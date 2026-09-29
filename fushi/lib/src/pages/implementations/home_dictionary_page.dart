@@ -612,12 +612,30 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             )
           : null,
       actions: <Widget>[
+        // 收藏夹入口：查词页里收藏的词 / 句（含视频、有声书来源）在这里集中看、
+        // 批量制卡。此前只能从书架 / 视频库进收藏夹，查词页没有入口。
+        FushiIconButton(
+          key: const ValueKey<String>('home-dictionary-collections'),
+          tooltip: t.collections,
+          icon: Icons.collections_bookmark_outlined,
+          onTap: _openCollections,
+        ),
         FushiIconButton(
           tooltip: t.clear_dictionary_title,
           icon: Icons.delete_sweep_outlined,
           onTap: _showDeleteDictionaryHistoryPrompt,
         ),
       ],
+    );
+  }
+
+  void _openCollections() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(),
+      ),
     );
   }
 

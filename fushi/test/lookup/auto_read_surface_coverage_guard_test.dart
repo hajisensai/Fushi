@@ -56,6 +56,9 @@ void main() {
         'Android 悬浮词典页的搜索框查词。用户已明确决定「不用接」自动朗读：'
             '该窗浮在别的 app 上层，查词后突然出声会打扰当前应用，故有意保持静音；'
             '此豁免不包含剪贴板面板点字换根或嵌套查词，那两条主动路径仍须按偏好朗读。',
+    'lib/src/media/favorites/favorite_batch_mining.dart':
+        '收藏夹一键制卡：逐条查词只为取回制卡字段，一批几十个词连续查，'
+            '每个都自动念一遍会变成一串噪音；用户没有在「看」这些查词结果。',
     'lib/src/pages/implementations/home_page.dart':
         'resumed 生命周期里用固定的 helloWorld 串 + useCache:false 预热词典引擎，'
             '不是用户查词，也没有结果呈现。',

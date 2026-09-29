@@ -509,6 +509,7 @@ class FavoriteWordRecord {
     required this.sourceType,
     required this.dateKey,
     required this.createdAt,
+    this.sentence = '',
   });
 
   final String expression;
@@ -517,6 +518,11 @@ class FavoriteWordRecord {
   final String sourceType;
   final String dateKey;
   final int createdAt;
+
+  /// v114 收藏上下文里的原句。wire 上可选（空串不发）：旧对端不认该键照常解析，
+  /// 旧对端发来的记录缺键回落 ''。定位锚点（章节 / cue）不上行——书 / 视频身份
+  /// 本就不随收藏词同步，单独的锚点在对端没有意义。
+  final String sentence;
 
   /// Dedupe identity: {expression, reading, sourceType}, exactly the table's
   /// unique key. Length-prefixed so a separator inside a field cannot forge a
@@ -531,6 +537,7 @@ class FavoriteWordRecord {
         'sourceType': sourceType,
         'dateKey': dateKey,
         'createdAt': createdAt,
+        if (sentence.isNotEmpty) 'sentence': sentence,
       };
 
   static FavoriteWordRecord? fromJson(Map<String, Object?> json) {
@@ -544,6 +551,7 @@ class FavoriteWordRecord {
       sourceType: sourceType,
       dateKey: (json['dateKey'] as String?) ?? '',
       createdAt: _asInt(json['createdAt']),
+      sentence: (json['sentence'] as String?) ?? '',
     );
   }
 }

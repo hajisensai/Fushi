@@ -3429,3 +3429,80 @@ Promise.all([
   testConfirmMiningReportsEmptyPopup(),
   testConfirmMiningReportsDisabledButton(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+// ── 收藏夹一键制卡：fushiPopupBuildMinePayloadFor ─────────────────────────────
+// 批量制卡要的是「与手动点 + 逐字段相同的 payload」，但不能点按钮、不能走 mineEntry
+// 桥（落卡由 Dart 批量流程自己做）。这里钉住：选中的词条下标、payload 与该词条一致、
+// 被隐藏词典过滤空的词条不被选中、全程零 mineEntry 桥调用、没有词条时回 null。
+function favoriteBatchEntries() {
+  const gloss = (dictionary, text) => ({
+    dictionary,
+    content: {tag: 'span', content: text},
+    definitionTags: '',
+    termTags: '',
+  });
+  return [
+    {
+      expression: '生', reading: 'せい', matched: '生',
+      frequencies: [], pitches: [], rules: [],
+      glossaries: [gloss('hiddenDict', 'life (hidden)')],
+    },
+    {
+      expression: '生', reading: 'なま', matched: '生',
+      frequencies: [], pitches: [], rules: [],
+      glossaries: [gloss('dict', 'raw')],
+    },
+    {
+      expression: '生きる', reading: 'いきる', matched: '生',
+      frequencies: [], pitches: [], rules: [],
+      glossaries: [gloss('dict', 'to live')],
+    },
+  ];
+}
+
+async function testFavoriteBatchPayloadPicksExactHeadword() {
+  const context = loadPopup();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'mineEntry') mined.push(payload);
+    return Promise.resolve(null);
+  };
+  context.window.hiddenDictionaryNames = ['hiddenDict'];
+  context.window.lookupEntries = favoriteBatchEntries();
+
+  const exact = await context.window.fushiPopupBuildMinePayloadFor('生きる', 'いきる');
+  assert.equal(exact.entryIndex, 2, 'expression + reading match wins');
+  assert.equal(exact.expression, '生きる');
+  assert.equal(exact.reading, 'いきる');
+  assert.ok(exact.glossary.includes('to live'),
+    'glossary is built from the picked entry');
+  assert.ok(!exact.glossary.includes('raw'),
+    'glossary must not leak another entry');
+
+  const byReading = await context.window.fushiPopupBuildMinePayloadFor('生', 'なま');
+  assert.equal(byReading.entryIndex, 1);
+
+  // 读音对不上 → 退到「仅表记相同」，且跳过被隐藏词典过滤空的第 0 条。
+  const expressionOnly = await context.window.fushiPopupBuildMinePayloadFor('生', 'しょう');
+  assert.equal(expressionOnly.entryIndex, 1,
+    'an entry emptied by hidden dictionaries must not be picked');
+
+  // 完全不相干 → 第一条**有可见释义**的词条。
+  const fallback = await context.window.fushiPopupBuildMinePayloadFor('無関係', '');
+  assert.equal(fallback.entryIndex, 1);
+
+  assert.equal(mined.length, 0, 'building a payload must never cross the mineEntry bridge');
+}
+
+async function testFavoriteBatchPayloadWithoutEntriesIsNull() {
+  const context = loadPopup();
+  context.window.lookupEntries = [];
+  assert.equal(await context.window.fushiPopupBuildMinePayloadFor('猫', 'ねこ'), null);
+  context.window.lookupEntries = undefined;
+  assert.equal(await context.window.fushiPopupBuildMinePayloadFor('猫', 'ねこ'), null);
+}
+
+Promise.all([
+  testFavoriteBatchPayloadPicksExactHeadword(),
+  testFavoriteBatchPayloadWithoutEntriesIsNull(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });

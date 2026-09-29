@@ -33,6 +33,7 @@ import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show padSentenceRange;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
@@ -2072,6 +2073,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookUid, title: _title ?? '');
+
+  /// 收藏词的上下文：查词所在字幕句 + 与视频收藏句同口径的锚点（集下标、cue 起点
+  /// 毫秒 / 时长毫秒），收藏夹据此显示原句、跳到那一秒、截该句音频。
+  @override
+  FavoriteLookupContext? get favoriteLookupContext {
+    final String sentence = _lastLookupSentence.trim();
+    if (sentence.isEmpty) return null;
+    final AudioCue? cue = _lastLookupCue;
+    return FavoriteLookupContext(
+      sentence: sentence,
+      sectionIndex: _favoriteSectionIndex,
+      normCharOffset: cue?.startMs,
+      normCharLength: cue == null
+          ? null
+          : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
+    );
+  }
 
   /// 多集播放列表的兄弟集（单视频/独立打开时为空）。统一合集 Phase 3：本地从 playlist
   /// 合集成员建、远端从 host episodes 建；只作面板/上下集/连播上下文，播放本身每集是独立

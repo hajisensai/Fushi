@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/stat_ring.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -16,10 +21,12 @@ import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 「按书」列表的排序键：字数 / 时长 / 阅读速度（cph）。
 enum _BookSort { chars, time, speed }
@@ -33,10 +40,17 @@ const int _kDailyTimeGoalMinutes = 60;
 const double _kWideBreakpoint = 720;
 
 class ReadingStatisticsPage extends BasePage {
-  const ReadingStatisticsPage({super.key, this.embedded = false});
+  const ReadingStatisticsPage({
+    super.key,
+    this.embedded = false,
+    this.rangeSelection,
+  });
 
   /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
   final bool embedded;
+
+  /// 统计中心共享的范围选择；null（独立页）时本页自持一份。
+  final ValueNotifier<StatRangeSelection>? rangeSelection;
 
   @override
   BasePageState<ReadingStatisticsPage> createState() =>
@@ -58,12 +72,33 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   Map<StatBreakdownSource, Map<String, StatSourceTotals>> _sourceDaily =
       <StatBreakdownSource, Map<String, StatSourceTotals>>{};
 
-  /// 「各来源」卡展示的窗口合计（今日 / 本周 / 本月 / 全部随 [_breakdownWindow]）。
+  /// 「各来源」卡展示的所选范围合计（随 [_range]）。
   Map<StatBreakdownSource, StatSourceTotals> _breakdownTotals =
       <StatBreakdownSource, StatSourceTotals>{};
 
-  /// 「各来源」卡的窗口：0=今日 1=本周 2=本月 3=全部（默认全部）。
-  int _breakdownWindow = 3;
+  /// 范围选择：统计中心传进来的共享那份，或独立页自持的一份。
+  late final ValueNotifier<StatRangeSelection> _rangeSelection =
+      widget.rangeSelection ??
+      ValueNotifier<StatRangeSelection>(const StatRangeSelection());
+
+  /// 阅读域逐日合计（范围图表 / 趋势 / 速度 / 所选范围卡 / 学习日历共用）。
+  Map<String, StatDayData> _byDay = <String, StatDayData>{};
+
+  /// 阅读域计数面原始行：按书的查词 / 制卡 / 收藏数跟随范围重算。
+  List<LookupMiningCounterRow> _counterRows = <LookupMiningCounterRow>[];
+  List<FavoriteWordRow> _favoriteRows = <FavoriteWordRow>[];
+  List<(String, int)> _lookupEvents = const <(String, int)>[];
+  List<(String, int)> _minedEvents = const <(String, int)>[];
+
+  /// bookKey → 书架条目（按书行的封面走书架同一条缩略图链）。
+  Map<String, MediaItem> _bookItemsByKey = <String, MediaItem>{};
+
+  /// 当前范围：共享选择 × 本轮今日 × 阅读域最早有数据的一天。
+  StatRange get _range => StatRange.resolve(
+    _rangeSelection.value,
+    todayKey: _window.todayKey,
+    earliestKey: earliestStatDateKey(_byDay.keys),
+  );
 
   /// 合集归属映射（书架同源）：按书 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -107,7 +142,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   int _allChars = 0;
   int _allMs = 0;
 
-  // 每日数据（最近 30 天）
+  // 所选范围内的逐日数据（升序、空日补 0）：趋势 / 速度摘要 / 日均的输入。
   List<StatDayData> _dailyData = [];
 
   // 今日每小时数据（0-23），按写入面（format）分带。v67 前的行没有身份，落在
@@ -133,12 +168,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 按书聚合
   List<_BookData> _bookData = [];
 
-  // 总览：日期范围（min/max dateKey，可空表示无数据）。
+  // 连续天数（阅读域）。
   int _streak = 0;
-  String? _firstDateKey;
-  String? _lastDateKey;
 
-  // 速度摘要（从最近 30 天纯函数算出）。
+  // 速度摘要（从所选范围的逐日数据纯函数算出）。
   SpeedSummary? _speedSummary;
 
   // 范围与趋势折线图的聚合粒度（日 / 周 / 月）与指标（字数 / 时长 / 速度）。
@@ -151,13 +184,22 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   @override
   void initState() {
     super.initState();
+    _rangeSelection.addListener(_onRangeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
   }
 
   @override
   void dispose() {
     _midnightReload?.cancel();
+    _rangeSelection.removeListener(_onRangeChanged);
+    if (widget.rangeSelection == null) _rangeSelection.dispose();
     super.dispose();
+  }
+
+  /// 范围变了只重算范围派生量（纯内存，不重查 DB）。
+  void _onRangeChanged() {
+    if (!mounted || _loading) return;
+    setState(_computeRangeAggregates);
   }
 
   /// 到下一个本地午夜整页重聚合（每次加载重新排一次；页面已卸载则不动）。
@@ -224,12 +266,15 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       // 聚合（无书查词 title='' 跳过，只进汇总）。
       final List<LookupMiningCounterRow> counters = counterFacts
           .lookupCountersFor(StatSourceKind.book);
-      _lookup = bucketActivityByDateKey(
-        counterFacts.lookupEvents(source: StatSourceKind.book),
-        now,
-      );
-      _bookCounters = aggregateStatCountersByTitle(counters);
-      _bookFavorites = aggregateStatFavoritesByTitle(favs);
+      _lookupEvents = counterFacts
+          .lookupEvents(source: StatSourceKind.book)
+          .toList();
+      _minedEvents = counterFacts
+          .minedEvents(source: StatSourceKind.book)
+          .toList();
+      _lookup = bucketActivityByDateKey(_lookupEvents, now);
+      _counterRows = counters;
+      _favoriteRows = favs;
       // 合集归属（书架同源）：title→bookKey→'epub|bookKey'→合集名，喂 per-book tile。
       _collectionNamesById = <int, String>{
         for (final MediaCollectionRow c in await db.getAllMediaCollections())
@@ -253,6 +298,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         now,
       );
       _loadHourlyData(facts);
+      _bookItemsByKey = <String, MediaItem>{
+        for (final MediaItem item
+            in ref
+                    .read(fushiBooksProvider(JapaneseLanguage.instance))
+                    .valueOrNull ??
+                const <MediaItem>[])
+          if (ReaderFushiSource.parseBookKey(item.mediaIdentifier)
+              case final String key)
+            key: item,
+      };
+      _computeRangeAggregates();
     } catch (e, stack) {
       ErrorLogService.instance.log('ReadingStatisticsPage.load', e, stack);
       _error = e.toString();
@@ -297,7 +353,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _allMs = 0;
 
     final dailyMap = <String, StatDayData>{};
-    final bookMap = <String, _BookData>{};
 
     // 阅读统计只合并阅读域的普通书与漫画。视频 / 游戏有各自统计页，不进入本页
     // KPI、趋势或活跃天数；唯一例外是目标进度——目标是学习域概念（BUG-1993），
@@ -339,29 +394,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       if (w.inWeek(f.dateKey)) _weekStudyChars += f.chars;
     }
 
-    // 按书：与视频域同一套身份分组（BUG-2216，[groupStatFactsByIdentity]）——有
-    // bookKey 按身份；legacy 无身份行（书已删 / 同名歧义反查失败）unique-title 吸收
-    // 进唯一身份组，同一本书的 legacy 日行与 v92 段合成一个 tile；歧义独立成无身份
-    // tile。title 取组首见快照作展示 / 计数键。
-    for (final StatIdentityGroup<StatFact> g in groupStatFactsByIdentity(
-      _bookFacts,
-      ambiguousTitles: _ambiguousBookTitles,
-    )) {
-      final _BookData book = bookMap.putIfAbsent(
-        '${g.identity ?? ''}|${g.title}',
-        () => _BookData(title: g.title, bookKey: g.identity),
-      );
-      for (final StatFact f in g.rows) {
-        book.chars += f.chars;
-        book.ms += f.ms;
-      }
-    }
-
-    // 最近 30 天（含今日），升序补齐空日期。
-    _dailyData = <StatDayData>[
-      for (final String key in w.lastDayKeys(30))
-        dailyMap[key] ?? StatDayData(dateKey: key),
-    ];
+    _byDay = dailyMap;
 
     // 总览活跃天数只取阅读域日期；dateKey 零填充，可直接字典序比较。
     final Set<String> activeDayKeys = <String>{};
@@ -376,41 +409,51 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       }
     }
     _streak = computeReadingStreak(activeDayKeys, now);
-    if (activeDayKeys.isEmpty) {
-      _firstDateKey = null;
-      _lastDateKey = null;
-    } else {
-      final List<String> sortedKeys = activeDayKeys.toList()..sort();
-      _firstDateKey = sortedKeys.first;
-      _lastDateKey = sortedKeys.last;
-    }
+  }
 
+  /// 范围派生量（纯内存，范围一变就重算，不重查 DB）：范围逐日数据 → 趋势 /
+  /// 速度摘要 / 日均；来源合计；按书列表（字数 / 时长 / 查词 / 制卡 / 收藏全按
+  /// 范围求和）。顶部时段卡与 KPI 的今日 / 本周是固定的当下视图，不在这里。
+  void _computeRangeAggregates() {
+    final StatRange range = _range;
+    _dailyData = <StatDayData>[
+      for (final String key in range.dayKeys)
+        _byDay[key] ?? StatDayData(dateKey: key),
+    ];
     _speedSummary = computeSpeedSummary(_dailyData);
 
+    // 按书：与视频域同一套身份分组（BUG-2216，[groupStatFactsByIdentity]）——有
+    // bookKey 按身份；legacy 无身份行（书已删 / 同名歧义反查失败）unique-title 吸收
+    // 进唯一身份组，同一本书的 legacy 日行与 v92 段合成一个 tile；歧义独立成无身份
+    // tile。title 取组首见快照作展示 / 计数键。只取范围内的日行。
+    final Map<String, _BookData> bookMap = <String, _BookData>{};
+    for (final StatIdentityGroup<StatFact> g in groupStatFactsByIdentity(
+      _bookFacts.where((StatFact f) => range.contains(f.dateKey)),
+      ambiguousTitles: _ambiguousBookTitles,
+    )) {
+      final _BookData book = bookMap.putIfAbsent(
+        '${g.identity ?? ''}|${g.title}',
+        () => _BookData(title: g.title, bookKey: g.identity),
+      );
+      for (final StatFact f in g.rows) {
+        book.chars += f.chars;
+        book.ms += f.ms;
+      }
+    }
     _bookData = bookMap.values.toList();
     _sortBookData();
-    _recomputeBreakdown();
-  }
+    _bookCounters = aggregateStatCountersByTitle(
+      _counterRows
+          .where((LookupMiningCounterRow r) => range.contains(r.dateKey))
+          .toList(),
+    );
+    _bookFavorites = aggregateStatFavoritesByTitle(
+      _favoriteRows
+          .where((FavoriteWordRow r) => range.contains(r.dateKey))
+          .toList(),
+    );
 
-  /// 「各来源」卡当前窗口的日期谓词（0=今日 1=近 7 天 2=近 30 天 3=全部）。
-  /// 阈值只从 [StatWindow] 取，与顶部 KPI 同一套窗口。
-  bool Function(String dateKey) _breakdownPredicate() {
-    final StatWindow w = _window;
-    switch (_breakdownWindow) {
-      case 0:
-        return w.isToday;
-      case 1:
-        return w.inWeek;
-      case 2:
-        return w.inMonth;
-      default:
-        return (String dateKey) => true;
-    }
-  }
-
-  /// 按当前窗口重算阅读域来源合计（普通书 + 漫画，纯内存，不重查 DB）。
-  void _recomputeBreakdown() {
-    final bool Function(String) inWindow = _breakdownPredicate();
+    // 阅读域来源合计（普通书 + 漫画）：所选范围内求和。
     _breakdownTotals = <StatBreakdownSource, StatSourceTotals>{
       for (final StatBreakdownSource source in const <StatBreakdownSource>[
         StatBreakdownSource.book,
@@ -418,7 +461,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       ])
         source: sumStatSourceTotals(
           _sourceDaily[source] ?? const <String, StatSourceTotals>{},
-          inWindow,
+          range.contains,
         ),
     };
   }
@@ -439,15 +482,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 阅读速度展示：委托共享的 [formatStatCph]（时段卡 / 会话行同一口径）。
   static String _formatCph(double cph) => formatStatCph(cph);
-
-  /// 日期范围展示：`首日 ~ 末日`；无数据回退占位符。
-  String _formatDateRange() {
-    final String? first = _firstDateKey;
-    final String? last = _lastDateKey;
-    if (first == null || last == null) return '-';
-    if (first == last) return first;
-    return '$first ~ $last';
-  }
 
   /// 指标名（趋势图图例 / 表头共用）。
   static String _metricLabel(StatTrendMetric m) {
@@ -523,12 +557,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         return CustomScrollView(
           slivers: <Widget>[
             SliverToBoxAdapter(child: _buildSummaryCards()),
-            SliverToBoxAdapter(
-              child: buildStatDailyDurationChartSection(
-                context,
-                _dailyData,
-              ),
-            ),
+            SliverToBoxAdapter(child: _buildRangeSection()),
             SliverToBoxAdapter(
               child: buildStatSessionSection(
                 context,
@@ -565,6 +594,46 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           ],
         );
       },
+    );
+  }
+
+  /// 范围区块（Niratan「Range」）：范围条 → 学习日历 → 范围时长图 → 所选范围卡。
+  /// 范围驱动下方趋势 / 速度摘要 / 来源分布 / 按书列表；顶部时段卡恒为当下。
+  Widget _buildRangeSection() {
+    final StatRange range = _range;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        StatRangeBar(
+          range: range,
+          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+        ),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: _window.now,
+          onDaySelected: (String dateKey) => _rangeSelection.value =
+              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+        ),
+        buildStatRangeChartSection(context, range, _byDay),
+        buildStatRangeSummary(
+          context,
+          range,
+          _byDay,
+          extraLines: <StatSummaryLine>[
+            if (statBookCphOf(_bookFacts, range.contains) case final String cph)
+              StatSummaryLine(label: t.stat_reading_speed, value: cph),
+            StatSummaryLine(
+              label: t.stat_lookup,
+              value: '${sumStatEventsInRange(_lookupEvents, range)}',
+            ),
+            StatSummaryLine(
+              label: t.stat_mined,
+              value: '${sumStatEventsInRange(_minedEvents, range)}',
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -626,8 +695,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// TODO-1253：交给自适应的 [StatKpiStrip]——宽屏一排、窄屏换行成 2 列，数值 FittedBox
   /// 缩放不截断。
   Widget _buildKpiStrip() {
-    // BUG-892 后续：日均字数用与「30 天字符图」同一窗口的活跃日均值（[_dailyData] 即
-    // 字符图数据），不再用终身均值——后者被历史低产日拉低、与同屏近期指标对不上。
+    // BUG-892 后续：日均字数用与范围图表同一窗口的活跃日均值（[_dailyData] 即所选
+    // 范围的逐日数据），不再用终身均值——后者被历史低产日拉低、与同屏指标对不上。
     final int dailyAvgChars = dailyAverageChars(_dailyData);
     final double? weekPct = computeWeekOverWeekPercent(
       _weekChars,
@@ -717,37 +786,25 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         right: tokens.spacing.card,
         bottom: tokens.spacing.card,
       ),
+      // 窗口 = 页面范围条（此前卡内自带今日 / 本周 / 本月 / 全部四颗 chip，与
+      // 范围条重复且口径不一）。
       child: _card(
         title: t.stat_source_breakdown,
+        trailing: Text(
+          formatStatRange(_range),
+          textAlign: TextAlign.right,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.type.metadata.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap,
-              children: <Widget>[
-                _breakdownWindowChip(t.stat_today, 0),
-                _breakdownWindowChip(t.stat_this_week, 1),
-                _breakdownWindowChip(t.stat_this_month, 2),
-                _breakdownWindowChip(t.stat_all_time, 3),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.card),
-            ...rows,
-          ],
+          children: rows,
         ),
       ),
     );
   }
-
-  Widget _breakdownWindowChip(String label, int window) => FushiSelectableChip(
-    label: label,
-    selected: _breakdownWindow == window,
-    onSelected: (_) => setState(() {
-      _breakdownWindow = window;
-      _recomputeBreakdown();
-    }),
-  );
 
   /// 单个来源一行：图标 + 名称 + 「字数 · 时长（· 页数）」。
   Widget _breakdownRow(StatBreakdownSource source, StatSourceTotals totals) {
@@ -1224,9 +1281,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final List<String> xLabels = points
         .map((StatTrendPoint p) => p.label)
         .toList();
-    final int labelEvery = _trendGranularity == StatTrendGranularity.daily
-        ? 5
-        : 1;
+    // 横轴标签稀疏到约 7 个：范围可以是一年 / 全部历史，逐日 365 个点不能每 5
+    // 个标一次。
+    final int labelEvery = math.max(1, (points.length / 7).ceil());
     final TextStyle labelStyle = tokens.type.metadata.copyWith(
       color: scheme.onSurfaceVariant,
     );
@@ -1234,8 +1291,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
     return _card(
       title: t.stat_range_and_trend,
+      // 标注 = 图上真实画的范围（此前标的是全部历史首末日，图却只画近 30 天）。
       trailing: Text(
-        _formatDateRange(),
+        formatStatRange(_range),
         textAlign: TextAlign.right,
         overflow: TextOverflow.ellipsis,
         style: tokens.type.metadata.copyWith(color: scheme.onSurfaceVariant),
@@ -1349,7 +1407,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(
-          t.stat_bookshelf_compare,
+          '${t.stat_bookshelf_compare} · ${formatStatRange(_range)}',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         SizedBox(height: tokens.spacing.gap),
@@ -1508,9 +1566,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         ? 0
         : _sessions.where((StudySession s) => s.mediaKey == bookKey).length;
     final String speed = book.cph > 0 ? ' · ${_formatCph(book.cph)}' : '';
+    final MediaItem? item = bookKey == null ? null : _bookItemsByKey[bookKey];
     return buildStatMediaRow(
       context,
       icon: Icons.menu_book,
+      cover: item == null
+          ? null
+          : resolveMediaCoverImage(
+              kind: MediaKind.epub,
+              book: item,
+              appModel: appModelNoUpdate,
+              decodeWidth: kActivityCoverDecodePixelWidth,
+            ),
       title: _bookDisplayTitle(book),
       collectionName: _collectionNameForBook(book),
       meta: '${formatStatChars(book.chars)} · '
