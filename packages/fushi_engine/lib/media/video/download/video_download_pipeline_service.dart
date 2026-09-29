@@ -2009,7 +2009,11 @@ class VideoDownloadPipelineService {
     }
     final VideoDownloadJobRow? duplicate = await database
         .findVideoDownloadJobByFingerprintAndTorrentHash(job.fingerprint, hash);
-    if (duplicate != null && duplicate.jobId != job.jobId) {
+    // 先判孤儿接管（BUG-2755）：持有者停在 failed / needsAttention 且目标来源已
+    // 失效时永远不会让出槽位，同包排队等它只会卡死。
+    if (duplicate != null &&
+        duplicate.jobId != job.jobId &&
+        !await _supersedeOrphanedDuplicate(duplicate, job)) {
       if (_releasesPackSlot(job) && _releasesPackSlot(duplicate)) {
         // 同包的上一卷还没下完：排队等它完成让出 torrent，不算失败、不耗重试
         // 预算。持有者被暂停/出错时也继续等——用户恢复、重试或删掉它之后这里
@@ -2025,11 +2029,9 @@ class VideoDownloadPipelineService {
         );
         return;
       }
-      if (!await _supersedeOrphanedDuplicate(duplicate, job)) {
-        throw VideoDownloadPipelineActionRequired(
-          'This torrent is already managed by job ${duplicate.jobId}',
-        );
-      }
+      throw VideoDownloadPipelineActionRequired(
+        'This torrent is already managed by job ${duplicate.jobId}',
+      );
     }
     _ensureLeaseHeld();
     // BUG-2755：受管任务直接下载进目标来源的暂存目录，不再先落全局下载根。
