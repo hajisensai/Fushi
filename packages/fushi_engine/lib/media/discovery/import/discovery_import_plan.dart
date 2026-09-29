@@ -75,6 +75,11 @@ enum DiscoveryImportBlocker {
   /// 有声书包里没有音频。
   audiobookMissingAudio,
 
+  /// 有声书包里的正文与库中已有书同名。自动入库不会把音频附着到既有书
+  /// （换音频/换字幕是有损操作，交互入口是有声书导入对话框），要用户手动
+  /// 关联（BUG-2775）。
+  audiobookBookAlreadyInLibrary,
+
   /// 游戏包里找不到可执行文件。
   gameNoExecutable,
 

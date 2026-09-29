@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2551 条。点号进各自文件。
+> 共 2552 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2775](bugs/BUG-2775-audiobook-import-failed-opaque.md) | ✅ | ✅ | 有声书下载导入失败只显示 import failed |
 | [BUG-2774](bugs/BUG-2774-gal-overlay-lookup-covers-word.md) | ✅ | ✅ | 台词浮窗贴屏幕底时查词卡压住被点的词 |
 | [BUG-2773](bugs/BUG-2773-ext-popup-flip-down-then-up.md) | ✅ | ✅ | 浏览器扩展查词弹窗先落字幕下方再翻到上方 |
 | [BUG-2772](bugs/BUG-2772-macos-tcc-adhoc-reauth.md) | ✅ | ✅ | macOS 每次更新全局查词都要重新授权辅助功能 |

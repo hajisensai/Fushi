@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
+    show DiscoveryImportBlocker;
+
 /// 计划里一条已暂存的字幕（选种那一刻从 Jimaku 下载并落地到暂存目录）。
 class PlanSubtitle {
   const PlanSubtitle({
@@ -140,7 +143,9 @@ class AnimeDownloadPlan {
   /// [statusDownloading] / [statusImported] / [statusFailed]。
   final String status;
 
-  /// 失败原因；仅 [statusFailed] 时有意义。
+  /// 失败原因；仅 [statusFailed] 时有意义。自动入库被挡下时是
+  /// [animeDownloadBlockedFailReason] 编出的稳定原因码（UI 翻译成用户文案），
+  /// 其余是诊断用的原始文本。
   final String? failReason;
 
   /// 入库后回填的合集 id；[statusImported] 或 [importedEarly] 时有意义。
@@ -486,4 +491,25 @@ class AnimeDownloadPlanStore {
       if (await subs.exists()) await subs.delete(recursive: true);
     } catch (_) {}
   }
+}
+
+/// [AnimeDownloadPlan.failReason] 里「自动入库被挡下」原因码的前缀。
+const String _kBlockedFailReasonPrefix = 'blocked:';
+
+/// 把导入被挡下的稳定原因编成可落盘的 failReason（BUG-2775）：原因码而不是
+/// 用户文案，这样换界面语言后旧任务也按新语言显示。
+String animeDownloadBlockedFailReason(DiscoveryImportBlocker blocker) =>
+    '$_kBlockedFailReasonPrefix${blocker.name}';
+
+/// [animeDownloadBlockedFailReason] 的逆；不是原因码（旧任务/诊断文本）返回
+/// null，调用方原样显示。
+DiscoveryImportBlocker? parseAnimeDownloadBlockedFailReason(String? reason) {
+  if (reason == null || !reason.startsWith(_kBlockedFailReasonPrefix)) {
+    return null;
+  }
+  final String name = reason.substring(_kBlockedFailReasonPrefix.length);
+  for (final DiscoveryImportBlocker blocker in DiscoveryImportBlocker.values) {
+    if (blocker.name == name) return blocker;
+  }
+  return null;
 }
