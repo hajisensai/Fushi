@@ -983,6 +983,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Game card screenshot format':
       'test/mining/gal_hook_mining_coordinator_test.dart + '
       'test/mining/mining_still_format_test.dart',
+  // 音画同步片段格式：ffmpeg 参数按格式分派（视频页 / gal 窗口）+ 偏好推导（老 MP4 片段
+  // 用户保持 MP4）+ 编码器缺失 AV1→VP9→MP4 降级且扩展名跟随实际产物 + WebM 卡片内嵌渲染。
+  'cardCreation/Video clip format': 'test/mining/mining_clip_format_test.dart + '
+      'test/mining/synchronized_video_mining_test.dart + '
+      'test/mining/immersion_capture_video_test.dart + '
+      '../packages/fushi_anki/test/inline_video_cover_test.dart',
+  'cardCreation/Game clip format': 'test/mining/mining_clip_format_test.dart + '
+      'test/mining/synchronized_video_mining_test.dart',
   // 同步后端选择：syncChannelScopeOf 是 resolveSyncBackend 的逆（选哪个就解析出哪个），
   // 外加 applyBackupBackendChange 真改变通道归属。
   'syncBackup/Storage backend':

@@ -294,6 +294,33 @@ void main() {
               '桌面端片段导出永远封不进字幕。${_revendorHint()}',
         );
       });
+
+      test('音画同步片段用到的组件真的在二进制里（gal concat / WebM）', () {
+        // 同样单拎出来：配方与二进制对得上 ≠ Dart 侧要的东西在配方里。
+        // - concat demuxer：galgame_window_video.dart 用 `-f concat -safe 0 -i list`
+        //   把录下的逐帧 JPEG 喂给编码；`-safe` 是 concat 的私有选项，缺它 ffmpeg
+        //   报 "Unrecognized option 'safe'"，gal 片段（WebM / MP4 两档）全挂。
+        // - libvpx_vp9 / libopus + webm muxer：制卡默认片段格式 WebM(VP9+Opus)。
+        final String configuration = _embeddedConfiguration(exe);
+        expect(
+          _parseBinaryList(configuration, 'demuxer'),
+          contains('concat'),
+          reason: '入库 ${target.ffmpegName}（${target.label}）没有 concat demuxer，'
+              'galgame 窗口录像片段在正式版必失败。${_revendorHint()}',
+        );
+        expect(
+          _parseBinaryList(configuration, 'encoder'),
+          containsAll(<String>['libvpx_vp9', 'libopus']),
+          reason: '入库 ${target.ffmpegName}（${target.label}）缺 WebM 片段编码器。'
+              '${_revendorHint()}',
+        );
+        expect(
+          _parseBinaryList(configuration, 'muxer'),
+          contains('webm'),
+          reason: '入库 ${target.ffmpegName}（${target.label}）缺 webm muxer。'
+              '${_revendorHint()}',
+        );
+      });
     });
   }
 }

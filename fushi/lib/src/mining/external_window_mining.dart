@@ -44,6 +44,10 @@ ImmersionMiningRequest buildExternalWindowRequest({
   // 行为不变；引擎据它把 [providedCoverBytes] 归一化成用户选的格式，并让
   // [providedCoverName] 的扩展名跟随**实际**字节（动图字节原样放行）。
   MiningStillFormat stillFormat = MiningStillFormat.jpg,
+  // [screenshotBytes] 是一个**已混进句子音频**的片段（gal 窗口录制 + 语音）。置 true 时
+  // 引擎把它认作音画同步片段：句子音频字段改为重播该片段，不再另挂一份 [audioBytes]——
+  // 否则卡片上同一句语音会播两遍（WebM 内嵌时更是两路同时响）。
+  bool synchronizedClip = false,
 }) {
   final bool hasAudio = audioBytes != null && audioBytes.isNotEmpty;
   return ImmersionMiningRequest(
@@ -58,8 +62,9 @@ ImmersionMiningRequest buildExternalWindowRequest({
     bookTitleTag: bookTitleTag,
     updateNoteId: updateNoteId,
     providedCoverBytes: screenshotBytes,
-    providedCoverName:
-        screenshotBytes == null ? null : (coverName ?? 'external_window.png'),
+    providedCoverName: screenshotBytes == null
+        ? null
+        : (coverName ?? 'external_window.png'),
     providedAudioBytes: hasAudio ? audioBytes : null,
     providedAudioName: hasAudio
         ? (audioName ?? 'galgame_audio.${immersionMiningAudioExtension()}')
@@ -67,5 +72,8 @@ ImmersionMiningRequest buildExternalWindowRequest({
     // 有音频 -> requireAudio 开（本应有音频却丢=失败）；纯截图卡 -> false（本就无声）。
     requireAudio: hasAudio,
     stillFormat: stillFormat,
+    imageMode: synchronizedClip
+        ? VideoMiningImageMode.videoClip
+        : VideoMiningImageMode.gif,
   );
 }

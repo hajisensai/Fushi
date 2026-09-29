@@ -1810,7 +1810,7 @@
   "go_to_chapter": "第 $n 章",
   "handlebar_audio": "音声",
   "handlebar_book_cover": "書籍カバー",
-  "handlebar_card_image": "Card Image (Cover / GIF)",
+  "handlebar_card_image": "Card Image (Cover / Clip)",
   "handlebar_clip_timestamp": "クリップの時間",
   "handlebar_cue_sentence": "字幕例文",
   "handlebar_deprecated_label": "${label}（非推奨）",
@@ -4788,7 +4788,6 @@
   "reader_volume_peek_failed": "Could not read this volume",
   "web_video_player_unavailable": "内蔵ウェブページプレーヤーは一時的に無効化されています。このアドレスは今のところアプリ内で再生できません。",
   "video_mining_image_mode_video_clip": "Video clip with sound",
-  "video_mining_image_mode_video_clip_hint": "Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.",
   "reader_gallery_title": "Illustrations",
   "reader_gallery_unlocked_count": "Unlocked $unlocked / $total",
   "reader_gallery_filter_unlocked": "Unlocked",
@@ -6084,5 +6083,12 @@
   "floating_ball_scope_system": "Outside the app",
   "floating_ball_buttons_hint": "Buttons shown when the ball is expanded here",
   "manga_import_ios_mokuro_needs_folder": "On iOS a single .mokuro can't bring its page images along. Pick the whole volume folder (the .mokuro plus its image folder), or a .zip/.cbz of it.",
-  "import_folder_copy_failed": "Couldn't copy the folder into the app: $error"
+  "import_folder_copy_failed": "Couldn't copy the folder into the app: $error",
+  "video_mining_image_mode_video_clip_inline_hint": "Picture and sentence audio are saved as one clip, so they always stay in sync. WebM plays inside the card (auto-plays when the card is shown; tap the sentence to replay); MP4 opens in Anki's own player.",
+  "video_mining_clip_format": "Video clip format",
+  "gal_mining_clip_format": "Game clip format",
+  "mining_clip_format_webm_vp9": "WebM · VP9 (plays inside the card, recommended)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card; smallest file, about 2× the encode time of VP9; desktop only)",
+  "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki's own player; use for AnkiMobile)",
+  "mining_clip_format_hint": "WebM plays inside the card, but AnkiMobile on iPhone cannot play it — choose MP4 if you review on iPhone. If WebM cannot be encoded on this device, Fushi falls back to MP4."
 }

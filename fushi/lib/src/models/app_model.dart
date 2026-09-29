@@ -3013,6 +3013,11 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      // 音画同步片段成为封面模式默认（PR #1717）只给全新安装：升级上来、从没显式
+      // 选过的存量用户在这里落一次显式 GIF（原行为）。必须赶在首页首帧改写
+      // first_time_setup 之前——它是「全新安装」的唯一判据。
+      await prefsRepo.settleMiningImageModeInstallDefault(
+          freshInstall: prefsRepo.isFirstTimeSetup);
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
@@ -7618,7 +7623,7 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
-  // 视频制卡封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 gif=现状。
+  // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
       prefsRepo.videoMiningImageMode;
   void setVideoMiningImageMode(VideoMiningImageMode mode) =>
@@ -7656,6 +7661,16 @@ class AppModel with ChangeNotifier {
   MiningStillFormat get galMiningStillFormat => prefsRepo.galMiningStillFormat;
   void setGalMiningStillFormat(MiningStillFormat format) =>
       prefsRepo.setGalMiningStillFormat(format);
+
+  // 音画同步片段格式（WebM VP9 / WebM AV1 / MP4，透传 prefsRepo）。默认由偏好层推导
+  // （老 MP4 片段用户保持 MP4，其余平台默认）。仅封面模式为 videoClip 时生效。
+  MiningClipFormat get videoMiningClipFormat => prefsRepo.videoMiningClipFormat;
+  void setVideoMiningClipFormat(MiningClipFormat format) =>
+      prefsRepo.setVideoMiningClipFormat(format);
+
+  MiningClipFormat get galMiningClipFormat => prefsRepo.galMiningClipFormat;
+  void setGalMiningClipFormat(MiningClipFormat format) =>
+      prefsRepo.setGalMiningClipFormat(format);
 
   /// 制卡句子音频头/尾 padding（毫秒），视频字幕与有声书两条制卡链共用。
   int get miningAudioHeadPadMs => prefsRepo.miningAudioHeadPadMs;
@@ -9249,6 +9264,8 @@ class _AppModelRemoteLookupService
           // 静图编码格式（默认 JPG）：服务端路径的两种静态档都落到引擎
           // tryStartFrame，抽帧按它选编码器与扩展名，失败退回 JPG。
           stillFormat: _appModel.videoMiningStillFormat,
+          // 音画同步片段格式：远端画面流 + 本地裁好的句子音频合成一个片段。
+          clipFormat: _appModel.videoMiningClipFormat,
         ),
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -9283,15 +9300,9 @@ class _AppModelRemoteLookupService
         payload.clipSourceId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
-      if (_appModel.videoMiningImageMode == VideoMiningImageMode.videoClip) {
-        return remoteMineError(
-          'Anki.mineImmersion.bilibili',
-          'bilibili 网页制卡暂未提供视频轨，无法生成同步视频；请在应用内打开视频后制卡',
-          detail:
-              'synchronized video requires a video stream; '
-              'the browser resolver currently supplies audio only',
-        );
-      }
+      // 片段模式（videoClip，默认）在这里拿不到视频轨：浏览器解析器只给音轨、画面是扩展
+      // 截的帧。照常出「截图 + 句子音频」卡，不声称同步——videoClip 成了默认值之后，
+      // 这里若还像过去那样直接报错，bilibili 网页制卡会对所有没改过设置的人全挂。
       // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声卡：这条路 requireAudio=true，
       // 而 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成一张只有图的卡。
       if (payload.clipEndMs! <= payload.clipStartMs!) {
@@ -9427,12 +9438,14 @@ class _AppModelRemoteLookupService
         // 静帧档的编码格式（默认 JPG）：同样选编码器 + 输出扩展名 + 降级链，
         // 实际产出格式经 ImmersionCaptureResult.stillFormat 回传给封面文件名。
         stillFormat: _appModel.videoMiningStillFormat,
+        // 音画同步片段格式（片段模式时）：实际产出格式经 ImmersionCaptureResult.clipFormat
+        // 回传给封面文件名，扩展名决定卡片上内嵌还是原生播放。
+        clipFormat: _appModel.videoMiningClipFormat,
         stillTarget: stillTarget,
         // BUG-2192：裁掉录屏片段四周的播放器黑底（扩展按 <video> 几何给的比例矩形）。
         crop: payload.clipCrop,
       );
-    } else if (_appModel.videoMiningImageMode != VideoMiningImageMode.videoClip &&
-        payload.netflixVideoId != null &&
+    } else if (payload.netflixVideoId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
       cap = await ImmersionCaptureChannel.capture(
@@ -9441,11 +9454,16 @@ class _AppModelRemoteLookupService
         clipEndMs: payload.clipEndMs!,
       );
     }
+    // 片段模式下**录到了**片段却没导出同步视频，才是真失败（录制有声、导出坏了），
+    // 报错而不是悄悄降级成动图。没录到片段的来源（后台软解动图 / 2A 截图）没有视频可
+    // 同步，由 buildImmersionRequest 照常用手上的封面出卡——片段模式是默认值，不能让
+    // 这些来源整体报错。
     if (_appModel.videoMiningImageMode == VideoMiningImageMode.videoClip &&
+        payload.clipBytes != null &&
         (!cap.ok || !cap.coverIsVideo || cap.gifBytes == null)) {
       return remoteMineError(
         'Anki.mineImmersion.video',
-        '同步视频制卡失败：需要包含声音的录制片段；请重新录制，或在应用内打开视频后制卡',
+        '同步视频制卡失败：录制片段未能导出为音画同步视频；请重新录制，或在应用内打开视频后制卡',
         detail: cap.error ?? 'capture did not provide synchronized video',
       );
     }

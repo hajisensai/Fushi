@@ -57,6 +57,8 @@ X264_REF="${X264_REF:-stable}"
 SVTAV1_REF="${SVTAV1_REF:-v2.3.0}"
 LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
 DAV1D_REF="${DAV1D_REF:-1.5.1}"
+LIBVPX_REF="${LIBVPX_REF:-v1.15.0}"
+OPUS_REF="${OPUS_REF:-v1.5.2}"
 
 # BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
 #
@@ -208,10 +210,45 @@ EOF
     ninja -C "$work/dav1d/build" install
   fi
 
+  if [ ! -f "$prefix/lib/libvpx.a" ]; then
+    # VP9 编码器：制卡「音画同步片段」的默认 WebM 视频轨（Anki 桌面 Qt WebEngine 与
+    # AnkiDroid WebView 都能内嵌解码 VP9；它们没有 H.264）。只要编码器——解码走 FFmpeg
+    # 自带的 vp8/vp9 decoder，省体积。libvpx 的 configure 用自己的 target 三元组选架构
+    # （`*-darwin20-gcc` 名义上是 gcc，实际按 CC 调 clang，并自动带 `-arch`）；x86_64
+    # 的 SIMD 汇编要 nasm（runner 已装）。
+    echo "[ffmpeg-min] build static libvpx @ $LIBVPX_REF"
+    rm -rf "$work/libvpx"
+    git clone --depth 1 --branch "$LIBVPX_REF" \
+      https://chromium.googlesource.com/webm/libvpx "$work/libvpx"
+    local vpx_target="x86_64-darwin20-gcc"
+    if [ "$MACOS_ARCH" = "arm64" ]; then vpx_target="arm64-darwin20-gcc"; fi
+    (cd "$work/libvpx" && CC="clang -arch $MACOS_ARCH" CXX="clang++ -arch $MACOS_ARCH" \
+      ./configure --prefix="$prefix" --target="$vpx_target" \
+      --enable-static --disable-shared --enable-pic \
+      --disable-examples --disable-tools --disable-docs --disable-unit-tests \
+      --disable-vp8 --disable-vp9-decoder --as=nasm \
+      && make -j"$JOBS" && make install)
+  fi
+
+  if [ ! -f "$prefix/lib/libopus.a" ]; then
+    # Opus 编码器：同步片段 WebM 的音轨（Qt WebEngine 没有 AAC 解码器）。
+    echo "[ffmpeg-min] build static libopus @ $OPUS_REF"
+    rm -rf "$work/opus"
+    git clone --depth 1 --branch "$OPUS_REF" \
+      https://github.com/xiph/opus.git "$work/opus"
+    cmake -S "$work/opus" -B "$work/opus/build" \
+      -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+      -DBUILD_SHARED_LIBS=OFF -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_BUILD_TESTING=OFF
+    cmake --build "$work/opus/build" -j "$JOBS"
+    cmake --install "$work/opus/build"
+  fi
+
   # 缺任何一个 .a 就当场停：继续跑下去只会又编出一个动态依赖 Homebrew 的产物，
   # 而那个缺陷要到发版流水线才暴露。
   local archive
-  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a; do
+  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a libvpx.a libopus.a; do
     if [ ! -f "$prefix/lib/$archive" ]; then
       echo "[ffmpeg-min] FATAL(BUG-1443): 缺静态库 $prefix/lib/$archive" >&2
       ls -la "$prefix/lib" >&2 || true
@@ -239,7 +276,12 @@ cd "$SRC"
 # 被当成未知格式 → AVERROR_INVALIDDATA（exit -1094995529），制卡中止在
 # `required audio missing`（BUG-2642）。依赖的 mpegts/mov/aac/ac3/eac3/webvtt demuxer
 # 与 http/https/crypto（AES-128）协议上面已全开。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls"
+# concat：galgame 窗口录像制卡（galgame_window_video.dart buildGalWindowVideoArgs）把
+# 录下的逐帧 JPEG 按真实时间戳排成 `ffconcat` 列表，`-f concat -safe 0 -i list` 喂给编码。
+# `-safe` 是 concat demuxer 的私有选项：缺 concat 时 ffmpeg 报 "Unrecognized option
+# 'safe'" 直接退出，gal 片段（WebM / MP4 两档）在正式版全挂、只能靠调用方降级成动图。
+# 列表里的每一帧再经上面的 image2（按扩展名）+ mjpeg 解码器读入。LGPL，体积增量近零。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
@@ -264,7 +306,12 @@ DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,r
 # 又快又小，而 libwebp_anim 要 16.4 秒（它是逐帧帧内的静态图编码器，无运动补偿也不并行）。
 # 二者均为 BSD 许可，本 build 已因 libx264 是 GPL，无新增许可约束。
 # ⚠️ CI 构建环境需装 libsvtav1 / libwebp 开发包（MSYS2: mingw-w64-x86_64-{svt-av1,libwebp}）。
-ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
+# libvpx_vp9 / libopus：制卡「音画同步片段」默认格式 WebM(VP9+Opus)，卡片里用 <video>
+# 内嵌播放。Anki 桌面的 Qt WebEngine 不带专利编解码器（无 H.264 / AAC），只有 WebM 这
+# 一族能内嵌；AV1 片段（libsvtav1）同样配 Opus 音轨。二者 BSD 许可。
+# ⚠️ CI 需装 libvpx / opus 开发包（MSYS2: mingw-w64-x86_64-{libvpx,opus}；apt: libvpx-dev
+# libopus-dev）；macOS 在 build_darwin_static_deps 里静态自编。
+ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,libopus,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。
@@ -282,7 +329,8 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subri
 # `pb->pos == 0` 重置 6.1 没有）；MPEG-TS 是 hls.c 那次 `pos = 0` 重置本来就为之
 # 设计的形态，也是 Jellyfin / Emby 给 mpv 客户端的标准形态。h264 进 TS 由已编入的
 # h264_mp4toannexb bsf 转 Annex B（见 BSFS）。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null,mpegts"
+# webm：音画同步片段的 WebM 容器（VP9/AV1 + Opus）。它与 matroska 共用 matroskaenc。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -376,6 +424,7 @@ esac
   --enable-ffmpeg \
   --enable-small --enable-zlib \
   --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp --enable-libdav1d \
+  --enable-libvpx --enable-libopus \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \
