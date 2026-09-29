@@ -263,6 +263,12 @@ class _VideoDownloadSubscriptionsPanelState
       ),
       nowAt: now,
     );
+    // 已完成的集还在旧来源里做种：一并摘掉种子（不删文件），否则用户删掉旧目录后
+    // 引擎续传会在原处重下（BUG-2776）。
+    if (result.targetSourceId != null) {
+      await appModel.videoDownloadPipelineService
+          ?.releaseSubscriptionSeedsOutsideTarget(subscription.subscriptionId);
+    }
     await appModel.videoDownloadSubscriptionService?.checkNow();
   }
 

@@ -704,17 +704,42 @@ typedef VideoDownloadDiscoveryImporter =
       List<String> absolutePaths,
     );
 
+/// 已完成的受管任务，但目标来源已不存在（删来源后 FK 置空 / 指向已删行，
+/// BUG-2776）。它的种子存储仍在旧来源根下做种，不再归任何来源所有：文件被删
+/// 后引擎续传会在旧位置重建目录并重新下载。这类种子必须从引擎摘掉。
+bool videoDownloadJobIsOrphanedCompletedSeed(
+  VideoDownloadJobRow job, {
+  required Set<int> liveSourceIds,
+}) {
+  if (job.lifecycle != VideoDownloadJobLifecycle.completed ||
+      !videoDownloadJobUsesManagedSource(job)) {
+    return false;
+  }
+  final int? sourceId = job.targetSourceId;
+  return sourceId == null || !liveSourceIds.contains(sourceId);
+}
+
 /// Resume ids that remain owned by the v78 pipeline after legacy JSON files
 /// have been archived. New library jobs keep completed torrents alive so upload
 /// policy, seeding and task metrics continue across restarts. Legacy imports
 /// retain their historical terminal-state cleanup contract.
-Set<String> legacyEmbeddedTorrentResumeIds(Iterable<VideoDownloadJobRow> jobs) {
+///
+/// [liveSourceIds]：当前存在的来源 id。完成后来源已被删的受管任务不再保留
+/// （[videoDownloadJobIsOrphanedCompletedSeed]，BUG-2776）。
+Set<String> legacyEmbeddedTorrentResumeIds(
+  Iterable<VideoDownloadJobRow> jobs, {
+  required Set<int> liveSourceIds,
+}) {
   final Set<String> ids = <String>{};
   for (final VideoDownloadJobRow job in jobs) {
     if (job.backendKind != 'embedded' ||
         job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
         (job.organizationPolicy == 'legacy' &&
-            job.lifecycle == VideoDownloadJobLifecycle.completed)) {
+            job.lifecycle == VideoDownloadJobLifecycle.completed) ||
+        videoDownloadJobIsOrphanedCompletedSeed(
+          job,
+          liveSourceIds: liveSourceIds,
+        )) {
       continue;
     }
     for (final String? candidate in <String?>[
@@ -726,6 +751,18 @@ Set<String> legacyEmbeddedTorrentResumeIds(Iterable<VideoDownloadJobRow> jobs) {
     }
   }
   return ids;
+}
+
+/// 从 Drift 真相源重建内置引擎的 resume keepIds（任务行 + 当前来源）。
+Future<Set<String>> loadEmbeddedTorrentResumeIds(FushiDatabase database) async {
+  final Set<int> liveSourceIds = <int>{
+    for (final MediaSourceRow source in await database.getAllMediaSources())
+      source.id,
+  };
+  return legacyEmbeddedTorrentResumeIds(
+    await database.getVideoDownloadJobs(),
+    liveSourceIds: liveSourceIds,
+  );
 }
 
 class VideoDownloadPipelineActionRequired implements Exception {
@@ -1669,6 +1706,103 @@ class VideoDownloadPipelineService {
       );
       return false;
     }
+  }
+
+  /// 把已完成任务的种子从下载后端摘掉（只摘任务、**不删数据**），并清掉任务行上
+  /// 的种子身份（BUG-2776）。任务行与已整理的文件都保留。
+  ///
+  /// 已完成的受管任务整理后被 moveStorage 到来源根下继续做种；来源一换，这颗种子
+  /// 就钉在旧位置——用户删掉旧目录后，引擎续传会在原处重建并重新下载。
+  ///
+  /// 本方法摘所有来源已不存在的已完成受管任务
+  /// （[videoDownloadJobIsOrphanedCompletedSeed]）：删来源后、流水线启动时调用。
+  /// 后端离线 / 摘除失败的保持原样，下次再摘；内置引擎重启时 resume keepIds 按
+  /// 同一判据兜底。返回摘掉的任务数。
+  Future<int> releaseOrphanedCompletedSeeds() async {
+    final Set<int> liveSourceIds = <int>{
+      for (final MediaSourceRow source in await database.getAllMediaSources())
+        source.id,
+    };
+    return _releaseCompletedSeeds(
+      await database.getVideoDownloadJobs(),
+      (VideoDownloadJobRow job) => videoDownloadJobIsOrphanedCompletedSeed(
+        job,
+        liveSourceIds: liveSourceIds,
+      ),
+    );
+  }
+
+  /// 改订阅来源后，摘掉该订阅名下仍留在别的来源里的已完成集的种子（BUG-2776）。
+  /// 与 [releaseOrphanedCompletedSeeds] 同一摘除语义；订阅不存在或没有目标来源时
+  /// 什么都不做。
+  Future<int> releaseSubscriptionSeedsOutsideTarget(
+    String subscriptionId,
+  ) async {
+    final VideoDownloadSubscriptionRow? subscription = await database
+        .getVideoDownloadSubscription(subscriptionId);
+    final int? target = subscription?.targetSourceId;
+    if (target == null) return 0;
+    final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[];
+    for (final String jobId in await database.getVideoDownloadSubscriptionJobIds(
+      subscriptionId,
+    )) {
+      final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+      if (job != null) jobs.add(job);
+    }
+    return _releaseCompletedSeeds(
+      jobs,
+      (VideoDownloadJobRow job) =>
+          job.lifecycle == VideoDownloadJobLifecycle.completed &&
+          videoDownloadJobUsesManagedSource(job) &&
+          job.targetSourceId != target,
+    );
+  }
+
+  Future<int> _releaseCompletedSeeds(
+    Iterable<VideoDownloadJobRow> jobs,
+    bool Function(VideoDownloadJobRow job) eligible,
+  ) async {
+    int released = 0;
+    for (final VideoDownloadJobRow job in jobs) {
+      if (!eligible(job)) continue;
+      final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '')
+          .trim();
+      if (torrentId.isEmpty) continue;
+      try {
+        final VideoDownloadBackendBinding? binding = await backendResolver(job);
+        _validateBackendBinding(job, binding);
+        final TorrentBackend backend = binding!.backend;
+        if (backend is! TorrentRemovalBackend) continue;
+        if (!await backend.removeTorrent(torrentId, deleteFiles: false)) {
+          // 摘除返回 false 可能只是种子早已不在后端（被剪枝 / 用户在 qB 里删过）；
+          // 确认不在了同样算摘掉，否则保持原样下次再试。
+          final String id = torrentId.toLowerCase();
+          final List<TorrentSnapshot> present = await backend.listTorrents();
+          if (present.any(
+            (TorrentSnapshot snapshot) => snapshot.hash.toLowerCase() == id,
+          )) {
+            continue;
+          }
+        }
+      } on Object catch (error, stack) {
+        engineLog.log(
+          'VideoDownloadReleaseSeed',
+          'Failed to release completed seed of job ${job.jobId}: $error',
+          stack,
+        );
+        continue;
+      }
+      await database.updateVideoDownloadJob(
+        job.jobId,
+        VideoDownloadJobsCompanion(
+          backendTaskId: const Value<String?>(null),
+          torrentHash: const Value<String?>(null),
+          updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
+      released++;
+    }
+    return released;
   }
 
   /// Removes a durable task and, when requested, only the files that this task

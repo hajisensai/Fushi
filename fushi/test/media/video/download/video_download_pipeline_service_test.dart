@@ -934,6 +934,7 @@ void main() {
     expect(
       legacyEmbeddedTorrentResumeIds(
         await environment.database.getVideoDownloadJobs(),
+        liveSourceIds: <int>{environment.sourceId},
       ),
       <String>{_torrentHash},
     );
@@ -945,6 +946,7 @@ void main() {
     );
     final Set<String> idsAfterCompletion = legacyEmbeddedTorrentResumeIds(
       await environment.database.getVideoDownloadJobs(),
+      liveSourceIds: <int>{environment.sourceId},
     );
     expect(idsAfterCompletion, isEmpty);
   });
@@ -971,6 +973,7 @@ void main() {
     expect(
       legacyEmbeddedTorrentResumeIds(
         await environment.database.getVideoDownloadJobs(),
+        liveSourceIds: <int>{environment.sourceId},
       ),
       <String>{_torrentHash},
     );
@@ -3790,6 +3793,237 @@ void main() {
           backend.addSavePaths, <String?>[incomingOf(environment.root.path)]);
     });
   });
+
+  group('BUG-2776 completed seeds leave the engine with their source', () {
+    const String orphanHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const String absentHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const String stuckHash = 'cccccccccccccccccccccccccccccccccccccccc';
+    const String liveHash = 'dddddddddddddddddddddddddddddddddddddddd';
+    const String discoveryHash = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const String activeHash = 'ffffffffffffffffffffffffffffffffffffffff';
+
+    Future<int> insertSource(_PipelineEnvironment environment, String label) =>
+        environment.database.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: label,
+            mediaKind: 'video',
+            rootPath: p.join(environment.root.path, label),
+            createdAt: 1,
+          ),
+        );
+
+    /// 插一条任务并换成独立 hash（同 fingerprint 下 hash 唯一）。
+    Future<void> insertSeed(
+      _PipelineEnvironment environment, {
+      required String jobId,
+      required String hash,
+      int? sourceId,
+      bool withoutTargetSource = false,
+      String organizationPolicy = 'library',
+      String lifecycle = VideoDownloadJobLifecycle.completed,
+      String stage = VideoDownloadJobStage.import,
+    }) async {
+      await environment.insertJob(
+        jobId: jobId,
+        stage: stage,
+        lifecycle: lifecycle,
+        organizationPolicy: organizationPolicy,
+        withoutTargetSource: withoutTargetSource,
+      );
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        VideoDownloadJobsCompanion(
+          torrentHash: Value<String?>(hash),
+          backendTaskId: Value<String?>(hash),
+          targetSourceId: sourceId == null
+              ? const Value<int?>.absent()
+              : Value<int?>(sourceId),
+        ),
+      );
+    }
+
+    Future<String?> hashOf(
+      _PipelineEnvironment environment,
+      String jobId,
+    ) async =>
+        (await environment.database.getVideoDownloadJob(jobId))!.torrentHash;
+
+    test('resume keepIds drop completed jobs whose source was deleted',
+        () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      final int oldSource = await insertSource(environment, 'old');
+      await insertSeed(
+        environment,
+        jobId: 'orphan',
+        hash: orphanHash,
+        sourceId: oldSource,
+      );
+      await insertSeed(environment, jobId: 'live', hash: liveHash);
+      await insertSeed(
+        environment,
+        jobId: 'active-unsourced',
+        hash: activeHash,
+        withoutTargetSource: true,
+        lifecycle: VideoDownloadJobLifecycle.active,
+        stage: VideoDownloadJobStage.download,
+      );
+      await environment.database.deleteMediaSource(oldSource);
+
+      expect(
+        await loadEmbeddedTorrentResumeIds(environment.database),
+        <String>{liveHash, activeHash},
+        reason: '来源已删的已完成种子不再续传，否则删掉旧目录后引擎在原处重下；'
+            '未完成任务的来源失效由改绑流程处理，不在这里剪掉',
+      );
+    });
+
+    test('orphaned completed seeds are detached without deleting files',
+        () async {
+      final _RemovingTorrentBackend backend = _RemovingTorrentBackend(
+        failingIds: <String>{absentHash, stuckHash},
+        snapshots: <TorrentSnapshot>[
+          const TorrentSnapshot(
+            hash: stuckHash,
+            name: 'Show',
+            progress: 1,
+            state: 'uploading',
+            savePath: '/old',
+            contentPath: '/old/Show',
+            amountLeft: 0,
+          ),
+        ],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final int oldSource = await insertSource(environment, 'old');
+      for (final (String jobId, String hash) in <(String, String)>[
+        ('orphan', orphanHash),
+        ('absent', absentHash),
+        ('stuck', stuckHash),
+      ]) {
+        await insertSeed(
+          environment,
+          jobId: jobId,
+          hash: hash,
+          sourceId: oldSource,
+        );
+      }
+      await insertSeed(environment, jobId: 'live', hash: liveHash);
+      await insertSeed(
+        environment,
+        jobId: 'discovery',
+        hash: discoveryHash,
+        withoutTargetSource: true,
+        organizationPolicy: manualDiscoveryOrganizationPolicy(
+          DiscoveryMediaKind.novel,
+        ),
+      );
+      await environment.database.deleteMediaSource(oldSource);
+
+      final int released =
+          await environment.service.releaseOrphanedCompletedSeeds();
+
+      expect(released, 2);
+      expect(
+        backend.removals,
+        unorderedEquals(<(String, bool)>[
+          (orphanHash, false),
+          (absentHash, false),
+          (stuckHash, false),
+        ]),
+      );
+      expect(await hashOf(environment, 'orphan'), isNull);
+      expect(
+        await hashOf(environment, 'absent'),
+        isNull,
+        reason: '后端里本来就没有这颗种子，同样算摘掉',
+      );
+      expect(
+        await hashOf(environment, 'stuck'),
+        stuckHash,
+        reason: '摘除失败且种子仍在后端：保持原样下次再摘',
+      );
+      expect(await hashOf(environment, 'live'), liveHash);
+      expect(await hashOf(environment, 'discovery'), discoveryHash);
+      expect(
+        await environment.database.getVideoDownloadJob('orphan'),
+        isNotNull,
+        reason: '只摘种子，任务行与已整理文件保留',
+      );
+    });
+
+    test(
+        'retargeting a subscription detaches its episodes left in the old '
+        'source', () async {
+      final _RemovingTorrentBackend backend = _RemovingTorrentBackend();
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final int newSource = await insertSource(environment, 'new');
+      await environment.database.upsertVideoDownloadSubscription(
+        VideoDownloadSubscriptionsCompanion.insert(
+          subscriptionId: 'sub-1',
+          resourceProvider: 'nyaa:test-instance',
+          mediaKind: 'tv',
+          title: 'Show',
+          searchQuery: 'Show',
+          backendKind: 'embedded',
+          fingerprint: _expectedIdentity.fingerprint,
+          targetSourceId: Value<int?>(newSource),
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+      );
+      Future<void> link(String jobId, int episode) =>
+          environment.database.upsertVideoDownloadSubscriptionItem(
+            VideoDownloadSubscriptionItemsCompanion.insert(
+              subscriptionId: 'sub-1',
+              logicalItemKey: 's1e$episode',
+              resourceProvider: 'nyaa:test-instance',
+              selectedResourceId: 'release-$episode',
+              title: 'Show - $episode',
+              jobId: Value<String?>(jobId),
+              discoveredAt: 1,
+              updatedAt: 1,
+            ),
+          );
+      await insertSeed(environment, jobId: 'done-old', hash: orphanHash);
+      await link('done-old', 1);
+      await insertSeed(
+        environment,
+        jobId: 'done-new',
+        hash: liveHash,
+        sourceId: newSource,
+      );
+      await link('done-new', 2);
+      await insertSeed(
+        environment,
+        jobId: 'downloading',
+        hash: activeHash,
+        lifecycle: VideoDownloadJobLifecycle.active,
+        stage: VideoDownloadJobStage.download,
+      );
+      await link('downloading', 3);
+      await insertSeed(environment, jobId: 'unlinked', hash: stuckHash);
+
+      final int released = await environment.service
+          .releaseSubscriptionSeedsOutsideTarget('sub-1');
+
+      expect(released, 1);
+      expect(backend.removals, <(String, bool)>[(orphanHash, false)]);
+      expect(await hashOf(environment, 'done-old'), isNull);
+      expect(await hashOf(environment, 'done-new'), liveHash);
+      expect(
+        await hashOf(environment, 'downloading'),
+        activeHash,
+        reason: '未完成的集由改绑流程带进新来源，不摘',
+      );
+      expect(await hashOf(environment, 'unlinked'), stuckHash);
+    });
+  });
 }
 
 /// 与 torrent_metainfo_test 同款的最小 v1 metainfo（单文件 name=test）。
@@ -4543,5 +4777,24 @@ class _RecordingUpdateFeed implements UpdateFeedPublisher {
     List<UpdateFeedDraft> drafts,
   ) async {
     batches.add((kind: kind, drafts: List<UpdateFeedDraft>.of(drafts)));
+  }
+}
+
+/// 带移除能力的假后端（BUG-2776）：[failingIds] 里的种子摘除返回 false。
+class _RemovingTorrentBackend extends _FakeTorrentBackend
+    implements TorrentRemovalBackend {
+  _RemovingTorrentBackend({
+    super.snapshots,
+    this.failingIds = const <String>{},
+  });
+
+  final Set<String> failingIds;
+  final List<(String, bool)> removals = <(String, bool)>[];
+
+  @override
+  Future<bool> removeTorrent(String torrentId,
+      {bool deleteFiles = false}) async {
+    removals.add((torrentId, deleteFiles));
+    return !failingIds.contains(torrentId);
   }
 }
