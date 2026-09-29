@@ -160,16 +160,14 @@ Future<bool> showStatPeriodDetailSheet(
     }
   });
   final _DeletedFlag deleted = _DeletedFlag();
-  await adaptiveModalSheet<void>(
-    context: context,
-    builder: (BuildContext sheetContext) => statSheetHeightCap(
-      sheetContext,
-      child: _PeriodDetailSheetBody(
-        periodLabel: periodLabel,
-        entries: entries,
-        resolvers: resolvers,
-        deleted: deleted,
-      ),
+  // 移动端底部 sheet、桌面端居中对话框（[showStatDetailSurface]）。
+  await showStatDetailSurface(
+    context,
+    builder: (BuildContext sheetContext) => _PeriodDetailSheetBody(
+      periodLabel: periodLabel,
+      entries: entries,
+      resolvers: resolvers,
+      deleted: deleted,
     ),
   );
   return deleted.value;

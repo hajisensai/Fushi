@@ -3231,6 +3231,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return;
     }
 
+    // 从查词弹窗顶栏 ★ 收藏（无划选）时记下当时查的那个词，收藏夹在句子旁显示、
+    // 批量制卡以它为词条；划选 / 右键菜单收藏没有查词对象，不记。
+    final ({String expression, String reading})? headword =
+        selection == null ? leadingHeadwordOf(rootLookupResult) : null;
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
@@ -3246,6 +3250,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // BUG-893：补 dateKey，否则阅读统计「收藏语句」计数恒为 0（视频收藏路径早已带
       // dateKey，唯独书内收藏漏了）。source 用默认（书籍），与统计分桶口径一致。
       dateKey: statTodayKey(),
+      expression: headword?.expression,
+      reading: headword?.reading,
     );
     await repo.add(fav);
     _invalidateFavoriteSentenceCache();

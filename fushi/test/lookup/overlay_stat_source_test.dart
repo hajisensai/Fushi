@@ -177,6 +177,26 @@ void main() {
       expect(await db.getAllFavoriteWords(), isEmpty);
     });
 
+    test('新增收藏带上释义快照与覆盖窗捕获的原句（此前恒为空）', () async {
+      expect(
+        await overlayToggleOrCheckFavoriteWord(
+          db: db,
+          toggle: true,
+          expression: '読む',
+          reading: 'よむ',
+          addSourceType: kStatSourceGame,
+          dateKey: today,
+          glossary: '【辞書】to read',
+          sentence: '本を読む。',
+        ),
+        isTrue,
+      );
+      final FavoriteWordRow row = (await db.getAllFavoriteWords()).single;
+      expect(row.glossary, '【辞書】to read');
+      expect(row.sentence, '本を読む。');
+      expect(row.sectionIndex, isNull, reason: 'app 外表面没有章节 / cue 锚点');
+    });
+
     test('不同词条互不干扰（跨源判定不是全表判定）', () async {
       await toggle(kStatSourceGame);
       expect(

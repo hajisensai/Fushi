@@ -13,6 +13,11 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 /// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·
 /// 一到两行 meta · 右侧主值（时长）· 有 [onTap] 时带 chevron。
 /// [onDelete] 挂在移动端长按 + 桌面端右键（经 [ContextMenuTrigger] 走绑定表，BUG-2111）。
+///
+/// [cover]：媒体封面（书架 / 视频库 / 游戏库同一条封面解析链
+/// `resolveMediaCoverImage`）。三个域的「按媒体」列表都给每行一个固定 2:3
+/// 封面槽（Niratan「Book Ranking」同款）：有封面画封面，没有 / 加载失败画
+/// [icon] 占位，整列左缘对齐。
 Widget buildStatMediaRow(
   BuildContext context, {
   required IconData icon,
@@ -21,6 +26,7 @@ Widget buildStatMediaRow(
   required String trailing,
   String? collectionName,
   String? meta2,
+  ImageProvider? cover,
   VoidCallback? onTap,
   VoidCallback? onDelete,
 }) {
@@ -29,12 +35,28 @@ Widget buildStatMediaRow(
   final TextStyle metaStyle = tokens.type.metadata.copyWith(
     color: colors.onSurfaceVariant,
   );
+  final Widget placeholder = Center(child: Icon(icon, color: colors.primary));
   final Widget card = FushiCard(
     onTap: onTap,
     onLongPress: onDelete,
     child: Row(
       children: <Widget>[
-        Icon(icon, color: colors.primary),
+        ClipRRect(
+          borderRadius: tokens.radii.chipRadius,
+          child: Container(
+            width: kStatMediaCoverWidth,
+            height: kStatMediaCoverWidth * 1.4,
+            color: tokens.surfaces.overlay,
+            child: cover == null
+                ? placeholder
+                : Image(
+                    image: cover,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => placeholder,
+                  ),
+          ),
+        ),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Column(
@@ -99,6 +121,9 @@ Widget buildStatMediaRow(
           ),
   );
 }
+
+/// 「按媒体」行封面槽宽（逻辑像素，高 = 宽 × 1.4，接近 2:3 海报 / 书封）。
+const double kStatMediaCoverWidth = 40;
 
 /// 统计页「分析」折叠区：三个域 tab 收敛到「时段卡 → 每日图 → 最近会话 → 按媒体」
 /// 的游戏页骨架后，阅读页的 KPI 条 / 趋势 / 今日环 / 速度摘要 / 来源分布 / 小时×格式
@@ -429,11 +454,14 @@ class _StatPeriodSummaryCard extends StatelessWidget {
   }
 }
 
-/// 最近 30 天时长柱状图（视频 / 游戏统计共用）。
+/// 时长柱状图（四个统计 tab 共用）。[title] 缺省为「近 30 天」；范围图表经
+/// `buildStatRangeChartSection` 传区间标题与按柱数稀疏的 [labelEvery]。
 Widget buildStatDailyDurationChartSection(
   BuildContext context,
-  List<StatDayData> daily,
-) {
+  List<StatDayData> daily, {
+  String? title,
+  int labelEvery = 5,
+}) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return Padding(
@@ -442,7 +470,7 @@ Widget buildStatDailyDurationChartSection(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(
-          t.stat_last_30_days,
+          title ?? t.stat_last_30_days,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
@@ -460,6 +488,7 @@ Widget buildStatDailyDurationChartSection(
               ),
               valueOf: statMsValue,
               axisScaleOf: statDurationAxisScale,
+              labelEvery: labelEvery,
             ),
           ),
         ),
@@ -1022,6 +1051,69 @@ class _StatHourlyLegendChip extends StatelessWidget {
 
 /// 统计 sheet（时段明细 / 会话列表）的高度上限占屏高比例。
 const double kStatSheetMaxHeightFactor = 0.8;
+
+/// 统计明细面（时段明细 / 会话列表）的唯一弹出入口：移动端是底部 sheet，桌面端
+/// （Windows / macOS / Linux）是居中对话框。
+///
+/// 桌面上宽窗口底部弹一条抽屉很别扭（用户 2026-09-28「Windows 这里用抽屉有点怪」）：
+/// 内容挤在屏幕下半截、要往下看、拖动条对鼠标没意义。对话框限宽 640、限高
+/// [kStatSheetMaxHeightFactor]，点外面 / Esc / 右上角关闭都会收起；[builder] 的内容
+/// 不区分载体（条目里 `Navigator.pop` 收的是同一个 modal route）。
+Future<void> showStatDetailSurface(
+  BuildContext context, {
+  required WidgetBuilder builder,
+}) {
+  if (!FushiAppUiScale.isDesktopPlatform(Theme.of(context).platform)) {
+    return adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) =>
+          statSheetHeightCap(sheetContext, child: builder(sheetContext)),
+    );
+  }
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
+      return Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: kStatDetailDialogMaxWidth,
+            maxHeight:
+                MediaQuery.sizeOf(dialogContext).height *
+                kStatSheetMaxHeightFactor,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.only(
+                  top: tokens.spacing.gap / 2,
+                  right: tokens.spacing.gap / 2,
+                ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FushiIconButton(
+                    icon: Icons.close,
+                    tooltip: MaterialLocalizations.of(
+                      dialogContext,
+                    ).closeButtonTooltip,
+                    onTap: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+              Flexible(child: builder(dialogContext)),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// 桌面端统计明细对话框的最大宽度（逻辑像素）。
+const double kStatDetailDialogMaxWidth = 640;
 
 /// 给统计 sheet 的内容加高度上限。
 ///
