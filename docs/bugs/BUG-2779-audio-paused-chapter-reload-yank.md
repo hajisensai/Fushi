@@ -5,4 +5,5 @@
 - **[x] ① 已修复** — `setChapterCues` 只换列表不换当前句身份：旧句仍在新列表里就保留（只改下标），重算得到同一句时走「未变」分支（暂停不跨章、护栏保留）；真换了句仍照旧发跨章。逐章 cue 列表换章（旧句不在新列表）行为不变。
 - **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/audiobook_paused_cue_reload_no_yank_test.dart`：暂停 + 手动翻到别章后重灌同一份 cue 不得发跨章（修复前得到 `[12]`）、当前句身份保留；对照：换句后跟随照常发跨章；逐章列表换章照旧按位置重算。
   真 app 集成测试 `fushi/integration_test/reader_audiobook_paused_chapter_back_itest.dart`（三章书：正文 / 纯图片章 / 正文，VN，音频停在 ch2，播一下再暂停，PageUp 回翻，每越过章界停 4 秒看是否被拽回；图片合并开 / 关两轮）：Windows 离屏 runner 上修复后两轮全绿（合并开 ch2→ch0 停住；合并关 ch2→插图章 ch1 停住→ch0 停住）；把控制器改动撤回后两轮全红（连按 40 次 PageUp 阅读器始终停在 ch2，每次越章都被拽回）。
-- **备注**：iOS 模拟器复测待做（模拟器被其它 agent 占用中），命令：`tool/run_mac_itest.ps1 integration_test/reader_audiobook_paused_chapter_back_itest.dart -Ios`。
+  iOS 模拟器（iPhone 17 Pro，iOS 26.5，WKWebView）上同一份集成测试修复后两轮全绿：合并开 ch2→ch0 停住；合并关 ch2→插图章 ch1 停住（16/16 采样）→ch0 停住。
+- **备注**：未在用户的真机 + 原书上复测（真书有声书 400 MB，未搬到模拟器）；合成书复现了同一条代码路径。

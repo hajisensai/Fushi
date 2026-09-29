@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2555 条。点号进各自文件。
+> 共 2556 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2779](bugs/BUG-2779-audio-paused-chapter-reload-yank.md) | ✅ | ✅ | 暂停有声书时翻到别章被拽回音频章（iOS VN 插图章回翻闪回） |
 | [BUG-2778](bugs/BUG-2778-pending-mine-relay-security.md) | ✅ | ✅ | 待发制卡跨设备中转：远端载荷可读本地文件/发任意请求、id 路径穿越、同一张卡重复落地 |
 | [BUG-2777](bugs/BUG-2777-stat-range-dst-paging.md) | ✅ | ✅ | 统计范围「周」翻段在 DST 切换周翻不动 / 多跳一周 |
 | [BUG-2776](bugs/BUG-2776-completed-seed-orphan-redownload.md) | ✅ | ✅ | 改来源后旧来源的已完成种子仍做种且文件删后重下 |
