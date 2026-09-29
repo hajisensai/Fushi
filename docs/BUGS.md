@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2548 条。点号进各自文件。
+> 共 2549 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2774](bugs/BUG-2774-gal-overlay-lookup-covers-word.md) | ✅ | ✅ | 台词浮窗贴屏幕底时查词卡压住被点的词 |
 | [BUG-2771](bugs/BUG-2771-video-metadata-startup-reload.md) | ✅ | ✅ | 每次打开 app 视频资料重新加载且刮削期间严重卡顿 |
 | [BUG-2770](bugs/BUG-2770-win-touch-popup-swipe-close.md) | ✅ | ✅ | Windows 触屏不能滑动关闭查词弹窗 |
 | [BUG-2769](bugs/BUG-2769-gal-touch-click-lookup.md) | ✅ | ✅ | Windows 触屏在 galgame 里点按不触发单击查词 |
