@@ -107,9 +107,13 @@ void main() {
     late String invariantSource;
 
     setUpAll(() {
+      // 真源在 tool/reader_pitch_headless/：harness 正文 + 它 import 的 CDP 客户端。
+      // test/reader/ 下那份只是一行 import 的薄入口（见下面的「不得再内联副本」）。
       harnessSource = File(
-        'test/reader/reader_horizontal_pitch_harness.mjs',
-      ).readAsStringSync();
+            '../tool/reader_pitch_headless/horizontal_pitch_harness.mjs',
+          ).readAsStringSync() +
+          File('../tool/reader_pitch_headless/cdp_client.mjs')
+              .readAsStringSync();
       invariantSource = File(
         'test/reader/reader_horizontal_pitch_invariant_test.dart',
       ).readAsStringSync();
@@ -145,7 +149,6 @@ void main() {
       // 旧实现轮询 DevToolsActivePort 且固定 8s 截止、stdio 全丢：满载 CI 上 Chrome
       // 只是慢就被判失败；被信号杀掉时 exitCode 恒 null，也只会等满 8s 报「没写文件」。
       for (final String source in <String>[
-        harnessSource,
         File('../tool/reader_pitch_headless/cdp_client.mjs').readAsStringSync(),
       ]) {
         expect(source.contains('DevTools listening on ws:'), isTrue,
@@ -160,6 +163,20 @@ void main() {
             isTrue,
             reason: '冷启动整段一个挂死护栏，按外层预算定尺');
       }
+    });
+
+    test('test/reader 下的 harness 只 import 真源，不得再内联副本', () {
+      // 旧的「AUTO-COMBINED」内联副本让 BUG-2803 得改两遍，SonarCloud 报新代码重复
+      // 95.9%。ESM 相对 import 按文件位置解析、与工作目录无关，所以不需要副本。
+      final String entry = File(
+        'test/reader/reader_horizontal_pitch_harness.mjs',
+      ).readAsStringSync();
+      expect(
+          entry.contains("import '../../../tool/reader_pitch_headless/"
+              "horizontal_pitch_harness.mjs';"),
+          isTrue);
+      expect(entry.contains('class CdpSocket'), isFalse,
+          reason: '薄入口里不得再出现 CDP 客户端实现（又内联回去了）');
     });
 
     test('Dart 侧 headless 测试显式放宽超时到 > harness 看门狗', () {
