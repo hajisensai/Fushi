@@ -1,9 +1,11 @@
-/// 应用内截屏识字（iOS）：截自己的窗口 → 系统 OCR（Vision）→ 选取页上点字查词。
+/// 应用内识字选取页：截屏识字（iOS 截自己的窗口）与拍照查词（Android / iOS 相机）
+/// 的识别结果都在这里点字查词。
 ///
-/// Android 不走这里：它用 MediaProjection 截整屏，识别与选取层都在原生侧
+/// Android 截屏识字不走这里：它用 MediaProjection 截整屏，识别与选取层都在原生侧
 /// （同一条流程服务应用内与应用外）。
 library;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -92,18 +94,76 @@ Rect _scaleRect(Rect rect, double scale) => Rect.fromLTRB(
   rect.bottom * scale,
 );
 
-/// 截图 + 识别结果的全屏选取页。截图铺满（截的就是当前窗口，尺寸一致），
-/// 行框描边；点字把整行交给应用内查词弹窗（弹窗宿主挂在导航之上，盖在本页上
-/// 面）。点空白或关闭钮退出。
+/// 送检图在选取页上怎么摆。
+enum ScreenOcrImageFit {
+  /// 截屏：截的就是当前窗口，与页面同形——贴宽、顶对齐，和截屏前的画面重合。
+  window,
+
+  /// 照片：形状任意，等比缩放后整张放进页面并居中（上下或左右留黑边）。
+  contain,
+}
+
+/// 送检图在选取页上的位置：[origin] 是图左上角（逻辑像素），[scale] = 逻辑像素 /
+/// 送检图像素。行框、点击坐标都经它换算。
+class ScreenOcrImageLayout {
+  const ScreenOcrImageLayout({required this.origin, required this.scale});
+
+  factory ScreenOcrImageLayout.of({
+    required Size box,
+    required int imageWidth,
+    required int imageHeight,
+    required ScreenOcrImageFit fit,
+  }) {
+    if (imageWidth <= 0 || imageHeight <= 0) {
+      return const ScreenOcrImageLayout(origin: Offset.zero, scale: 1);
+    }
+    switch (fit) {
+      case ScreenOcrImageFit.window:
+        // 截图宽 = 窗口宽 × dpr；按宽换算，高度方向同一比例（截图与窗口同形）。
+        return ScreenOcrImageLayout(
+          origin: Offset.zero,
+          scale: box.width / imageWidth,
+        );
+      case ScreenOcrImageFit.contain:
+        final double scale = math.min(
+          box.width / imageWidth,
+          box.height / imageHeight,
+        );
+        return ScreenOcrImageLayout(
+          origin: Offset(
+            (box.width - imageWidth * scale) / 2,
+            (box.height - imageHeight * scale) / 2,
+          ),
+          scale: scale,
+        );
+    }
+  }
+
+  final Offset origin;
+  final double scale;
+
+  /// 送检图像素坐标的框 → 页面坐标。
+  Rect toPage(Rect imageRect) => _scaleRect(imageRect, scale).shift(origin);
+
+  /// 整张图在页面上占的框。
+  Rect imageRect(int imageWidth, int imageHeight) =>
+      origin & Size(imageWidth * scale, imageHeight * scale);
+}
+
+/// 截图 / 照片 + 识别结果的全屏选取页。图按 [fit] 摆放（截屏与窗口重合，照片
+/// 等比居中），行框描边；点字把整行交给应用内查词弹窗（弹窗宿主挂在导航之上，
+/// 盖在本页上面）。点空白或关闭钮退出。
 class ScreenOcrPickerPage extends StatelessWidget {
   const ScreenOcrPickerPage({
     required this.imageBytes,
     required this.result,
+    this.fit = ScreenOcrImageFit.window,
     super.key,
   });
 
   final Uint8List imageBytes;
   final SystemOcrPageResult result;
+  final ScreenOcrImageFit fit;
 
   @override
   Widget build(BuildContext context) {
@@ -112,19 +172,20 @@ class ScreenOcrPickerPage extends StatelessWidget {
       backgroundColor: Colors.black,
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final Size size = constraints.biggest;
-          // 截图宽 = 窗口宽 × dpr；按宽换算，高度方向同一比例（截图与窗口同形）。
-          final double scale = result.imageWidth <= 0
-              ? 1
-              : size.width / result.imageWidth;
+          final ScreenOcrImageLayout layout = ScreenOcrImageLayout.of(
+            box: constraints.biggest,
+            imageWidth: result.imageWidth,
+            imageHeight: result.imageHeight,
+            fit: fit,
+          );
           return GestureDetector(
             key: const ValueKey<String>('screen_ocr_picker_surface'),
             behavior: HitTestBehavior.opaque,
             onTapUp: (TapUpDetails details) {
               final ScreenOcrHit? hit = screenOcrHitTest(
                 lines: result.lines,
-                point: details.localPosition,
-                scale: scale,
+                point: details.localPosition - layout.origin,
+                scale: layout.scale,
               );
               if (hit == null) {
                 Navigator.of(context).maybePop();
@@ -133,16 +194,16 @@ class ScreenOcrPickerPage extends StatelessWidget {
               FloatingLyricLookupNotifier.instance.requestLookup(
                 hit.line.text,
                 hit.charIndex,
-                selectionRect: hit.charRect,
+                selectionRect: hit.charRect.shift(layout.origin),
               );
             },
             child: Stack(
               children: <Widget>[
-                Positioned.fill(
+                Positioned.fromRect(
+                  rect: layout.imageRect(result.imageWidth, result.imageHeight),
                   child: Image.memory(
                     imageBytes,
-                    fit: BoxFit.fitWidth,
-                    alignment: Alignment.topCenter,
+                    fit: BoxFit.fill,
                     gaplessPlayback: true,
                   ),
                 ),
@@ -153,7 +214,7 @@ class ScreenOcrPickerPage extends StatelessWidget {
                 ),
                 for (final SystemOcrTextLine line in result.lines)
                   Positioned.fromRect(
-                    rect: _scaleRect(line.rect, scale).inflate(2),
+                    rect: layout.toPage(line.rect).inflate(2),
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(

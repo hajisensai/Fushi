@@ -109,6 +109,11 @@ void main() {
       byKey('floating_ball_action_screen_ocr'),
       Platform.isAndroid || Platform.isIOS ? findsOneWidget : findsNothing,
     );
+    // 拍照查词只有 Android / iOS 有（桌面没有相机入口）。
+    expect(
+      byKey('floating_ball_action_camera_ocr'),
+      Platform.isAndroid || Platform.isIOS ? findsOneWidget : findsNothing,
+    );
     // 应用外查词（独立查词窗）只有 Android 有。
     expect(
       byKey('floating_ball_action_popup_lookup'),

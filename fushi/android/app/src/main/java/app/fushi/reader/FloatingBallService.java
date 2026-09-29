@@ -79,13 +79,15 @@ public class FloatingBallService extends BaseFloatingService {
     static final String ACTION_POPUP_LOOKUP = "popup_lookup";
     static final String ACTION_CLIPBOARD = "clipboard";
     static final String ACTION_SCREEN_OCR = "screen_ocr";
+    static final String ACTION_CAMERA_OCR = "camera_ocr";
     static final String ACTION_OPEN_APP = "open_app";
     static final String ACTION_CLOSE = "close";
 
     /** Dart 可下发的动作；{@code open_app} / {@code close} 恒在面板末尾，不受配置控制。 */
     private static final List<String> CONFIGURABLE_ACTIONS =
             Arrays.asList(
-                    ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR);
+                    ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR,
+                    ACTION_CAMERA_OCR);
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
@@ -383,6 +385,7 @@ public class FloatingBallService extends BaseFloatingService {
             case ACTION_POPUP_LOOKUP: return "App-external lookup";
             case ACTION_CLIPBOARD: return "Clipboard";
             case ACTION_SCREEN_OCR: return "Screen OCR";
+            case ACTION_CAMERA_OCR: return "Photo lookup";
             case ACTION_OPEN_APP: return "Open Fushi";
             case ACTION_CLOSE: return "Close";
             default: return id;
@@ -412,6 +415,12 @@ public class FloatingBallService extends BaseFloatingService {
                 if (!ScreenCaptureRequestActivity.launch(this, ocrLanguage, labels)) {
                     Log.w(TAG, "screen OCR not started (no overlay permission or already running)");
                 }
+                break;
+            case ACTION_CAMERA_OCR:
+                // 拍照、识别、选字都在主窗里做（相机要 Activity 结果，服务拿不到）：
+                // 与「查词」同样先排请求再拉前台。
+                FloatingBallChannel.requestCameraOcr();
+                BackgroundActivityLauncher.bringAppToFront(this);
                 break;
             case ACTION_OPEN_APP:
                 BackgroundActivityLauncher.bringAppToFront(this);

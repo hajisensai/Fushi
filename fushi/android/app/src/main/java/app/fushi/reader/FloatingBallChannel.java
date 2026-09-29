@@ -41,6 +41,8 @@ final class FloatingBallChannel {
     static final String METHOD_SCREEN_OCR_FINISHED = "screenOcrFinished";
     /** 原生 → Dart：系统球「查词」，Fushi 已被拉到前台，请打开查词页。 */
     static final String METHOD_OPEN_LOOKUP_PAGE = "openLookupPage";
+    /** 原生 → Dart：系统球「拍照查词」，Fushi 已被拉到前台，请开相机。 */
+    static final String METHOD_OPEN_CAMERA_OCR = "openCameraOcr";
     /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
     static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
 
@@ -62,6 +64,9 @@ final class FloatingBallChannel {
      * 装好 handler 后经 {@code takePendingOpenLookupPage} 取走。只在主线程读写。
      */
     private static boolean pendingOpenLookupPage = false;
+
+    /** 同 {@link #pendingOpenLookupPage}，排的是系统球「拍照查词」。只在主线程读写。 */
+    private static boolean pendingCameraOcr = false;
 
     private FloatingBallChannel() {}
 
@@ -123,6 +128,25 @@ final class FloatingBallChannel {
         } catch (RuntimeException e) {
             Log.w(TAG, "openLookupPage could not be delivered; queued", e);
             pendingOpenLookupPage = true;
+        }
+    }
+
+    /**
+     * 系统球「拍照查词」：主引擎在就直接推 {@code openCameraOcr}（Fushi 随后被拉到前台，
+     * Dart 开相机）；不在就排队，由冷启动的 Dart 经 {@code takePendingCameraOcr} 来取。
+     * 主线程调用。
+     */
+    static void requestCameraOcr() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingCameraOcr = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_CAMERA_OCR, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openCameraOcr could not be delivered; queued", e);
+            pendingCameraOcr = true;
         }
     }
 
@@ -201,6 +225,12 @@ final class FloatingBallChannel {
             case "takePendingOpenLookupPage": {
                 boolean pending = pendingOpenLookupPage;
                 pendingOpenLookupPage = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingCameraOcr": {
+                boolean pending = pendingCameraOcr;
+                pendingCameraOcr = false;
                 result.success(pending);
                 return;
             }

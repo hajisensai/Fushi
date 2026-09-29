@@ -131,7 +131,11 @@ enum FloatingBallGlobalAction {
   clipboard('clipboard'),
 
   /// 截屏 → 系统 OCR → 点字查词。
-  screenOcr('screen_ocr');
+  screenOcr('screen_ocr'),
+
+  /// 相机拍照（纸质书、招牌、别的设备的屏幕）→ 系统 OCR → 点字查词。应用外球
+  /// 把 Fushi 唤到前台再开相机（拍照与识别都在主窗里做）。
+  cameraOcr('camera_ocr');
 
   const FloatingBallGlobalAction(this.storageValue);
 
@@ -145,11 +149,13 @@ enum FloatingBallGlobalAction {
   }
 
   /// 本平台有没有这个能力：截屏 OCR 只有 Android（MediaProjection）与 iOS
-  /// （截自己的窗口）接了；独立查词窗只有 Android 有（`:popup` 进程的透明
-  /// Activity），iOS / 桌面没有对应组件。
+  /// （截自己的窗口）接了；拍照查词要系统相机（image_picker 只在移动端有相机）；
+  /// 独立查词窗只有 Android 有（`:popup` 进程的透明 Activity），iOS / 桌面没有
+  /// 对应组件。
   bool availableOn({required bool isAndroid, required bool isIOS}) =>
       switch (this) {
-        FloatingBallGlobalAction.screenOcr => isAndroid || isIOS,
+        FloatingBallGlobalAction.screenOcr ||
+        FloatingBallGlobalAction.cameraOcr => isAndroid || isIOS,
         FloatingBallGlobalAction.popupLookup => isAndroid,
         _ => true,
       };
