@@ -41,8 +41,14 @@ void main() {
     );
     expect(
       shouldPaint,
-      contains('chromeExpanded: _showChrome'),
-      reason: '底栏可见性仍须随 _showChrome。',
+      contains('chromeExpanded: _chromeBarsExpanded'),
+      reason: '底栏可见性仍须随 _showChrome（经专注模式闸门 _chromeBarsExpanded）。',
+    );
+    expect(
+      src,
+      contains('bool get _chromeBarsExpanded => _showChrome && !_focusMode;'),
+      reason: '布局判据 = 用户意图 _showChrome 且未开专注模式；专注模式不得去翻 '
+          '_showChrome（它还是 JS 点词门控的镜像）。',
     );
     final String pureGate = _functionSource(
       File('lib/src/reader/reader_chrome_floating.dart')
@@ -77,7 +83,7 @@ void main() {
     // 占位判据 + 悬浮归零），不得退回 _readerContentReady。
     expect(
       src,
-      contains('barOccupiesLayout: _hasEverLoaded && _showChrome'),
+      contains('barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded'),
       reason: 'popupBottomReserve / _bottomChromeReserve 必须与底栏同门控在 '
           '_hasEverLoaded，不得用 _readerContentReady。',
     );

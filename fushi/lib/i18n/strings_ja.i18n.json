@@ -6123,5 +6123,8 @@
   "floating_ball_action_popup_lookup": "アプリ外で辞書検索",
   "leaderboard_board_me_pending": "You: ${value} · ranked after the next board refresh (${time})",
   "floating_ball_action_camera_ocr": "Photo lookup",
-  "floating_ball_camera_unavailable": "Couldn't open the camera"
+  "floating_ball_camera_unavailable": "Couldn't open the camera",
+  "reader_focus_mode_label": "集中モード",
+  "reader_focus_mode_exit": "集中モードを終了",
+  "reader_focus_mode_bars_locked": "集中モード中は上下のバーを表示しません"
 }

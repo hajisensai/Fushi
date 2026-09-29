@@ -6123,5 +6123,8 @@
   "floating_ball_action_popup_lookup": "应用外查词",
   "leaderboard_board_me_pending": "我的数据：${value} · 榜单 ${time} 刷新后排名",
   "floating_ball_action_camera_ocr": "拍照查词",
-  "floating_ball_camera_unavailable": "无法打开相机"
+  "floating_ball_camera_unavailable": "无法打开相机",
+  "reader_focus_mode_label": "专注模式",
+  "reader_focus_mode_exit": "退出专注模式",
+  "reader_focus_mode_bars_locked": "专注模式已开启，顶栏和底栏不会显示"
 }

@@ -59,7 +59,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
       controller
           .evaluateJavascript(
         source: 'window.__fushiTapGate = '
-            '{ chrome: $_showChrome, lookup: $lookup, maxLen: 400 };',
+            '{ chrome: $_tapGateChrome, lookup: $lookup, maxLen: 400 };',
       )
           .catchError((Object e, StackTrace s) {
         ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, s);
