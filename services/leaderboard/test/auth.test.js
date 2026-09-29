@@ -153,6 +153,19 @@ describe('注册（邮箱验证码）', () => {
     expect((await reg(code)).data.error).toBe('too_many_attempts');
   });
 
+  it('Cloudflare Email Service 绑定优先于 Resend：有 EMAIL 绑定就用它发，发件人取 EMAIL_FROM', async () => {
+    const sentViaBinding = [];
+    const env = makeEnv({
+      EMAIL_SENDER: undefined,
+      EMAIL_FROM: 'Fushi <no-reply@fushi.moe>',
+      EMAIL: { send: async (m) => { sentViaBinding.push(m); return { messageId: 'x' }; } },
+    });
+    expect((await codeFor(env, 'cf@example.com')).status).toBe(202);
+    expect(sentViaBinding).toHaveLength(1);
+    expect(sentViaBinding[0]).toMatchObject({ to: 'cf@example.com', from: 'Fushi <no-reply@fushi.moe>', subject: 'Fushi 验证码' });
+    expect(sentViaBinding[0].text).toMatch(/\d{6}/);
+  });
+
   it('没配置发信 / pepper → 503 fail-closed', async () => {
     const env = makeEnv({ EMAIL_SENDER: undefined });
     expect((await codeFor(env, 'x@example.com')).status).toBe(503);

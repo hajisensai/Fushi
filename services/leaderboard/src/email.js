@@ -75,9 +75,22 @@ const MESSAGES = {
   },
 };
 
+/** 发信渠道是否已配置：Cloudflare Email Service 绑定（Workers Paid）或 Resend（免费档）二选一。 */
+export function emailConfigured(env) {
+  if (typeof env.EMAIL_SENDER === 'function') return true;
+  if (!env.EMAIL_FROM) return false;
+  return Boolean((env.EMAIL && typeof env.EMAIL.send === 'function') || env.RESEND_API_KEY);
+}
+
 export async function sendEmail(env, to, subject, text) {
   if (typeof env.EMAIL_SENDER === 'function') return env.EMAIL_SENDER(to, subject, text);
-  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) throw new HttpError(503, 'email_not_configured');
+  if (!emailConfigured(env)) throw new HttpError(503, 'email_not_configured');
+  // Cloudflare Email Service（wrangler.toml 的 [[send_email]] name = "EMAIL"）：发往任意地址需 Workers Paid，
+  // 每月含 3000 封；本服务日预算 90 封 × 31 天仍在含量内。没绑定时走 Resend。
+  if (env.EMAIL && typeof env.EMAIL.send === 'function') {
+    await env.EMAIL.send({ to, from: env.EMAIL_FROM, subject, text });
+    return;
+  }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -97,9 +110,7 @@ export async function requestCode(env, ip, body, now, ctx) {
   const purpose = body.purpose;
   if (!PURPOSES.includes(purpose)) throw new HttpError(400, 'bad_purpose');
   pepper(env); // 未配置在前台就 503（与邮箱无关，不泄露信息）
-  if (typeof env.EMAIL_SENDER !== 'function' && (!env.RESEND_API_KEY || !env.EMAIL_FROM)) {
-    throw new HttpError(503, 'email_not_configured');
-  }
+  if (!emailConfigured(env)) throw new HttpError(503, 'email_not_configured');
   const lang = MESSAGES[body.lang] ? body.lang : 'en';
   await hit(env, `email:ip:${ip}`, HOUR, EMAIL_LIMITS.perIpHour, now);
   const work = deliverCode(env, email, purpose, lang, now).catch((e) => {
