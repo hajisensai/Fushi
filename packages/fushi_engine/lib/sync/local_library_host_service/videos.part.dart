@@ -20,7 +20,11 @@ mixin _LocalLibraryHostVideos
   /// [hasSubtitle] 当前视频文件旁能找到外挂字幕时为 true。
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    // 在线视频源入库集只在装了那个扩展的本机可播（起播时向扩展取流），对端拿到
+    // 也放不了：不下发。
+    final List<VideoBookRow> rows = (await _db.allVideoBooks())
+        .where((VideoBookRow row) => !isAnimeSourceVideoPath(row.videoPath))
+        .toList();
     // 按 importedAt 降序（null 排最后）
     rows.sort((VideoBookRow a, VideoBookRow b) {
       final int? ta = a.importedAt;
@@ -94,7 +98,11 @@ mixin _LocalLibraryHostVideos
     bool hasSubtitle = false;
     String? subtitleFileName;
 
-    if (videoPath.isNotEmpty) {
+    // 网络流（http(s) / rtsp …）与 `.strm` 流指针在本机没有媒体字节
+    // （[lacksLocalMediaFile]）：`.strm` 的 stat 只会拿到一行地址的文本大小冒充
+    // 视频体积，host 也下发不了它（[resolveVideoFile] 恒 null），sidecar 字幕同样
+    // 无从服务——整段不碰文件系统，sizeBytes 留 null、hasSubtitle 为 false。
+    if (videoPath.isNotEmpty && !lacksLocalMediaFile(videoPath)) {
       final File f = File(videoPath);
       if (f.existsSync()) {
         try {
@@ -280,10 +288,14 @@ mixin _LocalLibraryHostVideos
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
   ///
   /// **只查 DB**，不接受外部文件路径。文件不存在或 id 未知时返回 null。
+  /// 网络流（rtsp 频道等）与 `.strm` 流指针（[lacksLocalMediaFile]）没有可下发的
+  /// 媒体字节，同样返回 null——本地 `.strm` 虽然磁盘上存在，下发出去的只是一行
+  /// 地址文本，对端会当视频去播。
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
     final String? path = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (path == null || path.isEmpty) return null;
+    if (lacksLocalMediaFile(path)) return null;
     final File f = File(path);
     return f.existsSync() ? f : null;
   }
@@ -300,6 +312,9 @@ mixin _LocalLibraryHostVideos
   }) async {
     final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (videoPath == null || videoPath.isEmpty) return null;
+    // 只碰同目录 sidecar：网络流地址（[isNetworkOnlyVideoPath]）没有本地目录可扫；
+    // 本地 `.strm` 的同目录字幕是真实文件，照常可找。
+    if (isNetworkOnlyVideoPath(videoPath)) return null;
     final String effectiveLangCode =
         langCode.isEmpty ? _videoSubtitleLangCode : langCode;
     final String? subPath =
@@ -339,6 +354,7 @@ mixin _LocalLibraryHostVideos
       audioStreamCount: audioStreamCount,
       audioChannels: audioChannels,
       audioBitrate: audioBitrate,
+      timeout: clipVideoAudioTimeout(endMs - startMs),
     );
     if (result == null) {
       try {
@@ -719,48 +735,127 @@ mixin _LocalLibraryHostVideos
       throw ArgumentError.value(suffix, 'suffix', 'unsafe subtitle suffix');
     }
     await _runExclusive(() async {
-      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-      if (row == null) throw StateError('unknown video: $id');
-      final String videoPath = row.videoPath;
-      final String lower = videoPath.toLowerCase();
-      if (videoPath.isEmpty ||
-          lower.startsWith('http://') ||
-          lower.startsWith('https://')) {
-        throw StateError('video has no local file: $id');
-      }
-      final File dest = File(p.join(p.dirname(videoPath),
-          '${p.basenameWithoutExtension(videoPath)}$suffix'));
-      await _moveFileInto(subtitleFile, dest);
-      final String? preferred =
-          findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
-      if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
-      final String ext =
-          p.extension(preferred).replaceFirst('.', '').toLowerCase();
-      List<AudioCue> cues = const <AudioCue>[];
-      try {
-        cues = parseSubtitleCues(
-          content: await readTextWithEncoding(File(preferred)),
-          format: ext,
-          bookUid: id,
-        );
-      } catch (_) {
-        // best-effort：解析失败不挡字幕文件落位。
-      }
-      await _db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(id),
-        title: Value(row.title),
-        videoPath: Value(row.videoPath),
-        subtitleSource: Value<String?>(preferred),
-        subtitleFormat: Value<String?>(ext),
-        embeddedSubtitleTrack: const Value<int?>(null),
-      ));
-      if (cues.isNotEmpty) {
-        await _db.replaceCuesForBook(
-            id, cues.map(AudioCue.toCompanion).toList());
-      }
+      final VideoBookRow row = await _videoRowWithLocalFile(id);
+      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
     });
   }
+
+  /// 远端播放时用户导入 / 重定时的字幕设为默认（见 [VideoSubtitleDefaultHost]）。
+  @override
+  Future<String> importDefaultVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String format,
+  }) async {
+    _assertSafeVideoId(id);
+    final String? suffix =
+        defaultSidecarSubtitleSuffix(format, langCode: _videoSubtitleLangCode);
+    if (suffix == null) {
+      throw ArgumentError.value(format, 'format', 'not a subtitle format');
+    }
+    await _runExclusive(() async {
+      final VideoBookRow row = await _videoRowWithLocalFile(id);
+      _displaceSidecarsFor(row.videoPath, suffix);
+      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+    });
+    return suffix;
+  }
+
+  /// [id] 对应、且视频是 host 本地文件的库行；否则抛 [StateError]（端点映射 404）。
+  /// 网络流（http(s) / rtsp …）与 `.strm` 流指针（[lacksLocalMediaFile]）都不算：
+  /// 它们在 host 上没有可下发的视频本体（[resolveVideoFile] 恒 null），对端推来的
+  /// 字幕落过去也没有播放端会读。
+  Future<VideoBookRow> _videoRowWithLocalFile(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) throw StateError('unknown video: $id');
+    final String videoPath = row.videoPath;
+    if (videoPath.isEmpty || lacksLocalMediaFile(videoPath)) {
+      throw StateError('video has no local file: $id');
+    }
+    return row;
+  }
+
+  /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。
+  /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
+  void _displaceSidecarsFor(String videoPath, String suffix) {
+    final String dir = p.dirname(videoPath);
+    final String stemLower =
+        p.basenameWithoutExtension(videoPath).toLowerCase();
+    final Set<String> displaced =
+        sidecarSuffixesDisplacedBy(suffix, langCode: _videoSubtitleLangCode)
+            .map((String s) => '$stemLower$s')
+            .toSet();
+    final List<File> siblings;
+    try {
+      siblings = Directory(dir)
+          .listSync(followLinks: false)
+          .whereType<File>()
+          .toList();
+    } on FileSystemException {
+      return;
+    }
+    for (final File f in siblings) {
+      if (!displaced.contains(p.basename(f.path).toLowerCase())) continue;
+      final File backup = File('${f.path}$kDisplacedSidecarBackupSuffix');
+      if (backup.existsSync()) {
+        f.deleteSync();
+      } else {
+        f.renameSync(backup.path);
+      }
+    }
+  }
+
+  /// 把上传的 [subtitleFile] 落到 `<视频 stem><suffix>`，再按 host 学习语言重解析首选
+  /// sidecar 落库（[importVideoSubtitle] / [importDefaultVideoSubtitle] 共用）。
+  Future<void> _placeVideoSubtitleSidecar(
+    File subtitleFile, {
+    required VideoBookRow row,
+    required String suffix,
+  }) async {
+    final String id = row.bookUid;
+    final String videoPath = row.videoPath;
+    final File dest = File(p.join(p.dirname(videoPath),
+        '${p.basenameWithoutExtension(videoPath)}$suffix'));
+    await _moveFileInto(subtitleFile, dest);
+    final String? preferred =
+        findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
+    if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
+    final String ext =
+        p.extension(preferred).replaceFirst('.', '').toLowerCase();
+    List<AudioCue> cues = const <AudioCue>[];
+    try {
+      cues = parseSubtitleCues(
+        content: await readTextWithEncoding(File(preferred)),
+        format: ext,
+        bookUid: id,
+      );
+    } catch (_) {
+      // best-effort：解析失败不挡字幕文件落位。
+    }
+    await _db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: Value(id),
+      title: Value(row.title),
+      videoPath: Value(row.videoPath),
+      subtitleSource: Value<String?>(preferred),
+      subtitleFormat: Value<String?>(ext),
+      embeddedSubtitleTrack: const Value<int?>(null),
+    ));
+    if (cues.isNotEmpty) {
+      await _db.replaceCuesForBook(id, cues.map(AudioCue.toCompanion).toList());
+    }
+  }
 }
+
+/// [clipVideoAudio] 的 ffmpeg 超时：句子片段沿用 120s；整集音轨（client 远端对轴 /
+/// 重定时拉整条音轨）按「至少 10 倍速转码」放大，两小时电影给到 12 分钟。
+Duration clipVideoAudioTimeout(int spanMs) {
+  final int scaled = (spanMs ~/ 10) ~/ 1000;
+  return Duration(seconds: scaled > 120 ? scaled : 120);
+}
+
+/// 「设为默认字幕」让位的旧 sidecar 改名时追加的后缀；不是字幕扩展名，
+/// [pickSidecar] / [listSidecarSubtitles] 都不会再把它当候选。
+const String kDisplacedSidecarBackupSuffix = '.fushi-bak';
 
 // ── 本域私有的顶层 helper（原 LocalLibraryHostService 的 private static；mixin 体内看不到
 //    宿主类的 static，故提到库顶层）。

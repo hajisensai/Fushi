@@ -66,6 +66,7 @@ extension _ReaderMining on _ReaderFushiPageState {
         : CardSourceLink(
             kind: CardSourceKind.book,
             uid: sourceUid,
+            bookKey: widget.bookKey,
             sourceId: _sourceReviewSession?.link.sourceId ??
                 CardSourceLink.newSourceId(),
             chapterIndex: _favoriteSectionIndex,
@@ -130,6 +131,14 @@ extension _ReaderMining on _ReaderFushiPageState {
           imageTier: appModel.miningImageQuality,
           audioTier: appModel.miningAudioQuality,
         );
+        // 倍速制卡：开关开着且有声书正以非 1× 播放时，句子音频按同一倍率变速不变调
+        // （`-af atempo`），卡片听感与阅读时一致。开关关 / 1× 时 tempo 为 null，走
+        // 与现状逐字节相同的参数表（[buildFfmpegAtempoFilter] 对 1.0 返回 null）。
+        // 读的是控制器当前实时倍速而非落库偏好：用户刚拨的倍速就是这次制卡的倍速。
+        final double? sentenceAudioTempo =
+            appModel.miningAudioFollowPlaybackSpeed
+                ? _audiobookController?.speed
+                : null;
         sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
           inputPath: inputFile.path,
           startMs: clip.startMs,
@@ -137,6 +146,7 @@ extension _ReaderMining on _ReaderFushiPageState {
           outputPath: outputPath,
           audioChannels: mediaCompression.audioChannels,
           audioBitrate: mediaCompression.audioBitrate,
+          tempo: sentenceAudioTempo,
           onFailure: (String summary) {
             sentenceAudioFailure = summary;
           },
@@ -344,7 +354,7 @@ extension _ReaderMining on _ReaderFushiPageState {
       // TODO-270 D：AnkiConnect 成功制卡带回 note id（noteId 非空），让弹窗把这张
       // 标记为「最新可改」第三态；AnkiDroid 的 noteId 恒为 null（优雅降级，进不了
       // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     // BUG-1908/1915：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」
     // 区分；判据只住在 .failed(outcome) 一处。
@@ -381,7 +391,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     FushiToast.show(
         msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome);
   }
@@ -496,7 +506,10 @@ extension _ReaderMining on _ReaderFushiPageState {
         // context.documentTitle 已过显示门面，这里**必须直取 raw**；收藏页
         // 渲染端按 bookKey 再过门面显示新名。
         documentTitle: _book?.title,
-        chapterLabel: _currentChapterLabelFor(section),
+        chapterLabel: _currentChapterLabelFor(
+          section,
+          charOffset: context.sourceLink?.charOffset ?? sentenceRange?.offset,
+        ),
         bookKey: widget.bookKey,
         sectionIndex: section,
         normCharOffset: context.sourceLink?.charOffset ?? sentenceRange?.offset,

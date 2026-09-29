@@ -223,6 +223,8 @@ class AnkiSettings {
     this.repositionAggregate = 'harmonic',
     this.repositionRareFirst = false,
     this.autoRepositionEnabled = false,
+    this.batchMiningEnabled = false,
+    this.useAnkiSyncClient = false,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -288,6 +290,9 @@ class AnkiSettings {
     // 缺键 = 老装置升级上来：自动重排默认关，升级不会凭空获得
     // 一条会动 Anki 新卡队列位置的自动路径。
     autoRepositionEnabled: json['autoRepositionEnabled'] as bool? ?? false,
+    // 缺键 = 老装置：制卡照旧直接送 Anki。
+    batchMiningEnabled: json['batchMiningEnabled'] as bool? ?? false,
+    useAnkiSyncClient: json['useAnkiSyncClient'] as bool? ?? false,
   );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -417,6 +422,15 @@ class AnkiSettings {
   /// （[BaseAnkiRepository.supportsDeckReposition]）。
   final bool autoRepositionEnabled;
 
+  /// 批量制卡：制卡时不直接送 Anki，一律先存进设备端待发队列，之后一次性发送。
+  /// 给「每张卡都要切到 AnkiMobile」的 iOS、切 app 很慢的墨水屏准备。默认关。
+  final bool batchMiningEnabled;
+
+  /// 用「Anki 同步客户端」后端：不经 AnkiConnect，由 Fushi 写本地库再同步到
+  /// AnkiWeb / 自建 Anki 同步服务器（本机要带 `fushi-anki-sync`，目前只有桌面）。
+  /// 默认关。
+  final bool useAnkiSyncClient;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   /// BUG-2380：不需要真卡内容就能下的结论——当前选中的牌组 + 笔记类型 + 字段映射，
@@ -498,6 +512,8 @@ class AnkiSettings {
     String? repositionAggregate,
     bool? repositionRareFirst,
     bool? autoRepositionEnabled,
+    bool? batchMiningEnabled,
+    bool? useAnkiSyncClient,
   }) => AnkiSettings(
     selectedDeckId: clearSelectedDeck
         ? null
@@ -552,6 +568,8 @@ class AnkiSettings {
     repositionAggregate: repositionAggregate ?? this.repositionAggregate,
     repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
     autoRepositionEnabled: autoRepositionEnabled ?? this.autoRepositionEnabled,
+    batchMiningEnabled: batchMiningEnabled ?? this.batchMiningEnabled,
+    useAnkiSyncClient: useAnkiSyncClient ?? this.useAnkiSyncClient,
   );
 
   Map<String, dynamic> toJson() => {
@@ -592,6 +610,8 @@ class AnkiSettings {
     'repositionAggregate': repositionAggregate,
     'repositionRareFirst': repositionRareFirst,
     'autoRepositionEnabled': autoRepositionEnabled,
+    'batchMiningEnabled': batchMiningEnabled,
+    'useAnkiSyncClient': useAnkiSyncClient,
   };
 }
 
@@ -611,10 +631,26 @@ class AnkiMiningPayload {
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
     this.glossarySelectionHighlighted = false,
+    this.allowDuplicate = false,
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
   });
+
+  /// [allowDuplicate] 在 wire 上的键名（应用内桥的 `Map<String, String>` 与远端
+  /// `/api/mine/forward` 的 `rawPayloadJson` 都用它）。
+  static const String allowDuplicateKey = 'allowDuplicate';
+
+  /// 给一份弹窗字段拍上「用户已裁决：就是要再加一张」的标记（BUG-2605）。
+  ///
+  /// 「卡已在 Anki」对话框的「新增为重复卡」按钮此前直接复用普通制卡回调，而两后端的
+  /// `addNote` 只看 [AnkiSettings.allowDupes]（默认关）——用户明明选了「新增」，
+  /// AnkiConnect 仍回 `cannot create note because it is a duplicate`、AnkiDroid 仍在
+  /// `checkForDuplicates` 处拦掉，按钮等于没有。标记走 payload 而不是改 `mineEntry`
+  /// 签名：制卡请求本来就以这份 map 为唯一载体，互联「制卡到服务端」转发的也是它，
+  /// 主机侧 `fromJson` 原样认得，不需要另铺一条 wire 字段。
+  static Map<String, String> withAllowDuplicate(Map<String, String> fields) =>
+      <String, String>{...fields, allowDuplicateKey: 'true'};
 
   /// 本 payload 走**两条**线，编码不同，`fromJson` 必须对两条都成立：
   ///
@@ -685,6 +721,7 @@ class AnkiMiningPayload {
       glossarySelectionHighlighted: _boolFromPayloadWire(
         json['glossarySelectionHighlighted'],
       ),
+      allowDuplicate: _boolFromPayloadWire(json[allowDuplicateKey]),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
@@ -716,6 +753,13 @@ class AnkiMiningPayload {
   /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
   /// `false` → 行为逐字节不变。
   final bool glossarySelectionHighlighted;
+
+  /// 用户在「卡已在 Anki」对话框里明确选了「新增为重复卡」（BUG-2605）。
+  ///
+  /// 三个后端的 `addNote` 都以 `settings.allowDupes || allowDuplicate` 决定是否放行
+  /// 重复：这是**单次请求**的裁决，不改用户的全局「允许重复」偏好。旧 payload 没有
+  /// 这个键 → `false` → 行为逐字节不变。见 [withAllowDuplicate]。
+  final bool allowDuplicate;
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;
@@ -891,6 +935,11 @@ class AnkiHandlebarRenderer {
   static final _handlebarRegex = RegExp(r'\{[^}]*\}');
   static const _singleGlossaryPrefix = '{single-glossary-';
 
+  /// `{glossary-first-<n>}`：前 n 本词典的释义（`{glossary-first}` 的多本版）。
+  static final RegExp _glossaryFirstNPattern = RegExp(
+    r'^\{glossary-first-(\d+)\}$',
+  );
+
   static String render(
     String template,
     AnkiMiningPayload payload,
@@ -918,6 +967,13 @@ class AnkiHandlebarRenderer {
         handlebar.length - 1,
       );
       return _singleGlossaryForDictionary(payload, dictionary);
+    }
+    final RegExpMatch? firstN = _glossaryFirstNPattern.firstMatch(handlebar);
+    if (firstN != null) {
+      // 用户手写模板里的超长数字（溢出 int64）不能让整张卡制卡失败：
+      // 解析不了就当作无效 handlebar，与未知 handlebar 同样给空串。
+      final int? count = int.tryParse(firstN.group(1)!);
+      return count == null ? '' : _firstGlossaries(payload, count);
     }
     switch (handlebar) {
       case '{expression}':
@@ -1049,14 +1105,42 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     String dictionary,
   ) {
-    if (dictionary.isEmpty) return '';
-    final direct = payload.singleGlossaries[dictionary];
-    if (direct != null) return direct;
+    final String? key = _singleGlossaryKeyForDictionary(payload, dictionary);
+    return key == null ? '' : payload.singleGlossaries[key]!;
+  }
+
+  /// [dictionary] 在 [AnkiMiningPayload.singleGlossaries] 里对应的键：先精确命中，
+  /// 再按去掉 `[n]` 后缀的归一化名命中；查不到返回 null。
+  static String? _singleGlossaryKeyForDictionary(
+    AnkiMiningPayload payload,
+    String dictionary,
+  ) {
+    if (dictionary.isEmpty) return null;
+    if (payload.singleGlossaries.containsKey(dictionary)) return dictionary;
     final normalized = _normalizeDictionaryName(dictionary);
-    for (final entry in payload.singleGlossaries.entries) {
-      if (_normalizeDictionaryName(entry.key) == normalized) return entry.value;
+    for (final String key in payload.singleGlossaries.keys) {
+      if (_normalizeDictionaryName(key) == normalized) return key;
     }
-    return '';
+    return null;
+  }
+
+  /// `{glossary-first-<n>}`：前 [count] 本词典的释义，按弹窗里的词典顺序拼接。
+  ///
+  /// 与 `{glossary-first}` 同一套「选中优先」（BUG-1035）：长按选中的那本排第一，
+  /// 其余按原顺序补足到 [count] 本；没选中就是纯粹的前 [count] 本。词典不足
+  /// [count] 本时有几本给几本。`singleGlossaries` 为空（只带 glossaryFirst 的旧
+  /// 发送端）时退回 glossaryFirst，不产出空字段。每本已是独立的
+  /// `.yomitan-glossary` 块（各自带 `<ol>` 与词典样式），直接相接即可。
+  static String _firstGlossaries(AnkiMiningPayload payload, int count) {
+    if (payload.singleGlossaries.isEmpty) return payload.glossaryFirst;
+    final String? selectedKey = _singleGlossaryKeyForDictionary(
+      payload,
+      payload.selectedDictionary,
+    );
+    return <String>[
+      if (selectedKey != null) selectedKey,
+      ...payload.singleGlossaries.keys.where((String k) => k != selectedKey),
+    ].take(count).map((String k) => payload.singleGlossaries[k]!).join();
   }
 
   static String _normalizeDictionaryName(String name) =>
@@ -1101,6 +1185,8 @@ class AnkiHandlebarOptions {
     '{audio}',
     '{glossary}',
     '{glossary-first}',
+    '{glossary-first-2}',
+    '{glossary-first-3}',
     '{selected-glossary}',
     '{popup-selection-text}',
     '{sentence}',
@@ -1567,6 +1653,13 @@ class AnkiErrorCode {
   /// 牌组/笔记类型」：那会把用户自己的牌组当成 Lapis 选中、套上 Lapis 的字段映射，
   /// 还照样报「创建成功」。用户看到的就是「点了创建，选中的却是我自己的牌组」。
   static const String lapisSetupMissing = 'ANKI_LAPIS_SETUP_MISSING';
+
+  /// 「Anki 同步客户端」后端（Fushi 自己写本地库再同步到 AnkiWeb / 自建服务器）
+  /// 还没登录同步服务器。
+  static const String syncClientSignedOut = 'ANKI_SYNC_SIGNED_OUT';
+
+  /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
+  static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
 
 sealed class AnkiFetchResult {
@@ -1594,7 +1687,9 @@ class AnkiFetchError extends AnkiFetchResult {
   final String? code;
 }
 
-enum MineResult { success, duplicate, notConfigured, error }
+/// [queued]：卡没有送到 Anki，而是存进了设备端的待发制卡队列（后端不可达，或
+/// 用户开了批量模式），稍后补发。它不是失败——卡没丢；也不是成功——Anki 里还没有。
+enum MineResult { success, duplicate, notConfigured, error, queued }
 
 /// 制卡（mineEntry）的结果。
 ///
@@ -1645,6 +1740,17 @@ class MineOutcome {
 
   const MineOutcome.duplicate()
     : result = MineResult.duplicate,
+      noteId = null,
+      deckName = null,
+      audioWarning = null,
+      errorDetail = null,
+      errorCode = null,
+      error = null,
+      stackTrace = null;
+
+  /// 已存入待发制卡队列（见 [MineResult.queued]）。
+  const MineOutcome.queued()
+    : result = MineResult.queued,
       noteId = null,
       deckName = null,
       audioWarning = null,

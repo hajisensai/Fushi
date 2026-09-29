@@ -25,6 +25,84 @@ server-build.gradle.patch   Hibiki changes to upstream files that are too
                             small to justify a full-file overlay.
 LICENSE / NOTICE            MPL-2.0 text and the modification notice.
 
+Android host reuse (2026-09-19)
+-------------------------------
+fushi/android/app/build.gradle (`prepareAniyomiSourceApi`) compiles two
+subtrees straight into the Android app, layering overlay/ over upstream_src/
+exactly as the sidecar build does (overlay wins on the same relative path):
+  server/src/main/kotlin/eu/kanade/tachiyomi/animesource/**   Aniyomi
+      (video) extension ABI; see "Anime ABI" below
+  server/src/main/kotlin/eu/kanade/tachiyomi/util/lang/CoroutinesExtensions.kt
+      `eu.kanade.tachiyomi.util.lang.awaitSingle`, which the anime sources
+      import and Mihon's source-api does not provide
+This keeps the desktop sidecar and the Android host on one anime ABI. The
+manga ABI on Android still comes from the pinned Mihon commit
+(`prepareMihonSourceApi`), not from this tree. Changing these files here
+(upstream_src or overlay) changes the Android build too.
+
+Anime ABI (2026-09-19, overlay/.../animesource/**)
+--------------------------------------------------
+upstream_src ships the extensions-lib 14 shape of `eu.kanade.tachiyomi.
+animesource` (`Video(url, quality, videoUrl, headers, ...)` as a plain class
+with download-progress fields, `getVideoList(episode)`, no hosters). The
+extension repositories in the wild no longer compile against that: the
+yuzono / Anikku ecosystem builds every APK -- versionName still "14.x" --
+against komikku-app/aniyomi-extensions-lib (pinned f5961b5dfb, 2026-08-28),
+whose surface is the extensions-lib 16 one:
+  model/Video.kt        data class Video(videoUrl, videoTitle, resolution,
+                        bitrate, headers, preferred, subtitleTracks,
+                        audioTracks, timestamps, mpvArgs, ffmpegStreamArgs,
+                        ffmpegVideoArgs, internalData, initialized) plus a
+                        @Deprecated (url, quality, videoUrl, headers, ...)
+                        constructor mapping null videoUrl to "null";
+                        Track, TimeStamp, ChapterType
+  model/Hoster.kt       Hoster + List<Video>.toHosterList()
+  model/FetchType.kt    Seasons / Episodes
+  model/SAnime.kt       + background_url, fetch_type, season_number
+  model/SEpisode.kt     + fillermark, summary, preview_url
+  AnimeSource.kt        + getSeasonList, getHosterList, getVideoList(hoster),
+                        getRelatedAnimeList (KMK)
+  AnimeCatalogueSource  + supportsRelatedAnimes / disableRelatedAnimes* /
+                        getRelatedAnimeList* / fetchRelatedAnimeList (KMK)
+  online/AnimeHttpSource, ParsedAnimeHttpSource
+                        + seasonList*, hosterList*, videoListParse(response,
+                        hoster), resolveVideo, sortHosters, sortVideos,
+                        getVideo(request, listener), relatedAnimeList*
+Measured against upstream_src's ABI: KickAssAnime's getVideoList dies with
+NoSuchMethodError Video.getVideoTitle() (swallowed by the extension's
+parallelCatchingFlatMap, so the host just sees zero videos); AniDB's episode
+parser assigns SEpisode.fillermark. Those are the "source opens but nothing
+plays" / "episode list fails" reports.
+
+The overlay therefore replaces those files with the *union* of both
+generations (the lib-16 surface above, byte-compatible in constructor /
+copy / componentN descriptors, plus the lib-14 surface kept as compatibility:
+the deprecated constructors, `Video.url` / `Video.quality`, `videoUrl` as a
+var, `getVideoList(episode)` / `videoListParse(response)` / `getVideoUrl` /
+`videoUrlParse`). Every member one generation declares abstract and the other
+never heard of is `open` with a throwing default, otherwise the JVM would
+refuse to instantiate the other generation's classes. `AnimeHttpSource.
+getHosterList` decides per class by reflection (does anything below the host
+ABI package override `hosterListParse` / the parsed selector pair?) whether to
+issue the lib-16 hoster request or wrap the legacy video list in a
+NO_HOSTER_LIST hoster -- never by issuing a request and watching it fail.
+
+overlay/.../animesource/host/AnimeVideoLoader.kt is Hibiki's (not part of any
+lib): the one entry point both hosts call for `getVideoList` -- hosters ->
+sortHosters -> per hoster `videoList ?: getVideoList(hoster)` -> sortVideos ->
+per video `resolveVideo` (when not initialized) -> lib-14 `getVideoUrl` (when
+still unresolved); lazy hosters only when nothing eager produced a video;
+unresolvable candidates dropped; the first real failure rethrown only when
+nothing at all survives. DalvikHandler routes `getVideoList` here instead of
+MihonInvoker.invokeGetVideoList (which returned the raw legacy list), and
+projects the lib-16 fields (videoTitle / resolution / bitrate / preferred /
+mpvArgs) next to the lib-14 ones on the wire. InspectHandler accepts anime
+lib 14 / 15 / 16.
+
+Compatibility ceiling: the Aniyomi main line has since added HttpServer /
+ThumbnailInfo / SAnimeEpisodeUpdate / AnimeRelation (lib 17 territory); those
+are not vendored and such an APK is refused at inspect time.
+
 upstream_src/ excludes exactly two things from the upstream commit:
   .git/       clone metadata, not source
   .DS_Store   macOS Finder metadata that upstream had committed
@@ -63,7 +141,14 @@ and manifest point straight at the commit recorded above.
 
 Hibiki modifications
 --------------------
+overlay/.../animesource/** (full-file replacements + FetchType.kt + host/):
+  The lib 14 + lib 16 union anime ABI and the shared host video loader; see
+  "Anime ABI" above.
+
 overlay/.../DalvikHandler.kt:
+  `getVideoList` goes through AnimeVideoLoader (hoster expansion,
+  resolveVideo, getVideoUrl) and the Video wire projection carries the lib-16
+  fields; see "Anime ABI" above.
   Typed source HttpException responses retain their original HTTP 400-599
   transport status and carry errorKind/sourceStatusCode. Internal failures
   retain bridge/500; legacy code/type/stack fields remain available.
@@ -121,6 +206,23 @@ overlay/.../network/interceptor/CloudflareInterceptor.kt:
   reports errorKind "cloudflare" + challengeUrl + userAgent so the host can open
   a browser with the same identity -- cf_clearance is bound to both.
 
+overlay/.../network/Requests.kt, .../network/interceptor/RateLimitInterceptor.kt,
+.../network/interceptor/SpecificHostRateLimitInterceptor.kt (BUG-2601):
+  The extensions-lib 16 network surface: `suspend fun OkHttpClient.get(String |
+  HttpUrl, headers, cache)` / `OkHttpClient.post(...)` (extensions link to the
+  synthetic `RequestsKt.get$default(OkHttpClient, String, Headers,
+  CacheControl, Continuation, int, Object)`; measured: AnimeKai / yuzono
+  kotokai v16.8 episode list died with NoSuchMethodError wrapped as
+  BRIDGE_HTTP_500) and the `kotlin.time.Duration` overloads of `rateLimit` /
+  `rateLimitHost` (value-class mangled names `rateLimit-SxA4cEA` /
+  `rateLimitHost-Wn2Vu4Y`). The legacy TimeUnit overloads stay for lib 14
+  sources. Same declarations as kodjodevf/M-Extension-Server v1.0.7 (the
+  mirror that Mangayomi ships); the Android host carries the same three files
+  under fushi/android/app/src/main/kotlin/eu/kanade/tachiyomi/network/ and
+  fushi/test/media/manga/mihon_host_network_abi_guard_test.dart pins both
+  trees to one shape. Reflection tests pin the JVM descriptors
+  (overlay/.../test/kotlin/eu/kanade/tachiyomi/network/**).
+
 overlay/.../AppModule.kt:
   Registers ProtoBuf alongside Json in the Injekt container. Extensions using
   protobuf APIs resolve it from a static initialiser, so the missing
@@ -173,6 +275,12 @@ overlay/ (full-file replacements):
   .../network/interceptor/CloudflareInterceptor.kt
                                                 detects Cloudflare challenges
                                                 and reports URL + User-Agent
+  .../network/Requests.kt                       suspend OkHttpClient.get/post
+                                                (extensions-lib 16)
+  .../network/interceptor/RateLimitInterceptor.kt
+  .../network/interceptor/SpecificHostRateLimitInterceptor.kt
+                                                Duration overloads next to the
+                                                TimeUnit ones
 
 Security boundary (must not be weakened)
 ----------------------------------------

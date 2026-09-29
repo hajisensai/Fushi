@@ -49,6 +49,7 @@ import 'package:fushi/src/pages/implementations/game_shared.dart'
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
@@ -267,11 +268,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     _refresh();
   }
 
-  /// 移除一个游戏（按 id 定位；元数据源与游玩会话经 FK cascade 连带清理）。
+  /// 移除一个游戏（按 id 定位；元数据源经 FK cascade 连带清理）。
   ///
   /// 先弹统一确认框（与书架/合集同款 [FushiDestructiveConfirmDialog]）：语义
   /// 只是**从库移除**，绝不删磁盘上的游戏文件——确认文案明说这点，免得用户
   /// 不敢点或误以为会连本体一起没。
+  ///
+  /// 游玩会话（`galgame_sessions`，时长真相源）默认**保留**：v113 起它不再 FK
+  /// cascade 跟着游戏行走，移除时只把显示名快照进会话行，统计页照常计入。
+  /// 「同时删除统计数据」（默认不勾，与书架 / 漫画 / 视频删除同一选项）勾上时，在删
+  /// 行**之前**清该游戏的统计（[FushiDatabase.deleteGameStatisticsForId]）：
+  /// study_segments 要按游戏身份立碑，行删了身份也就没了。统计删除是 best-effort
+  /// （与书那边 `ReaderFushiSource.deleteBookStatistics` 同一纪律）：失败只记日志、
+  /// 不拦游戏本身的移除（用户可到统计页再删），异常也不逃出这个 unawaited 调用。
   Future<void> _removeGame(GalgameEntry game) async {
     final FushiDestructiveConfirmResult? result =
         await showAppDialog<FushiDestructiveConfirmResult>(
@@ -280,9 +289,18 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         title: t.game_remove,
         message: t.game_remove_confirm,
         confirmLabel: t.game_remove,
+        statisticsSubtitle: t.delete_statistics_game_desc,
       ),
     );
     if (result == null || !mounted) return;
+    if (result.deleteStatistics) {
+      try {
+        await _appModel.database.deleteGameStatisticsForId(game.id);
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('GamesLibrary.deleteGameStatistics', e, stack);
+      }
+    }
     await _repo.remove(game.id);
     _refresh();
   }
@@ -1345,6 +1363,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
       onEditLanguage: () => unawaited(_editGameLanguage(game)),
       onOpenFileLocation: () => unawaited(_openGameFileLocation(game)),
+      onStatistics: () => unawaited(
+        showMediaItemStatsDialog(
+          context,
+          database: _appModel.database,
+          target: MediaItemStatsTarget(
+            mediaKind: kActivityMediaGame,
+            mediaKeys: <String>{game.id},
+            title: game.displayName,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1621,6 +1650,7 @@ class _GameCard extends StatelessWidget {
     required this.onEditJapaneseLocale,
     required this.onEditLanguage,
     required this.onOpenFileLocation,
+    required this.onStatistics,
     this.sortLabel,
   });
 
@@ -1652,6 +1682,9 @@ class _GameCard extends StatelessWidget {
 
   /// 在系统文件管理器里定位这个游戏的 exe（见 `_openGameFileLocation`）。
   final VoidCallback onOpenFileLocation;
+
+  /// 右键 / 长按反查这个游戏的统计（游玩时长 + 文本钩子字数，身份 = galgames.id）。
+  final VoidCallback onStatistics;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1730,6 +1763,12 @@ class _GameCard extends StatelessWidget {
           action: 'status',
           label: t.game_play_status,
           icon: Icons.flag_outlined,
+          danger: false,
+        ),
+        (
+          action: 'stats',
+          label: t.media_stats_action,
+          icon: Icons.insights_outlined,
           danger: false,
         ),
         (
@@ -1823,6 +1862,8 @@ class _GameCard extends StatelessWidget {
         onDetail();
       case 'status':
         onPlayStatus();
+      case 'stats':
+        onStatistics();
       case 'scrape':
         onScrape();
       case 'rename':

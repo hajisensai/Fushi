@@ -10,6 +10,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -26,8 +27,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
@@ -284,6 +287,8 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.onCancel,
     this.showTitle = true,
     required this.initialQuery,
+    this.initialEpisode,
+    this.initialSeason,
     required this.initialApiKey,
     required this.onApiKeyChanged,
     required this.saveDirectory,
@@ -293,6 +298,7 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.httpClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.subtitleAligner,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     this.debugInitialSeriesLookupFailed = false,
@@ -323,6 +329,20 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 预填的搜索词（由视频文件名解析出的番名）。
   final String initialQuery;
 
+  /// BUG-2626：预填的集号；null = 留空（列出全部版本）。
+  ///
+  /// 这处改了一条既有决策：集数框原先**恒空**（「用户决策：默认空」），代价是用户每次
+  /// 都得自己数当前是第几集再手填，而这个数字调用方本来就知道。现在只在调用方能给出
+  /// **可靠**集号时预填；给不出仍留空，那条旧行为在没有集号的来源上原样保留。
+  final int? initialEpisode;
+
+  /// 调用方从文件名 / 远端标题解析出的季号；null = 不知道（面板再从预填词、合集名等
+  /// 标题里的季度记号推断，见 [subtitleSeasonHint]）。
+  ///
+  /// AniList 把每一季登记成独立条目、相关度首条恒为第一季：不带季号时看第四季也会按
+  /// 第一季的 id 去查 Jimaku，第四季条目里现成的字幕永远列不出来。
+  final int? initialSeason;
+
   /// 该视频**已知的身份**（刮削存下的 AniList / TMDB id 与备选搜索词），BUG-1842。
   ///
   /// 有强身份（[SubtitleSearchSeed.hasStrongIdentity]）且用户没改过输入框时，直接按 id
@@ -333,6 +353,9 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 当前视频的本地文件绝对路径；非空且存在时用于算 OSDb 文件哈希做精确匹配
   /// （BUG-1847）。远端流 / 无本地文件为 null。
   final String? videoPath;
+
+  /// 落盘前按 [videoPath] 的内嵌字幕轨对时间轴；null = 不对齐。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   /// 预填的 Jimaku API key。
   final String initialApiKey;
@@ -379,8 +402,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   late final TextEditingController _queryCtrl = TextEditingController(
     text: widget.initialQuery,
   );
-  // 集数输入框：初值空（用户决策「默认空」）。空 → 不传 episode（= 现状列全部）。
-  final TextEditingController _episodeCtrl = TextEditingController();
+  // 集数输入框：BUG-2626 起预填调用方给的集号（[SubtitleSearchPanel.initialEpisode]）；
+  // 调用方给不出可靠集号时仍为空 → 不传 episode（= 列出全部版本）。
+  late final TextEditingController _episodeCtrl = TextEditingController(
+    text: widget.initialEpisode?.toString() ?? '',
+  );
 
   bool _searching = false;
   bool _searched = false;
@@ -628,9 +654,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       });
       // 降级但仍留着同一番名的旧系列列表时，按旧列表首条继续检索：比退回纯文本搜准，
       // 也不用再问一次 AniList。
+      // 相关度首条恒为第一季：按本集季号挑对应那一季的条目（挑不出才退回首条）。
+      final int? season = _seasonHint(query);
       final int? resolvedSeriesId = outcome.media.isNotEmpty
-          ? outcome.media.first.id
-          : (_seriesMatches.isNotEmpty ? _seriesMatches.first.id : null);
+          ? pickAniListSeriesForSeason(outcome.media, season: season)?.id
+          : pickAniListSeriesForSeason(_seriesMatches, season: season)?.id;
       await _fetchCandidates(
         anilistId: resolvedSeriesId,
         queryFallback: query,
@@ -640,6 +668,19 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       anilist?.close();
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// 本次检索的季号提示：输入框里的词自带季度记号就用它；用户没改过番名时再看
+  /// 调用方给的季号（文件名 `S04E18`）与种子里的备选词（合集名「… 4th season」）。
+  /// 用户改了番名就只信他自己写的，不拿原视频的季号去套另一部作品。
+  int? _seasonHint(String query) {
+    final bool untouchedQuery = query == widget.initialQuery.trim();
+    final int? typed = subtitleSeasonHint(titles: <String>[query]);
+    if (typed != null || !untouchedQuery) return typed;
+    return subtitleSeasonHint(
+      parsedSeason: widget.initialSeason,
+      titles: widget.seed.queries,
+    );
   }
 
   /// 用户点某个系列 chip：以该系列 id 重搜 Jimaku（不再重跑 AniList，保留已展示的候选
@@ -734,6 +775,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               alternateTitles: untouchedQuery
                   ? seed.fallbackQueries
                   : const <String>[],
+              // OpenSubtitles / SubDL 据此按 season_number 收敛。只给**显式**季号
+              // （调用方从文件名 / 远端标题 `S04E18` 解析的）：从标题推断的季号只
+              // 用来挑 AniList 条目——标题里的季度记号与 TMDB 季号并不总对得上，
+              // 发给服务端当筛选条件会把同一部剧的另一季当成精确命中。
+              season: untouchedQuery ? widget.initialSeason : null,
               episode: episode,
               fingerprint: fingerprint,
             ),
@@ -915,7 +961,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           dir.path,
           safeSubtitleFileName(download.fileName),
         );
-        await File(dest).writeAsBytes(download.bytes);
+        await File(dest).writeAsBytes(await _alignedBytes(download));
         saved.add(dest);
       } on Object catch (error) {
         failed++;
@@ -933,6 +979,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     }
     if (failed > 0) _showError(t.download_batch_failed(n: failed));
     widget.onDownloaded(saved);
+  }
+
+  Future<Uint8List> _alignedBytes(VideoSubtitleDownload download) async {
+    final AutomaticSubtitleAligner? aligner = widget.subtitleAligner;
+    final String? path = widget.videoPath;
+    if (aligner == null || path == null) return download.bytes;
+    return aligner(download.bytes, path);
   }
 
   Future<void> _downloadSource(VideoSubtitleCandidate source) async {
@@ -957,7 +1010,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         dir.path,
         safeSubtitleFileName(download.fileName),
       );
-      await File(dest).writeAsBytes(download.bytes);
+      await File(dest).writeAsBytes(await _alignedBytes(download));
       if (!mounted) return;
       widget.onDownloaded(<String>[dest]);
     } on Object catch (error) {

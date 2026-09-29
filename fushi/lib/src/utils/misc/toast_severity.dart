@@ -61,7 +61,8 @@ enum ToastSeverity { neutral, info, success, warning, error }
 
 /// TODO-1325 #6: 制卡结果 toast 的语义状态。决定 MD3 toast 的着色与 Material 图标，
 /// 让「加入了 / 已存在 / 失败 / 制卡中」一眼可辨，而不再只靠弹窗里 mine 按钮的图标变化。
-enum MineToastStatus { added, duplicate, failed, pending }
+/// [queued]：卡存进了设备端待发制卡队列，稍后补发（不是失败，也还没进 Anki）。
+enum MineToastStatus { added, duplicate, failed, pending, queued }
 
 /// 把 [MineToastStatus] 映射成 toast 的 (背景色, 前景色, 图标)。用固定 Material 色阶
 /// （绿/橙/红/蓝）而非主题取色，保证四态在任意主题下都语义清晰、对比达标；也让无
@@ -94,6 +95,12 @@ enum MineToastStatus { added, duplicate, failed, pending }
         foreground: Colors.white,
         icon: Icons.sync_rounded,
       );
+    case MineToastStatus.queued:
+      return (
+        background: const Color(0xFF1565C0), // blue 800
+        foreground: Colors.white,
+        icon: Icons.schedule_send_rounded,
+      );
   }
 }
 
@@ -108,6 +115,7 @@ ToastSeverity mineToastSeverity(MineToastStatus status) {
     case MineToastStatus.failed:
       return ToastSeverity.error;
     case MineToastStatus.pending:
+    case MineToastStatus.queued:
       return ToastSeverity.info;
   }
 }

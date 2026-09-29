@@ -178,15 +178,15 @@ void main() {
 
   group('子3: 移动端永不进全屏路由 - 系统返回只一段退出', () {
     test('_toggleVideoFullscreen 移动端 no-op (杜绝所有入口推进全屏路由)', () {
-      final String body = methodBody(
-          src, 'Future<void> _toggleVideoFullscreen(BuildContext context) {');
+      // PR #1596 起该方法是 async（小窗里切全屏要先 await 退小窗），早返回写作裸 return。
+      final String body = methodBody(src,
+          'Future<void> _toggleVideoFullscreen(BuildContext context) async {');
       expect(
-        body.contains('if (isMobilePlatform) return Future<void>.value();'),
+        body.contains('if (isMobilePlatform) return;'),
         isTrue,
         reason: '移动端 _toggleVideoFullscreen 必须 no-op (否则全屏路由进栈 两段式返回)',
       );
-      final int gate =
-          body.indexOf('if (isMobilePlatform) return Future<void>.value();');
+      final int gate = body.indexOf('if (isMobilePlatform) return;');
       final int push = body.indexOf('_pushNeutralizedVideoFullscreen(context)');
       expect(gate, greaterThanOrEqualTo(0));
       expect(push, greaterThan(gate), reason: '移动端早返回必须排在进全屏路由之前');

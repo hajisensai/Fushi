@@ -26,12 +26,23 @@ dependencies:
     path: ../fushi_platform
   fushi_torrent:
     path: ../fushi_torrent
+  # 互联 P2P 隧道（iroh，纯 Dart FFI；原生库缺失时能力判不可用）。
+  fushi_p2p:
+    path: ../fushi_p2p
   # 与 fushi/pubspec.yaml 钉同一 sha（OCR 与 ASR 共用 OnnxSessionFactory 抽象）。
   fushi_asr_core:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
+      ref: 2168e85cc69b564eef36c57db36e9dbb82528ab3
+  # 外挂字幕按内嵌参考轨对时间轴的算法（subtitle_reference_alignment /
+  # subtitle_time_rewriter）住在上游；本包只留 ffmpeg 抽轨与原稿备份的装配层
+  # （media/video/subtitle/embedded_reference_subtitle_sync.dart）。同仓同 sha。
+  fushi_asr_subtitles:
+    git:
+      url: https://github.com/hajisensai/fushi-subtitles.git
+      path: packages/asr_subtitles
+      ref: 2168e85cc69b564eef36c57db36e9dbb82528ab3
   archive: ^3.6.1
   basic_utils: ^5.7.0
   collection: any
@@ -45,6 +56,7 @@ dependencies:
   image: ^4.3.0
   meta: ^1.9.0
   path: ^1.8.2
+  pointycastle: ^3.9.1
   shelf: ^1.4.0
   xml: ^6.3.0
   youtube_explode_dart: ^2.3.6

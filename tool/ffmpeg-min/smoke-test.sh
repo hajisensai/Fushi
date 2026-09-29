@@ -165,6 +165,48 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -frames:v 1 -update 1 "$WORK/frame.jpg"
 assert_nonempty "$WORK/frame.jpg"
 
+echo "[ffmpeg-min-smoke] decoding an AV1 source (libdav1d)"
+# FFmpeg's native `av1` decoder is only a hwaccel hook: with --disable-everything
+# there is no hwaccel, so every AV1 frame fails ("Your platform doesn't support
+# hardware accelerated AV1 decoding.") and ffmpeg exits 69 (decode error rate
+# above -max_error_rate) with nothing but "Conversion failed!" on the tail. The
+# vendored binary shipped that way for a whole release: card still frames / cue
+# animations / clip export died on every AV1 video while sentence audio kept
+# working. The real software decoder is libdav1d; a compile that merely lists
+# `av1` passes `-decoders` but fails the user, so decode a real AV1 file here
+# with the literal still-frame argument shape from desktop_audio_clipper.dart.
+"$FFMPEG_MIN" -hide_banner -decoders > "$WORK/decoders.txt" 2>&1
+if ! grep -Eq '^[[:space:]]*V[^[:space:]]*[[:space:]]+libdav1d([[:space:]]|$)' "$WORK/decoders.txt"; then
+  echo "MISSING DECODER (need libdav1d for AV1 video; the native av1 decoder is hwaccel-only):"
+  cat "$WORK/decoders.txt"
+  exit 1
+fi
+AV1_FIXTURE="$WORK/av1.mp4"
+AV1_FIXTURE_ENCODER=""
+for candidate in libsvtav1 libaom-av1; do
+  if "$FIXTURE_FFMPEG" -hide_banner -encoders 2>/dev/null | grep -qw "$candidate"; then
+    AV1_FIXTURE_ENCODER="$candidate"
+    break
+  fi
+done
+if [ -z "$AV1_FIXTURE_ENCODER" ]; then
+  echo "[ffmpeg-min-smoke] fixture ffmpeg has no AV1 encoder (libsvtav1 / libaom-av1); cannot generate the AV1 fixture" >&2
+  exit 1
+fi
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
+  -c:v "$AV1_FIXTURE_ENCODER" -pix_fmt yuv420p "$AV1_FIXTURE"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -i "$AV1_FIXTURE" -an \
+  -frames:v 1 -update 1 "$WORK/av1-frame.jpg"
+assert_nonempty "$WORK/av1-frame.jpg"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$AV1_FIXTURE" -an \
+  -filter_complex \
+  "fps=12,scale=160:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
+  -loop 0 "$WORK/av1-cue.gif"
+assert_nonempty "$WORK/av1-cue.gif"
+
 echo "[ffmpeg-min-smoke] exporting sentence audio"
 # Windows Galgame 资源链需要专用 xWMA demuxer；只有 wav demuxer + WMA decoder
 # 无法打开 RIFF/XWMA。真实游戏样本不入库，这里至少把随包二进制的能力位钉住。
@@ -188,6 +230,25 @@ for input in \
   assert_nonempty "$WORK/$stem.aac"
 done
 
+echo "[ffmpeg-min-smoke] exporting sentence audio from an HLS playlist"
+# BUG-2642: online video sources (Aniyomi extensions) hand mining an `.m3u8`.
+# Without the hls demuxer the bundled ffmpeg rejects the playlist with
+# AVERROR_INVALIDDATA and the card aborts with `required audio missing`.
+mkdir -p "$WORK/hls"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy -f hls -hls_time 1   -hls_playlist_type vod -hls_segment_filename "$WORK/hls/seg%03d.ts"   "$WORK/hls/index.m3u8"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/hls/index.m3u8" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/hls.aac"
+assert_nonempty "$WORK/hls.aac"
+
+echo "[ffmpeg-min-smoke] exporting sentence audio at playback tempo (atempo)"
+# Audiobook mining at playback speed (buildFfmpegClipArgs tempo=...) cuts the
+# sentence clip through `-af atempo=R`. A minimal build without the atempo
+# filter fails with "No such filter: 'atempo'" and the card silently loses its
+# sentence audio; exercise the literal app call so a dropped filter fails here.
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 0.800 -i "$WORK/tone.wav" -vn -map_chapters -1 \
+  -af "atempo=1.500" -c:a aac -ac 1 -b:a 64k "$WORK/tone.tempo.aac"
+assert_nonempty "$WORK/tone.tempo.aac"
+
 echo "[ffmpeg-min-smoke] extracting attached cover"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -i "$WORK/covered.m4a" -an -map 0:v:disp:attached_pic \
@@ -202,12 +263,15 @@ assert_nonempty "$WORK/cover-png.jpg"
 for output in \
   "$WORK/cue.gif" \
   "$WORK/frame.jpg" \
+  "$WORK/av1-frame.jpg" \
+  "$WORK/av1-cue.gif" \
   "$MP4_FIXTURE.aac" \
   "$MKV_FIXTURE.aac" \
   "$WORK/tone.ac3.aac" \
   "$WORK/tone.eac3.aac" \
   "$WORK/tone.wma.aac" \
   "$WORK/tone.wav.aac" \
+  "$WORK/tone.tempo.aac" \
   "$WORK/cover.jpg" \
   "$WORK/cover-png.jpg"; do
   run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$output" -f null -
@@ -304,6 +368,128 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   "$WORK/clip.mp4"
 assert_nonempty "$WORK/clip.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mp4" -f null -
+
+echo "[ffmpeg-min-smoke] verifying WebM synchronized mining clips (VP9/AV1 + Opus)"
+# 制卡「音画同步片段」默认 WebM：Anki 桌面 Qt WebEngine 没有 H.264/AAC，卡片内
+# <video> 只能放 VP9/AV1 + Opus。参数形态与 synchronized_video_exporter.dart 一致。
+for want in libvpx-vp9 libopus; do
+  if ! grep -qw -- "$want" "$WORK/encoders2.txt"; then
+    echo "MISSING ENCODER (need $want for WebM synchronized mining clips):"
+    cat "$WORK/encoders2.txt"
+    exit 1
+  fi
+done
+if ! grep -qw webm "$WORK/muxers2.txt"; then
+  echo "MISSING MUXER (need webm for synchronized mining clips):"
+  cat "$WORK/muxers2.txt"
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map 1:a:0 -vf "setpts=PTS,scale=w='trunc(min(960,iw)/2)*2':h=-2,fps=24,format=yuv420p" \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -crf 34 -b:v 0 \
+  -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/clip-vp9.webm"
+assert_nonempty "$WORK/clip-vp9.webm"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip-vp9.webm" -f null -
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map 0:a:0 -vf "scale=w='trunc(min(960,iw)/2)*2':h=-2,fps=24,format=yuv420p" \
+  -c:v libsvtav1 -preset 8 -crf 36 \
+  -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/clip-av1.webm"
+assert_nonempty "$WORK/clip-av1.webm"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip-av1.webm" -f null -
+
+echo "[ffmpeg-min-smoke] verifying gal window recording clips (concat demuxer, WebM + MP4)"
+# galgame 窗口录像制卡：逐帧 JPEG 按真实时间戳排成 ffconcat 列表，`-f concat -safe 0`
+# 读入后编码。`-safe` 是 concat demuxer 的私有选项，缺 concat 时报 "Unrecognized
+# option 'safe'"。参数形态与 galgame_window_video.dart buildGalWindowVideoArgs 一致
+# （WebM 档 = synchronizedClipVideoArgs/AudioArgs + 960 宽上限；MP4 档逐字相同）。
+mkdir -p "$WORK/gal"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" \
+  -vf fps=4 -frames:v 4 -q:v 3 "$WORK/gal/frame_%05d.jpg"
+for i in 1 2 3 4; do assert_nonempty "$WORK/gal/frame_0000$i.jpg"; done
+{
+  echo "ffconcat version 1.0"
+  for i in 1 2 3 4; do
+    echo "file 'frame_0000$i.jpg'"
+    echo "duration 0.250"
+  done
+  echo "file 'frame_00004.jpg'"
+} > "$WORK/gal/frames.ffconcat"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -f concat -safe 0 -i "$WORK/gal/frames.ffconcat" -i "$MP4_FIXTURE.aac" \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -crf 34 -b:v 0 -pix_fmt yuv420p \
+  -vf "scale=w='trunc(min(960,iw)/2)*2':h=-2" \
+  -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/gal/clip.webm"
+assert_nonempty "$WORK/gal/clip.webm"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/gal/clip.webm" -f null -
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -f concat -safe 0 -i "$WORK/gal/frames.ffconcat" -i "$MP4_FIXTURE.aac" \
+  -c:v libx264 -preset veryfast -crf 26 -pix_fmt yuv420p \
+  -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+  -c:a aac -b:a 128k -movflags +faststart "$WORK/gal/clip.mp4"
+assert_nonempty "$WORK/gal/clip.mp4"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/gal/clip.mp4" -f null -
+
+echo "[ffmpeg-min-smoke] verifying mpegts muxer for interconnect HLS transcode segments (BUG-2630)"
+# 互联 host 按档转码：一段一个短命 ffmpeg，输入侧 -ss/-to 切段、libx264 + aac 编码、
+# 以 MPEG-TS 写到 stdout，-output_ts_offset 把段内时间轴平移到片中绝对位置（这正是
+# live_transcode.dart buildTranscodeSegmentArgs 的形状）。TS 的 h264 要 Annex B，靠
+# 已编入的 h264_mp4toannexb bsf 自动插入。
+if ! grep -qw mpegts "$WORK/muxers2.txt"; then
+  echo "MISSING MUXER (need mpegts for interconnect HLS transcode segments, BUG-2630):"
+  cat "$WORK/muxers2.txt"
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
+  -ss 0.100 -to 0.700 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map '0:a:0?' -sn \
+  -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
+  -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 6 \
+  -f mpegts "$WORK/seg.ts"
+assert_nonempty "$WORK/seg.ts"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg.ts" -f null -
+
+# 第二段：只换 -ss/-to 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
+run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
+  -ss 0.700 -to 1.300 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map '0:a:0?' -sn \
+  -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
+  -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 7 \
+  -f mpegts "$WORK/seg2.ts"
+assert_nonempty "$WORK/seg2.ts"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg2.ts" -f null -
+
+# BUG-2630 第三段：只验单段 start_time 不够——`-output_ts_offset` 平移 PTS 与 DTS
+# 两者，有 B 帧时段首关键帧的 DTS 比 PTS 早一个重排延迟，start_time 看上去仍
+# 「≈ 偏移」，而 hls demuxer 判 seek 落点比的是 DTS，会把整段丢掉、落到下一段。
+# 这里直接验**段首视频关键帧的 DTS** 不早于该段的名义起点（关 B 帧后 DTS == PTS）。
+# 两段的取材区间都必须落在夹具内：sub.srt 止于 00:00:01,400 且夹具用 -shortest，
+# 整个 MP4 夹具只有约 1.4 s —— 越界的那一段 ffmpeg 会退出 0 却写出 0 字节。
+seg_key_dts() {
+  "$FFPROBE_MIN" -v error -select_streams v:0 -show_packets \
+    -show_entries packet=dts_time,flags -of csv=p=0 -read_intervals '%+#40' "$1" \
+    | awk -F, '$2 ~ /K/ { print $1; exit }'
+}
+for probe in "seg.ts 6" "seg2.ts 7"; do
+  set -- $probe
+  actual="$(seg_key_dts "$WORK/$1")"
+  if [ -z "$actual" ]; then
+    echo "NO VIDEO KEYFRAME in $1 (BUG-2630)"
+    exit 1
+  fi
+  # 判据是「不得**早**于名义位置」：seek 点不落在帧边界时首帧会晚一点（无害，hls
+  # 照收），早一点点才是 BUG-2630 第三段（整段被丢）。容差 1 ms 吃掉 90 kHz 量化；
+  # 上界 0.5 s 兜住「偏移整个写错」。
+  if ! awk -v a="$actual" -v n="$2" 'BEGIN { exit !(a >= n - 0.001 && a < n + 0.5) }'; then
+    echo "SEGMENT DTS OFF (BUG-2630): $1 first video keyframe dts=$actual, nominal=$2"
+    echo "  -> hls.c compares DTS against first_timestamp + sum(EXTINF); an early"
+    echo "     keyframe makes the demuxer discard the whole segment on seek."
+    exit 1
+  fi
+done
 
 echo "[ffmpeg-min-smoke] verifying movtext encoder + soft-subtitle clip mux"
 # Clip export muxes the subtitle the user is actually watching into the exported

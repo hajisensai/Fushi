@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=104；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=116；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,7 +26,7 @@
 
 ## 数据模型
 
-77 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+90 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -46,7 +46,7 @@
 | Profile | `Profiles`, `ProfileSettings`, `MediaTypeProfiles`, `BookProfiles` |
 | 同步基线 | `SyncBaselines` |
 | 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs` |
-| 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters` |
+| 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters`, `WebMineQueue`, `PendingMineQueue`（后两张设备本地） |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `CollectionBookAliases`, `Series`, `ShelfEntries` |
 | 互联 | `FushiPairedPeers` |
 | 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |

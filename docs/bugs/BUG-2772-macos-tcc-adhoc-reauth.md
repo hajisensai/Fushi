@@ -1,0 +1,6 @@
+## BUG-2772 · macOS 每次更新全局查词都要重新授权辅助功能
+- **报告**：2026-09-29（用户：macOS 每次更新全局查词都要重新授权）
+- **真实性**：✅ 真 bug。全局查词读前台选区要辅助功能授权（`fushi/macos/Runner/AppDelegate.swift` `AXIsProcessTrusted()` 门）。发布包没配 Developer ID secrets，`.github/workflows/release-desktop.yml` 的 macOS job 走 `codesign --force --deep --sign -` ad-hoc 签名（run 36519338874 的 Developer ID 三步全 skipped）。ad-hoc 的默认指定要求是 `cdhash H"…"`，每次构建都变；TCC 存的是授权当时的指定要求，于是每次应用内更新后新包都不满足旧记录，系统设置里那项看着开着但已失效。
+- **[x] ① 已修复** — `release-desktop.yml` 新增「Pin stable designated requirement for ad-hoc macOS app」：非 Developer ID 路径上，在所有 bundle 改动之后只重签外层 app，显式嵌入 `designated => identifier "app.fushi.reader"`；并校验 `--verify --deep --strict` 与实际嵌入的要求。Developer ID 路径不变（默认要求锚在 Team ID，本就稳定）。
+- **[x] ② 已加自动化测试** — `fushi/test/build/macos_adhoc_designated_requirement_guard_test.dart`（步骤存在、只在 ad-hoc 路径、不带 --deep、排在最后一次整包 ad-hoc 重签之后）。
+- **备注**：Mac（macOS 27.2）上实测：两份内容不同的 ad-hoc 包按此法签后，`SecCodeCopyDesignatedRequirement(A)` = `identifier "app.fushi.reader"`，`SecStaticCodeCheckValidity(B, reqA)` 通过；对照组纯 ad-hoc 得 `cdhash`、B 不满足。这正是 tccd 的判据路径。**已装旧版的用户在升到含此修复的第一个版本时仍需再授权一次**（旧记录是 cdhash），且最好先在「隐私与安全性 → 辅助功能」里把旧的 Fushi 条目删掉再加；之后的更新不再失效。未在真机走完「授权 → 应用内更新 → 仍有效」全流程（授权须人工在系统设置里勾）。代价：身份只按 bundle id 判定，任何同 bundle id 的 ad-hoc 包都能继承授权；根治是配上 Developer ID secrets（见 docs/agent/apple-signing.md）。

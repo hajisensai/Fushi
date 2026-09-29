@@ -33,6 +33,9 @@ import io.flutter.plugin.common.MethodChannel;
 
 public class AnkiChannelHandler {
     private static final String CHANNEL = ChannelNames.ANKI;
+    /** Card source IDs are UUID v4 strings (see CardSourceLink). */
+    private static final String SOURCE_ID_PATTERN =
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
     private static final int AD_PERM_REQUEST = 0;
 
     // BUG-2098：`requestAnkidroidPermissions` 的返回值。此前恒 success(true)——发起
@@ -93,7 +96,7 @@ public class AnkiChannelHandler {
                 final String model = call.argument("model");
                 final String deck = call.argument("deck");
                 final String key = call.argument("key");
-                final String markerTag = call.argument("markerTag");
+                final String sourceId = call.argument("sourceId");
                 final String reading = call.argument("reading");
                 final ArrayList<Integer> readingFieldIndices = call.argument("readingFieldIndices");
                 final ArrayList<String> fields = call.argument("fields");
@@ -112,6 +115,8 @@ public class AnkiChannelHandler {
                 final String deckName = call.argument("deckName");
                 final Number noteIdArg = call.argument("noteId");
                 final Map<String, String> fieldValues = call.argument("fieldValues");
+                // BUG-2606：覆盖=整体替换——没点名的字段也写空、并入新制会打的标签。
+                final Boolean clearUnspecified = call.argument("clearUnspecified");
                 // Lapis 样式客制化：模板列表（每项 name/front/back），见
                 // readNoteType / updateNoteTypeTemplates。
                 final ArrayList<Map<String, String>> noteTypeTemplates =
@@ -169,14 +174,16 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "updateNoteFields":
-                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留。
+                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留；
+                        // BUG-2606：clearUnspecified=true 时其余字段写空、tags 并入。
                         if (noteIdArg == null || fieldValues == null) {
                             result.error("MISSING_ARG",
                                 "noteId and fieldValues are required", null);
                         } else if (requirePermission(result)) {
                             try {
                                 String updateError = updateNoteFields(
-                                    noteIdArg.longValue(), fieldValues);
+                                    noteIdArg.longValue(), fieldValues,
+                                    Boolean.TRUE.equals(clearUnspecified), tags);
                                 if (updateError != null) {
                                     result.error("UPDATE_NOTE_FAILED",
                                         updateError, null);
@@ -189,13 +196,12 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
-                    case "findNotesBySourceMarker":
-                        if (markerTag == null
-                                || !markerTag.matches("^fushi_source_[0-9a-f]{32}$")) {
-                            result.error("INVALID_ARG", "Invalid source marker tag", null);
+                    case "findNotesBySourceId":
+                        if (sourceId == null || !sourceId.matches(SOURCE_ID_PATTERN)) {
+                            result.error("INVALID_ARG", "Invalid card source ID", null);
                         } else if (requirePermission(result)) {
                             try {
-                                result.success(findNotesBySourceMarker(markerTag));
+                                result.success(findNotesBySourceId(sourceId));
                             } catch (Exception e) {
                                 result.error(providerErrorCode(e), e.getMessage(), null);
                             }
@@ -681,19 +687,27 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * TODO-270 C2: overwrites only the given fields of an existing note,
-     * preserving every field the caller did not name (symmetric with the
-     * AnkiConnect updateNoteFields contract).
+     * TODO-270 C2: overwrites the given fields of an existing note (symmetric
+     * with the AnkiConnect updateNoteFields contract).
      *
      * <p>{@link AnkiProvider#updateNoteFields} takes a positional
      * {@code String[]} keyed by the model's field order. We start from the note's
-     * current values and overwrite only the named ones, so unspecified fields are
-     * not cleared.
+     * current values and overwrite the named ones; with {@code clearUnspecified}
+     * false, unspecified fields are preserved.
+     *
+     * <p>BUG-2606: {@code clearUnspecified} true makes this a whole-card replace
+     * (the card becomes what a freshly mined one would be): every field the
+     * caller did not name is written empty, so a stale value left in an unmapped
+     * field (Lapis {@code SentenceFurigana}, filled by another tool and preferred
+     * by the template) can no longer keep showing the old sentence. {@code tags}
+     * (the set a fresh mine would carry) is unioned into the note's existing
+     * tags — the user's other tags are kept.
      *
      * @return {@code null} on success, or a human-readable error string when the
      *         note / its model cannot be found or AnkiDroid refused the update.
      */
-    private String updateNoteFields(long noteId, Map<String, String> fieldValues) {
+    private String updateNoteFields(long noteId, Map<String, String> fieldValues,
+                                    boolean clearUnspecified, List<String> tags) {
         final AnkiProvider api = AnkiProviders.forContext(context);
         AnkiNote note = api.getNote(noteId);
         if (note == null) {
@@ -703,22 +717,31 @@ public class AnkiChannelHandler {
         if (fieldNames == null) {
             return "Note type not found for note: " + noteId;
         }
-        // Start from the existing values so unspecified fields are preserved
-        // (overwrite-given-fields-only semantics).
         String[] existing = note.getFields();
         String[] merged = new String[fieldNames.length];
         for (int i = 0; i < fieldNames.length; i++) {
             String value = fieldValues.get(fieldNames[i]);
             if (value != null) {
                 merged[i] = value;
-            } else if (i < existing.length && existing[i] != null) {
+            } else if (!clearUnspecified && i < existing.length && existing[i] != null) {
                 merged[i] = existing[i];
             } else {
                 merged[i] = "";
             }
         }
         boolean ok = api.updateNoteFields(noteId, merged);
-        return ok ? null : "AnkiDroid rejected the field update for note " + noteId;
+        if (!ok) {
+            return "AnkiDroid rejected the field update for note " + noteId;
+        }
+        if (tags != null && !tags.isEmpty()) {
+            Set<String> mergedTags = new HashSet<>(note.getTags());
+            if (mergedTags.addAll(tags)) {
+                if (!api.updateNoteTags(noteId, mergedTags)) {
+                    return "AnkiDroid rejected the tag update for note " + noteId;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -847,11 +870,16 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * Resolve a synced source identity without guessing by word or local note id.
-     * The notes URI accepts Anki browser syntax (notes_v2 accepts SQL instead).
+     * Candidate notes whose fields contain the card source ID substring, without
+     * guessing by word or local note id. The notes URI accepts Anki browser
+     * syntax (notes_v2 accepts SQL instead); an unqualified term is a substring
+     * match over the note fields, mirroring
+     * {@code CardSourceLink.searchQueryForSourceId}. Substring hits are only
+     * candidates: the Dart repository confirms identity by parsing each note's
+     * {@code fushi://source} href (BUG-2527 removed the redundant marker tag).
      * Rebase to the selected installation so parallel AnkiDroid builds work too.
      */
-    private List<Long> findNotesBySourceMarker(String markerTag) {
+    private List<Long> findNotesBySourceId(String sourceId) {
         final AnkiDroidTarget target = AnkiDroidTarget.resolve(context);
         if (target == null) {
             throw new IllegalStateException("AnkiDroid is unavailable");
@@ -859,22 +887,14 @@ public class AnkiChannelHandler {
         final List<Long> ids = new ArrayList<>();
         try (Cursor cursor = context.getContentResolver().query(
                 target.rebase(FlashCardsContract.Note.CONTENT_URI),
-                new String[] {FlashCardsContract.Note._ID, FlashCardsContract.Note.TAGS},
-                "tag:" + markerTag, null, null)) {
+                new String[] {FlashCardsContract.Note._ID},
+                "sourceId=" + sourceId, null, null)) {
             // A null cursor means lookup failed, never a trustworthy empty match.
             if (cursor == null) {
                 throw new IllegalStateException("AnkiDroid source lookup returned no cursor");
             }
             final int idIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID);
-            final int tagsIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.TAGS);
             while (cursor.moveToNext()) {
-                final String rawTags = cursor.getString(tagsIndex);
-                // Browser tag searches may include child tags. Only the exact
-                // marker authorizes editing; a prefix/hierarchy match does not.
-                if (rawTags == null
-                        || !Arrays.asList(rawTags.trim().split("\\s+")).contains(markerTag)) {
-                    continue;
-                }
                 final long id = cursor.getLong(idIndex);
                 if (id > 0 && !ids.contains(id)) ids.add(id);
             }

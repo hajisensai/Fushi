@@ -179,6 +179,38 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('切视图：同一个分段条 State 换位置，指示条从旧视图滑过去（不是原地跳变）',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      spec(0, MediaLibraryViewKind.library, '书架'),
+      spec(1, MediaLibraryViewKind.browse, '浏览'),
+      spec(2, MediaLibraryViewKind.sources, '来源'),
+    ]));
+
+    final Finder stripFinder =
+        find.byType(FushiSectionTabBar<MediaLibraryViewKind>);
+    final State<StatefulWidget> before = tester.state(stripFinder);
+    final FushiSectionTabBar<MediaLibraryViewKind> strip =
+        tester.widget(stripFinder);
+    strip.onChanged!(MediaLibraryViewKind.sources);
+    await tester.pump();
+    // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 60));
+
+    expect(tester.state(stripFinder), same(before),
+        reason: '导航条只交给当前视图，但必须是同一个 State 挪过去');
+    final TabController controller =
+        tester.widget<TabBar>(find.byType(TabBar)).controller!;
+    expect(controller.index, 2);
+    expect(controller.animation!.value, greaterThan(0));
+    expect(controller.animation!.value, lessThan(2),
+        reason: '指示条应正从「书架」滑向「来源」');
+
+    await tester.pumpAndSettle();
+    expect(controller.animation!.value, 2);
+  });
+
   testWidgets('分段导航注册可由 controller.requestById 定位的稳定 ID',
       (WidgetTester tester) async {
     await tester.pumpWidget(

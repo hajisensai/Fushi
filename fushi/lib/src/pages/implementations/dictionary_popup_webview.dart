@@ -11,8 +11,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -65,7 +69,28 @@ class MinePopupResult {
     this.ankiConnect = false,
     this.noteId,
     this.duplicate = false,
-  });
+  }) : queued = false;
+
+  /// 制卡请求已接下、在后台进行（在线视频：抽媒体要时间，弹窗不陪着等）。
+  ///
+  /// 弹窗把按钮画成「已加入」✓（popup.js `result.queued` 分支，网页播放器队列早就在用），
+  /// 不回查 Anki、也不把它当成功记「最新可改」——那张卡此刻还不存在。真实结局由宿主
+  /// 在后台完成时用 OSD 报告。
+  const MinePopupResult.queued()
+      : ankiConnect = false,
+        noteId = null,
+        duplicate = false,
+        queued = true;
+
+  /// 一次**被收下**的制卡结果（成功，或进了待发制卡队列）。
+  ///
+  /// 进了队列的卡此刻还不在 Anki 里：必须走 [MinePopupResult.queued]（画 ✓、不回查
+  /// Anki）。若按成功返回 `ankiConnect:true`，popup.js 会去问 Anki 查重、查不到就把
+  /// 按钮翻回「+」，诱导用户再制一张。判据只在这里。
+  factory MinePopupResult.mined(MineOutcome outcome) =>
+      outcome.result == MineResult.queued
+          ? const MinePopupResult.queued()
+          : MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
 
   /// BUG-1915：一次**未成功**的制卡结果。
   ///
@@ -87,7 +112,8 @@ class MinePopupResult {
   MinePopupResult.failed(MineOutcome outcome)
       : ankiConnect = false,
         noteId = null,
-        duplicate = outcome.result == MineResult.duplicate;
+        duplicate = outcome.result == MineResult.duplicate,
+        queued = false;
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -107,6 +133,9 @@ class MinePopupResult {
   /// 权威答复。仅重复时为真。
   final bool duplicate;
 
+  /// 见 [MinePopupResult.queued]。
+  final bool queued;
+
   /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
@@ -114,6 +143,7 @@ class MinePopupResult {
         // 只在为真时带上：popup.js 的 `reply.duplicate === true` 对缺字段与 false
         // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
         if (duplicate) 'duplicate': true,
+        if (queued) 'queued': true,
       };
 }
 
@@ -123,18 +153,26 @@ enum _PopupContextMenuAction { search, copy }
 
 /// BUG-1651：选择可信的 WebView 视口高度。
 ///
-/// 正常窗口优先用 JS `window.innerHeight`；macOS 离屏 runner / 原生视图尚未挂到
-/// CGWindow 时 JS 会报 0，但 Flutter platform-view widget 已有真实布局高度，此时回退
-/// [layoutHeight]。两边都无效才返回 null，让宿主保持当前尺寸。
+/// BUG-2640：**优先用 Flutter 布局高度** [layoutHeight]。宿主的自适应公式
+/// `当前外壳高 + 内容高 − 视口高` 里，「当前外壳高」是 Flutter 布局值，视口高必须与它
+/// 同源，结果才是幂等的 `顶栏高 + 内容高`。JS `window.innerHeight` 是量化后的整数：
+/// Windows fork 先把逻辑尺寸截断成整数（`custom_platform_view.cc` 的 setSize），125%
+/// 缩放下物理像素再截一次（165×1.25=206.25→206 → 164.8 CSS px），盒高的小数部分被整体
+/// 抹掉。拿它去减带小数的外壳高，每轮都恰好差 ±1 px、越过宿主 `<1` 去抖门，热槽弹窗
+/// 就在 164.967/165.967 两个高度间永久振荡：每次都触发 native setSize → WGC 帧池重建，
+/// 视频窗口模式卡顿、切全屏整个 UI 卡死。100% 缩放下量化恰好对齐，所以看不出来。
+///
+/// JS 值只在布局尚不可用时兜底；macOS 离屏 runner / 原生视图尚未挂到 CGWindow 时 JS
+/// 会报 0。两边都无效才返回 null，让宿主保持当前尺寸。
 double? resolvePopupViewportHeight({
   required double? reportedHeight,
   required double? layoutHeight,
 }) {
-  if (reportedHeight != null && reportedHeight.isFinite && reportedHeight > 0) {
-    return reportedHeight;
-  }
   if (layoutHeight != null && layoutHeight.isFinite && layoutHeight > 0) {
     return layoutHeight;
+  }
+  if (reportedHeight != null && reportedHeight.isFinite && reportedHeight > 0) {
+    return reportedHeight;
   }
   return null;
 }
@@ -180,6 +218,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     required this.result,
     super.key,
     this.hasChildPopup = false,
+    this.visibleViewportHeight,
     this.transparentDocumentBackground = false,
     this.onTextSelected,
     this.onLinkClick,
@@ -222,6 +261,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
   /// 不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生传入。
   final bool hasChildPopup;
+
+  /// BUG-2734：宿主让本 WebView 按外壳最大高度布局、外壳只裁剪时，用户实际看得见的
+  /// 视口高度（逻辑像素 = WebView 视觉 px）。注入 popup.js 的
+  /// `__fushiSetVisibleViewportHeight`：tooltip / 按钮提示 / 图片灯箱据此定位，并开启
+  /// 内容尺寸复报（`popupContentResized` → [onContentMetrics]）。null = 不裁剪，JS 用
+  /// `innerHeight`。
+  final double? visibleViewportHeight;
 
   /// TODO-1065：本弹窗宿主是「app 外 / 悬浮字幕」独立查词窗（popup_main 宿主）时置 true。
   /// 该路径的圆角卡由 Flutter [FushiPopupSurface] 画，弹窗 WebView 跑在透明浮动窗里；
@@ -360,9 +406,64 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
       DictionaryPopupWebViewState();
 }
 
-class DictionaryPopupWebViewState
-    extends ConsumerState<DictionaryPopupWebView> {
+class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
+    with WidgetsBindingObserver {
   InAppWebViewController? _controller;
+
+  /// 制卡态失效通知的订阅（见 [MinedStateSignal]）。
+  StreamSubscription<MinedStateChange>? _minedStateSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // 「切回前台就复核」与 texthooker 的已制卡徽章同口径（BUG-1799）：用户的原始路径
+    // 正是「制卡 → 切到 Anki 里删掉那张卡 → 切回 Fushi」，`resumed` 就是回到 app 的
+    // 那一刻，而弹窗上的 ✓ 是查词那一刻探测出来的、自己不会再变。
+    WidgetsBinding.instance.addObserver(this);
+    _minedStateSubscription = MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) =>
+            unawaited(_refreshMineStates(expression: change.expression)));
+  }
+
+  @override
+  void dispose() {
+    unawaited(_minedStateSubscription?.cancel());
+    _minedStateSubscription = null;
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed) return;
+    // 范围未知：popup.js 只重问**已经探测过**的按钮，不把懒探测退化成整屏发桥。
+    unawaited(_refreshMineStates());
+  }
+
+  /// 重问已渲染词条的制卡态并重画 ✓ / +。
+  ///
+  /// [expression] 非空 = 只刷这个词（iOS `x-success` 落账只带回词头）；null = 范围未知。
+  ///
+  /// 弹窗还没渲染出来（controller 未建 / 文档没就绪）时什么都不做——那种情况下下一次
+  /// 查词本来就会重新探测，屏幕上也没有过期的 ✓ 挂着。
+  Future<void> _refreshMineStates({String? expression}) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_ready || !mounted) return;
+    final String target = expression == null
+        ? 'null'
+        : jsonEncode(<String, String>{'expression': expression});
+    try {
+      await controller.evaluateJavascript(source: '''(function(){
+  if (typeof window.fushiRefreshMineStates === 'function') {
+    window.fushiRefreshMineStates($target);
+  }
+})();''');
+    } catch (e, stack) {
+      // 纯装饰态纠正，任何失败都不得冒泡打断查词（WebView 可能正在被摘除）。
+      debugPrint('DictPopupWebview._refreshMineStates: $e\n$stack');
+    }
+  }
 
   /// Debug eval on THIS popup's WebView. The reader routes through its
   /// `topPopupState` (gated behind its own @visibleForTesting hook + assert) so
@@ -458,6 +559,7 @@ class DictionaryPopupWebViewState
       _pushResults();
     }
     _setHasChildPopupJs(widget.hasChildPopup);
+    _setVisibleViewportHeightJs(widget.visibleViewportHeight);
   }
 
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
@@ -1021,11 +1123,174 @@ JSON.stringify((function(){
   /// BUG-763/766：确认「制卡前调整」原生对话框时，回 WebView 精确点中第 [idx] 个词条
   /// （`:scope > .entry` DOM 序）的制卡按钮，复用其全部制卡/查重/覆写逻辑（Dart 侧无
   /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。
-  Future<void> mineEntryByIndex(int idx) async {
-    await _controller?.evaluateJavascript(
-      source: 'window.fushiPopupMineEntryByIndex'
-          ' ? window.fushiPopupMineEntryByIndex($idx) : false',
-    );
+  ///
+  /// 返回**这次是否真的点到了那颗按钮**。BUG-2627：此前返回值（JS 侧三条
+  /// `return false`：容器里一个 `.entry` 都没有 / `entries[idx]` 越界 / 该词条没有
+  /// `.mine-button` 或按钮 disabled）与 `_controller == null` 一样被整个丢掉，于是
+  /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
+  /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
+  /// 提示用户。
+  /// 「回点前」这一段（下发 JS → 查重 → 取音 → 组 payload）的上限。BUG-2634：这个
+  /// 超时**只盖到宿主接手为止**——宿主的 Dart 代码一旦在跑（可能在等用户从「已有卡」
+  /// 操作单里选），桥就已经回过话了，再计时只会制造假失败。判据见
+  /// [ConfirmMineRoundTrip]。
+  static const Duration _kMineRoundTripTimeout = Duration(seconds: 45);
+
+  /// BUG-2634：当前在路上的那次「确认制卡」往返。没有时为 null，桥 handler 的信号
+  /// 全是 no-op。策略（两个信号各管什么、超时盖哪一段）在 [ConfirmMineRoundTrip]。
+  ConfirmMineRoundTrip? _confirmMineRoundTrip;
+
+  /// 本次往返的宿主是否保证「在首个 await 之前同步读走草稿 / 制卡上下文」。
+  /// 见 [mineEntryByIndex] 的 `releaseWhenPayloadConsumed`。
+  bool _confirmMineReleaseWhenConsumed = false;
+
+  /// 宿主已接手 payload：**只解除超时**，不关窗。三个制卡桥 handler 都在把 payload
+  /// 交出去的那一刻调。
+  void _markConfirmMineHostEntered() =>
+      _confirmMineRoundTrip?.markHostEntered();
+
+  /// 宿主已读走草稿 / 制卡上下文：允许提前关窗的宿主才走到这一步，否则退化成上面那条
+  /// 「只解除超时」。调用点必须在宿主的首个 await **之前**，否则就是在猜。
+  void _markConfirmMinePayloadConsumed() {
+    final ConfirmMineRoundTrip? trip = _confirmMineRoundTrip;
+    if (trip == null) return;
+    if (_confirmMineReleaseWhenConsumed) {
+      trip.markPayloadConsumed();
+    } else {
+      trip.markHostEntered();
+    }
+  }
+
+  /// [releaseWhenPayloadConsumed]：本次往返的宿主是否保证**在首个 `await` 之前**把
+  /// 草稿 / 制卡上下文同步读完。
+  ///
+  /// * 视频车道（`_openSentenceContextDialogForVideo`）传 true：`_onMineEntryImpl`
+  ///   在 `await _mineVideoCard(...)` 之前就把草稿、cue、历史快照读完，连当前帧截图
+  ///   的 Future 都在点击当下同步启动，所以提前关窗不会截到别的帧。
+  /// * 阅读器车道（`base_source_page` 的 `_openSentenceContextDialog`）传 false：它的
+  ///   `onMineFromPopup` 经制卡串行队列入队（TODO-644 / BUG-357），草稿要等前一次制卡
+  ///   整段跑完才被读走；提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿合成——
+  ///   卡制出来、toast 报成功、用户刚调的上下文全丢（BUG-2627 第二轮正是修的这个）。
+  ///   它退回「等落地」这条老路，只是不会再因为宿主慢而误报失败。
+  Future<bool> mineEntryByIndex(
+    int idx, {
+    required bool releaseWhenPayloadConsumed,
+  }) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) {
+      ErrorLogService.instance.log(
+        'DictPopupWebview.mineEntryByIndex',
+        'no webview controller (popup layer gone before the confirm round-trip)',
+        StackTrace.current,
+      );
+      return false;
+    }
+    final ConfirmMineRoundTrip trip =
+        ConfirmMineRoundTrip(preHostTimeout: _kMineRoundTripTimeout);
+    _confirmMineRoundTrip = trip;
+    _confirmMineReleaseWhenConsumed = releaseWhenPayloadConsumed;
+    try {
+      // popup.js 那头的 promise 在 mine 按钮的 onclick（查重 → 取音 → mineEntry
+      // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。
+      final Future<bool> landed = controller
+          .callAsyncJavaScript(
+        functionBody: 'return await (window.fushiPopupMineEntryByIndex'
+            ' ? window.fushiPopupMineEntryByIndex($idx) : false);',
+      )
+          .then<bool>((CallAsyncJavaScriptResult? result) {
+        if (result?.error != null) {
+          ErrorLogService.instance.log(
+            'DictPopupWebview.mineEntryByIndex',
+            'popup.js threw during the confirm round-trip: ${result!.error}',
+            StackTrace.current,
+          );
+          return false;
+        }
+        final Object? raw = result?.value;
+        // WebView 桥按平台可能回 bool / 'true' / 1，统一折成一个判据。
+        final bool clicked =
+            raw == true || raw == 1 || raw.toString().toLowerCase() == 'true';
+        if (!clicked) {
+          ErrorLogService.instance.log(
+            'DictPopupWebview.mineEntryByIndex',
+            'popup.js refused to click entry #$idx (entry or mine button gone)',
+            StackTrace.current,
+          );
+        }
+        return clicked;
+      }, onError: (Object e, StackTrace stack) {
+        // 半销毁的 WebView 通道已摘（MissingPluginException）或对话框关窗后弹窗被
+        // 关栈 / 重建让 promise 死在半路：记日志，按「没点到」回——若此时任务已被
+        // 接受，下面的赛跑早已返回 true，这里只剩一条日志。
+        ErrorLogService.instance
+            .log('DictPopupWebview.mineEntryByIndex', e, stack);
+        return false;
+      });
+      final ConfirmMineOutcome outcome = await trip.run(landed);
+      if (outcome == ConfirmMineOutcome.bridgeTimedOut) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.mineEntryByIndex',
+          'popup bridge did not even reach the host within '
+              '${_kMineRoundTripTimeout.inSeconds}s (half-dead WebView channel); '
+              'this is NOT "the host is slow" — once the host is in there is no deadline',
+          StackTrace.current,
+        );
+      }
+      return outcome.clickedOrAccepted;
+    } finally {
+      if (identical(_confirmMineRoundTrip, trip)) {
+        _confirmMineRoundTrip = null;
+        _confirmMineReleaseWhenConsumed = false;
+      }
+    }
+  }
+
+  /// 收藏夹一键制卡：在**当前已渲染的结果**里为 [expression] / [reading] 挑词条，取回
+  /// 与手动点「+」逐字段相同的制卡 payload（popup.js `fushiPopupBuildMinePayloadFor`
+  /// → `buildMinePayload`）。不点按钮、不走 `mineEntry` 桥、不画任何 UI——落卡与句子
+  /// 媒体由调用方负责（调用方还须先 [writeDictionaryMediaCache] 落外字字节）。
+  ///
+  /// 没有词条 / WebView 已摘 / JS 抛错 / 超时 → null（失败原因写 [ErrorLogService]）。
+  /// 值一律折成字符串，与 `mineEntry` 桥交给宿主的字段形状一致（null → 空串）。
+  Future<Map<String, String>?> buildMinePayloadFor({
+    required String expression,
+    required String reading,
+    Duration timeout = _kMineRoundTripTimeout,
+  }) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return null;
+    try {
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(
+            // 参数经 jsonEncode 内联成 JS 字面量（与本文件其余注入同法），不依赖各平台
+            // `arguments` 通道的实现差异。
+            functionBody: 'return await (window.fushiPopupBuildMinePayloadFor'
+                ' ? window.fushiPopupBuildMinePayloadFor('
+                '${jsonEncode(expression)}, ${jsonEncode(reading)})'
+                ' : null);',
+          )
+          .timeout(timeout);
+      if (result?.error != null) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.buildMinePayloadFor',
+          'popup.js threw while building the payload: ${result!.error}',
+          StackTrace.current,
+        );
+        return null;
+      }
+      final Object? raw = result?.value;
+      if (raw is! Map) return null;
+      return raw.map<String, String>(
+        (dynamic k, dynamic v) => MapEntry<String, String>(
+          k.toString(),
+          v == null ? '' : v.toString(),
+        ),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('DictPopupWebview.buildMinePayloadFor', e, stack);
+      return null;
+    }
   }
 
   Future<void> caretRefresh() async {
@@ -1125,6 +1390,9 @@ JSON.stringify((function(){
     if (oldWidget.hasChildPopup != widget.hasChildPopup) {
       _setHasChildPopupJs(widget.hasChildPopup);
     }
+    if (oldWidget.visibleViewportHeight != widget.visibleViewportHeight) {
+      _setVisibleViewportHeightJs(widget.visibleViewportHeight);
+    }
     // 键表随用户改键而变，故比较 spec 本身而不是「回调有没有」——只比回调会让改键
     // 在弹窗持焦时不生效（BUG-1071 复诉的一半）。
     if ((oldWidget.onHostInputToken == null) !=
@@ -1141,6 +1409,18 @@ JSON.stringify((function(){
     if (_controller == null || !_ready) return;
     _controller!
         .evaluateJavascript(source: 'window.__hasChildPopup = $hasChild;');
+  }
+
+  /// BUG-2734：把 [visibleViewportHeight] 交给 popup.js（门控同 [_setHasChildPopupJs]，
+  /// 未就绪时由 onLoadStop 旁的种子调用补发当前值）。
+  void _setVisibleViewportHeightJs(double? height) {
+    if (_controller == null || !_ready) return;
+    final String value =
+        height != null && height.isFinite && height > 0 ? '$height' : 'null';
+    _controller!.evaluateJavascript(
+      source: 'window.__fushiSetVisibleViewportHeight && '
+          'window.__fushiSetVisibleViewportHeight($value);',
+    );
   }
 
   @override
@@ -1282,6 +1562,16 @@ JSON.stringify((function(){
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''');
+    // 诊断（2026-09-22）：注入量是「查词为什么卡」的直接证据。冷建 WebView 时
+    // staticChanged 恒为真 ⇒ 数十 KB 的静态设置段要跟着每次查词一起发；命中热槽时它
+    // 是 0，只发 entries。两种模式的 static= 一栏一眼可辨。
+    LookupPerfTrace.current?.mark(
+      'push',
+      detail: 'static=${staticSettingsJs.length}B '
+          'extras=${inAppExtrasJs.length}B '
+          'entries=${entriesJs.length}B '
+          'load-more=$isLoadMore token=$renderToken',
+    );
   }
 
   /// BUG-717 ③：in-app 专属的固定注入块。内容与拆分前逐字节一致，只是不再每次
@@ -1949,6 +2239,41 @@ JSON.stringify((function(){
           },
         );
 
+        // BUG-2734：裁剪模式下内容在两次渲染之间变高的复报（见 popup.js
+        // __fushiObserveContentResize）。只更新外壳高度，不碰渲染 token / reveal。
+        controller.addJavaScriptHandler(
+          handlerName: 'popupContentResized',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupContentResized',
+              null,
+              ErrorLogService.instance,
+              () {
+                final Object? rawContent = args.isNotEmpty ? args[0] : null;
+                final double? contentHeight = rawContent is num
+                    ? rawContent.toDouble()
+                    : double.tryParse(rawContent?.toString() ?? '');
+                final Object? rawViewport = args.length > 1 ? args[1] : null;
+                final RenderObject? renderObject = context.findRenderObject();
+                final double? viewportHeight = resolvePopupViewportHeight(
+                  reportedHeight: rawViewport is num
+                      ? rawViewport.toDouble()
+                      : double.tryParse(rawViewport?.toString() ?? ''),
+                  layoutHeight: renderObject is RenderBox &&
+                          renderObject.attached &&
+                          renderObject.hasSize
+                      ? renderObject.size.height
+                      : null,
+                );
+                if (contentHeight != null && viewportHeight != null) {
+                  widget.onContentMetrics?.call(contentHeight, viewportHeight);
+                }
+                return null;
+              },
+            );
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'popupRendered',
           callback: (args) {
@@ -1962,8 +2287,18 @@ JSON.stringify((function(){
                     ? rawToken.toInt()
                     : int.tryParse(rawToken?.toString() ?? '');
                 if (token != null && token != _renderToken) {
+                  // 作废的渲染信号（这一批结果已被更新的一次推送取代）。记一行：
+                  // 「渲染了两遍」本身就是一种可感知的慢，且会让第一遍的 reveal 空等。
+                  videoDiag(
+                    VideoDiagCategory.popup,
+                    VideoDiagLevel.v,
+                    'popupRendered stale token=$token current=$_renderToken',
+                  );
                   return null;
                 }
+                // 诊断（2026-09-22）：JS 侧 renderPopup() 画完的时刻。push → rendered
+                // 这一段是 WebView 内部的真实渲染耗时，与 Dart 侧注入耗时分开计。
+                LookupPerfTrace.current?.mark('rendered');
                 final double? contentHeight = (args.isNotEmpty ? args[0] : null)
                         is num
                     ? (args[0] as num).toDouble()
@@ -2024,8 +2359,14 @@ JSON.stringify((function(){
                 // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
-                final MinePopupResult result =
-                    await widget.onMineEntry!(fields);
+                // BUG-2634：Dart 的 async 函数同步执行到首个 await，所以这一行返回
+                // 时宿主已经跑完它的同步前缀。**只有担保「草稿在首个 await 之前读完」
+                // 的宿主**（`releaseWhenPayloadConsumed`）才据此提前关窗；不担保的
+                // （阅读器经制卡串行队列入队）在内部降级成「只解除超时」。
+                final Future<MinePopupResult> pending =
+                    widget.onMineEntry!(fields);
+                _markConfirmMinePayloadConsumed();
+                final MinePopupResult result = await pending;
                 // TODO-270 D：回传结构化结果（ankiConnect + noteId）给 popup.js，
                 // 让它把刚制的这张标记为「最新可改」第三态。
                 return result.toJson();
@@ -2056,6 +2397,16 @@ JSON.stringify((function(){
                 );
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
+                // BUG-2634 第二轮：这条路（这个词以前制过卡）会弹「覆写 / 新增重复
+                // / 取消」的模态操作单，**无限等用户做选择**，选完还要等整张卡落地。
+                // 所以这里只解除超时、**不**提前关窗：
+                //   * 不解除 → 45 秒计时盖住「等人」，超时后报的正是用户原话那句
+                //     「查词弹窗已经关掉了」，还会把用户正在用的操作单 pop 掉；
+                //   * 提前关窗 → 草稿是用户选完之后、在 mineNew / overwrite 里才被
+                //     读走的，关早了就会被弹窗关栈清掉（= 另一头的静默丢草稿）。
+                // 对话框在整条链路落地时关，这正是这条路该有的样子：用户本来就在
+                // 上面那张模态单里忙着。
+                _markConfirmMineHostEntered();
                 final MinePopupResult result =
                     await widget.onMinedCardAction!(fields);
                 return result.toJson();
@@ -2122,8 +2473,12 @@ JSON.stringify((function(){
                 // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
-                final MinePopupResult result =
-                    await widget.onUpdateEntry!(noteId, fields);
+                // BUG-2634：与 mineEntry 同一条纪律（覆写路径同样在首个 await 之前
+                // 读走草稿），同样按宿主的担保决定是提前关窗还是只解除超时。
+                final Future<MinePopupResult> pending =
+                    widget.onUpdateEntry!(noteId, fields);
+                _markConfirmMinePayloadConsumed();
+                final MinePopupResult result = await pending;
                 return result.toJson();
               }
             } catch (e, stack) {
@@ -2473,6 +2828,15 @@ JSON.stringify((function(){
         _lastSentStaticRevision = null;
         _lastSentInAppExtrasKey = null;
         debugPrint('[popup-perf] webview loadStop $url');
+        // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
+        // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
+        // 300KB 内联 HTML/CSS/JS）的解析成本。
+        LookupPerfTrace.current?.mark('loadStop');
+        videoDiag(
+          VideoDiagCategory.popup,
+          VideoDiagLevel.info,
+          'webview loadStop (cold page parse completed)',
+        );
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.fushiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
@@ -2515,6 +2879,8 @@ JSON.stringify((function(){
         return dictionaryMediaCustomSchemeResponse(request.url);
       },
       // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_deathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(_deathGuard.handleDeath(

@@ -4,16 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_stat_aggregates.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -23,10 +28,17 @@ import 'package:fushi_core/fushi_core.dart';
 /// 阅读、视频、游戏各自拥有独立统计页；本页的时长与次数只从
 /// `galgame_sessions` 事实表 GROUP BY 得出，活动时间线不参与统计。
 class GameStatisticsPage extends BasePage {
-  const GameStatisticsPage({super.key, this.embedded = false});
+  const GameStatisticsPage({
+    super.key,
+    this.embedded = false,
+    this.rangeSelection,
+  });
 
   /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
   final bool embedded;
+
+  /// 统计中心共享的范围选择；null（独立页）时本页自持一份。
+  final ValueNotifier<StatRangeSelection>? rangeSelection;
 
   @override
   BasePageState<GameStatisticsPage> createState() => _GameStatisticsPageState();
@@ -73,16 +85,70 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   GalgameRepository get _repo => appModelNoUpdate.galgameRepo;
 
+  /// 范围选择：统计中心传进来的共享那份，或独立页自持的一份。
+  late final ValueNotifier<StatRangeSelection> _rangeSelection =
+      widget.rangeSelection ??
+          ValueNotifier<StatRangeSelection>(const StatRangeSelection());
+
+  /// 游戏域逐日合计（范围图表 / 所选范围卡 / 学习日历共用）。
+  Map<String, StatDayData> _byDay = <String, StatDayData>{};
+
+  /// 游戏域查词 / 制卡事件，所选范围卡按范围求和。
+  List<(String, int)> _lookupEvents = const <(String, int)>[];
+  List<(String, int)> _minedEvents = const <(String, int)>[];
+
+  /// 当前范围：共享选择 × 本轮今日 × 游戏域最早有数据的一天。
+  StatRange get _range => StatRange.resolve(
+        _rangeSelection.value,
+        todayKey: _window.todayKey,
+        earliestKey: earliestStatDateKey(_byDay.keys),
+      );
+
   @override
   void initState() {
     super.initState();
+    _rangeSelection.addListener(_onRangeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
   void dispose() {
     _midnightReload?.cancel();
+    _rangeSelection.removeListener(_onRangeChanged);
+    if (widget.rangeSelection == null) _rangeSelection.dispose();
     super.dispose();
+  }
+
+  void _onRangeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 所选范围内的按游戏排行：日面事实（galgame_sessions 时长 + hook 字数）按
+  /// 身份分组求和，按时长倒序；库里还在的游戏带显示名 / 封面 / 次数。
+  List<_RangeGame> _rangeGames() {
+    final StatRange range = _range;
+    final List<_RangeGame> rows = <_RangeGame>[];
+    for (final StatIdentityGroup<StatFact> g in groupStatFactsByIdentity(
+      _gameFacts.where((StatFact f) => range.contains(f.dateKey)),
+    )) {
+      final StatFact first = g.rows.first;
+      final GalgameEntry? entry = findGalgameForActivity(
+        _games,
+        mediaKey: first.mediaKey,
+        title: first.title,
+      );
+      final _RangeGame row = _RangeGame(
+        entry: entry,
+        title: displayTitleForGame(entry: entry, rawTitle: first.title),
+      );
+      for (final StatFact f in g.rows) {
+        row.ms += f.ms;
+        row.chars += f.chars;
+      }
+      if (row.ms > 0 || row.chars > 0) rows.add(row);
+    }
+    rows.sort((_RangeGame a, _RangeGame b) => b.ms.compareTo(a.ms));
+    return rows;
   }
 
   /// 到下一个本地午夜整页重聚合（每次加载重新排一次；页面已卸载则不动）。
@@ -126,14 +192,12 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         includeCounters: true,
       );
       final StatCounterFacts counterFacts = facts.counters;
-      _lookup = bucketActivityByDateKey(
-        counterFacts.lookupEvents(source: StatSourceKind.game),
-        now,
-      );
-      _mined = bucketActivityByDateKey(
-        counterFacts.minedEvents(source: StatSourceKind.game),
-        now,
-      );
+      _lookupEvents =
+          counterFacts.lookupEvents(source: StatSourceKind.game).toList();
+      _minedEvents =
+          counterFacts.minedEvents(source: StatSourceKind.game).toList();
+      _lookup = bucketActivityByDateKey(_lookupEvents, now);
+      _mined = bucketActivityByDateKey(_minedEvents, now);
       _favorited = bucketActivityByDateKey(
         counterFacts.favoriteWordEvents(source: StatSourceKind.game),
         now,
@@ -143,6 +207,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         now,
       );
       _gameFacts = facts.dailyGames.toList();
+      _byDay = sumStatDaysByKey(_gameFacts);
       _sessions = facts.sessions.where((StudySession s) => s.isGame).toList();
       _games = games;
       _collectionNamesById = <int, String>{
@@ -208,45 +273,97 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   Widget _buildContent() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return CustomScrollView(
-      slivers: <Widget>[
-        SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(
-          child: buildStatDailyDurationChartSection(context, _aggregate.daily),
+    final List<_RangeGame> games = _rangeGames();
+    // 横屏时会话与按游戏列表拆到右栏（[buildStatAdaptiveScrollView]）。
+    return buildStatAdaptiveScrollView(
+      context,
+      sections: (double _) => <StatPaneSliver>[
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildSummaryCards()),
         ),
-        SliverToBoxAdapter(
-          child: buildStatSessionSection(
-            context,
-            sessions: _sessions,
-            titleOf: _sessionTitle,
-            collectionOf: _sessionCollectionName,
-            onDelete: _deleteSession,
-            onEdit: _editSession,
-            onClearAll: _clearSessions,
-          ),
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildRangeSection()),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.card + tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            child: Text(
-              t.game_stat_by_game,
-              style: Theme.of(context).textTheme.titleMedium,
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: buildStatSessionSection(
+              context,
+              sessions: _sessions,
+              titleOf: _sessionTitle,
+              collectionOf: _sessionCollectionName,
+              onDelete: _deleteSession,
+              onEdit: _editSession,
+              onClearAll: _clearSessions,
             ),
           ),
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (BuildContext context, int index) =>
-                _buildGameRow(_aggregate.byGame[index]),
-            childCount: _aggregate.byGame.length,
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: Text(
+                '${t.game_stat_by_game} · ${formatStatRange(_range)}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
           ),
         ),
-        buildStatTailSliver(context),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (BuildContext context, int index) => _buildGameRow(games[index]),
+              childCount: games.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 范围区块：范围条 → 学习日历 → 范围时长图 → 所选范围卡（与阅读 / 观看 /
+  /// 总览 tab 同形）。
+  Widget _buildRangeSection() {
+    final StatRange range = _range;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        StatRangeBar(
+          range: range,
+          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+        ),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: _window.now,
+          onDaySelected: (String dateKey) => _rangeSelection.value =
+              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+        ),
+        buildStatRangeChartSection(context, range, _byDay),
+        buildStatRangeSummary(
+          context,
+          range,
+          _byDay,
+          extraLines: <StatSummaryLine>[
+            StatSummaryLine(
+              label: t.stat_lookup,
+              value: '${sumStatEventsInRange(_lookupEvents, range)}',
+            ),
+            StatSummaryLine(
+              label: t.stat_mined,
+              value: '${sumStatEventsInRange(_minedEvents, range)}',
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -367,19 +484,31 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     if (deleted && mounted) await _load();
   }
 
-  /// 「按游戏」一行：三域共用的 [buildStatMediaRow]（本行就是它的原型）。
-  Widget _buildGameRow(GalgameEntry game) {
-    final String lastPlayed = game.lastPlayedMs <= 0
+  /// 「按游戏」一行：三域共用的 [buildStatMediaRow]（本行就是它的原型）。右侧
+  /// 时长 = 所选范围内的游玩时长；次数 / 最近游玩是游戏库的累计信息。已删游戏只
+  /// 剩历史统计，没有封面也点不进详情。
+  Widget _buildGameRow(_RangeGame row) {
+    final GalgameEntry? game = row.entry;
+    final String lastPlayed = game == null || game.lastPlayedMs <= 0
         ? '-'
         : statDateKey(DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs));
     return buildStatMediaRow(
       context,
       icon: Icons.sports_esports_outlined,
-      title: game.displayName,
-      meta: '${t.game_stat_sessions}: ${game.sessionCount} · '
-          '${t.game_stat_last_played}: $lastPlayed',
-      trailing: formatStatTime(game.totalPlaySeconds * 1000),
-      onTap: () => unawaited(_openGame(game)),
+      cover: resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: game?.coverPath,
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      ),
+      title: row.title,
+      meta: row.chars > 0
+          ? '${formatStatChars(row.chars)} · '
+              '${t.game_stat_last_played}: $lastPlayed'
+          : '${t.game_stat_last_played}: $lastPlayed',
+      meta2:
+          game == null ? null : '${t.game_stat_sessions}: ${game.sessionCount}',
+      trailing: formatStatTime(row.ms),
+      onTap: game == null ? null : () => unawaited(_openGame(game)),
     );
   }
 
@@ -452,4 +581,14 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     if (!mounted) return;
     await _load();
   }
+}
+
+/// 「按游戏」排行的一行：所选范围内的时长 / 字数 + 库内条目（已删游戏为 null）。
+class _RangeGame {
+  _RangeGame({required this.entry, required this.title});
+
+  final GalgameEntry? entry;
+  final String title;
+  int ms = 0;
+  int chars = 0;
 }

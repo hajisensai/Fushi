@@ -172,6 +172,36 @@ mixin _FushiDbContentMisc
     return rows.map((TypedResult row) => row.read(epubBooks.bookKey)!).toSet();
   }
 
+  /// v115：还没有 ISBN 的 EPUB（`format='epub'` 且 `isbn IS NULL`）的
+  /// `(bookKey, extractDir)`，供引擎侧 `backfillEpubIsbns` 只读 OPF 回填。PDF /
+  /// 漫画不在内：前者没有 OPF，后者的解压树是页图 + manga.json。
+  Future<List<({String bookKey, String extractDir})>>
+      getEpubBooksMissingIsbn() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.extractDir,
+          ])
+          ..where(epubBooks.isbn.isNull() &
+              epubBooks.format.equals(BookFormat.epub.dbValue));
+    final List<TypedResult> rows = await query.get();
+    return <({String bookKey, String extractDir})>[
+      for (final TypedResult row in rows)
+        (
+          bookKey: row.read(epubBooks.bookKey)!,
+          extractDir: row.read(epubBooks.extractDir)!,
+        ),
+    ];
+  }
+
+  /// v115：只写一本书的 ISBN（调用方负责传已规范化的 ISBN-13）。只在列仍为空时
+  /// 写入——回填与用户/导入已写的值并发时不覆盖先到的值。返回受影响行数。
+  Future<int> setEpubBookIsbnIfMissing(String bookKey, String isbn) =>
+      (update(epubBooks)
+            ..where((t) => t.bookKey.equals(bookKey) & t.isbn.isNull()))
+          .write(EpubBooksCompanion(isbn: Value<String?>(isbn)));
+
   /// Inserts a book; returns its bookKey (the primary key) on success.
   ///
   /// v81：companion 未携带（或空）本机稳定 uid 时在此**单点自动生成**——
@@ -254,44 +284,58 @@ mixin _FushiDbContentMisc
 
   /// 写入 / 抬高一条按身份墓碑：同键只在 [deletedAt] 严格更大时覆盖（碑戳只增
   /// 不减，BUG-2220）。本机删除与同步 / 备份落地都经这里。
+  ///
+  /// v105：碑按 [profileId]（null = 当前激活 Profile）分区。
   Future<void> upsertStudySegmentTombstone({
     required String mediaKind,
     required String mediaKey,
     required int deletedAt,
-  }) =>
-      into(studySegmentTombstones).insert(
-        StudySegmentTombstonesCompanion.insert(
-          mediaKind: mediaKind,
-          mediaKey: mediaKey,
-          deletedAt: deletedAt,
-        ),
-        onConflict: DoUpdate(
-          (old) => StudySegmentTombstonesCompanion(deletedAt: Value(deletedAt)),
-          target: [
-            studySegmentTombstones.mediaKind,
-            studySegmentTombstones.mediaKey,
-          ],
-          where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
-        ),
-      );
+    int? profileId,
+  }) async {
+    final int scope = profileId ?? await resolveActiveProfileId();
+    await into(studySegmentTombstones).insert(
+      StudySegmentTombstonesCompanion.insert(
+        profileId: Value(scope),
+        mediaKind: mediaKind,
+        mediaKey: mediaKey,
+        deletedAt: deletedAt,
+      ),
+      onConflict: DoUpdate(
+        (old) => StudySegmentTombstonesCompanion(deletedAt: Value(deletedAt)),
+        target: [
+          studySegmentTombstones.profileId,
+          studySegmentTombstones.mediaKind,
+          studySegmentTombstones.mediaKey,
+        ],
+        where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
+      ),
+    );
+  }
 
   /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。墓碑
   /// 语义（BUG-2214 / BUG-2220）：压制 `startAt < deletedAt` 的段——删除之后开始的
   /// 新段（时钟下一次开段）自然存活，墓碑不需要清、也永不退场；碑戳只增不减
   /// （重复删只抬高、绝不倒退）。
+  ///
+  /// v105：只删 [profileId]（null = 当前激活 Profile）的段、只立该 Profile 的碑。
   Future<int> deleteStudySegmentsForMedia({
     required String mediaKind,
     required String mediaKey,
+    int? profileId,
   }) =>
       transaction(() async {
+        final int scope = profileId ?? await resolveActiveProfileId();
         final int removed = await (delete(studySegments)
               ..where((t) =>
-                  t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
+                  t.profileId.equals(scope) &
+                  t.mediaKind.equals(mediaKind) &
+                  t.mediaKey.equals(mediaKey)))
             .go();
         await upsertStudySegmentTombstone(
           mediaKind: mediaKind,
           mediaKey: mediaKey,
           deletedAt: DateTime.now().millisecondsSinceEpoch,
+          profileId: scope,
         );
         return removed;
       });
@@ -300,12 +344,16 @@ mixin _FushiDbContentMisc
   /// **每个身份**逐一立碑（`deletedAt = now`）再删行——否则互联 / 云同步下次聚合把
   /// 对端持有的全部历史整批回灌。新墓碑语义只压制 `startAt < deletedAt` 的段，立碑
   /// 不再「毒化身份空间」：之后再读同一本书开的新段照常存活。返回删掉的段数。
-  Future<int> clearStudySegments(String mediaKind) =>
+  ///
+  /// v105：只清 [profileId]（null = 当前激活 Profile）的段与碑。
+  Future<int> clearStudySegments(String mediaKind, {int? profileId}) =>
       transaction(() async {
+        final int scope = profileId ?? await resolveActiveProfileId();
         final int now = DateTime.now().millisecondsSinceEpoch;
         final List<QueryRow> keys = await customSelect(
-          'SELECT DISTINCT media_key FROM study_segments WHERE media_kind = ?',
-          variables: [Variable.withString(mediaKind)],
+          'SELECT DISTINCT media_key FROM study_segments '
+          'WHERE profile_id = ? AND media_kind = ?',
+          variables: [Variable.withInt(scope), Variable.withString(mediaKind)],
           readsFrom: {studySegments},
         ).get();
         for (final QueryRow row in keys) {
@@ -313,10 +361,12 @@ mixin _FushiDbContentMisc
             mediaKind: mediaKind,
             mediaKey: row.read<String>('media_key'),
             deletedAt: now,
+            profileId: scope,
           );
         }
         return (delete(studySegments)
-              ..where((t) => t.mediaKind.equals(mediaKind)))
+              ..where((t) =>
+                  t.profileId.equals(scope) & t.mediaKind.equals(mediaKind)))
             .go();
       });
 
@@ -325,14 +375,18 @@ mixin _FushiDbContentMisc
   /// 聚合 merge 同 uid 取 updatedAt 大者）自然传到对端，不需要 per-uid 墓碑或新 wire
   /// 字段；读取端对零行本就无贡献（活动流过滤、日面求和为 0、最近观看排除）。
   /// 返回改写的行数。
+  ///
+  /// v105：只写零当前激活 Profile 的段（时段明细里看到的就是这一份）。
   Future<int> zeroStudySegmentsOnDays({
     required String mediaKind,
     required String mediaKey,
     required Set<String> dateKeys,
-  }) {
-    if (dateKeys.isEmpty || mediaKey.isEmpty) return Future<int>.value(0);
+  }) async {
+    if (dateKeys.isEmpty || mediaKey.isEmpty) return 0;
+    final int profileId = await resolveActiveProfileId();
     return (update(studySegments)
           ..where((t) =>
+              t.profileId.equals(profileId) &
               t.mediaKind.equals(mediaKind) &
               t.mediaKey.equals(mediaKey) &
               t.dateKey.isIn(dateKeys)))
@@ -423,7 +477,9 @@ mixin _FushiDbContentMisc
               .write(row);
         }
         for (final StudySegmentsCompanion row in insertSegments) {
-          await into(studySegments).insertOnConflictUpdate(row);
+          await into(studySegments).insertOnConflictUpdate(
+            await _stampStudySegmentProfile(row),
+          );
         }
         if (gameSessionId != null &&
             gameStartMs != null &&
@@ -463,13 +519,19 @@ mixin _FushiDbContentMisc
           mediaKey: mediaKey,
           dateKeys: dateKeys,
         );
+        // v105：游戏骨架行按当前 Profile 删；legacy 行只有归属 Profile 看得见，
+        // 别的 Profile 的 sheet 里根本没有这几行可删（不再另设门）。
+        final int profileId = await resolveActiveProfileId();
+        final bool legacyVisible = await legacyStatsVisibleTo(profileId);
         switch (mediaKind) {
           case kActivityMediaBook:
+            if (!legacyVisible) break;
             await (delete(readingStatistics)
                   ..where(
                       (t) => t.title.equals(title) & t.dateKey.isIn(dateKeys)))
                 .go();
           case kActivityMediaVideo:
+            if (!legacyVisible) break;
             await (delete(videoWatchStatistics)
                   ..where((t) =>
                       (mediaKey.isNotEmpty
@@ -482,9 +544,12 @@ mixin _FushiDbContentMisc
             if (mediaKey.isNotEmpty) {
               await (delete(galgameSessions)
                     ..where((t) =>
-                        t.gameId.equals(mediaKey) & t.dateKey.isIn(dateKeys)))
+                        t.profileId.equals(profileId) &
+                        t.gameId.equals(mediaKey) &
+                        t.dateKey.isIn(dateKeys)))
                   .go();
             }
+            if (!legacyVisible) break;
             await (delete(activityEvents)
                   ..where((t) =>
                       t.eventType.equals(kActivityGame) &
@@ -581,6 +646,21 @@ mixin _FushiDbContentMisc
                 ..where(
                     (t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
               .go();
+          // 远端 host-playlist 的按集并集（`#ep<n>` 后缀）一并忘掉（BUG-2587）。
+          // uid 形如 `video/<文件名>`，可含 LIKE 通配 `_` / `%`：LIKE 只粗筛，
+          // 精确前缀在 Dart 里复核，按精确键删，不误删邻名视频的按集键。
+          final String episodePrefix =
+              '${videoWatchCoveragePrefKey(bookUid)}#ep';
+          final List<String> episodeKeys = (await (select(preferences)
+                    ..where((t) => t.key.like('$episodePrefix%')))
+                  .get())
+              .map((PreferenceRow r) => r.key)
+              .where((String k) => k.startsWith(episodePrefix))
+              .toList();
+          if (episodeKeys.isNotEmpty) {
+            await (delete(preferences)..where((t) => t.key.isIn(episodeKeys)))
+                .go();
+          }
         }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
         // wire title 粒度的已知限制，见方法 doc）。
@@ -679,6 +759,32 @@ mixin _FushiDbContentMisc
         }
       });
 
+  /// 删除某游戏（[gameId] = `galgames.id`）的**纯统计**：v92 `study_segments` 段
+  /// （按身份立碑防互联/云同步复活）、当前 Profile 的游玩会话 `galgame_sessions`
+  /// （游戏时长真相源）与 legacy 活动表里 v92 前的 hook 字数行。
+  ///
+  /// 与 [deleteReadingStatisticsForTitle] 同一「只清纯统计」边界：不动游戏本体行、
+  /// 收藏、制卡历史。游戏没有 per-game 查词/制卡计数行（lookup_mining_counters 只有
+  /// book / video 两个 sourceType），故无需清。legacy 行只在当前 Profile 看得见时
+  /// 才清（v105，与 [deleteStatFactsOnDays] 同一判据）。
+  Future<void> deleteGameStatisticsForId(String gameId) =>
+      transaction(() async {
+        if (gameId.isEmpty) return;
+        await deleteStudySegmentsForMedia(
+            mediaKind: kActivityMediaGame, mediaKey: gameId);
+        final int profileId = await resolveActiveProfileId();
+        await (delete(galgameSessions)
+              ..where((t) =>
+                  t.profileId.equals(profileId) & t.gameId.equals(gameId)))
+            .go();
+        if (!await legacyStatsVisibleTo(profileId)) return;
+        await (delete(activityEvents)
+              ..where((t) =>
+                  t.eventType.equals(kActivityGame) &
+                  t.mediaKey.equals(gameId)))
+            .go();
+      });
+
   /// TODO-1322: 一键清空**全部阅读统计**（book 域纯统计数字）：阅读时长 / 字数
   /// (reading_statistics)、按小时时段日志 (reading_hourly_logs)、per-book 查词 / 制卡
   /// 计数 (lookup_mining_counters 的 book 行) 与全局按日制卡计数 (mining_statistics 的
@@ -693,8 +799,14 @@ mixin _FushiDbContentMisc
   /// 阻断以后重新导入这些书的统计；legacy 行云同步下次聚合仍可能从云端 MAX-union 回灌
   /// （旧数据的旧口径，已知边界）。v92 段则**逐身份立碑**（[clearStudySegments]，
   /// BUG-2215）：新墓碑语义只压制清空之前开始的段，之后再读照常计。
+  ///
+  /// v105：v92 段只清当前激活 Profile 的；legacy 家族与计数面没有 Profile 维度，
+  /// 只在当前 Profile 看得见 legacy 行（[legacyStatsVisibleTo]）时才连带清——
+  /// 别的 Profile 看不见的历史不能被它的「清空全部」抹掉。
   Future<void> clearAllReadingStatistics() => transaction(() async {
-        await clearStudySegments(kActivityMediaBook);
+        final int profileId = await resolveActiveProfileId();
+        await clearStudySegments(kActivityMediaBook, profileId: profileId);
+        if (!await legacyStatsVisibleTo(profileId)) return;
         await delete(readingStatistics).go();
         await delete(readingHourlyLogs).go();
         await (delete(lookupMiningCounters)
@@ -710,12 +822,18 @@ mixin _FushiDbContentMisc
   /// 计数 (lookup_mining_counters 的 video 行) 与全局按日制卡计数 (mining_statistics 的
   /// video 行)。与 [clearAllReadingStatistics] 对称，同样不动收藏 / 制卡历史 / 视频本体；
   /// legacy 家族不写 title 墓碑，v92 段逐身份立碑（[clearStudySegments]，BUG-2215）。
+  ///
+  /// v105：同 [clearAllReadingStatistics]——段按当前 Profile 清，legacy / 计数面
+  /// 只在当前 Profile 看得见 legacy 行时连带清。覆盖并集偏好不进 Profile 排除表，
+  /// 本就随 Profile 快照各存各的，直接清 live 行即只清当前 Profile 的那份。
   Future<void> clearAllVideoStatistics() => transaction(() async {
-        await clearStudySegments(kActivityMediaVideo);
+        final int profileId = await resolveActiveProfileId();
+        await clearStudySegments(kActivityMediaVideo, profileId: profileId);
         // BUG-2108：清统计 = 全部当没看过，覆盖并集一并清。
         await (delete(preferences)
               ..where((t) => t.key.like('$kVideoWatchCoveragePrefPrefix%')))
             .go();
+        if (!await legacyStatsVisibleTo(profileId)) return;
         await delete(videoWatchStatistics).go();
         await delete(videoHourlyLogs).go();
         await (delete(lookupMiningCounters)
@@ -1070,6 +1188,9 @@ mixin _FushiDbContentMisc
           await (delete(bookmarks)..where((t) => t.bookUid.equals(bookUid)))
               .go();
           await (delete(bookCustomCss)..where((t) => t.bookUid.equals(bookUid)))
+              .go();
+          await (delete(mangaReaderOverrides)
+                ..where((t) => t.bookUid.equals(bookUid)))
               .go();
           await (delete(revealedImages)
                 ..where((t) => t.bookUid.equals(bookUid)))

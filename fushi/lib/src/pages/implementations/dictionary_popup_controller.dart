@@ -3,6 +3,8 @@ import 'dart:collection';
 
 import 'package:flutter/widgets.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
@@ -73,6 +75,17 @@ class DictionaryPopupEntry {
   /// 一翻可见就露白屏一瞬」。仅冷启动（新建 WebView）的嵌套/非热槽层需要：热槽
   /// WebView 已预热渲染就绪，立即可见无白屏。[revealRendered] 命中后清回 false。
   bool revealOnRender = false;
+
+  /// 本层这一次翻可见时，屏上正画着的搜索期加载占位卡已经显示了多久；null = 翻可见时
+  /// 没有占位卡（嵌套查词等）。
+  ///
+  /// 占位卡已经是「弹窗出现」本身（它自带入场淡入）；真弹窗接替它时若再从透明度 0
+  /// 淡入，占位卡同一帧撤掉、真弹窗还半透明，中间就露出一段透底的空框——视频页换词时
+  /// 用户看到的「先闪一个半透明空壳」；直接满不透明又会让快速查词「跳」一下。宿主据此
+  /// 让本层接着占位卡的淡入进度淡完（`popupEntranceProgressAfter`）。每次翻可见
+  /// （[DictionaryPopupController.revealRendered] / 兜底强制翻 / [DictionaryPopupController.show]）
+  /// 都重新判定，不跨查词沿用。
+  Duration? searchPlaceholderShownFor;
 
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
@@ -235,7 +248,19 @@ class DictionaryPopupController extends ChangeNotifier {
   void _retireEntries(Iterable<DictionaryPopupEntry> removed) {
     _cancelRevealTimers(removed);
     for (final DictionaryPopupEntry e in removed) {
-      if (e.isWarmSlot || lowMemory) continue;
+      if (e.isWarmSlot || lowMemory) {
+        if (lowMemory && !e.isWarmSlot) {
+          // 诊断（2026-09-22）：低内存下嵌套层的 WebView 键直接丢弃，不停驻。下一次
+          // 嵌套查词必然冷建——这是小内存模式「查词很慢」的第二条来源（第一条是没有
+          // 热槽），两者独立，日志里要分得开。
+          videoDiag(
+            VideoDiagCategory.warmSlot,
+            VideoDiagLevel.v,
+            'realm discarded (low-memory) parked=${_parkedRealms.length}',
+          );
+        }
+        continue;
+      }
       _parkedRealms.remove(e.webViewKey);
       _parkedRealms.add(e.webViewKey);
       if (_parkedRealms.length > kMaxParkedRealms) {
@@ -304,9 +329,24 @@ class DictionaryPopupController extends ChangeNotifier {
 
   Rect? get pendingRect => isSearchingUi ? _pendingRectRaw : null;
 
+  /// 上一帧屏上若画着 [e] 的搜索期加载占位卡，返回它已显示多久，否则 null（翻可见前
+  /// 判定，见 [DictionaryPopupEntry.searchPlaceholderShownFor]）。读原始字段而非派生的
+  /// [pendingRect]：空结果路径先 [fillResult] 清掉 `isSearching` 再 [show]，那一刻
+  /// 派生值已落 false，可占位卡要到这次重建才撤。
+  Duration? _searchPlaceholderElapsedFor(DictionaryPopupEntry e) =>
+      identical(_searchTarget, e) && _pendingRectRaw != null
+          ? _searchUiClock.elapsed
+          : null;
+
+  /// [beginSearchUi] 起表：占位卡（及其入场淡入）从那一刻开始画。
+  final Stopwatch _searchUiClock = Stopwatch();
+
   void beginSearchUi(Rect rect, DictionaryPopupEntry target) {
     _searchTarget = target;
     _pendingRectRaw = rect;
+    _searchUiClock
+      ..reset()
+      ..start();
     notifyListeners();
   }
 
@@ -321,7 +361,18 @@ class DictionaryPopupController extends ChangeNotifier {
   /// [seedResult] 让宿主放一个占位结果；缺省即 [kPopupSearchingPlaceholderResult]
   /// canonical 单例（与搜索期占位同一对象，seed→查词的 result 身份不变、不触发重推）。
   void seedWarmSlot({DictionarySearchResult? seedResult}) {
-    if (lowMemory || _entries.isNotEmpty) return;
+    if (lowMemory || _entries.isNotEmpty) {
+      // 诊断（2026-09-22）：不 seed 的两种原因后果完全不同——`low-memory` 是「此后每次
+      // 查词都冷建 WebView」，`already-seeded` 只是重复调用的幂等返回。把原因记下来，
+      // 别让排查时把两者混为一谈。
+      final String reason = lowMemory ? 'low-memory' : 'already-seeded';
+      videoDiag(
+        VideoDiagCategory.warmSlot,
+        VideoDiagLevel.v,
+        'seed skipped reason=$reason',
+      );
+      return;
+    }
     _entries.add(DictionaryPopupEntry(
       searchTerm: '',
       selectionRect: Rect.zero,
@@ -366,8 +417,22 @@ class DictionaryPopupController extends ChangeNotifier {
     DictionarySearchResult? initialResult,
   }) {
     onLookupStarted?.call();
+    final bool warmHit =
+        reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot;
+    final int stackBefore = _entries.length;
+    // 诊断（2026-09-22）：**这一分叉就是「查词为什么卡」的答案所在**。命中热槽 ⇒
+    // 复用已冷加载完的 WebView，只剩注入 + renderPopup；未命中 ⇒ 要么接管一个停驻
+    // realm，要么彻底冷建（解析约 300KB 内联 HTML/CSS/JS + 等 onLoadStop + 全量静态段
+    // 重注入）。后两者的毫秒差是两个数量级，必须能在日志里直接读出来。
+    //
+    // 三态**只能在 [_takeRealmKey] 调用前的那一刻**判定：`replaceStack` 路径会先
+    // [_retireEntries] 把当前这层的键停驻进池，随后 `_takeRealmKey()` 又把它接管回来。
+    // 在方法开头按池空与否判会把这种「先存后取」误报成 cold-create——会撒谎的诊断比
+    // 没有诊断更糟。
+    final String warmMode;
     final DictionaryPopupEntry e;
-    if (reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot) {
+    if (warmHit) {
+      warmMode = 'hit';
       if (_entries.length > 1) {
         _retireEntries(_entries.sublist(1));
         _entries.removeRange(1, _entries.length);
@@ -388,6 +453,7 @@ class DictionaryPopupController extends ChangeNotifier {
         _retireEntries(_entries);
         _entries.clear();
       }
+      warmMode = _parkedRealms.isEmpty ? 'cold-create' : 'parked-realm';
       e = DictionaryPopupEntry(
         searchTerm: term,
         selectionRect: rect,
@@ -397,6 +463,14 @@ class DictionaryPopupController extends ChangeNotifier {
       )..isSearching = true;
       _entries.add(e);
     }
+    videoDiag(
+      VideoDiagCategory.warmSlot,
+      warmHit ? VideoDiagLevel.v : VideoDiagLevel.info,
+      'beginTop warm=$warmMode low-memory=$lowMemory '
+      'stack=$stackBefore parked=${_parkedRealms.length} '
+      'reuse-requested=$reuseWarmSlot',
+    );
+    LookupPerfTrace.current?.mark('warm', detail: 'mode=$warmMode');
     notifyListeners();
     _notifyLookupStackDepth();
     return e;
@@ -457,6 +531,10 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 清空整个栈（宿主重置/销毁用；不保留热槽，也不保留停驻 realm）。
   void clear() {
     if (_entries.isEmpty && _parkedRealms.isEmpty) return;
+    // 在途的查词计时随栈一起收尾：不收，游标悬着，下一次别的宿主（阅读器家族
+    // 不 begin）的 revealRendered 会把它当自己的收尾——打出一行「视频页旧词
+    // total=几分钟」甚至假 warn，会撒谎的诊断比没有诊断更糟。
+    LookupPerfTrace.current?.finish('dismissed');
     _cancelRevealTimers(_entries);
     _entries.clear();
     _parkedRealms.clear();
@@ -567,6 +645,7 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。
   void show(DictionaryPopupEntry e) {
     _cancelRevealTimer(e);
+    e.searchPlaceholderShownFor = _searchPlaceholderElapsedFor(e);
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
@@ -618,8 +697,21 @@ class DictionaryPopupController extends ChangeNotifier {
       // 到时仍挂起（没收到 popupRendered，也没被显示/裁掉）→ 强制翻可见。
       _revealFailsafeTimers.remove(e);
       if (!e.revealOnRender || !_entries.contains(e)) return;
+      e.searchPlaceholderShownFor = _searchPlaceholderElapsedFor(e);
       e.visible = true;
       e.revealOnRender = false;
+      // 诊断（2026-09-22）：走到这里就是用户说的那个「闪」——渲染信号没在兜底超时内
+      // 到达，弹窗被强制翻可见，内容随后才画上去，于是先露一下空壳再重画。冷建
+      // WebView（小内存模式的必经之路）正是最容易撞上这个兜底的情形。提级到 warn，
+      // grep 一眼可见。
+      videoDiag(
+        VideoDiagCategory.popup,
+        VideoDiagLevel.warn,
+        'forced reveal after ${timeout.inMilliseconds}ms '
+        '(popupRendered never arrived) '
+        'term=${LookupPerfTrace.redactTerm(e.searchTerm)}',
+      );
+      LookupPerfTrace.current?.finish('forced-reveal');
       notifyListeners();
       _notifyLookupStackDepth();
       onForcedReveal?.call();
@@ -647,8 +739,11 @@ class DictionaryPopupController extends ChangeNotifier {
   bool revealRendered(DictionaryPopupEntry e) {
     if (!e.revealOnRender) return false;
     _cancelRevealTimer(e);
+    e.searchPlaceholderShownFor = _searchPlaceholderElapsedFor(e);
     e.visible = true;
     e.revealOnRender = false;
+    LookupPerfTrace.current?.mark('reveal');
+    LookupPerfTrace.current?.finish('revealed');
     notifyListeners();
     _notifyLookupStackDepth();
     return true;
@@ -658,6 +753,9 @@ class DictionaryPopupController extends ChangeNotifier {
   /// index>0：裁掉该层及之上，保留下层。
   void dismissAt(int index) {
     if (index < 0 || index >= _entries.length) return;
+    // 同 [clear]：fill 之后、popupRendered 之前被关掉（Esc / 点 barrier，冷建路径
+    // 下这窗口有上百 ms ~ 1.8 s），既走不到 abandoned 也走不到 revealed。
+    LookupPerfTrace.current?.finish('dismissed');
     if (index == 0) {
       final DictionaryPopupEntry first = _entries.first;
       if (first.isWarmSlot && !lowMemory) {

@@ -106,6 +106,11 @@ class ShortcutDefaults {
     ShortcutAction.readerOpenAudiobook: _kb([
       _key(LogicalKeyboardKey.keyB),
     ]),
+    // 停 / 续阅读统计计时：键盘默认 P（reader+audiobook co-active 组内未被占用；
+    // video 组的 P 是播放/暂停，属不同组、绝不同时激活）。手柄留空，用户可自绑。
+    ShortcutAction.readerToggleStudyClock: _kb([
+      _key(LogicalKeyboardKey.keyP),
+    ]),
     // 「只关词典、绝不退出」的可选专用动作：**默认空绑定**。
     //
     // Esc 已交给 universal 的 globalBack（一键阶梯：有词典先关词典、没词典才退书），
@@ -346,11 +351,28 @@ class ShortcutDefaults {
     ShortcutAction.videoScreenshot: _kb([
       _key(LogicalKeyboardKey.keyS),
     ]),
+    // Shift+S：与裸 S 同指法、只多一个修饰键，"带字幕的那一版截图" 正好对应
+    // "同一个动作的加强版" 这个修饰键直觉。video co-active 组内 Shift+S 未被占用。
+    ShortcutAction.videoScreenshotSubtitled: _kb([
+      _key(LogicalKeyboardKey.keyS, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleFullscreen: _kb([
       _key(LogicalKeyboardKey.keyF),
       _key(LogicalKeyboardKey.f12),
     ], [
       _gRT
+    ]),
+    // 小窗模式：W = window，video co-active 组内 W 此前完全空闲（全组唯一未占的
+    // 助记字母）。手柄留空——小窗是桌面/手机的窗口概念，手柄场景（电视/掌机）
+    // 用不上，用户要的话可以自绑。
+    ShortcutAction.videoToggleMiniWindow: _kb([
+      _key(LogicalKeyboardKey.keyW),
+    ]),
+    // 小窗控件显隐：Shift+M。裸 M 是静音（video 组内已占），而阅读器 / 漫画的
+    // 「切换界面」正是裸 M（readerToggleChrome / mangaToggleChrome）——Shift+M 既
+    // 避开冲突，又留住跨页面的肌肉记忆。手柄留空，理由同 videoToggleMiniWindow。
+    ShortcutAction.videoToggleMiniChrome: _kb([
+      _key(LogicalKeyboardKey.keyM, {ModifierKey.shift}),
     ]),
     ShortcutAction.videoToggleSubtitleList: _kb([
       _key(LogicalKeyboardKey.keyL),
@@ -571,6 +593,12 @@ class ShortcutDefaults {
     for (final entry in _desktop.entries)
       entry.key: ShortcutBindingSet(
         keyboardBindings: entry.value.keyboardBindings.map((b) {
+          // app 外全局查词热键**不做** Ctrl→Meta：⌘⌥D 是 macOS 系统级「打开/关闭
+          // Dock 隐藏」快捷键，系统热键先于应用的 RegisterEventHotKey 处理，
+          // 应用永远收不到。Ctrl⌥D 在 macOS 上空闲，保持与 Windows 同键。
+          if (entry.key == ShortcutAction.globalExternalLookup) {
+            return b;
+          }
           if (b.modifiers.contains(ModifierKey.ctrl)) {
             final newMods = Set<ModifierKey>.of(b.modifiers)
               ..remove(ModifierKey.ctrl)

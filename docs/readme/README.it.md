@@ -149,6 +149,7 @@ Fushi si basa sui seguenti progetti ed ecosistema:
 | Progetto | Descrizione |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | Ecosistema di estensioni per fonti manga |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Ecosistema di estensioni per fonti anime (extensions-lib 14–16, stesso runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime delle estensioni manga per desktop |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI del runtime delle fonti manga |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Riferimento del bridge dei sottotitoli in streaming per l'estensione del browser |

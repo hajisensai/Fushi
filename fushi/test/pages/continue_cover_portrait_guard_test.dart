@@ -110,24 +110,40 @@ void main() {
   });
 
   test('合集详情单集缩略图：走 PortraitCoverImage 横槽自适应', () {
-    final String source = File(collectionDetailPath).readAsStringSync();
-    final String body =
-        _stripLineComments(_functionSource(source, 'Widget _episodeThumb('));
+    // 集缩略图的视觉已随共享布局（本地系列 + 媒体服务器详情页同一套）搬到
+    // `collectionEpisodeThumb`；页面只负责把该集自己的封面 provider 喂进去。
+    // 两段各锁一半：页面必须调共享函数，共享函数必须走 PortraitCoverImage 横槽。
+    final String page = _stripLineComments(
+      File(collectionDetailPath).readAsStringSync(),
+    );
+    expect(
+      page,
+      contains('collectionEpisodeThumb(context, _episodeCover('),
+      reason: '本地详情页集缩略图必须消费共享 collectionEpisodeThumb，不得自己再画',
+    );
+    final String layout = File(
+      'lib/src/media/collections/collection_detail_layout.dart',
+    ).readAsStringSync();
+    final int start = layout.indexOf('Widget collectionEpisodeThumb(');
+    final int end = layout.indexOf('Widget collectionEpisodeThumbPlaceholder(');
+    expect(start, isNonNegative, reason: 'missing collectionEpisodeThumb');
+    expect(end, greaterThan(start));
+    final String body = _stripLineComments(layout.substring(start, end));
     expect(
       body,
       contains('PortraitCoverImage('),
-      reason: '_episodeThumb 必须走 PortraitCoverImage（BUG-1299）',
+      reason: 'collectionEpisodeThumb 必须走 PortraitCoverImage（BUG-1299）',
     );
     expect(
       body,
       contains('landscapeSlot: true'),
-      reason: '_episodeThumb 是 16:9 横槽，必须声明 landscapeSlot——否则竖版'
-          '海报仍按竖槽语义 cover 硬裁',
+      reason: 'collectionEpisodeThumb 是 16:9 横槽，必须声明 landscapeSlot——否则'
+          '竖版海报仍按竖槽语义 cover 硬裁',
     );
     expect(
       body,
       isNot(contains('BoxFit.cover')),
-      reason: '_episodeThumb 不得再用 BoxFit.cover 硬裁竖版海报',
+      reason: 'collectionEpisodeThumb 不得再用 BoxFit.cover 硬裁竖版海报',
     );
   });
 }

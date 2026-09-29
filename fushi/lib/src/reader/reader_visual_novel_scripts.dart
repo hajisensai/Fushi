@@ -349,7 +349,7 @@ $imageRevealSemantics
     this.root = root;
     this.options = options || {};
     this.textEntries = [];
-    this.totalMatchableChars = 0;
+    this.totalStudyChars = 0;
     this.totalRawChars = 0;
     this.sourceTextOffsets = new WeakMap();
     this.sourceTextRawOffsets = new WeakMap();
@@ -383,6 +383,7 @@ $imageRevealSemantics
 
       var count = 0;
       var rawCount = 0;
+      var matchableCount = 0;
       this.walkTextNodes(this.root, (function(node) {
         this.sourceTextOffsets.set(node, count);
         this.sourceTextRawOffsets.set(node, rawCount);
@@ -393,19 +394,45 @@ $imageRevealSemantics
           rubyRoot: this.rubyRootForTextNode(node),
           startChar: count,
           startRaw: rawCount,
+          startMatchable: matchableCount,
           text: node.textContent || ''
         };
         count += countChars(entry.text);
         rawCount += countRawChars(entry.text);
+        matchableCount += normalizeText(entry.text).length;
         entry.endChar = count;
         entry.endRaw = rawCount;
         this.textEntries.push(entry);
         this.updateSourceNodeStats(node, entry);
       }).bind(this));
 
-      this.totalMatchableChars = count;
+      this.totalStudyChars = count;
       this.totalRawChars = rawCount;
       this.mediaNodeEntries = this.collectMediaNodeEntries();
+    },
+
+    // Audio uses normalized UTF-16 offsets in the complete source chapter.
+    // Raw clone/screen offsets count code points, while startChar counts study
+    // units; neither can be passed directly to the audiobook cue index.
+    matchableOffsetForRawOffset: function(rawOffset) {
+      var target = Number(rawOffset);
+      var entries = this.textEntries;
+      if (!Number.isFinite(target) || target < 0 || !entries.length) return null;
+      var low = 0;
+      var high = entries.length - 1;
+      while (low < high) {
+        var mid = Math.ceil((low + high) / 2);
+        if (entries[mid].startRaw <= target) low = mid;
+        else high = mid - 1;
+      }
+      var entry = entries[low];
+      var remaining = Math.max(0, target - entry.startRaw);
+      var end = 0;
+      while (remaining > 0 && end < entry.text.length) {
+        end += String.fromCodePoint(entry.text.codePointAt(end)).length;
+        remaining--;
+      }
+      return entry.startMatchable + normalizeText(entry.text.slice(0, end)).length;
     },
 
     indexSourcePreorder: function() {
@@ -742,8 +769,8 @@ $imageRevealSemantics
       var walker = this.reader.createWalker();
       var node;
       while (node = walker.nextNode()) {
-        var nodeStart = this.reader.nodeStartOffsets.get(node);
-        if (nodeStart === undefined) continue;
+        var nodeStart = this.reader.getMatchableOffset(node, 0);
+        if (nodeStart === null) continue;
         var text = node.textContent || '';
         var cursor = nodeStart;
         var offset = 0;
@@ -766,7 +793,7 @@ $imageRevealSemantics
             } else {
               flushSegment();
             }
-            cursor += 1;
+            cursor += char.length;
             if (cursor === end) flushSegment();
           } else if (segment) {
             segment.end = next;
@@ -917,12 +944,30 @@ window.fushiReader = {
     this.nodeStartOffsets = offsets;
     this.nodeStartRawOffsets = rawOffsets;
   },
+  getMatchableOffset: function(node, offset) {
+    var rawStart = this.nodeStartRawOffsets.get(node);
+    if (rawStart === undefined || !this.contentStream) return null;
+    var prefix = (node.textContent || '').slice(0, offset);
+    return this.contentStream.matchableOffsetForRawOffset(
+      rawStart + this.countRawChars(prefix));
+  },
   waitForImages: function() {
     var images = this.sourceRoot && this.sourceRoot.querySelectorAll
       ? Array.from(this.sourceRoot.querySelectorAll('img'))
       : [];
     var promises = images.map(function(img) {
       return new Promise(function(resolve) {
+        // VN keeps the source chapter in a detached root while it builds the
+        // screen descriptors. A lazy image in a detached tree is not eligible
+        // for intersection-based loading, so its load/error event never fires
+        // and the chapter ready promise remains pending forever. Make the
+        // loading policy explicit before waiting; eager images still resolve
+        // through the normal load/error path and already-complete images take
+        // the fast path below.
+        if (img && img.getAttribute && img.getAttribute('loading') === 'lazy' &&
+            img.setAttribute) {
+          img.setAttribute('loading', 'eager');
+        }
         if (img.complete) {
           resolve();
           return;
@@ -1061,7 +1106,7 @@ $sharedInitViewport
     }
     this.contentStream = contentStreamFactory(this.sourceRoot);
     this.rangeMap = rangeMapFactory(this);
-    this.totalChapterChars = this.contentStream.totalMatchableChars;
+    this.totalChapterChars = this.contentStream.totalStudyChars;
   },
   buildScreens: function() {
     var mode = String(this.screenMode || '').toLowerCase();
@@ -1199,12 +1244,6 @@ $sharedInitViewport
     var end = this.screenEndCharCount(screen);
     return offset >= start && offset < end;
   },
-  screenIntersectsCharRange: function(screen, start, end) {
-    var screenStart = this.screenStartCharCount(screen);
-    var screenEnd = this.screenEndCharCount(screen);
-    if (end <= start) return start >= screenStart && start <= screenEnd;
-    return end > screenStart && start < screenEnd;
-  },
   assignScreenProgressAnchors: function() {
     if (!this.screens || !this.screens.length) return;
     if (!this.totalChapterChars) {
@@ -1307,18 +1346,18 @@ $sharedInitViewport
       var cueEnd = this.sentenceAudioCueEnd(cue);
       var zeroLengthCue = cueEnd <= cueStart;
       while (searchStart < screens.length) {
-        var screenEnd = this.screenEndCharCount(screens[searchStart]);
+        var screenEnd = this.screenMatchableOffset(screens[searchStart], true);
         if (zeroLengthCue) {
           if (cueStart <= screenEnd) break;
-        } else if (cueEnd > this.screenStartCharCount(screens[searchStart])) {
+        } else if (cueEnd > this.screenMatchableOffset(screens[searchStart], false)) {
           if (cueStart < screenEnd) break;
         }
         searchStart += 1;
       }
       for (var screenIndex = searchStart; screenIndex < screens.length; screenIndex++) {
         var screen = screens[screenIndex];
-        var screenStart = this.screenStartCharCount(screen);
-        var screenEnd = this.screenEndCharCount(screen);
+        var screenStart = this.screenMatchableOffset(screen, false);
+        var screenEnd = this.screenMatchableOffset(screen, true);
         if (!this.sentenceAudioCueIntersectsScreen(cue, screen)) {
           if (zeroLengthCue ? cueStart < screenStart : cueEnd <= screenStart) break;
           continue;
@@ -1446,16 +1485,24 @@ $sharedInitViewport
     var screenBox = this.screen && this.screen.getBoundingClientRect
       ? this.screen.getBoundingClientRect()
       : null;
+    // BUG-2575：量尺与真实屏共用 `.fushi-vn-screen` 这个 class，而 `_vnLayoutCss`
+    // 里它的 `width: 100% !important; height: 100% !important` 会压过**普通**内联
+    // 样式——上面 BUG-1688 那次把 rect 宽高搬进 `root.style.width/height` 其实一直
+    // 没生效，量尺仍是 position:fixed 相对视口的 100%（整视口），比真实屏盒（视口
+    // 减 chrome 预留带 + 用户上下边距）高出整条预留带。竖排下量尺的列更长、以为
+    // 装得下更多字，真屏列更短就多出一列贴左边被 overflow:hidden 裁掉（iOS 实机
+    // 竖排最左列切半）；横排则是末行被底栏吃掉。只有以 important 优先级写入才能
+    // 让量尺真正等于真实屏盒（属性优先级：内联 important > 样式表 important）。
     if (screenBox && screenBox.width > 0 && screenBox.height > 0) {
       root.style.left = screenBox.left + 'px';
       root.style.top = screenBox.top + 'px';
-      root.style.width = screenBox.width + 'px';
-      root.style.height = screenBox.height + 'px';
+      root.style.setProperty('width', screenBox.width + 'px', 'important');
+      root.style.setProperty('height', screenBox.height + 'px', 'important');
     } else {
       root.style.left = '0';
       root.style.top = '0';
-      root.style.width = 'var(--page-width, 100vw)';
-      root.style.height = 'var(--page-height, 100vh)';
+      root.style.setProperty('width', 'var(--page-width, 100vw)', 'important');
+      root.style.setProperty('height', 'var(--page-height, 100vh)', 'important');
     }
     var content = document.createElement('div');
     content.className = 'fushi-vn-content';
@@ -2499,13 +2546,16 @@ $sharedInitViewport
     wrapper.appendChild(element);
   },
   renderInitialScreen: function() {
-    var index = 0;
+    var index = -1;
     if (this.initialFragment) {
-      var fragmentIndex = this.screenIndexForFragment(this.initialFragment);
-      if (fragmentIndex >= 0) index = fragmentIndex;
-    } else if (this.initialProgress > 0) {
-      index = this.screenIndexForProgress(this.initialProgress);
+      index = this.screenIndexForFragment(this.initialFragment);
     }
+    // BUG-2576：fragment 在屏表里查无（id 落在收不进 screen.ids 的元素上）时不再
+    // 硬落第 0 屏，退回进度锚；进度走 restore 口径（>= 0.99 = 章末）。
+    if (index < 0 && this.initialProgress > 0) {
+      index = this.screenIndexForRestoreProgress(this.initialProgress);
+    }
+    if (index < 0) index = 0;
     this.renderScreen(index, !!this.initialFragment || index !== 0 || this.revealSpeed <= 0 || this.initialProgress > 0);
   },
   renderScreen: function(index, fullyRevealed) {
@@ -2523,6 +2573,7 @@ $sharedInitViewport
     content.className = 'fushi-vn-content';
     content.appendChild(this.screens[safeIndex].render());
     this.screen.appendChild(content);
+    this.centerScreenInk(content);
     if (fullyRevealed || this.revealSpeed <= 0) {
       this.revealComplete = true;
     } else {
@@ -2532,6 +2583,64 @@ $sharedInitViewport
     this.buildNodeOffsets();
     if (this.revealComplete) this.applyCurrentScreenHighlights();
     if (this.revealComplete) this.refreshSentenceAudioCuePresentation();
+  },
+  // BUG-2711：拆屏判据（measureScreenFits → renderedTextFitsBounds）认的是**字形墨迹**
+  // 落在内容盒内，而 flex 居中认的是段落的 margin 盒。长段落被拆开后，屏上那一截的
+  // margin 盒（两侧各 1em 段距 + 末列半行距）比内容盒宽，`max-width: 100%` 把内容钳成
+  // 满宽、flex 无从居中，段落只能从 block-start 一侧贴着段距往 block-end 排——竖排右边
+  // 空出「边距 + 1em + 半行距」、最左列压进左边距；横排同理上宽下窄。这里用与判据同一
+  // 把尺子（墨迹）沿 block 轴把本屏摆正：判据已保证墨迹装得下，平移后不会越出内容盒。
+  // 含图片/媒体的屏交回 flex 居中（图片晚加载会改几何，这里算的偏移会过期）；墨迹本身
+  // 就比内容盒宽的（不可拆的溢出屏）不动，否则会把屏首也推出裁切区。
+  //
+  // BUG-2751：平移走**布局**——内容的一侧 margin = d、对侧 = -d——不再挂 transform。
+  // iOS WebKit 在竖排（vertical-rl 翻转块方向）文档里给带绘制期偏移（transform /
+  // position: relative 都一样）的盒算失效矩形时把偏移镜像了，差出 2×d：切屏移除旧屏
+  // 时旧高亮列一侧 2×d 宽的竖条擦不掉（残留蓝条 / 半个字），新屏同侧一条画不出来
+  // （列被切半），直到无关重绘才补上。两侧 margin 和为 0：flex 算尺寸用的可用空间
+  // 不变，内容盒尺寸与换列完全不变，只是边框盒挪 d（iOS 模拟器真值帧与 transform 版
+  // 逐像素一致）。不能改挪整个屏盒：屏溢出视口后竖排根文档会被滚回去抵消平移。
+  centerScreenInk: function(content) {
+    if (!content || !this.screen || !content.style || !document.createRange) return;
+    content.style.removeProperty('transform');
+    content.style.removeProperty('margin-left');
+    content.style.removeProperty('margin-right');
+    content.style.removeProperty('margin-top');
+    content.style.removeProperty('margin-bottom');
+    if (content.querySelector && content.querySelector('img, svg, video, canvas, iframe')) return;
+    var vertical = this.isVertical();
+    var screenRect = this.screen.getBoundingClientRect();
+    var screenStyle = window.getComputedStyle(this.screen);
+    var boxStart = vertical
+      ? screenRect.left + (parseFloat(screenStyle.paddingLeft) || 0)
+      : screenRect.top + (parseFloat(screenStyle.paddingTop) || 0);
+    var boxEnd = vertical
+      ? screenRect.right - (parseFloat(screenStyle.paddingRight) || 0)
+      : screenRect.bottom - (parseFloat(screenStyle.paddingBottom) || 0);
+    var inkStart = Infinity;
+    var inkEnd = -Infinity;
+    var walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    var range = document.createRange();
+    var node;
+    while (node = walker.nextNode()) {
+      if (!(node.textContent || '').trim()) continue;
+      range.selectNodeContents(node);
+      var rects = range.getClientRects ? range.getClientRects() : [];
+      for (var i = 0; i < rects.length; i++) {
+        var rect = rects[i];
+        if (!rect || (!rect.width && !rect.height)) continue;
+        inkStart = Math.min(inkStart, vertical ? rect.left : rect.top);
+        inkEnd = Math.max(inkEnd, vertical ? rect.right : rect.bottom);
+      }
+    }
+    if (range.detach) range.detach();
+    if (!(inkEnd > inkStart) || !(boxEnd > boxStart)) return;
+    // 与 rectFitsBounds 同一容差（每侧 1px）。
+    if (inkEnd - inkStart > boxEnd - boxStart + 2) return;
+    var offset = ((boxStart + boxEnd) - (inkStart + inkEnd)) / 2;
+    if (Math.abs(offset) < 1) return;
+    content.style.setProperty(vertical ? 'margin-left' : 'margin-top', offset + 'px');
+    content.style.setProperty(vertical ? 'margin-right' : 'margin-bottom', (-offset) + 'px');
   },
   hideCurrentScreenForReveal: function() {
     this.revealSegments = [];
@@ -2736,9 +2845,21 @@ $sharedInitViewport
     }
     return this.screens.length - 1;
   },
+  // BUG-2576：宿主的 restoreProgress 口径里 `>= 0.99` 是「章末」的约定值（往前翻到
+  // 上一章 `_navigateToChapter(prev, progress: 0.99)`），分页 / 连续 shell 都专门分流到
+  // scrollToChapterEnd（reader_pagination_scripts.dart）。VN 此前只按进度锚线性找
+  // 「第一个尾锚 >= 0.99 的屏」，屏数一多就停在距末屏还差几屏的地方——用户感知是
+  // 「往前翻章落到奇怪的位置」。restore 入口统一走这里；calculateProgress 往返
+  // （refit / 样式重锚）仍走 screenIndexForProgress，不受 0.99 阈值影响。
+  screenIndexForRestoreProgress: function(progress) {
+    if (!this.screens.length) return 0;
+    var target = Number(progress) || 0;
+    if (target >= 0.99) return this.screens.length - 1;
+    return this.screenIndexForProgress(target);
+  },
   restoreProgress: async function(progress) {
     await this.ensureReady();
-    this.renderScreen(this.screenIndexForProgress(progress), true);
+    this.renderScreen(this.screenIndexForRestoreProgress(progress), true);
     this.notifyRestoreComplete();
   },
   screenIndexForFragment: function(fragment) {
@@ -2795,17 +2916,27 @@ $sharedInitViewport
     var start = this.sentenceAudioCueStart(cue);
     return start + Math.max(0, Number(cue && cue.length) || 0);
   },
+  screenMatchableOffset: function(screen, end) {
+    if (!this.contentStream) return null;
+    var rawOffset = end ? this.screenEndRawCount(screen) : this.screenStartRawCount(screen);
+    return this.contentStream.matchableOffsetForRawOffset(rawOffset);
+  },
   sentenceAudioCueIntersectsScreen: function(cue, screen) {
     if (!cue || !screen) return false;
     var start = this.sentenceAudioCueStart(cue);
     var end = this.sentenceAudioCueEnd(cue);
-    return this.screenIntersectsCharRange(screen, start, end);
+    var screenStart = this.screenMatchableOffset(screen, false);
+    var screenEnd = this.screenMatchableOffset(screen, true);
+    return end > start ? start < screenEnd && end > screenStart
+      : start >= screenStart && start <= screenEnd;
   },
   screenIndexForSentenceAudioCue: function(cue) {
     if (!cue || !this.screens || !this.screens.length) return -1;
     var start = this.sentenceAudioCueStart(cue);
     for (var i = 0; i < this.screens.length; i++) {
-      if (this.screenContainsCharOffset(this.screens[i], start)) return i;
+      var screen = this.screens[i];
+      if (start >= this.screenMatchableOffset(screen, false) &&
+          start < this.screenMatchableOffset(screen, true)) return i;
     }
     for (var j = 0; j < this.screens.length; j++) {
       if (this.sentenceAudioCueIntersectsScreen(cue, this.screens[j])) return j;

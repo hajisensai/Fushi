@@ -8,43 +8,8 @@ import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
-
-/// Records the namespace/name queried and the id deleted; [present] is what
-/// findAsset returns. Everything else throws (must not be touched).
-class _RecordingBackend implements SyncBackend {
-  _RecordingBackend({this.present});
-
-  final AssetEntry? present;
-  String? ensuredNamespace;
-  String? queriedName;
-  String? deletedId;
-
-  @override
-  Future<String> ensureNamespace(String name) async {
-    ensuredNamespace = name;
-    return 'root/$name/';
-  }
-
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
-    queriedName = name;
-    return present;
-  }
-
-  @override
-  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
-    deletedId = id;
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('unexpected ${invocation.memberName}');
-}
 
 // ── live 分支集成：验证 InterconnectSyncBackend 路由到 host DELETE 端点 ─────
 
@@ -259,39 +224,10 @@ Future<InterconnectSyncBackend> _buildBackend({
 }
 
 void main() {
-  group('deleteRemoteDictionaryAsset (BUG-086)', () {
-    test('deletes the matching <name>.fushidict package and reports true',
-        () async {
-      final _RecordingBackend backend = _RecordingBackend(
-        present: const AssetEntry(id: 'asset-1', name: 'Genius.fushidict'),
-      );
-
-      final bool deleted = await deleteRemoteDictionaryAsset(backend, 'Genius');
-
-      expect(deleted, isTrue);
-      expect(backend.ensuredNamespace, kSyncDictionaryNamespace);
-      expect(backend.queriedName, 'Genius.fushidict',
-          reason: 'must look up the package by name + .fushidict suffix');
-      expect(backend.deletedId, 'asset-1',
-          reason: 'must delete the exact remote package found');
-    });
-
-    test('no-op (false) when the remote package is absent', () async {
-      final _RecordingBackend backend = _RecordingBackend(present: null);
-
-      final bool deleted =
-          await deleteRemoteDictionaryAsset(backend, 'Missing');
-
-      expect(deleted, isFalse);
-      expect(backend.deletedId, isNull,
-          reason: 'nothing to delete → deleteAsset must not be called');
-    });
-  });
-
   group('删除传播 live 分支（Task-6）', () {
-    /// 验证当 backend 是 InterconnectSyncBackend 时，deleteRemoteDictionary
-    /// 确实向 host 发送 DELETE /api/library/dictionaries/<name>，
-    /// 且 host 库服务记录到该删除——不经过暂存 deleteRemoteDictionaryAsset 路径。
+    /// 验证 InterconnectSyncBackend.deleteRemoteDictionary 确实向 host 发送
+    /// DELETE /api/library/dictionaries/<name>，且 host 库服务记录到该删除。
+    /// （本地删词典不再自动调它——BUG-2762 退役了删除传播；这里只钉端点契约。）
     test(
         'InterconnectSyncBackend.deleteRemoteDictionary routes to host DELETE endpoint',
         () async {
@@ -312,8 +248,6 @@ void main() {
         token: token,
       );
 
-      // 直接调 live 方法——这正是分流分支（backend is InterconnectSyncBackend）
-      // 在 _propagateDictionaryDeleteToRemote 中执行的代码路径。
       await backend.deleteRemoteDictionary('Genius');
 
       expect(lib.deleted, contains('Genius'),

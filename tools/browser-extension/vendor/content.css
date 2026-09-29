@@ -259,10 +259,11 @@
        few px of furigana spill can still be scrolled to". That was WRONG - a
        scroll container's TOP overflow is unreachable (scrollTop can never go
        negative), so the spilling <rt> was permanently CLIPPED, not scrollable.
-       The real fix is that the headword ruby no longer overflows at all: it now
-       carries the same intrinsic em padding-top reserve as glossary ruby (see
-       the :where(..., .expression) block below), so the implicit overflow-y is
-       genuinely inert. */
+       The real fix is that the headword ruby no longer overflows at all: it
+       carries an intrinsic em padding-top reserve of its own (BUG-2568 moved
+       that reserve onto `.expression` itself when the headword went back to
+       native ruby; see the `.expression ruby` block above), so the implicit
+       overflow-y is genuinely inert. */
     scrollbar-width: none;
 }
 
@@ -273,6 +274,10 @@
 .expression {
     font-size: 26px;
     cursor: pointer;
+    /* BUG-2568: vertical reserve for the native ruby annotation — see the
+       `.expression ruby` block below for why the line box alone is not enough
+       and why the unit is em. */
+    padding-top: 0.66em;
 }
 
 .expression:active {
@@ -302,16 +307,51 @@
     white-space: nowrap;
 }
 
-/* BUG-1098: the headword <rt> geometry (size / absolute anchor / reserve) comes
-   from the SHARED :where(..., .expression) ruby block below - the same intrinsic
-   em reserve glossary furigana has used since BUG-108/363/722/850. The only
-   headword-specific bit left is user-select: the headword is a click target
-   (onLinkClick), so its reading must never be selected by a drag.
-   The old `font-size: 13px` is gone on purpose: 13px == 0.5em of .expression's
-   26px, so the rendered size is unchanged, but a `.expression rt` (0,1,1)
-   declaration used to OUT-RANK the zero-specificity `:where(...) rt` rule and
-   would have pinned the reading to an absolute px size that no longer tracks the
-   popup content zoom. */
+/* BUG-2568 — the entry HEADWORD renders its furigana with the engine's OWN ruby
+   algorithm, like Hoshi's reader does. The glossary ruby block further down is
+   NOT in play here (its `:where(...)` scope is glossary-only again): that scheme
+   deliberately keeps each base compact and lets a long reading hang off it, and
+   Blink pins the overhang to the base's START edge, which is exactly the
+   "reading sits left of the word" the report showed. Native ruby instead widens
+   the base run to the annotation and centres the two on each other — measured
+   in headless Blink on this stylesheet, 入寮/にゅうりょう gives base run and
+   reading both [10.0,73.8] (centre delta 0.00px), with 入 and 寮 spread to share
+   the reading's width.
+   Three declarations carry it and none may be dropped:
+     - `display: ruby` on the <ruby> (the shared block used to override it to
+       inline-block for the absolute-anchor scheme; the headword must stay a real
+       ruby container or Blink degrades <rt> to an anonymous ruby container that
+       renders start-aligned above the base again);
+     - `font-size: 0.6em` on `ruby > rt` — the single source of truth for
+       furigana scale (BUG-1655) expressed in em so it tracks
+       documentElement.style.zoom / popupContentZoom (BUG-363) instead of the
+       hard-coded 13px this rule carried before BUG-1098. The child combinator is
+       deliberate: it can only ever match markup postProcessRuby did NOT wrap, so
+       it can never multiply with the glossary annotation box's own em scale
+       (popup_ruby_single_scale_guard_test.dart locks that invariant). Its
+       (0,1,2) specificity also outranks a dictionary stylesheet's prefixed
+       `[data-dictionary="X"] rt` (0,1,1), so dictionary CSS cannot shrink the
+       headword reading;
+     - `padding-top: 0.66em` on `.expression` — the vertical reserve BUG-1098 was
+       really about. Blink does NOT grow the line box enough for a native ruby
+       annotation (measured: line-height 1.7 and 2.0 both still spill 4.0px above
+       the box), and `.expression-scroll` is `overflow-x: auto`, which computes
+       overflow-y to auto and makes a scroll container whose TOP overflow is
+       unreachable — so any spill is CLIPPED, not scrollable. The reserve is
+       intrinsic to .expression and expressed in em (same shape as the glossary
+       .ruby-unit band), so it scales with the reading under any zoom: same probe
+       measures the annotation landing 3.2px INSIDE the box instead of 4.0px
+       outside it.
+   user-select stays where it was: the headword is a click target (onLinkClick),
+   so its reading must never be selected by a drag. */
+.expression ruby {
+    display: ruby;
+}
+
+.expression ruby > rt {
+    font-size: 0.6em;
+}
+
 .expression rt {
     -webkit-user-select: none;
 }
@@ -1095,26 +1135,29 @@
     padding: 0 8px;
 }
 
-/* Furigana inside dictionary glossary bodies AND on the entry headword
-   (.expression). Three layout invariants live in this rule group and must stay
-   together.
-   BUG-1098 — the headword was NOT in this group until now and had zero vertical
-   reserve of its own (`.expression rt { font-size: 13px }` and nothing else),
-   because BUG-108 deliberately scoped its fix to glossary bodies. Its <rt> is
-   built by popup.js buildFuriganaEl as a BARE <ruby>/<rt>, so it also never
-   reached postProcessRuby (which only scanned `.glossary-content ruby`). The
-   reading therefore overflowed the header line box, and .expression-scroll
-   (overflow-x:auto -> computed overflow-y:auto) turned that box into a scroll
-   container whose TOP overflow is unreachable, so the reading was clipped /
-   squashed. Only single-segment readings hit it, because buildFuriganaEl only
-   asks for the .expression-scroll wrapper when the whole word is one segment
-   (pure-kanji nouns: 気配 / 邂逅 / 逢瀬), which is exactly the galgame vocabulary.
-   Fix = no new mechanism: postProcessRuby now also processes `.expression ruby`
-   and these rules cover `.expression`, so the headword gets the identical
-   per-base unit + em reserve + horizontal twin. `.expression` is 26px, so the
-   old hard-coded 13px reading is exactly the shared `font-size: 0.5em` — same
-   pixels today, and now it also tracks the popup content zoom instead of
-   growing the overflow linearly with it. The anchor of all three is the
+/* Furigana inside dictionary glossary bodies. Three layout invariants live in
+   this rule group and must stay together.
+   BUG-2568 — the entry HEADWORD (.expression) used to ride this same group;
+   BUG-1098 put it here to borrow the vertical reserve, and that part worked.
+   What it also borrowed was the glossary's COMPACT base: the base box never
+   widens to its reading, and the reading is an absolutely positioned box pinned
+   to the base's own width (left:0/right:0), so a reading wider than its base
+   hangs out of it. `text-align: center` does NOT re-centre that overhang —
+   measured in headless Blink against this exact stylesheet, a 26px headword
+   入寮/にゅうりょう puts the base at [10.0,62.0] and the reading at [10.0,73.8]:
+   flush with the base's START edge, 11.8px hanging off the right. Whole-word
+   readings are the common case (segmentFurigana cannot split にゅうりょう across
+   入/寮), so the headword habitually read as "reading shoved left of its word"
+   instead of centred over it — the reported difference from Hoshi's reader,
+   which renders the headword with the browser's own ruby algorithm.
+   The headword is therefore back on NATIVE <ruby> (see the `.expression ruby`
+   block further down): the engine widens the base run to the annotation and
+   centres the two on each other (same probe: base run and reading both
+   [10.0,73.8], centre delta 0.00px). Glossary bodies KEEP the compaction on
+   purpose — BUG-345/1778 exist precisely because 逐字 ruby lines must not go
+   ragged and正文 must not be pulled apart by a long reading — so the two faces
+   genuinely want different geometry, and the scope below is glossary-only
+   again. The anchor of all three is the
    per-base UNIT box (.ruby-unit), NOT the <ruby> element — popup.js's
    postProcessRuby wraps each base text node in a <span class="ruby-unit"> and
    moves that base's own <rt> INTO the span, so every rt sizes and positions
@@ -1157,14 +1200,14 @@
    inline text (no position of its own), so it degrades to an unstyled reading
    next to its base rather than escaping the popup — it can no longer be
    positioned against the wrong ancestor. */
-:where(.glossary-group, .glossary-content, .expression) ruby {
+:where(.glossary-group, .glossary-content) ruby {
     display: inline-block;
     position: relative;
     line-height: 1;
     vertical-align: baseline;
 }
 
-:where(.glossary-group, .glossary-content, .expression) .ruby-unit {
+:where(.glossary-group, .glossary-content) .ruby-unit {
     display: inline-block;
     position: relative;
     line-height: 1;
@@ -1208,7 +1251,7 @@
    Verified byte-for-byte geometry parity on Blink: with and without the
    wrapper, ruby = 37.5x23.25, units = [22.5, 15], annotation boxes =
    [(x+0, y+0, 22.5x7.5), (x+22.5, y+0, 15x7.5)], reading overlap 0px. */
-:where(.glossary-group, .glossary-content, .expression) .ruby-rt {
+:where(.glossary-group, .glossary-content) .ruby-rt {
     position: absolute;
     left: 0;
     right: 0;
@@ -1228,7 +1271,7 @@
     line-height: 1;
 }
 
-:where(.glossary-group, .glossary-content, .expression) rt {
+:where(.glossary-group, .glossary-content) rt {
     /* Both engines already settle on `inline` for a wrapped <rt>; declaring it
        stops Blink from spinning up an anonymous ruby container around the
        leftover `display: ruby-text`. */
@@ -1261,7 +1304,7 @@
    丢弃；rt 的颜色/字重/字体等非几何声明不受影响，仍照常生效。
    用户自定义的 `.ruby-rt { font-size: X em !important }`（词典样式可视化编辑器）作用在
    外层盒上，与本条不冲突，仍然可调。 */
-:where(.glossary-group, .glossary-content, .expression) .ruby-rt rt {
+:where(.glossary-group, .glossary-content) .ruby-rt rt {
     font-size: 1em !important;
 }
 
@@ -1274,7 +1317,7 @@
    absolutely position it out of flow: base glyph spacing stays natural, while
    .ruby-rt remains centred on the base and the vertical padding reserve is
    unchanged. */
-:where(.glossary-group, .glossary-content, .expression) .ruby-reserve {
+:where(.glossary-group, .glossary-content) .ruby-reserve {
     display: block;
     position: absolute;
     width: -webkit-max-content;
@@ -1306,7 +1349,7 @@
    仅这些单元把孪生体放回 in-flow —— 恰好只在会碰撞的地方付出字距代价，其余位置保持
    BUG-1778 的紧凑正文。两个单元互相标记是安全的：孪生体宽度是 max-content，读音不比
    基字宽时它撑不开任何东西，标了等于没标。 */
-:where(.glossary-group, .glossary-content, .expression) .ruby-unit.ruby-tight > .ruby-reserve {
+:where(.glossary-group, .glossary-content) .ruby-unit.ruby-tight > .ruby-reserve {
     position: static;
 }
 
@@ -2027,6 +2070,71 @@
     background: var(--background-color);
 }
 
+/* ── theme.css tokens, re-rooted to the in-page hosts (generated; edit theme.css) ── */
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls) {
+  color-scheme: light dark;
+  --fushi-bg: oklch(0.965 0.012 145);
+  --fushi-surface: oklch(0.99 0.008 145);
+  --fushi-surface-muted: oklch(0.935 0.018 145);
+  --fushi-surface-strong: oklch(0.9 0.022 145);
+  --fushi-text: oklch(0.245 0.026 145);
+  --fushi-muted: oklch(0.47 0.025 145);
+  --fushi-outline: oklch(0.79 0.025 145);
+  --fushi-primary: oklch(0.46 0.085 155);
+  --fushi-primary-strong: oklch(0.37 0.09 155);
+  --fushi-primary-soft: oklch(0.89 0.055 150);
+  --fushi-on-primary: oklch(0.985 0.008 145);
+  --fushi-warn: oklch(0.62 0.135 78);
+  --fushi-danger: oklch(0.55 0.18 28);
+  --fushi-focus: oklch(0.61 0.13 155);
+  /* 页内浮层（字幕覆盖层 / 拖柄 / 排队 chip / 拖放提示）压在视频画面上，明暗两态都用深底
+     浅字——画面本身什么颜色都有，浮层要的是稳定可读，不是跟页面同色。 */
+  --fushi-scrim: rgba(12, 15, 13, 0.72);
+  --fushi-scrim-strong: rgba(12, 15, 13, 0.92);
+  --fushi-on-scrim: #f7f8f2;
+}
+
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls):not([data-theme="light"]) {
+    --fushi-bg: oklch(0.18 0.018 145);
+    --fushi-surface: oklch(0.225 0.022 145);
+    --fushi-surface-muted: oklch(0.27 0.026 145);
+    --fushi-surface-strong: oklch(0.31 0.028 145);
+    --fushi-text: oklch(0.91 0.018 145);
+    --fushi-muted: oklch(0.72 0.02 145);
+    --fushi-outline: oklch(0.39 0.025 145);
+    --fushi-primary: oklch(0.78 0.085 155);
+    --fushi-primary-strong: oklch(0.84 0.075 155);
+    --fushi-primary-soft: oklch(0.31 0.065 155);
+    --fushi-on-primary: oklch(0.19 0.03 155);
+    --fushi-warn: oklch(0.77 0.12 78);
+    --fushi-danger: oklch(0.72 0.15 28);
+    --fushi-focus: oklch(0.78 0.11 155);
+  }
+}
+
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)[data-theme="dark"] {
+  color-scheme: dark;
+  --fushi-bg: oklch(0.18 0.018 145);
+  --fushi-surface: oklch(0.225 0.022 145);
+  --fushi-surface-muted: oklch(0.27 0.026 145);
+  --fushi-surface-strong: oklch(0.31 0.028 145);
+  --fushi-text: oklch(0.91 0.018 145);
+  --fushi-muted: oklch(0.72 0.02 145);
+  --fushi-outline: oklch(0.39 0.025 145);
+  --fushi-primary: oklch(0.78 0.085 155);
+  --fushi-primary-strong: oklch(0.84 0.075 155);
+  --fushi-primary-soft: oklch(0.31 0.065 155);
+  --fushi-on-primary: oklch(0.19 0.03 155);
+  --fushi-warn: oklch(0.77 0.12 78);
+  --fushi-danger: oklch(0.72 0.15 28);
+  --fushi-focus: oklch(0.78 0.11 155);
+}
+
 /*
  *  content-css-overlay.css — extension-only additions appended to the generated
  *  content.css (see generate-content-css.mjs).
@@ -2156,8 +2264,25 @@
 }
 
 /* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词；
-   按住拖动可挪位（subtitle-panel.js，位置按视频分数坐标记住）。 */
+   鼠标按住左侧拖柄（触屏按住整块）可挪位（subtitle-panel.js，位置按视频分数坐标记住）；
+   鼠标在文字上拖是原生选区，Ctrl+C 可复制。 */
 #fushi-subtitle-overlay {
+    /* 外观全部经 --fushi-sub-* 变量：这里是默认值，用户在扩展设置「字幕外观」里改的项由
+       subtitle-panel.js（subtitle-style.js toCssVars）逐个 setProperty 到本节点，默认项不写。 */
+    --fushi-sub-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    --fushi-sub-scale: 1;
+    /* 自适应缩放倍率：底板定了高度且「自适应缩放」开着时，由 subtitle-panel.js 按实测内容
+       算出来写进来（subtitle-style.js nextFitScale/applyFit）；1 = 不缩放。 */
+    --fushi-sub-fit: 1;
+    --fushi-sub-weight: 600;
+    --fushi-sub-spacing: 0.01em;
+    --fushi-sub-line-height: 1.45;
+    --fushi-sub-align: center;
+    --fushi-sub-color: var(--fushi-on-scrim);
+    --fushi-sub-bg: var(--fushi-scrim);
+    --fushi-sub-radius: 8px;
+    --fushi-sub-padding: 6px 12px 7px;
+    --fushi-sub-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
     position: fixed;
     z-index: 2147483637;
     /* top 给的是底边锚点（JS 默认写 88% 处，用户拖过则是记住的分数）：-100% 让文字向上长，
@@ -2165,18 +2290,40 @@
     transform: translate(-50%, -100%);
     /* 触屏拖字幕时不让浏览器把手势抢去滚页面/缩放：覆盖层压在视频上，本就不该从这里滚页。 */
     touch-action: none;
-    padding: 6px 12px 7px;
-    border-radius: 8px;
-    color: #f7f8f2;
-    background: rgba(12, 15, 13, 0.72);
+    /* 底板宽 / 高由 subtitle-panel.js placeOverlay 按视频盒百分比写成 style.width / min-height
+       （subtitle-style.js applyBox；默认不写 = 随内容）。border-box 让写进来的宽高就是底板的外
+       尺寸；grid + align-content 让底板高于文字时文字垂直居中，文字层随之成为块级项。 */
+    box-sizing: border-box;
+    display: grid;
+    align-content: center;
+    padding: var(--fushi-sub-padding);
+    border-radius: var(--fushi-sub-radius);
+    color: var(--fushi-sub-color);
+    background: var(--fushi-sub-bg);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
-    font: 600 clamp(18px, 2.2vw, 32px)/1.45 "Hiragino Sans", "Yu Gothic UI", sans-serif;
-    letter-spacing: 0.01em;
-    text-align: center;
-    text-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+    font-family: var(--fushi-sub-family);
+    /* 基准随视口响应（小播放器不撑、全屏不缩成蚂蚁），用户的「大小」是倍率而非绝对像素。 */
+    font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale) * var(--fushi-sub-fit));
+    font-weight: var(--fushi-sub-weight);
+    /* 原本是 `font:` 简写，会把这三项一起重置；拆成长手后要显式归 normal，
+       否则覆盖层挂在播放器容器下（非 shadow root），会继承宿主页的斜体/小型大写。 */
+    font-style: normal;
+    font-variant: normal;
+    font-stretch: normal;
+    line-height: var(--fushi-sub-line-height);
+    letter-spacing: var(--fushi-sub-spacing);
+    text-align: var(--fushi-sub-align);
+    text-shadow: var(--fushi-sub-shadow);
     white-space: pre-wrap;
     user-select: text;
     cursor: text;
+}
+
+/* 「字幕底色」关掉（options subtitleOverlayBackground=false）：去底板、去投影，只剩描边字——
+   像站点原生字幕那样不挡画面。文字描边（text-shadow）保留，浅色画面上仍读得清。 */
+#fushi-subtitle-overlay[data-bare] {
+    background: transparent;
+    box-shadow: none;
 }
 
 /* 拖动中：抓手光标 + 禁选区（否则移动指针会同时拉出一条文字选区）。 */
@@ -2185,15 +2332,111 @@
     user-select: none;
 }
 
+/* 缩放中：同样禁选区；光标交给把手自己的 nwse-resize。 */
+#fushi-subtitle-overlay[data-resizing] {
+    user-select: none;
+}
+
+/* 拖柄：贴在字幕左缘外侧的小抓手，悬停覆盖层时才显出来；用 ::before 画点阵，不带文本节点
+   （content.js 取词兜底会遍历覆盖层下所有文本节点）。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-grip {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translate(-100%, -50%);
+    width: 22px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px 0 0 6px;
+    background: var(--fushi-scrim);
+    opacity: 0;
+    transition: opacity 120ms ease;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+#fushi-subtitle-overlay .fushi-subtitle-overlay-grip::before {
+    content: '';
+    width: 8px;
+    height: 16px;
+    background-image: radial-gradient(circle, currentColor 1.4px, transparent 1.6px);
+    background-size: 4px 5px;
+    opacity: 0.85;
+}
+
+#fushi-subtitle-overlay:hover .fushi-subtitle-overlay-grip,
+#fushi-subtitle-overlay[data-dragging] .fushi-subtitle-overlay-grip {
+    opacity: 1;
+}
+
+#fushi-subtitle-overlay[data-dragging] .fushi-subtitle-overlay-grip {
+    cursor: grabbing;
+}
+
+/* 缩放把手：贴在底板右下角内侧的小三角，与查词弹窗右下角把手同一手势（拖拽改大小、
+   双击恢复随内容）。同样用 ::before 画图形，不带文本节点——content.js 取词兜底会遍历
+   覆盖层下所有文本节点，把手绝不能混进正文。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 0 0 var(--fushi-sub-radius) 0;
+    opacity: 0;
+    transition: opacity 120ms ease;
+    cursor: nwse-resize;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+/* 两道斜杠（右下角的通用缩放记号）；用 currentColor 跟着字幕文字色走，深浅底都看得见。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-resize::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background-image: linear-gradient(315deg, currentColor 0 1.6px, transparent 1.6px 4.2px, currentColor 4.2px 5.8px, transparent 5.8px);
+    opacity: 0.9;
+}
+
+#fushi-subtitle-overlay:hover .fushi-subtitle-overlay-resize,
+#fushi-subtitle-overlay[data-resizing] .fushi-subtitle-overlay-resize {
+    opacity: 1;
+}
+
+/* 触屏没有 hover：整块可拖，拖柄不需要露出来。但缩放把手是触屏上**唯一**能改大小的入口，
+   不能跟着藏——常显一枚半透明的小角标。 */
+@media (hover: none) {
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-grip {
+        display: none;
+    }
+
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-resize {
+        opacity: 0.6;
+    }
+}
+
 /* 覆盖层里的振假名：与字幕列表同一套取向——读音在正文上方、不参与选择/取词。 */
 #fushi-subtitle-overlay ruby {
     ruby-position: over;
     ruby-align: center;
 }
 
-/* 同字幕列表：有振假名的那句要给上方读音留出行框。 */
+/* 同字幕列表：有振假名的那句要给上方读音留出行框；用户把行高调得更大时跟用户的。 */
 #fushi-subtitle-overlay:has(ruby) {
-    line-height: 2;
+    line-height: max(2, var(--fushi-sub-line-height));
+}
+
+/* 文字层：只是个容器（覆盖层根是 grid，它是唯一的网格项、撑满一行），字号/对齐/描边继承自
+   覆盖层根；text-align 在它内部生效，所以固定宽底板里文字仍按设置对齐。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-text {
+    display: block;
 }
 
 #fushi-subtitle-overlay rt {
@@ -2250,7 +2493,7 @@
 /* 开态：拉手槽涂成面板同色（cream），与 iframe 无缝拼成一块面板边——
    旧的 #1e1b18 根底会在面板左缘留一条黑缝，收起态阴影渗边也是黑边元凶，一并禁掉。 */
 #fushi-drawer.is-open .fushi-drawer-strip {
-    background: #fff9f4;
+    background: var(--fushi-bg);
 }
 
 #fushi-drawer.is-port {
@@ -2320,8 +2563,8 @@
     display: grid;
     place-items: center;
     font: 700 15px/1 system-ui, sans-serif;
-    color: #f0e6da;
-    background: rgba(40, 32, 26, 0.88);
+    color: var(--fushi-on-scrim);
+    background: var(--fushi-scrim-strong);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
     cursor: pointer;
     touch-action: none;
@@ -2358,7 +2601,7 @@
     width: 100%;
     height: 100%;
     border: 0;
-    background: #fff9f4;
+    background: var(--fushi-bg);
     pointer-events: auto;
 }
 
@@ -2373,3 +2616,381 @@
 
 /* 视频让位（开抽屉时压 fullscreenElement/<html>）不走这里：mobile-drawer.js 直接对
    目标元素写 inline !important（站点后到样式/内联尺寸都压得住），关抽屉精确还原。 */
+
+/* ───────────────────────── 播放器内嵌字幕控制（player-controls.js） ─────────────────────────
+   #fushi-player-btn 插在站点自己的控制栏里（YouTube .ytp-right-controls / Netflix 控件行），
+   所以它落在**站点的样式作用域**下：站点给 button 设的 font / padding / border / background /
+   transform 都会砸到它身上。因此这里逐项显式归零，而不是指望继承——`all: unset` 不用，
+   那会连焦点轮廓这些可访问性默认一起抹掉。
+   #fushi-player-controls 是 fixed 浮层，挂 fullscreenElement||body，绝不进控制栏（那里
+   overflow 会把菜单裁掉）。两个 id 都在 theme.js IN_PAGE_HOSTS 清单里，故能读 --fushi-* token。 */
+
+#fushi-player-btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    box-sizing: border-box;
+    width: 44px;
+    height: 100%;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fushi-on-scrim);
+    font: inherit;
+    font-size: 9px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    cursor: pointer;
+    opacity: 0.9;
+    transform: none;
+    vertical-align: middle;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+#fushi-player-btn:hover,
+#fushi-player-btn:focus-visible {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+#fushi-player-btn .fushi-pc-btn-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 4px;
+    object-fit: contain;
+    /* 关态去饱和 + 压暗：与站点单色控件并排时，一颗彩色图标常态高亮会喧宾夺主；
+       开态才还原本色，于是「字幕开着没开着」扫一眼就知道，不必读下面那行小字。 */
+    filter: grayscale(1) opacity(0.75);
+}
+
+#fushi-player-btn[data-on="1"] .fushi-pc-btn-icon {
+    filter: none;
+}
+
+#fushi-player-btn .fushi-pc-btn-state {
+    display: block;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    color: var(--fushi-on-scrim);
+    opacity: 0.7;
+}
+
+#fushi-player-btn[data-on="1"] .fushi-pc-btn-state {
+    color: var(--fushi-primary);
+    opacity: 1;
+}
+
+/* 通用站点（没有已知控制栏锚点）：按钮自己浮在画面右下角，鼠标离开视频即淡出——
+   常驻一颗不透明按钮压在画面上，比没有按钮更烦人。 */
+#fushi-player-btn.is-floating {
+    position: fixed;
+    z-index: 2147483639;
+    width: 44px;
+    height: 44px;
+    min-height: 0;
+    border-radius: 999px;
+    background: var(--fushi-scrim);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+#fushi-player-btn.is-floating[data-visible="1"] {
+    opacity: 0.92;
+    pointer-events: auto;
+}
+
+#fushi-player-controls {
+    position: fixed;
+    z-index: 2147483640;
+    box-sizing: border-box;
+    display: none;
+    width: 288px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 12px;
+    background: var(--fushi-surface);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    color: var(--fushi-text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: left;
+    direction: ltr;
+}
+
+#fushi-player-controls[data-open="1"] {
+    display: block;
+}
+
+#fushi-player-controls .fushi-pc-page[hidden] {
+    display: none;
+}
+
+#fushi-player-controls .fushi-pc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 7px 8px;
+    border-radius: 8px;
+    background: transparent;
+}
+
+#fushi-player-controls .fushi-pc-row.is-switch,
+#fushi-player-controls .fushi-pc-row.is-action,
+#fushi-player-controls .fushi-pc-row.is-submenu {
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-row.is-switch:hover,
+#fushi-player-controls .fushi-pc-row.is-action:hover,
+#fushi-player-controls .fushi-pc-row.is-submenu:hover,
+#fushi-player-controls .fushi-pc-row:focus-visible {
+    background: var(--fushi-surface-muted);
+}
+
+/* 置灰的从属开关仍然可读（不是 display:none）：用户要看得见「还有这么一项，只是现在没意义」。 */
+#fushi-player-controls .fushi-pc-row[data-disabled="1"] {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#fushi-player-controls .fushi-pc-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+#fushi-player-controls .fushi-pc-copy strong {
+    font-weight: 600;
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-copy small {
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--fushi-muted);
+}
+
+#fushi-player-controls .fushi-pc-switch {
+    position: relative;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--fushi-outline);
+    transition: background 0.15s ease;
+}
+
+#fushi-player-controls .fushi-pc-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--fushi-surface);
+    transition: transform 0.15s ease;
+}
+
+#fushi-player-controls .fushi-pc-switch[data-on="1"] {
+    background: var(--fushi-primary);
+}
+
+#fushi-player-controls .fushi-pc-switch[data-on="1"]::after {
+    transform: translateX(14px);
+}
+
+#fushi-player-controls .fushi-pc-row.is-submenu::after {
+    content: "\203A";
+    flex: 0 0 auto;
+    font-size: 16px;
+    color: var(--fushi-muted);
+}
+
+#fushi-player-controls .fushi-pc-seg {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--fushi-surface-muted);
+}
+
+#fushi-player-controls .fushi-pc-seg button {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 3px 7px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fushi-text);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-seg button:hover {
+    background: var(--fushi-surface-strong);
+}
+
+#fushi-player-controls .fushi-pc-seg button[data-on="1"] {
+    background: var(--fushi-primary);
+    color: var(--fushi-on-primary);
+}
+
+#fushi-player-controls .fushi-pc-hint {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 2px 0 4px;
+    padding: 7px 8px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 8px;
+    background: var(--fushi-surface-muted);
+    color: var(--fushi-muted);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-hint:hover {
+    border-color: var(--fushi-primary);
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-back {
+    box-sizing: border-box;
+    margin: 0 0 4px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fushi-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-back:hover {
+    background: var(--fushi-surface-muted);
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-style-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 8px;
+}
+
+#fushi-player-controls .fushi-pc-style-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-range {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"] {
+    width: 108px;
+    margin: 0;
+    accent-color: var(--fushi-primary);
+}
+
+#fushi-player-controls .fushi-pc-range output {
+    min-width: 28px;
+    font-size: 11px;
+    color: var(--fushi-muted);
+    text-align: right;
+}
+
+#fushi-player-controls .fushi-pc-color {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+
+#fushi-player-controls .fushi-pc-color input[type="color"] {
+    box-sizing: border-box;
+    width: 30px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-color-auto {
+    margin: 0;
+    padding: 3px 7px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fushi-muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-color-auto[data-on="1"] {
+    border-color: var(--fushi-primary);
+    background: var(--fushi-primary);
+    color: var(--fushi-on-primary);
+}
+
+#fushi-player-controls .fushi-pc-foot {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--fushi-outline);
+}
+
+#fushi-player-controls .fushi-pc-foot button {
+    flex: 1 1 0;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fushi-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-foot button:hover {
+    border-color: var(--fushi-primary);
+    background: var(--fushi-surface-muted);
+}

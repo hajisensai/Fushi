@@ -50,8 +50,7 @@ MihonAvailableExtension _ext(
 }
 
 MangaExtensionStoreRow _store(String indexUrl, String name, int sortOrder) {
-  return MangaExtensionStoreRow(
-    indexUrl: indexUrl,
+  return MangaExtensionStoreRow(mediaKind: 'manga', indexUrl: indexUrl,
     name: name,
     badgeLabel: null,
     format: MihonStoreFormat.currentJson.name,

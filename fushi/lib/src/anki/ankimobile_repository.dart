@@ -6,7 +6,8 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -18,6 +19,10 @@ typedef _AnkiMobileLocalMediaRefBuilder =
 
 const String ankiMobileInfoCallback = 'anki://x-callback-url/infoForAdding';
 const String ankiMobileAddNoteCallback = 'anki://x-callback-url/addnote';
+
+/// 官方手册 URL Schemes 一节，AnkiMobile 2.0.90+：按 Anki 搜索串打开浏览界面。
+/// 这是 iOS 上「在 Anki 里看这个词」唯一可用的入口——没有按 note id 打开的通道。
+const String ankiMobileSearchCallback = 'anki://x-callback-url/search';
 const String fushiAnkiFetchCallback = 'fushi://ankiFetch';
 const String fushiAnkiSuccessCallback = 'fushi://ankiSuccess';
 
@@ -163,8 +168,8 @@ class AnkiMobileInfoReturnCoordinator {
 /// [AnkiMobileRepository]（BUG-2493）。不是 AnkiMobile 后端时返回 null（iOS 改用
 /// AnkiConnect 时就是这样，回传无事可做）。
 ///
-/// provider 现在**恒**把本地仓库包在 [AutoRepositionAnkiRepository] 里（制卡后自动
-/// 重排，d55752a5e1 起），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
+/// provider 现在**恒**把本地仓库包在 [DelegatingAnkiRepository] 系装饰器里（待发队列 ∘
+/// 制卡后自动重排），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
 /// 此前 `main.dart` 直接 `is! AnkiMobileRepository` 判型——自动重排那层一进来，
 /// iOS 上**每个人**的 `fushi://ankiFetch` 回调都被静默丢弃（模拟器实测第一步就撞上）。
 /// 新增包装层必须在这里登记，守卫见 ankimobile_info_return_coordinator_test.dart。
@@ -172,7 +177,9 @@ AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
   BaseAnkiRepository current = repo;
   while (true) {
     if (current is AnkiMobileRepository) return current;
-    if (current is AutoRepositionAnkiRepository) {
+    // 所有「行为同 inner、只在 mineEntry 上加料」的装饰器（自动重排、待发队列……）
+    // 都继承 DelegatingAnkiRepository：按基类拆，新增装饰器不必再回来登记。
+    if (current is DelegatingAnkiRepository) {
       current = current.inner;
       continue;
     }
@@ -182,6 +189,19 @@ AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
     }
     return null;
   }
+}
+
+/// 制卡最终落在**本机** AnkiMobile 上吗？只拆装饰器；已经转发到互联主机的
+/// （[RemoteMiningAnkiRepository]）不算——那种情况卡写在主机的 Anki 里。
+///
+/// 与 [resolveAnkiMobileRepository] 的区别：那个要找回本地仓库去收 x-callback，
+/// 所以连互联包装一起拆；这个回答的是「卡落在哪」。
+bool minesOnLocalAnkiMobile(BaseAnkiRepository repo) {
+  BaseAnkiRepository current = repo;
+  while (current is DelegatingAnkiRepository) {
+    current = current.inner;
+  }
+  return current is AnkiMobileRepository;
 }
 
 String _encodeAnkiMobileQueryComponent(String value) =>
@@ -220,6 +240,21 @@ Uri buildAnkiMobileAddNoteUri({
   );
 }
 
+/// Anki 搜索串里的 `"` 要转义，口径与 AnkiConnect 侧 `_escapeAnkiQuery` 一致。
+String _escapeAnkiMobileSearchQuery(String value) =>
+    value.replaceAll('"', '\\"');
+
+/// 打开 AnkiMobile 的浏览界面并搜这个词。
+///
+/// 整词加引号当**短语**搜：不加的话 Anki 会按空格拆成多个必须同时命中的词，且
+/// `*` `_` 会被当通配符——词典词头里出现这些字符不是不可能的。
+Uri buildAnkiMobileSearchUri(String expression) {
+  final query = <MapEntry<String, String>>[
+    MapEntry('query', '"${_escapeAnkiMobileSearchQuery(expression)}"'),
+  ];
+  return Uri.parse('$ankiMobileSearchCallback?${_buildAnkiMobileQuery(query)}');
+}
+
 class AnkiMobileRepository extends BaseAnkiRepository {
   AnkiMobileRepository({
     AnkiMobileUrlOpener? openUrl,
@@ -228,7 +263,9 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     AnkiMobileBackgroundTaskHandler? beginMediaImportBackgroundTask,
     AnkiMobileBackgroundTaskHandler? endMediaImportBackgroundTask,
     AnkiMobileInfoReturnCoordinator? infoReturnCoordinator,
+    AnkiMobileMinedLedger? minedLedger,
   }) : _openUrl = openUrl ?? _openExternalUrl,
+       _minedLedger = minedLedger ?? AnkiMobileMinedLedger.instance,
        _infoReturnCoordinator =
            infoReturnCoordinator ?? AnkiMobileInfoReturnCoordinator.instance,
        _readInfoForAddingJson =
@@ -243,6 +280,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
 
   final AnkiMobileUrlOpener _openUrl;
   final AnkiMobileInfoReturnCoordinator _infoReturnCoordinator;
+  final AnkiMobileMinedLedger _minedLedger;
   final AnkiMobileInfoReader _readInfoForAddingJson;
   final Duration _mediaServerLifetime;
   final AnkiMobileBackgroundTaskHandler _beginMediaImportBackgroundTask;
@@ -529,8 +567,11 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
         charPositionTag: context.charPositionTag,
-        sourceLink: context.sourceLink,
       );
+      // `x-success` 是 AnkiMobile「卡已经加进去了」的权威信号（手册：use to
+      // automatically return to another app **after the note is added**），带回的
+      // `expression` 就是 [AnkiMobileMinedLedger] 的落账依据、也是之后 `isDuplicate`
+      // 拿来提问的同一个串。收口在 `main.dart` 的 `handleIncomingUrl`。
       final success = Uri.parse(fushiAnkiSuccessCallback).replace(
         queryParameters: <String, String>{
           if (payload.expression.isNotEmpty) 'expression': payload.expression,
@@ -541,7 +582,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         noteTypeName: noteType.name,
         fields: fields,
         tags: tags,
-        allowDuplicate: settings.allowDupes,
+        // BUG-2605：「新增为重复卡」按单次请求放行（`dupes=1`），不动全局偏好。
+        allowDuplicate: settings.allowDupes || payload.allowDuplicate,
         successCallback: success,
       );
 
@@ -611,6 +653,9 @@ class AnkiMobileRepository extends BaseAnkiRepository {
           : sentenceAudioUrl,
     );
 
+    // issue #1432：「紧凑释义」开关只在这里落地——payload 进 handlebar 渲染前给
+    // 释义 HTML 注入紧凑样式；关闭时三份释义原样透传，输出逐字节不变。
+    final bool compactGlossaries = settings.compactGlossaries;
     final mediaPayload = AnkiMiningPayload(
       expression: payload.expression,
       reading: payload.reading,
@@ -618,9 +663,18 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       furiganaPlain: payload.furiganaPlain,
       frequenciesHtml: payload.frequenciesHtml,
       freqHarmonicRank: payload.freqHarmonicRank,
-      glossary: payload.glossary,
-      glossaryFirst: payload.glossaryFirst,
-      singleGlossaries: payload.singleGlossaries,
+      glossary: compactAnkiGlossaryHtml(
+        payload.glossary,
+        enabled: compactGlossaries,
+      ),
+      glossaryFirst: compactAnkiGlossaryHtml(
+        payload.glossaryFirst,
+        enabled: compactGlossaries,
+      ),
+      singleGlossaries: compactAnkiGlossaryMap(
+        payload.singleGlossaries,
+        enabled: compactGlossaries,
+      ),
       pitchPositions: payload.pitchPositions,
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
@@ -697,8 +751,53 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     return localMediaRef(path, mimePath: filename);
   }
 
+  /// iOS 上的 ✓ 只能问 Fushi 自己的账本——AnkiMobile 的 URL scheme 没有任何回读
+  /// collection 的通道（能力边界与代价见 [AnkiMobileMinedLedger]）。此前这里恒
+  /// `false`，等于 iOS 用户永远看不到「已制卡」。
+  ///
+  /// [reading] 刻意不参与匹配，与 AnkiConnect 的 `isDuplicate` 同口径（那条也只
+  /// 把第一字段发给 Anki 问）。
   @override
-  Future<bool> isDuplicate(String expression, String reading) async => false;
+  Future<bool> isDuplicate(String expression, String reading) =>
+      _minedLedger.contains(expression);
+
+  /// AnkiMobile 没有任何回读 collection 的通道（能力边界见 [AnkiMobileMinedLedger]），
+  /// 所以「反查不到这张卡」在本后端**不成立**——`findMatchingNotes` 恒空只是因为问不了。
+  /// 编排层据此改走「让用户裁决」而不是「当成已删、直接重制」。
+  @override
+  bool get canVerifyExistingCards => false;
+
+  /// 每张卡都经 `anki://x-callback-url/addnote` 拉起 AnkiMobile。
+  @override
+  bool get switchesAppPerNote => true;
+
+  /// 用户说「这张卡我已经在 Anki 里删了」——账本是 iOS 上唯一的真值来源，只能由他
+  /// 来纠正（[AnkiMobileMinedLedger.forget] 会顺带广播刷新，✓ 立刻变回 +）。
+  @override
+  Future<bool> forgetMinedCard(String expression) =>
+      _minedLedger.forget(expression);
+
+  /// ↗「在 Anki 里打开」。popup 只在 ✓ 亮着时才显示这个按钮，所以它必须和 ✓ 用
+  /// **同一份真值**：账本里没有就如实回 [AnkiOpenWordOutcome.noMatch]，不去打开一个
+  /// 注定搜不到东西的界面。
+  ///
+  /// 基类默认实现（`findMatchingNotes` → `openNoteInAnki`）在这里不可用：AnkiMobile
+  /// 既不回传 note id，也没有按 id 打开的入口，那条车道在本后端恒 `noMatch`。改走
+  /// 手册里的 `search` 端点按词搜。落点是 AnkiMobile 的浏览界面而不是某一张具体的
+  /// 卡——这是 URL scheme 给得出的最接近的东西。
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki(
+    String expression,
+    String reading,
+  ) async {
+    final String trimmed = expression.trim();
+    if (trimmed.isEmpty) return AnkiOpenWordOutcome.noMatch;
+    if (!await _minedLedger.contains(trimmed)) {
+      return AnkiOpenWordOutcome.noMatch;
+    }
+    final bool opened = await _openUrl(buildAnkiMobileSearchUri(trimmed));
+    return opened ? AnkiOpenWordOutcome.opened : AnkiOpenWordOutcome.failed;
+  }
 
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async => false;

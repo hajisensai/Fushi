@@ -14,6 +14,7 @@
 //      上界仍没播过去」这一档才按门实际观察到的窗口保守放弃，且不从队列里删。
 const test = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -112,6 +113,7 @@ function loadContentSandbox(options) {
     },
   };
   sandbox.window = {
+    fushiT: FUSHI_T,
     addEventListener() {},
     innerWidth: 1200,
     innerHeight: 800,

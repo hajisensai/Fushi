@@ -379,13 +379,7 @@ bool IsSiglusEngine() {
   if (slash == nullptr) return false;
 
   const std::wstring directory(path, static_cast<size_t>(slash - path));
-  return fushi_voice_hook::DirectoryLooksLikeSiglus(
-      directory, [](const std::wstring& dir, const wchar_t* name) {
-        const std::wstring candidate = dir + L"\\" + name;
-        const DWORD attributes = GetFileAttributesW(candidate.c_str());
-        return attributes != INVALID_FILE_ATTRIBUTES &&
-               (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
-      });
+  return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(directory);
 }
 
 bool TryHookSiglusOvk() {

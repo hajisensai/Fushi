@@ -34,10 +34,88 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   Future<MediaSourceRow?> getMediaSourceById(int id) =>
       (select(mediaSources)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// 还指向来源 [sourceId] 的下载订阅数与未整理完的下载任务数（BUG-2755）。
+  ///
+  /// 删来源前据此决定要不要让用户选迁移目标：FK setNull 会把这些行的
+  /// `target_source_id` 静默清空，订阅从此每轮报「目标来源不可用」、在途任务
+  /// 整理时报「受管来源不存在」。「未整理完」= 未完成且仍在
+  /// [kVideoDownloadSourceRebindableStages]（文件还没落进来源目录）。
+  Future<({int subscriptions, int pendingJobs})>
+      countVideoDownloadReferencesToSource(int sourceId) async {
+    final Expression<int> subscriptionCount =
+        videoDownloadSubscriptions.subscriptionId.count();
+    final TypedResult subscriptionRow =
+        await (selectOnly(videoDownloadSubscriptions)
+              ..addColumns(<Expression<Object>>[subscriptionCount])
+              ..where(
+                  videoDownloadSubscriptions.targetSourceId.equals(sourceId)))
+            .getSingle();
+    final Expression<int> jobCount = videoDownloadJobs.jobId.count();
+    final TypedResult jobRow = await (selectOnly(videoDownloadJobs)
+          ..addColumns(<Expression<Object>>[jobCount])
+          ..where(_pendingVideoDownloadJobsOfSource(sourceId)))
+        .getSingle();
+    return (
+      subscriptions: subscriptionRow.read(subscriptionCount) ?? 0,
+      pendingJobs: jobRow.read(jobCount) ?? 0,
+    );
+  }
+
+  Expression<bool> _pendingVideoDownloadJobsOfSource(int sourceId) =>
+      videoDownloadJobs.targetSourceId.equals(sourceId) &
+      videoDownloadJobs.lifecycle
+          .equals(VideoDownloadJobLifecycle.completed)
+          .not() &
+      videoDownloadJobs.stage.isIn(kVideoDownloadSourceRebindableStages);
+
   /// 删除来源：依赖 FK onDelete:setNull，归属本来源的 video_books / epub_books
   /// 自动把 source_id 归 NULL（条目保留，不连坐删）。返回删除行数。
-  Future<int> deleteMediaSource(int id) => transaction(() async {
+  ///
+  /// BUG-2755：视频下载的订阅与未整理完的任务也经 FK 指向来源。
+  /// - [migrateVideoDownloadsTo] 非 null：同一事务里把订阅与未整理完任务改写到
+  ///   该来源（必须是另一个视频来源，否则抛 [ArgumentError]，什么都不删）；
+  /// - 否则 [disableVideoDownloadSubscriptions] 为 true 时停用这些订阅（FK 随后把
+  ///   目标清空），免得它们每轮检查都报「目标来源不可用」。
+  Future<int> deleteMediaSource(
+    int id, {
+    int? migrateVideoDownloadsTo,
+    bool disableVideoDownloadSubscriptions = false,
+  }) =>
+      transaction(() async {
         final MediaSourceRow? source = await getMediaSourceById(id);
+        final int nowAt = DateTime.now().millisecondsSinceEpoch;
+        if (migrateVideoDownloadsTo != null) {
+          final MediaSourceRow? target =
+              await getMediaSourceById(migrateVideoDownloadsTo);
+          if (migrateVideoDownloadsTo == id ||
+              target == null ||
+              target.mediaKind != 'video') {
+            throw ArgumentError.value(
+              migrateVideoDownloadsTo,
+              'migrateVideoDownloadsTo',
+              'must be another video source',
+            );
+          }
+          await (update(videoDownloadSubscriptions)
+                ..where((t) => t.targetSourceId.equals(id)))
+              .write(VideoDownloadSubscriptionsCompanion(
+            targetSourceId: Value<int?>(migrateVideoDownloadsTo),
+            updatedAt: Value<int>(nowAt),
+          ));
+          await (update(videoDownloadJobs)
+                ..where((_) => _pendingVideoDownloadJobsOfSource(id)))
+              .write(VideoDownloadJobsCompanion(
+            targetSourceId: Value<int?>(migrateVideoDownloadsTo),
+            updatedAt: Value<int>(nowAt),
+          ));
+        } else if (disableVideoDownloadSubscriptions) {
+          await (update(videoDownloadSubscriptions)
+                ..where((t) => t.targetSourceId.equals(id) & t.enabled))
+              .write(VideoDownloadSubscriptionsCompanion(
+            enabled: const Value<bool>(false),
+            updatedAt: Value<int>(nowAt),
+          ));
+        }
         if (source != null && source.mediaKind == 'video') {
           // 来源设置可能刚改过还没重扫；FK 清空 sourceId 前保留最终组织选择。
           await (update(videoBooks)..where((t) => t.sourceId.equals(id))).write(
@@ -113,8 +191,15 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   // ── Mihon manga extensions (v63) ───────────────────────────────
 
-  Future<List<MangaExtensionStoreRow>> getMangaExtensionStores() =>
+  /// [mediaKind] 为 null 时不分片（全量）；传 `'manga'` / `'anime'` 只取该生态
+  /// 的仓库（v107，两个生态共用三张表按 media_kind 列分片）。
+  Future<List<MangaExtensionStoreRow>> getMangaExtensionStores({
+    String? mediaKind,
+  }) =>
       (select(mangaExtensionStores)
+            ..where((t) => mediaKind == null
+                ? const Constant(true)
+                : t.mediaKind.equals(mediaKind))
             ..orderBy([
               (t) => OrderingTerm(expression: t.sortOrder),
               (t) => OrderingTerm(expression: t.indexUrl),
@@ -128,8 +213,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (delete(mangaExtensionStores)..where((t) => t.indexUrl.equals(indexUrl)))
           .go();
 
-  Future<List<MangaExtensionRow>> getMangaExtensions() =>
+  Future<List<MangaExtensionRow>> getMangaExtensions({String? mediaKind}) =>
       (select(mangaExtensions)
+            ..where((t) => mediaKind == null
+                ? const Constant(true)
+                : t.mediaKind.equals(mediaKind))
             ..orderBy([
               (t) => OrderingTerm(expression: t.name),
               (t) => OrderingTerm(expression: t.packageName),
@@ -160,8 +248,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             .go();
       });
 
-  Future<List<MangaOnlineSourceRow>> getMangaOnlineSources() =>
+  Future<List<MangaOnlineSourceRow>> getMangaOnlineSources({
+    String? mediaKind,
+  }) =>
       (select(mangaOnlineSources)
+            ..where((t) => mediaKind == null
+                ? const Constant(true)
+                : t.mediaKind.equals(mediaKind))
             ..orderBy([
               (t) => OrderingTerm(
                     expression: t.pinned,
@@ -1037,32 +1130,50 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 合集随之删除。
   Future<void> removeEntryFromAllCollections(
           MediaKind mediaType, String entryKey) =>
+      removeEntriesFromAllCollections(mediaType, <String>[entryKey]);
+
+  /// [removeEntryFromAllCollections] 的批量版（BUG-2754：批量删视频一次清完，
+  /// 不再每条一个事务）。语义逐条等价：先删这些条目的全部成员行，再把因此变空
+  /// 的合集连同其标签映射删掉。`IN (...)` 按块走，避开 999 绑定变量上限。
+  Future<void> removeEntriesFromAllCollections(
+          MediaKind mediaType, Iterable<String> entryKeys) =>
       transaction(() async {
-        final List<MediaCollectionItemRow> affected =
-            await (select(mediaCollectionItems)
-                  ..where((t) =>
-                      t.mediaType.equals(mediaType.dbValue) &
-                      t.entryKey.equals(entryKey)))
-                .get();
-        if (affected.isEmpty) return;
-        final Set<int> ids =
-            affected.map((MediaCollectionItemRow e) => e.collectionId).toSet();
-        await (delete(mediaCollectionItems)
-              ..where((t) =>
-                  t.mediaType.equals(mediaType.dbValue) &
-                  t.entryKey.equals(entryKey)))
-            .go();
-        for (final int cid in ids) {
-          final List<MediaCollectionItemRow> rem =
+        final List<String> keys = entryKeys.toSet().toList(growable: false);
+        if (keys.isEmpty) return;
+        final Set<int> ids = <int>{};
+        for (final List<String> chunk
+            in _chunkForSqlVariables<String>(keys, _kVideoDeleteChunkSize)) {
+          final List<MediaCollectionItemRow> affected =
               await (select(mediaCollectionItems)
-                    ..where((t) => t.collectionId.equals(cid)))
+                    ..where((t) =>
+                        t.mediaType.equals(mediaType.dbValue) &
+                        t.entryKey.isIn(chunk)))
                   .get();
-          if (rem.isEmpty) {
-            await deleteTagAssignmentsForHost(
-                TagHostKind.collection, collectionTagEntryKey(cid));
-            await (delete(mediaCollections)..where((t) => t.id.equals(cid)))
-                .go();
-          }
+          if (affected.isEmpty) continue;
+          ids.addAll(
+              affected.map((MediaCollectionItemRow e) => e.collectionId));
+          await (delete(mediaCollectionItems)
+                ..where((t) =>
+                    t.mediaType.equals(mediaType.dbValue) &
+                    t.entryKey.isIn(chunk)))
+              .go();
+        }
+        if (ids.isEmpty) return;
+        final Set<int> stillPopulated = <int>{};
+        for (final List<int> chunk in _chunkForSqlVariables<int>(
+            ids.toList(growable: false), _kVideoDeleteChunkSize)) {
+          final List<MediaCollectionItemRow> remaining =
+              await (select(mediaCollectionItems)
+                    ..where((t) => t.collectionId.isIn(chunk)))
+                  .get();
+          stillPopulated.addAll(
+              remaining.map((MediaCollectionItemRow e) => e.collectionId));
+        }
+        for (final int cid in ids.difference(stillPopulated)) {
+          await deleteTagAssignmentsForHost(
+              TagHostKind.collection, collectionTagEntryKey(cid));
+          await (delete(mediaCollections)..where((t) => t.id.equals(cid)))
+              .go();
         }
       });
 

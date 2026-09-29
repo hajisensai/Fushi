@@ -323,6 +323,8 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {
     await dest.create(recursive: true);
     await dest.writeAsBytes(<int>[0, 0, 0]);

@@ -11,11 +11,13 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart'
     show aidokuChapterDisplayTitle;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -100,6 +102,9 @@ sealed class OnlineMangaPageRef {
 
   /// 0-based 页序（落盘名 `page-000001` 由它 +1 得出）。
   final int index;
+
+  /// Original provider URL, used only to match optional OCR sidecars.
+  String? get sourceUrl => null;
 }
 
 /// Mihon：取图必须经扩展自己的 OkHttp 客户端（拦截器、cookie、按请求头）。
@@ -112,6 +117,9 @@ class MihonMangaPageRef extends OnlineMangaPageRef {
 
   final MihonSourceContext context;
   final MihonPage page;
+
+  @override
+  String? get sourceUrl => page.resolvedUrl;
 }
 
 /// Aidoku：普通 https + UA / Referer / cookie jar。
@@ -126,6 +134,9 @@ class AidokuMangaPageRef extends OnlineMangaPageRef {
 
   /// 作品页 URL（https 才带），作为取图的 Referer。
   final String? referer;
+
+  @override
+  String? get sourceUrl => page.url;
 }
 
 /// 源补丁（quirk）产出的裸 https 页：URL 自带签名，只需 Referer（BUG-2514）。
@@ -143,6 +154,9 @@ class HttpMangaPageRef extends OnlineMangaPageRef {
 
   /// 源站 baseUrl（不带尾斜杠），作为 Referer。
   final String referer;
+
+  @override
+  String? get sourceUrl => url;
 }
 
 /// 互联对端：`bookKey` + 页序即是端点路径段。
@@ -171,8 +185,8 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
 /// `MihonLibraryService` 直接把 `MihonManager` 焊死在签名里。
 ///
 /// 取页是**两段式**（设计稿 2026-09-12 §3）：先 [resolveChapterPages] 拿页表，再逐页
-/// [fetchChapterPage] 取字节。没有阅读会话、没有页缓存——在线章只能下载后读，
-/// 落盘由 `MangaDownloadService` 统一做。
+/// [fetchChapterPage] 取字节。两个消费者共用这一对方法：下载服务（落章目录）与
+/// 阅读器的在线直读会话 `OnlineMangaReaderSession`（2026-09-26 起，临时缓存）。
 abstract interface class OnlineMangaRuntimeAdapter {
   OnlineMangaRuntimeKind get kind;
 
@@ -196,6 +210,15 @@ abstract interface class OnlineMangaRuntimeAdapter {
 
   /// 取封面字节（入库时落盘一份，之后书架离线可见）。
   Future<List<int>> fetchCover(OnlineMangaLibraryEntry entry, String url);
+}
+
+/// Optional OCR sidecar capability. Sources that do not implement this are
+/// never queried for sidecars.
+abstract interface class MangaOcrSidecarProvider {
+  Future<String?> fetchChapterOcrSidecar({
+    required OnlineMangaLibraryEntry entry,
+    required OnlineMangaChapter chapter,
+  });
 }
 
 /// 在 app 内登录源站所需的一切（[runtime] 交给 `mihonLoginTarget` 判能力）。
@@ -222,6 +245,15 @@ abstract interface class OnlineMangaLoginCapable {
     OnlineMangaLibraryEntry entry,
     OnlineMangaChapter chapter,
   );
+}
+
+/// 有「作品在源站的网页」的适配器：作品页 AppBar 的「在网站打开」入口用
+/// `is OnlineMangaWebUrlCapable` 判有没有（本地卷 / 互联对端没有）。
+abstract interface class OnlineMangaWebUrlCapable {
+  /// 该条目在源站的网页地址；源没登记、扩展没给出地址且 baseUrl 也拼不出时
+  /// 返回 null（按钮照常显示，点了给「该源没有网页」提示，不做静态判定——
+  /// 地址要真问扩展才知道）。
+  Future<Uri?> webUrl(OnlineMangaLibraryEntry entry);
 }
 
 /// 同一扩展下另一种语言的已启用源（BUG-2510）。
@@ -273,7 +305,9 @@ abstract interface class OnlineMangaLanguageScoped {
 class MihonLibraryAdapter
     implements
         OnlineMangaRuntimeAdapter,
+        MangaOcrSidecarProvider,
         OnlineMangaLoginCapable,
+        OnlineMangaWebUrlCapable,
         OnlineMangaLanguageScoped {
   const MihonLibraryAdapter(
     this.manager, {
@@ -282,6 +316,20 @@ class MihonLibraryAdapter
   });
 
   final MihonManager manager;
+
+  @override
+  Future<String?> fetchChapterOcrSidecar({
+    required OnlineMangaLibraryEntry entry,
+    required OnlineMangaChapter chapter,
+  }) async {
+    final MihonSourceContext context = await _context(entry);
+    return fetchMokuroSidecar(
+      entry,
+      chapter,
+      sourceName: context.source.name,
+      sourceBaseUrl: context.source.baseUrl,
+    );
+  }
 
   /// 测试缝：null = 生产装配（走应用代理出口的 http 客户端）。
   final ComicoMagazineComicQuirk? comicoQuirk;
@@ -340,6 +388,21 @@ class MihonLibraryAdapter
       return null;
     }
     return (runtime: runtime, sourceName: name, baseUrl: baseUrl);
+  }
+
+  @override
+  Future<Uri?> webUrl(OnlineMangaLibraryEntry entry) async {
+    final MihonSourceContext context;
+    try {
+      context = await _context(entry);
+    } on OnlineMangaUnavailable {
+      return null;
+    }
+    return resolveMihonMangaWebUrl(
+      runtime: manager.runtime,
+      context: context,
+      manga: MihonManga.fromJson(entry.series.raw),
+    );
   }
 
   @override
@@ -728,12 +791,12 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
   /// 平台门只管「要不要**我自己**去造运行时」。
   ///
   /// `AidokuRuntimeFactory.isSupported` 表达的是「本平台能不能创建 Aidoku 运行
-  /// 时」（只有 macOS）。但调用方把运行时和安装包都预置进来时，这条限制根本
-  /// 不适用——那份运行时已经在手上、能直接用。只看平台会把这种情况误判成不可用，
-  /// 于是页面明明能拉到章节却显示「本平台不支持」。
+  /// 时」（iOS、macOS 两个宿主已先后移除，当前恒 false）。但调用方把运行时和安装
+  /// 包都预置进来时，这条限制根本不适用——那份运行时已经在手上、能直接用。只看
+  /// 平台会把这种情况误判成不可用，于是页面明明能拉到章节却显示「本平台不支持」。
   ///
-  /// 这条 preset 逃生口不是合规缺口：iOS 上唯一能造出 [AidokuRuntime] 的工厂已经
-  /// 抛 `UNSUPPORTED_PLATFORM`，没有任何生产路径能把 `_runtime` 填非空。旧版本
+  /// 这条 preset 逃生口不是合规缺口：唯一能造出 [AidokuRuntime] 的工厂已经抛
+  /// `UNSUPPORTED_PLATFORM`，没有任何生产路径能把 `_runtime` 填非空。旧版本
   /// 留下的 Aidoku 书架条目走到这里会拿到 false，作品页据此显示「本平台不支持」，
   /// 而不是崩在懒建运行时上。
   @override
@@ -871,7 +934,7 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
     if (!AidokuRuntimeFactory.isSupported) {
       throw const OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.platformUnsupported,
-        'Aidoku sources are only available on macOS and iOS',
+        'No Aidoku runtime host is bundled in this build',
       );
     }
     final List<AidokuInstalledPackage> installed =

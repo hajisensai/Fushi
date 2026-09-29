@@ -35,6 +35,7 @@
 #include "stardict/stardict_reader.hpp"
 #include "util/fs_utf8.hpp"
 #include "util/import_breadcrumb.hpp"
+#include "util/term_rules_flag.hpp"
 #include "zip/zip.hpp"
 
 #include "fushidicts/platform.hpp"
@@ -64,6 +65,9 @@ struct ProcessedFile {
   size_t count = 0;
   size_t freq_count = 0;
   size_t pitch_count = 0;
+  // Any written term record carried a non-empty `rules` (POS) string. Folded
+  // into ImportResult::term_rules_present and persisted as term_rules.flag.
+  bool rules_present = false;
 };
 
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
@@ -363,6 +367,9 @@ ProcessedFile process_term_bank(const std::string& content, const ZSTD_CDict* cd
     write_str(processed.data, definition_tags);
     write_val<uint8_t>(processed.data, static_cast<uint8_t>(term.rules.size()));
     write_str(processed.data, term.rules);
+    if (!term.rules.empty()) {
+      processed.rules_present = true;
+    }
     write_val<uint8_t>(processed.data, static_cast<uint8_t>(term.term_tags.size()));
     write_str(processed.data, term.term_tags);
     // v2 term 记录追加段（上游 909c854）：Yomitan score，排序信号（JMdict 系词典
@@ -795,6 +802,9 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 
     write_offset += processed.data.size();
     result.term_count += processed.count;
+    if (processed.rules_present) {
+      result.term_rules_present = true;
+    }
   };
 
   int bank_seq = 0;
@@ -1947,6 +1957,13 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
     result.media_count = media_thread.get();
 
+    // term_rules.flag：本词典是否有任何 term 带词性（rules）。读侧据此决定空
+    // rules 是「Yomitan 语义：非变形词」还是「转换器根本没产出词性 → 通配」。
+    // 写在 marker 之前：marker 一落地读侧就会加载，flag 必须先就位。
+    blobs.flush();
+    fushi::term_rules_flag::write(path, result.term_rules_present,
+                                  std::filesystem::file_size(fushi::fs_path(path + "/blobs.bin")));
+
     // v2 = 本批引入的格式阶梯（fork 首个版本升级）：kanji 记录带 stats 追加段 +
     // term glossary 可能使用 dict.zstd 训练字典。旧引擎认不出 v2 marker 会整目录
     // 不加载（降级后新导入词典不可见，不毁数据、重导可救）；v1 存量照读不变。
@@ -2097,6 +2114,14 @@ void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, co
 
   sink.blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
   hash_thread.get();
+
+  // Simple dicts store the wildcard "*" on every term (SimpleEntryAccumulator),
+  // so rules are always present; writing the flag just spares the reader the
+  // legacy record scan.
+  sink.blobs.flush();
+  result.term_rules_present = true;
+  fushi::term_rules_flag::write(path, true,
+                                std::filesystem::file_size(fushi::fs_path(path + "/blobs.bin")));
 
   std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
 }

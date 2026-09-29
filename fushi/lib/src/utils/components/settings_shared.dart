@@ -46,6 +46,25 @@ const int kSettingsRowTitleMaxLines = 2;
 /// 只有密度敏感、确实需要固定行数的列表才显式传这个常量。
 const int kSettingsRowSubtitleMaxLines = 3;
 const double kSettingsStepperValueWidth = 72;
+
+/// stepper 行 trailing（`−` / 读数 / `+`）的固有宽度：两个
+/// `VisualDensity.compact` 的 [IconButton]（48 − 8 = 40）+ [Wrap] 的两处 4
+/// 间距 + [kSettingsStepperValueWidth] 读数槽。读数走 [FittedBox] 缩放，所以
+/// 这个盒子不随文字缩放变宽。
+///
+/// 之所以要写成常量：它是 [AdaptiveSettingsRow] 堆叠判据的输入之一（见
+/// [AdaptiveSettingsRow.trailingWidth]）——判「这行还放不放得下标题」必须知道
+/// trailing 到底占多宽，靠经验常数猜会把标题削没（BUG-2550）。
+const double kSettingsStepperTrailingWidth =
+    kSettingsStepperValueWidth + 2 * (40 + 4);
+
+/// 行内布局下，标题至少要拿到的宽度（1x；随文字缩放放大）。
+///
+/// 标题默认 2 行 + ellipsis（[kSettingsRowTitleMaxLines]），低于这个宽度就只剩
+/// 开头一两个字加省略号，配置项等于失效。判据与 BUG-1184 / BUG-1537 对说明文字
+/// 的判断同一条：截断即失效，宁可让控件换到下一行（[AdaptiveSettingsRow] 本来就
+/// 有这条堆叠退路）。96dp ≈ 7 个 CJK 字（bodyMedium 14）。
+const double kSettingsRowLabelMinWidth = 96;
 const double kSettingsPickerDefaultWidth = 220;
 const double kSettingsPickerMinInlineWidth = 120;
 
@@ -464,6 +483,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.onTap,
     this.controlBelow = false,
     this.trailingFlexible = false,
+    this.trailingWidth,
     this.titleMaxLines,
     this.subtitleMaxLines,
     this.horizontalPadding,
@@ -530,6 +550,17 @@ class AdaptiveSettingsRow extends StatelessWidget {
   /// (switches, steppers) must leave this false so the label stays greedy.
   final bool trailingFlexible;
 
+  /// [trailing] 的固有宽度（dp），由知道自己多宽的调用方声明（如
+  /// [AdaptiveSettingsStepperRow] 传 [kSettingsStepperTrailingWidth]）。
+  ///
+  /// 只影响**堆叠判据**：给出它，这行就按「padding + 图标 + 标题最低可读宽
+  /// （[kSettingsRowLabelMinWidth]）+ 间距 + 本值」判断还放不放得下行内布局，
+  /// 而不是套那个与 trailing 无关的经验常数。不给（默认）= 维持原经验值。
+  ///
+  /// 它**不**参与布局本身：trailing 仍是自尺寸的非 flex 子，本值只是声明，
+  /// 写错不会把控件拉宽或压窄，只会让堆叠点偏移。
+  final double? trailingWidth;
+
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
@@ -549,8 +580,28 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // wider non-flex trailing, like a stepper with a fixed readout slot,
     // genuinely needs the extra room. Capped so absurd scales don't demand an
     // impossible width.
+    //
+    // BUG-2550：那个经验值只在 trailing 窄（switch ~60）时成立。trailing 一旦真的
+    // 宽——stepper 是 [kSettingsStepperTrailingWidth]（160）——220 就远低于这行真正
+    // 需要的宽度：行宽刚好卡在阈值上时，标题拿到的是
+    // `220 + 42 − 32(padding) − 42(icon) − 12(gap) − 160(stepper) ≈ 16dp`，
+    // 一个汉字都装不下，于是「字体大小 / 字体粗细 / 段落间距」在阅读设置面板里
+    // 全被 ellipsis 削成开头一个字。所以**声明了固有宽度的 trailing** 改按真实需求
+    // 算阈值（padding + 图标 + 标题最低可读宽 + 间距 + trailing 实宽），没声明的
+    // 维持原经验值不动（它们的窄屏行为另有守卫钉着）。
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
-    final double stackThreshold = (220.0 * textScale).clamp(220.0, 420.0);
+    final double horizontalInset =
+        horizontalPadding ?? (cupertino ? 16 : tokens.spacing.rowHorizontal);
+    final double? declaredTrailingWidth = trailingWidth;
+    final double stackThreshold = declaredTrailingWidth == null
+        ? (220.0 * textScale).clamp(220.0, 420.0)
+        : 2 * horizontalInset +
+            (kSettingsRowLabelMinWidth * textScale).clamp(
+              kSettingsRowLabelMinWidth,
+              2 * kSettingsRowLabelMinWidth,
+            ) +
+            (tokens.spacing.gap + 4) +
+            declaredTrailingWidth;
     // 左栏图标占固定宽（badge ~30 + 间距 gap+4 = 12）：堆叠判断必须把它计入
     // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
     // 行内布局，label+trailing 少了一个图标位而右溢出。
@@ -1777,6 +1828,7 @@ class SettingsFormField extends StatelessWidget {
     this.errorText,
     this.obscureText = false,
     this.keyboardType,
+    this.suffixIcon,
     this.bottomSpacing = 8,
   }) : assert(
           initialValue == null || controller == null,
@@ -1804,6 +1856,13 @@ class SettingsFormField extends StatelessWidget {
   final bool obscureText;
   final TextInputType? keyboardType;
 
+  /// 贴在输入框尾部的操作按钮（`InputDecoration.suffixIcon`）。
+  ///
+  /// 存在的理由：一个值只能有一个输入控件。字段旁边另起一个下拉去写同一个值，
+  /// 两处必然对不上（BUG-2618），所以「从候选里挑一个填进来」这类操作一律挂在
+  /// 字段自己身上。
+  final Widget? suffixIcon;
+
   /// 字段之间的垂直间距（落在字段下方）。
   final double bottomSpacing;
 
@@ -1829,6 +1888,7 @@ class SettingsFormField extends StatelessWidget {
             helperText: helperText,
             helperMaxLines: 3,
             errorText: errorText,
+            suffixIcon: suffixIcon,
             isDense: true,
             border: const OutlineInputBorder(),
           ),
@@ -1874,6 +1934,9 @@ class AdaptiveSettingsStepperRow extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       showIcon: showIcon,
+      // BUG-2550：stepper 是最宽的自尺寸 trailing，把实宽报给行，让「窄到标题
+      // 放不下」时真的堆叠，而不是把标题削成一个字。
+      trailingWidth: kSettingsStepperTrailingWidth,
       trailing: _KeyboardStepper(
         value: value,
         step: step,

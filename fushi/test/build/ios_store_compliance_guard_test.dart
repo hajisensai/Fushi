@@ -50,18 +50,20 @@ void main() {
 
     test('下载中心在 iOS 上不是一个可用模块', () {
       expect(
-        ModuleId.downloads.availableOn(
+        ModuleId.browse.availableOn(
           isWindows: false,
           isDesktop: false,
           isIOS: true,
+          isAndroid: false,
         ),
         isFalse,
       );
       expect(
-        ModuleId.downloads.availableOn(
+        ModuleId.browse.availableOn(
           isWindows: false,
           isDesktop: false,
           isIOS: false,
+          isAndroid: true,
         ),
         isTrue,
         reason:
@@ -70,15 +72,49 @@ void main() {
       );
     });
 
-    test('iOS 这个维度只动下载中心，不误伤其它模块', () {
+    test('iOS 与 Android 的模块集合只差下载中心（外加 games 这一条技术例外）', () {
       for (final ModuleId module in ModuleId.values) {
-        if (module == ModuleId.downloads) continue;
+        if (module == ModuleId.browse) continue;
+        // games 是**技术**例外，不是合规边界：Android 的 games 模块是串流接收端
+        // （WebRTC 接收入口只接了 Android），iOS 没有这个接收端，所以两端结论
+        // 不同。它不属于 StoreRestrictedCapability，别据此把它登记进合规边界。
+        if (module == ModuleId.games) continue;
         expect(
-          module.availableOn(isWindows: false, isDesktop: false, isIOS: true),
-          module.availableOn(isWindows: false, isDesktop: false, isIOS: false),
+          module.availableOn(
+            isWindows: false,
+            isDesktop: false,
+            isIOS: true,
+            isAndroid: false,
+          ),
+          module.availableOn(
+            isWindows: false,
+            isDesktop: false,
+            isIOS: false,
+            isAndroid: true,
+          ),
           reason: '${module.name} 的可用性不该随 iOS 与否改变。',
         );
       }
+      expect(
+        ModuleId.games.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: true,
+          isAndroid: false,
+        ),
+        isFalse,
+        reason: 'iOS 没有串流接收端，也没有 galgame hook。',
+      );
+      expect(
+        ModuleId.games.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: false,
+          isAndroid: true,
+        ),
+        isTrue,
+        reason: 'Android 的 games 是串流接收端的远端游戏库。',
+      );
     });
 
     test('可见集合在 iOS 上滤掉下载中心（用户把开关打开也一样）', () {
@@ -86,8 +122,9 @@ void main() {
         isWindows: false,
         isDesktop: false,
         isIOS: true,
+        isAndroid: false,
       );
-      expect(ios.isEnabled(ModuleId.downloads), isFalse);
+      expect(ios.isEnabled(ModuleId.browse), isFalse);
       expect(
         ios.isEnabled(ModuleId.manga),
         isTrue,
@@ -98,43 +135,76 @@ void main() {
         isWindows: false,
         isDesktop: false,
         isIOS: false,
+        isAndroid: true,
       );
-      expect(android.isEnabled(ModuleId.downloads), isTrue);
+      expect(android.isEnabled(ModuleId.browse), isTrue);
     });
   });
 
   group('发现入口全部过同一道门', () {
-    test('书 / 漫画 / 视频三个库页的发现视图都由 externalDiscovery 门控', () {
-      const String gate =
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
-
-      // 书 tab：统一发现页（小说 + 有声书在线源）。
+    test('发现视图只住在「浏览」模块：库页不再声明发现视图，浏览整模块过 downloads 门', () {
+      // 2026-09-27 起在线发现从书 / 漫画 / 视频 / 游戏四个库页搬进顶层「浏览」
+      // 模块（browse_page.dart 的「发现」页签）。合规边界随之上移：库页里不得
+      // 再长出发现视图（否则它不在任何门后），浏览模块整个在 iOS 上缺席。
       expect(
         compactCode(
           read('lib/src/pages/implementations/home_reader_page.dart'),
         ),
-        contains(
-          '${gate}MediaLibraryViewSpec(kind:MediaLibraryViewKind.browse,',
+        allOf(
+          isNot(contains('MediaLibraryViewKind.browse')),
+          isNot(contains('MediaLibraryViewKind.discover')),
         ),
+        reason: '书 tab 的统一发现页已搬进「浏览」，书架页不得再挂发现视图。',
       );
-
-      // 漫画 tab：AniList 榜单 + 各来源热门行 + mokuro.moe 卷下载。
       expect(
         compactCode(read('lib/src/media/manga/manga_library_page.dart')),
-        contains(
-          '${gate}MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+        allOf(
+          isNot(contains('MediaLibraryViewKind.discover')),
+          isNot(contains('MediaLibraryViewKind.browse')),
         ),
+        reason: '漫画发现（AniList 榜单 / 来源热门 / mokuro.moe）已搬进「浏览」。',
       );
-
-      // 视频 tab：番剧发现 → 资源索引器 → 种子获取。
       expect(
         compactCode(
           read('lib/src/pages/implementations/video_library_shell.dart'),
         ),
+        isNot(contains('VideoLibrarySection.discover')),
+        reason: '视频发现（番剧发现 → 资源索引器 → 种子获取）已搬进「浏览」。',
+      );
+      expect(
+        compactCode(read('lib/src/pages/implementations/game_shared.dart')),
+        isNot(contains('GameSection.discover')),
+        reason: '游戏资源发现已搬进「浏览」。',
+      );
+
+      // 浏览模块的可用性委托给合规边界的唯一真相源，不自己写平台判断。
+      expect(
+        compactCode(read('lib/src/models/module_id.dart')),
         contains(
-          '${gate}LibrarySectionTab<VideoLibrarySection>'
-          '(value:VideoLibrarySection.discover,',
+          'ModuleId.browse=>StoreRestrictedCapability.downloads.availableOn('
+          'isIOS:isIOS,),',
         ),
+      );
+      final String browse = compactCode(
+        read('lib/src/pages/implementations/browse_page.dart'),
+      );
+      expect(
+        browse,
+        contains('BrowseTab.discover=>_buildResourceHub(),'),
+        reason: '发现页签就是资源发现 hub，只在浏览模块里构建。',
+      );
+      expect(
+        browse,
+        contains(
+          'finalbooldiscover='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable&&',
+        ),
+        reason: '发现页签自己问 externalDiscovery，不只靠模块委托的 downloads 能力。',
+      );
+      expect(
+        browse,
+        isNot(contains('Platform.isIOS')),
+        reason: '消费端不得各自写平台判断，只问 StoreRestrictedCapability。',
       );
     });
 
@@ -181,6 +251,56 @@ void main() {
       );
     });
 
+    test('「AI 下视频」入口 / 设置分类 / 功能指派行三处都过 downloads + '
+        'externalDiscovery 两道门', () {
+      // 对话页里说作品名 → 识别 → 下载或订阅：既是在线发现又是下载中心。三处消费
+      // 点必须问同一对判据；其中功能指派行最容易漏——它不是入口也不是分类，只是
+      // 设置页里一行文案，但那行写着「然后下载或订阅」，iOS 上留着等于把被拆掉
+      // 的能力写在审核员眼前（PR #1592 审查补的就是这一处）。
+      const String gates =
+          'StoreRestrictedCapability.downloads.isAvailable&&'
+          'StoreRestrictedCapability.externalDiscovery.isAvailable';
+
+      // 首页入口：偏好就绪 + 两道门（AI 未指派 / runtime 没起改在点击时引导，
+      // 不再藏入口——藏了新用户就永远找不到它）。
+      expect(
+        compactCode(read('lib/src/pages/implementations/home_page.dart')),
+        contains(
+          'boolget_canAiAcquire=>appModelNoUpdate.isPreferencesReady&&'
+          '$gates;',
+        ),
+      );
+
+      // 设置分类：section 级 visible，正文 / 主从详情 / 搜索索引三条路径共用。
+      expect(
+        compactCode(read('lib/src/settings/settings_schema_ai.dart')),
+        contains(
+          "id:'ai.video_download',title:t.ai_video_download_section,"
+          'visible:(SettingsContextc)=>$gates&&'
+          'c.appModel.moduleVisibility.isEnabled(ModuleId.browse),',
+        ),
+      );
+
+      // 功能指派行：AiFeature.values 逐行渲染前过滤。
+      final String section = compactCode(
+        read('lib/src/pages/implementations/ai_provider_settings_section.dart'),
+      );
+      expect(
+        section,
+        contains(
+          'for(finalAiFeaturefeatureinAiFeature.values)'
+          'if(_featureAvailableOnThisStore(feature))_featureRow(feature),',
+        ),
+      );
+      expect(
+        section,
+        contains(
+          'staticbool_featureAvailableOnThisStore(AiFeaturefeature)=>'
+          'feature!=AiFeature.acquire||($gates);',
+        ),
+      );
+    });
+
     test('设置里的资源索引器分区在 iOS 上整节不渲染', () {
       expect(
         compactCode(read('lib/src/settings/settings_schema_services.dart')),
@@ -194,9 +314,16 @@ void main() {
       );
     });
 
-    test('漫画「来源」视图的在线源三节由 onlineMangaSource 门控', () {
-      final String source = compactCode(
+    test('漫画在线源三节（浏览模块）由 onlineMangaSource 门控', () {
+      // 2026-09-27 起漫画在线源从「来源」导入视图拆进 MangaOnlineSourcesView，
+      // 只由「浏览」模块挂载；导入视图只剩本地来源。
+      final String importPage = compactCode(
         read('lib/src/media/manga/manga_sources_page.dart'),
+      );
+      expect(importPage, isNot(contains('MihonExtensionsPage')));
+      expect(importPage, isNot(contains('MihonInstalledSourcesSection')));
+      final String source = compactCode(
+        read('lib/src/media/manga/manga_online_sources_view.dart'),
       );
       expect(
         source,
@@ -205,25 +332,199 @@ void main() {
           'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
         ),
       );
-      expect(source, contains('if(onlineSourcesAvailable)'));
+      expect(source, contains('elseif(onlineSourcesAvailable)'));
       expect(
         source,
         contains('if(onlineSourcesAvailable&&manager!=null)'),
         reason: 'Mihon 扩展提供的源行也在这节里，不能只挡住标题。',
       );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/browse_online_sources_view.dart'),
+        ),
+        contains(
+          'OnlineSourcesDomain.manga=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable,',
+        ),
+        // 漫画域只问合规门、不再叠 Mihon 宿主门：内置 mokuro.moe 不需要扩展宿主，
+        // Linux 上它的开关要有入口（PR #1707 审查）；没有宿主时扩展相关的节由
+        // MangaOnlineSourcesView 自己换成「不可用」说明（上面几条断言钉的就是它）。
+        reason: '浏览页签是否出现漫画域也问同一道合规门。',
+      );
+    });
+
+    test('视频在线源三段（Aniyomi，浏览模块）由 onlineVideoSource 门控', () {
+      // 判据只写在 video_online_sources_gate.dart 一处（合规门 + 运行时平台门），
+      // 浏览页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
+      final String gate = compactCode(
+        read('lib/src/media/video/online/video_online_sources_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisVideoOnlineSourcesAvailable=>'
+          'StoreRestrictedCapability.onlineVideoSource.isAvailable&&'
+          'MihonRuntimeFactory.isSupported;',
+        ),
+      );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/media_sources_page.dart'),
+        ),
+        isNot(contains('animeMihonManager')),
+        reason: '视频导入页只剩本地来源，不得再取 animeMihonManager。',
+      );
+      final String sources = compactCode(
+        read('lib/src/pages/implementations/browse_online_sources_view.dart'),
+      );
+      expect(
+        sources,
+        contains(
+          'MihonManager?get_animeManager=>'
+          'isVideoOnlineSourcesAvailable?_appModel.animeMihonManager:null;',
+        ),
+        reason: '浏览页取 animeMihonManager（仓库 / 扩展 / 在线源）必须挂在这个门后。',
+      );
+      expect(
+        sources,
+        contains('OnlineSourcesDomain.video=>isVideoOnlineSourcesAvailable,'),
+        reason: '浏览页签是否出现视频域也问同一道门。',
+      );
+      expect(
+        sources,
+        contains('finalMihonManagermanager=>_videoSlivers(manager),'),
+        reason: '三段的 sliver 只在拿到 manager 时才进树，门失效时整段不出现。',
+      );
+      expect(
+        sources,
+        isNot(contains('Platform.isIOS')),
+        reason: '消费端不得各自写平台判断，只问 StoreRestrictedCapability。',
+      );
+    });
+
+    test('播放页从媒体库重开在线源集时，取 animeMihonManager 挂在同一道门后', () {
+      // 媒体库里的在线源行（anime-source://）会经备份 / 同步出现在任何平台上；播放页
+      // 重开它时若在门外取 animeMihonManager，iOS 上就会起在线源宿主（Linux 上直接
+      // 抛 UnsupportedError）。门不过时抛 AnimeSourceLaunchUnavailable，走原有的
+      // 「扩展不可用」失败提示。
+      final String page = compactCode(
+        read('lib/src/pages/implementations/video_fushi_page.dart'),
+      );
+      const String gate =
+          'if(!isVideoOnlineSourcesAvailable){'
+          'throwconstAnimeSourceLaunchUnavailable(';
+      const String use = 'manager:appModel.animeMihonManager,';
+      expect(page, contains(gate));
+      expect(page, contains(use));
+      expect(
+        'animeMihonManager'.allMatches(page).length,
+        1,
+        reason: '播放页只许这一处取 animeMihonManager，且它在门后。',
+      );
+      final int gateAt = page.indexOf(gate);
+      final int useAt = page.indexOf(use);
+      expect(gateAt, lessThan(useAt), reason: '门必须先于取用。');
+      expect(
+        page.substring(gateAt, useAt),
+        allOf(
+          contains('launch=awaitbuildAnimeSourceLaunch('),
+          isNot(contains('}catch(')),
+        ),
+        reason: '门与取用在同一个 try 里紧挨着：门不过就不会走到取用。',
+      );
+      final List<File> parts =
+          Directory('lib/src/pages/implementations/video_fushi')
+              .listSync()
+              .whereType<File>()
+              .where((File f) => f.path.endsWith('.dart'))
+              .toList();
+      expect(parts, isNotEmpty);
+      for (final File part in parts) {
+        expect(
+          compactCode(part.readAsStringSync()),
+          isNot(contains('animeMihonManager')),
+          reason: '${part.path}：播放页的 part 不得绕开门取 animeMihonManager。',
+        );
+      }
+    });
+
+    test('小说源三段（LNReader，浏览模块）由 onlineNovelSource 门控', () {
+      final String gate = compactCode(
+        read('lib/src/media/novel/online/novel_online_sources_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisNovelOnlineSourcesAvailable=>'
+          'StoreRestrictedCapability.onlineNovelSource.isAvailable&&'
+          'isLnReaderRuntimeSupported;',
+        ),
+      );
+      expect(
+        gate,
+        isNot(contains('Platform.isIOS')),
+        reason: '运行时平台门只列真支持的平台，iOS 的缺席归合规门管。',
+      );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/media_sources_page.dart'),
+        ),
+        isNot(contains('lnReaderManager')),
+        reason: '书导入页只剩本地来源，不得再取 lnReaderManager。',
+      );
+      final String sources = compactCode(
+        read('lib/src/pages/implementations/browse_online_sources_view.dart'),
+      );
+      expect(
+        sources,
+        contains(
+          'LnReaderManager?get_novelManager=>'
+          'isNovelOnlineSourcesAvailable?_appModel.lnReaderManager:null;',
+        ),
+        reason: '浏览页取 lnReaderManager（仓库 / 扩展 / 在线源）必须挂在这个门后。',
+      );
+      expect(
+        sources,
+        contains('OnlineSourcesDomain.novel=>isNovelOnlineSourcesAvailable,'),
+      );
+      expect(
+        sources,
+        contains('finalLnReaderManagermanager=>_novelSlivers(manager),'),
+        reason: '三段的 sliver 只在拿到 manager 时才进树，门失效时整段不出现。',
+      );
+      // 在线小说书的描述符会随备份恢复到 iOS：阅读器开书建取章加载器（它会拉起
+      // lnReaderManager、联网刷仓库、跑插件）也必须挂在同一个门后。
+      final String onlineBook = compactCode(
+        read('lib/src/media/novel/online/lnreader_online_book.dart'),
+      );
+      expect(
+        onlineBook,
+        contains(
+          'if(!(onlineSourcesAvailable??isNovelOnlineSourcesAvailable))'
+          'returnnull;',
+        ),
+        reason: '阅读器开在线书时取 lnReaderManager 必须先过在线小说门。',
+      );
     });
   });
 
   group('Aidoku 的 iOS 宿主已整条移除', () {
-    test('Dart 工厂只认 macOS', () {
+    test('Dart 工厂不认任何平台（macOS 宿主随后也已移除）', () {
       final String runtime = compactCode(
         read('lib/src/media/manga/aidoku/aidoku_runtime.dart'),
       );
-      expect(runtime, contains('staticboolgetisSupported=>Platform.isMacOS;'));
+      expect(runtime, contains('staticboolgetisSupported=>false;'));
       expect(
         runtime,
         isNot(contains('Platform.isIOS')),
         reason: 'iOS 分支必须消失，而不是留着抛异常——留着就还需要 native 侧配合。',
+      );
+      expect(
+        runtime,
+        isNot(contains('Platform.isMacOS')),
+        reason:
+            'macOS 子进程宿主随 Rust CLI、打包脚本与 CI 步骤一并移除；'
+            '分支留着就是一条指向不存在 helper 的死路径。',
       );
       expect(
         runtime,
@@ -261,31 +562,95 @@ void main() {
       );
     });
 
-    test('CI 不再为 iOS 装 Rust target', () {
+    // 曾断言「workflow 里不出现 aarch64-apple-ios / apple-darwin」：当时 Apple 的 Rust
+    // target 只为 Aidoku runtime 而装，字符串缺席就等于「不构建 Aidoku」。互联 P2P
+    // 隧道（native/fushi_p2p，docs/specs/2026-09-28-interconnect-remote-reach.md）
+    // 起 iOS 静态库 / macOS dylib 也要这些 target，那个近似判据不再成立。改钉真正
+    // 要守的事实：装 Apple Rust target 的 job 只能是在构建 fushi_p2p，且全程不碰 Aidoku。
+    test('CI 的 Apple Rust target 只服务 fushi_p2p，不构建 Aidoku runtime', () {
       for (final String path in <String>[
         '../.github/workflows/build-multiplatform.yml',
         '../.github/workflows/release-desktop.yml',
       ]) {
-        expect(
-          read(path),
-          isNot(contains('aarch64-apple-ios')),
-          reason: '$path 里的 iOS Rust toolchain 只为 Aidoku runtime 而装。',
-        );
+        final String workflow = read(path);
+        expect(workflow.toLowerCase(), isNot(contains('aidoku')), reason: path);
+        final Map<String, String> jobs = workflowJobs(workflow);
+        expect(jobs, isNotEmpty, reason: '切不出 job 时下面的核对就是空转');
+        for (final MapEntry<String, String> job in jobs.entries) {
+          if (!job.value.contains('apple-ios') &&
+              !job.value.contains('apple-darwin')) {
+            continue;
+          }
+          expect(
+            job.value,
+            contains('native/fushi_p2p'),
+            reason: '$path 的 job ${job.key} 装了 Apple Rust target，却不是在构建 '
+                'fushi_p2p——Apple 上唯一允许的 Rust 构建就是它。',
+          );
+        }
       }
     });
 
-    test('macOS 侧的 Aidoku 打包不受影响', () {
-      // 反向断言：这次移除的是 iOS 宿主，macOS 仍然是受支持平台。两条 macOS
-      // workflow 的打包步骤见 macos_aidoku_runtime_packaging_guard_test.dart，
-      // 这里只钉「不要顺手把 macOS 也删了」。
+    test('macOS 侧的 Aidoku 宿主也已整条移除', () {
+      // 曾是反向断言「不要顺手把 macOS 也删了」；macOS 宿主随后按同一口径移除，
+      // 这里改钉新事实：Dart 侧没有子进程实现，两条 macOS workflow 也不再打
+      // runtime 进 bundle，发布包里不带 WASM 解释器。
       expect(
         read('lib/src/media/manga/aidoku/aidoku_runtime.dart'),
-        contains('DesktopAidokuRuntime'),
+        isNot(contains('DesktopAidokuRuntime')),
       );
+      for (final String path in <String>[
+        '../.github/workflows/build-multiplatform.yml',
+        '../.github/workflows/release-desktop.yml',
+      ]) {
+        final String workflow = read(path);
+        expect(workflow, isNot(contains('tool/aidoku/')));
+        expect(workflow, isNot(contains('aidoku_runtime')));
+        // 这里曾禁 `apple-darwin`：当时 macOS Rust target 只为 Aidoku runtime 而装。
+        // 现在 native/fushi_anki_sync（Anki 同步 helper）正当地需要 universal macOS
+        // 构建，按 target 三元组禁会误伤它；改成直接禁任何 Aidoku 提及，边界不变。
+        expect(
+          workflow.toLowerCase(),
+          isNot(contains('aidoku')),
+          reason: '$path 又出现了 Aidoku 相关构建步骤；macOS / iOS 的 Aidoku 宿主已整条移除。',
+        );
+      }
+      expect(Directory('../tool/aidoku').existsSync(), isFalse);
       expect(
-        read('../.github/workflows/release-desktop.yml'),
-        contains('tool/aidoku/build_macos_runtime.sh'),
+        File('../native/aidoku_runtime/src/main.rs').existsSync(),
+        isFalse,
       );
     });
   });
+}
+
+/// 把 GitHub Actions workflow 按顶层 job 切开（job 名 → 该 job 的全文）。只认
+/// `jobs:` 下两格缩进的 `<name>:` 行作 job 起点，足够本守卫按 job 归属判断。
+Map<String, String> workflowJobs(String workflow) {
+  final Map<String, String> jobs = <String, String>{};
+  final RegExp jobHeader = RegExp(r'^  ([A-Za-z0-9_-]+):\s*$');
+  bool inJobs = false;
+  String? current;
+  final StringBuffer buffer = StringBuffer();
+  void flush() {
+    if (current != null) jobs[current] = buffer.toString();
+    buffer.clear();
+  }
+
+  for (final String line in workflow.split('\n')) {
+    if (line.startsWith('jobs:')) {
+      inJobs = true;
+      continue;
+    }
+    if (!inJobs) continue;
+    final RegExpMatch? m = jobHeader.firstMatch(line.trimRight());
+    if (m != null) {
+      flush();
+      current = m.group(1);
+      continue;
+    }
+    buffer.writeln(line);
+  }
+  flush();
+  return jobs;
 }

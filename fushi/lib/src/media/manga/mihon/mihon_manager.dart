@@ -30,6 +30,19 @@ const String kMihonDefaultStoreName = 'Keiyoushi';
 /// 的窗口。存量里 pref 仍为 false 的用户（旧代码下装配因断网失败过）下次启动即自愈。
 const String kMihonDefaultStoreSeededPref = 'mihon_default_store_seeded';
 
+/// 视频（Aniyomi）扩展的默认仓库：yuzono/anime-repo（Anikku 维护者，GitHub 原仓、
+/// 有签名指纹、内容是已消失的 Kohi-den 仓库的超集，2026-09 仍在日更）。旧格式
+/// `index.min.json` + 同目录 `repo.json`，与 Mihon legacy 索引同构，走同一个解析器。
+const String kMihonDefaultAnimeStoreIndexUrl =
+    'https://raw.githubusercontent.com/yuzono/anime-repo/repo/index.min.json';
+
+/// 默认视频仓库在拉到真实索引之前的显示名。
+const String kMihonDefaultAnimeStoreName = 'Yūzōnō';
+
+/// 与 [kMihonDefaultStoreSeededPref] 语义相同，按生态各置一位。
+const String kMihonDefaultAnimeStoreSeededPref =
+    'mihon_default_anime_store_seeded';
+
 class MihonManager extends ChangeNotifier {
   MihonManager({
     required this.database,
@@ -39,6 +52,8 @@ class MihonManager extends ChangeNotifier {
     MihonDownloadCountsClient? downloadCountsClient,
     this.seedDefaultStore = false,
     this.fetchDownloadCounts = false,
+    this.kind = MihonMediaKind.manga,
+    this.ownsRuntime = true,
     Duration coverCacheMaxAge = const Duration(
       days: kMangaCoverCacheDefaultMaxAgeDays,
     ),
@@ -49,7 +64,7 @@ class MihonManager extends ChangeNotifier {
       Directory(p.join(rootDirectory.path, 'cache', 'covers')),
       maxAge: coverCacheMaxAge,
     );
-    if (Platform.isWindows || Platform.isMacOS) {
+    if (ownsRuntime && (Platform.isWindows || Platform.isMacOS)) {
       _exitShutdown = ExitFlushRegistry.instance.register(
         shutdownRuntimeForExit,
       );
@@ -59,6 +74,22 @@ class MihonManager extends ChangeNotifier {
   final FushiDatabase database;
   final Directory rootDirectory;
   final MihonRuntime runtime;
+
+  /// 本 manager 管的是哪个生态的扩展（漫画 / 视频）。
+  ///
+  /// 三张扩展表按 `media_kind` 分片（v107），[reload] 只读本生态的行；安装门只收
+  /// 本生态的 APK（[MihonExtensionInspection.kind] 不符即 `WRONG_MEDIA_KIND`）；
+  /// 默认仓库与其「已装配」偏好位也按生态各一份。运行时可以共用——同一个
+  /// sidecar / 原生宿主两种扩展都认，见 [ownsRuntime]。
+  final MihonMediaKind kind;
+
+  /// 是否由本 manager 负责 [runtime] 的生命周期（退出时关 sidecar、dispose）。
+  ///
+  /// 真实 app 里漫画与视频两个 manager **共用一个** runtime 实例（桌面端一个
+  /// sidecar JVM 512 MiB，两个太贵；Android 原生宿主本来就是单例），生命周期由
+  /// 持有它的 `AppModel` 统一管，两个 manager 都传 false。单测构造一个 manager
+  /// 配一个 fake runtime 时保持默认 true，语义不变。
+  final bool ownsRuntime;
   late final MihonCoverCache coverCache;
   final MihonExtensionStoreClient _storeClient;
 
@@ -118,8 +149,9 @@ class MihonManager extends ChangeNotifier {
   /// ChangeNotifier/widget disposal is not guaranteed to run. Register this
   /// bounded callback with the app exit barrier to stop the exact retained
   /// sidecar process before the Flutter process terminates.
-  Future<void> shutdownRuntimeForExit() =>
-      _runtimeShutdown ??= runtime.dispose();
+  Future<void> shutdownRuntimeForExit() => _runtimeShutdown ??= ownsRuntime
+      ? runtime.dispose()
+      : Future<void>.value();
 
   Future<void> initialise() {
     final Future<void>? current = _initialising;
@@ -170,29 +202,24 @@ class MihonManager extends ChangeNotifier {
   /// 不是「已经拉到过目录」——所以用户删掉它之后不会被下次启动塞回来。
   Future<void> _seedDefaultStore() async {
     if (!seedDefaultStore) return;
-    final bool seeded = await database.getPrefTyped<bool>(
-      kMihonDefaultStoreSeededPref,
-      false,
-    );
+    final String seededPref = _defaultStoreSeededPref;
+    final bool seeded = await database.getPrefTyped<bool>(seededPref, false);
     if (seeded) return;
     // 用户自己先加过同一个地址：认下它，别用种子行覆盖掉他的排序/启用状态。
-    if (!stores.any(
-      (MangaExtensionStoreRow row) =>
-          row.indexUrl == kMihonDefaultStoreIndexUrl,
-    )) {
+    final String indexUrl = defaultStoreIndexUrl;
+    if (!stores.any((MangaExtensionStoreRow row) => row.indexUrl == indexUrl)) {
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
-          indexUrl: kMihonDefaultStoreIndexUrl,
-          name: kMihonDefaultStoreName,
-          // index.pb。真实格式由第一次成功刷新覆写，这里只是让「从未刷新过」的行
-          // 也能被 _refreshStores 正常处理（etag/lastModified 都为空，不会走 304）。
-          format: MihonStoreFormat.currentProtobuf.name,
+          indexUrl: indexUrl,
+          mediaKind: Value(kind.dbValue),
+          name: _defaultStoreName,
+          format: _defaultStoreFormat.name,
           sortOrder: Value(_nextStoreSortOrder()),
         ),
       );
       await reload();
     }
-    await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
+    await database.setPrefTyped<bool>(seededPref, true);
   }
 
   int _nextStoreSortOrder() => stores.isEmpty
@@ -203,11 +230,36 @@ class MihonManager extends ChangeNotifier {
             1;
 
   Future<void> reload() async {
-    stores = await database.getMangaExtensionStores();
-    installed = await database.getMangaExtensions();
-    sources = await database.getMangaOnlineSources();
+    final String mediaKind = kind.dbValue;
+    stores = await database.getMangaExtensionStores(mediaKind: mediaKind);
+    installed = await database.getMangaExtensions(mediaKind: mediaKind);
+    sources = await database.getMangaOnlineSources(mediaKind: mediaKind);
     _notify();
   }
+
+  /// 本生态默认仓库的三件套（地址 / 显示名 / 已装配偏好位）。
+  String get defaultStoreIndexUrl => switch (kind) {
+    MihonMediaKind.manga => kMihonDefaultStoreIndexUrl,
+    MihonMediaKind.anime => kMihonDefaultAnimeStoreIndexUrl,
+  };
+
+  String get _defaultStoreName => switch (kind) {
+    MihonMediaKind.manga => kMihonDefaultStoreName,
+    MihonMediaKind.anime => kMihonDefaultAnimeStoreName,
+  };
+
+  String get _defaultStoreSeededPref => switch (kind) {
+    MihonMediaKind.manga => kMihonDefaultStoreSeededPref,
+    MihonMediaKind.anime => kMihonDefaultAnimeStoreSeededPref,
+  };
+
+  /// 默认仓库的索引格式：keiyoushi 是 `index.pb`，yuzono 是旧格式 `index.min.json`。
+  /// 真实格式由第一次成功刷新覆写，这里只让「从未刷新过」的行能被 _refreshStores
+  /// 正常处理（etag/lastModified 都为空，不会走 304）。
+  MihonStoreFormat get _defaultStoreFormat => switch (kind) {
+    MihonMediaKind.manga => MihonStoreFormat.currentProtobuf,
+    MihonMediaKind.anime => MihonStoreFormat.legacy,
+  };
 
   Future<void> addStore(String url, {bool allowInsecure = false}) async {
     await _guarded(() async {
@@ -222,6 +274,7 @@ class MihonManager extends ChangeNotifier {
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
           indexUrl: store.indexUrl,
+          mediaKind: Value(kind.dbValue),
           name: store.name,
           format: store.format.name,
           badgeLabel: Value(store.badgeLabel),
@@ -250,7 +303,10 @@ class MihonManager extends ChangeNotifier {
 
   Future<void> _refreshStores() async {
     final List<MihonAvailableExtension> next = <MihonAvailableExtension>[];
-    for (final MangaExtensionStoreRow row in stores) {
+    final List<MangaExtensionStoreRow> rows = List<MangaExtensionStoreRow>.of(
+      stores,
+    );
+    for (final MangaExtensionStoreRow row in rows) {
       if (!row.enabled) continue;
       final List<MihonAvailableExtension> cachedExtensions = available
           .where(
@@ -280,6 +336,23 @@ class MihonManager extends ChangeNotifier {
         // the store from the DB cannot reconstruct that list. Retain the
         // already parsed list in that case; external/legacy indexes can
         // still be fetched independently from extensionListUrl.
+        // BUG-2641：入口地址可能被解析到另一个身份（legacy `index.min.json` 跟到同目录
+        // `repo.json`，默认视频仓库 yuzono 就是这样）。过去这里按解析后的地址落库、
+        // 却不删种子行，于是主键不同的两行指向同一仓库，之后每次刷新各拉一遍，
+        // 扩展列表整份翻倍。解析后的身份已有自己的**启用**行：这行只是别名，删掉
+        // 即可，目录由那一行自己拉；否则把这一行原子地迁到解析后的地址（同
+        // [editStoreUrl]）——包括解析后那行被停用的情况：用户在翻倍期间很可能停用了
+        // 其中一行来去重，若停的恰是 repo.json 那行，只删别名会让整个默认仓库从列表
+        // 消失；迁移则用本行（启用中）的启用位与排序覆盖它。
+        final bool aliased = store.indexUrl != row.indexUrl;
+        if (aliased &&
+            rows.any(
+              (MangaExtensionStoreRow other) =>
+                  other.indexUrl == store.indexUrl && other.enabled,
+            )) {
+          await database.deleteMangaExtensionStore(row.indexUrl);
+          continue;
+        }
         final List<MihonAvailableExtension> extensions =
             fetched.notModified && store.extensionListUrl == null
             ? cachedExtensions
@@ -288,23 +361,29 @@ class MihonManager extends ChangeNotifier {
                 allowInsecure: insecure,
               );
         next.addAll(extensions);
-        await database.upsertMangaExtensionStore(
-          MangaExtensionStoresCompanion.insert(
-            indexUrl: store.indexUrl,
-            name: store.name,
-            format: store.format.name,
-            badgeLabel: Value(store.badgeLabel),
-            signingKey: Value(store.signingKey),
-            contactJson: Value(jsonEncode(store.contact)),
-            extensionListUrl: Value(store.extensionListUrl),
-            enabled: Value(row.enabled),
-            sortOrder: Value(row.sortOrder),
-            etag: Value(fetched.etag ?? row.etag),
-            lastModified: Value(fetched.lastModified ?? row.lastModified),
-            lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
-            lastError: const Value(null),
-          ),
-        );
+        await database.transaction(() async {
+          if (aliased) {
+            await database.deleteMangaExtensionStore(row.indexUrl);
+          }
+          await database.upsertMangaExtensionStore(
+            MangaExtensionStoresCompanion.insert(
+              indexUrl: store.indexUrl,
+              mediaKind: Value(kind.dbValue),
+              name: store.name,
+              format: store.format.name,
+              badgeLabel: Value(store.badgeLabel),
+              signingKey: Value(store.signingKey),
+              contactJson: Value(jsonEncode(store.contact)),
+              extensionListUrl: Value(store.extensionListUrl),
+              enabled: Value(row.enabled),
+              sortOrder: Value(row.sortOrder),
+              etag: Value(fetched.etag ?? row.etag),
+              lastModified: Value(fetched.lastModified ?? row.lastModified),
+              lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
+              lastError: const Value(null),
+            ),
+          );
+        });
       } catch (exception) {
         // A manual refresh must not blank an already visible catalogue merely
         // because this request failed. Cold start has no in-memory catalogue,
@@ -313,6 +392,7 @@ class MihonManager extends ChangeNotifier {
         await database.upsertMangaExtensionStore(
           MangaExtensionStoresCompanion.insert(
             indexUrl: row.indexUrl,
+            mediaKind: Value(kind.dbValue),
             name: row.name,
             format: row.format,
             badgeLabel: Value(row.badgeLabel),
@@ -384,6 +464,7 @@ class MihonManager extends ChangeNotifier {
         await database.upsertMangaExtensionStore(
           MangaExtensionStoresCompanion.insert(
             indexUrl: store.indexUrl,
+            mediaKind: Value(kind.dbValue),
             name: store.name,
             format: store.format.name,
             badgeLabel: Value(store.badgeLabel),
@@ -555,7 +636,17 @@ class MihonManager extends ChangeNotifier {
     try {
       final MihonExtensionInspection inspection = await runtime
           .inspectExtension(temp.path);
-      if (inspection.libVersion != '1.4' && inspection.libVersion != '1.6') {
+      // 生态门先于版本门：一个 Aniyomi APK 装进漫画 manager（或反过来）不是
+      // 「版本不对」，是根本不属于这里——两个生态的 lib 版本号空间也不同
+      // （漫画 1.4/1.6，视频 14），先判生态才能给出对的原因。
+      if (inspection.kind != kind) {
+        throw MihonRuntimeException(
+          'WRONG_MEDIA_KIND',
+          'Extension is a ${inspection.kind.dbValue} extension; '
+              'this list only installs ${kind.dbValue} extensions',
+        );
+      }
+      if (!kind.supportedLibVersions.contains(inspection.libVersion)) {
         throw MihonRuntimeException(
           'UNSUPPORTED_LIB',
           'Extension lib ${inspection.libVersion} is not supported',
@@ -683,11 +774,11 @@ class MihonManager extends ChangeNotifier {
           packageName: packageName,
           apkPath: runtimePath,
         );
-        final List<MihonSource> loaded = await runtime.listSources(extension);
+        final List<MihonSource> loaded = await _listSources(extension);
         if (loaded.isEmpty) {
-          throw const MihonRuntimeException(
+          throw MihonRuntimeException(
             'NO_SOURCES',
-            'Extension did not expose any manga sources',
+            'Extension did not expose any ${kind.dbValue} sources',
           );
         }
         final String storedPath = p.join(
@@ -714,6 +805,7 @@ class MihonManager extends ChangeNotifier {
             apkSha256: proposal.apkSha256,
             signerSha256: signer,
             installedAt: DateTime.now().millisecondsSinceEpoch,
+            mediaKind: Value(kind.dbValue),
           ),
         );
         await database.replaceMangaOnlineSources(
@@ -725,6 +817,7 @@ class MihonManager extends ChangeNotifier {
               name: source.name,
               language: source.language,
               baseUrl: Value(source.baseUrl),
+              mediaKind: Value(kind.dbValue),
             ),
           ),
         );
@@ -955,11 +1048,11 @@ class MihonManager extends ChangeNotifier {
             packageName: packageName,
             apkPath: runtimePath,
           );
-          final List<MihonSource> loaded = await runtime.listSources(extension);
+          final List<MihonSource> loaded = await _listSources(extension);
           if (loaded.isEmpty) {
-            throw const MihonRuntimeException(
+            throw MihonRuntimeException(
               'NO_SOURCES',
-              'Extension did not expose any manga sources',
+              'Extension did not expose any ${kind.dbValue} sources',
             );
           }
           session = MihonPreviewSession(
@@ -1158,11 +1251,18 @@ class MihonManager extends ChangeNotifier {
     final List<MihonPreference> persisted = await _readPersistedPreferences(
       source,
     );
-    return runtime.getPreferences(
-      extensionRef(extension),
-      sourceModel(source),
-      persisted: persisted,
-    );
+    return switch (kind) {
+      MihonMediaKind.manga => runtime.getPreferences(
+        extensionRef(extension),
+        sourceModel(source),
+        persisted: persisted,
+      ),
+      MihonMediaKind.anime => animeRuntime.getAnimePreferences(
+        extensionRef(extension),
+        sourceModel(source),
+        persisted: persisted,
+      ),
+    };
   }
 
   Future<List<MihonPreference>> setPreference(
@@ -1175,12 +1275,20 @@ class MihonManager extends ChangeNotifier {
     final List<MihonPreference> persisted = await _readPersistedPreferences(
       source,
     );
-    final List<MihonPreference> updated = await runtime.setPreference(
-      extensionRef(extension),
-      sourceModel(source),
-      preference,
-      persisted: persisted,
-    );
+    final List<MihonPreference> updated = await switch (kind) {
+      MihonMediaKind.manga => runtime.setPreference(
+        extensionRef(extension),
+        sourceModel(source),
+        preference,
+        persisted: persisted,
+      ),
+      MihonMediaKind.anime => animeRuntime.setAnimePreference(
+        extensionRef(extension),
+        sourceModel(source),
+        preference,
+        persisted: persisted,
+      ),
+    };
     for (final MihonPreference item in updated) {
       await database.upsertMangaSourcePreference(
         MangaSourcePreferencesCompanion.insert(
@@ -1206,6 +1314,23 @@ class MihonManager extends ChangeNotifier {
       source.sourceId,
     );
   }
+
+  /// 视频生态需要 [AnimeMihonRuntime] 能力；生产的两个运行时都经
+  /// `MihonBridgeRuntime` 具备，缺的只可能是测试 fake 或未来的新宿主。
+  AnimeMihonRuntime get animeRuntime {
+    final Object candidate = runtime;
+    if (candidate is AnimeMihonRuntime) return candidate;
+    throw const MihonRuntimeException(
+      'ANIME_UNSUPPORTED',
+      'This Mihon runtime cannot host Aniyomi extensions',
+    );
+  }
+
+  Future<List<MihonSource>> _listSources(MihonExtensionRef extension) =>
+      switch (kind) {
+        MihonMediaKind.manga => runtime.listSources(extension),
+        MihonMediaKind.anime => animeRuntime.listAnimeSources(extension),
+      };
 
   Future<MihonSourceContext> contextForSource(
     MangaOnlineSourceRow source,

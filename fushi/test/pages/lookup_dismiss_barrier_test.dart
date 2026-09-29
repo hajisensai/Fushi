@@ -281,4 +281,156 @@ void main() {
     expect(dismissed, 0,
         reason: 'a pinch/two-finger gesture must not be read as a swipe-close');
   });
+
+  group('scroll-to-dismiss channel (reader scroll mode, 2026-09-23)', () {
+    Widget scrollBarrier({
+      required Axis? axis,
+      required List<Offset> scrolls,
+      required List<int> pointers,
+      void Function()? onSwipe,
+      bool swipeEnabled = true,
+    }) {
+      return _harness(
+        controller: _RecordingPlatformViewController(20),
+        barrier: LookupDismissBarrier(
+          onTapDismiss: (_) {},
+          onSwipeDismiss: onSwipe ?? () {},
+          swipeEnabled: swipeEnabled,
+          sensitivity: 0.6,
+          scrollDismissAxis: axis,
+          onScrollDismiss: (int pointer, Offset delta) {
+            pointers.add(pointer);
+            scrolls.add(delta);
+          },
+        ),
+      );
+    }
+
+    testWidgets('horizontal text: vertical touch drag fires once',
+        (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      final List<int> pointers = <int>[];
+      await tester.pumpWidget(scrollBarrier(
+          axis: Axis.vertical, scrolls: scrolls, pointers: pointers));
+
+      final TestGesture g = await tester.startGesture(bare, pointer: 31);
+      for (int i = 0; i < 12; i++) {
+        await g.moveBy(const Offset(0, -20));
+        await tester.pump();
+      }
+      await g.up();
+      await tester.pump();
+
+      expect(scrolls, hasLength(1),
+          reason: 'one scroll gesture = one dismiss, not one per move');
+      expect(pointers.single, 31);
+      expect(scrolls.single.dy, lessThan(-kTouchSlop),
+          reason: 'the accumulated finger delta is handed over for forwarding');
+    });
+
+    testWidgets(
+        'vertical text: horizontal drag scrolls-to-dismiss and does NOT also '
+        'swipe-close a layer', (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      int swiped = 0;
+      await tester.pumpWidget(scrollBarrier(
+        axis: Axis.horizontal,
+        scrolls: scrolls,
+        pointers: <int>[],
+        onSwipe: () => swiped++,
+      ));
+
+      await _dragHorizontally(tester, bare);
+
+      expect(scrolls, hasLength(1));
+      expect(swiped, 0,
+          reason: 'the scroll claimed the gesture; releasing must not close '
+              'another layer on top of the whole stack');
+    });
+
+    testWidgets('horizontal text: sideways drag stays a swipe-close',
+        (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      int swiped = 0;
+      await tester.pumpWidget(scrollBarrier(
+        axis: Axis.vertical,
+        scrolls: scrolls,
+        pointers: <int>[],
+        onSwipe: () => swiped++,
+      ));
+
+      await _dragHorizontally(tester, bare);
+
+      expect(scrolls, isEmpty);
+      expect(swiped, 1);
+    });
+
+    testWidgets('works with swipe-to-close switched off',
+        (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      await tester.pumpWidget(scrollBarrier(
+        axis: Axis.vertical,
+        scrolls: scrolls,
+        pointers: <int>[],
+        swipeEnabled: false,
+      ));
+
+      await _dragVertically(tester, bare);
+
+      expect(scrolls, hasLength(1));
+    });
+
+    testWidgets('mouse drag is a text selection, never a scroll',
+        (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      await tester.pumpWidget(scrollBarrier(
+          axis: Axis.vertical, scrolls: scrolls, pointers: <int>[]));
+
+      final TestGesture g =
+          await tester.startGesture(bare, kind: PointerDeviceKind.mouse);
+      for (int i = 0; i < 12; i++) {
+        await g.moveBy(const Offset(0, -20));
+        await tester.pump();
+      }
+      await g.up();
+      await tester.pump();
+
+      expect(scrolls, isEmpty);
+    });
+
+    testWidgets('trackpad two-finger pan counts as scrolling',
+        (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      await tester.pumpWidget(scrollBarrier(
+          axis: Axis.vertical, scrolls: scrolls, pointers: <int>[]));
+
+      final TestGesture g =
+          await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await g.panZoomStart(bare);
+      await g.panZoomUpdate(bare, pan: const Offset(0, -40));
+      await g.panZoomEnd();
+      await tester.pump();
+
+      expect(scrolls, hasLength(1));
+    });
+
+    testWidgets('axis null (setting off / paged mode): inert',
+        (WidgetTester tester) async {
+      final List<Offset> scrolls = <Offset>[];
+      await tester.pumpWidget(
+          scrollBarrier(axis: null, scrolls: scrolls, pointers: <int>[]));
+
+      await _dragVertically(tester, bare);
+
+      expect(scrolls, isEmpty);
+    });
+
+    test('tracker gives up once the cross axis wins', () {
+      final BarrierScrollDismissTracker tracker = BarrierScrollDismissTracker()
+        ..begin(Axis.vertical);
+      expect(tracker.update(const Offset(30, 5)), isFalse);
+      expect(tracker.update(const Offset(0, -200)), isFalse,
+          reason: 'decided as cross-axis; later along-axis motion is ignored');
+    });
+  });
 }

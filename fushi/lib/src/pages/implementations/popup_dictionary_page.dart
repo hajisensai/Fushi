@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
@@ -81,6 +82,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
+  late final LookupImeBinding _imeBinding = LookupImeBinding(
+    languageOf: () => appModel.effectiveLookupImeLanguage,
+  );
 
   AppModel get appModel => ref.read(appProvider);
 
@@ -102,6 +106,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.searchTerm);
+    _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
     _sourceLookupText = widget.searchTerm.trim();
@@ -149,7 +154,22 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
     _isClosing = false;
     final String trimmed = widget.searchTerm.trim();
-    if (trimmed.isEmpty || !appModel.isInitialised) return;
+    if (trimmed.isEmpty) {
+      // 悬浮球「查词」/ 剪贴板为空：宿主有意推来空词，常驻热页回到只有搜索栏的
+      // 初始态（隐藏上一次的结果、清空搜索框与源文本条），否则用户看到的是上一个词。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.searchTerm.trim().isNotEmpty) return;
+        setState(() {
+          _popup.dismissAt(0);
+          _searchController.clear();
+          _sourceLookupText = '';
+          _sourceHighlight = null;
+          _sourceHighlightGeneration++;
+        });
+      });
+      return;
+    }
+    if (!appModel.isInitialised) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _pushSearch(trimmed, Rect.zero, reuseWarmSlot: true);
@@ -158,6 +178,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   @override
   void dispose() {
+    _imeBinding.detach();
     _searchController.dispose();
     _searchFocusNode.dispose();
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
@@ -377,27 +398,38 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-708 P1 ⑥：避让锚优先用「整条字幕窗矩形」（超集，覆盖被查字与未点的其它字），
     // 弹窗不遮整条字幕窗；无字幕窗矩形时回退被查字单字（TODO-872 行为）。
     final Rect avoidRect = widget.subtitleWindowRect ?? anchor;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // TODO-1352: 同上——避让锚定分支也用用户的 popupMaxWidth，不再硬编码 480。
-        final double maxCardWidth = _externalPopupMaxWidth;
-        final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
-        final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
-        final Rect rect = computeFloatingLyricPopupRect(
-          glyphRect: avoidRect,
-          screen: screen,
-          maxWidth: maxCardWidth,
-          maxHeight: maxHeight,
-          gap: gap,
-        );
-        return Positioned(
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          child: _buildCard(tokens),
-        );
-      },
+    // [Positioned] 只能是 Stack 的直接子节点：LayoutBuilder 自己是一个 RenderObject，
+    // 直接在它的 builder 里返回 Positioned 会抛 `BoxParentData is not a subtype of
+    // StackParentData`，整张卡片画不出来、只剩背后的透明关闭层（截屏识字 / 悬浮字幕
+    // 点字弹出来是一层灰、没有查词卡）。所以先用 Positioned.fill 占满外层 Stack，
+    // 在里面量尺寸，再由自带的 Stack 承载定位后的卡片。
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // TODO-1352: 同上——避让锚定分支也用用户的 popupMaxWidth，不再硬编码 480。
+          final double maxCardWidth = _externalPopupMaxWidth;
+          final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
+          final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
+          final Rect rect = computeFloatingLyricPopupRect(
+            glyphRect: avoidRect,
+            screen: screen,
+            maxWidth: maxCardWidth,
+            maxHeight: maxHeight,
+            gap: gap,
+          );
+          return Stack(
+            children: <Widget>[
+              Positioned(
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                child: _buildCard(tokens),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -455,19 +487,23 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // SwipeDismissWrapper 基于 Listener，指针移动会同时派发到所有祖先 Listener，
     // 外层若仍在，横滑嵌套层会连带平移整张卡片（BUG-051 的第二症状）。
     // 嵌套层各自持有横滑（仅返回上一层），故此处只在基础层套外层横滑。
-    // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡也不挂横滑，
-    // 用搜索栏的关闭按钮兜底。
+    // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡不给鼠标挂横滑，
+    // 用搜索栏的关闭按钮兜底；BUG-2770 起触摸 / 触控笔仍可横滑（见 _buildSwipeChrome）。
     return card;
   }
 
   Widget _buildSwipeChrome(Widget child) {
-    if (_popup.entries.length > 1 ||
-        !ReaderFushiSource.instance.enableSwipeToClose) {
+    if (_popup.entries.length > 1) return child;
+    final bool mouseSwipe = ReaderFushiSource.instance.enableSwipeToClose;
+    // BUG-2770：鼠标滑关关（Windows/Linux 默认）时整卡仍按触摸开关挂 touchOnly
+    // 横滑——此前整卡直接不包，触屏上独立查词窗怎么滑都关不掉。
+    if (!mouseSwipe && !ReaderFushiSource.instance.enableTouchSwipeToClose) {
       return child;
     }
     return SwipeDismissWrapper(
       sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
       onDismiss: _close,
+      touchOnly: !mouseSwipe,
       child: child,
     );
   }
@@ -480,6 +516,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       focusNode: _searchFocusNode,
       onClose: null,
       onSubmit: _onSearchSubmit,
+      hintLocales: appModel.lookupImeHintLocales,
     );
   }
 
@@ -563,6 +600,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       showBorder: false,
       swipeDismissible: !isBase,
       enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+      // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+      enableTouchSwipeToClose:
+          ReaderFushiSource.instance.enableTouchSwipeToClose,
       overrideFillColor: isBase
           ? Colors.transparent
           : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
@@ -649,6 +689,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
     required this.focusNode,
     required this.onSubmit,
     this.onClose,
+    this.hintLocales,
     super.key,
   });
 
@@ -656,6 +697,9 @@ class PopupDictionarySearchBar extends StatelessWidget {
   final FocusNode focusNode;
   final ValueChanged<String> onSubmit;
   final VoidCallback? onClose;
+
+  /// 输入法语言提示，由页面从偏好算出来传进来（组件自己不读 provider）。
+  final List<Locale>? hintLocales;
 
   @override
   Widget build(BuildContext context) {
@@ -665,6 +709,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
       hintText: t.search,
       onSubmit: onSubmit,
       onClose: onClose,
+      hintLocales: hintLocales,
       closeButtonKey: const ValueKey<String>('popup_dictionary_close_button'),
       fieldKey: const ValueKey<String>('popup_dictionary_search_field'),
       searchButtonKey: const ValueKey<String>('popup_dictionary_search_button'),

@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/gal_lookup_calibration_capture.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -472,6 +475,181 @@ void main() {
     );
     await _waitUntil(() => controller.displayedLineId == otherThread.id);
   });
+
+  test(
+    'fresh profile captures selected occurrence from background game',
+    () async {
+      const String sha =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      const String exe = r'C:\Synthetic\Game.exe';
+      const GalLookupReferenceClientV1 client = GalLookupReferenceClientV1(
+        widthPx: 1,
+        heightPx: 1,
+        dpi: 96,
+      );
+      preferences[GalLookupSurfaceProfileV1.preferenceKeyForExePath(
+        exe,
+      )] = jsonEncode(
+        const GalLookupSurfaceProfileV1(
+          exePath: exe,
+          exeSha256: sha,
+          mode: GalLookupSurfaceMode.attachedOnly,
+          unsafeLeftClickAccepted: true,
+          variants: <GalLookupSurfaceVariantV1>[],
+        ).toJson(),
+      );
+      attachedInspectionOverride = <String, Object?>{
+        'status': 'targetBackground',
+        'exePath': exe,
+        'exeSha256': sha,
+        'referenceClient': client.toJson(),
+      };
+      const MethodChannel captureChannel = MethodChannel(
+        'app.fushi.reader/window_capture',
+      );
+      const MethodChannel lookupChannel = MethodChannel(
+        'app.fushi.reader/global_lookup',
+      );
+      final TestDefaultBinaryMessenger messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(lookupChannel, (
+        MethodCall call,
+      ) async {
+        if (call.method == 'isShowing') return false;
+        return null;
+      });
+      messenger.setMockMethodCallHandler(captureChannel, (
+        MethodCall call,
+      ) async {
+        expect(call.method, 'captureWindow');
+        expect((call.arguments as Map)['hwnd'], 77);
+        expect(nativeShowing, isFalse);
+        return <String, Object?>{
+          'pngBytes': base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+          ),
+          'metadata': const WindowCaptureMetadata(
+            capturedHwnd: 77,
+            capturedPid: 1234,
+            clientLeftPx: 0,
+            clientTopPx: 0,
+            clientWidthPx: 1,
+            clientHeightPx: 1,
+            imageWidthPx: 1,
+            imageHeightPx: 1,
+            dpi: 96,
+            clientAreaComplete: true,
+            capturedAtTickMs: 100,
+          ).toJson(),
+        };
+      });
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        await startSession();
+        await session.selectTextThread(11, threadKey: 'luna:first');
+        final TexthookerLineEntry line = textService.appendLine(
+          'Synthetic sample',
+          source: TexthookerLineSource.engineHook,
+          textThreadKey: 'luna:first',
+          nativeTextThreadId: 11,
+          sourceSequence: 9,
+        )!;
+        await _waitUntil(
+          () => controller.attachedText.canCaptureCalibrationSample,
+        );
+        controller.attachedText.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: controller.attachedText.target!,
+            state: 'suspended',
+            status: 'targetBackground',
+          ),
+        );
+        final GalLookupCalibrationCapture sample = await controller
+            .captureCalibrationSample();
+        expect(sample.occurrenceId, line.id);
+        expect(sample.sourceSequence, 9);
+        expect(sample.selectedThreadKey, 'luna:first');
+        expect(sample.sourceText, 'Synthetic sample');
+        expect(
+          nativeCalls.where(
+            (MethodCall call) => call.method == 'attachedSuspendForCapture',
+          ),
+          isEmpty,
+          reason: 'uncalibrated background target has no glyph lease to invent',
+        );
+      } finally {
+        messenger.setMockMethodCallHandler(captureChannel, null);
+        messenger.setMockMethodCallHandler(lookupChannel, null);
+      }
+    },
+  );
+
+  test(
+    'a current sentence with invalid Magpie mapping is not missing text',
+    () async {
+      const String exe = r'C:\Synthetic\Game.exe';
+      const String sha =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      preferences[GalLookupSurfaceProfileV1.preferenceKeyForExePath(
+        exe,
+      )] = jsonEncode(
+        const GalLookupSurfaceProfileV1(
+          exePath: exe,
+          exeSha256: sha,
+          mode: GalLookupSurfaceMode.attachedOnly,
+          unsafeLeftClickAccepted: true,
+          variants: <GalLookupSurfaceVariantV1>[],
+        ).toJson(),
+      );
+      attachedInspectionOverride = <String, Object?>{
+        'status': 'targetBackground',
+        'exePath': exe,
+        'exeSha256': sha,
+        'referenceClient': const GalLookupReferenceClientV1(
+          widthPx: 1280,
+          heightPx: 720,
+          dpi: 96,
+        ).toJson(),
+      };
+      await controller.start(appModel: AppModel(testPlatformServices()));
+      await startSession();
+      await session.selectTextThread(11, threadKey: 'luna:first');
+      textService.appendLine(
+        '合成本文',
+        source: TexthookerLineSource.engineHook,
+        textThreadKey: 'luna:first',
+        nativeTextThreadId: 11,
+        sourceSequence: 9,
+      );
+      await _waitUntil(
+        () => controller.attachedText.canCaptureCalibrationSample,
+      );
+      controller.attachedText.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.attachedText.target!,
+          state: 'suspended',
+          status: 'targetMappingUnavailable',
+          reason: 'magpie_source_viewport_invalid',
+        ),
+      );
+      await expectLater(
+        controller.captureCalibrationSample(),
+        throwsA(
+          isA<GalLookupCalibrationCaptureException>()
+              .having(
+                (e) => e.failure,
+                'failure',
+                GalLookupCalibrationCaptureFailure.surfaceMappingUnavailable,
+              )
+              .having(
+                (e) => e.captureReason,
+                'reason',
+                'magpie_source_viewport_invalid',
+              ),
+        ),
+      );
+    },
+  );
 
   test(
     'saved rectangle is restored and changed bounds are persisted',

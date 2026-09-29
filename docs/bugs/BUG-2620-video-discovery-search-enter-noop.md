@@ -1,0 +1,14 @@
+## BUG-2620 · 发现页搜索框按回车不触发搜索
+- **报告**：2026-09-22（用户：视频 → 发现，输入 `Revue Starlight` 后按 Enter，文本被全选、结果区仍是默认热门列表；只有继续改动输入内容触发防抖才真正搜索。）
+- **真实性**：✅ 真 bug，根因在共享搜索框 `fushi/lib/src/utils/components/fushi_material_components.dart` 的 `FushiSearchField`：
+  - 非 macOS 分支的 `TextField` **没有声明 `textInputAction`**（同文件的 `FushiTextField` 是显式透传的，搜索框是唯一漏掉的那个）。不声明时平台给的提交动作是 `done`，而 `TextInputAction.done` 的默认收尾会 **unfocus**；焦点一掉，`FushiFocusRoot` 的修复链（`fushi/lib/src/focus/fushi_focus_controller.dart` `ensureFocus()`）又把它以编程方式还回来，桌面端 `EditableText` 对非点击获得的焦点整段选中——这正是用户看到的「文字被全选」。
+  - 页面一侧本来是接好的：`fushi/lib/src/pages/implementations/video_discovery_page.dart:446` `onSubmitted: _submitSearch`，`_submitSearch` 取消防抖后直接 `_reload()`。也就是说缺的不是接线，而是提交动作根本没走到 `onSubmitted`。
+  - 全局快捷键不是凶手：app 根 `fushi/lib/src/shortcuts/global_navigation.dart` 对裸 Enter 一律 `KeyEventResult.ignored`（只中和空格/手柄/方向键），首页 `_handleKeyEvent` 只解析 home/global/universal 三个 scope，默认绑定里 Enter 只出现在 reader/video scope。
+  - 反证（上游基线 + 新测试）：物理 Enter 后 `controller.requests` 为空（`Expected: length of <1>, Actual: []`），`EditableText.textInputAction` 为 `null`。
+- **[x] ① 已修复** — `FushiSearchField` 两处：
+  - 显式 `textInputAction: TextInputAction.search` + `onEditingComplete: controller.clearComposing`——给了 `onEditingComplete` 就不走默认的 unfocus 收尾，焦点留在框里，`onSubmitted` 仍照常触发，「全选」的成因随之消失。
+  - 物理回车兜底：外面包一层 `Focus(canRequestFocus: false, skipTraversal: true)`，键事件这一层直接认领裸 Enter/小键盘 Enter 并调 `onSubmitted`，不再只指望平台 text-input 桥。带修饰键的回车与 **IME 组字期间**（`controller.value.composing.isValid`）一律放行——后者是确认候选词，抢走它等于中日文输入法在搜索框里没法选词。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_discovery_page_test.dart`：
+  - `物理回车立即搜索，不必等防抖`（`sendKeyEvent(enter)` 后立刻发请求，且吃掉防抖不重复发）
+  - `搜索框保留回车提交语义且不丢焦点`（断言 `textInputAction == search`、`receiveAction(search)` 发起搜索、提交后 `focusNode.hasFocus` 仍为真）
+- **备注**：修在共享控件上，所以所有用 `FushiSearchField` 的页面（视频发现 / 媒体服务器 / 书与 galgame 发现头部等）一并得到确定性的回车提交。macOS 分支走 `MacosTextField`，本来就保留 `onSubmitted`，未改。未在真机上复测（本次为 widget 层验证 + 基线反证）。

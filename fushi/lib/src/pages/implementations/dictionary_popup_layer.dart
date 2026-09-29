@@ -347,6 +347,36 @@ bool shouldShowLookupDismissBarrier({
 }) =>
     (hasVisiblePopup || isSearching) && !hiddenByDialog;
 
+/// BUG-2633：给查词浮层里的「悬停探针」补回**命中认领**。
+///
+/// `MouseRegion(opaque: false)` 不是「只旁听、不改命中」——`RenderMouseRegion.hitTest`
+/// 是 `super.hitTest(...) && opaque`（proxy_box.dart），`opaque: false` 时它**无条件返回
+/// false**：子树里所有 opaque 吸收层（弹窗矩形的 TODO-805 吸收层、barrier 的
+/// `ColoredBox`）认领的命中一到这一层就被丢掉，父 `Stack` 继续测下一个子项、根 Overlay
+/// 的 `_RenderTheater` 继续测下面的路由——整个查词 overlay entry 对命中测试变成透明：
+/// 弹窗上滚滚轮，词典滚了、视频音量也跟着变（页面级 `_handleVideoWheelSignal` 在命中
+/// 路径上）；barrier 上的滚轮同样穿到画面。真机逐层 `hitTest` 取证：
+/// `Semantics=true → MouseRegion=false → … → Stack(overlay)=false → _Theater=true`。
+///
+/// 修法是在 `MouseRegion(opaque: false)` **外面**再包一层会认领命中的 opaque
+/// [Listener]。这层必须是探针的**祖先**——放在探针里面无济于事，探针自己就会把结果
+/// 翻成 false。视频页的两处探针（浮层内容 / barrier）都经此包装；新的探针一律照此
+/// 办理（全树守卫见 `fushi/test/pages/lookup_overlay_hit_claim_guard_test.dart`）。
+///
+/// **hover 归属确实变了，别再写成「一字不改」。** 认领之后指针落在浮层上时 barrier
+/// 不再被 hitTest，于是会收到 exit。这一路无害：MouseTracker 在同一次同步派发里先发
+/// exit 再发 enter，浮层探针的 enter 紧接着就把 barrier exit 起的表撤掉。依赖的是
+/// 派发顺序与 arm/cancel 的同步性，把任何一边改成异步都会让指针移进浮层误触发续播。
+///
+/// 另一条**没有守卫的隐含前提**：同一个 `Stack` 里 barrier 与浮层之间的兄弟层
+/// （加载占位、停在屏外的 parked realm）都不认领命中。哪天给占位层加个
+/// `GestureDetector(behavior: opaque)`，就会出现「barrier exit 起了表、却没有任何
+/// 浮层 enter 来撤」——弹窗自己把自己关掉并续播。要加先想清楚这条。
+Widget lookupOverlayHitClaim({required Widget child}) => Listener(
+      behavior: HitTestBehavior.opaque,
+      child: child,
+    );
+
 /// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
 /// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
 ///
@@ -363,6 +393,7 @@ Widget parkedPopupLayer({
   required bool visible,
   required Size screen,
   required Widget child,
+  double entranceStartProgress = 0.0,
 }) {
   return Positioned(
     key: key,
@@ -376,7 +407,14 @@ Widget parkedPopupLayer({
       maintainAnimation: true,
       maintainSize: true,
       // TODO-890 姊妹项：入场淡入。四表面共用此收口，一处补齐全部。
-      child: _PopupEntranceFade(visible: visible, child: child),
+      // [entranceStartProgress]>0：本层接替已在屏上的搜索占位卡翻出，从占位卡当前的
+      // 淡入进度接着淡；从 0 重来会在交接处露出一段透底空框（见
+      // DictionaryPopupEntry.searchPlaceholderShownFor）。
+      child: _PopupEntranceFade(
+        visible: visible,
+        startProgress: entranceStartProgress,
+        child: child,
+      ),
     ),
   );
 }
@@ -447,6 +485,53 @@ List<Widget> parkedRealmPopupLayers({
   ];
 }
 
+/// 把 WebView 布局得比可见区高 [overflowHeight]、顶端对齐并裁掉超出部分（见
+/// [DictionaryPopupLayer.webViewOverflowHeight]），并把可见高度交给 [builder]
+/// （裁剪时为可见区高度，不裁剪为 null）——popup.js 的浮层定位据此避开被裁掉的区域。
+///
+/// 结构**恒定**：无论溢出多少，WebView 都在同一个 LayoutBuilder / ClipRect /
+/// OverflowBox 之下，溢出为 0 时 OverflowBox 取原高。若溢出归零就直接返回 WebView，
+/// 它会在两种树深度之间搬家，只靠 GlobalKey 保住 State，移动端平台视图有重建闪烁风险。
+Widget popupWebViewOverflow({
+  required double overflowHeight,
+  required Widget Function(double? visibleHeight) builder,
+}) {
+  final double extra =
+      overflowHeight.isFinite && overflowHeight > 0 ? overflowHeight : 0.0;
+  return LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final bool bounded = constraints.hasBoundedHeight;
+      final double? height = bounded ? constraints.maxHeight + extra : null;
+      return ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minHeight: height,
+          maxHeight: height,
+          child: builder(bounded && extra > 0 ? constraints.maxHeight : null),
+        ),
+      );
+    },
+  );
+}
+
+/// 入场淡入在 [elapsed] 时刻走到的进度（0..1，线性时间轴；透明度 = easeOut(进度)）。
+///
+/// 真弹窗接替搜索占位卡时从占位卡当前进度接着淡（[DictionaryPopupEntry.searchPlaceholderShownFor]）：
+/// 直接满不透明会让快速查词从半透明「跳」到满不透明，从 0 重来又会在交接处露底。
+double popupEntranceProgressAfter(Duration? elapsed) {
+  if (elapsed == null) return 0.0;
+  final double t =
+      elapsed.inMicroseconds / _kSlideDuration.inMicroseconds.toDouble();
+  if (!t.isFinite || t <= 0) return 0.0;
+  return t >= 1 ? 1.0 : t;
+}
+
+/// 搜索期加载占位卡的入场淡入：与 [parkedPopupLayer] 同一个 [_PopupEntranceFade]
+/// （同时长 / 曲线 / 墨水屏归零），占位卡每次插入 Stack 都是新 State，故每次查词淡入
+/// 一次。接替它的真弹窗用 [popupEntranceProgressAfter] 接着这条时间轴淡完。
+Widget popupEntranceFade({required Widget child}) =>
+    _PopupEntranceFade(visible: true, child: child);
+
 /// TODO-890 姊妹项：查词弹窗**入场淡入**收口。app 外覆盖窗靠注入 CSS
 /// `transition:opacity 200ms ease-out` + 双 gate 翻 `opacity 0→1` 做平滑淡入；app 内
 /// 各表面（阅读器 / 视频 / 首页 / 安卓独立窗）此前经 [parkedPopupLayer] 的 [Visibility]
@@ -456,57 +541,74 @@ List<Widget> parkedRealmPopupLayers({
 ///
 /// 关键：[ImplicitlyAnimatedWidget] 首帧取目标值不补间，故不能只写
 /// `AnimatedOpacity(opacity: visible ? 1 : 0)`——首次挂载即 `visible:true` 的
-/// 视频 / 首页 / 独立窗会跳过淡入。这里用「首帧强制 0 + post-frame 翻 1」保证每次进入
-/// 可见态都淡入（含首帧即可见），镜像 app 外「shell 默认 opacity:0，reveal gate 齐才翻 1」。
+/// 视频 / 首页 / 独立窗会跳过淡入。这里用显式 [AnimationController]：每次进入可见态把
+/// 进度置到起点再 forward（含首帧即可见），镜像 app 外「shell 默认 opacity:0，reveal
+/// gate 齐才翻 1」；起点可非 0，好让接替占位卡的真弹窗接着占位卡的进度淡（BUG-2734）。
 class _PopupEntranceFade extends StatefulWidget {
-  const _PopupEntranceFade({required this.visible, required this.child});
+  const _PopupEntranceFade({
+    required this.visible,
+    required this.child,
+    this.startProgress = 0.0,
+  });
 
   final bool visible;
   final Widget child;
+
+  /// 进入可见态时从这个进度（0..1，见 [popupEntranceProgressAfter]）开始淡入。
+  final double startProgress;
 
   @override
   State<_PopupEntranceFade> createState() => _PopupEntranceFadeState();
 }
 
-class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
-  /// 入场淡入是否已触发（[AnimatedOpacity] 目标翻 1）。隐藏态复位，下次可见重新淡入。
-  bool _revealed = false;
+class _PopupEntranceFadeState extends State<_PopupEntranceFade>
+    with SingleTickerProviderStateMixin {
+  // 在 initState 里建，不能写成 `late final` 懒初始化：停在屏外、从没可见过的层
+  // （热槽 / 停驻 realm）会拖到 dispose 才第一次建 controller，那时已不能查祖先
+  // （TickerMode），直接断言失败。
+  late final AnimationController _progress;
+  late final Animation<double> _opacity;
 
   @override
   void initState() {
     super.initState();
-    if (widget.visible) _scheduleReveal();
+    _progress = AnimationController(vsync: this, duration: _kSlideDuration);
+    _opacity = CurvedAnimation(parent: _progress, curve: Curves.easeOut);
+    if (widget.visible) _enterVisible();
   }
 
   @override
   void didUpdateWidget(_PopupEntranceFade oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.visible && !oldWidget.visible) {
-      _revealed = false; // 重新进入可见态：复位以再次淡入。
-      _scheduleReveal();
+      _enterVisible(); // 重新进入可见态：再淡入一次。
     } else if (!widget.visible && oldWidget.visible) {
-      _revealed = false; // 隐藏即复位，避免下次瞬间满不透明。
+      _progress.value = 0.0; // 隐藏即复位，避免下次瞬间满不透明。
     }
   }
 
-  /// 下一帧把 [_revealed] 翻 true，使 [AnimatedOpacity] 从首帧的 0 补间到 1
-  /// （同帧内 0→1 会被隐式动画当作初值直接取 1、不补间）。
-  void _scheduleReveal() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.visible && !_revealed) {
-        setState(() => _revealed = true);
-      }
-    });
+  /// 从 [_PopupEntranceFade.startProgress] 接着往 1 走；首个可见帧就是这个进度，
+  /// 剩余时长按比例缩短（AnimationController.forward 自带）。
+  void _enterVisible() {
+    final double start = widget.startProgress;
+    _progress.value = start.isFinite ? start.clamp(0.0, 1.0).toDouble() : 0.0;
+    if (_progress.value < 1.0) _progress.forward();
+  }
+
+  @override
+  void dispose() {
+    _progress.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
+    return FadeTransition(
       // 墨水屏模式：淡入归零为瞬时显示——慢刷新屏上 0→1 补间是一段灰阶残影，
       // 且弹窗「先出壳后出内容」的观感在 e-ink 上尤其糟。
-      opacity: widget.visible && _revealed ? 1.0 : 0.0,
-      duration: isEinkTheme(context) ? Duration.zero : _kSlideDuration,
-      curve: Curves.easeOut,
+      opacity: !widget.visible
+          ? kAlwaysDismissedAnimation
+          : (isEinkTheme(context) ? kAlwaysCompleteAnimation : _opacity),
       child: widget.child,
     );
   }
@@ -667,8 +769,10 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overrideFillColor,
     this.showBorder = true,
     this.bottomDocked = false,
+    this.webViewOverflowHeight = 0,
     this.swipeDismissible = true,
     this.enableSwipeToClose = true,
+    this.enableTouchSwipeToClose,
     this.onClose,
     this.onBack,
     this.historyNav,
@@ -800,6 +904,13 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 平台/偏好是否允许滑关"（Windows/Linux 默认 false）。
   final bool enableSwipeToClose;
 
+  /// BUG-2770：「滑动关闭」的**触摸半边**开关（手指 / 触控笔）。[enableSwipeToClose]
+  /// 为假而本值为真时，顶栏 / 整窗改挂 `touchOnly` 的 [SwipeDismissWrapper]、正文仍挂
+  /// 触摸横拖检测器——鼠标照旧不能滑关（BUG-299），触屏能。宿主传
+  /// [ReaderFushiSource.enableTouchSwipeToClose]；null = 跟随 [enableSwipeToClose]
+  /// （旧调用点语义逐字不变）。
+  final bool? enableTouchSwipeToClose;
+
   /// TODO-407①：顶层右端"X 关闭"按钮的回调。非空时弹窗顶栏渲染一个始终可关的 X
   /// （任何平台、即便滑关被禁用也能关）。点 X 走各表面既有的关闭汇聚点。
   final VoidCallback? onClose;
@@ -854,9 +965,39 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 选区的普通弹窗四周都有留白，保持既有圆角。
   final bool bottomDocked;
 
+  /// WebView 比正文可见区**多**布局出来的高度（逻辑像素，≥0），多出部分裁掉。
+  ///
+  /// 自适应高度（BUG-1651）的宿主把外壳收到内容高度，但让 WebView 始终按「外壳取
+  /// 用户最大高度」时的正文高度布局、顶端对齐、超出部分裁剪。这样内容增减（换词、
+  /// 分页追加词条）只改裁剪框，原生 WebView 表面尺寸不变：Windows 上 WebView2 表面
+  /// 改尺寸要重建 WGC 帧池、新尺寸的帧晚于 Flutter 布局到达，那几帧旧帧被 [Texture]
+  /// 拉伸到新矩形里——用户看到的「查词框内容先放大一帧再缩回」「高度一格一格撑开」。
+  /// app 外覆盖窗在 DOM 内改卡片高度，本来就没有这个问题。
+  ///
+  /// 前提：外壳比最大高度矮时，内容本就完整落在可见区内（外壳 = 内容高度），被裁掉的
+  /// 只是空白；外壳顶到最大高度时本值为 0，与改前逐字节一致。0 = 不裁剪（默认）。
+  final double webViewOverflowHeight;
+
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
   bool get _swipeActive => swipeDismissible && enableSwipeToClose;
+
+  /// BUG-2770：触摸类指针的滑关是否生效。[_swipeActive] 为真时恒真（全指针都放行）。
+  bool get _touchSwipeActive =>
+      swipeDismissible &&
+      (enableSwipeToClose || (enableTouchSwipeToClose ?? enableSwipeToClose));
+
+  /// BUG-2770：给顶栏 / 整窗挂滑关包装。鼠标滑关开 → 全指针包装（旧行为）；只有触摸
+  /// 滑关开 → `touchOnly` 包装；都关 → 原样返回。
+  Widget _wrapSwipeDismiss(Widget child) {
+    if (!_touchSwipeActive) return child;
+    return SwipeDismissWrapper(
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
+      onDismiss: onDismiss,
+      touchOnly: !_swipeActive,
+      child: child,
+    );
+  }
 
   static const BoxConstraints _topActionConstraints =
       BoxConstraints.tightFor(width: 36, height: 36);
@@ -874,13 +1015,8 @@ class DictionaryPopupLayer extends StatelessWidget {
       // TODO-406：可拖/可滑区收敛到顶栏（header + X）。WebView 正文 body 不在
       // [SwipeDismissWrapper] 的 Listener 子树内——正文里左键框选的指针位移序列
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
-      final Widget topRegion = _swipeActive
-          ? SwipeDismissWrapper(
-              sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-              onDismiss: onDismiss,
-              child: topBar,
-            )
-          : topBar;
+      // BUG-2770：鼠标滑关关时仍按触摸开关挂 touchOnly 包装。
+      final Widget topRegion = _wrapSwipeDismiss(topBar);
       // TODO-1187：分隔线从 header widget 内的无条件底边框移到这里，只在「有 header
       // 星标/音频行」且「有可渲染词条」时才画。无结果（「未找到搜索结果」占位）/ 搜索中
       // 不画，消除悬在收藏行与占位卡之间的多余横线。app 外覆盖窗 / 嵌套返回层无
@@ -943,20 +1079,17 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 仅有顶栏的层让本吸收层兼管「弹窗本体横拖关」（[bodySwipe]=true）；无顶栏的层
     // （popup_dictionary_page 嵌套返回层）仍交给下方整窗 [SwipeDismissWrapper]（保留其
     // 横滑动画反馈），本层只 onTap 吸收命中，避免两条路径同时触发 [onDismiss] 双关。
-    final bool bodySwipe = _swipeActive && topBar != null;
+    // BUG-2770：正文检测器本身只认触摸类指针，门控跟触摸开关走——此前跟鼠标开关
+    // （[_swipeActive]）一起关，Windows/Linux 默认触屏也滑不关，属误伤。
+    final bool bodySwipe = _touchSwipeActive && topBar != null;
     final Widget content = _BodySwipeDismissDetector(
       enableSwipeToClose: bodySwipe,
       onDismiss: onDismiss,
       child: surface,
     );
 
-    final Widget shell = (topBar != null || !_swipeActive)
-        ? content
-        : SwipeDismissWrapper(
-            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-            onDismiss: onDismiss,
-            child: content,
-          );
+    final Widget shell =
+        topBar != null ? content : _wrapSwipeDismiss(content);
 
     return _maybeWrapHostKeyInput(
       _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
@@ -1234,10 +1367,15 @@ class DictionaryPopupLayer extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     final bool hasRenderableResults = _hasRenderableResults;
-    final bool isSeedWarmSlot = keepWebViewWarm &&
+    // 真实空结果（查过了、没词条）：热槽上用不透明「未找到」盖板盖住 WebView，
+    // 非热槽层直接渲染同一占位（无 WebView）。
+    // BUG-2784：「查过了」按**不是空闲占位单例**判定，而不是「查询词非空」。点到
+    // ♡ / ♪ / ～ 这类纯符号时，查词前的清洗把它剥成空串，查询确实跑完了、只是没
+    // 东西可查；旧判据把它当成占位，于是露出一个空 WebView 的白框。
+    final bool isRealEmptyResult = !isSearching &&
+        !hasRenderableResults &&
         result != null &&
-        result!.searchTerm.isEmpty &&
-        !hasRenderableResults;
+        !identical(result, kPopupSearchingPlaceholderResult);
 
     // BUG-080: mount the WebView as soon as the lookup starts (while still
     // searching, before results arrive) so popup.html + JS + CSS cold-load in
@@ -1246,18 +1384,25 @@ class DictionaryPopupLayer extends StatelessWidget {
     // defaults to `transparent` until results push theme vars, so the empty
     // preload simply shows the themed popup surface behind the spinner — no
     // flash. Real results are pushed via the WebView's didUpdateWidget when
-    // they arrive. A finished search with no results falls through to the
-    // placeholder below (no WebView kept).
+    // they arrive. A finished search with no results on a NON-warm layer falls
+    // through to the placeholder below (no WebView kept).
     //
-    // A persistent hidden warm slot still mounts the WebView while seeded with
-    // the shared empty result. Once a real empty lookup completes, it must fall
-    // through to the Flutter placeholder instead of showing the warm WebView's
-    // blank shell.
-    if (hasRenderableResults || isSearching || isSeedWarmSlot) {
+    // BUG-2588：热槽（keepWebViewWarm）的 WebView **无论结果如何都留在树上**——seed
+    // 空结果、搜索中、真实空结果三态一致。此前真实空结果会落到下面的 Flutter 占位、
+    // 把带 GlobalKey 的热槽 WebView 整个 unmount：视频页 Shift 悬停换词换到一个没
+    // 词条的字位（助词 / 单字）时，上一词还在飞的 `Runtime.evaluate` + 60 Hz WGC 泵
+    // 尚在 Tick，平台线程就同步走 `ICoreWebView2Controller::Close()` +
+    // `DestroyWindow`（fork `in_app_webview.cpp` 析构），用户报整机卡死；且热槽被
+    // 拆后下一次换词退化为冷建 WebView2，BUG-094 的预热白白丢掉。「别露出热槽空白
+    // 壳」的诉求改由下面的不透明「未找到」盖板满足，与搜索中盖板同一手法。
+    if (hasRenderableResults || isSearching || keepWebViewWarm) {
       return Stack(
         children: [
-          DictionaryPopupWebView(
+          popupWebViewOverflow(
+              overflowHeight: webViewOverflowHeight,
+              builder: (double? visibleHeight) => DictionaryPopupWebView(
             key: webViewKey,
+            visibleViewportHeight: visibleHeight,
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
             restoreScrollTop: restoreScrollTop,
@@ -1284,7 +1429,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onRenderError: onRenderError,
             inputSpec: inputSpec,
             onHostInputToken: onHostInputToken,
-          ),
+          )),
           // 搜索期且还没有词条时，用一层不透明主题色盖板（带进度条）盖住 WebView。
           // 视频（mixin reuseWarmSlot）会在结果就绪前就把热槽设为可见，此刻 WebView
           // 是空载——Windows 的 inappwebview fork 不完全尊重 transparentBackground，
@@ -1307,11 +1452,27 @@ class DictionaryPopupLayer extends StatelessWidget {
                   ],
                 ),
               ),
+            )
+          // BUG-2588：热槽真实空结果——盖板而不是拆 WebView（见上）。ColoredBox 命中
+          // 行为 opaque，WebView 收不到穿透的指针事件。
+          else if (isRealEmptyResult)
+            Positioned.fill(
+              child: ColoredBox(
+                color: fillColor,
+                child: _buildNoResultsPlaceholder(context, tokens),
+              ),
             ),
         ],
       );
     }
 
+    return _buildNoResultsPlaceholder(context, tokens);
+  }
+
+  Widget _buildNoResultsPlaceholder(
+    BuildContext context,
+    FushiDesignTokens tokens,
+  ) {
     return Center(
       child: SingleChildScrollView(
         padding: EdgeInsets.all(tokens.spacing.gap),

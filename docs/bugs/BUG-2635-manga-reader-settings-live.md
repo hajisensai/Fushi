@@ -1,0 +1,13 @@
+## BUG-2635 · 漫画阅读设置缺失入口且关闭后才生效
+- **报告**：2026-09-23（用户：对齐 Mangatan 配置，设置改为桌面侧边弹窗，方向可在顶栏切换，OCR 改为边看边识别）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/manga/reader/manga_reader_settings_sheet.dart:36` 原描述表遗漏裁边、宽页拆分、旋转、背景与动画等已有字段；`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:3887` 原 onChanged 仅写 DB，关闭面板后才重新应用。
+- **收尾审查另查出的根因**（同一轮修掉）：
+  - 侧边弹窗里 Esc / 方向键失效：`_canOwnMangaFocus`（`manga_fushi_page.dart`）只在 `appResumed` 时检查上方是否压着路由，而设置面板每改一项都会整窗重载 → `contentReady` → 焦点被收回正文。小说页 `_canOwnReaderFocus` 的 contentReady / surfaceRemounted 组同形。弹窗内 `CallbackShortcuts` 补丁无效（焦点根本不在弹窗里）且会让颜色输入框里的 Esc 直接关掉面板，已移除。
+  - 本地 ONNX 边看边识别每页新起 isolate、重建全部 ORT 会话（`MangaOcrServiceImpl.ocrPages` → `_ocrFolder`）；后端与 isolate 各算一次缓存签名，注入模型目录时不一致。改为常驻页级会话（`MangaOcrPageService.openPageSession`）+ 单一签名来源（`resolvePageCacheDirPath`）。
+  - 面板 `_save` 在保存中直接 return，键盘 / 手柄改动与滑条松手被静默丢掉；改为串行队列、只丢失败之后的派生改动。
+  - 默认自动模式：无可用引擎时每开一本书挂「失败」胶囊；整卷已识别的书把空白页重送引擎（Lens 即上传）。
+  - 恢复默认把桌面窗口强切全屏、漫画默认「保持亮屏」压过全局设置：两者改为只听本书显式覆盖。
+- **[x] ① 已修复** — 分组设置、复用左右侧边弹窗，每次成功写入后立即重应用当前作品；阅读方向顶栏按钮与本书覆盖共用持久化；宽页拆分先消费另一半再进普通翻页队列；以及上面五条根因。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_reader_settings_sheet_test.dart`（即时持久化、重置失败恢复、保存中改动不丢、越界滑条值夹取）；`fushi/test/reader/reader_settings_side_dialog_test.dart`（换边与状态保持）；`fushi/test/ocr/manga_ocr_service_impl_test.dart`（一个页会话只建一次 ORT 会话、close 后失败、签名目录同源、建会话失败传播）；`fushi/integration_test/manga_settings_side_dialog_itest.dart`（真实阅读器焦点路径：打开即 Esc、改设置后 Esc、换边、方向按钮、回到开头）。
+- **备注**：`manga_visible_ocr_itest.dart` 需要 Windows 系统 OCR（日语 OCR 语言包），本机不可用，未跑通；本地 ONNX 常驻会话未在真 ORT 上验证第二页起省掉初始化。
+- **后续（2026-09-23，产品方向变更）**：「边看边识别」（页级 `MangaVisibleOcrController` / `MangaVisibleOcrBackend`、顶栏「识别当前可见页」、`parallelOcrTasks`）整体由「进入即整卷识别」取代；`manga_visible_ocr_itest.dart` 改写为 `manga_auto_volume_ocr_itest.dart`。漫画设置面板改为固定右侧（去掉换边按钮与行首图标），小说设置面板的换边能力不变。

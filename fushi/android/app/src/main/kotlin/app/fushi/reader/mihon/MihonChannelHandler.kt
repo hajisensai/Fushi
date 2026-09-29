@@ -4,6 +4,11 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animesource.host.AnimeVideoLoader
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
 import eu.kanade.tachiyomi.source.ConfigurableSource
@@ -261,18 +266,16 @@ class MihonChannelHandler(private val app: Application) {
         val packageName = arguments.requiredString("packageName")
         val method = arguments.requiredString("method")
         val loaded = loader.load(packageName)
-        if (method == "sourcesManga") {
-            return loaded.sources.map { source ->
-                mapOf(
-                    "id" to source.id.toString(),
-                    "name" to source.name,
-                    "lang" to source.lang,
-                    "baseUrl" to ((source as? HttpSource)?.getHomeUrl().orEmpty()),
-                )
-            }
+        if (method == "sourcesManga" || method == "sourcesAnime") {
+            return loaded.sources.map(::sourceDescriptor)
         }
-        val source = sourceFromPreferences(loaded, arguments)
-        applyPreferences(source, arguments)
+        val selected = sourceFromPreferences(loaded, arguments)
+        applyPreferences(selected, arguments)
+        if (selected is AnimeSource) {
+            return invokeAnime(loaded, selected, method, arguments)
+        }
+        val source = selected as? Source
+            ?: throw MihonHostException("SOURCE_NOT_FOUND", "Unknown source type ${selected.javaClass}")
         return when (method) {
             "filtersManga" -> filterListToBridge(source.getFilterList())
             "getPopularManga" -> runBlocking {
@@ -326,6 +329,15 @@ class MihonChannelHandler(private val app: Application) {
                 loaded.mangaCache[cacheKey(source, merged.url)] = merged
                 merged.toBridgeMap()
             }
+            // 作品在源站的网页地址（Mihon `HttpSource.getMangaUrl`，默认 = 详情请求
+            // 的 URL；源可覆盖）。与桌面 sidecar 的 `getMangaUrl` 同一 wire 名。
+            "getMangaUrl" -> {
+                val input = arguments.requiredMap("mangaData")
+                val manga = loaded.mangaCache[cacheKey(source, input.requiredString("url"))]
+                    ?: mangaFromBridge(input)
+                (source as? HttpSource)?.getMangaUrl(manga)
+                    ?: throw MihonHostException("NOT_IMPLEMENTED", "Source has no web page for this title")
+            }
             "getChapterList" -> runBlocking {
                 val input = arguments.requiredMap("mangaData")
                 val manga = loaded.mangaCache[cacheKey(source, input.requiredString("url"))]
@@ -358,6 +370,108 @@ class MihonChannelHandler(private val app: Application) {
         }
     }
 
+    /** Aniyomi 调用面：与漫画分支一一对应，wire 名与桌面 sidecar `MihonInvoker` 一致。 */
+    private fun invokeAnime(
+        loaded: LoadedMihonExtension,
+        source: AnimeSource,
+        method: String,
+        arguments: Map<String, Any?>,
+    ): Any? {
+        val catalogue = source as? AnimeCatalogueSource
+            ?: throw MihonHostException("UNSUPPORTED_SOURCE", "Anime source is not a catalogue source")
+        fun page(page: eu.kanade.tachiyomi.animesource.model.AnimesPage): Map<String, Any?> {
+            page.animes.forEach { anime -> loaded.animeCache[cacheKey(source, anime.url)] = anime }
+            return mapOf(
+                "animes" to page.animes.map { anime -> anime.toBridgeMap() },
+                "hasNextPage" to page.hasNextPage,
+            )
+        }
+        return when (method) {
+            "filtersAnime" -> animeFilterListToBridge(catalogue.getFilterList())
+            "getPopularAnime" -> runBlocking { page(catalogue.getPopularAnime(arguments.intValue("page", 1))) }
+            "getLatestAnime" -> runBlocking { page(catalogue.getLatestUpdates(arguments.intValue("page", 1))) }
+            "getSearchAnime" -> runBlocking {
+                val filters = applyBridgeAnimeFilters(
+                    catalogue.getFilterList(),
+                    arguments.mapList("filterList"),
+                )
+                page(
+                    catalogue.getSearchAnime(
+                        arguments.intValue("page", 1),
+                        arguments["search"]?.toString().orEmpty(),
+                        filters,
+                    ),
+                )
+            }
+            "getDetailsAnime" -> runBlocking {
+                val input = arguments.requiredMap("animeData")
+                val anime = loaded.animeCache[cacheKey(source, input.requiredString("url"))]
+                    ?: animeFromBridge(input)
+                // 同漫画：详情是增量，身份只能来自入参（见 SAnime.mergedWithDetails）。
+                val merged = anime.mergedWithDetails(catalogue.getAnimeDetails(anime))
+                loaded.animeCache[cacheKey(source, merged.url)] = merged
+                merged.toBridgeMap()
+            }
+            "getAnimeUrl" -> {
+                val input = arguments.requiredMap("animeData")
+                val anime = loaded.animeCache[cacheKey(source, input.requiredString("url"))]
+                    ?: animeFromBridge(input)
+                (catalogue as? AnimeHttpSource)?.getAnimeUrl(anime)
+                    ?: throw MihonHostException("NOT_IMPLEMENTED", "Source has no web page for this title")
+            }
+            "getEpisodeList" -> runBlocking {
+                val input = arguments.requiredMap("animeData")
+                val anime = loaded.animeCache[cacheKey(source, input.requiredString("url"))]
+                    ?: animeFromBridge(input)
+                catalogue.getEpisodeList(anime).onEach { episode ->
+                    loaded.episodeCache[cacheKey(source, episode.url)] = episode
+                }.map { episode -> episode.toBridgeMap() }
+            }
+            "getVideoList" -> runBlocking {
+                val input = arguments.requiredMap("episodeData")
+                val episode = loaded.episodeCache[cacheKey(source, input.requiredString("url"))]
+                    ?: episodeFromBridge(input)
+                // 两代扩展共用的宿主取流器（与桌面 sidecar 同一份源码）：Hoster 展开、
+                // `resolveVideo`、lib 14 的 `getVideoUrl`，解析不出的候选不过通道。
+                AnimeVideoLoader.loadVideos(catalogue, episode).map { video -> video.toBridgeMap() }
+            }
+            "preferencesAnime", "setPreferenceAnime" -> {
+                val configurable = source as? ConfigurableAnimeSource
+                    ?: return emptyList<Map<String, Any?>>()
+                MihonPreferenceBridge.applyAndRead(
+                    app,
+                    configurable,
+                    arguments.mapList("preferences"),
+                )
+            }
+            else -> throw MihonHostException("NOT_IMPLEMENTED", "Unsupported Mihon anime invoke method")
+        }
+    }
+
+    private fun sourceDescriptor(source: Any): Map<String, Any?> = when (source) {
+        is Source -> mapOf(
+            "id" to source.id.toString(),
+            "name" to source.name,
+            "lang" to source.lang,
+            "baseUrl" to ((source as? HttpSource)?.getHomeUrl().orEmpty()),
+        )
+        is AnimeSource -> mapOf(
+            "id" to source.id.toString(),
+            "name" to source.name,
+            "lang" to source.lang,
+            "baseUrl" to ((source as? AnimeHttpSource)?.baseUrl.orEmpty()),
+        )
+        else -> throw MihonHostException("SOURCE_NOT_FOUND", "Unknown source type ${source.javaClass}")
+    }
+
+    /** 漫画 / 视频 HTTP 源共有的取图三件套：客户端、默认头、站点根。 */
+    private fun httpSurface(source: Any): Triple<okhttp3.OkHttpClient, okhttp3.Headers, String> =
+        when (source) {
+            is HttpSource -> Triple(source.client, source.headers, source.baseUrl)
+            is AnimeHttpSource -> Triple(source.client, source.headers, source.baseUrl)
+            else -> throw MihonHostException("UNSUPPORTED_SOURCE", "Source cannot fetch HTTP images")
+        }
+
     private fun fetchPageImage(arguments: Map<String, Any?>): ByteArray {
         val loaded = loader.load(arguments.requiredString("packageName"))
         val source = loaded.source(arguments.requiredString("sourceId"))
@@ -384,13 +498,12 @@ class MihonChannelHandler(private val app: Application) {
         val loaded = loader.load(arguments.requiredString("packageName"))
         val source = loaded.source(arguments.requiredString("sourceId"))
         applyPreferences(source, arguments)
-        val http = source as? HttpSource
-            ?: throw MihonHostException("UNSUPPORTED_SOURCE", "Source cannot fetch HTTP images")
+        val (client, headers, _) = httpSurface(source)
         val request = Request.Builder()
             .url(arguments.requiredString("url"))
-            .headers(http.headers)
+            .headers(headers)
             .build()
-        http.client.newCall(request).execute().use { response ->
+        client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw MihonHostException("IMAGE_HTTP", "Source image request failed")
             }
@@ -402,18 +515,23 @@ class MihonChannelHandler(private val app: Application) {
         val loaded = loader.load(arguments.requiredString("packageName"))
         val source = loaded.source(arguments.requiredString("sourceId"))
         if (source is ConfigurableSource) source.getSourcePreferences().edit().clear().commit()
-        if (source is HttpSource) {
+        if (source is ConfigurableAnimeSource) source.getSourcePreferences().edit().clear().commit()
+        if (source is HttpSource || source is AnimeHttpSource) {
             val network = Injekt.get<NetworkHelper>()
-            runCatching { network.cookieJar.remove(source.baseUrl.toHttpUrl()) }
+            val (_, _, baseUrl) = httpSurface(source)
+            runCatching { network.cookieJar.remove(baseUrl.toHttpUrl()) }
         }
-        loaded.mangaCache.keys.removeAll { key -> key.startsWith("${source.id}:") }
-        loaded.chapterCache.keys.removeAll { key -> key.startsWith("${source.id}:") }
+        val prefix = "${sourceId(source)}:"
+        loaded.mangaCache.keys.removeAll { key -> key.startsWith(prefix) }
+        loaded.chapterCache.keys.removeAll { key -> key.startsWith(prefix) }
+        loaded.animeCache.keys.removeAll { key -> key.startsWith(prefix) }
+        loaded.episodeCache.keys.removeAll { key -> key.startsWith(prefix) }
     }
 
     private fun sourceFromPreferences(
         loaded: LoadedMihonExtension,
         arguments: Map<String, Any?>,
-    ): Source {
+    ): Any {
         val context = arguments.mapList("preferences")
             .firstOrNull { item -> item["key"] == "__mangatan_bridge_context__" }
         val sourceId = context?.get("sourceId")?.toString()
@@ -421,17 +539,27 @@ class MihonChannelHandler(private val app: Application) {
         return loaded.source(sourceId)
     }
 
-    private fun applyPreferences(source: Source, arguments: Map<String, Any?>) {
-        if (source is ConfigurableSource) {
-            MihonPreferenceBridge.apply(app, source, arguments.mapList("preferences"))
+    private fun applyPreferences(source: Any, arguments: Map<String, Any?>) {
+        when (source) {
+            is ConfigurableSource ->
+                MihonPreferenceBridge.apply(app, source, arguments.mapList("preferences"))
+            is ConfigurableAnimeSource ->
+                MihonPreferenceBridge.apply(app, source, arguments.mapList("preferences"))
+            else -> Unit
         }
     }
 
-    private fun LoadedMihonExtension.source(sourceId: String): Source =
-        sources.firstOrNull { source -> source.id.toString() == sourceId }
+    private fun sourceId(source: Any): Long = when (source) {
+        is Source -> source.id
+        is AnimeSource -> source.id
+        else -> throw MihonHostException("SOURCE_NOT_FOUND", "Unknown source type ${source.javaClass}")
+    }
+
+    private fun LoadedMihonExtension.source(sourceId: String): Any =
+        sources.firstOrNull { source -> sourceId(source).toString() == sourceId }
             ?: throw MihonHostException("SOURCE_NOT_FOUND", "Mihon source is unavailable")
 
-    private fun cacheKey(source: Source, url: String): String = "${source.id}:$url"
+    private fun cacheKey(source: Any, url: String): String = "${sourceId(source)}:$url"
 
     private fun fileArgument(call: MethodCall, key: String): File =
         File(stringArgument(call, key))

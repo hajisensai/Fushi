@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -11,6 +13,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.
 import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -164,10 +167,11 @@ void main() {
       expect(results.single.lookup.externalId, '42');
       expect(provider.searchCount, 0);
     }
+    // `tmdb=42` / `mal=42` 都是可选生产主源的身份，AniDB 主源下也直取（不换源
+    // 不重搜），不再报格式错误；这里只留真正非法的写法。
     for (final String query in <String>[
       'anidb=0',
       'anidb=bad',
-      'tmdb=42',
       'https://fakeanidb.net/anime/42'
     ]) {
       await expectLater(
@@ -324,7 +328,10 @@ void main() {
     expect(stored?.title, '主源电影');
   });
 
-  test('registry 缺少 AniDB 时即使 TMDB 可用也 fail closed', () async {
+  test('AniDB 主源缺席时 TMDB 按兜底源识别（Shoko 形态：AniDB 主 + TMDB 补充）',
+      () async {
+    // 2026-09-20 起 AniDB 是可选主源且有兜底（AniDB → TMDB），不再是「单源、
+    // 缺席即 fail closed」的退役语义：主源不可用时按双源策略问兜底源。
     final SourceLibraryRow source = await _createMovieSource(
       db,
       root,
@@ -345,11 +352,17 @@ void main() {
       onProgress: (_) {},
     );
 
-    expect(report.succeededWorks, 0);
-    expect(report.failedWorks, 1);
-    expect(tmdb.searchCount, 0);
-    expect(tmdb.fetchCount, 0);
-    expect(await db.getVideoMetadataWorkByBook('movie-book'), isNull);
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(report.failedWorks, 0);
+    expect(tmdb.searchCount, greaterThan(0));
+    final VideoMetadataWorkRow stored =
+        (await db.getVideoMetadataWorkByBook('movie-book'))!;
+    expect(
+      (await db.getVideoMetadataProviderIdentities(workId: stored.id))
+          .map((VideoMetadataProviderIdentityRow row) =>
+              '${row.provider}:${row.externalId}:${row.isPrimary}'),
+      contains('tmdb:700:true'),
+    );
   });
 
   test('movie NFO TMDB hint cannot enter the TV namespace', () async {
@@ -1236,6 +1249,320 @@ void main() {
     final List<VideoSourceScrapeRunRow> runs =
         await db.getVideoSourceScrapeRuns(sourceId: source.id);
     expect(runs.single.scope, 'work');
+  });
+
+  test('手动改绑身份重刮替换 Fushi 自己写下的旧封面并驱逐缓存，用户改过的 NFO 仍受保护（BUG-2737）', () async {
+    // 用户实报：独立电影被刮成同名度很低的别的片子，手动指定正确作品重刮后封面
+    // 还是错的那张。默认 missingOnly 下旧身份写下的 poster 会被原样跳过；图名只按
+    // 图种派生，换身份就是覆盖同一路径，还得驱逐宿主解码缓存。
+    final Future<void> Function(File) hostEvict = evictImageCacheForFile;
+    final List<String> evicted = <String>[];
+    evictImageCacheForFile = (File file) async => evicted.add(file.path);
+    addTearDown(() => evictImageCacheForFile = hostEvict);
+
+    final Directory movieDir =
+        await Directory(p.join(root.path, 'Liz')).create();
+    final File video = File(p.join(movieDir.path, 'Liz (2018).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Movies',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+      ),
+    );
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('liz'),
+      title: const Value<String>('Liz'),
+      videoPath: Value<String>(video.path),
+      sourceId: Value<int?>(sourceId),
+    ));
+    // 写 NFO + 图片，两者都是默认的 missingOnly。
+    await db.upsertVideoSourceScrapeSettings(
+      VideoSourceScrapeSettingsCompanion.insert(
+        sourceId: Value<int>(sourceId),
+        providerOverride: const Value<String?>('anidb'),
+        fanartEnabled: const Value<bool>(false),
+        updatedAt: 1,
+      ),
+    );
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry: VideoMetadataProviderRegistry(
+          <VideoMetadataProvider>[_CoverPerIdentityAniDbProvider()]),
+      assetDownloader: _UrlEchoAssetDownloader(),
+    );
+    Future<SourceScrapeReport> bindTo(String anidbId) async {
+      final VideoSourceScrapeWork work =
+          (await VideoSourceWorkPlanner(db).plan(source)).single;
+      return coordinator.rescrapeWorkWithLookup(
+        source: source,
+        workTitle: work.title,
+        workStableKey: work.stableKey,
+        lookup: VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: anidbId,
+          mediaKind: VideoMetadataMediaKind.movie,
+        ),
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+    }
+
+    final File poster = File(p.join(movieDir.path, 'poster.jpg'));
+    final File nfo = File(p.join(movieDir.path, 'Liz (2018).nfo'));
+    final SourceScrapeReport wrong = await bindTo('1');
+    expect(wrong.succeededWorks, 1, reason: '${wrong.errors}');
+    expect(await poster.readAsString(), 'IMG https://images.test/1.jpg');
+    expect((await db.getVideoBookByBookUid('liz'))?.coverPath, poster.path);
+    expect(evicted, isEmpty, reason: '首次写入没有旧解码可清');
+    // 用户手改过的 NFO：不是 Fushi 未改动的生成物，换身份也不能动它。
+    await nfo.writeAsString('<movie><title>my notes</title></movie>');
+
+    final SourceScrapeReport fixed = await bindTo('2');
+
+    expect(fixed.succeededWorks, 1, reason: '${fixed.errors}');
+    expect(await poster.readAsString(), 'IMG https://images.test/2.jpg',
+        reason: '旧身份写下的 poster 必须被换掉，否则库页封面永远是错的那张');
+    expect(evicted, contains(poster.path));
+    expect((await db.getVideoBookByBookUid('liz'))?.coverPath, poster.path);
+    expect(await nfo.readAsString(), '<movie><title>my notes</title></movie>');
+    expect(fixed.protectedArtifacts, 1);
+  });
+
+  group('AI 歧义消解', () {
+    // 15 条目录候选（anidb:1..15）全部只剩待确认：与「AniDB 模糊目录候选只在
+    // 人工确认后抓取选中项详情」同一套假 provider，AI 只是在人工确认前多一道。
+    Future<VideoSourceScrapeCoordinator> buildCoordinator(
+      _CatalogConfirmationAniDbProvider provider, {
+      required AiVideoIdentityDecider? decider,
+    }) async =>
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            provider,
+          ]),
+          aiIdentityDecider: decider,
+        );
+
+    test('高置信判定：不弹人工确认，绑定该候选并在运行记录留 ai:matched 标记',
+        () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final List<AiVideoIdentityQuery> queries = <AiVideoIdentityQuery>[];
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async {
+          queries.add(query);
+          return const AiVideoIdentityDecision(
+            key: 'anidb:7',
+            confidence: 0.93,
+            reason: '标题与年份一致',
+          );
+        },
+      );
+      bool confirmationAsked = false;
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+          confirmationAsked = true;
+          return confirmation.candidates.first;
+        },
+      );
+
+      expect(confirmationAsked, isFalse, reason: '高置信判定不该再问用户');
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(report.pendingConfirmations, 0);
+      // 与人工确认走同一条后续路径：目录候选选中后抓取选中项详情并落库。
+      expect(provider.fetchedIds, <String>['7']);
+      expect(
+        (await db.getVideoMetadataWorkByBook('movie-book'))?.title,
+        'Confirmed Anime',
+      );
+      // 提问只带已取回的候选，不新增网络请求（搜索次数不因 AI 增加）。
+      final AiVideoIdentityQuery query = queries.single;
+      expect(query.candidateKeys, hasLength(15));
+      expect(query.candidateKeys, contains('anidb:7'));
+      expect(query.localTitles, isNotEmpty);
+      expect(query.sampleFileNames, <String>['Movie (2024).mkv']);
+      // 运行记录：warnings 里有一条 ai:matched 标记，且随 summaryJson 落库。
+      final SourceScrapeIssue note = report.warnings.singleWhere(
+        (SourceScrapeIssue issue) =>
+            parseVideoScrapeAiIdentityNote(issue.message) != null,
+      );
+      expect(note.workTitle, 'Movie');
+      expect(
+        parseVideoScrapeAiIdentityNote(note.message)!.confidencePercent,
+        93,
+      );
+      expect(parseVideoScrapeAiIdentityNote(note.message)!.reason, '标题与年份一致');
+      final List<VideoSourceScrapeRunRow> runs =
+          await db.getVideoSourceScrapeRuns(sourceId: source.id);
+      expect(runs.single.summaryJson, contains('ai:matched'));
+    });
+
+    test('低置信判定：仍弹人工确认，运行记录不留 AI 标记', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:7', confidence: 0.6),
+      );
+      bool confirmationAsked = false;
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+          confirmationAsked = true;
+          expect(confirmation.candidates, hasLength(15));
+          return confirmation.candidates.last;
+        },
+      );
+
+      expect(confirmationAsked, isTrue);
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(provider.fetchedIds, <String>['15']);
+      expect(
+        report.warnings.where((SourceScrapeIssue issue) =>
+            parseVideoScrapeAiIdentityNote(issue.message) != null),
+        isEmpty,
+      );
+    });
+
+    test('decider 抛异常：仍弹人工确认，刮削不失败', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async =>
+            throw StateError('ai down'),
+      );
+      bool confirmationAsked = false;
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+          confirmationAsked = true;
+          return confirmation.candidates.last;
+        },
+      );
+
+      expect(confirmationAsked, isTrue);
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(report.failedWorks, 0);
+      expect(report.errors, isEmpty);
+      final List<VideoSourceScrapeRunRow> runs =
+          await db.getVideoSourceScrapeRuns(sourceId: source.id);
+      expect(runs.single.status, 'completed');
+    });
+
+    test('后台批次（无确认回调）：高置信判定直接收敛，不再落待确认', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:3', confidence: 0.9),
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(report.pendingConfirmations, 0);
+      expect(provider.fetchedIds, <String>['3']);
+    });
+
+    test('未注入 decider：歧义照旧落待确认（行为不变）', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator =
+          await buildCoordinator(provider, decider: null);
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(report.pendingConfirmations, 1);
+      expect(report.succeededWorks, 0);
+      expect(provider.fetchCount, 0);
+    });
+
+    test('同一目录同一批候选只问一次 AI（用户取消后重扫不重问）', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      int deciderCalls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async {
+          deciderCalls++;
+          return const AiVideoIdentityDecision(key: null, confidence: 0.2);
+        },
+      );
+
+      for (int round = 0; round < 2; round++) {
+        final SourceScrapeReport report = await coordinator.scrapeSource(
+          source,
+          cancellationToken: VideoSourceScrapeCancellationToken(),
+          onProgress: (_) {},
+          onConfirmation: (VideoSourceScrapeConfirmation confirmation) async =>
+              null,
+        );
+        expect(report.pendingConfirmations, 1, reason: 'round $round');
+      }
+
+      expect(deciderCalls, 1);
+    });
   });
 }
 
@@ -2331,6 +2658,74 @@ class _RecordingAssetDownloader extends VideoMetadataAssetDownloader {
       contentType: 'image/jpeg',
     );
   }
+
+  @override
+  void close() {}
+}
+
+/// 按 lookup 的 AniDB id 给出不同封面 URL 的电影 provider（换身份 = 换封面）。
+class _CoverPerIdentityAniDbProvider implements VideoMetadataProvider {
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.anidb;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async =>
+      const <VideoMetadataWork>[];
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
+      VideoMetadataWork(
+        provider: providerKind,
+        kind: VideoMetadataMediaKind.movie,
+        title: 'Work ${lookup.externalId}',
+        year: 2018,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(
+            type: 'anidb',
+            value: lookup.externalId,
+            isDefault: true,
+          ),
+        ],
+        images: <VideoMetadataImage>[
+          VideoMetadataImage(
+            kind: VideoMetadataImageKind.cover,
+            url: 'https://images.test/${lookup.externalId}.jpg',
+            provider: providerKind,
+          ),
+        ],
+      );
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataSeason>[];
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async =>
+      const <VideoMetadataEpisode>[];
+
+  @override
+  void close() {}
+}
+
+/// 把 URL 本身当图片字节回显，便于断言落盘的是哪一张。
+class _UrlEchoAssetDownloader extends VideoMetadataAssetDownloader {
+  @override
+  Future<VideoMetadataDownloadedAsset> download(String url) async =>
+      VideoMetadataDownloadedAsset(
+        bytes: Uint8List.fromList(utf8.encode('IMG $url')),
+        extension: '.jpg',
+        contentType: 'image/jpeg',
+      );
 
   @override
   void close() {}

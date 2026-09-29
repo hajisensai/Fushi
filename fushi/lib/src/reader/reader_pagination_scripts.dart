@@ -867,6 +867,14 @@ class ReaderPaginationScripts {
 
   /// TODO-693: 第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
+  /// BUG-2652：恢复完成重锚的第一阶段——锚取恢复自己的精确字符锚（无精确锚时退回
+  /// [beginUiScaleReanchorInvocation] 的现场采样），commit 仍是
+  /// [commitUiScaleReanchorInvocation]。
+  static String beginRestoreReanchorInvocation() =>
+      '(window.fushiReader && '
+      "typeof window.fushiReader.beginRestoreReanchor === 'function') "
+      '? window.fushiReader.beginRestoreReanchor() : -1';
+
   static String commitUiScaleReanchorInvocation() =>
       '(window.fushiReader && '
       "typeof window.fushiReader.commitUiScaleReanchor === 'function') "
@@ -1054,6 +1062,20 @@ window.__fushiInstallShell = function(C) {
   // （每列在 block 轴填满整页），不变。仅当 used 子列明显窄于整轴（真 pageColumns>=2）才夹到
   // 子列；单列 / 连续 / VN（无 column-count → columnWidth=='auto'→NaN，或子列≈整轴）回退整轴、
   // 与旧 cs.w/cs.h 字节等价（零回归，不碰 TODO-729/753/792 分页几何）。ratio 恒作用在宽（与旧同）。
+  // BUG-2652：setChromeInsets 的重锚只为补偿「inset 改变 → body padding 改变 → 重排」。
+  // 下发的 inset 与已生效的变量逐值相同、图片盒也不变时根本没有重排，采样首字锚
+  // 只会读到**尚未落定的视口**：iOS 上同一个 WKWebView 原地换章（切滚动/分页模式等
+  // 结构性重载）后，恢复滚动刚写下去的头几帧里原生侧会让 scrollX/scrollY 瞬时读成 0，
+  // 此刻采到的锚就是章首，rAF 里 scrollToCharOffset(0) 便把用户钉回章首并落库。
+  // 这里判「无变化」，调用方直接返回——不采样、不置旗、不动 metrics。
+  _chromeInsetsUnchanged: function(topPx, bottomPx) {
+    var st = document.documentElement.style;
+    if (st.getPropertyValue('--chrome-top-inset') !== topPx + 'px') return false;
+    if (st.getPropertyValue('--chrome-bottom-inset') !== bottomPx + 'px') return false;
+    var box = this._imageMaxBox();
+    return st.getPropertyValue('--fushi-image-max-width') === box.w + 'px' &&
+        st.getPropertyValue('--fushi-image-max-height') === box.h + 'px';
+  },
   _imageMaxBox: function() {
     var cs = this._contentSize();
     var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
@@ -1192,6 +1214,13 @@ window.__fushiInstallShell = function(C) {
   // 语义锚重算一次**：终态与「图片本来就在」等价。仅在恢复落地后、用户尚未翻页的窗口内
   // 有效（paginate 清资格），且只由真正改变几何的 block 图 load 触发。重锚是程序化滚动，
   // 走既有 onReaderScroll 通道把**修正后**的位置落库（既有 >=0.99 章末重锚同一条路）。
+  //
+  // BUG-2744：锚是「阅读器**当前**正在展示的语义目标」，不是「本章打开时的落点」。程序化
+  // 揭示（有声书跟读 highlightSentenceAudioCue → revealElement、跨插图暂停
+  // __fushiRevealTarget、搜索命中）一旦把视口带到新目标，目标就换了——分页 scrollToRange /
+  // 连续 scrollToTarget 在这里登记 {target}（Range 或元素），替换恢复锚。否则跟读翻过几页后
+  // 前方懒图才 load，重锚把视口拽回开章那页（横排听书「插图位置闪一下、图被跳过」）；跨图
+  // 暂停时滚到尚未 load 的插图（0 尺寸占位），load 后又对齐回那张图而不是停在错页。
   registerImageLateAnchor: function(anchor) {
     this.clearImageLateAnchor();
     if (!anchor) return;
@@ -1202,6 +1231,11 @@ window.__fushiInstallShell = function(C) {
       this.__imgReanchorProgress = anchor.progress;
     } else if (anchor.fragment) {
       this.__imgReanchorFragment = anchor.fragment;
+    } else if (anchor.target) {
+      // Range 是活的（DOM 变动后边界自动跟随，懒图 load 被包进 .block-img-wrapper 后仍选中
+      // 那张图），复制一份避免与调用方共用（搜索把同一个 Range 交给了 CSS.highlights）。
+      this.__imgReanchorTarget = typeof anchor.target.cloneRange === 'function'
+        ? anchor.target.cloneRange() : anchor.target;
     }
   },
   clearImageLateAnchor: function() {
@@ -1209,6 +1243,27 @@ window.__fushiInstallShell = function(C) {
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
     this.__imgReanchorFragment = null;
+    this.__imgReanchorTarget = null;
+  },
+  // BUG-2744 审查：**恢复锚**（BUG-2652 连续 beginRestoreReanchor 读的那一个）与上面的迟到
+  // 图片锚分开存。图片锚会被程序化揭示替换（跟读 / 跨图 / 搜索的 {target}），而「播放中恢复
+  // 完成」时 Dart 先同步下发跟读揭示（_onRestoreComplete → _updateCurrentCue → highlight
+  // evaluateJavascript），之后才调 beginRestoreReanchor——两次 JS 按 FIFO，揭示总是先到。
+  // 共用一个字段时揭示把字符锚换成 {target}，begin 退回现场采样，iOS 同一 WKWebView
+  // 头几帧 scroll 读 0 → 采到章首 → commit 钉回章首并落库（BUG-2652 回归）。
+  // 不变量：只由恢复入口（restoreToCharOffset 精确锚写入；restoreProgress / jumpToFragment /
+  // 越界回退写 null）与用户翻页 paginate（写 null）改写；揭示、迟到图片重锚都不碰它。
+  _setRestoreCharAnchor: function(charOffset, endCharOffset) {
+    this.__restoreCharOffset = typeof charOffset === 'number' ? charOffset : null;
+    this.__restoreCharOffsetEnd = endCharOffset;
+  },
+  // BUG-2748：用户亲手挪了视口（连续模式的滚轮 / 触摸原生滚动 / 拖滚动条 / 方向与翻页键
+  // 原生滚动 / 查词弹窗遮罩转发的滚动），与 paginate 同一语义：放弃迟到图片锚与恢复锚。
+  // 否则滚远后前方懒图 load，reapplyImageLateAnchor 把视口拽回最近一次揭示 / 恢复的目标。
+  // 连续 shell 的输入监听见 continuousShellSource 末尾；Dart 转发见 _evaluateScrollForward。
+  noteUserScroll: function() {
+    this.clearImageLateAnchor();
+    this._setRestoreCharAnchor(null);
   },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
@@ -1216,6 +1271,14 @@ window.__fushiInstallShell = function(C) {
     return typeof this.scrollToChapterEnd === 'function';
   },
   reapplyImageLateAnchor: function() {
+    // BUG-2744：程序化揭示的目标——对齐回这个目标本身（分页落到它起始边所在页；连续按
+    // 跟读同一套安全带判据滚回可见），绝不回退到开章落点。
+    var target = this.__imgReanchorTarget;
+    if (target) {
+      if (this._isContinuousShell()) this.scrollToTarget(target);
+      else this._alignRangeToPage(target);
+      return true;
+    }
     var co = this.__imgReanchorCharOffset;
     if (typeof co === 'number' && co > 0) {
       if (this._isContinuousShell()) {
@@ -1749,28 +1812,41 @@ window.__fushiInstallShell = function(C) {
     // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
     // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 fushi-sasayaki-cue span，
     // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
+    //
+    // BUG-2780：同一父节点下**连续**的片段（普通文字 + 整个 <ruby>）合并进同一个 wrapper，
+    // 由 wrapper 一次刷背景。旧实现「每段文字一个 span、每个 ruby 各自加 class 刷背景」
+    // 拼出整句，长注音（しゃく 比 釈 宽）撑出的间距归谁由引擎决定：iOS 真机上它落在 ruby
+    // 背景盒外（高亮在「会|釈|をす」间断开留缝），iOS 26.5 WebKit 又让 ruby 背景盒与后文
+    // span 叠 7.7px（半透明色叠深一条）。间距总在父级行内盒里，包进同一个 wrapper 后缝与
+    // 叠色都没有了；注音仍在 wrapper 内容区外（BUG-716 的形态不变）。父节点不同的片段
+    // （ruby 在书自带的 <a>/<span> 里）各成一组，ruby 仍整颗包进 wrapper；只有片段落在
+    // ruby 内部、ruby 却不能整颗移动时（理论上不会发生）才退回 ruby class。
     var range = document.createRange();
     for (var i = cueSegments.length - 1; i >= 0; i--) {
       var id = cueSegments[i].id;
       var segments = cueSegments[i].ranges;
       if (!segments.length) continue;
+      var items = this.sentenceAudioWrapItems(segments);
       var wrappers = [];
       var rubyElements = [];
-      for (var j = segments.length - 1; j >= 0; j--) {
-        var ruby = this.rubyForNode(segments[j].node);
-        if (ruby) {
-          if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
-          continue;
-        }
+      for (var g = items.length - 1; g >= 0; g--) {
+        var first = items[g][0];
+        var last = items[g][items[g].length - 1];
         try {
-          range.setStart(segments[j].node, segments[j].start);
-          range.setEnd(segments[j].node, segments[j].end);
+          if (first.ruby) range.setStartBefore(first.ruby);
+          else range.setStart(first.node, first.start);
+          if (last.ruby) range.setEndAfter(last.ruby);
+          else range.setEnd(last.node, last.end);
           var wrapper = document.createElement('span');
           wrapper.className = 'fushi-sentence-audio-cue';
           wrapper.appendChild(range.extractContents());
           range.insertNode(wrapper);
           wrappers.push(wrapper);
-        } catch (e) {}
+        } catch (e) {
+          for (var k = 0; k < items[g].length; k++) {
+            if (items[g][k].ruby && rubyElements.indexOf(items[g][k].ruby) < 0) rubyElements.push(items[g][k].ruby);
+          }
+        }
       }
       wrappers.reverse();
       rubyElements.reverse();
@@ -1778,6 +1854,47 @@ window.__fushiInstallShell = function(C) {
       if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
     }
     this.buildNodeOffsets();
+  },
+  // BUG-2780：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：ruby 内的片段
+  // 提升为整颗 ruby（去重），相邻两项父节点相同就并进同一组。组内首尾之间的兄弟节点
+  // 全部被完整包含（range 两端落在同一父节点的子节点上），extractContents 不会拆开书的元素。
+  sentenceAudioWrapItems: function(segments) {
+    var groups = [];
+    var current = null;
+    var lastRuby = null;
+    for (var j = 0; j < segments.length; j++) {
+      var ruby = this.rubyForNode(segments[j].node);
+      var item;
+      if (ruby) {
+        if (ruby === lastRuby) continue;
+        lastRuby = ruby;
+        item = { ruby: ruby, parent: ruby.parentNode };
+      } else {
+        item = { node: segments[j].node, start: segments[j].start, end: segments[j].end, parent: segments[j].node.parentNode };
+      }
+      if (!item.parent) continue;
+      if (current && current[0].parent === item.parent &&
+          this.sentenceAudioInlineGap(current[current.length - 1], item)) {
+        current.push(item);
+      } else {
+        current = [item];
+        groups.push(current);
+      }
+    }
+    return groups;
+  },
+  // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）。
+  sentenceAudioInlineGap: function(prev, next) {
+    var a = prev.ruby || prev.node;
+    var b = next.ruby || next.node;
+    if (a === b) return true;
+    for (var n = a.nextSibling; n; n = n.nextSibling) {
+      if (n === b) return true;
+      if (n.nodeType !== 1) continue;
+      var display = getComputedStyle(n).display;
+      if (display.indexOf('inline') !== 0 && display.indexOf('ruby') !== 0 && display !== 'contents' && display !== 'none') return false;
+    }
+    return false;
   },
   rubyForNode: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -2017,12 +2134,23 @@ window.__fushiInstallShell = function(C) {
   /// 这个缺口**只在 iOS 上显形**。VN 必须与分页/连续 shell 用同一份，故此常量公开。
   static const String sharedInitViewportJs = _sharedInitViewport;
 
-  static const String _sharedInitViewport = '''
+  /// 阅读器正文的 viewport 声明，唯一真相源。章节 HTML 交付时就带上
+  /// [readerViewportMetaTag]（BUG-2639：否则 WKWebView 在 initialize 跑到之前按
+  /// 980 CSS px 布局，iPhone 真机上竖排滚动模式停在那个 0.41 倍的布局里），
+  /// [sharedInitViewportJs] 再用同一串覆盖书自带的 viewport meta。
+  static const String readerViewportContent =
+      'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+
+  static const String readerViewportMetaTag =
+      '<meta name="viewport" content="$readerViewportContent"/>';
+
+  static const String _sharedInitViewport =
+      '''
   var viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) { viewport.remove(); }
   var newViewport = document.createElement('meta');
   newViewport.name = 'viewport';
-  newViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+  newViewport.content = '$readerViewportContent';
   document.head.appendChild(newViewport);
 ''';
 
@@ -2055,6 +2183,13 @@ window.__fushiInstallShell = function(C) {
   if (C.blurImages) {
     window.__fushiMarkImageRevealed = function(key) {
       if (key) _fushiRevealedKeys[key] = true;
+    };
+    // 插图册的「恢复遮罩」反向：把 key 移出活集，正文里这张图下次 load（或宿主
+    // 立刻补的 classList.add）就重新遮上。没有它，撤销只改了 Drift 与网格，当前
+    // 这次阅读会话的正文仍然记得「已揭开」，重载章节照样不遮 —— 两端对同一张图
+    // 给出相反答案。
+    window.__fushiUnmarkImageRevealed = function(key) {
+      if (key) delete _fushiRevealedKeys[key];
     };
   }
   // BUG-898：稳定 reveal key 归一到「extractDir 相对、decode、正斜杠」路径（如
@@ -2517,6 +2652,13 @@ $_sharedJs
     return Math.abs(currentScroll - nearestPage) <= 1 ? nearestPage : currentScroll;
   },
   scrollToRange: function(range) {
+    // BUG-2744：揭示的目标即阅读器此刻的语义落点，替换恢复锚（见 registerImageLateAnchor）。
+    // 不论这次是否真的翻页都要登记：跨图暂停滚到尚未 load 的插图时，0 尺寸占位常还在当前
+    // 页（不翻），load 撑开后插图才挪到下一页，得靠这个锚把视口带过去。
+    this.registerImageLateAnchor({target: range});
+    return this._alignRangeToPage(range);
+  },
+  _alignRangeToPage: function(range) {
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
@@ -3078,6 +3220,8 @@ $_sharedJs
     this.setPagePosition(context, aligned);
   },
   setChromeInsets: function(topPx, bottomPx) {
+    // BUG-2652：inset 与图片盒都没变 = 没有重排可补偿，见 _chromeInsetsUnchanged。
+    if (this._chromeInsetsUnchanged(topPx, bottomPx)) return;
     // Re-anchoring (after a chrome-inset OR a page-size change) is serialised
     // through one shared in-flight flag, _reanchorPending. A layout change
     // transiently resets scrollTop to 0; if a re-anchor rAF is already pending
@@ -3402,6 +3546,9 @@ $_sharedJs
   // reveal 分支）武装 _reanchorClearedAt 让 B-3 窗覆盖这条平滑滚动的落定尾沿，从源头消除二次
   // 反弹——动画保留，闪烁靠 settle 窗治住。分页模式 reveal（scrollToRange）走另一路不受影响。
   scrollToTarget: function(target) {
+    // BUG-2744：跟读 / 跨图 / 搜索揭示的目标替换恢复锚，迟到懒图 load 后按它重对齐，
+    // 而不是把视口拽回开章落点（与分页 scrollToRange 同一不变量）。
+    this.registerImageLateAnchor({target: target});
     var rect = this.getRect(target);
     var margin = 0.15;
     var wm = window.getComputedStyle(document.body).writingMode;
@@ -3501,6 +3648,8 @@ $_sharedJs
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var self = this;
+    // 新的恢复覆盖上一次的精确恢复锚：progress 落点没有字符锚，begin 走采样。
+    this._setRestoreCharAnchor(null);
     if (progress <= 0) {
       // BUG-1140 第二轮：章首也登记。内容向下增长不移动 scroll 0，重锚
       // scrollToChapterStart 幂等；但章首之前若有前导插图（合并注入 / 封面），图 load
@@ -3546,6 +3695,7 @@ $_sharedJs
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
+    this._setRestoreCharAnchor(null);
     if (!this.alignToFragmentTarget(fragment)) {
       this.clearImageLateAnchor();
       this.notifyRestoreComplete();
@@ -3559,6 +3709,7 @@ $_sharedJs
     // TODO-1349（续）：用户翻页即放弃 late-load 重锚资格（镜像分页 paginate），
     // 避免图 load 回调把用户已翻走的位置拽回恢复锚。
     this.clearImageLateAnchor();
+    this._setRestoreCharAnchor(null);
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var before = vertical ? window.scrollX : root.scrollTop;
@@ -3742,6 +3893,7 @@ $_sharedJs
     if (charOffset <= 0) {
       this.scrollToChapterStart();
       this.registerImageLateAnchor({progress: 0});
+      this._setRestoreCharAnchor(null);
     } else {
       // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
       // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
@@ -3752,16 +3904,21 @@ $_sharedJs
       if (!this.charOffsetInRange(charOffset)) {
         this.scrollToChapterStart();
         this.registerImageLateAnchor({progress: 0});
+        this._setRestoreCharAnchor(null);
       } else {
         this.scrollToCharOffset(charOffset, endCharOffset);
         // BUG-1140 第二轮：精确字符锚登记重锚资格（理由见分页版 restoreToCharOffset）。
         this.registerImageLateAnchor(
             {charOffset: charOffset, endCharOffset: endCharOffset});
+        // BUG-2744 审查：恢复锚另存一份给 beginRestoreReanchor（见 _setRestoreCharAnchor）。
+        this._setRestoreCharAnchor(charOffset, endCharOffset);
       }
     }
     this._settleAndNotify();
   },
   setChromeInsets: function(topPx, bottomPx) {
+    // BUG-2652：同分页版——无变化不采样、不重锚（见 _chromeInsetsUnchanged）。
+    if (this._chromeInsetsUnchanged(topPx, bottomPx)) return;
     // See the paginated setChromeInsets: re-anchoring is serialised through the
     // shared _reanchorPending flag so a transiently reset scrollTop (from a
     // previous inset/size change's relayout) is never sampled as the chapter
@@ -3810,15 +3967,39 @@ $_sharedJs
     this._uiScaleReanchorScroll = this._readContinuousScroll();
     return charOffset;
   },
+  // BUG-2652：恢复完成重锚（TODO-718，Dart `_reanchorContinuousAfterRestore`）的锚取
+  // **恢复自己的语义锚**，不再现场采样视口。恢复刚写下滚动的头几帧，视口还没落定：
+  // iOS 上同一个 WKWebView 原地换章（书内切滚动/分页等结构性重载）后，原生侧会让
+  // scrollX/scrollY 瞬时读成 0（Mac 模拟器实测：写入 -1047 后 +16ms 读到 0、约 40ms 后
+  // 滚动树里仍是 -1047，这之间没有任何 JS 写入）。此刻 getFirstVisibleCharOffset 采到章首，
+  // commit 就 scrollToChapterStart——位置被永久钉回章首并落库，而新开书（全新
+  // WebView）没有这个瞬时态，所以只在「书内切换」时坏、退出重进又好。
+  // 恢复锚是 restoreToCharOffset 另存的 __restoreCharOffset（_setRestoreCharAnchor），**不是**
+  // 迟到图片锚：后者会被跟读揭示替换，而播放中恢复完成时揭示先于本入口执行（BUG-2744 审查）。
+  // 恢复落地到用户首次翻页之间有效，此刻用户还碰不到正文；只有精确字符锚能这样取，
+  // progress / fragment 恢复仍走采样。
+  beginRestoreReanchor: function() {
+    var co = this.__restoreCharOffset;
+    if (typeof co !== 'number' || co <= 0) return this.beginUiScaleReanchor();
+    if (this._reanchorPending === true) return -1;
+    this._setReanchorPending(true);
+    this._uiScaleReanchorOffset = co;
+    this._uiScaleReanchorEnd = this.__restoreCharOffsetEnd;
+    this._uiScaleReanchorScroll = this._readContinuousScroll();
+    return co;
+  },
   commitUiScaleReanchor: function() {
     // beginUiScaleReanchor 必须先成功置旗 + 暂存锚；否则（旗未由本入口置/锚无效）整体 no-op，
     // 绝不误清别处的 _reanchorPending（finally 只在本入口确实拥有旗时执行）。
     var off = this._uiScaleReanchorOffset;
     if (off === undefined || off < 0) return false;
     try {
-      this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll);
+      // 句尾锚只由 beginRestoreReanchor 带入（收藏句跳转的整句对齐，BUG-461）；缩放入口
+      // 不设，undefined 与旧行为一致。
+      this.scrollToCharOffset(off, this._uiScaleReanchorEnd, this._uiScaleReanchorScroll);
     } finally {
       this._uiScaleReanchorOffset = undefined;
+      this._uiScaleReanchorEnd = undefined;
       this._uiScaleReanchorScroll = undefined;
       this._setReanchorPending(false);
     }
@@ -4018,6 +4199,35 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
   // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
   // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
+})();
+// BUG-2748：连续模式用户滚动的输入入口统一在这里认领，调 noteUserScroll（语义见 _sharedJs）。
+// 连续模式的视口由原生滚动驱动，没有分页那种单一 paginate 入口：滚轮（webview 层的 wheel
+// 处理器自己 scrollBy）、手机原生触摸滚动、拖滚动条（按下点落在根元素上）、WebView 持焦时
+// 方向 / 翻页键的原生滚动。捕获阶段 + passive，只记意图、不改任何既有手势行为。按键里不含
+// Space（它被桥接成播放 / 暂停或翻页，翻页已由 paginate 清锚）。一个文档只装一次；切到分页
+// shell 后监听仍在，所以按 fushiReader 当下是不是连续 shell 判断。
+(function() {
+  if (window.__fushiUserScrollIntentInstalled) return;
+  window.__fushiUserScrollIntentInstalled = true;
+  var SCROLL_KEYS = {
+    ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1,
+    PageUp: 1, PageDown: 1, Home: 1, End: 1
+  };
+  function note() {
+    var r = window.fushiReader;
+    if (r && r._isContinuousShell && r._isContinuousShell() && r.noteUserScroll) {
+      r.noteUserScroll();
+    }
+  }
+  var opts = {capture: true, passive: true};
+  document.addEventListener('wheel', note, opts);
+  document.addEventListener('touchmove', note, opts);
+  document.addEventListener('pointerdown', function(e) {
+    if (e.target === document.documentElement) note();
+  }, opts);
+  document.addEventListener('keydown', function(e) {
+    if (SCROLL_KEYS[e.key]) note();
+  }, opts);
 })();
 $_sharedInitBoot
 };

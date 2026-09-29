@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -28,7 +29,7 @@ class DropboxSyncBackend extends SyncBackend
         SyncBackendFileTrioMixin,
         SyncAssetStoreDefaults,
         PkceOAuthBackendMixin
-    implements RemoteListingCapable {
+    implements RemoteListingCapable, SyncAssetRangeReader {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
 
@@ -395,6 +396,50 @@ class DropboxSyncBackend extends SyncBackend
       rethrow;
     }
   }
+
+  // ── SyncAssetRangeReader（云盘视频流播） ──────────────────────────
+
+  /// `files/get_temporary_link` 的直链有效期 4 小时、免鉴权、支持 Range。本地只信
+  /// 3 小时，过期或被拒即现取；绝不落库。
+  final PresignedLinkCache _temporaryLinks =
+      PresignedLinkCache(ttl: const Duration(hours: 3));
+
+  /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号——
+  /// 资产 id 就是路径，换了账号同一路径是另一个文件——与文件夹缓存一起作废。
+  @override
+  void clearCache() {
+    super.clearCache();
+    _temporaryLinks.clear();
+  }
+
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) async =>
+      openPresignedAssetRange(
+        client: await obtainSyncHttpClient(),
+        cache: _temporaryLinks,
+        assetId: assetId,
+        fetchLink: () => _fetchTemporaryLink(assetId),
+        start: start,
+        end: end,
+      );
+
+  /// [path] 是 [AssetEntry.id]（Dropbox 上即小写路径）。
+  Future<Uri> _fetchTemporaryLink(String path) =>
+      retryAfterAuthRefresh(refreshAuth, () async {
+        final resp = await _apiPost('/files/get_temporary_link', {
+          'path': path,
+        });
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final link = json['link'] as String?;
+        if (link == null || link.isEmpty) {
+          throw SyncBackendError('No temporary link for $path');
+        }
+        return Uri.parse(link);
+      });
 
   // ── Cache ─────────────────────────────────────────────────────────
   //

@@ -24,9 +24,10 @@
 // - manga：三 transport 全通（[_importMangaRemote]：读远端 `.mokuro` 派生标题做
 //   去重预检，未命中才整卷镜像到临时目录，交给既有 MangaImporter——落库产物与
 //   本地导入逐字节同构）。
-// - video：仅 WebDAV（条目路径即 http(s) URL，按流媒体书原地入库
-//   videoPath=URL，播放走既有 stream 通道 + 打开时按 sourceId 现解析 Basic 认证，
-//   见 source_stream_headers.dart）；SFTP/FTP 无 HTTP 直链、播放器吃不了，仍拒绝。
+// - video：仅 WebDAV / AList（条目路径即 http(s) URL，按流媒体书原地入库
+//   videoPath=URL，播放走既有 stream 通道 + 打开时按 sourceId 现解析 Basic 认证 /
+//   AList 换签名直链，见 source_stream_headers.dart）；SFTP/FTP 无 HTTP 直链、
+//   播放器吃不了，仍拒绝。
 
 import 'dart:convert';
 import 'dart:io';
@@ -38,6 +39,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/torrent/download_save_root.dart'
+    show isSourceIncomingPath;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
@@ -45,6 +48,8 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
@@ -66,13 +71,12 @@ import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath, sourceEntryBasename;
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/media/video/strm_file.dart' show kStrmExtension;
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
-import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 
@@ -86,6 +90,12 @@ const Set<String> kScanBookExtensions = <String>{'epub', 'pdf'};
 
 /// Subtitle whitelist shared with the video import dialog (no lrc).
 const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
+
+/// 视频域允许的网络传输：条目路径本身是可原地流播的 http(s) URL。
+const Set<String> kStreamableVideoSourceTransports = <String>{
+  'webdav',
+  'alist'
+};
 
 /// 漫画 manifest 扩展名白名单（小写、不带点）。页图目录不靠扩展名代表整卷，
 /// 由 [planScanFromFileList] 按目录结构另行归组。
@@ -242,6 +252,23 @@ class ScanMangaFolderItem {
   int get hashCode => folderPath.hashCode;
 }
 
+/// One pending Blu-ray disc (`BDMV` tree) scanned from a local video source.
+@immutable
+class ScanBlurayDiscItem {
+  const ScanBlurayDiscItem({required this.discRootPath});
+
+  /// 含 `BDMV` 的那一层目录。盘内各条播放列表在导入时才解析——规划层只认路径形状，
+  /// 不读盘（一次扫描会走过上万个路径）。
+  final String discRootPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanBlurayDiscItem && other.discRootPath == discRootPath;
+
+  @override
+  int get hashCode => discRootPath.hashCode;
+}
+
 /// Classification result of one scan (pure data).
 @immutable
 class ScanPlan {
@@ -252,6 +279,7 @@ class ScanPlan {
     this.mangas = const <ScanMangaItem>[],
     this.mangaArchives = const <ScanMangaArchiveItem>[],
     this.mangaFolders = const <ScanMangaFolderItem>[],
+    this.blurayDiscs = const <ScanBlurayDiscItem>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -271,6 +299,9 @@ class ScanPlan {
 
   /// Pending local pure-image manga folders.
   final List<ScanMangaFolderItem> mangaFolders;
+
+  /// Pending Blu-ray discs (local video sources only).
+  final List<ScanBlurayDiscItem> blurayDiscs;
 }
 
 /// 一次来源扫描的可核对摘要。
@@ -308,6 +339,23 @@ class SourceScanSummary {
 String _extOf(String name) =>
     p.extension(name).toLowerCase().replaceFirst('.', '');
 
+/// Drops entries inside the source's video download staging directory
+/// (`.fushi-incoming`, BUG-2755). Managed video downloads land there
+/// while they are still downloading; importing them would register half-written
+/// files that the organize stage then renames away. Only local sources can be
+/// download targets, so network listings pass through unchanged.
+List<SourceFileEntry> excludeSourceIncomingEntries(
+  List<SourceFileEntry> entries, {
+  required String sourceRoot,
+  required bool isLocal,
+}) {
+  if (!isLocal) return entries;
+  return entries
+      .where((SourceFileEntry entry) =>
+          !isSourceIncomingPath(sourceRoot, entry.path))
+      .toList(growable: false);
+}
+
 /// Pure function: classifies a listed [files] set into a scan plan. No IO.
 ///
 /// - Skips directory entries (recursive listing yields only files anyway).
@@ -322,7 +370,23 @@ String _extOf(String name) =>
 ScanPlan planScanFromFileList(
   List<SourceFileEntry> files, {
   String? mangaRootPath,
+  bool detectBlurayDiscs = false,
 }) {
+  // 蓝光盘先认：认出来之后，盘的 `BDMV` 树整个从散装视频里摘掉。不摘的话用户会同时
+  // 拿到「正片」和一屏叫 `00001`~`00042` 的 m2ts 碎片（正片常被切成好几段，另有菜
+  // 单/预告/警告片）。与 `.mokuro` 让位规则同一取舍：manifest 认领了的文件不再被更
+  // 低层的分类器重复消费。
+  //
+  // 只在本地来源开：盘内播放列表要随机读 `PLAYLIST`/`CLIPINF`，播放要拿到 `STREAM`
+  // 下的本地路径，网络来源两样都给不了。
+  final List<String> blurayRoots = detectBlurayDiscs
+      ? planBlurayDiscRoots(<String>[
+          for (final SourceFileEntry entry in files)
+            if (!entry.isDirectory) entry.path,
+        ])
+      : const <String>[];
+  final Set<String> blurayRootSet = blurayRoots.toSet();
+
   // parent dir -> all file basenames under it (for sidecar matching).
   final Map<String, List<String>> namesByDir = <String, List<String>>{};
   // parent dir -> {basename: original full path} (for sidecar path lookup).
@@ -346,6 +410,7 @@ ScanPlan planScanFromFileList(
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
+    if (isInsideBlurayDisc(e.path, blurayRootSet)) continue;
     final String ext = _extOf(e.name);
     // TODO-1237: m3u8/m3u playlist manifest, reusing the drag-drop path's own
     // [kDragPlaylistExtensions] whitelist. Checked before the video branch
@@ -384,7 +449,10 @@ ScanPlan planScanFromFileList(
       ));
       continue;
     }
-    if (kVideoExtensions.contains('.$ext')) {
+    // `.strm` 流指针按普通视频入库（videoPath = `.strm` 自身）：标题取文件名、
+    // 照常参与分组 / 刮削 / 同名字幕关联；指向的流地址在起播时现读
+    // （stream_video_launch.dart 的 resolveStrmStreamTarget）。
+    if (kVideoExtensions.contains('.$ext') || ext == kStrmExtension) {
       final String dir = p.dirname(e.path);
       final List<String> siblings = namesByDir[dir] ?? const <String>[];
       final ({String? subtitle, List<String> audio}) sel = selectSidecarNames(
@@ -411,6 +479,10 @@ ScanPlan planScanFromFileList(
     mangaFolders: mangaRootPath == null
         ? const <ScanMangaFolderItem>[]
         : _planLocalMangaImageFolders(files: files, rootPath: mangaRootPath),
+    blurayDiscs: <ScanBlurayDiscItem>[
+      for (final String root in blurayRoots)
+        ScanBlurayDiscItem(discRootPath: root),
+    ],
   );
 }
 
@@ -492,6 +564,7 @@ class SourceLibraryScanner {
       privateKey:
           (privateKey != null && privateKey.isNotEmpty) ? privateKey : null,
       useTls: (config['useTls'] as bool?) ?? false,
+      baseUrl: (config['baseUrl'] as String?),
     ));
   }
 
@@ -537,6 +610,10 @@ class SourceLibraryScanner {
     final SourceFileSystem files = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;
+
+    /// 逐文件失败的汇总（BUG-2570）。扫描本身跑完了，只是其中几个文件没进得去——
+    /// 比「整次扫描中断」轻一级，所以只有在 [scanError] 为空时才顶上去。
+    String? partialError;
     List<String> discoveredPaths = const <String>[];
     VideoFolderGroupSummary grouping = (
       createdVideoUids: const <String>[],
@@ -556,23 +633,29 @@ class SourceLibraryScanner {
           'Unsupported media kind for scan (expected book | video | manga)',
         );
       }
-      // 网络视频来源仅支持 WebDAV：条目路径本身就是 http(s) URL，可按流媒体书
-      // 原地入库播放（[_importVideos] streamInPlace）；SFTP/FTP 远端路径无 HTTP
-      // 直链、播放器吃不了，仍拒绝（放开需要本地转流桥，留后续）。
+      // 网络视频来源仅支持 WebDAV 与 AList/OpenList：条目路径本身就是 http(s)
+      // URL，可按流媒体书原地入库播放（[_importVideos] streamInPlace；AList 条目
+      // 播放前再经 fs/get 换签名直链，见 source_stream_headers.dart）；SFTP/FTP
+      // 远端路径无 HTTP 直链、播放器吃不了，仍拒绝（放开需要本地转流桥，留后续）。
       if (!files.isLocal &&
           kind == SourceLibraryKind.video &&
-          source.transport != 'webdav') {
-        throw StateError('Network video sources support WebDAV only');
+          !kStreamableVideoSourceTransports.contains(source.transport)) {
+        throw StateError('Network video sources support WebDAV/AList only');
       }
-      final List<SourceFileEntry> entries = await files.listFiles(
-        source.rootPath,
-        recursive: source.recursive,
+      final List<SourceFileEntry> entries = excludeSourceIncomingEntries(
+        await files.listFiles(
+          source.rootPath,
+          recursive: source.recursive,
+        ),
+        sourceRoot: source.rootPath,
+        isLocal: files.isLocal,
       );
       final ScanPlan plan = planScanFromFileList(
         entries,
         mangaRootPath: files.isLocal && kind == SourceLibraryKind.manga
             ? source.rootPath
             : null,
+        detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
       );
       discoveredPaths = <String>[
         for (final ScanBookItem item in plan.books) item.bookPath,
@@ -583,6 +666,8 @@ class SourceLibraryScanner {
           item.archivePath,
         for (final ScanMangaFolderItem item in plan.mangaFolders)
           item.folderPath,
+        for (final ScanBlurayDiscItem item in plan.blurayDiscs)
+          item.discRootPath,
       ];
 
       switch (kind) {
@@ -591,9 +676,22 @@ class SourceLibraryScanner {
         case SourceLibraryKind.video:
           // Video source imports both single videos and m3u8/m3u playlists
           // (TODO-1237).
-          final List<String> createdVideoPaths =
-              await _importVideos(plan, source.id, files);
+          final ({
+            List<String> createdPaths,
+            List<String> failedPaths,
+            Object? firstError,
+          }) imported = await _importVideos(plan, source.id, files);
+          final List<String> createdVideoPaths = imported.createdPaths;
           mediaCount = createdVideoPaths.length;
+          // BUG-2570：部分文件失败不再作废整批。把「几个失败 / 第一个是谁 / 为什么」
+          // 汇总成一条能照着查的错误，成功的条目照常计数入库。真正中断扫描的异常
+          // 仍走下面的总 catch 覆盖它（那是整次扫描没跑完，比部分失败更严重）。
+          if (imported.failedPaths.isNotEmpty) {
+            partialError = 'Imported ${createdVideoPaths.length} video(s); '
+                '${imported.failedPaths.length} failed. First failure: '
+                '${p.basename(imported.failedPaths.first)} — '
+                '${imported.firstError}';
+          }
           // 来源扫描与旧「导入视频文件夹」共用同一套作品/季/集解析规则：散片
           // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
           // 的既有增强不变；再只做归组，重扫复用已有成员且不删除缺失文件。
@@ -616,6 +714,7 @@ class SourceLibraryScanner {
             sourceRoot: source.rootPath,
           );
           mediaCount += await _importPlaylists(plan, source.id, files);
+          mediaCount += await _importBlurayDiscs(plan, source.id);
           if (source.videoGroupingMode != 'folder') {
             await VideoSourceMetadataIndexer(_db).index(source);
           }
@@ -633,6 +732,8 @@ class SourceLibraryScanner {
       }
     }
 
+    // 整次扫描中断的异常优先；没有它时，逐文件失败的汇总才是本次要报的错。
+    scanError ??= partialError;
     await _db.updateMediaSourceScanResult(
       id: source.id,
       mediaCount: mediaCount,
@@ -1020,22 +1121,45 @@ class SourceLibraryScanner {
   }
 
   /// Imports every video in the plan (with sidecar subtitle cues); returns the
-  /// physical paths that were newly inserted in this scan.
+  /// physical paths newly inserted plus the per-file failures.
   ///
   /// [fs] is the source file system the scan listed from. Subtitles are read via
   /// [SourceFileSystem.copyToLocal] (local = original path unchanged; network =
   /// downloaded to a temp dir) then decoded with [readTextWithEncoding] so the
   /// SJIS/CP932/EUC-JP charset detection used by the manual import path is
-  /// preserved (TODO-817 M1b TODO②). Covers are extracted via [extractVideoCover]
-  /// (TODO-817 M1b TODO①); ffmpeg failure / mobile simply yields a null cover and
-  /// the video still imports (shelf shows a placeholder).
-  Future<List<String>> _importVideos(
+  /// preserved (TODO-817 M1b TODO②).
+  ///
+  /// **封面不在这里抽（BUG-2569）。** 导入的契约是「把条目放进库」；封面是书架的
+  /// best-effort 增强，仓库里早有专门的增量产线做它——`HomeVideoPage`
+  /// `_maybeBackfillCovers` 扫「缺封面的本地可抽帧行」逐个补，带节流刷新、
+  /// 会话级失败账本（`CoverBackfillLedger`）与 `diagnosticOnly` 降级，并且由
+  /// `watchVideoBookUids` 流在**新行落库时**自动触发，所以本方法留空封面不会让
+  /// 任何条目漏掉。
+  ///
+  /// 此前这里内联调 `extractVideoCover`，每个文件最坏两段 30s ffmpeg（内嵌封面 +
+  /// 抽帧）、全部串行、全部裹在进程级 [VideoCoverMutationGate] 里、全部在 UI
+  /// isolate：50 个文件的文件夹理论上限 50 分钟，用户只看得到一个 spinner。移动端
+  /// 更糟——那里的后端是**进程内** ffmpeg-kit，抽帧直接和 UI 抢 CPU，还会把
+  /// `VideoSpecsService` 的 ffprobe（并发 2、20s 超时）全部挤到超时，于是整库文件被
+  /// 当成「探不出规格」永久记进负缓存，技术规格角标再也不出现。
+  Future<
+      ({
+        List<String> createdPaths,
+        List<String> failedPaths,
+        Object? firstError,
+      })> _importVideos(
     ScanPlan plan,
     int sourceId,
     SourceFileSystem fs,
   ) async {
-    if (plan.videos.isEmpty) return const <String>[];
-    // 网络（仅 WebDAV 能走到这里，[scan] 入口已拒 SFTP/FTP）：条目路径就是
+    if (plan.videos.isEmpty) {
+      return (
+        createdPaths: const <String>[],
+        failedPaths: const <String>[],
+        firstError: null,
+      );
+    }
+    // 网络（仅 WebDAV/AList 能走到这里，[scan] 入口已拒 SFTP/FTP）：条目路径就是
     // http(s) URL，按流媒体书**原地**入库——videoPath=URL、sidecar 字幕 URL 进
     // streamSpecJson，播放走既有 stream 通道（isStreamVideoBook 判据 =
     // videoPath 是 http）。不下载视频、不抽封面、不解析 cue（字幕由播放页按
@@ -1059,118 +1183,93 @@ class SourceLibraryScanner {
 
     try {
       final List<String> createdPaths = <String>[];
+      final List<String> failedPaths = <String>[];
+      Object? firstError;
       for (final ScanVideoItem item in plan.videos) {
         // Skip already-imported physical files (library or same-batch dup).
         if (!existingPaths.add(normalizeVideoPath(item.videoPath))) {
           continue;
         }
-        final String bookUid = uniqueVideoBookUid(
-          singleVideoBookUid(item.videoPath),
-          existingKeys,
-        );
-        existingKeys.add(bookUid);
-
-        String? subtitleSource;
-        String? subtitleFormat;
-        String? streamSpecJson;
-        List<AudioCue> cues = const <AudioCue>[];
-        if (streamInPlace) {
-          final String? subUrl = item.subtitlePath;
-          streamSpecJson = StreamVideoSpec(
-            subtitleUrl: subUrl,
-            subtitleFileName:
-                subUrl == null ? null : sourceEntryBasename(subUrl),
-          ).toStorageJson();
-        } else if (item.subtitlePath != null) {
-          final String fmt = _extOf(p.basename(item.subtitlePath!));
-          subtitleTmp ??= Directory.systemTemp.createTempSync('m1c_scan_subs_');
-          final String localSub =
-              await fs.copyToLocal(item.subtitlePath!, subtitleTmp.path);
-          // readTextWithEncoding(File) keeps the non-UTF-8 charset detection;
-          // local copyToLocal returns the original path so behaviour is unchanged.
-          final String content = await readTextWithEncoding(File(localSub));
-          cues = parseSubtitleCues(
-            content: content,
-            format: fmt,
-            bookUid: bookUid,
+        // BUG-2570：一个文件的失败只作废这个文件。此前整个循环共用 [scan] 的总
+        // catch，任何一处抛错（读不了的 sidecar 字幕、坏编码、单行落库约束冲突）
+        // 都会把**本批其余全部视频**一起掀掉——已经成功解析的也不落库，用户拿到
+        // 的是「一句裸异常 + 零条入库」。失败路径逐条记账，扫描结束后汇总成一条
+        // 指名道姓的错误，成功的照常入库。
+        try {
+          final String bookUid = uniqueVideoBookUid(
+            singleVideoBookUid(item.videoPath),
+            existingKeys,
           );
-          subtitleSource = item.subtitlePath;
-          subtitleFormat = fmt;
-        }
+          existingKeys.add(bookUid);
 
-        // 标题用解码后的文件名：WebDAV 条目路径是百分号编码的 href，直接取
-        // basename 会把 %20 之类渗进书架标题。
-        final String title = streamInPlace
-            ? p.basenameWithoutExtension(sourceEntryBasename(item.videoPath))
-            : p.basenameWithoutExtension(item.videoPath);
-        Future<void> persistVideo(String? coverPath) =>
-            _videoRepo.saveVideoBook(
-              VideoBooksCompanion(
-                bookUid: Value(bookUid),
-                title: Value(title),
-                videoPath: Value(item.videoPath),
-                coverPath: Value<String?>(coverPath),
-                subtitleSource: Value<String?>(subtitleSource),
-                subtitleFormat: Value<String?>(subtitleFormat),
-                streamSpecJson: Value<String?>(streamSpecJson),
-                embeddedSubtitleTrack: subtitleSource == null
-                    ? const Value<int?>(0)
-                    : const Value<int?>(null),
-                importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-              ),
-              sourceId: sourceId,
+          String? subtitleSource;
+          String? subtitleFormat;
+          String? streamSpecJson;
+          List<AudioCue> cues = const <AudioCue>[];
+          if (streamInPlace) {
+            final String? subUrl = item.subtitlePath;
+            streamSpecJson = StreamVideoSpec(
+              subtitleUrl: subUrl,
+              subtitleFileName:
+                  subUrl == null ? null : sourceEntryBasename(subUrl),
+            ).toStorageJson();
+          } else if (item.subtitlePath != null) {
+            final String fmt = _extOf(p.basename(item.subtitlePath!));
+            subtitleTmp ??=
+                Directory.systemTemp.createTempSync('m1c_scan_subs_');
+            final String localSub =
+                await fs.copyToLocal(item.subtitlePath!, subtitleTmp.path);
+            // readTextWithEncoding(File) keeps the non-UTF-8 charset detection;
+            // local copyToLocal returns the original path so behaviour is
+            // unchanged.
+            final String content = await readTextWithEncoding(File(localSub));
+            cues = parseSubtitleCues(
+              content: content,
+              format: fmt,
+              bookUid: bookUid,
             );
+            subtitleSource = item.subtitlePath;
+            subtitleFormat = fmt;
+          }
 
-        // Cover only for local files (extractVideoCover needs a local path).
-        // 准入、文件替换、book pointer 与 provenance 同处封面串行边界；远端流
-        // 不抽帧，直接以空封面入库。
-        if (fs.isLocal) {
-          await VideoCoverMutationGate.runExclusive(() async {
-            String? coverPath;
-            CoverMetaStore? autoFrameMetaStore;
-            try {
-              final CoverMetaStore store =
-                  CoverMetaStore(await VideoStorage.coversDir());
-              if (await store.allowsAutoFrameWrite(bookUid)) {
-                autoFrameMetaStore = store;
-                coverPath = await extractVideoCover(
-                  videoPath: item.videoPath,
-                  bookUid: bookUid,
-                );
-              }
-            } catch (e) {
-              debugPrint('SourceLibraryScanner cover extract failed for '
-                  '$bookUid: $e');
-            }
-            await persistVideo(coverPath);
-            if (coverPath != null && autoFrameMetaStore != null) {
-              try {
-                final bool committed =
-                    await autoFrameMetaStore.markAutoFrameAfterWrite(bookUid);
-                if (!committed) {
-                  debugPrint(
-                    'SourceLibraryScanner cover provenance changed during '
-                    'write for $bookUid',
-                  );
-                }
-              } catch (e) {
-                // 来源仍是旧 legacy/空状态；生成帧不会被误标成用户保护资产。
-                debugPrint(
-                  'SourceLibraryScanner cover provenance commit failed '
-                  'for $bookUid: $e',
-                );
-              }
-            }
-          });
-        } else {
-          await persistVideo(null);
+          // 标题用解码后的文件名：WebDAV 条目路径是百分号编码的 href，直接取
+          // basename 会把 %20 之类渗进书架标题。
+          final String title = streamInPlace
+              ? p.basenameWithoutExtension(sourceEntryBasename(item.videoPath))
+              : p.basenameWithoutExtension(item.videoPath);
+          // 封面一律留空入库，抽帧交给书架的补齐产线（见本方法文档 BUG-2569）。
+          await _videoRepo.saveVideoBook(
+            VideoBooksCompanion(
+              bookUid: Value(bookUid),
+              title: Value(title),
+              videoPath: Value(item.videoPath),
+              coverPath: const Value<String?>(null),
+              subtitleSource: Value<String?>(subtitleSource),
+              subtitleFormat: Value<String?>(subtitleFormat),
+              streamSpecJson: Value<String?>(streamSpecJson),
+              embeddedSubtitleTrack: subtitleSource == null
+                  ? const Value<int?>(0)
+                  : const Value<int?>(null),
+              importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+            ),
+            sourceId: sourceId,
+          );
+          if (cues.isNotEmpty) {
+            await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
+          }
+          createdPaths.add(item.videoPath);
+        } catch (e, stack) {
+          failedPaths.add(item.videoPath);
+          firstError ??= e;
+          debugPrint('SourceLibraryScanner video import failed for '
+              '${item.videoPath}: $e\n$stack');
         }
-        if (cues.isNotEmpty) {
-          await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
-        }
-        createdPaths.add(item.videoPath);
       }
-      return createdPaths;
+      return (
+        createdPaths: createdPaths,
+        failedPaths: failedPaths,
+        firstError: firstError,
+      );
     } finally {
       if (subtitleTmp != null) {
         try {
@@ -1228,6 +1327,7 @@ class SourceLibraryScanner {
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
     Directory? playlistTmp;
+    final List<ScanVideoItem> hlsStreams = <ScanVideoItem>[];
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
@@ -1247,6 +1347,12 @@ class SourceLibraryScanner {
         final String baseDir = fs.isLocal
             ? p.dirname(item.playlistPath)
             : _remoteParentDir(item.playlistPath);
+        // HLS 媒体 / master 播放列表是**一条流**，不是分集清单：按行拆会把 `.ts`
+        // 分片（或码率档）当成一集一集入库。整份清单按单个视频入库，交给播放内核。
+        if (isHlsStreamPlaylist(content)) {
+          hlsStreams.add(ScanVideoItem(videoPath: item.playlistPath));
+          continue;
+        }
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         // 空 / 不可解析清单：跳过（不当成「清单变空 → 清光成员」，避免读盘瞬时失败
@@ -1296,40 +1402,21 @@ class SourceLibraryScanner {
           title: collectionName,
         );
 
-        // TODO-1237 ①: cover from the first USABLE episode (local ffmpeg only),
-        // applied to the first episode row; mobile / any failure -> null cover,
-        // never aborts the scan.
-        if (fs.isLocal) {
-          try {
-            await VideoCoverMutationGate.runExclusive(() async {
-              final String firstUid = result.episodeUids.first;
-              final CoverMetaStore store =
-                  CoverMetaStore(await VideoStorage.coversDir());
-              if (await store.allowsAutoFrameWrite(firstUid)) {
-                final String? coverPath = await extractPlaylistCover(
-                  episodePaths:
-                      entries.map((PlaylistEntry e) => e.path).toList(),
-                  bookUid: firstUid,
-                );
-                if (coverPath != null) {
-                  await _videoRepo.updateCover(firstUid, coverPath);
-                  final bool committed =
-                      await store.markAutoFrameAfterWrite(firstUid);
-                  if (!committed) {
-                    debugPrint(
-                      'SourceLibraryScanner playlist cover provenance '
-                      'changed during write for $firstUid',
-                    );
-                  }
-                }
-              }
-            });
-          } catch (e) {
-            debugPrint('SourceLibraryScanner playlist cover extract failed for '
-                '${result.collectionId}: $e');
-          }
-        }
+        // BUG-2569：清单封面同样不在扫描里抽。`extractPlaylistCover` 会**逐集重试**
+        // 直到抽出一帧，每集最坏 30s，一个坏清单就能把整次扫描拖到分钟级；拆出来的
+        // 各集都是带真实路径的本地行，书架的封面补齐产线会逐个补上（那条产线本来
+        // 就是为「拆集导入只有首集有封面」写的，见 `_maybeBackfillCovers` 文档）。
         count++;
+      }
+      if (hlsStreams.isNotEmpty) {
+        // 与散装视频同一条入库路径（重扫按路径去重、网络来源原地流播）。
+        final ({
+          List<String> createdPaths,
+          List<String> failedPaths,
+          Object? firstError,
+        }) imported =
+            await _importVideos(ScanPlan(videos: hlsStreams), sourceId, fs);
+        count += imported.createdPaths.length;
       }
       return count;
     } finally {
@@ -1339,5 +1426,99 @@ class SourceLibraryScanner {
         } catch (_) {}
       }
     }
+  }
+
+  /// 把扫描根里认出的蓝光盘导入成合集。
+  ///
+  /// 形状与 m3u8 清单完全同构（一张盘 = 一个 `playlist` 合集，一条标题 = 一行
+  /// `VideoBooks`），所以幂等性、墓碑守卫、重扫对齐直接复用 [_importPlaylists] 那套：
+  /// 合集名取盘名，重扫时按合集名找到既有合集并把成员对齐到当前标题表。
+  ///
+  /// 每条标题的 `videoPath` 是它自己的 `.mpls` 绝对路径——一个真实存在的文件，于是
+  /// 「文件还在不在」「这路径被谁引用着」这些既有判据原样可用，不需要为 BD 另开一套。
+  Future<int> _importBlurayDiscs(ScanPlan plan, int sourceId) async {
+    if (plan.blurayDiscs.isEmpty) return 0;
+
+    final Map<String, int> existingCollectionIds = <String, int>{
+      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+        if (c.collectionType == 'playlist') c.name: c.id,
+    };
+
+    int count = 0;
+    for (final ScanBlurayDiscItem item in plan.blurayDiscs) {
+      final BlurayDisc? disc = await readBlurayDisc(item.discRootPath);
+      // 半张盘 / 一条标题都选不出来：跳过而不是记错。盘里的文件已经在规划层被摘出
+      // 散装视频，这里再报错只会把整次扫描标红。
+      if (disc == null) continue;
+
+      final List<PlaylistEntry> entries = <PlaylistEntry>[
+        for (final BlurayTitle title in disc.titles)
+          PlaylistEntry(title: title.name, path: title.playlistPath),
+      ];
+
+      // 合集名不能只按盘名全局对号：`S1/DISC1` 与 `S2/DISC1` 同名不同盘，对到一起
+      // 会互相吞成员（见 [blurayCollectionNameCandidates]）。撞上别的盘 / 别的
+      // 清单的合集就换下一个候选名，直到找到本盘的或一个空位。
+      String collectionName = disc.name;
+      int? existingId;
+      for (final String candidate
+          in blurayCollectionNameCandidates(disc.name, disc.rootPath)) {
+        collectionName = candidate;
+        existingId = existingCollectionIds[candidate];
+        if (existingId == null) break;
+        if (await _collectionBelongsToDisc(existingId, disc.rootPath)) break;
+        existingId = null;
+      }
+      if (existingId != null) {
+        await _videoRepo.reconcileSplitPlaylist(
+          collectionId: existingId,
+          entries: entries,
+          sourceId: sourceId,
+        );
+        continue;
+      }
+
+      // BUG-1739 同款守卫：用户删过同名合集，重扫不复活。
+      if (await _db.hasCollectionDeletionTombstone(
+        collectionName,
+        'playlist',
+      )) {
+        continue;
+      }
+
+      final SplitPlaylistImportResult result =
+          await _videoRepo.importSplitPlaylist(
+        collectionName: collectionName,
+        entries: entries,
+        sourceId: sourceId,
+        reuseExistingPaths: true,
+      );
+      existingCollectionIds[collectionName] = result.collectionId;
+      await _videoRepo.recordVideoImportActivity(
+        bookUid: result.episodeUids.first,
+        title: collectionName,
+      );
+      count++;
+    }
+    return count;
+  }
+
+  /// 既有合集 [collectionId] 是不是 [discRootPath] 这张盘的：成员全是本盘
+  /// `BDMV/PLAYLIST/` 下的 `.mpls`（或还没有任何视频成员）才算；有任何一条来自别的
+  /// 盘、或根本不是蓝光标题（同名 m3u8 清单合集），都不算。
+  Future<bool> _collectionBelongsToDisc(
+    int collectionId,
+    String discRootPath,
+  ) async {
+    final String root = p.normalize(discRootPath);
+    for (final MediaCollectionItemRow item
+        in await _videoRepo.getCollectionItems(collectionId)) {
+      final VideoBookRow? row = await _videoRepo.getByBookUid(item.entryKey);
+      if (row == null) continue;
+      if (!isBlurayPlaylistPath(row.videoPath)) return false;
+      final String? owner = blurayDiscRootForPlaylistPath(row.videoPath);
+      if (owner == null || p.normalize(owner) != root) return false;
+    }
+    return true;
   }
 }

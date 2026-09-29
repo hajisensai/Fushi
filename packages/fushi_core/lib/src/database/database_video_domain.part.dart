@@ -289,6 +289,29 @@ mixin _FushiDbVideoDomain
         .write(VideoMetadataWorksCompanion(updatedAt: Value<int>(updatedAt)));
   }
 
+  /// 用户选定的 TMDB 备选排序（`episode_group_id`；`null` = TMDB 默认排序），
+  /// 同时把 `episodeGroup` 加进字段锁——之后刮削不再用自动挑的分组覆盖它
+  /// （Shoko `PreferredAlternateOrderingID`）。锁字段名与
+  /// `VideoMetadataLockableField.episodeGroup.name` 同一 wire 值。
+  Future<void> setVideoMetadataWorkEpisodeGroup(
+    int workId,
+    String? episodeGroupId,
+  ) async {
+    final VideoMetadataWorkRow? row = await getVideoMetadataWorkById(workId);
+    if (row == null) return;
+    final List<String> locked = <String>[
+      for (final String part in (row.lockedFields ?? '').split(','))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+    if (!locked.contains('episodeGroup')) locked.add('episodeGroup');
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(
+      episodeGroupId: Value<String?>(episodeGroupId),
+      lockedFields: Value<String?>(locked.join(',')),
+    ));
+  }
+
   /// 写作品级字段锁（schema v99）。`null` = 清空全部锁。锁是纯用户意图，独立于
   /// 刮削产物，所以是自己的原语而不是 `upsertVideoMetadataWork` 的一个字段。
   Future<void> setVideoMetadataWorkLockedFields(
@@ -504,20 +527,182 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
-  Future<VideoMetadataEpisodeRow?> getVideoMetadataEpisodeByBook(
+  // ── video_episode_binding_overrides（v111，Shoko UserVerified）──
+
+  /// 某文件的手动季集指定；没有 → null。
+  Future<VideoEpisodeBindingOverrideRow?> getVideoEpisodeBindingOverride(
+    String bookUid,
+  ) =>
+      (select(videoEpisodeBindingOverrides)
+            ..where(($VideoEpisodeBindingOverridesTable t) =>
+                t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  /// 一批文件的手动季集指定（刮削一个作品单元时按成员批量取）。
+  Future<Map<String, VideoEpisodeBindingOverrideRow>>
+      getVideoEpisodeBindingOverrides(Iterable<String> bookUids) async {
+    final List<String> uids = bookUids.toList(growable: false);
+    if (uids.isEmpty) return const <String, VideoEpisodeBindingOverrideRow>{};
+    final List<VideoEpisodeBindingOverrideRow> rows =
+        await (select(videoEpisodeBindingOverrides)
+              ..where(($VideoEpisodeBindingOverridesTable t) =>
+                  t.bookUid.isIn(uids)))
+            .get();
+    return <String, VideoEpisodeBindingOverrideRow>{
+      for (final VideoEpisodeBindingOverrideRow row in rows) row.bookUid: row,
+    };
+  }
+
+  /// 写 / 覆盖某文件的手动季集指定。
+  Future<void> setVideoEpisodeBindingOverride(
+    String bookUid, {
+    required int seasonNumber,
+    required int episodeNumber,
+  }) =>
+      into(videoEpisodeBindingOverrides).insertOnConflictUpdate(
+        VideoEpisodeBindingOverridesCompanion.insert(
+          bookUid: bookUid,
+          seasonNumber: seasonNumber,
+          episodeNumber: episodeNumber,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+  /// 清除手动季集指定；下次刮削回到自动链接。
+  Future<void> clearVideoEpisodeBindingOverride(String bookUid) =>
+      (delete(videoEpisodeBindingOverrides)
+            ..where(($VideoEpisodeBindingOverridesTable t) =>
+                t.bookUid.equals(bookUid)))
+          .go();
+
+  /// 把 [bookUid] 立刻改绑到 [workId] 下的 (季, 集) 分集行：原先绑它的行解绑
+  /// （AniDB 身份三列随之清），目标行绑上并继承该文件的 AniDB eid / 原生集号、
+  /// 评级写 `userVerified`。目标行不存在返回 false（UI 只让选已有的集）。
+  Future<bool> rebindVideoEpisodeToBook({
+    required int workId,
+    required String bookUid,
+    required int seasonNumber,
+    required int episodeNumber,
+  }) =>
+      transaction(() async {
+        final VideoMetadataSeasonRow? season =
+            await (select(videoMetadataSeasons)
+                  ..where(($VideoMetadataSeasonsTable t) =>
+                      t.workId.equals(workId) &
+                      t.seasonNumber.equals(seasonNumber)))
+                .getSingleOrNull();
+        if (season == null) return false;
+        final VideoMetadataEpisodeRow? target =
+            await (select(videoMetadataEpisodes)
+                  ..where(($VideoMetadataEpisodesTable t) =>
+                      t.seasonId.equals(season.id) &
+                      t.episodeNumber.equals(episodeNumber)))
+                .getSingleOrNull();
+        if (target == null) return false;
+        final List<VideoMetadataEpisodeRow> bound =
+            await getVideoMetadataEpisodesByBook(bookUid);
+        final VideoMetadataEpisodeRow? primary = bound.firstOrNull;
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        for (final VideoMetadataEpisodeRow row in bound) {
+          if (row.id == target.id) continue;
+          await (update(videoMetadataEpisodes)
+                ..where(($VideoMetadataEpisodesTable t) => t.id.equals(row.id)))
+              .write(VideoMetadataEpisodesCompanion(
+            bookUid: const Value<String?>(null),
+            anidbEpisodeId: const Value<int?>(null),
+            anidbEpisodeNumber: const Value<String?>(null),
+            anidbMatchRating: const Value<String?>(null),
+            updatedAt: Value<int>(now),
+          ));
+        }
+        await (update(videoMetadataEpisodes)
+              ..where(($VideoMetadataEpisodesTable t) => t.id.equals(target.id)))
+            .write(VideoMetadataEpisodesCompanion(
+          bookUid: Value<String?>(bookUid),
+          anidbEpisodeId: Value<int?>(primary?.anidbEpisodeId),
+          anidbEpisodeNumber: Value<String?>(primary?.anidbEpisodeNumber),
+          anidbMatchRating: const Value<String?>('userVerified'),
+          updatedAt: Value<int>(now),
+        ));
+        return true;
+      });
+
+  /// 绑到同一个文件的全部分集行（v110 起一文件可绑多集：AniDB FILE 的 other
+  /// episodes），按季、集排序。
+  Future<List<VideoMetadataEpisodeRow>> getVideoMetadataEpisodesByBook(
     String bookUid,
   ) =>
       (select(videoMetadataEpisodes)
             ..where(
-                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid)))
-          .getSingleOrNull();
+                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid))
+            ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.seasonId),
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.episodeNumber),
+            ]))
+          .get();
 
+  /// 人物 upsert：名字与时间戳照新值写，描述性字段（照片、简介、生卒、性别、
+  /// 出生地、原名）**只补空不抹掉**——同一人会被多个来源、多次刮削反复写入，
+  /// AniDB 职员没有照片、NFO 回灌没有 id，一次带 null 的写入不该把上一轮拿到的
+  /// 照片抹成空（Shoko 对 creator 同样是 fill-if-empty，BUG-2612）。
   Future<void> upsertVideoMetadataPeople(
     List<VideoMetadataPeopleCompanion> people,
   ) =>
       batch((Batch batch) {
-        batch.insertAllOnConflictUpdate(videoMetadataPeople, people);
+        batch.insertAll(
+          videoMetadataPeople,
+          people,
+          onConflict: DoUpdate.withExcluded(
+            (
+              $VideoMetadataPeopleTable old,
+              $VideoMetadataPeopleTable excluded,
+            ) =>
+                VideoMetadataPeopleCompanion.custom(
+              name: excluded.name,
+              originalName: coalesce(<Expression<String>>[
+                excluded.originalName,
+                old.originalName,
+              ]),
+              biography: coalesce(<Expression<String>>[
+                excluded.biography,
+                old.biography,
+              ]),
+              birthday: coalesce(<Expression<String>>[
+                excluded.birthday,
+                old.birthday,
+              ]),
+              deathday: coalesce(<Expression<String>>[
+                excluded.deathday,
+                old.deathday,
+              ]),
+              gender: coalesce(<Expression<int>>[excluded.gender, old.gender]),
+              placeOfBirth: coalesce(<Expression<String>>[
+                excluded.placeOfBirth,
+                old.placeOfBirth,
+              ]),
+              profileUrl: coalesce(<Expression<String>>[
+                excluded.profileUrl,
+                old.profileUrl,
+              ]),
+              updatedAt: excluded.updatedAt,
+            ),
+          ),
+        );
       });
+
+  /// 人物照片落地后回写本地路径（Shoko `AutoDownloadStaffImages`）；行不存在不写。
+  Future<void> updateVideoMetadataPersonProfilePath(
+    String personKey,
+    String? profilePath,
+  ) =>
+      (update(videoMetadataPeople)
+            ..where(($VideoMetadataPeopleTable t) =>
+                t.personKey.equals(personKey)))
+          .write(VideoMetadataPeopleCompanion(
+        profilePath: Value<String?>(profilePath),
+      ));
 
   Future<VideoMetadataPersonRow?> getVideoMetadataPerson(String personKey) =>
       (select(videoMetadataPeople)
@@ -525,11 +710,33 @@ mixin _FushiDbVideoDomain
                 ($VideoMetadataPeopleTable t) => t.personKey.equals(personKey)))
           .getSingleOrNull();
 
+  /// 角色 upsert：与 [upsertVideoMetadataPeople] 同规则，简介与角色图只补空。
   Future<void> upsertVideoMetadataCharacters(
     List<VideoMetadataCharactersCompanion> characters,
   ) =>
       batch((Batch batch) {
-        batch.insertAllOnConflictUpdate(videoMetadataCharacters, characters);
+        batch.insertAll(
+          videoMetadataCharacters,
+          characters,
+          onConflict: DoUpdate.withExcluded(
+            (
+              $VideoMetadataCharactersTable old,
+              $VideoMetadataCharactersTable excluded,
+            ) =>
+                VideoMetadataCharactersCompanion.custom(
+              name: excluded.name,
+              description: coalesce(<Expression<String>>[
+                excluded.description,
+                old.description,
+              ]),
+              imageUrl: coalesce(<Expression<String>>[
+                excluded.imageUrl,
+                old.imageUrl,
+              ]),
+              updatedAt: excluded.updatedAt,
+            ),
+          ),
+        );
       });
 
   Future<VideoMetadataCharacterRow?> getVideoMetadataCharacter(
@@ -754,11 +961,16 @@ mixin _FushiDbVideoDomain
   }
 
   /// 整体替换 work / season / episode 之一的职员表。人物与角色实体需先 upsert。
+  ///
+  /// [keepExisting] = true 时不删旧行，只追加库里还没有的关系（按唯一键
+  /// `{owner, personKey, creditKind, roleName}` 判重）：来源本轮人物表残缺
+  /// （MAL characters 端点抖动）时用它，免得残缺表覆盖上一轮的完整表。
   Future<void> replaceVideoMetadataCredits({
     int? workId,
     int? seasonId,
     int? episodeId,
     required List<VideoMetadataCreditsCompanion> credits,
+    bool keepExisting = false,
   }) {
     _requireOneVideoMetadataOwner(
       workId: workId,
@@ -766,19 +978,21 @@ mixin _FushiDbVideoDomain
       episodeId: episodeId,
     );
     return transaction(() async {
-      final DeleteStatement<$VideoMetadataCreditsTable, VideoMetadataCreditRow>
-          statement = delete(videoMetadataCredits);
-      if (workId != null) {
-        statement
-            .where(($VideoMetadataCreditsTable t) => t.workId.equals(workId));
-      } else if (seasonId != null) {
-        statement.where(
-            ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
-      } else {
-        statement.where(
-            ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+      if (!keepExisting) {
+        final DeleteStatement<$VideoMetadataCreditsTable,
+            VideoMetadataCreditRow> statement = delete(videoMetadataCredits);
+        if (workId != null) {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.workId.equals(workId));
+        } else if (seasonId != null) {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
+        } else {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+        }
+        await statement.go();
       }
-      await statement.go();
       for (final VideoMetadataCreditsCompanion credit in credits) {
         await into(videoMetadataCredits).insert(
           credit.copyWith(
@@ -786,6 +1000,7 @@ mixin _FushiDbVideoDomain
             seasonId: Value<int?>(seasonId),
             episodeId: Value<int?>(episodeId),
           ),
+          mode: keepExisting ? InsertMode.insertOrIgnore : InsertMode.insert,
         );
       }
     });
@@ -1986,6 +2201,105 @@ mixin _FushiDbVideoDomain
                 t.subscriptionId.equals(subscriptionId)))
           .go();
 
+  /// 改订阅并把它派生、尚未进整理的任务一起改到新目标来源（BUG-2755）。
+  ///
+  /// 只改订阅行时，已经派出去的集还固化着旧 `targetSourceId`，下载完照样整理进
+  /// 旧来源——用户看到的是「改了来源仍在旧位置下载」。这里在同一事务里经
+  /// `subscription_items.job_id` 找到该订阅的任务，把未完成且仍在
+  /// [kVideoDownloadPreOrganizeStages] 的改写过去。已交给下载器的种子不强制搬：
+  /// 整理阶段会把它移进新来源。[patch] 未带 `targetSourceId` 时等同
+  /// [updateVideoDownloadSubscription]。返回被改写的任务数。
+  Future<int> updateVideoDownloadSubscriptionRetargetingJobs(
+    String subscriptionId,
+    VideoDownloadSubscriptionsCompanion patch, {
+    required int nowAt,
+  }) =>
+      transaction(() async {
+        final int changed =
+            await updateVideoDownloadSubscription(subscriptionId, patch);
+        final int? target =
+            patch.targetSourceId.present ? patch.targetSourceId.value : null;
+        if (changed == 0 || target == null) return 0;
+        final List<String> jobIds =
+            await getVideoDownloadSubscriptionJobIds(subscriptionId);
+        if (jobIds.isEmpty) return 0;
+        return (update(videoDownloadJobs)
+              ..where(($VideoDownloadJobsTable t) =>
+                  t.jobId.isIn(jobIds) &
+                  t.lifecycle
+                      .equals(VideoDownloadJobLifecycle.completed)
+                      .not() &
+                  t.stage.isIn(kVideoDownloadPreOrganizeStages)))
+            .write(VideoDownloadJobsCompanion(
+          targetSourceId: Value<int?>(target),
+          updatedAt: Value<int>(nowAt),
+        ));
+      });
+
+  /// 订阅 [subscriptionId] 派生过的全部任务 id（经 `subscription_items.job_id`，去重）。
+  Future<List<String>> getVideoDownloadSubscriptionJobIds(
+    String subscriptionId,
+  ) =>
+      (selectOnly(videoDownloadSubscriptionItems, distinct: true)
+            ..addColumns(<Expression<Object>>[
+              videoDownloadSubscriptionItems.jobId,
+            ])
+            ..where(videoDownloadSubscriptionItems.subscriptionId
+                    .equals(subscriptionId) &
+                videoDownloadSubscriptionItems.jobId.isNotNull()))
+          .map((TypedResult row) =>
+              row.read(videoDownloadSubscriptionItems.jobId)!)
+          .get();
+
+  /// 认领任务 [jobId] 的订阅（经 `subscription_items.job_id`）；非订阅任务为 null。
+  Future<VideoDownloadSubscriptionRow?> getVideoDownloadSubscriptionForJob(
+    String jobId,
+  ) async {
+    final VideoDownloadSubscriptionItemRow? item =
+        await (select(videoDownloadSubscriptionItems)
+              ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                  t.jobId.equals(jobId))
+              ..orderBy(<OrderingTerm Function(
+                  $VideoDownloadSubscriptionItemsTable)>[
+                ($VideoDownloadSubscriptionItemsTable t) =>
+                    OrderingTerm.desc(t.updatedAt),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
+    if (item == null) return null;
+    return getVideoDownloadSubscription(item.subscriptionId);
+  }
+
+  /// 同 torrent 的新任务接管一条来源已失效的旧任务（BUG-2755）。
+  ///
+  /// `(fingerprint, torrent_hash)` 唯一：旧任务停在 failed / needsAttention、目标
+  /// 来源又被删了时，同一集重新入队会被它永远拦成「already managed」。这里在一个
+  /// 事务里把认领旧任务的订阅条目改指 [byJobId]，再删掉旧任务行（文件行随 FK
+  /// 级联删除，后端里的种子不动——新任务按同 hash 接着用）。只接管文件还没落进
+  /// 来源的旧任务（[kVideoDownloadSourceRebindableStages]）；条件不满足返回 false。
+  Future<bool> supersedeVideoDownloadJob({
+    required String supersededJobId,
+    required String byJobId,
+  }) =>
+      transaction(() async {
+        if (supersededJobId == byJobId) return false;
+        final VideoDownloadJobRow? old =
+            await getVideoDownloadJob(supersededJobId);
+        if (old == null ||
+            (old.lifecycle != VideoDownloadJobLifecycle.failed &&
+                old.lifecycle != VideoDownloadJobLifecycle.needsAttention) ||
+            !kVideoDownloadSourceRebindableStages.contains(old.stage)) {
+          return false;
+        }
+        await (update(videoDownloadSubscriptionItems)
+              ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                  t.jobId.equals(supersededJobId)))
+            .write(VideoDownloadSubscriptionItemsCompanion(
+          jobId: Value<String?>(byJobId),
+        ));
+        return await deleteVideoDownloadJob(supersededJobId) == 1;
+      });
+
   /// 原子领取一个到期订阅检查。订阅没有 job lifecycle/stage；enabled、nextCheckAt
   /// 与 lease 正交表达「是否调度 / 何时调度 / 谁正在调度」。
   Future<VideoDownloadSubscriptionRow?> claimNextVideoDownloadSubscription({
@@ -2346,6 +2660,27 @@ mixin _FushiDbVideoDomain
         lastPlayedAt: Value<int?>(playedAt > 0 ? playedAt : null),
       ));
 
+  /// 清除一行视频的观看进度（用户显式操作：卡菜单「清除观看进度」）。
+  ///
+  /// 一条 UPDATE 同时归零 [VideoBooks.lastPositionMs] / [VideoBooks.lastPlayedAt] /
+  /// [VideoBooks.completedAt] / [VideoBooks.currentEpisode]——这四列合起来才是
+  /// 「这一集有没有看过的痕迹」（`CollectionMemberProgress.hasTrace` 三判据 +
+  /// 单行多集形态的集指针）。只清位置不清时刻会留下「位置 0 但有时刻」的痕迹，
+  /// 合集续播锚点照样钉在这一集上（BUG-1542 的时刻口径），用户看到的还是
+  /// 「继续看这一集」而不是回到上一集看完后的下一集。
+  ///
+  /// 不动观看时长统计（`video_watch_statistics` / `study_segments`）：那是
+  /// 「看了多久」的历史事实，不是「看到哪」的进度。互联 LWW 镜像键由仓库层
+  /// `VideoBookRepository.clearWatchProgress` 负责，这里只管行。
+  Future<void> clearVideoBookWatchProgress(String bookUid) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(const VideoBooksCompanion(
+        lastPositionMs: Value(0),
+        lastPlayedAt: Value<int?>(null),
+        completedAt: Value<DateTime?>(null),
+        currentEpisode: Value(0),
+      ));
+
   Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(currentEpisode: Value(episodeIndex)));
@@ -2411,25 +2746,82 @@ mixin _FushiDbVideoDomain
   /// 删除视频书：标签映射（v77 起逻辑外键）与 audio_cues 的 bookKey 都不是 DB
   /// 外键（cue 的 owner key 对有声书/SRT/视频共用一个字符串，无法挂 FK），必须
   /// 在同一事务里显式清（BUG-276：否则删视频后 cue 行永久残留）。
-  Future<void> deleteVideoBook(String bookUid) => transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookKey.equals(bookUid))).go();
+  ///
+  /// 单条删是 [deleteVideoBooks] 的一元特例（不动合集成员——合集引用由调用方
+  /// 决定是否清，保持本方法一贯语义）。
+  Future<void> deleteVideoBook(String bookUid) =>
+      deleteVideoBooks(<String>[bookUid], removeFromCollections: false);
+
+  /// 在**一个事务**里批量删视频书（BUG-2754），返回删前快照的行（不存在的 uid
+  /// 不在返回值里）。
+  ///
+  /// 覆盖单条删的全部清理：audio_cues、shelf_entry、标签映射、规格缓存
+  /// （v95，按主视频 + 播放列表各集路径）、**本地花絮行**、行本身；
+  /// [removeFromCollections] 为真时再同事务清合集成员（等价
+  /// [removeEntriesFromAllCollections]，被清空的合集随之删除）。
+  ///
+  /// 本地花絮必须先删：`video_metadata_extras.book_uid` 的外键是 `SET NULL`，
+  /// 而 CHECK 要求 `source_kind='local'` 的行 `book_uid` 非空——让 FK 去置空，
+  /// CHECK 当场失败、整个删除事务回滚（BUG-2754：被扫描器挂成 `Extras/` 花絮的
+  /// 视频永远删不掉）。本地花絮就是这条视频本身，视频没了它也该没；在线花絮
+  /// 不挂 book_uid，不受影响。
+  ///
+  /// 所有 `IN (...)` 按 [_kVideoDeleteChunkSize] 分块，避开旧 SQLite 的 999 绑定
+  /// 变量上限（全选几千条是真实场景）。
+  Future<List<VideoBookRow>> deleteVideoBooks(
+    Iterable<String> bookUids, {
+    bool removeFromCollections = true,
+  }) {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    if (uids.isEmpty) return Future<List<VideoBookRow>>.value(<VideoBookRow>[]);
+    return transaction(() async {
+      final List<List<String>> uidChunks =
+          _chunkForSqlVariables<String>(uids, _kVideoDeleteChunkSize);
+      // v95：规格缓存以**文件路径**为键、与 book 无 FK，不在这里清就永远不会被
+      // 清——`video_file_specs` 会随「每个曾经扫描过的文件」单调增长，删片子也
+      // 不缩。路径须在删行前取（主视频 + 播放列表里的每一集）。
+      final List<VideoBookRow> rows = <VideoBookRow>[];
+      for (final List<String> chunk in uidChunks) {
+        rows.addAll(await (select(videoBooks)
+              ..where((t) => t.bookUid.isIn(chunk)))
+            .get());
+      }
+      for (final List<String> chunk in uidChunks) {
+        // cue 的 owner key 对有声书/SRT/视频共用，无法挂 FK（BUG-276）。
+        await (delete(audioCues)..where((t) => t.bookKey.isIn(chunk))).go();
         // TODO-616：同事务清 shelf_entry（mediaType='video'、entryKey=bookUid）。
-        await deleteShelfEntry(MediaKind.video, bookUid);
-        await deleteTagAssignmentsForHost(TagHostKind.video, bookUid);
-        // v95：同事务清该书涉及的规格缓存。缓存以**文件路径**为键、与 book 无 FK，
-        // 不在这里清就永远不会被清——`video_file_specs` 会随「每个曾经扫描过的文件」
-        // 单调增长，删片子也不缩。取主视频 + 播放列表里的每一集。
-        final VideoBookRow? row = await (select(videoBooks)
-              ..where((t) => t.bookUid.equals(bookUid)))
-            .getSingleOrNull();
-        if (row != null) {
-          for (final String path in videoBookFilePaths(row)) {
-            await deleteVideoFileSpec(path);
-          }
-        }
-        await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+        await (delete(shelfEntries)
+              ..where((t) =>
+                  t.mediaType.equals(MediaKind.video.dbValue) &
+                  t.entryKey.isIn(chunk)))
             .go();
-      });
+        await (delete(tagAssignments)
+              ..where((t) =>
+                  t.mediaKind.equals(TagHostKind.video.dbValue) &
+                  t.entryKey.isIn(chunk)))
+            .go();
+        await (delete(videoMetadataExtras)
+              ..where((t) =>
+                  t.sourceKind.equals('local') & t.bookUid.isIn(chunk)))
+            .go();
+      }
+      final List<String> filePaths = <String>{
+        for (final VideoBookRow row in rows) ...videoBookFilePaths(row),
+      }.toList(growable: false);
+      for (final List<String> chunk
+          in _chunkForSqlVariables<String>(filePaths, _kVideoDeleteChunkSize)) {
+        await (delete(videoFileSpecs)..where((t) => t.filePath.isIn(chunk)))
+            .go();
+      }
+      if (removeFromCollections) {
+        await removeEntriesFromAllCollections(MediaKind.video, uids);
+      }
+      for (final List<String> chunk in uidChunks) {
+        await (delete(videoBooks)..where((t) => t.bookUid.isIn(chunk))).go();
+      }
+      return rows;
+    });
+  }
 
   // ── video_file_specs（v95 规格探测缓存）────────────────────────────
 
@@ -2468,6 +2860,54 @@ mixin _FushiDbVideoDomain
   /// 删一个文件的规格缓存（文件被删/被移出库时）。
   Future<void> deleteVideoFileSpec(String filePath) =>
       (delete(videoFileSpecs)..where((t) => t.filePath.equals(filePath))).go();
+
+  // ── anidb_file_identities（v106 AniDB 文件级身份）────────────────────
+
+  /// 按内容键取身份；没查过返回 null。
+  Future<AnidbFileIdentityRow?> anidbFileIdentityByHash({
+    required String ed2k,
+    required int fileSize,
+  }) =>
+      (select(anidbFileIdentities)
+            ..where((t) =>
+                t.ed2k.equals(ed2k.toLowerCase()) &
+                t.fileSize.equals(fileSize)))
+          .getSingleOrNull();
+
+  /// 按「路径 + 大小」取最近一次记下的身份（免重算哈希的快路径）；调用方
+  /// 还要再比 `fileModifiedAt`——同名同大小但内容换过的文件靠这个判出来。
+  Future<AnidbFileIdentityRow?> anidbFileIdentityByPath({
+    required String filePath,
+    required int fileSize,
+  }) =>
+      (select(anidbFileIdentities)
+            ..where((t) =>
+                t.filePath.equals(filePath) & t.fileSize.equals(fileSize))
+            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// 一批路径里哪些已经有身份行（补刮排队用）：返回有行的路径集合。
+  Future<Set<String>> anidbFileIdentityPaths(Iterable<String> filePaths) async {
+    final List<String> paths = filePaths.toSet().toList();
+    if (paths.isEmpty) return const <String>{};
+    final List<AnidbFileIdentityRow> rows =
+        await (select(anidbFileIdentities)
+              ..where((t) => t.filePath.isIn(paths)))
+            .get();
+    return <String>{
+      for (final AnidbFileIdentityRow row in rows)
+        if (row.filePath != null) row.filePath!,
+    };
+  }
+
+  /// 写入/覆盖一份内容的身份。整行覆盖是有意的：一次 FILE 响应就是该内容的
+  /// 完整事实快照，路径 / mtime 也随之更新到最近一次看到它的位置。
+  Future<void> upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion row) =>
+      into(anidbFileIdentities).insert(
+          // 内容键统一小写：读侧按小写查，写侧不归一化就会同一哈希两行。
+          row.copyWith(ed2k: Value(row.ed2k.value.toLowerCase())),
+          mode: InsertMode.insertOrReplace);
 }
 
 /// 一本视频书涉及的全部本地文件路径：主视频 + 播放列表里的每一集。
@@ -2497,4 +2937,19 @@ List<String> videoBookFilePaths(VideoBookRow row) {
     }
   }
   return List<String>.unmodifiable(out);
+}
+
+/// 批量删除类 `IN (...)` 每块的绑定变量数。低于旧 SQLite（Android 老系统库）
+/// 999 的上限并给同条语句里其余谓词留余量，与 sidecar ledger 清理同一口径。
+const int _kVideoDeleteChunkSize = 400;
+
+/// 把 [items] 切成至多 [size] 个一块（最后一块可以更短；空输入返回空列表）。
+List<List<T>> _chunkForSqlVariables<T>(List<T> items, int size) {
+  final List<List<T>> chunks = <List<T>>[];
+  for (int offset = 0; offset < items.length; offset += size) {
+    final int end =
+        offset + size < items.length ? offset + size : items.length;
+    chunks.add(items.sublist(offset, end));
+  }
+  return chunks;
 }

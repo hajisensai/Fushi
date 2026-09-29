@@ -34,17 +34,22 @@ void main() {
   // 而旧链路「主源歧义即短路」让 TMDB 永远问不到，整批番剧记成识别失败。
   //
   // 但那条测试真正护住的不变式没变，只是被「不给选」连带写死了：**作品资料源
-  // 只有 MAL 与 TMDB 两家**。所以这里改成钉住可选范围与历史值的处置——
-  // 退役的 Bangumi / Douban / AniList 不得借「可选」回潮，AniDB 也不得升格成
-  // 作品资料主源（它只做文件身份识别，见 CLAUDE.md 的 provider 边界）。
-  test('primary metadata source is selectable, but only MAL and TMDB', () {
+  // 只有白名单里这几家**。所以这里改成钉住可选范围与历史值的处置——退役的
+  // Bangumi / Douban / AniList 不得借「可选」回潮。2026-09-20 用户拍板对齐 Shoko
+  // 后 AniDB 升格为默认主源（HTTP anime XML 资料链 + TMDB 补充），MAL 仍可选。
+  test('primary metadata source is selectable: AniDB (default), MAL, TMDB', () {
     expect(
       kSelectableVideoMetadataProviders,
       <VideoMetadataProviderKind>[
+        VideoMetadataProviderKind.anidb,
         VideoMetadataProviderKind.mal,
         VideoMetadataProviderKind.tmdb,
       ],
-      reason: '作品资料源只有这两家；加第三家是 provider 边界变更，要先过用户',
+      reason: '作品资料源只有这三家；加第四家是 provider 边界变更，要先过用户',
+    );
+    expect(
+      kDefaultVideoMetadataPrimaryProvider,
+      VideoMetadataProviderKind.anidb,
     );
 
     // 下拉的选项必须**由白名单生成**，不能另抄一份可选值——抄一份就会出现
@@ -64,7 +69,6 @@ void main() {
       'bangumi',
       'douban',
       'anilist',
-      'anidb',
       'fanart',
       '',
       'nonsense',

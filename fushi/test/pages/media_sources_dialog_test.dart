@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -35,8 +36,13 @@ Future<void> _pumpDialog(
   FushiDatabase db,
   String mediaKind,
 ) async {
+  // 移除来源会顺带修正「默认下载来源」偏好（BUG-2755），所以装配真实偏好仓库。
   final AppModel appModel = AppModel(testPlatformServices())
-    ..wireDatabaseForTesting(db);
+    ..wireDatabaseForTesting(db)
+    ..wireLocalAudioForTesting(
+      prefsRepo: PreferencesRepository(db),
+      databaseDirectory: Directory.systemTemp,
+    );
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[
@@ -359,10 +365,23 @@ void main() {
     late String src;
     setUpAll(() {
       // 实现体已从对话框文件搬到 [MediaSourcesView]（对话框与库页「来源」视图共用
-      // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。
+      // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。移除来源的落库步骤
+      // （含凭据清除）收进 removeSourceLibrary（BUG-2755），两份一起扫。
       src = File(
-        'lib/src/pages/implementations/media_sources_view.dart',
-      ).readAsStringSync();
+            'lib/src/pages/implementations/media_sources_view.dart',
+          ).readAsStringSync() +
+          File(
+            'lib/src/media/source_library/source_library_removal.dart',
+          ).readAsStringSync();
+    });
+
+    test('source removal goes through removeSourceLibrary', () {
+      expect(
+          File('lib/src/pages/implementations/media_sources_view.dart')
+              .readAsStringSync()
+              .contains('removeSourceLibrary('),
+          isTrue,
+          reason: '视图移除来源必须走 removeSourceLibrary（凭据与下载引用一起处理）');
     });
 
     test('secrets go through SourceLibraryCredentialStore, not the source row',
@@ -402,10 +421,11 @@ void main() {
       // 三选、视频仅 WebDAV，见 _networkTransports），测试连接复用 sync 子系统的
       // WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面的红线守卫
       // 覆盖），绝不作为列写进来源行。
-      expect(src.contains("const <String>['sftp', 'ftp', 'webdav']"), isTrue,
-          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV 三选');
-      expect(src.contains("const <String>['webdav']"), isTrue,
-          reason: '视频网络来源必须收窄到仅 WebDAV（SFTP/FTP 无 HTTP 直链不可播）');
+      expect(src.contains("const <String>['sftp', 'ftp', 'webdav', 'alist']"),
+          isTrue,
+          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选');
+      expect(src.contains("const <String>['webdav', 'alist']"), isTrue,
+          reason: '视频网络来源必须收窄到 WebDAV/AList（SFTP/FTP 无 HTTP 直链不可播）');
       expect(src.contains('WebDavSyncBackend.instance.testConnection'), isTrue,
           reason: 'WebDAV 测试连接必须复用 sync 的 WebDavSyncBackend');
     });

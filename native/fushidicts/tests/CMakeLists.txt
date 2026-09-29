@@ -58,6 +58,8 @@ add_fushi_test(text_processor_test text_processor_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # 弹窗 deinflectionTrace：纯内存，直接喂 LookupResult 给 build_popup_json。
 add_fushi_test(popup_json_deinflection_test popup_json_deinflection_test.cpp)
+# BUG-2753：空读音（MDX 等）并入同表记唯一显式读音的卡，与 Dart 侧同口径。
+add_fushi_test(popup_json_reading_merge_test popup_json_reading_merge_test.cpp)
 # FFI 边界异常闸门覆盖守卫：扫 fushidicts_ffi.cpp 源码，确认每个导出都经过
 # ffi_guard*。漏掉闸门的后果是异常逃出 extern "C" → std::terminate → 进程静默
 # 消失（用户侧：「转圈转一半 app 自己退出，没有报错」），人工 review 兜不住。
@@ -128,6 +130,20 @@ endif()
 add_test(NAME en_apostrophe_lookup_test
          COMMAND en_apostrophe_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json")
+
+# 英语词形变化闭环：不规则形（真 en_irregular.json）+ 整本无词性的 Yomitan 词典
+# 靠 term_rules.flag 把空 rules 当通配，带词性的词典 Yomitan 语义不变。
+add_executable(en_inflection_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/en_inflection_lookup_test.cpp")
+target_link_libraries(en_inflection_lookup_test PRIVATE fushidicts)
+target_include_directories(en_inflection_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(en_inflection_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME en_inflection_lookup_test
+         COMMAND en_inflection_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate

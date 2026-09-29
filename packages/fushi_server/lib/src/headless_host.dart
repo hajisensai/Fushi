@@ -16,6 +16,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
@@ -30,6 +32,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
+import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
@@ -68,14 +71,25 @@ class _AsyncMutex {
 
 class HeadlessHost {
   HeadlessHost({
-    required this.config,
+    required ServerConfig config,
     required this.paths,
     required this.db,
     required this.prefs,
     required this.identity,
-  });
+    bool Function()? p2pAvailable,
+  })  : _config = config,
+        _p2pAvailable =
+            p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
-  final ServerConfig config;
+  ServerConfig _config;
+
+  /// 当前配置（WebUI 改完经 [applyConfig] 推进来）。只有运行期可变的项从这里
+  /// 实时读（公网地址 / 局域网 PIN / P2P）；端口、绑定、TLS 这类要重启的，在
+  /// [start] 时取快照（见 [_loopbackOnly]），不跟着新配置漂。
+  ServerConfig get config => _config;
+
+  /// 原生 libfushi_p2p 是否可用（测试可注入）。
+  final bool Function() _p2pAvailable;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -83,10 +97,20 @@ class HeadlessHost {
 
   FushiSyncServer? _server;
   LanAdvertiser? _advertiser;
+  InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
+  ServerAnkiLanding? _anki;
   final _AsyncMutex _mutex = _AsyncMutex();
+
+  /// [start] 时的绑定地址是否只监听本机（重启前改了 `bind` 也按实际监听判）。
+  bool _loopbackOnly = false;
+
+  /// P2P 挂载 / 卸载一律串行（见 [_serializeP2p]）。
+  Future<void> _p2pOps = Future<void>.value();
+  bool _p2pListening = false;
+  String? _p2pLastError;
   PendingPairing? _pendingPairing;
   String? _hostFingerprint;
   SecurityContext? _securityContext;
@@ -103,6 +127,9 @@ class HeadlessHost {
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
   HostSubscriptionHost? get subscriptions => _downloads?.subscriptions;
+
+  /// Anki 落地（手机的待发卡经互联同步进来，这里写进 Anki 并同步）。
+  ServerAnkiLanding? get anki => _anki;
 
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
@@ -158,11 +185,12 @@ class HeadlessHost {
     await downloads.start();
     _downloads = downloads;
 
+    _loopbackOnly = _isLoopbackBind(config.bind);
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: paths.syncData.path,
       port: config.port,
       token: identity.hostToken,
-      allowLan: config.bind != '127.0.0.1' && config.bind != 'localhost',
+      allowLan: !_loopbackOnly,
       libraryService: _buildLibraryService(),
       mangaOcrJobs: ocrJobs,
       hostJobs: jobs,
@@ -171,15 +199,35 @@ class HeadlessHost {
       securityContext: securityContext,
       hostFingerprint: _hostFingerprint,
       deviceName: config.deviceName,
+      // 无头服务端的 host 偏好读侧（「允许为对端转码视频」等），与 app 侧同一张
+      // `preferences` 表、同一份默认值。
+      prefs: prefs,
     )
       ..onPairRequest = _approvePairing
       ..onPairPinGenerated = _generatePin
       ..onPairSessionResolved = _clearPendingPairing
+      // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
       ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
       ..onPeerPaired = _persistPairedPeer
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+      ..pairedPeerTokensProvider = _loadPairedPeerTokens
+      // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
+      ..hostId = identity.deviceId
+      ..publicUrlsProvider = (() async => config.publicUrls);
     await server.start();
     _server = server;
+    // P2P 挂不上只留痕（[_serializeP2p] 吞错并记 lastError）：server 已经起来了，
+    // 这里抛出去会让它没有拥有者（泄漏一个在跑的 server，审查问题 12）。
+    await _attachP2p(server);
+
+    final ServerAnkiLanding anki = ServerAnkiLanding(
+      prefs: prefs,
+      db: db,
+      support: paths.support,
+      syncData: paths.syncData,
+      deviceId: identity.deviceId,
+      deviceName: config.deviceName,
+    )..start();
+    _anki = anki;
 
     _advertiser = LanAdvertiser(
       deviceName: config.deviceName,
@@ -195,12 +243,156 @@ class HeadlessHost {
     );
   }
 
+  static bool _isLoopbackBind(String bind) =>
+      bind == '127.0.0.1' || bind == 'localhost';
+
+  // ── P2P 隧道 ──────────────────────────────────────────────────────────
+  //
+  // 配置 `p2p: true` 且随包带了 libfushi_p2p 时：起 iroh 端点、开信任区监听口、
+  // 把 `p2p://<nodeId>` 加进地址集。私钥存服务端偏好表（设备身份，不进用户手改
+  // 的配置文件）。失败只留痕，不影响互联本身。
+  //
+  // 挂载 / 卸载 / 换中继一律经 [_serializeP2p] 排队（与 app 侧
+  // `FushiServerController._serializeP2p` 同一形态）：并发的「开了又立刻关」若不
+  // 串行，后到的卸载会先落空、先到的挂载随后才挂上——配置显示已关、隧道却对
+  // 公网开着。每次配置变更都在队尾追加动作，所以任何一次挂载之后若配置已变，
+  // 紧跟着的那次卸载必然排在它后面执行。
+
+  Future<void> _serializeP2p(Future<void> Function() op) {
+    final Future<void> next = _p2pOps.then((_) => op());
+    _p2pOps = next.then<void>((_) {}, onError: (Object e, StackTrace st) {
+      _p2pLastError = '$e';
+      engineLog.log('HeadlessHost.p2p', e, st);
+    });
+    return _p2pOps;
+  }
+
+  /// 这台 server 此刻是否应该开着隧道。只监听本机时地址集为空、对外不可达：
+  /// 开隧道等于给公网单开一扇门。
+  bool _p2pWanted(FushiSyncServer server) =>
+      identical(_server, server) && config.p2p && !_loopbackOnly;
+
+  /// 开：起端点 → 信任区监听口 → iroh 入站转发 → 地址集带上 `p2p://`。
+  Future<void> _attachP2p(FushiSyncServer server) => _serializeP2p(() async {
+        if (!_p2pWanted(server) || _p2pListening) return;
+        if (!_p2pAvailable()) {
+          engineLog.logDiagnostic(
+            'HeadlessHost',
+            'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+          );
+          return;
+        }
+        _p2pLastError = null;
+        final InterconnectP2pRuntime runtime = _p2p ??= InterconnectP2pRuntime(
+          loadSecret: () async =>
+              prefs.getPref(kInterconnectP2pSecretPref) as String?,
+          saveSecret: (String secret) =>
+              prefs.setPref(kInterconnectP2pSecretPref, secret),
+          // 实时读：换中继时 [_detachP2p] 关掉旧端点，下一次 ensure 按新值重建。
+          loadRelayUrls: () async => config.p2pRelays,
+        );
+        final InterconnectP2pNode? node = await runtime.ensure();
+        if (node == null) {
+          _p2pLastError = 'P2P 端点启动失败（详见日志）';
+          return;
+        }
+        final int port = await server.startP2pListener();
+        // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
+        // 而不是捕获这一个——换中继会重建端点。
+        server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
+        node.hostListen(port);
+        server.extraAddressesProvider =
+            () => runtime.hostAddresses(tls: server.usesTls);
+        _p2pListening = true;
+        engineLog.logDiagnostic('HeadlessHost', 'p2p node ${node.nodeId}');
+      });
+
+  /// 关：停 iroh 入站 → 摘地址集 → 关信任区监听口 → 关端点（关掉才不再连公共
+  /// 中继；NodeId 不变，私钥持久）。对未挂载的状态幂等。
+  Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
+        _p2pListening = false;
+        final InterconnectP2pRuntime? runtime = _p2p;
+        runtime?.current?.hostStop();
+        server.extraAddressesProvider = null;
+        server.p2pPeerResolver = null;
+        await server.stopP2pListener();
+        await runtime?.dispose();
+      });
+
+  /// 运行中改配置（WebUI）：内存配置换新，「远程可达」三项即时生效——公网地址
+  /// 由 provider 实时读；P2P 开关与中继变更在正在跑的 host 上挂载 / 卸载 / 重建
+  /// 端点。返回时本次变更引起的 P2P 动作（以及排在它之前的）都已落地。
+  Future<void> applyConfig(ServerConfig next) async {
+    final ServerConfig prev = _config;
+    _config = next;
+    final FushiSyncServer? server = _server;
+    if (server == null) return;
+    final bool relaysChanged = !_sameStrings(prev.p2pRelays, next.p2pRelays);
+    if (prev.p2p == next.p2p && !relaysChanged) return;
+    // 换中继 = 先整个卸下（关旧端点）再按新中继挂上，与 app 的 setP2pRelayUrls 同序。
+    if (!next.p2p || relaysChanged) await _detachP2p(server);
+    if (next.p2p) await _attachP2p(server);
+  }
+
+  static bool _sameStrings(List<String> a, List<String> b) =>
+      a.length == b.length &&
+      Iterable<int>.generate(a.length).every((int i) => a[i] == b[i]);
+
+  /// 原生库是否可用（WebUI 据此置灰开关）。
+  bool get p2pAvailable => _p2pAvailable();
+
+  /// 给 WebUI / admin API 的 P2P 状态。未生效时 `reason` 说明原因：
+  /// `unavailable`（没有原生库）/ `disabled`（没开）/ `host_stopped` /
+  /// `loopback_bind`（只监听本机）/ `start_failed`（见 `lastError` 与日志）。
+  Map<String, Object?> p2pStatus() {
+    final InterconnectP2pRuntime? runtime = _p2p;
+    final InterconnectP2pNode? node = runtime?.current;
+    final bool active = _p2pListening && node != null;
+    // 拨号提示（home relay / 直连地址）从地址集里的 `p2p://` 反解，与对端看到的一致。
+    final String? p2pUrl = active
+        ? runtime!
+            .hostAddresses(tls: _server?.usesTls ?? false)
+            .map((InterconnectHostAddress a) => a.url)
+            .firstOrNull
+        : null;
+    final ({
+      String nodeId,
+      bool tls,
+      String? relayUrl,
+      List<String> directAddrs,
+    })? hints = p2pUrl == null ? null : parseInterconnectP2pUrl(p2pUrl);
+    return <String, Object?>{
+      'available': p2pAvailable,
+      'enabled': config.p2p,
+      'active': active,
+      'nodeId': node?.nodeId,
+      'address': p2pUrl,
+      'relayUrl': hints?.relayUrl,
+      'directAddrs': hints?.directAddrs ?? const <String>[],
+      'reason': active ? null : _p2pInactiveReason(),
+      'lastError': _p2pLastError,
+    };
+  }
+
+  String _p2pInactiveReason() {
+    if (!p2pAvailable) return 'unavailable';
+    if (!config.p2p) return 'disabled';
+    if (_server == null) return 'host_stopped';
+    if (_loopbackOnly) return 'loopback_bind';
+    return 'start_failed';
+  }
+
   Future<void> stop() async {
+    final ServerAnkiLanding? anki = _anki;
+    _anki = null;
+    await anki?.stop();
     final LanAdvertiser? adv = _advertiser;
     _advertiser = null;
     await adv?.stop();
     final FushiSyncServer? server = _server;
     _server = null;
+    // 排在所有在飞的 P2P 动作之后卸下（之前的挂载先落地、再被这次拆掉）。
+    if (server != null) await _detachP2p(server);
     await server?.stop();
     final ServerDownloadHost? downloads = _downloads;
     _downloads = null;

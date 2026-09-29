@@ -14,8 +14,53 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 const String malIncompleteCreditEndpointsKey =
     'mal_incomplete_credit_endpoints';
 
+/// 某个 MAL 作品的 characters / staff 端点本轮没拉下来（`fetchWork` 把端点名
+/// 记在 [malIncompleteCreditEndpointsKey]）。协调器据此决定要不要补 TMDB，
+/// 落库层据此决定不用残缺表覆盖库里已有的完整表。
+bool hasIncompleteMalCredits(VideoMetadataWork work) {
+  final Object? endpoints = work.rawPayload?[malIncompleteCreditEndpointsKey];
+  return endpoints is List && endpoints.isNotEmpty;
+}
+
+/// MAL CDN 的「无图」占位：人物 / 角色 / 作品没有图时 Jikan 不给 null，而是
+/// 这些站点资源。`questionmark_23.gif`（人物、作品）、
+/// `img/sp/icon/apple-touch-icon-256.png`（角色）以及同目录其它尺寸变体。
+bool isMalPlaceholderImageUrl(String url) {
+  final String path =
+      Uri.tryParse(url)?.path.toLowerCase() ?? url.toLowerCase();
+  return path.contains('/images/questionmark_') ||
+      path.contains('/img/sp/icon/');
+}
+
+/// MAL 上的一条关联：关系名原串（`Sequel` / `Prequel` / `Side story` /
+/// `Alternative version` …）+ 对端 anime id。
+class MalRelation {
+  const MalRelation({required this.relation, required this.malId});
+
+  final String relation;
+  final int malId;
+}
+
+/// [MalVideoMetadataProvider.fetchRelatedWorks] 的结果。
+class MalRelatedWorks {
+  const MalRelatedWorks({
+    required this.work,
+    required this.malType,
+    required this.relations,
+  });
+
+  final VideoMetadataWork work;
+
+  /// Jikan `type` 原串：`TV` / `Movie` / `OVA` / `ONA` / `Special` /
+  /// `TV Special` / `Music` / `CM` / `PV`；[VideoMetadataWork.kind] 只分电影 / 剧集，
+  /// 区分不了 OVA 与 PV，系列展开要靠它。
+  final String? malType;
+  final List<MalRelation> relations;
+}
+
 /// MAL metadata delivered by the public, read-only Jikan v4 API.
-class MalVideoMetadataProvider implements VideoMetadataProvider {
+class MalVideoMetadataProvider
+    implements VideoMetadataProvider, VideoMetadataRelationsProvider {
   MalVideoMetadataProvider({
     http.Client? client,
     VideoMetadataHttpClient? transport,
@@ -99,6 +144,72 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
         ...item,
         if (incomplete.isNotEmpty) malIncompleteCreditEndpointsKey: incomplete,
       },
+    );
+  }
+
+  /// Jikan `full` 里的 `relations[].relation == "Prequel"`（只取 anime 条目）。
+  /// 走同一个 `full` 缓存，不多打请求。
+  @override
+  Future<List<VideoMetadataLookup>> fetchPrequels(
+      VideoMetadataLookup lookup) async {
+    final String id = _id(lookup);
+    final Map<String, Object?> payload;
+    try {
+      payload = await _get('anime/$id/full');
+    } on VideoMetadataNetworkException catch (error) {
+      if (error.statusCode == 404) return const <VideoMetadataLookup>[];
+      rethrow;
+    }
+    final Map<String, Object?>? item = metadataObject(payload['data']);
+    return <VideoMetadataLookup>[
+      for (final Object? node in metadataList(item?['relations']))
+        if (metadataObject(node) case final Map<String, Object?> relation)
+          if (metadataString(relation['relation'])?.toLowerCase() == 'prequel')
+            for (final Object? entryNode in metadataList(relation['entry']))
+              if (metadataObject(entryNode)
+                  case final Map<String, Object?> entry)
+                if (metadataString(entry['type'])?.toLowerCase() == 'anime')
+                  if (metadataInt(entry['mal_id']) case final int malId)
+                    VideoMetadataLookup(
+                      provider: VideoMetadataProviderKind.mal,
+                      externalId: '$malId',
+                      mediaKind: lookup.mediaKind,
+                    ),
+    ];
+  }
+
+  /// 一部作品 + 它在 MAL 上的全部 anime 关联（`relations[].entry` 里 `type == anime`
+  /// 的条目）。只打 `anime/{id}/full` 一个请求（与 [fetchWork] / [fetchPrequels]
+  /// 同一缓存），**不**拉 characters / staff——「整套下载」要沿关联链走几十部，
+  /// 每部多两个请求在 Jikan 限流下就是几分钟。404 → null。
+  Future<MalRelatedWorks?> fetchRelatedWorks(String malId) async {
+    final int? id = int.tryParse(malId.trim());
+    if (id == null || id <= 0) return null;
+    final Map<String, Object?> payload;
+    try {
+      payload = await _get('anime/$id/full');
+    } on VideoMetadataNetworkException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+    final Map<String, Object?>? item = metadataObject(payload['data']);
+    if (item == null) return null;
+    final VideoMetadataWork? work = _work(item);
+    if (work == null) return null;
+    return MalRelatedWorks(
+      work: work,
+      malType: metadataString(item['type']),
+      relations: <MalRelation>[
+        for (final Object? node in metadataList(item['relations']))
+          if (metadataObject(node) case final Map<String, Object?> relation)
+            if (metadataString(relation['relation']) case final String kind)
+              for (final Object? entryNode in metadataList(relation['entry']))
+                if (metadataObject(entryNode)
+                    case final Map<String, Object?> entry)
+                  if (metadataString(entry['type'])?.toLowerCase() == 'anime')
+                    if (metadataInt(entry['mal_id']) case final int relatedId)
+                      MalRelation(relation: kind, malId: relatedId),
+      ],
     );
   }
 
@@ -236,11 +347,25 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
           for (final Object? node in metadataList(item['title_synonyms']))
             metadataString(node),
         ]).where((String alias) => alias != title).toList(),
+        // Jikan 的 `title` 是 MAL 默认标题（日本作品即罗马音）。
+        romajiTitle: metadataString(item['title']),
+        englishTitle: metadataString(item['title_english']),
         year: metadataInt(item['year']) ?? metadataYear(premiered),
         premiered: premiered,
+        endDate: _date(metadataObject(item['aired'])?['to']),
+        // Jikan `status`：`Currently Airing` / `Finished Airing` / `Not yet aired`，
+        // 原串落 status，读取侧用 VideoAiringStatus 归一；老 payload 没有 status
+        // 时退到布尔 `airing`。
+        status: metadataString(item['status']) ??
+            (metadataBool(item['airing']) == true ? 'Currently Airing' : null),
+        // 不填 originalLanguage：Jikan 没有语言字段，MAL 也收录中 / 韩动画，
+        // 硬填 ja 会压过音轨 tag 给出的真实原语言。
         plot: metadataStripHtml(metadataString(item['synopsis'])),
         rating: metadataDouble(item['score']),
         ratingVotes: metadataInt(item['scored_by']),
+        // Jikan `rating`：`G - All Ages` … `Rx - Hentai`。成人向作品补 TMDB 时要
+        // 带 include_adult（见 VideoMetadataSearchRequest.includeAdult）。
+        contentRating: metadataString(item['rating']),
         episodeCount: metadataInt(item['episodes']),
         runtimeMinutes: _minutes(metadataString(item['duration'])),
         genres: _names(item['genres']),
@@ -326,11 +451,17 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
         ]);
   }
 
+  /// MAL 对没有图的人物 / 角色 / 作品**不返回 null**，而是给站点占位图
+  /// （`images/questionmark_23.gif`、`img/sp/icon/apple-touch-icon-256.png`）。
+  /// 原样落库会让详情页把问号图当真照片加载，还挡住合并层用 TMDB 照片补空
+  /// （`profileUrl: primary ?? supplement`）。这里把占位图归一成「无图」，与
+  /// Shoko 对 AniDB 空 picname 的处理同义（BUG-2612）。
   String? _image(Map<String, Object?> item) {
     final Map<String, Object?>? images = metadataObject(item['images']);
     final Map<String, Object?>? jpg = metadataObject(images?['jpg']);
-    return metadataString(jpg?['large_image_url']) ??
+    final String? url = metadataString(jpg?['large_image_url']) ??
         metadataString(jpg?['image_url']);
+    return url == null || isMalPlaceholderImageUrl(url) ? null : url;
   }
 
   List<String> _names(Object? items) =>
@@ -373,20 +504,42 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
   }
 }
 
-/// One gate is shared by all production instances: <= 60 starts/minute,
+/// One gate is shared by all production instances: < 60 starts/minute,
 /// coalesced concurrent reads, bounded cache, and server-directed cooldown.
+///
+/// Jikan 限 3 req/s 且 60 req/min；1 req/s 正好贴着分钟上限，长 sweep 里一个
+/// 计数抖动就是 429。间隔留 10% 余量，429 按 `Retry-After`（缺省 60 s）冷却后
+/// **就地重试同一请求**（最多 [maxRateLimitRetries] 次）——此前 429 一次即失败，
+/// 一个 429 会同时炸出「演职员不完整 / 第 N 季拉取失败 / 季集 0 集」三条警告，
+/// 而下一个请求其实已经在冷却后正常通过（BUG-2595）。
 class MalVideoMetadataRequestGate {
   MalVideoMetadataRequestGate(
       {VideoMetadataNow? now,
       VideoMetadataRetrySleep? sleep,
-      this.interval = const Duration(seconds: 1),
-      this.cacheTtl = const Duration(hours: 1)})
+      this.interval = const Duration(milliseconds: 1100),
+      this.cacheTtl = const Duration(hours: 1),
+      this.maxRateLimitRetries = 2,
+      this.maxTransientRetries = 2,
+      this.transientBackoff = const Duration(seconds: 2)})
       : _now = now ?? DateTime.now,
         _sleep = sleep ?? Future<void>.delayed;
   final VideoMetadataNow _now;
   final VideoMetadataRetrySleep _sleep;
   final Duration interval;
   final Duration cacheTtl;
+
+  /// 同一请求收到 429 后在冷却期满时重试的次数上限。
+  final int maxRateLimitRetries;
+
+  /// 同一请求遇到 5xx / 超时后原地重试的次数上限。Jikan 是 MAL 的只读镜像，
+  /// 上游连不上时整批返回 504（`Jikan failed to connect to MyAnimeList`），
+  /// 多为秒级抖动；MAL transport 钉死 `maxAttempts: 1` 把重试权全交给本闸门，
+  /// 所以 5xx 只能在这里重试，否则 characters / staff 一抖就整张声优表空掉
+  /// （BUG-2612）。退避 [transientBackoff] × 第几次（默认 2 s、4 s），与 429
+  /// 的全局冷却不同——5xx 不是配额问题，不推后 `_nextStart`，退避期满后队列
+  /// 立刻继续。
+  final int maxTransientRetries;
+  final Duration transientBackoff;
   DateTime? _nextStart;
   Future<void> _queue = Future<void>.value();
   final Map<String, ({DateTime expires, String body})> _cache =
@@ -412,29 +565,50 @@ class MalVideoMetadataRequestGate {
       String key, Future<VideoMetadataHttpResponse> Function() request) async {
     final Completer<String> result = Completer<String>();
     _queue = _queue.then((_) async {
-      try {
-        final Duration wait = _nextStart?.difference(_now()) ?? Duration.zero;
-        if (wait > Duration.zero) await _sleep(wait);
-        _nextStart = _now().add(interval);
-        final VideoMetadataHttpResponse response = await request();
-        response.decodeJsonObject(operation: 'MAL');
-        _cache.removeWhere(
-            (String _, ({DateTime expires, String body}) entry) =>
-                !entry.expires.isAfter(_now()));
-        if (_cache.length >= 256) _cache.remove(_cache.keys.first);
-        _cache[key] = (expires: _now().add(cacheTtl), body: response.body);
-        result.complete(response.body);
-      } catch (error, stack) {
-        if (error is VideoMetadataNetworkException && error.statusCode == 429) {
-          final DateTime cooldown =
-              _now().add(error.retryAfter ?? const Duration(seconds: 60));
-          if (_nextStart == null || cooldown.isAfter(_nextStart!)) {
-            _nextStart = cooldown;
+      int rateLimitRetries = 0;
+      int transientRetries = 0;
+      for (;;) {
+        try {
+          final Duration wait = _nextStart?.difference(_now()) ?? Duration.zero;
+          if (wait > Duration.zero) await _sleep(wait);
+          _nextStart = _now().add(interval);
+          final VideoMetadataHttpResponse response = await request();
+          response.decodeJsonObject(operation: 'MAL');
+          _cache.removeWhere(
+              (String _, ({DateTime expires, String body}) entry) =>
+                  !entry.expires.isAfter(_now()));
+          if (_cache.length >= 256) _cache.remove(_cache.keys.first);
+          _cache[key] = (expires: _now().add(cacheTtl), body: response.body);
+          result.complete(response.body);
+          return;
+        } catch (error, stack) {
+          if (error is VideoMetadataNetworkException &&
+              error.statusCode == 429) {
+            // 冷却是全局的：队列里后面的请求同样要等；本请求在冷却期满后
+            // 原样重发。
+            final DateTime cooldown =
+                _now().add(error.retryAfter ?? const Duration(seconds: 60));
+            if (_nextStart == null || cooldown.isAfter(_nextStart!)) {
+              _nextStart = cooldown;
+            }
+            if (rateLimitRetries++ < maxRateLimitRetries) continue;
+          } else if (_isTransientFailure(error) &&
+              transientRetries < maxTransientRetries) {
+            transientRetries++;
+            await _sleep(transientBackoff * transientRetries);
+            continue;
           }
+          result.completeError(error, stack);
+          return;
         }
-        result.completeError(error, stack);
       }
     });
     return result.future;
   }
+
+  /// 5xx、超时与连接层失败（transport 把它们都包成无状态码的
+  /// [VideoMetadataNetworkException]）。4xx 是确定性答案，不重试。
+  static bool _isTransientFailure(Object error) =>
+      error is VideoMetadataNetworkException &&
+      (error.statusCode == null || error.statusCode! >= 500);
 }

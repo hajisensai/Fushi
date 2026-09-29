@@ -148,4 +148,33 @@ void main() {
     expect((await hostDb.allVideoBooks()).length, 1);
     expect(report2.videosExported, 0);
   });
+
+  test('IPTV 直播频道（rtsp）与 .strm 流指针不上传到 host（没有媒体字节可传）', () async {
+    final FushiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+
+    // IPTV 频道：rtsp 直播地址，本机无字节。
+    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
+      bookUid: 'video/channel',
+      title: 'Channel',
+      videoPath: 'rtsp://10.0.0.1:554/live/1',
+    ));
+    // 本地 `.strm`：磁盘上真实存在，但内容只是一行地址——传过去 host 会把它当视频
+    // 下发给其它端，播不了。
+    final File strm = File(p.join(work.path, 'show.strm'))
+      ..writeAsStringSync('https://example.com/live.m3u8\n');
+    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
+      bookUid: 'video/strm',
+      title: 'Strm',
+      videoPath: strm.path,
+    ));
+
+    final InterconnectSyncBackend backend =
+        await _buildClientBackend(base: base, token: token);
+    final SyncRunReport report =
+        await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+
+    expect(await hostDb.allVideoBooks(), isEmpty);
+    expect(report.videosExported, 0);
+  });
 }

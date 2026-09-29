@@ -11,21 +11,39 @@ public final class ChannelNames {
     public static final String UPDATE = PREFIX + "/update";
     public static final String VOLUME_KEYS = PREFIX + "/volume_keys";
     public static final String FLOATING_LYRIC = PREFIX + "/floating_lyric";
+    public static final String LOOKUP_IME = PREFIX + "/lookup_ime";
     public static final String FLOATING_DICT = PREFIX + "/floating_dict";
+    /** 互联配对链接写 NFC 贴纸（{@link app.fushi.reader.NfcTagWriterChannelHandler}）。 */
+    public static final String NFC_TAG_WRITER = PREFIX + "/nfc_tag_writer";
     public static final String LIFECYCLE = PREFIX + "/lifecycle";
     public static final String FONTS = PREFIX + "/fonts";
     public static final String SAF = PREFIX + "/saf";
     public static final String ICON_SWITCH = PREFIX + "/icon_switch";
+    // 长按 app 图标的动态快捷方式，实现见 AppShortcutsHelper。
+    public static final String APP_SHORTCUTS = PREFIX + "/app_shortcuts";
     public static final String SCREEN_BRIGHTNESS = PREFIX + "/screen_brightness";
     public static final String SELECTION_ACTIONS = PREFIX + "/selection_actions";
     public static final String CLOUDFLARE_PROXY_BROWSER = PREFIX + "/cloudflare_proxy_browser";
     // 设备自带文字识别（ML Kit bundled 模型）：漫画 OCR 的零下载兜底引擎。
     public static final String SYSTEM_OCR = PREFIX + "/system_ocr";
+    // 复制图片到系统剪贴板（视频截图 / 阅读器内联图）。这条通道最早只有 Windows
+    // 一端（CF_DIB），补齐 Android 时顺手对齐 Dart 侧 channel_constants.dart 的
+    // 「两边必须同步」约定——在此之前 clipboard_image 一直不在本表里。
+    public static final String CLIPBOARD_IMAGE = PREFIX + "/clipboard_image";
     // TODO-1232 A3: render-backend toggle (persist the "disable Impeller / use
     // Skia" experiment flag; applied at next launch via MainActivity's
     // getFlutterShellArgs override).
     public static final String RENDER = PREFIX + "/render";
+    // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
+    // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
+    public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";
+    // 互联下载保活：下载进行期间挂 dataSync 前台服务 + 进度通知，防止切走后进程被杀。
+    // 实现见 DownloadKeepAliveService，Dart 门面 android_download_keep_alive.dart。
+    public static final String DOWNLOAD_KEEP_ALIVE = PREFIX + "/download_keep_alive";
     // Hibiki→Fushi 跨包名迁移（改名迁移计划 P1-3/P1-4）：探测/拉起新包、
     // 发起卸载、注销 PROCESS_TEXT 系统入口。
     public static final String MIGRATION = PREFIX + "/migration";
+    // 全局悬浮球：Android 系统常驻球（FloatingBallService）+ 截屏 OCR（ScreenOcrService）。
+    // 契约见 docs/specs/2026-09-28-floating-ball.md，实现见 FloatingBallChannel。
+    public static final String FLOATING_BALL = PREFIX + "/floating_ball";
 }

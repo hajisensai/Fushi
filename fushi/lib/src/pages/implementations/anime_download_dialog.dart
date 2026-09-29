@@ -8,6 +8,7 @@ import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_fail_reason.dart';
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
@@ -26,8 +27,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
-import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
@@ -406,6 +409,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 下载后端是否就绪（推送按钮禁用条件；浏览选种不禁）。默认（auto）在桌面
   /// 走内置引擎、开箱即用；只有显式外接 qb 且没填地址才算未就绪。
   bool get _backendReady => torrentBackendReady(ref.read(appProvider));
+
+  /// 通用磁链一栏在「下载执行设备」指到互联 host 时不需要本机后端
+  /// （`pushGenericMagnet` 会整条交给 host）；番剧计划推送仍只走本机——它的
+  /// 字幕意图 / 暂停 / 计划追踪都绑在本机后端上。
+  bool get _genericPushEnabled =>
+      _backendReady ||
+      ref.read(appProvider).prefsRepo.downloadExecutionHostUrl.isNotEmpty;
 
   /// 后端未就绪（推送禁用 + 提示横幅）。
   bool get _qbMissing => !_backendReady;
@@ -1292,7 +1302,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (BuildContext context) =>
-            const DownloadsPage(initialShowSettings: true),
+            const BrowseDownloadSettingsPage(),
       ),
     );
   }
@@ -1488,7 +1498,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
     );
     final Widget button = FilledButton.icon(
-      onPressed: (!_backendReady || _pushingGeneric) ? null : _pushGeneric,
+      onPressed:
+          (!_genericPushEnabled || _pushingGeneric) ? null : _pushGeneric,
       icon: const Icon(Icons.download, size: 18),
       label: Text(t.anime_download_generic_download),
     );
@@ -1545,11 +1556,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       appModel: appModel,
       magnet: _magnetCtrl.text,
       contentKind: _genericKind,
+      // 远端按域入库只认发现页四域；「自动 / 视频」在 host 上都是视频任务。
+      discoveryKind: _genericKind == AnimeDownloadPlan.kindBook
+          ? DiscoveryMediaKind.novel
+          : null,
     );
     if (!mounted) return;
     setState(() => _pushingGeneric = false);
     _snack(genericPushMessage(outcome));
-    if (outcome == GenericPushOutcome.ok) {
+    if (outcome.isSuccess) {
       _magnetCtrl.clear();
       await _reloadPlans();
     }
@@ -2701,7 +2716,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         : null;
     final String? failReason =
         (failed && (plan.failReason?.isNotEmpty ?? false))
-            ? plan.failReason
+            ? describeAnimeDownloadFailReason(plan.failReason!)
             : null;
     // 字幕的时序对用户是可见的（BUG-1206）：推送时不再预下字幕，所以必须在这里
     // 说清「还没配」「没配上」，否则用户会以为字幕功能没了。
@@ -2765,7 +2780,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           if (failReason != null)
             Text(
               failReason,
-              maxLines: 2,
+              // 入库被挡下的原因带补救说明（BUG-2775），两行放不下。
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
             ),

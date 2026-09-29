@@ -8,14 +8,20 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/alist/alist_api_client.dart';
+import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi_engine/utils/net/app_http.dart';
+
+/// 用户自配站点的源 id 前缀（内置站是 `alist-erogame`，同前缀不同 id 空间：
+/// 自配 id 由 UI 生成为 `site-<微秒>`，不会与内置站撞名）。
+const String kAListSourceIdPrefix = 'alist-';
+
+String alistSourceIdFor(String configId) => '$kAListSourceIdPrefix$configId';
 
 class AListDiscoverySource extends MediaDiscoverySource {
   AListDiscoverySource({
@@ -26,12 +32,33 @@ class AListDiscoverySource extends MediaDiscoverySource {
     this.priority = 20,
     this.username,
     this.password,
+    this.isUserConfigured = false,
     http.Client? client,
-  })  : _baseUrl = baseUrl.endsWith('/')
-            ? baseUrl.substring(0, baseUrl.length - 1)
-            : baseUrl,
-        _kinds = Set<DiscoveryMediaKind>.unmodifiable(kinds),
-        _client = client ?? createAppHttpIoClient();
+  })  : _kinds = Set<DiscoveryMediaKind>.unmodifiable(kinds),
+        _api = AListApiClient(
+          baseUrl: baseUrl,
+          providerId: id,
+          username: username,
+          password: password,
+          client: client,
+        );
+
+  /// 由用户自配站点建源：id 从配置派生、域按用户声明、空账号 = 游客访问。
+  /// 自配站排在内置源之后（priority 30），与 OPDS 自配源同档。
+  AListDiscoverySource.fromConfig(
+    AListSiteConfig config, {
+    http.Client? client,
+  }) : this(
+          id: alistSourceIdFor(config.id),
+          displayName: config.displayName,
+          baseUrl: config.origin,
+          kinds: config.kinds,
+          priority: 30,
+          username: config.username.trim().isEmpty ? null : config.username,
+          password: config.password,
+          isUserConfigured: true,
+          client: client,
+        );
 
   @override
   final String id;
@@ -42,15 +69,16 @@ class AListDiscoverySource extends MediaDiscoverySource {
   @override
   final int priority;
 
+  @override
+  final bool isUserConfigured;
+
   final String? username;
   final String? password;
 
-  final String _baseUrl;
   final Set<DiscoveryMediaKind> _kinds;
-  final http.Client _client;
 
-  /// 已换取的登录 token（匿名站恒 null）。
-  String? _token;
+  /// 信封校验 / token / 401 重登都在这里（与媒体库 `alist` 来源共用）。
+  final AListApiClient _api;
 
   /// search 结果路径相对 `fs/list` 命名空间多出来的前缀，已归一：无前缀时为空串。
   ///
@@ -80,27 +108,20 @@ class AListDiscoverySource extends MediaDiscoverySource {
     DiscoveryRequest request,
   ) async {
     final String path = request.path ?? '/';
-    final Map<String, dynamic> data =
-        await _post('/api/fs/list', <String, dynamic>{
-      'path': path,
-      'password': '',
-      'page': request.page,
-      'per_page': request.pageSize,
-      'refresh': false,
-    });
-    final List<dynamic> content =
-        (data['content'] as List<dynamic>?) ?? <dynamic>[];
-    final int total = (data['total'] as num?)?.toInt() ?? content.length;
+    final AListPage result = await _api.list(
+      path,
+      page: request.page,
+      perPage: request.pageSize,
+    );
     return ProviderBatchResult<DiscoveryResultPage>.success(
       <DiscoveryResultPage>[
         DiscoveryResultPage(
           entries: <DiscoveryEntry>[
-            for (final Map<String, dynamic> raw
-                in content.cast<Map<String, dynamic>>())
-              _entryFrom(raw, parent: path, kind: request.kind),
+            for (final AListEntry entry in result.entries)
+              _entryFrom(entry, parent: path, kind: request.kind),
           ],
           page: request.page,
-          hasMore: request.page * request.pageSize < total,
+          hasMore: request.page * request.pageSize < result.total,
         ),
       ],
     );
@@ -110,39 +131,30 @@ class AListDiscoverySource extends MediaDiscoverySource {
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
   ) async {
-    final Map<String, dynamic> data =
-        await _post('/api/fs/search', <String, dynamic>{
-      'parent': '/',
-      'keywords': request.query!.trim(),
-      'scope': 0,
-      'page': request.page,
-      'per_page': request.pageSize,
-      'password': '',
-    });
-    final List<dynamic> content =
-        (data['content'] as List<dynamic>?) ?? <dynamic>[];
-    final int total = (data['total'] as num?)?.toInt() ?? content.length;
+    final AListPage result = await _api.search(
+      request.query!.trim(),
+      page: request.page,
+      perPage: request.pageSize,
+    );
     // 先拿本次结果里的 parent 当样本反推命名空间前缀，再逐条转换（BUG-1771）。
     // 推断失败只是不剥前缀，不影响本次搜索返回。
     await _ensureBasePath(<String>[
-      for (final Map<String, dynamic> raw
-          in content.cast<Map<String, dynamic>>())
-        if (raw['parent'] is String) raw['parent'] as String,
+      for (final AListEntry entry in result.entries)
+        if (entry.parent case final String parent) parent,
     ]);
     return ProviderBatchResult<DiscoveryResultPage>.success(
       <DiscoveryResultPage>[
         DiscoveryResultPage(
           entries: <DiscoveryEntry>[
-            for (final Map<String, dynamic> raw
-                in content.cast<Map<String, dynamic>>())
+            for (final AListEntry entry in result.entries)
               _entryFrom(
-                raw,
-                parent: _stripBasePath(raw['parent'] as String? ?? '/'),
+                entry,
+                parent: _stripBasePath(entry.parent ?? '/'),
                 kind: request.kind,
               ),
           ],
           page: request.page,
-          hasMore: request.page * request.pageSize < total,
+          hasMore: request.page * request.pageSize < result.total,
         ),
       ],
     );
@@ -151,39 +163,25 @@ class AListDiscoverySource extends MediaDiscoverySource {
   /// 下载时经 `/api/fs/get` 取带签名的 `raw_url`。
   @override
   Future<DiscoveryPayload> resolvePayload(DiscoveryResourceItem item) async {
-    final Map<String, dynamic> data =
-        await _post('/api/fs/get', <String, dynamic>{
-      'path': item.id,
-      'password': '',
-    });
-    final String? rawUrl = data['raw_url'] as String?;
-    if (rawUrl == null || rawUrl.trim().isEmpty) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: 'resolvePayload',
-        kind: ExternalProviderFailureKind.invalidResponse,
-        message: 'fs/get returned no raw_url',
-      );
-    }
+    final AListFileLink link = await _api.getFile(item.id);
     return DiscoveryHttpPayload(
-      url: rawUrl,
-      fileName: data['name'] as String?,
-      sizeBytes: (data['size'] as num?)?.toInt(),
+      url: link.rawUrl,
+      fileName: link.name,
+      sizeBytes: link.sizeBytes,
     );
   }
 
   DiscoveryEntry _entryFrom(
-    Map<String, dynamic> raw, {
+    AListEntry entry, {
     required String parent,
     required DiscoveryMediaKind kind,
   }) {
-    final String name = raw['name'] as String? ?? '';
-    final bool isDir = raw['is_dir'] == true;
+    final String name = entry.name;
     final String fullPath = parent == '/' ? '/$name' : '$parent/$name';
-    if (isDir) {
+    if (entry.isDir) {
       return DiscoveryFolder(sourceId: id, title: name, path: fullPath);
     }
-    final String? modified = raw['modified'] as String?;
+    final String? modified = entry.modified;
     return DiscoveryResourceItem(
       sourceId: id,
       id: fullPath,
@@ -191,59 +189,11 @@ class AListDiscoverySource extends MediaDiscoverySource {
       kind: kind,
       payloadKind: DiscoveryPayloadKind.httpFile,
       // payload 留空 → 下载时 resolvePayload 取临期直链。
-      sizeBytes: (raw['size'] as num?)?.toInt(),
+      sizeBytes: entry.sizeBytes,
       dateText: modified != null && modified.length >= 10
           ? modified.substring(0, 10)
           : modified,
     );
-  }
-
-  /// POST JSON → 校验 AList 信封（`code`/`message`/`data`）→ 返回 data。
-  ///
-  /// `code` 401 时若配了账号自动重登一次再试；其余非 200 code 一律按
-  /// invalidResponse 失败上浮（信封 message 是站点自述文案，脱敏保留）。
-  Future<Map<String, dynamic>> _post(
-    String apiPath,
-    Map<String, dynamic> body, {
-    bool retriedAuth = false,
-  }) async {
-    await _ensureToken();
-    final http.Response response = await _client.post(
-      Uri.parse('$_baseUrl$apiPath'),
-      headers: <String, String>{
-        'Content-Type': 'application/json',
-        if (_token != null) 'Authorization': _token!,
-      },
-      body: jsonEncode(body),
-    );
-    if (response.statusCode != 200) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: apiPath,
-        kind: ExternalProviderFailureKind.unavailable,
-        message: 'http status ${response.statusCode}',
-        statusCode: response.statusCode,
-      );
-    }
-    final Map<String, dynamic> envelope =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final int code = (envelope['code'] as num?)?.toInt() ?? -1;
-    if (code == 401 && !retriedAuth && username != null) {
-      _token = null;
-      return _post(apiPath, body, retriedAuth: true);
-    }
-    if (code != 200) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: apiPath,
-        kind: code == 401 || code == 403
-            ? ExternalProviderFailureKind.unauthorized
-            : ExternalProviderFailureKind.invalidResponse,
-        message: 'alist code $code: ${envelope['message'] ?? ''}',
-        statusCode: code,
-      );
-    }
-    return (envelope['data'] as Map<String, dynamic>?) ?? <String, dynamic>{};
   }
 
   /// 反推 search 命名空间相对 `fs/list` 命名空间多出来的前缀。
@@ -267,19 +217,9 @@ class AListDiscoverySource extends MediaDiscoverySource {
     // 样本一个都对不上、网络异常）都必须让 _basePath 保持 null，否则本会话再也
     // 不会重推，而搜索结果的目录会一直打不开。只有两个 return 才算有结论。
     try {
-      final Map<String, dynamic> data =
-          await _post('/api/fs/list', <String, dynamic>{
-        'path': '/',
-        'password': '',
-        'page': 1,
-        'per_page': 200,
-        'refresh': false,
-      });
+      final AListPage root = await _api.list('/', perPage: 200);
       final Set<String> rootNames = <String>{
-        for (final Map<String, dynamic> raw
-            in ((data['content'] as List<dynamic>?) ?? <dynamic>[])
-                .cast<Map<String, dynamic>>())
-          if (raw['name'] is String) raw['name'] as String,
+        for (final AListEntry entry in root.entries) entry.name,
       };
       if (rootNames.isEmpty) return;
       for (final String parent in samples) {
@@ -315,33 +255,6 @@ class AListDiscoverySource extends MediaDiscoverySource {
     return path;
   }
 
-  Future<void> _ensureToken() async {
-    final String? user = username;
-    if (user == null || _token != null) return;
-    final http.Response response = await _client.post(
-      Uri.parse('$_baseUrl/api/auth/login'),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{
-        'username': user,
-        'password': password ?? '',
-      }),
-    );
-    final Map<String, dynamic> envelope =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final String? token =
-        (envelope['data'] as Map<String, dynamic>?)?['token'] as String?;
-    if (response.statusCode != 200 || token == null || token.isEmpty) {
-      throw ExternalProviderFailure(
-        providerId: id,
-        operation: '/api/auth/login',
-        kind: ExternalProviderFailureKind.unauthorized,
-        message: 'alist login failed',
-        statusCode: response.statusCode,
-      );
-    }
-    _token = token;
-  }
-
   @override
-  void close() => _client.close();
+  void close() => _api.close();
 }

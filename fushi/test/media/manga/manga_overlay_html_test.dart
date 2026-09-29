@@ -504,7 +504,8 @@ void main() {
           reason: '必须从精确命中的字符节点发起现有查词管线');
       expect(doc.contains('_selectOcrChar(e.clientX, e.clientY, true)'), isTrue,
           reason: 'Shift 悬停必须复用同一精确字符命中路径');
-      expect(doc.contains('if (!e.shiftKey)'), isTrue);
+      expect(doc.contains('if (!e.shiftKey && !false)'), isTrue,
+          reason: '默认仍需 Shift，显式开启 hover 后才省略修饰键');
       // 收敛不变式：恰好一个 pointerup 监听。
       expect("addEventListener('pointerup'".allMatches(doc).length, 1,
           reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
@@ -853,7 +854,8 @@ void main() {
       expect(doc.contains('image.naturalHeight'), isTrue);
       expect(doc.contains("page.style.aspectRatio = width + ' / ' + height"),
           isTrue);
-      expect(doc.contains("page.style.width =\n        'min('"), isTrue);
+      expect(doc.contains('_inspectSource(page);'), isTrue);
+      expect(doc.contains('var fit = Math.min(sx, sy);'), isTrue);
     });
 
     test('desktop zoom and right-button drag/menu contract is embedded', () {
@@ -881,8 +883,22 @@ void main() {
               'var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));'),
           isTrue,
           reason: '滚轮步长必须是 10 个百分点（乘灵敏度）的定量网格，不能是乘法缩放');
-      expect(doc.contains('Math.exp('), isFalse,
-          reason: '乘法指数缩放已废弃：一格缩多少不能取决于本机 deltaY 绝对值');
+      // 鼠标一格（>=40）的网格步进不能退回按幅值乘法缩放；指数只允许出现在
+      // 精密手势分支（BUG-2758），并且以 -dy/100 还原 fork 合成的捏合比例。
+      expect('Math.exp('.allMatches(doc).length, 1,
+          reason: '乘法指数缩放只属于精密手势分支，鼠标一格仍走网格');
+      final int precise = doc.indexOf('if (Math.abs(dy) < PRECISE_ZOOM_DELTA) {');
+      expect(precise, greaterThan(0));
+      expect(
+          doc
+              .substring(precise, precise + 160)
+              .contains('_zoomAbout(ZOOM * Math.exp(-dy / 100 * ZOOM_SENS), '
+                  'e.clientX, e.clientY);'),
+          isTrue,
+          reason: '触控板捏合（-100·ln 比例的碎 delta）必须连续跟手，'
+              '攒够 40 才走 10% 要张开约 1.5 倍');
+      expect(doc.contains('var PRECISE_ZOOM_DELTA = 40;'), isTrue,
+          reason: '鼠标一格恒 >=40，精密增量恒 <40');
       expect(
           doc.contains('(Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP'), isTrue,
           reason: '放大必须对齐到网格，否则捏合留下的非整值会一路歪下去');
@@ -891,15 +907,6 @@ void main() {
           reason: '缩小必须对齐到网格');
       expect(doc.contains('var cur = Math.round(ZOOM * 1000) / 10;'), isTrue,
           reason: '必须先消掉浮点毛刺，否则 1.2000000000000002 缩小一步会原地不动');
-      // 「一格」的判定复用翻页滚轮的累计口径（阈值 40 + 反向清账）：鼠标一格无论
-      // deltaY 是 57/67/100 都 >=40 恒好一步，触控板碎 delta 攒够才走。
-      expect(doc.contains('if (_zoomAccum < 40) return 0;'), isTrue,
-          reason: '必须按累计位移判定一格，否则触控板碎 delta 要么失灵要么暴走');
-      expect(
-          doc.contains(
-              'if (dir !== _zoomDir) { _zoomAccum = 0; _zoomDir = dir; }'),
-          isTrue,
-          reason: '反向必须立刻清账，否则来回滚会被上一方向的余量吃掉');
       expect(doc.contains('e.deltaMode === 1'), isTrue,
           reason: 'deltaMode 必须归一化，否则行/页模式步长完全不同');
     });
@@ -941,8 +948,16 @@ void main() {
       final String on = docFor(tapZonePaging: true, direction: 'rtl');
       expect(on.contains('var TAP_ZONE_PAGING = true;'), isTrue);
       expect(on.contains('var IS_RTL = true;'), isTrue);
-      // RTL 下左边缘前进（LTR 相反）——同一份 JS 靠 IS_RTL 分流。
-      expect(on.contains("IS_RTL ? 'next' : 'prev'"), isTrue);
+      // RTL 下左边缘前进（LTR 相反）。镜像已从 JS 的 `IS_RTL ? ...` 三元挪到
+      // Dart 的 mangaTapZones()，注入的热区表里 forward 就是最终值——JS 不得再
+      // 镜像一次（会抵消）。表本身的几何见 manga_tap_zones_test.dart。
+      expect(on.contains('[0,0,0.25,1,true]'), isTrue,
+          reason: 'RTL 左竖条必须已经是前进');
+      final String ltrOn = docFor(tapZonePaging: true, direction: 'ltr');
+      expect(ltrOn.contains('[0,0,0.25,1,false]'), isTrue,
+          reason: 'LTR 左竖条必须是后退');
+      expect(on.contains("IS_RTL ? 'next' : 'prev'"), isFalse,
+          reason: 'JS 侧不得二次镜像');
       final String off = docFor(tapZonePaging: false, direction: 'ltr');
       expect(off.contains('var TAP_ZONE_PAGING = false;'), isTrue);
       expect(off.contains('var IS_RTL = false;'), isTrue);

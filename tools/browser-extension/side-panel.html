@@ -3,31 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Fushi 字幕</title>
+  <title data-i18n="sp_root_title">Fushi 字幕</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="side-panel.css">
 </head>
 <body>
   <header class="panel-header">
     <div class="title-row">
       <div>
-        <h1>字幕列表</h1>
-        <p id="video-status">正在连接当前标签页…</p>
+        <h1 data-i18n="sp_heading">字幕列表</h1>
+        <p id="video-status" data-i18n="sp_status_connecting">正在连接当前标签页…</p>
       </div>
-      <div class="toolbar" aria-label="字幕工具">
-        <button id="load" type="button" title="加载外挂字幕">＋</button>
-        <button id="subs" type="button" title="搜索在线字幕（Jimaku / OpenSubtitles / AJATT）">字</button>
-        <button id="smaller" type="button" title="缩小字号">A−</button>
-        <button id="larger" type="button" title="放大字号">A＋</button>
-        <button id="auto-scroll" class="is-on" type="button" title="自动滚动到当前句">AS</button>
-        <button id="settings" type="button" title="扩展设置">⚙</button>
+      <div class="toolbar" aria-label="字幕工具" data-i18n-aria-label="sp_toolbar_aria_label">
+        <button id="load" type="button" title="加载外挂字幕" data-i18n-title="sp_load_title">＋</button>
+        <button id="subs" type="button" title="搜索在线字幕（Jimaku / OpenSubtitles / AJATT）" data-i18n-title="sp_subs_title" data-i18n="sp_subs_button">字</button>
+        <button id="smaller" type="button" title="缩小字号" data-i18n-title="sp_smaller_title">A−</button>
+        <button id="larger" type="button" title="放大字号" data-i18n-title="sp_larger_title">A＋</button>
+        <button id="auto-scroll" class="is-on" type="button" title="自动滚动到当前句" data-i18n-title="sp_auto_scroll_title">AS</button>
+        <button id="settings" type="button" title="扩展设置" data-i18n-title="sp_settings_title">⚙</button>
       </div>
     </div>
     <input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt" multiple hidden>
-    <select id="track" aria-label="字幕轨" hidden></select>
+    <select id="track" aria-label="字幕轨" data-i18n-aria-label="sp_track_aria_label" hidden></select>
     <div id="subs-row" class="subs-row" hidden>
-      <input id="subs-query" type="search" placeholder="搜在线字幕（日文原名命中率最高）" aria-label="字幕搜索词">
-      <input id="subs-ep" type="number" min="1" placeholder="集" title="集数（可选）" aria-label="集数">
-      <button id="subs-go" type="button" title="搜索">搜</button>
+      <input id="subs-query" type="search" placeholder="搜在线字幕（日文原名命中率最高）" data-i18n-placeholder="sp_subs_query_placeholder" aria-label="字幕搜索词" data-i18n-aria-label="sp_subs_query_aria_label">
+      <input id="subs-ep" type="number" min="1" placeholder="集" data-i18n-placeholder="sp_subs_ep_placeholder" title="集数（可选）" data-i18n-title="sp_subs_ep_title" aria-label="集数" data-i18n-aria-label="sp_subs_ep_aria_label">
+      <button id="subs-go" type="button" title="搜索" data-i18n-title="sp_subs_go_title" data-i18n="sp_subs_go_button">搜</button>
     </div>
     <div id="subs-results" class="subs-results" hidden></div>
     <div id="offset" class="offset-row" hidden>
@@ -36,14 +37,18 @@
       <span id="offset-value">+0.0s</span>
       <button type="button" data-offset="100">＋0.1</button>
       <button type="button" data-offset="500">＋0.5</button>
-      <button id="offset-reset" type="button" title="重置时轴偏移">⟲</button>
+      <button id="offset-reset" type="button" title="重置时轴偏移" data-i18n-title="sp_offset_reset_title">⟲</button>
     </div>
   </header>
   <main id="list" class="subtitle-list" aria-live="polite">
-    <div class="empty">正在读取字幕…</div>
+    <div class="empty" data-i18n="sp_list_loading">正在读取字幕…</div>
   </main>
-  <section id="lookup-pane" class="lookup-pane" aria-label="查词结果" hidden></section>
+  <section id="lookup-pane" class="lookup-pane" aria-label="查词结果" data-i18n-aria-label="sp_lookup_pane_aria_label" hidden></section>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="locales/en.js"></script>
+  <script src="i18n.js"></script>
+  <script src="theme-palette.js"></script>
+  <script src="theme.js"></script>
   <script src="popup-size.js"></script>
   <script src="vendor/selection.js"></script>
   <script src="vendor/dict-media.js"></script>

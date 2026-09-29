@@ -20,7 +20,6 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_display_name.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/utils.dart';
 
@@ -122,7 +121,15 @@ class MangaSourceCatalog {
   }
 }
 
-/// 发现页正文末尾的「浏览来源」一节：每个已启用来源一张卡片，点进各自的目录。
+/// 发现页顶部的「浏览来源」快捷条：每个已启用来源一枚紧凑磁贴，横向排开，
+/// 点进各自的目录。
+///
+/// 此前这一节是页底一列整宽大卡片：启用二十几个源时要滚过全部热门行才看得到，
+/// 而它恰恰是「去某个源里逛」的最短路径。改成页首横滑条后，来源多少都只占一行
+/// 高度；热门行在它下面照常展开。
+///
+/// 空态（一个来源都没有）不在这里渲染：页面会整页换成引导空态，这一节此时根本
+/// 不挂载——两处都写空态提示就会叠出两句同义文案。
 class MangaSourceCatalogSection extends StatelessWidget {
   const MangaSourceCatalogSection({
     required this.catalog,
@@ -139,9 +146,53 @@ class MangaSourceCatalogSection extends StatelessWidget {
   final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
   final ValueChanged<OpdsServerConfig> onOpenOpds;
 
+  /// 磁贴条高度：两行文字 + 上下内边距，全部磁贴同高。
+  static const double stripHeight = 64;
+
   @override
   Widget build(BuildContext context) {
     final Object? error = catalog.aidokuError;
+    final List<Widget> tiles = <Widget>[
+      if (catalog.mokuroEnabled)
+        _SourceTile(
+          key: const ValueKey<String>('manga-source-mokuro'),
+          leading: const Icon(Icons.auto_stories_outlined),
+          title: t.mihon_source_browse_mokuro,
+          subtitle: 'mokuro.moe',
+          onTap: onOpenMokuro,
+        ),
+      for (final AidokuInstalledPackage package in catalog.aidokuPackages)
+        _SourceTile(
+          key: ValueKey<String>('manga-aidoku-${package.id}'),
+          leading: _LanguageBadge(
+            package.languages.isEmpty ? '' : package.languages.first,
+          ),
+          title: package.name,
+          subtitle: package.id,
+          onTap: () => onOpenAidoku(package),
+        ),
+      for (final MangaOnlineSourceRow source in catalog.mihonSources)
+        _SourceTile(
+          key: ValueKey<String>(
+            'manga-mihon-${MangaSourceCatalog.mihonSourceId(source)}',
+          ),
+          leading: _LanguageBadge(source.language),
+          title: source.name,
+          subtitle: source.baseUrl.isEmpty
+              ? source.extensionPackage
+              : Uri.tryParse(source.baseUrl)?.host ?? source.baseUrl,
+          pinned: source.pinned,
+          onTap: () => onOpenMihon(source),
+        ),
+      for (final OpdsServerConfig server in catalog.opdsServers)
+        _SourceTile(
+          key: ValueKey<String>('manga-opds-${server.id}'),
+          leading: const Icon(Icons.menu_book_outlined),
+          title: server.displayName,
+          subtitle: server.catalogUrl.host,
+          onTap: () => onOpenOpds(server),
+        ),
+    ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -155,106 +206,127 @@ class MangaSourceCatalogSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (catalog.mokuroEnabled)
-                  FushiCard(
-                    padding: EdgeInsets.zero,
-                    child: FushiListItem(
-                      leading: const Icon(Icons.auto_stories_outlined),
-                      title: Text(t.mihon_source_browse_mokuro),
-                      subtitle: const Text('mokuro.moe'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: onOpenMokuro,
-                    ),
-                  ),
-                for (final AidokuInstalledPackage package
-                    in catalog.aidokuPackages)
-                  FushiCard(
-                    padding: EdgeInsets.zero,
-                    child: FushiListItem(
-                      leading: CircleAvatar(
-                        child: Text(
-                          package.languages.isEmpty
-                              ? '?'
-                              : package.languages.first.toUpperCase(),
-                        ),
-                      ),
-                      title: Text(package.name),
-                      subtitle: Text(package.id),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => onOpenAidoku(package),
-                    ),
-                  ),
-                for (final MangaOnlineSourceRow source in catalog.mihonSources)
-                  FushiCard(
-                    padding: EdgeInsets.zero,
-                    child: FushiListItem(
-                      leading: CircleAvatar(
-                        child: Text(
-                          source.language.isEmpty
-                              ? '?'
-                              : source.language.toUpperCase(),
-                        ),
-                      ),
-                      title: Text(source.name),
-                      subtitle: Text(
-                        source.baseUrl.isEmpty
-                            ? source.extensionPackage
-                            : source.baseUrl,
-                      ),
-                      trailing: source.pinned
-                          ? const Icon(Icons.push_pin_outlined)
-                          : const Icon(Icons.chevron_right),
-                      onTap: () => onOpenMihon(source),
-                    ),
-                  ),
-                for (final OpdsServerConfig server in catalog.opdsServers)
-                  FushiCard(
-                    key: ValueKey<String>('manga-opds-${server.id}'),
-                    padding: EdgeInsets.zero,
-                    child: FushiListItem(
-                      leading: const Icon(Icons.menu_book_outlined),
-                      title: Text(server.displayName),
-                      subtitle: Text(server.catalogUrl.host),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => onOpenOpds(server),
-                    ),
-                  ),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 16,
-                    ),
-                    child: Text(
-                      '$error',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                // 有扩展宿主却一个来源都没启用时才提示「先装一个扩展」；没有宿主
-                // 的平台（Linux 等）提示这句只会误导，那里本来就装不了扩展。
-                if (MihonRuntimeFactory.isSupported && catalog.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 32,
-                    ),
-                    child: Text(
-                      t.mihon_source_empty,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-              ],
+          if (tiles.isNotEmpty)
+            // 桌面端默认 dragDevices 不含 mouse，横滑条必须包
+            // HorizontalDragScrollable（横向滚动守卫）。
+            SizedBox(
+              height: stripHeight,
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: tiles.length,
+                  separatorBuilder: (BuildContext context, int index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (BuildContext context, int index) =>
+                      tiles[index],
+                ),
+              ),
             ),
-          ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                '$error',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// 一枚来源磁贴：图标/语言徽标 + 名称 + 一行副标题（域名或包名）。
+class _SourceTile extends StatelessWidget {
+  const _SourceTile({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.pinned = false,
+    super.key,
+  });
+
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool pinned;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SizedBox(
+      width: 216,
+      child: FushiCard(
+        padding: EdgeInsets.zero,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: <Widget>[
+              SizedBox.square(dimension: 36, child: Center(child: leading)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                pinned ? Icons.push_pin_outlined : Icons.chevron_right,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 语言码徽标（`JA` / `ZH` …）；空码显示 `?`。
+class _LanguageBadge extends StatelessWidget {
+  const _LanguageBadge(this.language);
+
+  final String language;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: FushiBorderRadius.control,
+      ),
+      child: Text(
+        language.isEmpty ? '?' : language.toUpperCase(),
+        maxLines: 1,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: scheme.onSecondaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }

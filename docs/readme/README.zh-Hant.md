@@ -155,6 +155,7 @@ Fushi 基於以下專案與生態：
 | 專案 | 說明 |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | 漫畫來源擴充生態 |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 動畫來源擴充生態（extensions-lib 14–16，與漫畫共用同一執行環境） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫畫擴充執行環境 |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫畫來源執行環境 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 瀏覽器擴充功能串流字幕橋接參考 |

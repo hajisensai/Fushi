@@ -79,6 +79,66 @@ void main() {
     }
   }, skip: !Platform.isWindows);
 
+  test(
+    'Ogg Opus voice reaches event lookup, preview and mining',
+    () async {
+      final Directory root = await Directory.systemTemp.createTemp(
+        'gal_opus_resource_',
+      );
+      final GalVoiceDumpIndex index = GalVoiceDumpIndex(directory: root);
+      final _RecordingFfmpegBackend backend = _RecordingFfmpegBackend();
+      const String voice = '10000_fushi_textseq7_voice.opus';
+      const String bgm = '10001_fushi_textseq7_bgm_theme.opus';
+      const String other = '10000_fushi_textseq8_other.opus';
+      const String unmarked = '9780_voice_unmarked.opus';
+      try {
+        for (final String name in <String>[voice, bgm, other, unmarked]) {
+          await File(
+            '${root.path}/$name',
+          ).writeAsBytes(<int>[0x4f, 0x67, 0x67, 0x53]);
+        }
+        await index.startSession();
+        setFfmpegBackendForTesting(backend);
+        final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+          injectorPath: '',
+          voiceDumpIndex: index,
+        );
+        expect(
+          index.findEventOwnedResourceNames(textTsMs: 10020, textEventId: 7),
+          <String>[voice],
+        );
+        expect(source.findPairedVoiceResourceId(10020, textEventId: 7), voice);
+        expect(index.findPairedResourceNames(textTsMs: 10000), <String>[
+          unmarked,
+        ]);
+        expect(
+          source.pairedVoiceFilePathForResourceId(voice),
+          '${root.path}${Platform.pathSeparator}$voice',
+        );
+        expect(
+          await source.grabPairedVoiceBytes(
+            10020,
+            outputExtension: 'aac',
+            textEventId: 7,
+            resourceId: voice,
+            allowLatestSessionFallback: false,
+          ),
+          <int>[0xff, 0xf1, 0x50, 0x80],
+        );
+        expect(backend.calls, hasLength(1));
+        expect(
+          backend.calls.single,
+          contains('${root.path}${Platform.pathSeparator}$voice'),
+        );
+      } finally {
+        setFfmpegBackendForTesting(null);
+        await index.stopSession();
+        await root.delete(recursive: true);
+      }
+    },
+    skip: !Platform.isWindows,
+  );
+
   group('pickPairedVoiceOggs（事件 ID 层全取）', () {
     test('同一事件 ID 的多个资源全部返回，按与文本时间戳的距离排序', () {
       final List<String> picked = pickPairedVoiceOggs(

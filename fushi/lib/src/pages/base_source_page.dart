@@ -9,10 +9,13 @@ import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
+import 'package:fushi_anki/fushi_anki.dart'
+    show AnkiMiningPayload, AnkiOpenWordOutcome;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/models/module_id.dart';
@@ -82,6 +85,13 @@ abstract class BaseSourcePage extends BasePage {
 /// implemented to define shortcuts for common lengthy methods across UI code.
 abstract class BaseSourcePageState<T extends BaseSourcePage>
     extends BasePageState<T> {
+  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]）。`null` = 只听总开关。
+  ModuleId? get popupDockModule => null;
+
+  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  bool get popupBottomDocked => appModel.popupBottomDockedFor(popupDockModule);
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +101,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _closeForSourceReturn,
       returnToReading: SourceReviewScope.read(context)?.onReturnToReading,
       isSourceReview: () => SourceReviewScope.read(context)?.isReview ?? false,
+      ownsRoute: (Route<dynamic> route) =>
+          mounted && identical(ModalRoute.of(context), route),
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -162,6 +174,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// popup itself keeps its native scrolling behavior.
   @protected
   void onDismissBarrierPointerSignal(PointerSignalEvent event) {}
+
+  /// 弹窗开着时「沿此轴继续滚动正文 = 关弹窗」（barrier 上的触摸/触控板拖动）。
+  /// null = 不启用（默认；只有阅读器滚动模式开了对应偏好才返回轴）。
+  @protected
+  Axis? get dismissBarrierScrollAxis => null;
+
+  /// [dismissBarrierScrollAxis] 上的拖动越过 slop 时回调（见
+  /// [LookupDismissBarrier.onScrollDismiss]）。默认直接清整栈。
+  @protected
+  void onDismissBarrierScrollDrag(int pointer, Offset delta) {
+    clearDictionaryResult();
+  }
 
   /// 本页面的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥
   /// （[dictionaryPopupForwardedActions] 决定交回哪些）。
@@ -286,13 +310,41 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return true;
   }
 
+  bool _sourceExitClaimed = false;
+
+  /// 退出单飞门：页内退出（PopScope 回调 / 退出按钮）与外部导航收页
+  /// （[_closeForSourceReturn]，经 [ExternalMediaNavigation.closeActive]）共用。
+  /// 返回 false = 已经有一条退出在跑，调用方不得再跑第二遍——否则
+  /// [onSourcePagePop]（落盘、停表）、closeMedia、自动同步都会并发执行两次。
+  /// 只上不下：退出一旦发起就无条件出栈（[exitAfterPersist]），本页随之销毁。
+  /// 自带单飞门的子类（阅读器的 `_popInProgress`）覆写成同一把锁。
+  @protected
+  bool claimSourceExit() {
+    if (_sourceExitClaimed) return false;
+    _sourceExitClaimed = true;
+    return true;
+  }
+
   Future<bool> _closeForSourceReturn() async {
     if (!mounted) return true;
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route == null || !route.isCurrent) return false;
+    // 页面自己的退出已在跑（用户同时按了返回）：它会无条件出栈，等它结束即可。
+    if (!claimSourceExit()) {
+      await route.completed;
+      return true;
+    }
     final NavigatorState navigator = Navigator.of(context);
-    if (!await onWillPop()) return false;
-    if (mounted && route.isCurrent) navigator.pop();
+    // BUG-2119 口径（与页内返回同一原语）：同步发起落库后立即出栈，不 await
+    // onWillPop。drift 写请求已排进队列，外部导航随后对同一行的读排在它之后；
+    // 而 await 一条没有上界的写会把 ExternalMediaNavigation 的共享队列永久卡死。
+    exitAfterPersist(
+      persist: onWillPop,
+      exit: navigator.pop,
+      onPersistError: (Object error, StackTrace stack) => ErrorLogService
+          .instance
+          .log('BaseSourcePage.externalClose', error, stack),
+    );
     await route.completed;
     return true;
   }
@@ -778,6 +830,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         onSwipeDismiss: dismissTopPopup,
                         swipeEnabled:
                             ReaderFushiSource.instance.enableSwipeToClose,
+                        // BUG-2770：触摸半边未设置时所有平台默认开。
+                        touchSwipeEnabled:
+                            ReaderFushiSource.instance.enableTouchSwipeToClose,
                         sensitivity:
                             ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
@@ -786,6 +841,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         // opaque，页面根 Listener 收不到）——见该钩子的文档。
                         onNonPrimaryButtonDown:
                             onDismissBarrierNonPrimaryButton,
+                        scrollDismissAxis: dismissBarrierScrollAxis,
+                        onScrollDismiss: onDismissBarrierScrollDrag,
                       ),
                     ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),
@@ -908,10 +965,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         isDark: isDark,
         overrideFillColor: appModel.overrideDictionaryColor,
         // dock 面板铺满屏幕左右缘时把圆角摊平，否则边缘露出背景（BUG-2439）。
-        bottomDocked: appModel.popupBottomDocked,
+        bottomDocked: popupBottomDocked,
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+        // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+        enableTouchSwipeToClose:
+            ReaderFushiSource.instance.enableTouchSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"并走既有关闭汇聚点 [_dismissPopupAt(0)]
         // （不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: () => _dismissPopupAt(index),
@@ -932,9 +992,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
         inputSpec: dictionaryPopupInputSpec,
+        // BUG-2627：与 [DictionaryPageMixin] 同一道门——对话框期间（选择句子上下文 /
+        // 已制卡动作 / 打开卡片）弹窗停靠屏外但仍挂载，它的 DOM 还可能拿着系统键盘
+        // 焦点，一个被绑的键就能把对话框背后的整条浮层栈关掉。与 `visible:` 的
+        // `_popupHidingDialogDepth == 0` 共用判据。
         onHostInputToken: dictionaryPopupInputScope == null
             ? null
-            : onDictionaryPopupInputToken,
+            : (String token) {
+                if (_popupHidingDialogDepth != 0) return;
+                onDictionaryPopupInputToken(token);
+              },
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         overlayWidget: isTop ? buildDictionaryLoading() : null,
         onTextSelected: (text, localRect) async {
@@ -1112,8 +1179,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
           stopAudioPreview:
               supportsSentenceAudioPreview ? onStopSentenceAudioPreview : null,
-          onConfirm: () =>
-              webViewKey.currentState?.mineEntryByIndex(entryIndex),
+          // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。
+          onConfirm: () async =>
+              await webViewKey.currentState?.mineEntryByIndex(
+                    entryIndex,
+                    // BUG-2634 第二轮：阅读器的 onMineFromPopup 经制卡串行队列
+                    // 入队（TODO-644 / BUG-357），草稿要等前一次制卡整段跑完才被
+                    // 读走——提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿
+                    // 合成。这条车道退回「等落地」，只是不会再因为宿主慢而误报。
+                    releaseWhenPayloadConsumed: false,
+                  ) ??
+                  false,
         ),
       ),
     );
@@ -1287,7 +1363,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final Rect anchored = resolvePopupRect(
       selectionRect: sel,
       screen: screen,
-      bottomDocked: appModel.popupBottomDocked,
+      bottomDocked: popupBottomDocked,
       maxWidth: popupMaxWidth,
       maxHeight: popupMaxHeight,
       padding: popupPadding,
@@ -1297,7 +1373,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
     // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
     // 消除「词靠右缘时贴词定位把左缘左移」的 bug。底部固定 dock 模式忽略选区、不冻结。
-    if (!appModel.popupBottomDocked &&
+    if (!popupBottomDocked &&
         _popupResizeAnchorTopLeft != null &&
         _popupResizeAnchorSelection == sel) {
       return anchorPopupTopLeft(
@@ -1434,13 +1510,22 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
+    // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（queued 画 ✓、不回查
+    // Anki），下面那个二元组装不下这个状态。
+    MinePopupResult? minedNew;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
       expression: expression,
       reading: reading,
+      // BUG-2605：走到 mineNew 的三条路（点「新增为重复卡」/ AnkiMobile「再加一张」/
+      // 反查为空后重制）用户都已被告知「这张卡已有」并选择继续，请求必须带上
+      // allowDuplicate，否则两后端的 addNote 仍按全局 allowDupes（默认关）判重拒掉。
       mineNew: () async {
-        final res = await onMineFromPopup(fields);
+        final res = await onMineFromPopup(
+          AnkiMiningPayload.withAllowDuplicate(fields),
+        );
+        minedNew = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
@@ -1450,6 +1535,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
+    if (minedNew?.queued ?? false) return minedNew!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
@@ -1474,6 +1560,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 对齐）；无书来源保持 null → 查词只进统计页「查词」汇总，不落 per-book tile。
   @protected
   ({String? bookKey, String? title})? get lookupBookIdentity => null;
+
+  /// 收藏词时的上下文（原句 + 定位锚点，口径见 [FavoriteLookupContext]）。阅读器 /
+  /// 有声书覆写返回查词所在句；默认取当前媒体源的当前句（无锚点），首页查词等没有
+  /// 句子的场景为 null。此前弹窗 ☆ 只落词形，收藏夹里的词没有释义也没有上下文。
+  @protected
+  FavoriteLookupContext? get favoriteLookupContext {
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text.trim() ?? '';
+    if (sentence.isEmpty) return null;
+    return FavoriteLookupContext(sentence: sentence);
+  }
 
   /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
   /// （顶层 / 嵌套 / 重复查各一次）累加 [FushiDatabase.addLookupCount]。best-effort，
@@ -1534,6 +1631,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // TODO-1252：把当前书身份（阅读器 / 有声书覆写 lookupBookIdentity）随收藏落库，
     // 供统计页 per-book tile 聚合「收藏 N」；无书来源为 null / '' → 只进汇总。
     final ({String? bookKey, String? title})? favIdentity = lookupBookIdentity;
+    final FavoriteLookupContext? favContext = favoriteLookupContext;
     await db.addFavoriteWord(
       expression: expression,
       reading: reading,
@@ -1542,6 +1640,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       dateKey: statTodayKey(),
       bookKey: favIdentity?.bookKey,
       title: favIdentity?.title ?? '',
+      sentence: favContext?.sentence ?? '',
+      sectionIndex: favContext?.sectionIndex,
+      normCharOffset: favContext?.normCharOffset,
+      normCharLength: favContext?.normCharLength,
     );
     FushiToast.show(
       msg: t.word_favorite_added,
@@ -1573,6 +1675,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   DictionarySearchResult? get currentResult =>
       _lastVisiblePopup(_popup.entries)?.result;
+
+  /// 顶层（从正文点出来的那一层）查词结果。收藏句时用它的首个词头记下「为哪个词
+  /// 收藏的这句」；嵌套层是在释义里再查的词，不代表原文里的那个词。
+  DictionarySearchResult? get rootLookupResult =>
+      _popup.entries.isEmpty ? null : _popup.entries.first.result;
 
   @protected
   void prunePopupStack(int keepCount) {

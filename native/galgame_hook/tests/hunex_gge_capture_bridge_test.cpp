@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <thread>
@@ -201,15 +202,24 @@ void TestWorkerNeverReadsATornSnapshot() {
   // 固定圈数就收工：seqlock 在写者满负荷时会持续把读者顶回去，实测 300
   // 代固定圈数下这个数落在 0..46，8 次里有 2 次是 0 —— 断言本身变成掷骰子。
   // 让写者一直产出到读者真的攒够并发证据为止，竞态就从判据里消失了。
+  //
+  // 前 kContendedGenerations 代满负荷写（只 yield）：这段是「写的同时读」的并发压力。
+  // 之后每代写完 sleep 一小段：繁忙的 runner 上，满负荷 seqlock 能让读者在二十万代里
+  // 一次完整快照都拿不到（CI 实测撞上旧的 kMaxGenerations 上限后断言失败；本机按核数×2
+  // 满载复现 2/30）。让出的窗口里写者仍在两代之间持续产出，读者读到的仍是并发下的快照，
+  // 只是不再被饿死。终止改用宽松的时间上限，而不是会被慢机器提前撞上的代数上限。
   constexpr size_t kMinStableReads = 8u;
-  constexpr uint32_t kMaxGenerations = 200000u;
+  constexpr uint32_t kContendedGenerations = 300u;
+  constexpr auto kReaderWindow = std::chrono::microseconds(100);
+  constexpr auto kMaxWriterTime = std::chrono::seconds(60);
   std::atomic<size_t> stable_reads{0u};
   std::thread writer([&]() {
     writer_started.store(true, std::memory_order_release);
+    const auto deadline = std::chrono::steady_clock::now() + kMaxWriterTime;
     for (uint32_t generation = 1u;
-         generation <= 300u ||
+         generation <= kContendedGenerations ||
          (stable_reads.load(std::memory_order_acquire) < kMinStableReads &&
-          generation <= kMaxGenerations);
+          std::chrono::steady_clock::now() < deadline);
          ++generation) {
       const uint32_t scalar = u'A' + (generation % 26u);
       const int32_t base_x = static_cast<int32_t>(generation * 1000u);
@@ -220,7 +230,11 @@ void TestWorkerNeverReadsATornSnapshot() {
              static_cast<int32_t>(scalar), 12, 24});
         assert(outcome.glyph_accepted && !outcome.quarantined);
       }
-      std::this_thread::yield();
+      if (generation <= kContendedGenerations) {
+        std::this_thread::yield();
+      } else {
+        std::this_thread::sleep_for(kReaderWindow);
+      }
     }
     // Force the last complete traversal to seal.
     assert(capture_bridge

@@ -10,8 +10,8 @@
 //  ① 本地写入面零直写 legacy 表：`setReadingStatistic` / `setVideoWatchStatistic` /
 //     `setReadingHourlyLog` / `setVideoHourlyLog` / `addUnattributedHourlyReadingTime`
 //     只允许 `sync/**`（legacy wire 家族的 MAX-union 落地面，app 与引擎两处）调用；
-//  ② `upsertStudySegment` 只允许两个写入方：`StudyClock`（fushi_audio）与
-//     galgame hook 的 chars-only 段；页面不得自己拼段；
+//  ② `upsertStudySegment` 只允许一个写入方：`StudyClock`（fushi_audio）；页面 /
+//     galgame hook 不得自己拼段（BUG-2564 起 hook 字数也经 StudyClock）；
 //  ③ 页面不得直读 legacy 统计表 / 活动表做统计（只许经 `loadStatFacts`）；
 //  ④ 页面不得自己算窗口阈值（`subtract(const Duration(days:` 只许在 StatWindow）；
 //  ⑤ 页面不得持有会话累计器（`_sessionReadingMs` / `_sessionCharsRead` /
@@ -21,6 +21,9 @@
 //  ⑦ `StudyClock.stop()` 结构性幂等：清引用在第一个 await 之前；
 //  ⑧ 首页每日目标分子与阅读统计页同函数（`studyGoalCharsForDay`，学习域口径）。
 //  ⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）。
+//  ⑩ 外来段的落地原语 `upsertStudySegmentsIfNewer`（LWW + 墓碑门）只许 sync 域调：
+//     同步 / 备份落地与第三方阅读器备份导入（Hoshi Reader）。本地写入面仍只经
+//     StudyClock；这条堵的是「页面拿批量 LWW 原语绕开时钟直接拼段」。
 
 import 'dart:io';
 
@@ -104,6 +107,8 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/activity_feed.dart',
   // 阅读器内统计浮层：今日 / 累计卡按 StatWindow.isToday 切片（BUG-2218 起走统计口径）。
   'lib/src/reader/reader_statistics_sheet.dart',
+  // 库页条目右键 / 长按「查看统计」：今日 / 近 7 天 / 近 30 天按 StatWindow 切片。
+  'lib/src/pages/implementations/media_item_stats_dialog.dart',
 ];
 
 void main() {
@@ -158,11 +163,10 @@ void main() {
     );
   });
 
-  test('② upsertStudySegment 只有两个写入方：StudyClock 与 galgame hook 字数', () {
+  test('② upsertStudySegment 只有一个写入方：StudyClock', () {
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
       final String path = norm(f.path);
-      if (path == 'lib/src/mining/gal_hook_session_controller.dart') continue;
       if (containsIdentifierCall(
         f.readAsStringSync(),
         'upsertStudySegment',
@@ -174,8 +178,9 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '页面 / 仓库不得自己拼段：时长与字数必须经 StudyClock 进同一段同一 uid，'
-          '否则又是第二本账：\n${offenders.join('\n')}',
+      reason: '页面 / 仓库 / galgame hook 不得自己拼段：时长与字数必须经 StudyClock '
+          '进同一段同一 uid（BUG-2564：hook 自家攒 500 字才 insert 新 uid，统计页翻几行'
+          '后仍是 0），否则又是第二本账：\n${offenders.join('\n')}',
     );
     // fushi_audio 侧：StudyClock 是唯一持有 sink 默认值的地方。
     final String clock = read(
@@ -467,6 +472,36 @@ void main() {
             '`if (mounted) setState(() => _loading = false);`',
       );
     }
+  });
+
+  test('⑩ upsertStudySegmentsIfNewer（外来段落地）只许 sync 域调', () {
+    final List<String> offenders = <String>[];
+    final List<String> callers = <String>[];
+    for (final File f in dartFiles()) {
+      final String path = norm(f.path);
+      if (!containsIdentifierCall(
+        f.readAsStringSync(),
+        'upsertStudySegmentsIfNewer',
+        allowNamedConstructor: false,
+      )) {
+        continue;
+      }
+      (_isSyncDomain(path) ? callers : offenders).add(path);
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: '批量 LWW 落地原语只给「不是本机时钟产出的段」用（同步 / 备份 / 第三方'
+          '备份导入）；本地写入面必须经 StudyClock：\n${offenders.join('\n')}',
+    );
+    // 正向：两条合法落地面确实走它——守卫不是在空转。
+    expect(
+      callers,
+      containsAll(<String>[
+        '../packages/fushi_engine/lib/sync/aggregate_sync_service.dart',
+        'lib/src/sync/external_reader_import/external_reader_import_service.dart',
+      ]),
+    );
   });
 
   test('legacy 累加 DAO 已从 DB 层彻底删除（编译层守卫的文本镜像）', () {

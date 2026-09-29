@@ -6,8 +6,8 @@ import java.net.ProxySelector
 import java.net.URI
 import java.net.SocketAddress
 import java.io.IOException
-import com.sun.net.httpserver.HttpServer
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
@@ -119,7 +119,8 @@ class HostProxyPolicyTest {
             client.newCall(Request.Builder().url("http://source.invalid/next").build()).execute().use {
                 assertEquals("second", it.body.string())
             }
-            assertEquals(3, selections.get())
+            // Each call asks twice: once to pick the route, once to re-check it per exchange.
+            assertEquals(6, selections.get())
         } finally {
             first.stop(0)
             second.stop(0)
@@ -156,6 +157,67 @@ class HostProxyPolicyTest {
             assertEquals(3, attempts.get())
         } finally {
             proxy.stop(0)
+            client.dispatcher.executorService.shutdownNow()
+        }
+    }
+
+    @Test
+    fun http2StaysNegotiableForWafProtectedSources() {
+        // Miruro's Cloudflare WAF answers every HTTP/1.1 /api/secure/pipe request with 403.
+        val client = HostProxyPolicy.configureClient(OkHttpClient.Builder()).build()
+        assertEquals(true, Protocol.HTTP_2 in client.protocols)
+        client.dispatcher.executorService.shutdownNow()
+    }
+
+    @Test
+    fun exchangeRefusesARouteThePolicyNoLongerAllows() {
+        val origin = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val originHits = AtomicInteger()
+        origin.createContext("/") { exchange ->
+            originHits.incrementAndGet()
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        origin.start()
+        val selections = AtomicInteger()
+        var policyChangesAfterRouting = true
+        val selector =
+            object : ProxySelector() {
+                // Routing sees DIRECT; by the time the exchange starts the host says "proxy".
+                // On a live HTTP/2 connection this is the normal shape: routed long ago.
+                override fun select(uri: URI): List<Proxy> =
+                    if (policyChangesAfterRouting && selections.getAndIncrement() > 0) {
+                        listOf(Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("proxy.invalid", 7890)))
+                    } else {
+                        listOf(Proxy.NO_PROXY)
+                    }
+
+                override fun connectFailed(
+                    uri: URI,
+                    sa: SocketAddress,
+                    ioe: IOException,
+                ) = Unit
+            }
+        val client = HostProxyPolicy.configureClient(OkHttpClient.Builder(), selector).build()
+        val url = "http://127.0.0.1:${origin.address.port}/"
+        try {
+            val failure = assertFails { client.newCall(Request.Builder().url(url).build()).execute().close() }
+            assertEquals(
+                true,
+                generateSequence(failure, Throwable::cause).any { it is HostProxyPolicy.StaleProxyRouteException },
+                "expected the stale-route refusal, got ${failure::class.java.name}: ${failure.message}",
+            )
+            // Refused before a byte left: the old route never carried the request, and the
+            // unrecoverable exception kept OkHttp from retrying over it.
+            assertEquals(0, originHits.get())
+            assertEquals(2, selections.get())
+
+            policyChangesAfterRouting = false
+            client.newCall(Request.Builder().url(url).build()).execute().use { assertEquals(200, it.code) }
+            assertEquals(1, originHits.get())
+        } finally {
+            origin.stop(0)
+            client.connectionPool.evictAll()
             client.dispatcher.executorService.shutdownNow()
         }
     }

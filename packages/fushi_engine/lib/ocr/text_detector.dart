@@ -274,6 +274,8 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
 int nmsGroupOf(int classId) => classId == kDetClassBubble ? 0 : 1;
 
 /// 分组贪心 NMS：按分数降序，同组内 IoU >= [iouThreshold] 的低分框剔除。
+/// 低 IoU 的内框留到识别后判重：几何包含不能保证父块读全小字号正文，
+/// 横排切行的振假名过滤也可能删掉正文，因此这里不按包含关系删除。
 List<RawDetection> applyClassAwareNms(
   List<RawDetection> detections, {
   double iouThreshold = 0.7,
@@ -284,8 +286,10 @@ List<RawDetection> applyClassAwareNms(
   for (final RawDetection candidate in sorted) {
     bool suppressed = false;
     for (final RawDetection keep in kept) {
-      if (nmsGroupOf(keep.classId) == nmsGroupOf(candidate.classId) &&
-          keep.rect.iou(candidate.rect) >= iouThreshold) {
+      if (nmsGroupOf(keep.classId) != nmsGroupOf(candidate.classId)) {
+        continue;
+      }
+      if (keep.rect.iou(candidate.rect) >= iouThreshold) {
         suppressed = true;
         break;
       }

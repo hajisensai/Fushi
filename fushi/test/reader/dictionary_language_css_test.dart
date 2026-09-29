@@ -32,6 +32,17 @@ void main() {
       expect(css, contains('Yu Gothic UI'));
     });
 
+    test('浏览器扩展弹窗的兜底链挂在 #entries-container（shadow root 里没有 html/body）', () {
+      final String css = dictionaryLanguageFontCss(
+        customFamilies: const <String>['Klee One'],
+        dictionaries: noDictionaries,
+        platform: TargetPlatform.windows,
+        rootSelector: '#entries-container',
+      );
+      expect(css, contains('#entries-container { font-family: "Klee One"'));
+      expect(css, isNot(contains('html, body')));
+    });
+
     test('繁体规则必须写在简体之后（:lang(zh) 会前缀命中 zh-Hant）', () {
       // CSS `:lang(zh)` 按 BCP-47 前缀匹配，`lang="zh-Hant"` 的子树**同时**命中
       // :lang(zh) 和 :lang(zh-Hant)。两者特异性相同 → 后写的赢。写反了繁体子树

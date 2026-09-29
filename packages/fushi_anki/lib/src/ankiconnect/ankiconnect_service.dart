@@ -4,8 +4,12 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import '../anki_models.dart';
+import '../card_source_link.dart';
 import '../anki_note_type_definition.dart';
 import '../lapis_note_type.dart';
+
+/// 一张 note 的现有字段（`name → value`）与所属笔记类型名（AnkiConnect 没给时为 null）。
+typedef AnkiConnectNoteInfo = ({String? modelName, Map<String, String> fields});
 
 class AnkiConnectService {
   final String host;
@@ -793,6 +797,17 @@ class AnkiConnectService {
     });
   }
 
+  /// BUG-2606：给已存在的 note 追加标签。AnkiConnect `addTags` 接收
+  /// `{notes: [id], tags: "a b c"}`，与现有标签取并集、已有的不重复；重发幂等，
+  /// 故同 [updateNoteFields] 不列入 [_nonIdempotentActions]。[tags] 为空时不发请求。
+  Future<void> addTags(int noteId, List<String> tags) async {
+    if (tags.isEmpty) return;
+    await _request('addTags', {
+      'notes': [noteId],
+      'tags': tags.join(' '),
+    });
+  }
+
   /// 批量覆写笔记字段。往返数 = `ceil(updates.length / kMultiBatchSize)`。
   ///
   /// 逐条报告结果（与 [updates] 同序），失败条不抛：调用方要能分清哪几条没写
@@ -813,7 +828,14 @@ class AnkiConnectService {
   // fields: {<name>: {value, order}}}`。我们只取 `fields` 拍平成 `name → value`。
   // note 不存在时 AnkiConnect 返回一个空对象项（无 noteId/fields）；这里统一以
   // 「无 fields」当作不存在返回 `null`。
-  Future<Map<String, String>?> notesInfo(int noteId) async {
+  Future<Map<String, String>?> notesInfo(int noteId) async =>
+      (await noteInfo(noteId))?.fields;
+
+  /// [notesInfo] 的原语：同一次往返顺带把 `modelName` 带回来。覆盖既有卡（BUG-2606）
+  /// 要先确认目标 note 就是当前选定的笔记类型——`findMatchingNotes` 按**首字段名**
+  /// 搜同卡组，任何带同名首字段的别的 note type 都会命中，而整卡覆盖会把它没映射的
+  /// 字段全部清空。
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async {
     final result = await _request('notesInfo', {
       'notes': [noteId],
     });
@@ -832,47 +854,18 @@ class AnkiConnectService {
         fields[key.toString()] = value;
       }
     });
-    return fields;
+    final dynamic modelName = first['modelName'];
+    return (
+      modelName: modelName is String && modelName.isNotEmpty ? modelName : null,
+      fields: fields,
+    );
   }
 
-  /// Search candidates then verify the literal tag: Anki's tag search may also
-  /// return descendants in its tag hierarchy. Never infer identity from that.
-  Future<List<int>> findNotesBySourceMarker(String markerTag) async {
-    if (!RegExp(r'^fushi_source_[0-9a-f]{32}$').hasMatch(markerTag)) {
-      throw const FormatException('Invalid source marker');
-    }
-    final List<int> candidates = await findNotesByQuery('tag:$markerTag');
-    if (candidates.isEmpty) return <int>[];
-    final Set<int> matches = <int>{};
-    for (int offset = 0; offset < candidates.length; offset += 100) {
-      final List<int> batch = candidates.sublist(
-        offset,
-        (offset + 100).clamp(0, candidates.length),
-      );
-      final Object? response = await _request('notesInfo', <String, Object>{
-        'notes': batch,
-      });
-      if (response is! List || response.length != batch.length) {
-        throw AnkiConnectException('Invalid source note lookup response');
-      }
-      for (final Object? item in response) {
-        if (item is! Map) {
-          throw AnkiConnectException('Invalid source note lookup entry');
-        }
-        if (item.isEmpty) continue; // Deleted after candidate search.
-        final Object? id = item['noteId'];
-        final Object? tags = item['tags'];
-        if (id is! int ||
-            !batch.contains(id) ||
-            tags is! List ||
-            tags.any((dynamic tag) => tag is! String)) {
-          throw AnkiConnectException('Invalid source note identity response');
-        }
-        if (tags.contains(markerTag)) matches.add(id);
-      }
-    }
-    return matches.toList();
-  }
+  /// Candidate notes whose fields contain the source ID substring. Substring
+  /// hits are not identities: the repository confirms each candidate by parsing
+  /// its `fushi://source` href (BUG-2527 removed the redundant marker tag).
+  Future<List<int>> findNotesBySourceId(String sourceId) =>
+      findNotesByQuery(CardSourceLink.searchQueryForSourceId(sourceId));
 
   // TODO-1007/1008：批量读取多张 note 的字段（字段名 -> 值），供命中多张时一次往返
   // 拉全部预览。AnkiConnect `notesInfo` 接收 `{notes: [id...]}`，按 id 顺序返回每项

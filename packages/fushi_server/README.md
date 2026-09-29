@@ -17,8 +17,9 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 
 ## 安装
 
-从本仓 GitHub Releases 下 tag 以 `fushi-server-v` 开头的包（`release-server.yml` 手动
-发布；beta 是 prerelease）：`fushi_server-<version>-<seq>-linux-x64.tar.gz` /
+从独立发布仓 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)
+下包（源码在本仓；那边的 `release.yml` 回调本仓 `release-server.yml` 构建；beta 是
+prerelease，formal 是 Latest）：`fushi_server-<version>-<seq>-linux-x64.tar.gz` /
 `fushi_server-<version>-<seq>-windows-x64.zip`。每条 PR 也在 `build-multiplatform.yml`
 的 linux job 出一份 `fushi_server-linux-x64` 工件（Actions 页面下载）。布局：
 
@@ -96,6 +97,9 @@ metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
 upload_quota_bytes: 53687091200   # WebUI 上传累计配额（50 GB），防被当网盘
+public_urls: []               # 公网 / 反代 / DDNS 地址（如 - "https://nas.example.com"），经 /api/host/addresses 公布给已配对设备自动学习
+p2p: false                    # 允许经 iroh P2P 隧道远程连接（无公网 IP 时用；会连 iroh 公共中继与发现服务）。需随包 libfushi_p2p（bin/../lib/ 或 FUSHI_P2P_LIB）
+p2p_relays: []                # 自建 iroh-relay 地址；空 = iroh 公共中继
 torrent:
   engine: "auto"              # auto | embedded | qbittorrent
   # library: "/opt/fushi_server/lib/libfushi_torrent_ffi.so"   # 缺省找 bundle/lib，再找系统路径
@@ -116,6 +120,12 @@ libraries:
 ```
 
 WebUI「设置」页改的就是这个文件；端口 / TLS / 绑定 / torrent / qBittorrent / ORT 路径改后要重启 `serve`。
+
+「设置」页的「远程访问」卡片管 `public_urls` / `p2p` / `p2p_relays` 三项，**保存即生效、不用重启**：
+公网地址由地址集实时读；打开 P2P 会在正在跑的 host 上起 iroh 端点 + 信任区监听口，关掉则停入站、关监听口、关端点（不再连中继）；
+改自建中继会关掉旧端点按新中继重建（NodeId 不变，私钥存在数据目录的偏好表里）。多次快速切换按提交顺序串行执行，以最后一次为准。
+没随包 `libfushi_p2p`（`bin/../lib/` 或 `FUSHI_P2P_LIB`）时开关置灰，API 拒绝从关到开（409）；`bind` 只监听本机时隧道不启用。
+卡片里显示 P2P 是否生效、本机 NodeId、当前中继与直连地址。
 
 ## CLI
 
@@ -145,8 +155,29 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 | `GET|POST downloads` / `POST downloads/<id>/cancel|retry` / `DELETE downloads/<id>` | 代下载 |
 | `GET|POST subscriptions` / `POST subscriptions/check` / `POST subscriptions/<id>/enable|check` / `DELETE subscriptions/<id>` | 内容订阅（WebUI 只按搜索词建；客户端发现页建的带完整作品身份） |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
-| `GET|PUT settings` | 配置读写 |
+| `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
+| `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
+| `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
 | `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
+
+### 远程访问三项
+
+`PUT settings` 的 body 里可带（缺省 = 不改；与其它设置项可同一个请求）：
+
+```json
+{"publicUrls": ["https://nas.example.com:38765"], "p2p": true, "p2pRelays": ["https://relay.example.com"]}
+```
+
+- `publicUrls` / `p2pRelays` 必须是字符串数组；每条去首尾空白，空行与重复项丢弃；必须 `http://` 或 `https://` 且带主机名，任一条不合法整个请求 400、什么都不写。空数组 = 清空。
+- `p2p` 必须是布尔；没有原生库时从关到开返回 409 `{"error": …, "reason": "p2p_unavailable"}`（原本就开着时仍能保存别的项、也能关掉）。
+- 返回同 `GET settings`，其中 `p2pStatus`（也是 `GET p2p` 的返回）：
+
+```json
+{"available": true, "enabled": true, "active": true, "nodeId": "…", "address": "p2p://…?tls=1&addr=…",
+ "relayUrl": null, "directAddrs": ["192.168.1.30:50506"], "reason": null, "lastError": null}
+```
+
+`reason` 在未生效时说明原因：`unavailable`（没原生库）/ `disabled` / `host_stopped` / `loopback_bind`（`bind` 只监听本机）/ `start_failed`（看 `lastError` 与日志）。
 
 ### 上传协议
 
@@ -154,6 +185,25 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 `Content-Range: bytes <start>-<end>/<total>`。服务端追加到 `<目标>.part`，`start` 必须等于
 已收字节数（否则 409），收齐 `total` 后原子改名。`GET` 同 URL 返回 `{"received": n}` 供断点续传。
 路径不得逃出库根（400）；累计超 `upload_quota_bytes` 拒收（413）。传完记得扫描库。
+
+## Anki 落地
+
+没装 Anki 的手机也能把卡送进 Anki：手机把 Fushi 的同步后端设为本服务端（互联），制卡时
+Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互联写进本机
+`<data>/interconnect/sync-data/fushi-data/__pending_mines__/`。本服务端当「落地设备」：
+收下这些卡，用 WebUI 里配的牌组 / 笔记类型 / 字段映射渲染，写进本地 Anki 牌组集合，
+再同步到 **自建 Anki 同步服务器** 或 **AnkiWeb**；落完写回执，手机下次同步出队。
+
+- 需要随包的 `bin/fushi-anki-sync`（链接 Anki 官方 rslib 26.09.3，AGPL-3.0-or-later，
+  源码说明见旁边的 `fushi-anki-sync.SOURCE.txt`）。没带时 WebUI 的 Anki 页如实显示不可用。
+- WebUI → Anki：登录同步服务器（密码只用来换取凭据，不保存；AnkiWeb 登录前有条款风险确认）
+  → 选牌组 / 笔记类型、填字段映射 → 打开「本机负责落地其它设备的卡片」。
+- 数据在 `<data>/support/anki_sync/`（本地牌组集合 + 未同步日志 + 账号凭据）与
+  `<data>/support/pending_mine_queue/`。同步成功才出日志；服务器要求整库**上传**时 Fushi
+  不做，停在「被拦」，等你在官方 Anki 里同步一次。
+- 同一时刻只有一台设备负责落地（最后打开开关的那台）。关掉时立刻撤认领。
+- 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
+  `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
 
 ## GPU（CUDA）
 

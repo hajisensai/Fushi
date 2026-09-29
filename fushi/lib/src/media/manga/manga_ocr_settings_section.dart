@@ -14,8 +14,8 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置区「漫画 OCR」组的正文（隶属**漫画**设置分类）。
@@ -37,6 +37,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.mokuroPathSetter,
     this.enginePreferenceGetter,
     this.enginePreferenceSetter,
+    this.parallelTasksGetter,
+    this.parallelTasksSetter,
+    this.localModelGetter,
+    this.localModelSetter,
     this.lensLanguageGetter,
     this.lensLanguageSetter,
     this.modelsDirProvider,
@@ -62,6 +66,13 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// When omitted the section uses `auto` without touching a provider.
   final String Function()? enginePreferenceGetter;
   final Future<void> Function(String value)? enginePreferenceSetter;
+
+  /// 桌面跨书任务并发：0 自动，1～4 手动。
+  final int Function()? parallelTasksGetter;
+  final Future<void> Function(int value)? parallelTasksSetter;
+
+  final String Function()? localModelGetter;
+  final Future<void> Function(String value)? localModelSetter;
 
   /// Google Lens 识别语言偏好读写（可选：省略时下拉不出现）。
   final String Function()? lensLanguageGetter;
@@ -89,14 +100,18 @@ class _MangaOcrSettingsSectionState
     extends ConsumerState<MangaOcrSettingsSection> {
   late final TextEditingController _pathCtrl;
   late MangaOcrEnginePreference _enginePreference;
+  late int _parallelTasks;
+  late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
 
   MangaOcrModelStatus? _status;
   bool _loadingStatus = true;
+  int _statusRequest = 0;
 
   // 下载态。
   bool _downloading = false;
   String? _downloadingFile;
+  bool _installing = false;
 
   /// 逐文件已收字节（文件名 → 字节）。
   ///
@@ -127,6 +142,10 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
+    _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(0, 4);
+    _localModel = MangaOcrLocalModel.forPlatform(
+      widget.localModelGetter?.call() ?? 'manga_ocr',
+    );
     // BUG-1780：这个位现在就是「本机能不能跑本地 ONNX 推理」（ORT native 可用性），
     // 不再是一份独立的平台白名单。它为真的每一端都要加载模型状态——整卷 / 点击 /
     // 框选区域重识别走的都是同一个本地 ONNX 引擎，闸门本来就是 ORT 可用性。
@@ -136,6 +155,19 @@ class _MangaOcrSettingsSectionState
       _loadingStatus = false;
     }
     unawaited(_probeSystemOcr());
+  }
+
+  @override
+  void didUpdateWidget(MangaOcrSettingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _localModel = MangaOcrLocalModel.forPlatform(
+      widget.localModelGetter?.call() ?? 'manga_ocr',
+    );
+    if (!identical(widget.service, oldWidget.service)) {
+      _status = null;
+      _receivedByFile.clear();
+      unawaited(_loadStatus());
+    }
   }
 
   @override
@@ -199,6 +231,7 @@ class _MangaOcrSettingsSectionState
   }
 
   Future<void> _loadStatus() async {
+    final int request = ++_statusRequest;
     setState(() => _loadingStatus = true);
     MangaOcrModelStatus? status;
     try {
@@ -206,7 +239,7 @@ class _MangaOcrSettingsSectionState
     } catch (_) {
       status = null;
     }
-    if (!mounted) return;
+    if (!mounted || request != _statusRequest) return;
     setState(() {
       _status = status;
       _loadingStatus = false;
@@ -219,23 +252,35 @@ class _MangaOcrSettingsSectionState
   int get _downloadReceivedBytes =>
       _receivedByFile.values.fold<int>(0, (int a, int b) => a + b);
 
-  void _startDownload() {
+  void _startDownload({bool prepareOnly = false}) {
     if (_importing) return;
     setState(() {
       _downloading = true;
       _downloadingFile = null;
+      _installing = false;
       _receivedByFile.clear();
     });
-    _downloadSub = widget.service.downloadModels().listen(
+    final MangaOcrService service = widget.service;
+    final Stream<MangaOcrDownloadEvent> events =
+        prepareOnly && service is MangaOcrModelPreparationService
+        ? (service as MangaOcrModelPreparationService).prepareModels()
+        : service.downloadModels();
+    bool failed = false;
+    _downloadSub = events.listen(
       (MangaOcrDownloadEvent event) {
         if (!mounted) return;
         setState(() {
           _downloadingFile = event.fileName;
+          _installing = event.installing;
           // 同名文件取最新值而不是累加：同一文件会连发多条递增进度事件。
-          _receivedByFile[event.fileName] = event.receivedBytes;
+          if (!event.installing) {
+            _receivedByFile[event.fileName] = event.receivedBytes;
+          }
         });
       },
       onError: (Object e) {
+        failed = true;
+        unawaited(_downloadSub?.cancel());
         if (!mounted) return;
         setState(() {
           _downloading = false;
@@ -245,10 +290,11 @@ class _MangaOcrSettingsSectionState
           msg: t.manga_ocr_download_failed,
           severity: ToastSeverity.error,
         );
+        unawaited(_loadStatus());
       },
       onDone: () async {
         _downloadSub = null;
-        if (!mounted) return;
+        if (!mounted || failed) return;
         setState(() => _downloading = false);
         FushiToast.show(
           msg: t.manga_ocr_download_done,
@@ -315,7 +361,7 @@ class _MangaOcrSettingsSectionState
     if (provider != null) {
       return provider();
     }
-    return MangaOcrServiceImpl.defaultMangaOcrModelsDir();
+    return _localModel.modelsDirectory();
   }
 
   /// 导入入口对话框：**先说要哪些文件，再给选择器**。
@@ -337,7 +383,7 @@ class _MangaOcrSettingsSectionState
               children: <Widget>[
                 Text(t.manga_ocr_import_intro),
                 const SizedBox(height: 12),
-                for (final MangaOcrModelFile model in kMangaOcrModelManifest)
+                for (final MangaOcrModelFile model in _localModel.manifest)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
@@ -386,7 +432,7 @@ class _MangaOcrSettingsSectionState
   /// 那批人，只给主源等于什么都没给。
   Future<void> _copyModelUrls() async {
     final StringBuffer buffer = StringBuffer();
-    for (final MangaOcrModelFile model in kMangaOcrModelManifest) {
+    for (final MangaOcrModelFile model in _localModel.manifest) {
       for (final String url in mangaOcrModelUrlCandidates(model)) {
         buffer.writeln(url);
       }
@@ -408,7 +454,8 @@ class _MangaOcrSettingsSectionState
     Object? failure;
     try {
       final MangaOcrModelImporter importer =
-          widget.modelImporter ?? MangaOcrModelImporter();
+          widget.modelImporter ??
+          MangaOcrModelImporter(manifest: _localModel.manifest);
       result = await importer.import(
         sourcePaths: paths,
         targetDir: await _modelsDir(),
@@ -428,6 +475,12 @@ class _MangaOcrSettingsSectionState
     }
     _reportImport(result);
     await _loadStatus();
+    if (mounted &&
+        result.allReady &&
+        _localModel == MangaOcrLocalModel.mangaOcrCuda &&
+        widget.service is MangaOcrModelPreparationService) {
+      _startDownload(prepareOnly: true);
+    }
   }
 
   Future<List<String>?> _pickImportPaths(bool folderMode) async {
@@ -473,11 +526,13 @@ class _MangaOcrSettingsSectionState
       if (rejection.reason != MangaOcrModelImportRejectReason.sizeMismatch) {
         continue;
       }
-      lines.add(t.manga_ocr_import_size_mismatch(
-        file: rejection.source,
-        expected: _formatBytes(rejection.expectedBytes ?? 0),
-        actual: _formatBytes(rejection.actualBytes ?? 0),
-      ));
+      lines.add(
+        t.manga_ocr_import_size_mismatch(
+          file: rejection.source,
+          expected: _formatBytes(rejection.expectedBytes ?? 0),
+          actual: _formatBytes(rejection.actualBytes ?? 0),
+        ),
+      );
     }
     if (!result.allReady && !result.matchedNothing) {
       lines.add(
@@ -499,8 +554,9 @@ class _MangaOcrSettingsSectionState
   Widget _importButton() {
     return TextButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
-      onPressed:
-          (_importing || _downloading) ? null : () => unawaited(_showImportDialog()),
+      onPressed: (_importing || _downloading)
+          ? null
+          : () => unawaited(_showImportDialog()),
       icon: _importing
           ? const SizedBox.square(
               dimension: 16,
@@ -545,10 +601,7 @@ class _MangaOcrSettingsSectionState
     // Material 透明层：cupertino 桌面嵌入渲染（BUG-009 R2 路径）下设置正文没有
     // Material 祖先，而本组含 TextField/InkWell 系控件——透明 Material 只补墨水
     // 与文本编辑依赖，不改视觉。
-    return Material(
-      type: MaterialType.transparency,
-      child: _buildBody(theme),
-    );
+    return Material(type: MaterialType.transparency, child: _buildBody(theme));
   }
 
   /// 补齐标准设置行的水平内边距。
@@ -577,6 +630,15 @@ class _MangaOcrSettingsSectionState
         // 桌面里等于让移动端用户无法持久地退回离线引擎。外部 mokuro 是桌面工具，
         // 由下拉项自身 disable，不再靠整块 gating。
         _inset(_buildEnginePreference(theme)),
+        if (Platform.isWindows && widget.localModelGetter != null) ...<Widget>[
+          const SizedBox(height: 12),
+          _inset(_buildLocalModel()),
+        ],
+        if (isDesktopPlatform &&
+            widget.parallelTasksGetter != null) ...<Widget>[
+          const SizedBox(height: 12),
+          _inset(_buildParallelTasks()),
+        ],
         if (widget.lensLanguageGetter != null) ...<Widget>[
           const SizedBox(height: 12),
           _inset(_buildLensLanguage(theme)),
@@ -590,8 +652,9 @@ class _MangaOcrSettingsSectionState
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 t.manga_ocr_unsupported,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -661,6 +724,77 @@ class _MangaOcrSettingsSectionState
     ];
   }
 
+  Widget _buildParallelTasks() {
+    return DropdownButtonFormField<int>(
+      key: const ValueKey<String>('manga_ocr_parallel_tasks'),
+      initialValue: _parallelTasks,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: t.manga_ocr_parallel_tasks,
+        helperText: t.manga_ocr_parallel_tasks_desc,
+        helperMaxLines: 3,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: <DropdownMenuItem<int>>[
+        DropdownMenuItem<int>(value: 0, child: Text(t.manga_ocr_parallel_auto)),
+        for (int count = 1; count <= 4; count++)
+          DropdownMenuItem<int>(value: count, child: Text('$count')),
+      ],
+      onChanged: widget.parallelTasksSetter == null
+          ? null
+          : (int? value) async {
+              if (value == null) return;
+              await widget.parallelTasksSetter!(value);
+              if (mounted) setState(() => _parallelTasks = value);
+            },
+    );
+  }
+
+  Widget _buildLocalModel() {
+    return DropdownButtonFormField<MangaOcrLocalModel>(
+      key: const ValueKey<String>('manga_ocr_local_model'),
+      initialValue: _localModel,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: t.manga_ocr_local_model,
+        helperText: switch (_localModel) {
+          MangaOcrLocalModel.baberu => t.manga_ocr_baberu_desc,
+          MangaOcrLocalModel.mangaOcrCuda => t.manga_ocr_cuda_desc,
+          MangaOcrLocalModel.mangaOcr => t.manga_ocr_manga_model_desc,
+        },
+        helperMaxLines: 4,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: <DropdownMenuItem<MangaOcrLocalModel>>[
+        DropdownMenuItem<MangaOcrLocalModel>(
+          value: MangaOcrLocalModel.mangaOcr,
+          child: Text(t.manga_ocr_manga_model),
+        ),
+        DropdownMenuItem<MangaOcrLocalModel>(
+          value: MangaOcrLocalModel.mangaOcrCuda,
+          child: Text(t.manga_ocr_cuda_model),
+        ),
+        DropdownMenuItem<MangaOcrLocalModel>(
+          value: MangaOcrLocalModel.baberu,
+          child: Text(t.manga_ocr_baberu_model),
+        ),
+      ],
+      onChanged:
+          widget.localModelSetter == null ||
+              _downloading ||
+              _importing ||
+              _deleting
+          ? null
+          : (MangaOcrLocalModel? value) async {
+              if (value == null || value == _localModel) return;
+              await widget.localModelSetter!(value.key);
+              if (mounted) setState(() => _localModel = value);
+            },
+    );
+  }
+
   Widget _buildEnginePreference(ThemeData theme) {
     final List<_EngineOption> options = _engineOptions();
     return DropdownButtonFormField<MangaOcrEnginePreference>(
@@ -717,8 +851,9 @@ class _MangaOcrSettingsSectionState
     final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
       for (final (String tag, String label) in kGoogleLensLanguageOptions)
         DropdownMenuItem<String>(value: tag, child: Text(label)),
-      if (!kGoogleLensLanguageOptions
-          .any(((String, String) option) => option.$1 == _lensLanguage))
+      if (!kGoogleLensLanguageOptions.any(
+        ((String, String) option) => option.$1 == _lensLanguage,
+      ))
         DropdownMenuItem<String>(
           value: _lensLanguage,
           child: Text(_lensLanguage),
@@ -759,6 +894,10 @@ class _MangaOcrSettingsSectionState
   ///   这正是「应该支持删除 ocr 模型」的落点：换了引擎之后那几百 MB 得能清掉。
   /// - 引擎用不到且磁盘干净 → **次级入口**（不劝，但也不藏）。
   Widget _buildLocalModelArea(ThemeData theme) {
+    // 下载/安装期间始终保留进度与取消入口，不受引擎偏好或磁盘状态影响。
+    if (_downloading) {
+      return _buildModelBlock(theme);
+    }
     if (_loadingStatus) {
       return _inset(
         const Padding(
@@ -788,10 +927,6 @@ class _MangaOcrSettingsSectionState
   /// 次级形态的分寸：用普通 [TextButton] 而不是主按钮，状态行也不喊「模型未
   /// 下载」（当前引擎本来就不需要它，那不是缺陷状态）——不劝，但也不藏。
   Widget _buildDormantModelEntry(ThemeData theme) {
-    // 在这个形态下点了下载就切回完整块：否则进度条、取消按钮全都无处可见。
-    if (_downloading) {
-      return _buildModelBlock(theme);
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -846,10 +981,7 @@ class _MangaOcrSettingsSectionState
             child: Wrap(
               spacing: 8,
               runSpacing: 4,
-              children: <Widget>[
-                _deleteButton(),
-                _importButton(),
-              ],
+              children: <Widget>[_deleteButton(), _importButton()],
             ),
           ),
         ),
@@ -873,16 +1005,22 @@ class _MangaOcrSettingsSectionState
         ),
         if (_downloading) ...<Widget>[
           const SizedBox(height: 8),
-          _inset(LinearProgressIndicator(value: _downloadProgressValue)),
+          _inset(
+            LinearProgressIndicator(
+              value: _installing ? null : _downloadProgressValue,
+            ),
+          ),
           const SizedBox(height: 4),
           if (_downloadingFile != null)
             _inset(
               Text(
-                t.manga_ocr_downloading_file(file: _downloadingFile!),
+                _installing
+                    ? t.manga_ocr_runtime_installing
+                    : t.manga_ocr_downloading_file(file: _downloadingFile!),
                 style: theme.textTheme.bodySmall,
               ),
             ),
-          if (_downloadTotalBytes > 0)
+          if (!_installing && _downloadTotalBytes > 0)
             _inset(
               Text(
                 t.manga_ocr_download_total_progress(
@@ -934,10 +1072,7 @@ class _MangaOcrSettingsSectionState
           if (!ready && (status?.hasAnyFiles ?? false)) ...<Widget>[
             const SizedBox(height: 4),
             _inset(
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _deleteButton(),
-              ),
+              Align(alignment: Alignment.centerLeft, child: _deleteButton()),
             ),
           ],
         ],
@@ -965,15 +1100,17 @@ class _MangaOcrSettingsSectionState
     final String? needed = status.totalBytes <= 0
         ? null
         : status.obtainedBytes > 0
-            ? t.manga_ocr_download_total_progress(
-                done: _formatBytes(status.obtainedBytes),
-                total: _formatBytes(status.totalBytes),
-              )
-            : t.manga_ocr_model_download_size(
-                size: _formatBytes(status.totalBytes),
-              );
-    final String joined =
-        <String?>[usage, needed].whereType<String>().join(' · ');
+        ? t.manga_ocr_download_total_progress(
+            done: _formatBytes(status.obtainedBytes),
+            total: _formatBytes(status.totalBytes),
+          )
+        : t.manga_ocr_model_download_size(
+            size: _formatBytes(status.totalBytes),
+          );
+    final String joined = <String?>[
+      usage,
+      needed,
+    ].whereType<String>().join(' · ');
     return joined.isEmpty ? null : joined;
   }
 
@@ -988,7 +1125,9 @@ class _MangaOcrSettingsSectionState
 
   Widget _deleteButton() {
     return OutlinedButton.icon(
-      onPressed: _deleting ? null : _confirmDelete,
+      onPressed: (_deleting || _downloading || _importing)
+          ? null
+          : _confirmDelete,
       icon: _deleting
           ? const SizedBox(
               width: 16,
@@ -1049,8 +1188,9 @@ class _MangaOcrSettingsSectionState
       padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Text(
         text,
-        style: theme.textTheme.titleSmall
-            ?.copyWith(color: theme.colorScheme.primary),
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
       ),
     );
   }

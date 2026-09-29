@@ -109,6 +109,24 @@ void main() {
         videoPath: p.join('E:', 'anime', 'V2.mkv'),
         subtitleSource: const Value('off:'),
       ));
+      // v106 AniDB 文件身份：一条数据根内（下载副本）、一条用户原位外部文件。
+      await db.upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion(
+        ed2k: const Value('0123456789abcdef0123456789abcdef'),
+        fileSize: const Value(1),
+        anidbFileId: const Value(1),
+        anidbAnimeId: const Value(2),
+        anidbEpisodeId: const Value(3),
+        filePath: Value(docs(<String>['anime_downloads', 'content', 'ep.mkv'])),
+        resolvedAt: const Value(1),
+        updatedAt: const Value(1),
+      ));
+      await db.upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion(
+        ed2k: const Value('ffffffffffffffffffffffffffffffff'),
+        fileSize: const Value(2),
+        filePath: Value(p.join('E:', 'anime', 'V2.mkv')),
+        resolvedAt: const Value(1),
+        updatedAt: const Value(1),
+      ));
       final int metadataWorkId = await db.upsertVideoMetadataWork(
         VideoMetadataWorksCompanion.insert(
           bookUid: const Value<String?>('video/V1'),
@@ -227,6 +245,13 @@ void main() {
         out['extra.${row.read<String>('extra_key')}.thumbnail'] =
             row.read<String?>('thumbnail_path');
       }
+      final List<QueryRow> anidbFiles = await db
+          .customSelect('SELECT ed2k, file_path FROM anidb_file_identities')
+          .get();
+      for (final QueryRow row in anidbFiles) {
+        out['anidb.${row.read<String>('ed2k')}.path'] =
+            row.read<String?>('file_path');
+      }
       final Map<String, String> prefs = await db.getAllPrefs();
       for (final String key in <String>[
         'galgame_library',
@@ -275,6 +300,16 @@ void main() {
       snap['extra.local:video/V1.thumbnail'],
       equals(at(<String>['video_covers', 'v1.jpg'])),
       reason: '本地视频附加内容复用的封面必须与 VideoBook.coverPath 同步重挂',
+    );
+    expect(
+      snap['anidb.0123456789abcdef0123456789abcdef.path'],
+      equals(at(<String>['anime_downloads', 'content', 'ep.mkv'])),
+      reason: 'AniDB 文件身份的路径提示随数据根重挂，否则每个文件重算 ED2K',
+    );
+    expect(
+      snap['anidb.ffffffffffffffffffffffffffffffff.path'],
+      equals(p.join('E:', 'anime', 'V2.mkv')),
+      reason: '用户原位外部视频的路径提示不该被改写',
     );
     expect(
         snap['media.reader_fushi/Bk.image'],

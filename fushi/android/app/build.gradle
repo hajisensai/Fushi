@@ -60,6 +60,41 @@ def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
     }
 }
 
+// Aniyomi (anime) extension ABI. The `eu.kanade.tachiyomi.animesource` sources
+// are vendored with the desktop sidecar (third_party/m_extension_server);
+// compiling the same files here keeps Android and the desktop sidecar on one
+// ABI. The sidecar build layers `overlay/` over `upstream_src/` (overlay wins),
+// and so does this task: the overlay holds Fushi's lib 14 + lib 16 union of
+// the ABI (data-class `Video`, hoster API, `SEpisode.fillermark`, ...) plus the
+// shared host loader `animesource/host/AnimeVideoLoader.kt`. It is a plain
+// copy of files already in the repository: no download, no hash.
+// `util/lang/CoroutinesExtensions.kt` comes along because the anime sources
+// import `eu.kanade.tachiyomi.util.lang.awaitSingle`, which Mihon's source-api
+// does not provide (its awaitSingle lives in `eu.kanade.tachiyomi.util`).
+def aniyomiSourceRoot = rootProject.file("../../third_party/m_extension_server/upstream_src/server/src/main/kotlin")
+def aniyomiOverlayRoot = rootProject.file("../../third_party/m_extension_server/overlay/server/src/main/kotlin")
+def aniyomiSourceOutput = layout.buildDirectory.dir("generated/aniyomiSourceApi")
+def prepareAniyomiSourceApi = tasks.register("prepareAniyomiSourceApi", Sync) {
+    File upstreamAnime = new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/animesource")
+    File overlayAnime = new File(aniyomiOverlayRoot, "eu/kanade/tachiyomi/animesource")
+    // Same relative path in both trees: the overlay file replaces the upstream one.
+    List<String> overlaid = fileTree(overlayAnime).files.collect { File file ->
+        overlayAnime.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+    }
+    from(upstreamAnime) {
+        into "eu/kanade/tachiyomi/animesource"
+        exclude overlaid
+    }
+    from(overlayAnime) {
+        into "eu/kanade/tachiyomi/animesource"
+    }
+    from(new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/util/lang")) {
+        into "eu/kanade/tachiyomi/util/lang"
+    }
+    include "**/*.kt"
+    into aniyomiSourceOutput
+}
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
@@ -141,12 +176,17 @@ android {
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
         main.java.srcDirs += mihonSourceOutput
+        main.java.srcDirs += aniyomiSourceOutput
         // 内置 libtorrent 引擎（copy-if-present，与 Windows runner 同姿态）：
         // native/fushi_torrent/build_android_so.{ps1,sh} 产出的
         // prebuilt/android/<abi>/libfushi_torrent_ffi.so 存在则随包；目录缺失时
         // Gradle 静默跳过，app 运行期 EmbeddedTorrentHost.open 因 .so 缺失返回
         // null → 自动回退外接 qBittorrent。构建本身不依赖 vcpkg/NDK 交叉编译。
         main.jniLibs.srcDirs += '../../../native/fushi_torrent/prebuilt/android'
+        // 互联 P2P 隧道（iroh，copy-if-present）：native/fushi_p2p/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_p2p.so 则随包；缺失时 P2P 能力判
+        // 不可用，其余互联照常。
+        main.jniLibs.srcDirs += '../../../native/fushi_p2p/prebuilt/android'
     }
 
     defaultConfig {
@@ -315,5 +355,6 @@ dependencies {
 tasks.configureEach { task ->
     if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
         task.dependsOn(prepareMihonSourceApi)
+        task.dependsOn(prepareAniyomiSourceApi)
     }
 }

@@ -238,6 +238,55 @@ void main() {
     expect(source.gameLaunchConfirmed, isFalse);
   });
 
+  // BUG-2704：加载器初始化门里，壳 / 汉化补丁在 TLS 回调中弹出等用户点「确定」的对话框
+  // （千恋＊万花光盘版 SenrenBankaCHS.exe）。这段时间不能吃掉就绪预算。
+  test(
+    'loader-gate user wait outlives the budget, then hook is accepted',
+    () async {
+      final Future<PcmFormat?> result = create().start();
+      await started.future;
+      await process.send(
+        'LAUNCH pid=3333 arch=x86 role=game locale=0\n'
+        'WAIT pid=3333 reason=user\n',
+      );
+      await Future<void>.delayed(budget * 2);
+      expect(process.killed, isFalse);
+      await process.send('WAIT pid=3333 reason=none\n');
+      await Future<void>.delayed(budget ~/ 3);
+      await process.send('OK hooked pid=3333 mode=launch\n');
+      expect(await result, isNull);
+      expect(opens, 1);
+      expect(process.killed, isFalse);
+    },
+  );
+
+  test('budget is re-armed after the user wait ends', () async {
+    final Future<PcmFormat?> result = create().start();
+    await started.future;
+    await process.send(
+      'LAUNCH pid=3333 arch=x86 role=game\n'
+      'WAIT pid=3333 reason=user\n',
+    );
+    await Future<void>.delayed(budget * 2);
+    await process.send('WAIT pid=3333 reason=none\n');
+    expect(await result, isNull);
+    expect(process.killed, isTrue);
+    expect(opens, 0);
+    expect(source.lastFailure.failure, GalHookInjectorFailure.readyTimeout);
+  });
+
+  test('helper exit ends a pending user wait', () async {
+    final Future<PcmFormat?> result = create().start();
+    await started.future;
+    await process.send(
+      'LAUNCH pid=3333 arch=x86 role=game\n'
+      'WAIT pid=3333 reason=user\n',
+    );
+    process.exited.complete(1);
+    expect(await result.timeout(const Duration(seconds: 2)), isNull);
+    expect(opens, 0);
+  });
+
   test(
     'game confirmation is monotonic within and across output chunks',
     () async {

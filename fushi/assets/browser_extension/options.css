@@ -1,39 +1,22 @@
+/* 颜色只来自 theme.css（扩展所有自有界面同一套调色板；明暗由 theme.js 按扩展设置
+   extensionTheme 写根 data-theme，缺省跟随系统）。这里只保留局部别名与非颜色 token。 */
 :root {
-  color-scheme: light dark;
-  --bg: oklch(0.965 0.012 145);
-  --surface: oklch(0.99 0.008 145);
-  --surface-muted: oklch(0.935 0.018 145);
-  --text: oklch(0.245 0.026 145);
-  --muted: oklch(0.47 0.025 145);
-  --outline: oklch(0.79 0.025 145);
-  --primary: oklch(0.46 0.085 155);
-  --primary-strong: oklch(0.37 0.09 155);
-  --primary-soft: oklch(0.89 0.055 150);
-  --on-primary: oklch(0.985 0.008 145);
-  --warn: oklch(0.62 0.135 78);
-  --danger: oklch(0.55 0.18 28);
-  --focus: oklch(0.61 0.13 155);
+  --bg: var(--fushi-bg);
+  --surface: var(--fushi-surface);
+  --surface-muted: var(--fushi-surface-muted);
+  --text: var(--fushi-text);
+  --muted: var(--fushi-muted);
+  --outline: var(--fushi-outline);
+  --primary: var(--fushi-primary);
+  --primary-strong: var(--fushi-primary-strong);
+  --primary-soft: var(--fushi-primary-soft);
+  --on-primary: var(--fushi-on-primary);
+  --warn: var(--fushi-warn);
+  --danger: var(--fushi-danger);
+  --focus: var(--fushi-focus);
   --radius: 16px;
   --ease: cubic-bezier(.22, 1, .36, 1);
   font-family: "Aptos", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: oklch(0.18 0.018 145);
-    --surface: oklch(0.225 0.022 145);
-    --surface-muted: oklch(0.27 0.026 145);
-    --text: oklch(0.91 0.018 145);
-    --muted: oklch(0.72 0.02 145);
-    --outline: oklch(0.39 0.025 145);
-    --primary: oklch(0.78 0.085 155);
-    --primary-strong: oklch(0.84 0.075 155);
-    --primary-soft: oklch(0.31 0.065 155);
-    --on-primary: oklch(0.19 0.03 155);
-    --warn: oklch(0.77 0.12 78);
-    --danger: oklch(0.72 0.15 28);
-    --focus: oklch(0.78 0.11 155);
-  }
 }
 
 * { box-sizing: border-box; }
@@ -173,6 +156,19 @@ summary:focus-visible {
 }
 
 .size-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.select-input {
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 9px 11px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.select-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 .switch {
   position: relative;
@@ -509,4 +505,309 @@ summary:focus-visible {
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
   }
+}
+
+/* ── 配色主题：色块网格（与 app 设置页的主题选择器同一取向：一排圆点 + 名称，选中描边）。 ── */
+.setting-row-block {
+  flex-wrap: wrap;
+  align-items: start;
+}
+
+.setting-row-block .setting-copy { flex-basis: 100%; }
+
+.palette-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.palette-swatch {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 78px;
+  padding: 6px 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.palette-swatch:hover { background: color-mix(in oklch, var(--primary-soft) 55%, transparent); }
+.palette-swatch:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.palette-swatch.is-selected { border-color: var(--primary); background: var(--primary-soft); }
+
+.palette-dot {
+  --swatch-primary: var(--primary);
+  --swatch-surface: var(--surface);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklch, var(--outline) 70%, transparent);
+  background: linear-gradient(135deg, var(--swatch-primary) 0 50%, var(--swatch-surface) 50% 100%);
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 600;
+  box-shadow: 0 1px 4px color-mix(in oklch, var(--text) 18%, transparent);
+}
+
+.palette-swatch.is-selected .palette-dot { border-color: var(--primary-strong); }
+.palette-dot.is-pending { background: repeating-linear-gradient(135deg, var(--surface-muted) 0 6px, var(--surface) 6px 12px); }
+.palette-add .palette-dot { background: var(--surface-muted); border-style: dashed; }
+
+.palette-name {
+  max-width: 78px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.palette-swatch.is-selected .palette-name { color: var(--primary-strong); font-weight: 690; }
+
+/* 自定义主题编辑器：字段 + 明暗双预览（预览卡吃派生出的 --fushi-* 内联变量）。 */
+.custom-theme-editor {
+  display: grid;
+  gap: 16px;
+  margin: 4px 0 8px;
+  padding: 16px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.custom-theme-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 18px;
+}
+
+.custom-theme-fields .field span:first-child { font-size: 12px; color: var(--muted); }
+.custom-theme-fields .field-check { grid-column: 1 / -1; }
+.custom-theme-fields .field-check small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.color-with-auto { display: flex; align-items: center; gap: 10px; }
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.inline-check input {
+  width: 16px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.inline-check span { white-space: nowrap; color: var(--text); font-weight: 500; }
+
+/* 编辑器只在选中自定义主题时出现；.custom-theme-editor 自带 display: grid，得显式让 hidden 赢。 */
+.custom-theme-editor[hidden] { display: none; }
+
+.custom-theme-fields .field-color > span:last-child,
+.custom-theme-fields .field-color > input { justify-self: start; }
+.custom-theme-fields .field-check { display: grid; gap: 4px; }
+
+input[type="color"].color-input,
+.custom-theme-fields input[type="color"] {
+  width: 44px;
+  min-height: 0;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+input[type="color"]:disabled { opacity: 0.45; cursor: default; }
+
+.theme-preview-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.theme-preview {
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--fushi-outline);
+  background: var(--fushi-bg);
+  color: var(--fushi-text);
+}
+
+.theme-preview-label { display: block; margin-bottom: 8px; font-size: 11px; color: var(--fushi-muted); }
+
+.theme-preview-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--fushi-outline);
+  background: var(--fushi-surface);
+}
+
+.theme-preview-card strong { font-size: 13px; color: var(--fushi-text); }
+.theme-preview-card small { padding: 2px 6px; border-radius: 6px; background: var(--fushi-primary-soft); color: var(--fushi-text); font-size: 12px; }
+
+.theme-preview-button {
+  justify-self: start;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--fushi-primary);
+  color: var(--fushi-on-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── 字幕外观：预览 + 滑杆 / 颜色 / 文本控件 ── */
+/* 预览用与 content-css-overlay.css #fushi-subtitle-overlay 同一组 --fushi-sub-* 默认值
+   （守卫 subtitle-style.test.js 钉两处一致），用户改的项由 options.js 经同一份 toCssVars 覆盖。 */
+/* 预览舞台充当「视频盒」：底板宽 / 高的百分比按它的盒折 px（options.js 经 applyBox 写到预览
+   节点上，与覆盖层按视频盒同一算法）。给个视频状的比例，比例值才看得出效果。 */
+.subtitle-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 21 / 9;
+  min-height: 132px;
+  margin-bottom: 8px;
+  /* 留白挪到字幕节点的 max-width 上：舞台自身的盒就是「视频盒」，100% 宽的底板贴到舞台边。 */
+  padding: 0;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.16), transparent 55%),
+    linear-gradient(160deg, #35506a, #1a2430 60%, #0d1218);
+}
+
+.subtitle-preview-cue {
+  --fushi-sub-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  --fushi-sub-scale: 1;
+  --fushi-sub-fit: 1;
+  --fushi-sub-weight: 600;
+  --fushi-sub-spacing: 0.01em;
+  --fushi-sub-line-height: 1.45;
+  --fushi-sub-align: center;
+  --fushi-sub-color: var(--fushi-on-scrim);
+  --fushi-sub-bg: var(--fushi-scrim);
+  --fushi-sub-radius: 8px;
+  --fushi-sub-padding: 6px 12px 7px;
+  --fushi-sub-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
+  max-width: calc(100% - 40px);
+  padding: var(--fushi-sub-padding);
+  border-radius: var(--fushi-sub-radius);
+  color: var(--fushi-sub-color);
+  background: var(--fushi-sub-bg);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
+  font-family: var(--fushi-sub-family);
+  font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale) * var(--fushi-sub-fit));
+  font-weight: var(--fushi-sub-weight);
+  font-style: normal;
+  font-variant: normal;
+  font-stretch: normal;
+  line-height: var(--fushi-sub-line-height);
+  letter-spacing: var(--fushi-sub-spacing);
+  text-align: var(--fushi-sub-align);
+  text-shadow: var(--fushi-sub-shadow);
+  white-space: pre-wrap;
+}
+
+.subtitle-preview-cue[data-bare] { background: transparent; box-shadow: none; }
+
+/* 字体库：推荐字体清单（app 端下载）；离线时只留提示。 */
+.font-library-note { color: var(--primary-strong); }
+
+.font-library-list {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.font-library-list:empty { display: none; }
+
+.font-library-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 0;
+  border-top: 1px dashed color-mix(in oklch, var(--outline) 50%, transparent);
+}
+
+.font-library-item:first-child { border-top: 0; }
+
+.font-library-copy {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.font-library-copy strong { font-size: 13.5px; font-weight: 650; }
+
+.font-library-copy small { font-size: 12px; }
+
+.font-library-item .text-button { min-height: 32px; padding: 5px 11px; flex: 0 0 auto; }
+
+.font-library-item .text-button:disabled { color: var(--muted); cursor: default; background: transparent; }
+
+.range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.range-wrap output {
+  min-width: 58px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.range-input {
+  width: 160px;
+  accent-color: var(--primary);
+}
+
+.range-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 4px; }
+
+.color-wrap { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.color-wrap .text-button:disabled { opacity: 0.45; cursor: default; }
+
+.text-input {
+  flex: 0 0 auto;
+  width: 240px;
+  max-width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.text-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+@media (max-width: 760px) {
+  .theme-preview-pair { grid-template-columns: 1fr; }
+  .range-input { width: 120px; }
+  .text-input { width: 170px; }
 }

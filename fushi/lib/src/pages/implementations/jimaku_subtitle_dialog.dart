@@ -30,6 +30,7 @@ class JimakuSubtitleDialog extends StatelessWidget {
     this.httpClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.initialSeason,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     this.debugInitialSeriesLookupFailed = false,
@@ -40,6 +41,9 @@ class JimakuSubtitleDialog extends StatelessWidget {
   final String initialQuery;
   final SubtitleSearchSeed seed;
   final String? videoPath;
+
+  /// 见 [SubtitleSearchPanel.initialSeason]。
+  final int? initialSeason;
   final String initialApiKey;
   final Future<void> Function(String key) onApiKeyChanged;
   final String saveDirectory;
@@ -76,6 +80,7 @@ class JimakuSubtitleDialog extends StatelessWidget {
         httpClientFactory: httpClientFactory,
         seed: seed,
         videoPath: videoPath,
+        initialSeason: initialSeason,
         debugInitialCandidates: debugInitialCandidates,
         debugInitialSeriesMatches: debugInitialSeriesMatches,
         debugInitialSeriesLookupFailed: debugInitialSeriesLookupFailed,

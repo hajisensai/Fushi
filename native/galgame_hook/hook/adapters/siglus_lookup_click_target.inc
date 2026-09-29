@@ -34,6 +34,15 @@ bool ReadSiglusLookupClickTarget(SiglusLookupClickTarget *copy,
   return true;
 }
 
+// Click paths only: the published line must also accept a plain click as a
+// lookup. Shift and hover read the same target through the plain reader.
+bool ReadSiglusLookupClickClaimTarget(SiglusLookupClickTarget *copy,
+    SiglusLookupPressDiagnostic* diagnostic = nullptr) {
+  if (!ReadSiglusLookupClickTarget(copy, diagnostic)) return false;
+  return copy->claims_clicks == 1 ||
+      RejectSiglusLookupPress(diagnostic, SiglusLookupPressReason::kTargetLeavesClicks);
+}
+
 bool BuildSiglusLookupPayloadAtPress(const SiglusLookupClickTarget &target,
                                      HWND game, const POINT &screen_point,
                                      SiglusLookupPayload *payload,

@@ -126,6 +126,13 @@ String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
       // 一台对端都没配对：以前落到字符串层的 `contains('not configured')` → 返回
       // null → 裸英文 'Fushi server credentials not configured' 直接上屏。
       return t.sync_err_not_paired;
+    case SyncAuthFailureKind.htmlPage:
+      // BUG-2631：服务端回的是网页（Cloudflare 挑战 / 反代错误页 / URL 是个网站）。
+      // 凭据没被评估过，「你的登录没问题」是错的；可操作项是核对地址。
+      // serverReason 在这条上只会是网页标题，整页标记在读体那层就已被丢掉。
+      final String? title = serverReason;
+      if (title == null || title.isEmpty) return t.sync_err_html_page;
+      return t.sync_err_html_page_detail(title: title);
   }
 }
 

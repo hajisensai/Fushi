@@ -28,6 +28,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     required this.onChanged,
     this.onOpenMember,
     this.onDeleteMembersMedia,
+    this.deleteMembersStatisticsSubtitle,
     super.key,
   });
 
@@ -61,13 +62,19 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// (mediaType, entryKey) 删底层书/有声书/视频本体 + 磁盘副本，并释放空间。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
   ///
-  /// 第二个参数 `deleteLocalFiles` 与视频侧共用同一回调形状；书架合集不提供
-  /// 「同时删除本地文件」二级勾选（书的原件删除由 [ReaderFushiSource.deleteBook]
-  /// 自己的纪律决定），故这里恒传 false。
+  /// 第二、三个参数 `deleteLocalFiles` / `deleteStatistics` 与视频侧共用同一回调
+  /// 形状；书架合集不提供「同时删除本地文件」（书的原件删除由
+  /// [ReaderFushiSource.deleteBook] 自己的纪律决定），故 `deleteLocalFiles` 恒传
+  /// false；`deleteStatistics` 来自 [deleteMembersStatisticsSubtitle] 那一行勾选。
   final Future<void> Function(
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia;
+
+  /// 「同时删除统计数据」勾选行的副标题（挂在「连同成员一起删」之下）；null = 不
+  /// 提供该选项（如游戏库：游戏成员从不随合集删除），`deleteStatistics` 恒 false。
+  final String? deleteMembersStatisticsSubtitle;
 
   @override
   State<MediaCollectionGridDetailPage> createState() =>
@@ -154,6 +161,8 @@ class _MediaCollectionGridDetailPageState
     final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_books : null,
+      statisticsSubtitle:
+          canDeleteMembers ? widget.deleteMembersStatisticsSubtitle : null,
       checkedDisclosure: canDeleteMembers
           ? buildDeletionDisclosure(
               target: DeletionDisclosureTarget.shelfBook,
@@ -168,6 +177,7 @@ class _MediaCollectionGridDetailPageState
       await widget.onDeleteMembersMedia!(
         List<MediaCollectionItemRow>.of(_rows),
         false,
+        result.deleteStatistics,
       );
     }
     await deleteMediaCollectionWithAssets(

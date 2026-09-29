@@ -165,7 +165,10 @@ void main() {
     );
 
     expect(result.failures, isEmpty);
-    expect(metadata.requestedKinds, VideoMetadataMediaKind.values);
+    expect(metadata.requestedKinds, <VideoMetadataMediaKind>[
+      VideoMetadataMediaKind.tv,
+      VideoMetadataMediaKind.movie,
+    ]);
     final List<VideoDiscoveryItem> items = result.items.single.items;
     expect(items, hasLength(2));
     expect(
@@ -178,6 +181,36 @@ void main() {
     );
     expect(items.first.metadataWork, isNotNull);
     expect(items.first.confirmedLookup, isNotNull);
+  });
+
+  test('BUG-2750 anime search interleaves TV and movie results by rank',
+      () async {
+    final _FakeMetadataProvider metadata =
+        _FakeMetadataProvider(resultsPerKind: 3);
+    final VideoMetadataSearchDiscoveryProvider provider =
+        VideoMetadataSearchDiscoveryProvider(
+      provider: metadata,
+      categories: const <VideoDiscoveryCategory>{
+        VideoDiscoveryCategory.anime,
+      },
+    );
+
+    final ProviderBatchResult<VideoDiscoveryPage> result =
+        await provider.search(const VideoDiscoveryRequest(query: 'Anime'));
+
+    // 旧实现先拼整页剧场版再拼 TV：剧场版的模糊命中全排在正片前面。
+    expect(
+      result.items.single.items
+          .map((VideoDiscoveryItem item) => item.reference.title),
+      <String>[
+        'Anime tv',
+        'Anime movie',
+        'Anime tv 1',
+        'Anime movie 1',
+        'Anime tv 2',
+        'Anime movie 2',
+      ],
+    );
   });
 
   test('reports discovery feeds as an unsupported capability', () async {
@@ -223,6 +256,9 @@ MalVideoMetadataProvider _malSeasonsProvider() => MalVideoMetadataProvider(
     );
 
 class _FakeMetadataProvider implements VideoMetadataProvider {
+  _FakeMetadataProvider({this.resultsPerKind = 1});
+
+  final int resultsPerKind;
   final List<VideoMetadataMediaKind> requestedKinds =
       <VideoMetadataMediaKind>[];
 
@@ -239,19 +275,25 @@ class _FakeMetadataProvider implements VideoMetadataProvider {
   ) async {
     requestedKinds.add(request.mediaKind);
     return <VideoMetadataWork>[
-      VideoMetadataWork(
-        provider: providerKind,
-        kind: request.mediaKind,
-        title: 'Anime ${request.mediaKind.name}',
-        ids: <VideoMetadataId>[
-          VideoMetadataId(
-            type: 'anilist',
-            value:
-                request.mediaKind == VideoMetadataMediaKind.movie ? '1' : '2',
-            isDefault: true,
-          ),
-        ],
-      ),
+      for (int rank = 0; rank < resultsPerKind; rank++)
+        VideoMetadataWork(
+          provider: providerKind,
+          kind: request.mediaKind,
+          title: rank == 0
+              ? 'Anime ${request.mediaKind.name}'
+              : 'Anime ${request.mediaKind.name} $rank',
+          ids: <VideoMetadataId>[
+            VideoMetadataId(
+              type: 'anilist',
+              value: rank == 0
+                  ? (request.mediaKind == VideoMetadataMediaKind.movie
+                      ? '1'
+                      : '2')
+                  : '${request.mediaKind.name}-$rank',
+              isDefault: true,
+            ),
+          ],
+        ),
     ];
   }
 

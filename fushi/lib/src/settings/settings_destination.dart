@@ -5,6 +5,9 @@ import 'package:fushi/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
   appearance,
+  // 「悬浮球」一级分类：应用内 / 应用外开关与各场景按钮的唯一入口
+  // （settings_schema_floating_ball.dart）。此前散在查词页与阅读页两处。
+  floatingBall,
   profiles,
   reading,
   // 「漫画」一级分类：漫画阅读器的观看偏好（方向/缩放/翻页）+ 漫画 OCR。原先
@@ -28,6 +31,10 @@ enum SettingsDestinationId {
   // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
   // 同门控（仅 Windows，galgame hook 平台边界）。
   game,
+  // 「AI」一级分类：用户自配的大模型提供商（端点/凭据/模型/协议）与「哪个功能用
+  // 哪家」的映射。归在 services 模块下（同 Jimaku / OpenSubtitles / Torznab 一类
+  // 第三方在线服务），见 module_registry.dart。
+  ai,
   syncBackup,
   // 「存储」一级分类：磁盘占用总览（书/词典单条删除）+ 可选模块（OCR 模型 /
   // Anime4K 着色器删除恢复）+ 随包组件展示（构建函数在 settings_schema_storage.dart）。

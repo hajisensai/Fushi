@@ -2,16 +2,22 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
@@ -65,16 +71,27 @@ abstract class HomeDictionarySearchDebug {
 /// 通知脉冲：底栏点「查词」时页面还没挂载，脉冲发出去无人接。与桌面取词的
 /// [DesktopLookupService.pendingRequest] 同范式。
 ///
-/// [clearQuery] 是这条请求的**意图**，不是调用方的旗标堆叠：
-/// - 用户从导航（底栏 / 侧栏 rail）点进查词 = 「我要查个新词」→ 清空上次残留的
-///   查询与结果再聚焦，键盘随焦点弹起。
-/// - 热键「聚焦搜索框」= 「我要编辑当前查询」→ 只聚焦，不动已有文本。
+/// [intent] 是这条请求的**意图**，不是调用方的旗标堆叠（见 [DictionaryFocusIntent]）。
 @immutable
 class DictionaryFocusRequest {
-  const DictionaryFocusRequest({required this.clearQuery});
+  const DictionaryFocusRequest(this.intent);
 
-  /// 聚焦前是否先清空搜索框与查询结果。
-  final bool clearQuery;
+  final DictionaryFocusIntent intent;
+}
+
+/// 「把用户送进搜索框」时对已有查询的处置——一个调用来源一种意图，别再往上堆 bool。
+enum DictionaryFocusIntent {
+  /// 只聚焦，不动已有文本：热键「聚焦搜索框」= 「我要编辑当前查询」。
+  keepQuery,
+
+  /// 先清空搜索框与查询结果再聚焦：用户从导航（底栏 / 侧栏 rail）点进查词 =
+  /// 「我要查个新词」，键盘随焦点弹起。
+  clearQuery,
+
+  /// 聚焦并**全选**已有文本：app 外热键「置顶主窗并打开查词页」。用户按它多半是要查
+  /// 新词——直接打字就替换；但也可能只是切回来看上次的结果（尤其配合「查词页按 Esc
+  /// 最小化」来回切），什么都不打就原样保留。浏览器地址栏 Ctrl+L 的模型。
+  selectQuery,
 }
 
 /// The body content for the Dictionary tab in the main menu.
@@ -119,6 +136,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  /// 语言取 [appModelNoUpdate] 而**不是** `appModel`：后者在 mounted 时是
+  /// `ref.watch`（`base_page.dart`），而 [LookupImeBinding.attach] 在 `initState`
+  /// 里**同步**调一次 `languageOf()`——在 build 之外建立 InheritedWidget 依赖会被
+  /// Flutter 当场抛（debug 下点进查词 tab 直接红屏）。这里也本来就不该 watch：
+  /// 输入法语言变了只需下次同步时读到新值，不需要整页重建。
+  late final LookupImeBinding _imeBinding = LookupImeBinding(
+    languageOf: () => appModelNoUpdate.effectiveLookupImeLanguage,
+  );
 
   DictionarySearchResult? _result;
   final DictionaryPopupController _popup = DictionaryPopupController(
@@ -175,6 +200,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);
+    _imeBinding.attach(focusNode: _searchFocusNode);
     widget.focusSignal?.addListener(_consumeFocusRequest);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
     // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
@@ -228,16 +254,65 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     final ValueNotifier<DictionaryFocusRequest?>? signal = widget.focusSignal;
     final DictionaryFocusRequest? request = signal?.value;
     if (signal == null || request == null) return;
+    // 被全屏路由（阅读器 / 播放器）压在底下的 tab 承载不消费：同一个 focusSignal
+    // 此刻还有另一个消费者——HomePage 为「被遮住」推的独立查词路由（同一个
+    // HomeDictionaryPage、同一条信号）。底下这份先监听、先抢走请求，往看不见的
+    // 搜索框上 requestFocus 等于把请求吞掉，用户看到的是最上层那页没有焦点。留给
+    // 真正可见的那份消费。
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
     signal.value = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (request.clearQuery) {
+    // 与 [_onDesktopLookupPending] 同一条纪律：不在帧中（idle，或已经在后帧回调里
+    // ——挂载即消费那条路就是从 initState 的后帧回调进来的）直接执行，只有 build /
+    // layout 进行中才排后帧。addPostFrameCallback **不调度帧**——「已经在查词页上
+    // 再按热键」这条路没有任何 setState，排进去的回调要等到别的东西凑巧触发一帧
+    // 才跑，焦点请求就这样悬空。
+    final SchedulerPhase phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      _applyFocusRequest(request);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _applyFocusRequest(request);
+      });
+    }
+  }
+
+  void _applyFocusRequest(DictionaryFocusRequest request) {
+    if (!mounted) return;
+    switch (request.intent) {
+      case DictionaryFocusIntent.clearQuery:
         // _clearSearch 自带 requestFocus——清空与聚焦是同一个动作，别拆成两步。
         _clearSearch();
-        return;
-      }
+      case DictionaryFocusIntent.selectQuery:
+        // 先选区后聚焦：EditableText 拿到焦点时只会把**无效**选区重置到文末，
+        // 合法的全选原样保留。
+        _controller.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _controller.text.length,
+        );
+        _focusSearchField();
+      case DictionaryFocusIntent.keepQuery:
+        _focusSearchField();
+    }
+  }
+
+  /// 把用户送进搜索框并确保软键盘弹起（BUG-2687）。
+  ///
+  /// 光 `requestFocus` 不够：搜索框**已经有焦点**时它是空操作，而移动端焦点在、
+  /// 键盘不在是常态——提交后收了键盘（BUG-2686）、系统返回键收了键盘，焦点都还
+  /// 留在框里。此时已在查词页再点「查词」，框清空了键盘却不弹。
+  /// [EditableTextState.requestKeyboard] 正是「点一下输入框」的语义：没焦点就
+  /// 聚焦，有焦点就向输入法再要一次键盘。
+  void _focusSearchField() {
+    if (!_searchFocusNode.canRequestFocus) return;
+    final EditableTextState? editable = _searchFocusNode.context
+        ?.findAncestorStateOfType<EditableTextState>();
+    if (editable != null && editable.mounted) {
+      editable.requestKeyboard();
+    } else {
       _searchFocusNode.requestFocus();
-    });
+    }
   }
 
   void _onDesktopLookupPending() {
@@ -291,11 +366,81 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     }
   }
 
+  // ── 「返回上一级」最小化主窗（用户请求，Flow Launcher 式用法）────────────
+  //
+  // app 外热键把主窗置顶到本页 → 查完按「返回上一级」（默认 Esc）→ 主窗最小化、OS 把
+  // 前台交还给之前的程序，全程不碰鼠标。偏好默认关；开了之后它**优先于**本页
+  // PopScope 的「关弹窗 → 清查询」阶梯——用户要的是一键收窗，走完阶梯要按三下，
+  // 而查询与结果原样留着，下次热键回来搜索框全选、直接打字就替换。
+  //
+  // 执行体只有这一份，两条输入通道汇进来：
+  //   · Flutter 持焦（搜索框 / 历史列表）：本页 [_handleLookupPageKey]，挂在整页
+  //     子树上，比 HomePage / app 根的 globalBack 更近，先到先认领；
+  //   · 弹窗持焦（用户点过结果卡片，焦点在根 Overlay 的 WebView 子树里，按键**永远
+  //     到不了**本页与 HomePage 的 Focus，BUG-1347）：既有的弹窗输入桥
+  //     [dictionaryPopupInputScope] → [onDictionaryPopupInputToken]。
+  // 两边都解析注册表里的 [ShortcutAction.globalBack]，不硬编码 Esc——改键跟着走。
+  // 落地在本页而不是 HomePage：tab 承载与独立路由承载（查词模块关掉时）都是同一个
+  // HomeDictionaryPage，放这里两种承载天然一致。
+
+  /// 偏好开着且当前平台真有「最小化」这回事。
+  bool get _escapeMinimizesWindow =>
+      DesktopLookupService.isDesktop &&
+      appModel.lookupPageEscapeMinimizesWindow;
+
+  /// 最小化主窗；返回是否真的发出（非桌面 / 插件缺席返回 false，按键不认领）。
+  Future<bool> _minimizeWindowFromLookupPage() =>
+      DesktopLookupService.instance.minimizeMainWindow();
+
+  KeyEventResult _handleLookupPageKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (!_escapeMinimizesWindow) return KeyEventResult.ignored;
+    // TODO-847 同款：IME 组字时 logicalKey 被改写成 process，传 physicalKey 让注册
+    // 表走物理键回退；搜索框正在组字（focusedEditableText != null）时传 null 关闭回
+    // 退——那一下 Esc 是在取消组字，不是要收窗。
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
+      event.logicalKey,
+      modifiers: activeModifierKeys(),
+      scope: ShortcutScope.universal,
+      physicalKey: focusedEditableText() == null ? event.physicalKey : null,
+    );
+    if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
+    unawaited(_minimizeWindowFromLookupPage());
+    return KeyEventResult.handled;
+  }
+
+  /// 弹窗持焦时把「返回上一级」交回本页（偏好关着时不装桥：空表 = 弹窗那边什么都
+  /// 不拦，Esc 照旧沿根 Overlay 冒到 app 根，行为与改动前逐字相同）。
+  @override
+  ShortcutScope? get dictionaryPopupInputScope =>
+      _escapeMinimizesWindow ? ShortcutScope.home : null;
+
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      _escapeMinimizesWindow
+          ? const <ShortcutAction>{ShortcutAction.globalBack}
+          : const <ShortcutAction>{};
+
+  @override
+  bool onDictionaryPopupInputToken(String token) {
+    // home scope 未命中时函数内部回落 universal（「返回上一级」就在那里）。
+    final ShortcutAction? action = resolveDictionaryPopupInputToken(
+      registry: appModel.shortcutRegistry,
+      token: token,
+      scope: ShortcutScope.home,
+    );
+    if (action != ShortcutAction.globalBack) return false;
+    if (!_escapeMinimizesWindow) return false;
+    unawaited(_minimizeWindowFromLookupPage());
+    return true;
+  }
+
   @override
   void dispose() {
     widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
+    _imeBinding.detach();
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
         .removeListener(_onDictionaryEntriesChanged);
@@ -347,9 +492,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _sourceHighlight = null;
     _historyWritten = false;
     setState(() {});
-    if (_searchFocusNode.canRequestFocus) {
-      _searchFocusNode.requestFocus();
-    }
+    _focusSearchField();
   }
 
   void _clearSearchFromResultPull() {
@@ -397,34 +540,41 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           _clearSearch();
         }
       },
-      child: FushiFileDropTarget(
-        debugLabel: 'home-dictionary',
-        onDrop: _handleDictionaryHomeDrop,
-        // BUG-1658：页头必须在 DesktopContentLayout 外——dictionary 档的 16/24px
-        // 侧向留白只属于查词正文（文字流贴边可读性差），叠到页头上会让本页大标题
-        // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
-        child: Column(
-          children: [
-            // Cupertino 档由外层导航栏顶替页头，但独立路由（查词模块被关掉时
-            // 走的 `_StandaloneDictionaryRoute`）是个裸 Scaffold，页头里的返回键
-            // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
-            // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
-            if (!isCupertinoPlatform(context) || widget.showBackButton)
-              _buildPageHeader(),
-            Expanded(
-              child: DesktopContentLayout(
-                kind: DesktopContentKind.dictionary,
-                child: Column(
-                  children: [
-                    _buildSearchHeader(),
-                    // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-                    const SyncProgressBanner(),
-                    Expanded(child: _buildBody()),
-                  ],
+      // 「返回上一级」最小化主窗（见 [_handleLookupPageKey]）：挂在整页子树上、
+      // 只拦不抢焦点（canRequestFocus: false + skipTraversal），偏好关着时恒 ignored。
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleLookupPageKey,
+        child: FushiFileDropTarget(
+          debugLabel: 'home-dictionary',
+          onDrop: _handleDictionaryHomeDrop,
+          // BUG-1658：页头必须在 DesktopContentLayout 外——dictionary 档的 16/24px
+          // 侧向留白只属于查词正文（文字流贴边可读性差），叠到页头上会让本页大标题
+          // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
+          child: Column(
+            children: [
+              // Cupertino 档由外层导航栏顶替页头，但独立路由（查词模块被关掉时
+              // 走的 `_StandaloneDictionaryRoute`）是个裸 Scaffold，页头里的返回键
+              // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
+              // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
+              if (!isCupertinoPlatform(context) || widget.showBackButton)
+                _buildPageHeader(),
+              Expanded(
+                child: DesktopContentLayout(
+                  kind: DesktopContentKind.dictionary,
+                  child: Column(
+                    children: [
+                      _buildSearchHeader(),
+                      // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                      const SyncProgressBanner(),
+                      Expanded(child: _buildBody()),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -462,12 +612,30 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             )
           : null,
       actions: <Widget>[
+        // 收藏夹入口：查词页里收藏的词 / 句（含视频、有声书来源）在这里集中看、
+        // 批量制卡。此前只能从书架 / 视频库进收藏夹，查词页没有入口。
+        FushiIconButton(
+          key: const ValueKey<String>('home-dictionary-collections'),
+          tooltip: t.collections,
+          icon: Icons.collections_bookmark_outlined,
+          onTap: _openCollections,
+        ),
         FushiIconButton(
           tooltip: t.clear_dictionary_title,
           icon: Icons.delete_sweep_outlined,
           onTap: _showDeleteDictionaryHistoryPrompt,
         ),
       ],
+    );
+  }
+
+  void _openCollections() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(),
+      ),
     );
   }
 
@@ -1090,6 +1258,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       onSwipeDismiss: _dismissTopNestedPopup,
                       swipeEnabled:
                           ReaderFushiSource.instance.enableSwipeToClose,
+                      // BUG-2770：触摸半边未设置时所有平台默认开。
+                      touchSwipeEnabled:
+                          ReaderFushiSource.instance.enableTouchSwipeToClose,
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
                       // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形

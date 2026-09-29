@@ -142,43 +142,6 @@ void main() {
       );
     });
 
-    test('hover reveal: mouse move reveals when hidden, re-arms when shown', () {
-      expect(
-        readerHoverRevealAction(
-          floating: true,
-          transientVisible: false,
-          isMouse: true,
-        ),
-        ReaderHoverRevealAction.reveal,
-      );
-      expect(
-        readerHoverRevealAction(
-          floating: true,
-          transientVisible: true,
-          isMouse: true,
-        ),
-        ReaderHoverRevealAction.rearm,
-      );
-      expect(
-        readerHoverRevealAction(
-          floating: false,
-          transientVisible: false,
-          isMouse: true,
-        ),
-        ReaderHoverRevealAction.none,
-        reason: '挤压常驻，没有东西可唤',
-      );
-      expect(
-        readerHoverRevealAction(
-          floating: true,
-          transientVisible: false,
-          isMouse: false,
-        ),
-        ReaderHoverRevealAction.none,
-        reason: '触屏 / 手写笔悬停不唤出',
-      );
-    });
-
     test('autoHide millis: default 3000, clamps to 1000..10000', () {
       expect(kDefaultAutoHideChromeMillis, 3000);
       expect(normalizeAutoHideChromeMillis(3000), 3000);
@@ -309,7 +272,11 @@ void main() {
         '  /// TODO-693:',
       );
       expect(reveal.contains('_chromeTransientVisible'), isTrue);
-      expect(reveal.contains('_armChromeAutoHide'), isTrue);
+      expect(
+        reveal.contains('_armChromeAutoHide'),
+        isFalse,
+        reason: '用户 2026-09-14：点出来的栏不自动收起，只有下一次点击能关掉它',
+      );
       expect(
         reveal.contains('_reanchor') || reveal.contains('_applyChromeInsets'),
         isFalse,

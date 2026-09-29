@@ -145,6 +145,15 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
         '单包从 git 引进来时 pub 会当 hosted 去 pub.dev 找而解析失败。'
         '行级 context 只放行这一行，同文件里新长出来的其它失效 slug 照样报。',
   ),
+  _Exemption(
+    pathSuffix: 'tool/check_release_policy.ps1',
+    context: RegExp('fushi-server'),
+    reason:
+        'hajisensai/fushi-server 是无头服务端的**独立发布仓**真名（2026-09-14 起：'
+        '那边的 release.yml 以 workflow_call 回调本仓 release-server.yml，Release '
+        '落那边）。守卫脚本里提到它是为了说明「本仓自己禁发服务端包」的规则来源。'
+        '行级 context 只放行含 fushi-server 的行，其它失效 slug 照样报。',
+  ),
 ];
 
 /// C：构建/打包配置里的旧代号词根。

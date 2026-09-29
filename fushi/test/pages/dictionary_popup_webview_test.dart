@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -9,10 +10,10 @@ import '../helpers/source_guard.dart';
 
 void main() {
   group('resolvePopupViewportHeight', () {
-    test('uses the live JS viewport when it is valid', () {
+    test('BUG-2640: prefers the Flutter layout height over quantized JS', () {
       expect(
-        resolvePopupViewportHeight(reportedHeight: 280, layoutHeight: 310),
-        280,
+        resolvePopupViewportHeight(reportedHeight: 164, layoutHeight: 164.967),
+        164.967,
       );
     });
 
@@ -23,11 +24,75 @@ void main() {
       );
     });
 
+    test('falls back to the JS viewport while layout is unavailable', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 280, layoutHeight: null),
+        280,
+      );
+    });
+
     test('returns null when neither side has a usable viewport', () {
       expect(
         resolvePopupViewportHeight(reportedHeight: 0, layoutHeight: 0),
         isNull,
       );
+    });
+  });
+
+  // BUG-2640：125% 缩放下热槽弹窗自适应高度的闭环。模型与生产链路一一对应：
+  //   外壳高 H → WebView 盒高 H − 顶栏（带小数）→ fork setSize 把逻辑尺寸截成整数
+  //   → ×DPR 再截成物理像素 → JS innerHeight 为整数 CSS px；内容高 ceil 后上报；
+  //   宿主用 resolveAutoFitPopupHeight 求下一高，差值 <1 不重建
+  //   （dictionary_page_mixin.dart 的 onContentMetrics）。
+  group('BUG-2640 auto-fit loop under fractional DPR', () {
+    const double header = 35.033;
+    const double dpr = 1.25;
+    const int contentHeight = 251; // ceil(250.2 CSS px)
+
+    double quantizedInnerHeight(double box) {
+      final double logical = box.truncateToDouble();
+      final double physical = (logical * dpr).truncateToDouble();
+      return (physical / dpr).floorToDouble();
+    }
+
+    /// 跑宿主闭环，返回每次真正 setState 写下的外壳高度序列。
+    List<double> runHostLoop({required bool layoutAvailable}) {
+      double shell = 200;
+      double? autoFit;
+      final List<double> writes = <double>[];
+      for (int i = 0; i < 20; i++) {
+        final double box = shell - header;
+        final double viewport = resolvePopupViewportHeight(
+          reportedHeight: quantizedInnerHeight(box),
+          layoutHeight: layoutAvailable ? box : null,
+        )!;
+        final double next = resolveAutoFitPopupHeight(
+          currentPopupHeight: shell,
+          contentHeight: contentHeight.toDouble(),
+          viewportHeight: viewport,
+          minHeight: 200,
+          maxHeight: 450,
+        );
+        if ((next - (autoFit ?? shell)).abs() < 1) break;
+        autoFit = next;
+        shell = next;
+        writes.add(next);
+      }
+      return writes;
+    }
+
+    test('quantized JS viewport alone flips by exactly 1 px forever', () {
+      final List<double> writes = runHostLoop(layoutAvailable: false);
+      expect(writes.length, 20, reason: 'never converges');
+      final Set<double> tail = writes.skip(10).toSet();
+      expect(tail.length, 2);
+      expect((tail.first - tail.last).abs(), closeTo(1, 1e-9));
+    });
+
+    test('layout viewport converges to header + content in one write', () {
+      final List<double> writes = runHostLoop(layoutAvailable: true);
+      expect(writes, hasLength(1));
+      expect(writes.single, closeTo(header + contentHeight, 1e-9));
     });
   });
 

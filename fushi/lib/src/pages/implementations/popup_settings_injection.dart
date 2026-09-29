@@ -9,6 +9,7 @@
 // + instant-scroll + load-more orchestration).
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
@@ -172,6 +173,7 @@ final Object _noSettingsFontStyleToken = Object();
 /// 测试用：清空两个字体 memo 槽，避免用例之间互相污染。
 @visibleForTesting
 void debugResetDictionaryFontStyleMemo() {
+  _extensionDictionaryFontMemo = null;
   _fontStyleMemoInline
     ..key = null
     ..value = ''
@@ -181,6 +183,155 @@ void debugResetDictionaryFontStyleMemo() {
     ..value = ''
     ..token = Object();
 }
+
+/// 词典字体的全部输入与其指纹。in-app 注入与浏览器扩展共用这一份解析，保证两边
+/// 「哪些字体算数、按什么语言分流」是同一判据（BUG-1868 那类分叉的教训）。
+typedef _DictionaryFontInputs = ({
+  List<Map<String, dynamic>> fonts,
+  List<String> allowedDirectories,
+  List<DictionaryLanguageEntry> dictionaryLanguages,
+  String defaultContentLanguage,
+  String fingerprint,
+});
+
+_DictionaryFontInputs _resolveDictionaryFontInputs(
+  AppModel appModel,
+  ReaderSettings settings,
+) {
+  final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
+  final List<String> allowedDirectories = <String>[
+    p.join(appModel.appDirectory.path, 'custom_fonts'),
+  ];
+  // 全局默认内容语言（设置 · 外观 · 排版）。前两档真值都缺时的兜底语言。
+  // 与词典语言一样必须进 memo 键。
+  final String defaultContentLanguage =
+      appModel.isDatabaseReady ? appModel.prefsRepo.defaultContentLanguage : '';
+  // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
+  // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
+  // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
+  // settings 判空——初始化早期 / 测试 seam 会命中「DB 就绪但词典仓库还
+  // 没建」的窗口，直接读会抛 LateInitializationError。
+  // 未就绪时退化成空列表：只出兜底链，不做 per-dictionary 分流，不崩。
+  final List<DictionaryLanguageEntry> dictionaryLanguages =
+      appModel.isDictionaryRepoReady
+          ? <DictionaryLanguageEntry>[
+              for (final Dictionary d in appModel.dictionaries)
+                DictionaryLanguageEntry(
+                  name: d.name,
+                  glossaryLanguage: d.effectiveTargetLanguage,
+                ),
+            ]
+          : const <DictionaryLanguageEntry>[];
+  final String languageFingerprint = dictionaryLanguages
+      .map((DictionaryLanguageEntry e) => '${e.name}=${e.glossaryLanguage}')
+      .join('|');
+  return (
+    fonts: fonts,
+    allowedDirectories: allowedDirectories,
+    dictionaryLanguages: dictionaryLanguages,
+    defaultContentLanguage: defaultContentLanguage,
+    fingerprint:
+        '${DictionaryFontCss.fontListFingerprint(fonts, allowedDirectories: allowedDirectories)}|$languageFingerprint|$defaultContentLanguage',
+  );
+}
+
+/// 扩展弹窗词典字体的 wire 形状：[faces] 是 `{family, src, format}`（src 为相对 URL），
+/// [css] 是语言分流字体链，[languages] 是词典名 -> 释义语言（popup.js 的
+/// `__fushiDictionaryLanguages`）。
+typedef ExtensionDictionaryFont = ({
+  List<Map<String, String>> faces,
+  String css,
+  Map<String, String> languages,
+});
+
+/// 浏览器扩展查词弹窗的词典字体：与 in-app 弹窗同一份「词典字体」设置与语言分流。
+///
+/// 与 in-app 注入的三处差别都来自宿主：
+///   * 字体字节走扩展端点 `GET /api/extension/fonts/dictionary?path=`（相对 URL，
+///     扩展 background 补上 base 与 token）——弹窗活在网页里，没有 `fushi.local` 拦截器；
+///   * `@font-face` 以结构化 [faces] 下发，扩展用 `new FontFace()` 注册，带 token 的
+///     URL 不进网页可读的样式表；
+///   * 兜底链挂在 `#entries-container` 而不是 `html, body`（shadow root 里没有后两者）。
+///
+/// 按指纹 memo：它挂在每次查词都会调用的 provider 上。
+ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
+  ReaderSettings? settings;
+  try {
+    settings = ReaderFushiSource.resolveEffectiveReaderSettings(appModel);
+  } catch (_) {
+    // 早期 / 测试 seam 里 AppModel 的 late 字段可能还没赋值：与「没配字体」同义。
+  }
+  if (settings == null) return _kNoExtensionDictionaryFont;
+  final _DictionaryFontInputs inputs =
+      _resolveDictionaryFontInputs(appModel, settings);
+  final String cacheKey = '${inputs.fingerprint}|${defaultTargetPlatform.name}';
+  final _ExtensionDictionaryFont? cached = _extensionDictionaryFontMemo;
+  if (cached != null && cached.key == cacheKey) return cached.value;
+  final ({
+    String fontFamily,
+    String fontFaces,
+    List<String> families,
+    List<({String family, String src, String format})> faceSources,
+  }) css = DictionaryFontCss.build(
+    inputs.fonts,
+    allowedDirectories: inputs.allowedDirectories,
+    fontUrlBuilder: extensionDictionaryFontUrl,
+  );
+  final ExtensionDictionaryFont value = (
+    faces: <Map<String, String>>[
+      for (final ({String family, String src, String format}) face
+          in css.faceSources)
+        <String, String>{
+          'family': face.family,
+          'src': face.src,
+          'format': face.format,
+        },
+    ],
+    css: dictionaryLanguageFontCss(
+      customFamilies: css.families,
+      dictionaries: inputs.dictionaryLanguages,
+      platform: defaultTargetPlatform,
+      defaultLanguage: inputs.defaultContentLanguage,
+      rootSelector: '#entries-container',
+    ),
+    languages: <String, String>{
+      for (final DictionaryLanguageEntry e in inputs.dictionaryLanguages)
+        if ((e.glossaryLanguage ?? '').isNotEmpty) e.name: e.glossaryLanguage!,
+    },
+  );
+  _extensionDictionaryFontMemo = (key: cacheKey, value: value);
+  return value;
+}
+
+/// 扩展字体端点的相对 URL（扩展侧补 base + token）。带 `v=<mtimeUs>-<size>` 版本戳，
+/// 理由同 [dictionaryFontUrl]：同名覆盖导入后 URL 必须变成新资源。
+const String kExtensionDictionaryFontPath = '/api/extension/fonts/dictionary';
+
+String extensionDictionaryFontUrl(String safePath) {
+  String version = '';
+  try {
+    final FileStat stat = FileStat.statSync(safePath);
+    if (stat.type != FileSystemEntityType.notFound) {
+      version = '&v=${stat.modified.microsecondsSinceEpoch}-${stat.size}';
+    }
+  } catch (_) {
+    // 拿不到版本不影响可用性，只是少了自动失效。
+  }
+  return '$kExtensionDictionaryFontPath?path=${Uri.encodeQueryComponent(safePath)}$version';
+}
+
+typedef _ExtensionDictionaryFont = ({
+  String key,
+  ExtensionDictionaryFont value,
+});
+
+_ExtensionDictionaryFont? _extensionDictionaryFontMemo;
+
+const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
+  faces: <Map<String, String>>[],
+  css: '',
+  languages: <String, String>{},
+);
 
 ({String cacheKey, Object cacheToken, String js}) _dictionaryFontStyleJsMemo(
   AppModel appModel, {
@@ -210,14 +361,13 @@ void debugResetDictionaryFontStyleMemo() {
       js: '',
     );
   }
-  final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
-  final List<String> allowedDirectories = <String>[
-    p.join(appModel.appDirectory.path, 'custom_fonts'),
-  ];
-  // 全局默认内容语言（设置 · 外观 · 排版）。前两档真值都缺时的兜底语言。
-  // 与词典语言一样必须进 memo 键。
-  final String defaultContentLanguage =
-      appModel.isDatabaseReady ? appModel.prefsRepo.defaultContentLanguage : '';
+  final _DictionaryFontInputs inputs =
+      _resolveDictionaryFontInputs(appModel, settings);
+  final List<Map<String, dynamic>> fonts = inputs.fonts;
+  final List<String> allowedDirectories = inputs.allowedDirectories;
+  final String defaultContentLanguage = inputs.defaultContentLanguage;
+  final List<DictionaryLanguageEntry> dictionaryLanguages =
+      inputs.dictionaryLanguages;
   // 词头语言 = 查词来源的语言（正在读的书/视频/游戏）> 全局默认。它与释义区的
   // 词典语言是两条独立的轴，不能混用同一个值。
   final String lookupLanguage = resolveContentLanguage(
@@ -225,34 +375,18 @@ void debugResetDictionaryFontStyleMemo() {
         globalDefault: defaultContentLanguage,
       ) ??
       '';
-
-  // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
-  // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
-  // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
-  // 上面那个 settings 判空——初始化早期 / 测试 seam 会命中「DB 就绪但词典仓库还
-  // 没建」的窗口，直接读会抛 LateInitializationError（与上面注释说的同一个坑）。
-  // 未就绪时退化成空列表：只出兜底链，不做 per-dictionary 分流，不崩。
-  final List<DictionaryLanguageEntry> dictionaryLanguages =
-      appModel.isDictionaryRepoReady
-          ? <DictionaryLanguageEntry>[
-              for (final Dictionary d in appModel.dictionaries)
-                DictionaryLanguageEntry(
-                  name: d.name,
-                  glossaryLanguage: d.effectiveTargetLanguage,
-                ),
-            ]
-          : const <DictionaryLanguageEntry>[];
-  final String languageFingerprint = dictionaryLanguages
-      .map((DictionaryLanguageEntry e) => '${e.name}=${e.glossaryLanguage}')
-      .join('|');
   final String cacheKey =
-      '${DictionaryFontCss.fontListFingerprint(fonts, allowedDirectories: allowedDirectories)}|$languageFingerprint|$defaultContentLanguage|$lookupLanguage|${defaultTargetPlatform.name}';
+      '${inputs.fingerprint}|$lookupLanguage|${defaultTargetPlatform.name}';
   if (cacheKey == slot.key) {
     return (cacheKey: cacheKey, cacheToken: slot.token, js: slot.value);
   }
   final int inlineFailuresBefore = DictionaryFontCss.inlineFailureCount;
-  final ({String fontFamily, String fontFaces, List<String> families}) css =
-      DictionaryFontCss.build(
+  final ({
+    String fontFamily,
+    String fontFaces,
+    List<String> families,
+    List<({String family, String src, String format})> faceSources,
+  }) css = DictionaryFontCss.build(
     fonts,
     allowedDirectories: allowedDirectories,
     fontUrlBuilder: fontUrlBuilder,
@@ -599,6 +733,8 @@ class _PopupStaticSettingsMemo {
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
     required this.popupInstantScroll,
+    required this.popupInstantScrollWheelStep,
+    required this.popupInstantScrollTouchStep,
     required this.wheelBindingsJson,
     required this.popupKeyBindings,
     required this.audioSourcesJson,
@@ -628,6 +764,8 @@ class _PopupStaticSettingsMemo {
   final double dictionaryFontSize;
   final double popupWheelSpeed;
   final bool popupInstantScroll;
+  final double popupInstantScrollWheelStep;
+  final double popupInstantScrollTouchStep;
   final String wheelBindingsJson;
   final String popupKeyBindings;
   final String audioSourcesJson;
@@ -765,6 +903,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
       cached.popupInstantScroll == appModel.popupInstantScroll &&
+      cached.popupInstantScrollWheelStep ==
+          appModel.popupInstantScrollWheelStep &&
+      cached.popupInstantScrollTouchStep ==
+          appModel.popupInstantScrollTouchStep &&
       cached.wheelBindingsJson == wheelBindingsJson &&
       cached.popupKeyBindings == popupKeyBindings &&
       cached.audioSourcesJson == audioSourcesJson &&
@@ -831,6 +973,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 的两个分支（'instant' / 'auto'）在无 scroll-behavior:smooth 的弹窗里完全等价，
     // 滚轮路径又根本不读它——开关两端行为一致 = 用户看到的「不生效」。
     window.__fushiPopupInstantScroll = ${appModel.popupInstantScroll};
+    // 瞬时滚动步长（占被滚表面视口高度的比例，clamp 0.1–1.0）：滚轮一格跳多少 /
+    // 手指滑满多少跳一步。popup.js 的两条瞬时分支读它们替代原先写死的
+    // POPUP_EINK_{WHEEL,TOUCH}_VIEWPORT_FRACTION（那两个常量退为缺省/非法时的回退）。
+    window.__fushiPopupInstantScrollWheelStep = ${appModel.popupInstantScrollWheelStep};
+    window.__fushiPopupInstantScrollTouchStep = ${appModel.popupInstantScrollTouchStep};
     // 查词弹窗「上/下一个词条」的滚轮绑定（ShortcutAction.popupNextEntry /
     // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
     // fushiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
@@ -913,6 +1060,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
     popupInstantScroll: appModel.popupInstantScroll,
+    popupInstantScrollWheelStep: appModel.popupInstantScrollWheelStep,
+    popupInstantScrollTouchStep: appModel.popupInstantScrollTouchStep,
     wheelBindingsJson: wheelBindingsJson,
     popupKeyBindings: popupKeyBindings,
     audioSourcesJson: audioSourcesJson,

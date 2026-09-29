@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
 /// TODO-291 阶段2 行为守卫：[AudiobookSession] 是进程级常驻控制器持有者。
@@ -69,7 +71,7 @@ void main() {
     FloatingLyricChannel.platformOverride = null;
   });
 
-  AudiobookSession makeSession() {
+  AudiobookSession makeSession({FushiDatabase? db}) {
     return AudiobookSession(
       audioHandler: () => null,
       showFloatingLyric: () => false,
@@ -93,6 +95,10 @@ void main() {
         skipPreviousStream: const Stream<void>.empty(),
         toggleFloatingLyricStream: const Stream<void>.empty(),
       ),
+      // BUG-2558：库给 null = 不建后台听书时钟（默认装置不碰统计）；只有验统计的
+      // 用例传内存库进来。
+      database: () => db,
+      studyIdleTimeout: () => const Duration(minutes: 10),
     );
   }
 
@@ -118,9 +124,10 @@ void main() {
     String key, {
     List<AudioCue> cues = const <AudioCue>[],
     int positionMs = 0,
+    FushiDatabase? db,
   }) async {
     installPlatform();
-    final AudiobookSession session = makeSession();
+    final AudiobookSession session = makeSession(db: db);
     addTearDown(session.dispose);
     await session.start(
       info: SessionBookInfo(
@@ -256,6 +263,145 @@ void main() {
     expect(session.isActive, isFalse);
     expect(session.controller, isNull);
     expect(session.book, isNull);
+  });
+
+  group('BUG-2558：退出阅读器后台听书期间的学习统计', () {
+    // 根因：阅读器那只 StudyClock 随 reader 页 dispose 一起 detach，于是「退出书籍页
+    // → 锁屏 → 经媒体中心继续听」整段没有任何统计写入方。会话自己补一只，与阅读器
+    // 那只**互斥**（判据含 hasReaderAttached），两只同时跑就是同一段时间记两遍。
+    FushiDatabase memoryDb() {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      return db;
+    }
+
+    test('reader 在场不起表、reader 一走接手、重进书再交回（互斥交接）', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+
+      session.attachReader(reader);
+      await c.play();
+      await pumpEventQueue();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: 'reader 在场时统计归阅读器那只时钟，会话这只必须停着',
+      );
+
+      session.detachReader(reader);
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isTrue,
+        reason: '「退出书籍页继续听」这一段过去完全没有统计写入方',
+      );
+
+      session.attachReader(reader);
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '重进书交回阅读器那只时钟，不得两只并行',
+      );
+    });
+
+    test('后台暂停即停表、再播即续表（用户要的「关了有声书就关统计」）', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+
+      await c.play();
+      await pumpEventQueue();
+      expect(session.debugBackgroundStudyClockRunning, isTrue);
+
+      await c.pause();
+      await pumpEventQueue();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '媒体中心 / 耳机键暂停后会话仍在（通知还挂着），但那不是学习时间',
+      );
+
+      await c.play();
+      await pumpEventQueue();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isTrue,
+        reason: '后台按播放要立刻续表，不能等回前台',
+      );
+    });
+
+    test('没在播时 reader 离场不起表（退书时本来就是暂停态）', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '会话活着 ≠ 在学习；判据要的是「真在出声」',
+      );
+    });
+
+    test('停会话结算并放掉时钟', () async {
+      final AudiobookSession session =
+          await startedSession('a', db: memoryDb());
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+      await c.play();
+      await pumpEventQueue();
+      expect(session.debugBackgroundStudyClockRunning, isTrue);
+
+      await session.stop();
+      expect(
+        session.debugBackgroundStudyClockRunning,
+        isFalse,
+        reason: '换书 / 显式停会话必须在 _book 被清空前把这只时钟结算掉',
+      );
+    });
+
+    test('库不可用时不建时钟，播放本身照常（默认装置即此形态）', () async {
+      final AudiobookSession session = await startedSession('a');
+      final AudiobookPlayerController c = session.controller!;
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
+      session.detachReader(reader);
+      await c.play();
+      await pumpEventQueue();
+      expect(session.debugBackgroundStudyClockRunning, isFalse);
+      expect(c.isPlaying, isTrue, reason: '统计不可用不得影响播放');
+    });
+
+    test('统计身份回退：statsMediaKey 缺席时用 bookKey', () {
+      // launcher 两条分支都会显式填 statsMediaKey（SRT 分支的 bookKey 是 srt_books.uid，
+      // 与阅读器用的身份不是同一个串）；旧构造点 / 测试缺席时回退 bookKey。
+      expect(
+        SessionBookInfo(
+          bookKey: 'uid-1',
+          audiobook: ab('uid-1'),
+          title: 'T',
+          mediaIdentifier: 'fushi://book/k',
+          statsMediaKey: 'book-key-1',
+        ).studyMediaKey,
+        'book-key-1',
+      );
+      expect(
+        SessionBookInfo(
+          bookKey: 'uid-1',
+          audiobook: ab('uid-1'),
+          title: 'T',
+          mediaIdentifier: 'fushi://book/uid-1',
+        ).studyMediaKey,
+        'uid-1',
+      );
+    });
   });
 
   test('BUG-1240 a new session waits for the old generation to release',

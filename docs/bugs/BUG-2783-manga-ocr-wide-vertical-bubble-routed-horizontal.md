@@ -1,0 +1,6 @@
+## BUG-2783 · 两列竖排气泡（宽 ≥ 高）被当横排识别、落库也标横排
+- **报告**：2026-09-28（转述 iPhone 用户：竖排气泡有两列字时经常显示成横排且识别错误）
+- **真实性**：✅ 真 bug（本地 ONNX 引擎路径；Lens / 系统 OCR 各自判方向，见备注）。块方向在两处各自按检测框长宽比猜，从没用过块内切行的结论：① 路由 `packages/fushi_engine/lib/ocr/routing_ocr_recognizer.dart` `routesToHorizontalPath`（宽 ≥ 高 → 横排路径），两列竖排气泡常常宽 ≥ 高；进入横排路径后 PP det 会把竖列切断，短列碎片（`packages/fushi_engine/lib/ocr/ppocr_line_detector.dart` `PpTextLine.vertical` 要求 h ≥ 1.5w）被当成横行交给 PP 横排识别器 → 乱码，同一列的碎片按 x 中心排序还会乱序；② 落库 `packages/fushi_engine/lib/ocr/manga_ocr_pipeline.dart` `processPage` 用 `isVerticalBlock(region.rect)`（h > 1.25w）写 `OcrBlock.vertical`，宽的竖排块一律标横排，叠加层按横排排字、查词几何也跟着错。
+- **[x] ① 已修复** — 块方向改成只有一个拥有者：路由器对宽块切行后按行投票（`linesAreVerticalMajority`，竖行严格过半），多列竖排整块交 manga-ocr（与竖长块同一条已验证路径），横行占多数才维持原逐行路径；方向经新接口 `OrientedOcrRecognizer.recognizeOriented`（`packages/fushi_engine/lib/ocr/ocr_types.dart`）交回 pipeline，pipeline 仅在识别器不报方向时才用长宽比兜底。一横一竖的混排块（并列）行为不变。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/routing_ocr_recognizer_test.dart` 三条 `BUG-2783` 用例（非批 / 批路由的方向与调用路径、pipeline 落库 `vertical`）。
+- **备注**：iOS 默认 OCR 引擎是 Google Lens（按行投票判方向）或系统 OCR（Apple Vision，`fushi/lib/src/ocr/system_ocr_channel.dart` 只按单行 h > 1.6w 判竖排），这两条路径不经本路由器，本修复不覆盖；报告者用的是哪个引擎未知。未用真实漫画页复测识别率。

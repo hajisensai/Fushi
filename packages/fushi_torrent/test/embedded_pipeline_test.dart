@@ -285,7 +285,14 @@ void main() {
           EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
       addTearDown(leecher!.close);
       // 限速让 1MiB 传输持续若干秒，peer 不会秒完即断——保证下面观察到它。
-      leecher.setRateLimits(downloadBps: 64 * 1024);
+      // 必须连 local peer class 一起限：libtorrent 把 127.0.0.0/8 划进 local
+      // class，全局 download_rate_limit 管不到回环 peer——只设全局时 1MiB 在
+      // 回环上几十 ms 传完、多余连接随即被关，下面 100ms 一次的采样在 Linux CI
+      // 上一次都碰不到做种者（Windows 慢，碰巧落进窗口）。
+      expect(leecher.applyLimits(downloadBps: 64 * 1024, limitLocalPeers: true),
+          isTrue,
+          reason: 'local peer class must be rate-limited for the '
+              'observation window below to exist');
 
       // 先封整个回环段：随后 connect_peer 到做种者应被 ip_filter 拒绝，
       // 30×0.1s 窗口内拿不到元数据（若不生效，1MiB 本地传输早该几百 ms 完成）。

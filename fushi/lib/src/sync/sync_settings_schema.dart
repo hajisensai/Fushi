@@ -7,11 +7,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
+import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
@@ -37,6 +40,15 @@ import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi/src/sync/interconnect_link_pairing.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show InterconnectP2pRuntime, parseInterconnectP2pUrl;
+import 'package:fushi/src/sync/interconnect_p2p_path_badge.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
@@ -81,6 +93,7 @@ export 'package:fushi/src/sync/manual_sync_ui.dart' show summarizeSyncReport;
 part 'sync_settings_schema/account.part.dart';
 part 'sync_settings_schema/backend_config.part.dart';
 part 'sync_settings_schema/interconnect.part.dart';
+part 'sync_settings_schema/interconnect_link.part.dart';
 part 'sync_settings_schema/actions.part.dart';
 part 'sync_settings_schema/backup.part.dart';
 part 'sync_settings_schema/data_root.part.dart';
@@ -363,6 +376,18 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
           ),
+          // 第三方阅读器（Hoshi Reader iOS / Android）的 `.hoshi` 书库备份：
+          // 书 + 阅读位置 + 统计。五端都给——备份文件本身跨端通用。
+          SettingsActionItem(
+            id: 'sync.hoshi_import',
+            title: t.hoshi_import_entry,
+            subtitle: t.hoshi_import_entry_subtitle,
+            icon: Icons.move_to_inbox_outlined,
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (_) => ExternalReaderImportPage(appModel: ctx.appModel),
+            ),
+          ),
           // Hibiki→Fushi 跨包名迁移入口（改名迁移计划 P1-3/P2-2）；仅 Android——
           // 桌面端数据目录可直接搬迁，不走导出/导入通道。同一份代码按**运行时
           // 包名**切方向：老包（app.hibiki.reader，过渡版基线）显示导出入口，
@@ -538,6 +563,22 @@ SettingsDestination buildInterconnectDestination() {
             icon: Icons.devices_outlined,
             child: _buildInterconnectDevicesPage,
           ),
+          SettingsActionItem(
+            id: 'interconnect.game_stream',
+            title: t.game_stream_join,
+            icon: Icons.cast,
+            visible: (SettingsContext ctx) => !kIsWeb && Platform.isAndroid,
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => GameStreamJoinPage(
+                repository: SyncRepository(ctx.appModel.database),
+                readSettings: () =>
+                    ctx.appModel.prefsRepo.gameStreamVideoSettings,
+                writeSettings:
+                    ctx.appModel.prefsRepo.setGameStreamVideoSettings,
+              ),
+            ),
+          ),
         ],
       ),
       // BUG-988：上传到互联对端——互联通道专属的「本设备内容要不要上传给对端」分项开关，
@@ -566,25 +607,11 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectSyncContentEnabled(value);
             },
           ),
-          SettingsSwitchItem(
-            id: 'interconnect.upload_dictionary',
-            title: t.interconnect_upload_dictionary,
-            subtitle: t.interconnect_upload_dictionary_hint,
-            icon: Icons.menu_book_outlined,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncDictionary,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncDictionary = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncDictionaryEnabled(value);
-            },
-          ),
-          // BUG-2494：互联页没有任何「把对端的词典拉下来」的入口——上面那个开关虽然
-          // 实际驱动的是双向 union，但文案是「上传」，用户不会把它当成下载；云备份页
-          // 那行「词典 · 传输 ▾」在同步方式=互联时被藏掉、且 runManualAssetTransfer
-          // 显式跳过互联通道。这里给互联通道自己一行显式的上传/下载动作，跑在
+          // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
           // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
+          // BUG-2762：这一行是互联页词典的**唯一**入口。以前上面还有一个「上传词典」
+          // 自动同步开关，与本行在同一组里并排成两个「词典」，且开关实际驱动的是双向
+          // union、文案却是「上传」；现在与云备份页同形——词典只由显式动作搬。
           SettingsCustomItem(
             id: 'interconnect.dictionary_transfer',
             searchTitle: t.sync_asset_dictionary,
@@ -847,6 +874,41 @@ SettingsDestination _buildInterconnectHostPage() {
             builder: (SettingsContext ctx) =>
                 _ServerModeWidget(settingsContext: ctx),
           ),
+          // 弱网转码：对端在外面用手机网络播本机的片子时，host 按对端选的画质档
+          // 切段转码成 HLS。默认开——它是纯按需的，对端不报画质档就一个 ffmpeg
+          // 都不会起，行为与从前逐字节相同；关掉它的意愿（「这台机器不想被烤」）
+          // 该由用户显式表达。判据另有 ffmpeg 可用性那道（移动端当 host 时能力位
+          // 恒 false，这个开关开着也不会转）。
+          SettingsSwitchItem(
+            id: 'interconnect.transcode_host',
+            title: t.interconnect_transcode_host_toggle,
+            subtitle: t.interconnect_transcode_host_toggle_desc,
+            icon: Icons.hd_outlined,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.interconnectTranscodeEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setInterconnectTranscodeEnabled(
+                value,
+              );
+            },
+          ),
+          // 游戏串流「从库里启动」许可。默认关：开了就等于允许已配对设备在本机起
+          // 游戏进程，必须是主机主人的显式意愿；端点另有 HTTPS + 已配对 peer token
+          // 两道门。只在有本地游戏库的 Windows 上出现。
+          SettingsSwitchItem(
+            id: 'interconnect.game_stream_remote_launch',
+            title: t.game_stream_remote_launch_title,
+            subtitle: t.game_stream_remote_launch_hint,
+            icon: Icons.sports_esports_outlined,
+            visible: (SettingsContext ctx) => Platform.isWindows,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.gameStreamRemoteLaunchEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setGameStreamRemoteLaunchEnabled(
+                value,
+              );
+            },
+          ),
           // host 侧「配置文件」读写许可。默认关：入站写没有显式开关就是一条无 UI 的
           // 隐形通道（BUG-988 立过的规矩），出站同理——整份 Profile 比四个内容上传
           // 开关更敏感。端点另有 TLS + 已配对 peer token 两道门，本开关是用户意图那道。
@@ -972,7 +1034,6 @@ class _SyncSettingsState {
   bool syncVideoFiles = false;
   // BUG-988：互联通道专属的「上传内容到对端」开关，独立于上面的云备份 sync* 开关。
   bool interconnectSyncContent = false;
-  bool interconnectSyncDictionary = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
   // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
@@ -1008,7 +1069,9 @@ class _SyncSettingsState {
   }
 
   Future<void> _reloadPeerCount() async {
-    final int count = (await _repo.getFushiClientUrls()).length;
+    final int count =
+        interconnectPeerRepresentatives(await _repo.getFushiClientUrls())
+            .length;
     if (peerCount == count) return;
     peerCount = count;
     _settingsContext.refresh();
@@ -1082,8 +1145,6 @@ class _SyncSettingsState {
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
-      interconnectSyncDictionary = await _repo
-          .isInterconnectSyncDictionaryEnabled();
       interconnectSyncAudioBookFiles = await _repo
           .isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles = await _repo
@@ -1099,7 +1160,7 @@ class _SyncSettingsState {
       serverPort = await _repo.getServerPort();
       final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
       hasClientConnection = urls.isNotEmpty;
-      peerCount = urls.length;
+      peerCount = interconnectPeerRepresentatives(urls).length;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

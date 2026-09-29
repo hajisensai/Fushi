@@ -27,6 +27,9 @@ enum ImportCarrier {
 
   /// mokuro v0.2+ 的 `.mokuro` OCR 结果文件（+ 同级图片）。
   /// 走 `MangaModule.importMokuro`。
+  ///
+  /// 也可能是一个**目录**：直接子层恰好一个 `.mokuro`（BUG-2785）。消费方须经
+  /// `MangaModule.directorySingleMokuroPath` 换成那个文件再导入。
   mangaMokuro,
 
   /// 图片压缩包：`.cbz` / `.cbr` / `.rar` / `.cb7`，或真读包确认装的是
@@ -103,14 +106,24 @@ const Set<String> kMangaCarrierFileExtensions = <String>{
 ///   同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」。
 /// - [directoryCarrierFileCount]：目录**直接子层**里有几个 [kMangaCarrierFileExtensions]
 ///   文件。只看扩展名（便宜），真定性推迟到逐卷导入时——那时反正要开包。
+/// - [directoryMokuroFileCount]：目录**直接子层**里有几个 `.mokuro`。
 ImportCarrier classifyImportCarrier(
   String path, {
   required bool Function(String path) isDirectory,
   required bool Function(String path) isImageArchive,
   required bool Function(String path) directoryHasPageImages,
   required int Function(String path) directoryCarrierFileCount,
+  required int Function(String path) directoryMokuroFileCount,
 }) {
   if (isDirectory(path)) {
+    // `.mokuro` 先于页图（BUG-2785）：mokuro 的标准产物就是「`卷.mokuro` + 同名页图
+    // 子目录」，用户选的恰是装着这两样的文件夹。页图判据会递归压平进子目录、先把它
+    // 认成页图目录，于是 OCR 结果被静默丢掉、导成一本没字的漫画。`.mokuro` 是这个
+    // 目录里**信息量最大**的东西，它在就按它导：一个 = 这一卷（调用方把路径换成那个
+    // 文件），多个 = 一批卷（逐卷各带各的 OCR）。
+    final int mokuroCount = directoryMokuroFileCount(path);
+    if (mokuroCount == 1) return ImportCarrier.mangaMokuro;
+    if (mokuroCount > 1) return ImportCarrier.mangaBatchFolder;
     // 页图优先：有页图就是一卷页图目录，与改动前的行为逐字节一致。目录里
     // 同时躺着页图和整卷文件时，页图这条解释更贴近用户点「选文件夹」的意图。
     if (directoryHasPageImages(path)) return ImportCarrier.mangaFolder;
@@ -167,12 +180,14 @@ class ImportCarrierResolver {
     required this.isImageArchive,
     required this.directoryHasPageImages,
     required this.directoryCarrierFileCount,
+    required this.directoryMokuroFileCount,
   });
 
   final bool Function(String path) isDirectory;
   final bool Function(String path) isImageArchive;
   final bool Function(String path) directoryHasPageImages;
   final int Function(String path) directoryCarrierFileCount;
+  final int Function(String path) directoryMokuroFileCount;
 
   String? _cachedKey;
   ImportCarrier? _cachedCarrier;
@@ -210,6 +225,7 @@ class ImportCarrierResolver {
       isImageArchive: isImageArchive,
       directoryHasPageImages: directoryHasPageImages,
       directoryCarrierFileCount: directoryCarrierFileCount,
+      directoryMokuroFileCount: directoryMokuroFileCount,
     );
     _cachedKey = key;
     _cachedCarrier = carrier;

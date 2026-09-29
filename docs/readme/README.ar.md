@@ -149,6 +149,7 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 | المشروع | الوصف |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | منظومة إضافات مصادر المانغا |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | منظومة إضافات مصادر الأنمي (extensions-lib 14–16 بنفس بيئة التشغيل) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | بيئة تشغيل إضافات المانغا لسطح المكتب |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | واجهة ABI لبيئة تشغيل مصادر المانغا |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | مرجع جسر ترجمات البث لإضافة المتصفح |

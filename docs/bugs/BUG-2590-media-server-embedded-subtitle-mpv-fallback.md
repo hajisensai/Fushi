@@ -1,0 +1,13 @@
+## BUG-2590 · 媒体服务器兼容层无字幕抽取端点：内嵌文本轨回落 libmpv 自绘
+- **报告**：2026-09-18（用户截图：Emby 剧集《要我和你交往也不是不行》S01E01，字幕面板选「Embedded 2: jpn / subrip」→ OSD「无法加载该字幕（可能是图形或不支持的字幕轨）」；BUG-2585 修后的「还是无法使用」）
+- **真实性**：✅ 真 bug（沿真实代码路径 + 真服务器取证）
+  - 安装版 `error_log.txt` 直接给出根因：`VideoFushi.remoteSubtitle JellyfinApiException(404, /Videos/<item>/<source>/Subtitles/2/Stream.srt)`，轨 2/3/4/5 全部 404。响应体是 **nginx/1.30.4 默认 404 页**，不是 Emby 的错误。
+  - 对该服务器探针：`/System/Info` 报 `ProductName: "UHD Media Server"`、`Version: 4.9.3.0`——是自研 Emby 兼容层，不实现 `/Videos/{id}/{source}/Subtitles/{index}/Stream.{ext}` 抽取端点（`Stream.js` / `.vtt` / `/0/Stream.srt` / `subtitles.m3u8` 全 404）；PlaybackInfo 也如实标了 4 条 subrip 轨 `IsExternal=false, SupportsExternalStream=false, DeliveryMethod=null`。但 `SupportsDirectPlay=true`，直出的就是原始 mkv（1.77 GB，字幕轨 2..5 在流里）。原版 Emby 4.10（本地 Docker）对同一个 mkv 是 `SupportsExternalStream=true`、抽取端点 200。
+  - 本仓文本字幕一律走自家 cue overlay（`_applyRemoteEmbeddedSubtitle` → `client.getRemoteVideoSubtitle` 下载 → cue），`fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart` 的 catch 分支只会报「无法加载」，从没想过「轨就在 libmpv 正在 demux 的流里」；恢复路径 `video_fushi_page.dart` `_loadRemoteEpisode` 的 `embedded:<n>` 重放同样下载失败即静默无字幕。
+  - 附带事实：Emby / Jellyfin 的 `MediaStreams[].Index` 是**全局**流号（视频 0 / 音频 1 / 字幕 2..），libmpv `tracks.subtitle` 要的是字幕内的相对序号，直接拿 streamIndex 去选 mpv 轨会越界。
+- **[x] ① 已修复** — `_showRemoteEmbeddedTrackViaPlayer`：下载失败且 `RemoteVideoStreamUrls.streamIsOriginalContainer`（Jellyfin 客户端按 PlayMethod ≠ Transcode 置）时，把轨按 `RemoteVideoEmbeddedSubtitleTrack.containerTrackOrdinal`（`JellyfinVideoClient.containerSubtitleOrdinals` 由全局流号换算，图形轨占号、外挂不占）交给 `VideoPlayerController.selectEmbeddedGraphicTrack` 自绘——瞬时出字幕、零额外流量、不可查词（与 BUG-122 图形轨同一降级），选中即持久化，OSD 说明降级；恢复路径同样回落。**有意不做**「后台 ffmpeg 对直出流再读一遍抽成 cue」：那把整集流量翻倍（用户 2026-09-19 拍板不要；曾实现并真机验证过，已撤）。
+- **[x] ② 已加自动化测试** —
+  - 源码守卫 `fushi/test/pages/video_remote_embedded_subtitle_player_fallback_guard_test.dart`（下载失败先回落再报错、只对原始容器、按容器内序号、恢复路径回落、视频页不得出现远端流 ffmpeg 抽取入口）。
+  - `fushi/test/sync/jellyfin_playback_negotiation_test.dart`「内嵌字幕轨的容器内序号与直出标记」（全局流号→序号、转码流不标原始容器、无 PlaybackInfo 仍标）；`fushi/test/sync/remote_dto_wire_format_golden_test.dart`（`containerTrackOrdinal` 缺省 null / 往返）。
+  - 真 app 取证 `fushi/integration_test/media_server_emby_embedded_subtitle_itest.dart`（`-DartDefine FUSHI_EMBY_URL/…/ITEM`，可用 TOKEN/USERID 代替密码；`FUSHI_EMBY_EXPECT_FALLBACK=false` 为原版回归口径）：假 Emby（404 端点）与用户的真 UHD Media Server 上选轨 → libmpv 选中真实轨 + 无 cue → 重进恢复同一轨（20 s 处像素证据日文轨「女の人と付き合ってるって実感できて」）；本地 Docker 原版 Emby 4.10 走原路（服务器抽取 → cue）不变。
+- **备注**：飞牛影视同样没有该端点（BUG-2254 ④），同一条回落路生效。此类服务器上内嵌轨看得到、不可逐字查词；要查词只能导入外挂字幕文件或在线搜字幕。副字幕层没有 libmpv 可回落，仍只报失败。

@@ -79,7 +79,7 @@ test('lookup pane is user-resizable and persists via the popupSize channel', () 
 });
 
 test('side-panel lookup reuses the Shift popup host model and parsed results', () => {
-  assert.match(SIDE_PANEL_HTML, /<section id="lookup-pane" class="lookup-pane" aria-label="查词结果" hidden><\/section>/);
+  assert.match(SIDE_PANEL_HTML, /<section id="lookup-pane" class="lookup-pane" aria-label="查词结果" data-i18n-aria-label="sp_lookup_pane_aria_label" hidden><\/section>/);
   assert.doesNotMatch(SIDE_PANEL_HTML, /lookup-header|lookup-close|lookup-scroll/);
   assert.match(SIDE_PANEL, /lookupPaneEl\.attachShadow\(\{ mode: 'open' \}\)/);
   assert.match(SIDE_PANEL, /var lookupInFlight = new Map\(\);/);

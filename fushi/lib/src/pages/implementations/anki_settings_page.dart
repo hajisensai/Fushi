@@ -9,7 +9,14 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, JapaneseLanguage;
+import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi/src/anki/anki_backup_word_reader.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart'
+    show pickFilesByExtensions;
+import 'package:file_picker/file_picker.dart' show FilePickerResult;
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
@@ -17,10 +24,18 @@ import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_client_section.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningPadMaxMs;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
+    show
+        MiningAnimatedFormat,
+        MiningClipFormat,
+        MiningStillFormat,
+        VideoMiningImageMode;
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -38,6 +53,16 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   @override
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
+
+/// 片段格式选项的文案。五端随包 ffmpeg 都带 libvpx-vp9 + libopus（桌面 ffmpeg-min、
+/// Android AAR、iOS xcframework），两档 WebM 在各端都能内嵌；AV1 只有桌面有 SVT-AV1，
+/// 移动端按 [MiningClipFormat.encodeAttempts] 降级 VP9——文案本身已写明「仅桌面端」。
+@visibleForTesting
+String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
+  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
+  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
+  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
+};
 
 class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
@@ -68,6 +93,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 以 Future 完成顺序覆盖最后一次手势。
   bool _ankiBackendBusy = false;
 
+  /// 「导入 Anki 备份用于查重」在途（选文件 + 解包 + 读库，大备份要几秒）。
+  bool _ankiBackupImportBusy = false;
+
+  /// 导入快照当前条数；null = 还没从账本读出来。
+  int? _ankiBackupImportedCount;
+
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这个开关。
   /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：iOS 的 AnkiMobile
   /// 只有加卡的 URL scheme，Android 的 AnkiDroid 走 Content Provider（能改模板，
@@ -97,6 +128,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   @override
   void initState() {
     super.initState();
+    if (widget.panel == null && Platform.isIOS) {
+      unawaited(_loadAnkiBackupImportedCount());
+    }
     if (widget.panel != null && widget.panel != AnkiSettingsPanel.maintenance) {
       return;
     }
@@ -157,6 +191,31 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             SettingsSearchTarget(
               id: 'card_creation.anki.create_lapis',
               child: _buildCreateLapisTile(uiState, vm),
+            ),
+          ],
+        ),
+        // 待发制卡队列：不受「Anki 已配置」门控——恰恰是连不上 Anki 的时候卡会
+        // 攒在这里，用户必须能看到、能处理。
+        AdaptiveSettingsSection(
+          children: [
+            SettingsSearchTarget(
+              id: 'card_creation.anki.batch_mining',
+              child: AdaptiveSettingsSwitchRow(
+                icon: Icons.inventory_2_outlined,
+                showIcon: true,
+                title: t.anki_batch_mining_title,
+                subtitle: t.anki_batch_mining_hint,
+                value: settings.batchMiningEnabled,
+                onChanged: (bool v) => vm.setBatchMiningEnabled(v),
+              ),
+            ),
+            const SettingsSearchTarget(
+              id: 'card_creation.anki.pending_mine_landing',
+              child: PendingMineLandingSwitchRow(),
+            ),
+            const SettingsSearchTarget(
+              id: 'card_creation.anki.pending_mines',
+              child: PendingMinesEntryRow(),
             ),
           ],
         ),
@@ -223,6 +282,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                   onChanged: vm.updateAllowDupes,
                 ),
               ),
+              // iOS + AnkiMobile：查重只能问本机账本，而账本天生不知道别处加的卡。
+              // 导入一份 Anki 备份把整个 collection 的第一字段补进来（对齐 Hoshi
+              // Reader iOS 的「Import Anki Backup」）。
+              if (Platform.isIOS &&
+                  ankiMobileLedgerIsDuplicateSource(
+                    useAnkiConnectOnMobile: settings.useAnkiConnectOnMobile,
+                    mineToServer: ref.watch(
+                      appProvider.select((AppModel m) => m.mineToServerEnabled),
+                    ),
+                  ))
+                SettingsSearchTarget(
+                  id: 'card_creation.anki.backup_import',
+                  child: _buildAnkiBackupImportRow(),
+                ),
               // TODO-614：「覆写已制卡片」范围单选——和「允许重复」并排（两者都关乎
               // 「再点 ✓ 时改旧卡还是建新卡」）。latest=仅最近一张（默认=现状）；
               // all=按同一查重条件覆写任意已存在卡（含更早制的）。
@@ -315,6 +388,22 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildConnectionPanel(AnkiUiState uiState, AnkiViewModel vm) {
     final AnkiSettings settings = uiState.settings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 不装 Anki、由 Fushi 直接同步到 AnkiWeb / 自建服务器；本机没带
+        // fushi-anki-sync 时这一节不渲染。
+        const AnkiSyncClientSection(),
+        _buildAnkiConnectSection(uiState, vm, settings),
+      ],
+    );
+  }
+
+  Widget _buildAnkiConnectSection(
+    AnkiUiState uiState,
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) {
     return AdaptiveSettingsSection(
       title: 'AnkiConnect',
       children: [
@@ -611,9 +700,29 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             onChanged: appModel.setMiningAudioTailPadMs,
           ),
         ),
+        // 有声书倍速制卡：句子音频跟随播放倍速（变速不变调）。只有小说有声书链读它，
+        // 但与其余句子音频设置同区——用户找「卡片音频长什么样」只会来这里找。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_audio_follow_playback_speed',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_audio_follow_playback_speed,
+            subtitle: t.mining_audio_follow_playback_speed_hint,
+            icon: Icons.speed_outlined,
+            value: appModel.miningAudioFollowPlaybackSpeed,
+            onChanged: (bool value) {
+              appModel.toggleMiningAudioFollowPlaybackSpeed();
+              setState(() {});
+            },
+          ),
+        ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
+        ),
+        // 非 videoClip 模式下这一行不参与制卡，理由同下面两行照常渲染。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_mining_clip_format',
+          child: _buildVideoMiningClipFormatPicker(),
         ),
         // videoClip 模式下这两行不参与制卡，但仍渲染：设置行按 item-id 被覆盖守卫
         // 枚举，按模式从树上抽掉会让焦点驱动的守卫在切换那一刻账目对不上。
@@ -625,10 +734,18 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           id: 'card_creation.anki.video_mining_still_format',
           child: _buildVideoMiningStillFormatPicker(),
         ),
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_online_mining_mode',
+          child: _buildVideoOnlineMiningModePicker(),
+        ),
         if (Platform.isWindows) ...[
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_image_mode',
             child: _buildGalMiningImageModePicker(),
+          ),
+          SettingsSearchTarget(
+            id: 'card_creation.anki.gal_mining_clip_format',
+            child: _buildGalMiningClipFormatPicker(),
           ),
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_animated_format',
@@ -736,15 +853,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  /// 视频制卡封面模式：gif=字幕区间动图（默认）；currentFrame=
+  /// 视频制卡封面模式：videoClip（默认）将同一时间段的画面与例句声音封装为一个片段
+  /// （格式见 [_buildVideoMiningClipFormatPicker]）；gif=字幕区间动图；currentFrame=
   /// 制卡那一刻的当前解码帧（点词已自动暂停）；subtitleStart=当前字幕 cue 起始时间点的帧。
-  /// videoClip 将同一时间段的画面与例句声音封装为一个 MP4，由 Anki 媒体播放器播放。
   /// 全局设置，透传 [AppModel.videoMiningImageMode]，所有视频制卡生效。
   Widget _buildVideoMiningImageModePicker() {
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
       title: t.video_mining_image_mode,
       subtitle: appModel.videoMiningImageMode.isVideoClip
-          ? t.video_mining_image_mode_video_clip_hint
+          ? t.video_mining_image_mode_video_clip_inline_hint
           : null,
       icon: Icons.photo_library_outlined,
       controlBelow: true,
@@ -770,6 +887,44 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
         setState(() {});
+      },
+    );
+  }
+
+  /// 在线视频（媒体服务器 / 在线源扩展等网络流）点制卡后弹窗等不等：后台（默认）/
+  /// 看完再制卡 / 等待完成。副标题随选中项说明取舍，透传
+  /// [AppModel.videoOnlineMiningMode]。本地视频不受影响（恒等待，本来就秒出）。
+  Widget _buildVideoOnlineMiningModePicker() {
+    final VideoOnlineMiningMode mode = appModel.videoOnlineMiningMode;
+    return AdaptiveSettingsPickerRow<VideoOnlineMiningMode>(
+      title: t.video_online_mining_mode,
+      subtitle: switch (mode) {
+        VideoOnlineMiningMode.background =>
+          t.video_online_mining_mode_background_hint,
+        VideoOnlineMiningMode.deferred =>
+          t.video_online_mining_mode_deferred_hint,
+        VideoOnlineMiningMode.wait => t.video_online_mining_mode_wait_hint,
+      },
+      icon: Icons.cloud_download_outlined,
+      controlBelow: true,
+      selected: mode,
+      options: [
+        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
+          value: VideoOnlineMiningMode.background,
+          label: t.video_online_mining_mode_background,
+        ),
+        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
+          value: VideoOnlineMiningMode.deferred,
+          label: t.video_online_mining_mode_deferred,
+        ),
+        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
+          value: VideoOnlineMiningMode.wait,
+          label: t.video_online_mining_mode_wait,
+        ),
+      ],
+      onChanged: (VideoOnlineMiningMode value) async {
+        await appModel.setVideoOnlineMiningMode(value);
+        if (mounted) setState(() {});
       },
     );
   }
@@ -915,6 +1070,102 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     selected: appModel.galMiningStillFormat,
     onChanged: appModel.setGalMiningStillFormat,
   );
+
+  /// 音画同步片段**容器 + 编码**（与动图 / 静图两轴正交，只在封面模式为 videoClip 时
+  /// 生效）。视频 / gal 各存一份（同上两轴的分法），共用一套 option 文案。
+  ///
+  /// 默认值不在这里：偏好层按「老用户是不是显式选过 MP4 片段」推导（见
+  /// `PreferencesRepository.videoMiningClipFormat`）。
+  Widget _buildClipFormatPicker({
+    required String title,
+    required MiningClipFormat selected,
+    required void Function(MiningClipFormat) onChanged,
+  }) {
+    return AdaptiveSettingsPickerRow<MiningClipFormat>(
+      title: title,
+      subtitle: t.mining_clip_format_hint,
+      icon: Icons.movie_outlined,
+      controlBelow: true,
+      selected: selected,
+      options: [
+        for (final MiningClipFormat format in MiningClipFormat.values)
+          AdaptiveSettingsPickerOption<MiningClipFormat>(
+            value: format,
+            label: miningClipFormatLabel(format),
+          ),
+      ],
+      onChanged: (MiningClipFormat format) {
+        onChanged(format);
+        setState(() {});
+      },
+    );
+  }
+
+  Widget _buildVideoMiningClipFormatPicker() => _buildClipFormatPicker(
+    title: t.video_mining_clip_format,
+    selected: appModel.videoMiningClipFormat,
+    onChanged: appModel.setVideoMiningClipFormat,
+  );
+
+  Widget _buildGalMiningClipFormatPicker() => _buildClipFormatPicker(
+    title: t.gal_mining_clip_format,
+    selected: appModel.galMiningClipFormat,
+    onChanged: appModel.setGalMiningClipFormat,
+  );
+
+  Widget _buildAnkiBackupImportRow() {
+    return AdaptiveSettingsRow(
+      icon: Icons.upload_file_outlined,
+      showIcon: true,
+      title: t.anki_backup_import,
+      subtitle: t.anki_backup_import_hint(count: _ankiBackupImportedCount ?? 0),
+      trailing: _ankiBackupImportBusy
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: adaptiveIndicator(context: context, strokeWidth: 2),
+            )
+          : null,
+      onTap: _ankiBackupImportBusy ? null : _importAnkiBackup,
+    );
+  }
+
+  Future<void> _loadAnkiBackupImportedCount() async {
+    final int count = await AnkiMobileMinedLedger.instance.importedCount();
+    if (!mounted) return;
+    setState(() => _ankiBackupImportedCount = count);
+  }
+
+  /// 选一份 `.colpkg` / `.apkg` → 读出全部笔记第一字段 → 整份替换账本的导入快照。
+  Future<void> _importAnkiBackup() async {
+    setState(() => _ankiBackupImportBusy = true);
+    try {
+      final FilePickerResult? picked = await pickFilesByExtensions(
+        context: context,
+        allowedExtensions: const <String>{'colpkg', 'apkg'},
+      );
+      final String? path = picked?.files.single.path;
+      if (path == null) return;
+      final Directory temp = await getTemporaryDirectory();
+      final Set<String> words = await readAnkiBackupFirstFields(
+        backupPath: path,
+        workDir:
+            '${temp.path}/anki_backup_import_'
+            '${DateTime.now().microsecondsSinceEpoch}',
+      );
+      final int count = await AnkiMobileMinedLedger.instance.replaceImported(
+        words,
+      );
+      if (!mounted) return;
+      setState(() => _ankiBackupImportedCount = count);
+      FushiToast.show(msg: t.anki_backup_import_done(count: count));
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiSettings.importAnkiBackup', e, stack);
+      if (mounted) FushiToast.show(msg: t.anki_backup_import_failed);
+    } finally {
+      if (mounted) setState(() => _ankiBackupImportBusy = false);
+    }
+  }
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     // Lapis 创建在途时 vm 的 isFetching 也为 true（vm 内部复用同一 flag）；
@@ -1101,6 +1352,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                   ? null
                   : (String field, String currentValue) =>
                         _pickHandlebar(field, currentValue),
+              // 「让 AI 帮忙」的提供商按功能指派解析；编辑器本身零 Riverpod 依赖，
+              // 所以在这里读偏好再传进去。
+              resolveAiProvider: () {
+                final PreferencesRepository prefs = ref
+                    .read(appProvider)
+                    .prefsRepo;
+                return prefs.aiFeatureAssignments.resolve(
+                  AiFeature.lapisStyle,
+                  prefs.aiProviders,
+                );
+              },
             ),
           ),
         );
@@ -1748,6 +2010,10 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_glossary;
     case '{glossary-first}':
       return t.handlebar_glossary_first;
+    case '{glossary-first-2}':
+      return t.handlebar_glossary_first_n(count: 2);
+    case '{glossary-first-3}':
+      return t.handlebar_glossary_first_n(count: 3);
     case '{selected-glossary}':
       return t.handlebar_selected_glossary;
     case '{popup-selection-text}':

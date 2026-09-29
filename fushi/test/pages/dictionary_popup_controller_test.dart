@@ -2,6 +2,8 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState;
@@ -29,6 +31,37 @@ void main() {
 
     final lm = DictionaryPopupController(lowMemory: true)..seedWarmSlot();
     expect(lm.entries, isEmpty);
+  });
+
+  // PR #1598 审查：在途的查词计时游标是进程级的，关栈不收尾就会被下一次别的宿主
+  // 的 revealRendered 当成自己的收尾——打出「视频页旧词 total=几分钟」的假行。
+  test('dismissAt / clear 把在途的 LookupPerfTrace 收尾成 dismissed', () {
+    VideoDiagLog.instance.resetForTesting();
+    VideoDiagLog.instance.enableForTesting();
+    addTearDown(() {
+      VideoDiagLog.instance.resetForTesting();
+      LookupPerfTrace.current = null;
+    });
+
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final LookupPerfTrace trace = LookupPerfTrace.begin(
+      term: '辞書',
+      host: 'video',
+      lowMemory: false,
+    )!;
+    c.dismissAt(0);
+    expect(trace.isFinished, isTrue, reason: 'Esc / 点 barrier 关栈 = 这次查词结束');
+    expect(LookupPerfTrace.current, isNull, reason: '游标不得悬着给下一位宿主');
+
+    final c2 = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final LookupPerfTrace trace2 = LookupPerfTrace.begin(
+      term: '事典',
+      host: 'video',
+      lowMemory: false,
+    )!;
+    c2.clear();
+    expect(trace2.isFinished, isTrue);
+    expect(LookupPerfTrace.current, isNull);
   });
 
   test('beginTop 复用热槽（视频：搜索期即可见）', () {

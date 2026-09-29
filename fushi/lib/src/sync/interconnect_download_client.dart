@@ -4,6 +4,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -14,17 +15,36 @@ class HostDownloadTarget {
     required this.baseUrl,
     required this.deviceName,
     required this.backend,
+    this.kinds = const <String>['video'],
     this.fingerprintSha256,
+    this.peerUrls = const <String>{},
   });
 
   final String baseUrl;
+
+  /// 这台 host 在候选列表里的全部地址（含 [baseUrl]）。「下载执行设备」偏好存的是
+  /// 某一条地址，而选路可能经另一条（LAN / IPv6 / 组网 / P2P）到达同一台 host；
+  /// 判「是不是偏好里那台」用 [isPeer]，不按 URL 字面比。
+  final Set<String> peerUrls;
+
+  /// [url] 是否指向这台 host。
+  bool isPeer(String? url) =>
+      url != null && (url == baseUrl || peerUrls.contains(url));
   final String? deviceName;
 
   /// `qbittorrent` / `embedded`。
   final String backend;
+
+  /// host 宣告能收的内容域：`video` 加上它能按域入库的发现页域（`novel` /
+  /// `manga` / `audiobook` / `game`）。老 host 不带这个字段 = 只收视频。
+  final List<String> kinds;
   final String? fingerprintSha256;
 
   String get label => deviceName ?? baseUrl;
+
+  /// [discoveryKind] = `DiscoveryMediaKind.name`；null 表示视频。
+  bool supportsKind(String? discoveryKind) =>
+      discoveryKind == null || kinds.contains(discoveryKind);
 }
 
 /// host 上的一条下载任务（`videoDownloadJobToWire` 的镜像）。
@@ -92,47 +112,104 @@ class InterconnectDownloadClient {
 
   /// 第一台宣告 `downloads.supported` 的已配对 host。
   Future<HostDownloadTarget?> probe() async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = _uri(candidate.url, '/api/capabilities');
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (uri == null || token == null) continue;
-      final (http.Client client, bool closeAfter) = _clientFor(
-        candidate.url,
-        fingerprint: candidate.fingerprintSha256,
-      );
-      try {
-        final http.Response response = await client
-            .get(uri, headers: _headers(token))
-            .timeout(_probeTimeout);
-        if (response.statusCode != 200) continue;
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is! Map) continue;
-        final Object? downloads = decoded['downloads'];
-        if (downloads is! Map || downloads['supported'] != true) continue;
-        return HostDownloadTarget(
-          baseUrl: candidate.url,
-          deviceName: candidate.deviceName,
-          backend: (downloads['backend'] ?? '').toString(),
-          fingerprintSha256: candidate.fingerprintSha256,
-        );
-      } catch (_) {
-        continue;
-      } finally {
-        if (closeAfter) client.close();
-      }
+    for (final FushiClientUrl candidate in await _enabledCandidates()) {
+      final HostDownloadTarget? target = await _probeCandidate(candidate);
+      if (target != null) return target;
     }
     return null;
   }
 
+  /// 只探这一台（用户在「下载执行设备」里选定的那台）；不在配对清单里 / 没宣告
+  /// 能力 / 探不到 → null，**不**退而求其次换别的 host——用户点名的设备连不上要
+  /// 如实告诉他，而不是悄悄下到另一台机器上。
+  ///
+  /// [baseUrl] 认的是「那台 host」而不是那一条地址：偏好里存的是用户当初选中时的
+  /// 地址（在家可能是 LAN），出门后同一台 host 仍可经 IPv6 / 组网 / P2P 到达，
+  /// 按组内可达性依次试。
+  Future<HostDownloadTarget?> probeUrl(String baseUrl) async {
+    final List<FushiClientUrl> host =
+        interconnectPeerAddressesOf(await _enabledCandidates(), baseUrl);
+    for (final FushiClientUrl candidate
+        in await rankInterconnectCandidates(host)) {
+      final HostDownloadTarget? target = await _probeCandidate(candidate);
+      if (target != null) return target;
+    }
+    return null;
+  }
+
+  /// 全部宣告能力的已配对 host（资源搜索页的「下载到」下拉要列出来让用户挑）。
+  ///
+  /// 按 host 去重：同一台 host 的多条地址只产出一个目标（组内已按可达性排序）。
+  Future<List<HostDownloadTarget>> probeAll() async {
+    final List<HostDownloadTarget> targets = <HostDownloadTarget>[];
+    final List<FushiClientUrl> candidates =
+        await rankInterconnectCandidates(await _enabledCandidates());
+    for (final List<FushiClientUrl> host in groupInterconnectPeers(candidates)) {
+      for (final FushiClientUrl candidate in host) {
+        final HostDownloadTarget? target = await _probeCandidate(candidate);
+        if (target == null) continue;
+        targets.add(target);
+        break;
+      }
+    }
+    return targets;
+  }
+
+  Future<List<FushiClientUrl>> _enabledCandidates() async =>
+      (await _repo.getFushiClientUrls())
+          .where((FushiClientUrl u) => u.enabled)
+          .toList(growable: false);
+
+  Future<HostDownloadTarget?> _probeCandidate(FushiClientUrl candidate) async {
+    final Uri? uri = _uri(candidate.url, '/api/capabilities');
+    final String? token =
+        interconnectTokenFor(candidate, await _repo.getFushiClientToken());
+    if (uri == null || token == null) return null;
+    final (http.Client client, bool closeAfter) = _clientFor(
+      candidate.url,
+      fingerprint: candidate.fingerprintSha256,
+    );
+    try {
+      final http.Response response = await client
+          .get(uri, headers: _headers(token))
+          .timeout(_probeTimeout);
+      if (response.statusCode != 200) return null;
+      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return null;
+      final Object? downloads = decoded['downloads'];
+      if (downloads is! Map || downloads['supported'] != true) return null;
+      final Object? kinds = downloads['kinds'];
+      return HostDownloadTarget(
+        baseUrl: candidate.url,
+        deviceName: candidate.deviceName,
+        backend: (downloads['backend'] ?? '').toString(),
+        kinds: kinds is List
+            ? kinds.map((Object? k) => k.toString()).toList(growable: false)
+            : const <String>['video'],
+        fingerprintSha256: candidate.fingerprintSha256,
+        peerUrls: <String>{
+          for (final FushiClientUrl u in interconnectPeerAddressesOf(
+            await _repo.getFushiClientUrls(),
+            candidate.url,
+          ))
+            u.url,
+        },
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      if (closeAfter) client.close();
+    }
+  }
+
+  /// [discoveryKind] = `DiscoveryMediaKind.name`（非视频域，host 按域入库）；
+  /// null = 视频，此时 [mediaKind] 才有意义。
   Future<String> addMagnet(
     HostDownloadTarget target, {
     required String magnetUri,
     required String title,
     String mediaKind = 'movie',
+    String? discoveryKind,
   }) async {
     final Map<String, dynamic> body = await _call(
       target,
@@ -142,6 +219,7 @@ class InterconnectDownloadClient {
         'magnet': magnetUri,
         'title': title,
         'mediaKind': mediaKind,
+        if (discoveryKind != null) 'discoveryKind': discoveryKind,
       },
     );
     return body['jobId'].toString();
@@ -227,7 +305,10 @@ class InterconnectDownloadClient {
   Future<String?> _tokenForBaseUrl(String baseUrl) async {
     final String? fallbackToken = await _repo.getFushiClientToken();
     for (final FushiClientUrl u in await _repo.getFushiClientUrls()) {
-      if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
+      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
+      if (u.url == interconnectPersistedUrl(baseUrl)) {
+        return interconnectTokenFor(u, fallbackToken);
+      }
     }
     return (fallbackToken != null && fallbackToken.isNotEmpty)
         ? fallbackToken

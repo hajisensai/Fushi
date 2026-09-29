@@ -1,0 +1,6 @@
+## BUG-2616 · iOS 滚动模式设置未落地导致阅读器布局不更新
+- **报告**：2026-09-21（用户：iOS 滚动模式选择后设置不生效，正文布局与界面显示异常）
+- **真实性**：✅ 真 bug，**但根因不是「重载读到旧设置」**（2026-09-21 合并前复核改写）：`ReaderSettings._set`（`fushi/lib/src/reader/reader_settings.dart:167`）第一行就**同步**写内存缓存、读侧 `_get`（:159）直接读缓存，`_reloadWithCurrentSettings`（`reader_fushi/chrome.part.dart:2477`）也不 `refreshFromDb()`——await 与否，重载都拿得到新模式。真正错位的是**两个钩子的先后**：`setReaderViewMode`（`media/sources/reader_fushi_source.dart:1727`）在 `await` 持久化**之后**才 `onSettingsChangedLive?.call()`（CSS 重注入），而 `settings_schema_reading.dart:71-78` 的 `onChanged` 不 await 就直接 `notifyReaderLayoutChanged` → 顺序变成「先结构重载 → 重载途中迟到的 CSS 重注入打进正在重建的 WebView」。iOS 的 WKWebView 重载慢、这个窗口更宽，所以只在 iOS 上复现成「切了模式还是旧布局」。
+- **[x] ① 已修复** — 结构性阅读设置在触发 WebView 重载前 `await` 异步 setter（连同其 live 重注入）完成（本提交）；同文件另外 4 处同形写法（`setReaderPageColumns` / `setReaderPrioritizeReaderStyles` / `setReaderBlurImages` / `setReaderMergeImagePages`）一并对齐。
+- **[x] ② 已加自动化测试** — `fushi/test/settings/reader_structural_setting_order_test.dart`：8 个结构性阅读设置逐项钉 `async → await setter → notifyReaderLayoutChanged` 的顺序，外加一条「`notifyReaderLayoutChanged` 前一行不得是裸 `c.readerSource.setX(`」的全文件扫描，新增项漏 await 会红。
+- **备注**：待 iOS 真机复测原始路径（切换滚动/分页模式后正文布局立即跟随）。机制解释由代码路径推得，未在设备上抓过时序证据。

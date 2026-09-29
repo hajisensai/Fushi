@@ -21,7 +21,6 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -156,7 +155,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       if (_folderStatus == MangaOcrFolderStatus.valid) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           unawaited(_refreshEngines());
-          unawaited(_probeSystemOcr());
         });
       }
       return;
@@ -171,7 +169,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       if (_folderStatus == MangaOcrFolderStatus.valid) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           unawaited(_refreshEngines());
-          unawaited(_probeSystemOcr());
         });
       }
     }
@@ -201,13 +198,13 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           : _WizardStage.pick;
     });
     if (status == MangaOcrFolderStatus.valid) {
-      unawaited(_probeSystemOcr());
       await _refreshEngines();
     }
   }
 
-  /// 探测两个引擎的可用性（内置模型是否就绪 / 外部 mokuro 是否探测到），据此
-  /// 决定默认引擎与可选项。
+  /// 探测各引擎的可用性（内置模型 / 系统 OCR / 外部 mokuro / 配对主机），据此
+  /// 决定默认引擎与可选项。系统 OCR 必须在这一次探测里：auto 的默认引擎要看它，
+  /// 单独异步探测的话，没下本地模型的 Apple 设备打开向导永远默认不到 Vision。
   Future<void> _refreshEngines() async {
     if (!mounted) return;
     setState(() => _checkingEngines = true);
@@ -223,6 +220,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       _remoteModelsMissing = availability.remoteModelsMissing;
       _remoteTarget = availability.remoteTarget;
       _lensAvailable = availability.lensOffered;
+      _systemAvailable = availability.systemOcrReady;
       _checkingEngines = false;
       final String preferenceKey = _engines.initialEnginePreference ??
           MangaOcrEnginePreference.auto.key;
@@ -254,25 +252,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   Stream<MangaOcrBackgroundEvent> _backgroundEvents(String dir) =>
       mangaOcrBackgroundEvents(_jobSpec(dir));
 
-
-  /// 系统 OCR 可用性单独探测，**不并进 `_checkingEngines`**。
-  ///
-  /// 它是一个引擎的可用位，不该卡住整块引擎选择器：把它串进那条闸门，向导在
-  /// 探测返回前会一直渲染「正在检查引擎」的转圈，而无限动画会让任何
-  /// `pumpAndSettle` 永远 settle 不了（既有的三条入口测试当场超时）。UI 上的
-  /// 表现与「已配对主机」一致——先灰着，探测回来再亮。
-  Future<void> _probeSystemOcr() async {
-    final SystemOcrMangaRunner? runner = _engines.systemOcrRunner;
-    if (runner == null) return;
-    bool available = false;
-    try {
-      available = await runner.isAvailable();
-    } catch (_) {
-      available = false;
-    }
-    if (!mounted || available == _systemAvailable) return;
-    setState(() => _systemAvailable = available);
-  }
 
   bool get _selectedEngineAvailable {
     switch (_engine) {
@@ -452,7 +431,11 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   void _runBuiltin(String dir) {
     _runSub = _engines.service
-        .ocrFolder(imageDirPath: dir, volumeTitle: _title)
+        .ocrFolder(
+          imageDirPath: dir,
+          volumeTitle: _title,
+          startPage: widget.startPage,
+        )
         .listen(
       (MangaOcrVolumeEvent event) {
         if (!mounted) return;

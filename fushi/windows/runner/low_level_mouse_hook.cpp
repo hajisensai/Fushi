@@ -1,6 +1,7 @@
 #include "low_level_mouse_hook.h"
 
 #include "attached_glyph_transaction_latch.h"
+#include "attached_popup_rearm_policy.h"
 #include "voice_hook_reader.h"
 
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
@@ -94,13 +95,35 @@ struct AttachedGlyphHitSnapshot {
   uint32_t token = 0;
   bool allow_risk = false;
   std::vector<RECT> screen_rects;
+  // Runtime hit rectangles live in presentation screen pixels.  When Magpie
+  // captures the cursor it moves the physical cursor back into the source
+  // viewport, so retain the immutable source->destination transform beside
+  // the rectangles.  The presentation HWND is already verified by the
+  // window thread; HookProc reads only its bounded ex-style bit to confirm
+  // that this snapshot's one coordinate space is still authoritative.
+  bool has_cursor_mapping = false;
+  attached_magpie_surface_geometry::Mapping cursor_mapping{};
+  HWND cursor_presentation_hwnd = nullptr;
 };
 
 // C++17 supplies atomic operations for shared_ptr as free functions.  Updates
 // allocate/copy on the surface thread; WH_MOUSE_LL performs only an atomic
 // snapshot load and linear reads over immutable RECTs.
 std::shared_ptr<const AttachedGlyphHitSnapshot> g_attached_hit_snapshot;
+// A visible attached surface can lose its published snapshot while a popup
+// owns the singleton hook. Keep a passive HWND candidate so popup close can
+// request a fresh snapshot/admission without waiting for the health timer.
+std::atomic<HWND> g_attached_rearm_candidate{nullptr};
+// Popup close and attached re-arm are delivered on different threads.  Keep a
+// short-lived fence between the two so a physical click cannot fall through
+// while g_target is empty and advance the game before SyncToTarget runs.
+std::atomic<bool> g_attached_rearm_pending{false};
+std::atomic<uint32_t> g_attached_rearm_suppressed_buttons{0};
 std::atomic<uint32_t> g_attached_hit_token{0};
+// A style transition can happen between the surface thread's publication and
+// the next synchronous mouse event.  Revoke the exact snapshot atomically so
+// the old mapping cannot become live again until the next coherent publication.
+std::atomic<uint32_t> g_attached_cursor_snapshot_invalidated_token{0};
 std::atomic<uint32_t> g_attached_transaction_counter{0};
 SRWLOCK g_attached_transaction_lock = SRWLOCK_INIT;
 
@@ -108,6 +131,7 @@ struct AttachedGlyphActiveTransaction {
   AttachedGlyphTransactionLatch latch;
   size_t rect_index = 0;
   POINT down_point{};
+  bool down_point_was_source_mapped = false;
   ULONGLONG physical_up_tick = 0;
   std::shared_ptr<const AttachedGlyphHitSnapshot> snapshot;
 };
@@ -205,9 +229,37 @@ std::atomic<const SampledInputShieldContract*>
 std::atomic<uint32_t> g_direct_input_shield_tail_generation{0};
 std::atomic<uint32_t> g_direct_input_shield_tail_token{0};
 
+void RequestAttachedGlyphRearmIfNeutral();
+
 static_assert(kLowLevelMouseShieldReleaseMessage ==
                   fushi_voice_hook::kSampledInputShieldReleaseWindowMessage,
               "host/helper sampled-input release message drifted");
+
+// BUG-2613 — 覆盖窗口左键护盾（接口说明见 .h）。
+//
+// 登记表是不可变快照：窗口线程在 g_binding_mutex 下整表复制-替换，回调只做一次
+// atomic_load 然后线性扫（表很小：一两张卡 + 台词浮窗 + 工具条）。game 在登记时由
+// 解析器解出，nullptr = 这张窗口此刻没有可保护的游戏，回调直接跳过。
+struct OverlayClickShieldEntry {
+  HWND overlay = nullptr;
+  HWND game = nullptr;
+};
+struct OverlayClickShieldTable {
+  std::vector<OverlayClickShieldEntry> entries;
+};
+std::shared_ptr<const OverlayClickShieldTable> g_overlay_shield_table;
+// 表里 game != nullptr 的条目数。它是回调的纯比较快门，也是钩子安装的第二个理由
+// （见 HookWanted）。
+std::atomic<size_t> g_overlay_shield_count{0};
+std::atomic<HWND (*)()> g_overlay_shield_game_resolver{nullptr};
+// 在飞的覆盖窗口左键事务。只在钩子线程写（回调与它自己的定时器），所以不需要
+// 锁；两个字段之间没有原子性要求——id 是真值，game 只是它的附属。
+std::atomic<HWND> g_overlay_transaction_game{nullptr};
+std::atomic<uint64_t> g_overlay_transaction_id{0};
+std::atomic<uint32_t> g_overlay_transaction_counter{0};
+// transaction_id 高 16 位打上标记，日志里一眼能和 attached 事务（高 32 位是快照
+// token）区分开。
+constexpr uint64_t kOverlayTransactionTag = 0x4F56ull << 48;  // 'OV'
 
 // BUG-1286 — 回调最近一次被调用的时刻。存活性判据的一半（另一半是光标是否移动过）。
 // 只在回调里写、只在钩子线程的定时器里读，relaxed 足够：判据比较的是「有没有变化」，
@@ -272,6 +324,107 @@ bool IsButtonUpMessage(WPARAM message) {
          message == WM_MBUTTONUP || message == WM_XBUTTONUP ||
          message == WM_NCLBUTTONUP || message == WM_NCRBUTTONUP ||
          message == WM_NCMBUTTONUP || message == WM_NCXBUTTONUP;
+}
+
+// BUG-2613 — 钩子是否应该装着：查词卡目标 与 登记的覆盖窗口 任一存在即要。
+// 卸载路径（宽限期定时器 / 存活性补装）都问这里，而不是只看 g_target。
+bool HookWanted() {
+  return g_target.load(std::memory_order_relaxed) != nullptr ||
+         g_overlay_shield_count.load(std::memory_order_relaxed) != 0;
+}
+
+// 光标下的窗口是否为已登记的覆盖窗口（或其子窗，WebView2 的宿主子 HWND 就是这种）。
+// 命中返回该条目绑定的游戏 HWND，否则 nullptr。只在按键事件上跑：一次 WindowFromPoint
+// + GetAncestor + 小表线性扫，与既有的卡内/卡外判定同量级。
+HWND OverlayClickShieldGameAt(POINT pt) {
+  const auto table = std::atomic_load_explicit(&g_overlay_shield_table,
+                                               std::memory_order_acquire);
+  if (table == nullptr) return nullptr;
+  const HWND hit = WindowFromPoint(pt);
+  if (hit == nullptr) return nullptr;
+  const HWND root = GetAncestor(hit, GA_ROOT);
+  for (const OverlayClickShieldEntry& entry : table->entries) {
+    if (entry.game == nullptr) continue;
+    if (entry.overlay == hit || entry.overlay == root) return entry.game;
+  }
+  return nullptr;
+}
+
+uint64_t NextOverlayTransactionId() {
+  uint32_t counter =
+      g_overlay_transaction_counter.fetch_add(1, std::memory_order_relaxed) +
+      1u;
+  if (counter == 0) {
+    counter = g_overlay_transaction_counter.fetch_add(
+                  1, std::memory_order_relaxed) +
+              1u;
+  }
+  return kOverlayTransactionTag | counter;
+}
+
+// 结束在飞的覆盖窗口事务：发布 release（active_buttons=0）。写者忙时发布失败，
+// 事务保留，由下一次 up / 下一次 down / 宽限期定时器重试——一条 down 请求若永远
+// 没有 release，注入侧会把游戏里之后的每一次左键都藏掉，所以重试路径必须有三条。
+// 返回 true = 已无在飞事务。
+void RequestAttachedGlyphPhysicalReconciliation();
+
+bool EndOverlayClickShieldTransaction() {
+  const uint64_t id = g_overlay_transaction_id.load(std::memory_order_relaxed);
+  if (id == 0) return true;
+  const HWND game = g_overlay_transaction_game.load(std::memory_order_relaxed);
+  if (VoiceHookReader::Instance().TryPublishOverlayClickShieldTransaction(
+          game, id, false) == 0) {
+    // 只有「写者忙」才值得重试。gate 已关（会话结束、共享内存没了）release 永远
+    // 发不出去；槽位已被别的 owner / 事务接管则我方 release 只会盖掉人家的 down。
+    // 两种孤儿状态都按 attached 的 fail-open 退役口径放弃事务——否则
+    // has_pending_button 恒真，钩子线程每 3s 为它续命，全局 WH_MOUSE_LL 在没有
+    // 任何 galgame 会话时常驻。
+    if (!VoiceHookReader::Instance().OverlayClickShieldTransactionOrphaned(
+            game, id)) {
+      return false;
+    }
+  }
+  g_overlay_transaction_id.store(0, std::memory_order_relaxed);
+  g_overlay_transaction_game.store(nullptr, std::memory_order_relaxed);
+  return true;
+}
+
+// 左键 down 落在登记的覆盖窗口上：同步发布 Popup owner 的 down 请求。回调里
+// 只做一次 CAS，失败即 fail-open（这一下会漏给游戏，但绝不阻塞系统输入）。
+void BeginOverlayClickShieldTransaction(POINT pt) {
+  if (g_overlay_shield_count.load(std::memory_order_relaxed) == 0 &&
+      g_overlay_transaction_id.load(std::memory_order_relaxed) == 0) {
+    return;
+  }
+  // 同一物理键的新 down 证明上一笔事务已经结束（up 丢了 / release 发布失败）：
+  // 先补发 release。补不上时旧事务**保留**——只有下面新的 down 请求真的发布成功
+  // （它替换的是同一个请求槽，注入侧的 latch 跨代际保留「按下后一直隐藏到物理
+  // 松开」的不变式）才把它换掉；新 down 不落在覆盖窗口上或发布失败，旧事务仍留给
+  // up / 定时器去 release，否则请求槽会永远停在 down。
+  EndOverlayClickShieldTransaction();
+  const HWND game = OverlayClickShieldGameAt(pt);
+  if (game == nullptr) return;
+  const uint64_t id = NextOverlayTransactionId();
+  if (VoiceHookReader::Instance().TryPublishOverlayClickShieldTransaction(
+          game, id, true) == 0) {
+    return;
+  }
+  g_overlay_transaction_game.store(game, std::memory_order_relaxed);
+  g_overlay_transaction_id.store(id, std::memory_order_relaxed);
+  // 第三条重试路：与 attached 的 down 同款，安排宽限期定时器做物理键态对账。
+  // 不投这条消息定时器在常见配置下根本不存在（Arm 处理器没有挂起按键就把它杀了），
+  // up 的发布一旦撞上写者忙，请求槽会停在 down 直到用户下一次物理左键。
+  RequestAttachedGlyphPhysicalReconciliation();
+}
+
+// 宽限期定时器上的对账：物理左键仍按着就继续等；已松开就补发 release。
+// 返回 true = 仍有在飞事务（调用方续表）。
+bool ReconcileOverlayClickShieldTransactionWithPhysicalState() {
+  if (g_overlay_transaction_id.load(std::memory_order_relaxed) == 0) {
+    return false;
+  }
+  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0) return true;
+  return !EndOverlayClickShieldTransaction();
 }
 
 uint32_t ReconcileSwallowedButtonsWithPhysicalState() {
@@ -610,6 +763,10 @@ void RevokeDirectInputShieldIfIdle(HWND expected_popup) {
   g_direct_input_shield_popup.store(nullptr, std::memory_order_release);
   g_direct_input_shield_game.store(nullptr, std::memory_order_release);
   g_direct_input_shield_contract.store(nullptr, std::memory_order_release);
+  // Leaf/HUNEX posts kLowLevelMouseShieldReleaseMessage only after the
+  // injected detour has observed raw zero and published its exact tail ACK.
+  // This is the tail's real neutral edge, not a timer approximation.
+  RequestAttachedGlyphRearmIfNeutral();
 }
 
 bool PointInWindowClient(HWND window, POINT point) {
@@ -661,6 +818,10 @@ AttachedGlyphSnapshotForTarget(HWND target) {
       snapshot->game_owner == nullptr || snapshot->screen_rects.empty()) {
     return nullptr;
   }
+  if (g_attached_cursor_snapshot_invalidated_token.load(
+          std::memory_order_acquire) == snapshot->token) {
+    return nullptr;
+  }
   return snapshot;
 }
 
@@ -672,6 +833,85 @@ size_t AttachedGlyphRectAt(
     if (PtInRect(&snapshot->screen_rects[index], screen_point)) return index;
   }
   return SIZE_MAX;
+}
+
+struct AttachedGlyphPointHit {
+  size_t rect_index = SIZE_MAX;
+  POINT destination_point{};
+};
+
+bool PresentationWindowHasTransparentStyle(HWND presentation) {
+  if (presentation == nullptr) return false;
+  SetLastError(ERROR_SUCCESS);
+  const LONG_PTR style = GetWindowLongPtrW(presentation, GWL_EXSTYLE);
+  if (style == 0 && GetLastError() != ERROR_SUCCESS) return false;
+  return (style & static_cast<LONG_PTR>(WS_EX_TRANSPARENT)) != 0;
+}
+
+bool AttachedGlyphCursorCaptureStillActive(
+    const std::shared_ptr<const AttachedGlyphHitSnapshot>& snapshot) {
+  if (snapshot == nullptr) return false;
+  if (!snapshot->has_cursor_mapping) return true;
+  return PresentationWindowHasTransparentStyle(
+      snapshot->cursor_presentation_hwnd);
+}
+
+void RevokeAttachedGlyphSnapshotIfCurrent(
+    const std::shared_ptr<const AttachedGlyphHitSnapshot>& snapshot) {
+  if (snapshot == nullptr) return;
+  // Keep this callback-side operation lock-free and allocation-free. The
+  // invalidation token makes the immutable snapshot unreachable to later
+  // downs; the surface thread observes it through
+  // LowLevelAttachedGlyphHitSnapshotIsCurrent and republishes on its next
+  // coherent sync.
+  g_attached_cursor_snapshot_invalidated_token.store(snapshot->token,
+                                                     std::memory_order_release);
+}
+
+// The snapshot itself selects exactly one coordinate space.  During Magpie
+// cursor capture the physical point is in source viewport space and must be
+// mapped; otherwise it is already in destination space.  A live style check
+// rejects a stale snapshot instead of inferring the space from which glyph it
+// happens to hit.
+bool ResolveAttachedGlyphPointHit(
+    const std::shared_ptr<const AttachedGlyphHitSnapshot>& snapshot,
+    POINT physical_point, AttachedGlyphPointHit* hit) {
+  if (hit != nullptr) *hit = AttachedGlyphPointHit{};
+  if (snapshot == nullptr || hit == nullptr) return false;
+  const bool cursor_captured = AttachedGlyphCursorCaptureStillActive(snapshot);
+  if (snapshot->has_cursor_mapping && !cursor_captured) {
+    RevokeAttachedGlyphSnapshotIfCurrent(snapshot);
+    return false;
+  }
+  const auto* mapping = snapshot->has_cursor_mapping
+                            ? &snapshot->cursor_mapping
+                            : nullptr;
+  POINT mapped_point{};
+  if (!attached_magpie_surface_geometry::ResolveCursorPoint(
+          mapping, cursor_captured, physical_point, &mapped_point)) {
+    return false;
+  }
+  hit->rect_index = AttachedGlyphRectAt(snapshot, mapped_point);
+  if (hit->rect_index == SIZE_MAX) return false;
+  hit->destination_point = mapped_point;
+  return true;
+}
+
+bool DestinationPointForAttachedGlyphTransaction(
+    const AttachedGlyphActiveTransaction& transaction,
+    POINT physical_point, POINT* destination_point) {
+  if (destination_point == nullptr || transaction.snapshot == nullptr) {
+    return false;
+  }
+  const bool cursor_captured =
+      !transaction.snapshot->has_cursor_mapping ||
+      AttachedGlyphCursorCaptureStillActive(transaction.snapshot);
+  const auto* mapping = transaction.snapshot->has_cursor_mapping
+                            ? &transaction.snapshot->cursor_mapping
+                            : nullptr;
+  return attached_magpie_surface_geometry::ResolveCursorTransactionPoint(
+      mapping, transaction.down_point_was_source_mapped, cursor_captured,
+      physical_point, destination_point);
 }
 
 bool BareLeftClickModifiersClear() {
@@ -711,7 +951,8 @@ void RequestAttachedGlyphPhysicalReconciliation() {
 bool BeginAttachedGlyphTransaction(
     HWND target,
     const std::shared_ptr<const AttachedGlyphHitSnapshot>& snapshot,
-    size_t rect_index, POINT screen_point, uint64_t* transaction_id) {
+    size_t rect_index, POINT destination_point, bool source_mapped,
+    uint64_t* transaction_id) {
   if (transaction_id != nullptr) *transaction_id = 0;
   if (snapshot == nullptr || snapshot->surface != target ||
       rect_index >= snapshot->screen_rects.size()) {
@@ -770,7 +1011,8 @@ bool BeginAttachedGlyphTransaction(
     return false;
   }
   g_attached_active_transaction.rect_index = rect_index;
-  g_attached_active_transaction.down_point = screen_point;
+  g_attached_active_transaction.down_point = destination_point;
+  g_attached_active_transaction.down_point_was_source_mapped = source_mapped;
   g_attached_active_transaction.snapshot = snapshot;
   g_attached_active_transaction_id.store(id, std::memory_order_release);
   ReleaseSRWLockExclusive(&g_attached_transaction_lock);
@@ -779,7 +1021,7 @@ bool BeginAttachedGlyphTransaction(
   if (!PostMessageW(target, kLowLevelMouseAttachedGlyphDownMessage,
                     static_cast<WPARAM>(id),
                     static_cast<LPARAM>(PackMouseHookPoint(
-                        screen_point.x, screen_point.y)))) {
+                        destination_point.x, destination_point.y)))) {
     if (TryAcquireSRWLockExclusive(&g_attached_transaction_lock)) {
       if (g_attached_active_transaction.latch.transaction_id() == id) {
         g_attached_active_transaction.latch.Cancel();
@@ -840,14 +1082,18 @@ bool ApplyPendingAttachedGlyphPhysicalUp() {
   const bool cancel_submission =
       !real_up || g_attached_active_transaction.latch.cancelled();
   const HWND surface = g_attached_active_transaction.snapshot->surface;
+  POINT destination_point{};
+  const bool point_space_valid = DestinationPointForAttachedGlyphTransaction(
+      g_attached_active_transaction, screen_point, &destination_point);
   ReleaseSRWLockExclusive(&g_attached_transaction_lock);
   if (first_up) {
     PostMessageW(surface,
-                 cancel_submission ? kLowLevelMouseAttachedGlyphCancelMessage
+                 (cancel_submission || !point_space_valid)
+                     ? kLowLevelMouseAttachedGlyphCancelMessage
                                    : kLowLevelMouseAttachedGlyphUpMessage,
                  static_cast<WPARAM>(transaction_id),
                  static_cast<LPARAM>(PackMouseHookPoint(
-                     screen_point.x, screen_point.y)));
+                     destination_point.x, destination_point.y)));
   }
   return true;
 }
@@ -901,14 +1147,19 @@ bool ObserveAttachedGlyphPhysicalUp(POINT screen_point, bool real_up) {
   const bool cancel_submission =
       !real_up || g_attached_active_transaction.latch.cancelled();
   const HWND surface = g_attached_active_transaction.snapshot->surface;
+  POINT destination_point{};
+  const bool point_space_valid = DestinationPointForAttachedGlyphTransaction(
+      g_attached_active_transaction, screen_point, &destination_point);
   ReleaseSRWLockExclusive(&g_attached_transaction_lock);
   if (first_up) {
     PostMessageW(surface,
-                 cancel_submission ? kLowLevelMouseAttachedGlyphCancelMessage
+                 (cancel_submission || !point_space_valid)
+                     ? kLowLevelMouseAttachedGlyphCancelMessage
                                    : kLowLevelMouseAttachedGlyphUpMessage,
                  static_cast<WPARAM>(transaction_id),
                  static_cast<LPARAM>(
-                     PackMouseHookPoint(screen_point.x, screen_point.y)));
+                     PackMouseHookPoint(destination_point.x,
+                                        destination_point.y)));
   }
   RequestAttachedGlyphReleasePoll();
   return true;
@@ -941,14 +1192,18 @@ bool TryObserveAttachedGlyphPhysicalUp(POINT screen_point, bool real_up) {
   const bool cancel_submission =
       !real_up || g_attached_active_transaction.latch.cancelled();
   const HWND surface = g_attached_active_transaction.snapshot->surface;
+  POINT destination_point{};
+  const bool point_space_valid = DestinationPointForAttachedGlyphTransaction(
+      g_attached_active_transaction, screen_point, &destination_point);
   ReleaseSRWLockExclusive(&g_attached_transaction_lock);
   if (first_up) {
     PostMessageW(surface,
-                 cancel_submission ? kLowLevelMouseAttachedGlyphCancelMessage
+                 (cancel_submission || !point_space_valid)
+                     ? kLowLevelMouseAttachedGlyphCancelMessage
                                    : kLowLevelMouseAttachedGlyphUpMessage,
                  static_cast<WPARAM>(transaction_id),
                  static_cast<LPARAM>(PackMouseHookPoint(
-                     screen_point.x, screen_point.y)));
+                     destination_point.x, destination_point.y)));
   }
   RequestAttachedGlyphReleasePoll();
   return true;
@@ -967,6 +1222,31 @@ bool HasActiveAttachedGlyphTransaction() {
   const bool active = g_attached_active_transaction.latch.active();
   ReleaseSRWLockShared(&g_attached_transaction_lock);
   return active;
+}
+
+void RequestAttachedGlyphRearmIfNeutral() {
+  // This is callable from HookProc: atomic reads plus PostMessage only. Never
+  // inspect HWND state or take the transaction lock on the synchronous path.
+  const attached_popup_rearm_policy::State state{
+      g_attached_rearm_candidate.load(std::memory_order_acquire),
+      g_target.load(std::memory_order_acquire),
+      g_swallowed_buttons.load(std::memory_order_acquire),
+      g_direct_input_shield_buttons.load(std::memory_order_acquire),
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire),
+      HasActiveAttachedGlyphTransactionFast(),
+      g_attached_rearm_pending.load(std::memory_order_acquire),
+  };
+  if (!attached_popup_rearm_policy::CanRequestRearm(state)) return;
+  bool expected = false;
+  if (!g_attached_rearm_pending.compare_exchange_strong(
+          expected, true, std::memory_order_acq_rel,
+          std::memory_order_acquire)) {
+    return;
+  }
+  if (!PostMessageW(state.candidate_surface,
+                    kLowLevelMouseAttachedGlyphRearmMessage, 0, 0)) {
+    g_attached_rearm_pending.store(false, std::memory_order_release);
+  }
 }
 
 bool FailOpenRetireAttachedGlyphTransaction(uint64_t transaction_id) {
@@ -1140,6 +1420,7 @@ bool AdvanceAttachedGlyphReleaseIfAcknowledged() {
       g_attached_active_transaction = {};
       g_attached_active_transaction_id.store(0, std::memory_order_release);
       ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+      RequestAttachedGlyphRearmIfNeutral();
       return false;
     }
     ReleaseSRWLockExclusive(&g_attached_transaction_lock);
@@ -1168,6 +1449,31 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
           ? ButtonBitForMessage(wparam, info->mouseData)
           : 0;
 
+  // A re-arm may complete between a suppressed down and its physical up.
+  // Retire that private pair before checking the normal target path, otherwise
+  // the next lookup would inherit a stale suppressed-button bit.
+  if (is_button_up && button_bit != 0 &&
+      (g_attached_rearm_suppressed_buttons.fetch_and(
+           ~button_bit, std::memory_order_relaxed) &
+       button_bit) != 0) {
+    return 1;
+  }
+
+  // A popup can release the singleton before its re-arm message is processed
+  // by the attached surface thread.  Keep the game fail-closed for this tiny
+  // handoff window.  Only a button that we actually swallowed is paired and
+  // swallowed on up; once a target is published normal dispatch resumes.
+  if (g_attached_rearm_pending.load(std::memory_order_acquire) &&
+      g_target.load(std::memory_order_acquire) == nullptr &&
+      g_attached_rearm_candidate.load(std::memory_order_acquire) != nullptr &&
+      button_bit != 0) {
+    if (is_button_down) {
+      g_attached_rearm_suppressed_buttons.fetch_or(
+          button_bit, std::memory_order_relaxed);
+      return 1;
+    }
+  }
+
   // 这道闸故意在 g_target 之前。外部 down 被吞后，PostMessage 会让窗口线程
   // 立刻 Hide/Disarm；配对 up 到来时 target 通常已空，若先看 target 就会漏半个
   // 点击给那些在 button-up 推进的游戏。
@@ -1175,6 +1481,9 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     const uint32_t bit = button_bit;
     if (wparam == WM_LBUTTONUP) {
       EndAttachedGlyphTransaction(info->pt);
+      // BUG-2613 — 覆盖窗口事务的配对 up：也在 g_target 闸门之前，台词浮窗上的
+      // 点击根本没有 g_target。
+      EndOverlayClickShieldTransaction();
     }
     if (bit != 0) {
       const uint32_t previous = g_direct_input_shield_buttons.fetch_and(
@@ -1186,6 +1495,10 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     if (bit != 0 &&
         (g_swallowed_buttons.fetch_and(~bit, std::memory_order_relaxed) & bit) !=
             0) {
+      // Popup Hide cleared g_target after swallowing its down. This matching
+      // up is the first safe point to wake the attached surface; re-arming
+      // earlier would split the popup's dismiss transaction.
+      RequestAttachedGlyphRearmIfNeutral();
       return 1;
     }
     return CallNextHookEx(nullptr, code, wparam, lparam);
@@ -1222,25 +1535,41 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
       if ((stale_shield & bit) != 0 && (stale_shield & ~bit) == 0) {
         RequestDirectInputShieldFinalize();
       }
+      // The re-arm fence's private pair bits follow the same rule: a fresh down
+      // proves the fenced press ended, even if its up arrived after an unhook.
+      // Without this a stale bit would swallow an unrelated future up while its
+      // down reached the foreground app (a stuck button).
+      g_attached_rearm_suppressed_buttons.fetch_and(~bit,
+                                                    std::memory_order_relaxed);
     }
+  }
+  // BUG-2613 — 落在登记的覆盖窗口上的左键 down：向注入侧发布 Popup 护盾请求，
+  // 事件本身不吞。放在 g_target 闸门之前：hook 台词浮窗 / 穿透工具条上的点击没有
+  // 查词卡目标，却同样不能让采样型引擎看见。
+  if (wparam == WM_LBUTTONDOWN) {
+    BeginOverlayClickShieldTransaction(info->pt);
   }
   const HWND target = g_target.load(std::memory_order_acquire);
   if (target == nullptr) {
     return CallNextHookEx(nullptr, code, wparam, lparam);
   }
   // Attached runtime owns a fully prevalidated immutable screen-space
-  // snapshot. Handle it before any HWND/property/WindowFromPoint calls: the
-  // system is synchronously waiting for this callback, so a hit needs only the
-  // bounded modifier reads, rectangle scan and single-CAS v19 TryPublish path.
+  // snapshot. Handle it before any WindowFromPoint/property lookup or window
+  // enumeration: the system is synchronously waiting for this callback, so a
+  // hit needs only the bounded modifier reads, one style read on the
+  // already-bound Magpie presentation HWND, rectangle scan and single-CAS v19
+  // TryPublish path.
   const auto attached_snapshot = AttachedGlyphSnapshotForTarget(target);
   if (attached_snapshot != nullptr) {
     if (wparam == WM_LBUTTONDOWN && BareLeftClickModifiersClear()) {
-      const size_t attached_rect =
-          AttachedGlyphRectAt(attached_snapshot, info->pt);
-      if (attached_rect != SIZE_MAX) {
+      AttachedGlyphPointHit point_hit;
+      if (ResolveAttachedGlyphPointHit(attached_snapshot, info->pt,
+                                       &point_hit)) {
         uint64_t transaction_id = 0;
         if (BeginAttachedGlyphTransaction(target, attached_snapshot,
-                                          attached_rect, info->pt,
+                                          point_hit.rect_index,
+                                          point_hit.destination_point,
+                                          attached_snapshot->has_cursor_mapping,
                                           &transaction_id)) {
           g_swallowed_buttons.fetch_or(kSwallowedLeftButton,
                                         std::memory_order_relaxed);
@@ -1308,7 +1637,9 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
       g_swallowed_buttons.fetch_or(bit, std::memory_order_relaxed);
     }
     PostMessage(target, kLowLevelMouseClickMessage,
-                PackMouseHookPoint(info->pt.x, info->pt.y), inside ? 1 : 0);
+                PackMouseHookPoint(info->pt.x, info->pt.y),
+                (inside ? kLowLevelMouseClickInsideBit : 0) |
+                    (consume_click ? kLowLevelMouseClickConsumedBit : 0));
     if (consume_click) {
       // 返回非 0 = 这次 down 不进入游戏的输入队列。窗口线程已经收到
       // 异步 dismiss 消息；这里绝不同步等它，否则又把 Flutter/WebView2 忙闲
@@ -1393,7 +1724,10 @@ void HookThreadMain() {
       const bool has_pending_button =
           g_swallowed_buttons.load(std::memory_order_relaxed) != 0 ||
           g_direct_input_shield_buttons.load(std::memory_order_relaxed) != 0 ||
-          HasActiveAttachedGlyphTransaction();
+          g_attached_rearm_suppressed_buttons.load(
+              std::memory_order_relaxed) != 0 ||
+          HasActiveAttachedGlyphTransaction() ||
+          g_overlay_transaction_id.load(std::memory_order_relaxed) != 0;
       if (disarm_timer != 0 && !has_pending_button) {
         KillTimer(nullptr, disarm_timer);
         disarm_timer = 0;
@@ -1427,7 +1761,7 @@ void HookThreadMain() {
       const BOOL got_cursor = GetCursorPos(&cursor);
       const ULONGLONG seen_tick =
           g_callback_tick.load(std::memory_order_relaxed);
-      if (g_target.load(std::memory_order_relaxed) != nullptr) {
+      if (HookWanted()) {
         if (hook == nullptr) {
           // armed 但没有钩子：Arm 那次 SetWindowsHookEx 失败，或 kThreadArm 根本没
           // 送达（PostThreadMessage 会失败，旧实现没检查返回值）。补装。
@@ -1497,21 +1831,32 @@ void HookThreadMain() {
           ReconcileDirectInputShieldButtonsWithPhysicalState();
       const bool attached_still_held =
           ReconcileAttachedGlyphTransactionWithPhysicalState();
+      const bool overlay_still_held =
+          ReconcileOverlayClickShieldTransactionWithPhysicalState();
+      // Re-arm fence pairs get the same physical reconciliation: keep the hook
+      // while a fenced press is really held (its up must still be swallowed),
+      // drop bits whose button is already up (lost up on device switch).
+      const uint32_t rearm_still_held = PhysicalButtonsStillHeld(
+          g_attached_rearm_suppressed_buttons.load(std::memory_order_relaxed));
+      g_attached_rearm_suppressed_buttons.fetch_and(rearm_still_held,
+                                                    std::memory_order_relaxed);
       if (still_held != 0 || shield_still_held != 0 ||
-          attached_still_held) {
+          attached_still_held || overlay_still_held || rearm_still_held != 0) {
         disarm_timer = SetTimer(nullptr, 0, kDisarmGraceMs, nullptr);
         continue;
       }
       // 宽限期内没有新的 Arm（有的话定时器早被杀掉）——真正闲置，卸钩子。
       // 再核一次 g_target 防御 Arm 消息尚在队列里的窗口期。
-      if (hook != nullptr &&
-          g_target.load(std::memory_order_relaxed) == nullptr) {
+      // BUG-2613 — 登记着覆盖窗口时同样不卸：它们的护盾请求只能在回调里发。
+      if (hook != nullptr && !HookWanted()) {
         UnhookWindowsHookEx(hook);
         hook = nullptr;
         g_hook_active.store(false, std::memory_order_release);
         // 所有配对 up 都已收齐后才会走到这里。清零是防御式收尾，避免未来
         // 新增按钮位时遗漏某条释放路径。
         g_swallowed_buttons.store(0, std::memory_order_relaxed);
+        g_attached_rearm_suppressed_buttons.store(0,
+                                                  std::memory_order_relaxed);
       }
     }
   }
@@ -1640,6 +1985,110 @@ MouseHookWheel UnpackMouseHookWheel(LPARAM lparam) {
   return wheel;
 }
 
+void SetOverlayClickShieldGameResolver(HWND (*resolver)()) {
+  g_overlay_shield_game_resolver.store(resolver, std::memory_order_release);
+}
+
+namespace {
+
+// 用新表替换登记表并重算快门计数。调用方持 g_binding_mutex。返回新计数。
+size_t PublishOverlayClickShieldTable(
+    std::shared_ptr<OverlayClickShieldTable> next) {
+  size_t count = 0;
+  for (const OverlayClickShieldEntry& entry : next->entries) {
+    if (entry.game != nullptr) ++count;
+  }
+  std::shared_ptr<const OverlayClickShieldTable> immutable = std::move(next);
+  std::atomic_store_explicit(&g_overlay_shield_table, std::move(immutable),
+                             std::memory_order_release);
+  g_overlay_shield_count.store(count, std::memory_order_release);
+  return count;
+}
+
+std::shared_ptr<OverlayClickShieldTable> CopyOverlayClickShieldTable() {
+  auto next = std::make_shared<OverlayClickShieldTable>();
+  const auto current = std::atomic_load_explicit(
+      &g_overlay_shield_table, std::memory_order_acquire);
+  if (current != nullptr) next->entries = current->entries;
+  return next;
+}
+
+}  // namespace
+
+void RegisterOverlayClickShield(HWND overlay) {
+  if (overlay == nullptr) return;
+  // 解析器在锁外跑：它会 EnumWindows，且不碰本模块的任何状态。
+  HWND (*const resolver)() =
+      g_overlay_shield_game_resolver.load(std::memory_order_acquire);
+  const HWND game = resolver != nullptr ? resolver() : nullptr;
+  size_t count = 0;
+  {
+    std::lock_guard<std::mutex> guard(g_binding_mutex);
+    auto next = CopyOverlayClickShieldTable();
+    bool found = false;
+    for (OverlayClickShieldEntry& entry : next->entries) {
+      if (entry.overlay == overlay) {
+        entry.game = game;
+        found = true;
+      }
+    }
+    if (!found) next->entries.push_back(OverlayClickShieldEntry{overlay, game});
+    count = PublishOverlayClickShieldTable(std::move(next));
+  }
+  if (count == 0) {
+    // 没有可保护的游戏：不为它装钩子。台词浮窗每行重登记，会话结束后解析器返回
+    // nullptr 让计数从 >0 掉到 0——这时与 Unregister 对称地投一次 Disarm，钩子
+    // 才不会等到 Flutter 真的 hide 正文窗才卸；没有钩子线程时纯空操作。
+    if (g_target.load(std::memory_order_acquire) == nullptr) {
+      const DWORD thread_id = g_thread_id.load(std::memory_order_acquire);
+      if (thread_id != 0) PostThreadMessage(thread_id, kThreadDisarm, 0, 0);
+    }
+    return;
+  }
+  const DWORD thread_id = EnsureHookThread();
+  if (thread_id == 0) return;
+  // kThreadArm 的无 ack 形态：钩子没装就装上，装着就取消挂起的宽限期卸载。
+  PostThreadMessage(thread_id, kThreadArm, 0, 0);
+}
+
+void UnregisterOverlayClickShield(HWND overlay) {
+  if (overlay == nullptr) return;
+  size_t count = 0;
+  {
+    std::lock_guard<std::mutex> guard(g_binding_mutex);
+    auto next = CopyOverlayClickShieldTable();
+    auto& entries = next->entries;
+    bool changed = false;
+    for (size_t index = 0; index < entries.size();) {
+      if (entries[index].overlay == overlay) {
+        entries.erase(entries.begin() + static_cast<ptrdiff_t>(index));
+        changed = true;
+      } else {
+        ++index;
+      }
+    }
+    if (!changed) return;
+    count = PublishOverlayClickShieldTable(std::move(next));
+  }
+  if (count != 0 || g_target.load(std::memory_order_acquire) != nullptr) {
+    return;
+  }
+  // 最后一张覆盖窗口撤了、也没有查词卡目标：走既有的宽限期卸载。在飞的事务由
+  // 定时器对账兜底（宽限期内 up 到来照常 release；卸钩前会等它排空）。
+  const DWORD thread_id = g_thread_id.load(std::memory_order_acquire);
+  if (thread_id != 0) {
+    PostThreadMessage(thread_id, kThreadDisarm, 0, 0);
+  }
+}
+
+size_t OverlayClickShieldCountForTest() {
+  return g_overlay_shield_count.load(std::memory_order_acquire);
+}
+
+bool OverlayClickShieldTransactionActiveForTest() {
+  return g_overlay_transaction_id.load(std::memory_order_acquire) != 0;
+}
+
 void ArmLowLevelMouseHook(HWND target) {
   if (target == nullptr) {
     return;
@@ -1659,11 +2108,19 @@ void ArmLowLevelMouseHook(HWND target) {
 
 uint32_t UpdateLowLevelAttachedGlyphHitRegions(
     HWND surface, HWND game_owner, const RECT* screen_rects,
-    size_t screen_rect_count, bool allow_risk) {
+    size_t screen_rect_count, bool allow_risk,
+    const attached_magpie_surface_geometry::Mapping* cursor_mapping,
+    HWND cursor_presentation_hwnd) {
   constexpr size_t kMaximumAttachedGlyphRects = 4096;
   if (surface == nullptr || game_owner == nullptr || screen_rects == nullptr ||
       screen_rect_count == 0 ||
-      screen_rect_count > kMaximumAttachedGlyphRects) {
+      screen_rect_count > kMaximumAttachedGlyphRects ||
+      (cursor_mapping == nullptr) != (cursor_presentation_hwnd == nullptr)) {
+    return 0;
+  }
+  if (cursor_mapping != nullptr &&
+      (!attached_magpie_surface_geometry::IsMappingValid(*cursor_mapping) ||
+       !PresentationWindowHasTransparentStyle(cursor_presentation_hwnd))) {
     return 0;
   }
   // Start the acknowledgement worker before the snapshot becomes reachable
@@ -1673,6 +2130,9 @@ uint32_t UpdateLowLevelAttachedGlyphHitRegions(
   snapshot->surface = surface;
   snapshot->game_owner = game_owner;
   snapshot->allow_risk = allow_risk;
+  snapshot->has_cursor_mapping = cursor_mapping != nullptr;
+  snapshot->cursor_presentation_hwnd = cursor_presentation_hwnd;
+  if (cursor_mapping != nullptr) snapshot->cursor_mapping = *cursor_mapping;
   snapshot->screen_rects.reserve(screen_rect_count);
   for (size_t index = 0; index < screen_rect_count; ++index) {
     const RECT rect = screen_rects[index];
@@ -1686,10 +2146,33 @@ uint32_t UpdateLowLevelAttachedGlyphHitRegions(
         g_attached_hit_token.fetch_add(1, std::memory_order_acq_rel) + 1u;
   }
   snapshot->token = token;
+  g_attached_cursor_snapshot_invalidated_token.store(
+      0, std::memory_order_release);
   std::shared_ptr<const AttachedGlyphHitSnapshot> immutable = snapshot;
   std::atomic_store_explicit(&g_attached_hit_snapshot, std::move(immutable),
                              std::memory_order_release);
+  g_attached_rearm_candidate.store(surface, std::memory_order_release);
   return token;
+}
+
+bool LowLevelAttachedGlyphHitSnapshotIsCurrent(HWND surface, uint32_t token) {
+  if (surface == nullptr || token == 0) return false;
+  const auto snapshot = std::atomic_load_explicit(
+      &g_attached_hit_snapshot, std::memory_order_acquire);
+  return snapshot != nullptr && snapshot->surface == surface &&
+         snapshot->token == token &&
+         g_attached_cursor_snapshot_invalidated_token.load(
+             std::memory_order_acquire) != token;
+}
+
+bool LowLevelAttachedGlyphTransactionActiveFor(HWND surface) {
+  if (surface == nullptr) return false;
+  AcquireSRWLockShared(&g_attached_transaction_lock);
+  const bool active = g_attached_active_transaction.latch.active() &&
+                      g_attached_active_transaction.snapshot != nullptr &&
+                      g_attached_active_transaction.snapshot->surface == surface;
+  ReleaseSRWLockShared(&g_attached_transaction_lock);
+  return active;
 }
 
 void ClearLowLevelAttachedGlyphHitRegions(HWND surface) {
@@ -1701,6 +2184,8 @@ void ClearLowLevelAttachedGlyphHitRegions(HWND surface) {
     if (std::atomic_compare_exchange_weak_explicit(
             &g_attached_hit_snapshot, &snapshot, empty,
             std::memory_order_acq_rel, std::memory_order_acquire)) {
+      g_attached_cursor_snapshot_invalidated_token.store(
+          0, std::memory_order_release);
       break;
     }
   }
@@ -1714,6 +2199,24 @@ void ClearLowLevelAttachedGlyphHitRegions(HWND surface) {
     g_attached_active_transaction.latch.Cancel();
   }
   ReleaseSRWLockExclusive(&g_attached_transaction_lock);
+}
+
+void RetireLowLevelAttachedGlyphRearmCandidate(HWND surface) {
+  if (surface == nullptr) return;
+  HWND expected = surface;
+  if (g_attached_rearm_candidate.compare_exchange_strong(
+          expected, nullptr, std::memory_order_acq_rel,
+          std::memory_order_acquire)) {
+    g_attached_rearm_pending.store(false, std::memory_order_release);
+    g_attached_rearm_suppressed_buttons.store(0, std::memory_order_release);
+  }
+}
+
+void CompleteLowLevelAttachedGlyphRearm(HWND surface) {
+  if (surface == nullptr) return;
+  if (g_attached_rearm_candidate.load(std::memory_order_acquire) == surface) {
+    g_attached_rearm_pending.store(false, std::memory_order_release);
+  }
 }
 
 namespace {
@@ -1904,6 +2407,7 @@ bool ArmLowLevelMouseHookForAttachedGlyph(HWND target, HWND game_owner) {
       target, game_owner, true, snapshot->allow_risk, true);
   if (armed) {
     g_attached_arm_failure.store(nullptr, std::memory_order_release);
+    CompleteLowLevelAttachedGlyphRearm(target);
   }
   return armed;
 }
@@ -1923,6 +2427,9 @@ void FinalizeLowLevelMouseDirectInputShield(HWND target) {
 void DisarmLowLevelMouseHook(HWND expected_target) {
   if (expected_target == nullptr) return;
   ClearLowLevelAttachedGlyphHitRegions(expected_target);
+  const bool released_transient_popup =
+      expected_target !=
+      g_attached_rearm_candidate.load(std::memory_order_acquire);
   std::lock_guard<std::mutex> guard(g_binding_mutex);
   const HWND current = g_target.load(std::memory_order_acquire);
   const bool owns_binding = current == expected_target;
@@ -1969,6 +2476,11 @@ void DisarmLowLevelMouseHook(HWND expected_target) {
   if ((owns_binding || clean_uncommitted_arm) && thread_id != 0) {
     PostThreadMessage(thread_id, kThreadDisarm, 0, 0);
   }
+  // Esc/button/programmatic popup Hide has no physical up to wake the
+  // candidate. An attached surface hiding itself must not post a self-rearm
+  // loop; the predicate keeps a popup dismiss click pending until HookProc
+  // owns its up.
+  if (released_transient_popup) RequestAttachedGlyphRearmIfNeutral();
 }
 
 }  // namespace fushi

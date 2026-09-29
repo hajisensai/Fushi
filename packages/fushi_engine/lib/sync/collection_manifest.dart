@@ -269,7 +269,8 @@ class CollectionManifestMember {
 
   /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
   /// （game 是本机局域身份：对端无对应 galgames 行时该成员在对端静默不渲染，
-  /// 归属关系仍随清单往返、不丢失）。
+  /// 归属关系仍随清单往返、不丢失。刻意不换成游戏跨端身份——见
+  /// `CollectionBookIdentityIndex`：成员无别名，换键会让新旧键并存 / 移出复活）。
   final String entryKey;
 
   /// 合集内序（整合集 LWW 覆盖的载荷）。

@@ -71,7 +71,7 @@ void main() {
 
   test('远端字幕应用路径仅内存（不写本地 VideoBookRepository 持久化）', () {
     // 截取 _applyRemoteSubtitle 函数体，断言其内不调用 repo 持久化方法。
-    final int start = src.indexOf('Future<void> _applyRemoteSubtitle(');
+    final int start = src.indexOf('Future<bool> _applyRemoteSubtitle(');
     expect(start, greaterThanOrEqualTo(0));
     final int end = src.indexOf('Future<void> _clearRemoteSubtitle(', start);
     expect(end, greaterThan(start));

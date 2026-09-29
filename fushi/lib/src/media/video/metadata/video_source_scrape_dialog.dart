@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -228,6 +229,12 @@ class _VideoSourceScrapeTaskPanelState
     );
   }
 
+  /// 「当前任务」tab 是**一个**平铺的列表：状态头 → 报告说明行 / 待确认候选
+  /// → 排队请求，全部是同一个 `ListView` 的条目，占满 tab 的整个高度。
+  ///
+  /// 以前把报告说明和候选各自套一层 `ConstrainedBox(maxHeight: 260/300)` +
+  /// `shrinkWrap` 内嵌列表：外层列表无界高度，内层只能硬截，弹窗下半截永远
+  /// 空着、上半截 260px 里再滚（BUG-2594）。
   Widget _buildActivity() {
     final VideoSourceScrapeProgress progress = widget.controller.progress;
     final VideoSourceScrapeConfirmation? confirmation =
@@ -235,50 +242,44 @@ class _VideoSourceScrapeTaskPanelState
     final SourceScrapeReport? report = progress.report;
     final List<VideoSourceScrapeManualRequest> queued =
         widget.controller.queuedManualRequests;
+    final List<Widget> rows = <Widget>[
+      if (widget.controller.isScanning)
+        Text(t.video_source_scrape_phase_scanning)
+      else if (confirmation != null)
+        ..._confirmationRows(confirmation)
+      else if (report != null) ...<Widget>[
+        Text(_phaseLabel(progress.phase),
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        ..._reportRows(report),
+      ] else
+        _buildProgress(progress),
+      if (queued.isNotEmpty) ...<Widget>[
+        const Divider(height: 32),
+        Text(
+          '${t.video_source_scrape_queue_waiting} (${queued.length})',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        for (int index = 0; index < queued.length; index++)
+          FushiListItem(
+            key: ObjectKey(queued[index]),
+            leading: Text('${index + 1}'),
+            title: Text(queued[index].workTitle),
+            subtitle: Text(
+                '${queued[index].source.label} · ${queued[index].lookup.provider.name.toUpperCase()} ${queued[index].lookup.externalId}'),
+            trailing: IconButton(
+              tooltip: t.video_source_scrape_queue_remove,
+              onPressed: () =>
+                  widget.controller.cancelQueuedManualRequest(queued[index]),
+              icon: const Icon(Icons.close),
+            ),
+          ),
+      ],
+    ];
     return ListView.builder(
       key: const PageStorageKey<String>('video-source-activity-list'),
-      itemCount: queued.length + 1,
-      itemBuilder: (BuildContext context, int index) {
-        if (index == 0) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (widget.controller.isScanning)
-                Text(t.video_source_scrape_phase_scanning)
-              else if (confirmation != null)
-                _buildConfirmation(confirmation)
-              else if (report != null) ...<Widget>[
-                Text(_phaseLabel(progress.phase),
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                _buildReport(report),
-              ] else
-                _buildProgress(progress),
-              if (queued.isNotEmpty) ...<Widget>[
-                const Divider(height: 32),
-                Text(
-                  '${t.video_source_scrape_queue_waiting} (${queued.length})',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ],
-          );
-        }
-        final VideoSourceScrapeManualRequest request = queued[index - 1];
-        return FushiListItem(
-          key: ObjectKey(request),
-          leading: Text('$index'),
-          title: Text(request.workTitle),
-          subtitle: Text(
-              '${request.source.label} · ${request.lookup.provider.name.toUpperCase()} ${request.lookup.externalId}'),
-          trailing: IconButton(
-            tooltip: t.video_source_scrape_queue_remove,
-            onPressed: () =>
-                widget.controller.cancelQueuedManualRequest(request),
-            icon: const Icon(Icons.close),
-          ),
-        );
-      },
+      itemCount: rows.length,
+      itemBuilder: (BuildContext context, int index) => rows[index],
     );
   }
 
@@ -540,82 +541,59 @@ class _VideoSourceScrapeTaskPanelState
         _ => Icons.sync,
       };
 
-  Widget _buildConfirmation(VideoSourceScrapeConfirmation confirmation) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Text(
-          t.video_source_scrape_waiting_confirmation,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 6),
-        Text(confirmation.localWorkTitle),
-        const SizedBox(height: 6),
-        Text(t.video_source_scrape_confirmation_hint),
-        const SizedBox(height: 12),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 300),
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: confirmation.candidates.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (BuildContext context, int index) =>
-                VideoSourceScrapeCandidateTile(
-              candidate: confirmation.candidates[index],
-              onSelected: widget.controller.confirmPending,
-            ),
-          ),
+  /// 待确认区块的行：说明头 + 候选（候选之间一条细分割线）。
+  List<Widget> _confirmationRows(VideoSourceScrapeConfirmation confirmation) {
+    return <Widget>[
+      Text(
+        t.video_source_scrape_waiting_confirmation,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      const SizedBox(height: 6),
+      Text(confirmation.localWorkTitle),
+      const SizedBox(height: 6),
+      Text(t.video_source_scrape_confirmation_hint),
+      const SizedBox(height: 12),
+      for (int index = 0; index < confirmation.candidates.length; index++) ...[
+        if (index > 0) const Divider(height: 1),
+        VideoSourceScrapeCandidateTile(
+          candidate: confirmation.candidates[index],
+          onSelected: widget.controller.confirmPending,
         ),
       ],
-    );
+    ];
   }
 
-  Widget _buildReport(SourceScrapeReport report) {
+  /// 已完成区块的行：汇总一行 + 每条警告 / 错误一行。
+  List<Widget> _reportRows(SourceScrapeReport report) {
     final List<(SourceScrapeIssue, bool)> issues = <(SourceScrapeIssue, bool)>[
       for (final SourceScrapeIssue issue in report.warnings) (issue, false),
       for (final SourceScrapeIssue issue in report.errors) (issue, true),
     ];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Text(t.scrape_all_done(
-          applied: report.succeededWorks,
-          review: report.pendingConfirmations,
-          skipped: report.protectedArtifacts,
-          failed: report.failedWorks,
-        )),
-        if (issues.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 260),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: issues.length,
-              itemBuilder: (BuildContext context, int index) {
-                final (SourceScrapeIssue issue, bool isError) = issues[index];
-                return FushiListItem(
-                  density: FushiListDensity.compact,
-                  padding: EdgeInsets.zero,
-                  leading: Icon(
-                    isError ? Icons.error_outline : Icons.info_outline,
-                    color: isError
-                        ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.primary,
-                  ),
-                  title: Text(issue.workTitle),
-                  subtitle: SelectableText(
-                    issue.path == null
-                        ? issue.message
-                        : '${issue.message}\n${issue.path}',
-                  ),
-                );
-              },
-            ),
+    return <Widget>[
+      Text(t.scrape_all_done(
+        applied: report.succeededWorks,
+        review: report.pendingConfirmations,
+        skipped: report.protectedArtifacts,
+        failed: report.failedWorks,
+      )),
+      if (issues.isNotEmpty) const SizedBox(height: 12),
+      for (final (SourceScrapeIssue issue, bool isError) in issues)
+        FushiListItem(
+          density: FushiListDensity.compact,
+          padding: EdgeInsets.zero,
+          leading: Icon(
+            isError ? Icons.error_outline : Icons.info_outline,
+            color: isError
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).colorScheme.primary,
           ),
-        ],
-      ],
-    );
+          title: Text(issue.workTitle),
+          subtitle: SelectableText(
+            issue.path == null
+                ? describeVideoScrapeIssueMessage(issue.message)
+                : '${describeVideoScrapeIssueMessage(issue.message)}\n${issue.path}',
+          ),
+        ),
+    ];
   }
 }

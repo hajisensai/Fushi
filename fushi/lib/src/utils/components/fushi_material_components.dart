@@ -1,11 +1,23 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 // SelectedContent 住在 rendering 层（selection.dart），material 不转出它。
 import 'package:flutter/rendering.dart' show SelectedContent;
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
+import 'package:flutter/services.dart'
+    show
+        Clipboard,
+        ClipboardData,
+        HardwareKeyboard,
+        KeyDownEvent,
+        KeyEvent,
+        LogicalKeyboardKey,
+        SystemChannels,
+        TextInputAction;
 import 'package:macos_ui/macos_ui.dart'
     show MacosTextField, MacosIcon, OverlayVisibilityMode;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -182,7 +194,10 @@ class FushiListItem extends StatefulWidget {
   /// （golden `list_tile_narrow` 即在 150×80 的盒子里复现出 overflow 红条），窄容器
   /// 里标题一换行就会撑破父容器。所以放宽必须逐调用点显式进行——只在父容器高度自由
   /// 的地方传 `titleMaxLines: 2`，而不是改默认值连带影响每一个既有调用点。
-  final int titleMaxLines;
+  ///
+  /// null = 不限行数：只给父容器高度自由、且截断会丢掉**唯一区分信息**的调用点
+  /// （发现页同系列书名只在末尾差一个卷号，两行 ellipsis 恰好把卷号切掉）。
+  final int? titleMaxLines;
   final int subtitleMaxLines;
   final FushiFocusId? focusId;
 
@@ -259,7 +274,11 @@ class _FushiListItemState extends State<FushiListItem> {
                   DefaultTextStyle.merge(
                     style: titleStyle,
                     maxLines: widget.titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
+                    // 不限行时不能带 ellipsis：TextPainter 在 maxLines 为 null
+                    // 时把省略号作用于**第一行**，「不限行」反而退化成单行。
+                    overflow: widget.titleMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
                     child: widget.title,
                   ),
                   if (widget.subtitle != null)
@@ -380,6 +399,34 @@ class FushiSearchField extends StatelessWidget {
   final ValueChanged<String> onSubmitted;
   final VoidCallback? onClear;
 
+  /// 提交的收尾：清 composing，移动端再收起软键盘（BUG-2686）。
+  ///
+  /// 焦点刻意**不**交出去：unfocus 之后 [FushiFocusRoot] 的被动修复会把焦点
+  /// 还给登记过的搜索框（BUG-2620），移动端键盘随之再弹一次。所以只收键盘、
+  /// 不交焦点——再点一下框（EditableText.requestKeyboard）键盘就回来。
+  ///
+  /// 收键盘必须排在 EditableText 自己的收尾**之后**：提交动作带 shouldUnfocus，
+  /// 而焦点还在，它会在 onSubmitted 之后排一个 microtask 重建输入连接并 show
+  /// （flutter#84240 的「开发者把焦点留住了就重置键盘」）。在这里同步 hide 会被
+  /// 那次 show 覆盖——实测日志就是 hide → clearClient → setClient → show。
+  /// 所以收键盘排到下一帧的后帧回调：帧总在 microtask 队列排空之后才开始，顺序
+  /// 是确定的，不是靠等时间。后帧回调本身不调度帧，必须显式 scheduleFrame，否则
+  /// 没有别的 setState 时它永远不跑。桌面端没有要收的软键盘，维持原样。
+  void _finishSubmit() {
+    controller.clearComposing();
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!focusNode.hasFocus) return;
+        unawaited(
+            SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+      })
+      ..scheduleFrame();
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -460,6 +507,16 @@ class FushiSearchField extends StatelessWidget {
                   minHeight: 32,
                 ),
               ),
+              // 搜索框的提交动作必须显式声明：不声明时软键盘/IME 给的是
+              // 「完成」，而 `TextInputAction.done` 的默认收尾是 unfocus——焦点
+              // 一掉，[FushiFocusRoot] 的修复链又会把它以编程方式还回来，桌面端
+              // 的 EditableText 对非点击获得的焦点整段选中，于是按下回车的观感
+              // 就是「文字被全选、什么也没搜」（BUG-2620）。
+              textInputAction: TextInputAction.search,
+              // 给了 onEditingComplete 就不会走默认的 unfocus 收尾，焦点留在
+              // 框里；onSubmitted 仍照常触发。composing 要自己清，移动端的软
+              // 键盘也要自己收（见 [_finishSubmit]）。
+              onEditingComplete: _finishSubmit,
               onChanged: onChanged,
               onSubmitted: onSubmitted,
             ),
@@ -467,12 +524,44 @@ class FushiSearchField extends StatelessWidget {
         },
       );
     }
-    if (focusId == null) return searchBar;
-    if (FushiFocusRoot.maybeControllerOf(context) == null) return searchBar;
+    // 物理回车的兜底：提交动作本该由平台 text-input 桥转成 onSubmitted，但那条
+    // 路要穿过 engine 的输入插件，桌面端一旦没走到，按回车就是「什么也没发生」，
+    // 用户只能靠改动输入再等防抖才搜得出来（BUG-2620）。键事件这一层是确定性的，
+    // 直接在这里认领裸回车并调 onSubmitted，handled 同时挡住重复提交。
+    //
+    // 两种情况必须放行：带修饰键的回车（不是提交语义），以及 IME 组字期间的回车
+    // ——那一下是确认候选词，抢走它等于日文/中文输入法在搜索框里没法选词。
+    final Widget submittable = Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+          return KeyEventResult.ignored;
+        }
+        if (HardwareKeyboard.instance.isControlPressed ||
+            HardwareKeyboard.instance.isShiftPressed ||
+            HardwareKeyboard.instance.isAltPressed ||
+            HardwareKeyboard.instance.isMetaPressed) {
+          return KeyEventResult.ignored;
+        }
+        if (!focusNode.hasFocus) return KeyEventResult.ignored;
+        if (controller.value.composing.isValid) return KeyEventResult.ignored;
+        onSubmitted(controller.text);
+        // 有的移动端输入法把「搜索」键发成回车键事件而不是 editor action，
+        // 走到这里的提交同样要收键盘。
+        _finishSubmit();
+        return KeyEventResult.handled;
+      },
+      child: searchBar,
+    );
+    if (focusId == null) return submittable;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return submittable;
     return FushiFocusRegistration(
       id: focusId!,
       focusNode: focusNode,
-      child: searchBar,
+      child: submittable,
     );
   }
 }
@@ -874,22 +963,34 @@ class _FushiTagChipState extends State<FushiTagChip> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // eink：这里的每一档 alpha（0.44 / 0.88 / 0.2 / 0.12 / 0.4）在墨水屏上都是
+    // 抖动灰，而 overlay 底又塌成页面底色——未选中的 surface chip 整个消失。
+    // 一律实心：selected 反色（chipTheme 同款），未选中页面底色 + 描边，dimmed
+    // 只保留文字不加透明。
+    final bool eink = isEinkTheme(context);
     final Color tagColor = widget.color ?? colors.primary;
     final Color baseColor = widget.color ??
         (widget.selected ? colors.primaryContainer : tokens.surfaces.overlay);
     final Color background = switch (widget.tone) {
-      FushiTagChipTone.filled => widget.dimmed
-          ? baseColor.withValues(alpha: 0.44)
-          : baseColor.withValues(alpha: widget.color == null ? 1 : 0.88),
-      FushiTagChipTone.surface => widget.selected
-          ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
-          : tokens.surfaces.overlay.withValues(alpha: widget.dimmed ? 0.44 : 1),
+      FushiTagChipTone.filled => eink
+          ? baseColor
+          : widget.dimmed
+              ? baseColor.withValues(alpha: 0.44)
+              : baseColor.withValues(alpha: widget.color == null ? 1 : 0.88),
+      FushiTagChipTone.surface => eink
+          ? (widget.selected ? colors.onSurface : colors.surface)
+          : widget.selected
+              ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
+              : tokens.surfaces.overlay
+                  .withValues(alpha: widget.dimmed ? 0.44 : 1),
     };
     final Color foreground = switch (widget.tone) {
       FushiTagChipTone.filled => _foregroundFor(background),
-      FushiTagChipTone.surface => widget.dimmed
-          ? colors.onSurface.withValues(alpha: 0.4)
-          : colors.onSurface,
+      FushiTagChipTone.surface => eink
+          ? (widget.selected ? colors.surface : colors.onSurface)
+          : widget.dimmed
+              ? colors.onSurface.withValues(alpha: 0.4)
+              : colors.onSurface,
     };
     final BoxBorder? border = widget.selected
         ? Border.all(
@@ -897,7 +998,9 @@ class _FushiTagChipState extends State<FushiTagChip> {
                 ? tagColor
                 : colors.primary,
           )
-        : null;
+        : eink && widget.tone == FushiTagChipTone.surface
+            ? Border.all(color: colors.outline)
+            : null;
     final Text labelText = Text(
       widget.label,
       maxLines: 1,
@@ -938,7 +1041,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
       children: contentChildren,
     );
     final Widget chip = AnimatedContainer(
-      duration: fushiMd3StateDuration,
+      duration: einkSafeDuration(context, fushiMd3StateDuration),
       curve: fushiMd3StateCurve,
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
@@ -2879,6 +2982,49 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
     _selectionAreaKey.currentState?.selectableRegion.clearSelection();
   }
 
+  /// BUG-2715：行集合被**非滚动**原因换掉时丢弃选区（BUG-1582 的补全）。
+  ///
+  /// 与 BUG-1582 同一个框架不变式（`scrollable.dart` `_updateDragLocationsFromGeometries`
+  /// 假定 `currentSelectionStart/EndIndex` 指向的 Selectable 仍持有选区），但 BUG-1582
+  /// 只收口了「用户滚动回收端点行」这一个来源。选区端点行离开 `selectables` 的
+  /// 来源其实有三个，另两个与滚动无关：
+  ///
+  /// 1. **日志内容变化**：错误/调试日志页监听日志服务，新条目一来就整段重拼
+  ///    （新条目在最前，所有行下移）→ 行 Text 内容变化 → `RenderParagraph.text`
+  ///    走 layout 分支，把旧 `_SelectableFragment` 从 registrar `remove()` 掉再注册新的。
+  ///    `_removeSelectable` 只把下标减一，选区端点于是指向一个**没有选区**的片段。
+  /// 2. **视口变高度**（转屏 / 分屏 / 键盘）：视口变矮后端点行落出 cacheExtent 被回收，
+  ///    同样只做下标减一；外层 `StaticSelectionContainerDelegate` 也会因此读到空端点。
+  ///
+  /// 之后再长按到**命不中任何 Selectable 的位置**（每条错误日志都有的空行——空文本
+  /// 的 `RenderParagraph` 不注册片段；行尾空白；列表内边距），
+  /// `_handleSelectBoundary` 不改下标就返回，`handleSelectWord` 随即无条件读陈旧下标
+  /// → `startSelectionPoint!` / `endSelectionPoint!` 空断言（release 下 assert 不执行，
+  /// 直接 Null check operator）。
+  ///
+  /// 选区只对「划它时屏幕上那批行」有意义：行被换掉，旧选区指的已经不是同一段
+  /// 文字；所以在行集合被换掉时清掉选区，让选区状态与渲染快照同步。纯尾部追加
+  /// 不换掉任何既有行（见 [logUpdateReplacesRows]），选区与菜单照常保留
+  /// （TODO-1380「日志流追加期间菜单保持打开」）。无条件清（不看 [_hasSelection]）：
+  /// 桌面单击留下的折叠选区 plainText 为空，同样持有下标。
+  void _dropSelectionForReplacedRows() {
+    _hasSelection = false;
+    _selectionAreaKey.currentState?.selectableRegion.clearSelection();
+  }
+
+  // BUG-2715：上一次看到的视口主轴尺寸，用来从 ScrollMetricsNotification 里
+  // 只挑出「视口本身变了」这一种（懒加载列表滚动时 maxScrollExtent 估值也会变，
+  // 那由 [_dropStaleSelectionOnUserScroll] 管）。
+  double? _lastViewportDimension;
+
+  void _dropSelectionOnViewportResize(ScrollMetricsNotification notification) {
+    final double viewport = notification.metrics.viewportDimension;
+    final double? previous = _lastViewportDimension;
+    _lastViewportDimension = viewport;
+    if (previous == null || (previous - viewport).abs() < 0.5) return;
+    _dropSelectionForReplacedRows();
+  }
+
   // 整段 log 按行预切一次（不在 build 里反复 split），仅 widget.log 变化时重切。
   // ListView.builder 按 [_lines] 索引懒构造每行，只渲染视口内行。
   late List<String> _lines = _splitLines(widget.log);
@@ -2901,7 +3047,13 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
   void didUpdateWidget(covariant FushiLogPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.log != widget.log) {
-      _lines = _splitLines(widget.log);
+      final List<String> newLines = _splitLines(widget.log);
+      // BUG-2715：既有行被换掉时先清选区再换行——此刻旧片段还在 registrar 里，
+      // 清得干净。纯尾部追加不动既有行，保留选区。
+      if (logUpdateReplacesRows(_lines, newLines)) {
+        _dropSelectionForReplacedRows();
+      }
+      _lines = newLines;
     }
   }
 
@@ -3021,50 +3173,58 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
                         _hasSelection =
                             content != null && content.plainText.isNotEmpty;
                       },
-                      child: NotificationListener<ScrollUpdateNotification>(
-                        // BUG-1582：挂在 SelectionArea 与 ListView 之间——滚动
-                        // 通知自下而上冒泡，这里既拿得到，又不会拦住外层。
+                      child: NotificationListener<ScrollMetricsNotification>(
+                        // BUG-2715：视口变高度（转屏 / 分屏）回收端点行。
                         onNotification:
-                            (ScrollUpdateNotification notification) {
-                          _dropStaleSelectionOnUserScroll(notification);
+                            (ScrollMetricsNotification notification) {
+                          _dropSelectionOnViewportResize(notification);
                           return false;
                         },
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: EdgeInsets.all(tokens.spacing.card),
-                          itemCount: _lines.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            // TODO-806/TODO-822：单行不换行（softWrap:false）。
-                            // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
-                            // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
-                            // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
-                            // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
-                            // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
-                            // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
-                            //
-                            // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
-                            // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
-                            // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
-                            // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
-                            // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
-                            // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
-                            // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
-                            // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
-                            // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
-                            return ClipRect(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: constraints.maxWidth,
-                                ),
-                                child: Text(
-                                  _lines[index],
-                                  style: lineStyle,
-                                  softWrap: false,
-                                  overflow: TextOverflow.clip,
-                                ),
-                              ),
-                            );
+                        child: NotificationListener<ScrollUpdateNotification>(
+                          // BUG-1582：挂在 SelectionArea 与 ListView 之间——滚动
+                          // 通知自下而上冒泡，这里既拿得到，又不会拦住外层。
+                          onNotification:
+                              (ScrollUpdateNotification notification) {
+                            _dropStaleSelectionOnUserScroll(notification);
+                            return false;
                           },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            padding: EdgeInsets.all(tokens.spacing.card),
+                            itemCount: _lines.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              // TODO-806/TODO-822：单行不换行（softWrap:false）。
+                              // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
+                              // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
+                              // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
+                              // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
+                              // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
+                              // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
+                              //
+                              // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
+                              // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
+                              // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
+                              // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
+                              // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
+                              // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
+                              // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
+                              // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
+                              // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
+                              return ClipRect(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: constraints.maxWidth,
+                                  ),
+                                  child: Text(
+                                    _lines[index],
+                                    style: lineStyle,
+                                    softWrap: false,
+                                    overflow: TextOverflow.clip,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -3092,6 +3252,22 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
       ),
     );
   }
+}
+
+/// BUG-2715：一次日志更新是否会换掉某个**已有文字**的行（`_lines[i]` 非空且
+/// 更新后该下标的文字不同或不复存在）。
+///
+/// 行 i 的 Text 内容一变，`RenderParagraph` 就把旧的选区片段从 registrar 移除，
+/// 选区端点可能随之陈旧（见 [_FushiLogPanelState._dropSelectionForReplacedRows]）。
+/// 空行不注册片段、新增行只是 add，都不会让端点陈旧——所以纯尾部追加（含「末尾
+/// 空行被填上文字」）返回 false；新条目插在最前（错误 / 调试日志页的真实顺序）、
+/// 截断、清空都返回 true。
+bool logUpdateReplacesRows(List<String> oldLines, List<String> newLines) {
+  for (int i = 0; i < oldLines.length; i++) {
+    if (oldLines[i].isEmpty) continue;
+    if (i >= newLines.length || newLines[i] != oldLines[i]) return true;
+  }
+  return false;
 }
 
 /// BUG-119 拽回判据的纯函数核心：在拖拽选区期间，决定是否放行一次程序化滚动
@@ -3411,6 +3587,7 @@ class FushiCompactSearchRow extends StatelessWidget {
     this.fieldKey,
     this.closeButtonKey,
     this.searchButtonKey,
+    this.hintLocales,
   });
 
   final TextEditingController controller;
@@ -3421,6 +3598,13 @@ class FushiCompactSearchRow extends StatelessWidget {
   final Key? fieldKey;
   final Key? closeButtonKey;
   final Key? searchButtonKey;
+
+  /// 希望输入法切到哪种语言（Android `EditorInfo.hintLocales`，API 24+）。
+  ///
+  /// 由调用方从「查词输入法语言」偏好算出来传进来（`AppModel.lookupImeHintLocales`），组件
+  /// **不自己读设置**：这几个组件被大量无 ProviderScope 的 widget 测试直接 pump，
+  /// 往 build 路径里加 Riverpod 读取会让整页 build 抛。
+  final List<Locale>? hintLocales;
 
   void _submit() {
     final String query = controller.text.trim();
@@ -3468,6 +3652,7 @@ class FushiCompactSearchRow extends StatelessWidget {
                   focusedBorder: InputBorder.none,
                 ),
                 textInputAction: TextInputAction.search,
+                hintLocales: hintLocales,
                 onSubmitted: (_) => _submit(),
               ),
             ),

@@ -56,12 +56,20 @@ extension _VideoFullscreen on _VideoFushiPageState {
         systemPadding: MediaQuery.of(context).padding,
       );
 
-  Future<void> _toggleVideoFullscreen(BuildContext context) {
+  Future<void> _toggleVideoFullscreen(BuildContext context) async {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
     // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
     // 全屏路由会带来「退全屏弹回竖屏」与「全屏 PopScope 吞第一次返回的两段式退出」。桌面
     // 不受影响（窗口全屏走 native window，返回行为本就合理）。
-    if (isMobilePlatform) return Future<void>.value();
+    if (isMobilePlatform) return;
+    // 全屏与小窗互斥，两个方向都要收口：`DesktopMiniWindowMode.enter` 做了「进小窗先退
+    // 全屏」，这里做另一个方向——小窗里按 F11 / 双击画面，先退小窗再进全屏。否则 runner
+    // 全屏（巨窗 + TOPMOST）叠在小窗态之上，密度判据对小窗表面恒回 mini：整屏只有居中
+    // 三键、无进度条无顶栏、顶部一条 32px 拖动带。
+    if (_miniWindowSurface == VideoMiniSurface.desktopMiniWindow) {
+      await _exitVideoMiniWindow();
+      if (!mounted || !context.mounted) return;
+    }
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
         : _pushNeutralizedVideoFullscreen(context);
@@ -231,6 +239,16 @@ extension _VideoFullscreen on _VideoFushiPageState {
                             filterQuality: params.filterQuality,
                             controls: params.controls,
                             wakelock: false,
+                            // BUG-2544：与窗口侧同一策略——生命周期暂停/续播由本页
+                            // 接管，media_kit 自带的那套整个关掉（理由与「为什么不是
+                            // 只把 resume 打开」见 [_buildVideoBody] 里同名参数处的
+                            // 长注释）。这里**必须显式写**：本路由是自建的、逐字段从
+                            // `params` 转发，而 [VideoViewParameters] 压根不带这两个
+                            // 字段（media_kit 自己的全屏走
+                            // `controls/methods/fullscreen.dart` 从 widget 上直取），
+                            // 不写就会退回「后台暂停、回来不续」的构造器默认值，
+                            // 全屏态下重新长出同一个 bug。
+                            pauseUponEnteringBackgroundMode: false,
                             // 全屏路由也显式禁用内置 SubtitleView（TODO-080/092，
                             // BUG-190）。虽然与窗口侧共享同一
                             // videoViewParametersNotifier（窗口侧已设 visible:false 会

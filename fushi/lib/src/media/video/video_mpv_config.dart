@@ -667,29 +667,48 @@ bool isNetworkStreamUri(String uri) {
 /// - `network-timeout=30`：默认 5s 太激进——WiFi 短暂抖动超过 5s 就会撕掉 HTTP 连接
 ///   触发整段重连。放宽到 30s，让瞬时停顿靠缓存撑过去而非断流。
 /// - `cache=yes`：显式确认开启流缓存（media_kit 默认已开，远端流再确认一次）。
-/// - `demuxer-max-bytes=128MiB`：缓存的**真实约束**。mpv 文档明确「cache 开启时实际
-///   预读量受 demuxer-max-bytes 限制」；默认 32MiB 在 ~40Mbps REMUX 下只够约 6s，
-///   抖动一下就空。提到 128MiB（~40Mbps 约 25s / 典型 15Mbps 约 68s）给足缓冲。
-///   只一段视频会话用一份缓冲，dispose 即释放，128MiB 桌面/现代移动端可接受。
-/// - `demuxer-max-back-bytes=64MiB`：向后缓冲（往回 seek 不重新拉流），取前向一半。
-/// - `cache-secs=30`：目标预读 30s（受上面字节上限封顶）。mpv 文档：cache 开启时
+/// - `demuxer-max-bytes=128MiB`（桌面）：缓存的**真实约束**。mpv 文档明确「cache 开启
+///   时实际预读量受 demuxer-max-bytes 限制」；默认 32MiB 在 ~40Mbps REMUX 下只够约
+///   6s，抖动一下就空。提到 128MiB（~40Mbps 约 25s / 典型 15Mbps 约 68s）给足缓冲。
+///   只一段视频会话用一份缓冲，dispose 即释放，128MiB 桌面可接受。
+/// - `demuxer-max-back-bytes=64MiB`（桌面）：向后缓冲（往回 seek 不重新拉流），取前向一半。
+/// - `cache-secs=30`（桌面）：目标预读 30s（受上面字节上限封顶）。mpv 文档：cache 开启时
 ///   cache-secs 覆盖 demuxer-readahead-secs，故网络流用 cache-secs 控预读时长（而非
 ///   demuxer-readahead-secs——后者在 cache 开启时「基本被忽略」）。
 ///
+/// **移动端分档**（[isMobile]，默认取 `Platform.isAndroid || Platform.isIOS`，注入仅为
+/// 单测）：前向 32MiB / 后向 16MiB / cache-secs 20。iOS 对前台 app 的内存 jetsam 线
+/// 远低于桌面（多数机型 1~2GB 就杀），128+64MiB 的 demuxer 缓冲叠上解码器 surface、
+/// 远端封面 ImageCache 与 WebView 后，Jellyfin / Emby 远端播放整机就近在被杀线上——
+/// 用户报「iOS 远端播放闪退 / 卡死」。48MiB 总量在典型 15Mbps 下仍够 ~17s 前向预读，
+/// 足以撑过 WiFi 抖动；桌面维持原值不动。
+///
 /// 所有属性均为 libmpv 运行时可设属性（经 `mpv_set_property_string`），由
-/// [applyNetworkCachePropertiesToPlayer] 在 `player.open` 后逐条 best-effort 注入。
-Map<String, String> buildNetworkCacheProperties() {
+/// [applyNetworkCachePropertiesToPlayer] 在 `player.open` **之前**逐条 best-effort
+/// 注入——`network-timeout` 约束的是 loadfile 发出的第一个请求，open 之后再设对本次
+/// 加载已经无效（media_kit 建 Player 时钉的 5s 会原封不动地吃掉首开）。
+/// 下发给 libmpv 的 `network-timeout`（秒）。播放页对网络流的「压根没打开」判定以它
+/// 为基准：mpv 自己的连接超时都到了还没打开，就不再是弱网慢握手。
+const int kMpvNetworkTimeoutSeconds = 30;
+
+Map<String, String> buildNetworkCacheProperties({bool? isMobile}) {
+  final bool mobile = isMobile ?? (Platform.isAndroid || Platform.isIOS);
+  final int forwardBytes = (mobile ? 32 : 128) * 1024 * 1024;
+  final int backBytes = (mobile ? 16 : 64) * 1024 * 1024;
   return <String, String>{
     'cache': 'yes',
-    'cache-secs': '30',
-    'demuxer-max-bytes': '${128 * 1024 * 1024}', // 128 MiB
-    'demuxer-max-back-bytes': '${64 * 1024 * 1024}', // 64 MiB
-    'network-timeout': '30',
+    'cache-secs': mobile ? '20' : '30',
+    'demuxer-max-bytes': '$forwardBytes',
+    'demuxer-max-back-bytes': '$backBytes',
+    'network-timeout': '$kMpvNetworkTimeoutSeconds',
   };
 }
 
 /// 仅对**网络流** [sourceUri]（http/https）把 [buildNetworkCacheProperties] 注入
 /// media_kit [player]（仅 libmpv 后端/桌面生效）。本地文件 [sourceUri] 直接 no-op。
+///
+/// 调用点必须在 `player.open` 之前（见 [buildNetworkCacheProperties] 文档与守卫
+/// `video_network_timeout_before_open_guard_test.dart`）。
 ///
 /// best-effort：与 [applyMpvConfigToPlayer] 同范式，单条属性失败静默吞掉。
 Future<void> applyNetworkCachePropertiesToPlayer(
@@ -743,6 +762,21 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
   };
 }
 
+/// 副字幕交给 libmpv「只解码不画」的属性 map（远端直出容器、服务器抽不出的内嵌
+/// 文本轨作副字幕，[VideoPlayerController.selectEmbeddedSecondaryTextTrackViaPlayer]）。
+/// 纯函数。
+///
+/// `secondary-sub-visibility` **必须排在** `secondary-sid` 前面：
+/// [applySubtitleMpvPropertiesToPlayer] 按 map 顺序逐条下发，先选轨会让 libmpv 把
+/// 副字幕画进画面一瞬。它默认 `yes`，且与主字幕的 `sub-visibility` 各管各的——
+/// 主字幕的抑制（[buildSubtitleSuppressionProperties]）盖不到副字幕槽。
+Map<String, String> buildSecondarySubtitleDecodeProperties(String trackId) {
+  return <String, String>{
+    'secondary-sub-visibility': 'no',
+    'secondary-sid': trackId,
+  };
+}
+
 /// 构建图形字幕调轴用的 libmpv `sub-delay` 属性 map（`属性名→值`）。纯函数。
 ///
 /// 文本字幕走可点 overlay（cue 同步），其偏移由 [effectiveSubtitlePositionMs] 在
@@ -786,8 +820,17 @@ Future<void> applySubtitleMpvPropertiesToPlayer(
 /// libmpv 的 `http-header-fields` 是 `Field: value` 列表属性，给网络流请求附加自定义
 /// HTTP 头（典型用于带 Referer / User-Agent 的防盗链直链）。media_kit 经
 /// `mpv_set_property_string` 逐条设属性，列表项以逗号分隔——故把每个 `key: value`
-/// 拼成 `Key: Value` 并用逗号连接。[headers] 为空时返回空 map（调用方据此不下发，
+/// 拼成 `Key: Value` 再连接。[headers] 为空时返回空 map（调用方据此不下发，
 /// 普通流 / 本地文件零影响）。
+///
+/// **每一项都带 mpv 列表选项的 `%<字节数>%` 长度前缀**（BUG-2617）。裸逗号连接会
+/// 把**值里本来就有的逗号**当成分隔符：在线视频源扩展给的 `User-Agent` 几乎人手一个
+/// `Mozilla/5.0 (…) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/…`，那个
+/// `(KHTML, like Gecko)` 一拆，就变成「半条 UA」+「` like Gecko) Chrome/…` 这种没有
+/// 冒号的垃圾项」一起发给 CDN，防盗链站点直接拒；观感是点开在线源必转圈到超时。
+/// mpv 对列表选项提供的转义就是长度前缀（`--http-header-fields=%11%Hello,World`），
+/// 逐项声明字节长度后，值里的逗号不再参与分隔。长度按 UTF-8 字节数算（mpv 按字节
+/// 截取），不是 Dart 的 UTF-16 码元数。
 ///
 /// **不进 [VideoMpvConfig]/[buildMpvProperties]**：header 是每条流的会话级防盗链
 /// 凭据（per-stream，阶段①只在 session 内有效、不落 DB），不是全局画质/音频偏好；
@@ -799,8 +842,29 @@ Map<String, String> buildHttpHeaderFieldsProperty(Map<String, String> headers) {
       if (e.key.trim().isNotEmpty) '${e.key.trim()}: ${e.value.trim()}',
   ];
   if (fields.isEmpty) return const <String, String>{};
-  return <String, String>{'http-header-fields': fields.join(',')};
+  return <String, String>{
+    'http-header-fields': fields.map(encodeMpvListItem).join(','),
+  };
 }
+
+/// 把一个列表项里的逗号转义成 `\,`，使它不再被当作项分隔符。纯函数（测试直接钉它）。
+///
+/// **不能用 `%<字节数>%` 长度前缀**：那套语法属于 suboption / object settings / path
+/// 解析（`read_subparam`），字符串列表（`OPT_STRINGLIST`，`http-header-fields` 就是）
+/// 的分项只走 `get_nextsep`，只认反斜杠转义。随包 libmpv 实测（`mpv_set_property_string`
+/// 写、`MPV_FORMAT_NODE` 读回真实项数组）：
+///   `%103%User-Agent: …(KHTML, like Gecko)…`
+///     → ['%103%User-Agent: …(KHTML', ' like Gecko)…']  ← 前缀原样留在头名里，逗号照拆
+///   `User-Agent: …(KHTML\, like Gecko)…`
+///     → ['User-Agent: …(KHTML, like Gecko)…']          ← 正确
+/// Aniyomi 在同一位置做的也是这个替换。
+///
+/// 反斜杠本身**不是**通用转义符（实测 `a\b` / `a\\b` 都原样保留，只有 `\,` 这一个
+/// 序列会被吃掉），所以这里只转义逗号、不动其它字符。唯一表达不出的边角是「值以反斜杠
+/// 结尾」——那时尾部的 `\` 会把紧随的分隔逗号吃掉、与下一项并成一条；HTTP 头值以反斜杠
+/// 结尾现实中不存在，Aniyomi 同样不处理。
+@visibleForTesting
+String encodeMpvListItem(String item) => item.replaceAll(',', '\\,');
 
 /// 仅当 [headers] 非空时，把 [buildHttpHeaderFieldsProperty] 注入 media_kit [player]
 /// （仅 libmpv 后端/桌面生效）。空 header 直接 no-op（普通流/本地文件零影响）。
@@ -811,6 +875,22 @@ Future<void> applyHttpHeaderFieldsToPlayer(
     Player player, Map<String, String> headers) async {
   final Map<String, String> props = buildHttpHeaderFieldsProperty(headers);
   if (props.isEmpty) return;
+  await _setMpvProperties(player, props);
+}
+
+/// 清掉上一片下发的 `http-header-fields`：libmpv 属性跨 `open` 持久，换集复用同一
+/// Player 时上一站的 Referer 会带到下一站（在线源扩展多集连播换 hoster 是常态，
+/// 严格防盗链 CDN 直接 403）。只在此前真下发过时调用（见 controller）。
+Future<void> clearHttpHeaderFieldsOnPlayer(Player player) =>
+    _setMpvProperties(player, kClearHttpHeaderFieldsProperty);
+
+/// [clearHttpHeaderFieldsOnPlayer] 下发的属性（测试可见）。
+const Map<String, String> kClearHttpHeaderFieldsProperty = <String, String>{
+  'http-header-fields': '',
+};
+
+Future<void> _setMpvProperties(
+    Player player, Map<String, String> props) async {
   final dynamic native = player.platform;
   if (native == null) return;
   for (final MapEntry<String, String> e in props.entries) {

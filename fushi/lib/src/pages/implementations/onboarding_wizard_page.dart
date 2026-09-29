@@ -151,9 +151,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   bool get _browserExtensionAvailable =>
       _moduleAvailable(ModuleId.browserExtension);
 
-  /// 当前真正有应用外查词入口的平台。Windows 用系统级热键；Android 用系统文本
-  /// 选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示错误教程。
-  bool get _globalLookupAvailable => Platform.isWindows || Platform.isAndroid;
+  /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
+  /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示
+  /// 错误教程。
+  bool get _globalLookupAvailable =>
+      Platform.isWindows || Platform.isMacOS || Platform.isAndroid;
 
   /// 「连接成功」与「能创建第一张卡」不是一回事：还必须从本次拉回的真实列表中
   /// 选中了仍存在的牌组和笔记类型。旧持久化 id 即使非 null，也可能已在 Anki 中
@@ -187,6 +189,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     isWindows: Platform.isWindows,
     isDesktop: DesktopLookupService.isDesktop,
     isIOS: Platform.isIOS,
+    isAndroid: Platform.isAndroid,
   );
 
   @override
@@ -1464,8 +1467,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.games:
         return Icons.videogame_asset_outlined;
       // 有 tab 的两个模块图标取底栏真值，与底栏/侧栏同一份。
-      case OnboardingFeature.downloads:
-        return homeNavItemFor(HomeTab.downloads).icon;
+      case OnboardingFeature.browse:
+        return homeNavItemFor(HomeTab.browse).icon;
       case OnboardingFeature.lookup:
         return homeNavItemFor(HomeTab.dictionaries).icon;
       case OnboardingFeature.listening:
@@ -1507,8 +1510,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_games;
       // 新增的六个模块**零新增 i18n**：有 tab 的取底栏标签（同一真值），没 tab 的
       // 取它在设置页一级分类的标题 / 摘要。
-      case OnboardingFeature.downloads:
-        return homeNavItemFor(HomeTab.downloads).label;
+      case OnboardingFeature.browse:
+        return homeNavItemFor(HomeTab.browse).label;
       case OnboardingFeature.lookup:
         return homeNavItemFor(HomeTab.dictionaries).label;
       case OnboardingFeature.listening:
@@ -1547,10 +1550,18 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.video:
         return t.onboarding_feature_video_hint;
       case OnboardingFeature.games:
-        return t.onboarding_feature_games_hint;
-      // 同上：一句话说明直接复用各自设置分类的 summary，不新增 key。
-      case OnboardingFeature.downloads:
-        return t.download_settings;
+        // Android 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」不适用。
+        return GamesModuleForm.on(
+                  isWindows: Platform.isWindows,
+                  isAndroid: Platform.isAndroid,
+                ) ==
+                GamesModuleForm.streamClient
+            ? t.game_stream_module_hint
+            : t.onboarding_feature_games_hint;
+      // 浏览不是一个设置分类（来源 / 扩展 / 发现 / 下载），用自己的一句话说明；
+      // 其余复用各自设置分类的 summary，不新增 key。
+      case OnboardingFeature.browse:
+        return t.onboarding_feature_browse_hint;
       case OnboardingFeature.lookup:
         return t.dictionary_settings;
       case OnboardingFeature.listening:

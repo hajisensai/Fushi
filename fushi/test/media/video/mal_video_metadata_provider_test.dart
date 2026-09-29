@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -221,15 +222,18 @@ void main() {
       gate.get('b', load),
     ]);
     expect(starts.length, 2);
-    expect(starts[1].difference(starts[0]), const Duration(seconds: 1));
+    // Jikan 60 req/min：1 s 正好贴着上限，留 10% 余量（BUG-2595）。
+    expect(starts[1].difference(starts[0]), const Duration(milliseconds: 1100));
     values.first['data'] = 'mutated';
     expect((await gate.get('a', load))['data'], isEmpty);
   });
 
-  test('429 propagates without retry and applies global Retry-After cooldown',
-      () async {
+  test(
+      '429 waits out Retry-After, retries the same request in place and keeps '
+      'the global cooldown (BUG-2595)', () async {
     DateTime now = DateTime.utc(2026);
     final DateTime start = now;
+    final List<DateTime> starts = <DateTime>[];
     final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
         now: () => now,
         sleep: (Duration duration) async {
@@ -240,6 +244,7 @@ void main() {
         requestGate: gate,
         client: MockClient((http.Request request) async {
           calls++;
+          starts.add(now);
           if (calls == 1) {
             return http.Response('limited', 429,
                 headers: <String, String>{'retry-after': '12'});
@@ -248,19 +253,51 @@ void main() {
         }));
     const VideoMetadataSearchRequest request = VideoMetadataSearchRequest(
         title: 'name', mediaKind: VideoMetadataMediaKind.tv);
-    await expectLater(provider.search(request),
-        throwsA(isA<VideoMetadataNetworkException>()));
-    expect(calls, 1);
+    // 一次 429 不再让调用方失败：冷却 12 s 后原样重发即成功。
     expect(await provider.search(request), isEmpty);
+    expect(calls, 2);
+    expect(starts[1].difference(starts[0]), const Duration(seconds: 12));
     expect(now.difference(start), const Duration(seconds: 12));
+    // 命中缓存，不再发请求。
+    expect(await provider.search(request), isEmpty);
+    expect(calls, 2);
+    provider.close();
+  });
+
+  test('persistent 429 gives up after the retry budget', () async {
+    DateTime now = DateTime.utc(2026);
+    final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
+        now: () => now,
+        sleep: (Duration duration) async {
+          now = now.add(duration);
+        },
+        maxRateLimitRetries: 2);
+    int calls = 0;
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+        requestGate: gate,
+        client: MockClient((http.Request request) async {
+          calls++;
+          return http.Response('limited', 429,
+              headers: <String, String>{'retry-after': '1'});
+        }));
+    const VideoMetadataSearchRequest request = VideoMetadataSearchRequest(
+        title: 'name', mediaKind: VideoMetadataMediaKind.tv);
+    await expectLater(
+        provider.search(request),
+        throwsA(isA<VideoMetadataNetworkException>()
+            .having((e) => e.statusCode, 'statusCode', 429)));
+    expect(calls, 3, reason: '首发 + 2 次重试');
     provider.close();
   });
 
   test('optional credit failure retains MAL work and successful staff',
       () async {
+    int characterCalls = 0;
     final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
-      requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+      requestGate: MalVideoMetadataRequestGate(
+          interval: Duration.zero, sleep: (Duration _) async {}),
       client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/characters')) characterCalls++;
         if (request.url.path.endsWith('/full')) {
           return response(<String, Object?>{
             'data': <String, Object?>{
@@ -289,6 +326,162 @@ void main() {
     expect(work.credits.single.person.name, 'Director');
     expect(work.rawPayload?[malIncompleteCreditEndpointsKey],
         <String>['characters']);
+    expect(hasIncompleteMalCredits(work), isTrue);
+    expect(characterCalls, 3, reason: '5xx 首发 + 2 次有界重试后才放弃');
+    provider.close();
+  });
+
+  test(
+      'transient 5xx on a credits endpoint is retried in place and the voice '
+      'cast survives (BUG-2612)', () async {
+    DateTime now = DateTime.utc(2026);
+    final List<Duration> sleeps = <Duration>[];
+    final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
+        interval: Duration.zero,
+        now: () => now,
+        sleep: (Duration duration) async {
+          sleeps.add(duration);
+          now = now.add(duration);
+        });
+    int characterCalls = 0;
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      requestGate: gate,
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{'mal_id': 1, 'title': 'T', 'type': 'TV'},
+          });
+        }
+        if (request.url.path.endsWith('/characters')) {
+          // Jikan 上游连不上时的真实形态：整批 504。
+          if (++characterCalls == 1) {
+            return http.Response(
+                '{"status":504,"type":"BadResponseException"}', 504);
+          }
+          return response(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{
+                'character': <String, Object?>{'mal_id': 7, 'name': 'Spike'},
+                'voice_actors': <Object?>[
+                  <String, Object?>{
+                    'language': 'Japanese',
+                    'person': <String, Object?>{'mal_id': 8, 'name': 'Koichi'},
+                  },
+                ],
+              },
+            ],
+          });
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+    expect(characterCalls, 2);
+    expect(sleeps, <Duration>[const Duration(seconds: 2)]);
+    expect(work.credits.single.person.name, 'Koichi');
+    expect(hasIncompleteMalCredits(work), isFalse);
+    provider.close();
+  });
+
+  test('4xx on a credits endpoint is not retried', () async {
+    int characterCalls = 0;
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      requestGate: MalVideoMetadataRequestGate(
+          interval: Duration.zero, sleep: (Duration _) async {}),
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{'mal_id': 1, 'title': 'T', 'type': 'TV'},
+          });
+        }
+        if (request.url.path.endsWith('/characters')) {
+          characterCalls++;
+          return http.Response('Not Found', 404);
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+    expect(characterCalls, 1);
+    expect(hasIncompleteMalCredits(work), isTrue);
+    provider.close();
+  });
+
+  test('MAL placeholder images are treated as no image (BUG-2612)', () async {
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{'mal_id': 1, 'title': 'T', 'type': 'TV'},
+          });
+        }
+        if (request.url.path.endsWith('/characters')) {
+          return response(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{
+                'character': <String, Object?>{
+                  'mal_id': 7,
+                  'name': 'Nameless',
+                  'images': <String, Object?>{
+                    'jpg': <String, Object?>{
+                      'image_url':
+                          'https://cdn.myanimelist.net/img/sp/icon/apple-touch-icon-256.png',
+                    },
+                  },
+                },
+                'voice_actors': <Object?>[
+                  <String, Object?>{
+                    'language': 'Japanese',
+                    'person': <String, Object?>{
+                      'mal_id': 8,
+                      'name': 'Newcomer',
+                      'images': <String, Object?>{
+                        'jpg': <String, Object?>{
+                          'image_url':
+                              'https://cdn.myanimelist.net/images/questionmark_23.gif',
+                        },
+                      },
+                    },
+                  },
+                  <String, Object?>{
+                    'language': 'Japanese',
+                    'person': <String, Object?>{
+                      'mal_id': 9,
+                      'name': 'Veteran',
+                      'images': <String, Object?>{
+                        'jpg': <String, Object?>{
+                          'image_url':
+                              'https://cdn.myanimelist.net/images/voiceactors/1/2.jpg',
+                          'large_image_url':
+                              'https://cdn.myanimelist.net/images/voiceactors/1/2l.jpg',
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          });
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+    expect(work.credits, hasLength(2));
+    expect(work.credits[0].person.profileUrl, isNull,
+        reason: 'questionmark 占位不是照片，留空让合并层用别的源补');
+    expect(work.credits[0].character?.imageUrl, isNull);
+    expect(work.credits[1].person.profileUrl,
+        'https://cdn.myanimelist.net/images/voiceactors/1/2l.jpg');
+    expect(
+        isMalPlaceholderImageUrl(
+            'https://cdn.myanimelist.net/images/questionmark_50.gif'),
+        isTrue);
+    expect(
+        isMalPlaceholderImageUrl(
+            'https://cdn.myanimelist.net/images/characters/9/310307.jpg'),
+        isFalse);
     provider.close();
   });
 
@@ -306,5 +499,74 @@ void main() {
     expect(await provider.fetchWork(lookup), isNull);
     expect(calls, 1);
     provider.close();
+  });
+
+  group('MAL airing status and end date', () {
+    Future<VideoMetadataWork> fetch(Map<String, Object?> extra) async {
+      final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+        requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+        client: MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/full')) {
+            return response(<String, Object?>{
+              'data': <String, Object?>{
+                'mal_id': 1,
+                'title': 'Sousou no Frieren',
+                'type': 'TV',
+                ...extra,
+              }
+            });
+          }
+          return response(<String, Object?>{'data': <Object?>[]});
+        }),
+      );
+      addTearDown(provider.close);
+      return (await provider.fetchWork(lookup))!;
+    }
+
+    test('status keeps the Jikan raw string; endDate comes from aired.to',
+        () async {
+      final VideoMetadataWork work = await fetch(<String, Object?>{
+        'status': 'Currently Airing',
+        'airing': true,
+        'aired': <String, Object?>{
+          'from': '2023-09-29T00:00:00+09:00',
+          'to': '2024-03-22T00:00:00+09:00',
+        },
+      });
+      expect(work.status, 'Currently Airing');
+      expect(work.premiered, '2023-09-29');
+      expect(work.endDate, '2024-03-22');
+      expect(work.airingStatus, VideoAiringStatus.airing);
+    });
+
+    test('missing status falls back to airing: true', () async {
+      final VideoMetadataWork work =
+          await fetch(<String, Object?>{'airing': true});
+      expect(work.status, 'Currently Airing');
+      expect(work.airingStatus, VideoAiringStatus.airing);
+      expect(work.endDate, isNull);
+    });
+
+    test('airing: false without status stays null instead of guessing',
+        () async {
+      final VideoMetadataWork work =
+          await fetch(<String, Object?>{'airing': false});
+      expect(work.status, isNull);
+      expect(work.airingStatus, isNull);
+    });
+
+    test('finished status normalizes and originalLanguage is never filled',
+        () async {
+      final VideoMetadataWork work = await fetch(<String, Object?>{
+        'status': 'Finished Airing',
+        'airing': false,
+        'aired': <String, Object?>{'to': null},
+      });
+      expect(work.status, 'Finished Airing');
+      expect(work.airingStatus, VideoAiringStatus.finished);
+      expect(work.endDate, isNull);
+      expect(work.originalLanguage, isNull,
+          reason: 'Jikan 无语言字段，MAL 收录中 / 韩动画，不能硬填 ja');
+    });
   });
 }

@@ -54,6 +54,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     _syncSettings(widget.settingsContext)
         .clientConfigRevision
         .addListener(_onClientConfigRevision);
+    // 后台地址学习也会写候选列表：跟着真值重载，免得下次编辑把学到的地址整份覆盖。
+    SyncRepository.fushiClientUrlsRevision
+        .addListener(_onClientConfigRevision);
     // Rebuild when the server-enabled flag flips so "add connection" re-gates.
     _syncSettings(widget.settingsContext)
         .roleRevision
@@ -64,6 +67,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   void dispose() {
     _syncSettings(widget.settingsContext)
         .clientConfigRevision
+        .removeListener(_onClientConfigRevision);
+    SyncRepository.fushiClientUrlsRevision
         .removeListener(_onClientConfigRevision);
     _syncSettings(widget.settingsContext)
         .roleRevision
@@ -120,24 +125,99 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       _tokenPresent = _tokenController.text.trim().isNotEmpty;
     });
     _syncSettings(widget.settingsContext)
-      ..peerCount = urls.length
+      // 按 host 计数：同一台机器的多条地址（LAN / IPv6 / 组网）只算一台。
+      ..peerCount = interconnectPeerRepresentatives(urls).length
       ..setHasClientConnection(urls.isNotEmpty);
   }
 
-  Future<void> _persistUrls() async {
-    // BUG-1693：连通性结果按 URL 键控，URL 集合一变（删除/改址）就把不再对应任何
-    // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
-    // 冒充新测）。收在这里而不是各调用点：所有 URL 变更都必经本方法（见下），
-    // 单点清理消除「哪个入口忘了清」的特例。
-    _reachable.removeWhere(
-        (String url, bool _) => !_urls.any((FushiClientUrl u) => u.url == url));
-    await _repo.setFushiClientUrls(_urls);
+  /// 扫码或粘贴链接 → 共享的链接配对流程。列表由候选列表变更广播自动重载。
+  Future<void> _pairFromLink({required bool scan}) async {
+    final FushiPairLink? link = scan
+        ? await scanInterconnectPairQr(context)
+        : await promptInterconnectPairLinkPaste(context);
+    if (link == null || !mounted) return;
+    setState(() => _pairingManual = true);
+    try {
+      final bool paired = await runInterconnectLinkPairingFlow(
+        context,
+        widget.settingsContext.appModel,
+        link,
+      );
+      if (paired) _syncSettings(widget.settingsContext).reloadClientConfig();
+    } finally {
+      if (mounted) setState(() => _pairingManual = false);
+    }
+  }
+
+  /// 把某台已配对 host 的地址（不含票据）写进 NFC 贴纸。多台时让用户挑。
+  Future<void> _writeNfcSticker() async {
+    final List<FushiClientUrl> hosts = interconnectPeerRepresentatives(_urls)
+        .where((FushiClientUrl u) => u.hostId != null)
+        .toList(growable: false);
+    if (hosts.isEmpty) return;
+    FushiClientUrl? host = hosts.length == 1 ? hosts.single : null;
+    host ??= await showAppDialog<FushiClientUrl>(
+      context: context,
+      builder: (BuildContext ctx) => SimpleDialog(
+        title: Text(t.sync_pair_nfc_write),
+        children: <Widget>[
+          for (final FushiClientUrl h in hosts)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, h),
+              child: Text(h.deviceName ?? h.url),
+            ),
+        ],
+      ),
+    );
+    if (host == null || !mounted) return;
+    final FushiPairLink? link = interconnectStickerLinkFor(_urls, host);
+    if (link == null) return;
+    await writeInterconnectPairNfcTag(context, link);
+  }
+
+  /// 地址行副标题：连通性测试结果；`p2p://` 地址另挂隧道路径（直连 / 中继）。
+  Widget? _urlRowSubtitle(ThemeData theme, String url, bool? ok) {
+    final Widget? reach = ok == null
+        ? null
+        : Text(
+            ok ? t.sync_connection_success : t.sync_connection_failed,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: ok ? theme.colorScheme.primary : theme.colorScheme.error,
+            ),
+          );
+    if (parseInterconnectP2pUrl(url) == null) return reach;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[?reach, InterconnectP2pPathBadge(url: url)],
+    );
+  }
+
+  /// 所有列表改动的唯一入口。[transform] 作用在**库里最新的**列表上（经
+  /// [SyncRepository.updateFushiClientUrls] 与后台地址学习、链接配对串行），而不是
+  /// 本页手里的快照——弹窗 / 拖动期间学习器插进来的 learned 条目不会被覆盖掉。
+  /// 因此变换一律按 URL / hostId 定位，不按下标。结果以库为准回写 [_urls]。
+  Future<void> _mutateUrls(
+    List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
+  ) async {
+    final List<FushiClientUrl> stored = await _repo.updateFushiClientUrls(
+      transform,
+    );
+    if (!mounted) return;
+    setState(() {
+      _urls = stored;
+      // BUG-1693：连通性结果按 URL 键控，URL 集合一变（删除/改址）就把不再对应任何
+      // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
+      // 冒充新测）。收在这里：所有 URL 变更都必经本方法。
+      _reachable.removeWhere(
+          (String url, bool _) => !stored.any((FushiClientUrl u) => u.url == url));
+    });
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
     // 主页「配对与设备」入口行的已配对数也从这里刷新（C2）。
     _syncSettings(widget.settingsContext)
-      ..peerCount = _urls.length
-      ..setHasClientConnection(_urls.isNotEmpty);
+      ..peerCount = interconnectPeerRepresentatives(stored).length
+      ..setHasClientConnection(stored.isNotEmpty);
   }
 
   Future<void> _saveToken() async {
@@ -155,8 +235,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   /// Add a new address, or edit the one at [index]. Reuses the URL field
   /// labels/actions that already exist in i18n (no new keys).
   Future<void> _addOrEditUrl({int? index}) async {
+    // 记 URL 不记下标：弹窗是个 async gap，期间后台地址学习可能往列表里插条目，
+    // 下标会指向另一行（审查问题 9）。关窗后按 URL 重新定位。
+    final String? editingUrl = index != null ? _urls[index].url : null;
     final TextEditingController controller = TextEditingController(
-      text: index != null ? _urls[index].url : '',
+      text: editingUrl ?? '',
     );
     final String? result = await showAppDialog<String>(
       context: context,
@@ -233,38 +316,42 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // 只在 added==true 时配对，导致「重加一个列表里已存在的地址」被去重守卫吞成 added=false
     // → 不再发起配对 → 点「添加」毫无反应。去重只应防列表出现重复条目，不该拦住重新配对
     // （尤其首次配对失败后用户想靠再点「添加」重试）。
-    bool shouldPair = false;
-    setState(() {
-      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
-      if (index != null) {
-        final bool dupElsewhere = copy.asMap().entries.any(
-            (MapEntry<int, FushiClientUrl> e) =>
-                e.key != index && e.value.url == normalizedResult);
-        if (!dupElsewhere) {
-          final FushiClientUrl edited = copy[index];
-          // BUG-1557：只有「还是同一个端点」（scheme+host+port 未变，只是补斜杠/改
-          // 大小写）才保留已铉扎的指纹；改指另一台机器时旧指纹就是一把开不了
-          // 新锁的旧钥匙，https 握手次次失败而 UI 里无处清除——那条地址就此死掉。
-          // 清指纹后下次配对重新 TOFU；令牌不动（同一台 host 换 IP 时它仍有效）。
-          copy[index] = isSameInterconnectEndpoint(edited.url, normalizedResult)
-              ? edited.copyWith(url: normalizedResult)
-              : FushiClientUrl(
-                  url: normalizedResult,
-                  enabled: edited.enabled,
-                  deviceName: edited.deviceName,
-                  token: edited.token,
-                );
-        }
-      } else {
+    final bool shouldPair = editingUrl == null;
+    if (editingUrl != null &&
+        !_urls.any((FushiClientUrl u) => u.url == editingUrl)) {
+      return; // 那一行已被删 / 被学习替换。
+    }
+    await _mutateUrls((List<FushiClientUrl> current) {
+      final List<FushiClientUrl> copy = <FushiClientUrl>[...current];
+      if (editingUrl == null) {
         // 新地址才加进列表（去重防重复条目）；已存在则不重复加，但仍会在下方发起配对。
         if (!copy.any((FushiClientUrl u) => u.url == normalizedResult)) {
           copy.add(FushiClientUrl(url: normalizedResult));
         }
-        shouldPair = true;
+        return copy;
       }
-      _urls = copy;
+      final int index =
+          copy.indexWhere((FushiClientUrl u) => u.url == editingUrl);
+      final bool dupElsewhere = copy.asMap().entries.any(
+          (MapEntry<int, FushiClientUrl> e) =>
+              e.key != index && e.value.url == normalizedResult);
+      if (index < 0 || dupElsewhere) return current;
+      final FushiClientUrl edited = copy[index];
+      // BUG-1557：只有「还是同一个端点」（scheme+host+port 未变，只是补斜杠/改
+      // 大小写）才保留已铉扎的指纹；改指另一台机器时旧指纹就是一把开不了
+      // 新锁的旧钥匙，https 握手次次失败而 UI 里无处清除——那条地址就此死掉。
+      // 清指纹后下次配对重新 TOFU；令牌不动（同一台 host 换 IP 时它仍有效）。
+      copy[index] = isSameInterconnectEndpoint(edited.url, normalizedResult)
+          // 用户亲手改过的条目从此归用户所有：不再随 host 地址集自动增删。
+          ? edited.copyWith(url: normalizedResult, learned: false)
+          : FushiClientUrl(
+              url: normalizedResult,
+              enabled: edited.enabled,
+              deviceName: edited.deviceName,
+              token: edited.token,
+            );
+      return copy;
     });
-    await _persistUrls();
 
     // TODO-963 M2: 新增/重加地址后走「探测 → 配对」。手动输入 IP 也能发起配对（不再只挂
     // mDNS 发现设备）：ping 探测可达 + 取指纹做 TOFU → 双确认 → pair/v2 → 自动落
@@ -330,7 +417,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             return;
           }
         }
-        // 手动路径：地址在 [_addOrEditUrl] 里已经 `_persistUrls()` 落库了，
+        // 手动路径：地址在 [_addOrEditUrl] 里已经 `_mutateUrls` 落库了，
         // 「已保存该地址」这句后半句成立。
         _showSnackBar(
           context,
@@ -366,36 +453,43 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   Future<void> _toggleUrl(int index) async {
-    setState(() {
-      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
-      final FushiClientUrl u = copy[index];
-      // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
-      // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
-      copy[index] = u.copyWith(enabled: !u.enabled);
-      _urls = copy;
-    });
-    await _persistUrls();
+    final String url = _urls[index].url;
+    await _mutateUrls((List<FushiClientUrl> current) => <FushiClientUrl>[
+          for (final FushiClientUrl u in current)
+            // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
+            // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
+            u.url == url ? u.copyWith(enabled: !u.enabled) : u,
+        ]);
   }
 
+  /// 带 hostId 的条目删的是**那台 host**：同组其余地址都带着它的 token，只删一行
+  /// 等于没解绑（剩下的照常同步，被删的 learned 地址 10 分钟内还会被学回来，
+  /// 审查问题 8）。老条目（无 hostId）仍只删那一行，行为不变。
   Future<void> _deleteUrl(int index) async {
-    setState(() {
-      _urls = <FushiClientUrl>[..._urls]..removeAt(index);
-    });
-    await _persistUrls();
+    final String url = _urls[index].url;
+    final String? hostId = _urls[index].hostId;
+    await _mutateUrls((List<FushiClientUrl> current) => <FushiClientUrl>[
+          for (final FushiClientUrl u in current)
+            if (u.url != url && (hostId == null || u.hostId != hostId)) u,
+        ]);
   }
 
   /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
   /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
   /// 上/下移按钮同样按最终下标传（下移传 index+1）。
+  ///
+  /// 落库时按 URL 表达成「把 X 挪到 Y 前面」，在库里最新的列表上执行：期间被
+  /// 学习器插入的条目保持原位，不会因为本页快照过期而丢失或乱序。
   Future<void> _reorderUrls(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
-    setState(() {
-      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
-      final FushiClientUrl item = copy.removeAt(oldIndex);
-      copy.insert(newIndex, item);
-      _urls = copy;
-    });
-    await _persistUrls();
+    final List<FushiClientUrl> view = <FushiClientUrl>[..._urls];
+    final FushiClientUrl moved = view.removeAt(oldIndex);
+    view.insert(newIndex, moved);
+    final String? beforeUrl =
+        newIndex + 1 < view.length ? view[newIndex + 1].url : null;
+    setState(() => _urls = view); // 拖动手感：先按本页顺序显示，再以库为准。
+    await _mutateUrls((List<FushiClientUrl> current) =>
+        moveInterconnectUrlBefore(current, moved.url, beforeUrl));
   }
 
   Future<void> _testAll() async {
@@ -501,18 +595,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                             : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    subtitle: ok == null
-                        ? null
-                        : Text(
-                            ok
-                                ? t.sync_connection_success
-                                : t.sync_connection_failed,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: ok
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.error,
-                            ),
-                          ),
+                    subtitle: _urlRowSubtitle(theme, u.url, ok),
                     onTap: lockedByServer
                         ? null
                         : () => _addOrEditUrl(index: index),
@@ -572,22 +655,50 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                 ),
               ),
             ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: (lockedByServer || _pairingManual)
-                  ? null
-                  : () => _addOrEditUrl(),
-              icon: _pairingManual
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child:
-                          adaptiveIndicator(context: context, strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add, size: 18),
-              label: Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              TextButton.icon(
+                onPressed: (lockedByServer || _pairingManual)
+                    ? null
+                    : () => _addOrEditUrl(),
+                icon: _pairingManual
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: adaptiveIndicator(
+                            context: context, strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add, size: 18),
+                label:
+                    Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
+              ),
+              // 扫码 / 粘贴链接：地址 + 证书指纹 + 一次性票据一次到手，不必同网段、
+              // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
+              if (interconnectPairQrScanSupported)
+                TextButton.icon(
+                  onPressed: (lockedByServer || _pairingManual)
+                      ? null
+                      : () => _pairFromLink(scan: true),
+                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  label: Text(t.sync_pair_scan),
+                ),
+              TextButton.icon(
+                onPressed: (lockedByServer || _pairingManual)
+                    ? null
+                    : () => _pairFromLink(scan: false),
+                icon: const Icon(Icons.link, size: 18),
+                label: Text(t.sync_pair_link_paste),
+              ),
+              if (interconnectPairNfcWriteSupported &&
+                  _urls.any((FushiClientUrl u) => u.hostId != null))
+                TextButton.icon(
+                  onPressed: _writeNfcSticker,
+                  icon: const Icon(Icons.nfc, size: 18),
+                  label: Text(t.sync_pair_nfc_write),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           // TODO-1330 ④（改）：客户端令牌在配对成功后由 host 自动签发并填入，值是 host 按
@@ -868,6 +979,14 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
     await _pairRepo.setFushiClientTokenForUrl(baseUrl, token);
+    // 配对成功立即学一次 host 的地址集（IPv6 / 组网 / 公网 / P2P）：出了这个
+    // 局域网也连得回来。失败只留痕，不影响配对结果。
+    for (final FushiClientUrl u in await _pairRepo.getFushiClientUrls()) {
+      if (u.url == baseUrl) {
+        InterconnectAddressLearner(_pairRepo).refreshInBackground(u);
+        break;
+      }
+    }
     // BUG-1693：配对**成功**才代表互联真的投入使用，此刻才落「互联已启用」。
     // 已启用时（本 UI 的常态——配置区本就门控于互联开关）是幂等 no-op。
     await _syncSettings(_pairSettingsContext).setInterconnectEnabled(true);
@@ -882,7 +1001,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 换了的机器说「这里没有设备」，用户的排查方向从第一步就是错的。
   ///
   /// [addressSaved] 由调用点显式声明「本条路径此刻是否已经把地址落进候选列表」：
-  /// 手动输入 IP 的 [_addOrEditUrl] 在探测**之前**就 `_persistUrls()` 了，所以
+  /// 手动输入 IP 的 [_addOrEditUrl] 在探测**之前**就 `_mutateUrls` 了，所以
   /// `sync_pair_not_fushi` 那句「已保存该地址」是实话；而发现列表的
   /// [_connectToDevice] 在同一分型上直接 return，一个字都没写进库。两条路径的
   /// 后半句正好相反，共用一句就必然有一边在说谎——所以这里**没有默认值**，
@@ -920,177 +1039,20 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
-  /// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
-  /// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
-  /// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
-  String _pairV2FailureMessage(String reason) {
-    switch (reason) {
-      case 'pin':
-        return t.sync_pair_pin_wrong;
-      case 'declined':
-        return t.sync_pair_denied;
-      case 'unavailable':
-        return t.sync_pair_unavailable;
-      case 'rate_limited':
-        return t.sync_pair_rate_limited;
-      case 'tls':
-        return t.sync_pair_tls_failed;
-      case 'timeout':
-        return t.sync_pair_timeout;
-      case 'expired':
-        // BUG-1556：会话超时与「对端拒绝」不是一回事——前者重试就行，
-        // 后者再试多少次都白搭。
-        return t.sync_pair_expired;
-      default:
-        return t.sync_pair_failed;
-    }
-  }
+  String _pairV2FailureMessage(String reason) =>
+      interconnectPairFailureMessage(reason);
 
-  /// 第一重确认弹窗：展示要连接的设备身份（名 + 指纹），让用户核对后再继续。
   Future<bool> _confirmPairIdentity({
     String? deviceName,
     String? fingerprint,
-  }) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return FushiDialogFrame(
-          maxWidth: 460,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: FushiModalSheetFrame(
-            title: t.sync_pair_confirm_identity_title,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.sync_pair_confirm_identity_body(
-                  device: (deviceName != null && deviceName.trim().isNotEmpty)
-                      ? deviceName
-                      : t.sync_pair_unknown_device,
-                )),
-                if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  Text(t.sync_pair_fingerprint_label,
-                      style: Theme.of(ctx).textTheme.labelSmall),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    fingerprint,
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
-                  ),
-                ],
-              ],
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(t.sync_pair_continue),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    return ok ?? false;
-  }
+  }) =>
+      confirmInterconnectPairIdentity(
+        context,
+        deviceName: deviceName,
+        fingerprint: fingerprint,
+      );
 
-  /// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
-  Future<String?> _promptPairPinInput() async {
-    final TextEditingController pinController = TextEditingController();
-    final String? pin = await showAppDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return FushiDialogFrame(
-          maxWidth: 420,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: FushiModalSheetFrame(
-            title: t.sync_pair_enter_pin_title,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.sync_pair_enter_pin_body),
-                SizedBox(height: tokens.spacing.gap),
-                FushiTextField(
-                  controller: pinController,
-                  labelText: t.sync_pair_enter_pin_title,
-                  keyboardType: TextInputType.number,
-                ),
-              ],
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () =>
-                      Navigator.pop(ctx, pinController.text.trim()),
-                  child: Text(t.sync_pair_continue),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    pinController.dispose();
-    return pin;
-  }
+  Future<String?> _promptPairPinInput() => promptInterconnectPairPin(context);
 
   /// This device's own advertised name, sent to the host so its approval prompt
   /// (and later its paired-devices list) can identify who is asking. Sourced
@@ -1120,6 +1082,13 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   bool _tlsEnabled = false;
   String? _token;
   late final TextEditingController _portController;
+
+  /// 公网 / 反代 / DDNS 地址（每行一个），经 /api/host/addresses 公布给已配对设备。
+  late final TextEditingController _publicUrlsController;
+
+  /// P2P 隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §6）。
+  bool _p2pEnabled = false;
+  late final TextEditingController _p2pRelayController;
   bool _loaded = false;
 
   // TODO-961 M1b: 已配对设备（per-peer token 表 fushi_paired_peers 的行）。开启
@@ -1136,6 +1105,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   void initState() {
     super.initState();
     _portController = TextEditingController(text: '$_port');
+    _publicUrlsController = TextEditingController();
+    _p2pRelayController = TextEditingController();
     _serverController.addListener(_onServerChanged);
     // Rebuild when the client-connection flag flips so the toggle re-gates.
     _syncSettings(widget.settingsContext)
@@ -1151,6 +1122,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         .roleRevision
         .removeListener(_onRoleRevision);
     _portController.dispose();
+    _publicUrlsController.dispose();
+    _p2pRelayController.dispose();
     // NOTE: do NOT stop the server here. It is owned app-wide by AppModel now
     // (BUG-085); leaving this settings page must not kill the running host.
     super.dispose();
@@ -1182,8 +1155,14 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     // TODO-961 M1b: 预取已配对设备（server 开启时才展示列表，但不阻塞开关加载）。
     final List<FushiPairedPeerRow> peers =
         await _serverController.pairedPeers();
+    final List<String> publicUrls = await repo.getInterconnectPublicUrls();
+    final bool p2pEnabled = await repo.isInterconnectP2pEnabled();
+    final List<String> relayUrls = await repo.getInterconnectP2pRelayUrls();
     if (mounted) {
+      _publicUrlsController.text = publicUrls.join('\n');
+      _p2pRelayController.text = relayUrls.join('\n');
       setState(() {
+        _p2pEnabled = p2pEnabled;
         _enabled = enabled;
         _tlsEnabled = tlsEnabled;
         _port = port;
@@ -1202,6 +1181,12 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         _applyStartOutcome(await _serverController.startIfEnabled());
       }
     }
+  }
+
+  /// 公网地址每次 capabilities / 地址集请求实时读，改完不必重启互联服务。
+  Future<void> _setPublicUrls(String raw) async {
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .setInterconnectPublicUrls(raw.split(RegExp(r'[\r\n]+')));
   }
 
   /// Persist an edited port (no live restart — the new port applies next time
@@ -1377,6 +1362,62 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               value: _tlsEnabled,
               onChanged: (bool v) => _setTlsEnabled(v),
             ),
+            // 扫码配对：一次性票据 + 地址集 + 证书指纹，另一台设备不必同网段、
+            // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
+            if (running)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () =>
+                      showInterconnectPairQrDialog(context, _serverController),
+                  icon: const Icon(Icons.qr_code_2, size: 18),
+                  label: Text(t.sync_pair_qr_show),
+                ),
+              ),
+            const SizedBox(height: 8),
+            FushiTextField(
+              controller: _publicUrlsController,
+              labelText: t.sync_server_public_urls,
+              hintText: t.sync_server_public_urls_hint,
+              keyboardType: TextInputType.multiline,
+              maxLines: 3,
+              minLines: 1,
+              onChanged: _setPublicUrls,
+            ),
+            // P2P 隧道：原生库随包的平台才出现（缺库时整个能力不可用）。
+            if (InterconnectP2pRuntime.isAvailable) ...<Widget>[
+              const SizedBox(height: 8),
+              AdaptiveSettingsSwitchRow(
+                title: t.sync_p2p_enable,
+                subtitle: t.sync_p2p_enable_hint,
+                value: _p2pEnabled,
+                onChanged: (bool v) async {
+                  setState(() => _p2pEnabled = v);
+                  await _serverController.setP2pEnabled(v);
+                },
+              ),
+              if (_p2pEnabled) ...<Widget>[
+                FushiTextField(
+                  controller: _p2pRelayController,
+                  labelText: t.sync_p2p_relay_urls,
+                  hintText: t.sync_p2p_relay_urls_hint,
+                  keyboardType: TextInputType.multiline,
+                  maxLines: 3,
+                  minLines: 1,
+                ),
+                // 显式保存才重建端点：多行框里回车只是换行，逐字重建又会在半截
+                // 地址上反复断连。
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _serverController.setP2pRelayUrls(
+                      _p2pRelayController.text.split(RegExp(r'[\r\n]+')),
+                    ),
+                    child: Text(t.dialog_save),
+                  ),
+                ),
+              ],
+            ],
             const SizedBox(height: 12),
             Text(t.sync_server_token,
                 style: Theme.of(context).textTheme.labelSmall),
@@ -2046,4 +2087,195 @@ class _InterconnectBackupBackendWidgetState
       ),
     );
   }
+}
+
+// ── 配对弹窗（手动 IP / LAN 发现 / 扫码 / 深链共用）────────────────────
+
+/// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
+/// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
+/// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
+String interconnectPairFailureMessage(String reason) {
+  switch (reason) {
+    case 'pin':
+      return t.sync_pair_pin_wrong;
+    case 'declined':
+      return t.sync_pair_denied;
+    case 'unavailable':
+      return t.sync_pair_unavailable;
+    case 'rate_limited':
+      return t.sync_pair_rate_limited;
+    case 'tls':
+      return t.sync_pair_tls_failed;
+    case 'timeout':
+      return t.sync_pair_timeout;
+    case 'expired':
+      // BUG-1556：会话超时与「对端拒绝」不是一回事——前者重试就行，
+      // 后者再试多少次都白搭。
+      return t.sync_pair_expired;
+    case 'unreachable':
+      // 链接配对：链接里没有一条地址可达，或可达的不是链接里那台 host。
+      return t.sync_pair_link_unreachable;
+    case 'fingerprint_changed':
+      return t.sync_pair_fingerprint_changed;
+    default:
+      return t.sync_pair_failed;
+  }
+}
+
+/// 第一重确认弹窗：展示要连接的设备身份（名 + 指纹 + 可选地址），让用户核对后再
+/// 继续。设置页手动配对与扫码 / 深链配对共用（深链可能来自任何网页，必须确认）。
+Future<bool> confirmInterconnectPairIdentity(
+  BuildContext context, {
+  String? deviceName,
+  String? fingerprint,
+  String? address,
+}) async {
+  final bool? ok = await showAppDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+      return FushiDialogFrame(
+        maxWidth: 460,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.card,
+        ),
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: t.sync_pair_confirm_identity_title,
+          scrollable: true,
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.sync_pair_confirm_identity_body(
+                device: (deviceName != null && deviceName.trim().isNotEmpty)
+                    ? deviceName
+                    : t.sync_pair_unknown_device,
+              )),
+              if (address != null && address.isNotEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                SelectableText(
+                  address,
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+              if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                Text(t.sync_pair_fingerprint_label,
+                    style: Theme.of(ctx).textTheme.labelSmall),
+                const SizedBox(height: 4),
+                SelectableText(
+                  fingerprint,
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+            ],
+          ),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              adaptiveDialogAction(
+                context: ctx,
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(t.sync_pair_continue),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  return ok ?? false;
+}
+
+/// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
+Future<String?> promptInterconnectPairPin(BuildContext context) async {
+  final TextEditingController pinController = TextEditingController();
+  final String? pin = await showAppDialog<String>(
+    context: context,
+    builder: (BuildContext ctx) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+      return FushiDialogFrame(
+        maxWidth: 420,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.card,
+        ),
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: t.sync_pair_enter_pin_title,
+          scrollable: true,
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.sync_pair_enter_pin_body),
+              SizedBox(height: tokens.spacing.gap),
+              FushiTextField(
+                controller: pinController,
+                labelText: t.sync_pair_enter_pin_title,
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              adaptiveDialogAction(
+                context: ctx,
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                onPressed: () =>
+                    Navigator.pop(ctx, pinController.text.trim()),
+                child: Text(t.sync_pair_continue),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  pinController.dispose();
+  return pin;
 }

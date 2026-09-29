@@ -19,6 +19,11 @@ public final class PreferenceKeys {
     /** Prefs file used by {@code FloatingLyricService} and its {@code BaseFloatingService} base. */
     public static final String FILE_FLOATING_LYRIC = "floating_lyric_prefs";
 
+    /**
+     * Prefs file used by {@code FloatingBallService}（位置 + 按钮配置，服务重建时重放）.
+     */
+    public static final String FILE_FLOATING_BALL = "floating_ball_prefs";
+
     /** Prefs file used by {@code MainActivity} for splash/theme persistence. */
     public static final String FILE_SPLASH = "hibiki_splash";
 
@@ -88,6 +93,23 @@ public final class PreferenceKeys {
     // 行标记（N=0 单行或旧 payload 缺字段），服务据此退化为无中间行明暗（never-break）。
     public static final String LYRIC_CURRENT_LINE_START = "lyricCurrentLineStart";
     public static final String LYRIC_CURRENT_LINE_LENGTH = "lyricCurrentLineLength";
+
+    // ── Lookup IME language (原生查词输入框) ──────────────────────────────────
+
+    /**
+     * Prefs file holding the user's lookup input-method language. Written by the
+     * Flutter side through {@code ChannelNames.LOOKUP_IME}; read by the two
+     * lookup surfaces whose search box is a native EditText
+     * ({@code FloatingDictService}, {@code PopupDictActivity}) — those cannot
+     * take Flutter's {@code hintLocales} parameter.
+     *
+     * Its own file rather than the floating-dict one: both of those surfaces
+     * need it, and one of them is an Activity that owns no floating-window prefs.
+     */
+    public static final String FILE_LOOKUP_IME = "lookup_ime_prefs";
+
+    /** BCP-47 tag, or empty when the user has not chosen a language. */
+    public static final String LOOKUP_IME_LANGUAGE = "lookupImeLanguage";
 
     // ── Splash / theme keys (MainActivity) ───────────────────────────────────
 

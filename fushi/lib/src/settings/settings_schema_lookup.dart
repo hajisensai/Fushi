@@ -5,7 +5,11 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/lookup_ime_channel.dart';
+import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
@@ -97,7 +101,7 @@ Future<void> _terminatePortOwnerAndRetry(
   // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
   // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
   await appModel.setYomitanApiServerEnabled(true);
-  for (int attempt = 0; ; attempt++) {
+  for (int attempt = 0;; attempt++) {
     try {
       await appModel.startYomitanApiServer();
       break;
@@ -117,6 +121,43 @@ Future<void> _terminatePortOwnerAndRetry(
   }
   _showSettingsSnackBar(settingsContext, t.yomitan_api_server_started);
   settingsContext.refresh();
+}
+
+/// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
+SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
+  final ({String title, IconData icon}) identity = switch (module) {
+    ModuleId.books => (
+        title: t.popup_bottom_docked_books,
+        icon: Icons.menu_book_outlined,
+      ),
+    ModuleId.manga => (
+        title: t.popup_bottom_docked_manga,
+        icon: Icons.auto_stories_outlined,
+      ),
+    ModuleId.video => (
+        title: t.popup_bottom_docked_video,
+        icon: Icons.movie_outlined,
+      ),
+    ModuleId.games => (
+        title: t.popup_bottom_docked_games,
+        icon: Icons.sports_esports_outlined,
+      ),
+    _ => throw StateError('$module 没有底部停靠细分开关'),
+  };
+  return SettingsSwitchItem(
+    id: 'lookup.popup_bottom_docked.${module.name}',
+    title: identity.title,
+    icon: identity.icon,
+    visible: (SettingsContext settingsContext) =>
+        settingsContext.appModel.popupBottomDocked &&
+        settingsContext.appModel.moduleVisibility.isEnabled(module),
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.popupBottomDockedIn(module),
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      await settingsContext.appModel.setPopupBottomDockedIn(module, value);
+      settingsContext.refresh();
+    },
+  );
 }
 
 SettingsDestination buildLookupDestination() {
@@ -216,6 +257,27 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 悬停查词的收尾动作：鼠标离开字幕与查词浮层即自动关浮层 + 恢复播放，免去
+          // 「再点一下空白」。只作用于悬停发起的查词会话（点击查词不受影响），故与上面
+          // 的悬停开关同组、同走桌面门控（移动端无 OS hover，这条永远不会触发）。
+          SettingsSwitchItem(
+            id: 'lookup.resume_on_lookup_leave',
+            title: t.lookup_hover_leave_resume,
+            subtitle: t.lookup_hover_leave_resume_hint,
+            icon: Icons.play_circle_outline,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            // 不投影进阅读器快捷设置（无 ReaderPlacement）：这条只管视频页悬停查词的
+            // 收尾，阅读器正文没有「继续播放」可言。
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.resumeOnLookupLeave,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setResumeOnLookupLeave(
+                value: value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
           // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
           SettingsNumberItem(
@@ -269,6 +331,82 @@ SettingsDestination buildLookupDestination() {
                 value,
               );
               settingsContext.refresh();
+            },
+          ),
+          // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
+          // 授权；未授权时旧行为会退化为只查当前剪贴板文本。设置页和第一次
+          // 明确触发全局查词时会弹系统授权提示，应用启动时不主动打扰用户。
+          SettingsActionItem(
+            id: 'lookup.accessibility_permission',
+            title: t.lookup_accessibility_permission_request,
+            subtitle: t.lookup_accessibility_permission_hint,
+            icon: Icons.accessibility_new_outlined,
+            visible: (SettingsContext settingsContext) =>
+                SelectionCapture.needsAccessibilityTrust,
+            onTap: (SettingsContext settingsContext) async {
+              final bool trusted =
+                  await SelectionCapture.requestAccessibilityTrust();
+              _showSettingsSnackBar(
+                settingsContext,
+                trusted
+                    ? t.lookup_accessibility_permission_granted
+                    : t.lookup_accessibility_permission_missing,
+              );
+            },
+          ),
+          // 查词输入框希望输入法切到哪种语言。默认未设置 = 不碰用户的系统输入法
+          // 状态（桌面端切输入法是改系统全局状态，会漏到别的 app，不该默认开）。
+          //
+          // 这**不是**「查词的目标语言」：查词流水线语言无关，`targetLanguage` 那个
+          // 假抽象已删且有守卫钉着（见 preferences_repository 的 lookupImeLanguage）。
+          //
+          // 语言选项复用内容语言那份（`kContentLanguageOptions`）——用户要认的是
+          // 「哪国语言」，和给书/词典指定语言是同一件事，没必要两套清单。
+          SettingsNavigationItem(
+            id: 'lookup.ime_language',
+            title: t.settings_lookup_ime_language_title,
+            // 当前值只能进 titleBuilder（渲染期求值）——塞进 title 会被设置页缓存
+            // 成陈旧文案，`settings_schema_cache_test.dart` 钉着这条。
+            titleBuilder: (SettingsContext settingsContext) {
+              final String current =
+                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
+              final String label = current.isEmpty
+                  ? t.settings_lookup_ime_language_unset
+                  : contentLanguageLabelOf(current);
+              return '${t.settings_lookup_ime_language_title} · $label';
+            },
+            subtitle: t.settings_lookup_ime_language_description,
+            icon: Icons.keyboard_alt_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              final String current =
+                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
+              await showContentLanguagePicker(
+                context: settingsContext.context,
+                title: t.settings_lookup_ime_language_title,
+                description: t.settings_lookup_ime_language_description,
+                current: current.isEmpty ? null : current,
+                autoDetected: '',
+                autoLabel: t.settings_lookup_ime_language_unset,
+                onSelected: (String? tag) async {
+                  await settingsContext.appModel.prefsRepo.setLookupImeLanguage(
+                    tag ?? '',
+                  );
+                  // 原生查词界面（Android 悬浮 / 弹窗词典的 EditText）读的是这份
+                  // 持久化值，它们可能在任何 Flutter 查词页面打开之前就被拉起。
+                  await LookupImeChannel.persistForNativeSurfaces(tag);
+                  settingsContext.refresh();
+                  // 选了系统里没装的输入法时说一声。否则用户设完发现「没反应」，
+                  // 而真正的原因（系统里根本没这个输入法）他无从知道——我们又不该
+                  // 替他往系统里装一个。
+                  if (tag == null) return;
+                  if (await LookupImeChannel.isLanguageAvailable(tag)) return;
+                  if (!settingsContext.context.mounted) return;
+                  _showSettingsSnackBar(
+                    settingsContext,
+                    t.settings_lookup_ime_language_unavailable,
+                  );
+                },
+              );
             },
           ),
         ],
@@ -633,15 +771,60 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
+          // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
+          // 去翻全局设置）。步长只在开关开启时展示；滚轮 / 触摸各一个（默认值本就不同，
+          // 见 PreferencesRepository.popupInstantScrollWheelStep 的注释）。
           SettingsSwitchItem(
             id: 'lookup.popup_instant_scroll',
             title: t.popup_instant_scroll,
             subtitle: t.popup_instant_scroll_hint,
             icon: Icons.animation_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 7),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setPopupInstantScroll(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_instant_scroll_wheel_step',
+            title: t.popup_instant_scroll_wheel_step,
+            subtitle: t.popup_instant_scroll_wheel_step_hint,
+            icon: Icons.mouse_outlined,
+            min: PreferencesRepository.kPopupInstantScrollStepMin,
+            max: PreferencesRepository.kPopupInstantScrollStepMax,
+            divisions: 18,
+            titleReadout: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 8),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScrollWheelStep,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupInstantScrollWheelStep(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_instant_scroll_touch_step',
+            title: t.popup_instant_scroll_touch_step,
+            subtitle: t.popup_instant_scroll_touch_step_hint,
+            icon: Icons.touch_app_outlined,
+            min: PreferencesRepository.kPopupInstantScrollStepMin,
+            max: PreferencesRepository.kPopupInstantScrollStepMax,
+            divisions: 18,
+            titleReadout: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 9),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScrollTouchStep,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupInstantScrollTouchStep(value);
               settingsContext.refresh();
             },
           ),
@@ -657,6 +840,12 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
+          // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
+          // 功能模块里关掉时不出——判据走 [AppModel.moduleVisibility] 唯一合成。
+          for (final ModuleId module
+              in PreferencesRepository.kPopupBottomDockedModules)
+            _popupBottomDockedModuleSwitch(module),
           // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
           // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
@@ -710,6 +899,26 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.readerSource.popupDismissAnimation,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.readerSource.setPopupDismissAnimation(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
+          // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
+          // （与 page_columns 只在翻页模式可见同理）。默认开启。
+          SettingsSwitchItem(
+            id: 'reading_controls.dismiss_popup_on_scroll',
+            title: t.reader_popup_scroll_dismiss,
+            subtitle: t.reader_popup_scroll_dismiss_hint,
+            icon: Icons.swap_vert_outlined,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.readerViewMode == 'continuous',
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 10),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissPopupOnScroll,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setDismissPopupOnScroll(
                 value,
               );
               notifyReaderSettingsChanged(settingsContext);

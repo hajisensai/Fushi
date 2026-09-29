@@ -149,6 +149,7 @@ Fushi aşağıdaki projeler ve ekosistem üzerine kuruludur:
 | Proje | Açıklama |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | Manga kaynak eklentisi ekosistemi |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Anime kaynak eklentisi ekosistemi (extensions-lib 14–16, aynı çalışma zamanı) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Masaüstü için manga eklenti çalışma zamanı |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | Manga kaynak çalışma zamanı ABI'si |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Tarayıcı eklentisi için akış altyazı köprüsü referansı |

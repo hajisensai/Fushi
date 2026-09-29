@@ -175,19 +175,27 @@ void main() {
     expect(cellBefore(collectionPos, looseAPos), isTrue,
         reason: '合集卡必须排在散卡之前——即使散卡「更最近」');
     expect(cellBefore(collectionPos, looseBPos), isTrue);
-    // 单一混排墙 = 主滚动区里恰好一个 Wrap（合集卡与散卡同墙；旧横排行形态是
+    // 单一混排墙 = 主滚动区里恰好一个 SliverGrid（合集卡与散卡同墙；旧横排行形态是
     // 「行 slivers + 网格」两段式，更旧的交错布局把散卡切成两个网格段）。
-    // TODO-2486：SliverGrid 已被朝向自适应 Wrap 墙取代，回潮即红。
+    // 墙必须是视口裁剪的 sliver：TODO-2486 的 `SliverToBoxAdapter + Wrap` 每帧把
+    // 全部 cell 一起 build + layout，Jellyfin/Emby 大库进「系列」页直接卡死；
+    // Wrap / SliverToBoxAdapter 回潮即红。
+    expect(
+      find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(SliverGrid),
+      ),
+      findsOneWidget,
+      reason: '合集卡与散卡必须合成单一混排墙（SliverGrid）',
+    );
     expect(
       find.descendant(
         of: find.byType(CustomScrollView),
         matching: find.byType(Wrap),
       ),
-      findsOneWidget,
-      reason: '合集卡与散卡必须合成单一混排墙（Wrap）',
+      findsNothing,
+      reason: '墙不得回退成非懒构建的 Wrap（每帧全量 build，大库卡死）',
     );
-    expect(find.byType(SliverGrid), findsNothing,
-        reason: '不得回退到恒定卡宽的 SliverGrid 网格（TODO-2486 混排墙）');
     // 封面卡形态：合集卡在，成员卡不再出现在库页（成员收进详情页）。
     expect(
       find.byKey(const ValueKey<String>('home_video_video/ep1')),

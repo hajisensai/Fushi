@@ -27,6 +27,7 @@ String _stripCssComments(String css) => maskCssComments(css);
 Future<String> _readerCss({
   required String writingMode,
   required String viewMode,
+  double? lineHeight,
 }) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
@@ -34,6 +35,7 @@ Future<String> _readerCss({
   await settings.refreshFromDb();
   await settings.setWritingMode(writingMode);
   await settings.setViewMode(viewMode);
+  if (lineHeight != null) await settings.setLineHeight(lineHeight);
   return ReaderContentStyles.css(settings: settings);
 }
 
@@ -47,6 +49,17 @@ final RegExp _kNegativeRtMarginBlockStart = RegExp(
 /// 「压根没有负的 `margin-block-start`」——非 Apple 端的不变式。用它而不是某个
 /// 具体数值，Apple 端换值时这条不会跟着退化成恒真空壳。
 final RegExp _kAnyNegativeMarginBlockStart = RegExp(r'margin-block-start:\s*-');
+
+/// BUG-2724：「含 `rt` 的选择器块里带一个负的 `margin-block-end`」——WebKit
+/// 注音贴回本行的不变式，同样不钉数值与写法（字面负值或以负项开头的 `calc()`，
+/// BUG-2779 起是后者）。
+final RegExp _kNegativeRtMarginBlockEnd = RegExp(
+    r'rt\b[^{}]*\{[^}]*margin-block-end:\s*(?:-\s*[\d.]+[a-z]+|calc\(\s*-)',
+    dotAll: true);
+
+/// 非 Apple 端：压根没有负的 `margin-block-end`（字面负值或负项 `calc()`）。
+final RegExp _kAnyNegativeMarginBlockEnd =
+    RegExp(r'margin-block-end:\s*(?:-|calc\(\s*-)');
 
 void main() {
   group('BUG-611 竖排 ruby 不被 -webkit-line-box-contain 抹掉标注预留', () {
@@ -114,6 +127,182 @@ void main() {
               reason: '$p：Blink 本就不为注音长高，负 margin 只发给 WebKit。'
                   '钉「任何负 margin-block-start 都不得出现」而不是钉某个数值——'
                   '否则 Apple 端一改数值，这条就退化成恒真空壳');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test(
+        'BUG-2724：Apple 端（WebKit）给注音盒负 margin-block-end，把注音贴回本行'
+        '（横排）/本列（竖排）；Android / Windows / Linux 不发', () async {
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          debugDefaultTargetPlatformOverride = p;
+          try {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: wm, viewMode: 'paginated'));
+            expect(
+                css,
+                matches(_kNegativeRtMarginBlockEnd),
+                reason: '$p/$wm：WebKit 把注音边框盒底贴在基字内容区顶，Hiragino 的 '
+                    'ascent 空白 + 注音半行距全落在注音与本行之间，注音贴近上一行'
+                    '（iOS 实拍本行 3.3px / 上一行 5.3px）。注音盒底 = 基字顶 − '
+                    'margin-block-end，负值才能把注音挪回基字。钉「注音选择器块里'
+                    '有负的 margin-block-end」这条不变式，不钉数值');
+          } finally {
+            debugDefaultTargetPlatformOverride = null;
+          }
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css, isNot(matches(_kAnyNegativeMarginBlockEnd)),
+              reason: '$p：Blink 的注音本就紧贴基字，这条 WebKit 位置补偿不得发给它');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test(
+        'BUG-2779：Apple 端注音负块尾边距吃运行时量出的字体度量变量（缺省即 '
+        'BUG-2724 的 -0.2em），并打出给度量脚本的开关；其它平台都不发', () async {
+      // 变量缺省值必须让 calc 退回旧的 -0.2em：脚本没跑到（首帧 / 无 ruby）时行为不变。
+      final RegExp pullRule = RegExp(
+          r'rt\b[^{}]*\{[^}]*margin-block-end:\s*calc\(\s*-1em\s*\*\s*'
+          r'var\(--fushi-ruby-pull,\s*([\d.]+)\)\s*-\s*([\d.]+)em\s*\)',
+          dotAll: true);
+      final RegExp snap = RegExp(r'--fushi-ruby-snap:\s*1');
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          for (final String vm in <String>['paginated', 'continuous', 'vn']) {
+            debugDefaultTargetPlatformOverride = p;
+            try {
+              final String css = _stripCssComments(
+                  await _readerCss(writingMode: wm, viewMode: vm));
+              final RegExpMatch? m = pullRule.firstMatch(css);
+              expect(m, isNotNull,
+                  reason: '$p/$wm/$vm：注音与基字之间的空白由字体 ascent/descent 决定，'
+                      '固定 em 值只对 Hiragino 成立（Klee One 下 iOS 实测离本列 8.3px、'
+                      '贴上一列）；必须吃 reader_ruby_metrics_script 量出的 '
+                      '--fushi-ruby-pull');
+              expect(double.parse(m!.group(1)!) + double.parse(m.group(2)!),
+                  closeTo(0.2, 1e-9),
+                  reason: '$p/$wm/$vm：变量缺省时必须等于 BUG-2724 已验证的 -0.2em');
+              expect(css, matches(snap),
+                  reason: '$p/$wm/$vm：度量脚本只认这个开关，缺了它变量永远不写');
+            } finally {
+              debugDefaultTargetPlatformOverride = null;
+            }
+          }
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css, isNot(matches(snap)),
+              reason: '$p：Blink 注音本就贴基字，度量脚本不得在这里写变量');
+          expect(css.contains('--fushi-ruby-pull'), isFalse);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test(
+        'BUG-2761：Apple 端分页给段落块首预留注音位置，并用 p::after 的负块尾边距'
+        '抵消（页中零位移、页顶边距截断后留出预留）；其它平台 / 滚动 / VN 不发',
+        () async {
+      // 段落块首预留 R，与 p::after 块尾 −R 等量相抵：页中段落位置不变，只有落在
+      // 页顶（分栏处边距被截断）时 R 留下来装注音。钉「两者同值且都在」，不钉数值。
+      final RegExp reserve = RegExp(
+          r'(?:^|[\s,}])p\s*\{[^}]*padding-block-start:\s*([\d.]+)em',
+          multiLine: true);
+      final RegExp cancel = RegExp(
+          r'p::after\s*\{[^}]*display:\s*block[^}]*margin-block-end:\s*-\s*([\d.]+)em');
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          debugDefaultTargetPlatformOverride = p;
+          try {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: wm, viewMode: 'paginated'));
+            final RegExpMatch? r = reserve.firstMatch(css);
+            final RegExpMatch? c = cancel.firstMatch(css);
+            expect(r, isNotNull,
+                reason: '$p/$wm：WebKit 多列把伸出列顶的注音画进上一列底部，'
+                    '页顶那一行必须在段落块首留出注音的位置');
+            expect(c, isNotNull,
+                reason: '$p/$wm：预留必须由可在分栏处被截断的负边距抵消，'
+                    '否则每个段落都多出一截、整本书排版变样');
+            expect(double.parse(r!.group(1)!), greaterThan(0));
+            expect(c!.group(1), r.group(1),
+                reason: '$p/$wm：预留与抵消必须等量，页中段落才零位移');
+          } finally {
+            debugDefaultTargetPlatformOverride = null;
+          }
+        }
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          for (final String vm in <String>['continuous', 'vn']) {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: 'vertical-rl', viewMode: vm));
+            expect(css, isNot(matches(cancel)),
+                reason: '$p/$vm：不经多列分页，没有跨列问题，不发');
+          }
+          final String loose = _stripCssComments(await _readerCss(
+              writingMode: 'horizontal-tb',
+              viewMode: 'paginated',
+              lineHeight: 2.4));
+          expect(loose, isNot(matches(cancel)),
+              reason: '$p：行高 2.4 的上半 leading 已容得下注音，不需要预留');
+          final String tight = _stripCssComments(await _readerCss(
+              writingMode: 'horizontal-tb',
+              viewMode: 'paginated',
+              lineHeight: 1.0));
+          final String normal = _stripCssComments(await _readerCss(
+              writingMode: 'horizontal-tb', viewMode: 'paginated'));
+          expect(
+              double.parse(reserve.firstMatch(tight)!.group(1)!),
+              greaterThan(double.parse(reserve.firstMatch(normal)!.group(1)!)),
+              reason: '$p：行高越小 leading 越装不下注音，预留要跟着变大');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css, isNot(matches(cancel)),
+              reason: '$p：Blink 按行片段所在列绘制注音，不跨列，不发');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }

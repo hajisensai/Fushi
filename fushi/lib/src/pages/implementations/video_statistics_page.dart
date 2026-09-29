@@ -5,7 +5,12 @@ import 'package:fushi/pages.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
+import 'package:fushi/src/stats/stat_range.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
@@ -20,10 +25,17 @@ import 'package:fushi_core/fushi_core.dart';
 /// 完全隔离（视频专用表）。展示观看时长 + 完成视频数 + 制卡/收藏计数（不再展示
 /// 字幕字数：字数仍在 DB 里采集，只是统计页不再呈现）。
 class VideoStatisticsPage extends BasePage {
-  const VideoStatisticsPage({super.key, this.embedded = false});
+  const VideoStatisticsPage({
+    super.key,
+    this.embedded = false,
+    this.rangeSelection,
+  });
 
   /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
   final bool embedded;
+
+  /// 统计中心共享的范围选择；null（独立页）时本页自持一份。
+  final ValueNotifier<StatRangeSelection>? rangeSelection;
 
   @override
   BasePageState<VideoStatisticsPage> createState() =>
@@ -69,16 +81,71 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   // 今日每小时观看时长（0-23，毫秒）。
   List<int> _hourlyMs = List.filled(24, 0);
 
+  /// 范围选择：统计中心传进来的共享那份，或独立页自持的一份。
+  late final ValueNotifier<StatRangeSelection> _rangeSelection =
+      widget.rangeSelection ??
+      ValueNotifier<StatRangeSelection>(const StatRangeSelection());
+
+  /// 观看域逐日合计（范围图表 / 所选范围卡 / 学习日历共用）。
+  Map<String, StatDayData> _byDay = <String, StatDayData>{};
+
+  /// 按视频排行的原始输入（范围一变就用 [computeVideoStats] 在范围切片上重跑
+  /// 一次身份分组，tile 上的时长 / 查词 / 制卡 / 收藏全是范围内的数）。
+  List<LookupMiningCounterRow> _counterRows = <LookupMiningCounterRow>[];
+  List<FavoriteWordRow> _favoriteRows = <FavoriteWordRow>[];
+  Set<String> _ambiguousTitles = <String>{};
+  List<(String, int)> _lookupEvents = const <(String, int)>[];
+  List<(String, int)> _minedEvents = const <(String, int)>[];
+
+  /// 所选范围内的按视频排行。
+  List<VideoStatBookData> _rangeVideos = <VideoStatBookData>[];
+
+  /// bookUid → 封面本地路径（按视频行封面）。
+  Map<String, String> _coverPathByUid = <String, String>{};
+
+  /// 当前范围：共享选择 × 本轮今日 × 观看域最早有数据的一天。
+  StatRange get _range => StatRange.resolve(
+    _rangeSelection.value,
+    todayKey: _window.todayKey,
+    earliestKey: earliestStatDateKey(_byDay.keys),
+  );
+
   @override
   void initState() {
     super.initState();
+    _rangeSelection.addListener(_onRangeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
   }
 
   @override
   void dispose() {
     _midnightReload?.cancel();
+    _rangeSelection.removeListener(_onRangeChanged);
+    if (widget.rangeSelection == null) _rangeSelection.dispose();
     super.dispose();
+  }
+
+  void _onRangeChanged() {
+    if (!mounted || _loading) return;
+    setState(_computeRangeVideos);
+  }
+
+  /// 范围内的按视频排行：与全量排行同一个纯函数、同一次身份分组，只是输入换成
+  /// 范围切片（观看行 / 计数行 / 收藏行都按 dateKey 过滤）。
+  void _computeRangeVideos() {
+    final StatRange range = _range;
+    _rangeVideos = computeVideoStats(
+      stats: _videoFacts.where((StatFact f) => range.contains(f.dateKey)),
+      completed: const <DateTime>[],
+      now: _window.now,
+      counters: _counterRows
+          .where((LookupMiningCounterRow r) => range.contains(r.dateKey))
+          .toList(),
+      favorites: _favoriteRows
+          .where((FavoriteWordRow r) => range.contains(r.dateKey))
+          .toList(),
+      ambiguousTitles: _ambiguousTitles,
+    ).byVideo;
   }
 
   /// 到下一个本地午夜整页重聚合（每次加载重新排一次；页面已卸载则不动）。
@@ -118,8 +185,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       );
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
+      _byDay = sumStatDaysByKey(stats);
       _sessions = facts.sessions.where((StudySession s) => s.isVideo).toList();
       final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
+      _coverPathByUid = <String, String>{
+        for (final VideoBookRow b in books)
+          if (b.coverPath case final String path when path.isNotEmpty)
+            b.bookUid: path,
+      };
       final List<DateTime> completed = books
           .map((VideoBookRow b) => b.completedAt)
           .whereType<DateTime>()
@@ -157,18 +230,27 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // （review3-6）：歧义不粘——同名视频之一被移出库且没留下任何带身份统计行
       // 后，「曾经同名」这一事实没有任何观察者能复原，遗留行会按 unique-title
       // 判据归并给幸存者；粘化需要新增持久面，成本与收益不成比例，不做。
+      _counterRows = counters;
+      _favoriteRows = favs;
+      _ambiguousTitles = <String>{
+        for (final MapEntry<String, Set<String>> e
+            in _libraryUidsByTitle.entries)
+          if (e.value.length >= 2) e.key,
+      };
       _agg = computeVideoStats(
         stats: stats,
         completed: completed,
         now: now,
         counters: counters,
         favorites: favs,
-        ambiguousTitles: <String>{
-          for (final MapEntry<String, Set<String>> e
-              in _libraryUidsByTitle.entries)
-            if (e.value.length >= 2) e.key,
-        },
+        ambiguousTitles: _ambiguousTitles,
       );
+      _lookupEvents = counterFacts
+          .lookupEvents(source: StatSourceKind.video)
+          .toList();
+      _minedEvents = counterFacts
+          .minedEvents(source: StatSourceKind.video)
+          .toList();
       _favorited = bucketActivityByDateKey(
         counterFacts.favoriteWordEvents(source: StatSourceKind.video),
         now,
@@ -205,6 +287,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           counters.isNotEmpty ||
           videoFavSentences.isNotEmpty;
       _loadHourlyData(facts);
+      _computeRangeVideos();
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoStatisticsPage.load', e, stack);
       _error = e.toString();
@@ -272,52 +355,107 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Widget _buildContent() {
     final tokens = FushiDesignTokens.of(context);
 
-    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频。
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(
-          child: buildStatDailyDurationChartSection(context, _agg.daily),
+    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频；
+    // 横屏时会话与按视频列表拆到右栏（[buildStatAdaptiveScrollView]）。
+    return buildStatAdaptiveScrollView(
+      context,
+      sections: (double _) => <StatPaneSliver>[
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildSummaryCards()),
         ),
-        SliverToBoxAdapter(
-          child: buildStatSessionSection(
-            context,
-            sessions: _sessions,
-            titleOf: (StudySession s) => s.title,
-            collectionOf: _sessionCollectionName,
-            onDelete: _deleteSession,
-            onEdit: _editSession,
-            onClearAll: _clearSessions,
-          ),
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildRangeSection()),
         ),
-        SliverToBoxAdapter(
-          child: StatAnalysisFold(
-            children: <Widget>[
-              buildStatHourlyChartSection(context, _hourlyMs),
-            ],
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.card + tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            child: Text(
-              t.video_stat_by_video,
-              style: Theme.of(context).textTheme.titleMedium,
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: buildStatSessionSection(
+              context,
+              sessions: _sessions,
+              titleOf: (StudySession s) => s.title,
+              collectionOf: _sessionCollectionName,
+              onDelete: _deleteSession,
+              onEdit: _editSession,
+              onClearAll: _clearSessions,
             ),
           ),
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _buildVideoTile(_agg.byVideo[index]),
-            childCount: _agg.byVideo.length,
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(
+            child: StatAnalysisFold(
+              children: <Widget>[
+                buildStatHourlyChartSection(context, _hourlyMs),
+              ],
+            ),
           ),
         ),
-        buildStatTailSliver(context),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: Text(
+                '${t.video_stat_by_video} · ${formatStatRange(_range)}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ),
+        ),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildVideoTile(_rangeVideos[index]),
+              childCount: _rangeVideos.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 范围区块：范围条 → 学习日历 → 范围时长图 → 所选范围卡（与阅读 / 游戏 /
+  /// 总览 tab 同形）。
+  Widget _buildRangeSection() {
+    final StatRange range = _range;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        StatRangeBar(
+          range: range,
+          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+        ),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: _window.now,
+          onDaySelected: (String dateKey) => _rangeSelection.value =
+              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+        ),
+        buildStatRangeChartSection(context, range, _byDay),
+        buildStatRangeSummary(
+          context,
+          range,
+          _byDay,
+          extraLines: <StatSummaryLine>[
+            StatSummaryLine(
+              label: t.stat_lookup,
+              value: '${sumStatEventsInRange(_lookupEvents, range)}',
+            ),
+            StatSummaryLine(
+              label: t.stat_mined,
+              value: '${sumStatEventsInRange(_minedEvents, range)}',
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -564,9 +702,15 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final int sessionCount = uid == null
         ? 0
         : _sessions.where((StudySession s) => s.mediaKey == uid).length;
+    final String? coverPath = uid == null ? null : _coverPathByUid[uid];
     return buildStatMediaRow(
       context,
       icon: Icons.movie,
+      cover: resolveMediaCoverImage(
+        kind: MediaKind.video,
+        localPath: coverPath,
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      ),
       title: video.title,
       collectionName: _collectionNameForVideo(video),
       meta: t.stat_sessions_count(n: sessionCount),

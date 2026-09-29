@@ -1,9 +1,51 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 void main() {
+  test('resetting book mode returns to legacy or global/automatic defaults',
+      () {
+    const MokuroPayload tallPages = MokuroPayload(images: <MokuroImage>[
+      MokuroImage(
+          url: 'p.jpg', size: MokuroSize(800, 4000), blocks: <MokuroBlock>[]),
+    ]);
+    expect(
+        MangaFushiPage.resolveReaderMode(
+          preferences: const MangaReaderPreferences(
+              mode: MangaReadingMode.pagedVertical),
+          payload: tallPages,
+          hasModeOverride: true,
+          legacyMode: 'spread',
+        ),
+        MangaReadingMode.pagedVertical);
+    expect(
+        MangaFushiPage.resolveReaderMode(
+          preferences:
+              const MangaReaderPreferences(mode: MangaReadingMode.webtoonGaps),
+          payload: tallPages,
+          hasModeOverride: false,
+          legacyMode: 'spread',
+        ),
+        MangaReadingMode.spread);
+    expect(
+        MangaFushiPage.resolveReaderMode(
+          preferences:
+              const MangaReaderPreferences(mode: MangaReadingMode.webtoonGaps),
+          payload: tallPages,
+          hasModeOverride: false,
+        ),
+        MangaReadingMode.webtoonGaps);
+    expect(
+        MangaFushiPage.resolveReaderMode(
+          preferences: const MangaReaderPreferences(autoMode: true),
+          payload: tallPages,
+          hasModeOverride: false,
+        ),
+        MangaReadingMode.webtoon);
+  });
   group('mangaWindowRange', () {
     test('窗口在起点被 clamp', () {
       expect(

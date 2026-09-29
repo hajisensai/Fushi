@@ -7,6 +7,8 @@ import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
+import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -63,6 +65,22 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
           ),
+          // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
+          // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
+          // 细线会把这个意图撤回一半；要的人在这里开。
+          // 小窗档不受它管（那里完整进度条已被收起，细线是唯一进度指示），判据统一在
+          // `videoSlimProgressBarVisible`。播放页面板不单列（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.playback.slim_progress_bar',
+            title: t.video_setting_slim_progress_bar,
+            subtitle: t.video_setting_slim_progress_bar_hint,
+            icon: Icons.linear_scale_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSlimProgressBar,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoSlimProgressBar(value);
+            },
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。
@@ -103,6 +121,90 @@ SettingsDestination buildVideoDestination() {
                 ) async {
                   await setVideoImmersiveModeDual(settingsContext, mode);
                 },
+          ),
+          // 截图去向（两个截图快捷键共用这一个偏好）：默认「每次询问」＝历史行为，
+          // 老用户升级后按键手感不变。
+          SettingsSegmentedItem<VideoScreenshotDestination>(
+            id: 'video.playback.screenshot_destination',
+            title: t.video_setting_screenshot_destination,
+            subtitle: t.video_setting_screenshot_destination_hint,
+            icon: Icons.photo_camera_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 110),
+            options: <SettingsSegmentOption<VideoScreenshotDestination>>[
+              for (final VideoScreenshotDestination destination
+                  in VideoScreenshotDestination.values)
+                SettingsSegmentOption<VideoScreenshotDestination>(
+                  value: destination,
+                  label: _videoScreenshotDestinationLabel(destination),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoScreenshotDestination,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoScreenshotDestination destination,
+                ) async {
+                  await settingsContext.appModel
+                      .setVideoScreenshotDestination(destination);
+                  settingsContext.refresh();
+                },
+          ),
+          // 目录行常驻可见（不按去向 gate）：用户通常先把目录选好、再把去向切到
+          // 「保存到目录」，gate 掉会逼出「先切去向才能设目录」的鸡生蛋。
+          SettingsActionItem(
+            id: 'video.playback.screenshot_directory',
+            title: t.video_setting_screenshot_directory,
+            subtitleBuilder: (SettingsContext settingsContext) {
+              final String dir =
+                  settingsContext.appModel.videoScreenshotDirectory.trim();
+              return dir.isEmpty ? t.video_screenshot_directory_not_set : dir;
+            },
+            icon: Icons.folder_open_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              // 截图目录长期承载写入，必须是真实文件系统路径（安卓上
+              // getDirectoryPath() 只给 SAF tree URI，dart:io 读不了）——走统一入口。
+              final String? picked = await pickRealDirectoryPath(
+                context: settingsContext.context,
+                appModel: settingsContext.appModel,
+                dialogTitle: t.video_setting_screenshot_directory,
+                initialDirectory:
+                    settingsContext.appModel.videoScreenshotDirectory.trim()
+                        .isEmpty
+                    ? null
+                    : settingsContext.appModel.videoScreenshotDirectory.trim(),
+              );
+              if (picked == null || picked.isEmpty) return;
+              await settingsContext.appModel
+                  .setVideoScreenshotDirectory(picked);
+              settingsContext.refresh();
+            },
+          ),
+          // 片段导出的视频码率：0 = 跟随源（默认，能 copy 就 copy、不为改码率而重编
+          // 码），其它值把视频重编码到该码率。给一个自由输入框而不是预设档位：用户的
+          // 诉求是「发到 IM / 上传站点前把体积压到某个上限」，上限各家不同，档位永远
+          // 对不上。放进播放页快捷面板（VideoPlacement）是因为码率通常在按下导出前
+          // 临时调，不该为此退出播放去翻全局设置。
+          SettingsNumberItem(
+            id: 'video.playback.clip_export_video_bitrate',
+            title: t.video_setting_clip_export_video_bitrate,
+            subtitle: t.video_setting_clip_export_video_bitrate_hint,
+            icon: Icons.movie_creation_outlined,
+            integer: true,
+            min: kVideoClipExportVideoBitrateFollowSource,
+            max: kVideoClipExportVideoBitrateMaxKbps,
+            suffixText: t.unit_kbps,
+            video: VideoPlacement(group: VideoGroup.playback, order: 111),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoClipExportVideoBitrateKbps,
+            resetValue: (SettingsContext settingsContext) =>
+                kVideoClipExportVideoBitrateFollowSource,
+            onChanged: (SettingsContext settingsContext, num value) async {
+              await settingsContext.appModel
+                  .setVideoClipExportVideoBitrateKbps(value.toInt());
+              settingsContext.refresh();
+            },
           ),
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
@@ -275,6 +377,42 @@ SettingsDestination buildVideoDestination() {
                   );
                 },
           ),
+          // issue #1525：移动端左半区竖滑调亮度 / 右半区竖滑调音量各自可关（默认开 =
+          // 旧行为），常误触的用户改用系统亮度条与实体音量键。仅移动端可见——桌面控制条
+          // 本无这两个手势，显出来是假开关。播放页在场时经 host 回调即时生效。
+          SettingsSwitchItem(
+            id: 'video.playback.brightness_swipe_gesture',
+            title: t.video_setting_brightness_swipe_gesture,
+            subtitle: t.video_setting_brightness_swipe_gesture_hint,
+            icon: Icons.brightness_6_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 96),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).brightnessSwipeGesture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(brightnessSwipeGesture: value),
+              );
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.volume_swipe_gesture',
+            title: t.video_setting_volume_swipe_gesture,
+            subtitle: t.video_setting_volume_swipe_gesture_hint,
+            icon: Icons.volume_up_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 97),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).volumeSwipeGesture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) => c.copyWith(volumeSwipeGesture: value),
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'video.playback.lock_window_aspect',
             title: t.video_setting_lock_window_aspect,
@@ -366,6 +504,21 @@ SettingsDestination buildVideoDestination() {
                 settingsContext,
                 (VideoAsbplayerConfig c) =>
                     c.copyWith(pauseAtSubtitleEnd: value),
+              );
+            },
+          ),
+          // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
+          // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.reference_sync',
+            title: t.video_setting_subtitle_reference_sync,
+            subtitle: t.video_setting_subtitle_reference_sync_hint,
+            icon: Icons.sync_alt_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.subtitleReferenceSyncEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setSubtitleReferenceSyncEnabled(
+                value,
               );
             },
           ),
@@ -728,6 +881,21 @@ SettingsDestination buildVideoDestination() {
                   .setVideoSubtitleBackfillAfterScrape(value);
             },
           ),
+          // BUG-2728 的自动上传：远端（互联 host）视频上导入 / 重定时的字幕上传到
+          // host 并设为该集默认——会改掉所有 peer 看到的默认字幕，所以要能关。
+          // 关掉时字幕只在本机生效（见 _uploadRemoteSubtitleToHost 的进场门）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.auto_upload_to_host',
+            title: t.video_setting_subtitle_auto_upload_to_host,
+            subtitle: t.video_setting_subtitle_auto_upload_to_host_hint,
+            icon: Icons.cloud_upload_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleAutoUploadToHost,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoSubtitleAutoUploadToHost(value);
+            },
+          ),
           // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
           // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
           // 「一个能力两个家」修法是双挂载——那是把症状固化）。第三方凭据现在只
@@ -784,11 +952,11 @@ SettingsDestination buildVideoDestination() {
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoMetadataPrimaryProviderPref,
                                 defaultValue:
-                                    VideoMetadataProviderKind.mal.name,
+                                    kDefaultVideoMetadataPrimaryProvider.name,
                               )
                               as String,
                         ) ??
-                        VideoMetadataProviderKind.mal)
+                        kDefaultVideoMetadataPrimaryProvider)
                     .name,
             onChanged: (SettingsContext settingsContext, String value) async {
               await commitVideoMetadataRuntimePreference(
@@ -827,6 +995,71 @@ SettingsDestination buildVideoDestination() {
                 kVideoMetadataLocalePref,
                 value,
               );
+            },
+          ),
+          // 图片保留张数（Shoko TMDB.MaxAutoPosters / Backdrops / Logos，默认 10，
+          // 0 = 不限）与演职员头像落地（AutoDownloadStaffImages）。改后经
+          // commitVideoMetadataRuntimePreference 同款路径重建刮削快照。
+          for (final (String key, String title, IconData icon) limit
+              in <(String, String, IconData)>[
+            (
+              kVideoMetadataMaxCoversPref,
+              t.video_metadata_max_covers,
+              Icons.image_outlined
+            ),
+            (
+              kVideoMetadataMaxBackdropsPref,
+              t.video_metadata_max_backdrops,
+              Icons.panorama_outlined
+            ),
+            (
+              kVideoMetadataMaxLogosPref,
+              t.video_metadata_max_logos,
+              Icons.title_outlined
+            ),
+          ])
+            SettingsStepperItem(
+              id: 'video.library.${limit.$1}',
+              title: limit.$2,
+              subtitle: t.video_metadata_image_limit_hint,
+              icon: limit.$3,
+              value: (SettingsContext settingsContext) {
+                final Object? raw = settingsContext.appModel.prefsRepo.getPref(
+                  limit.$1,
+                  defaultValue: kVideoMetadataDefaultMaxImages,
+                );
+                return (raw is int
+                        ? raw
+                        : int.tryParse('$raw') ??
+                            kVideoMetadataDefaultMaxImages)
+                    .toDouble();
+              },
+              step: 1,
+              min: 0,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (SettingsContext settingsContext, double v) async {
+                await settingsContext.appModel.prefsRepo
+                    .setPref(limit.$1, v.round());
+                await settingsContext.appModel
+                    .reloadVideoDownloadPipelineRuntime();
+              },
+            ),
+          SettingsSwitchItem(
+            id: 'video.library.metadata_download_staff_images',
+            title: t.video_metadata_download_staff_images,
+            subtitle: t.video_metadata_download_staff_images_hint,
+            icon: Icons.people_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.getPref(
+                  kVideoMetadataStaffImagesPref,
+                  defaultValue: false,
+                ) as bool,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setPref(kVideoMetadataStaffImagesPref, value);
+              await settingsContext.appModel
+                  .reloadVideoDownloadPipelineRuntime();
             },
           ),
           // 识别词（设计稿 C 二期，对标 MoviePilot WordsMatcher）：用户词表在
@@ -1911,6 +2144,19 @@ Widget _buildWindowsBlackFlashNotice(SettingsContext settingsContext) {
     icon: Icons.info_outline,
     showIcon: true,
   );
+}
+
+String _videoScreenshotDestinationLabel(
+  VideoScreenshotDestination destination,
+) {
+  switch (destination) {
+    case VideoScreenshotDestination.ask:
+      return t.video_screenshot_destination_ask;
+    case VideoScreenshotDestination.clipboard:
+      return t.video_screenshot_destination_clipboard;
+    case VideoScreenshotDestination.directory:
+      return t.video_screenshot_destination_directory;
+  }
 }
 
 String _videoImmersiveModeLabel(VideoImmersiveMode mode) {

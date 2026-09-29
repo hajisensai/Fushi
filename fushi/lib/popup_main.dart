@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -175,8 +176,13 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           builder: _buildWithSpacing,
           home: Scaffold(
             backgroundColor: Colors.transparent,
-            body: Center(
-              child: CircularProgressIndicator(color: cs.primary),
+            // 冷启动占位：不再在别的 app 画面正中裸转圈；慢了才在词卡将出现的位置淡入
+            // 小加载胶囊，且加载期间点外面同样能关窗。
+            body: PopupDictionaryLoadingView(
+              colorScheme: cs,
+              // 与 PopupDictionaryPage 同一避让优先级：整条字幕窗 > 被查字。
+              anchorRect: _toLogicalRect(_subtitlePhysical ?? _anchorPhysical),
+              onDismiss: () => unawaited(PopupChannel.instance.finishPopup()),
             ),
           ),
         ),

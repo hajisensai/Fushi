@@ -122,6 +122,7 @@ void main() {
       },
       directoryHasPageImages: MangaModule.directoryHasPageImages,
       directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
     );
 
     expect(resolver.resolve(first.path), ImportCarrier.epub);

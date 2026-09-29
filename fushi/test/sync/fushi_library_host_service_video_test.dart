@@ -62,6 +62,42 @@ void main() {
       expect(list, isEmpty);
     });
 
+    test('在线视频源入库集（anime-source://）不下发给对端，也不能挂字幕', () async {
+      final File videoFile = File(p.join(tmp.path, 'local.mp4'))
+        ..writeAsBytesSync(List<int>.filled(16, 0));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/local',
+        title: 'Local',
+        videoPath: videoFile.path,
+      ));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'anime-source:pkg:42:/ep/1',
+        title: 'Episode 1',
+        videoPath: 'anime-source://pkg/42/Show - E01',
+        streamSpecJson: const Value<String?>('{"kind":"anime-source"}'),
+      ));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/stream',
+        title: 'Stream',
+        videoPath: 'https://example.com/a.mp4',
+      ));
+
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      expect(list.map((RemoteVideoInfo v) => v.id).toSet(),
+          <String>{'video/local', 'video/stream'});
+
+      final File subtitle = File(p.join(tmp.path, 'sub.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+      await expectLater(
+        svc.importVideoSubtitle(subtitle,
+            id: 'anime-source:pkg:42:/ep/1', suffix: '.srt'),
+        throwsA(isA<StateError>().having((StateError e) => e.message,
+            'message', contains('no local file'))),
+      );
+      expect(await svc.resolveVideoFile('anime-source:pkg:42:/ep/1'), isNull);
+    });
+
     test('返回已插入的视频条目，字段正确', () async {
       // 建一个真实视频文件（内容任意）供 stat 拿大小
       final File videoFile = File(p.join(tmp.path, 'film.mp4'))
@@ -655,6 +691,82 @@ void main() {
       // 传的是文件路径而非 bookUid，DB 中查不到 → null
       final File? f = await svc.resolveVideoFile(sneaky.path);
       expect(f, isNull);
+    });
+
+    test('IPTV 直播频道（rtsp）与 .strm 流指针没有可下发的媒体字节 → null', () async {
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/channel',
+        title: 'Channel',
+        videoPath: 'rtsp://10.0.0.1:554/live/1',
+      ));
+      // 本地 `.strm` 在磁盘上**存在**——旧判据只看 existsSync，会把这一行地址文本
+      // 当视频文件下发给对端。
+      final File strm = File(p.join(tmp.path, 'show.strm'))
+        ..writeAsStringSync('https://example.com/live.m3u8\n');
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/strm',
+        title: 'Strm',
+        videoPath: strm.path,
+      ));
+
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      expect(await svc.resolveVideoFile('video/channel'), isNull);
+      expect(await svc.resolveVideoFile('video/strm'), isNull);
+      // 剪音频走同一条反查，也不会拿文本去喂 ffmpeg。
+      expect(await svc.clipVideoAudio('video/strm', startMs: 0, endMs: 1000),
+          isNull);
+    });
+
+    test('listVideos 不把 .strm 的文本大小 / 同目录字幕当成视频的', () async {
+      final File strm = File(p.join(tmp.path, 'pointer.strm'))
+        ..writeAsStringSync('https://example.com/live.m3u8\n');
+      File(p.join(tmp.path, 'pointer.ja.srt'))
+          .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/pointer',
+        title: 'Pointer',
+        videoPath: strm.path,
+      ));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/channel',
+        title: 'Channel',
+        videoPath: 'udp://@239.0.0.1:1234',
+      ));
+
+      final LocalLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, langCode: 'ja');
+      final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{
+        for (final RemoteVideoInfo v in await svc.listVideos()) v.id: v,
+      };
+      expect(byId['video/pointer']!.sizeBytes, isNull);
+      expect(byId['video/pointer']!.hasSubtitle, isFalse);
+      expect(byId['video/channel']!.sizeBytes, isNull);
+      expect(byId['video/channel']!.hasSubtitle, isFalse);
+    });
+
+    test('rtsp 频道 / .strm 行拒收对端推来的字幕（无本地视频本体）', () async {
+      final File strm = File(p.join(tmp.path, 'pushed.strm'))
+        ..writeAsStringSync('https://example.com/live.m3u8\n');
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/pushed',
+        title: 'Pushed',
+        videoPath: strm.path,
+      ));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/channel',
+        title: 'Channel',
+        videoPath: 'rtsp://10.0.0.1:554/live/1',
+      ));
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      for (final String id in <String>['video/pushed', 'video/channel']) {
+        final File sub = File(p.join(tmp.path, 'incoming.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHi\n');
+        await expectLater(
+          svc.importVideoSubtitle(sub, id: id, suffix: '.ja.srt'),
+          throwsA(isA<StateError>()),
+        );
+      }
+      expect(File(p.join(tmp.path, 'pushed.ja.srt')).existsSync(), isFalse);
     });
   });
 

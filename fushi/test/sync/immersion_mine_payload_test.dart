@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 
 void main() {
@@ -66,6 +67,38 @@ void main() {
     expect(p.clipEndMs, 15000);
     expect(p.isImmersion, isTrue);
     expect(p.clipBytes, isNull);
+  });
+
+  // 番剧（bilibili-pgc）：音轨由扩展在页面主世界里解析后随响应体回传，服务端据此挑流。
+  // 它不参与 isImmersion 判据（那是「有没有可裁原始流 + 时间窗」的问题），但少了它服务端就得
+  // 匿名去打 playurl —— 大会员内容必然失败。
+  test('parses clipSourcePlayurlBody for the bilibili-pgc path', () {
+    final ImmersionMinePayload p =
+        ImmersionMinePayload.fromJson(<String, dynamic>{
+      'fields': <String, dynamic>{'sentence': '正道ではなく邪道'},
+      'clipSourceKind': 'bilibili-pgc',
+      'clipSourceId': '815751',
+      'clipSourcePlayurlBody': '{"code":0,"result":{"dash":{"audio":[]}}}',
+      'clipStartMs': 61000,
+      'clipEndMs': 64500,
+    });
+    expect(p.clipSourceKind, 'bilibili-pgc');
+    expect(p.clipSourceId, '815751');
+    expect(p.clipSourcePlayurlBody, '{"code":0,"result":{"dash":{"audio":[]}}}');
+    expect(p.isImmersion, isTrue);
+  });
+
+  test('clipSourcePlayurlBody absent -> null (falls back to no clip source)',
+      () {
+    final ImmersionMinePayload p =
+        ImmersionMinePayload.fromJson(<String, dynamic>{
+      'fields': <String, dynamic>{'sentence': 'x'},
+      'clipSourceKind': 'bilibili',
+      'clipSourceId': 'BV1Este6wExx',
+      'clipStartMs': 0,
+      'clipEndMs': 1000,
+    });
+    expect(p.clipSourcePlayurlBody, isNull);
   });
 
   test('youtubeVideoId without a window is not immersion', () {
@@ -190,6 +223,73 @@ void main() {
       expect(p.isImmersion, true);
       expect(p.screenshotBytes, <int>[7, 8]);
       expect(p.documentTitle, 'テスト動画_哔哩哔哩_bilibili');
+    });
+  });
+
+  // BUG-2573：制卡时 `fields.audio` 是服务端把短命 token 换成的 `data:` 自包含 URI
+  // （3007ff272 起）。标准 base64 字母表含 `+`，而 `_normalizeIncomingText` 原本按
+  // 「加号 = 表单编码里的空格」还原，把 base64 里的孤立 `+` 全换成空格 → 落卡侧
+  // `UriData.parse` 抛 Invalid base64 data → `AnkiAudioRef.decodeDataUri` 返回 null
+  // → `_storeRemoteAudio` 返回 none → 卡片 ExpressionAudio 没有单词音频。
+  // 2.2.4 的 token URL 用 base64UrlEncode（字母表是 `-` / `_`，不含 `+`）所以从没触发。
+  group('BUG-2573：data: URI 载荷不被「加号→空格」归一化打坏', () {
+    // 确定性伪随机字节（模拟真实单词音频），保证 base64 里出现多个孤立 `+`。
+    List<int> sampleBytes() =>
+        List<int>.generate(1024, (int i) => (i * 7919 + 13) % 256);
+
+    int lonePlusCount(String s) {
+      var n = 0;
+      for (var i = 0; i < s.length; i++) {
+        if (s.codeUnitAt(i) != 0x2b) continue;
+        final prevIsPlus = i > 0 && s.codeUnitAt(i - 1) == 0x2b;
+        final nextIsPlus = i + 1 < s.length && s.codeUnitAt(i + 1) == 0x2b;
+        if (!prevIsPlus && !nextIsPlus) n++;
+      }
+      return n;
+    }
+
+    test('含加号的 data: URI 原样透传（+ 不被换成空格）', () {
+      final dataUri = 'data:audio/mpeg;base64,${base64Encode(sampleBytes())}';
+      // 自证：构造出的载荷必须真含孤立 +，否则这条用例测了个寂寞。
+      expect(lonePlusCount(dataUri), greaterThan(1));
+
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'expression': '走る', 'audio': dataUri},
+        'sentence': 's',
+      });
+      expect(p.fields['audio'], dataUri);
+      expect(p.fields['audio'], isNot(contains(' ')),
+          reason: 'base64 的 + 被换成空格，落卡侧就会解码失败');
+    });
+
+    test('端到端：解码出的字节与原始单词音频一致（不丢音频）', () {
+      final bytes = sampleBytes();
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{
+          'expression': '走る',
+          'reading': 'はしる',
+          'audio': 'data:audio/mpeg;base64,${base64Encode(bytes)}',
+        },
+        'sentence': 's',
+      });
+      final AnkiAudioData? decoded =
+          AnkiAudioRef.decodeDataUri(p.fields['audio']!);
+      expect(decoded, isNotNull,
+          reason: '解码失败 = 落卡侧 AudioFetchOutcome.none() = 卡片没有单词音频');
+      expect(decoded!.bytes, bytes);
+      expect(decoded.extension, 'mp3');
+    });
+
+    test('回归：普通文本字段仍照常做表单编码还原', () {
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{
+          'glossary': '(明鏡+第三版)+たい%E3%81%9D%E3%81%86',
+          'note': 'C++ primer',
+        },
+        'sentence': 's',
+      });
+      expect(p.fields['glossary'], '(明鏡 第三版) たいそう');
+      expect(p.fields['note'], 'C++ primer', reason: '连续 ++ 不是分隔符，保持原样');
     });
   });
 }

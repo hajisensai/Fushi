@@ -8,12 +8,10 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
-import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
-import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
@@ -33,10 +31,10 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onOpenScrapeTasks,
     required this.onLibraryChanged,
     this.loadPendingScrapeWorks,
-    this.discoveryController,
-    this.discoveryActions = const VideoDiscoveryActions(),
     this.localLibraryPageBuilder,
-    this.discoveryPageBuilder,
+    this.mediaServerServersLoader,
+    this.mediaServerPageBuilder,
+    this.systemBackActive = true,
     super.key,
   });
 
@@ -57,12 +55,6 @@ class VideoLibraryShell extends StatefulWidget {
   /// null = 不接线（宿主测试），视频页的待确认提醒条静默不显示。
   final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
 
-  /// 在线发现的数据端口。生产环境由发现聚合服务注入；null 时页面呈现可重试的空态。
-  final VideoDiscoveryController? discoveryController;
-
-  /// 详情页的资源、字幕、订阅和播放动作端口。
-  final VideoDiscoveryActions discoveryActions;
-
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
     BuildContext context,
@@ -70,9 +62,19 @@ class VideoLibraryShell extends StatefulWidget {
     VideoLibrarySection section,
   )? localLibraryPageBuilder;
 
-  /// 仅供宿主定制或 widget 测试注入发现页，不改变惰性构建/保活语义。
+  /// 「媒体服务器」分区的已登录服务器清单（生产由 HomePage 从 SyncRepository
+  /// 装配）。null = 未接线（宿主测试），分区呈现空态。
+  final Future<List<MediaServerEntry>> Function()? mediaServerServersLoader;
+
+  /// 仅供宿主定制或 widget 测试注入媒体服务器页，不改变惰性构建/保活语义。
   final Widget Function(BuildContext context, Widget navigation)?
-      discoveryPageBuilder;
+      mediaServerPageBuilder;
+
+  /// 视频 tab 此刻是否是 HomePage 看得见的那个 tab。媒体服务器分区的嵌套栈靠
+  /// [NavigatorPopHandler] 接系统返回，而它登记在 HomePage 根路由上、不随
+  /// IndexedStack/Offstage 失效；宿主必须把可见性传进来，否则用户切去词典/设置 tab
+  /// 按 Android 返回会静默 pop 一层看不见的分区栈（见 [MediaServerBrowsePage.systemBackActive]）。
+  final bool systemBackActive;
 
   @override
   State<VideoLibraryShell> createState() => _VideoLibraryShellState();
@@ -81,9 +83,18 @@ class VideoLibraryShell extends StatefulWidget {
 class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _section = VideoLibrarySection.home;
   VideoLibrarySection _localSection = VideoLibrarySection.home;
-  bool _discoverVisited = false;
+  bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
   bool _settingsVisited = false;
+
+  /// 分区页签的唯一身份。页签同一时刻只交给看得见的那个分区（[_navigationFor]），
+  /// 切分区时它从旧分区的页头挪到新分区的页头；给它一个壳持有的 [GlobalKey]，
+  /// 挪位置就是**同一个** State 换父节点，[TabController] 还停在旧下标、随后
+  /// 滑到新下标。没有这把 key，每个分区都挂一份全新的页签、以目标下标起步，指示条
+  /// 就只剩首页 / 系列 / 全部视图之间（它们共用一个 [HomeVideoPage]）会滑动。
+  final GlobalKey _navigationKey = GlobalKey(
+    debugLabel: 'video-library-sections',
+  );
 
   void _select(VideoLibrarySection value) {
     if (value == _section) return;
@@ -94,7 +105,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value == VideoLibrarySection.allVideos) {
         _localSection = value;
       }
-      if (value == VideoLibrarySection.discover) _discoverVisited = true;
+      if (value == VideoLibrarySection.mediaServers) {
+        _mediaServersVisited = true;
+      }
       if (value == VideoLibrarySection.sources) _sourcesVisited = true;
       if (value == VideoLibrarySection.settings) _settingsVisited = true;
     });
@@ -105,7 +118,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         VideoLibrarySection.series ||
         VideoLibrarySection.allVideos =>
           true,
-        VideoLibrarySection.discover ||
+        VideoLibrarySection.mediaServers ||
         VideoLibrarySection.sources ||
         VideoLibrarySection.settings =>
           false,
@@ -146,19 +159,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value: VideoLibrarySection.allVideos,
           label: t.video_library_all_videos,
         ),
-        // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删），
-        // **也同位**：本地库的各视图排完才是在线发现，最后才是管理类分区。此前发现夹在
-        // 首页与系列 / 全部视频之间，一排里「自己的库 → 推荐 → 自己的库」来回跳，是四个
-        // 模块里唯一的例外（2026-08-24 用户反馈）。
-        //
-        // iOS 上整段不声明（[StoreRestrictedCapability.externalDiscovery]）：发现页的
-        // 番剧条目全部通向资源索引器与种子获取，索引器不装配后它只剩空列表。分区不进
-        // tabs 列表，`_discoverVisited` 就永远是 false，下面 Stack 里那段也不会构建。
-        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
-          LibrarySectionTab<VideoLibrarySection>(
-            value: VideoLibrarySection.discover,
-            label: t.library_view_browse,
-          ),
+        // 媒体服务器是用户自己的库（只是远端的），排在本地库视图之后、管理类分区之前。
+        // 在线发现 2026-09-27 起只住在顶层「浏览」模块（`browse_page.dart`）。
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.mediaServers,
+          label: t.video_library_media_servers,
+        ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
           label: t.library_view_import,
@@ -169,6 +175,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         ),
       ];
     final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
+      key: _navigationKey,
       tabs: tabs,
       selected: _section,
       onChanged: _select,
@@ -216,29 +223,32 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             ),
           ),
         ),
-        if (_discoverVisited)
+        if (_mediaServersVisited)
           Offstage(
-            offstage: _section != VideoLibrarySection.discover,
+            offstage: _section != VideoLibrarySection.mediaServers,
             child: ExcludeFocus(
-              excluding: _section != VideoLibrarySection.discover,
+              excluding: _section != VideoLibrarySection.mediaServers,
               child: TickerMode(
-                enabled: _section == VideoLibrarySection.discover,
+                enabled: _section == VideoLibrarySection.mediaServers,
                 child: _dropScoped(
-                  () => _section == VideoLibrarySection.discover,
-                  widget.discoveryPageBuilder?.call(
+                  () => _section == VideoLibrarySection.mediaServers,
+                  widget.mediaServerPageBuilder?.call(
                         context,
                         _navigationFor(
-                          _section == VideoLibrarySection.discover,
+                          _section == VideoLibrarySection.mediaServers,
                           navigation,
                         ),
                       ) ??
-                      VideoDiscoveryPage(
+                      MediaServerBrowsePage(
                         navigation: _navigationFor(
-                          _section == VideoLibrarySection.discover,
+                          _section == VideoLibrarySection.mediaServers,
                           navigation,
                         ),
-                        controller: widget.discoveryController,
-                        actions: widget.discoveryActions,
+                        systemBackActive: widget.systemBackActive &&
+                            _section == VideoLibrarySection.mediaServers,
+                        repo: widget.repository,
+                        loadServers: widget.mediaServerServersLoader ??
+                            () async => const <MediaServerEntry>[],
                       ),
                 ),
               ),

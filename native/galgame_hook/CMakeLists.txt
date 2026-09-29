@@ -623,6 +623,15 @@ target_include_directories(fushi_kirikiri_launch_profile_test PRIVATE "include")
 add_test(NAME fushi_kirikiri_launch_profile_test
   COMMAND fushi_kirikiri_launch_profile_test)
 
+# 加载器初始化门：KiriKiri launch profile（XP3 归档签名）+ exe 带 TLS 回调时，由主线程自己跑
+# 进程初始化再注入；含跨引擎负向（带 TLS 回调的非 KiriKiri 不过门）。
+add_executable(fushi_loader_init_gate_test
+  "tests/loader_init_gate_test.cpp"
+)
+target_include_directories(fushi_loader_init_gate_test PRIVATE "include")
+add_test(NAME fushi_loader_init_gate_test
+  COMMAND fushi_loader_init_gate_test)
+
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
 add_test(NAME fushi_luna_hook_config_test COMMAND fushi_luna_hook_config_test)
@@ -671,6 +680,15 @@ target_compile_definitions(fushi_lookup_ipc_contract_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_ipc_contract_test
   COMMAND fushi_lookup_ipc_contract_test)
+
+add_executable(fushi_game_stream_input_ipc_concurrency_test
+  tests/game_stream_input_ipc_concurrency_test.cpp)
+target_include_directories(fushi_game_stream_input_ipc_concurrency_test
+  PRIVATE include)
+target_compile_definitions(fushi_game_stream_input_ipc_concurrency_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_game_stream_input_ipc_concurrency_test
+  COMMAND fushi_game_stream_input_ipc_concurrency_test)
 
 add_executable(fushi_geometry_provider_registry_test
   tests/geometry_provider_registry_test.cpp)

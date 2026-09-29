@@ -7,15 +7,25 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- 全局悬浮球的截屏 OCR（ScreenOcrService）：每次截屏都经系统确认框，
+         只截一帧即停止投屏。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 互联配对链接写 NFC 贴纸（普通权限，不弹运行时授权框）。required=false：
+         没有 NFC 的设备照常能装，入口按 NfcAdapter 可用性自行降级。 -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="false"/>
     <application
         android:label="Fushi"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon_squircle"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         xmlns:tools="http://schemas.android.com/tools"
         tools:replace="android:label">
@@ -59,6 +69,21 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fushi" android:host="source" />
+            </intent-filter>
+            <!-- Interconnect pairing links (fushi://pair?…): QR codes scanned by the
+                 system camera, copied links, and NFC stickers all land here and go
+                 through the same confirm-then-pair flow
+                 (docs/specs/2026-09-28-interconnect-remote-reach.md §4). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fushi" android:host="pair" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="fushi" android:host="pair" />
             </intent-filter>
         </activity>
 
@@ -205,6 +230,35 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="clipboard_dictionary_overlay"/>
         </service>
+        <!-- 全局悬浮球（floating_ball.mode = system），契约见
+             docs/specs/2026-09-28-floating-ball.md。 -->
+        <service android:name=".FloatingBallService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_ball_overlay"/>
+        </service>
+        <!-- 截屏 OCR：mediaProjection 前台服务，截一帧 → ML Kit → 全屏选取层。 -->
+        <service android:name=".ScreenOcrService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"/>
+        <!-- 截屏确认框的透明宿主。独立 taskAffinity：从悬浮球（Fushi 在后台）拉起时不能
+             把 Fushi 主任务带到前台，否则截到的是 Fushi 而不是用户眼前的 app。
+             不用 noHistory：noHistory 的 Activity 收不到 onActivityResult。 -->
+        <activity
+            android:name=".ScreenCaptureRequestActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:taskAffinity="app.fushi.reader.screencapture"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
+            android:launchMode="singleTop"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
+        <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
+             防止切到后台后进程被杀、下载随之中断。 -->
+        <service android:name=".DownloadKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
         <!-- 暂时取消无障碍权限的申请：注释掉无障碍服务声明，app 不再出现在
              系统「无障碍」列表里，悬浮词典仅靠剪贴板+手动搜索。后面再决定是否恢复。
              恢复方法：取消本段注释即可（Java/xml/提示文案均保留未删）。

@@ -9,8 +9,14 @@ void CaptureSiglusLookupGlyph(void* self, uint8_t result,
   const uintptr_t module = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr || profile->glyph_abi != abi ||
-      return_address < module ||
-      return_address - module != profile->dialogue_glyph_return_rva) return;
+      return_address < module) return;
+  const uintptr_t caller = return_address - module;
+  // Only the proved choice caller joins the dialogue caller; name plates and
+  // every other text object stay out of the lookup line.
+  const bool selection = profile->selection_glyph_return_rva != 0 &&
+      caller == profile->selection_glyph_return_rva &&
+      abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments;
+  if (!selection && caller != profile->dialogue_glyph_return_rva) return;
   const bool eightarg = abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments;
   uint32_t ordinal = 0, count = 0;
   fushi_voice_hook::siglus_eightarg_owner::Vector vector;
@@ -35,7 +41,9 @@ void CaptureSiglusLookupGlyph(void* self, uint8_t result,
             profile->viewport_height, &glyph)) {
       if (eightarg) CaptureSiglusEightArgGlyphRecord(glyph, ordinal, count, vector);
       else PublishSiglusLookupGlyphEvent(glyph.code_unit, glyph.x, glyph.y,
-                                         glyph.extent);
+                                         glyph.extent,
+                                         selection ? kSiglusLookupGlyphEventSelection
+                                                   : kSiglusLookupGlyphEventBody);
     } else if (abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments) {
       PublishSiglusLookupGlyphInvalidation();
     }

@@ -173,6 +173,16 @@ class FakeElement {
     delete this.attributes[name];
   }
 
+  // BUG-2627：`fushiPopupMineEntryByIndex` 用的是真 DOM 的 `el.click()`（而不是直接
+  // 调 onclick）——生产代码借它复用按钮自己的全部制卡/查重/覆写逻辑。真 DOM 上
+  // disabled 的按钮点了不派发 activation，照此实现。
+  click() {
+    if (this.disabled) {
+      return undefined;
+    }
+    return typeof this.onclick === 'function' ? this.onclick() : undefined;
+  }
+
   addEventListener(type, handler) {
     if (!this.listeners[type]) {
       this.listeners[type] = [];
@@ -237,6 +247,23 @@ class FakeElement {
   // 因为 rewriteExportedGlossaryAnchors 用的是 'a[href]'。真 DOM 返回 NodeList，
   // 生产代码只对它 .forEach，所以这里返回数组即可。
   querySelectorAll(selector) {
+    // BUG-2627：`fushiPopupMineEntryByIndex` 按 `:scope > .entry` 取**直接子节点**的
+    // DOM 序——那正是「调整上下文」按钮记下 entryIndex 时用的同一套索引。深度遍历
+    // 会把嵌套节点也算进来，索引就和生产不同源了，故单独一条直接子节点分支。
+    const scoped = selector.match(/^:scope\s*>\s*(.+)$/);
+    if (scoped) {
+      const inner = scoped[1].trim();
+      const p = inner.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?$/);
+      if (!p || (!p[1] && !p[2])) {
+        return [];
+      }
+      const tag = p[1] ? p[1].toUpperCase() : null;
+      const cls = p[2] || null;
+      return (this.children ?? []).filter(
+        (el) =>
+          (tag === null || el.tagName === tag) &&
+          (cls === null || (!!el.classList && el.classList.contains(cls))));
+    }
     const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/);
     if (!parsed || (!parsed[1] && !parsed[2] && !parsed[3])) {
       return [];
@@ -3098,4 +3125,384 @@ async function testQueueFailureKeepsPlusAndAllowsRetry() {
 Promise.all([
   testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
   testQueueFailureKeepsPlusAndAllowsRetry(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+// 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。
+//
+// 为什么需要这条入口：查词时探测出的 ✓ 画完就不再动。AnkiMobile 后端上「卡真的进库
+// 了」比 mineEntry 返回晚好几秒（x-callback 的 x-success 回跳，Dart 侧
+// AnkiMobileMinedLedger），所以制卡后紧跟着那次 refreshFromAnki 必然问在落账之前、
+// 拿到 false —— 用户报「iOS 添加完卡片并没有出现打勾，要重新点一次词才出现」。落账
+// 那一侧（Dart: MinedStateSignal）拿到真值后回头调本入口，✓ 才画得对。
+//
+// 刷新从 __fushiRootNode() 往下找按钮，而 harness 的 document 是最小实现、没有
+// querySelectorAll。走 BUG-688 的 shadow-root 车道：把 header 挂进一个真 FakeElement
+// 交给 window.__fushiRoot，与扩展里弹窗活在 shadow root 的形态一致。
+function mountMineHeaderFor(context, expression) {
+  let root = context.window.__fushiRoot;
+  if (!root) {
+    root = context.document.createElement('div');
+    context.window.__fushiRoot = root;
+  }
+  const entry = {
+    expression,
+    reading: expression,
+    matched: expression,
+    frequencies: [],
+    pitches: [],
+    rules: [],
+  };
+  const header = context.createEntryHeader(entry, 0);
+  root.appendChild(header);
+  const hasClass = (node, name) =>
+    (node.className || '').split(/\s+/).includes(name) ||
+    (node.classList && node.classList.contains(name));
+  const findMine = (node) => {
+    if (hasClass(node, 'mine-button')) return node;
+    for (const child of node.children ?? []) {
+      const found = findMine(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const mineButton = findMine(header);
+  assert.ok(mineButton, 'mine button was not created');
+  return mineButton;
+}
+
+async function testHostRefreshPaintsMinedStateAfterLateLedgerWrite() {
+  const context = loadPopup();
+  // 账本：AnkiMobile 还没回跳，所以制卡刚返回时它仍然说「没有这张卡」。
+  let mined = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(mined);
+    if (name === 'mineEntry') {
+      return Promise.resolve({ ankiConnect: true, noteId: null });
+    }
+    return Promise.resolve(null);
+  };
+
+  const button = mountMineHeaderFor(context, '刀');
+  await flush();
+  assert.equal(button.textContent, '+', 'lookup-time state is 可制卡');
+
+  await button.onclick();
+  await flush();
+  assert.equal(
+    button.textContent,
+    '+',
+    'mineEntry 返回时账本还没落账，此刻画 ✓ 就是说谎',
+  );
+
+  // x-success 回跳 → 账本落账 → 宿主回头刷这个词。
+  mined = true;
+  const refreshed = await context.window.fushiRefreshMineStates({
+    expression: '刀',
+  });
+  await flush();
+  assert.equal(refreshed, 1, '宿主刷新必须命中那颗按钮');
+  assert.equal(button.textContent, '✓', '落账后 ✓ 立刻亮，不必重新查词');
+  assert.equal(button.dataset.mined, '1');
+  assert.ok(button.classList.contains('duplicate'));
+
+  // 指名别的词不得连坐（一次落账只该动那一个词条）。
+  const other = await context.window.fushiRefreshMineStates({
+    expression: '剣',
+  });
+  assert.equal(other, 0, '别的词头不该被这次刷新带走');
+}
+
+async function testHostRefreshWithoutTargetOnlyRepaintsProbedButtons() {
+  const context = loadPopup();
+  let mined = true;
+  let duplicateCalls = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') {
+      duplicateCalls++;
+      return Promise.resolve(mined);
+    }
+    return Promise.resolve(null);
+  };
+
+  const button = mountMineHeaderFor(context, '刀');
+  // 还没 flush：初始探测在途，这颗按钮还没有过真值。
+  assert.equal(
+    await context.window.fushiRefreshMineStates(),
+    0,
+    '范围未知的刷新不得把没探测过的按钮拖去发桥（BUG-1833 的懒探测）',
+  );
+
+  await flush();
+  assert.equal(button.textContent, '✓');
+
+  // 用户切到 Anki 里删掉这张卡再切回前台：复核必须把 ✓ 降回 +。能回读 Anki 的后端
+  // （AnkiConnect / AnkiDroid）每次都真问，所以这一跳就是「删掉后自动纠正」。
+  mined = false;
+  const before = duplicateCalls;
+  assert.equal(
+    await context.window.fushiRefreshMineStates(),
+    1,
+    '探测过的按钮要跟着切回前台复核',
+  );
+  await flush();
+  assert.equal(duplicateCalls, before + 1, '复核恰好重问一次');
+  assert.equal(button.textContent, '+', 'Anki 里已经没有这张卡了，✓ 必须收回');
+  assert.notEqual(button.dataset.mined, '1');
+}
+
+async function testHostRefreshKeepsMinedStateWhenBridgeThrows() {
+  const context = loadPopup();
+  let fail = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') {
+      if (fail) return Promise.reject(new Error('bridge gone'));
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(null);
+  };
+
+  const button = mountMineHeaderFor(context, '刀');
+  await flush();
+  assert.equal(button.textContent, '✓');
+
+  // 刷新失败绝不把 ✓ 抹回 +：那会诱导用户再制一张重复卡，比不刷新更糟。
+  fail = true;
+  const errors = [];
+  const realError = context.console.error;
+  context.console.error = (...args) => errors.push(args);
+  try {
+    await context.window.fushiRefreshMineStates({ expression: '刀' });
+  } finally {
+    context.console.error = realError;
+  }
+  await flush();
+  assert.equal(button.textContent, '✓', '桥挂了要保持现状，不得抹掉 ✓');
+  assert.equal(button.dataset.mined, '1');
+  // 按内容断言而不是数总条数：本文件的用例是并行跑的，console 是共享对象，
+  // 数量断言会被别的用例（例如制卡失败那条）打进来的日志搅黄。
+  assert.ok(
+    errors.some((a) => String(a[0]).includes('refreshMineState failed')),
+    '刷新失败要留下诊断日志，不许静默',
+  );
+}
+
+Promise.all([
+  testHostRefreshPaintsMinedStateAfterLateLedgerWrite(),
+  testHostRefreshWithoutTargetOnlyRepaintsProbedButtons(),
+  testHostRefreshKeepsMinedStateWhenBridgeThrows(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+
+// -- BUG-2627: "confirm mining" round-trip from the sentence-context dialog ----
+//
+// 「确认制卡」不是一句本地调用：宿主 Dart 侧没有「制卡指定词条」的直接入口
+// （mineEntry 契约要求 JS 先构造 payload），所以它是一次「Dart →
+// `window.fushiPopupMineEntryByIndex(idx)` → 点第 idx 个词条的 .mine-button」的往返。
+// 这个函数此前**全仓没有任何一条断言它真的点到了按钮**：三条 `return false`
+// （容器里一个 .entry 都没有 / entries[idx] 越界 / 该词条没有 .mine-button 或按钮
+// disabled）在 Dart 侧又被整个丢弃，于是「弹窗栈在回点之前被关掉」这类竞态长成同一个
+// 无声症状——对话框关了、卡没制出来、一句提示都没有（用户报「视频调整上下文制卡不行」）。
+//
+// 索引必须与「调整上下文」按钮记 entryIndex 时同源（`:scope > .entry` 的直接子节点
+// DOM 序），否则用户在第 2+ 个词条上确认会去点第一个词条（BUG-1326 的形态）。
+function mountEntriesWith(context, expressions) {
+  const root = context.document.createElement('div');
+  context.window.__fushiRoot = root;
+  const container = context.document.createElement('div');
+  root.appendChild(container);
+  const mineButtons = [];
+  const hasClass = (node, name) =>
+    (node.className || '').split(/\s+/).includes(name) ||
+    (node.classList && node.classList.contains(name));
+  const findMine = (node) => {
+    if (hasClass(node, 'mine-button')) return node;
+    for (const child of node.children ?? []) {
+      const found = findMine(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  expressions.forEach((expression, index) => {
+    const entry = context.document.createElement('div');
+    entry.className = 'entry';
+    entry.classList.add('entry');
+    const header = context.createEntryHeader(
+      {
+        expression,
+        reading: expression,
+        matched: expression,
+        frequencies: [],
+        pitches: [],
+        rules: [],
+      },
+      index,
+    );
+    entry.appendChild(header);
+    container.appendChild(entry);
+    const mineButton = findMine(entry);
+    assert.ok(mineButton, `mine button missing for ${expression}`);
+    mineButtons.push(mineButton);
+  });
+  return mineButtons;
+}
+
+function stubMineBridge(context, mined) {
+  context.window.allowDupes = true;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: 7 });
+    }
+    return Promise.resolve(null);
+  };
+}
+
+async function testConfirmMiningClicksTheRequestedEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+
+  // 第 2 个词条（idx=1）——用户在哪个词条上点的「调整上下文」，确认就必须回点哪个。
+  assert.equal(await context.window.fushiPopupMineEntryByIndex(1), true,
+    'clicking an existing entry must report success');
+  // 回点返回的 promise 只在 mineEntry **落地后**才 resolve——Dart 侧据它关对话框、
+  // 撤弹窗保护；若它在 onclick 跑完之前就回 true，保护撤了往返还在路上（BUG-2627
+  // 审查）。这里不 flush 就断言，钉的正是这个时序。
+  assert.equal(mined.length, 1,
+    'the promise must not resolve before mineEntry landed');
+  await flush();
+
+  assert.equal(mined.length, 1, 'exactly one card is mined');
+  assert.equal(mined[0].expression, '事典',
+    'confirm must mine the entry the dialog was opened from, not the first one');
+}
+
+async function testConfirmMiningReportsMissingEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['辞書']);
+  await flush();
+
+  assert.equal(context.window.fushiPopupMineEntryByIndex(3), false,
+    'an out-of-range entry index must report failure, not silently do nothing');
+  await flush();
+  assert.equal(mined.length, 0, 'nothing is mined when the entry is not there');
+}
+
+async function testConfirmMiningReportsEmptyPopup() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  // 弹窗栈在回点之前被关掉 → 热槽被还原成空种子，容器里一个 .entry 都没有。
+  // 这就是 BUG-2627 用户看到的那一幕，它必须回 false 让宿主说得出话。
+  context.window.__fushiRoot = context.document.createElement('div');
+  await flush();
+
+  assert.equal(context.window.fushiPopupMineEntryByIndex(0), false,
+    'a dismissed popup must report failure so the host can tell the user');
+  assert.equal(mined.length, 0);
+}
+
+async function testConfirmMiningReportsDisabledButton() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const buttons = mountEntriesWith(context, ['辞書']);
+  await flush();
+  // 上一次点击还在飞（单飞守卫把按钮 disable 住）。
+  buttons[0].disabled = true;
+
+  assert.equal(context.window.fushiPopupMineEntryByIndex(0), false,
+    'a disabled mine button must report failure instead of a no-op click');
+  await flush();
+  assert.equal(mined.length, 0);
+}
+
+Promise.all([
+  testConfirmMiningClicksTheRequestedEntry(),
+  testConfirmMiningReportsMissingEntry(),
+  testConfirmMiningReportsEmptyPopup(),
+  testConfirmMiningReportsDisabledButton(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+// ── 收藏夹一键制卡：fushiPopupBuildMinePayloadFor ─────────────────────────────
+// 批量制卡要的是「与手动点 + 逐字段相同的 payload」，但不能点按钮、不能走 mineEntry
+// 桥（落卡由 Dart 批量流程自己做）。这里钉住：选中的词条下标、payload 与该词条一致、
+// 被隐藏词典过滤空的词条不被选中、全程零 mineEntry 桥调用、没有词条时回 null。
+function favoriteBatchEntries() {
+  const gloss = (dictionary, text) => ({
+    dictionary,
+    content: {tag: 'span', content: text},
+    definitionTags: '',
+    termTags: '',
+  });
+  return [
+    {
+      expression: '生', reading: 'せい', matched: '生',
+      frequencies: [], pitches: [], rules: [],
+      glossaries: [gloss('hiddenDict', 'life (hidden)')],
+    },
+    {
+      expression: '生', reading: 'なま', matched: '生',
+      frequencies: [], pitches: [], rules: [],
+      glossaries: [gloss('dict', 'raw')],
+    },
+    {
+      expression: '生きる', reading: 'いきる', matched: '生',
+      frequencies: [], pitches: [], rules: [],
+      glossaries: [gloss('dict', 'to live')],
+    },
+  ];
+}
+
+async function testFavoriteBatchPayloadPicksExactHeadword() {
+  const context = loadPopup();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'mineEntry') mined.push(payload);
+    return Promise.resolve(null);
+  };
+  context.window.hiddenDictionaryNames = ['hiddenDict'];
+  context.window.lookupEntries = favoriteBatchEntries();
+
+  const exact = await context.window.fushiPopupBuildMinePayloadFor('生きる', 'いきる');
+  assert.equal(exact.entryIndex, 2, 'expression + reading match wins');
+  assert.equal(exact.expression, '生きる');
+  assert.equal(exact.reading, 'いきる');
+  assert.ok(exact.glossary.includes('to live'),
+    'glossary is built from the picked entry');
+  assert.ok(!exact.glossary.includes('raw'),
+    'glossary must not leak another entry');
+
+  const byReading = await context.window.fushiPopupBuildMinePayloadFor('生', 'なま');
+  assert.equal(byReading.entryIndex, 1);
+
+  // 读音对不上 → 退到「仅表记相同」，且跳过被隐藏词典过滤空的第 0 条。
+  const expressionOnly = await context.window.fushiPopupBuildMinePayloadFor('生', 'しょう');
+  assert.equal(expressionOnly.entryIndex, 1,
+    'an entry emptied by hidden dictionaries must not be picked');
+
+  // 完全不相干 → 第一条**有可见释义**的词条。
+  const fallback = await context.window.fushiPopupBuildMinePayloadFor('無関係', '');
+  assert.equal(fallback.entryIndex, 1);
+
+  assert.equal(mined.length, 0, 'building a payload must never cross the mineEntry bridge');
+}
+
+async function testFavoriteBatchPayloadWithoutEntriesIsNull() {
+  const context = loadPopup();
+  context.window.lookupEntries = [];
+  assert.equal(await context.window.fushiPopupBuildMinePayloadFor('猫', 'ねこ'), null);
+  context.window.lookupEntries = undefined;
+  assert.equal(await context.window.fushiPopupBuildMinePayloadFor('猫', 'ねこ'), null);
+}
+
+Promise.all([
+  testFavoriteBatchPayloadPicksExactHeadword(),
+  testFavoriteBatchPayloadWithoutEntriesIsNull(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });

@@ -24,21 +24,43 @@ const String kVideoMetadataLocalePref = 'video_metadata_locale';
 const String kVideoMetadataIdentifierWordsPref =
     'video_metadata_identifier_words';
 const String kVideoAniDbHashEnabledPref = 'video_anidb_hash_enabled';
+
+/// 每部作品每类图保留张数上限（Shoko `TMDB.MaxAutoPosters` / `MaxAutoBackdrops`
+/// / `MaxAutoLogos`，默认都是 10；0 = 不限）。分集剧照恒 1（`MaxAutoThumbnails`）。
+const String kVideoMetadataMaxCoversPref = 'video_metadata_max_covers';
+const String kVideoMetadataMaxBackdropsPref = 'video_metadata_max_backdrops';
+const String kVideoMetadataMaxLogosPref = 'video_metadata_max_logos';
+const int kVideoMetadataDefaultMaxImages = 10;
+
+/// 刮削时把演职员头像下到本地（Shoko `TMDB.AutoDownloadStaffImages`）。默认关：
+/// Shoko 默认 `AutoDownloadCrewAndCast = false` 根本不拉人物，本仓照片走按需
+/// 缓存已等价；开了才落地，每部作品最多 [kVideoMetadataMaxStaffImages] 张
+/// （Shoko `MaxAutoStaffImages`）。
+const String kVideoMetadataStaffImagesPref =
+    'video_metadata_download_staff_images';
+const int kVideoMetadataMaxStaffImages = 10;
 const String kVideoAniDbUsernamePref = 'video_anidb_username';
 const String kVideoAniDbPasswordPref = 'video_anidb_password';
 
-/// 全局主资料源偏好（`mal` / `tmdb`）。另一个源恒为兜底源；默认 MAL 沿用
-/// 2026-09-07 的决定，用户可切 TMDB。
+/// 全局主资料源偏好（`anidb` / `mal` / `tmdb`）。2026-09-20 用户拍板对齐 Shoko：
+/// 默认 **AniDB 为主源**（哈希给出的 aid 直接就是作品身份，anime XML 出核心资料
+/// 与全集播出日），TMDB 补充 / 兜底；MAL 保留为可选主源（MAL ↔ TMDB 互为兜底），
+/// AniDB 主源下 MAL 只是交叉引用（Shoko `CrossRef_AniDB_MAL`）。
 const String kVideoMetadataPrimaryProviderPref =
     'video_metadata_primary_provider';
 
-/// 用户可选的主资料源全集。注册进生产 registry 的就是这两家；其余枚举值
-/// （AniDB / Bangumi / Douban / AniList / Fanart）只是历史身份兼容，不可选。
+/// 用户可选的主资料源全集。注册进生产 registry 的就是这三家；其余枚举值
+/// （Bangumi / Douban / AniList / Fanart）只是历史身份兼容，不可选。
 const List<VideoMetadataProviderKind> kSelectableVideoMetadataProviders =
     <VideoMetadataProviderKind>[
+  VideoMetadataProviderKind.anidb,
   VideoMetadataProviderKind.mal,
   VideoMetadataProviderKind.tmdb,
 ];
+
+/// 默认主源（Shoko 形态）。
+const VideoMetadataProviderKind kDefaultVideoMetadataPrimaryProvider =
+    VideoMetadataProviderKind.anidb;
 
 /// 把偏好值 / `provider_override` 列值解析成可选主源；非法或历史值（如旧
 /// `bangumi` override）返回 `null`，由调用方回落到全局默认。
@@ -52,12 +74,13 @@ VideoMetadataProviderKind? parseSelectableVideoMetadataProvider(
       : null;
 }
 
-/// 双源策略里某个主源的兜底源：MAL ↔ TMDB 互为兜底；其它主源（AniDB 等
-/// 单源语义）没有兜底。
+/// 双源策略里某个主源的兜底源：AniDB → TMDB（Shoko：TMDB 恒为 AniDB 的补充）；
+/// MAL ↔ TMDB 互为兜底；其它历史主源没有兜底。
 VideoMetadataProviderKind? videoMetadataFallbackProvider(
   VideoMetadataProviderKind primary,
 ) =>
     switch (primary) {
+      VideoMetadataProviderKind.anidb => VideoMetadataProviderKind.tmdb,
       VideoMetadataProviderKind.mal => VideoMetadataProviderKind.tmdb,
       VideoMetadataProviderKind.tmdb => VideoMetadataProviderKind.mal,
       _ => null,
@@ -82,9 +105,27 @@ class VideoSourceScrapeGlobalConfig {
     this.anidbUsername = '',
     this.anidbPassword = '',
     this.locale = kFallbackVideoMetadataLocale,
-    this.primaryProvider = VideoMetadataProviderKind.mal,
+    this.primaryProvider = kDefaultVideoMetadataPrimaryProvider,
     this.identifierWords = ScrapeIdentifierWords.empty,
+    this.maxCovers = kVideoMetadataDefaultMaxImages,
+    this.maxBackdrops = kVideoMetadataDefaultMaxImages,
+    this.maxLogos = kVideoMetadataDefaultMaxImages,
+    this.downloadStaffImages = false,
   });
+
+  /// 每类图保留张数（0 = 不限），见 [kVideoMetadataMaxCoversPref] 等。
+  final int maxCovers, maxBackdrops, maxLogos;
+
+  /// 见 [kVideoMetadataStaffImagesPref]。
+  final bool downloadStaffImages;
+
+  /// 图种 → 上限，喂 `selectVideoMetadataImages(maxPerKind:)`。
+  Map<VideoMetadataImageKind, int> get maxImagesPerKind =>
+      <VideoMetadataImageKind, int>{
+        VideoMetadataImageKind.cover: maxCovers,
+        VideoMetadataImageKind.backdrop: maxBackdrops,
+        VideoMetadataImageKind.logo: maxLogos,
+      };
 
   /// 全局主资料源（来源级 `provider_override` 可覆盖）；另一个可选源恒为兜底。
   final VideoMetadataProviderKind primaryProvider;
@@ -101,6 +142,37 @@ class VideoSourceScrapeGlobalConfig {
         clientName: anidbClientName,
         clientVersion: anidbClientVersion ?? 0,
       );
+
+  /// 哈希识别在本快照下会不会真的跑：开关打开且 UDP 凭据 / 客户端身份完整，
+  /// 与协调器里 `AnidbHashIdentityService` 的 `enabled` + `isConfigured` 同一判据。
+  ///
+  /// 设置页状态、首页「配置在线服务」提醒都读这个，别再各自按偏好键名判空：
+  /// 客户端名留空时 [resolveAniDbAppClient] 走内置 `fushiplayer`，按键名判空会把
+  /// 「测试登录」已成功的账号标成「未配置」（BUG-2586）。
+  bool get anidbHashReady => hashEnabled && anidbUdpConfig.isAvailable;
+
+  /// 装配点判「配置变没变、要不要重建协调器 / 发现服务」的唯一指纹。
+  ///
+  /// 所有会被烘进 [VideoSourceScrapeCoordinator] / `VideoDiscoveryService`
+  /// 构造快照的字段都必须在这里：BUG-2581 手动刮削装配点自己手写指纹时漏掉了
+  /// `hashEnabled` / 用户名 / 密码，用户填好 AniDB 账号后仍复用旧协调器，
+  /// 旧协调器里的 `AnidbHashIdentityService` 还是构建时那份「未配置」快照。
+  String get runtimeFingerprint => <Object>[
+        tmdbApiKey,
+        anidbClientName,
+        anidbClientVersion ?? 0,
+        hashEnabled,
+        anidbUsername,
+        anidbPassword,
+        locale,
+        primaryProvider.name,
+        identifierWords.source,
+        maxCovers,
+        maxBackdrops,
+        maxLogos,
+        downloadStaffImages,
+      ].join('\u0000');
+
   /// 本批次的**全局**资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，所以
   /// 消费端一律从**有效** locale 派生语言参数（`VideoSourceScrapeCoordinator._locale`
   /// / provider 的 `language`），不要在这里加一个从全局 locale 派生的 getter——
@@ -133,6 +205,14 @@ class VideoSourceScrapeGlobalConfig {
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
+    int readLimit(String key) {
+      final Object? raw =
+          preferences.getPref(key, defaultValue: kVideoMetadataDefaultMaxImages);
+      final int value = raw is int
+          ? raw
+          : int.tryParse('$raw') ?? kVideoMetadataDefaultMaxImages;
+      return value < 0 ? kVideoMetadataDefaultMaxImages : value;
+    }
     final String uiLocale = uiLocaleTag.trim().isEmpty
         ? kFallbackVideoMetadataLocale
         : uiLocaleTag.trim();
@@ -158,12 +238,17 @@ class VideoSourceScrapeGlobalConfig {
       primaryProvider: parseSelectableVideoMetadataProvider(
             read(kVideoMetadataPrimaryProviderPref),
           ) ??
-          VideoMetadataProviderKind.mal,
+          kDefaultVideoMetadataPrimaryProvider,
       // 解析失败不抛：非法行在这里被丢弃，错误说明由设置页自己再解析一次展示。
       identifierWords: ScrapeIdentifierWords.parse(
         preferences.getPref(kVideoMetadataIdentifierWordsPref, defaultValue: '')
             as String,
       ).identifierWords,
+      maxCovers: readLimit(kVideoMetadataMaxCoversPref),
+      maxBackdrops: readLimit(kVideoMetadataMaxBackdropsPref),
+      maxLogos: readLimit(kVideoMetadataMaxLogosPref),
+      downloadStaffImages: preferences.getPref(kVideoMetadataStaffImagesPref,
+          defaultValue: false) as bool,
     );
   }
 }

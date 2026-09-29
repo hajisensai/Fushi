@@ -41,6 +41,14 @@ const repoRoot = join(scriptsDir, '..', '..', '..');
 
 const POPUP_CSS = join(repoRoot, 'fushi', 'assets', 'popup', 'popup.css');
 const OVERLAY = join(scriptsDir, 'content-css-overlay.css');
+// 扩展自有界面的调色板（theme.css，:root 级）。页内浮层（抽屉 / 字幕覆盖层 / 拖放提示 /
+// 排队 chip / toast）也要吃同一套 --fushi-* token，但 content.css 注入的是宿主页，绝不能
+// 往宿主 :root 写变量——这里把 theme.css 的 `:root` 重根到那几个 #fushi-* 宿主上再拼进去
+// （零特异性 :where，与 popup.css 重根同一取向）。明暗：宿主上有 data-theme 走显式块，
+// 没有走 prefers-color-scheme 块，与扩展页面上的 theme.css 语义完全一致。
+const THEME_CSS = join(repoRoot, 'tools', 'browser-extension', 'theme.css');
+const IN_PAGE_THEME_HOSTS =
+  ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)';
 const OUTPUTS = [
   join(repoRoot, 'tools', 'browser-extension', 'vendor', 'content.css'),
   join(repoRoot, 'fushi', 'assets', 'browser_extension', 'vendor', 'content.css'),
@@ -268,8 +276,21 @@ function generate() {
   // Normalize the popup.css portion: collapse any 3+ newline runs left by drops
   // into a single blank line, then append the extension-only overlay.
   out = out.replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n\n';
+  out += rerootThemeCss(readFileSync(THEME_CSS, 'utf8')) + '\n\n';
   out += overlay.replace(/^\s+/, '').replace(/\s+$/, '') + '\n';
   return out;
+}
+
+/** theme.css（:root 级 token）→ 重根到页内 #fushi-* 宿主；去掉文件头注释（那段讲的是扩展页面）。 */
+function rerootThemeCss(css) {
+  const body = css.replace(/^\s*\/\*[\s\S]*?\*\/\s*/, '');
+  if (!/:root/.test(body)) {
+    throw new Error('[generate-content-css] theme.css has no :root token block — nothing to re-root');
+  }
+  return (
+    '/* ── theme.css tokens, re-rooted to the in-page hosts (generated; edit theme.css) ── */\n' +
+    body.replace(/:root/g, IN_PAGE_THEME_HOSTS).replace(/\s+$/, '')
+  );
 }
 
 function main() {

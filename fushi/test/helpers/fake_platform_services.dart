@@ -102,6 +102,8 @@ PlatformServices fakePlatformServices({
   bool isMobile = false,
   bool? isWindows,
   bool? isDesktop,
+  bool? isIOS,
+  bool? isAndroid,
 }) {
   return PlatformServices(
     directory: directory ?? FakeDirectoryService(),
@@ -114,5 +116,7 @@ PlatformServices fakePlatformServices({
     isMobile: isMobile,
     isWindows: isWindows,
     isDesktop: isDesktop,
+    isIOS: isIOS,
+    isAndroid: isAndroid,
   );
 }

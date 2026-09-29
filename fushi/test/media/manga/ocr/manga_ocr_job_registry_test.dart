@@ -326,5 +326,248 @@ void main() {
       expect(c, isNotNull);
       await registry.cancelAll();
     });
+
+    test('跨书全局名额：上限 1 时第二本书等第一本结束才启动，等名额期间算排队中', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => 1,
+      );
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+        job: first.job('book-a', dirA),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book-b', dirB),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await startedA, isNotNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.running('book-b'), isNull, reason: '名额被 A 占着');
+      expect(second.controller.hasListener, isFalse, reason: '订阅即启动');
+      expect(registry.queuedDirectories('book-b'), <String>[dirB]);
+
+      await first.controller.close();
+      expect(await startedB, isNotNull);
+      expect(registry.running('book-b')!.job.managedDirectory, dirB);
+      await registry.cancelAll();
+    });
+
+    test('等名额期间被 cancel 的书不启动，名额顺延给下一本', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => 1,
+      );
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final _FakeSource third = _FakeSource();
+      final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+        job: first.job('book-a', p.join(tmp.path, 'a')),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book-b', p.join(tmp.path, 'b')),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedC = registry.enqueue(
+        job: third.job('book-c', p.join(tmp.path, 'c')),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await startedA, isNotNull);
+      await registry.cancel('book-b');
+      await first.controller.close();
+      expect(await startedB, isNull);
+      expect(second.controller.hasListener, isFalse);
+      expect(await startedC, isNotNull, reason: 'B 放弃后名额必须顺延，不能卡死');
+      await registry.cancelAll();
+    });
+
+    test('并发从 1 调到 3：原任务未结束也立即启动两个排队任务', () async {
+      int limit = 1;
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => limit,
+      );
+      final List<_FakeSource> sources = List<_FakeSource>.generate(
+        4,
+        (int _) => _FakeSource(),
+      );
+      final List<Future<MangaOcrRunningJob?>> started =
+          <Future<MangaOcrRunningJob?>>[
+            for (int i = 0; i < sources.length; i++)
+              registry.enqueue(
+                job: sources[i].job('book-$i', p.join(tmp.path, '$i')),
+                mangaJsonPath: mangaJsonPath,
+              ),
+          ];
+      final MangaOcrRunningJob first = (await started[0])!;
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        sources.skip(1).every((_FakeSource s) => !s.controller.hasListener),
+        isTrue,
+      );
+
+      limit = 3;
+      registry.refreshConcurrencyLimit();
+      expect(await started[1], isNotNull);
+      expect(await started[2], isNotNull);
+      expect(first.isEnded, isFalse, reason: '扩容不得靠先结束原任务来放行');
+      expect(sources[0].cancelled, isFalse);
+      expect(registry.all, hasLength(3));
+      expect(sources[3].controller.hasListener, isFalse);
+
+      await sources[0].controller.close();
+      expect(await started[3], isNotNull);
+      for (final _FakeSource source in sources.skip(1)) {
+        await source.controller.close();
+      }
+      await registry.cancelAll();
+    });
+
+    test('并发从 3 调到 1：保留已运行任务，归还足够名额后才启动后续任务', () async {
+      int limit = 3;
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => limit,
+      );
+      final List<_FakeSource> sources = List<_FakeSource>.generate(
+        5,
+        (int _) => _FakeSource(),
+      );
+      final List<Future<MangaOcrRunningJob?>> started =
+          <Future<MangaOcrRunningJob?>>[
+            for (int i = 0; i < sources.length; i++)
+              registry.enqueue(
+                job: sources[i].job('book-$i', p.join(tmp.path, '$i')),
+                mangaJsonPath: mangaJsonPath,
+              ),
+          ];
+      final List<MangaOcrRunningJob> running = <MangaOcrRunningJob>[
+        for (int i = 0; i < 3; i++) (await started[i])!,
+      ];
+
+      limit = 1;
+      registry.refreshConcurrencyLimit();
+      expect(running.every((MangaOcrRunningJob job) => !job.isEnded), isTrue);
+      expect(sources.take(3).every((_FakeSource s) => !s.cancelled), isTrue);
+      expect(registry.all, hasLength(3));
+
+      for (int i = 0; i < 2; i++) {
+        await sources[i].controller.close();
+        await running[i].whenEnded;
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          sources[3].controller.hasListener,
+          isFalse,
+          reason: '缩容后仍有运行任务时，不得用旧上限启动第四本书',
+        );
+        expect(sources[4].controller.hasListener, isFalse);
+      }
+      await sources[2].controller.close();
+      expect(await started[3], isNotNull);
+      expect(
+        sources[4].controller.hasListener,
+        isFalse,
+        reason: '归还全部旧名额后也只应按新上限启动一本',
+      );
+      await sources[3].controller.close();
+      expect(await started[4], isNotNull);
+      await sources[4].controller.close();
+      await registry.cancelAll();
+    });
+
+    test('不给上限（默认）：两本书同时跑', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      expect(
+        await registry.enqueue(
+          job: first.job('book-a', p.join(tmp.path, 'a')),
+          mangaJsonPath: mangaJsonPath,
+        ),
+        isNotNull,
+      );
+      expect(
+        await registry.enqueue(
+          job: second.job('book-b', p.join(tmp.path, 'b')),
+          mangaJsonPath: mangaJsonPath,
+        ),
+        isNotNull,
+      );
+      await registry.cancelAll();
+    });
+  });
+
+  group('resolveMangaOcrJobConcurrency（按设备自适应）', () {
+    test('手动并发 1～4 覆盖桌面自动值，0 恢复按核数自动选择', () {
+      for (int requested = 1; requested <= 4; requested++) {
+        expect(
+          resolveMangaOcrJobConcurrency(
+            isMobile: false,
+            lowMemoryMode: false,
+            processors: 2,
+            requestedTasks: requested,
+          ),
+          requested,
+        );
+      }
+      expect(
+        resolveMangaOcrJobConcurrency(
+          isMobile: false,
+          lowMemoryMode: false,
+          processors: 16,
+          requestedTasks: 0,
+        ),
+        2,
+      );
+    });
+
+    test('显式选择 4 也不能越过手机和低内存模式的单任务限制', () {
+      for (final (bool mobile, bool lowMemory) in <(bool, bool)>[
+        (true, false),
+        (false, true),
+        (true, true),
+      ]) {
+        expect(
+          resolveMangaOcrJobConcurrency(
+            isMobile: mobile,
+            lowMemoryMode: lowMemory,
+            processors: 32,
+            requestedTasks: 4,
+          ),
+          1,
+        );
+      }
+    });
+
+    test('手机与低内存模式只跑 1 卷', () {
+      expect(
+        resolveMangaOcrJobConcurrency(
+          isMobile: true,
+          lowMemoryMode: false,
+          processors: 8,
+        ),
+        1,
+      );
+      expect(
+        resolveMangaOcrJobConcurrency(
+          isMobile: false,
+          lowMemoryMode: true,
+          processors: 16,
+        ),
+        1,
+      );
+    });
+
+    test('桌面按核数给 1～2 卷', () {
+      int desktop(int processors) => resolveMangaOcrJobConcurrency(
+        isMobile: false,
+        lowMemoryMode: false,
+        processors: processors,
+      );
+      expect(desktop(2), 1);
+      expect(desktop(4), 1);
+      expect(desktop(8), 2);
+      expect(desktop(32), 2);
+    });
   });
 }

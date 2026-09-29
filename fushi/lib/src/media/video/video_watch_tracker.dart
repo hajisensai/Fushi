@@ -15,6 +15,19 @@ bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
   return positionMs / durationMs >= 0.9;
 }
 
+/// 远端播放断点是否值得写。只有**直播频道**（[isLiveChannel]：IPTV 频道列表导入的
+/// 频道行，由条目来源判定）才看时长：总时长未知或为 0 的直播，position 只是
+/// 「开播至今」，写进断点后下次起播会带 `start=<旧位置>` 落到直播窗口之外
+/// （黑屏 / 卡住），「继续观看」也会把频道当成看了一半的片子。
+///
+/// 其它远端（互联转码、Jellyfin 渐进式、普通直链……）即使 mpv 暂时报不出时长也
+/// 照常写——那是点播，断点是真的；按时长一刀切会让它们整段丢进度与上报。
+bool shouldPersistStreamPosition({
+  required bool isLiveChannel,
+  required int? durationMs,
+}) =>
+    !isLiveChannel || (durationMs != null && durationMs > 0);
+
 /// 一句 cue 计入字幕字数所需的最低真实播放停留（媒体时间，毫秒）。
 /// 短 cue 取自身时长为门（日语字幕大量 cue 短于该值，固定阈值会让它们永远不计）。
 ///
@@ -191,6 +204,11 @@ class VideoWatchTracker {
   /// 覆盖并集加载完成（测试等待用）。
   @visibleForTesting
   Future<void> get debugCoverageLoaded => _coverageLoad ?? Future<void>.value();
+
+  /// 模拟一次定时器采样（测试用：真定时器不在受控墙钟里，要验证「定时 tick 与
+  /// 播放源通知交错」的记账只能手动触发）。
+  @visibleForTesting
+  void debugSampleNow() => _sample();
 
   Future<void> _initCoverage() async {
     String? json;

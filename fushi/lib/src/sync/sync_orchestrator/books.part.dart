@@ -84,6 +84,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           index++;
           continue;
         }
+        // 在线小说占位书（LNReader）同理：推过去是一本补不全的书。
+        if (isLnReaderOnlineBookMetadata(row.sourceMetadata)) {
+          index++;
+          continue;
+        }
         tmp = _tmpFile('.epub');
         // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
         // EPUB → 既有 repackage。

@@ -3,14 +3,12 @@ part of '../video_fushi_page.dart';
 
 /// Dictionary-lookup mining (制卡) domain extracted via part-of (TODO-590
 /// batch14); shared private scope. Behaviour-preserving: every method body is
-/// moved character-for-character except two kinds of @protected-member
-/// normalisations forced by the extension boundary (an extension is not seen as
-/// an instance member of the State subclass, so it cannot call @protected
-/// members directly):
-/// the `recordMined()` call (inside [_mineVideoCard]) → routed through the
-/// main shell's `_recordMinedForVideo()` forwarder.
-/// That forwarder is the established part paradigm (pure 1-line delegation,
-/// zero behaviour change). No host-class static needed re-qualification: every collaborator
+/// moved character-for-character. The stat write that used to go through the
+/// mixin's @protected `recordMined()` (via a 1-line shell forwarder) is now
+/// [_recordVideoMineStat]: the same `recordMiningEvent` call, but on the
+/// database and identity frozen at click time, because an online-video card can
+/// land in the background after the page is gone (see [VideoOnlineMiningMode]).
+/// No host-class static needed re-qualification: every collaborator
 /// ([miningClipTimeMs], [resolveMiningCueForPosition],
 /// [extractClipGifViaFfmpeg], [extractAudioSegmentViaFfmpeg], [describeMineOutcome],
 /// [statTodayKey], [downsampleCardScreenshot], [AnkiMiningContext], etc.) is a
@@ -223,6 +221,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
       dateKey: statTodayKey(),
     );
 
+    final bool recordHistory = _sourceReviewSession == null;
+    // 后台落卡时页面可能已经关了：历史行写进点击时的库，不经 `ref`。
+    final FushiDatabase historyDb = appModel.database;
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
       // 音频/封面区间 = 合并后的首句起→末句止（单句即该 cue 时间窗，两端相等→不抽）。
@@ -231,7 +232,26 @@ extension _VideoLookupMining on _VideoFushiPageState {
       stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
+      historySnapshot: recordHistory ? historySnapshot : null,
+      // 在线视频后台制卡：卡在弹窗返回之后才落地，历史行跟着落地时再写。
+      onBackgroundLanded: (MinePopupResult landed) {
+        if (landed.ankiConnect && recordHistory) {
+          unawaited(_recordMinedSentenceForVideo(
+            historySnapshot,
+            landed.noteId,
+            db: historyDb,
+          ));
+        }
+      },
     );
+    if (result.queued) {
+      // 后台 / 看完再制卡：请求已冻结了草稿里的句子，当场清空（popup.js 在同一次回包
+      // 里把上下文角标归零），下一次查词从空草稿重新累积。与落卡路径同一道门：页面
+      // 已销毁或已换集就不碰新页面 / 新集的草稿。
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      _miningDraft.clear();
+      return result;
+    }
     // result.ankiConnect 是「制卡成功」信号（两后端成功时都置 true；noteId 仅
     // AnkiConnect 非空，故清选中句不能以 noteId 为判据，否则 AnkiDroid 成功也不清）。
     if (result.ankiConnect) {
@@ -305,9 +325,19 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required String sentence,
     String? cueSentence,
     int? updateNoteId,
+    VideoMiningHistorySnapshot? historySnapshot,
+    void Function(MinePopupResult result)? onBackgroundLanded,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return const MinePopupResult();
+    // 在线视频：弹窗等不等这张卡（见 [VideoOnlineMiningMode]）。覆盖已有卡片 / 回看会话
+    // 要拿到落卡结果才有意义，恒等待；本地文件本就秒出，恒等待（= 改动前行为）。
+    final VideoOnlineMiningMode onlineMode = resolveVideoOnlineMiningMode(
+      preferred: appModel.videoOnlineMiningMode,
+      mediaSource: controller.miningSource,
+      overwrite: updateNoteId != null,
+      sourceReview: _sourceReviewSession != null,
+    );
 
     // 入队前立即冻结所有播放器/页面输入。换集会复用或 dispose controller，后续任务绝不能
     // 到真正出队时再读“当前集”。截图 Future 也在点击当下启动，current-frame 模式不会因
@@ -321,8 +351,27 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 解析——否则顶格档会拿到 GIF 的封顶值，用户选了 AVIF 也享受不到原图档。
       format: appModel.videoMiningAnimatedFormat,
     );
-    final String? mediaSource = controller.miningSource;
+    String? mediaSource = controller.miningSource;
     final String? audioSource = controller.miningAudioSource;
+    // BUG-2642 残留：在线视频源（扩展 hoster / 粘贴的流）常把 HLS 分片伪装成图片——
+    // `.jpg` / `.image` 名、正文前垫一张 PNG。播放器经本机中继 + mpv 自己的放宽都能播，
+    // 制卡 ffmpeg 直连原始地址则被扩展名白名单拒掉、或把分片认成一张图。改走与播放器
+    // 同一条中继；地址当场改写（同步，保持点击顺序入队），登记在队列里等。
+    // 媒体服务器同理，判据见 [videoMiningInputUsesPlaybackRelay]。
+    Future<void>? mediaSourceRouteReady;
+    if (mediaSource != null &&
+        videoMiningInputUsesPlaybackRelay(
+          remoteClient: _effectiveRemoteClient,
+          mediaSource: mediaSource,
+        )) {
+      final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
+        mediaSource,
+        isHls: controller.isHlsStream(),
+        headers: _streamHttpHeaderFields,
+      );
+      mediaSource = relayed.url;
+      mediaSourceRouteReady = relayed.ready;
+    }
     final int? audioStreamIndex = controller.currentAudioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
     final int episode = _currentEpisode;
@@ -358,6 +407,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MiningAnimatedFormat animatedFormat =
         appModel.videoMiningAnimatedFormat;
     final MiningStillFormat stillFormat = appModel.videoMiningStillFormat;
+    final MiningClipFormat clipFormat = appModel.videoMiningClipFormat;
     final String? bookTitleTag = appModel.autoAddBookNameToTags
         ? BaseAnkiRepository.sanitizeTitleTag(_title)
         : null;
@@ -381,6 +431,73 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 连续点击可能因 path_provider 返回先后不同而逆序入队。
     final Future<String> tempDir =
         getTemporaryDirectory().then((Directory value) => value.path);
+    // 在线视频：这句多半刚播完、还在播放器缓冲里——点击当下就让播放器把它落成本地
+    // 副本（落盘毫秒级），引擎对副本抽取，不再为音频和封面各开一次远端流。必须现在
+    // 发起而不是等轮到本任务：那时缓冲可能已被挤掉、甚至已换集。分离音轨（YouTube）
+    // 不在播放的这条流里，不落副本。拿不到副本引擎照旧远端抽取。
+    final String? playbackSource = controller.miningSource;
+    final Future<CachedMediaSnapshot?>? cachedSnapshot =
+        playbackSource != null &&
+                isNetworkStreamUri(playbackSource) &&
+                audioSource == null &&
+                clipEndMs > clipStartMs
+            ? tempDir.then(
+                (String dir) => controller.snapshotCachedRange(
+                  startMs: math.min(clipStartMs, stillFrameAtMs),
+                  endMs: clipEndMs,
+                  outputPath: p.join(
+                    dir,
+                    'mine_snapshot_${DateTime.now().microsecondsSinceEpoch}.mkv',
+                  ),
+                ),
+              )
+            : null;
+    // 统计 / 历史归属在点击当下冻结：后台落卡时页面可能已经关了。
+    final FushiDatabase mineDb = appModel.database;
+    final ({String bookKey, String title}) statIdentity =
+        (bookKey: widget.bookUid, title: _title ?? '');
+    // 看完再制卡：媒体照常备好，但交给暂存队列而不是 Anki（见 [VideoMineQueue]）。
+    Future<MineOutcome> Function({
+      required String rawPayloadJson,
+      required AnkiMiningContext context,
+    })? stageNote;
+    if (onlineMode == VideoOnlineMiningMode.deferred) {
+      final Future<VideoMineQueue> queueFuture = _videoMineQueue();
+      final String queueBookUid = widget.bookUid;
+      final String videoKey = '$sourceUid#$sourceEpisode';
+      final VideoMineStagedMeta meta = VideoMineStagedMeta(
+        documentTitle: _videoMiningDocumentTitle(),
+        bookTitleTag: appModel.autoAddBookNameToTags
+            ? BaseAnkiRepository.sanitizeTitleTag(_title)
+            : null,
+        collectionTag: appModel.autoAddBookNameToTags
+            ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
+            : null,
+        statBookKey: statIdentity.bookKey,
+        statTitle: statIdentity.title,
+        recordHistory: historySnapshot != null,
+        historyDateKey: historySnapshot?.dateKey ?? '',
+        historyDocumentTitle: historySnapshot?.documentTitle,
+        historyBookKey: historySnapshot?.bookKey,
+        historySectionIndex: historySnapshot?.sectionIndex,
+        historyCueStartMs: historySnapshot?.normCharOffset,
+        historyCueLengthMs: historySnapshot?.normCharLength,
+      );
+      stageNote = ({
+        required String rawPayloadJson,
+        required AnkiMiningContext context,
+      }) async {
+        final VideoMineQueue queue = await queueFuture;
+        await queue.stage(
+          bookUid: queueBookUid,
+          videoKey: videoKey,
+          fields: decodeWebMineFields(rawPayloadJson),
+          context: context,
+          meta: meta,
+        );
+        return const MineOutcome.success();
+      };
+    }
     // BUG-891：远端 Hibiki 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
     // 已 TOFU 钉扎的证书指纹带给引擎，使 ffmpeg（自编 ffmpeg-kit `--enable-gnutls` + pin
     // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /
@@ -446,12 +563,18 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 中止」OSD 的原因）。语义由参数名承载，不再依赖时序。
     String? coverFailure;
     String? audioFailure;
-    final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+    final Future<ImmersionMiningResult> job = ImmersionMiningEngine().mine(
       ImmersionMiningRequest(
         fields: fields,
         mediaSource: mediaSource,
         audioSource: audioSource,
         mediaSourceTlsPinSha256: mediaSourceTlsPin,
+        // BUG-2625：制卡源是远端流时，把**播放器取到这条流用的同一组防盗链请求头**
+        // 一起交给引擎。在线视频源（Aniyomi 扩展）的 hoster 直链几乎都校验
+        // Referer/UA，ffmpeg 裸请求会被 403（`required audio missing`）。本地文件与
+        // 无防盗链源这里是空 map，抽取器据此 no-op，既有路径零影响。
+        mediaSourceHttpHeaders: _streamHttpHeaderFields,
+        mediaSourceRouteReady: mediaSourceRouteReady,
         // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
         remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,
@@ -484,8 +607,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: collectionTag,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
-        // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
-        // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
+        // 用户在 Anki 设置里选的封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧）；
+        // 默认 videoClip。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
         imageMode: imageMode,
         // 动图编码格式（默认 AVIF）。引擎在编码失败时会自动降级 GIF 重试一次——旧版本
         // 包捆绑的 ffmpeg 没有 libsvtav1/libwebp，靠这条保证不会因换默认格式而制不出卡。
@@ -493,6 +616,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 静图编码格式（默认 JPG）：两种截图档与动图抽取失败后的静帧降级都走它。
         // 选 PNG 而捕绑 ffmpeg 缺编码器时引擎自动退回 JPG，不会因换格式而丢封面。
         stillFormat: stillFormat,
+        // 音画同步片段格式（默认 WebM VP9，卡片内嵌播放）：编不出来按 AV1→VP9→MP4 降级。
+        clipFormat: clipFormat,
+        // 在线视频的本地缓冲副本（拿不到就是 null，引擎远端抽取）。
+        cachedMediaSnapshot: cachedSnapshot,
+        // 看完再制卡：备好媒体后暂存，不落卡。
+        stageNote: stageNote,
       ),
       compression: mediaCompression,
       tempDir: tempDir,
@@ -501,6 +630,40 @@ extension _VideoLookupMining on _VideoFushiPageState {
       onCoverFailure: (String summary) => coverFailure ??= summary,
       onAudioFailure: (String summary) => audioFailure ??= summary,
     );
+    MinePopupResult land(ImmersionMiningResult res) => _landVideoMine(
+          res,
+          coverFailure: coverFailure,
+          audioFailure: audioFailure,
+          staged: stageNote != null,
+          overwrite: reviewSession != null || updateNoteId != null,
+          recordStats: reviewSession == null,
+          mineDb: mineDb,
+          statIdentity: statIdentity,
+        );
+    if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
+    // 后台 / 看完再制卡：弹窗不陪着等。结局（成功 / 暂存 / 失败）在落地时由 OSD 报告。
+    _trackBackgroundMine(job.then((ImmersionMiningResult res) {
+      final MinePopupResult landed = land(res);
+      onBackgroundLanded?.call(landed);
+    }));
+    return const MinePopupResult.queued();
+  }
+
+  /// 一张视频卡落地后的收尾（OSD / 统计），等待与后台两条路共用。后台路径上页面可能
+  /// 已经关了：OSD 自带 mounted 判断，统计用点击时冻结的 [mineDb] / [statIdentity]。
+  ///
+  /// [staged] = 看完再制卡：这次只是暂存成功，不是制卡成功——不记统计、报「已加入待制卡」，
+  /// 回给调用方的是「未落卡」（不写制卡历史），真正的账在写入 Anki 时记。
+  MinePopupResult _landVideoMine(
+    ImmersionMiningResult res, {
+    required String? coverFailure,
+    required String? audioFailure,
+    required bool staged,
+    required bool overwrite,
+    required bool recordStats,
+    required FushiDatabase mineDb,
+    required ({String bookKey, String title}) statIdentity,
+  }) {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
       if (mounted) {
@@ -526,22 +689,31 @@ extension _VideoLookupMining on _VideoFushiPageState {
       );
     }
     final MineOutcome outcome = res.outcome! as MineOutcome;
-    final MinePopupResult result = outcome.result == MineResult.success
-        ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
+    if (staged) {
+      // 看完再制卡：只是进了待制卡列表。统计 / 历史等写入 Anki 时再记。
+      if (outcome.result == MineResult.success) unawaited(_onVideoMineStaged());
+      return const MinePopupResult();
+    }
+    final MinePopupResult result =
+        outcome.result == MineResult.success ||
+            outcome.result == MineResult.queued
+        ? MinePopupResult.mined(outcome)
         : MinePopupResult.failed(outcome);
-    if (!context.mounted) return result;
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
     // overwrite=true（updateNoteId 非空）→ 收口产 card_overwritten + record=false；
     // 新制 → card_exported + record=true（消息/记账判定统一在 describeMineOutcome）。
-    final described = describeMineOutcome(
-      outcome,
-      overwrite: reviewSession != null || updateNoteId != null,
-    );
+    final described = describeMineOutcome(outcome, overwrite: overwrite);
     // 新制成功计入视频统计（dictionarySourceType=video）；覆盖 record=false 故不记账。
-    // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
-    if (described.record && reviewSession == null) {
-      unawaited(_recordMinedForVideo());
+    // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 的
+    // recordMined 同一次 DB 写入）。用点击时冻结的库与归属：后台制卡落地时页面可能
+    // 已经关了，卡进了 Anki，账也得记上。
+    if (described.record && recordStats) {
+      unawaited(_recordVideoMineStat(mineDb, statIdentity));
     }
+    // State 的 `mounted`，不是 `context.mounted`：后台落地时页面可能早已 unmount，
+    // 那时连取 `context` 都会抛（debug FlutterError / release 空检查），落地回调
+    // （写制卡历史）就跟着没了，还会记一条假失败。
+    if (!mounted) return result;
     // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
     // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
@@ -554,16 +726,35 @@ extension _VideoLookupMining on _VideoFushiPageState {
     return result;
   }
 
+  /// 视频制卡的统计记账（= [DictionaryPageMixin.recordMined] 对视频来源的那一次写入），
+  /// 但不经 `ref`：后台落卡时页面可能已经销毁。best-effort，失败吞掉。
+  Future<void> _recordVideoMineStat(
+    FushiDatabase db,
+    ({String bookKey, String title}) identity,
+  ) async {
+    try {
+      await db.recordMiningEvent(
+        bookKey: identity.bookKey,
+        title: identity.title,
+        sourceType: kStatSourceVideo,
+        at: DateTime.now(),
+      );
+    } catch (e, st) {
+      debugPrint('[fushi-stats] video recordMiningEvent failed: $e\n$st');
+    }
+  }
+
   /// TODO-633: land one mined-sentence history row for a video card. Locator
   /// anchors mirror _toggleFavoriteSentenceForVideo (bookUid + episode +
   /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
   /// Best-effort; failure is swallowed + logged (does not break mining).
   Future<void> _recordMinedSentenceForVideo(
     VideoMiningHistorySnapshot snapshot,
-    int? noteId,
-  ) async {
+    int? noteId, {
+    FushiDatabase? db,
+  }) async {
     try {
-      await appModel.database.addMinedSentence(
+      await (db ?? appModel.database).addMinedSentence(
         source: kStatSourceVideo,
         dateKey: snapshot.dateKey,
         expression: snapshot.expression,
@@ -581,6 +772,26 @@ extension _VideoLookupMining on _VideoFushiPageState {
       debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
     }
   }
+}
+
+/// 制卡 ffmpeg 的远端输入是否改走本机中继（与播放器同一条取流路径）。
+///
+/// - 在线视频源（[RemoteVideoStreamHeaders]：扩展 hoster / 粘贴的流）：BUG-2642 残留，
+///   伪装成图片的 HLS 分片只有中继 + 放开扩展名才读得动。
+/// - 媒体服务器（[MediaServerBrowser]：Emby / Jellyfin）：BUG-2692。播放器早就经
+///   [nativePlaybackUri] 走中继（Dart 的 TLS + 应用代理），制卡 ffmpeg 却直连原始
+///   https——移动端 ffmpeg-kit 用自己编进去的 TLS、也不认应用代理，于是「能播放、
+///   制不了卡」，截图 / 动图 / 句子音频三条抽取全报 `I/O error`。
+/// - 互联主机**不在此列**：它有指纹钉扎（`-tls_pin_sha256` 只对 https 输入有效，
+///   改成中继的明文地址反而让 ffmpeg 报选项不认）与 host 端裁音频两条专用通道。
+/// - 本地文件 / YouTube（没有远端 client）不改道。
+bool videoMiningInputUsesPlaybackRelay({
+  required RemoteVideoClient? remoteClient,
+  required String mediaSource,
+}) {
+  if (!isNetworkStreamUri(mediaSource)) return false;
+  return remoteClient is RemoteVideoStreamHeaders ||
+      remoteClient is MediaServerBrowser;
 }
 
 /// 纯函数：据是否播放列表 + 系列名 + 剧集名算制卡 `documentTitle`（TODO-761，方案 B）。

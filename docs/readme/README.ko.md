@@ -149,6 +149,7 @@ Fushi는 다음 프로젝트와 생태계를 기반으로 합니다.
 | 프로젝트 | 설명 |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | 만화 소스 확장 생태계 |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 애니메이션 소스 확장 생태계 (extensions-lib 14–16, 동일 런타임) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 데스크톱용 만화 확장 런타임 |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 만화 소스 런타임 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 브라우저 확장의 스트리밍 자막 브리지 참고 |

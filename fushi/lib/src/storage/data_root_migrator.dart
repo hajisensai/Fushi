@@ -987,6 +987,7 @@ class DataRootMigrator {
         throw StateError('debugFailMidRebase');
       }
       await _rebaseVideoFileSpecs(db, docs);
+      await _rebaseAnidbFileIdentities(db, docs);
       await _rebaseGalgames(db, docs);
       await _rebaseMediaCollections(db, docs);
       await _rebaseCollectionScrapeMeta(db, docs);
@@ -1116,6 +1117,36 @@ class DataRootMigrator {
         'UPDATE OR REPLACE video_file_specs SET file_path = ? '
         'WHERE file_path = ?',
         <Object?>[newPath, oldPath],
+      );
+    }
+  }
+
+  /// anidb_file_identities：file_path（v106 文件级 AniDB 身份的路径提示，非主键）。
+  ///
+  /// 主键是 (ed2k, file_size)，路径只服务「同路径同大小同 mtime 免重算哈希」的快路径。
+  /// 不改写不丢身份（哈希后按内容键仍命中），但数据根搬家后每个文件都要重算一遍
+  /// ED2K——几十 GB 的顺序读——才能命中；改写只是一条 UPDATE。
+  static Future<void> _rebaseAnidbFileIdentities(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+            'SELECT ed2k, file_size, file_path FROM anidb_file_identities '
+            'WHERE file_path IS NOT NULL')
+        .get();
+    for (final QueryRow row in rows) {
+      final String oldPath = row.read<String>('file_path');
+      final String newPath = docs.rebase(oldPath);
+      if (newPath == oldPath) continue;
+      await db.customStatement(
+        'UPDATE anidb_file_identities SET file_path = ? '
+        'WHERE ed2k = ? AND file_size = ?',
+        <Object?>[
+          newPath,
+          row.read<String>('ed2k'),
+          row.read<int>('file_size')
+        ],
       );
     }
   }

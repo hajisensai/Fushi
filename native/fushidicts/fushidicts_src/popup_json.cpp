@@ -89,18 +89,39 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
   std::map<std::string, GroupData> groups;
   int entry_count = 0;
 
+  // 分组口径与 Dart 侧 lookupHeadwordKey / soleExplicitReadings 对齐：
+  // BUG-2753：MDX/StarDict/DSL 导入时读音恒空；同表记在本次结果里只有一个显式读音
+  //   时，空读音行补上它、并入同一张卡；有多个读音时不猜。
+  // BUG-791：补完仍为空的读音按 Yomitan 约定视同表记。
+  std::map<std::string, std::set<std::string>> explicit_readings;
   for (const auto& r : results) {
+    if (!r.term.reading.empty()) {
+      explicit_readings[r.term.expression].insert(r.term.reading);
+    }
+  }
+  auto resolved_reading = [&](const LookupResult& r) -> std::string {
+    if (!r.term.reading.empty()) return r.term.reading;
+    auto it = explicit_readings.find(r.term.expression);
+    if (it != explicit_readings.end() && it->second.size() == 1) {
+      return *it->second.begin();
+    }
+    return std::string();
+  };
+
+  for (const auto& r : results) {
+    const std::string reading = resolved_reading(r);
     for (const auto& g : r.term.glossaries) {
       if (entry_count >= max_terms) goto done;
       entry_count++;
 
-      std::string key = r.term.expression + "\n" + r.term.reading;
+      std::string key = r.term.expression + "\n" +
+                        (reading.empty() ? r.term.expression : reading);
       auto it = groups.find(key);
       if (it == groups.end()) {
         group_order.push_back(key);
         auto& gd = groups[key];
         gd.expression = r.term.expression;
-        gd.reading = r.term.reading;
+        gd.reading = reading;
         gd.matched = r.matched;
         gd.deinflected = r.deinflected;
         gd.trace = r.trace;

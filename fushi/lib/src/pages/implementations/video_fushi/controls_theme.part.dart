@@ -35,6 +35,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
+      bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
+        readSpeed: _networkReadSpeedOf(controller),
+      ),
       // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
       // 桌面默认 150ms，显式写出后改一处全部跟随）。
@@ -57,6 +61,8 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // onSeekEnd 透出落点 target，页面补调 notifyExternalSeek 应用同款保护（不重复 seek）。
       onSeekEnd: (Duration target) =>
           controller.notifyExternalSeek(target.inMilliseconds),
+      // BUG-2731 后续（同移动 theme）：进度条落点那次 player.seek 的 Future。
+      onSeekDispatched: controller.noteExternalSeekDispatched,
       // TODO-669：进度条 hover 缩略图预览。seek bar hover 时 fork 把 hover 比例
       // （轨道内宽权威值）回调给 [_onSeekBarHover]，桌面转发到取帧调度器、移动端不接
       // （触屏无 hover，故仅桌面 theme 接线）。null 时 fork 零行为变化。
@@ -101,16 +107,25 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarPositionColor: _videoChromeAccent(cs),
       seekBarThumbColor: _videoChromeAccent(cs),
       buttonBarButtonColor: _videoChromeAccent(cs),
-      buttonBarHeight: _videoButtonBarHeight,
-      buttonBarButtonSize: _videoControlIconSize,
+      // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
+      // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
+      buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
+      buttonBarButtonSize: _videoControlIconSize * _controlsDensityScale,
       // BUG-1224：进度条触摸热区高与「骑按钮行上沿的下压量」显式传入（取值 = fork 原本
       // 的默认 36 / 16，桌面渲染逐像素不变）。目的是让**控制条实际布局**与**字幕避让计算**
       // 读同一份常量：此前避让只让出一个按钮行高，而热区上缘其实还高出 36−16=20px，字幕
       // 恰好压住那条带 → 点进度条上缘被字幕 glyph 命中层吸走成查词（seek 收不到指针）。
       seekBarContainerHeight:
-          _VideoFushiPageState._videoDesktopSeekBarContainerHeight,
+          _VideoFushiPageState._videoDesktopSeekBarContainerHeight *
+              _controlsDensityScale,
       seekBarBottomButtonBarOverlap:
-          _VideoFushiPageState._videoDesktopSeekBarButtonBarOverlap,
+          _VideoFushiPageState._videoDesktopSeekBarButtonBarOverlap *
+              _controlsDensityScale,
+      // mini 档（桌面小窗 / 被拖到 480 逻辑像素以下的窗口）收掉整条进度条：那点宽度
+      // 里一条可拖的 seek bar 既难命中又把画面压没了，进度改由视频最下方那条细线
+      // 承担（[VideoSlimProgressBar]，要拖进度请退出小窗）。fork 早有这个旋钮
+      // （`displaySeekBar`，默认 true），本仓此前从未设过。
+      displaySeekBar: _controlsDensity.showSeekBar,
       // 方案 D（BUG-1864 同源缺口）：media_kit 这层**故意留空**，不再是视频快捷键的
       // 挂载点。它只包 `AdaptiveVideoControls` 子树，而字幕列表 / 剧集轨 / 侧栏是
       // `Video` 的**兄弟**——焦点一进面板（[PanelFocusScope] 会主动抢），整张表就够不
@@ -130,40 +145,43 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 用单个 [Expanded] 承接 [_centeredBottomControlBar] 同一套路。不能再把三段
         // 直接摊成 fork 那条 Row 的 flex child——那会被 Flex 平分成 1/3，右上角按钮
         // 永远拿不到自己需要的宽。
-        Expanded(
-          child: VideoTopBarSlots(
-            leftLead: _topBarSlotGroup(
-              VideoControlSlot.topLeft,
-              controller,
-              layout: layout,
-              desktop: true,
-              segment: VideoTopBarSegment.lead,
-            ),
-            leftTail: _topBarSlotGroup(
-              VideoControlSlot.topLeft,
-              controller,
-              layout: layout,
-              desktop: true,
-              segment: VideoTopBarSegment.tail,
-            ),
-            title: _topBarTitle(),
-            titlePlacement: _topBarTitlePlacement(),
-            rightLead: _topBarSlotGroup(
-              VideoControlSlot.topRight,
-              controller,
-              layout: layout,
-              desktop: true,
-              segment: VideoTopBarSegment.lead,
-            ),
-            rightTail: _topBarSlotGroup(
-              VideoControlSlot.topRight,
-              controller,
-              layout: layout,
-              desktop: true,
-              segment: VideoTopBarSegment.tail,
+        // mini 档整条顶栏收起：那点宽度放不下标题 + 一排按钮，「退出小窗」另由自绘
+        // mini chrome 提供（[_buildMiniWindowTopChrome]）。
+        if (_controlsDensity.showTopBar)
+          Expanded(
+            child: VideoTopBarSlots(
+              leftLead: _topBarSlotGroup(
+                VideoControlSlot.topLeft,
+                controller,
+                layout: layout,
+                desktop: true,
+                segment: VideoTopBarSegment.lead,
+              ),
+              leftTail: _topBarSlotGroup(
+                VideoControlSlot.topLeft,
+                controller,
+                layout: layout,
+                desktop: true,
+                segment: VideoTopBarSegment.tail,
+              ),
+              title: _topBarTitle(),
+              titlePlacement: _topBarTitlePlacement(),
+              rightLead: _topBarSlotGroup(
+                VideoControlSlot.topRight,
+                controller,
+                layout: layout,
+                desktop: true,
+                segment: VideoTopBarSegment.lead,
+              ),
+              rightTail: _topBarSlotGroup(
+                VideoControlSlot.topRight,
+                controller,
+                layout: layout,
+                desktop: true,
+                segment: VideoTopBarSegment.tail,
+              ),
             ),
           ),
-        ),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
@@ -171,9 +189,12 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // bottomButtonBar 放进 Row，用单个 [Expanded] 占满整宽承接绝对定位布局。
         // 进度/时长文字吃「界面大小」（TODO-128）、5 键带 Tooltip（BUG-247）均在
         // [_centeredBottomControlBar] 内保留。
-        Expanded(
-          child: _centeredBottomControlBar(controller, desktop: true),
-        ),
+        // mini 档整行让位给本仓自绘的居中大三键（[_buildMiniWindowCenterControls]，
+        // 即系统画中画那种观感）；系统画中画下连三键也不画（系统自带控件）。
+        if (_controlsDensity.showBottomButtonBar)
+          Expanded(
+            child: _centeredBottomControlBar(controller, desktop: true),
+          ),
       ],
     );
   }
@@ -189,6 +210,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoControlLayout layout,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 控制条密度缩放（小窗 / 窄窗按档缩小控件，见 video_controls_density.dart）。
+    // 取成局部量只为让下面几条几何行留在一行内——字幕避让 reserve 乘的是同一个
+    // [_controlsDensityScale]，两边永远同一口径。
+    final double density = _controlsDensityScale;
     // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
     // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
@@ -199,11 +224,18 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // 个 bottomCenter Stack、都按 bottom 对齐，进度条 bottom 必须 = 按钮条底部基线 +
     // 按钮条高 + 间距，否则两者落同一基线重叠。保留 [bottomChromeInset]（BUG-184 抬离
     // 系统栏）作为按钮条基线，进度条偏移叠加其上。
-    final double seekBarBottom =
-        bottomChromeInset + _videoButtonBarHeight + _videoSeekBarButtonGap;
+    // 按钮条高与间距同样吃密度档缩放（小窗 / 窄窗），否则进度条会按未缩小的按钮条
+    // 高度抬起、在缩小后的底栏上方凭空浮一截。
+    final double seekBarBottom = bottomChromeInset +
+        _videoButtonBarHeight * density +
+        _videoSeekBarButtonGap * density;
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
+      bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
+        readSpeed: _networkReadSpeedOf(controller),
+      ),
       // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
       // 移动默认 300ms，显式写出后改一处全部跟随）。
@@ -225,6 +257,16 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 旧字幕立即消失、不被滞后旧 position 拉回；不重复 seek（进度条内部已 seek）。
       onSeekEnd: (Duration target) =>
           controller.notifyExternalSeek(target.inMilliseconds),
+      // BUG-2731 后续：横滑 / 双击快进快退是**相对** seek，基准取 controller 的
+      // [VideoPlayerController.resumePositionMs]（有在途 seek 取其目标，否则取当前位置）。
+      // 远端流上一次 seek 还在缓冲时 player 位置仍是旧值，按它算第二次滑动会把第一次
+      // 的位移整个抹掉（录屏里 HUD 一直 ±0:00、只能反复小幅滑动）。
+      // fork 在一次横滑开始时只取一次（快照），HUD 经 lastRelativeSeekBaseMs 读同一值。
+      relativeSeekBasePosition: () =>
+          Duration(milliseconds: controller.captureRelativeSeekBaseMs() ?? 0),
+      // BUG-2731 后续：fork 把横滑 / 双击 / 进度条落点那次 player.seek 的 Future 交过来，
+      // 等它完成才开始按「正常推进」判 seek 收场（seek 还在排队时旧内容照常推进）。
+      onSeekDispatched: controller.noteExternalSeekDispatched,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
@@ -235,10 +277,15 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 双击全屏语义并存，竞技场先达成者胜）。
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
-      volumeGesture: true,
+      // issue #1525：两侧手势各有用户开关（[_asbConfig.brightnessSwipeGesture] /
+      // [_asbConfig.volumeSwipeGesture]，默认开 = 旧行为），关掉后改走系统亮度条 / 实体
+      // 音量键，避免误触。fork 每个竖滑事件现读 theme，设置改完经 `_setAsbConfig` 的
+      // setState 重建即时生效。
+      volumeGesture: _asbConfig.volumeSwipeGesture,
       volumeIndicatorBuilder: (BuildContext _, double __) =>
           const SizedBox.shrink(),
-      brightnessGesture: _brightness.canControl,
+      brightnessGesture:
+          _brightness.canControl && _asbConfig.brightnessSwipeGesture,
       brightnessIndicatorBuilder: (BuildContext _, double __) =>
           const SizedBox.shrink(),
       // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即
@@ -270,8 +317,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         sensitivity: _asbConfig.dragSeekSensitivity,
       ),
       // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
-      // 播放器手感）。builder 每帧随拖动重建，读 controller 实时 position + 增量算
-      // 目标时间（clamp [0,duration]）。delta 为 fork 回传的有符号 swipeDuration。
+      // 播放器手感）。builder 每帧随拖动重建，以本次横滑开始时快照的相对 seek 基准
+      // （controller.lastRelativeSeekBaseMs，有在途 seek 时是其目标）+ 增量算目标时间
+      // （clamp [0,duration]），与 fork 松手落点同一口径。delta 为 fork 回传的有符号
+      // swipeDuration。
       seekIndicatorBuilder: (BuildContext context, Duration delta) =>
           _buildSeekIndicator(controller, delta),
       onVolumeChanged: _onMediaKitVolumeChanged,
@@ -298,16 +347,20 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 太细、难命中（手指比默认热区窄，滑不到 / 拖不动）。改用随界面缩放的基线放大
       // 命中区与可视轨道。三者由 [_videoSeekBarButtonGap] 把进度条整体抬到按钮条上方
       // 后才有竖直空间承接更高的热区（向上长，不向下侵入系统边缘手势区）。
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
-      seekBarThumbSize: _videoSeekBarThumbSize,
-      seekBarHeight: _videoSeekBarTrackHeight,
+      seekBarContainerHeight: _videoSeekBarContainerHeight * density,
+      seekBarThumbSize: _videoSeekBarThumbSize * density,
+      seekBarHeight: _videoSeekBarTrackHeight * density,
+      // 同桌面 theme：mini 档收掉整条进度条，进度交给视频最下方的细线。
+      displaySeekBar: _controlsDensity.showSeekBar,
       // chrome 前景固定亮色（同桌面 theme，UI 巡检 PR-4 P1）：压固定深色 scrim
       // （material.dart 0x66000000），不随 colorScheme。
       seekBarPositionColor: _videoChromeAccent(cs),
       seekBarThumbColor: _videoChromeAccent(cs),
       buttonBarButtonColor: _videoChromeAccent(cs),
-      buttonBarHeight: _videoButtonBarHeight,
-      buttonBarButtonSize: _videoControlIconSize,
+      // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
+      // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
+      buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
+      buttonBarButtonSize: _videoControlIconSize * _controlsDensityScale,
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏抬离状态栏 / 刘海（BUG-463）：移动端视频永不进 media_kit 全屏路由
       // （BUG-221），fork 只在全屏分支给顶栏套 `MediaQuery.padding` 顶部内缩、窗口分支恒
@@ -320,49 +373,53 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       topButtonBar: <Widget>[
         // 与桌面同源：整条顶栏交给 [VideoTopBarSlots] 分宽（按钮按需优先、标题吃剩余），
         // 不再让三段各占 fork 顶栏 Row 的 1/3 flex 份额。
-        Expanded(
-          child: VideoTopBarSlots(
-            leftLead: _topBarSlotGroup(
-              VideoControlSlot.topLeft,
-              controller,
-              layout: layout,
-              desktop: false,
-              segment: VideoTopBarSegment.lead,
-            ),
-            leftTail: _topBarSlotGroup(
-              VideoControlSlot.topLeft,
-              controller,
-              layout: layout,
-              desktop: false,
-              segment: VideoTopBarSegment.tail,
-            ),
-            title: _topBarTitle(),
-            titlePlacement: _topBarTitlePlacement(),
-            rightLead: _topBarSlotGroup(
-              VideoControlSlot.topRight,
-              controller,
-              layout: layout,
-              desktop: false,
-              segment: VideoTopBarSegment.lead,
-            ),
-            rightTail: _topBarSlotGroup(
-              VideoControlSlot.topRight,
-              controller,
-              layout: layout,
-              desktop: false,
-              segment: VideoTopBarSegment.tail,
+        // 同桌面：mini 档整条顶栏收起。
+        if (_controlsDensity.showTopBar)
+          Expanded(
+            child: VideoTopBarSlots(
+              leftLead: _topBarSlotGroup(
+                VideoControlSlot.topLeft,
+                controller,
+                layout: layout,
+                desktop: false,
+                segment: VideoTopBarSegment.lead,
+              ),
+              leftTail: _topBarSlotGroup(
+                VideoControlSlot.topLeft,
+                controller,
+                layout: layout,
+                desktop: false,
+                segment: VideoTopBarSegment.tail,
+              ),
+              title: _topBarTitle(),
+              titlePlacement: _topBarTitlePlacement(),
+              rightLead: _topBarSlotGroup(
+                VideoControlSlot.topRight,
+                controller,
+                layout: layout,
+                desktop: false,
+                segment: VideoTopBarSegment.lead,
+              ),
+              rightTail: _topBarSlotGroup(
+                VideoControlSlot.topRight,
+                controller,
+                layout: layout,
+                desktop: false,
+                segment: VideoTopBarSegment.tail,
+              ),
             ),
           ),
-        ),
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
         // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±10s 带可见标注、5 键带
         // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
         // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。
-        Expanded(
-          child: _centeredBottomControlBar(controller, desktop: false),
-        ),
+        // 同桌面：mini 档整行让位给自绘居中三键。
+        if (_controlsDensity.showBottomButtonBar)
+          Expanded(
+            child: _centeredBottomControlBar(controller, desktop: false),
+          ),
       ],
     );
   }
@@ -370,7 +427,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
   /// TODO-916 症状①：横滑 seek 居中 HUD（替换 fork 默认只显增量的 HUD）。
   ///
   /// fork 的 `seekIndicatorBuilder` 只回传增量 [delta]（有符号 swipeDuration）。主流
-  /// 播放器横滑时显示**目标绝对时间**，故这里读 [controller] 实时位置/时长，经纯函数
+  /// 播放器横滑时显示**目标绝对时间**，故这里读 [controller] 的基准位置/时长，经纯函数
   /// [VideoSeekIndicatorLabel.target] /
   /// [VideoSeekIndicatorLabel.deltaSigned] 算出「目标时间」与「±增量」
   /// 两行。fork 把本 widget 套在居中 `IgnorePointer + AnimatedOpacity` 里，故这里只画
@@ -379,8 +436,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoPlayerController controller,
     Duration delta,
   ) {
-    final Duration position =
-        Duration(milliseconds: controller.positionMs ?? 0);
+    // 与 fork 横滑落点同一基准（relativeSeekBasePosition，BUG-2731 后续）：fork 在横滑
+    // 开始时取一次快照（经 captureRelativeSeekBaseMs 记下），HUD 读同一快照——在途 seek
+    // 未落地时从那次 seek 的目标算起，拖动途中目标落地 / 清掉也不跳。
+    final Duration position = Duration(
+      milliseconds:
+          controller.lastRelativeSeekBaseMs ?? controller.resumePositionMs ?? 0,
+    );
     final Duration duration =
         Duration(milliseconds: controller.durationMs ?? 0);
     final String targetLabel =

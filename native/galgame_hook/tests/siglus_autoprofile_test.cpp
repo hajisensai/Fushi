@@ -126,6 +126,25 @@ int main() {
   moved.iat += 0x40u;
   Image{moved}.Check();
 
+  {
+    // The choice caller is optional. Absent, unlinked or ambiguous, it stays
+    // zero and the dialogue profile still resolves; only a unique site that
+    // calls the glyph entry is admitted.
+    Image image;
+    SiglusLookupProfile result;
+    assert(image.Resolve(&result) && result.selection_glyph_return_rva == 0u);
+    image.Put(0x2800u, kSelectionCall.pattern());
+    assert(image.Resolve(&result) && result.selection_glyph_return_rva == 0u);
+    image.Call(0x2800u + kSelectionCallOffset, image.layout.glyph);
+    image.Check();
+    assert(image.Resolve(&result) &&
+           result.selection_glyph_return_rva ==
+               0x2800u + kSelectionCallOffset + 5u);
+    image.Put(0x4800u, kSelectionCall.pattern());
+    image.Call(0x4800u + kSelectionCallOffset, image.layout.glyph);
+    assert(image.Resolve(&result) && result.selection_glyph_return_rva == 0u);
+  }
+
   for (int which = 0; which != 8; ++which) {
     Image image;
     switch (which) {

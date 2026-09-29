@@ -33,7 +33,7 @@ const int kRecInputSize = 224;
 const int kRecEncoderTokens = 196;
 const int kRecHiddenSize = 768;
 
-/// 灰度化（ITU-R 601-2，与 PIL convert("L") 同系数）后按 ViT 惯例归一化，
+/// 灰度化（PIL convert("L") 的 8 位取整）后按 ViT 惯例归一化，
 /// 输出 CHW float32（三通道数值相同）。输入必须已是 224x224。
 Float32List mangaOcrNormalize(img.Image resized) {
   assert(resized.width == kRecInputSize && resized.height == kRecInputSize);
@@ -43,8 +43,7 @@ Float32List mangaOcrNormalize(img.Image resized) {
   for (int y = 0; y < kRecInputSize; y++) {
     for (int x = 0; x < kRecInputSize; x++) {
       final img.Pixel pixel = resized.getPixel(x, y);
-      final double luma =
-          (299 * pixel.r + 587 * pixel.g + 114 * pixel.b) / 1000;
+      final int luma = _pilLuma(pixel);
       final double value = (luma / 255.0 - 0.5) / 0.5;
       chw[index] = value;
       chw[planeSize + index] = value;
@@ -56,7 +55,12 @@ Float32List mangaOcrNormalize(img.Image resized) {
 }
 
 /// 从页面裁出 [box]（clamp 到页面内，可选向外扩 [marginRatio] 比例的边距）
-/// 并做 squish resize 到 224x224。
+/// 先转成 8 位灰度，再按 PIL BILINEAR 做 squish resize 到 224x224。
+///
+/// manga-ocr 的 preprocessor_config.json 指定 resample=2（BILINEAR）。
+/// image.copyResize(linear) 缩小时只取相邻四点，细笔画会混叠甚至消失；
+/// 索引色 PNG 更会强制降成 nearest。因此这里按 PIL 的像素中心、缩小滤波
+/// 支撑区间和两遍 8 位取整处理，不把「bilinear」名字相同当成行为相同。
 img.Image cropAndResizeForRecognition(
   img.Image page,
   OcrRect box, {
@@ -70,23 +74,95 @@ img.Image cropAndResizeForRecognition(
     right: box.right + marginX,
     bottom: box.bottom + marginY,
   ).clamp(page.width.toDouble(), page.height.toDouble());
-  final int x = expanded.left.floor();
-  final int y = expanded.top.floor();
-  final int w = math.max(1, expanded.width.ceil());
-  final int h = math.max(1, expanded.height.ceil());
-  final img.Image crop = img.copyCrop(
-    page,
-    x: x,
-    y: y,
-    width: math.min(w, page.width - x),
-    height: math.min(h, page.height - y),
-  );
-  return img.copyResize(
-    crop,
+  final int x = expanded.left.floor().clamp(0, page.width - 1);
+  final int y = expanded.top.floor().clamp(0, page.height - 1);
+  // 左上向下取整、右下向上取整；ceil(width) 会在小数框上漏掉末列/末行。
+  final int w = math.max(1, expanded.right.ceil() - x);
+  final int h = math.max(1, expanded.bottom.ceil() - y);
+  final Uint8List gray = Uint8List(w * h);
+  for (int row = 0; row < h; row++) {
+    for (int col = 0; col < w; col++) {
+      gray[row * w + col] = _pilLuma(page.getPixel(x + col, y + row));
+    }
+  }
+  return _resizeMangaGray(gray, w, h);
+}
+
+// PIL Convert.c 的 RGB -> L 定点系数。先灰度化再缩放，避免彩色逐通道取整
+// 改变灰度；也自然解开 PNG palette，不让缩放退成 nearest。
+int _pilLuma(img.Pixel pixel) {
+  // 单通道灰度的 g/b getter 为 0；不能当成红色再乘一次亮度系数。
+  // length 返回调色板颜色通道数，不能用索引图存储的 numChannels 判断。
+  if (pixel.length < 3) return pixel.r.toInt();
+  return (19595 * pixel.r.toInt() +
+          38470 * pixel.g.toInt() +
+          7471 * pixel.b.toInt() +
+          32768) >>
+      16;
+}
+
+const int _pilResampleBits = 22;
+const int _pilResampleScale = 1 << _pilResampleBits;
+
+typedef _BilinearTap = ({int start, Int32List weights});
+
+/// PIL Resample.c 的 BILINEAR 系数：以像素中心采样，缩小时扩宽三角滤波核。
+/// 22 位定点系数与每一遍的舍入对齐其 8bpc 路径。
+List<_BilinearTap> _mangaBilinearTaps(int sourceSize) {
+  final double scale = sourceSize / kRecInputSize;
+  final double support = math.max(1.0, scale);
+  return List<_BilinearTap>.generate(kRecInputSize, (int dst) {
+    final double center = (dst + 0.5) * scale;
+    final int start = math.max(0, (center - support + 0.5).toInt());
+    final int end = math.min(sourceSize, (center + support + 0.5).toInt());
+    final List<double> weights = <double>[
+      for (int src = start; src < end; src++)
+        math.max(0.0, 1.0 - ((src - center + 0.5) / support).abs()),
+    ];
+    final double sum = weights.fold(0.0, (double a, double b) => a + b);
+    return (
+      start: start,
+      weights: Int32List.fromList(<int>[
+        for (final double weight in weights)
+          (weight / sum * _pilResampleScale).round(),
+      ]),
+    );
+  }, growable: false);
+}
+
+img.Image _resizeMangaGray(Uint8List gray, int width, int height) {
+  final List<_BilinearTap> xTaps = _mangaBilinearTaps(width);
+  final List<_BilinearTap> yTaps = _mangaBilinearTaps(height);
+  final Uint8List horizontal = Uint8List(kRecInputSize * height);
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < kRecInputSize; x++) {
+      final _BilinearTap tap = xTaps[x];
+      int sum = _pilResampleScale ~/ 2;
+      for (int i = 0; i < tap.weights.length; i++) {
+        sum += gray[y * width + tap.start + i] * tap.weights[i];
+      }
+      horizontal[y * kRecInputSize + x] = (sum >> _pilResampleBits).clamp(
+        0,
+        255,
+      );
+    }
+  }
+  final img.Image resized = img.Image(
     width: kRecInputSize,
     height: kRecInputSize,
-    interpolation: img.Interpolation.linear,
   );
+  for (int y = 0; y < kRecInputSize; y++) {
+    final _BilinearTap tap = yTaps[y];
+    for (int x = 0; x < kRecInputSize; x++) {
+      int sum = _pilResampleScale ~/ 2;
+      for (int i = 0; i < tap.weights.length; i++) {
+        sum += horizontal[(tap.start + i) * kRecInputSize + x] * tap.weights[i];
+      }
+      final int value = (sum >> _pilResampleBits).clamp(0, 255);
+      resized.setPixelRgb(x, y, value, value, value);
+    }
+  }
+  return resized;
 }
 
 /// manga-ocr 识别器：encoder 跑一次，decoder 以 beam batch 自回归。
@@ -105,8 +181,8 @@ class MangaOcrRecognizer implements OcrRecognizer {
     this.decoderInputIdsName = 'input_ids',
     this.decoderHiddenStatesName = 'encoder_hidden_states',
     this.decoderOutputName = 'logits',
-  })  : _encoder = encoderSession,
-        _decoder = decoderSession;
+  }) : _encoder = encoderSession,
+       _decoder = decoderSession;
 
   final OcrSession _encoder;
   final OcrSession _decoder;
@@ -131,15 +207,22 @@ class MangaOcrRecognizer implements OcrRecognizer {
     final img.Image resized = cropAndResizeForRecognition(page, box);
     final Float32List pixels = mangaOcrNormalize(resized);
 
-    final Map<String, OcrTensor> encoderOutputs =
-        await _encoder.run(<String, OcrTensor>{
-      encoderInputName:
-          OcrTensor.float32(pixels, <int>[1, 3, kRecInputSize, kRecInputSize]),
-    });
+    final Map<String, OcrTensor> encoderOutputs = await _encoder.run(
+      <String, OcrTensor>{
+        encoderInputName: OcrTensor.float32(pixels, <int>[
+          1,
+          3,
+          kRecInputSize,
+          kRecInputSize,
+        ]),
+      },
+    );
     final OcrTensor? hidden = encoderOutputs[encoderOutputName];
     if (hidden == null) {
-      throw StateError('encoder output $encoderOutputName missing: '
-          '${encoderOutputs.keys.toList()}');
+      throw StateError(
+        'encoder output $encoderOutputName missing: '
+        '${encoderOutputs.keys.toList()}',
+      );
     }
     final int encTokens = hidden.shape[1];
     final int hiddenSize = hidden.shape[2];
@@ -151,8 +234,11 @@ class MangaOcrRecognizer implements OcrRecognizer {
     for (int b = 0; b < numBeams; b++) {
       tiledHidden.setRange(b * perBeam, (b + 1) * perBeam, hiddenData);
     }
-    final OcrTensor hiddenTensor =
-        OcrTensor.float32(tiledHidden, <int>[numBeams, encTokens, hiddenSize]);
+    final OcrTensor hiddenTensor = OcrTensor.float32(tiledHidden, <int>[
+      numBeams,
+      encTokens,
+      hiddenSize,
+    ]);
 
     final BeamSearchResult result = await beamSearchDecode(
       config: BeamSearchConfig(
@@ -183,15 +269,18 @@ class MangaOcrRecognizer implements OcrRecognizer {
         inputIds[b * seqLen + t] = sequences[b][t];
       }
     }
-    final Map<String, OcrTensor> outputs =
-        await _decoder.run(<String, OcrTensor>{
-      decoderInputIdsName: OcrTensor.int64(inputIds, <int>[beams, seqLen]),
-      decoderHiddenStatesName: hiddenTensor,
-    });
+    final Map<String, OcrTensor> outputs = await _decoder.run(
+      <String, OcrTensor>{
+        decoderInputIdsName: OcrTensor.int64(inputIds, <int>[beams, seqLen]),
+        decoderHiddenStatesName: hiddenTensor,
+      },
+    );
     final OcrTensor? logits = outputs[decoderOutputName];
     if (logits == null) {
-      throw StateError('decoder output $decoderOutputName missing: '
-          '${outputs.keys.toList()}');
+      throw StateError(
+        'decoder output $decoderOutputName missing: '
+        '${outputs.keys.toList()}',
+      );
     }
     final int vocabSize = logits.shape[2];
     final Float32List data = logits.floatData!;

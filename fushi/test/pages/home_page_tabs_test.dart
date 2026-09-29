@@ -25,7 +25,7 @@ ModuleVisibility _visibility({
   if (manga) ModuleId.manga,
   if (video) ModuleId.video,
   if (games) ModuleId.games,
-  if (downloads) ModuleId.downloads,
+  if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
   if (browserExtension) ModuleId.browserExtension,
 });
@@ -152,20 +152,20 @@ void main() {
 
   group('downloads home tab', () {
     test('HomeTab 枚举包含 downloads', () {
-      expect(HomeTab.values, contains(HomeTab.downloads));
+      expect(HomeTab.values, contains(HomeTab.browse));
     });
 
     test('下载 tab 恒在（统一下载中心）：视频关也出现', () {
       expect(
         homeActiveTabs(_visibility(video: false)),
-        contains(HomeTab.downloads),
+        contains(HomeTab.browse),
       );
     });
 
     test('视频开启时下载 tab 出现且紧随视频', () {
       final List<HomeTab> tabs = homeActiveTabs(_visibility(video: true));
       final int video = tabs.indexOf(HomeTab.video);
-      final int downloads = tabs.indexOf(HomeTab.downloads);
+      final int downloads = tabs.indexOf(HomeTab.browse);
       expect(video, isNonNegative);
       expect(downloads, equals(video + 1));
     });
@@ -204,7 +204,7 @@ void main() {
       expect(tabs, isNot(contains(HomeTab.manga)));
       expect(tabs, contains(HomeTab.books));
       expect(tabs, contains(HomeTab.video));
-      expect(tabs, contains(HomeTab.downloads));
+      expect(tabs, contains(HomeTab.browse));
       expect(tabs, contains(HomeTab.dictionaries));
       expect(tabs, contains(HomeTab.settings));
     });
@@ -244,7 +244,7 @@ void main() {
         tabs,
         <HomeTab>[
           HomeTab.home,
-          HomeTab.downloads,
+          HomeTab.browse,
           HomeTab.dictionaries,
           HomeTab.settings,
         ],
@@ -255,7 +255,7 @@ void main() {
       final List<HomeTab> tabs = homeActiveTabs(
         _visibility(video: true, games: true, downloads: false),
       );
-      expect(tabs, isNot(contains(HomeTab.downloads)));
+      expect(tabs, isNot(contains(HomeTab.browse)));
       expect(
           tabs.indexOf(HomeTab.dictionaries), tabs.indexOf(HomeTab.games) + 1);
       expect(tabs, contains(HomeTab.settings));
@@ -266,10 +266,10 @@ void main() {
         _visibility(video: true, browserExtension: true, lookup: false),
       );
       expect(tabs, isNot(contains(HomeTab.dictionaries)));
-      expect(tabs, contains(HomeTab.downloads));
+      expect(tabs, contains(HomeTab.browse));
       expect(
         tabs.indexOf(HomeTab.browserExtension),
-        tabs.indexOf(HomeTab.downloads) + 1,
+        tabs.indexOf(HomeTab.browse) + 1,
       );
     });
 

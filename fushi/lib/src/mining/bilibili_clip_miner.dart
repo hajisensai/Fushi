@@ -7,9 +7,11 @@
 /// 非截屏。两半合起来，这条链上没有任何一处经过「录」。
 ///
 /// 与 YouTube 那条的两点差异（都已实测，不是推测）：
-///   · **不需要 Referer**：mcdn/upos 直链对 ffmpeg 直接放行，带不带 Referer 都成功（各跑
-///     两次，产出逐字节一致）。曾经出现的 `-138` 是瞬时 connect 超时，被既有的
-///     `-reconnect_on_network_error` 兜住，与鉴权无关。
+///   · **必须带 Referer**（BUG-2574 / BUG-2730）：`upos-sz-*.bilivideo.com` 与 PCDN
+///     `*.edge.mountaintoys.cn` 节点不带 `Referer: https://www.bilibili.com/` 一律 403，
+///     只有 `*.mcdn.bilivideo.cn` 宽松放行。同一个 playurl 每次解析落到哪类节点是随机的，
+///     且 PCDN 域名会轮换——所以 Referer 由本层随请求**显式声明**（[BilibiliClipRequest.httpHeaders]），
+///     不靠 ffmpeg 那侧按 host 白名单去猜。
 ///   · **不需要 range 物化**：googlevideo 那套 `range=` 查询参数分片是为绕开它的 SABR 限速，
 ///     B 站没有这个限速，ffmpeg 对 URL 直接 `-ss/-t` 稳定出片（3 秒片段约 1 秒）。见
 ///     `audioSourceNeedsRangeMaterialization`。
@@ -22,6 +24,8 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show kBilibiliCdnReferer;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -75,16 +79,21 @@ class BilibiliClipRequest {
     required this.sentence,
     required this.cueSentence,
     required this.documentTitle,
+    this.httpHeaders = kBilibiliMediaHttpHeaders,
   });
 
   /// 句子音频的 ffmpeg 输入（audio-only DASH URL）。
   final String audioSource;
+
+  /// 取 [audioSource] 时必须带的请求头（防盗链 Referer），经
+  /// `ImmersionMiningRequest.mediaSourceHttpHeaders` 下发给 ffmpeg。
+  final Map<String, String> httpHeaders;
   final int clipStartMs;
   final int clipEndMs;
   final Map<String, String> fields;
   final String sentence;
   final String? cueSentence;
-  final String documentTitle;
+  final String? documentTitle;
 }
 
 /// `x/web-interface/view` 响应体 → 指定分 P 的身份。纯函数，便于离线单测。
@@ -134,7 +143,30 @@ BilibiliPlayStreams? parseBilibiliPlayurlResponse(String body) {
   if (decoded['code'] != 0) return null;
   final Object? data = decoded['data'];
   if (data is! Map) return null;
-  final Object? dash = data['dash'];
+  return _playStreamsFrom(data);
+}
+
+/// `pgc/player/web/playurl`（番剧 / PGC，DASH）响应体 → 最高码率音轨。纯函数，便于离线单测。
+///
+/// 与 [parseBilibiliPlayurlResponse] 唯一的形状差异是**顶层键**：番剧回 `result`，稿件回 `data`
+/// （实测 `ep_id=815751`）。两个键都认，B 站哪天改回来也不会整条链断掉；挑音轨的判据与稿件那条
+/// 完全一致（同一个 [_playStreamsFrom]）。
+///
+/// 这份响应体是**扩展在页面主世界里**取回的（番剧大会员内容要带 SESSDATA，服务端匿名请求拿不
+/// 到），服务端只负责挑流——凭据从头到尾不出浏览器。
+BilibiliPlayStreams? parseBilibiliPgcPlayurlResponse(String body) {
+  final Object? decoded = _tryDecodeJson(body);
+  if (decoded is! Map) return null;
+  if (decoded['code'] != 0) return null;
+  final Object? payload =
+      decoded['result'] is Map ? decoded['result'] : decoded['data'];
+  if (payload is! Map) return null;
+  return _playStreamsFrom(payload);
+}
+
+/// 两类 playurl 响应体共用的挑流逻辑：只要 audio-only DASH，取 bandwidth 最高的那条。
+BilibiliPlayStreams? _playStreamsFrom(Map<Object?, Object?> payload) {
+  final Object? dash = payload['dash'];
   if (dash is! Map) return null;
   final Object? audio = dash['audio'];
   if (audio is! List || audio.isEmpty) return null;
@@ -158,8 +190,15 @@ BilibiliPlayStreams? parseBilibiliPlayurlResponse(String body) {
   );
 }
 
-/// B 站接口要求带浏览器 UA；不带会被部分节点拒。与 playurl 的 Referer 无关（见类注释：
-/// 音轨直链本身不校验 Referer，这里的 UA 是给 **API** 用的）。
+/// B 站媒体直链（DASH m4s）的防盗链请求头。BUG-2730：按 host 白名单推 Referer 追不上
+/// PCDN 域名轮换（实测 `*.edge.mountaintoys.cn:4483` 不在白名单 → ffmpeg 不带 Referer →
+/// 403 → required audio missing），所以 B 站这条链自己声明，与节点落在哪个域名无关。
+const Map<String, String> kBilibiliMediaHttpHeaders = <String, String>{
+  'Referer': kBilibiliCdnReferer,
+};
+
+/// B 站接口要求带浏览器 UA；不带会被部分节点拒。这里的 UA 是给 **API** 用的；媒体直链的
+/// 防盗链头见 [kBilibiliMediaHttpHeaders]。
 const String kBilibiliApiUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -180,6 +219,8 @@ typedef BilibiliJsonFetcher = Future<String?> Function(Uri uri);
 ///
 /// TTL 取 3 分钟而不是更长：playurl 给的直链带 `deadline` 查询参数（实测有效期数小时），
 /// 但 3 分钟已足够覆盖一次批量生成，且过期链只会让下一次重新解析，不会留下坏卡。
+/// 番剧（PGC）不进这个缓存：它的音轨由扩展随每次制卡一起回传（[buildPgcRequest]），
+/// 本类为它一行网络请求都不发。
 class BilibiliClipMiner {
   BilibiliClipMiner({
     BilibiliJsonFetcher? fetchJson,
@@ -218,6 +259,39 @@ class BilibiliClipMiner {
       documentTitle: (documentTitle != null && documentTitle.trim().isNotEmpty)
           ? documentTitle
           : resolved.identity.displayTitle,
+    );
+  }
+
+  /// 番剧（PGC）制卡：音轨已由**扩展在页面主世界里**解析好，这里只挑流 + 组装，不发网络请求。
+  ///
+  /// 与 [buildRequest] 的差别只有「身份从哪来」：番剧没有 bvid、没有分 P（`ep_id` 本身就是
+  /// 分集），标题也只有扩展带上来的页面标题——它就是用户此刻看到的那个。
+  /// 响应体里没有可裁音轨（未登录 / 大会员过期 / 接口改版）时抛 [StateError]，由调用方收敛成
+  /// 制卡失败：这条路的 `requireAudio` 是 true，静默出一张没有音频的卡更糟。
+  BilibiliClipRequest buildPgcRequest({
+    required String playurlBody,
+    required int startMs,
+    required int endMs,
+    required Map<String, String> fields,
+    required String sentence,
+    String? cueSentence,
+    String? documentTitle,
+  }) {
+    final BilibiliPlayStreams? streams =
+        parseBilibiliPgcPlayurlResponse(playurlBody);
+    if (streams == null) {
+      throw StateError('bilibili pgc playurl has no DASH audio');
+    }
+    return BilibiliClipRequest(
+      audioSource: streams.audioUrl,
+      clipStartMs: startMs,
+      clipEndMs: endMs,
+      fields: fields,
+      sentence: sentence,
+      cueSentence: cueSentence,
+      documentTitle: (documentTitle != null && documentTitle.trim().isNotEmpty)
+          ? documentTitle
+          : null,
     );
   }
 

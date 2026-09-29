@@ -1,0 +1,16 @@
+## BUG-2626 · 字幕搜索预填：远端合集把分集标题当番剧名、集数从来没被预填
+- **报告**：2026-09-22（用户：「字幕搜索没自动填充作品名和集数」，截图里「番剧名」框写着 `Episode 1`、「集数（可选）」框空，播放的是 Aniyomi 在线视频源的剧集）
+- **真实性**：✅ 真 bug，两条独立成因。
+  - **番剧名**：`fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart` 的 `_jimakuQuery()` 远端分支拿 `_title ?? widget.remoteInfo?.title` 当番名，而远端**合集**里的一集，`RemoteVideoInfo.title` 是**分集**标题——在线源直接用 `MihonEpisode.name`（`fushi/lib/src/media/video/online/anime_source_video_client.dart:153`），番名在 `collection.collectionName`（`:157`，= `anime.title`）里。它再过一道 `parseVideoFilename` 也救不回来：裸集号规则只认 `0\d{1,2}` 或恰两位数字（`packages/fushi_engine/lib/media/video/scraper/filename_parser.dart` 的 `_bareTrailingEpisode`），`Episode 1` 原样留下被整串当番名搜（Jimaku 必然空手）；`Episode 12` 更糟——番名会变成 `Episode`。种子那条路也补不上：在线源 `playlistCollectionId` 恒 null、`bookUid` 查不到刮削行、`_playlistTitle` 只在本地播放列表分支赋值，于是 `seed.queries` 只有 `["Episode 1"]` 一条。
+  - **集数**：结构性缺失，**两条来路都恒空**——`SubtitleEpisodeSearchSpec`（`subtitle_workbench_page.dart`）根本没有集号字段，`SubtitleSearchPanel` 也没有入参，`_episodeCtrl` 硬编码初值空（旧注释记为「用户决策：默认空」）。本地视频的集号其实已被 `parseVideoFilename` 解析出来、然后整个丢掉。
+  - 顺带：「AI 补充搜索词」按钮（`subtitle_search_panel.dart` 的 `_runAiExpand`）吃的是同一个 `_queryCtrl` 文本 + `_lastSearchMedia.title`，输入端被双重污染；修好番名它自动正确，不需要独立改。
+- **[x] ① 已修复** —
+  - 番名：新增纯函数 `remoteSubtitleSeriesQuery`（`fushi/lib/src/media/video/subtitle/subtitle_search_seed.dart`），合集名非空即胜出且**不再过 `parseVideoFilename`**（那条规则会削掉结尾带数字的作品名，`86` / `Gundam 00`）；无合集名时回落标题并按原规则收敛，与改动前一致。`_jimakuQuery()` 改调它，并把 `widget.remoteInfo` 换成 `_effectiveRemoteInfo`（前者是首播那一集，换集后陈旧）。这一改对**所有**远端合集来源（在线源 / 互联 host / 媒体服务器）同时生效，不按来源分支。
+  - 集数：`SubtitleEpisodeSearchSpec.episode` → `SubtitleSearchPanel.initialEpisode` → `_episodeCtrl` 初值。集号来源按可靠度降序：① 远端来源自己报的集号（新增可选能力 `RemoteVideoEpisodeNumber`，`fushi/lib/src/sync/remote_video_client.dart`，由 `AnimeSourceVideoClient` 实现，取 `MihonEpisode.number`，**只认整集**——`1.5` 这类特别篇号四舍五入会指到隔壁那一集，宁可返回 null）；② 本地文件名解析。**刻意不拿播放序兜底**（`collection.sortIndex` / `_currentEpisode`）：有特别篇/OVA 或不从第 1 集开始的季度时它与集号不等，填错的集号比留空更坏。算不出仍留空 = 列出全部版本 = 旧行为。
+  - 这一处改了一条既有决策（集数框原先恒空），已在 `SubtitleSearchPanel.initialEpisode` 的文档注释里写明是有意变更，不是漏读旧注释。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/video/subtitle_search_seed_test.dart`（新增 5 条：合集名胜出且不过解析、番名结尾是数字原样保留、无合集名回落、解析空回落整串、两者都空 → null）
+  - `fushi/test/media/video/online/anime_source_video_client_test.dart`（新增 2 条：`remoteVideoEpisodeNumber` 报扩展集号而非播放序；集号缺失/小数 → null）
+  - `fushi/test/pages/subtitle_workbench_page_test.dart`（新增 2 条 widget：spec 带集号 → 集数框预填；不带 → 留空）
+  - `fushi/test/media/video/subtitle_prefill_wiring_guard_test.dart`（新增 3 条源码扫描守卫：`_jimakuQuery` 走纯函数且取 `_effectiveRemoteInfo`、`_openSubtitleWorkbench` 下发集号、`_jimakuEpisodeNumber` 不许出现 `_currentEpisode` / `sortIndex`）
+- **备注**：`fushi analyze` 全绿（lib + test）。**未真机 E2E**：番名/集数预填正确后「能不能真搜到字幕」取决于 Jimaku 有没有该作品的条目，那一段要真机 + API key 验。

@@ -30,13 +30,19 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "attached_magpie_surface_geometry.h"
+
 namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
 //   wparam = 打包的屏幕物理坐标 ((uint32)x << 32) | (uint32)y
-//   lparam = 1 表示点击真实命中目标 window region/子窗，0 表示在透明区或窗外
+//   lparam = 位集：kLowLevelMouseClickInsideBit 表示点击真实命中目标 window
+//            region/子窗（否则在透明区或窗外）；kLowLevelMouseClickConsumedBit 表示
+//            钩子已把这次 down（及配对 up）从游戏的输入流里吞掉
 // 窗口线程自己决定「转发给 host / 关闭浮窗」——钩子线程不碰任何 C++ 对象。
 constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
+constexpr LPARAM kLowLevelMouseClickInsideBit = 1;
+constexpr LPARAM kLowLevelMouseClickConsumedBit = 2;
 
 // BUG-1166 — 落在目标窗口内的滚轮：钩子**吞掉**它（回调返回非 0，事件不再进入
 // 输入流），改投这条消息让窗口线程自己消化。
@@ -70,6 +76,10 @@ constexpr UINT kLowLevelMouseAttachedGlyphCancelMessage = WM_APP + 0x56;
 // matching generation so another down cannot overwrite a best-effort neutral
 // tail before the injected side observes it.
 constexpr UINT kLowLevelMouseAttachedGlyphAbortMessage = WM_APP + 0x57;
+// A popup that temporarily owned the singleton hook has completed its close
+// path. The attached surface uses this only to re-run its ordinary admission
+// path after the full down/up and sampled-input tail are neutral.
+constexpr UINT kLowLevelMouseAttachedGlyphRearmMessage = WM_APP + 0x58;
 
 // 打包/解包屏幕坐标（x64 下 WPARAM 为 64 位；坐标可为负，故按 uint32 位模式搬运）。
 WPARAM PackMouseHookPoint(int x, int y);
@@ -135,7 +145,21 @@ bool LowLevelAttachedGlyphUsesRiskFallback(HWND target);
 // and copying happen here on the window thread, never in WH_MOUSE_LL.
 uint32_t UpdateLowLevelAttachedGlyphHitRegions(
     HWND surface, HWND game_owner, const RECT* screen_rects,
-    size_t screen_rect_count, bool allow_risk);
+    size_t screen_rect_count, bool allow_risk,
+    const attached_magpie_surface_geometry::Mapping* cursor_mapping,
+    HWND cursor_presentation_hwnd);
+
+// True while the exact immutable snapshot for |surface| and |token| is still
+// published.  A callback can revoke a Magpie snapshot immediately after its
+// bound presentation HWND leaves cursor-capture mode; the surface thread uses
+// this bit to force a fresh publication on its next health sync.
+bool LowLevelAttachedGlyphHitSnapshotIsCurrent(HWND surface, uint32_t token);
+
+// True while the LL worker still owns a glyph transaction admitted from
+// |surface|'s snapshot.  A fail-open retire clears it before the abort message
+// reaches the surface, so an unanswered shield request stops counting as this
+// surface's in-flight click.  Window-thread only: takes the transaction lock.
+bool LowLevelAttachedGlyphTransactionActiveFor(HWND surface);
 
 // Revoke one surface's immutable snapshot and fail-open any owned transaction.
 // Safe to call repeatedly during sentence replacement, hide, detach or target
@@ -144,10 +168,45 @@ uint32_t UpdateLowLevelAttachedGlyphHitRegions(
 // publishes/drains the v19 release asynchronously.
 void ClearLowLevelAttachedGlyphHitRegions(HWND surface);
 
+// The passive re-arm candidate intentionally outlives a transient snapshot
+// clear while a popup owns the singleton. The surface retires it at WM_NCDESTROY
+// so a recycled HWND can never receive a late notification.
+void RetireLowLevelAttachedGlyphRearmCandidate(HWND surface);
+
+// Finish one queued re-arm attempt.  A failed admission must not leave the
+// global hook suppressing game clicks forever; the next health tick may retry
+// from a clean pending state.
+void CompleteLowLevelAttachedGlyphRearm(HWND surface);
+
 inline uint32_t LowLevelAttachedGlyphSnapshotToken(
     uint64_t transaction_id) {
   return static_cast<uint32_t>(transaction_id >> 32u);
 }
+// BUG-2613 — 覆盖窗口左键护盾。
+//
+// 桌面查词卡 / hook 台词浮窗 / 穿透工具条都是 WS_EX_NOACTIVATE 的置顶窗：点它们时
+// 游戏仍是前台窗口。Win32 消息型引擎（KiriKiri 等）看不到这些点击——消息投给了
+// 光标下的我方窗口；但**采样型**引擎不看消息：HUNEX / Leaf 每帧 GetAsyncKeyState、
+// SGRE 读 DirectInput 设备状态、其它引擎走 RawInput，物理左键一按它们就推进台词。
+// 注入侧的输入盾（generic_input_shield.inc + 各 exact adapter）已能对游戏隐藏这类
+// 采样，但它只认共享内存里的 v19 LookupShieldRequest，而这三种窗口从不发布请求。
+//
+// 这里让窗口把自己登记进一张小表；WH_MOUSE_LL 回调里裸左键 down 落在登记窗口
+// （含子窗）上时，同步发布 owner=Popup、target=绑定游戏 HWND 的 down 请求，配对
+// up 时发布 release。事件本身**不吞**——仍照常投给我方窗口，只是游戏的采样面看
+// 不到它。发布走 TryPublish（单次 CAS + try_lock），回调里绝不等待。
+//
+// 游戏 HWND 由 SetOverlayClickShieldGameResolver 装的解析器在**登记时**（窗口线程）
+// 解出：没有 galgame 会话时解析器返回 nullptr，登记就是空操作——有声书歌词条 /
+// 剪贴板文本窗这类不在游戏之上的表面完全不受影响。重复登记同一 HWND 只是刷新
+// 游戏 HWND（会话换局 / 前台窗换了都靠这条刷新），幂等。
+void SetOverlayClickShieldGameResolver(HWND (*resolver)());
+void RegisterOverlayClickShield(HWND overlay);
+void UnregisterOverlayClickShield(HWND overlay);
+// 测试/诊断：当前登记的覆盖窗口数与是否有在飞的覆盖窗口左键事务。
+size_t OverlayClickShieldCountForTest();
+bool OverlayClickShieldTransactionActiveForTest();
+
 // 处理 kLowLevelMouseShieldReleaseMessage。只有 |target| 仍是本次发布的 popup、
 // popup 已 Disarm 且没有按键等待 up 时才撤销；新 Reveal 已经开始时是 no-op。
 void FinalizeLowLevelMouseDirectInputShield(HWND target);

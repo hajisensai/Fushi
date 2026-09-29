@@ -1626,6 +1626,7 @@ class _HomeDashboardPageState
     _ContinueEntry entry, {
     required bool landscape,
   }) {
+    final bool eink = isEinkTheme(context);
     final double coverWidth =
         landscape ? _kContinueCoverHeight * 16 / 9 : _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
@@ -1674,12 +1675,17 @@ class _HomeDashboardPageState
                         right: 0,
                         bottom: 0,
                         child: IgnorePointer(
+                          // eink：半透明黑轨道压在封面上是抖动灰，改实心页面底色
+                          // 轨道 + 前景色进度，黑白各自一段、无灰阶。
                           child: LinearProgressIndicator(
                             value: progress,
                             minHeight: 3,
-                            backgroundColor:
-                                Colors.black.withValues(alpha: 0.35),
-                            color: tokens.surfaces.primary,
+                            backgroundColor: eink
+                                ? tokens.surfaces.page
+                                : Colors.black.withValues(alpha: 0.35),
+                            color: eink
+                                ? tokens.surfaces.onSurface
+                                : tokens.surfaces.primary,
                           ),
                         ),
                       ),
@@ -1735,12 +1741,30 @@ class _HomeDashboardPageState
       return _videoCover(tokens, entry.video!, landscapeSlot: landscapeSlot);
     }
     if (entry.isGame) return _gameCover(tokens, entry.game!);
-    return FadeInImage(
-      placeholder: MemoryImage(kTransparentImage),
-      image: ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
+    return _bookCoverImage(
+      tokens,
+      ReaderFushiSource.instance.getDisplayThumbnailFromMediaItem(
         appModel: appModel,
         item: entry.book!,
       ),
+    );
+  }
+
+  /// 书封面：正常主题 700ms 淡入；eink 下直接出图——淡入是一串灰阶中间帧，
+  /// 墨水屏上每帧都是一次局部刷新（残影）。`FadeInImage` 不接受零时长
+  /// （TweenSequence 权重断言 > 0），所以不能靠 einkSafeDuration，只能换 widget。
+  Widget _bookCoverImage(FushiDesignTokens tokens, ImageProvider image) {
+    if (isEinkTheme(context)) {
+      return Image(
+        image: image,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            _coverPlaceholder(tokens, Icons.menu_book_outlined),
+      );
+    }
+    return FadeInImage(
+      placeholder: MemoryImage(kTransparentImage),
+      image: image,
       fit: BoxFit.cover,
       imageErrorBuilder: (_, __, ___) =>
           _coverPlaceholder(tokens, Icons.menu_book_outlined),
@@ -1853,10 +1877,16 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 封面占位：中性底色 + 图标。
+  /// 封面占位：中性底色 + 图标（eink 下 card 色塌成页面底色，补描边免得只剩
+  /// 一枚悬空图标）。
   Widget _coverPlaceholder(FushiDesignTokens tokens, IconData icon) {
     return DecoratedBox(
-      decoration: BoxDecoration(color: tokens.surfaces.card),
+      decoration: BoxDecoration(
+        color: tokens.surfaces.card,
+        border: isEinkTheme(context)
+            ? Border.all(color: tokens.surfaces.outline)
+            : null,
+      ),
       child: Center(child: Icon(icon, color: tokens.type.metadata.color)),
     );
   }
@@ -2129,13 +2159,23 @@ class _HomeDashboardPageState
             Text(t.stat_goal, style: tokens.type.metadata),
             SizedBox(width: tokens.spacing.gap),
             Expanded(
-              child: ClipRRect(
-                borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
-                  value: fraction,
-                  minHeight: 6,
-                  backgroundColor: tokens.surfaces.card,
-                  color: tokens.surfaces.primary,
+              // eink：card 轨道色 == 页面底色，未完成段和 0% 态都看不见，进度条
+              // 像一截长度不明的短棍；描一圈边把轨道全长画出来。
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: tokens.radii.chipRadius,
+                  border: isEinkTheme(context)
+                      ? Border.all(color: tokens.surfaces.outline)
+                      : null,
+                ),
+                child: ClipRRect(
+                  borderRadius: tokens.radii.chipRadius,
+                  child: LinearProgressIndicator(
+                    value: fraction,
+                    minHeight: 6,
+                    backgroundColor: tokens.surfaces.card,
+                    color: tokens.surfaces.primary,
+                  ),
                 ),
               ),
             ),
@@ -2617,17 +2657,14 @@ class _HomeDashboardPageState
             child: SizedBox(
               width: 40,
               height: 56,
-              child: FadeInImage(
-                placeholder: MemoryImage(kTransparentImage),
-                image: resolveMediaCoverImage(
+              child: _bookCoverImage(
+                tokens,
+                resolveMediaCoverImage(
                   kind: _bookMediaKind(book),
                   book: book,
                   appModel: appModel,
                   decodeWidth: kActivityCoverDecodePixelWidth,
                 )!,
-                fit: BoxFit.cover,
-                imageErrorBuilder: (_, __, ___) =>
-                    _coverPlaceholder(tokens, Icons.menu_book_outlined),
               ),
             ),
           );
@@ -3143,11 +3180,17 @@ class _HomeDashboardPageState
     required Widget child,
     Widget? header,
   }) {
+    // eink：group 面层塌缩成页面底色，四张分区卡（学习活动 / 继续 / 最近添加 /
+    // 动态）的边界全没了，整页读成一根连续的列；补 1px 描边（FushiCard 同款）。
+    final bool eink = isEinkTheme(context);
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: tokens.surfaces.group,
-        shape: const RoundedRectangleBorder(
+        shape: RoundedRectangleBorder(
           borderRadius: FushiBorderRadius.card,
+          side: eink
+              ? BorderSide(color: tokens.surfaces.outline)
+              : BorderSide.none,
         ),
       ),
       child: Padding(

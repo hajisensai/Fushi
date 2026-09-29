@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
+import '../card_source_link.dart';
 import '../anki_note_type_definition.dart';
 import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
@@ -265,7 +266,9 @@ class AnkiRepository extends BaseAnkiRepository {
     // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
     final String? audioWarning = rendered.audioWarning;
 
-    if (!settings.allowDupes) {
+    // BUG-2605：「新增为重复卡」是用户对这一次请求的裁决——跳过查重，与 AnkiConnect
+    // 侧 `allowDuplicate: settings.allowDupes || payload.allowDuplicate` 同口径。
+    if (!settings.allowDupes && !payload.allowDuplicate) {
       final firstFieldValue = noteType.fields.isNotEmpty
           ? (fields[noteType.fields.first] ?? '')
           : '';
@@ -323,7 +326,6 @@ class AnkiRepository extends BaseAnkiRepository {
       // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
       // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
       charPositionTag: context.charPositionTag,
-      sourceLink: context.sourceLink,
     );
 
     try {
@@ -449,14 +451,20 @@ class AnkiRepository extends BaseAnkiRepository {
   ///
   /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体写入链路）从
   /// [rawPayloadJson] + [context] 生成 fields，再经平台通道 `updateNoteFields`
-  /// 按 id 覆盖（native 端只覆盖给出的字段，未给出的保留）。与 [mineEntry] 一样
-  /// 保证**返回** [MineOutcome] 而非抛出（供调用方统一 switch 处理 toast/UI）。
-  /// 不新增卡片、不改 tag、不查重（更新语义）——与 AnkiConnect 后端对称。
+  /// 按 id 覆盖。与 [mineEntry] 一样保证**返回** [MineOutcome] 而非抛出（供调用方
+  /// 统一 switch 处理 toast/UI）。不新增卡片、不查重（更新语义）——与 AnkiConnect
+  /// 后端对称。
   ///
   /// BUG-858：覆盖=整体替换。keepEmpty 保留所有映射字段（含渲染为空的）。native
-  /// `updateNoteFields` 只覆盖给出的字段——不发空字段则句子瞬时选区为空时旧句被静默
-  /// 保留（表现为「只覆盖图片和语音」），故发送空值以真正清空。仅当所有字段皆空白时
-  /// 拒绝（会清空整卡），部分有内容时照常整体替换。
+  /// `updateNoteFields` 默认只覆盖给出的字段——不发空字段则句子瞬时选区为空时旧句被
+  /// 静默保留（表现为「只覆盖图片和语音」），故发送空值以真正清空。仅当所有字段皆
+  /// 空白时拒绝（会清空整卡），部分有内容时照常整体替换。
+  ///
+  /// BUG-2606：整体替换还要覆盖到**没映射的**字段——`clearUnspecified: true` 让
+  /// native 把 note 里没被点名的字段写空（native 本来就握着整条 note，按位置合并，
+  /// 不必再经通道回读一次），否则 Lapis 的 `SentenceFurigana` 这类别的工具填过、
+  /// 模板又优先读的字段会让卡面停在旧句子。`tags` 是新制会打的那组标签，native
+  /// 与现有标签取并集——覆盖后的卡与新制的卡在字段与标签上都一样。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -508,10 +516,23 @@ class AnkiRepository extends BaseAnkiRepository {
         );
       }
 
+      // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper。
+      final List<String> tags = buildNoteTags(
+        settings.tags,
+        source: context.source,
+        includeHibiki: settings.tagIncludeHibiki,
+        includeCategory: settings.tagIncludeCategory,
+        titleTag: context.bookTitleTag,
+        collectionTag: context.collectionTag,
+        charPositionTag: context.charPositionTag,
+      );
+
       try {
         await _channel.invokeMethod('updateNoteFields', <String, dynamic>{
           'noteId': noteId,
           'fieldValues': fields,
+          'clearUnspecified': true,
+          'tags': tags,
         });
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
         // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
@@ -572,17 +593,25 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) async {
+  Future<List<int>> findSourceNoteCandidates(String sourceId) async {
     await _ensurePermission();
+    // The native side validates the UUID and builds the field substring query
+    // itself; no free-form search string crosses the channel.
     final Object? raw = await _channel.invokeMethod<Object?>(
-      'findNotesBySourceMarker',
-      <String, Object>{'markerTag': markerTag},
+      'findNotesBySourceId',
+      <String, Object>{'sourceId': CardSourceLink.validateSourceId(sourceId)},
     );
     if (raw is! List ||
         raw.any((dynamic value) => value is! int || value <= 0)) {
-      throw StateError('Invalid source marker lookup response');
+      throw StateError('Invalid source note lookup response');
     }
     return raw.cast<int>();
+  }
+
+  @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    await _ensurePermission();
+    return notesInfo(noteId);
   }
 
   @override

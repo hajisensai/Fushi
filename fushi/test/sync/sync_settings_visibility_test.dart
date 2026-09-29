@@ -129,6 +129,8 @@ void main() {
       expect(idsOf(dest.sections[4]), <String>[
         'sync.backup_export',
         'sync.backup_import',
+        // 第三方阅读器（Hoshi Reader）书库备份导入：五端都有。
+        'sync.hoshi_import',
       ]);
     });
 
@@ -451,11 +453,20 @@ void main() {
           reason: 'the note must say the other device pairs with that server',
         );
         // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
-        // 主页只留一行带已配对数摘要的入口。
-        expect(idsOf(dest.sections[1]), <String>['interconnect.devices']);
+        // 主页只留一行带已配对数摘要的入口；其后是 Android 接收端的「加入游戏串流」
+        // 入口（PR #1611）——只有 Android 是接收端，所以该行必须自带平台门控。
+        expect(idsOf(dest.sections[1]), <String>[
+          'interconnect.devices',
+          'interconnect.game_stream',
+        ]);
         expect(dest.sections[1].visible, isNotNull);
+        expect(
+          dest.sections[1].items[1].visible,
+          isNotNull,
+          reason: '串流接收端只在 Android，入口不能在其它平台常显',
+        );
         final SettingsNavigationItem devices =
-            dest.sections[1].items.single as SettingsNavigationItem;
+            dest.sections[1].items.first as SettingsNavigationItem;
         expect(devices.child, isNotNull, reason: '入口必须是子 schema 页');
         expect(devices.subtitleBuilder, isNotNull, reason: '入口行带实时摘要');
         final SettingsDestination devicesPage = devices.child!();
@@ -468,11 +479,11 @@ void main() {
         );
         // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
         // 可见（host 无 outbound 时进一步隐藏）。
-        // BUG-2494：「上传词典」开关之后紧跟一行互联通道专属的词典显式传输动作
-        // （上传 / 下载），补上互联页此前缺失的「下载对端词典」入口。
+        // BUG-2494：一行互联通道专属的词典显式传输动作（上传 / 下载）。
+        // BUG-2762：它是本区唯一的词典行——旧的「上传词典」自动同步开关曾与它
+        // 并排成两个「词典」，已删除。
         expect(idsOf(dest.sections[2]), <String>[
           'interconnect.upload_content',
-          'interconnect.upload_dictionary',
           'interconnect.dictionary_transfer',
           'interconnect.upload_audiobook_files',
           'interconnect.upload_video_files',
@@ -515,7 +526,16 @@ void main() {
           hostPage.sections.expand(
             (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
           ),
-          <String>['sync.server_mode', 'interconnect.profile_transfer_host'],
+          <String>[
+            'sync.server_mode',
+            // 弱网转码开关（host 按对端选的画质档切段转 HLS）也住在主机服务子页：
+            // 它是「本机作为服务器」的能力开关，不是对端侧偏好。
+            'interconnect.transcode_host',
+            // 允许已配对设备远程启动本机游戏（PR #1616）：会在主机上拉起进程，
+            // 必须是主机主人的显式意愿，所以同样是主机服务子页的能力开关。
+            'interconnect.game_stream_remote_launch',
+            'interconnect.profile_transfer_host',
+          ],
         );
       },
     );
@@ -603,19 +623,20 @@ void main() {
     test('upload section carries an explicit dictionary transfer row scoped to '
         'the interconnect channel (BUG-2494)', () {
       // 互联页此前没有任何「把对端的词典拉下来」的入口：云备份页那行「词典 · 传输 ▾」
-      // 在同步方式=互联时被藏掉，且 runManualAssetTransfer 显式跳过互联通道；互联页
-      // 只有一个文案叫「上传词典」的开关。这一行必须与上传开关同区、同门控（互联开
-      // 启且非 host），并且跑在互联通道范围上——不能复用云通道的默认范围，否则点一下
-      // 就把词典推上云盘而不是对端。
+      // 在同步方式=互联时被藏掉，且 runManualAssetTransfer 显式跳过互联通道。这一行
+      // 必须与上传开关同区、同门控（互联开启且非 host），并且跑在互联通道范围上——
+      // 不能复用云通道的默认范围，否则点一下就把词典推上云盘而不是对端。
       final SettingsSection upload = dest.sections.firstWhere(
         (SettingsSection s) => s.id == 'interconnect.upload.section',
       );
       final List<String> ids = idsOf(upload);
       expect(ids, contains('interconnect.dictionary_transfer'));
+      // BUG-2762：词典在这一区只能出现一次。旧的「上传词典」开关与本行并排，用户
+      // 看到两个「词典」；开关已删，这里钉住它不回来。
       expect(
-        ids.indexOf('interconnect.dictionary_transfer'),
-        ids.indexOf('interconnect.upload_dictionary') + 1,
-        reason: '传输动作紧跟在「上传词典」开关之后，用户在同一处看到开关与显式动作',
+        ids,
+        isNot(contains('interconnect.upload_dictionary')),
+        reason: '互联页词典只留显式传输一行，不得再有自动同步开关',
       );
       expect(upload.visible, isNotNull, reason: '整区按互联开启 + 非 host 门控，动作行随区隐藏');
 

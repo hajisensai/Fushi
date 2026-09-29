@@ -68,7 +68,20 @@ class ReaderChromeController extends ChangeNotifier {
     _autoHideTimer = null;
   }
 
+  /// 唤出悬浮 chrome 而**不**武装自动收起：点出来就留着，只有下一次点击能关掉它
+  /// （用户 2026-09-14 定的悬浮控制栏口径）。已在计时的收起一并停掉，否则上一轮
+  /// 武装的计时会把这次刚点出来的栏收走。
+  void showTransient() {
+    cancelAutoHide();
+    if (_transientVisible) return;
+    _transientVisible = true;
+    notifyListeners();
+  }
+
   /// 唤出悬浮 chrome 并（重新）武装自动收起。
+  ///
+  /// 只剩「点空白已被别的动作占死、收起没有第二条手势通道」的场景还该用它
+  /// （EPUB 的 VN 翻页）；常规显隐一律用 [showTransient] + [hideTransient]。
   void reveal(Duration autoHideAfter) {
     _transientVisible = true;
     notifyListeners();

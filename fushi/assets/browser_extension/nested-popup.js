@@ -2,6 +2,9 @@
 // draft and scroll state must never overwrite the parent dictionary's state.
 (function () {
   'use strict';
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
 
   const host = document.getElementById('fushi-nested-root');
   const root = host.attachShadow({ mode: 'open' });
@@ -59,7 +62,7 @@
     let entries;
     try { entries = JSON.parse(data.popupJson); }
     catch (_) {
-      container.textContent = '词典结果解析失败，请重试。';
+      container.textContent = tr('lookup_parse_failed');
       return;
     }
     if (!Array.isArray(entries)) return;
@@ -69,7 +72,7 @@
     window.audioSources = Array.isArray(data.audioSources) ? data.audioSources : [];
     window.needsAudio = true;
     window.embedMedia = true;
-    window._noResultsMessage = '没有查词结果';
+    window._noResultsMessage = tr('lookup_no_results');
     window.sentenceContextPreviewEnabled = data.sentenceContextPreviewEnabled === true;
     if (data.i18nCtx && typeof data.i18nCtx === 'object') window.i18nCtx = data.i18nCtx;
     window.__hasChildPopup = false;
@@ -77,16 +80,27 @@
     const theme = data.theme && typeof data.theme === 'object' ? data.theme : {};
     const zoom = Number(data.popupZoom) > 0 ? Number(data.popupZoom) : 1;
     host.style.zoom = String(zoom);
-    host.style.width = (100 / zoom) + '%';
-    host.style.height = (100 / zoom) + '%';
+    // 百分比尺寸按包含块解析、不乘 zoom（Chrome 标准化 CSS zoom 后实测：zoom 1.25 + 80%
+    // 渲染为父盒 80%）。写 100/zoom % 会让内容只占外框的 1/zoom，底部右侧留大块空白。
+    host.style.width = '100%';
+    host.style.height = '100%';
     for (const [key, value] of Object.entries(theme)) {
       if (key.startsWith('--') && typeof value === 'string') {
         container.style.setProperty(key, value);
         document.documentElement.style.setProperty(key, value);
       }
     }
-    const scheme = theme['--fushi-color-scheme'];
+    // 扩展主题显式 light/dark 压过 app 的值（theme.js；查词请求已带同一个 colorScheme 提示）。
+    let scheme = theme['--fushi-color-scheme'];
+    if (window.fushiTheme && typeof window.fushiTheme.resolve === 'function') {
+      scheme = window.fushiTheme.resolve(scheme);
+    }
     if (scheme === 'light' || scheme === 'dark') container.setAttribute('data-theme', scheme);
+    // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
+      window.fushiTheme.applyPopupPalette(container, scheme);
+      window.fushiTheme.applyPopupPalette(document.documentElement, scheme);
+    }
     const wheelSpeed = Number.parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = Number.isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
     applyFushiPopupCss(data);
@@ -152,6 +166,7 @@
     chrome.runtime.sendMessage({ type: 'dictMediaConfig' }, function (response) {
       if (response && response.ok && response.base && response.token) {
         window.__fushiDictMedia = { base: response.base, token: response.token };
+        if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
       }
     });
   } catch (_) { /* The normal shared media fallback handles unavailable config. */ }

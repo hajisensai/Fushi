@@ -100,6 +100,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // reader caret 正激活，surface 会滞留 reader，之后方向键会对歌词文档调
         // window.fushiCaret.move() 报错、caret 卡死——进入前先丢掉旧 caret。
         _exitCaret();
+        // BUG-2597：进歌词 = 翻走正文当前页（与 [_beginNavigation] 对称的 `leave()`），
+        // 之后账本的单元是歌词里的句子（[_arriveLyricsCueUnit]）；退出歌词经
+        // `_navigateToChapter` → `_beginNavigation` 再 `leave()` 结算最后一句。
+        _readLedger.leave();
         await _resolveAndApplyProfile(
           appModelNoUpdate.database,
           mediaTypeOverride: ProfileMediaKind.lyrics,

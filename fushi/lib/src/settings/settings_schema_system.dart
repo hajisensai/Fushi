@@ -10,6 +10,8 @@ import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/diagnostics/video_diag_export.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
@@ -594,6 +596,30 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.save_alt_outlined,
             onTap: _exportStudyDiagLog,
           ),
+          // 用户 2026-09-22：「视频模块加入日志用于分析视频为什么卡顿、查词为什么
+          // 卡」。与统计诊断流水（永远开着、密度低）不同，这套是 mpv 级别的详尽日志
+          // ——每秒一行帧耗时汇总 + 每秒一行 libmpv 属性快照 + libmpv 自己的 verbose
+          // log-file，常开会白白吃 IO，所以默认关闭、复现期才打开。
+          SettingsSwitchItem(
+            id: 'diagnostics.video_diag_log_enabled',
+            title: t.settings_video_diag_toggle,
+            subtitle: t.settings_video_diag_toggle_hint,
+            icon: Icons.videocam_outlined,
+            value: (_) => VideoDiagLog.instance.enabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await VideoDiagLog.instance.setEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsActionItem(
+            id: 'diagnostics.video_diag_export',
+            title: t.settings_video_diag_export,
+            subtitle: t.settings_video_diag_export_hint,
+            icon: Icons.save_alt_outlined,
+            // 开关关着也留着导出：复现完先关掉再导出是很自然的顺序，此时流水仍在
+            // （[VideoDiagLog.setEnabled] 只停止记录、不清空）。
+            onTap: _exportVideoDiagLog,
+          ),
         ],
       ),
     ],
@@ -615,6 +641,23 @@ Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
     log: log,
     fileName: 'fushi_study_diag_log.txt',
     subject: t.study_diag_share_subject,
+  );
+}
+
+/// 设置 › 诊断 › 导出视频诊断日志（正文见 [buildVideoDiagExportFromDisk]）。
+/// 三段：头信息（含小内存模式 / 热槽状态）+ 统一时间轴 + libmpv 原始日志尾部。
+Future<void> _exportVideoDiagLog(SettingsContext settingsContext) async {
+  final AppModel appModel = settingsContext.appModel;
+  final String log = await buildVideoDiagExportFromDisk(
+    appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
+    lowMemoryMode: appModel.lowMemoryMode,
+  );
+  if (!settingsContext.context.mounted) return;
+  await saveLogToFile(
+    context: settingsContext.context,
+    log: log,
+    fileName: 'fushi_video_diag_log.txt',
+    subject: t.video_diag_share_subject,
   );
 }
 

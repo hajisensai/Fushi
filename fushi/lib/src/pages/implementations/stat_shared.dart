@@ -13,6 +13,11 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 /// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·
 /// 一到两行 meta · 右侧主值（时长）· 有 [onTap] 时带 chevron。
 /// [onDelete] 挂在移动端长按 + 桌面端右键（经 [ContextMenuTrigger] 走绑定表，BUG-2111）。
+///
+/// [cover]：媒体封面（书架 / 视频库 / 游戏库同一条封面解析链
+/// `resolveMediaCoverImage`）。三个域的「按媒体」列表都给每行一个固定 2:3
+/// 封面槽（Niratan「Book Ranking」同款）：有封面画封面，没有 / 加载失败画
+/// [icon] 占位，整列左缘对齐。
 Widget buildStatMediaRow(
   BuildContext context, {
   required IconData icon,
@@ -21,6 +26,7 @@ Widget buildStatMediaRow(
   required String trailing,
   String? collectionName,
   String? meta2,
+  ImageProvider? cover,
   VoidCallback? onTap,
   VoidCallback? onDelete,
 }) {
@@ -29,12 +35,28 @@ Widget buildStatMediaRow(
   final TextStyle metaStyle = tokens.type.metadata.copyWith(
     color: colors.onSurfaceVariant,
   );
+  final Widget placeholder = Center(child: Icon(icon, color: colors.primary));
   final Widget card = FushiCard(
     onTap: onTap,
     onLongPress: onDelete,
     child: Row(
       children: <Widget>[
-        Icon(icon, color: colors.primary),
+        ClipRRect(
+          borderRadius: tokens.radii.chipRadius,
+          child: Container(
+            width: kStatMediaCoverWidth,
+            height: kStatMediaCoverWidth * 1.4,
+            color: tokens.surfaces.overlay,
+            child: cover == null
+                ? placeholder
+                : Image(
+                    image: cover,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => placeholder,
+                  ),
+          ),
+        ),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Column(
@@ -99,6 +121,9 @@ Widget buildStatMediaRow(
           ),
   );
 }
+
+/// 「按媒体」行封面槽宽（逻辑像素，高 = 宽 × 1.4，接近 2:3 海报 / 书封）。
+const double kStatMediaCoverWidth = 40;
 
 /// 统计页「分析」折叠区：三个域 tab 收敛到「时段卡 → 每日图 → 最近会话 → 按媒体」
 /// 的游戏页骨架后，阅读页的 KPI 条 / 趋势 / 今日环 / 速度摘要 / 来源分布 / 小时×格式
@@ -257,6 +282,99 @@ Widget buildStatTailSliver(BuildContext context) {
     padding: EdgeInsets.only(
       bottom: tokens.spacing.card * 2 + bottomSafeInsetOf(context),
     ),
+  );
+}
+
+/// 横屏双栏的最小内容区宽度（dp）。两栏各分一半、再扣掉左右 [FushiSpacingTokens.card]
+/// 后，每栏仍刚好能让时段卡排两列（见 [kStatPeriodSummaryMinColumnWidth]）；再窄
+/// 就是把竖排布局硬劈两半，每栏都挤，不如单列。
+const double kStatLandscapeMinWidth = 720;
+
+/// 纯函数：统计 tab 的内容区该不该走横屏双栏。
+///
+/// 判的是**内容区**（tab 内扣掉页头 / TabBar / 动作行之后）的形状，不是屏幕朝向：
+/// 手机横过来、平板横放、桌面宽窗口都落在这里；桌面窄高窗口与竖屏仍是单列。
+/// 高度无界（放进外层滚动容器）时没有「横」可言，按单列。
+bool useStatLandscapeLayout(Size size) =>
+    size.width.isFinite &&
+    size.height.isFinite &&
+    size.width > size.height &&
+    size.width >= kStatLandscapeMinWidth;
+
+/// 横屏双栏里一个区块归哪一栏。
+enum StatPane {
+  /// 左栏「概览」：目标、时段卡、图表、分析——回答「多少」。
+  overview,
+
+  /// 右栏「明细」：最近会话、按媒体列表——回答「是什么」。
+  detail,
+}
+
+/// 统计 tab 的一个区块：一条 sliver + 它在横屏下归哪一栏。
+class StatPaneSliver {
+  const StatPaneSliver(this.pane, this.sliver);
+
+  final StatPane pane;
+  final Widget sliver;
+}
+
+/// 统计 tab 的自适应滚动主体：竖屏 = 一条 [CustomScrollView]，区块按 [sections]
+/// 给出的顺序原样排（竖排布局一处不改）；横屏（[useStatLandscapeLayout]）= 按
+/// [StatPaneSliver.pane] 拆成左「概览」右「明细」两栏、各自独立滚动，栏内保持
+/// 原相对顺序。
+///
+/// 横屏下竖排布局只是被拉宽：时段卡、图表铺满一屏高度后，最近会话与按媒体列表
+/// 全被挤到折线以下，要看数字对应哪本书 / 哪次会话得来回滚。双栏让「多少」和
+/// 「是什么」同屏——左栏数字、右栏条目，任一栏滚动不影响另一栏。
+///
+/// [sections] 收到区块所在栏的宽度（竖屏即整宽），供区块自己决定是否并排。
+Widget buildStatAdaptiveScrollView(
+  BuildContext context, {
+  required List<StatPaneSliver> Function(double columnWidth) sections,
+}) {
+  return LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      if (!useStatLandscapeLayout(constraints.biggest)) {
+        return CustomScrollView(
+          slivers: <Widget>[
+            for (final StatPaneSliver s in sections(constraints.maxWidth))
+              s.sliver,
+            buildStatTailSliver(context),
+          ],
+        );
+      }
+      final List<StatPaneSliver> all = sections((constraints.maxWidth - 1) / 2);
+      List<Widget> paneSlivers(StatPane pane) => <Widget>[
+            for (final StatPaneSliver s in all)
+              if (s.pane == pane) s.sliver,
+            buildStatTailSliver(context),
+          ];
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: CustomScrollView(
+              key: const ValueKey<String>('stat-landscape-overview'),
+              slivers: paneSlivers(StatPane.overview),
+            ),
+          ),
+          VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+          Expanded(
+            // 两栏都挂 PrimaryScrollController 时（移动端默认继承），状态栏点按回顶
+            // 会撞「一个控制器挂两个视图」；主栏留给左侧概览。
+            child: CustomScrollView(
+              key: const ValueKey<String>('stat-landscape-detail'),
+              primary: false,
+              slivers: paneSlivers(StatPane.detail),
+            ),
+          ),
+        ],
+      );
+    },
   );
 }
 
@@ -429,11 +547,14 @@ class _StatPeriodSummaryCard extends StatelessWidget {
   }
 }
 
-/// 最近 30 天时长柱状图（视频 / 游戏统计共用）。
+/// 时长柱状图（四个统计 tab 共用）。[title] 缺省为「近 30 天」；范围图表经
+/// `buildStatRangeChartSection` 传区间标题与按柱数稀疏的 [labelEvery]。
 Widget buildStatDailyDurationChartSection(
   BuildContext context,
-  List<StatDayData> daily,
-) {
+  List<StatDayData> daily, {
+  String? title,
+  int labelEvery = 5,
+}) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return Padding(
@@ -442,7 +563,7 @@ Widget buildStatDailyDurationChartSection(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(
-          t.stat_last_30_days,
+          title ?? t.stat_last_30_days,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
@@ -460,6 +581,7 @@ Widget buildStatDailyDurationChartSection(
               ),
               valueOf: statMsValue,
               axisScaleOf: statDurationAxisScale,
+              labelEvery: labelEvery,
             ),
           ),
         ),
@@ -1018,4 +1140,86 @@ class _StatHourlyLegendChip extends StatelessWidget {
       ],
     );
   }
+}
+
+/// 统计 sheet（时段明细 / 会话列表）的高度上限占屏高比例。
+const double kStatSheetMaxHeightFactor = 0.8;
+
+/// 统计明细面（时段明细 / 会话列表）的唯一弹出入口：移动端是底部 sheet，桌面端
+/// （Windows / macOS / Linux）是居中对话框。
+///
+/// 桌面上宽窗口底部弹一条抽屉很别扭（用户 2026-09-28「Windows 这里用抽屉有点怪」）：
+/// 内容挤在屏幕下半截、要往下看、拖动条对鼠标没意义。对话框限宽 640、限高
+/// [kStatSheetMaxHeightFactor]，点外面 / Esc / 右上角关闭都会收起；[builder] 的内容
+/// 不区分载体（条目里 `Navigator.pop` 收的是同一个 modal route）。
+Future<void> showStatDetailSurface(
+  BuildContext context, {
+  required WidgetBuilder builder,
+}) {
+  if (!FushiAppUiScale.isDesktopPlatform(Theme.of(context).platform)) {
+    return adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) =>
+          statSheetHeightCap(sheetContext, child: builder(sheetContext)),
+    );
+  }
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
+      return Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: kStatDetailDialogMaxWidth,
+            maxHeight:
+                MediaQuery.sizeOf(dialogContext).height *
+                kStatSheetMaxHeightFactor,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.only(
+                  top: tokens.spacing.gap / 2,
+                  right: tokens.spacing.gap / 2,
+                ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FushiIconButton(
+                    icon: Icons.close,
+                    tooltip: MaterialLocalizations.of(
+                      dialogContext,
+                    ).closeButtonTooltip,
+                    onTap: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+              Flexible(child: builder(dialogContext)),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// 桌面端统计明细对话框的最大宽度（逻辑像素）。
+const double kStatDetailDialogMaxWidth = 640;
+
+/// 给统计 sheet 的内容加高度上限。
+///
+/// [adaptiveModalSheet] 走 `isScrollControlled: true`、不开 `useSafeArea`：sheet 高度
+/// 只受内容约束，路由还会抹掉顶部安全区。时段 / 会话一多，sheet 就一路长到屏幕
+/// 最顶，拖动条压进状态栏 / 灵动岛下面（iOS 刘海屏最明显），既盖满页面又难以下拉
+/// 收起。内容少时照常按内容高度收缩，只在超出时截到 [kStatSheetMaxHeightFactor]
+/// 并在 sheet 内滚动。
+Widget statSheetHeightCap(BuildContext context, {required Widget child}) {
+  return ConstrainedBox(
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * kStatSheetMaxHeightFactor,
+    ),
+    child: child,
+  );
 }

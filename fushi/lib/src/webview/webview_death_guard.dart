@@ -119,17 +119,30 @@ class WebViewDeathGuard {
   Future<void> handleDeath({
     bool didCrash = false,
     Object? rendererPriorityAtExit,
-  }) async {
+  }) =>
+      _handle(
+        'renderer gone (didCrash=$didCrash, '
+        'priorityAtExit=$rendererPriorityAtExit)',
+      );
+
+  /// WKWebView（iOS / macOS）的 WebContent 进程终止。接到
+  /// `onWebContentProcessDidTerminate` 就调这个。
+  ///
+  /// BUG-2759：WebKit 在内存压力下会回收（jetsam）后台或屏外 WebView 的内容
+  /// 进程，插件只把事件转给 Dart、不会自动重载。此前全仓没人接这个回调：进程
+  /// 死后 controller 与就绪标志照旧，`evaluateJavascript` 打进死进程既不报错也
+  /// 不渲染——常驻查词弹窗在整卷 OCR 之后点任何字都只剩空白框。处置与 Android
+  /// 的 renderer 死亡同构：先抢救、再按预算重建。
+  Future<void> handleWebContentTerminated() =>
+      _handle('WebKit content process terminated');
+
+  Future<void> _handle(String cause) async {
     // 同一次死亡可能由多路回调进来（例如宿主自己也挂了监听）；重入直接丢弃，
     // 否则 epoch 会一次死亡跳两代、预算被虚耗。
     if (_handling) return;
     _handling = true;
     _deathCount += 1;
-    _reporter(
-      surface,
-      'renderer gone (didCrash=$didCrash, '
-      'priorityAtExit=$rendererPriorityAtExit, death#$_deathCount)',
-    );
+    _reporter(surface, '$cause, death#$_deathCount');
     try {
       // 抢救永远先做，且抛错也不能挡住后面的重建：宿主 flush 失败最多丢这次
       // 增量，而不重建就是永久白屏。

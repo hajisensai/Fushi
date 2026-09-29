@@ -36,6 +36,9 @@ class RemotePopupDictionaryCss {
     required this.globalDictCss,
     required this.customDictCss,
     this.dictionaryDisplayNames = const <String, String>{},
+    this.dictionaryFontFaces = const <Map<String, String>>[],
+    this.dictionaryFontCss = '',
+    this.dictionaryLanguages = const <String, String>{},
   });
 
   final Map<String, String> dictionaryStyles;
@@ -49,6 +52,17 @@ class RemotePopupDictionaryCss {
   /// 挂在本类而不是另开一条通道：它与 CSS 三件套同属「弹窗渲染用的旁路数据」，
   /// 共用下面的 revision 门控——改名改 revision，扩展下次查词即拉到新表。
   final Map<String, String> dictionaryDisplayNames;
+
+  /// 用户「词典字体」：`{family, src, format}`，src 是 app 端点的相对 URL
+  /// （扩展补 base + token 后 `new FontFace()` 注册）。与 in-app 弹窗同一份设置。
+  final List<Map<String, String>> dictionaryFontFaces;
+
+  /// 按内容语言分流的字体链 CSS（用户字体接在每条链首），根选择器是扩展弹窗的
+  /// `#entries-container`。
+  final String dictionaryFontCss;
+
+  /// 词典名 -> 释义语言，popup.js 的 `__fushiDictionaryLanguages`。
+  final Map<String, String> dictionaryLanguages;
 
   late final String revision = _computeRevision();
 
@@ -65,10 +79,31 @@ class RemotePopupDictionaryCss {
     for (final MapEntry<String, String> e in dictionaryDisplayNames.entries) {
       h = Object.hash(h, e.key, e.value.hashCode);
     }
+    // 换字体 / 改语言同理：不进 revision，扩展就一直用旧字体。
+    for (final Map<String, String> face in dictionaryFontFaces) {
+      h = Object.hash(h, face['family'], face['src'], face['format']);
+    }
+    h = Object.hash(h, dictionaryFontCss.length, dictionaryFontCss.hashCode);
+    for (final MapEntry<String, String> e in dictionaryLanguages.entries) {
+      h = Object.hash(h, e.key, e.value);
+    }
     return '${dictionaryStyles.length}.${customDictCss.length}.'
         '${dictionaryDisplayNames.length}.'
         '${h.toUnsigned(32).toRadixString(16)}';
   }
+}
+
+/// 查词响应 `theme` 字段的供给器。参数是请求体里扩展显式要求的明暗
+/// （`'light'` / `'dark'`，经 [remoteLookupColorSchemeOf] 校验），null = 跟随 app 当前明暗。
+typedef RemoteThemeColorsProvider = Map<String, String> Function(
+    String? colorScheme);
+
+/// 从查词请求体取扩展显式要求的明暗：只接受字符串 `'light'` / `'dark'`，其它
+/// （缺省 / 非字符串 / 别的值）一律 null。
+String? remoteLookupColorSchemeOf(Map<String, dynamic> body) {
+  final Object? raw = body['colorScheme'];
+  if (raw == 'light' || raw == 'dark') return raw as String;
+  return null;
 }
 
 /// `POST /api/lookup/dictionary` 的响应体。[body] 是已解析的 JSON Map。
@@ -78,18 +113,24 @@ class RemotePopupDictionaryCss {
 /// `--fushi-popup-*` / `--dict-columns`），随响应放进 `theme` 字段下发。浏览器扩展
 /// content.js 读 `resp.data.theme` 并 `setProperty` 到弹窗容器 → 弹窗实时跟随用户主题
 /// （改主题下次查词即变），无需重装扩展。null（未注入）时不带 `theme` 字段（向后兼容）。
+///
+/// 扩展侧「主题：跟随 / 浅色 / 深色」设置：用户选显式明暗时请求体带
+/// `colorScheme: 'light' | 'dark'`（[remoteLookupColorSchemeOf]），provider 据此按
+/// 该明暗生成变量；缺省 / 非法值一律 null = 跟随 app 当前明暗（旧扩展行为不变）。
 Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   Map<String, dynamic> body, {
   required FushiRemoteLookupService lookup,
   FushiRemoteHistoryService? history,
   RemoteDictionaryPopupTiming? popupTiming,
-  Map<String, String> Function()? themeColorsProvider,
+  RemoteThemeColorsProvider? themeColorsProvider,
   List<String> Function()? audioSourcesProvider,
   bool Function()? autoReadOnLookupProvider,
   String? Function()? extensionBuildProvider,
   RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
+  String? Function()? appLocaleProvider,
 }) async {
-  final Map<String, String>? theme = themeColorsProvider?.call();
+  final Map<String, String>? theme =
+      themeColorsProvider?.call(remoteLookupColorSchemeOf(body));
   // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
   // window.audioSources（非空 → popup.js 渲染 ♪ 按钮）。null（未注入，如 sync host）
   // 时不带该字段（向后兼容）。
@@ -104,6 +145,9 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // null（未注入，如 sync host）时不带该字段（向后兼容）。
   final bool? autoReadOnLookup = autoReadOnLookupProvider?.call();
   final String? extensionBuild = extensionBuildProvider?.call();
+  // app 当前 UI 语言（Slang languageTag，如 'en' / 'zh-CN' / 'ja'）随查词响应下发，
+  // 扩展弹窗 / 面板据此选文案；缺失（未注入，如 sync host）时扩展回落浏览器语言。
+  final String? appLocale = appLocaleProvider?.call();
   // BUG-1718：弹窗「CSS 尾段」（词典自带 styles.css + 用户全局/单典自定义 CSS）。app 内弹窗由
   // popup_settings_injection 把 window.dictionaryStyles / globalDictCSS / customDictCSS 注入
   // WebView；浏览器扩展跑的是**同一份 popup.js**，却从来拿不到这三件套 —— mdx 词典的自带样式
@@ -123,12 +167,16 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     if (audioSources != null) 'audioSources': audioSources,
     if (autoReadOnLookup != null) 'autoReadOnLookup': autoReadOnLookup,
     if (extensionBuild != null) 'extensionBuild': extensionBuild,
+    if (appLocale != null) 'appLocale': appLocale,
     if (popupCss != null) 'dictionaryStylesRevision': popupCss.revision,
     if (cssStale) ...<String, Object?>{
       'dictionaryStyles': popupCss.dictionaryStyles,
       'globalDictCSS': popupCss.globalDictCss,
       'customDictCSS': popupCss.customDictCss,
       'dictionaryDisplayNames': popupCss.dictionaryDisplayNames,
+      'dictionaryFontFaces': popupCss.dictionaryFontFaces,
+      'dictionaryFontCss': popupCss.dictionaryFontCss,
+      'dictionaryLanguages': popupCss.dictionaryLanguages,
     },
   };
   final String term = body['term']?.toString() ?? '';
@@ -302,7 +350,7 @@ Future<Map<String, dynamic>> buildSourceNoteResponse(
     case '/api/anki/source/read':
       final Object? sourceId = body['sourceId'];
       if (sourceId is! String) throw const FormatException('Missing source ID');
-      CardSourceLink.markerForSourceId(sourceId);
+      CardSourceLink.validateSourceId(sourceId);
       final AnkiSourceNote? note = await mining.readSourceNote(sourceId);
       return <String, dynamic>{
         'ok': true,
@@ -363,6 +411,25 @@ Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
   final bool duplicate =
       await mining.isDuplicate(expression: expression, reading: reading);
   return <String, dynamic>{'duplicate': duplicate};
+}
+
+/// Issue #1409：`POST /api/anki/open` 的响应体。[body] 需含非空 `expression`
+/// （+可选 `reading`），缺失抛 [FormatException]（调用方转 400）。回
+/// `{outcome: 'opened' | 'noMatch' | 'failed'}`——正是弹窗 `openWordInAnki` 认的三态名
+/// （[AnkiOpenWordOutcome.name]），经注入的 [mining].openWordInAnki 复用 app 内同一
+/// `repo.openWordInAnki`。
+Future<Map<String, dynamic>> buildRemoteOpenInAnkiResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String expression = body['expression']?.toString() ?? '';
+  final String reading = body['reading']?.toString() ?? '';
+  if (expression.trim().isEmpty) {
+    throw const FormatException('Missing expression');
+  }
+  final AnkiOpenWordOutcome outcome =
+      await mining.openWordInAnki(expression: expression, reading: reading);
+  return <String, dynamic>{'outcome': outcome.name};
 }
 
 /// `POST /api/anki/note-type/read` 的响应体。互联 Lapis 客制化：手机端（AnkiDroid /

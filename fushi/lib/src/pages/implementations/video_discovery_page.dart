@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
     as discovery;
 import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/utils.dart';
 
@@ -82,7 +83,6 @@ class VideoDiscoveryPage extends StatefulWidget {
 
 class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   static const double _filterControlHeight = 44;
-  static const Duration _searchDebounce = Duration(milliseconds: 350);
   static const int _pageSize = 30;
 
   final TextEditingController _searchController = TextEditingController();
@@ -91,7 +91,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   );
   final ScrollController _scrollController = ScrollController();
 
-  Timer? _debounce;
+  final DiscoverySearchDebouncer _debounce = DiscoverySearchDebouncer();
   int _generation = 0;
   int _page = 1;
   bool _loading = true;
@@ -100,7 +100,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   bool _totalFailure = false;
 
   discovery.VideoDiscoveryCategory? _category;
-  discovery.VideoDiscoverySort _sort = discovery.VideoDiscoverySort.popularity;
+
+  /// 用户在排序菜单里显式选的排序；null = 跟随默认（见 [_sort]）。
+  discovery.VideoDiscoverySort? _pickedSort;
   int _year = 0;
   String _region = '';
   String _genre = '';
@@ -116,8 +118,27 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   VideoDiscoveryController get _controller =>
       widget.controller ?? const EmptyVideoDiscoveryController();
 
+  bool get _searching => _searchController.text.trim().isNotEmpty;
+
+  /// 没搜索时默认按热度浏览；一旦输入关键词，默认改按相关度——各来源按热度重排
+  /// 搜索结果会把「沾边但热门」的作品顶到精确命中前面（AniList 走
+  /// `POPULARITY_DESC` 而不是 `SEARCH_MATCH`，TMDB 按 popularity 重排多页结果）。
+  /// 相关度只对搜索有意义，清空关键词后自动回落到热度。
+  discovery.VideoDiscoverySort get _defaultSort => _searching
+      ? discovery.VideoDiscoverySort.relevance
+      : discovery.VideoDiscoverySort.popularity;
+
+  discovery.VideoDiscoverySort get _sort {
+    final discovery.VideoDiscoverySort? picked = _pickedSort;
+    if (picked == null ||
+        (picked == discovery.VideoDiscoverySort.relevance && !_searching)) {
+      return _defaultSort;
+    }
+    return picked;
+  }
+
   bool get _hasActiveSearchOrFilter =>
-      _searchController.text.trim().isNotEmpty ||
+      _searching ||
       _category != null ||
       _sort != discovery.VideoDiscoverySort.popularity ||
       _year != 0 ||
@@ -141,7 +162,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _debounce.dispose();
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
@@ -151,28 +172,27 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.extentAfter < 600) {
+    if (discoveryShouldLoadMore(_scrollController.position)) {
       unawaited(_loadMore());
     }
   }
 
   void _scheduleSearch(String _) {
-    _debounce?.cancel();
     // Invalidate an in-flight response as soon as the input changes. Waiting
     // until the debounce fires would let an older query briefly replace the
     // visible results while the user is already typing the next query.
     _generation += 1;
-    _debounce = Timer(_searchDebounce, () => unawaited(_reload()));
+    _debounce.schedule(() => unawaited(_reload()));
   }
 
   void _submitSearch(String _) {
-    _debounce?.cancel();
+    _debounce.cancel();
     unawaited(_reload());
   }
 
   void _clearSearch() {
     _searchController.clear();
-    _debounce?.cancel();
+    _debounce.cancel();
     unawaited(_reload());
   }
 
@@ -265,7 +285,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         ...flattened.items,
       ]);
       _hasMore = flattened.hasMore;
-      _failures = _deduplicateFailures(<ExternalProviderFailure>[
+      _failures = deduplicateDiscoveryFailures(<ExternalProviderFailure>[
         ..._failures,
         ...result.failures,
       ]);
@@ -340,32 +360,23 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     return List<discovery.VideoDiscoveryItem>.unmodifiable(result);
   }
 
-  List<ExternalProviderFailure> _deduplicateFailures(
-    Iterable<ExternalProviderFailure> failures,
-  ) {
-    final Set<String> seen = <String>{};
-    return <ExternalProviderFailure>[
-      for (final ExternalProviderFailure failure in failures)
-        if (seen.add(
-          '${failure.providerId}:${failure.operation}:${failure.kind.name}',
-        ))
-          failure,
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!widget.embedded && !isCupertinoPlatform(context)) _buildHeader(),
+          if (_headerVisible) _buildHeader(),
           _buildControls(),
           Expanded(child: _buildBody()),
         ],
       ),
     );
   }
+
+  /// 页头只在独立页面（非 embedded、非 Cupertino）渲染；不渲染时页头上的入口
+  /// （放送日历）改放进搜索行，否则浏览页里的视频发现就没有日历入口了。
+  bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
 
   /// 放送日历（2026-08-21 迁入发现页）：条目直达发现详情，同一套 actions。
   void _openCalendar() {
@@ -446,10 +457,51 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 onSubmitted: _submitSearch,
                 onClear: _clearSearch,
               );
+              // 「AI 下视频」入口跟搜索框同一行：embedded 于下载页时页头不渲染，
+              // 搜索行是三种宽度下唯一都可见的位置。null = 宿主没接线（平台合规
+              // 不可用），整颗按钮不渲染；AI 未指派由宿主在点击时引导去配置。
+              final ValueChanged<String?>? onAiAcquire =
+                  widget.actions.onAiAcquire;
+              final Widget? aiEntry = onAiAcquire == null
+                  ? null
+                  : IconButton.filledTonal(
+                      constraints: const BoxConstraints(
+                        minWidth: kFushiSearchFieldHeight,
+                        minHeight: kFushiSearchFieldHeight,
+                      ),
+                      key: const ValueKey<String>('video-discovery-ai-acquire'),
+                      tooltip: t.ai_video_acquire_entry,
+                      onPressed: () => onAiAcquire(_searchController.text),
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                    );
+              // 放送日历：页头不渲染时（embedded 于浏览页 / Cupertino）页头那颗
+              // 按钮看不见，同一个 key 挪到搜索行，三种宽度下都可达。
+              final Widget? calendarEntry = _headerVisible
+                  ? null
+                  : IconButton.filledTonal(
+                      constraints: const BoxConstraints(
+                        minWidth: kFushiSearchFieldHeight,
+                        minHeight: kFushiSearchFieldHeight,
+                      ),
+                      key: const ValueKey<String>(
+                        'video-discovery-open-calendar',
+                      ),
+                      tooltip: t.download_airing_calendar_title,
+                      onPressed: _openCalendar,
+                      icon: const Icon(Icons.calendar_month_outlined),
+                    );
+              final List<Widget> trailing = <Widget>[
+                for (final Widget entry in <Widget?>[calendarEntry, aiEntry]
+                    .whereType<Widget>()) ...<Widget>[
+                  SizedBox(width: tokens.spacing.gap),
+                  entry,
+                ],
+              ];
               if (compact) {
                 return Row(
                   children: <Widget>[
                     Expanded(child: search),
+                    ...trailing,
                     SizedBox(width: tokens.spacing.gap),
                     IconButton.filledTonal(
                       // 与同一行的搜索框等高：搜索框已统一为
@@ -476,7 +528,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   ],
                 );
               }
-              if (width < 900) return search;
+              if (width < 900) {
+                if (trailing.isEmpty) return search;
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: search),
+                    ...trailing,
+                  ],
+                );
+              }
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -489,6 +549,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   _buildGenreMenu(),
                   SizedBox(width: tokens.spacing.gap),
                   _buildSortMenu(),
+                  ...trailing,
                 ],
               );
             },
@@ -727,14 +788,13 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       tooltip: '${t.sort_by}: ${_sortLabel(_sort)}',
       initialValue: _sort,
       onSelected: (discovery.VideoDiscoverySort value) {
-        setState(() => _sort = value);
+        setState(() => _pickedSort = value);
         unawaited(_reload());
       },
       itemBuilder: (_) => <PopupMenuEntry<discovery.VideoDiscoverySort>>[
         for (final discovery.VideoDiscoverySort sort
             in discovery.VideoDiscoverySort.values)
-          if (sort != discovery.VideoDiscoverySort.relevance ||
-              _searchController.text.trim().isNotEmpty)
+          if (sort != discovery.VideoDiscoverySort.relevance || _searching)
             PopupMenuItem<discovery.VideoDiscoverySort>(
               value: sort,
               child: Text(_sortLabel(sort)),
@@ -746,16 +806,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               height: 48,
               child: Icon(
                 Icons.sort_rounded,
-                color: _sort == discovery.VideoDiscoverySort.popularity
+                color: _sort == _defaultSort
                     ? null
                     : Theme.of(context).colorScheme.primary,
               ),
             )
           : _filterButton(
-              label: _sort == discovery.VideoDiscoverySort.popularity
-                  ? t.sort_by
-                  : _sortLabel(_sort),
-              active: _sort != discovery.VideoDiscoverySort.popularity,
+              label: _sort == _defaultSort ? t.sort_by : _sortLabel(_sort),
+              active: _sort != _defaultSort,
             ),
     );
   }
@@ -805,7 +863,13 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       controller: _scrollController,
       slivers: <Widget>[
         if (_failures.isNotEmpty)
-          SliverToBoxAdapter(child: _buildProviderWarning()),
+          SliverToBoxAdapter(
+            child: DiscoveryProviderWarningBanner(
+              key: const ValueKey<String>('video-discovery-provider-warning'),
+              failures: _failures,
+              displayNameFor: _controller.displayNameFor,
+            ),
+          ),
         if (!searchMode && _popular.isNotEmpty)
           SliverToBoxAdapter(
             child: _DiscoveryShelf(
@@ -890,17 +954,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               },
             ),
           ),
-        if (_loadingMore)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.card),
-              child: Center(child: adaptiveIndicator(context: context)),
-            ),
-          )
-        else
-          SliverToBoxAdapter(
-            child: SizedBox(height: tokens.spacing.section),
-          ),
+        SliverToBoxAdapter(
+          child: DiscoveryLoadMoreFooter(loading: _loadingMore),
+        ),
       ],
     );
   }
@@ -920,68 +976,6 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     return (measure('国M\n国M', tokens.type.listTitle) +
             measure('2026 · ★ 8.4', tokens.type.metadata))
         .ceilToDouble();
-  }
-
-  /// 横幅文案取决于失败**性质**，不是「有失败就说不可用」。
-  ///
-  /// BUG-2430：MAL 走 Jikan 公共接口，1 秒一发、不重试，撞上 429 是家常便饭。那是
-  /// 「等一会儿再搜」，不是「这个来源不可用」——后者会让用户跑去设置页找一个根本不
-  /// 存在的开关。混合了多种性质时退回最泛的说法。
-  String _providerWarningMessage() {
-    bool allOf(Set<ExternalProviderFailureKind> kinds) =>
-        _failures.every((ExternalProviderFailure e) => kinds.contains(e.kind));
-    if (allOf(const <ExternalProviderFailureKind>{
-      ExternalProviderFailureKind.rateLimited,
-      ExternalProviderFailureKind.quotaExceeded,
-    })) {
-      return t.video_discovery_provider_rate_limited;
-    }
-    if (allOf(const <ExternalProviderFailureKind>{
-      ExternalProviderFailureKind.unavailable,
-      ExternalProviderFailureKind.unauthorized,
-      ExternalProviderFailureKind.forbidden,
-      ExternalProviderFailureKind.unsupported,
-    })) {
-      return t.video_discovery_provider_warning;
-    }
-    return t.video_discovery_provider_failed;
-  }
-
-  Widget _buildProviderWarning() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 印品牌名而不是接线用的 provider id（BUG-2430）。
-    final Set<String> providerNames = <String>{
-      for (final ExternalProviderFailure failure in _failures)
-        _controller.displayNameFor(failure.providerId),
-    };
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        0,
-      ),
-      child: FushiCard(
-        key: const ValueKey<String>('video-discovery-provider-warning'),
-        color: Theme.of(context).colorScheme.tertiaryContainer,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: tokens.spacing.rowVertical,
-        ),
-        child: Row(
-          children: <Widget>[
-            const Icon(Icons.cloud_off_outlined),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(child: Text(_providerWarningMessage())),
-            if (providerNames.isNotEmpty)
-              Text(
-                providerNames.join(' · '),
-                style: tokens.type.metadata,
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
   void _openItem(discovery.VideoDiscoveryItem item) {
@@ -1058,6 +1052,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       };
 }
 
+/// 视频发现的横滑行：共享 [DiscoveryShelf] 版式 + 本页的横向封面卡。
 class _DiscoveryShelf extends StatelessWidget {
   const _DiscoveryShelf({
     required this.title,
@@ -1074,44 +1069,18 @@ class _DiscoveryShelf extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.only(top: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.card),
-          SizedBox(
-            // BUG-1527：横向卡的 16:9 封面 + 标题/元数据在大字体下会超过 224。
-            height: 240,
-            child: HorizontalDragScrollable(
-              child: ListView.separated(
-                key: PageStorageKey<String>('video-discovery-shelf-$title'),
-                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-                scrollDirection: Axis.horizontal,
-                itemCount: items.length,
-                separatorBuilder: (_, __) =>
-                    SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int index) => SizedBox(
-                  width: 260,
-                  child: _DiscoveryMediaCard(
-                    item: items[index],
-                    landscape: true,
-                    imageResolver: imageResolver,
-                    onTap: () => onOpen(items[index]),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+    return DiscoveryShelf(
+      title: title,
+      storageKey: 'video-discovery-shelf-$title',
+      // BUG-1527：横向卡的 16:9 封面 + 标题/元数据在大字体下会超过 224。
+      height: 240,
+      itemWidth: 260,
+      itemCount: items.length,
+      itemBuilder: (BuildContext context, int index) => _DiscoveryMediaCard(
+        item: items[index],
+        landscape: true,
+        imageResolver: imageResolver,
+        onTap: () => onOpen(items[index]),
       ),
     );
   }

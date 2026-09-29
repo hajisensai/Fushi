@@ -258,4 +258,34 @@ void main() {
     );
     await _unmount(tester);
   });
+
+  testWidgets('BUG-2687 已在查词 tab、键盘已收起：再点「查词」重新弹起键盘',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await _pumpHome(tester);
+    await _tapNav(tester, t.nav_lookup);
+    await tester.enterText(find.byKey(_searchFieldKey), 'おばさん');
+    await _settle(tester);
+    expect(tester.testTextInput.isVisible, isTrue, reason: '前提：键盘已弹起。');
+
+    // 用户收起了键盘（提交收键盘 / 系统返回键）——焦点仍留在搜索框上。
+    await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(_searchFocusNode(tester).hasFocus, isTrue);
+
+    await _tapNav(tester, t.nav_lookup);
+
+    expect(_searchText(tester), isEmpty);
+    expect(_searchFocusNode(tester).hasFocus, isTrue);
+    expect(
+      tester.testTextInput.isVisible,
+      isTrue,
+      reason: '焦点本来就在框里时 requestFocus 是空操作；点「查词」必须显式把键盘要回来。',
+    );
+    await _unmount(tester);
+  });
 }

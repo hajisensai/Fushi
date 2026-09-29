@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
@@ -12,7 +11,6 @@ import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
-import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -71,7 +69,6 @@ class HomeGamePage extends StatefulWidget {
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
   static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
-  static const Key discoverKey = ValueKey<String>('game-discover');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -192,13 +189,14 @@ class _HomeGamePageState extends State<HomeGamePage> {
         key: HomeGamePage.importKey,
         child: _buildImport(context),
       ),
-      GameSection.discover: KeyedSubtree(
-        key: HomeGamePage.discoverKey,
-        child: _buildDiscover(context),
-      ),
     };
     return Material(
       type: MaterialType.transparency,
+      // 六个子区常驻 IndexedStack、各挂一份常量 selected 的页签：广播真实所在子区，
+      // 让隐藏页的页签跟着走，被切出来时指示条才有起点可滑（见
+      // [LibrarySectionFollowScope]）。
+      child: LibrarySectionFollowScope(
+        current: gameSectionNotifier,
       // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
       // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
       child: SectionSwipeNavigator<GameSection>(
@@ -211,7 +209,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
           for (final GameSection section in GameSection.values)
             // [IndexedStack] 比 [Offstage] 更狠：它**急切构建全部子区**并以完整约束
             // 布局，而 desktop_drop 是进程级全局广播、只按各 drop target 的
-            // `RenderBox.paintBounds` 过滤 —— 于是七个子区的 drop target 会全部命中
+            // `RenderBox.paintBounds` 过滤 —— 于是六个子区的 drop target 会全部命中
             // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
             // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
             // `_section`，且写成回调、在 drop 落地那一刻求值。
@@ -222,21 +220,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
         ],
         ),
       ),
-    );
-  }
-
-  /// 游戏「发现」视图：统一发现页（shinnku / AList / sukebei 等在线源，
-  /// 下载完自动解压、登记进游戏库）。
-  Widget _buildDiscover(BuildContext context) {
-    return MediaDiscoveryPage(
-      kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
-      navigation: GameSectionTabs(
-        selected: GameSection.discover,
-        focusIdPrefix: 'game-discover-tab',
-        onSelectDashboard: _showDashboard,
-        onSelectLibrary: _showLibrary,
-        onSelectMonitor: _showMonitor,
-        onSelectSettings: _showSettings,
       ),
     );
   }
@@ -437,11 +420,17 @@ class _CaptureStatusStrip extends StatelessWidget {
             ),
           );
 
+    // eink：45% 的 primaryContainer 既是抖动灰、又塌成页面底色，激活态看不出来；
+    // 改走 FushiCard 的 selected（eink 下 2px 描边），图标 + 文案已带语义。
+    final bool eink = isEinkTheme(context);
     return FushiCard(
       key: HomeGamePage.captureStatusKey,
       focusId: const FushiFocusId('game-capture-status'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: active ? colors.primaryContainer.withValues(alpha: 0.45) : null,
+      color: active && !eink
+          ? colors.primaryContainer.withValues(alpha: 0.45)
+          : null,
+      selected: active && eink,
       onTap: onOpen,
       child: Row(
         children: <Widget>[

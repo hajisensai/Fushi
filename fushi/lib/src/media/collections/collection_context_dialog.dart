@@ -6,6 +6,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -31,6 +32,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// 「同时删除本地文件」勾选行，其状态经 `deleteLocalFiles` 参数交给
 /// [onDeleteMembersMedia]——库里的条目删不删、磁盘上的原件删不删是两个决定，
 /// 调用方按媒体域决定是否提供后者（视频合集提供；书 / 游戏合集传 null）。
+/// [deleteMembersStatisticsSubtitle] 同款：非 null 时再多一行「同时删除统计数据」
+/// （默认不勾、不被记忆），状态经 `deleteStatistics` 参数交给
+/// [onDeleteMembersMedia]。
 /// [extraListActions] 由调用方注入媒体特有行（视频页：在线匹配封面 / 为合集
 /// 获取字幕），本对话框统一负责「先关自身再执行」，回调里不要再 pop。
 /// 排序两项内建（[applyCollectionOneKeySort]，与详情页 AppBar 排序菜单同源），
@@ -44,9 +48,11 @@ Future<void> showCollectionContextDialog({
   Future<void> Function(
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
   String? deleteMembersLocalFilesSubtitle,
+  String? deleteMembersStatisticsSubtitle,
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
@@ -86,6 +92,18 @@ Future<void> showCollectionContextDialog({
                 context: context,
                 collection: collection,
                 onChanged: onChanged,
+              ),
+            ),
+          ),
+          // 右键 / 长按反查整个合集（全部成员身份之并）的学习统计。
+          DialogListAction(
+            label: t.media_stats_action,
+            icon: Icons.insights_outlined,
+            onPressed: () => closeThen(
+              () => _openCollectionStatistics(
+                context: context,
+                db: db,
+                collection: collection,
               ),
             ),
           ),
@@ -136,6 +154,8 @@ Future<void> showCollectionContextDialog({
                 deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
                 deleteMembersLocalFilesSubtitle:
                     deleteMembersLocalFilesSubtitle,
+                deleteMembersStatisticsSubtitle:
+                    deleteMembersStatisticsSubtitle,
                 deleteMembersDisclosure: deleteMembersDisclosure,
               ),
             ),
@@ -209,9 +229,11 @@ Future<void> _deleteCollection({
   required Future<void> Function(
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia,
   required String? deleteMembersCheckboxLabel,
   required String? deleteMembersLocalFilesSubtitle,
+  required String? deleteMembersStatisticsSubtitle,
   required DeletionDisclosure? deleteMembersDisclosure,
 }) async {
   final List<MediaCollectionItemRow> members =
@@ -229,6 +251,8 @@ Future<void> _deleteCollection({
       checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
       localFilesSubtitle:
           canDeleteMembers ? deleteMembersLocalFilesSubtitle : null,
+      statisticsSubtitle:
+          canDeleteMembers ? deleteMembersStatisticsSubtitle : null,
       checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
     ),
   );
@@ -237,8 +261,28 @@ Future<void> _deleteCollection({
     await onDeleteMembersMedia(
       List<MediaCollectionItemRow>.of(members),
       result.deleteLocalFiles,
+      result.deleteStatistics,
     );
   }
   await deleteMediaCollectionWithAssets(db, collection.id);
   onChanged();
+}
+
+/// 合集「查看统计」：成员身份现取（与删除 / 排序同一张成员表），合并成一个统计目标。
+Future<void> _openCollectionStatistics({
+  required BuildContext context,
+  required FushiDatabase db,
+  required MediaCollectionRow collection,
+}) async {
+  final List<MediaCollectionItemRow> members =
+      await db.getCollectionItems(collection.id);
+  if (!context.mounted) return;
+  await showMediaItemStatsDialog(
+    context,
+    database: db,
+    target: MediaItemStatsTarget.collection(
+      members: members,
+      title: collection.name,
+    ),
+  );
 }

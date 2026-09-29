@@ -243,7 +243,9 @@ class _VideoDownloadSubscriptionsPanelState
     );
     if (result == null || !mounted) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await appModel.database.updateVideoDownloadSubscription(
+    // 改了目标来源时，该订阅已派出、还没进整理的任务一起改过去（BUG-2755），
+    // 否则它们下载完照旧整理进旧来源。
+    await appModel.database.updateVideoDownloadSubscriptionRetargetingJobs(
       subscription.subscriptionId,
       VideoDownloadSubscriptionsCompanion(
         searchQuery: Value<String>(result.searchQuery),
@@ -259,7 +261,14 @@ class _VideoDownloadSubscriptionsPanelState
         lastError: const Value<String?>(null),
         updatedAt: Value<int>(now),
       ),
+      nowAt: now,
     );
+    // 已完成的集还在旧来源里做种：一并摘掉种子（不删文件），否则用户删掉旧目录后
+    // 引擎续传会在原处重下（BUG-2776）。
+    if (result.targetSourceId != null) {
+      await appModel.videoDownloadPipelineService
+          ?.releaseSubscriptionSeedsOutsideTarget(subscription.subscriptionId);
+    }
     await appModel.videoDownloadSubscriptionService?.checkNow();
   }
 
@@ -859,7 +868,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
           ),
           if (expanded && itemsWatcher != null)
             _SubscriptionItemsSection(
-              subscriptionId: subscription.subscriptionId,
+              subscription: subscription,
               itemsWatcher: itemsWatcher!,
             ),
         ],
@@ -873,18 +882,28 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
 /// 换发布组重订也不清（窄合并纪律的另一半）。
 class _SubscriptionItemsSection extends StatelessWidget {
   const _SubscriptionItemsSection({
-    required this.subscriptionId,
+    required this.subscription,
     required this.itemsWatcher,
   });
 
-  final String subscriptionId;
+  final VideoDownloadSubscriptionRow subscription;
   final VideoDownloadSubscriptionItemsWatcher itemsWatcher;
+
+  /// 这条追更订阅已经查过、却一条发布都没跟踪到。
+  ///
+  /// 空列表本身有两种完全不同的成因——「番还没更新」和「规则结构上对不上」——
+  /// 而界面原先对两者说同一句话，用户无从分辨（BUG-2619）。查过至少一次仍为空
+  /// 时补一句可操作的解释：追更只认新的单集，完结作品与整包要走一次性下载。
+  bool get _ongoingNeverMatched =>
+      subscription.mode == 'ongoing' &&
+      subscription.lastCheckedAt != null &&
+      subscription.lastMatchedAt == null;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return StreamBuilder<List<VideoDownloadSubscriptionItemRow>>(
-      stream: itemsWatcher(subscriptionId),
+      stream: itemsWatcher(subscription.subscriptionId),
       builder: (
         BuildContext context,
         AsyncSnapshot<List<VideoDownloadSubscriptionItemRow>> snapshot,
@@ -904,11 +923,28 @@ class _SubscriptionItemsSection extends StatelessWidget {
         if (items.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              t.subscription_items_empty,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.subscription_items_empty,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (_ongoingNeverMatched) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    key: const ValueKey<String>(
+                      'video-subscription-never-matched-hint',
+                    ),
+                    t.subscription_items_empty_ongoing_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
           );
         }

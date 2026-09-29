@@ -5,6 +5,10 @@
 /// 书名也只能在顶栏中间（或移出）。返回与设置是必需项：任何平台都不能移出——返回是
 /// 退书的唯一可见入口（BUG-2230 同一口径），设置是其它所有面板的入口。
 ///
+/// 悬浮球不是这里的槽：它的按钮在 设置 → 悬浮球 → 阅读器 里勾选
+/// （`docs/specs/2026-09-28-floating-ball.md`）。旧版布局 JSON 里的 `floatingBall`
+/// 槽解码时按未知槽丢弃，里面的按钮回落到出厂位置（有声书传输键在托盘）。
+///
 /// 持久化键 `reader_control_layout`，JSON `{version:1, slots:{...}, removed:[...]}`
 /// （与视频 v3 同形；阅读器没有历史布局，不需要迁移）。
 library;
@@ -64,6 +68,10 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// 书内统计侧栏。
   statistics('statistics', recoverySlot: ReaderControlSlot.topLeft),
 
+  /// 暂停 / 继续阅读统计计时（与状态行计时键、快捷键 P 同一入口）。出厂在托盘，
+  /// 悬浮球出厂带上它（见 设置 → 悬浮球 → 阅读器）；可拖去顶栏 / 底栏。
+  studyTimer('studyTimer', recoverySlot: ReaderControlSlot.topRight),
+
   /// 书名（只能在顶栏中间）。
   title('title', recoverySlot: ReaderControlSlot.topCenter),
 
@@ -78,6 +86,28 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
     'settings',
     pinnedRequired: true,
     recoverySlot: ReaderControlSlot.topRight,
+  ),
+
+  // ── 有声书传输键（只在挂了有声书控制器时渲染）。出厂都在托盘（悬浮球出厂放
+  // 上一句 / 播放暂停 / 下一句，见 设置 → 悬浮球）；都可以拖去顶栏 / 底栏。上一句 /
+  // 下一句跟随「跳转方式」偏好（按句或按 N 秒），与底栏播放条同一语义。
+  audiobookPrev('audiobookPrev', recoverySlot: ReaderControlSlot.bottomCenter),
+  audiobookPlayPause(
+    'audiobookPlayPause',
+    recoverySlot: ReaderControlSlot.bottomCenter,
+  ),
+  audiobookNext('audiobookNext', recoverySlot: ReaderControlSlot.bottomCenter),
+  audiobookSeekBack(
+    'audiobookSeekBack',
+    recoverySlot: ReaderControlSlot.bottomCenter,
+  ),
+  audiobookSeekForward(
+    'audiobookSeekForward',
+    recoverySlot: ReaderControlSlot.bottomCenter,
+  ),
+  audiobookFollow(
+    'audiobookFollow',
+    recoverySlot: ReaderControlSlot.bottomCenter,
   );
 
   const ReaderControlItem(
@@ -102,6 +132,18 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
 
   @override
   final ReaderControlSlot recoverySlot;
+
+  /// 有声书传输键（上一句 / 播放暂停 / 下一句 / ±10s / 跟随）。
+  bool get isAudiobookTransport => switch (this) {
+        ReaderControlItem.audiobookPrev ||
+        ReaderControlItem.audiobookPlayPause ||
+        ReaderControlItem.audiobookNext ||
+        ReaderControlItem.audiobookSeekBack ||
+        ReaderControlItem.audiobookSeekForward ||
+        ReaderControlItem.audiobookFollow =>
+          true,
+        _ => false,
+      };
 
   @override
   bool canMoveToSlot(ReaderControlSlot target, {bool isTouchControls = false}) {
@@ -160,7 +202,7 @@ class ReaderControlLayout {
       ReaderControlLayout._(core);
 
   /// 出厂布局 = 2026-09 之前硬编码的顶栏：左「← / 模式 / 目录 / 插图 / 统计」，
-  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空。
+  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；有声书传输键留在托盘。
   static final ReaderControlLayout defaults = ReaderControlLayout._(
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,

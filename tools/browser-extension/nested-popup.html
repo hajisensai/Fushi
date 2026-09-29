@@ -4,11 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fushi dictionary</title>
-  <style>html,body{margin:0;width:100%;height:100%;overflow:hidden}#fushi-nested-root{display:block;width:100%;height:100%;overflow:auto}#fushi-nested-close{position:fixed;right:4px;top:4px;z-index:2147483647;border:0;border-radius:50%;width:24px;height:24px;cursor:pointer;background:#eee;color:#222}</style>
+  <link rel="stylesheet" href="theme.css">
+  <style>html,body{margin:0;width:100%;height:100%;overflow:hidden}#fushi-nested-root{display:block;width:100%;height:100%;overflow:auto}#fushi-nested-close{position:fixed;right:4px;top:4px;z-index:2147483647;border:0;border-radius:50%;width:24px;height:24px;cursor:pointer;background:var(--fushi-surface-strong,#eee);color:var(--fushi-text,#222)}</style>
 </head>
 <body>
   <div id="fushi-nested-root"></div>
-  <button id="fushi-nested-close" aria-label="关闭本层查词">×</button>
+  <button id="fushi-nested-close" aria-label="关闭本层查词" data-i18n-aria-label="np_fushi_nested_close_aria_label">×</button>
+  <script src="locales/en.js"></script>
+  <script src="i18n.js"></script>
+  <script src="theme-palette.js"></script>
+  <script src="theme.js"></script>
   <script src="nested-popup.js"></script>
   <script src="vendor/dict-media.js"></script>
   <script src="vendor/selection.js"></script>

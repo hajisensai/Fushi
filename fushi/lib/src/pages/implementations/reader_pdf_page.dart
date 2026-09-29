@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
@@ -47,6 +48,9 @@ class ReaderPdfPage extends BaseSourcePage {
 class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     with WidgetsBindingObserver {
   final PdfViewerController _pdfController = PdfViewerController();
+
+  @override
+  ModuleId? get popupDockModule => ModuleId.books;
 
   /// 每页结构化文本缓存（`loadStructuredText` 有解析成本，点一次查一次会卡）。
   /// key = 0-based 页索引。
@@ -605,7 +609,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       }
       FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+        return MinePopupResult.mined(outcome);
       }
       return MinePopupResult.failed(outcome);
     } catch (e, stack) {
@@ -704,6 +708,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (didPop) return;
+        // 与外部导航收页（closeActive）/ 连按返回共用单飞门，退出只跑一遍。
+        if (!claimSourceExit()) return;
         final NavigatorState navigator = Navigator.of(context);
         // BUG-2119 口径（视频页 / 阅读器同此）：**退出不等落库**。onWillPop 是位置
         // flush + closeMedia 两笔 drift 写，一条 SQLITE_BUSY 后未 reset 的写语句能让

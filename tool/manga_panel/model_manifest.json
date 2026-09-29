@@ -1,0 +1,46 @@
+{
+  "model": "manga-panel-detector-yolo26n",
+  "source": "https://huggingface.co/leoxs22/manga-panel-detector-yolo26n",
+  "sourceRevision": "535bbe1fc1e922d2108f918cd1bce29ba3516196",
+  "sourceFile": "manga_panel_detector_fp32.pt",
+  "assetUrl": "https://github.com/hajisensai/Fushi/releases/download/manga-panel-detector-onnx-v1/manga_panel_detector_yolo26n_fp32.onnx",
+  "assetFile": "manga_panel_detector_yolo26n_fp32.onnx",
+  "sha256": "6a2143c6130c358e390a8d425c51b22589fd43d4647485e2c011a553b73aaaed",
+  "bytes": 9779394,
+  "license": "Apache-2.0",
+  "trainingData": {
+    "name": "Manga109-s",
+    "url": "http://www.manga109.org/en/download_s.html",
+    "terms": "Models trained on Manga109-s may be used commercially provided that the use of the dataset is clearly indicated.",
+    "citations": [
+      "Matsui et al., \"Sketch-based Manga Retrieval using Manga109 Dataset\", Multimedia Tools and Applications, 2017.",
+      "Aizawa et al., \"Building a Manga Dataset “Manga109” with Annotations for Multimedia Applications\", IEEE MultiMedia, 2020."
+    ]
+  },
+  "input": {
+    "shape": [
+      1,
+      3,
+      640,
+      640
+    ],
+    "layout": "NCHW",
+    "color": "RGB",
+    "normalization": "0..1"
+  },
+  "output": {
+    "shape": [
+      1,
+      300,
+      6
+    ],
+    "layout": "xyxy-score-class",
+    "classes": {
+      "0": "panel",
+      "1": "text"
+    }
+  },
+  "confidenceThreshold": 0.25,
+  "nmsIouThreshold": 0.5,
+  "status": "verified-release-asset"
+}

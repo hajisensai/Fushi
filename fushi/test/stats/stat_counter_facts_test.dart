@@ -38,6 +38,7 @@ FavoriteWordRow _word(String source, String dateKey) => FavoriteWordRow(
       reading: 'あ',
       glossary: '',
       sourceType: source,
+      sentence: '',
       title: '',
       dateKey: dateKey,
       createdAt: 0,

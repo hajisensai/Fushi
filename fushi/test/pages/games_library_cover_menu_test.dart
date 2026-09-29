@@ -82,6 +82,7 @@ void main() {
   List<String> menuLabels() => <String>[
         t.game_view_detail,
         t.game_play_status,
+        t.media_stats_action,
         t.game_rename,
         t.game_set_cover,
         t.game_auto_cover,

@@ -76,12 +76,27 @@ void main() {
       // 路径（正斜杠、相对本测试的扫描根）→ 允许出现的**次数**。数量也钉住：同一文件
       // 里多冒出一处同样要表态，这正是「漏改一个」的形状。
       const Map<String, int> allowed = <String, int>{
+        // OCR 字符词表校验：只对单个 Unicode 字母/数字施加重复生成上限，非学习计数。
+        'packages/fushi_engine/lib/ocr/baberu_ocr_recognizer.dart': 1,
+        // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
+        // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
+        'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,
+        // 排行榜昵称长度校验（与服务端「1–24 个码点」同口径），是表单校验不是记账。
+        'lib/src/pages/implementations/leaderboard/leaderboard_account_page.dart': 1,
+        'lib/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart': 1,
+        // galgame 校准 OCR：判断一个 CTC token / 墨迹单元是否恰好是单个码点（能否
+        // 与源文本逐字对齐），是对齐校验不是记账。
+        'lib/src/ocr/gal_lookup_calibration_ocr.dart': 1,
+        'lib/src/ocr/gal_lookup_ocr_ink_geometry.dart': 1,
         // 超时兜底日志里报文本长度，不进统计。
         'lib/src/media/audiobook/audiobook_clip_text_render.dart': 1,
         // 有声书片段排版：决定字号/换行的文本长度，不进统计。
         'lib/src/pages/implementations/reader_fushi/audiobook.part.dart': 1,
         // 判断是否「逐字 cue」（per-character cue），不是计数。
         'lib/src/media/video/video_subtitle_jump_panel.dart': 1,
+        // 从上面那个面板抽出来的共享整句渲染器：字素数是**键盘光标在句内左右移动
+        // 的边界**（_handleKey 里 count == 0 就不接键），是导航不是记账。
+        'lib/src/media/video/subtitle_transcript_text.dart': 1,
         // BUG-442：词典查询输入长度上限保护，是校验不是记账。
         'lib/src/models/app_model.dart': 1,
         // BUG-2091 字幕查词高亮：把引擎回报的匹配长度（**码点**数）折算成 grapheme

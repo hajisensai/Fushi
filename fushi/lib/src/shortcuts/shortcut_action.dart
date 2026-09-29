@@ -318,6 +318,11 @@ enum ShortcutAction {
   readerOpenGallery(ShortcutScope.reader, 'reader_open_gallery'),
   readerOpenStatistics(ShortcutScope.reader, 'reader_open_statistics'),
   readerOpenAudiobook(ShortcutScope.reader, 'reader_open_audiobook'),
+  // 一键停 / 续阅读统计计时（执行体 = _toggleStudyClockManualPause，与状态行 /
+  // 播放条内联读数里那颗 [ReaderStudyClockButton] 同一入口）。此前停表只能用指针
+  // 点那颗键，键盘 / 手柄用户中途离开得先唤出底栏再找按钮。默认键盘 P（reader+
+  // audiobook co-active 组内未被占用；video 组的 P 属不同组）。手柄留空，用户可自绑。
+  readerToggleStudyClock(ShortcutScope.reader, 'reader_toggle_study_clock'),
 
   // Home
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),
@@ -491,8 +496,22 @@ enum ShortcutAction {
 
   // 画面/杂项
   videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
+  // 小窗模式：桌面把主窗缩成无边框置顶小窗，Android 进系统画中画（iOS 不支持，
+  // 见 mini_window.part.dart 的类文档）。与 videoToggleFullscreen 正交、互斥——
+  // 进小窗前会先退全屏。执行体在 video_player_shortcuts。
+  videoToggleMiniWindow(ShortcutScope.video, 'video_toggle_mini_window'),
+  // 小窗控件显隐：小窗常态只剩画面 + 字幕 + 底部细线（hover 不再唤起任何按钮），
+  // 顶部拖动带 / 退出钮 / 居中三键改由本动作显式唤出。只在本仓自绘 chrome 的那一
+  // 档（桌面小窗）有效；常规窗口 chrome 归 media_kit、系统画中画归系统，那两处按
+  // 下去是 no-op。执行体在 video_player_shortcuts。
+  videoToggleMiniChrome(ShortcutScope.video, 'video_toggle_mini_chrome'),
   videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
+  // 截图分两个独立动作而不是一个动作 + 一个「含字幕」开关：两种图的用途不同
+  // （纯画面用来做壁纸/封面，带字幕的用来发截图/记台词），要的是两只手都能直接按到，
+  // 而不是先去设置里翻开关再回来按。字幕是 Flutter overlay 画的、不在画面里，所以
+  // 「含字幕」那条要在 Dart 侧把字幕合成回帧上（`video_screenshot_compose.dart`）。
   videoScreenshot(ShortcutScope.video, 'video_screenshot'),
+  videoScreenshotSubtitled(ShortcutScope.video, 'video_screenshot_subtitled'),
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
       ShortcutScope.video, 'video_toggle_favorite_sentence'),

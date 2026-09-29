@@ -20,6 +20,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/video/bluray/bluray_probe.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 
@@ -38,6 +40,15 @@ const int kVideoSpecsProbeConcurrency = 2;
 /// 没有这个上限时，快速下滑几秒就能把几百条早已离屏的路径排进队列，而当前视口排在
 /// 队尾，角标要等前面几百个 ffprobe 跑完才浮出来。
 const int kVideoSpecsQueueCapacity = 256;
+
+/// 探测没得出结论后，同一路径的重试冷却（BUG-2571）。
+///
+/// 「没得出结论」（超时 / 后端不回包 / 没有 ffprobe）是**可自愈**状态：导入期
+/// ffmpeg-kit 被封面抽帧占满时成片超时，等这阵过去就能探出来。所以不能像
+/// 「探完了，这文件没有规格」那样永久记账，但也不能立刻重排——那会在最忙的时候
+/// 再加一轮必然超时的探测。冷却足够长到让当前那阵忙碌过去，又足够短到用户滚一会
+/// 儿列表回来就会重试。
+const Duration kVideoSpecsProbeRetryCooldown = Duration(seconds: 90);
 
 /// 取服务实例。生命周期归 `AppModel`（那里懒建、db 关闭时销毁）。
 ///
@@ -67,8 +78,11 @@ class VideoSpecsService extends ChangeNotifier {
   /// 探测入口，可注入以便单测不真起 ffprobe。
   final Future<VideoProbeFacts> Function(String path) probe;
 
-  /// 已知规格。**value 可为 null**：null = 已经查过、这个文件探不出规格（没装
-  /// ffprobe / 文件损坏 / 是流 URL），用来防止对同一个失败文件反复重试。
+  /// 已知规格。**value 可为 null**：null = 已经查过、这个文件**确实**给不出规格
+  /// （无视频流的容器 / 坏文件 / 流 URL），用来防止对同一个文件反复重探。
+  ///
+  /// 「这次没探成」（超时 / 没有 ffprobe）**不进这张表**——那不是结论，走
+  /// [_retryAfter] 的冷却重试。两者混为一谈是 BUG-2571 的根因。
   final Map<String, VideoProbeFacts?> _cache = <String, VideoProbeFacts?>{};
 
   final Queue<String> _queue = Queue<String>();
@@ -86,6 +100,12 @@ class VideoSpecsService extends ChangeNotifier {
   /// 每个路径当前有几个活着的 widget 需要它。见 [retain] / [release]。
   final Map<String, int> _holds = <String, int>{};
 
+  /// 探测没得出结论（超时 / 后端不回包 / 没有 ffprobe）的路径 → 冷却到期时刻。
+  ///
+  /// 它**不是** [_cache] 的一部分：这些路径没有结论，`isResolved` 必须保持 false，
+  /// 将来还要再探。冷却只用来防止「立刻重排 → 立刻再超时」的空转风暴。
+  final Map<String, DateTime> _retryAfter = <String, DateTime>{};
+
   /// 真正在跑 ffprobe 的个数（**不含**还在栈里等的）。
   int _running = 0;
   bool _disposed = false;
@@ -99,8 +119,22 @@ class VideoSpecsService extends ChangeNotifier {
   }
 
   /// 是否已经对这个路径有过结论（不论探到与否）。
+  ///
+  /// 「这次没探成」不算结论——那条路径会在冷却后重探，所以这里仍是 false。
   bool isResolved(String? filePath) =>
       filePath != null && _cache.containsKey(filePath);
+
+  /// 这个路径上一次探测没得出结论，且冷却还没过。
+  ///
+  /// 只拦[prime]（滚动触发的批量预取）。[resolve] 是用户点开详情页的显式动作，
+  /// 一律立刻重探——与下拉刷新清封面失败账本同一条纪律：用户明示要结果就再试。
+  bool _inRetryCooldown(String path) {
+    final DateTime? until = _retryAfter[path];
+    if (until == null) return false;
+    if (DateTime.now().isBefore(until)) return true;
+    _retryAfter.remove(path);
+    return false;
+  }
 
   /// 把一批路径纳入视野：先一条查询批量读库，仍缺的排进后台探测队列。
   ///
@@ -111,7 +145,8 @@ class VideoSpecsService extends ChangeNotifier {
       for (final String path in filePaths.toSet())
         if (path.isNotEmpty &&
             !_cache.containsKey(path) &&
-            !_inFlight.containsKey(path))
+            !_inFlight.containsKey(path) &&
+            !_inRetryCooldown(path))
           path,
     ];
     if (unknown.isEmpty) return;
@@ -311,6 +346,8 @@ class VideoSpecsService extends ChangeNotifier {
   /// 丢弃一个文件的缓存（文件被删/被替换时）。
   Future<void> invalidate(String filePath) async {
     _cache.remove(filePath);
+    // 文件被删/被替换：连「上次没探成」的冷却一起作废，换了内容就该立刻能重探。
+    _retryAfter.remove(filePath);
     try {
       await _db.deleteVideoFileSpec(filePath);
     } catch (e) {
@@ -335,15 +372,30 @@ class VideoSpecsService extends ChangeNotifier {
         _cache[path] = null;
         return null;
       }
-      facts = await probe(path);
+      // 蓝光标题的规格直接从它自己的 MPLS 读：ffprobe 不认 `.mpls`，退而去探
+      // `STREAM/*.m2ts` 既慢（BD 的 m2ts 实测一条 18~75 秒）又给不出多段正片的真实
+      // 总时长。走注入的 [probe] 之外的一条路，所以单测注入的假探测器对 BD 无效——
+      // BD 分支本来就不需要 ffmpeg 后端。
+      facts = isBlurayPlaylistPath(path)
+          ? await probeBlurayPlaylistFacts(path)
+          : await probe(path);
     } catch (e) {
       debugPrint('[VideoSpecsService] probe failed for "$path": $e');
       _cache[path] = null;
       return null;
     }
     if (_disposed) return null;
+    if (facts.isUnavailable) {
+      // BUG-2571：**这次**没探成（超时 / 后端不回包 / 没有 ffprobe），不是这个文件
+      // 没有规格。绝不能写进 _cache——那是终局结论，写进去就等于把整库在最忙的那
+      // 几分钟里一次性判死，本次会话再也不重试，角标永远空着。只记冷却，过后重探。
+      _retryAfter[path] = DateTime.now().add(kVideoSpecsProbeRetryCooldown);
+      return null;
+    }
+    _retryAfter.remove(path);
     if (facts.isEmpty) {
-      // 探不出就不落库——写一个空壳会让它永远「命中缓存」，再也不会重试。
+      // 探完了，这文件确实给不出事实（无视频流的容器 / 坏文件）。这是终局结论，
+      // 记 null 防止反复重探；不落库——写一个空壳行会让失效判据也跟着失灵。
       _cache[path] = null;
       notifyListeners();
       return null;

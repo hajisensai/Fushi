@@ -15,6 +15,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
@@ -110,8 +111,62 @@ class MangaOcrRunningJob {
   }
 }
 
+/// 整卷 OCR 同时能跑几卷（跨书的全局上限，[MangaOcrJobRegistry.enqueue] 用）。
+///
+/// 进入阅读器即整卷识别之后，连着点开 N 本本地卷就是 N 个任务：本地 ONNX 每个任务
+/// 一个 isolate + 一整套 ORT 会话，Lens 则是 N 路并发上传。手机与开了低内存模式的
+/// 设备只跑 1 卷；桌面按核数给 1～2 卷（ONNX 自己就吃多核，再多只是互相抢）。
+/// [requestedTasks] 为 0 时自动选择，桌面用户可显式选择 1～4 个任务。
+int resolveMangaOcrJobConcurrency({
+  required bool isMobile,
+  required bool lowMemoryMode,
+  required int processors,
+  int requestedTasks = 0,
+}) {
+  if (isMobile || lowMemoryMode) return 1;
+  if (requestedTasks > 0) return requestedTasks.clamp(1, 4);
+  return (processors ~/ 4).clamp(1, 2);
+}
+
 /// 按 `bookKey` 索引的任务注册表；一本书同一时刻最多一个整卷任务。
+///
+/// [maxConcurrentJobs] 是跨书的全局上限（每次排到时现读，低内存模式开关即时生效）；
+/// null = 不限（单测与只起单个任务的场景）。
 class MangaOcrJobRegistry {
+  MangaOcrJobRegistry({int Function()? maxConcurrentJobs})
+    : _maxConcurrentJobs = maxConcurrentJobs;
+
+  final int Function()? _maxConcurrentJobs;
+
+  /// 经 [enqueue] 占着全局名额的任务数，与等名额的排队者。
+  int _activeSlots = 0;
+  final Queue<Completer<void>> _slotWaiters = Queue<Completer<void>>();
+
+  Future<void> _acquireSlot() {
+    final int? limit = _maxConcurrentJobs?.call();
+    if (limit == null || _activeSlots < limit) {
+      _activeSlots += 1;
+      return Future<void>.value();
+    }
+    final Completer<void> waiter = Completer<void>();
+    _slotWaiters.add(waiter);
+    return waiter.future;
+  }
+
+  void _releaseSlot() {
+    _activeSlots -= 1;
+    refreshConcurrencyLimit();
+  }
+
+  /// 设置提高并发后立即唤醒排队任务；调低时让已有任务完成，不中断识别。
+  void refreshConcurrencyLimit() {
+    final int? limit = _maxConcurrentJobs?.call();
+    while (_slotWaiters.isNotEmpty && (limit == null || _activeSlots < limit)) {
+      _activeSlots += 1;
+      _slotWaiters.removeFirst().complete();
+    }
+  }
+
   final Map<String, MangaOcrRunningJob> _jobs = <String, MangaOcrRunningJob>{};
 
   /// 按 bookKey 的排队链尾（[enqueue] 用）；链上没人时不留条目。
@@ -200,6 +255,9 @@ class MangaOcrJobRegistry {
   /// 直接把已在跑的那个返回、本章被静默吞掉。这里按 bookKey 串成 FIFO，每章都
   /// 轮得到。返回的 Future 在**本任务真正启动**时完成（不等它跑完）；排队期间
   /// 被 [cancel] 放弃的以 null 完成。
+  ///
+  /// 轮到本书之后还要等一个全局名额（[resolveMangaOcrJobConcurrency]）；等名额
+  /// 期间仍算「排队中」（[queuedDirectories] 里有它）。
   Future<MangaOcrRunningJob?> enqueue({
     required MangaOcrBackgroundJob job,
     required String mangaJsonPath,
@@ -213,22 +271,27 @@ class MangaOcrJobRegistry {
     _queuedDirectories.putIfAbsent(bookKey, () => <String>[]).add(directory);
     _notifyChanged();
     final Future<void> tail = previous.then((_) async {
-      final List<String>? queue = _queuedDirectories[bookKey];
-      if (queue == null || !queue.remove(directory)) {
-        // 排队期间被 cancel(bookKey) 整本放弃：不启动。目录可能已随「移出书架」
-        // 被删，对着空目录跑只会产出一条失败日志。
-        started.complete(null);
-        return;
+      await _acquireSlot();
+      try {
+        final List<String>? queue = _queuedDirectories[bookKey];
+        if (queue == null || !queue.remove(directory)) {
+          // 排队期间（含等全局名额期间）被 cancel(bookKey) 整本放弃：不启动。目录
+          // 可能已随「移出书架」被删，对着空目录跑只会产出一条失败日志。
+          started.complete(null);
+          return;
+        }
+        if (queue.isEmpty) _queuedDirectories.remove(bookKey);
+        // 前一个刚 _forget 时 running() 可能已为空，但也可能仍是「刚结束还没被
+        // 清掉」的那一个；start 只认 _jobs 里的，_forget 与 _end 同步发生，安全。
+        final MangaOcrRunningJob running = start(
+          job: job,
+          mangaJsonPath: mangaJsonPath,
+        );
+        started.complete(running);
+        await running.whenEnded;
+      } finally {
+        _releaseSlot();
       }
-      if (queue.isEmpty) _queuedDirectories.remove(bookKey);
-      // 前一个刚 _forget 时 running() 可能已为空，但也可能仍是「刚结束还没被
-      // 清掉」的那一个；start 只认 _jobs 里的，_forget 与 _end 同步发生，安全。
-      final MangaOcrRunningJob running = start(
-        job: job,
-        mangaJsonPath: mangaJsonPath,
-      );
-      started.complete(running);
-      await running.whenEnded;
     });
     _queues[bookKey] = tail;
     unawaited(

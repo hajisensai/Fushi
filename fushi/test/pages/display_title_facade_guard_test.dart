@@ -93,9 +93,14 @@ void main() {
 
   group('游戏首页活动时间轴（galgame_home_page.dart）', () {
     test('时间轴条目标题经 displayTitleForGame（快照回退）', () {
+      // 判的是调用形状，不是排版：同一调用被格式化器拆成多行（带尾逗号）不该误红。
       expect(
         galgameHome,
-        contains('displayTitleForGame(entry: game, rawTitle: entry.title)'),
+        matches(
+          RegExp(
+            r'displayTitleForGame\(\s*entry:\s*game,\s*rawTitle:\s*entry\.title,?\s*\)',
+          ),
+        ),
       );
     });
   });

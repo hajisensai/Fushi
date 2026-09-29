@@ -287,8 +287,10 @@ class LapisNoteType {
     function addAudioButtons() {
         const audioContainers = document.querySelectorAll(".audio-buttons, .audio-buttons-alt");
         audioContainers.forEach(audio => audio.innerHTML = `{{ExpressionAudio}}<span class="fushi-sentence-audio">{{SentenceAudio}}</span>`);
-        // Hibiki synchronized video: delegate replay to the client's native
-        // media button. Never start a separate HTML video/audio player.
+        // Hibiki synchronized clip: clicking the sentence clicks the replay
+        // button inside the sentence audio span. MP4 clips use the client's native
+        // media button; inline WebM clips ship their own replay button that
+        // restarts the card's <video>. Don't start another player here.
         document.querySelectorAll(".sentence, .sentence-alt").forEach(sentence => {
             sentence.addEventListener("click", event => {
                 if (event.target.closest("a, button, video, audio")) return;

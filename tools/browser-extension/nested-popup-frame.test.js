@@ -57,7 +57,8 @@ function world() {
 test('frame bootstraps its private root and bridge before shared popup scripts', () => {
   const html = fs.readFileSync(path.join(__dirname, 'nested-popup.html'), 'utf8');
   const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(scripts, ['nested-popup.js', 'vendor/dict-media.js',
+  // 文案 / 主题基建（locales/en.js + i18n.js + theme-palette.js + theme.js）先于本层脚本装入；私有 root 与桥仍在共享弹窗脚本之前。
+  assert.deepEqual(scripts, ['locales/en.js', 'i18n.js', 'theme-palette.js', 'theme.js', 'nested-popup.js', 'vendor/dict-media.js',
     'vendor/selection.js', 'vendor/popup.js', 'auto-read.js', 'ruby-render.js']);
   const w = world();
   assert.equal(w.window.__fushiRoot, w.root);
@@ -110,8 +111,8 @@ test('render forwards shared CSS, audio, theme and queue state without changing 
   assert.equal(w.window.sentenceContextPreviewEnabled, true);
   assert.equal(w.autoReadOptions.enabled, true);
   assert.equal(w.host.style.zoom, '1.25');
-  assert.equal(w.host.style.width, '80%');
-  assert.equal(w.host.style.height, '80%');
+  assert.equal(w.host.style.width, '100%');
+  assert.equal(w.host.style.height, '100%');
   w.receive({ type: 'hasChild', value: true });
   assert.equal(w.window.__hasChildPopup, true);
   assert.equal(w.renders, 1);

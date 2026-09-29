@@ -181,6 +181,29 @@ void main() {
     expect(base.contains('runAnkiMinedCardAction('), isTrue);
   });
 
+  // BUG-2605：mineNew 只在用户已被告知「卡已有」并选择继续后才会被调（「新增为重复卡」
+  // / AnkiMobile「再加一张」/ 反查为空后重制）。两条车道构造它时必须给请求拍上
+  // AnkiMiningPayload.withAllowDuplicate，否则三个后端的 addNote 仍按全局 allowDupes
+  // （默认关）把这一次判成重复拒掉——用户报「手动选了新增，Fushi 还是说重复不导出」。
+  test('both host lanes mark the mineNew request as an explicit duplicate add',
+      () {
+    final RegExp marked = RegExp(
+      r'mineNew: \(\) async \{[\s\S]{0,200}?AnkiMiningPayload\.withAllowDuplicate\(fields\)',
+    );
+    expect(
+      marked.hasMatch(
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart'),
+      ),
+      isTrue,
+      reason: 'dictionary_page_mixin 的 mineNew 必须带 withAllowDuplicate',
+    );
+    expect(
+      marked.hasMatch(read('lib/src/pages/base_source_page.dart')),
+      isTrue,
+      reason: 'base_source_page 的 mineNew 必须带 withAllowDuplicate',
+    );
+  });
+
   test('action sheet orchestrator falls back to mineNew when nothing matches',
       () {
     final src = read('lib/src/anki/anki_mined_card_action_sheet.dart');
@@ -195,23 +218,25 @@ void main() {
     expect(src.contains('openNoteInAnki'), isTrue);
   });
 
-  // TODO-1007 健壮性守卫：三处 await 宿主回调必须被 try/catch 包裹，catch 内复位
+  // TODO-1007 健壮性守卫：每一处 await 宿主回调都必须被 try/catch 包裹，catch 内复位
   // _busy 并给用户反馈，否则宿主网络/平台通道抛错时 action sheet 卡在进度条无反应。
-  test('mineNew/overwrite await 三处都被 try/catch 包裹且 catch 内复位 _busy + 反馈', () {
+  test('mineNew/overwrite await 每处都被 try/catch 包裹且 catch 内复位 _busy + 反馈', () {
     final src = read('lib/src/anki/anki_mined_card_action_sheet.dart');
-    // 三处 await：_runMineNew / _runOverwrite / _AnkiNoteViewerDialogState._overwrite。
+    // 五处 await 宿主回调：_runMineNew / _runOverwrite /
+    // _AnkiNoteViewerDialogState._overwrite，加上「回读不了 Anki 的后端」裁决框的
+    // _UnverifiedMinedCardDialogState._runMineNew / ._runForget（AnkiMobile 车道）。
     expect(
       'try {'.allMatches(src).length,
-      greaterThanOrEqualTo(3),
-      reason: '三处宿主回调 await 必须各有 try',
+      greaterThanOrEqualTo(5),
+      reason: '每处宿主回调 await 必须各有 try',
     );
-    // catch 块固定形态：复位 _busy（避免卡死）+ 弹失败反馈。三处都必须出现这条收口。
+    // catch 块固定形态：复位 _busy（避免卡死）+ 弹失败反馈。每处都必须出现这条收口。
     final String catchReset = compactCode('setState(() => _busy = false); '
         'FushiToast.show(msg: t.anki_card_action_failed,');
     expect(
       catchReset.allMatches(compactCode(src)).length,
-      3,
-      reason: '三处 catch 必须复位 _busy 并弹 anki_card_action_failed 反馈',
+      5,
+      reason: '五处 catch 必须复位 _busy 并弹 anki_card_action_failed 反馈',
     );
     // 失败分支早返回，不得继续走成功的 Navigator.pop。
     expect(src.contains('} catch (e) {'), isTrue);

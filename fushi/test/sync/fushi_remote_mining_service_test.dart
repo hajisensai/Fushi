@@ -34,6 +34,13 @@ class _FakeMining implements FushiRemoteMiningService {
       false;
 
   @override
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async =>
+      AnkiOpenWordOutcome.failed;
+
+  @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
           String modelName) async =>
       null;

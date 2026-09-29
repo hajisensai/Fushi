@@ -99,6 +99,15 @@ void _assertBarrierSwipeWiring(String label, String rawSrc) {
     reason: '$label must gate barrier swipe on enableSwipeToClose (switch OFF '
         '=> tap-only, never-break)',
   );
+  // BUG-2770 literal:
+  // 'touchSwipeEnabled: ReaderFushiSource.instance.enableTouchSwipeToClose'
+  expect(
+    src.contains(compactCode('touchSwipeEnabled: '
+        'ReaderFushiSource.instance.enableTouchSwipeToClose')),
+    isTrue,
+    reason: '$label must feed the touch half of swipe-to-close to the barrier '
+        '(Windows/Linux default: mouse off, touch on)',
+  );
   // literal: 'ReaderFushiSource.instance.dismissSwipeSensitivity'
   expect(
     src.contains(

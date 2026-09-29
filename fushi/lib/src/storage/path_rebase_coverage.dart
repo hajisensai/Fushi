@@ -282,6 +282,21 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '内封字幕轨事实数组，与 audioTracksJson 同型——内封轨没有外部文件，'
           '外挂字幕路径存在 video_books.subtitle_source，不在本表。'),
 
+  // ── anidb_file_identities（v106 AniDB 文件级身份）──────────────────
+  PathRebaseColumn(
+      'AnidbFileIdentities',
+      'filePath',
+      PathRebaseKind.documentsRooted,
+      '与 video_books.video_path 同语义的「最近一次看到这份内容的路径」，不是主键'
+          '（主键是 ed2k + file_size），只用于「路径 + 大小 + mtime 命中就免重算哈希」。'
+          '不改写 = 数据根搬家后每个文件都要重算一遍 ED2K（几十 GB 的顺序读）才能'
+          '按内容键命中；改写只是一条 UPDATE。'),
+  PathRebaseColumn(
+      'AnidbFileIdentities',
+      'ed2k',
+      PathRebaseKind.notAPath,
+      'ED2K 哈希十六进制，内容键。'),
+
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
   PathRebaseColumn('FavoriteWords', 'sourceType', PathRebaseKind.notAPath,
       '统计桶枚举值（book/video/...），不是路径。'),
@@ -434,6 +449,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // ── web_mine_queue（schema v90，网页播放器自动制卡队列，device-local）──
   PathRebaseColumn('WebMineQueue', 'fieldsJson', PathRebaseKind.notAPath,
       '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。'),
+
+  // ── pending_mine_queue（schema v116，设备端待发制卡队列，device-local）──
+  PathRebaseColumn(
+      'PendingMineQueue',
+      'id',
+      PathRebaseKind.notAPath,
+      '128-bit 随机 hex 行身份；载荷文件 <support>/pending_mine_queue/<id>.json 的文件名'
+          '由它派生，表内不存任何路径列——数据根迁移整目录搬 support 即可，无需改写。'),
 
   // ── video_download_*（schema v78，device-local 持久流水线）────────
   PathRebaseColumn('VideoDownloadJobs', 'resourceProvider',
@@ -593,6 +616,10 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath,
       '最近一次失败的错误文案（可能夹带异常里的路径片段，但那是诊断文本，'
           '不会被任何代码当路径解析）。'),
+
+  // ── manga_reader_overrides（v112 漫画阅读器每作品覆盖）──────────────
+  PathRebaseColumn('MangaReaderOverrides', 'overridesJson',
+      PathRebaseKind.notAPath, '稀疏阅读器设置 JSON（枚举值与数值），无路径。'),
 ];
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的

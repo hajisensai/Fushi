@@ -149,6 +149,7 @@ Fushi baut auf den folgenden Projekten und dem folgenden Ökosystem auf:
 | Projekt | Beschreibung |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | Ökosystem der Manga-Quellen-Erweiterungen |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Ökosystem der Anime-Quellen-Erweiterungen (extensions-lib 14–16, gleiche Laufzeit) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga-Erweiterungs-Runtime für den Desktop |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI der Manga-Quellen-Runtime |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Referenz für die Streaming-Untertitelbrücke der Browser-Erweiterung |

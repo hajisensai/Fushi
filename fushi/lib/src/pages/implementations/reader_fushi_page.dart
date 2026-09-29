@@ -8,8 +8,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -18,6 +18,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -54,6 +55,7 @@ import 'package:fushi/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -66,6 +68,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
@@ -88,7 +91,11 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_open_trace.dart';
@@ -112,7 +119,6 @@ import 'package:fushi/src/utils/misc/coalesced_async_runner.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
-import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/serial_task_queue.dart';
 import 'package:fushi/src/utils/misc/volume_key_channel.dart';
@@ -467,18 +473,35 @@ int absoluteCharOffsetOf({
   return chapterCumulativeChars[chapter] + clamped;
 }
 
-/// 阅读时钟「此刻可跑」的统一判据（BUG-2209 / BUG-2208）。
+/// 阅读时钟「此刻可跑」的统一判据（BUG-2209 / BUG-2208 / BUG-2558）。
 ///
 /// 三个正交旗：用户点状态行计时器手动暂停（[manualPause]）、app 切后台 / 桌面失焦
 /// （[lifecycleStopped]）、阅读器面板 / 弹层 / 全页路由压在正文上（[modalDepth] > 0，
 /// 对齐 Hoshi Android 的 `modalPaused`）。任一为真都不算在读。页面里所有 start /
 /// stop 决策只经这一个判据——旧实现 `_ensureStudyClock` 只看手动暂停旗，后台听书
 /// 跟随每次翻章 / 进度刷新都经它把已被生命周期停掉的时钟重新起表。
+///
+/// BUG-2558：[audiobookPlaying]（有声书**此刻真在出声**）是唯一能豁免生命周期停表
+/// 的输入。切后台 / 锁屏 / 桌面 Alt+Tab 之后音频经媒体中心继续播，用户就是在听书
+/// 学习，这段时间必须照常计时；一旦媒体中心按下暂停 / 播完 / 会话结束，
+/// [audiobookPlaying] 立刻回到 false，判据随之停表。BUG-2209 防的「后台挂起 / 熄屏 /
+/// 睡眠的墙钟被一次性计入」依然成立——**没在播就不计**，豁免要的是正在出声这条具体
+/// 证据，不是「后台」这个状态本身。
+///
+/// 后台分支**不看 [modalDepth]**：[modalDepth] 的语义是「用户在操作压住正文的面板，
+/// 不是在读」，而屏幕已经关掉 / 窗口已经切走时面板一样不可见，这条语义不成立；从有声
+/// 书面板点下播放再锁屏是最常见的听书路径，看 [modalDepth] 会把它整段吞掉。前台仍按
+/// BUG-2208 原样停表（面板开着听书 = 在调面板）。[manualPause] 任何时候都一票否决。
 bool studyClockMayRun({
   required bool manualPause,
   required bool lifecycleStopped,
   required int modalDepth,
-}) => !manualPause && !lifecycleStopped && modalDepth == 0;
+  required bool audiobookPlaying,
+}) {
+  if (manualPause) return false;
+  if (lifecycleStopped) return audiobookPlaying;
+  return modalDepth == 0;
+}
 
 // BUG-2424：跨章去抖判据 `chapterTurnCoolingDown` 连同 TODO-1229 / BUG-568 / BUG-1829
 // 那整套时间窗（`_kChapterTurnCooldown` / `_lastChapterTurnAt` /
@@ -558,7 +581,7 @@ bool studyClockMayRun({
 ///   注入的是**同一份**常量：主轴取绝对值更大的那个 + 抖动余量，`delta > 0` =
 ///   forward，并回传 trackpad / mouse 供 Dart 侧的手势闸门分流）；
 /// * 单指横扫 → `onSwipe`（与正文 `touchend` 分支同款判据：横向分量占优，且位移过
-///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ 900px/s」，`dx < 0`
+///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ [swipeFastVelocity]」，`dx < 0`
 ///   = `'left'`）。阈值由调用方从 [ReaderSettings] 取同一真值传入，不在此另立默认；
 /// * 键盘 → [keyBridgeScript]（调用方用 `webViewKeyBridgeScript` 按注册表**当前**绑定
 ///   生成）。Windows 的 WebView2 一旦持有 OS 焦点，按键只存在于 DOM 里，Flutter 的
@@ -568,6 +591,7 @@ String buildSpreadPageHtml({
   required String rightUrl,
   required int swipeDistThreshold,
   required int swipeFastDistThreshold,
+  required int swipeFastVelocity,
   String keyBridgeScript = '',
 }) {
   return '''
@@ -646,7 +670,7 @@ $kPagedWheelGestureHelperJs
     if (absDx <= absDy) return;
     var velocity = absDx / Math.max(1, Date.now() - _swipeStartAt) * 1000;
     if (absDx < $swipeDistThreshold &&
-        !(absDx >= $swipeFastDistThreshold && velocity >= 900)) return;
+        !(absDx >= $swipeFastDistThreshold && velocity >= $swipeFastVelocity)) return;
     if (e.preventDefault) e.preventDefault();
     _swipeDoneAt = Date.now();
     window.flutter_inappwebview.callHandler('onSwipe', dx < 0 ? 'left' : 'right');
@@ -1063,6 +1087,40 @@ List<int> countChapterChars(EpubBook book) {
   );
 }
 
+/// [computeTocAnchorCharOffsets] 结果的键：章号 + 锚点 id。
+String tocAnchorKey(int chapterIndex, String fragment) =>
+    '$chapterIndex#$fragment';
+
+/// 整本目录里每个带 `#fragment` 的条目，其锚点在所属章内的字符偏移
+/// （[EpubBook.chapterAnchorCharOffsets] 口径），键见 [tocAnchorKey]。同一章的锚点
+/// 合成一次 DOM 遍历。供 compute() 在后台 isolate 调用——「一个 xhtml 装整卷、目录
+/// 靠锚点分节」的书，一章就是几万字，不能在 UI 线程解析。
+Map<String, int> computeTocAnchorCharOffsets(EpubBook book) {
+  final Map<int, Set<String>> byChapter = <int, Set<String>>{};
+  void walk(List<EpubTocItem> nodes) {
+    for (final EpubTocItem item in nodes) {
+      final String? fragment = tocHrefFragment(item.href);
+      final int index = book.chapterIndexForHref(item.href);
+      if (fragment != null && index >= 0) {
+        byChapter.putIfAbsent(index, () => <String>{}).add(fragment);
+      }
+      walk(item.children);
+    }
+  }
+
+  walk(book.toc);
+  final Map<String, int> offsets = <String, int>{};
+  for (final MapEntry<int, Set<String>> entry in byChapter.entries) {
+    book.chapterAnchorCharOffsets(entry.key, entry.value).forEach((
+      String fragment,
+      int offset,
+    ) {
+      offsets[tocAnchorKey(entry.key, fragment)] = offset;
+    });
+  }
+  return offsets;
+}
+
 /// 在单个 isolate 内解析 EPUB 并计算每章纯文本长度。供 compute() 调用，
 /// 也可直接调用做等价性校验。
 ///
@@ -1360,6 +1418,13 @@ class ReaderFushiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<void> Function(FavoriteSentence fav)? debugJumpToFavorite;
 
+  /// 集成测试钩子：等价于用户在章节导航里点某一章（歌词模式下走音频定位）。
+  static Future<void> Function(int sectionIndex)? debugJumpSection;
+
+  /// 集成测试钩子：把阅读时钟当前段写穿（`StudyClock.flushNow`），让测试不用等
+  /// 60 s tick 就能在 `study_segments` 里读到字数。
+  static Future<void> Function()? debugFlushReadingStats;
+
   @override
   BaseSourcePageState<ReaderFushiPage> createState() => _ReaderFushiPageState();
 }
@@ -1384,6 +1449,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 模块时请先把它落成局部变量再问，别在同一帧里反复读。
   ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
 
+  @override
+  ModuleId? get popupDockModule => ModuleId.books;
+
   EpubBook? _book;
 
   /// 歌词模式下按 cue 反查 EPUB 原文的解析器，与 [_book] 同生命周期；只经
@@ -1395,6 +1463,23 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookKey, title: _book?.title);
+
+  /// 收藏词的上下文：查词所在句 + 与收藏句同口径的锚点（选区时刻锁定的章号、句子
+  /// 的章内归一化范围），收藏夹据此显示原句、跳回原文、截有声书音频。
+  @override
+  FavoriteLookupContext? get favoriteLookupContext {
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text.trim() ?? '';
+    if (sentence.isEmpty) return null;
+    final ({int offset, int length})? range = _cachedSentenceRange;
+    return FavoriteLookupContext(
+      sentence: sentence,
+      sectionIndex: _favoriteSectionIndex,
+      normCharOffset: range?.offset,
+      normCharLength: range?.length,
+    );
+  }
+
   EpubSpreadMap? _spreadMap;
 
   /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**
@@ -1416,6 +1501,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _spreadDocumentLoaded = false;
   ReaderSettings? _settings;
   String? _extractDir;
+
+  /// 在线小说书（LNReader 在线阅读）的按需取章；普通书为 null。开书定位时按
+  /// 书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
+  LnReaderOnlineChapterLoader? _onlineChapterLoader;
 
   /// v82：本书子表键（= EpubBooks.uid，开书定位时一次解析存下，写库不再逐次
   /// resolve）。null = 书行缺失或旧行无 uid——reader_positions / revealed_images
@@ -1465,6 +1554,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       (_settings?.writingMode ?? 'vertical-rl') == 'vertical-rl';
 
   int _currentChapter = 0;
+  // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
+  // 树。只随 _book 失效，故这两个字段总是成对写。
+  List<TtuTocEntry>? _ttuTocCache;
+  EpubBook? _ttuTocCacheBook;
+  // 目录锚点的章内字符偏移（[computeTocAnchorCharOffsets]），开书后后台算，落定
+  // 即作废 _ttuTocCache 让目录项带上偏移；只对 _tocAnchorOffsetsBook 那本有效。
+  Map<String, int>? _tocAnchorCharOffsets;
+  EpubBook? _tocAnchorOffsetsBook;
   bool _readerContentReady = false;
   // BUG-2015：连续模式跨章前捕获旧视口，加载期间继续展示，目标章就绪后淡出。
   // 这张图只跨一次章节导航存活；不用于分页/手动跳转，也不落盘。
@@ -1481,9 +1578,23 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
   bool _imageChapterPauseInFlight = false;
+  // 音频跨章驱动的到达章（-1 = 无）：落地后第一次真实 cue 高亮把文档开头当作上一句
+  // 锚点，让章首插图也走图片等待 + 揭遮罩（见 _handleCueCrossChapter /
+  // _consumeAudioChapterArrival）。
+  int _audioChapterArrivalSection = -1;
   // BUG-782 加固：PopScope 退出链（onWillPop 异步 flush + closeMedia）在途为真，
   // 并发退出触发（ESC 连按/退出按钮后再 ESC）合并为一次，防连退两级。
   bool _popInProgress = false;
+
+  /// 外部导航收页（[ExternalMediaNavigation.closeActive]）与页内退出共用
+  /// [_popInProgress] 这一把单飞门。
+  @override
+  bool claimSourceExit() {
+    if (_popInProgress) return false;
+    _popInProgress = true;
+    return true;
+  }
+
   double _initialProgress = 0;
   // BUG-162: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
   // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。
@@ -1560,11 +1671,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
-
-  /// 鼠标此刻是否停在顶栏 / 底栏上（两处 MouseRegion 进出翻它）。悬停在栏上时
-  /// 自动收起计时暂停（[_ReaderChrome._handleReaderPointerHover] 也不再 re-arm），
-  /// 离开后重新武装——否则鼠标静止在栏上 3 秒它就自己收掉。
-  bool _chromeHovered = false;
 
   /// 底栏内容行的自然（未缩放）高度。
   static const double _readerChromeBaseHeight = 56;
@@ -1795,6 +1901,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   final Set<String> _revealedImageKeys = <String>{};
 
   AudiobookPlayerController? _audiobookController;
+
+  /// 播放态 → chrome 重建的监听状态（见 chrome.part 的 `_syncChromePlaybackListener`）。
+  AudiobookPlayerController? _chromePlaybackListened;
+  bool _chromeLastPlaying = false;
+  bool _chromeLastFollow = false;
   String? _audiobookBookKey;
   String? _srtBookUid;
   Map<int, int>? _srtCueChapterMap;
@@ -1884,6 +1995,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 压在正文上的面板 / 弹层 / 全页路由计数（BUG-2208）。> 0 时时钟停表：调半小时
   /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
   int _studyClockModalDepth = 0;
+
+  /// 上一次喂给 [_noteAudiobookPlayingForStudyClock] 的有声书播放态镜像（BUG-2558）。
+  ///
+  /// **只用于边沿检测**（播放态翻转时才 sync 时钟运行态）；[_studyClockMayRun] 判定时
+  /// 现读控制器，不读这里——镜像滞后一帧无所谓，判据滞后就会多计。
+  bool _audiobookPlayingForStudyClock = false;
 
   // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
@@ -2032,7 +2149,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _statusFooterAbsorbedByBar => readerStatusFooterAbsorbedByBar(
     inlineStatus: _playbackStatusInline,
     bottomChromeReserve: _bottomChromeReserve,
-    floatingBarPainted: _bottomBarFloating &&
+    floatingBarPainted:
+        _bottomBarFloating &&
         _bottomBarShouldPaint &&
         _audiobookController != null,
   );
@@ -2057,9 +2175,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _progressEdgeLineShouldPaint => readerProgressEdgeLineVisible(
     floating: _bottomBarFloating,
     footerVisible: _statusFooterShouldPaint,
-    showProgress: _statusFooterEnabled &&
-        ReaderFushiSource.instance.showTopProgressBar,
-    hasTotal: readerProgressRatio(
+    showProgress:
+        _statusFooterEnabled && ReaderFushiSource.instance.showTopProgressBar,
+    hasTotal:
+        readerProgressRatio(
           current: _progressCurrentChars,
           total: _progressTotalChars,
         ) !=
@@ -2135,11 +2254,37 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 在歌词模式翻真）：状态行画的是字数进度 / 阅读追踪，歌词模式不刷新进度，
   /// 并进播放条右端的那一份同样不能画，否则只是把同一批冻住的旧数字换个位置。
   /// 正文模式两个判据恒等（非歌词 ⇒ 状态行启用 ⇒ chrome 启用），行为逐字不变。
-  bool get _playbackStatusInline =>
-      _statusFooterEnabled && !readerHeaderCompact(_readerControlsWidth);
+  bool get _playbackStatusInline => readerPlaybackStatusInline(
+    enabled: _statusFooterEnabled,
+    landscape: _readerIsLandscape,
+    width: _readerControlsWidth,
+  );
+
+  /// 横屏：窗口宽 ≥ 高。桌面的横着的窗口与横屏手机是同一个排版问题，不分平台。
+  bool get _readerIsLandscape {
+    final Size size = MediaQuery.sizeOf(context);
+    return size.width >= size.height;
+  }
 
   bool get _separatePlaybackStatus =>
       _statusFooterEnabled && !_playbackStatusInline;
+
+  /// 读数独立成行时，它是否**并进底栏这块遮罩**（底栏 Column 的最后一行），而不是
+  /// 自己在屏底另画一块背景。
+  ///
+  /// 两块相邻的半透明遮罩在悬浮态下是看得出接缝的：底栏那块罩着正文、读数那块
+  /// 底下已经没有正文，同一个颜色画出来深浅不一，底部看着像缺了一层
+  /// （用户 2026-09-14「底栏遮罩少了进度显示的那层高度」）。并进同一个 Column
+  /// 后底栏的遮罩一路盖到屏底，读数是它最底下的一行（[ReaderStatusFooter.centered]
+  /// 居中），底部只有一块面。
+  ///
+  /// 底栏此刻**真的画着东西**才谈得上并进去：没有有声书播放条、底栏槽位又是空的
+  /// （默认布局）时 [_buildBottomChrome] 整条不画，读数照旧自己贴屏底右端。
+  bool get _statusFooterInBottomBar =>
+      _separatePlaybackStatus &&
+      _statusFooterShouldPaint &&
+      _bottomBarShouldPaint &&
+      (_audiobookController != null || _bottomSlotsHaveButtons);
 
   /// 底部带高：状态行坐进系统底部安全区，带高 = max(状态行预留, 系统底 inset)
   /// （单一真相源 [readerStatusFooterBandHeight]，BUG-2470）。状态行不在场时就是
@@ -2226,6 +2371,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugLyricsModeReady = () =>
           mounted && _lyricsMode && _lyricsPageReady;
       ReaderFushiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
+      ReaderFushiPage.debugJumpSection = (int index) =>
+          _jumpToChapterAnchor(index, null);
+      ReaderFushiPage.debugFlushReadingStats = _flushReadingStats;
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
@@ -2376,6 +2524,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final EpubBookRow? bookRow = located.bookRow;
     final String extractDir = located.extractDir;
     _extractDir = extractDir;
+    _onlineChapterLoader = lnReaderOnlineChapterLoaderFor(
+      row: bookRow,
+      extractDir: extractDir,
+      database: db,
+      manager: () => appModelNoUpdate.lnReaderManager,
+    );
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
     // 正文语言：本书手动指定/导入回填的 dc:language > 全局默认内容语言。
@@ -2462,6 +2616,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       );
       _recomputeCharCountsInBackground();
     }
+
+    _computeTocAnchorOffsetsInBackground();
 
     // TODO-131: spread map 与 audio slot 互不依赖（前者写 _spreadMap/_edgeMatchResults，
     // 后者写 _audiobookController，都只读已就绪的 _book），并行等待两组 DB 往返。
@@ -2674,6 +2830,35 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     );
   }
 
+  /// 目录锚点的章内偏移放后台 isolate 算（[computeTocAnchorCharOffsets]），不阻塞
+  /// 首屏；落定后作废压平缓存并重建，顶栏章名 / 导航面板的「当前章」从此能分清
+  /// 同一 xhtml 里的各节。目录里一个锚点都没有的书直接跳过（多数书如此）。
+  void _computeTocAnchorOffsetsInBackground() {
+    final EpubBook? book = _book;
+    if (book == null || book.toc.isEmpty) return;
+    bool hasFragment(List<EpubTocItem> nodes) => nodes.any(
+      (EpubTocItem item) =>
+          tocHrefFragment(item.href) != null || hasFragment(item.children),
+    );
+    if (!hasFragment(book.toc)) return;
+    unawaited(
+      compute(computeTocAnchorCharOffsets, book)
+          .then((Map<String, int> offsets) {
+            if (!mounted || !identical(_book, book)) return;
+            _tocAnchorCharOffsets = offsets;
+            _tocAnchorOffsetsBook = book;
+            _rebuild(() => _ttuTocCache = null);
+          })
+          .catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log(
+              'ReaderFushi._computeTocAnchorOffsetsInBackground',
+              e,
+              s,
+            );
+          }),
+    );
+  }
+
   Future<EpubBook?> _buildBookFromDb(
     FushiDatabase db,
     String bookKey,
@@ -2831,8 +3016,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
+    // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
+    _audiobookController = null;
+    _syncChromePlaybackListener();
     // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只停表。
     //
     // 全程零 DB IO：dispose 是同步的，在这里发起的事务没有任何人持有它的 future，
@@ -2857,6 +3046,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugToggleLyricsMode = null;
       ReaderFushiPage.debugLyricsModeReady = null;
       ReaderFushiPage.debugJumpToFavorite = null;
+      ReaderFushiPage.debugJumpSection = null;
+      ReaderFushiPage.debugFlushReadingStats = null;
       return true;
     }());
     ReaderFushiSource.onSettingsChangedLive = null;
@@ -3071,6 +3262,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // kMaxReadingGap 守卫）再封段落库，时长与字数在同一段里一起写穿。
       // BUG-2209：置生命周期旗再经统一判据停表——后台听书跟随经 _ensureStudyClock
       // 到达时看到旗子，不会把时钟重新起起来。
+      // BUG-2558：判据里「有声书此刻在播」能豁免这枚旗（媒体中心后台播放 = 在听书
+      // 学习，照常计时），所以这里只管置旗，停不停交给 _syncStudyClockRunState。
+      // 熄屏 / 挂起但**没在播**的情形与从前完全一致：判据照样停表。
       _studyClockLifecycleStopped = true;
       _syncStudyClockRunState();
     } else if (state == AppLifecycleState.resumed) {
@@ -3254,9 +3448,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: _handleReaderPointerDown,
-              // 鼠标在正文上移动即唤出悬浮 chrome（Flutter 腿，见
-              // [_handleReaderPointerHover]）。
-              onPointerHover: _handleReaderPointerHover,
               child: PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
@@ -3399,6 +3590,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       // 底栏之前，让它们盖在其上。
                       _buildProgressEdgeLine(),
                       _buildStatusFooter(),
+                      // 悬浮球的阅读器场景按钮（零尺寸登记器，球画在根上）。
+                      _buildReaderFloatingBallScene(),
                       buildDictionary(),
                       // The bottom chrome returns a Positioned; it MUST stay a direct
                       // child of this Stack. The chrome FocusScope is mounted INSIDE
@@ -4050,11 +4243,10 @@ $liveConfigJs
         if (isDictionaryShown) return false; // 弹窗 WebView 持焦点期间不抢
         // resumed 是全局生命周期回调，阅读器上方可能压着设置 / 查词大对话框；
         // 直接抢会夺走对话框焦点（Never break userspace 红线）。那些覆盖层关闭
-        // 时各自的返回点会归还焦点。
-        if (cause == FocusReclaimCause.appResumed) {
-          final ModalRoute<Object?>? owner = ModalRoute.of(context);
-          if (owner != null && !owner.isCurrent) return false;
-        }
+        // 时各自的返回点会归还焦点。contentReady / surfaceRemounted 同理：在设置
+        // 侧边弹窗里改排版会触发重排就绪，不能借机把弹窗的键盘焦点收回正文。
+        final ModalRoute<Object?>? owner = ModalRoute.of(context);
+        if (owner != null && !owner.isCurrent) return false;
         return true;
     }
   }
@@ -4265,6 +4457,136 @@ $liveConfigJs
     // 「悬停即查词」偏好只作用于正文 MouseRegion 入口（JS 腿在 barrier 盖住时同样
     // 收不到 mousemove，语义一致）。
     _hostHoverLookupAt(local, hoverAutoLookup: false);
+  }
+
+  /// 用户诉求（2026-09-23）：滚动（连续）模式下查词后，继续滚动正文即关闭弹窗
+  /// （横排纵向滚、竖排横向滚都算），由偏好 `dismiss_popup_on_scroll` 开关。
+  ///
+  /// 弹窗开着时正文被 [LookupDismissBarrier] 实心遮住（既有设计），滚轮与拖动都到不
+  /// 了 WebView，所以「继续滚动」只能在 barrier 上接：滚轮走
+  /// [onDismissBarrierPointerSignal]，触摸 / 触控板拖动走 barrier 的沿轴拖动通道
+  /// （[dismissBarrierScrollAxis] → [onDismissBarrierScrollDrag]）。两路都是关整栈
+  /// 并把这次滚动原样交给正文，滚动不会因为关窗而「断一下」。
+  bool get _dismissPopupOnScrollActive =>
+      _settings?.isContinuousMode == true &&
+      ReaderFushiSource.instance.dismissPopupOnScroll;
+
+  /// 竖排滚动轴是横向、横排是纵向（与 JS 连续模式滚轮投影同口径）。
+  @override
+  Axis? get dismissBarrierScrollAxis {
+    if (!_dismissPopupOnScrollActive) return null;
+    return (_settings?.writingMode.startsWith('vertical') ?? false)
+        ? Axis.horizontal
+        : Axis.vertical;
+  }
+
+  @override
+  void onDismissBarrierPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_dismissPopupOnScrollActive) return;
+    final Offset d = event.scrollDelta;
+    final double delta = d.dy.abs() >= d.dx.abs() ? d.dy : d.dx;
+    if (delta == 0) return;
+    clearDictionaryResult();
+    // 与 webview.part.dart 连续模式 wheel 处理同款投影：竖排把主 delta 投到横向，
+    // vertical-rl 前进 = scrollLeft 减小。竖排与否以 JS 运行时为准。
+    final String px = delta.toStringAsFixed(2);
+    // 这一拍**不跨章**：到了章边界 scrollBy 滚不动，弹窗关掉、页面不动，用户再滚一次
+    // 才走文档内那条带「真试滚 → 读回位移 → 跨章」的 handler。代价是一拍，换来的是
+    // 不必在这里复刻整套边界与手势判定（那套没有任何自动化覆盖）。
+    // 但**必须**把这一拍记进 JS 侧的手势时间线：否则紧随其后的触控板惯性 tick 会被
+    // 判成新手势，章末一次带惯性的滑动就会直接跨章（BUG-2015 防的正是这个）。
+    unawaited(
+      _evaluateScrollForward(
+        '(function(){var r=window.fushiReader;'
+        'if(window.__fushiArmWheelGesture)window.__fushiArmWheelGesture();'
+        'var v=r&&r.isVertical&&r.isVertical();'
+        'if(v){var s=window.getComputedStyle(document.body).writingMode'
+        "==='vertical-rl'?-1:1;"
+        "window.scrollBy({left:$px*s,top:0,behavior:'auto'});}"
+        "else{window.scrollBy({left:0,top:$px,behavior:'auto'});}})();",
+      ),
+    );
+  }
+
+  /// 拖动认领后正在跟随的指针：barrier 随弹窗关闭而卸载，同一根手指剩余的移动由
+  /// 这里经 [PointerRouter] 继续转给正文，直到抬起 / 取消。
+  int? _scrollDismissFollowPointer;
+  Offset _scrollDismissPending = Offset.zero;
+  bool _scrollDismissFlushing = false;
+
+  @override
+  void onDismissBarrierScrollDrag(int pointer, Offset delta) {
+    clearDictionaryResult();
+    _stopFollowingScrollDismissPointer();
+    _scrollDismissFollowPointer = pointer;
+    GestureBinding.instance.pointerRouter.addRoute(
+      pointer,
+      _onScrollDismissFollowEvent,
+    );
+    _queueScrollDismissForward(delta);
+  }
+
+  void _onScrollDismissFollowEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      _queueScrollDismissForward(event.delta);
+    } else if (event is PointerPanZoomUpdateEvent) {
+      _queueScrollDismissForward(event.panDelta);
+    } else if (event is PointerUpEvent ||
+        event is PointerCancelEvent ||
+        event is PointerPanZoomEndEvent) {
+      _stopFollowingScrollDismissPointer();
+    }
+  }
+
+  void _stopFollowingScrollDismissPointer() {
+    final int? pointer = _scrollDismissFollowPointer;
+    if (pointer == null) return;
+    _scrollDismissFollowPointer = null;
+    GestureBinding.instance.pointerRouter.removeRoute(
+      pointer,
+      _onScrollDismissFollowEvent,
+    );
+  }
+
+  /// 手指位移 → 正文反向滚动（内容跟手，与原生触摸滚动同向）。上一段 JS 未返回前
+  /// 的位移合并成一次，避免每个指针事件各发一次 evaluateJavascript。
+  void _queueScrollDismissForward(Offset fingerDelta) {
+    _scrollDismissPending += fingerDelta;
+    if (_scrollDismissFlushing) return;
+    unawaited(_flushScrollDismissForward());
+  }
+
+  Future<void> _flushScrollDismissForward() async {
+    _scrollDismissFlushing = true;
+    try {
+      while (mounted && _scrollDismissPending != Offset.zero) {
+        final Offset d = _scrollDismissPending;
+        _scrollDismissPending = Offset.zero;
+        await _evaluateScrollForward(
+          'window.scrollBy({left:${(-d.dx).toStringAsFixed(2)},'
+          "top:${(-d.dy).toStringAsFixed(2)},behavior:'auto'});",
+        );
+      }
+    } finally {
+      _scrollDismissFlushing = false;
+      _scrollDismissPending = Offset.zero;
+    }
+  }
+
+  Future<void> _evaluateScrollForward(String js) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    try {
+      // BUG-2748：这是用户滚动（弹窗遮罩收下的滚轮 / 拖动转给正文），先让阅读器放弃
+      // 迟到图片锚与恢复锚——裸 scrollBy 不产生 DOM 输入事件，JS 侧的意图监听看不见。
+      await controller.evaluateJavascript(
+        source:
+            '(function(){var r=window.fushiReader;'
+            'if(r&&r.noteUserScroll)r.noteUserScroll();})();$js',
+      );
+    } catch (e, s) {
+      ErrorLogService.instance.log('ReaderFushi.scrollDismissForward', e, s);
+    }
   }
 
   /// 宿主腿的落点入口（barrier / 正文 MouseRegion 共用）：门开且越过节流阈值才

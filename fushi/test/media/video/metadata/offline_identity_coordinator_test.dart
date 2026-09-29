@@ -53,6 +53,8 @@ void main() {
     final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
     final SourceScrapeReport report = await scrape(
       VideoSourceScrapeCoordinator(
+        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+        primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
         registry:
@@ -92,6 +94,8 @@ void main() {
     final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
     final SourceScrapeReport report = await scrape(
       VideoSourceScrapeCoordinator(
+        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+        primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
         registry:
@@ -122,6 +126,8 @@ void main() {
     final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
     final SourceScrapeReport report = await scrape(
       VideoSourceScrapeCoordinator(
+        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+        primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
         registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
@@ -151,6 +157,8 @@ void main() {
     final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
     final SourceScrapeReport report = await scrape(
       VideoSourceScrapeCoordinator(
+        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+        primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
         registry:

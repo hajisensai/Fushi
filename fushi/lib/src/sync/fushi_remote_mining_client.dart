@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi_engine/sync/remote_source_note.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -49,7 +50,31 @@ abstract class RemoteSourceNoteSender {
 /// Non-secret identity of an authenticated pairing. A reused network address
 /// must not let a draft move to another device after the client restarts.
 /// [peer.token] must be the effective credential (including legacy fallback).
+///
+/// 条目带 hostId 时身份是 **host + 凭据**（v2），与经哪条地址到达无关：同一台 host
+/// 可经 LAN / IPv6 / 组网 / P2P 到达，把地址编进身份会让出门后草稿再也续不上
+/// （docs/specs/2026-09-28-interconnect-remote-reach.md）。无 hostId 的老条目仍是 v1。
 String sourcePeerPairingIdentity(FushiClientUrl peer) {
+  final String? token = peer.token;
+  if (token == null || token.isEmpty) {
+    throw StateError('Source pairing has no effective credential');
+  }
+  final String? hostId = peer.hostId;
+  if (hostId != null && hostId.isNotEmpty) {
+    return sha256
+        .convert(
+          utf8.encode(
+            jsonEncode(<Object?>['fushi-source-pairing-v2', hostId, token]),
+          ),
+        )
+        .toString();
+  }
+  return legacySourcePeerPairingIdentity(peer);
+}
+
+/// v1 身份（scheme + host + port + 凭据 + 指纹）。升级前保存的草稿存的是它；
+/// 对应条目后来学到 hostId 之后，续草稿时两种都要认。
+String legacySourcePeerPairingIdentity(FushiClientUrl peer) {
   final Uri uri = Uri.parse(peer.url);
   final String? token = peer.token;
   if (token == null || token.isEmpty) {
@@ -71,9 +96,24 @@ String sourcePeerPairingIdentity(FushiClientUrl peer) {
       .toString();
 }
 
+
+/// 转发制卡的结果未知：对端回过话（非 2xx / 坏 JSON）但没给出结果，或请求发出后
+/// 等应答超时。主机可能已经落了卡，所以不能当「没送到」去入队重发。
+class RemoteMineOutcomeUnknown implements Exception {
+  const RemoteMineOutcomeUnknown();
+
+  @override
+  String toString() =>
+      'The Fushi Interconnect server may have received the card, but did not confirm it.';
+}
+
 abstract class RemoteMineSender {
-  /// 转发一次制卡；返回服务端 `{result, message?, detail?}`，无可达候选/全失败返回 null，
-  /// token 被拒抛 [SyncAuthError]。
+  /// 转发一次制卡；返回服务端 `{result, message?, detail?}`。
+  ///
+  /// 返回 null **只**表示「确定没送到」（没有已配对设备，或全部候选在建连阶段就失败），
+  /// 调用方可以把这张卡入队稍后重发；对端回过话却没给出结果、或请求发出后超时，抛
+  /// [RemoteMineOutcomeUnknown]（主机可能已经落卡，重发会造重复卡）；token 被拒抛
+  /// [SyncAuthError]。
   Future<Map<String, dynamic>?> mineForward(ForwardedMinePayload payload);
 
   /// 远端查重。三态：命中 / 未命中 / token 被拒（见 [RemoteDuplicateCheck]）。
@@ -159,7 +199,7 @@ class FushiRemoteMiningClient
     String peerUrl, {
     required String pairingIdentity,
   }) async {
-    CardSourceLink.markerForSourceId(sourceId);
+    CardSourceLink.validateSourceId(sourceId);
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(pairingIdentity)) {
       throw const FormatException('Missing or invalid saved pairing identity');
     }
@@ -190,7 +230,8 @@ class FushiRemoteMiningClient
     if (matches.length != 1) {
       throw StateError('The saved peer is not uniquely paired and enabled.');
     }
-    if (sourcePeerPairingIdentity(matches.single) != pairingIdentity) {
+    if (sourcePeerPairingIdentity(matches.single) != pairingIdentity &&
+        legacySourcePeerPairingIdentity(matches.single) != pairingIdentity) {
       throw StateError('The saved draft belongs to a different pairing.');
     }
     final FushiClientUrl? bound = _sourcePeers[sourceId];
@@ -205,7 +246,7 @@ class FushiRemoteMiningClient
 
   @override
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
-    CardSourceLink.markerForSourceId(sourceId);
+    CardSourceLink.validateSourceId(sourceId);
     final InterconnectPostOutcome outcome = await _transport.post(
       path: '/api/anki/source/read',
       body: <String, dynamic>{'sourceId': sourceId},
@@ -223,8 +264,22 @@ class FushiRemoteMiningClient
     if (note.sourceId != sourceId || outcome.candidate == null) {
       throw const FormatException('Source note identity mismatch');
     }
-    _sourcePeers[sourceId] = outcome.candidate!;
+    _sourcePeers[sourceId] = await _stableSourcePeer(outcome.candidate!);
     return note;
+  }
+
+  /// 草稿记下的对端要稳定：取该 host 的身份代表（手输条目，永不被自动删改），
+  /// 而不是本次恰好连上的那条（可能是随 host 换 IP 被删的 learned 地址，或每次
+  /// 运行都换端口的 P2P 本地转发口）。凭据沿用本次实际生效的那份。
+  Future<FushiClientUrl> _stableSourcePeer(FushiClientUrl used) async {
+    final String? hostId = used.hostId;
+    if (hostId == null) return used;
+    for (final FushiClientUrl rep in interconnectPeerRepresentatives(
+      await _repo.getFushiClientUrls(),
+    )) {
+      if (rep.hostId == hostId) return rep.copyWith(token: used.token);
+    }
+    return used;
   }
 
   @override
@@ -315,12 +370,21 @@ class FushiRemoteMiningClient
   /// 转发一次制卡到已配对主机。返回服务端 `{result, message?, detail?}`；
   /// 无可达候选/全部失败返回 null；token 被拒抛 [SyncAuthError]。
   @override
-  Future<Map<String, dynamic>?> mineForward(ForwardedMinePayload payload) {
-    return _post(
+  Future<Map<String, dynamic>?> mineForward(
+    ForwardedMinePayload payload,
+  ) async {
+    final InterconnectPostOutcome outcome = await _transport.post(
       path: '/api/mine/forward',
       body: payload.toJson(),
       timeout: _mineTimeout,
+      authErrorMessage: 'Fushi server rejected remote mining token',
     );
+    if (outcome.json != null) return outcome.json;
+    // null 在契约里 = 「确定没送到」（调用方据此允许入队重发）。对端回过话（非 2xx /
+    // 坏 JSON）或请求发出后超时，主机可能已经落了卡——这不是「没送到」，重发会造
+    // 重复卡，必须报成结果未知。
+    if (outcome.mayHaveDelivered) throw const RemoteMineOutcomeUnknown();
+    return null;
   }
 
   /// 查重（`+`→`✓`）：命中主机 Anki 后端。

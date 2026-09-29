@@ -70,6 +70,16 @@ void main() {
       expect(r.serverName, 'NAS');
     });
 
+    test('parseAuthResult：Emby 只在 User.ServerName 给服务器名时回落', () {
+      final JellyfinAuthResult r =
+          JellyfinApi.parseAuthResult(<String, Object?>{
+        'AccessToken': 'tok',
+        'ServerId': 'UHD',
+        'User': <String, Object?>{'Id': 'u1', 'ServerName': 'UHD'},
+      });
+      expect(r.serverName, 'UHD');
+    });
+
     test('parseViews 保留 collectionType；isVideoish 滤掉音乐/图书', () {
       final List<JellyfinLibraryView> views =
           JellyfinApi.parseViews(<String, Object?>{
@@ -285,8 +295,13 @@ void main() {
       expect(info.durationMs, 90 * 60 * 1000);
       expect(info.positionMs, 60000);
       expect(info.hasCover, isTrue);
-      expect(info.coverUrl,
-          'http://nas:8096/Items/ep1/Images/Primary?api_key=tok');
+      // 清单封面走服务器侧缩放（maxWidth=720）：iOS 上解几十张原图海报是
+      // 内存闪退候选之一；api_key 仍在 URL 里自带认证。
+      expect(
+        info.coverUrl,
+        'http://nas:8096/Items/ep1/Images/Primary'
+        '?maxWidth=720&quality=90&api_key=tok',
+      );
       // 「显示视频库」结构表达：单集按剧名折叠成 playlist 合集卡。
       expect(info.collection?.collectionName, 'Show A');
       expect(info.collection?.collectionType, 'playlist');
@@ -297,6 +312,11 @@ void main() {
     test('remoteVideoStreamUrls：直连流自带 api_key，外挂文本字幕优先', () async {
       final JellyfinVideoClient c =
           clientWith(MockClient((http.Request req) async {
+        // 兼容层没有 PlaybackInfo 端点 → 回落手拼直出 URL（协商路径见
+        // jellyfin_playback_negotiation_test.dart）。
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return http.Response('', 404);
+        }
         expect(req.url.path, '/Users/u1/Items/ep1');
         return http.Response(
           jsonEncode(_episodeJson(

@@ -84,6 +84,7 @@ class FushiPairV2Client {
     required String deviceName,
     Future<String?> Function()? pinProvider,
     String? clientDeviceId,
+    String? ticketId,
   }) async {
     final http.Client client = _client();
     try {
@@ -97,6 +98,9 @@ class FushiPairV2Client {
               'clientNonce': clientNonce,
               if (clientDeviceId != null && clientDeviceId.isNotEmpty)
                 'clientDeviceId': clientDeviceId,
+              // 扫码 / 复制链接：host 签发的一次性票据 id；[pinProvider] 此时应返回
+              // 票据 secret（代替 PIN 进 HMAC）。
+              if (ticketId != null && ticketId.isNotEmpty) 'ticket': ticketId,
             }),
           )
           .timeout(timeout);

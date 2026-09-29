@@ -1,0 +1,6 @@
+## BUG-2782 · 漫画页内缩放回写「默认缩放」，16:10 笔记本「适应屏幕」装不下整页
+- **报告**：2026-09-28（用户：16:10 笔记本看漫画显示不全，录屏 `2026-09-28 19-32-05.mp4`）
+- **真实性**：✅ 真 bug（按录屏几何推断，未拿到用户机上的偏好值）。录屏里三种窗口尺寸下跨页都比正确 contain 大约 1.08~1.1 倍，上下被裁、裁切位置随平移变化；打开设置选「适应屏幕」无变化。CSS（`fushi/lib/src/media/manga/manga_overlay_html.dart` `mangaPageDivHtml` 的 `min(slotVw, w/h·vh)`）与 JS `_layoutSource` 的 `Math.min(sx, sy)` 都是正确的 contain；多出来的是 `#manga-canvas` 的 `scale(ZOOM)`。根因：页内捏合 / Ctrl+滚轮 / 双击放大经 `onMangaZoomChanged` → `_queueZoomPreferencePersist` → `MangaZoomPreferenceDebouncer` → `appModel.setMangaZoomPercent`，右键菜单 ± 经 `_setZoomPercent` 也直接写同一个键 `manga_zoom_percent`，而它就是设置里的「默认缩放」（`fushi/lib/src/settings/settings_schema_manga.dart` `manga.default_zoom`），下次打开任何漫画都从这个值起步（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart` `_zoomPercent = readerPreferences.zoomStart`）。同一份状态两个写入方：笔记本触控板随手一捏就把 110% 钉成永久默认值，release 版 chrome 又不显示缩放比例，用户只看到「适应屏幕」失效。
+- **[x] ① 已修复** — 页内缩放只是会话状态：删掉 `onMangaZoomChanged` / `_setZoomPercent` 的偏好回写和 `MangaZoomPreferenceDebouncer`（整文件删除），「默认缩放」只由设置项写。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_default_zoom_single_writer_guard_test.dart`（扫整棵 `lib/`：`setMangaZoomPercent` 只允许设置 schema 调用；漫画页缩放回调不得持久化）。
+- **备注**：修复不回滚已经被写坏的存量值——分不出用户是故意设的还是误捏的。已经中招的用户去 设置 › 漫画 › 默认缩放 拉回 100%（或右键菜单看「缩放 +（xxx%）」确认当前值）。行为变化：以前捏合后的缩放会被带到下一本，现在每次打开都回到「默认缩放」。

@@ -103,6 +103,30 @@ void main() {
     expect(smoke.contains(r'"$WORK/clip.mp4"'), isTrue,
         reason: 'smoke test must actually encode a real .mp4 with libx264 and '
             'validate it (a compile alone is insufficient, TODO-1257).');
+    // BUG-2630: the interconnect transcode host writes MPEG-TS segments whose
+    // in-segment timeline is shifted by -output_ts_offset. The recipe guard only
+    // diffs configure strings, so without this the probe could be dropped and
+    // nothing would notice that ffmpeg-min can no longer produce a real segment.
+    expect(smoke.contains('-f mpegts'), isTrue,
+        reason: 'smoke test must mux a real MPEG-TS segment, not just grep the '
+            'muxer list (BUG-2630).');
+    expect(smoke.contains('-output_ts_offset'), isTrue,
+        reason: 'smoke test must pin the segment timeline shift used by '
+            'buildTranscodeSegmentArgs (BUG-2630).');
+    expect(smoke.contains(r'"$WORK/seg.ts"'), isTrue,
+        reason: 'smoke test must decode the produced .ts back (BUG-2630).');
+    // BUG-2630 third finding: a single segment start_time cannot see the defect
+    // (an early DTS still reads as "about the offset"). The probe must compare
+    // the first video keyframe DTS of two segments against their nominal starts.
+    expect(smoke.contains('-bf 0'), isTrue,
+        reason: 'segment encode must disable B-frames so DTS == PTS; otherwise '
+            'the hls demuxer drops a whole segment on seek (BUG-2630).');
+    expect(smoke.contains(r'"$WORK/seg2.ts"'), isTrue,
+        reason: 'smoke test must produce a SECOND segment — the invariant is '
+            'across segments, not inside one (BUG-2630).');
+    expect(smoke.contains('dts_time'), isTrue,
+        reason: 'smoke test must check DTS, not start_time/PTS: hls.c compares '
+            'DTS against first_timestamp + sum(EXTINF) (BUG-2630).');
   });
 
   test('ffmpeg-min CI workflow installs x264 + TLS dev packages', () {

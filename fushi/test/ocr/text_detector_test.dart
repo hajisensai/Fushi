@@ -42,8 +42,11 @@ void main() {
     });
 
     test('letterbox 模式：等比缩放 + 居中 pad、正反变换互逆', () {
-      final LetterboxTransform t =
-          computeLetterbox(1000, 500, preserveAspect: true);
+      final LetterboxTransform t = computeLetterbox(
+        1000,
+        500,
+        preserveAspect: true,
+      );
       expect(t.scaleX, closeTo(0.64, 1e-9));
       expect(t.scaleY, closeTo(0.64, 1e-9));
       expect(t.padX, 0);
@@ -63,8 +66,12 @@ void main() {
     test('squish：RGB / 255、CHW 布局', () {
       final img.Image src = img.Image(width: 2, height: 2);
       img.fill(src, color: img.ColorRgb8(255, 0, 0)); // 纯红
-      final LetterboxTransform t =
-          computeLetterbox(2, 2, dstWidth: 4, dstHeight: 4);
+      final LetterboxTransform t = computeLetterbox(
+        2,
+        2,
+        dstWidth: 4,
+        dstHeight: 4,
+      );
       final Float32List chw = rtdetrPreprocess(src, t);
       expect(chw.length, 3 * 4 * 4);
       // R 平面全 1，G/B 平面全 0。
@@ -78,8 +85,13 @@ void main() {
     test('letterbox：pad 区域为 114 灰', () {
       final img.Image src = img.Image(width: 2, height: 1);
       img.fill(src, color: img.ColorRgb8(255, 255, 255));
-      final LetterboxTransform t = computeLetterbox(2, 1,
-          dstWidth: 4, dstHeight: 4, preserveAspect: true);
+      final LetterboxTransform t = computeLetterbox(
+        2,
+        1,
+        dstWidth: 4,
+        dstHeight: 4,
+        preserveAspect: true,
+      );
       // scale=2 → 内容占 4x2，上下各 1 行 pad。
       final Float32List chw = rtdetrPreprocess(src, t);
       const double gray = 114 / 255;
@@ -103,7 +115,8 @@ void main() {
     final LetterboxTransform transform = computeLetterbox(1280, 1280);
 
     Float32List logitsFor(List<List<double>> perQuery) => Float32List.fromList(
-        <double>[for (final List<double> q in perQuery) ...q]);
+          <double>[for (final List<double> q in perQuery) ...q],
+        );
 
     test('sigmoid + 阈值 + cxcywh 反变换回原图', () {
       final Float32List logits = logitsFor(<List<double>>[
@@ -156,8 +169,12 @@ void main() {
         <double>[-10, -10, 5],
       ]);
       // 框超出左上边界。
-      final Float32List boxes =
-          Float32List.fromList(<double>[0.0, 0.0, 0.2, 0.2]);
+      final Float32List boxes = Float32List.fromList(<double>[
+        0.0,
+        0.0,
+        0.2,
+        0.2,
+      ]);
       final List<RawDetection> detections = decodeRtdetrOutputs(
         logits: logits,
         boxes: boxes,
@@ -177,16 +194,7 @@ void main() {
       final List<RawDetection> detections = decodeProcessedRtdetrOutputs(
         scores: Float32List.fromList(<double>[0.9, 0.1]),
         labels: Float32List.fromList(<double>[2, 1]),
-        boxes: Float32List.fromList(<double>[
-          256,
-          256,
-          384,
-          384,
-          0,
-          0,
-          64,
-          64,
-        ]),
+        boxes: Float32List.fromList(<double>[256, 256, 384, 384, 0, 0, 64, 64]),
         transform: transform,
       );
 
@@ -202,6 +210,103 @@ void main() {
   group('applyClassAwareNms', () {
     const OcrRect boxA = OcrRect(left: 0, top: 0, right: 100, bottom: 100);
     const OcrRect boxB = OcrRect(left: 5, top: 5, right: 105, bottom: 105);
+
+    test('低 IoU 的内框保留到识别后，几何包含不能证明父框读全正文', () {
+      const RawDetection paragraph = RawDetection(
+        rect: OcrRect(left: 585, top: 766, right: 1149, bottom: 1166),
+        score: 0.67,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection line = RawDetection(
+        rect: OcrRect(left: 601, top: 863, right: 1022, bottom: 911),
+        score: 0.33,
+        classId: kDetClassTextBubble,
+      );
+      expect(paragraph.rect.iou(line.rect), lessThan(0.1));
+      expect(
+        applyClassAwareNms(<RawDetection>[line, paragraph]),
+        <RawDetection>[paragraph, line],
+      );
+      expect(
+        applyClassAwareNms(<RawDetection>[paragraph, line]),
+        <RawDetection>[paragraph, line],
+      );
+    });
+
+    test('低分大框不能被其中一条高分行代替，避免丢其它行', () {
+      const RawDetection paragraph = RawDetection(
+        rect: OcrRect(left: 0, top: 0, right: 100, bottom: 100),
+        score: 0.6,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection line = RawDetection(
+        rect: OcrRect(left: 10, top: 10, right: 90, bottom: 20),
+        score: 0.9,
+        classId: kDetClassTextFree,
+      );
+      expect(
+        applyClassAwareNms(<RawDetection>[paragraph, line]),
+        <RawDetection>[line, paragraph],
+      );
+    });
+
+    test('同分嵌套文字不受输入顺序影响，竖排整块保留内部小字', () {
+      const RawDetection paragraph = RawDetection(
+        rect: boxA,
+        score: 0.8,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection line = RawDetection(
+        rect: OcrRect(left: 10, top: 10, right: 90, bottom: 20),
+        score: 0.8,
+        classId: kDetClassTextFree,
+      );
+      expect(applyClassAwareNms(<RawDetection>[paragraph, line]), hasLength(2));
+      expect(applyClassAwareNms(<RawDetection>[line, paragraph]), hasLength(2));
+      expect(
+        applyClassAwareNms(<RawDetection>[
+          const RawDetection(
+            rect: OcrRect(left: 0, top: 0, right: 100, bottom: 300),
+            score: 0.9,
+            classId: kDetClassTextFree,
+          ),
+          line,
+        ]),
+        hasLength(2),
+      );
+    });
+
+    test('部分相交的相邻行和嵌套气泡不会按包含规则删除', () {
+      const RawDetection paragraph = RawDetection(
+        rect: boxA,
+        score: 0.9,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection adjacent = RawDetection(
+        rect: OcrRect(left: 90, top: 20, right: 160, bottom: 40),
+        score: 0.7,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection bubble = RawDetection(
+        rect: boxA,
+        score: 0.8,
+        classId: kDetClassBubble,
+      );
+      const RawDetection innerBubble = RawDetection(
+        rect: OcrRect(left: 20, top: 20, right: 40, bottom: 40),
+        score: 0.6,
+        classId: kDetClassBubble,
+      );
+      expect(
+        applyClassAwareNms(<RawDetection>[
+          paragraph,
+          adjacent,
+          bubble,
+          innerBubble,
+        ]),
+        hasLength(4),
+      );
+    });
 
     test('同类高重叠只留高分', () {
       final List<RawDetection> kept = applyClassAwareNms(<RawDetection>[
@@ -236,10 +341,18 @@ void main() {
   group('buildPageDetections', () {
     test('类过滤 + 气泡内外判定', () {
       const OcrRect bubble = OcrRect(left: 0, top: 0, right: 100, bottom: 100);
-      const OcrRect insideText =
-          OcrRect(left: 20, top: 20, right: 80, bottom: 80);
-      const OcrRect outsideText =
-          OcrRect(left: 200, top: 200, right: 260, bottom: 260);
+      const OcrRect insideText = OcrRect(
+        left: 20,
+        top: 20,
+        right: 80,
+        bottom: 80,
+      );
+      const OcrRect outsideText = OcrRect(
+        left: 200,
+        top: 200,
+        right: 260,
+        bottom: 260,
+      );
       final PageDetections page = buildPageDetections(<RawDetection>[
         const RawDetection(rect: bubble, score: 0.9, classId: 0),
         const RawDetection(rect: insideText, score: 0.8, classId: 1),
@@ -247,10 +360,12 @@ void main() {
       ]);
       expect(page.bubbles, hasLength(1));
       expect(page.textRegions, hasLength(2));
-      final DetectedTextRegion inside =
-          page.textRegions.firstWhere((DetectedTextRegion r) => r.classId == 1);
-      final DetectedTextRegion outside =
-          page.textRegions.firstWhere((DetectedTextRegion r) => r.classId == 2);
+      final DetectedTextRegion inside = page.textRegions.firstWhere(
+        (DetectedTextRegion r) => r.classId == 1,
+      );
+      final DetectedTextRegion outside = page.textRegions.firstWhere(
+        (DetectedTextRegion r) => r.classId == 2,
+      );
       expect(inside.insideBubble, isTrue);
       expect(outside.insideBubble, isFalse);
     });
@@ -298,10 +413,14 @@ void main() {
 
     test('兼容图内后处理的 scores labels boxes 输出', () async {
       final FakeSession session = FakeSession(<String, OcrTensor>{
-        'scores': OcrTensor.float32(
-            Float32List.fromList(<double>[0.95]), <int>[1, 1]),
-        'labels':
-            OcrTensor.float32(Float32List.fromList(<double>[2]), <int>[1, 1]),
+        'scores': OcrTensor.float32(Float32List.fromList(<double>[0.95]), <int>[
+          1,
+          1,
+        ]),
+        'labels': OcrTensor.float32(Float32List.fromList(<double>[2]), <int>[
+          1,
+          1,
+        ]),
         'boxes': OcrTensor.float32(
           Float32List.fromList(<double>[256, 256, 384, 384]),
           <int>[1, 1, 4],
@@ -309,8 +428,9 @@ void main() {
       });
       final TextDetector detector = TextDetector(session);
 
-      final PageDetections result =
-          await detector.detect(img.Image(width: 100, height: 200));
+      final PageDetections result = await detector.detect(
+        img.Image(width: 100, height: 200),
+      );
 
       expect(result.textRegions, hasLength(1));
       expect(result.textRegions.single.classId, kDetClassTextFree);
@@ -326,18 +446,19 @@ void main() {
           Float32List.fromList(<double>[0.9]),
           const <int>[1, 1],
         ),
-        'labels': OcrTensor.int64(
-          Int64List.fromList(<int>[2]),
-          const <int>[1, 1],
-        ),
+        'labels': OcrTensor.int64(Int64List.fromList(<int>[2]), const <int>[
+          1,
+          1,
+        ]),
         'boxes': OcrTensor.float32(
           Float32List.fromList(<double>[64, 64, 128, 128]),
           const <int>[1, 1, 4],
         ),
       });
       final TextDetector detector = TextDetector(session);
-      final PageDetections page =
-          await detector.detect(img.Image(width: 640, height: 640));
+      final PageDetections page = await detector.detect(
+        img.Image(width: 640, height: 640),
+      );
       expect(page.textRegions, hasLength(1));
       expect(page.textRegions.single.classId, kDetClassTextFree);
       expect(page.textRegions.single.rect.left, closeTo(64, 1e-6));

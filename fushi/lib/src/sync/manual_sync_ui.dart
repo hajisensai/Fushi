@@ -5,6 +5,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
@@ -77,6 +78,8 @@ bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
       SyncAuthFailureKind.pairingRejected => false,
       // 压根没有凭据可丢，登出无事可做。
       SyncAuthFailureKind.pairingNotConfigured => false,
+      // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
+      SyncAuthFailureKind.htmlPage => false,
     };
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。
@@ -278,7 +281,10 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
         // 手动同步是用户的显式动作：立刻解冲突，不受 in-book/snooze 约束
         // （ConflictSource.manual）。option B 双通道：逐通道用**各自的**后端呈现
         // 该通道的冲突 —— 合并报告的冲突可能来自互联通道，用云后端去 apply 会
-        // 写错端。
+        // 写错端。两条通道共用一本裁决簿：同一本书在两条通道上都分叉时用户只
+        // 裁决一次，第二条通道直接按同一裁决应用、不再弹（用户报告 2026-09-22
+        // 「点了立即同步还会继续弹」）。
+        final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
         for (final ManualSyncChannelReport channel in result.channelReports) {
           if (channel.report.conflicts.isEmpty) continue;
           if (!context.mounted) return result.outcome;
@@ -289,6 +295,7 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
             conflicts: channel.report.conflicts,
             source: ConflictSource.manual,
             inBook: appModel.isMediaOpen,
+            decisions: decisions,
           );
         }
     }

@@ -1,0 +1,6 @@
+## BUG-2753 · MDX词典与Yomitan词典同一词条被拆成两张卡
+- **报告**：2026-09-28（用户 issue hajisensai/Fushi#1725：mdx词典和yomitan词典的词条被分开显示——上方 `取り戻す／とりもどす`，下方 `取り戻す` 无读音、全是 MDX 词典）
+- **真实性**：✅ 真 bug。MDX / StarDict / DSL 这类 simple dict 只有「词头 → 释义」，导入时读音恒空（`native/fushidicts/fushidicts_src/importer.cpp` 写 `reading_len = 0`）。弹窗按「表记 + 有效读音」分组（`packages/fushi_dictionary/lib/src/language/language.dart` 的 `lookupHeadwordKey`），BUG-791 只把空读音归一成表记本身，于是 Yomitan 行 key=`取り戻す\nとりもどす`、MDX 行 key=`取り戻す\n取り戻す`，拆成两张卡。Android 系统划词弹窗走的 C++ `build_popup_json`（`native/fushidicts/fushidicts_src/popup_json.cpp`）连 BUG-791 的归一都没有，同样拆卡。
+- **[x] ① 已修复** — 新增 `soleExplicitReadings` / `resolvedLookupReading`：同表记在本次结果里只有**一个**显式读音时，空读音行补上该读音再分组（一张卡，卡片读音取显式读音，即使 MDX 行先到）；同表记有多个读音（辛い＝つらい／からい）时不猜，空读音行照旧自成一组；只有空读音时保持原状。`buildPopupJsonFromLookup` 与 `buildResultFromLookup` 同一口径，后者把补全后的读音写进 `DictionaryEntry.reading`（`buildLookupEntriesJson` 按它再分组，制卡 / 音频 / 振假名 / Anki 查重也读它），词头预算按合并后计。C++ `build_popup_json` 同步同一规则（顺带补上 BUG-791 归一）。不改导入器、不改已导入数据。提交 `a2423b56fbd`。
+- **[x] ② 已加自动化测试** — Dart：`fushi/test/pages/dictionary_popup_empty_reading_group_test.dart` 新增 BUG-2753 组（并卡 / MDX 先到仍取显式读音 / entry 读音补全且只占一个词头预算 / 多读音不猜 / 全空保持 / 不跨表记外溢）；C++：`native/fushidicts/tests/popup_json_reading_merge_test.cpp`（旧实现 3 条断言红、新实现绿）。
+- **备注**：未用用户的 MDX 词典真机复现；逻辑层两侧测试覆盖。

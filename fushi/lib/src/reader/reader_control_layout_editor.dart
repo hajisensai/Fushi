@@ -24,6 +24,8 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return Icons.collections_outlined;
     case ReaderControlItem.statistics:
       return Icons.insights_outlined;
+    case ReaderControlItem.studyTimer:
+      return Icons.timer_outlined;
     case ReaderControlItem.title:
       return Icons.title;
     case ReaderControlItem.audiobook:
@@ -32,6 +34,18 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return Icons.fullscreen_rounded;
     case ReaderControlItem.settings:
       return Icons.tune_outlined;
+    case ReaderControlItem.audiobookPrev:
+      return Icons.skip_previous_outlined;
+    case ReaderControlItem.audiobookPlayPause:
+      return Icons.play_arrow_outlined;
+    case ReaderControlItem.audiobookNext:
+      return Icons.skip_next_outlined;
+    case ReaderControlItem.audiobookSeekBack:
+      return Icons.replay_10_outlined;
+    case ReaderControlItem.audiobookSeekForward:
+      return Icons.forward_10_outlined;
+    case ReaderControlItem.audiobookFollow:
+      return Icons.link;
   }
 }
 
@@ -47,6 +61,8 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.reader_gallery_tooltip;
     case ReaderControlItem.statistics:
       return t.reading_statistics;
+    case ReaderControlItem.studyTimer:
+      return t.shortcut_action_reader_toggle_study_clock;
     case ReaderControlItem.title:
       return t.reader_control_title;
     case ReaderControlItem.audiobook:
@@ -55,6 +71,18 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.shortcut_action_global_toggle_fullscreen;
     case ReaderControlItem.settings:
       return t.reader_settings_section;
+    case ReaderControlItem.audiobookPrev:
+      return t.prev_sentence;
+    case ReaderControlItem.audiobookPlayPause:
+      return t.reader_control_item_play_pause;
+    case ReaderControlItem.audiobookNext:
+      return t.next_sentence;
+    case ReaderControlItem.audiobookSeekBack:
+      return t.reader_control_item_seek_back;
+    case ReaderControlItem.audiobookSeekForward:
+      return t.reader_control_item_seek_forward;
+    case ReaderControlItem.audiobookFollow:
+      return t.audiobook_follow_audio;
   }
 }
 
@@ -122,8 +150,8 @@ class ReaderControlLayoutEditor extends StatelessWidget {
     return null;
   }
 
-  /// 舞台：一张「阅读器」示意——顶栏一行、正文留白、底栏一行。窄窗每行折成
-  /// 两列 Wrap。
+  /// 舞台：一张「阅读器」示意——顶栏一行、正文带（书本占位）、底栏一行。窄窗
+  /// 每行折成两列 Wrap。
   Widget _buildStage(
     BuildContext context,
     ControlSlotRegionBuilder<ReaderControlSlot> buildSlotRegion,
@@ -169,7 +197,7 @@ class ReaderControlLayoutEditor extends StatelessWidget {
               ReaderControlSlot.topCenter,
               ReaderControlSlot.topRight,
             ]),
-            // 正文占位：让两行读出「上 / 下」的方位感。
+            // 正文带：书本占位，让三行读出「上 / 正文 / 下」的方位感。
             Padding(
               padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
               child: Center(

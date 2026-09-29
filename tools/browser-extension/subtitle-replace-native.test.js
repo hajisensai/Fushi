@@ -13,6 +13,7 @@
 //   ④ 用户主动隐藏字幕（manual）仍然全藏，替代模式不得把它降级。
 const test = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -24,6 +25,12 @@ const POPUP_SIZE = path.join(__dirname, 'popup-size.js');
 const DICT_MEDIA = path.join(__dirname, 'vendor', 'dict-media.js');
 const STYLE_ID = 'fushi-hide-subs';
 const OVERLAY_ID = 'fushi-subtitle-overlay';
+
+// 覆盖层根下有「文字层 + 拖柄」两个子节点，正文在 .fushi-subtitle-overlay-text 里。
+function overlayText(el) {
+  const text = el && el.children && el.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  return (text || el).textContent;
+}
 
 function makeEl(tag) {
   const el = {
@@ -138,6 +145,7 @@ function loadWorld(prefs) {
     },
   };
   sandbox.window = {
+    fushiT: FUSHI_T,
     addEventListener() {},
     postMessage() {},
     innerWidth: 1280,
@@ -205,7 +213,7 @@ test('替代生效：藏站点原生字幕，但自绘覆盖层必须留着（�
 
   const overlay = w.overlayEl();
   assert.ok(overlay, '替代模式必须画出自绘覆盖层');
-  assert.strictEqual(overlay.textContent, CUES[0].text,
+  assert.strictEqual(overlayText(overlay), CUES[0].text,
     '覆盖层显示的应是整轨里的**整句**，不是逐词快照');
 });
 
@@ -308,7 +316,7 @@ test('videoKey 契约：上游给不出有效 key 时落回 host+path，不外�
   const overlay = w.overlayEl();
   assert.ok(overlay,
     '上游给不出 key 时必须落回 host+path 继续选轨，而不是拿 undefined 去拼一把命不中的 key');
-  assert.strictEqual(overlay.textContent, CUES[0].text);
+  assert.strictEqual(overlayText(overlay), CUES[0].text);
   assert.ok(w.styleText(), '落回 key 选中整轨后，替代照常生效');
 });
 

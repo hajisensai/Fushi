@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 void main() {
@@ -11,9 +12,11 @@ void main() {
   // 让全屏路由绑在旧实例上 → 黑屏；②标题字符串固定进 theme 快照 → 不刷新。根因修=
   // 复用 Player/VideoController（player.open 换片）+ 标题走 ValueNotifier/ValueListenableBuilder。
   // 全屏黑屏与真实 libmpv 渲染 headless 不可复现，用源码守卫锁住关键接线防回归。
-  final String controllerSource = File(
-    'lib/src/media/video/video_player_controller.dart',
-  ).readAsStringSync();
+  // 剥掉注释再数：PR #1542 在 load 与 _loadEmbeddedSubtitleIfNeeded 之间加的
+  // 方法文档里写了 `VideoController()`，裸源码计数会把它当第二次构造。
+  final String controllerSource = maskComments(
+    File('lib/src/media/video/video_player_controller.dart').readAsStringSync(),
+  );
   // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，标题接线
   // （`_topBarTitle()` 的两处调用）随之搬出主壳，故改读合并语料；`_topBarTitle()`
   // 定义与 `_buildBottomSlotButton(` 端点仍在主壳（语料最前段），切片不受影响。

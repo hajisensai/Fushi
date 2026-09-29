@@ -16,6 +16,7 @@ class ImmersionMinePayload {
     this.youtubeVideoId,
     this.clipSourceKind,
     this.clipSourceId,
+    this.clipSourcePlayurlBody,
     this.clipSourcePart,
     this.screenshotBytes,
     this.clipBytes,
@@ -47,8 +48,16 @@ class ImmersionMinePayload {
   /// （老扩展仍在发它们）。
   final String? clipSourceKind;
 
-  /// [clipSourceKind] 对应的视频 id（bilibili 是 `BVxxxxxxxxxx`）。
+  /// [clipSourceKind] 对应的视频 id（bilibili 是 `BVxxxxxxxxxx`；番剧是 ep_id 的数字串）。
   final String? clipSourceId;
+
+  /// 扩展在**页面里**取回的 playurl 原始响应体（目前只有 `bilibili-pgc` 用）。
+  ///
+  /// 为什么不直接让服务端去取：番剧的 `pgc/player/web/playurl` 大会员内容要带 SESSDATA，而它的
+  /// CORS 只放行 `https://www.bilibili.com`（实测 `Access-Control-Allow-Credentials: true`）
+  /// ——服务端是匿名请求，拿不到。扩展在页面主世界里取（凭据不出浏览器），只把**响应体**回传，
+  /// 挑音轨仍是服务端的事（见 `parseBilibiliPgcPlayurlResponse`）。
+  final String? clipSourcePlayurlBody;
 
   /// 分 P / 分集号，1 基（bilibili URL 的 `?p=`）。缺省视作第 1 P。
   final int? clipSourcePart;
@@ -126,6 +135,7 @@ class ImmersionMinePayload {
       youtubeVideoId: json['youtubeVideoId'] as String?,
       clipSourceKind: json['clipSourceKind'] as String?,
       clipSourceId: json['clipSourceId'] as String?,
+      clipSourcePlayurlBody: json['clipSourcePlayurlBody'] as String?,
       clipSourcePart: (json['clipSourcePart'] as num?)?.round(),
       // 截图 / clip 是**可选媒体**：base64 坏了就当没这个媒体（降级到截图/文本卡），
       // 绝不 throw 把整张卡 400 掉——只有 fields 缺失才是真正的坏请求。
@@ -164,6 +174,22 @@ final RegExp _immersionAudioPath = RegExp(
 );
 
 String _normalizeIncomingText(String value) {
+  // BUG-2573：`data:` URI 是**机器生成的自包含载荷**，不是被 x-www-form-urlencoded
+  // 弄坏的用户文本，必须整体原样透传。
+  //
+  // 标准 base64 字母表含 `+`（与 `/`），而下面的「`+` → 空格」还原只看加号个数：
+  // 一个 4KB 单词音频的 base64 里通常有几十个孤立 `+` → `separatorPlusCount >= 2`
+  // → 每个 `+` 被换成空格 → 落卡侧 `UriData.parse` 抛 `Invalid base64 data`
+  // → `AnkiAudioRef.decodeDataUri` 返回 null → `_storeRemoteAudio` 返回
+  // `AudioFetchOutcome.none()` → `processedAudio` 空串 → 卡片 ExpressionAudio 没音频。
+  //
+  // 2.2.4 时 `fields.audio` 是 http token URL（id 由 `base64UrlEncode` 生成，字母表
+  // 是 `-` / `_`，**不含 `+`**）所以从未触发；3007ff272 起制卡时把短命 token 换成
+  // `data:` 自包含 URI，才让同一个归一化函数把音频字节打坏（几乎每张卡都中）。
+  //
+  // 判据只看 `data:` 前缀而不是白名单字段名：Anki 字段名是用户在模板里配的，
+  // 硬编码 `audio` 认不全，而 `data:` 是载荷形态的可靠标识（外字图片同理受益）。
+  if (value.startsWith('data:')) return value;
   final hasPercentEscape = _percentEscape.hasMatch(value);
   final separatorPlusCount = _separatorPlusCount(value);
   final shouldTreatPlusAsSpace = hasPercentEscape ||

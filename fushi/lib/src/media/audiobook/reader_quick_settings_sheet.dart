@@ -17,8 +17,11 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSectionLabel;
+import 'package:fushi/src/reader/ttu_toc_flatten.dart'
+    show resolveCurrentTocEntry;
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -37,8 +40,8 @@ enum ReaderQuickSettingsPresentation {
   /// 桌面端右侧抽屉「导航」：阅读进度 + 书内搜索 + 按字数跳转 + 章节列表 + 收藏。
   sideSheetNavigation,
 
-  /// 桌面端右侧抽屉「设置」：布局显示 / 阅读操作 / 查词 三组分段切换，末尾歌词
-  /// 模式切换。有声书不在这里（见 [audiobookPanel]）。
+  /// 桌面端右侧抽屉「设置」：布局显示 / 阅读操作 / 查词 三个标签页，布局页末尾
+  /// 是歌词模式切换。有声书不在这里（见 [audiobookPanel]）。
   sideSheetAppearance,
 
   /// 桌面端居中「有声书」面板（Niratan Sasayaki 形态）：封面 + 书名 + 进度条 +
@@ -71,6 +74,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     required this.readerProgress,
     required this.onJumpSection,
     required this.onExitReader,
+    this.readerCharOffset,
     required this.webViewController,
     required this.appModel,
     required this.ref,
@@ -123,6 +127,11 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   /// 0-indexed section index and total chapter count.
   final (int section, int total)? readerProgress;
+
+  /// 当前章内的字符偏移（`countStudyChars` 口径，与 [TtuTocEntry.anchorCharOffset]
+  /// 同尺），未知为 null。同一 spine 章下靠锚点分节的多条目录项只有它能分清
+  /// 读到哪一条。
+  final int? readerCharOffset;
   final (int current, int total)? pageProgress;
 
   /// 跳到目录条目。[fragment] 是该条目的章内锚（[TtuTocEntry.fragment]），
@@ -224,7 +233,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 }
 
 class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
-    with SettingsContextHost<ReaderQuickSettingsSheet> {
+    with
+        SettingsContextHost<ReaderQuickSettingsSheet>,
+        SingleTickerProviderStateMixin {
   ReaderFushiSource get _src => ReaderFushiSource.instance;
 
   final TextEditingController _searchController = TextEditingController();
@@ -238,13 +249,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   late String? _subPage = widget.initialSubPage;
 
-  /// 「听书」模块是否可见。关掉时本面板不再渲染「有声书」分类（宽窗分段条 +
+  /// 「听书」模块是否可见。关掉时本面板不再渲染「有声书」分类（设置抽屉标签栏 +
   /// 窄窗导航行两处），即便宿主还持有一个控制器也一样——模块关掉 = 入口消失。
   bool get _listeningEnabled =>
       widget.appModel.moduleVisibility.isEnabled(ModuleId.listening);
 
   /// 桌面端右侧「设置」抽屉当前展开的分组 id（初值来自页面记忆）。
   late String _sideSheetTab = widget.initialSideSheetTab;
+
+  /// 「设置」抽屉标签栏的控制器，仅 [ReaderQuickSettingsPresentation.sideSheetAppearance]
+  /// 形态首次 build 时创建（其余形态没有标签栏）。
+  TabController? _sideSheetTabController;
 
   /// 导航抽屉里当前章那一行的 key：打开时滚到它。
   final GlobalKey _currentTocRowKey = GlobalKey();
@@ -276,6 +291,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   @override
   void dispose() {
+    _sideSheetTabController?.dispose();
     _searchController.dispose();
     _charJumpController.dispose();
     super.dispose();
@@ -458,44 +474,105 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// 桌面端右侧抽屉「设置」：顶部分段条一次只展开一组（布局显示 / 阅读操作 / 查词），
-  /// 避免几十行全部纵向平铺；有声书不在这里——它有自己的居中面板
-  /// （[ReaderQuickSettingsPresentation.audiobookPanel]）。歌词模式切换挂在
-  /// 「布局显示」末尾（退出走顶部工具栏的返回键）。
+  /// 「设置」抽屉的标签页：导航与有声书各有自己的面板，不在这里。
+  List<({String id, IconData icon, String label})> _sideSheetCategories() {
+    return _wideCategories()
+        .where((cat) => cat.id != 'location' && cat.id != 'audiobook')
+        .toList();
+  }
+
+  TabController _ensureSideSheetTabController(
+    List<({String id, IconData icon, String label})> cats,
+  ) {
+    final TabController? existing = _sideSheetTabController;
+    if (existing != null) return existing;
+    final int initial = cats.indexWhere((cat) => cat.id == _sideSheetTab);
+    final TabController controller = TabController(
+      length: cats.length,
+      initialIndex: initial < 0 ? 0 : initial,
+      vsync: this,
+    );
+    controller.addListener(() {
+      // 点标签时动画开始、结束各通知一次，只认落定后那次；滑动切页只通知落定。
+      if (controller.indexIsChanging) return;
+      final String id = cats[controller.index].id;
+      if (id == _sideSheetTab) return;
+      // 换页由 TabBarView 自己完成，这里只记账、交给页面记忆，不必重建整个面板。
+      _sideSheetTab = id;
+      widget.onSideSheetTabChanged?.call(id);
+    });
+    return _sideSheetTabController = controller;
+  }
+
+  /// 桌面端右侧抽屉「设置」：标题下固定一条标签栏（布局显示 / 阅读操作 / 查词），
+  /// 每个标签页各自滚动、切走再切回保留滚动位置，避免几十行全部纵向平铺；有声书
+  /// 不在这里——它有自己的居中面板（[ReaderQuickSettingsPresentation.audiobookPanel]）。
+  /// 歌词模式切换挂在「布局显示」页末尾（退出走顶部工具栏的返回键）。
   Widget _buildAppearanceSideSheet(BuildContext context, ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<({String id, IconData icon, String label})> cats =
-        _wideCategories()
-            .where((cat) => cat.id != 'location' && cat.id != 'audiobook')
-            .toList();
-    final String tab = cats.any((cat) => cat.id == _sideSheetTab)
-        ? _sideSheetTab
-        : cats.first.id;
-    final List<Widget> children = <Widget>[
-      FushiSegmentedStrip<String>(
-        segments: <ButtonSegment<String>>[
-          for (final cat in cats)
-            ButtonSegment<String>(value: cat.id, label: Text(cat.label)),
+        _sideSheetCategories();
+    final TabController controller = _ensureSideSheetTabController(cats);
+    return ReaderSideSheet(
+      title: t.reader_settings_section,
+      headerActions: const <Widget>[ReaderSettingsSideButton()],
+      onClose: _sideSheetClose(context),
+      scrollable: false,
+      // 与库页 / 下载页同一个分区导航组件：整排是单个焦点停靠点（方向键 / 手柄
+      // 左右切页），按文案取宽、放不下横向滚动（桌面可鼠标拖），并与下方
+      // TabBarView 共用同一个 controller，横滑时指示器跟手。
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            // 首个页签文字与标题左缘对齐（标题左留白 20 = 4 + tab 自带的 16）。
+            padding: const EdgeInsetsDirectional.only(start: 4, end: 4),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: LibrarySectionTabs<String>.controlled(
+                key: const ValueKey<String>('fushi_side_sheet_tabs'),
+                tabs: <LibrarySectionTab<String>>[
+                  for (final cat in cats)
+                    LibrarySectionTab<String>(value: cat.id, label: cat.label),
+                ],
+                controller: controller,
+                focusIdPrefix: 'reader-settings-tab',
+              ),
+            ),
+          ),
+          const Divider(height: 1),
         ],
-        selected: tab,
-        alignment: Alignment.center,
-        onChanged: (String id) {
-          setState(() => _sideSheetTab = id);
-          widget.onSideSheetTabChanged?.call(id);
-        },
       ),
-      SizedBox(height: tokens.spacing.gap),
-      // KeyedSubtree：按 tab 编码，切换时整棵内容子树作废重建，避免 Switch /
-      // Segmented 复用上一组同位置 Element 的动画副作用（同宽窗 master-detail）。
-      KeyedSubtree(
-        key: ValueKey<String>('fushi_side_sheet_tab_$tab'),
-        child: _subPageContent(tab),
+      child: TabBarView(
+        controller: controller,
+        children: <Widget>[
+          // 每页一个独立滚动视图（PageStorageKey 记住各自的滚动位置）；页面离屏即
+          // 卸载，切换时整棵内容子树重建，不会复用上一页同位置 Element 的
+          // Switch / Segmented 动画副作用。
+          for (final cat in cats)
+            SingleChildScrollView(
+              key: PageStorageKey<String>('fushi_side_sheet_tab_${cat.id}'),
+              padding: ReaderSideSheet.defaultPadding.copyWith(
+                top: tokens.spacing.gap + tokens.spacing.gap / 2,
+              ),
+              child: _buildSideSheetTabContent(context, cat.id),
+            ),
+        ],
       ),
-    ];
-    if (tab == 'layout' && widget.onToggleLyricsMode != null) {
-      children
-        ..add(ReaderSideSheetSectionLabel(t.lyrics_mode))
-        ..add(AdaptiveSettingsSection(children: <Widget>[
+    );
+  }
+
+  Widget _buildSideSheetTabContent(BuildContext context, String tab) {
+    final Widget content = _subPageContent(tab);
+    if (tab != 'layout' || widget.onToggleLyricsMode == null) return content;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        content,
+        ReaderSideSheetSectionLabel(t.lyrics_mode),
+        AdaptiveSettingsSection(children: <Widget>[
           AdaptiveSettingsNavigationRow(
             key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
             title: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
@@ -507,16 +584,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               widget.onToggleLyricsMode!();
             },
           ),
-        ]));
-    }
-    return ReaderSideSheet(
-      title: t.reader_settings_section,
-      onClose: _sideSheetClose(context),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      ),
+        ]),
+      ],
     );
   }
 
@@ -527,6 +596,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       controller: widget.controller,
       toc: widget.toc,
       currentSection: widget.readerProgress?.$1,
+      currentCharOffset: widget.readerCharOffset,
       onJumpSection: widget.onJumpSection,
       title: widget.epubBook?.title ?? '',
       chapterLabel: widget.chapterLabel,
@@ -539,7 +609,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// 面板分类项（id 与 [_subPageContent] 的 case 对齐）：设置抽屉分段条、有声书
+  /// 面板分类项（id 与 [_subPageContent] 的 case 对齐）：设置抽屉标签栏、有声书
   /// 面板与窄窗主页共用同一份顺序。
   /// audiobook 仅在有 controller 时出现。
   List<({String id, IconData icon, String label})> _wideCategories() {
@@ -1291,16 +1361,29 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildCurrentTocSection(BuildContext context, ThemeData theme) {
-    final int? currentIdx = widget.readerProgress?.$1;
     final List<TtuTocEntry> toc = widget.toc;
+    // BUG-2545：目录是 spine 的**稀疏**映射（同一章横跨多个 xhtml 只有头一个进
+    // 目录，章间插图页根本不在目录里），所以「当前章」不能拿当前 spine 章号去和
+    // 目录项 index 精确相等——那样一来读在任何没被目录直接指向的 spine 位置上
+    // （实测一本 35 项 spine 的书里占 23 个位置）整个列表一行都不标、
+    // `_currentTocRowKey` 也挂不上，「打开即滚到当前章」跟着静默失效。判据统一成
+    // floor（最后一个不晚于当前位置的目录项），与页脚章名
+    // `_currentChapterLabelFor` 和有声书面板「章节」tab 同一口径。
+    //
+    // 同一 spine 章下靠 `#anchor` 分节的多条目录项（一个 xhtml 装整卷）章号全
+    // 相同，再按章内字符偏移比一次（[resolveCurrentTocEntry]），当前只落在
+    // **一条**上——旧判据只比章号，那一章下的每一条都被标成当前（四个勾）。
+    final int? currentRow = resolveCurrentTocEntry(
+      toc,
+      widget.readerProgress?.$1,
+      widget.readerCharOffset,
+    );
     // 折叠规则：深度 >= 2 的条目挂在其 parent 下，parent 未展开则不画；当前章所在链
     // 上的父节自动视为展开。父节是否有可折叠子节：看下一条的深度是否更深且 >= 2。
     final Set<String> autoExpanded = <String>{};
-    for (final TtuTocEntry e in toc) {
-      if (!e.isHeader && currentIdx == e.index && e.depth >= 2) {
-        final String? parent = e.parent;
-        if (parent != null) autoExpanded.add(parent);
-      }
+    if (currentRow != null && toc[currentRow].depth >= 2) {
+      final String? parent = toc[currentRow].parent;
+      if (parent != null) autoExpanded.add(parent);
     }
     bool hasFoldableChildren(int i) =>
         i + 1 < toc.length &&
@@ -1312,12 +1395,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // 「当前章那一行」只能有**一行**：`_currentTocRowKey` 是 GlobalKey，同一个
     // key 挂到两个在场 widget 上，debug 直接抛 `Multiple widgets used the same
     // GlobalKey`，release 则由 `Element._retakeInactiveElement` 把 element 从前
-    // 一行手里抢走——那一行被摘出渲染树，**目录里真的少一行**。而同章多行是常态
-    // 而非例外：一个 xhtml 装整卷、目录靠 `#anchor` 分节的书，那一章下的每条目录
-    // 项 index 全相同。取第一条（阅读顺序最靠前的那条）作为滚动锚点。
-    final int currentRow = toc.indexWhere(
-      (TtuTocEntry e) => !e.isHeader && e.index == currentIdx,
-    );
+    // 一行手里抢走——那一行被摘出渲染树，**目录里真的少一行**。
+    // [resolveCurrentTocEntry] 返回的就是唯一一条的下标。
     return AdaptiveSettingsSection(
       title: t.toc_section(n: toc.length),
       children: [
@@ -1329,7 +1408,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             _InBookTocRow(
               key: i == currentRow ? _currentTocRowKey : null,
               entry: toc[i],
-              selected: !toc[i].isHeader && currentIdx == toc[i].index,
+              selected: i == currentRow,
               foldable: hasFoldableChildren(i),
               expanded: hasFoldableChildren(i) && isExpanded(toc[i]),
               onToggleExpanded: hasFoldableChildren(i)

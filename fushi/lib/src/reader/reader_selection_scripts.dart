@@ -61,10 +61,17 @@ class ReaderSelectionScripts {
   ///
   /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
   /// 550ms，仅命中图片才 arm）按命中元素天然互斥；多指触摸（缩放）直接不 arm。
-  static String longPressDragGestureScript({
-    int delayMs = 400,
-    int slop = 10,
-  }) {
+  ///
+  /// BUG-长按选择不灵敏：[delayMs] 原为 400、[slop] 原为 10，两个都偏严。
+  /// * 400ms：同一个 app 的查词弹窗长按已因「等待时间太长」从 500 调到 250
+  ///   （BUG-536），阅读器这条却一直没跟。280ms 仍远高于轻点（轻点松手 timer 还没
+  ///   fire 就被 touchend 清掉），也仍早于 WebView 自己的原生长按（~500ms）。
+  /// * 10px：是全仓最紧的触摸容差——tap 判据 [ReaderSettings.tapSlopPx] 是 10 但只
+  ///   需维持到松手，连续模式边界手势是 12px，翻页是 24px，而这里要求手指在整整
+  ///   一个长按时限内**始终**停在 10px 半径内，实际上比单击还难触发。放宽到 16px，
+  ///   仍小于翻页距离阈值（24px），所以「想滑动翻页」的手势照样能在 arm 阶段被
+  ///   slop 取消，两者不会互抢。
+  static String longPressDragGestureScript({int delayMs = 280, int slop = 16}) {
     final int slopSq = slop * slop;
     return '''
 (function() {
@@ -80,17 +87,21 @@ class ReaderSelectionScripts {
     lpsActive = false;
     window.__fushiTextSelectDragActive = false;
   }
-  // Arm only over real matchable text, never over links / form controls / caret
-  // ring / block images (those own their own gestures). getCharacterAtPoint is
-  // the same hit test the tap path uses, so blank margins never arm.
+  // Arm over any visible glyph, never over links / form controls / caret ring /
+  // block images (those own their own gestures). Uses the *selection* hit test,
+  // not the lookup one: a long press onto a comma, a full stop or an indent is a
+  // perfectly ordinary place to start selecting text, and gating the arm on the
+  // lookup test (which rejects scan boundaries) is what made the long press feel
+  // dead on exactly those spots. Blank margins still never arm -- the geometry
+  // and visibility checks live in the shared lower layer.
   function lpsAllowed(target, x, y) {
     var el = target || document.elementFromPoint(x, y);
     if (el && el.closest &&
         el.closest('a[href], img, .block-img-wrapper, input, textarea, select, button, [contenteditable="true"], [data-fushi-clk], #fushi-caret-ring, [data-fushi-sel-handle]')) {
       return false;
     }
-    return !!(window.fushiSelection && window.fushiSelection.getCharacterAtPoint &&
-      window.fushiSelection.getCharacterAtPoint(x, y));
+    return !!(window.fushiSelection && window.fushiSelection.getSelectableCharacterAtPoint &&
+      window.fushiSelection.getSelectableCharacterAtPoint(x, y));
   }
   document.addEventListener('touchstart', function(e) {
     lpsReset();
@@ -651,7 +662,20 @@ window.fushiSelection = {
     }
     return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
   },
+  // BUG-长按选择不灵敏：命中测试拆成两层，因为**查词**和**选文本**对「这个点算不算
+  // 命中」的要求根本不同。查词要的是一个可扫描的词首字，落在空白/标点上必须放弃
+  // （否则拿标点去查词）；而文本选择要的只是「这里有字」——选中标点、选中句号完全
+  // 正当。旧实现让两者共用带 isScanBoundary 剔除的这一个函数，于是长按落在标点、
+  // 行首缩进、句读旁边时 lpsAllowed 直接返回 false，**连计时器都不 arm**，表现就是
+  // 「长按了半天没反应、也没有高亮」。下层保留几何与可见性，上层只给查词加边界剔除。
   getCharacterAtPoint: function(x, y) {
+    var hit = this.getSelectableCharacterAtPoint(x, y);
+    if (!hit) return null;
+    if (this.isScanBoundary(hit.node.textContent[hit.offset])) return null;
+    return hit;
+  },
+  // 几何命中层：只回答「这个点上有没有一个**可见的**字」，不判断它是不是词边界。
+  getSelectableCharacterAtPoint: function(x, y) {
     // BUG-1797：整条命中链共用同一个可见正文盒，一次 hit-test 只量一次几何。
     var box = this.visibleContentBox();
     var range = this.getCaretRange(x, y, box);
@@ -662,7 +686,7 @@ window.fushiSelection = {
     var caret = range.startOffset;
     var offsets = [caret, caret - 1, caret + 1];
     // 第一遍精确确认（旧行为，零回归）；TODO-916 症状④：精确全 miss 时第二遍带容差
-    // （半字宽/行高）兜底，消除字缝/行距点不中。scan 边界字（空白/标点）任一遍命中均不查词。
+    // （半字宽/行高）兜底，消除字缝/行距点不中。
     var pads = [0, 6];
     for (var p = 0; p < pads.length; p++) {
       for (var i = 0; i < offsets.length; i++) {
@@ -677,7 +701,6 @@ window.fushiSelection = {
         // moveSelectionHandle / tapHasCharacter）上的唯一收口。
         if (this.inCharRange(charRange, x, y, pads[p]) &&
             this.charRangeVisible(charRange, box)) {
-          if (this.isScanBoundary(text[offset])) return null;
           return { node: node, offset: offset };
         }
       }
@@ -1461,7 +1484,7 @@ window.fushiSelection = {
   beginRangeSelection: function(x, y) {
     var el = document.elementFromPoint(x, y);
     if (el && el.closest && el.closest('a')) return false;
-    var hit = this.getCharacterAtPoint(x, y);
+    var hit = this.getSelectableCharacterAtPoint(x, y);
     if (!hit) return false;
     this.clearSelection();
     this.dragAnchor = { node: hit.node, offset: hit.offset };
@@ -1473,7 +1496,7 @@ window.fushiSelection = {
   },
   updateRangeSelection: function(x, y) {
     if (!this.dragAnchor) return null;
-    var hit = this.getCharacterAtPoint(x, y);
+    var hit = this.getSelectableCharacterAtPoint(x, y);
     // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
     var endNode = hit ? hit.node : this.dragAnchor.node;
     var endOffset = hit ? hit.offset : this.dragAnchor.offset;
@@ -1645,7 +1668,9 @@ window.fushiSelection = {
       handles.start.style.pointerEvents = 'none';
       handles.end.style.pointerEvents = 'none';
     }
-    var hit = this.getCharacterAtPoint(x, y);
+    // 手柄拖动是在调整**选区范围**，不是查词：用选择命中，才能把选区端点停在标点
+    // 或句读上（旧实现走查词命中，拖到句号处 hit 为 null → 手柄卡住不动）。
+    var hit = this.getSelectableCharacterAtPoint(x, y);
     if (handles) {
       handles.start.style.pointerEvents = savedStartPe || 'auto';
       handles.end.style.pointerEvents = savedEndPe || 'auto';
@@ -1799,6 +1824,11 @@ window.fushiSelection = {
   // counts. Do not read nodeStartOffsets: that index belongs to navigation.
   getMatchableOffset: function(targetNode, offset) {
     if (!window.fushiReader || !targetNode) return null;
+    // VN renders a clone of one screen. Its source map retains the chapter
+    // position; walking document.body here would restart audio offsets at zero.
+    if (typeof window.fushiReader.getMatchableOffset === 'function') {
+      return window.fushiReader.getMatchableOffset(targetNode, offset);
+    }
     var walker = this.createWalker(document.body);
     var count = 0;
     var node;

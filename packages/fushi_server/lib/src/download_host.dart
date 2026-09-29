@@ -32,7 +32,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
-import 'package:fushi_server/src/subscription_host.dart';
+import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -59,11 +59,11 @@ class ServerDownloadHost implements HostDownloadHost {
   VideoSourceScrapeCoordinator? _scrape;
   VideoResourceRegistry? _registry;
   VideoDownloadSubscriptionService? _subscriptionService;
-  ServerSubscriptionHost? _subscriptions;
+  PipelineSubscriptionHost? _subscriptions;
 
   /// 内容订阅面（`/api/subscriptions`）。下载后端没起来时也挂着——能力位如实报
   /// supported=false，路由不 404（客户端好区分「host 不懂」与「host 没配后端」）。
-  ServerSubscriptionHost get subscriptions => _subscriptions ??= _buildSubscriptionHost();
+  PipelineSubscriptionHost get subscriptions => _subscriptions ??= _buildSubscriptionHost();
   TorrentBackend? _backend;
   EmbeddedTorrentHost? _embedded;
   int? _sourceId;
@@ -142,6 +142,8 @@ class ServerDownloadHost implements HostDownloadHost {
       scrapeCoordinator: scrape,
       manualTorrentDirectory: Directory(p.join(paths.support.path, 'manual_torrents')),
       workerId: 'fushi-server-${identity.deviceId}',
+      // 目标来源失效的任务重试时改绑到服务端自己的下载来源（BUG-2755）。
+      defaultTargetSourceId: () async => _sourceId,
     )..start();
     _pipeline = pipeline;
     // 内容订阅：host 自己抢租约、搜、投管线（与 app 同一个服务类）。
@@ -168,7 +170,7 @@ class ServerDownloadHost implements HostDownloadHost {
     if (existing != null) return existing;
     await paths.torrentResume.create(recursive: true);
     // 计划集合 = video_download_jobs 里仍活着的 embedded 任务；resume 目录只是它的镜像。
-    final Set<String> restoreIds = legacyEmbeddedTorrentResumeIds(await db.getVideoDownloadJobs());
+    final Set<String> restoreIds = await loadEmbeddedTorrentResumeIds(db);
     final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
       libraryPath: _torrentLibraryPath,
       baseSavePath: downloadRoot.path,
@@ -201,7 +203,7 @@ class ServerDownloadHost implements HostDownloadHost {
     );
   }
 
-  ServerSubscriptionHost _buildSubscriptionHost() => ServerSubscriptionHost(
+  PipelineSubscriptionHost _buildSubscriptionHost() => PipelineSubscriptionHost(
         db: db,
         registry: _registry ?? _buildRegistry(),
         backendTarget: () => VideoDownloadBackendTarget(identity: _identity(), category: _qbConfig.category),
@@ -225,7 +227,7 @@ class ServerDownloadHost implements HostDownloadHost {
     final EmbeddedTorrentHost? embedded = _embedded;
     _embedded = null;
     if (embedded != null) {
-      embedded.dispose(keepIds: legacyEmbeddedTorrentResumeIds(await db.getVideoDownloadJobs()));
+      embedded.dispose(keepIds: await loadEmbeddedTorrentResumeIds(db));
     }
   }
 
@@ -288,7 +290,13 @@ class ServerDownloadHost implements HostDownloadHost {
     required String magnetUri,
     required String title,
     String mediaKind = 'movie',
+    String? discoveryKind,
   }) async {
+    // 无头服务端没有发现导入执行器（小说/漫画/有声书/游戏的按域入库都在 app 里），
+    // 能力位 `kinds` 只报 video；客户端照规矩不会投，投了按 400 拒。
+    if (discoveryKind != null) {
+      throw ArgumentError('this host only downloads video (got discoveryKind=$discoveryKind)');
+    }
     final VideoDownloadPipelineService? pipeline = _pipeline;
     final int? sourceId = _sourceId;
     if (pipeline == null || sourceId == null) {

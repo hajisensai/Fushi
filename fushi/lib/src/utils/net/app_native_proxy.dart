@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
+import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 
 Future<AppNativeProxy>? _sharedProxy;
 Future<AppNativeProxy>? _challengeProxy;
@@ -51,21 +53,65 @@ String? pinnedNativeOriginFingerprint(String host, int port) =>
     _pinnedNativeOrigins[_pinnedOriginKey(host, port)];
 
 @visibleForTesting
-void clearPinnedNativeOriginsForTesting() => _pinnedNativeOrigins.clear();
+void clearPinnedNativeOriginsForTesting() {
+  _pinnedNativeOrigins.clear();
+  _tlsNativeOrigins.clear();
+}
+
+/// 由中继替 native **终结 TLS** 的 https 原点（`host:port`，系统信任根）。
+///
+/// 钉扎原点（上面）是「自签证书 + 指纹」的特例；这里是所有其它 https 流（Emby /
+/// Jellyfin 远程访问、公网直链……）。为什么普通 https 也不交给 native 自己握手：
+///  - macOS / iOS 随包 libmpv（FFmpeg 6.1.6 + Mbed TLS）在 `mbedtls_ssl_handshake`
+///    里**段错误**（Mac 崩溃报告 `fushi-2026-09-18-210129.ips`：`*/opener` 线程
+///    `demux_open_url → … → ssl_parse_server_hello → ssl_get_next_record`，
+///    `KERN_INVALID_ADDRESS`）——用户报「iOS / macOS 播 Emby 直接闪退」就是它；
+///  - Android 随包 libmpv 走 ffmpeg tls，**从不校验证书**；
+///  - Windows 走 libcurl、自己校验，与 Dart 侧 API 通道的信任判据又是两套。
+/// 三端三种结局，说明 TLS 根本不该在 native 侧做。降成明文 http 交给 native，中继
+/// 用与 API / 字幕 / 封面同一个 [createAppHttpClient]（系统信任根）升回 https：
+/// 登录能过的证书流就一定能过，反之亦然，不再有「API 通、视频 502」的第三种状态。
+final Set<String> _tlsNativeOrigins = <String>{};
+
+/// `(host, port)` 是否已登记为「中继终结 TLS」的原点。
+bool isTlsNativeOrigin(String host, int port) =>
+    _tlsNativeOrigins.contains(_pinnedOriginKey(host, port));
+
+/// 登记一个由中继终结 TLS 的 https 原点（[nativePlaybackUri] 每次降级都会调；
+/// 响应里的 `Location` 指向别的 https host 时中继也会替它登记）。
+void registerTlsNativeOrigin({required String host, required int port}) {
+  _tlsNativeOrigins.add(_pinnedOriginKey(host, port));
+}
 
 /// 把要交给 native 播放器 / ffmpeg 的 URL 换成中继能识别的形式。
 ///
-/// 已登记钉扎原点的 https URL → 同 host、**显式端口**的 http（中继据此升回钉扎
-/// https）；其它 URL（本地文件、公网流、未登记的 https）原样返回。端口必须显式：
-/// `https://h/x`（隐含 443）降成 `http://h/x` 会变成隐含 80，中继就查不到登记项。
+/// 任何 https URL → 同 host、**显式端口**的 http，并把 `(host, port)` 登记给中继：
+/// 钉扎原点由中继按指纹升回 https，其余原点按系统信任根升回 https（见
+/// [_tlsNativeOrigins]）。非 https（本地文件、明文 http）原样返回；明文 http 同时
+/// **撤销**同 `(host, port)` 的 TLS 登记——用户把服务器从 https 改回同端口的 http
+/// 时，残留登记会让中继把真明文请求硬升成 https 去握手一个明文端口。
+///
+/// 端口必须显式：`https://h/x`（隐含 443）降成 `http://h/x` 会变成隐含 80，中继就
+/// 查不到登记项。
 String nativePlaybackUri(String uri) {
   final Uri? parsed = Uri.tryParse(uri);
-  if (parsed == null || !parsed.isScheme('https')) return uri;
-  if (pinnedNativeOriginFingerprint(parsed.host, parsed.port) == null) {
+  if (parsed == null) return uri;
+  if (parsed.isScheme('http')) {
+    _tlsNativeOrigins.remove(_pinnedOriginKey(parsed.host, parsed.port));
     return uri;
+  }
+  if (!parsed.isScheme('https') || parsed.host.isEmpty) return uri;
+  if (pinnedNativeOriginFingerprint(parsed.host, parsed.port) == null) {
+    registerTlsNativeOrigin(host: parsed.host, port: parsed.port);
   }
   return parsed.replace(scheme: 'http', port: parsed.port).toString();
 }
+
+/// 中继连非钉扎上游用的客户端工厂（明文与系统信任根 https 共用）。默认
+/// [createAppHttpClient]（代理装配 + 连接超时 + 系统证书信任）；测试用自签原点时
+/// 替换成信任测试证书的客户端。
+HttpClient Function() appNativeProxyUpstreamClientFactory = () =>
+    createAppHttpClient(connectionTimeout: kAppHttpConnectionTimeout);
 
 /// Scrub native diagnostics before forwarding them to application logs/UI.
 String redactAppNativeProxySecrets(String value) {
@@ -162,13 +208,19 @@ class AppNativeProxy {
   final String _secret;
   final bool _publicTargetsOnly;
   final Set<Socket> _sockets = <Socket>{};
-  final Set<HttpClient> _clients = <HttpClient>{};
 
   /// 钉扎原点的客户端按 `(host, port, 指纹)` 缓存复用：libmpv 取流是一串 Range /
   /// seek / 缓存回填请求，每个都新建客户端就是每个都重新 TCP + TLS 握手（旧 CONNECT
   /// 隧道时代 curl 只握一次）。复用同一客户端才有 keep-alive 连接池。指纹换了
   /// （重新配对）就换客户端、关旧的。
   final Map<String, HttpClient> _pinnedClients = <String, HttpClient>{};
+
+  /// 非钉扎上游的客户端按 `scheme://host:port` 复用（明文 http 与系统信任根 https
+  /// 各一份）。此前非钉扎分支是「一请求一客户端 + `close(force: true)`」：libmpv
+  /// 取流是一串 Range / seek / 缓存回填请求，每个都重新 TCP（https 还要 TLS）握手，
+  /// 局域网 Emby 直播放的卡顿主因之一。复用同一客户端才有 keep-alive 连接池；
+  /// 同一原点在明文与 https 之间切换（登记变化）时换客户端、关旧的。
+  final Map<String, HttpClient> _originClients = <String, HttpClient>{};
   bool _closed = false;
 
   /// 监听 socket 还活着。为 false 时 [ensureAppNativeProxy] 会另起一个。
@@ -217,14 +269,30 @@ class AppNativeProxy {
     for (final Socket socket in _sockets.toList()) {
       socket.destroy();
     }
-    for (final HttpClient client in _clients.toList()) {
-      client.close(force: true);
-    }
     for (final HttpClient client in _pinnedClients.values) {
       client.close(force: true);
     }
     _pinnedClients.clear();
+    for (final HttpClient client in _originClients.values) {
+      client.close(force: true);
+    }
+    _originClients.clear();
     await _server.close(force: true);
+  }
+
+  /// 非钉扎原点的复用客户端（见 [_originClients]）。[secure] 决定这份客户端服务的
+  /// 是明文还是系统信任根 https；同一 `(host, port)` 只留一种。
+  HttpClient _originClientFor(String host, int port, {required bool secure}) {
+    final String origin = _pinnedOriginKey(host, port);
+    final String key = '${secure ? 'https' : 'http'}://$origin';
+    final HttpClient? cached = _originClients[key];
+    if (cached != null) return cached;
+    final String stale = '${secure ? 'http' : 'https'}://$origin';
+    _originClients.remove(stale)?.close(force: true);
+    final HttpClient client = appNativeProxyUpstreamClientFactory()
+      ..autoUncompress = false;
+    _originClients[key] = client;
+    return client;
   }
 
   /// 钉扎原点的复用客户端（见 [_pinnedClients]）。连接超时与非钉扎分支、
@@ -313,33 +381,207 @@ class AppNativeProxy {
       uri.host,
       uri.port,
     );
-    final Uri upstreamUri = pinnedFingerprint == null
-        ? uri
-        : uri.replace(scheme: 'https', port: uri.port);
-    // 非钉扎：一请求一客户端（原样）。钉扎：按原点复用，请求结束不关。
+    // 非钉扎但已登记为「中继终结 TLS」的原点（见 [_tlsNativeOrigins]）：同样升回
+    // https，只是用系统信任根而非指纹。
+    final bool secure =
+        pinnedFingerprint != null || isTlsNativeOrigin(uri.host, uri.port);
+    final Uri upstreamUri = secure
+        ? uri.replace(scheme: 'https', port: uri.port)
+        : uri;
+    // 三种客户端都按原点复用，请求结束不关（连接回池）；见 [_originClients]。
     final HttpClient client = pinnedFingerprint == null
-        ? (createAppHttpClient()..autoUncompress = false)
+        ? _originClientFor(uri.host, uri.port, secure: secure)
         : _pinnedClientFor(uri.host, uri.port, pinnedFingerprint);
-    if (pinnedFingerprint == null) _clients.add(client);
+    final HttpClientRequest outbound = await client.openUrl(
+      request.method,
+      upstreamUri,
+    );
+    // 重定向交给 native 自己跟：mpv 以**最终** URL 作相对 HLS 分片的解析基址，中继
+    // 替它跟了基址就错了。只把 Location 改写成中继认识的形式（下面）。
+    outbound.followRedirects = false;
+    _copyHeaders(request.headers, outbound.headers);
+    // 上游一律回未压缩正文：中继要读播放列表改写分片地址、要看分片首字节判「图片
+    // 伪装」，压缩过的都做不了（megap 之类 CDN 不问也回 Brotli，Dart 没有 br）。媒体
+    // 分片本就不可压缩，播放列表只有几 KB，放弃压缩没有代价。
+    outbound.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+    await outbound.addStream(request);
+    final HttpClientResponse response = await outbound.close();
+    request.response.statusCode = response.statusCode;
+    _copyHeaders(response.headers, request.response.headers);
+    _rewriteRedirectLocation(response.headers, request.response.headers);
+    await _relayBody(request, response);
+    await request.response.close();
+  }
+
+  /// 把上游正文转给 native，途中做两项 HLS 归一化（见 `hls_relay_normalizer.dart`）：
+  ///  - 播放列表：绝对 https 分片 / 变体 / `URI="…"` 改写成中继终结 TLS 的明文形式，
+  ///    分片请求才会以明文回到中继（否则 CONNECT 隧道里的字节中继看不见）；
+  ///  - 分片：图片魔数开头、后面却是 MPEG-TS / fMP4 的「伪装分片」剥掉图片前缀。
+  /// 只对整包 GET 做（200，或 `bytes=0-` 换来的完整 206）；真正的部分范围请求的
+  /// 字节偏移不能动，原样流过。
+  Future<void> _relayBody(
+    HttpRequest request,
+    HttpClientResponse response,
+  ) async {
+    final HttpResponse out = request.response;
+    // ffmpeg 的 http 首请求默认带 `Range: bytes=0-`，上游多半回 206 + 完整
+    // Content-Range——语义上仍是整包，与 200 同等处理；改写 / 剥前缀后以 200 回给
+    // native（Content-Range 随之作废）。真正的部分范围请求原样流过。
+    final bool wholeBody =
+        request.method == 'GET' &&
+        isWholeBodyRangeRequest(
+          request.headers.value(HttpHeaders.rangeHeader),
+        ) &&
+        (response.statusCode == HttpStatus.ok ||
+            (response.statusCode == HttpStatus.partialContent &&
+                isCompleteContentRange(
+                  response.headers.value(HttpHeaders.contentRangeHeader),
+                )));
+    if (!wholeBody) {
+      await out.addStream(response);
+      return;
+    }
+    final String? encoding = response.headers.value(
+      HttpHeaders.contentEncodingHeader,
+    );
+    final bool gzipped = encoding != null && encoding.toLowerCase() == 'gzip';
+    final bool plain = encoding == null || encoding.toLowerCase() == 'identity';
+    final bool playlistHint =
+        isHlsPlaylistContentType(
+          response.headers.value(HttpHeaders.contentTypeHeader),
+        ) ||
+        isHlsPlaylistPath(request.requestedUri.path);
+    final StreamIterator<List<int>> chunks = StreamIterator<List<int>>(
+      response,
+    );
+    // native 中途断开（libmpv 每次 seek / 换集都会掐掉正在下的分片或首个
+    // `bytes=0-` 整包请求）：Dart 的 HttpResponse 对已销毁的连接 `add` / `flush`
+    // **不抛**、`done` 也不完成（实测 Windows 上循环会一直跑到上游读完），不看
+    // 它这条循环会把上游整包拉完喂给死连接。唯一可靠信号是连接销毁后
+    // `connectionInfo` 取不到对端地址回 null。`addStream` 路径由 Dart 自己取消
+    // 源订阅，只有这条手动迭代要管；检测到就停读、finally 里 cancel 迭代器让
+    // 上游连接回池 / 关闭（读完后 cancel 是 no-op）。
     try {
-      final HttpClientRequest outbound = await client.openUrl(
-        request.method,
-        upstreamUri,
+      await _relayWholeBody(
+        request: request,
+        response: response,
+        out: out,
+        chunks: chunks,
+        gzipped: gzipped,
+        plain: plain,
+        playlistHint: playlistHint,
+        downstreamAlive: () => out.connectionInfo != null,
       );
-      outbound.followRedirects = false;
-      _copyHeaders(request.headers, outbound.headers);
-      await outbound.addStream(request);
-      final HttpClientResponse response = await outbound.close();
-      request.response.statusCode = response.statusCode;
-      _copyHeaders(response.headers, request.response.headers);
-      await request.response.addStream(response);
-      await request.response.close();
     } finally {
-      if (pinnedFingerprint == null) {
-        _clients.remove(client);
-        client.close(force: true);
+      await chunks.cancel();
+    }
+  }
+
+  static Future<void> _relayWholeBody({
+    required HttpRequest request,
+    required HttpClientResponse response,
+    required HttpResponse out,
+    required StreamIterator<List<int>> chunks,
+    required bool gzipped,
+    required bool plain,
+    required bool playlistHint,
+    required bool Function() downstreamAlive,
+  }) async {
+    final BytesBuilder head = BytesBuilder(copy: false);
+    // 第一段先攒够 16 字节判魔数（播放列表 / 图片 / 其它）。
+    while (head.length < 16 && await chunks.moveNext()) {
+      head.add(chunks.current);
+    }
+    Uint8List bytes = head.toBytes();
+    final bool playlist =
+        (playlistHint && (gzipped || plain)) ||
+        (plain && looksLikeHlsPlaylist(bytes));
+    if (playlist) {
+      // 播放列表整份读完再改写（一般几 KB；封顶 16 MiB，超了原样透传）。
+      const int cap = 16 * 1024 * 1024;
+      while (head.length <= cap &&
+          downstreamAlive() &&
+          await chunks.moveNext()) {
+        head.add(chunks.current);
+      }
+      bytes = head.takeBytes();
+      if (bytes.length <= cap) {
+        final List<int> decoded = gzipped ? gzip.decode(bytes) : bytes;
+        if (looksLikeHlsPlaylist(decoded)) {
+          final String rewritten = rewriteHlsPlaylistUris(
+            utf8.decode(decoded, allowMalformed: true),
+            nativePlaybackUri,
+          );
+          final List<int> body = utf8.encode(rewritten);
+          _asWholeEntity(out);
+          out.headers.removeAll(HttpHeaders.contentEncodingHeader);
+          out.contentLength = body.length;
+          out.add(body);
+          return;
+        }
+      }
+      out.add(bytes);
+      await _drain(chunks, out, downstreamAlive);
+      return;
+    }
+    if (plain && looksLikeImagePrefix(bytes)) {
+      // 伪装分片：继续攒到探到媒体起点或封顶。
+      int? offset = disguisedMediaPayloadOffset(bytes);
+      while (offset == null &&
+          head.length < kDisguisedSegmentProbeLimit &&
+          await chunks.moveNext()) {
+        head.add(chunks.current);
+        offset = disguisedMediaPayloadOffset(head.toBytes());
+      }
+      bytes = head.takeBytes();
+      if (offset != null) {
+        _asWholeEntity(out);
+        final int declared = response.contentLength;
+        if (declared >= offset) out.contentLength = declared - offset;
+        out.headers.contentType = bytes[offset] == 0x47
+            ? ContentType('video', 'mp2t')
+            : ContentType('video', 'mp4');
+        out.add(Uint8List.sublistView(bytes, offset));
+        await _drain(chunks, out, downstreamAlive);
+        return;
       }
     }
+    out.add(bytes);
+    await _drain(chunks, out, downstreamAlive);
+  }
+
+  /// 改写过的响应不再是上游那个实体的字节切片：206 → 200、去掉 Content-Range。
+  static void _asWholeEntity(HttpResponse out) {
+    out.statusCode = HttpStatus.ok;
+    out.headers.removeAll(HttpHeaders.contentRangeHeader);
+  }
+
+  static Future<void> _drain(
+    StreamIterator<List<int>> chunks,
+    HttpResponse out,
+    bool Function() downstreamAlive,
+  ) async {
+    while (downstreamAlive() && await chunks.moveNext()) {
+      out.add(chunks.current);
+      // 逐段 flush 给 native 侧回压：不然大分片会整段堆在 Dart 端内存里。
+      await out.flush();
+    }
+  }
+
+  /// 上游 3xx 的 `Location` 若是 https，改写成 [nativePlaybackUri] 同款的明文
+  /// 显式端口形式并登记原点：native 跟过去仍经中继升 https，而不是自己去握手
+  /// （Apple 端那一握手就是段错误）。相对 Location / 明文 http 原样。
+  static void _rewriteRedirectLocation(
+    HttpHeaders upstream,
+    HttpHeaders downstream,
+  ) {
+    final String? location = upstream.value(HttpHeaders.locationHeader);
+    if (location == null) return;
+    final Uri? target = Uri.tryParse(location);
+    if (target == null || !target.isScheme('https') || target.host.isEmpty) {
+      return;
+    }
+    downstream.set(HttpHeaders.locationHeader, nativePlaybackUri(location));
   }
 
   Future<void> _connect(HttpRequest request) async {
@@ -507,6 +749,9 @@ class AppNativeProxy {
 
   static void _copyHeaders(HttpHeaders source, HttpHeaders destination) {
     final Set<String> excluded = <String>{
+      // Host 由 Dart 按上游 URL 自己填：中继升 https 时上游端口可能与 native 看到
+      // 的显式端口写法不同（`h:443` vs `h`），照抄会撞严格的虚拟主机匹配。
+      'host',
       'connection',
       'proxy-connection',
       'proxy-authorization',

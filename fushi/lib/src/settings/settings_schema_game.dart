@@ -8,6 +8,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
@@ -40,10 +41,14 @@ SettingsDestination buildGameDestination() {
     title: t.nav_game,
     summary: t.game_home_subtitle,
     icon: Icons.sports_esports_outlined,
-    visible: (SettingsContext c) => isSettingsDestinationVisible(
-      SettingsDestinationId.game,
-      c.appModel.moduleVisibility,
-    ),
+    // 本分类的三条导航项与全部配置都属于本机 galgame 库（hook / 捕获工作台 /
+    // 兼容性诊断）；Android 的 games 模块是串流接收端，这里一条都用不上。
+    visible: (SettingsContext c) =>
+        c.appModel.gamesModuleForm == GamesModuleForm.localLibrary &&
+        isSettingsDestinationVisible(
+          SettingsDestinationId.game,
+          c.appModel.moduleVisibility,
+        ),
     sections: <SettingsSection>[
       SettingsSection(
         items: <SettingsItem>[

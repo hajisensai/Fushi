@@ -3,13 +3,14 @@
   "name": "Fushi Reader Bridge",
   "version": "0.1.0",
   "description": "Look up words on web pages using Fushi's dictionaries.",
+  "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
   "permissions": ["storage", "activeTab", "tabCapture", "offscreen", "scripting", "alarms", "sidePanel", "cookies"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["frame-capture.js", "bridge-shim.js", "subtitle-adapters.js", "popup-size.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "auto-read.js", "ruby-render.js", "scan.js", "subtitle-providers.js", "nested-popup-host.js", "content.js", "subtitle-panel.js", "video-shortcuts.js", "touch-lookup.js", "mobile-drawer.js"],
+      "js": ["frame-capture.js", "bridge-shim.js", "subtitle-adapters.js", "popup-size.js", "locales/en.js", "i18n.js", "theme-palette.js", "theme.js", "subtitle-style.js", "vendor/dict-media.js", "vendor/selection.js", "vendor/popup.js", "auto-read.js", "ruby-render.js", "scan.js", "subtitle-providers.js", "nested-popup-host.js", "content.js", "subtitle-panel.js", "video-shortcuts.js", "touch-lookup.js", "mobile-drawer.js", "player-controls.js", "study-tracker.js"],
       "css": ["vendor/content.css"]
     },
     {
@@ -44,10 +45,10 @@
     }
   ],
   "web_accessible_resources": [
-    { "resources": ["vendor/content.css", "nested-popup.html"], "matches": ["<all_urls>"] },
-    { "resources": ["side-panel.html", "side-panel.css", "side-panel.js", "popup-size.js", "auto-read.js", "ruby-render.js", "vendor/selection.js", "vendor/dict-media.js", "vendor/popup.js"], "matches": ["<all_urls>"] }
+    { "resources": ["vendor/content.css", "nested-popup.html", "locales/*.json", "icon-32.png"], "matches": ["<all_urls>"] },
+    { "resources": ["side-panel.html", "side-panel.css", "side-panel.js", "popup-size.js", "locales/en.js", "i18n.js", "theme-palette.js", "theme.js", "theme.css", "auto-read.js", "ruby-render.js", "vendor/selection.js", "vendor/dict-media.js", "vendor/popup.js"], "matches": ["<all_urls>"] }
   ],
   "options_page": "options.html",
   "side_panel": { "default_path": "side-panel.html" },
-  "action": { "default_title": "Fushi Reader Bridge", "default_popup": "vendor/action-popup.html" }
+  "action": { "default_title": "Fushi Reader Bridge", "default_popup": "vendor/action-popup.html", "default_icon": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" } }
 }

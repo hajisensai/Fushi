@@ -1,7 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart'
+    show ankiMobileLedgerIsDuplicateSource;
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -93,6 +96,21 @@ SettingsDestination buildCardCreationDestination() {
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.batch_mining',
+        title: t.anki_batch_mining_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.pending_mine_landing',
+        title: t.anki_pending_mine_landing_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.pending_mines',
+        title: t.anki_pending_mines_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.duplicate_scope',
         title: t.anki_duplicate_scope,
         hasRevealTarget: true,
@@ -151,6 +169,21 @@ SettingsDestination buildCardCreationDestination() {
         hasRevealTarget: true,
         title: t.anki_allow_duplicates,
         subtitle: t.anki_allow_duplicates_hint,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.backup_import',
+        visible: (SettingsContext c) =>
+            Platform.isIOS &&
+            c.ref.watch(ankiViewModelProvider).isConfigured &&
+            ankiMobileLedgerIsDuplicateSource(
+              useAnkiConnectOnMobile: c.ref
+                  .watch(ankiViewModelProvider)
+                  .settings
+                  .useAnkiConnectOnMobile,
+              mineToServer: c.appModel.mineToServerEnabled,
+            ),
+        hasRevealTarget: true,
+        title: t.anki_backup_import,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.overwrite_scope',
@@ -265,6 +298,14 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
         ),
       ],
       if (panel == AnkiSettingsPanel.connection) ...[
+        // 只有带了 fushi-anki-sync 的安装包才有这一节（目前是桌面端）。
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.sync_client',
+          title: t.anki_sync_client_use_title,
+          subtitle: t.anki_sync_client_section_title,
+          hasRevealTarget: true,
+          visible: (_) => sharedAnkiSyncSession != null,
+        ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.connect_port_auto_fix',
           title: t.anki_connect_port_auto_fix,
@@ -288,6 +329,13 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_image_mode',
           title: t.gal_mining_image_mode,
+          hasRevealTarget: true,
+          visible: (_) => Platform.isWindows,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.gal_mining_clip_format',
+          title: t.gal_mining_clip_format,
+          subtitle: t.mining_clip_format_hint,
           hasRevealTarget: true,
           visible: (_) => Platform.isWindows,
         ),
@@ -357,15 +405,32 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.mining_audio_tail_pad_hint,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_audio_follow_playback_speed',
+          hasRevealTarget: true,
+          title: t.mining_audio_follow_playback_speed,
+          subtitle: t.mining_audio_follow_playback_speed_hint,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_image_mode',
           hasRevealTarget: true,
           title: t.video_mining_image_mode,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.video_mining_clip_format',
+          hasRevealTarget: true,
+          title: t.video_mining_clip_format,
+          subtitle: t.mining_clip_format_hint,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_still_format',
           hasRevealTarget: true,
           title: t.video_mining_still_format,
           subtitle: t.video_mining_still_format_hint,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.video_online_mining_mode',
+          hasRevealTarget: true,
+          title: t.video_online_mining_mode,
         ),
       ],
       if (panel == AnkiSettingsPanel.connection &&

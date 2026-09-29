@@ -129,6 +129,13 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.derivesPathOnly,
     '引擎侧三根目录抽象的定义处（videoCoversDirectory 等），只定义不落盘。',
   ),
+  'lib/src/media/video/online/anime_source_library.dart': (
+    CoverDeriverRole.writesViaService,
+    '在线视频源入库集（2026-09-27 浏览阶段 2b）：封面经扩展取回字节后，作品共用封面 / '
+        '合集封面的目的地在这里派生（animeSourceWorkCoverFileName / videoCoverFileName / '
+        'VideoStorage.coversDir），落盘一律经 MediaCoverService.applyCoverBytes，'
+        '本文件不裸写。',
+  ),
   'lib/src/media/torrent/anime_download_importer.dart': (
     CoverDeriverRole.derivesPathOnly,
     'BUG-1394 那条跨文件洞的派生半边：它算出目的地后交给 video_cover_extractor '
@@ -153,6 +160,12 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.derivesPathOnly,
     '仓储层只解析封面路径供读取/展示，不落盘。',
   ),
+  '../packages/fushi_engine/lib/media/video/metadata/video_source_scrape_coordinator.dart': (
+    CoverDeriverRole.writesViaService,
+    '演职员头像落地（Shoko AutoDownloadStaffImages）：派生 <video_covers>/people/ '
+        '目的地后经引擎 writeCoverBytesAtomically 收口写盘；作品图片 sidecar 走 '
+        'SidecarWriter，本文件自己一个字节都不裸写。',
+  ),
   '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': (
     CoverDeriverRole.writesViaService,
     'ffmpeg 子进程直写目标路径（Dart 侧无字节）；下载路已走 applyCoverBytes。'
@@ -161,6 +174,11 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
   'lib/src/media/video/video_import_dialog.dart': (
     CoverDeriverRole.writesViaService,
     '导入弹窗重取封面，字节走 applyCover*。',
+  ),
+  'lib/src/media/video/iptv_playlist_import.dart': (
+    CoverDeriverRole.writesViaService,
+    'IPTV 频道台标（tvg-logo）补封面：派生 <video_covers>/<uid> 目的地，字节经引擎 '
+        'writeCoverBytesAtomically 收口写盘，本文件自己不裸写。',
   ),
   '../packages/fushi_engine/lib/media/video/video_storage.dart': (
     CoverDeriverRole.derivesPathOnly,
@@ -179,10 +197,9 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     '「用 Fushi 打开」外部视频建行时派生 coversDir 交给 CoverMetaStore 做来源准入，'
         '抽帧仍由 extractVideoCover 落盘；main 自己一个字节都不写。',
   ),
-  'lib/src/media/source_library/source_library_scanner.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '扫描入库时派生 coversDir 做封面来源准入，落盘交给 extractVideoCover。',
-  ),
+  // BUG-2569 起 `source_library_scanner.dart` **不再**在此列：扫描入库不碰封面了
+  // （不派生 coversDir、不抽帧），封面统一由书架的补齐产线负责。它此前每个文件最坏
+  // 两段 30s ffmpeg，串行 + 进程级排他锁 + UI isolate，把导入拖成几十分钟。
   'lib/src/media/video/metadata/video_scrape_cleanup_service.dart': (
     CoverDeriverRole.writesViaService,
     '「清理全部刮削记录」删封面：隔离/删除由本文件自己按 ledger SHA 校验后执行，'

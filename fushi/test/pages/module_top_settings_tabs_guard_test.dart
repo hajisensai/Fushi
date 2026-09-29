@@ -132,24 +132,49 @@ TorrentSettingsSection()
         reason: '设置恒排末位，与书 / 漫画 / 视频库页同构');
   });
 
-  test('下载把设置作为第四个顶部 tab，而不是临时齿轮模式', () {
+  // 2026-09-27 起「下载」模块改名「浏览」（Mihon Browse 形态）：顶部页签变成
+  // 来源 / 扩展 / 发现 / 下载，下载设置不再占顶部页签，而是「下载」页签页头齿轮
+  // push 的独立页 BrowseDownloadSettingsPage。守的行为是「设置有一个稳定入口、
+  // 是全宽整页」，不是「设置原地替换正文的临时模式」（_showSettings 仍禁止）。
+  test('浏览页的下载设置是页头齿轮 push 的独立页，而不是临时模式', () {
     final String downloads = source(
-      'lib/src/pages/implementations/downloads_page.dart',
+      'lib/src/pages/implementations/browse_page.dart',
     );
-    expect(_hasSettingsSegment(downloads), isTrue);
+    expect(
+      _hasSettingsSegment(downloads),
+      isFalse,
+      reason: '下载设置不再占顶部页签（页签用 BrowseTab 枚举）',
+    );
     expect(_hasFullWidthTorrentSettings(downloads), isTrue);
     expect(containsIdentifier(downloads, '_showSettings'), isFalse);
 
     final String downloadsCode = _code(downloads);
-    final int subscriptions = downloadsCode.indexOf(
-      'label: t.download_subscriptions_tab',
+    expect(
+      containsCodeLine(
+        downloadsCode,
+        'class BrowseDownloadSettingsPage extends ConsumerWidget {',
+      ),
+      isTrue,
     );
-    final Match? settings = RegExp(
-      r'label:\s*t\.settings\b',
-    ).firstMatch(downloadsCode);
-    expect(subscriptions, greaterThanOrEqualTo(0));
-    expect(settings, isNotNull);
-    expect(settings!.start, greaterThan(subscriptions));
+    expect(
+      RegExp(
+        r'builder:\s*\(BuildContext context\)\s*=>\s*'
+        r'const BrowseDownloadSettingsPage\(\)',
+      ).hasMatch(downloadsCode),
+      isTrue,
+      reason: '齿轮必须 push 设置独立页',
+    );
+    expect(
+      containsIdentifier(downloads, '_openDownloadSettings'),
+      isTrue,
+    );
+    expect(
+      RegExp(
+        r'enum BrowseTab \{ discover, sources, extensions, downloads \}',
+      ).hasMatch(downloadsCode),
+      isTrue,
+      reason: '顶部页签里不得再有 settings',
+    );
   });
 
   test('模块设置和诊断详情都保留返回模块导航的真实入口', () {

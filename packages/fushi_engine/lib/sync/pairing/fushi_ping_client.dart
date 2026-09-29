@@ -14,6 +14,7 @@ class FushiPingResult {
     required this.tlsEnabled,
     this.fingerprint,
     this.deviceName,
+    this.hostId,
   });
 
   /// host 自报为 fushi（`app == 'fushi'`）。非 fushi / 非 JSON → false。
@@ -30,6 +31,10 @@ class FushiPingResult {
 
   /// host 展示名（`deviceName`，可空）。
   final String? deviceName;
+
+  /// host 稳定设备 id（`hostId`，老 host 无此字段 → null）。选路探测用它核对
+  /// 「这个地址背后还是不是我那台 host」。
+  final String? hostId;
 }
 
 /// BUG-1741：`/api/ping` 探测的失败分型（机器可读，与 [FushiPairV2Client] 的
@@ -128,6 +133,7 @@ Future<FushiPingOutcome> probeFushiPing(
         tlsEnabled: tlsEnabled,
         fingerprint: fingerprint,
         deviceName: json['deviceName'] as String?,
+        hostId: json['hostId'] as String?,
       ),
     );
   } catch (e) {

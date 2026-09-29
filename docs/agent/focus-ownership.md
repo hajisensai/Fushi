@@ -36,6 +36,15 @@
 
 新增回收点时先想清楚属于哪个 cause，别习惯性复制最近的一行。cause 判据里最容易错的一类，就是把「本页自己的 chrome」和「压在本页之上的覆盖层」混成一个。
 
+## 方向导航引擎的候选集（手柄 / 键盘方向键，BUG-2749）
+
+`FushiFocusController.move()` 在**当前焦点作用域**（主焦点最近的 `FocusScopeNode`：页面路由 / 对话框 / 菜单 / 页内面板）里**所有可聚焦叶子**上做几何选择，不只是 `FushiFocusTarget` 登记过的目标。登记只是增强（稳定 id、方向锚点、`autoHome`、几何锚点 context）。所以：
+
+- 新页面用原生 Material 控件也能被手柄走到，**不必**为了「手柄能到」去包 `FushiFocusTarget`；需要锚点 / 稳定 id / 自定义几何边界时才包。
+- 一个控件「按了没反应」却能被走到，先查它是不是挂着空转回调（Material 控件有回调就算 enabled、可聚焦）——装饰性控件的回调必须给 null。
+- 包着别的可聚焦控件的原生节点（整页 / 整区 key sink）不会成为落点；受管复合控件内部的原生节点由外层登记节点代表。
+- 控制器是唯一引擎：它说「该方向没有目标」就只剩边缘滚动接管，不再跑第二遍框架 `focusInDirection`。
+
 ## WebView 宿主还要一层：键盘桥
 
 焦点抢回来只解决「OS 焦点归 Flutter」的情况。焦点归 WebView2 期间按下的键**只存在于 DOM 里**，必须在内容层截获后交回 Dart——桌面 Windows 上 fork 的 `flutter_inappwebview_windows` 只转鼠标不转键盘。

@@ -214,7 +214,7 @@ void main() {
         read('lib/src/reader/popup_swipe_close_script.dart');
     expect(
       swipeJsSrc,
-      contains("callHandler('topPullReleased')"),
+      contains("callHandler('topPullReleased', kind)"),
       reason: 'The real definition WebView must report a top pull release; '
           'an outer Flutter scroll wrapper would not reliably receive WebView '
           'touch drags.',
@@ -266,7 +266,9 @@ void main() {
     expect(clearSearch, contains('_debounceTimer?.cancel();'));
     expect(clearSearch, contains('_controller.clear();'));
     expect(clearSearch, contains('_result = null;'));
-    expect(clearSearch, contains('_searchFocusNode.requestFocus();'));
+    // BUG-2687：聚焦走 _focusSearchField（没焦点就聚焦、有焦点就再要一次键盘），
+    // 光 requestFocus 在焦点已在框里时是空操作，键盘收起后就弹不回来。
+    expect(clearSearch, contains('_focusSearchField();'));
     expect(
       clearSearch,
       isNot(contains('_searchFocusNode.unfocus()')),

@@ -11,7 +11,7 @@ AnkiSourceNote decodeRemoteSourceNote(Object? value) {
   if (sourceId is! String || noteId is! int || noteId <= 0) {
     throw const FormatException('Invalid source note identity');
   }
-  CardSourceLink.markerForSourceId(sourceId);
+  CardSourceLink.validateSourceId(sourceId);
   return AnkiSourceNote(
     sourceId: sourceId,
     noteId: noteId,

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -73,6 +74,19 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaVolumeKeyPaging => false;
+
+  // 进入即整卷 OCR（_maybeStartVolumeOcr）开书就读这三项：测试里 prefsRepo 是
+  // null，不覆写就在开书后抛 _TypeError。与 manga_fushi_page_test 同口径显式走
+  // manual，免得 widget 测试去碰原生 OCR 后端。
+  @override
+  MangaReaderPreferences get mangaReaderPreferences =>
+      const MangaReaderPreferences(ocrTrigger: 'manual');
+
+  @override
+  String get mangaOcrEnginePreference => 'local_onnx';
+
+  @override
+  String get mangaOcrLensLanguage => 'ja';
 }
 
 Widget _harness(AppModel appModel, String bookKey) {

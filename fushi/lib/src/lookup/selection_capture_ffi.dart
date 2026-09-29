@@ -112,6 +112,16 @@ abstract final class SelectionCapture {
   static Future<String?> captureForegroundSelection({
     bool Function()? stillWanted,
   }) async {
+    if (Platform.isMacOS) {
+      // macOS: the Runner does the whole transaction natively
+      // (SelectionCaptureMac.swift: AX selected text → synthetic ⌘C + pasteboard
+      // restore → current pasteboard when Accessibility is not granted). Same
+      // serial gate as the Windows path: the pasteboard is one global resource.
+      return _runClipboardExclusive<String>(
+        _captureForegroundSelectionMac,
+        stillWanted: stillWanted,
+      );
+    }
     if (!Platform.isWindows || _keybdEvent == null) {
       glog('capture: unsupported (windows=${Platform.isWindows} '
           'ffi=${_keybdEvent != null})');
@@ -213,6 +223,58 @@ abstract final class SelectionCapture {
       // fall back to the clipboard capture. Log only the error TYPE.
       glog('context: UIA EXCEPTION ${e.runtimeType} — fall back to clipboard');
       return null;
+    }
+  }
+
+  /// macOS body of [captureForegroundSelection] (runs inside the clipboard
+  /// gate). Never throws: any native error resolves to null.
+  static Future<String?> _captureForegroundSelectionMac() async {
+    try {
+      final Map<Object?, Object?>? reply = await _foregroundSelectionChannel
+          .invokeMapMethod<Object?, Object?>('captureSelection');
+      final String text = reply?['text']?.toString() ?? '';
+      // 隐私：只记方法/授权/长度，绝不记正文。
+      glog('capture(mac): method=${reply?['method']} '
+          'trusted=${reply?['trusted']} len=${text.length}');
+      return text.isEmpty ? null : text;
+    } catch (e) {
+      glog('capture(mac): EXCEPTION ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  /// Whether this platform gates cross-app selection capture behind an OS
+  /// permission the user must grant (macOS Accessibility / TCC). Drives the
+  /// settings-page permission action's visibility.
+  static bool get needsAccessibilityTrust => Platform.isMacOS;
+
+  /// macOS only: whether the app is trusted under System Settings > Privacy &
+  /// Security > Accessibility (needed to read / copy another app's selection).
+  /// Other platforms report true (no such gate). Never prompts.
+  static Future<bool> isAccessibilityTrusted() async {
+    if (!Platform.isMacOS) return true;
+    try {
+      return await _foregroundSelectionChannel
+              .invokeMethod<bool>('isAccessibilityTrusted') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// macOS only: shows the system Accessibility prompt / opens the privacy
+  /// pane and returns the CURRENT trust state (a grant takes effect once the
+  /// user flips the switch; re-query with [isAccessibilityTrusted]). Called
+  /// from the settings action and from the first explicit global-lookup
+  /// trigger, never during app startup.
+  static Future<bool> requestAccessibilityTrust() async {
+    if (!Platform.isMacOS) return true;
+    try {
+      return await _foregroundSelectionChannel
+              .invokeMethod<bool>('requestAccessibilityTrust') ??
+          false;
+    } catch (_) {
+      return false;
     }
   }
 

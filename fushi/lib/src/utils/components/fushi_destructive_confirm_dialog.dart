@@ -9,19 +9,25 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 ///
 /// pop `null` = 取消；非 null = 已确认，[checked] 携带可选勾选项状态
 /// （无 [FushiDestructiveConfirmDialog.checkboxLabel] 时恒为 false）。
-/// [deleteLocalFiles] 是挂在 [checked] 之下的二级勾选（无
-/// [FushiDestructiveConfirmDialog.localFilesSubtitle] 或主勾选未勾时恒为 false）。
+/// [deleteLocalFiles] / [deleteStatistics] 是挂在 [checked] 之下的两个二级勾选
+/// （对应的 subtitle 没传、或主勾选未勾时恒为 false）；没有主勾选时
+/// [deleteStatistics] 是独立勾选行的状态。
 @immutable
 class FushiDestructiveConfirmResult {
   const FushiDestructiveConfirmResult({
     required this.checked,
     this.deleteLocalFiles = false,
+    this.deleteStatistics = false,
   });
 
   final bool checked;
 
   /// 用户是否要求连磁盘上的原始文件一起删（仅在 [checked] 为真时可能为真）。
   final bool deleteLocalFiles;
+
+  /// 用户是否要求连这些媒体攒下的统计一起删（有主勾选时仅在 [checked] 为真时
+  /// 可能为真）。
+  final bool deleteStatistics;
 }
 
 /// 全 app 统一的「确认销毁」对话框。
@@ -43,6 +49,7 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.checkboxLabel,
     this.checkboxInitialValue = false,
     this.localFilesSubtitle,
+    this.statisticsSubtitle,
     this.checkedDisclosure,
     this.checkboxKey,
     this.requireCheckboxToConfirm = false,
@@ -78,6 +85,17 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 会在用户下次勾主选时静默删掉磁盘原件。
   final String? localFilesSubtitle;
 
+  /// 「同时删除统计数据」二级勾选行的副标题；null = 这个入口不提供该选项，结果里
+  /// 的 [FushiDestructiveConfirmResult.deleteStatistics] 恒 false。
+  ///
+  /// 与 [localFilesSubtitle] 同款纪律（必填副标题、只在主勾选为真时可见、主勾选
+  /// 取消时复位），但**默认恒为未勾且不被记忆**：统计是与「这条媒体还在不在库里」
+  /// 正交的另一类事实，删条目远比删统计常见，默认值站在保留那一侧。
+  ///
+  /// 没有主勾选（[checkboxLabel] 为 null，如游戏库「移除游戏」：确认即删条目本身）
+  /// 时，它作为独立勾选行直接挂在正文下方。
+  final String? statisticsSubtitle;
+
   /// 勾选框被勾上后追加渲染的「会被删除 / 会被保留」逐项披露。
   ///
   /// 根因（BUG-1305）：本对话框的正文 [message] 与勾选行是两个静态节点，勾选翻转
@@ -106,6 +124,25 @@ class _FushiDestructiveConfirmDialogState
     extends State<FushiDestructiveConfirmDialog> {
   late bool _checked = widget.checkboxInitialValue;
   bool _deleteLocalFiles = false;
+  // 统计删除**永远**从未勾开始，也不进「记住这些选择」：删条目是常事，把看它花掉
+  // 的那些小时从图表里抹掉是另一件事，而且按身份立碑后其他设备也跟着删、没有撤销。
+  bool _deleteStatistics = false;
+
+  /// 统计勾选此刻是否可见：有主勾选时跟随主勾选，没有主勾选时恒可见。
+  bool get _statisticsOffered =>
+      widget.statisticsSubtitle != null &&
+      (widget.checkboxLabel == null || _checked);
+
+  /// 勾选态叠加后的披露：两个二级勾选各自把对应条目从「保留」翻到「删除」，
+  /// 与 `ReaderHistoryDeleteDialog` / 视频删除框同一叠加顺序（幂等、可交换）。
+  DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
+    DeletionDisclosure shown = base;
+    if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
+    if (_statisticsOffered && _deleteStatistics) {
+      shown = shown.withStatisticsDeleted();
+    }
+    return shown;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -161,9 +198,12 @@ class _FushiDestructiveConfirmDialogState
                 ),
                 onTap: () => setState(() {
                   _checked = !_checked;
-                  // 主勾选取消 = 连成员都不删，磁盘原件更无从谈起；不复位就会留下
-                  // 一个看不见的 true。
-                  if (!_checked) _deleteLocalFiles = false;
+                  // 主勾选取消 = 连成员都不删，磁盘原件与统计更无从谈起；不复位
+                  // 就会留下一个看不见的 true。
+                  if (!_checked) {
+                    _deleteLocalFiles = false;
+                    _deleteStatistics = false;
+                  }
                 }),
               ),
               if (_checked && widget.localFilesSubtitle != null)
@@ -172,16 +212,29 @@ class _FushiDestructiveConfirmDialogState
                   subtitle: widget.localFilesSubtitle!,
                   onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
                 ),
+              if (_statisticsOffered)
+                DeleteStatisticsRow(
+                  value: _deleteStatistics,
+                  subtitle: widget.statisticsSubtitle!,
+                  onChanged: (bool v) => setState(() => _deleteStatistics = v),
+                ),
               if (_checked && widget.checkedDisclosure != null) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 DeletionDisclosureView(
-                  // 勾了「同时删除本地文件」时披露必须跟着翻面，否则又回到
-                  // BUG-1305 那种「正文说保留、代码在删」的说反话状态。
-                  disclosure: _deleteLocalFiles
-                      ? widget.checkedDisclosure!.withLocalFilesDeleted()
-                      : widget.checkedDisclosure!,
+                  // 勾了「同时删除本地文件」/「同时删除统计数据」时披露必须跟着
+                  // 翻面，否则又回到 BUG-1305 那种「正文说保留、代码在删」的说
+                  // 反话状态。
+                  disclosure: _shownDisclosure(widget.checkedDisclosure!),
                 ),
               ],
+            ],
+            if (widget.checkboxLabel == null && _statisticsOffered) ...[
+              SizedBox(height: tokens.spacing.gap),
+              DeleteStatisticsRow(
+                value: _deleteStatistics,
+                subtitle: widget.statisticsSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteStatistics = v),
+              ),
             ],
           ],
         ),
@@ -208,6 +261,8 @@ class _FushiDestructiveConfirmDialogState
                           deleteLocalFiles: _checked &&
                               widget.localFilesSubtitle != null &&
                               _deleteLocalFiles,
+                          deleteStatistics:
+                              _statisticsOffered && _deleteStatistics,
                         ),
                       ),
               child: Text(widget.confirmLabel ?? t.dialog_delete),

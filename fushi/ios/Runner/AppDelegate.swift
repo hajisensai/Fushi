@@ -11,6 +11,8 @@ import Flutter
   private var urlEventSink: FlutterEventSink?
   private var ankiMobileMediaBackgroundTask: UIBackgroundTaskIdentifier = .invalid
   private var challengeBrowser: FushiChallengeBrowser?
+  /// 强引用：channel handler 只弱持有它，且它自己是文档选择器的 delegate（UIKit 弱引用）。
+  private var directoryImport: FushiDirectoryImport?
 
   // TODO-057: brightness override applied during a video session. We snapshot
   // the user's brightness the first time the player asks (getBrightness) and
@@ -50,12 +52,61 @@ import Flutter
     // 系统语音转录（iOS 26 的 SpeechAnalyzer）。老系统上原生侧应答「不支持」，
     // Dart 侧据此不把这个引擎放进下拉。
     FushiSpeechTranscriber.register(binaryMessenger: binaryMessenger)
+    // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 macOS 同一份实现，
+    // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
+    FushiClipboardImage.register(binaryMessenger: binaryMessenger)
+    // 全局悬浮球的 iOS 半边：截本 app 窗口给 OCR + App Intent 查词投递
+    // （docs/specs/2026-09-28-floating-ball.md）。
+    FushiFloatingBall.register(binaryMessenger: binaryMessenger)
+    // 查词输入框的输入法语言。install 必须在任何输入框成为第一响应者之前完成——
+    // `textInputMode` 是在 becomeFirstResponder **之前**被读的。
+    let imeInstalled = LookupImeLanguage.install()
+    let lookupImeChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/lookup_ime",
+      binaryMessenger: binaryMessenger)
+    lookupImeChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setLanguage":
+        let tag = call.arguments as? String
+        LookupImeLanguage.desiredLanguage = (tag?.isEmpty ?? true) ? nil : tag
+        result(nil)
+      case "probe":
+        // 探针：分辨「属性压根没被调用」和「被调用了但系统没采纳返回值」——
+        // 这两种失败的修法完全不同（见 LookupImeLanguage 的类注释）。
+        result([
+          "installed": imeInstalled,
+          "desired": LookupImeLanguage.desiredLanguage ?? "",
+          "resolveCount": LookupImeLanguage.resolveCount,
+          "lastResolved": LookupImeLanguage.lastResolved ?? "",
+          "activeInputModes": UITextInputMode.activeInputModes.compactMap {
+            $0.primaryLanguage
+          },
+        ])
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     challengeBrowser = FushiChallengeBrowser(binaryMessenger: binaryMessenger) {
       UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }
         .filter { $0.activationState == .foregroundActive }
         .flatMap { $0.windows }
         .first { $0.isKeyWindow }?.rootViewController
+    }
+    // 目录导入（BUG-2786）：iOS 上沙盒外文件夹只能在安全作用域访问窗口内整卷拷进来。
+    // 呈现者必须是最顶层的 VC——导入对话框本身就是 Flutter 路由，但若此刻上面还压着
+    // 别的原生表单，从 root 直接 present 会被 UIKit 拒掉（静默不弹）。
+    directoryImport = FushiDirectoryImport(binaryMessenger: binaryMessenger) {
+      var top = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .filter { $0.activationState == .foregroundActive }
+        .flatMap { $0.windows }
+        .first { $0.isKeyWindow }?.rootViewController
+      while let presented = top?.presentedViewController {
+        top = presented
+      }
+      return top
     }
     let splashChannel = FlutterMethodChannel(
       name: "app.fushi.reader/splash",
@@ -96,6 +147,36 @@ import Flutter
       case "getInitialUrl":
         result(self?.initialUrl)
         self?.initialUrl = nil
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // 长按 app 图标的 Home Screen quick actions（Dart 门面
+    // lib/src/platform/app_shortcuts.dart）。点击由 SceneDelegate 换成
+    // `fushi://shortcut/<id>` 走下面的 url_events，不另起投递通道。
+    let appShortcutsChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/app_shortcuts",
+      binaryMessenger: binaryMessenger)
+    appShortcutsChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setShortcuts":
+        // Dart 发 {items, disabledMessage}；后者只给 Android 置灰固定快捷方式用，
+        // iOS 的 quick actions 整表替换即可，不存在「固定」的残留。
+        let args = call.arguments as? [String: Any]
+        let items = (args?["items"] as? [[String: String]]) ?? []
+        UIApplication.shared.shortcutItems = items.compactMap { item in
+          guard let id = item["id"], let title = item["title"],
+            let url = item["url"]
+          else { return nil }
+          return UIApplicationShortcutItem(
+            type: Self.appShortcutType(id),
+            localizedTitle: title,
+            localizedSubtitle: nil,
+            icon: UIApplicationShortcutIcon(systemImageName: Self.appShortcutSymbol(id)),
+            userInfo: ["url": url as NSString])
+        }
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -162,6 +243,32 @@ import Flutter
     deliverUrl(url.absoluteString)
     let handled = super.application(application, open: url, options: options)
     return handled || url.scheme == "fushi"
+  }
+
+  private static let appShortcutTypePrefix = "app.fushi.reader.shortcut."
+
+  private static func appShortcutType(_ id: String) -> String {
+    return appShortcutTypePrefix + id
+  }
+
+  private static func appShortcutSymbol(_ id: String) -> String {
+    switch id {
+    case "lookup": return "magnifyingglass"
+    case "books": return "book"
+    case "manga": return "photo.on.rectangle"
+    case "video": return "film"
+    default: return "app"
+    }
+  }
+
+  /// 把快捷方式点击交给 Dart。返回 false = 不是本 app 发布的快捷方式。
+  @discardableResult
+  func deliverShortcut(_ item: UIApplicationShortcutItem) -> Bool {
+    guard item.type.hasPrefix(Self.appShortcutTypePrefix) else { return false }
+    let url = (item.userInfo?["url"] as? String)
+      ?? "fushi://shortcut/" + item.type.dropFirst(Self.appShortcutTypePrefix.count)
+    deliverUrl(url)
+    return true
   }
 
   func deliverUrl(_ url: String) {

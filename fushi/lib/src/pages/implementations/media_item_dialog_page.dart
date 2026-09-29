@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
@@ -331,7 +334,8 @@ class MediaItemDialogFrame extends StatelessWidget {
                   ),
                   SizedBox(height: tokens.spacing.gap + 4),
                 ],
-                if (quickActions.isNotEmpty) _buildQuickActions(tokens),
+                if (quickActions.isNotEmpty)
+                  _buildQuickActions(context, tokens),
                 if (listActions.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap),
                   const FushiDivider(),
@@ -377,33 +381,14 @@ class MediaItemDialogFrame extends StatelessWidget {
     );
   }
 
-  /// 单行等宽时单个 chip 仍能容纳中文「导入有声书」这类标签的保守最小宽度；
-  /// 平分后低于此宽度就降级成竖排整行，避免 intrinsic-width 横排被 ellipsis 截断。
-  static const double _quickActionMinChipWidth = 96.0;
-
-  Widget _buildQuickActions(FushiDesignTokens tokens) {
-    final double gap = tokens.spacing.gap;
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final int count = quickActions.length;
-        final double available = constraints.maxWidth;
-        final bool fitsOneRow = available.isFinite &&
-            (available - gap * (count - 1)) / count >= _quickActionMinChipWidth;
-        final double chipWidth = fitsOneRow
-            ? (available - gap * (count - 1)) / count
-            : (available.isFinite ? available : double.infinity);
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: <Widget>[
-            for (final DialogQuickAction action in quickActions)
-              SizedBox(
-                width: chipWidth,
-                child: _quickActionChip(action),
-              ),
-          ],
-        );
-      },
+  Widget _buildQuickActions(BuildContext context, FushiDesignTokens tokens) {
+    return _QuickActionGrid(
+      gap: tokens.spacing.gap,
+      textDirection: Directionality.of(context),
+      children: <Widget>[
+        for (final DialogQuickAction action in quickActions)
+          _quickActionChip(action),
+      ],
     );
   }
 
@@ -413,5 +398,208 @@ class MediaItemDialogFrame extends StatelessWidget {
       icon: action.icon,
       onPressed: action.onPressed,
     );
+  }
+}
+
+/// 等宽快捷 chip 网格：按 chip 的**真实内在宽度**决定每行放几列。
+///
+/// BUG-2603：旧实现用常量 96 猜「一个 chip 最少要多宽」再平分。中文「从互联对端
+/// 下载有声书」、日语「オーディオブックをインポート」这类标签远超 96，手机宽度下
+/// 三等分后每个 chip 只剩三四个字，被 ellipsis 截成「查…/导…/从…」。这里改成在
+/// layout 阶段量每个 chip 的 maxIntrinsicWidth（含图标、内边距与字号缩放），取最宽者
+/// 为列宽下限，从「全部一行」往下试到一列，第一个「等分列宽 ≥ 最宽 chip」的列数
+/// 胜出；所有 chip 等宽，放不进本行的换行沿用同一列宽。不再依赖任何拍脑袋常量。
+class _QuickActionGrid extends MultiChildRenderObjectWidget {
+  const _QuickActionGrid({
+    required this.gap,
+    required this.textDirection,
+    required super.children,
+  });
+
+  final double gap;
+  final TextDirection textDirection;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderQuickActionGrid(gap: gap, textDirection: textDirection);
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _RenderQuickActionGrid renderObject) {
+    renderObject
+      ..gap = gap
+      ..textDirection = textDirection;
+  }
+}
+
+class _QuickActionGridParentData extends ContainerBoxParentData<RenderBox> {}
+
+/// 一次布局决议：[columns] 列、每列 [width] 宽。
+typedef _QuickActionColumns = ({int columns, double width});
+
+class _RenderQuickActionGrid extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _QuickActionGridParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _QuickActionGridParentData> {
+  _RenderQuickActionGrid({
+    required double gap,
+    required TextDirection textDirection,
+  })  : _gap = gap,
+        _textDirection = textDirection;
+
+  double _gap;
+  double get gap => _gap;
+  set gap(double value) {
+    if (_gap == value) return;
+    _gap = value;
+    markNeedsLayout();
+  }
+
+  TextDirection _textDirection;
+  TextDirection get textDirection => _textDirection;
+  set textDirection(TextDirection value) {
+    if (_textDirection == value) return;
+    _textDirection = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _QuickActionGridParentData) {
+      child.parentData = _QuickActionGridParentData();
+    }
+  }
+
+  /// 从「全部一行」往下试到一列，第一个「等分列宽容得下最宽 chip」的列数胜出；
+  /// 一列都容不下时仍取一列铺满——chip 内部的 ellipsis 只是最后防线，不是布局目标。
+  _QuickActionColumns _resolveColumns(double maxWidth) {
+    int count = 0;
+    double widest = 0;
+    RenderBox? child = firstChild;
+    while (child != null) {
+      count++;
+      widest = math.max(widest, child.getMaxIntrinsicWidth(double.infinity));
+      child = childAfter(child);
+    }
+    if (count == 0) return (columns: 0, width: 0);
+    if (!maxWidth.isFinite) return (columns: count, width: widest);
+    for (int columns = count; columns > 1; columns--) {
+      final double width = (maxWidth - gap * (columns - 1)) / columns;
+      if (width >= widest) return (columns: columns, width: width);
+    }
+    return (columns: 1, width: maxWidth);
+  }
+
+  /// 逐 chip 走一遍网格：[childHeight] 给出 chip 在 [grid].width 下的高度，
+  /// [place] 非空时顺带把 chip 的偏移写进 parentData。返回整块的尺寸。
+  Size _walkGrid(
+    _QuickActionColumns grid,
+    double Function(RenderBox child, BoxConstraints constraints) childHeight, {
+    bool place = false,
+  }) {
+    if (grid.columns == 0) return Size.zero;
+    final BoxConstraints chipConstraints =
+        BoxConstraints.tightFor(width: grid.width);
+    final double totalWidth =
+        grid.columns * grid.width + gap * (grid.columns - 1);
+    double y = 0;
+    double rowHeight = 0;
+    int column = 0;
+    RenderBox? child = firstChild;
+    while (child != null) {
+      if (column == grid.columns) {
+        column = 0;
+        y += rowHeight + gap;
+        rowHeight = 0;
+      }
+      final double height = childHeight(child, chipConstraints);
+      if (place) {
+        final double start = column * (grid.width + gap);
+        final double x = switch (textDirection) {
+          TextDirection.ltr => start,
+          TextDirection.rtl => totalWidth - start - grid.width,
+        };
+        final _QuickActionGridParentData parentData =
+            child.parentData! as _QuickActionGridParentData;
+        parentData.offset = Offset(x, y);
+      }
+      rowHeight = math.max(rowHeight, height);
+      column++;
+      child = childAfter(child);
+    }
+    return Size(totalWidth, y + rowHeight);
+  }
+
+  @override
+  void performLayout() {
+    final _QuickActionColumns grid = _resolveColumns(constraints.maxWidth);
+    final Size content = _walkGrid(
+      grid,
+      (RenderBox child, BoxConstraints chipConstraints) {
+        child.layout(chipConstraints, parentUsesSize: true);
+        return child.size.height;
+      },
+      place: true,
+    );
+    size = constraints.constrain(content);
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final _QuickActionColumns grid = _resolveColumns(constraints.maxWidth);
+    final Size content = _walkGrid(
+      grid,
+      (RenderBox child, BoxConstraints chipConstraints) =>
+          child.getDryLayout(chipConstraints).height,
+    );
+    return constraints.constrain(content);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) {
+    double widest = 0;
+    RenderBox? child = firstChild;
+    while (child != null) {
+      widest = math.max(widest, child.getMinIntrinsicWidth(height));
+      child = childAfter(child);
+    }
+    return widest;
+  }
+
+  @override
+  double computeMaxIntrinsicWidth(double height) {
+    return _walkGrid(
+      _resolveColumns(double.infinity),
+      (RenderBox child, BoxConstraints chipConstraints) => 0,
+    ).width;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) {
+    return _walkGrid(
+      _resolveColumns(width),
+      (RenderBox child, BoxConstraints chipConstraints) =>
+          child.getMinIntrinsicHeight(chipConstraints.maxWidth),
+    ).height;
+  }
+
+  @override
+  double computeMaxIntrinsicHeight(double width) {
+    return _walkGrid(
+      _resolveColumns(width),
+      (RenderBox child, BoxConstraints chipConstraints) =>
+          child.getMaxIntrinsicHeight(chipConstraints.maxWidth),
+    ).height;
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    return defaultHitTestChildren(result, position: position);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    defaultPaint(context, offset);
   }
 }

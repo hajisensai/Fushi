@@ -79,13 +79,20 @@ void main() {
           reason: '集成测试按 key 找这颗键');
     });
 
-    test('导航 / 插图只在正文模式挂（歌词页翻章会把歌词文档换成 EPUB 章节）', () {
+    test('插图只在正文模式挂；章节导航在歌词模式也在（BUG-2596，跳章走音频定位）', () {
       final String navGroup = render.substring(
         render.indexOf('case ReaderControlItem.navigation:'),
         render.indexOf('case ReaderControlItem.audiobook:'),
       );
-      expect(navGroup, contains('case ReaderControlItem.gallery:'));
-      expect(navGroup, contains('return !_lyricsMode;'));
+      final int gallery = navGroup.indexOf('case ReaderControlItem.gallery:');
+      expect(gallery, greaterThan(0));
+      // navigation 自己那段先于 gallery，且不再被 !_lyricsMode 藏掉。
+      final String navOnly = navGroup.substring(0, gallery);
+      expect(navOnly, contains('return true;'),
+          reason: '用户报「歌词模式没有跳章节按钮」——导航键在歌词模式必须在场');
+      expect(navOnly, isNot(contains('_lyricsMode')));
+      expect(navGroup.substring(gallery), contains('return !_lyricsMode;'),
+          reason: '图集仍是正文文档的东西，歌词模式不挂');
     });
   });
 

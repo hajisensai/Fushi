@@ -30,7 +30,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
   HomeTab.books => ModuleId.books,
   HomeTab.manga => ModuleId.manga,
   HomeTab.video => ModuleId.video,
-  HomeTab.downloads => ModuleId.downloads,
+  HomeTab.browse => ModuleId.browse,
   HomeTab.dictionaries => ModuleId.lookup,
   HomeTab.games => ModuleId.games,
   HomeTab.browserExtension => ModuleId.browserExtension,
@@ -47,7 +47,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.books => HomeTab.books,
   ModuleId.manga => HomeTab.manga,
   ModuleId.video => HomeTab.video,
-  ModuleId.downloads => HomeTab.downloads,
+  ModuleId.browse => HomeTab.browse,
   ModuleId.lookup => HomeTab.dictionaries,
   ModuleId.games => HomeTab.games,
   ModuleId.browserExtension => HomeTab.browserExtension,
@@ -74,6 +74,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
 ///   让对应的合成面板整个消失。
 ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appearance => null,
+  SettingsDestinationId.floatingBall => null,
   SettingsDestinationId.profiles => null,
   SettingsDestinationId.reading => null,
   SettingsDestinationId.lookup => null,
@@ -86,12 +87,15 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
-  SettingsDestinationId.downloads => ModuleId.downloads,
+  SettingsDestinationId.downloads => ModuleId.browse,
   SettingsDestinationId.game => ModuleId.games,
   // 在线服务与媒体追踪同属「第三方服务」一个开关：追踪本就是靠在线服务的
   // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。
   SettingsDestinationId.services => ModuleId.services,
   SettingsDestinationId.mediaTracking => ModuleId.services,
+  // AI 提供商配置就是第三方在线服务的端点 + 凭据，与 Jimaku / OpenSubtitles /
+  // Torznab 同类，共用 services 这一个开关，不另开 ModuleId。
+  SettingsDestinationId.ai => ModuleId.services,
   // 互联是从同步备份拆出去的一级分类，共享同一套后端与私有状态，同一个开关。
   SettingsDestinationId.syncBackup => ModuleId.sync,
   SettingsDestinationId.interconnect => ModuleId.sync,

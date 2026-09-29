@@ -56,6 +56,9 @@ void main() {
         'Android 悬浮词典页的搜索框查词。用户已明确决定「不用接」自动朗读：'
             '该窗浮在别的 app 上层，查词后突然出声会打扰当前应用，故有意保持静音；'
             '此豁免不包含剪贴板面板点字换根或嵌套查词，那两条主动路径仍须按偏好朗读。',
+    'lib/src/media/favorites/favorite_batch_mining.dart':
+        '收藏夹一键制卡：逐条查词只为取回制卡字段，一批几十个词连续查，'
+            '每个都自动念一遍会变成一串噪音；用户没有在「看」这些查词结果。',
     'lib/src/pages/implementations/home_page.dart':
         'resumed 生命周期里用固定的 helloWorld 串 + useCache:false 预热词典引擎，'
             '不是用户查词，也没有结果呈现。',
@@ -70,6 +73,13 @@ void main() {
     '../packages/fushi_engine/lib/sync/fushi_remote_lookup_service.dart':
         '上一条的抽象接口声明（FushiRemoteLookupService），只有方法签名没有实现体，'
             '不产生任何结果也不呈现 UI，谈不上朗读。',
+    'lib/src/sync/game_stream_client.dart':
+        '游戏串流接收端（Android）向主机查词的传输层封装，只是把 '
+            'FushiRemoteLookupClient 约束到当前串流对端。**有意静音**：这台手机同时'
+            '正在放主机串过来的游戏声，查词再朗读会直接盖在台词语音上——与悬浮词典'
+            '那条豁免同一理由（会打扰正在发声的前景内容）。结果由 '
+            'game_stream_page 的 DictionaryPopupLayer 呈现，那层也不接朗读；'
+            '哪天要接，就把它挪进 wiredSurfaces 并在页面侧按偏好调 autoReadWord。',
   };
 
   /// 收集 lib/ 下所有 `searchDictionary(` 的**调用**点（排除声明/重写本身）。

@@ -2,6 +2,9 @@
 // are never re-rendered, and callbacks are owned by the exact layer that sent them.
 (function () {
   'use strict';
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
   const layers = [];
   const requests = new Map();
   let sequence = 0;
@@ -72,7 +75,7 @@
           window.fushiSelection.highlightSelection(matchLength);
         }
       }
-      frame.title = '嵌套查词：' + term;
+      frame.title = tr('nested_lookup_title', { term: term });
       frame.setAttribute('allow', 'autoplay');
       frame.style.cssText = 'position:fixed;z-index:2147483647;border:0;visibility:hidden;background:transparent;border-radius:10px;box-shadow:0 5px 24px #0005;';
       const fallback = (parent ? parent.frame : owner).getBoundingClientRect();
@@ -93,7 +96,7 @@
       updateParents();
     });
   }
-  const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'openLink',
+  const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'openLink', 'openInAnki',
     'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview']);
   function receive(layer, message) {
     if (!layers.includes(layer) || !message || message.__fushiPopupFrame !== true) return;
@@ -152,6 +155,8 @@
     open: (query, anchor, highlight) => open(query, anchor, null, highlight),
     dismissChildren: () => dismissAfter(null),
     clear: () => { requests.clear(); dismissAfter(null); },
+    // 有子层在场：子层是独立 iframe，指针进去后顶层文档收不到事件，content.js 的悬停离开判定据此不关栈。
+    active: () => layers.length > 0,
     pop: () => {
       if (!layers.length) return false;
       dismissAfter(layers.length > 1 ? layers[layers.length - 2] : null);

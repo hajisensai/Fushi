@@ -1,6 +1,6 @@
 /// 有声书居中面板（Niratan「Sasayaki」形态），从 ReaderQuickSettingsSheet 抽出成
 /// 独立组件：封面 + 书名 + 当前章 + **全书**进度条 + 播放控制，下接「资源 / 章节 /
-/// 设置」分段，底部全宽「关闭」。设置页内容由调用方经 [settingsBuilder] 提供
+/// 设置」三个 MD3 标签页。设置页内容由调用方经 [settingsBuilder] 提供
 /// （音量 / 速度 / 延迟等行仍由设置 sheet 持有其写路径）。
 library;
 
@@ -13,7 +13,34 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
+import 'package:fushi/src/reader/ttu_toc_flatten.dart'
+    show resolveCurrentTocEntry;
 import 'package:fushi/utils.dart';
+
+/// 「信息卡固定 + tab 内容独立滚动」形态所需的最小可用高度（dp）。
+///
+/// 固定部分（标题行 + 96×136 封面的信息卡 + 进度条 + 五颗播放键 + 标签栏 + 间距）
+/// 实测约 312dp；再留 ≥128dp 给 tab 视口，才够看见几行章节。低于此高度就得整块
+/// 面板一起滚——见 [readerAudiobookPanelPinsHero]。
+const double kReaderAudiobookPanelPinnedMinHeight = 440.0;
+
+/// 给定可用高度下，面板是否还能把信息卡钉住、只让 tab 内容滚。
+///
+/// 为什么需要这道判据：面板原先恒为「Column(min) + Flexible(tab 滚动区)」。
+/// `Flexible` 在高度不够时**不会溢出报错，而是被压到 ~0**——手机横屏（如
+/// 768×348dp，bottom sheet 只有 0.9×348≈313dp）下实测 tab 视口只剩 1.2px，
+/// `maxScrollExtent` 也近乎 0：标签栏以下的资源 / 章节 / 设置既看不见、也**滚不
+/// 出来**，且因为没有 overflow 报错而在测试里毫无痕迹。
+bool readerAudiobookPanelPinsHero(double availableHeight) =>
+    availableHeight.isFinite &&
+    availableHeight >= kReaderAudiobookPanelPinnedMinHeight;
+
+/// 标签页顺序（也是 [ReaderAudiobookPanel.initialTab] 的取值域）。
+const List<String> kReaderAudiobookPanelTabs = <String>[
+  'files',
+  'chapters',
+  'settings',
+];
 
 class ReaderAudiobookPanel extends StatefulWidget {
   const ReaderAudiobookPanel({
@@ -21,6 +48,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
     required this.controller,
     required this.toc,
     required this.currentSection,
+    this.currentCharOffset,
     required this.onJumpSection,
     required this.title,
     required this.chapterLabel,
@@ -38,6 +66,10 @@ class ReaderAudiobookPanel extends StatefulWidget {
 
   /// 阅读器当前章（用于「当前章节」标注）。
   final int? currentSection;
+
+  /// 当前章内字符偏移（与 [TtuTocEntry.anchorCharOffset] 同尺），未知 null；
+  /// 同一 spine 章下靠锚点分节的目录项靠它分清当前是哪一条。
+  final int? currentCharOffset;
   final Future<void> Function(int sectionIndex, String? fragment) onJumpSection;
   final String title;
   final String? chapterLabel;
@@ -52,7 +84,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
   final VoidCallback? onPickAlignment;
   final VoidCallback? onTranscribe;
 
-  /// files / chapters / settings。
+  /// files / chapters / settings（见 [kReaderAudiobookPanelTabs]）。
   final String initialTab;
 
   /// 进度条刷新周期（控制器只在 cue 切换 / 播放暂停时 notify，拖动条需要秒级 tick）。
@@ -62,9 +94,21 @@ class ReaderAudiobookPanel extends StatefulWidget {
   State<ReaderAudiobookPanel> createState() => _ReaderAudiobookPanelState();
 }
 
-class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
-  late String _tab = widget.initialTab;
+class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
+    with SingleTickerProviderStateMixin {
+  late String _tab = kReaderAudiobookPanelTabs.contains(widget.initialTab)
+      ? widget.initialTab
+      : 'chapters';
   Timer? _ticker;
+
+  /// 标签栏指示器的 controller。真相仍是 [_tab]：这里没有 [TabBarView]（tab 内容
+  /// 高度各异，矮窗形态还要和信息卡一起滚，放不进定高的横滑视口），点击 / 键盘
+  /// 激活都经 [TabBar.onTap] 回到 [_tab]。
+  TabController? _tabController;
+
+  /// eink 下指示器不滑（滑动 = 一串局部刷新的残影）；Theme 在 initState 读不到，
+  /// 故 controller 在 didChangeDependencies 里按当前时长建 / 重建。
+  Duration? _tabAnimationDuration;
 
   /// 拖动整书进度条期间 / 跨文件 seek 落定前本地保留的目标位置（毫秒），避免松手
   /// 后拇指先跳回旧位置再追上。位置追上（±1.5s）或超过 2s 自动放手。
@@ -94,8 +138,24 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Duration duration = einkSafeDuration(context, kTabScrollDuration);
+    if (duration == _tabAnimationDuration) return;
+    _tabAnimationDuration = duration;
+    _tabController?.dispose();
+    _tabController = TabController(
+      length: kReaderAudiobookPanelTabs.length,
+      initialIndex: kReaderAudiobookPanelTabs.indexOf(_tab),
+      animationDuration: duration,
+      vsync: this,
+    );
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
+    _tabController?.dispose();
     super.dispose();
   }
 
@@ -106,22 +166,42 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AudiobookPlayerController? ctrl = widget.controller;
-    final List<ButtonSegment<String>> segments = <ButtonSegment<String>>[
-      ButtonSegment<String>(
-        value: 'files',
-        label: Text(t.reader_audiobook_tab_files),
-      ),
-      ButtonSegment<String>(
-        value: 'chapters',
-        label: Text(t.reader_audiobook_tab_chapters),
-      ),
-      ButtonSegment<String>(value: 'settings', label: Text(t.settings)),
-    ];
     final Widget tabContent = switch (_tab) {
       'files' => _buildFilesTab(theme, ctrl),
       'settings' => widget.settingsBuilder(context),
       _ => _buildChaptersTab(theme, ctrl),
     };
+    // 标签栏及其之上的固定部分（钉住形态下不随 tab 内容滚动）。
+    final List<Widget> head = <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              t.section_audiobook,
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            key: const ValueKey<String>('fushi_audiobook_panel_close'),
+            icon: const Icon(Icons.close),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+      SizedBox(height: tokens.spacing.gap),
+      _buildHero(theme, ctrl),
+      SizedBox(height: tokens.spacing.gap),
+      _buildTabBar(theme),
+      SizedBox(height: tokens.spacing.gap),
+    ];
+    // 侧栏 / bottom sheet 形态：标题行的 × 与点外面即关已够，底部不再摆一颗
+    // 整宽「关闭」（那是居中对话框时代的产物，在 400px 侧栏里只是占掉一行
+    // 章节）。
+    final Widget body = KeyedSubtree(
+      key: ValueKey<String>('fushi_audiobook_tab_$_tab'),
+      child: tabContent,
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -129,51 +209,83 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         tokens.spacing.page,
         tokens.spacing.page,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          // 高度够 → 信息卡钉住、只有 tab 内容滚（400px 侧栏 / 竖屏 sheet 的既有
+          // 形态）；不够 → 整块面板一起滚，否则 Flexible 会被压到 ~0，标签栏以下
+          // 的内容滚不出来（手机横屏）。滚动区的 key 带 tab，切 tab 即回到顶部。
+          final bool pinned =
+              readerAudiobookPanelPinsHero(constraints.maxHeight);
+          final Widget column = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  t.section_audiobook,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                key: const ValueKey<String>('fushi_audiobook_panel_close'),
-                icon: const Icon(Icons.close),
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
+              ...head,
+              if (pinned)
+                Flexible(
+                  child: SingleChildScrollView(
+                    key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
+                    primary: false,
+                    child: body,
+                  ),
+                )
+              else
+                body,
             ],
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          _buildHero(theme, ctrl),
-          SizedBox(height: tokens.spacing.gap * 1.5),
-          FushiSegmentedStrip<String>(
-            segments: segments,
-            selected: _tab,
-            alignment: Alignment.center,
-            onChanged: (String id) => setState(() => _tab = id),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          // 侧栏 / bottom sheet 形态：标题行的 × 与点外面即关已够，底部不再摆一颗
-          // 整宽「关闭」（那是居中对话框时代的产物，在 400px 侧栏里只是占掉一行
-          // 章节）。
-          Flexible(
-            child: SingleChildScrollView(
-              key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
-              primary: false,
-              child: KeyedSubtree(
-                key: ValueKey<String>('fushi_audiobook_tab_$_tab'),
-                child: tabContent,
-              ),
+          );
+          // 无界高度（父级自己就是滚动容器）时不再套一层 viewport。
+          if (pinned || !constraints.maxHeight.isFinite) return column;
+          return SingleChildScrollView(
+            key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
+            primary: false,
+            child: column,
+          );
+        },
+      ),
+    );
+  }
+
+  /// 「资源 / 章节 / 设置」标签栏：三等分铺满面板宽（与漫画阅读器设置 sheet 的
+  /// 标签栏同形），图标 + 文案同行以保住 48dp 行高（上下叠放要 72dp，会把矮窗
+  /// 的钉住判据再往上推）。长译文按比例缩小，不截断、不换行。
+  Widget _buildTabBar(ThemeData theme) {
+    Widget tab(String id, IconData icon, String label) => Tab(
+          key: ValueKey<String>('fushi_audiobook_tab_button_$id'),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(icon, size: 18),
+                const SizedBox(width: 6),
+                Text(label),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+    return TabBar(
+      controller: _tabController,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+      onTap: (int index) {
+        final String id = kReaderAudiobookPanelTabs[index];
+        if (id != _tab) setState(() => _tab = id);
+      },
+      tabs: <Widget>[
+        for (final String id in kReaderAudiobookPanelTabs)
+          switch (id) {
+            'files' => tab(
+                id,
+                Icons.library_music_outlined,
+                t.reader_audiobook_tab_files,
+              ),
+            'settings' => tab(id, Icons.tune_outlined, t.settings),
+            _ => tab(
+                id,
+                Icons.format_list_bulleted,
+                t.reader_audiobook_tab_chapters,
+              ),
+          },
+      ],
     );
   }
 
@@ -314,6 +426,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 3,
+                // 章节刻度画在 slider 自己的轨道上：刻度与拇指共用同一个
+                // trackRect（左右内缩由 thumb / overlay 尺寸决定），任何内缩
+                // 变化下刻度都与进度对齐。
+                trackShape: ReaderAudiobookChapterTrackShape(
+                  fractions: ticks,
+                  tickColor: theme.colorScheme.onSurfaceVariant,
+                ),
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               ),
@@ -346,25 +465,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                     : null,
               ),
             ),
-            // 章节刻度：每章首句在全书时间轴上的位置（控制器按章缓存）。
-            if (ticks.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: SizedBox(
-                  height: 4,
-                  child: CustomPaint(
-                    key: const ValueKey<String>(
-                      'fushi_audiobook_chapter_ticks',
-                    ),
-                    painter: _ChapterTickPainter(
-                      fractions: ticks,
-                      color: theme.colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.6,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             Row(
               children: <Widget>[
                 Text(_formatDuration(pos), style: timeStyle),
@@ -480,11 +580,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   /// 「章节」tab：目录 + 该章首句在全书音频时间轴上的起点（控制器按章缓存）；当前
   /// 章加标注。点击先跳阅读器到该章，再把音频定位到该章首句（无 cue 的章只跳文字）。
   Widget _buildChaptersTab(ThemeData theme, AudiobookPlayerController? ctrl) {
-    final int currentSection = widget.currentSection ?? -1;
-    int currentEntry = -1;
-    for (int i = 0; i < widget.toc.length; i++) {
-      if (widget.toc[i].index <= currentSection) currentEntry = i;
-    }
+    final int currentEntry = resolveCurrentTocEntry(
+          widget.toc,
+          widget.currentSection,
+          widget.currentCharOffset,
+        ) ??
+        -1;
     final TextStyle? timeStyle = theme.textTheme.bodyMedium?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
@@ -553,27 +654,97 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   }
 }
 
-/// 进度条下方的章节刻度（每章首句位置的竖线）。
-class _ChapterTickPainter extends CustomPainter {
-  const _ChapterTickPainter({required this.fractions, required this.color});
+/// 全书进度条的轨道：先画默认圆角轨道，再在**同一个 trackRect** 上画章节刻度
+/// （每章首句在全书时间轴上的位置）。
+///
+/// 刻度曾是 slider 下方单独一条 `CustomPaint`，左右硬写 24px 内缩；而 slider 的
+/// 轨道内缩是 `max(overlay, thumb) / 2`（本面板 overlayRadius 12 → 12px），两者
+/// 对不上，刻度整体被往中间压、离两端越远偏得越多，拇指走到章首时和刻度错开。
+/// 非离散 slider 的拇指中心就是 `trackRect.left + value * trackRect.width`，刻度
+/// 用同一公式即与进度恒对齐。
+class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
+  const ReaderAudiobookChapterTrackShape({
+    required this.fractions,
+    required this.tickColor,
+    this.inner = const RoundedRectSliderTrackShape(),
+  });
 
+  /// 章首在全书时间轴上的位置（0~1，已去掉两端）。
   final List<double> fractions;
-  final Color color;
+  final Color tickColor;
+  final SliderTrackShape inner;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-    for (final double f in fractions) {
-      final double x = f * size.width;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
+  /// 刻度 x 坐标：与非离散 slider 的拇指中心同一公式。
+  static double tickX(Rect trackRect, double fraction, TextDirection dir) {
+    final double f = dir == TextDirection.rtl ? 1 - fraction : fraction;
+    return trackRect.left + f * trackRect.width;
   }
 
   @override
-  bool shouldRepaint(covariant _ChapterTickPainter old) =>
-      old.color != color || old.fractions != fractions;
+  bool get isRounded => inner.isRounded;
+
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    Offset offset = Offset.zero,
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+  }) =>
+      inner.getPreferredRect(
+        parentBox: parentBox,
+        offset: offset,
+        sliderTheme: sliderTheme,
+        isEnabled: isEnabled,
+        isDiscrete: isDiscrete,
+      );
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+    required TextDirection textDirection,
+  }) {
+    inner.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      enableAnimation: enableAnimation,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+      textDirection: textDirection,
+    );
+    if (fractions.isEmpty) return;
+    final Rect trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final double half = trackRect.height / 2 + 3;
+    final Paint paint = Paint()
+      ..color = tickColor
+      ..strokeWidth = 1.5;
+    for (final double f in fractions) {
+      final double x = tickX(trackRect, f, textDirection);
+      context.canvas.drawLine(
+        Offset(x, trackRect.center.dy - half),
+        Offset(x, trackRect.center.dy + half),
+        paint,
+      );
+    }
+  }
 }
 
 extension _Let<T> on T {

@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
 
-/// Source identities are library UIDs, never device-local filenames.
+/// Source identities are library UIDs, never device-local filenames. Book and
+/// manga UIDs are machine-local (`book_<time>` minted at import), so those
+/// links also carry the cross-device `bookKey` that sync/backup/interconnect
+/// align on; a card mined on one device still finds the synced copy.
 enum CardSourceKind { book, manga, video }
 
 /// Versioned, portable source locator embedded in a mined Anki note.
@@ -22,8 +25,24 @@ class CardSourceLink {
     this.audioFileIndex,
     this.chapterId,
     this.fingerprint,
-  }) {
+    String? bookKey,
+  }) : bookKey = _portableBookKey(bookKey) {
     _validate();
+  }
+
+  /// [bookKey] is only a fallback identity next to [uid]. A key that cannot be
+  /// carried safely (empty, oversized, or with control characters — EPUB titles
+  /// keep embedded newlines/tabs and `sanitizeTtuFilename` leaves them) is
+  /// dropped instead of rejected: rejecting it made every card of that book
+  /// fail to mine, while dropping it only loses the cross-device fallback.
+  static String? _portableBookKey(String? value) {
+    if (value == null ||
+        value.trim().isEmpty ||
+        value.length > 1024 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(value)) {
+      return null;
+    }
+    return value;
   }
 
   final CardSourceKind kind;
@@ -42,6 +61,11 @@ class CardSourceLink {
   /// SHA-256 of the complete source file; mandatory for video identities,
   /// whose existing library UID can otherwise collide across devices.
   final String? fingerprint;
+
+  /// Cross-device library identity of a book/manga (the title-derived key
+  /// shared by sync, backup and interconnect). Resolvers try [uid] first and
+  /// fall back to this. Absent on links minted before it existed.
+  final String? bookKey;
 
   static final RegExp _uuid = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
@@ -62,6 +86,7 @@ class CardSourceLink {
     'audioFileIndex',
     'chapterId',
     'fingerprint',
+    'bookKey',
   };
 
   static String newSourceId() {
@@ -74,14 +99,24 @@ class CardSourceLink {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
-  static String markerForSourceId(String sourceId) {
+  /// The source ID lives only inside the `fushi://source` href written to a
+  /// note field (BUG-2527: it used to be duplicated as a `fushi_source_<hex>`
+  /// tag, which put one meaningless hash tag on every mined card). Returns the
+  /// validated ID so callers can chain it.
+  static String validateSourceId(String sourceId) {
     if (!_uuid.hasMatch(sourceId)) {
       throw const FormatException('Invalid card source ID');
     }
-    return 'fushi_source_${sourceId.replaceAll('-', '')}';
+    return sourceId;
   }
 
-  String get markerTag => markerForSourceId(sourceId);
+  /// Anki browser-syntax candidate query for [sourceId]: an unqualified
+  /// substring match over note fields (AnkiConnect `findNotes` and the
+  /// AnkiDroid notes ContentProvider accept the same syntax). Substring hits
+  /// are candidates only; identity is confirmed by parsing the field hrefs
+  /// with [fromHtml] and comparing [sourceId] exactly.
+  static String searchQueryForSourceId(String sourceId) =>
+      'sourceId=${validateSourceId(sourceId)}';
 
   CardSourceLink withSourceId(String value) => CardSourceLink(
         kind: kind,
@@ -97,6 +132,7 @@ class CardSourceLink {
         audioFileIndex: audioFileIndex,
         chapterId: chapterId,
         fingerprint: fingerprint,
+        bookKey: bookKey,
       );
 
   /// Reads only quoted source hrefs generated for note fields. The locator
@@ -115,7 +151,7 @@ class CardSourceLink {
   }
 
   void _validate() {
-    markerForSourceId(sourceId);
+    validateSourceId(sourceId);
     if (fingerprint != null &&
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint!)) {
       throw const FormatException('Invalid source file fingerprint');
@@ -132,6 +168,11 @@ class CardSourceLink {
             .split('/')
             .any((String segment) => segment == '.' || segment == '..')) {
       throw const FormatException('Invalid library UID');
+    }
+    // Content problems were already dropped by [_portableBookKey]; a book key on
+    // a video identity is a malformed link (video identity is the fingerprint).
+    if (bookKey != null && kind == CardSourceKind.video) {
+      throw const FormatException('Invalid library book key');
     }
     for (final int? value in <int?>[
       chapterIndex,
@@ -214,6 +255,7 @@ class CardSourceLink {
           if (audioFileIndex != null) 'audioFileIndex': '$audioFileIndex',
           if (chapterId != null) 'chapterId': chapterId!,
           if (fingerprint != null) 'fingerprint': fingerprint!,
+          if (bookKey != null) 'bookKey': bookKey!,
         },
       );
 
@@ -281,6 +323,7 @@ class CardSourceLink {
       audioFileIndex: number('audioFileIndex'),
       chapterId: query['chapterId'],
       fingerprint: query['fingerprint'],
+      bookKey: query['bookKey'],
     );
   }
 }

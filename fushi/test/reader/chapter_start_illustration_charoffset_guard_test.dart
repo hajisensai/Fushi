@@ -166,9 +166,10 @@ void main() {
       isTrue,
       reason: '连续 setChromeInsets 必须把 scrollBefore 作第 3 参 hint 传入',
     );
+    // BUG-2652：第 2 参是恢复重锚带入的句尾锚（缩放入口为 undefined），第 3 参仍是 hint。
     expect(
-      js.contains(
-          'this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll);'),
+      js.contains('this.scrollToCharOffset(off, this._uiScaleReanchorEnd, '
+          'this._uiScaleReanchorScroll);'),
       isTrue,
       reason: '连续 commitUiScaleReanchor 必须透传 begin 采到的滚动位',
     );

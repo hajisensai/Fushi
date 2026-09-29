@@ -3,6 +3,23 @@ import 'dart:typed_data';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
+/// 一次扩展调用（桌面 `/dalvik` POST / Android method channel）在 Dart 侧放手的上界。
+///
+/// **必须大于宿主自己的 OkHttp `callTimeout`**（两端都是 2 分钟：桌面
+/// `third_party/m_extension_server/overlay/server/src/main/kotlin/eu/kanade/tachiyomi/
+/// network/NetworkHelper.kt`，Android `fushi/android/app/src/main/kotlin/eu/kanade/
+/// tachiyomi/network/NetworkHelper.kt`）。此前桌面钉的是 45 秒——比宿主自己的预算还
+/// 短，于是慢站点必然先撞 Dart 这一层：JVM 里那次请求还在跑，Dart 已经把它报成
+/// `BRIDGE_TIMEOUT`，真正的失败原因（HTTP 状态码 / 解析异常 / 哪个 hoster 死了）永远
+/// 到不了用户面前。取流是这条链路上最重的一步（展开 hoster、逐条解析候选，每次都是
+/// 一轮真实 HTTP），45 秒对在线视频源等于「点开必失败」（BUG-2617）。
+///
+/// 参照物一概没有这层闸：Aniyomi 的 `EpisodeLoader` / `HosterLoader` 对扩展调用是裸
+/// `await`，Mangayomi 到同一个 sidecar 的 POST 也没有 `.timeout()`——两家都只靠 OkHttp
+/// 的 per-call 预算收口。本仓保留一个上界只为兜住「桥真卡死」（JVM 僵死 / 管道断了但
+/// 连接没关），所以取值是「宿主上界 + 余量」而不是一个更激进的产品化超时。
+const Duration kMihonBridgeRequestTimeout = Duration(seconds: 150);
+
 abstract interface class MihonRuntime {
   Future<MihonCapabilities> getCapabilities();
 
@@ -112,6 +129,110 @@ abstract interface class MihonRuntime {
   Future<void> invalidateExtensions(Iterable<String> packageNames);
 
   Future<void> dispose();
+}
+
+/// Aniyomi（视频）扩展的调用面。
+///
+/// 与 [MihonRuntime] 的漫画方法逐一对应，只是 wire 方法名与模型不同
+/// （`sourcesAnime` / `getEpisodeList` / `getVideoList` …）；扩展安装、信任、
+/// 偏好、代理、Cloudflare、图片取图（[MihonRuntime.fetchSourceImage]）全部
+/// 复用同一个运行时实例。独立成接口而不是往 [MihonRuntime] 上加方法，是让
+/// 既有的十来个测试 fake 不必跟着实现；生产的两个实现（桌面 sidecar / Android
+/// 原生）都经 [MihonBridgeRuntime] 天然具备，调用方用 `runtime is
+/// AnimeMihonRuntime` 判能力。
+abstract interface class AnimeMihonRuntime {
+  Future<List<MihonSource>> listAnimeSources(
+    MihonExtensionRef extension, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<List<MihonFilter>> getAnimeFilters(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnimePage> getPopularAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnimePage> getLatestAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnimePage> searchAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    required String query,
+    List<MihonFilter> filters = const <MihonFilter>[],
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnime> getAnimeDetails(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<List<MihonEpisode>> getEpisodes(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  /// 一集的全部可播候选（画质 / hoster），空列表表示源解析不出流。
+  Future<List<MihonVideo>> getVideos(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonEpisode episode, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<List<MihonPreference>> getAnimePreferences(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    List<MihonPreference> persisted = const <MihonPreference>[],
+  });
+
+  Future<List<MihonPreference>> setAnimePreference(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPreference preference, {
+    required List<MihonPreference> persisted,
+  });
+}
+
+/// 作品在源站的网页地址（Mihon `HttpSource.getMangaUrl` / Aniyomi
+/// `AnimeHttpSource.getAnimeUrl`）：详情页「在网站打开」入口用。
+///
+/// 独立成可选能力而不是往 [MihonRuntime] 上加方法，理由同 [AnimeMihonRuntime]：
+/// 既有的测试 fake 不必跟着实现。两个生产实现都经 [MihonBridgeRuntime] 具备；
+/// 调用方一律走 `resolveMihonMangaWebUrl` / `resolveMihonAnimeWebUrl`
+/// （`mihon_web_url.dart`），运行时没这能力或源报错时那边回落到
+/// `baseUrl + url` 拼接（Mihon 默认实现就是详情请求的 URL，多数源等价）。
+abstract interface class MihonWebUrlRuntime {
+  Future<String> getMangaWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonManga manga, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<String> getAnimeWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
 }
 
 /// Optional runtime capability used by the online reader to abort image

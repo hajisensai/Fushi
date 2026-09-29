@@ -72,6 +72,8 @@ class FavoriteSentence {
         // 向后兼容：旧条目无 source → 默认书籍；无 dateKey → 留空（不计入按日统计）。
         source: (json['source'] as String?) ?? kFavoriteSentenceSourceBook,
         dateKey: json['dateKey'] as String?,
+        expression: json['expression'] as String?,
+        reading: json['reading'] as String?,
       );
   FavoriteSentence({
     required this.text,
@@ -86,6 +88,8 @@ class FavoriteSentence {
     String? id,
     String? source,
     this.dateKey,
+    this.expression,
+    this.reading,
   })  : id = id ?? _generateFavoriteId(),
         source = source ?? kFavoriteSentenceSourceBook;
 
@@ -108,6 +112,12 @@ class FavoriteSentence {
   /// 旧条目无此字段 → null，按日统计时归为「未分类」，不参与分桶（不会崩）。
   final String? dateKey;
 
+  /// 从查词弹窗顶栏 ★ 收藏这句时，当时查的那个词（顶层结果的首个词头）与读音。
+  /// 收藏夹在句子旁显示它、批量制卡时以它为词条。划选 / 右键菜单收藏的句子没有
+  /// 查词对象，为 null；旧条目无此字段同为 null。
+  final String? expression;
+  final String? reading;
+
   // BUG-494 (TODO-1053 Bug C)：id 生成必须无碰撞。旧 'hl_<microsecondsSinceEpoch>' 在同一
   // 微秒内连续 new 两条（快速连续收藏 / 测试）会撞出相同 id → id 身份键坍缩（add 按 id 去重
   // 误判重复丢第二条、removeById 连坐）。加进程内单调计数器后缀，保证同微秒也唯一。
@@ -128,6 +138,8 @@ class FavoriteSentence {
         if (color != null) 'color': color,
         'source': source,
         if (dateKey != null) 'dateKey': dateKey,
+        if (expression != null) 'expression': expression,
+        if (reading != null) 'reading': reading,
       };
 }
 

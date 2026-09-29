@@ -209,6 +209,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         },
         onLoadStop: (_, __) => unawaited(_bootstrap()),
         // 非 null 本身就是救命动作：Java 侧据此 return true，不再连坐杀 app。
+        onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+            unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:
             (InAppWebViewController _, RenderProcessGoneDetail detail) =>
                 unawaited(
@@ -256,6 +258,9 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'openMinedNote',
   'openSentenceContextModal',
   'overwriteTargetNoteId',
+  // 裁剪模式（宿主调 __fushiSetVisibleViewportHeight）才会复报内容高度；预览
+  // WebView 占满自身区域、不裁剪，也没有外壳高度可重算，与 popupRendered 同样 no-op。
+  'popupContentResized',
   'popupRendered',
   'reportJsError',
   'resolveWordAudio',

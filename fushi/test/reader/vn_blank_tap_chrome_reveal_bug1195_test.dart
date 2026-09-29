@@ -291,10 +291,11 @@ void main() {
       final String body =
           end > start ? chrome.substring(start, end) : chrome.substring(start);
       expect(
-        body.contains('_chromeTransientVisible = false'),
+        body.contains('_chromeTransientVisible = !_chromeTransientVisible'),
         isTrue,
-        reason: '非 VN 的「唤出期间再点一下立即收起」（决策#4）必须保留——'
-            'VN 的修复不得把这个开关语义改成只开不关',
+        reason: '非 VN 的「唤出期间再点一下立即收起」必须保留——VN 的修复不得把'
+            '这个开关语义改成只开不关。2026-09-14 起它写成一句 toggle（同一下'
+            '点击两个方向），关的那一半就在这句里',
       );
     });
 

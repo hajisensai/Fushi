@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -67,8 +68,13 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerViewMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderViewMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              // Persist the structural mode before asking the live reader to
+              // reload.  The setter is asynchronous; firing the reload first
+              // lets the WebView rebuild with the previous mode (especially
+              // visible on iOS where the old vertical paged shell remains on
+              // screen), and the later persistence callback only reapplies CSS.
+              await c.readerSource.setReaderViewMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -91,8 +97,8 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerWritingMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderWritingMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderWritingMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -120,8 +126,8 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerSpreadMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderSpreadMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderSpreadMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -150,8 +156,8 @@ SettingsDestination buildReadingDestination() {
             ],
             selected: (SettingsContext c) =>
                 c.readerSource.readerSpreadDirection,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderSpreadDirection(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderSpreadDirection(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -459,8 +465,8 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.readerPageColumns.toDouble(),
             format: (double v) =>
                 v.round() == 0 ? t.reader_page_columns_auto : '${v.round()}',
-            onChanged: (SettingsContext c, double v) {
-              c.readerSource.setReaderPageColumns(v.round());
+            onChanged: (SettingsContext c, double v) async {
+              await c.readerSource.setReaderPageColumns(v.round());
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -592,13 +598,18 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // BUG-2563：这条 slider 的值以前是**阈值倍数**（越大越迟钝），与标题
+          // 「滑动翻页灵敏度」正好相反，且没有 titleReadout（上面的滚轮间隔有），
+          // 用户既看不到数值、也无从发现「想更灵敏要往左拖」。语义已在 ReaderSettings
+          // 侧翻正（值即灵敏度，越大越灵敏），这里只需跟上新的取值域并把读数打开。
           SettingsSliderItem(
             id: 'reading_controls.swipe_page_turn_sensitivity',
+            titleReadout: true,
             title: t.swipe_page_turn_sensitivity,
             icon: Icons.swipe_outlined,
-            min: 0.3,
-            max: 2.0,
-            divisions: 17,
+            min: ReaderSettings.minSwipePageTurnSensitivity,
+            max: ReaderSettings.maxSwipePageTurnSensitivity,
+            divisions: 25,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 9,
@@ -825,6 +836,7 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(c);
             },
           ),
+          // 悬浮球不在这里：唯一入口是 设置 → 悬浮球（阅读器场景的按钮在那里勾选）。
         ],
       ),
       // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
@@ -850,24 +862,8 @@ SettingsDestination buildReadingDestination() {
               c.refresh();
             },
           ),
-          // 「今日」重置时刻（整点）：写入时前移 dateKey，历史段不重分桶。
-          SettingsStepperItem(
-            id: 'reading.stats_day_reset_hour',
-            title: t.reading_stats_day_reset_hour,
-            subtitle: t.reading_stats_day_reset_hour_hint,
-            icon: Icons.update_outlined,
-            min: PreferencesRepository.statDayResetHourMin.toDouble(),
-            max: PreferencesRepository.statDayResetHourMax.toDouble(),
-            step: 1,
-            value: (SettingsContext c) =>
-                c.appModel.statDayResetHour.toDouble(),
-            format: (double value) =>
-                '${value.round().toString().padLeft(2, '0')}:00',
-            onChanged: (SettingsContext c, double value) async {
-              await c.appModel.setStatDayResetHour(value.round());
-              c.refresh();
-            },
-          ),
+          // 「今日」重置时刻（整点）是三域共用的统计日界，入口在统计中心页头
+          // （stat_day_reset_hour_dialog.dart），不再放在阅读设置里。
         ],
       ),
       // 「高级选项」现移到最后（低频排版微调）：文字两端对齐、竖排字距/VPAL、
@@ -922,8 +918,8 @@ SettingsDestination buildReadingDestination() {
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 18),
             value: (SettingsContext c) =>
                 c.readerSource.readerPrioritizeReaderStyles,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderPrioritizeReaderStyles(value);
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderPrioritizeReaderStyles(value);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -935,8 +931,8 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.blur_on_outlined,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 20),
             value: (SettingsContext c) => c.readerSource.readerBlurImages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderBlurImages(value);
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderBlurImages(value);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -952,8 +948,8 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.collections_bookmark_outlined,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 21),
             value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderMergeImagePages(value);
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderMergeImagePages(value);
               notifyReaderLayoutChanged(c);
             },
           ),

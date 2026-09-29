@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -303,7 +304,8 @@ String jimakuLanguageLabel(String code) {
     case 'ko':
       return '한국어';
     default:
-      return code.toUpperCase();
+      // Jimaku 本身只有这四种，但同一个标签也用在 OpenSubtitles 的结果与偏好上。
+      return subtitleLanguageNativeName(code);
   }
 }
 

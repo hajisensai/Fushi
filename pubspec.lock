@@ -440,6 +440,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.7"
+  dart_webrtc:
+    dependency: transitive
+    description:
+      name: dart_webrtc
+      sha256: "078e3c431500147e5cc52b3c6ea41ed538f30c7720cc2467d2186c9251e62716"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.8.2"
   dartssh2:
     dependency: transitive
     description:
@@ -876,6 +884,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_webrtc:
+    dependency: transitive
+    description:
+      name: flutter_webrtc
+      sha256: c1d3674f61b14cbe98b60f0cce396835b1483163e644b8cd26fd3fdd55360fb9
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.6.2+hotfix.3"
   fluttertoast:
     dependency: transitive
     description:
@@ -917,8 +933,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: "packages/asr_core"
-      ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
-      resolved-ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
+      ref: "2168e85cc69b564eef36c57db36e9dbb82528ab3"
+      resolved-ref: "2168e85cc69b564eef36c57db36e9dbb82528ab3"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -926,8 +942,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_onnx_ffi"
-      ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
-      resolved-ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
+      ref: "2168e85cc69b564eef36c57db36e9dbb82528ab3"
+      resolved-ref: "2168e85cc69b564eef36c57db36e9dbb82528ab3"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -935,8 +951,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_subtitles"
-      ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
-      resolved-ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
+      ref: "2168e85cc69b564eef36c57db36e9dbb82528ab3"
+      resolved-ref: "2168e85cc69b564eef36c57db36e9dbb82528ab3"
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -1353,6 +1369,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  logger:
+    dependency: transitive
+    description:
+      name: logger
+      sha256: "2a0dc097e7b01d942475bdd552356db2d0f768b05540bd4b2b53f1840f2239a7"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.8.0"
   logging:
     dependency: transitive
     description:
@@ -1492,6 +1516,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.4"
+  mobile_scanner:
+    dependency: transitive
+    description:
+      name: mobile_scanner
+      sha256: "5a51ea79f0cf8293f616a5d08baae185b59b5e6bb24df01f2a63037ade0bade0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.4.2"
   multi_value_listenable_builder:
     dependency: transitive
     description:
@@ -1786,6 +1818,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
+  qr:
+    dependency: transitive
+    description:
+      name: qr
+      sha256: "5a1d2586170e172b8a8c8470bbbffd5eb0cd38a66c0d77155ea138d3af3a4445"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.2"
+  qr_flutter:
+    dependency: transitive
+    description:
+      name: qr_flutter
+      sha256: "5095f0fc6e3f71d08adef8feccc8cea4f12eec18a2e31c2e8d82cb6019f4b097"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   quiver:
     dependency: transitive
     description:
@@ -2496,6 +2544,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.2.1"
+  webrtc_interface:
+    dependency: transitive
+    description:
+      name: webrtc_interface
+      sha256: c6f100eac5057d9a817a60473126f9828c796d42884d498af4f339c97b21014f
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.5.1"
   win32:
     dependency: transitive
     description:

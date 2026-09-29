@@ -9,9 +9,12 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
@@ -481,6 +484,25 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 打开/关闭「批量制卡」：制卡一律先存进待发队列，之后一次性发送。
+  /// 待发队列装饰器每次制卡都重新读这个值，所以改完立即生效。
+  /// 切到 / 切离「Anki 同步客户端」后端。两边看到的是用户同一份库、同样的牌组与
+  /// 笔记类型名，而两个后端写卡都只认**名字**——所以什么都不清，只翻开关。
+  /// 「刷新」后 [BaseAnkiRepository.selectDeckAfterFetch] 按 id 落空、按名字对回，
+  /// 字段映射（含 Lapis 判定）照旧。库不是同一份时写卡报「找不到笔记类型」，刷新即可。
+  Future<void> updateUseAnkiSyncClient(bool value) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(useAnkiSyncClient: value),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
+  Future<void> setBatchMiningEnabled(bool enabled) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(batchMiningEnabled: enabled));
+    state = state.copyWith(settings: updated);
+  }
+
   /// 打开/关闭去重的自动处理。默认关；打开后自动路径**仍然只做干跑并提示**，
   /// 要真删得由用户在确认弹窗里点，或另外打开 [setMediaDedupAutoDelete]。
   Future<void> setMediaDedupAutoEnabled(bool enabled) async {
@@ -573,7 +595,9 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
       ref.watch(platformServicesProvider).createAnkiRepository();
   final bool mineToServer =
       ref.watch(appProvider.select((AppModel m) => m.mineToServerEnabled));
-  if (!mineToServer) return _withAutoReposition(ref, local);
+  if (!mineToServer) {
+    return _withPendingQueue(ref, _withAutoReposition(ref, local));
+  }
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
@@ -587,8 +611,24 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
   // 远端制卡的仓库 `supportsDeckReposition` 为 false，装饰器里的判据会跳过——
   // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
-  return _withAutoReposition(ref, remote);
+  return _withPendingQueue(ref, _withAutoReposition(ref, remote));
 });
+
+/// 最外层套上「待发制卡队列」：后端不可达 / 批量模式时把卡冻结进队列而不是丢掉，
+/// 之后补发（见 [PendingMiningAnkiRepository]）。包在自动重排**外面**，补发进去的卡
+/// 同样会触发自动重排。
+BaseAnkiRepository _withPendingQueue(Ref ref, BaseAnkiRepository repo) {
+  return PendingMiningAnkiRepository(
+    inner: repo,
+    store: pendingMineStoreFor(ref.read(appProvider)),
+    openUrl: (Uri uri) =>
+        launchUrl(uri, mode: LaunchMode.externalApplication),
+  );
+}
+
+/// 本机的待发制卡队列存储（`<support>/pending_mine_queue`）。
+PendingMineStore pendingMineStoreFor(AppModel appModel) =>
+    pendingMineStoreAtSupportRoot(() => appModel.database);
 
 /// 给 [repo] 套上「制卡后自动重排新卡」。
 ///

@@ -103,6 +103,7 @@ void main() {
           isImageArchive: (String _) => true,
           directoryHasPageImages: (String _) => false,
           directoryCarrierFileCount: (String _) => 0,
+          directoryMokuroFileCount: (String _) => 0,
         );
         expect(
           carrier.isMangaCapable,

@@ -56,6 +56,9 @@ STATIC_DEPS="${STATIC_DEPS:-$PWD/ffmpeg-min-deps}"
 X264_REF="${X264_REF:-stable}"
 SVTAV1_REF="${SVTAV1_REF:-v2.3.0}"
 LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
+DAV1D_REF="${DAV1D_REF:-1.5.1}"
+LIBVPX_REF="${LIBVPX_REF:-v1.15.0}"
+OPUS_REF="${OPUS_REF:-v1.5.2}"
 
 # BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
 #
@@ -71,8 +74,8 @@ LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
 # 合成 universal（见 .github/workflows/ffmpeg-min.yml 的 macOS job）。
 MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
 
-# BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp 从源码编成**静态库**，装进一个
-# 私有 prefix，让 ffmpeg 只从那里取。
+# BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp / dav1d 从源码编成**静态库**，
+# 装进一个私有 prefix，让 ffmpeg 只从那里取。
 #
 # 为什么必须自编，而不是用 Homebrew 的库：
 #   1. 之前的做法是 `brew install x264 svt-av1 webp` 后直接 configure，产物于是
@@ -171,10 +174,81 @@ build_darwin_static_deps() {
     cmake --install "$work/libwebp/build"
   fi
 
+  if [ ! -f "$prefix/lib/libdav1d.a" ]; then
+    # AV1 软件解码器（见 DECODERS 注释）。dav1d 只有 meson 构建系统，静态库 +
+    # 目标架构都靠一份 cross file 钉死：`[binaries]` 里把 `-arch` 并进编译器命令、
+    # `[host_machine]` 声明目标 CPU。两个架构都写 cross file（同架构时 meson 只是
+    # 多走一遍「交叉」路径，产物一致），省得 x86_64 / arm64 各维护一套分支。
+    # `-Denable_asm=true` 在 x86_64 上要 nasm（runner 已装），arm64 走 clang 汇编。
+    echo "[ffmpeg-min] build static dav1d @ $DAV1D_REF"
+    rm -rf "$work/dav1d"
+    git clone --depth 1 --branch "$DAV1D_REF" \
+      https://code.videolan.org/videolan/dav1d.git "$work/dav1d"
+    local meson_cpu_family="$MACOS_ARCH"
+    if [ "$MACOS_ARCH" = "arm64" ]; then meson_cpu_family="aarch64"; fi
+    cat >"$work/dav1d/macos-$MACOS_ARCH.ini" <<EOF
+[binaries]
+c = ['clang', '-arch', '$MACOS_ARCH']
+cpp = ['clang++', '-arch', '$MACOS_ARCH']
+ar = 'ar'
+strip = 'strip'
+nasm = 'nasm'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'darwin'
+cpu_family = '$meson_cpu_family'
+cpu = '$MACOS_ARCH'
+endian = 'little'
+EOF
+    meson setup "$work/dav1d/build" "$work/dav1d" \
+      --cross-file "$work/dav1d/macos-$MACOS_ARCH.ini" \
+      --prefix="$prefix" --libdir=lib --buildtype=release \
+      --default-library=static \
+      -Denable_tools=false -Denable_tests=false -Denable_examples=false
+    ninja -C "$work/dav1d/build"
+    ninja -C "$work/dav1d/build" install
+  fi
+
+  if [ ! -f "$prefix/lib/libvpx.a" ]; then
+    # VP9 编码器：制卡「音画同步片段」的默认 WebM 视频轨（Anki 桌面 Qt WebEngine 与
+    # AnkiDroid WebView 都能内嵌解码 VP9；它们没有 H.264）。只要编码器——解码走 FFmpeg
+    # 自带的 vp8/vp9 decoder，省体积。libvpx 的 configure 用自己的 target 三元组选架构
+    # （`*-darwin20-gcc` 名义上是 gcc，实际按 CC 调 clang，并自动带 `-arch`）；x86_64
+    # 的 SIMD 汇编要 nasm（runner 已装）。
+    echo "[ffmpeg-min] build static libvpx @ $LIBVPX_REF"
+    rm -rf "$work/libvpx"
+    git clone --depth 1 --branch "$LIBVPX_REF" \
+      https://chromium.googlesource.com/webm/libvpx "$work/libvpx"
+    local vpx_target="x86_64-darwin20-gcc"
+    if [ "$MACOS_ARCH" = "arm64" ]; then vpx_target="arm64-darwin20-gcc"; fi
+    (cd "$work/libvpx" && CC="clang -arch $MACOS_ARCH" CXX="clang++ -arch $MACOS_ARCH" \
+      ./configure --prefix="$prefix" --target="$vpx_target" \
+      --enable-static --disable-shared --enable-pic \
+      --disable-examples --disable-tools --disable-docs --disable-unit-tests \
+      --disable-vp8 --disable-vp9-decoder --as=nasm \
+      && make -j"$JOBS" && make install)
+  fi
+
+  if [ ! -f "$prefix/lib/libopus.a" ]; then
+    # Opus 编码器：同步片段 WebM 的音轨（Qt WebEngine 没有 AAC 解码器）。
+    echo "[ffmpeg-min] build static libopus @ $OPUS_REF"
+    rm -rf "$work/opus"
+    git clone --depth 1 --branch "$OPUS_REF" \
+      https://github.com/xiph/opus.git "$work/opus"
+    cmake -S "$work/opus" -B "$work/opus/build" \
+      -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+      -DBUILD_SHARED_LIBS=OFF -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_BUILD_TESTING=OFF
+    cmake --build "$work/opus/build" -j "$JOBS"
+    cmake --install "$work/opus/build"
+  fi
+
   # 缺任何一个 .a 就当场停：继续跑下去只会又编出一个动态依赖 Homebrew 的产物，
   # 而那个缺陷要到发版流水线才暴露。
   local archive
-  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a; do
+  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a libvpx.a libopus.a; do
     if [ ! -f "$prefix/lib/$archive" ]; then
       echo "[ffmpeg-min] FATAL(BUG-1443): 缺静态库 $prefix/lib/$archive" >&2
       ls -la "$prefix/lib" >&2 || true
@@ -197,8 +271,29 @@ cd "$SRC"
 # 文件走 image2；若改走管道则用 image2pipe——两者都加，零体积成本、LGPL。漏 image2 会让
 # ffmpeg 找不到 PNG 的 demuxer → AVERROR_INVALIDDATA（exit -1094995529，"Invalid data found
 # when processing input"），片段导出全挂（AudiobookClipSynthFailure.ffmpegFailed）。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe"
-DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
+# hls：在线视频源（Aniyomi 扩展）的 hoster 几乎都给 `.m3u8`。播放走 libmpv 自带的完整
+# FFmpeg 所以能播，但制卡的句子音频 / 封面走本捆绑 ffmpeg，缺 hls demuxer 时整条 m3u8
+# 被当成未知格式 → AVERROR_INVALIDDATA（exit -1094995529），制卡中止在
+# `required audio missing`（BUG-2642）。依赖的 mpegts/mov/aac/ac3/eac3/webvtt demuxer
+# 与 http/https/crypto（AES-128）协议上面已全开。
+# concat：galgame 窗口录像制卡（galgame_window_video.dart buildGalWindowVideoArgs）把
+# 录下的逐帧 JPEG 按真实时间戳排成 `ffconcat` 列表，`-f concat -safe 0 -i list` 喂给编码。
+# `-safe` 是 concat demuxer 的私有选项：缺 concat 时 ffmpeg 报 "Unrecognized option
+# 'safe'" 直接退出，gal 片段（WebM / MP4 两档）在正式版全挂、只能靠调用方降级成动图。
+# 列表里的每一帧再经上面的 image2（按扩展名）+ mjpeg 解码器读入。LGPL，体积增量近零。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat"
+# libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
+# （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
+# decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
+# 每一帧都是 "Your platform doesn't support hardware accelerated AV1 decoding. /
+# Failed to get pixel format." → 解码错误率 100% 超过默认 -max_error_rate 2/3 →
+# ffmpeg **退出码 69**、尾行只有一句 "Conversion failed!"。用户侧症状：AV1 编码的视频
+# 制卡时截帧 / 动图 / 片段导出全挂，句子音频（不解视频流）却正常。真正的软件 AV1
+# 解码器是 libdav1d（BSD-2，VideoLAN，也是 FFmpeg 默认优先选用的 AV1 解码器）；配上它
+# 之后 `av1` 那个壳就没有存在意义，从清单里去掉，避免再有人以为 AV1 已经覆盖。
+# ⚠️ CI 构建环境需装 dav1d 开发包（MSYS2: mingw-w64-x86_64-dav1d；Ubuntu: libdav1d-dev；
+# macOS 在 build_darwin_static_deps 里从源码静态编，需要 meson + ninja + nasm）。
+DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
 # movtext：视频片段导出把「用户正在看的字幕」封成软字幕流（`-c:s mov_text`）。片段
 # 输出恒 .mp4（BUG-917），而 ISO-BMFF 只认 3GPP Timed Text = movtext 编码器；缺它
 # ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
@@ -211,7 +306,12 @@ DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,r
 # 又快又小，而 libwebp_anim 要 16.4 秒（它是逐帧帧内的静态图编码器，无运动补偿也不并行）。
 # 二者均为 BSD 许可，本 build 已因 libx264 是 GPL，无新增许可约束。
 # ⚠️ CI 构建环境需装 libsvtav1 / libwebp 开发包（MSYS2: mingw-w64-x86_64-{svt-av1,libwebp}）。
-ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
+# libvpx_vp9 / libopus：制卡「音画同步片段」默认格式 WebM(VP9+Opus)，卡片里用 <video>
+# 内嵌播放。Anki 桌面的 Qt WebEngine 不带专利编解码器（无 H.264 / AAC），只有 WebM 这
+# 一族能内嵌；AV1 片段（libsvtav1）同样配 Opus 音轨。二者 BSD 许可。
+# ⚠️ CI 需装 libvpx / opus 开发包（MSYS2: mingw-w64-x86_64-{libvpx,opus}；apt: libvpx-dev
+# libopus-dev）；macOS 在 build_darwin_static_deps 里静态自编。
+ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,libopus,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。
@@ -223,7 +323,14 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subri
 # 通用、任意播放器/浏览器直接打开）；mp4 muxer 与 mov 同一 movenc，体积增量近零。
 # avif / webp：动图封面的两个新容器（ffmpeg 按输出扩展名选 muxer）。avif muxer 自
 # FFmpeg 6.1 进主线，本 build 钉的 n7.1.5 已有；它与 mov/mp4 同属 movenc，体积增量近零。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
+# mpegts：互联 host 按档转码的 HLS 分段（live_transcode.dart，BUG-2630 第二段）。
+# 之前用 fMP4 分段，但 Apple / Android 随包 libmpv 的 FFmpeg 6.1 hls demuxer 一 seek
+# 就把 fMP4 流解成垃圾（mov demuxer 沿用 seek 前的绝对偏移，master 才补的
+# `pb->pos == 0` 重置 6.1 没有）；MPEG-TS 是 hls.c 那次 `pos = 0` 重置本来就为之
+# 设计的形态，也是 Jellyfin / Emby 给 mpv 客户端的标准形态。h264 进 TS 由已编入的
+# h264_mp4toannexb bsf 转 Annex B（见 BSFS）。
+# webm：音画同步片段的 WebM 容器（VP9/AV1 + Opus）。它与 matroska 共用 matroskaenc。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -243,7 +350,11 @@ MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
 #   选 overlay 而不是 libass 的 subtitles filter：overlay 是**内建** filter，五平台
 #   零新增原生依赖；libass 要拖进 libass+freetype+fribidi+fontconfig 四个库，而 macOS
 #   自 BUG-1443 起不能用 brew 的动态库，得把整条链从源码静态编一遍。
-FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata,overlay"
+# atempo：有声书倍速制卡（buildFfmpegClipArgs 的 tempo 参数）——阅读器有声书以
+#   倍速播放时，句子音频按同一倍率 `-af atempo=R` 变速不变调裁出，卡片听感与阅读
+#   时一致。移动端自编 ffmpeg-kit（完整内建滤镜集）本就带；桌面精简构建漏掉它会让
+#   倍速制卡整条 ffmpeg 失败（"No such filter: 'atempo'"）→ 卡片没句子音频。
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata,overlay,atempo"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 # http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo
@@ -312,7 +423,8 @@ esac
   --disable-ffplay --enable-ffprobe \
   --enable-ffmpeg \
   --enable-small --enable-zlib \
-  --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp \
+  --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp --enable-libdav1d \
+  --enable-libvpx --enable-libopus \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \

@@ -173,6 +173,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
+    final LnReaderOnlineChapterLoader? onlineChapters = _onlineChapterLoader;
+    if (onlineChapters != null) {
+      await _ensureOnlineChapter(onlineChapters, filePath);
+    }
     final File file = File(filePath);
     if (!file.existsSync()) {
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
@@ -253,6 +257,32 @@ extension _ReaderWebView on _ReaderFushiPageState {
       },
       data: data,
     );
+  }
+
+  /// 在线小说书：WebView 要的章节还是占位页就先经插件取正文写回解压树（按需
+  /// 取章，见 [LnReaderOnlineChapterLoader]）。换成正文后丢掉这一章的 sanitize
+  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
+  /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
+  Future<void> _ensureOnlineChapter(
+    LnReaderOnlineChapterLoader loader,
+    String filePath,
+  ) async {
+    try {
+      if (!await loader.ensureLoaded(filePath)) return;
+      _sanitizedHtmlCache.remove(filePath);
+      final int? index = loader.chapterIndexForFile(filePath);
+      final EpubBook? book = _book;
+      if (book != null && index != null && index < book.chapters.length) {
+        book.chapters[index].discardCachedHtml();
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.onlineChapter', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.novel_online_chapter_failed(error: '$e'),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
@@ -374,21 +404,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
         '<style id="fushi-cloak">body{visibility:hidden!important}</style>';
     // Cloak goes early (right after <head>) to hide FOUC. Reader style goes last
     // (before </head>) so it wins over EPUB CSS in !important specificity ties.
-    final RegExp headOpenPattern = RegExp('<head[^>]*>', caseSensitive: false);
-    final RegExp headClosePattern = RegExp(r'</head\s*>', caseSensitive: false);
-    final RegExpMatch? headOpen = headOpenPattern.firstMatch(html);
-    final RegExpMatch? headClose = headClosePattern.firstMatch(html);
-    if (headOpen != null && headClose != null) {
-      html =
-          '${html.substring(0, headOpen.end)}\n$hideUntilReady'
-          '${html.substring(headOpen.end, headClose.start)}\n$styleTag\n'
-          '${html.substring(headClose.start)}';
-    } else if (headOpen != null) {
-      html =
-          '${html.substring(0, headOpen.end)}\n$hideUntilReady\n$styleTag${html.substring(headOpen.end)}';
-    } else {
-      html = '$hideUntilReady\n$styleTag\n$html';
-    }
+    // BUG-2639: the viewport meta is served with the document instead of only
+    // being added later by the shell's initialize(). Without it WKWebView lays
+    // the chapter out at the default 980 CSS px (scale 402/980 ≈ 0.41) until
+    // that JS runs; on a real iPhone the vertical scroll mode stayed stuck in
+    // that layout (text at 4/10 size, columns only 4/10 of the screen tall).
+    html = ReaderResourceSanitizer.injectReaderHead(
+      html,
+      headStart: hideUntilReady,
+      headEnd: '${ReaderPaginationScripts.readerViewportMetaTag}\n$styleTag',
+    );
     return Uint8List.fromList(utf8.encode(html));
   }
 
@@ -495,6 +520,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
           if (!await file.exists()) return;
           final Uint8List raw = await file.readAsBytes();
           if (!mounted || _settings == null) return;
+          // 在线小说书还没取正文的章：占位页不进缓存。正文随后由拦截层 /
+          // 后台预取写盘，占位页若进了缓存，翻到这一章时会被原样下发。
+          if (_onlineChapterLoader != null &&
+              utf8
+                  .decode(raw, allowMalformed: true)
+                  .contains(kLnReaderPendingChapterAttribute)) {
+            return;
+          }
           final Uint8List built = _buildSanitizedChapterHtmlBytes(
             raw,
             chapterIndex: index,
@@ -624,9 +657,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
     String? sentenceAudioCuesJson,
   }) {
     final ReaderSettings s = _settings!;
-    // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
-    // （配合速度的快速短滑触发），系数 1.0 = 默认「轻快」手感，越大越迟钝（需滑得更远）。
-    final ({int dist, int fastDist}) swipeThresholds =
+    // TODO-113 / BUG-滑动翻页不够灵敏：三个滑动阈值随灵敏度缩放（灵敏度越大阈值越
+    // 小）。基础值 24px（纯距离触发）/ 12px + 300px/s（快速短滑），对齐
+    // Hoshi-Reader-Android 在 3x 屏上的有效阈值，见 swipePageTurnDistThresholds。
+    final ({int dist, int fastDist, int fastVelocity}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     // BUG-239: 连续模式靠原生滚动（滚动轴 = 书写轴），章间切换走边界手势 IIFE。
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
@@ -658,6 +692,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      swipeFastVelocity: swipeThresholds.fastVelocity,
       wheelGestureQuietMs: ReaderFushiSource.instance.wheelPageTurnInterval
           .clamp(150, 800),
       furiganaMode: s.furiganaMode,
@@ -702,7 +737,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
   /// 导航 / 视口 / 进度那些必须随 install 走的键。
   String _liveEngineConfigJs() {
     final ReaderSettings s = _settings!;
-    final ({int dist, int fastDist}) swipeThresholds =
+    final ({int dist, int fastDist, int fastVelocity}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     return ReaderEngineConfig.liveUpdateInvocation(
       marginTop: s.marginTop,
@@ -711,6 +746,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       marginRight: s.marginRight,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      swipeFastVelocity: swipeThresholds.fastVelocity,
       wheelGestureQuietMs: ReaderFushiSource.instance.wheelPageTurnInterval
           .clamp(150, 800),
       scanNonJapaneseText: appModel.scanNonJapaneseText,
@@ -795,6 +831,8 @@ install: function(C) {
   $selectionJs
   $paginationJs
   window.__fushiInstallShell(C);
+  // BUG-2779: WebKit ruby annotations snap to the base by measured font metrics.
+  $kReaderRubyMetricsJs
   $caretJs
   // TODO-975：insetBottom 与 chromeBottomInset 同源 _readerBottomReserve
   // （悬浮 0 / 挤压含底栏），由 Dart 侧算好放进 C。
@@ -985,7 +1023,7 @@ install: function(C) {
     var horizontalEnough = absDx > absDy;
     var distanceEnough =
         absDx >= C.swipeDistThreshold ||
-        (absDx >= C.swipeFastDistThreshold && velocity >= 900);
+        (absDx >= C.swipeFastDistThreshold && velocity >= C.swipeFastVelocity);
     if (horizontalEnough && distanceEnough) {
       return dx < 0 ? 'left' : 'right';
     }
@@ -1123,7 +1161,7 @@ install: function(C) {
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     // BUG-239: 连续模式（fushiContinuousMode）不在此回传 onSwipe——原生滚动沿书写轴
     // 翻屏，到边界由 onBoundarySwipe 跨章；此处的水平 onSwipe 只属分页模式。
-    if (!fushiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= 900))) {
+    if (!fushiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= C.swipeFastVelocity))) {
       if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
@@ -1411,6 +1449,13 @@ $kPagedWheelGestureHelperJs
   // 只有静默后、起点已经在边界的新手势才表达跨章意图。真正跨 document 的残余惯性
   // 仍由 Dart 的 chapter-turn cooldown 承接。
   var _continuousWheelLastTickAt = 0;
+  // 查词弹窗的 barrier 会吃掉「弹窗开着时的第一拍滚轮」（它在 Flutter 侧，滚轮根本
+  // 到不了本 document）。那一拍如果不记进手势时间线，紧随其后的惯性 tick 就会被上面
+  // 的 startsNewWheelGesture 判成**新手势** —— 章末一次带惯性的滑动会直接跨章，正是
+  // BUG-2015 那段 arm-then-fire 要防的。宿主关窗后调这个口子把时间戳补上。
+  window.__fushiArmWheelGesture = function() {
+    _continuousWheelLastTickAt = Date.now();
+  };
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
@@ -1517,22 +1562,6 @@ $kPagedWheelGestureHelperJs
     // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
     _handlePagedWheelTick(e);
   }, {passive: false});
-  // 鼠标移动唤出悬浮控制栏（JS 腿，非 Windows / 非 macOS；Windows 由 Flutter 侧
-  // Listener 承担，macOS 的 DOM 收不到 pointermove、同样走宿主腿，Dart 端按
-  // hostOwnsWebViewPointerInput / hostOwnsWebViewHoverLookup 互斥）。用 pointermove
-  // + pointerType 判真鼠标：触屏一次 tap 之后 Chromium/WebKit 会合成 mousemove→mousedown→mouseup→
-  // click（正文空白点不 preventDefault），走 mousemove 会让「点空白收起」被紧跟的
-  // 合成移动又唤出。250ms 节流：唤出 / 续命不需要每帧。
-  var _hoverRevealLast = 0;
-  document.addEventListener('pointermove', function(e) {
-    // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
-    if (window.__fushiHostHoverLookup) return;
-    if (e.pointerType !== 'mouse') return;
-    var now = Date.now();
-    if (now - _hoverRevealLast < 250) return;
-    _hoverRevealLast = now;
-    window.flutter_inappwebview.callHandler('onPointerHoverReveal');
-  }, {passive: true});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {
     // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
@@ -1557,6 +1586,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     var p = r.calculateProgress();
     var m = r.paginationMetrics;
     var total = (m && m.totalChars) ? m.totalChars : 0;
+    // VN shell：整章正文被 detach 进游离的 sourceRoot，document 里只剩当前一屏的克隆，
+    // 下面的 createWalker() 兜底只会数到**本屏**字数（几十字），于是 round(p × 本屏字数)
+    // 恒为 0、progress 恒 0.0，Dart 侧去抖把每一次翻屏都当「没动」丢掉，charOffset
+    // 一次也落不了库——退出重开永远回到第 0 屏；打字渐显未完成时 walker 还会剔掉未揭示
+    // 节点让 total 归零、整段返空串。VN 在 initialize 里已算好章级 totalChapterChars
+    // （contentStream.totalStudyChars），与分页 shell 的 paginationMetrics.totalChars
+    // 同口径，这里直接用它，walker 只留给真没有章级计数的 shell。
+    if (total <= 0 && typeof r.totalChapterChars === 'number' && r.totalChapterChars > 0) {
+      total = r.totalChapterChars;
+    }
     if (total <= 0 && r.createWalker) {
       var walker = r.createWalker();
       var node;
@@ -1888,9 +1927,30 @@ updateLive: function(patch) {
         // 故 Windows 下显式禁掉原生菜单，只留 Flutter 菜单。移动端不设（值 false），原生
         // ContextMenu（查词+导出）仍可用，不回归。
         disableContextMenu: isWindowsPlatform,
+        // BUG-2607：iOS 上 TODO-1279「触屏不建原生选区」不能再靠 CSS
+        // `user-select: none`——WebKit 对 user-select:none 的文字不绘制任何
+        // ::highlight()，查词/划选/收藏/搜索高亮在 iOS 上全部不可见（见
+        // ReaderContentStyles._touchNativeSelectionCss）。改用 WKWebView 的原生开关
+        // `WKPreferences.isTextInteractionEnabled = false`（iOS 14.5+）关掉文本选择
+        // 手势：长按不再起原生选区/放大镜，app 自绘选区（caretRangeFromPoint + Range +
+        // CSS Custom Highlight）不受影响。上面的原生 ContextMenu 在触屏本就因 1279
+        // 无原生选区而不可达，这里不改变其可达性。其它平台保持默认 true。
+        isTextInteractionEnabled: !isIOSPlatform,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
+        // BUG-2578：阅读器自己拥有两条轴的滚动语义——分页模式 `touch-action: none`
+        // 根本不走原生滚动；连续模式只沿书写轴原生滚动、到章边界由 onBoundarySwipe
+        // 跨章。Android 平台层的过滚回弹（EdgeEffect 辉光 / Android 12+ 拉伸）在任一
+        // 轴上都不对应任何阅读动作。默认 IF_CONTENT_SCROLLS 只看「文档比视口高不高」，
+        // 不看 CSS 有没有锁轴：竖排连续下 html 已 `overflow-y: hidden`，但章内任一元素
+        // 纵向溢出（文档 scrollHeight > 视口）就足以让上下滑动把整页拉伸回弹。
+        // Android 专属设置，其它平台忽略。
+        overScrollMode: OverScrollMode.NEVER,
+        // iOS 需单独关闭 WKWebView 的 UIScrollView.bounces；Android 的
+        // overScrollMode 不会传到这里，CSS 锁轴也不会关闭原生橡皮筋回弹。
+        // 只禁边界回弹，保留连续模式沿书写轴的原生滚动与边界跨章手势。
+        disallowOverScroll: true,
         verticalScrollbarThumbColor: Colors.transparent,
         verticalScrollbarTrackColor: Colors.transparent,
         horizontalScrollbarThumbColor: Colors.transparent,
@@ -2108,11 +2168,6 @@ updateLive: function(patch) {
             // not reclaim here or we would fight the popup for focus.
             _selectTextAt(x, y);
           },
-        );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'onPointerHoverReveal',
-          callback: (_) => _handleJsHoverReveal(),
         );
 
         controller.addJavaScriptHandler(
@@ -2776,6 +2831,8 @@ updateLive: function(patch) {
       // `InAppWebViewClientCompat.onRenderProcessGone` 只有拿到非 null 回调才
       // `return true`；否则默认动作是把整个 app 进程一起杀掉。这里的处置刻意
       // **不重建**（见 [_webViewDeathGuard] 的注释：恢复锚陈旧会把进度写回退）。
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_webViewDeathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(
@@ -2940,6 +2997,11 @@ updateLive: function(patch) {
       }
       if (!currentLyricsLoad()) return;
       _lyricsPageReady = true;
+      // BUG-2597：开书自动恢复歌词模式（BUG-785）可能抢在正文 `_onRestoreComplete`
+      // 之前——歌词 `loadData` 换掉文档后那次回调永远不来，`_studyClock` 一直为 null，
+      // `_onCueChanged` 的 `touch()` / 账本回调全部 no-op → 整段歌词会话零时长零字数。
+      // 歌词文档就绪也是「书能读了」，与正文就绪同样建/起表（对已在跑的是 no-op）。
+      _ensureStudyClock();
       // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
       // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
       if (_pendingLyricsHintOnReady) {

@@ -16,23 +16,25 @@ void main() {
     );
     final Uint8List small = Uint8List.fromList(<int>[1, 2, 3, 4, 5]);
 
-    test('fushiAnkiMediaEncodeForUploadAsync：文件名+base64 与同步计算一致（大媒体走隔离）',
-        () async {
-      final encoded = await fushiAnkiMediaEncodeForUploadAsync(
-        prefix: 'fushi_audio_',
-        bytes: big,
-        sourceName: 'clip.mp3',
-      );
-      expect(
-        encoded.filename,
-        fushiAnkiMediaFilenameForBytes(
+    test(
+      'fushiAnkiMediaEncodeForUploadAsync：文件名+base64 与同步计算一致（大媒体走隔离）',
+      () async {
+        final encoded = await fushiAnkiMediaEncodeForUploadAsync(
           prefix: 'fushi_audio_',
           bytes: big,
           sourceName: 'clip.mp3',
-        ),
-      );
-      expect(encoded.base64Data, base64Encode(big));
-    });
+        );
+        expect(
+          encoded.filename,
+          fushiAnkiMediaFilenameForBytes(
+            prefix: 'fushi_audio_',
+            bytes: big,
+            sourceName: 'clip.mp3',
+          ),
+        );
+        expect(encoded.base64Data, base64Encode(big));
+      },
+    );
 
     test('fushiAnkiMediaEncodeForUploadAsync：小媒体走同步分支也一致', () async {
       final encoded = await fushiAnkiMediaEncodeForUploadAsync(
@@ -88,14 +90,18 @@ void main() {
     File _pkgFile(String relative) {
       // 测试 cwd 为包目录（packages/fushi_anki）。
       final File f = File(relative);
-      expect(f.existsSync(), isTrue,
-          reason: '找不到 $relative（cwd=${Directory.current.path}）');
+      expect(
+        f.existsSync(),
+        isTrue,
+        reason: '找不到 $relative（cwd=${Directory.current.path}）',
+      );
       return f;
     }
 
     test('ankidroid/anki_repository.dart 不直接调用同步 sha256/ base64', () {
-      final String src =
-          _pkgFile('lib/src/ankidroid/anki_repository.dart').readAsStringSync();
+      final String src = _pkgFile(
+        'lib/src/ankidroid/anki_repository.dart',
+      ).readAsStringSync();
       // 同步文件名/编码会在 UI isolate 对整段媒体跑纯 Dart 循环 → 卡顿。必须走
       // ...Async 变体（Async 后缀不匹配 `(` 前的裸调用）。
       expect(
@@ -111,13 +117,15 @@ void main() {
     });
 
     test('ankiconnect_repository.dart 本机走 path、远端才走后台 base64', () {
-      final String src =
-          _pkgFile('lib/src/ankiconnect/ankiconnect_repository.dart')
-              .readAsStringSync();
+      final String src = _pkgFile(
+        'lib/src/ankiconnect/ankiconnect_repository.dart',
+      ).readAsStringSync();
+      // 合并编码 helper 的定义已移到 anki_media_naming.dart；制卡路径一次都不许调，
+      // 否则本机媒体又会构造整份 base64。
       expect(
-        RegExp(r'fushiAnkiMediaEncodeForUploadAsync\(').allMatches(src).length,
-        1,
-        reason: '合并编码 helper 只保留 API 定义；本机媒体不得再构造整份 base64',
+        RegExp(r'fushiAnkiMediaEncodeForUploadAsync\(').hasMatch(src),
+        isFalse,
+        reason: '本机媒体不得再构造整份 base64',
       );
       expect(
         src,
@@ -130,8 +138,9 @@ void main() {
         reason: '本机 Anki 应直接读取临时媒体路径，避免巨大 JSON',
       );
       expect(
+        // 本机 path / 远端 base64 已收进唯一的 _uploadLocalFile，一处即可。
         RegExp(r'fushiAnkiBase64EncodeAsync\(').allMatches(src).length,
-        greaterThanOrEqualTo(2),
+        greaterThanOrEqualTo(1),
         reason: '远端 AnkiConnect 仍须保留后台 base64 回退',
       );
       expect(

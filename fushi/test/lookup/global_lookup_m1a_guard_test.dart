@@ -125,7 +125,7 @@ void main() {
       // No double-fire: pointer handlers skip pointerType 'touch'.
       expect(js.contains("e.pointerType === 'touch'"), isTrue);
       // Still reports through the same bridge.
-      expect(js.contains("callHandler('topPullReleased')"), isTrue);
+      expect(js.contains("callHandler('topPullReleased', kind)"), isTrue);
     });
 
     test('in-app popup webview reuses the shared constant (single truth)', () {
@@ -154,7 +154,7 @@ void main() {
       // the JS-source-of-truth test above), and the in-app popup still uses it.
       final String shared =
           read('lib/src/reader/popup_swipe_close_script.dart');
-      expect(shared.contains("callHandler('topPullReleased')"), isTrue,
+      expect(shared.contains("callHandler('topPullReleased', kind)"), isTrue,
           reason:
               'the single shared swipe source must still exist for in-app + '
               'the future host re-wiring');
@@ -164,6 +164,10 @@ void main() {
       final String src = read('lib/src/lookup/global_lookup_controller.dart');
       expect(src.contains("handler == 'topPullReleased'"), isTrue);
       expect(src.contains('ReaderFushiSource.instance.enableSwipeToClose'),
+          isTrue);
+      // BUG-2770：触摸 / 触控笔的下拉走触摸半边，鼠标默认关不再连带触屏。
+      expect(src.contains('popupTopPullDismissAllowed('), isTrue);
+      expect(src.contains('ReaderFushiSource.instance.enableTouchSwipeToClose'),
           isTrue);
     });
   });

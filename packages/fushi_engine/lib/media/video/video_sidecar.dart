@@ -88,6 +88,36 @@ bool isSidecarSubtitleSuffix(String suffix) => RegExp(
       caseSensitive: false,
     ).hasMatch(suffix);
 
+/// 纯函数：「设为该视频默认字幕」时落盘用的 sidecar 后缀——学习语言标记版
+/// `.<langCode>.<ext>`（[pickSidecar] 优先级最高的那一组），[langCode] 为空时退回
+/// 无标记 `.<ext>`。[format] 取 `srt` / `.ass` 等（大小写、前导点皆可）；不是字幕
+/// 扩展名时返回 null。
+String? defaultSidecarSubtitleSuffix(String format,
+    {required String langCode}) {
+  final String ext = format.toLowerCase().replaceFirst(RegExp(r'^\.'), '');
+  if (!_baseSubtitleExtensions.contains('.$ext')) return null;
+  final String lang = langCode.toLowerCase();
+  final String suffix = lang.isEmpty ? '.$ext' : '.$lang.$ext';
+  return isSidecarSubtitleSuffix(suffix) ? suffix : null;
+}
+
+/// 纯函数：把 [suffix] 落成默认字幕时要让位的 sidecar 后缀——[pickSidecar] 优先级
+/// 列表里排在它前面的全部候选，加上它自己（同名文件会被覆盖）。不让位的话，一份
+/// 更高优先级的旧字幕会继续被 host 选中，上传等于白传。[suffix] 不在优先级列表里
+/// 时只返回它自己。
+List<String> sidecarSuffixesDisplacedBy(
+  String suffix, {
+  required String langCode,
+}) {
+  final String lower = suffix.toLowerCase();
+  final List<String> priority = langCode.isEmpty
+      ? _baseSubtitleExtensions
+      : _sidecarSuffixPriority(langCode);
+  final int index = priority.indexOf(lower);
+  if (index < 0) return <String>[lower];
+  return priority.sublist(0, index + 1);
+}
+
 /// 在 [videoPath] 同目录查找同名 sidecar 字幕（IO 版，包装 [pickSidecar]）。
 ///
 /// [langCode] 是 app 目标学习语言代码（如 `'ja'`/`'ko'`），优先选带该语言标记的

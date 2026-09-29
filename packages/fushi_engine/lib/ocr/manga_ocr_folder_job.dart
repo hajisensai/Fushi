@@ -29,10 +29,15 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // against the encoded pixel matrix while Chromium displayed the oriented page,
 // so portrait pages with orientation metadata had a shifted lookup layer.
 //
-// 这只是**坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
+// v3 matches manga-ocr's antialiased grayscale resize.
+// v4 retains nested regions through recognition and only removes text-confirmed
+// horizontal duplicates. Invalidate v3 caches that may have lost small body text.
+// 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kLocalMangaOcrEngineSignature = 'local-onnx-v2-oriented';
+const String kMangaOcrPipelineRevision = 'v4-antialias-text-dedup';
+const String kLocalMangaOcrEngineSignature =
+    'local-onnx-$kMangaOcrPipelineRevision';
 
 /// 产物文件名（`manga_ocr_out/manga.json`）。
 const String kMangaOcrOutputFileName = 'manga.json';
@@ -313,7 +318,9 @@ Future<img.Image> decodeMangaPageFile(File file) async {
 ///   （[MangaOcrFilePageCache]），重跑只补缺页。
 /// - [cancelToken] 置位后在页/块边界抛 [OcrCancelledException]；已完成页
 ///   缓存保留。
-/// - [onProgress] 逐页回调（含缓存命中页）。
+/// - [onProgress] 逐页回调（含缓存命中页），带该页真实页号。
+/// - [startPage] 处理起点（页号，按 [enumerateMangaPages] 的自然序）：从它起向后、
+///   再绕回开头（[mangaOcrPageOrder]）。产物 manga.json 内容与页序与起点无关。
 /// - [decodePage] 可注入（测试免真图解码）。
 /// - [engineSignature] 逐页缓存子目录名 + 产物元数据里的引擎签名。**必须**由调用
 ///   方按已安装模型解析（见 `manga_ocr_model_fingerprint.dart`）：这里不给默认值，
@@ -323,6 +330,8 @@ Future<String> runMangaOcrFolderJob({
   required OcrDetector detector,
   required OcrRecognizer recognizer,
   required String engineSignature,
+  List<String>? relativeUrls,
+  int startPage = 0,
   OcrCancelToken? cancelToken,
   OcrProgressCallback? onProgress,
   Future<img.Image> Function(File file)? decodePage,
@@ -331,7 +340,20 @@ Future<String> runMangaOcrFolderJob({
   if (!root.existsSync()) {
     throw ArgumentError('image directory does not exist: $imageDirPath');
   }
-  final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+  final List<MangaOcrPageFile> allPages = enumerateMangaPages(root);
+  final Set<String>? requested = relativeUrls?.map(normalizeMangaUrl).toSet();
+  final List<MangaOcrPageFile> pages = requested == null
+      ? allPages
+      : allPages
+          .where(
+            (MangaOcrPageFile page) => requested.contains(page.relativeUrl),
+          )
+          .toList();
+  if (requested != null && pages.length != requested.length) {
+    throw ArgumentError(
+      'Requested OCR page is outside the managed image directory',
+    );
+  }
   if (pages.isEmpty) {
     throw StateError('no images found in $imageDirPath');
   }
@@ -364,9 +386,13 @@ Future<String> runMangaOcrFolderJob({
     bookId: 'manga_ocr',
     pageCount: pages.length,
     loadPage: (int pageIndex) => decode(pages[pageIndex].file),
+    startPage: startPage,
     cancelToken: cancelToken,
     onProgress: onProgress,
   );
+
+  // Reader requests own page caches, never the complete volume output.
+  if (requested != null) return cacheDir.path;
 
   final MokuroPayload generated = buildMangaPayloadFromResults(pages, results);
   final MokuroPayload payload = MokuroPayload(

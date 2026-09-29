@@ -50,6 +50,29 @@ void main() {
   MangaOcrModelImporter importer() =>
       MangaOcrModelImporter(manifest: manifest);
 
+  test(
+    'a runtime ZIP in the manifest is imported intact for verification',
+    () async {
+      final File archive = writeSource('python.zip', 8);
+      final MangaOcrModelImportResult result = await MangaOcrModelImporter(
+        manifest: const <MangaOcrModelFile>[
+          MangaOcrModelFile(
+            fileName: 'python.zip',
+            url: 'https://example.invalid/python.zip',
+            expectedBytes: 8,
+            role: MangaOcrModelRole.runtime,
+          ),
+        ],
+      ).import(sourcePaths: <String>[archive.path], targetDir: targetDir);
+      expect(result.allReady, isTrue);
+      expect(result.rejected, isEmpty);
+      expect(
+        File(p.join(targetDir.path, 'python.zip')).readAsBytesSync(),
+        archive.readAsBytesSync(),
+      );
+    },
+  );
+
   test('逐个选文件：命中清单且长度正确的落盘转正，清单齐全后 allReady', () async {
     final File detector = writeSource('detector.onnx', 8);
     final File vocab = writeSource('vocab.txt', 4);

@@ -1,16 +1,25 @@
-# 无头服务端 fushi_server 的专用发布：Linux x64 + Windows x64 两个包，手动触发，
-# 发到本仓 GitHub Release，tag 前缀 `fushi-server-v`。
+# 无头服务端 fushi_server 的发布流水线：Linux x64 + Windows x64 两个包。
 #
-# ── 与 app 发布的关系（刻意分开）─────────────────────────────────────────────
+# ── 这是一条 workflow_call 可复用 workflow，只被独立发布仓调用 ─────────────────
+# Release 落在 https://github.com/hajisensai/fushi-server，**不落本仓**。那边只有
+# README / LICENSE / 一条薄 workflow（`.github/workflows/release.yml`），它
+# `uses: hajisensai/Fushi/.github/workflows/release-server.yml@develop` 调到这里。
+# 可复用 workflow 在**调用方**的仓库上下文里跑：GITHUB_TOKEN 是 fushi-server 的，
+# softprops/action-gh-release 于是发到 fushi-server；源码 checkout 显式钉
+# `repository: hajisensai/Fushi`（公开仓，不要 token）。零 PAT、零 secret、
+# 源码单份留在 monorepo。
+#
+# * 本仓自己**不能**发服务端包：channel job 第一步断言 github.repository 不是
+#   hajisensai/Fushi。理由是 app 稳定通道更新检查走本仓 `releases/latest`
+#   （update_checker_release.dart）；服务端包一旦在本仓成为 Latest，五端 app 会把
+#   「已是最新」判成「远端不比本机新」而永远停更。把 Release 整体搬去独立仓后这个
+#   冲突不存在了——formal 在 fushi-server 里就是正常的 Latest。断言让这条硬规则
+#   不再依赖「记得 make_latest 恒 false」。
 # * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
-#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，别再造第二条）。
+#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 hibiki 的
+#   checkout 上算，别再造第二条）。
 # * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
 #   debug 包没有消费者。
-# * **永远不做 Latest**（make_latest 恒 false，formal 也不例外）：app 的稳定通道更新
-#   检查走 `releases/latest`（update_checker_release.dart），服务端包一旦成为 Latest，
-#   五端 app 会把它当成「最新正式版」去比对——资产名对不上是不会错装，但会把
-#   「已是最新」判成「远端不比本机新」而永远停更。formal 通道的可见性靠 tag 前缀与
-#   Release 名，不靠 Latest 徽章。
 # * concurrency 组带 workflow 名：与 release.yml / release-desktop.yml 曾共用一个组
 #   时同 sha 触发的第一条会被取消（PR#1302 教训）。
 #
@@ -19,38 +28,43 @@
 #   fushi_server-<version>-<seq>-windows-x64.zip    同上
 # lib/ 里随包：sqlite3（dart build native asset）、内置 torrent 引擎（Linux 静态链
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
-# CPU 版。目标机不需要任何 libtorrent / ssl 运行库（README「安装」）。
+# CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）。目标机不需要任何
+# libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       channel:
-        description: Release channel (beta = prerelease; formal = non-prerelease, still never Latest)
-        type: choice
-        required: true
+        description: Release channel (beta = prerelease; formal = non-prerelease + Latest)
+        type: string
+        required: false
         default: beta
-        options:
-          - beta
-          - formal
+      source_ref:
+        description: hajisensai/Fushi ref to build from (branch / tag / sha)
+        type: string
+        required: false
+        default: develop
       tag_name:
-        description: Optional tag override (default fushi-server-v<version>-beta.<seq> / fushi-server-v<version>)
+        description: Optional tag override (default v<version>-beta.<seq> / v<version>)
+        type: string
         required: false
         default: ''
       release_name:
         description: Optional release name override
+        type: string
         required: false
         default: ''
 
-permissions:
-  contents: write
-
 concurrency:
-  group: fushi-server-release-${{ github.workflow }}-${{ github.event.inputs.tag_name || github.sha }}
+  # 可复用 workflow 里 github.sha 是调用方仓的 HEAD（几乎不变），拿它当 key 会让所有
+  # 服务端发布共用一个组、连发时中间那条被取消；按 run 独立，只有显式同 tag 才串行。
+  group: fushi-server-release-${{ github.workflow }}-${{ inputs.tag_name || github.run_id }}
   cancel-in-progress: false
 
 env:
   ORT_VERSION: '1.22.0'
+  SOURCE_REPO: hajisensai/Fushi
 
 jobs:
   channel:
@@ -64,8 +78,22 @@ jobs:
       make_latest: ${{ steps.resolve.outputs.make_latest }}
       body: ${{ steps.resolve.outputs.body }}
     steps:
+      - name: Refuse to publish server releases into the app repo
+        shell: bash
+        env:
+          CALLER_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # 大小写不敏感：github.repository 跟仓库显示名走（hajisensai/Fushi），只改大小写的
+          # 改名不能让这条断言静默失效。
+          if [ "${CALLER_REPO,,}" = "${SOURCE_REPO,,}" ]; then
+            echo "::error title=Wrong repository::fushi_server releases live in hajisensai/fushi-server; a server release in $SOURCE_REPO would become the app updater's releases/latest. Dispatch from the fushi-server repo."
+            exit 1
+          fi
       - uses: actions/checkout@v6
         with:
+          repository: hajisensai/Fushi
+          ref: ${{ inputs.source_ref }}
           fetch-depth: 0
       - name: Validate unified release policy
         shell: pwsh
@@ -74,9 +102,10 @@ jobs:
         id: resolve
         shell: bash
         env:
-          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
-          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
-          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' packages/fushi_server/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
@@ -86,35 +115,40 @@ jobs:
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
           fi
-          SHORT_SHA="${GITHUB_SHA::7}"
+          # 源码 sha 是 hibiki checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
+          SOURCE_SHA="$(git rev-parse --short HEAD)"
+          SOURCE="${SOURCE_REPO}@${INPUT_SOURCE_REF} (${SOURCE_SHA})"
           CHANNEL="${INPUT_CHANNEL:-beta}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
           NOTES_FILE="docs/release-notes/server-${VERSION}.md"
           PRERELEASE=true
-          # 服务端包永远不做 Latest（见文件头）。这是通道无关的硬规则，不进 case。
           MAKE_LATEST=false
           case "$CHANNEL" in
             beta)
-              TAG="${TAG:-fushi-server-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+              TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
               NAME="${NAME:-fushi_server ${VERSION} beta ${RELEASE_SEQUENCE}}"
-              BODY="Manual fushi_server beta build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Server releases are never Latest."
+              BODY="fushi_server beta build from ${SOURCE}."
               ;;
             formal)
-              TAG="${TAG:-fushi-server-v${VERSION}}"
+              TAG="${TAG:-v${VERSION}}"
               NAME="${NAME:-fushi_server ${VERSION}}"
-              BODY="Manual fushi_server formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Server releases are never Latest."
+              BODY="fushi_server ${VERSION} from ${SOURCE}."
               PRERELEASE=false
+              MAKE_LATEST=true
               ;;
             *)
               echo "::error title=Invalid release channel::Use beta or formal."
               exit 1
               ;;
           esac
-          if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+          if [ -f "$NOTES_FILE" ]; then
+            BODY="$(cat "$NOTES_FILE")"
+            BODY="${BODY}"$'\n\n'"Built from ${SOURCE}."
+          fi
           case "$TAG" in
-            fushi-server-*) : ;;
-            *) echo "::error title=Bad tag::server release tags must start with fushi-server- (got $TAG)"; exit 1 ;;
+            v[0-9]*) : ;;
+            *) echo "::error title=Bad tag::server release tags must look like v<version>[-beta.<seq>] (got $TAG)"; exit 1 ;;
           esac
           {
             echo "version=$VERSION"
@@ -135,6 +169,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -146,6 +183,14 @@ jobs:
       - name: Pub get (workspace)
         working-directory: fushi
         run: flutter pub get
+      # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
+      # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: bash
@@ -167,7 +212,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded torrent bridge (static)
         shell: bash
         env:
@@ -177,6 +227,24 @@ jobs:
           chmod +x native/fushi_torrent/build_linux_so.sh
           bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
           bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so nm
+      # 互联 P2P 隧道（iroh）.so：服务端按 bin/../lib/libfushi_p2p.so 定位。只依赖
+      # glibc（Rust 静态链其余一切），在本 job 的 ubuntu-22.04 上编即继承同一条 glibc 下限。
+      # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺库的服务端包。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-linux-x64-ubuntu22
+      - name: Build fushi_p2p (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_linux_so.sh
+          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
       - name: Build fushi_server bundle
         shell: bash
         run: |
@@ -184,11 +252,23 @@ jobs:
           dart build cli --target packages/fushi_server/bin/fushi_server.dart --output build/fushi_server_linux
           mkdir -p build/fushi_server_linux/bundle/lib
           cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
+          cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
           cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
           ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+      # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
+      # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
+      # fushi-anki-sync.SOURCE.txt（commit 取 hibiki checkout 的 HEAD——这里 GITHUB_SHA
+      # 是调用方仓库的）并对装好的副本跑 version 冒烟。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_anki_sync/build.sh --install-dir build/fushi_server_linux/bundle/bin
       - name: Smoke (serve + embedded engine + models)
         shell: bash
         run: |
@@ -218,6 +298,23 @@ jobs:
           curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/subscriptions | grep -q '"supported":true' \
             || { echo "::error::subscriptions capability not reported"; exit 1; }
           kill $pid; wait $pid || true
+      # 用 **bundle 里那一份** .so 跑 packages/fushi_p2p 的真隧道测试（同进程两端点经直连
+      # 地址互拨，不依赖外网）：验的是要发出去的文件能 dlopen、与 Dart 绑定的 ABI 对得上。
+      # 库加载失败时测试整组 skip 且退出码 0，所以还要断言 skip 原因没出现。
+      - name: fushi_p2p FFI tests against the bundled .so
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_p2p.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_P2P_LIB" || { echo "::error::$FUSHI_P2P_LIB missing"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: bash
         env:
@@ -241,6 +338,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -248,6 +348,14 @@ jobs:
       - name: Pub get (workspace)
         working-directory: fushi
         run: flutter pub get
+      # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
+      # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh
@@ -269,7 +377,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
@@ -277,6 +390,22 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
+      # 互联 P2P 隧道（iroh）DLL：服务端按 bin/../lib/fushi_p2p.dll 定位。失败即 job 失败。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-windows-x64
+      - name: Build fushi_p2p DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
       - name: Build fushi_server bundle
         shell: pwsh
         run: |
@@ -285,11 +414,20 @@ jobs:
           $lib = "build/fushi_server_win/bundle/lib"
           New-Item -ItemType Directory -Force $lib | Out-Null
           Copy-Item native/fushi_torrent/prebuilt/windows-x64/*.dll $lib -Force
+          Copy-Item native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll $lib -Force
           $zip = "$env:RUNNER_TEMP/ort.zip"
           Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
           Copy-Item "$env:RUNNER_TEMP/ort/onnxruntime-win-x64-$env:ORT_VERSION/lib/onnxruntime.dll" $lib -Force
           Get-ChildItem build/fushi_server_win/bundle -Recurse | Select-Object FullName, Length
+      # fushi-anki-sync：同 linux job，放 bundle\bin\ 与 fushi_server.exe 同级。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -InstallDirectory "$PWD\build\fushi_server_win\bundle\bin"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
       - name: Smoke (serve + embedded engine)
         shell: pwsh
         run: |
@@ -321,6 +459,21 @@ jobs:
           } finally {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
+      # 同 linux job：拿 bundle 里那一份 DLL 跑真隧道测试，并断言没有整组 skip。
+      - name: fushi_p2p FFI tests against the bundled DLL
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}\build\fushi_server_win\bundle\lib\fushi_p2p.dll
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_P2P_LIB" || { echo "::error::$FUSHI_P2P_LIB missing"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: pwsh
         env:
@@ -344,6 +497,10 @@ jobs:
       - linux
       - windows
     runs-on: ubuntu-latest
+    # 可复用 workflow 的权限上限由调用方决定；调用方（fushi-server 的 release.yml）
+    # 给 contents: write，这里的 GITHUB_TOKEN 就是 fushi-server 的。
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v7
         with:
@@ -360,8 +517,8 @@ jobs:
           name: ${{ needs.channel.outputs.name }}
           body: ${{ needs.channel.outputs.body }}
           prerelease: ${{ needs.channel.outputs.prerelease }}
-          # 恒 false（见文件头）；用 output 而不是字面量，与 check_release_policy 的
-          # 「不得硬编码 make_latest: true」同一条纪律。
+          # 只有 formal 为 true（channel 输出）；用 output 而不是字面量，与
+          # check_release_policy 的「make_latest 不得硬编码为字面量」同一条纪律。
           make_latest: ${{ needs.channel.outputs.make_latest }}
           files: |
             release-artifacts/fushi_server-*-linux-x64.tar.gz

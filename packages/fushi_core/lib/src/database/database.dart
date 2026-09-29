@@ -657,6 +657,7 @@ void _requireOneVideoMetadataOwner({
   StatisticsTombstones,
   BookTagMembershipTombstones,
   BookCustomCss,
+  MangaReaderOverrides,
   SyncDeletionTombstones,
   RevealedImages,
   ActivityEvents,
@@ -702,6 +703,9 @@ void _requireOneVideoMetadataOwner({
   VideoFileSpecs,
   UpdateFeedEntries,
   MangaDownloadJobs,
+  AnidbFileIdentities,
+  VideoEpisodeBindingOverrides,
+  PendingMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -734,7 +738,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 104;
+  int get schemaVersion => 116;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3137,6 +3141,376 @@ class FushiDatabase extends _$FushiDatabase
           if (from < 104) {
             if (!await _tableExists('collection_book_aliases')) {
               await m.createTable(collectionBookAliases);
+            }
+          }
+          if (from < 105) {
+            // v105（统计按 Profile 隔离）：`study_segments` / `galgame_sessions`
+            // 加分区列 profile_id；`study_segment_tombstones` 主键并入 profile_id
+            // （PK 变 = 重建表）。存量行全部归到升级那一刻激活的 Profile（没有
+            // 激活的取最早建的；一个都没有就建 'Default'——升级前的历史必须有
+            // 归属，否则新 Profile 一建，旧统计对谁都不可见）。
+            //
+            // legacy 四张投影表 + activity_events 不加列（冻结只读）：同一 Profile
+            // 记进偏好 `stats_legacy_profile_id`，读取面只对它露出 legacy 行。
+            final int owner = await _statOwnerProfileForV105();
+            if (await _tableExists('study_segments') &&
+                !await _columnExists('study_segments', 'profile_id')) {
+              await m.addColumn(studySegments, studySegments.profileId);
+              await customStatement(
+                'UPDATE study_segments SET profile_id = ?',
+                <Object>[owner],
+              );
+            }
+            if (await _tableExists('galgame_sessions') &&
+                !await _columnExists('galgame_sessions', 'profile_id')) {
+              await m.addColumn(galgameSessions, galgameSessions.profileId);
+              await customStatement(
+                'UPDATE galgame_sessions SET profile_id = ?',
+                <Object>[owner],
+              );
+            }
+            if (await _tableExists('study_segment_tombstones') &&
+                !await _columnExists('study_segment_tombstones', 'profile_id')) {
+              await customStatement('''
+              CREATE TABLE study_segment_tombstones_v105 (
+                profile_id INTEGER NOT NULL DEFAULT 0,
+                media_kind TEXT NOT NULL,
+                media_key TEXT NOT NULL,
+                deleted_at INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, media_kind, media_key))''');
+              await customStatement(
+                'INSERT OR IGNORE INTO study_segment_tombstones_v105 '
+                '(profile_id, media_kind, media_key, deleted_at) '
+                'SELECT ?, media_kind, media_key, deleted_at '
+                'FROM study_segment_tombstones',
+                <Object>[owner],
+              );
+              await customStatement('DROP TABLE study_segment_tombstones');
+              await customStatement(
+                'ALTER TABLE study_segment_tombstones_v105 '
+                'RENAME TO study_segment_tombstones',
+              );
+            }
+            // 分区索引与加列同步内联（升级路径不跑 _ensureIndexes）。表存在性
+            // 守卫与 _ensureIndexes 同理：部分迁移的老库可能缺这两张表。
+            if (await _tableExists('study_segments')) {
+              await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_date '
+                'ON study_segments (profile_id, date_key)',
+              );
+            }
+            if (await _tableExists('galgame_sessions')) {
+              await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
+                'ON galgame_sessions (profile_id, date_key)',
+              );
+            }
+            if (owner > 0 && await _tableExists('preferences')) {
+              await customStatement(
+                'INSERT OR REPLACE INTO preferences ("key", "value", updated_at) '
+                'VALUES (?, ?, ?)',
+                <Object>[
+                  kStatLegacyProfileIdPrefKey,
+                  owner.toString(),
+                  DateTime.now().millisecondsSinceEpoch,
+                ],
+              );
+            }
+          }
+          if (from < 106) {
+            // v106（AniDB 文件级身份持久化）：新表 anidb_file_identities，与
+            // v103 / v104 同款的纯新增表范式。无损：旧库升级后表为空，下一次
+            // 刮削按需回填。幂等：fresh DB 由 onCreate 的 createAll 建好；重复
+            // 升级被 _tableExists 短路。
+            if (!await _tableExists('anidb_file_identities')) {
+              await m.createTable(anidbFileIdentities);
+            }
+            // 索引与建表同步内联（升级路径不会自动补上）；fresh 库由
+            // `_ensureIndexes` 建同名索引，两处 SQL 必须逐字一致。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_path '
+              'ON anidb_file_identities (file_path, file_size)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_anime '
+              'ON anidb_file_identities (anidb_anime_id)',
+            );
+          }
+          if (from < 107) {
+            // v107（视频在线源扩展）：Mihon 扩展三张表加 media_kind 列，把
+            // Aniyomi 视频扩展与漫画扩展分片在同一套表里（仓库索引格式同源、
+            // 宿主运行时同一个）。存量行全是漫画，列默认值 'manga' 即历史事实，
+            // 无需回填。幂等：fresh 库由 createAll 带列建表；重复升级被
+            // _columnExists 短路；部分表形态的种子库先查 _tableExists。
+            if (await _tableExists('manga_extension_stores') &&
+                !await _columnExists('manga_extension_stores', 'media_kind')) {
+              await m.addColumn(
+                mangaExtensionStores,
+                mangaExtensionStores.mediaKind,
+              );
+            }
+            if (await _tableExists('manga_extensions') &&
+                !await _columnExists('manga_extensions', 'media_kind')) {
+              await m.addColumn(mangaExtensions, mangaExtensions.mediaKind);
+            }
+            if (await _tableExists('manga_online_sources') &&
+                !await _columnExists('manga_online_sources', 'media_kind')) {
+              await m.addColumn(
+                mangaOnlineSources,
+                mangaOnlineSources.mediaKind,
+              );
+            }
+          }
+          if (from < 108) {
+            // v108（AniDB 对齐 Shoko）：anidb_file_identities 加 miss_attempts，
+            // 记 AniDB FILE 回 320「未收录」的连续复查次数（对齐 Shoko
+            // MaxAutoScanAttemptsPerFile 上限，识别成功时归零）。存量行默认 0
+            // 即「尚未计数」，无需回填。幂等：fresh 库由 createAll 带列建表；
+            // 重复升级被 _columnExists 短路；缺表的种子库先查 _tableExists。
+            if (await _tableExists('anidb_file_identities') &&
+                !await _columnExists('anidb_file_identities', 'miss_attempts')) {
+              await m.addColumn(
+                anidbFileIdentities,
+                anidbFileIdentities.missAttempts,
+              );
+            }
+          }
+          if (from < 109) {
+            // v109（AniDB 对齐 Shoko，集级）：anidb_file_identities 加
+            // episode_aired_at（UDP EPISODE 的集播出日，供 AniDB 集 → TMDB 集按
+            // 「播出日 + 标题」逐集链接；存量行 null，sweep 时补问一次回填），
+            // 以及 FILE 掩码扩展后多出的 other_episodes（一文件多集）/
+            // is_deprecated / file_state（CRC 正误、文件版本）。存量行取默认值即
+            // 「未知」，下次识别时随 FILE 应答一起落。幂等守卫同 v108。
+            if (await _tableExists('anidb_file_identities')) {
+              if (!await _columnExists(
+                  'anidb_file_identities', 'episode_aired_at')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.episodeAiredAt,
+                );
+              }
+              if (!await _columnExists(
+                  'anidb_file_identities', 'other_episodes')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.otherEpisodes,
+                );
+              }
+              if (!await _columnExists(
+                  'anidb_file_identities', 'is_deprecated')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.isDeprecated,
+                );
+              }
+              if (!await _columnExists('anidb_file_identities', 'file_state')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.fileState,
+                );
+              }
+            }
+            // 分集行带上绑定文件的 AniDB 集身份（eid / 原生集号 / TMDB 链接评级），
+            // Shoko 的 CrossRef_AniDB_TMDB_Episode 在本仓的落点；存量行 null，
+            // 下次刮削时随绑定一起写。
+            if (await _tableExists('video_metadata_episodes')) {
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_episode_id')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbEpisodeId,
+                );
+              }
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_episode_number')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbEpisodeNumber,
+                );
+              }
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_match_rating')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbMatchRating,
+                );
+              }
+            }
+          }
+          if (from < 110) {
+            // v110：video_metadata_episodes.book_uid 去掉列级 UNIQUE——AniDB
+            // FILE 给出的「一文件多集」（`01-02` 合集文件）要绑到两条分集行，
+            // Shoko `CrossRef_File_Episode` 一文件多集。列级 UNIQUE 是内联约束、
+            // SQLite 不能单独 DROP，走 alterTable 按当前 Dart 定义重建 + 按列名拷
+            // 贝（v67 先例），`id` 原值保留所以四张以 id 引用的子表（identities /
+            // credits / images CASCADE、sidecar SET NULL）不悬空；FK OFF/ON 夹住
+            // 重建（v57 先例），否则 DROP 旧表会级联清空子表。幂等守卫：只在
+            // 自动唯一索引仍只覆盖 book_uid 时才重建，mid-ladder 由 createTable
+            // fresh 建出的表已是新 shape 直接短路。
+            if (await _tableExists('video_metadata_episodes') &&
+                await _hasUniqueIndexOnColumn(
+                    'video_metadata_episodes', 'book_uid')) {
+              final bool foreignKeysWereOn = await _foreignKeysEnabled();
+              await customStatement('PRAGMA foreign_keys = OFF');
+              try {
+                await m.alterTable(TableMigration(videoMetadataEpisodes));
+                if (await _tableExists('video_metadata_seasons') &&
+                    await _tableExists('video_books')) {
+                  final List<QueryRow> violations = await customSelect(
+                          'PRAGMA foreign_key_check(video_metadata_episodes)')
+                      .get();
+                  if (violations.isNotEmpty) {
+                    throw StateError(
+                        'v110 migration left ${violations.length} FK '
+                        'violations in video_metadata_episodes');
+                  }
+                }
+              } finally {
+                if (foreignKeysWereOn) {
+                  await customStatement('PRAGMA foreign_keys = ON');
+                }
+              }
+            }
+            await _ensureIndexes();
+          }
+          if (from < 111) {
+            // v111：① anidb_file_identities.anime_type——FILE amask 取回的 AniDB
+            // 动画类型，Shoko 的作品形态来源（存量行 ''，下次 FILE 命中时补）；
+            // ② video_episode_binding_overrides——用户手动钉死的文件 → 季集绑定
+            // （Shoko UserVerified），刮削时最高优先级、每次重刮都保留。
+            if (await _tableExists('anidb_file_identities') &&
+                !await _columnExists('anidb_file_identities', 'anime_type')) {
+              await m.addColumn(
+                anidbFileIdentities,
+                anidbFileIdentities.animeType,
+              );
+            }
+            if (!await _tableExists('video_episode_binding_overrides')) {
+              await m.createTable(videoEpisodeBindingOverrides);
+            }
+          }
+          if (from < 112) {
+            // v112：manga_reader_overrides——漫画阅读器的每作品稀疏覆盖（Mihon
+            // 对齐的阅读模式/缩放/裁边等），全局默认仍落 preferences。存量的
+            // epub_books.manga_reading_mode 不改写，按书搬成一条稀疏覆盖，旧列
+            // 留给旧版本读。幂等守卫同 v108。
+            if (!await _tableExists('manga_reader_overrides')) {
+              await m.createTable(mangaReaderOverrides);
+            }
+            if (await _tableExists('epub_books') &&
+                await _columnExists('epub_books', 'manga_reading_mode') &&
+                await _columnExists('epub_books', 'uid')) {
+              final List<QueryRow> legacy = await customSelect(
+                "SELECT uid, manga_reading_mode FROM epub_books "
+                "WHERE uid != '' AND format = 'manga'",
+              ).get();
+              for (final QueryRow row in legacy) {
+                final String? mode =
+                    row.readNullable<String>('manga_reading_mode');
+                // `manga_reading_mode` 为 NULL / 空 = 这本书从没被单独设过，语义是
+                // 「跟随全局」。给它写一行 `{'autoMode': true}` 等于把每一本存量漫画
+                // 都钉成自动判定：此后用户改全局阅读模式，对全部存量书永久不再生效。
+                // 而且覆盖表本该是**稀疏**的（PR 说明也这么写），逐本写行会让每本书
+                // 各多一次 sidecar 资产上传与一条互联 wire 条目。
+                if (mode != 'spread' && mode != 'webtoon') continue;
+                await into(mangaReaderOverrides).insert(
+                  MangaReaderOverridesCompanion.insert(
+                    bookUid: row.read<String>('uid'),
+                    overridesJson: Value(
+                      jsonEncode(<String, Object?>{
+                        'autoMode': false,
+                        'mode': mode,
+                      }),
+                    ),
+                    updatedAt: 0,
+                  ),
+                  mode: InsertMode.insertOrIgnore,
+                );
+              }
+            }
+          }
+          if (from < 113) {
+            // v113：galgame_sessions.game_id 去掉 `REFERENCES galgames ON DELETE
+            // CASCADE`（改逻辑外键），并加 game_title 快照列。此前从库移除游戏会经
+            // cascade 删光它在**所有 Profile** 下的游玩会话——不勾「同时删除统计数据」
+            // 也丢游玩时长。内联 FK 约束 SQLite 不能单独 DROP，走 alterTable 按当前
+            // Dart 定义重建 + 按列名拷贝（v110 先例），`id` 原值保留，表上既有索引
+            // 由 alterTable 按 sqlite_master 原文重建；存量会话的游戏都还在库里（旧
+            // cascade 保证没有孤儿），game_title 取默认空串即可。
+            // 没有表引用 galgame_sessions，FK OFF/ON 夹住只是沿用重建惯例。幂等
+            // 守卫：只在还挂着 FK 或缺 game_title 时重建，mid-ladder 由 createTable
+            // fresh 建出的表已是新 shape 直接短路。
+            if (await _tableExists('galgame_sessions') &&
+                (await _hasForeignKeys('galgame_sessions') ||
+                    !await _columnExists('galgame_sessions', 'game_title'))) {
+              final bool foreignKeysWereOn = await _foreignKeysEnabled();
+              await customStatement('PRAGMA foreign_keys = OFF');
+              try {
+                await m.alterTable(TableMigration(
+                  galgameSessions,
+                  newColumns: [galgameSessions.gameTitle],
+                ));
+              } finally {
+                if (foreignKeysWereOn) {
+                  await customStatement('PRAGMA foreign_keys = ON');
+                }
+              }
+            }
+          }
+          if (from < 114) {
+            // v114：favorite_words 加收藏上下文（原句 + 定位锚点四列）。存量行
+            // 取默认 '' / null——旧收藏本来就没记，不回填。幂等守卫同 v111。
+            if (await _tableExists('favorite_words')) {
+              if (!await _columnExists('favorite_words', 'sentence')) {
+                await m.addColumn(favoriteWords, favoriteWords.sentence);
+              }
+              if (!await _columnExists('favorite_words', 'section_index')) {
+                await m.addColumn(favoriteWords, favoriteWords.sectionIndex);
+              }
+              if (!await _columnExists('favorite_words', 'norm_char_offset')) {
+                await m.addColumn(favoriteWords, favoriteWords.normCharOffset);
+              }
+              if (!await _columnExists('favorite_words', 'norm_char_length')) {
+                await m.addColumn(favoriteWords, favoriteWords.normCharLength);
+              }
+            }
+          }
+          if (from < 115) {
+            // v115（排行榜的两个本地事实；原定 v114，被并行合入的收藏上下文占用后顺延）：
+            // ① epub_books.isbn——OPF dc:identifier 规范化后的 ISBN-13。存量书不在
+            //   迁移里读文件（慢且解压目录可能不在），由引擎侧 backfillEpubIsbns
+            //   只读 OPF 回填；这里只加列。
+            // ② galgames.completed_at——进入「玩过」(play_status=2) 的毫秒戳。存量
+            //   「玩过」取该游戏最后一次游玩会话的 end_ms（跨全部 Profile；v113 起
+            //   会话不随游戏删，但此处按 game_id 关联的只会是仍在库的游戏）；一条
+            //   会话都没有的留 NULL（= 日期未知）。
+            // 幂等守卫：mid-ladder 由 createTable 按当前 Dart 定义建出的表已带列。
+            if (await _tableExists('epub_books') &&
+                !await _columnExists('epub_books', 'isbn')) {
+              await m.addColumn(epubBooks, epubBooks.isbn);
+            }
+            if (await _tableExists('galgames') &&
+                !await _columnExists('galgames', 'completed_at')) {
+              await m.addColumn(galgames, galgames.completedAt);
+            }
+            if (await _tableExists('galgames') &&
+                await _tableExists('galgame_sessions')) {
+              await customStatement(
+                'UPDATE galgames SET completed_at = '
+                '(SELECT MAX(s.end_ms) FROM galgame_sessions AS s '
+                'WHERE s.game_id = galgames.id) '
+                'WHERE play_status = 2 AND completed_at IS NULL',
+              );
+            }
+          }
+          if (from < 116) {
+            // v116（待发制卡队列；原定 v114，被并行合入的收藏上下文 v114 / 排行榜 v115
+            // 占用后顺延）：设备端 pending_mine_queue（后端不可达/批量模式先入队
+            // 稍后补发；载荷在 <support>/pending_mine_queue/<id>.json）。设备本地、
+            // 无 FK；fresh DB 已由 onCreate 的 createAll 建好，_tableExists 守卫幂等。
+            if (!await _tableExists('pending_mine_queue')) {
+              await m.createTable(pendingMineQueue);
             }
           }
         },

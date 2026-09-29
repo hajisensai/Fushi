@@ -18,6 +18,16 @@ function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+/* BUG-2734：app 内查词框（视频 / 首页 / texthooker）让 WebView 按外壳**最大**高度布局、
+   外壳只做裁剪（内容增减不再改原生表面尺寸，免得 Windows 上旧帧被拉伸），于是
+   window.innerHeight 大于用户实际看得见的高度。宿主经 __fushiSetVisibleViewportHeight
+   注入可见高度（视觉 px，与 innerHeight 同单位）；所有「下方放不放得下」的浮层定位都走
+   本函数，否则会落进被裁掉、也滚不到的区域。未注入（浏览器扩展 / 其它宿主）= innerHeight。 */
+function __fushiVisibleViewportHeight(){
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    var v = Number(window.__fushiVisibleViewportHeight);
+    return (isFinite(v) && v > 0 && (h <= 0 || v < h)) ? v : h;
+}
 /* 词典改名（v95）：把**真名**翻成用户起的显示名，只用于渲染给人看的文本。
    宿主在 popup_settings_injection 注入 window.dictionaryDisplayNames = {真名: 显示名}，
    只含真正改过名的条目；没改过 / 表不存在 → 原样返回真名。
@@ -171,6 +181,9 @@ async function resolveCachedAudioUrl(expression, reading, entryIndex) {
 let currentAudio = null;
 let lastSelection = '';
 let currentDictionaryMedia = null;
+// 制卡导出用的图片真实像素尺寸（key 见 exportImageSizeKey）。与 currentDictionaryMedia
+// 同款：由 buildMinePayload 开启和关闭，不跨制卡存活。
+let currentExportImageSizes = null;
 const selectedDictionaries = {};
 
 // TODO-270 D: tri-state mine button — "overwrite the latest mined card".
@@ -194,6 +207,55 @@ let lastMinedEntryKey = null;
 function mineEntryKey(expression, reading) {
     return `${expression || ''}\u0000${reading || ''}`;
 }
+
+// 宿主回头刷新**已经画好**的「已制卡 ✓ / 可制卡 +」。
+//
+// 为什么非得由宿主来推：lookup-time 探测（createEntryHeader 末尾那条
+// scheduleEntryStateCheck）问的是「此刻 Anki 里有没有这张卡」，画完就不再动，除非
+// 用户点按钮或重新查一次这个词。AnkiMobile 后端上「卡真的进库了」比 mineEntry 返回
+// 晚好几秒——它只能确认「AnkiMobile 被拉起来了」，落账要等 x-callback 的 x-success
+// 回跳（Dart: AnkiMobileMinedLedger），那时用户才刚从 AnkiMobile 切回来。所以制卡
+// 成功后紧跟着那次 refreshFromAnki **必然**问在落账之前、拿到 false，✓ 不亮（用户报
+// 「iOS 添加完卡片并没有出现打勾，要重新点一次词才出现」）。这是时序错配，不能靠
+// 延迟重试蒙对；由落账那一侧（Dart: MinedStateSignal）拿到真值后调本函数。
+//
+// target = {expression, reading?}：只刷这个词（省略 reading 就只比 expression——
+// x-success 只带回 expression）。target 省略/null = 「范围未知」（例如从后台切回
+// 前台，期间用户可能在 Anki 里删了卡）：此时**只刷已经探测过的按钮**，否则一次刷新
+// 会把 BUG-1833 好不容易改成懒探测的整屏词条重新变成几十次桥调用。
+//
+// 返回真的重问了几个按钮（诊断与测试用）。
+async function refreshRenderedMineStates(target) {
+    const wantedExpression = target && typeof target.expression === 'string'
+        ? target.expression.trim()
+        : '';
+    const wantedReading = target && typeof target.reading === 'string'
+        ? target.reading.trim()
+        : '';
+    const pending = [];
+    // 走 __fushiRootNode()（BUG-688）：扩展车道里弹窗活在 shadow root 里，裸 document
+    // 一个按钮都找不到。与同族的 fushiPopupMineFirstEntry / 上下文选择器刷新同一口径。
+    for (const button of __fushiRootNode().querySelectorAll('.mine-button')) {
+        const refresh = button.__fushiRefreshMineState;
+        if (typeof refresh !== 'function') continue;
+        if (wantedExpression) {
+            if ((button.__fushiMineExpression || '').trim() !== wantedExpression) {
+                continue;
+            }
+            if (wantedReading &&
+                (button.__fushiMineReading || '').trim() !== wantedReading) {
+                continue;
+            }
+        } else if (button.__fushiMineStateKnown !== true) {
+            continue;
+        }
+        pending.push(refresh());
+    }
+    if (pending.length === 0) return 0;
+    await Promise.all(pending);
+    return pending.length;
+}
+window.fushiRefreshMineStates = refreshRenderedMineStates;
 
 // BUG-1833 follow-up: favorite/Anki state is decoration for each result header,
 // not a prerequisite for revealing the dictionary card. A large lookup can
@@ -771,7 +833,7 @@ function showGrammarTooltip(element, pinned) {
     const z = __fushiPopupContentZoom();
     const margin = 8;
     const viewportWidth = __fushiViewportWidth();
-    const viewportHeight = window.innerHeight;
+    const viewportHeight = __fushiVisibleViewportHeight();
 
     /* 先按视口收窄再量：窄屏（原 `.overlay` 铺满弹窗的唯一理由）由这条自适应承担。 */
     const maxWidth = Math.max(160, Math.min(460, viewportWidth - 2 * margin));
@@ -959,11 +1021,17 @@ function applyTableStyles(html) {
     .replace(/<td(?=[>\s])/g, `<td style="${cellStyle}"`);
 }
 
-function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSized = false) {
+// containerFontSize 决定容器 `${usedWidth}em` 的 1em 有多大。Yomitan 导出到 Anki 时把
+// ext/data/structured-content-style.json 内联进卡片：`.gloss-image-container{font-size:1px}`，
+// 只有 `.gloss-image-link[data-size-units=em] .gloss-image-container` 再覆盖成 `1em`——
+// 即非 em 图是 usedWidth 个 px，em 图才是 usedWidth 个卡片字号（用户库里 Yomitan 真卡
+// 逐条核对过：明鏡 `font-size:1px;width:150em`，語彙力 `font-size:1px;font-size:1em;
+// width:8.57143em`）。
+function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, containerFontSize, naturalSized = false) {
     // .gloss-image-link
     node.style.cssText += 'display:inline-block;position:relative;line-height:1;max-width:100%;';
     // .gloss-image-container
-    imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:1em;`;
+    imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:${containerFontSize};`;
     if (naturalSized) {
         // BUG-1676：词典没声明尺寸时，<img> 自己就是布局盒（容器 width:auto）。此时
         // 绝对定位的 img 会把容器塌成 0×0（sizer 也已关掉），整张图消失，所以这两条
@@ -1066,6 +1134,14 @@ function openImageLightbox(imageUrl, alt) {
     // 灯箱统一 tap-to-close。
     overlay.addEventListener('click', () => closeImageLightbox());
 
+    // BUG-2734：灯箱是 fixed inset:0，铺的是整个布局视口；外壳被收矮时视口下半截被裁掉，
+    // 居中的图只露上半截。收到可见高度内（style 是 layout px，要除以内容 zoom）。
+    const visibleHeight = __fushiVisibleViewportHeight();
+    if (visibleHeight > 0 && visibleHeight < (window.innerHeight || 0)) {
+        overlay.style.bottom = 'auto';
+        overlay.style.height = (visibleHeight / __fushiPopupContentZoom()) + 'px';
+    }
+
     __fushiOverlayParent().appendChild(overlay);
 }
 
@@ -1105,10 +1181,6 @@ function enableDefinitionImagePreview(node, imageUrl, alt) {
         openImageLightbox(imageUrl, alt);
     });
 }
-
-const COMPACT_GLOSSARIES_ANKI = `.yomitan-glossary ul[data-sc-content="glossary"] > li:not(:first-child)::before, .yomitan-glossary .glossary-list > li:not(:first-child)::before { white-space: pre-wrap; content: " | "; display: inline; color: rgb(119, 119, 119); }
-.yomitan-glossary ul[data-sc-content="glossary"] > li, .yomitan-glossary .glossary-list > li { display: inline; }
-.yomitan-glossary ul[data-sc-content="glossary"], .yomitan-glossary .glossary-list { display: inline; list-style: none; padding-left: 0px; }`;
 
 // BUG-1666: exported glossary HTML used to keep the dictionary's raw
 // cross-reference anchors (`entry://词` / relative hrefs). Anki desktop and
@@ -1399,9 +1471,6 @@ function constructSingleGlossaryHtml(entryIndex) {
             .trim();
             html += `<style>${formatted}</style>`;
         }
-        if (window.compactGlossariesAnki) {
-            html += `<style>${COMPACT_GLOSSARIES_ANKI}</style>`;
-        }
         html += `</div>`;
         
         glossaries[lastDict] = html;
@@ -1544,9 +1613,6 @@ function constructGlossaryHtml(entryIndex) {
         .trim();
         result += `<style>${formatted}</style>`;
     }
-    if (window.compactGlossariesAnki) {
-        result += `<style>${COMPACT_GLOSSARIES_ANKI}</style>`;
-    }
     result += '</div>';
     return result;
 }
@@ -1648,6 +1714,134 @@ function constructPitchCategories(pitches, reading, rules) {
     return categories.join(',');
 }
 
+// 词典原始 JSON 声明的图片尺寸。Yomitan 导入时把这两个数存成 preferredWidth /
+// preferredHeight，另把 width/height 换成媒体文件的真实像素尺寸
+// （dictionary-importer.js `_createImageData`）；本仓直接吃原始 JSON，所以这里的
+// width/height 就是 Yomitan 的 preferred*，真实尺寸要另外探（probeExportImageSizes）。
+function declaredImageSize(data) {
+    return {
+        width: typeof data.width === 'number' ? data.width : null,
+        height: typeof data.height === 'number' ? data.height : null,
+    };
+}
+
+// 两维都声明了就用不上真实尺寸；无尺寸 SVG 走外字分支（1.2em 行内框），也用不上。
+function exportImageNeedsNaturalSize(data) {
+    const declared = declaredImageSize(data);
+    if (declared.width !== null && declared.height !== null) return false;
+    return !(declared.width === null && declared.height === null && /\.svg$/i.test(data.path));
+}
+
+// 逐行对齐 Yomitan structured-content-generator.js `createDefinitionImage` 的尺寸算法
+// （preferred* = 词典声明值，width/height = 真实像素尺寸）。返回 null 表示算不出：
+// 只声明了一维（或都没声明）而真实尺寸没探到，宽高比无从得知。
+//
+// 用户报的「语彙力」插图就栽在这里：词典只写 `height: 10, sizeUnits: 'em'`。以前缺的
+// 宽度回落到 `width = 100`，宽高比成了 10/100，导出一个 100em × 10em 的扁盒子；被
+// max-width:100% 压到卡片宽后 object-fit:contain 把图缩成一小块、居中、各占一行。
+// Yomitan 用图的真实 180×210 算出 `width: 8.57143em`（高 10em），图按原比例并排左对齐。
+function resolveExportImageGeometry(data, naturalSize) {
+    const {width: preferredWidth, height: preferredHeight} = declaredImageSize(data);
+    const hasPreferredWidth = preferredWidth !== null;
+    const hasPreferredHeight = preferredHeight !== null;
+    if (!(hasPreferredWidth && hasPreferredHeight) && !naturalSize) {
+        return null;
+    }
+    const invAspectRatio = (
+                            hasPreferredWidth && hasPreferredHeight ?
+                            preferredHeight / preferredWidth :
+                            naturalSize.height / naturalSize.width
+                            );
+    const usedWidth = (
+                       hasPreferredWidth ?
+                       preferredWidth :
+                       (hasPreferredHeight ? preferredHeight / invAspectRatio : naturalSize.width)
+                       );
+    // sizeUnits 只在词典声明了尺寸时生效（Yomitan 同条件）。
+    const useEmUnits = data.sizeUnits === 'em' && (hasPreferredWidth || hasPreferredHeight);
+    return { invAspectRatio, usedWidth, useEmUnits };
+}
+
+// 与 getMediaFilename 同一个 key：词典名 + 归一化 path。
+function exportImageSizeKey(dictionary, path) {
+    return `${dictionary}\n${normalizeDictMediaPath(path)}`;
+}
+
+// 与 renderStructuredContent 的图片判据同一条（`tag === 'img' || type === 'image'`）。
+function collectDefinitionImageNodes(node, out) {
+    if (Array.isArray(node)) {
+        node.forEach(child => collectDefinitionImageNodes(child, out));
+    } else if (node && typeof node === 'object') {
+        if (node.tag === 'img' || node.type === 'image') {
+            out.push(node);
+        } else {
+            collectDefinitionImageNodes(node.content, out);
+        }
+    }
+}
+
+// 探不到（缺图 / 宿主太慢）就放弃这一张，导出退回让 <img> 自己定宽高比，
+// 不让一张图卡住整次制卡。
+const EXPORT_IMAGE_PROBE_TIMEOUT_MS = 3000;
+
+function probeImageNaturalSize(url) {
+    return new Promise(resolve => {
+        const img = new Image();
+        let timer = null;
+        const finish = (size) => {
+            clearTimeout(timer);
+            img.onload = null;
+            img.onerror = null;
+            resolve(size);
+        };
+        timer = setTimeout(() => finish(null), EXPORT_IMAGE_PROBE_TIMEOUT_MS);
+        img.onload = () => finish(img.naturalWidth > 0 && img.naturalHeight > 0 ?
+                                  { width: img.naturalWidth, height: img.naturalHeight } :
+                                  null);
+        img.onerror = () => finish(null);
+        img.src = url;
+    });
+}
+
+// Yomitan 在导入时就把每张图的真实尺寸存进库；本仓的库里没有，只能在制卡前从同一个
+// 媒体 URL 量（弹窗刚显示过这些图，基本命中缓存）。只量真正需要的图。
+async function probeExportImageSizes(entryIndex) {
+    const sizes = new Map();
+    const entry = window.lookupEntries?.[entryIndex];
+    if (!entry || typeof Image !== 'function') {
+        return sizes;
+    }
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
+    const seen = new Set();
+    const probes = [];
+    entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        let content = g.content;
+        if (typeof content === 'string') {
+            try {
+                content = JSON.parse(content);
+            } catch {
+                return;
+            }
+        }
+        const images = [];
+        collectDefinitionImageNodes(content, images);
+        images.forEach(image => {
+            if (typeof image.path !== 'string' || !exportImageNeedsNaturalSize(image)) return;
+            const key = exportImageSizeKey(g.dictionary, image.path);
+            if (seen.has(key)) return;
+            seen.add(key);
+            const url = rewriteDictionaryMediaPath(image.path, g.dictionary);
+            if (url === null) return;
+            probes.push(probeImageNaturalSize(url).then(size => {
+                if (size) sizes.set(key, size);
+            }));
+        });
+    });
+    await Promise.all(probes);
+    return sizes;
+}
+
 // https://github.com/yomidevs/yomitan/blob/d810b2f0842536d24ab82b6cd75d00841710e57b/ext/js/display/structured-content-generator.js#L64
 function createDefinitionImage(data, dictionary, exporting = false) {
     const {
@@ -1673,24 +1867,31 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     const hasPreferredWidth = (typeof preferredWidth === 'number');
     const hasPreferredHeight = (typeof preferredHeight === 'number');
     const hasDimensions = (hasPreferredWidth || hasPreferredHeight || typeof data.width === 'number' || typeof data.height === 'number');
-    const invAspectRatio = (
+    const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
+    const isSvg = /\.svg$/i.test(path);
+    const svgWithoutDimensions = !hasDimensions && isSvg;
+    // 制卡导出按 Yomitan 的尺寸算法定盒子（resolveExportImageGeometry，真实尺寸由
+    // buildMinePayload 事先量好）；弹窗仍走下面的原算法，缺的真实尺寸由 img.onload 用
+    // naturalWidth/naturalHeight 纠正。
+    const exportGeometry = exporting && !svgWithoutDimensions ?
+        resolveExportImageGeometry(data, currentExportImageSizes?.get(exportImageSizeKey(dictionary, path)) || null) :
+        null;
+    const invAspectRatio = exportGeometry ? exportGeometry.invAspectRatio : (
                             hasPreferredWidth && hasPreferredHeight ?
                             preferredHeight / preferredWidth :
                             height / width
                             );
-    const usedWidth = (
+    const usedWidth = exportGeometry ? exportGeometry.usedWidth : (
                        hasPreferredWidth ?
                        preferredWidth :
                        (hasPreferredHeight ? preferredHeight / invAspectRatio : width)
                        );
-    const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
-    const isSvg = /\.svg$/i.test(path);
-    const useEmUnits = effectiveSizeUnits === 'em';
-    // BUG-1676：词典没声明尺寸的位图。上面的 `width = 100, height = 100` 是兜底值，
+    const useEmUnits = exportGeometry ? exportGeometry.useEmUnits : effectiveSizeUnits === 'em';
+    // BUG-1676：真实尺寸没量到时，上面的 `width = 100, height = 100` 只是兜底值，
     // 既不是这张图的真实尺寸也不是它的宽高比。弹窗端能在 img.onload 里用
     // naturalWidth/naturalHeight 纠正（见下面的 load 分支），导出端没有加载事件，
     // 只能把布局交给 <img> 自己 —— 这两条路径拿到的信息量不同，分流是本质不是特例。
-    const naturalSizedExport = exporting && !useEmUnits && !hasDimensions && !isSvg;
+    const naturalSizedExport = exporting && !exportGeometry && !svgWithoutDimensions;
 
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
@@ -1737,9 +1938,21 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     if (window.__fushiPopupDebug) {
         console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (useEmUnits ? 'em' : 'px'));
     }
-    if (useEmUnits) {
+    if (exportGeometry) {
+        // Yomitan 导出时容器宽恒为 `${usedWidth}em`，1em 多大由容器字号决定（见 applyImageStyles）。
         imageContainer.style.width = `${usedWidth}em`;
-    } else if (!hasDimensions && isSvg) {
+    } else if (naturalSizedExport) {
+        // 凭空写 `100em`（= 100 × 卡片正文字号 ≈ 2000px）会把 400×300 的插图放成
+        // 2000×2000 并按 1:1 摆位；再加上 structured-content 的 `table-layout:auto`
+        // 表格不理会百分比 max-width，整张卡就被撑到屏幕右外（BUG-1676）。
+        // 交给浏览器：容器 width:auto、关掉 aspect-ratio sizer，<img> 按真实自然尺寸和
+        // 真实宽高比布局，`max-width:100%` 负责不超出卡片。
+        node.dataset.hasAspectRatio = 'false';
+        imageContainer.style.width = 'auto';
+        aspectRatioSizer.style.display = 'none';
+    } else if (useEmUnits) {
+        imageContainer.style.width = `${usedWidth}em`;
+    } else if (svgWithoutDimensions) {
         node.dataset.hasAspectRatio = 'false';
         imageContainer.style.width = 'auto';
         const isGaiji = nodeData?.class === 'gaiji' || Object.prototype.hasOwnProperty.call(nodeData || {}, 'gaiji');
@@ -1753,23 +1966,10 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         imageContainer.style.lineHeight = '0';
         imageContainer.style.overflow = 'visible';
         aspectRatioSizer.style.display = 'none';
-    } else if (naturalSizedExport) {
-        // 凭空写 `100em`（= 100 × 卡片正文字号 ≈ 2000px）会把 400×300 的插图放成
-        // 2000×2000 并按 1:1 摆位；再加上 structured-content 的 `table-layout:auto`
-        // 表格不理会百分比 max-width，整张卡就被撑到屏幕右外（BUG-1676）。
-        // 交给浏览器：容器 width:auto、关掉 aspect-ratio sizer，<img> 按真实自然尺寸和
-        // 真实宽高比布局，`max-width:100%` 负责不超出卡片。
-        node.dataset.hasAspectRatio = 'false';
-        imageContainer.style.width = 'auto';
-        aspectRatioSizer.style.display = 'none';
     } else {
-        // 导出（制卡）与弹窗的尺寸语义不同：Yomitan 的 structured-content-generator 永远写
-        // `${usedWidth}em`，弹窗端再由它自己的 CSS
-        // (.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))}) 把 1em 压成 1px；
-        // Anki 卡片上没有那份 CSS，em 按卡片正文字号解析，所以 Yomitan 的卡片图才是
-        // 「宽度数值 x 卡片字号」。这里若把导出也折算成物理 px，卡片图就比 Yomitan 小一个
-        // 字号的倍数（BUG-1062）。故导出保留 em 语义，弹窗维持 px。
-        imageContainer.style.width = exporting ? `${usedWidth}em` : `${usedWidth}px`;
+        // 只剩弹窗：它自带把 1em 压成 1px 的 CSS
+        // (.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))})，px 在这里才对。
+        imageContainer.style.width = `${usedWidth}px`;
     }
     if (typeof title === 'string') {
         imageContainer.title = title;
@@ -1855,7 +2055,19 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 image.width = usedWidth;
                 image.height = image.width * invAspectRatio;
             }
-            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSizedExport);
+            // 无尺寸 SVG 外字的 1.2em 行内框要跟正文字号走，1px 会把它压成 1.2px。
+            const containerFontSize = useEmUnits || svgWithoutDimensions ? '1em' : '1px';
+            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, containerFontSize, naturalSizedExport);
+            if (naturalSizedExport) {
+                // 真实尺寸没量到：只把词典声明的那一维落到 <img> 上（em 按容器字号解析），
+                // 另一维交给图片自己的宽高比。
+                const declared = declaredImageSize(data);
+                if (declared.width !== null) {
+                    image.style.width = `${declared.width}em`;
+                } else if (declared.height !== null) {
+                    image.style.height = `${declared.height}em`;
+                }
+            }
         }
         imageContainer.appendChild(image);
     }
@@ -1977,6 +2189,7 @@ function getFrequencyHarmonicRank(frequencies) {
 async function buildMinePayload(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
+    currentExportImageSizes = await probeExportImageSizes(idx);
     currentDictionaryMedia = new Map();
     currentSelectionHighlights = 0;
     const glossary = constructGlossaryHtml(idx);
@@ -1985,6 +2198,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
+    currentExportImageSizes = null;
     // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
     // 选中的释义段已经作为 <mark> 进了导出的释义树。此时把同一段文本再原样塞进
     // SelectionText 字段是否合适，**取决于用户的笔记类型和字段映射**——而这一层
@@ -3018,6 +3232,51 @@ function redirectMarkerKind(content) {
     return 0;
 }
 
+// glossary.content 经桥接过来时可能是 JSON 字符串；两个 redirect 谓词共用同一种归一。
+function parseGlossaryContent(content) {
+    if (typeof content === 'string') {
+        const trimmed = content.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+                return JSON.parse(trimmed);
+            } catch (_) {
+                // Not JSON: dictionary HTML or plain text.
+            }
+        }
+    }
+    return content;
+}
+
+function glossaryVisibleText(content) {
+    if (typeof content === 'string') {
+        return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    if (Array.isArray(content)) {
+        return content.map(glossaryVisibleText).join(' ').trim();
+    }
+    if (content && typeof content === 'object') {
+        if (Object.prototype.hasOwnProperty.call(content, 'content')) {
+            return glossaryVisibleText(content.content);
+        }
+        if (typeof content.text === 'string') return glossaryVisibleText(content.text);
+    }
+    return '';
+}
+
+// BUG-2566: a record is redirect-only when the redirect label is all it has.
+// OALDPE10 prefixes every phrasal-verb record with a self-redirect label
+// `["give up", ["Redirected from give up"]]` and carries the real
+// structured-content definition right next to it (its alias records such as
+// `give-up` consist of that label alone). The label must not hide the
+// definition: a top-level item that has visible text and no redirect marker of
+// its own is a definition, and its presence keeps the record.
+function hasStandaloneDefinition(content) {
+    const parsed = parseGlossaryContent(content);
+    if (!Array.isArray(parsed)) return false;
+    return parsed.some(
+        (item) => redirectMarkerKind(item) === 0 && glossaryVisibleText(item) !== '');
+}
+
 function isRedirectGlossary(glossary) {
     if (!glossary) return false;
     const tags = `${glossary.definitionTags || ''} ${glossary.termTags || ''}`
@@ -3026,8 +3285,9 @@ function isRedirectGlossary(glossary) {
     if (/(?:^|\s)redirect(?:ed)?(?:\s|$)/.test(tags)) return true;
 
     const marker = redirectMarkerKind(glossary.content);
-    if (marker === 2) return true;
-    return marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags);
+    const redirectMarked =
+        marker === 2 || (marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags));
+    return redirectMarked && !hasStandaloneDefinition(glossary.content);
 }
 
 function createGlossarySectionWrapper(entry) {
@@ -3160,7 +3420,7 @@ function __fushiShowButtonTip(button) {
     let left = btnRect.left + btnRect.width / 2 - tipRect.width / 2;
     left = Math.max(4, Math.min(left, __fushiViewportWidth() - tipRect.width - 4));
     let top = btnRect.bottom + 6;
-    if (top + tipRect.height > window.innerHeight - 4) {
+    if (top + tipRect.height > __fushiVisibleViewportHeight() - 4) {
         top = btnRect.top - tipRect.height - 6;
     }
     __fushiBtnTipEl.style.left = left + 'px';
@@ -3258,17 +3518,67 @@ function createAudioButton(expression, reading, entryIndex) {
     return button;
 }
 
+// 收藏词的释义快照（纯文本）：按词典分段「【词典名】释义」，跳过隐藏词典与重定向
+// 条目（与制卡 constructGlossaryHtml 同一过滤口径）。收藏夹只做展示用，故取纯文本
+// 并截断——完整 HTML 释义在批量制卡时由 Dart 侧重新查词生成，不靠这份快照。
+const FAVORITE_GLOSSARY_MAX_CHARS = 2000;
+function favoriteGlossaryText(entryIndex) {
+    const entry = window.lookupEntries?.[entryIndex];
+    if (!entry || !Array.isArray(entry.glossaries)) return '';
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
+    const sections = [];
+    let lastDict = null;
+    let current = [];
+    const flush = () => {
+        if (lastDict !== null && current.length) {
+            sections.push(`【${lastDict}】${current.join('; ')}`);
+        }
+        current = [];
+    };
+    for (const g of entry.glossaries) {
+        if (hiddenDictionaryNames.includes(g.dictionary)) continue;
+        if (isRedirectGlossary(g)) continue;
+        if (g.dictionary !== lastDict) {
+            flush();
+            lastDict = g.dictionary;
+        }
+        const tempDiv = document.createElement('div');
+        try {
+            const content = typeof g.content === 'string' ? JSON.parse(g.content) : g.content;
+            renderStructuredContent(tempDiv, content, dictionaryLanguageOf(g.dictionary), g.dictionary, true);
+        } catch {
+            renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(g.dictionary), g.dictionary, true);
+        }
+        const text = (tempDiv.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text) current.push(text);
+    }
+    flush();
+    const joined = sections.join('\n');
+    return joined.length > FAVORITE_GLOSSARY_MAX_CHARS
+        ? `${joined.slice(0, FAVORITE_GLOSSARY_MAX_CHARS)}…`
+        : joined;
+}
+
 // 收藏按钮（☆/★）：切换收藏当前词条。书内阅读与视频共用同一套弹窗，故两表面
 // 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
-function createFavoriteButton(expression, reading) {
+// 带上释义快照：此前只传 {expression, reading}，收藏夹里的词只剩词形。原句与
+// 定位锚点由宿主（阅读器 / 视频页）在 Dart 侧补，JS 不知道当前句。
+function createFavoriteButton(expression, reading, entryIndex) {
     const button = el('button', {
         className: 'inline-action-button favorite-button',
         onclick: async () => {
             invalidateEntryStateCheck(button);
             button.disabled = true;
             try {
+                let glossary = '';
+                try {
+                    glossary = favoriteGlossaryText(entryIndex);
+                } catch (e) {
+                    // 释义快照只是展示用，渲染失败不能挡住收藏本身。
+                    console.error('favorite button: glossary snapshot failed', e);
+                }
                 const nowFav = await window.flutter_inappwebview.callHandler(
-                    'favoriteEntry', { expression, reading });
+                    'favoriteEntry', { expression, reading, glossary });
                 setButtonIcon(button, nowFav ? 'favorited' : 'favorite');
                 button.classList.toggle('favorited', !!nowFav);
             } catch (e) {
@@ -3434,7 +3744,7 @@ function createEntryHeader(entry, idx) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
     }
 
-    buttonsContainer.appendChild(createFavoriteButton(expression, reading));
+    buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
 
     // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
     // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.
@@ -3470,6 +3780,9 @@ function createEntryHeader(entry, idx) {
         ? window.fushiIsEntryQueued({ expression, reading }) === true
         : queuedLocally;
     const setMineState = (isMined) => {
+        // 本按钮的制卡态至少有过一次真值（lookup-time 探测，或点按钮后的回问）。
+        // 「范围未知」的宿主刷新只重问这类按钮，见 refreshRenderedMineStates。
+        mineButton.__fushiMineStateKnown = true;
         const queued = isEntryQueued();
         mineButton.dataset.queued = queued ? '1' : '';
         mineButton.title = queued ? (window.i18nMineQueued || '已加入制卡队列') : '';
@@ -3755,6 +4068,24 @@ function createEntryHeader(entry, idx) {
     // 制卡模块关掉时上面一颗制卡按钮都没渲染，这里的查重探测也一并停掉——模块
     // 关掉 = 它的后台流量（每次查词一次 Anki 查重 + 可能的覆写目标反查）也一起停。
     if (miningEnabled) {
+        // 宿主推来的刷新入口（window.fushiRefreshMineStates → 本闭包）。setMineState
+        // 是 createEntryHeader 的闭包局部，外面拿不到，所以把重问+重画整条挂到按钮上。
+        mineButton.__fushiMineExpression = expression || '';
+        mineButton.__fushiMineReading = reading || '';
+        mineButton.__fushiRefreshMineState = async () => {
+            try {
+                // 先作废在途的 lazy 探测：它问得比这次早，答案更旧，settle 后不得再
+                // 覆盖我们刚拿到的真值（applyIfCurrent 靠的就是这个 version）。
+                invalidateEntryStateCheck(mineButton);
+                const isMined = await window.flutter_inappwebview.callHandler(
+                    'duplicateCheck', { expression, reading });
+                setMineState(isMined === true);
+            } catch (e) {
+                // 刷新只是纠正装饰态：失败一律保持现状，绝不把 ✓ 抹回 +（那会诱导
+                // 用户再制一张重复卡，比不刷新更糟）。
+                console.error('refreshMineState failed', e);
+            }
+        };
         scheduleEntryStateCheck(
             mineButton,
             `duplicate\u0000${mineEntryKey(expression, reading)}`,
@@ -3989,8 +4320,52 @@ window.fushiPopupMineEntryByIndex = function(idx) {
     if (!entry) return false;
     const b = entry.querySelector('.mine-button');
     if (!b || b.disabled) return false;
-    b.click();
-    return true;
+    // 回点后**等它落地**再回给 Dart（BUG-2627 审查）：mine 按钮的 onclick 是 async
+    // （查重 → 取音 → mineEntry 桥调用），同步 `return true` 只代表「点下去
+    // 了」。Dart 拿到 true 就关对话框、撤掉弹窗保护，落地前那几百毫秒到几秒里悬停离开
+    // 自动关栈 / 低内存 dismiss 会把弹窗连制卡草稿一起撤掉——卡制成了但上下文全丢，
+    // 或 WebView 半路销毁回到「无卡无提示」。所以直接调 onclick 取回它的 promise，让
+    // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
+    const result = typeof b.onclick === 'function' ? b.onclick() : b.click();
+    return Promise.resolve(result).then(() => true);
+};
+
+// 收藏夹一键制卡：为 (expression, reading) 在当前 window.lookupEntries 里挑一个词条，
+// 产出与手动点「+」**逐字段相同**的制卡 payload（释义 HTML / 单词典释义 / 频率 / 音调 /
+// 单词音频 / 外字媒体），但**不点任何按钮、不画任何 UI、不走桥**——落卡由 Dart 批量
+// 流程自己做（它还要配句子音频 / 视频片段）。
+//
+// 选词条（下标是 lookupEntries 下标，与 buildMinePayload 的 entryIndex 同一套）：
+//   ① 表记 + 读音都相同；② 仅表记相同；③ 第一条。每一档都优先「至少有一本未隐藏词典
+//   给了释义」的词条——被隐藏词典过滤空了的词条弹窗里根本不渲染，拿它制卡是一张空卡。
+// 没有任何词条时回 null（Dart 据此把这一条记为「词典里没有这个词」）。
+window.fushiPopupBuildMinePayloadFor = async function(expression, reading) {
+    const entries = window.lookupEntries;
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const hidden = window.hiddenDictionaryNames || [];
+    const hasVisibleGlossary = (entry) => Array.isArray(entry && entry.glossaries)
+        && entry.glossaries.some(g => !hidden.includes(g.dictionary));
+    const wantExpression = String(expression || '');
+    const wantReading = String(reading || '');
+    const tiers = [
+        (e) => e.expression === wantExpression
+            && (e.reading || '') === wantReading,
+        (e) => e.expression === wantExpression,
+        () => true,
+    ];
+    let idx = -1;
+    for (const matches of tiers) {
+        idx = entries.findIndex(e => e && matches(e) && hasVisibleGlossary(e));
+        if (idx < 0) idx = entries.findIndex(e => e && matches(e));
+        if (idx >= 0) break;
+    }
+    if (idx < 0) return null;
+    const entry = entries[idx];
+    const payload = await buildMinePayload(
+        entry.expression, entry.reading, entry.frequencies, entry.pitches,
+        entry.rules, entry.matched, idx, '');
+    payload.entryIndex = idx;
+    return payload;
 };
 
 // TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条
@@ -4465,14 +4840,18 @@ function appendNextDeferredGlossaryBlock(entryDiv) {
 }
 
 function postProcessRuby(container) {
-    // BUG-1098: `.expression ruby` (the entry HEADWORD's furigana, built as a
-    // bare <ruby>/<rt> by buildFuriganaEl) joins the glossary bodies here. It
-    // used to be skipped entirely, so it never got the per-base unit and never
-    // got popup.css's em padding-top reserve; the reading then overflowed the
-    // header line box and .expression-scroll (a scroll container whose TOP
-    // overflow is unreachable) clipped it. Same wrap, same reserve, no new
-    // mechanism.
-    container.querySelectorAll('.glossary-content ruby, .expression ruby').forEach(ruby => {
+    // BUG-2568: the entry HEADWORD (`.expression ruby`) is deliberately NOT in
+    // this selector. BUG-1098 had added it so the headword would inherit the
+    // vertical reserve, but the per-base unit below also imposes the glossary's
+    // COMPACT base — the base box never widens to its reading and the annotation
+    // hangs off it, start-aligned (measured in Blink: 入寮 base [10.0,62.0],
+    // reading [10.0,73.8]). Hoshi renders the headword with the engine's own
+    // ruby algorithm, which widens the base run to the annotation and centres
+    // them. So the headword keeps the bare <ruby>/<rt> buildFuriganaEl emits and
+    // popup.css's `.expression ruby` block gives it native ruby plus its own em
+    // padding-top reserve (the real content of BUG-1098's fix). Glossary bodies
+    // keep the compaction — BUG-345/1778 want it — and therefore keep this pass.
+    container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
         // Wrap each base — a bare text node OR an element base like <rb>/<span>
         // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
         // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.
@@ -4865,6 +5244,41 @@ function __fushiPopupContentZoom(){
     var z = parseFloat(raw);
     return (Number.isFinite(z) && z > 0) ? z : 1;
 }
+// BUG-2734：宿主注入可见高度（null = 撤销，回到 innerHeight）。注入了可见高度说明外壳
+// 在裁剪 WebView：内容在两次渲染之间变高（<details> 展开、图片载入、masonry 重排之外的
+// 任何重排）时，若不复报，多出来的部分会落进被裁掉、且滚不到的区域——WebView 视口比
+// 内容高，根本不出滚动条。所以这种模式下观察内容容器尺寸，变化即复报给宿主重算外壳高度。
+// 走独立的 popupContentResized 而不是 popupRendered：后者带渲染 token 语义、会驱动 reveal
+// 与宿主的「渲染完成」后续动作，重排不是一次渲染。
+var __fushiContentResizeObserver = null;
+var __fushiContentResizeRaf = 0;
+var __fushiLastContentResizeReport = -1;
+window.__fushiSetVisibleViewportHeight = function(height){
+    var v = Number(height);
+    window.__fushiVisibleViewportHeight = (height != null && isFinite(v) && v > 0) ? v : null;
+    if (window.__fushiVisibleViewportHeight != null) __fushiObserveContentResize();
+};
+function __fushiObserveContentResize(){
+    if (__fushiContentResizeObserver || typeof ResizeObserver !== 'function') return;
+    if (!window.flutter_inappwebview || typeof window.flutter_inappwebview.callHandler !== 'function') return;
+    var target = __fushiContainer() || document.body;
+    if (!target) return;
+    __fushiContentResizeObserver = new ResizeObserver(function(){
+        if (__fushiContentResizeRaf) return;
+        __fushiContentResizeRaf = requestAnimationFrame(function(){
+            __fushiContentResizeRaf = 0;
+            var h = __fushiReportedContentHeight();
+            if (Math.abs(h - __fushiLastContentResizeReport) < 1) return;
+            __fushiLastContentResizeReport = h;
+            try {
+                window.flutter_inappwebview.callHandler('popupContentResized', h,
+                    window.innerHeight || document.documentElement.clientHeight || 0);
+            } catch (_) { /* 复报失败只是少一次伸缩，绝不阻断弹窗 */ }
+        });
+    });
+    __fushiContentResizeObserver.observe(target);
+}
+
 // popupRendered 的 args[0]：内容高度，host CSS px。Math.ceil 只防子像素短一格
 // （z=1 时 scrollHeight 本就是整数，换算逐字节等价于换算前）。
 function __fushiReportedContentHeight(){
@@ -5701,6 +6115,17 @@ const POPUP_EINK_WHEEL_VIEWPORT_FRACTION = 0.5; // 一次跳半屏
 const POPUP_EINK_WHEEL_MIN_STEP = 48;           // 视口异常小时的下限（布局 px）
 const POPUP_EINK_WHEEL_COOLDOWN_MS = 140;       // 一次手势内的跳跃合并窗口
 let _popupEinkWheelAt = 0;
+// 步长比例用户可调：滚轮 / 触摸各一个旋钮（app 设置 lookup.popup_instant_scroll_
+// {wheel,touch}_step，偏好 popup_instant_scroll_{wheel,touch}_step）。in-app 由
+// popup_settings_injection 注入 window.__fushiPopupInstantScroll{Wheel,Touch}Step；
+// 扩展经查词响应 theme 的 --fushi-instant-scroll-wheel-step 由 content.js /
+// side-panel.js 设同名全局（触摸半边扩展侧不挂，见 BUG-2415 块注释）。缺省 / 非法
+// → 上面的 VIEWPORT_FRACTION 常量，即改前行为；夹在 [0.1, 1]，与 Dart 侧 clamp 同界。
+const POPUP_EINK_STEP_FRACTION_MIN = 0.1;
+function popupEinkStepFraction(value, fallback) {
+    if (typeof value !== 'number' || !isFinite(value) || value <= 0) return fallback;
+    return Math.min(1, Math.max(POPUP_EINK_STEP_FRACTION_MIN, value));
+}
 // 被滚表面的视口高度，单位与 scrollBy 的实参一致（布局 px）。扩展的滚动者是 shadow
 // host（zoom 设在 host 上，clientHeight 已是它自己的布局 px）；in-app 滚 document，
 // window.innerHeight 是视觉 px，要除以 documentElement 的 zoom 才是布局 px。
@@ -5895,9 +6320,11 @@ const __fushiPopupWheelListener = (e) => {
         _popupEinkWheelAt = nowMs;
         _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
         const extent = popupEinkWheelExtent(scroller);
+        const wheelFraction = popupEinkStepFraction(
+            window.__fushiPopupInstantScrollWheelStep, POPUP_EINK_WHEEL_VIEWPORT_FRACTION);
         const jump = Math.max(
             POPUP_EINK_WHEEL_MIN_STEP,
-            Math.min(extent, extent * POPUP_EINK_WHEEL_VIEWPORT_FRACTION * wheelSpeed));
+            Math.min(extent, extent * wheelFraction * wheelSpeed));
         const step = Math.trunc(deltaPx < 0 ? -jump : jump);
         if (step === 0) return;
         if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
@@ -5980,9 +6407,11 @@ function __fushiPopupEinkTouchReset() {
 // 内容）。复用滚轮那条的 extent 解析——zoom → 布局 px 的换算已经在里面。
 function popupEinkTouchStep(scroller) {
     const extent = popupEinkWheelExtent(scroller);
+    const touchFraction = popupEinkStepFraction(
+        window.__fushiPopupInstantScrollTouchStep, POPUP_EINK_TOUCH_VIEWPORT_FRACTION);
     return Math.max(
         POPUP_EINK_TOUCH_MIN_STEP,
-        Math.min(extent, extent * POPUP_EINK_TOUCH_VIEWPORT_FRACTION));
+        Math.min(extent, extent * touchFraction));
 }
 
 // 从触点向上找**真正横向溢出**的祖先（不是只看 CSS 声明）。找到 → 本轮不接管。

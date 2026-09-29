@@ -120,4 +120,95 @@ void main() {
           reason: 'からい 组不能被空读音条目污染');
     });
   });
+
+  // BUG-2753：MDX / StarDict / DSL 导入时读音恒空。同表记只有一个显式读音时，
+  // 空读音行并入该读音组；多个读音时不猜（上面辛い那条守住）。
+  group('empty-reading simple dict merges into the sole reading (BUG-2753)',
+      () {
+    List<FushiLookupResult> torimodosu({bool mdxFirst = false}) {
+      final yomitan = makeResult(
+        expression: '取り戻す',
+        reading: 'とりもどす',
+        dictName: 'JMdict',
+        gloss: 'to take back',
+      );
+      final mdx = [
+        makeResult(
+          expression: '取り戻す',
+          reading: '',
+          dictName: '大辞林MDX',
+          gloss: '<b>とりもどす</b>',
+        ),
+        makeResult(
+          expression: '取り戻す',
+          reading: '',
+          dictName: '新明解MDX',
+          gloss: '<b>とりもどす</b>',
+        ),
+      ];
+      return mdxFirst ? [...mdx, yomitan] : [yomitan, ...mdx];
+    }
+
+    test('popup：MDX 空读音条目并进 とりもどす 那张卡', () {
+      final result = groups(torimodosu());
+      expect(result.length, 1, reason: '同表记唯一读音，MDX 不该另起一张卡');
+      expect(result.single['reading'], 'とりもどす');
+      expect((result.single['glossaries'] as List).length, 3);
+    });
+
+    test('popup：MDX 行排在前面时，卡片读音仍是补全后的 とりもどす', () {
+      final result = groups(torimodosu(mdxFirst: true));
+      expect(result.length, 1);
+      expect(result.single['reading'], 'とりもどす', reason: '先建组的空读音行不能把卡片读音定成空');
+    });
+
+    test('buildResultFromLookup：同一个词头，MDX entry 读音补全', () {
+      final r = buildResultFromLookup(
+        searchTerm: '取り戻す',
+        results: torimodosu(),
+        maximumTerms: 1,
+      );
+      expect(r.headwordCount, 1, reason: '合并后只占一个词头预算');
+      expect(r.truncated, isFalse);
+      expect(r.entries.length, 3);
+      expect(r.entries.map((e) => e.reading).toSet(), {'とりもどす'},
+          reason: 'buildLookupEntriesJson / 制卡 / 音频都读 entry.reading');
+    });
+
+    test('多读音时 buildResultFromLookup 不给空读音 entry 猜读音', () {
+      final r = buildResultFromLookup(
+        searchTerm: '辛い',
+        results: [
+          makeResult(
+              expression: '辛い', reading: 'つらい', dictName: 'A', gloss: 'a'),
+          makeResult(
+              expression: '辛い', reading: 'からい', dictName: 'B', gloss: 'b'),
+          makeResult(expression: '辛い', reading: '', dictName: 'C', gloss: 'c'),
+        ],
+        maximumTerms: 100,
+      );
+      expect(r.headwordCount, 3);
+      expect(r.entries.singleWhere((e) => e.dictionaryName == 'C').reading, '');
+    });
+
+    test('只有空读音时保持原状', () {
+      final result = groups([
+        makeResult(expression: '取り戻す', reading: '', dictName: 'A', gloss: 'a'),
+        makeResult(expression: '取り戻す', reading: '', dictName: 'B', gloss: 'b'),
+      ]);
+      expect(result.length, 1);
+      expect(result.single['reading'], '');
+    });
+
+    test('只按同表记补全：别的表记的读音不外溢', () {
+      final result = groups([
+        makeResult(
+            expression: '取戻す', reading: 'とりもどす', dictName: 'A', gloss: 'a'),
+        makeResult(expression: '取り戻す', reading: '', dictName: 'B', gloss: 'b'),
+      ]);
+      expect(result.length, 2);
+      expect(
+          result.firstWhere((g) => g['expression'] == '取り戻す')['reading'], '');
+    });
+  });
 }

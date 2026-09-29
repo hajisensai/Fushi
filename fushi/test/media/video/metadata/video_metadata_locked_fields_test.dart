@@ -285,5 +285,50 @@ void main() {
       expect(row.overview, '新简介');
       expect(row.lockedFields, isNull);
     });
+
+    // Shoko `PreferredAlternateOrderingID`：用户选定的 TMDB 排序是意图，不是
+    // 刮削产物——上锁后刮到别的分组（含自动挑的）也不覆盖；选回默认（null）同样
+    // 被锁住。
+    test('setVideoMetadataWorkEpisodeGroup 写排序并上 episodeGroup 锁，apply 不覆盖',
+        () async {
+      final PersistedVideoMetadata first = await store.apply(
+        localWork,
+        build(title: '旧标题').copyWith(episodeGroupId: 'auto-picked'),
+      );
+      await database.setVideoMetadataWorkEpisodeGroup(first.workId, 'seasons');
+      VideoMetadataWorkRow row =
+          (await database.getVideoMetadataWorkById(first.workId))!;
+      expect(row.episodeGroupId, 'seasons');
+      expect(parseLockedFields(row.lockedFields),
+          <VideoMetadataLockableField>{VideoMetadataLockableField.episodeGroup});
+
+      await store.apply(
+        localWork,
+        build(title: '新标题').copyWith(episodeGroupId: 'auto-picked'),
+      );
+      row = (await database.getVideoMetadataWorkById(first.workId))!;
+      expect(row.episodeGroupId, 'seasons', reason: '锁住 = 刮到了也不写');
+      expect(row.title, '新标题', reason: '其余字段照常');
+
+      // 选回默认：null 同样被锁住，既有锁保留不重复。
+      await database.setVideoMetadataWorkLockedFields(
+        first.workId,
+        encodeLockedFields(<VideoMetadataLockableField>{
+          VideoMetadataLockableField.title,
+          VideoMetadataLockableField.episodeGroup,
+        }),
+      );
+      await database.setVideoMetadataWorkEpisodeGroup(first.workId, null);
+      row = (await database.getVideoMetadataWorkById(first.workId))!;
+      expect(row.episodeGroupId, isNull);
+      expect(row.lockedFields, 'title,episodeGroup');
+      await store.apply(
+        localWork,
+        build(title: '更新标题').copyWith(episodeGroupId: 'auto-picked'),
+      );
+      row = (await database.getVideoMetadataWorkById(first.workId))!;
+      expect(row.episodeGroupId, isNull);
+      expect(row.title, '新标题', reason: 'title 也锁着');
+    });
   });
 }

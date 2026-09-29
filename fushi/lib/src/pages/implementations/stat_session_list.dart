@@ -342,8 +342,9 @@ Future<bool> showStatSessionsSheet(
   StatSessionCollectionOf? collectionOf,
 }) async {
   bool touched = false;
-  await adaptiveModalSheet<void>(
-    context: context,
+  // 移动端底部 sheet、桌面端居中对话框（[showStatDetailSurface]）。
+  await showStatDetailSurface(
+    context,
     builder: (BuildContext sheetContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(sheetContext);
       return SafeArea(

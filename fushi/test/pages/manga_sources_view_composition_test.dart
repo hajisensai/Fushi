@@ -9,7 +9,9 @@ import '../helpers/source_guard.dart';
 ///
 /// 1. 漫画库顶层**恒为三视图**，Mihon 扩展不占 tab —— 由
 ///    `manga_library_page_split_test.dart` 守；
-/// 2. **扩展管理挂在「来源」视图里**（本文件）；
+/// 2. **扩展管理挂在漫画在线来源面里**（本文件）——2026-09-27 起这张面
+///    （`MangaOnlineSourcesView`）只由顶层「浏览」模块挂载，「来源」导入视图只剩
+///    本地来源 + 互联；
 /// 3. **iOS / Linux 与其它平台导航结构相同**，差异只在各视图内部内容（本文件）。
 ///
 /// 第 2、3 条为什么用源码扫描而不是 widget 测试：`MangaSourcesPage` /
@@ -27,11 +29,13 @@ String _read(List<String> parts) => maskComments(
     );
 
 void main() {
-  group('漫画「来源」视图组成', () {
+  group('漫画「来源」视图与在线来源面组成', () {
     late String sources;
+    late String online;
 
     setUp(() {
       sources = _read(<String>['manga_sources_page.dart']);
+      online = _read(<String>['manga_online_sources_view.dart']);
     });
 
     test('本地扫描根这一节仍是漫画种类的 MediaSourcesView（没接成 book）', () {
@@ -39,68 +43,90 @@ void main() {
       expect(sources, contains("mediaKind: 'manga'"));
     });
 
-    test('Mihon 扩展管理内嵌在「来源」视图里，不是另一个顶层 tab', () {
+    test('Mihon 扩展管理内嵌在漫画在线来源面里，不在导入页', () {
       expect(
-        sources,
-        contains('MihonExtensionsPage(embedded: true)'),
-        reason: '用户口径：漫画扩展就是来源，必须收进「来源」视图当一节',
+        online,
+        contains('MihonExtensionsPage('),
+        reason: '用户口径：漫画扩展就是来源，必须作为在线来源面的一节内嵌',
       );
+      expect(online, contains('embedded: true'));
+      // 仓库 / 扩展两节由同一个内嵌 widget 按 sections 渲染，key 按节固定；
+      // 浏览页按域保活这张面，切页签不丢筛选 / 批量安装状态。
+      expect(
+        online,
+        contains(r"ValueKey<String>('manga_mihon_extensions_${section.name}')"),
+      );
+      expect(sources, isNot(contains('MihonExtensionsPage(')));
+      expect(sources, isNot(contains('ImportPageSegmentBar(')));
     });
 
-    test('macOS 的「来源」视图有 Aidoku 单包与仓库导入入口', () {
+    test('在线来源面按与视频 / 小说同构的三节（来源 / 扩展 / 仓库）渲染', () {
+      // 三节共用同一个 OnlineSourcesSection 参数；「扩展」是来源 / 仓库之外的分支。
+      expect(online, contains('final OnlineSourcesSection section;'));
+      expect(online, contains('if (section == OnlineSourcesSection.sources)'));
+      expect(online, contains('if (section == OnlineSourcesSection.stores)'));
+      expect(online, contains('MihonExtensionsSection.catalog'));
+    });
+
+    test('在线来源面有 Aidoku 单包与仓库导入入口', () {
       // BUG-2099 后 picker 走统一原语 pickSystemFilePath，扩展名集是 Set 字面量
       // （裸 FilePicker + FileType.custom 在安卓会被 MimeTypeMap 静默丢掉 aix，
       // 那个文件在 SAF 里是灰的）。断言的仍是「白名单还在、没被放宽成任意文件」。
-      expect(sources, contains("allowedExtensions: const <String>{'aix'}"));
-      expect(sources, contains("ValueKey<String>('aidoku_import_aix')"));
-      expect(sources, contains("ValueKey<String>('aidoku_add_repository')"));
-      expect(sources, contains("ValueKey<String>('aidoku_repository_url')"));
-      expect(sources, contains('AidokuPackageStore.open()'));
-      expect(sources, contains('AidokuRepositoryStore.open()'));
-      expect(sources, contains('_AidokuRepositorySourcesDialog('));
-      expect(sources, contains('MangaExtensionManagementTile('));
-      expect(sources, contains('MangaExtensionFilters('));
-      expect(sources, contains("keyPrefix: 'aidoku_extension'"));
+      expect(online, contains("allowedExtensions: const <String>{'aix'}"));
+      expect(online, contains("ValueKey<String>('aidoku_import_aix')"));
+      expect(online, contains("ValueKey<String>('aidoku_add_repository')"));
+      expect(online, contains("ValueKey<String>('aidoku_repository_url')"));
+      expect(online, contains('AidokuPackageStore.open()'));
+      expect(online, contains('AidokuRepositoryStore.open()'));
+      expect(online, contains('_AidokuRepositorySourcesDialog('));
+      expect(online, contains('MangaExtensionManagementTile('));
+      expect(online, contains('MangaExtensionFilters('));
+      expect(online, contains("keyPrefix: 'aidoku_extension'"));
     });
 
-    test('Aidoku 源浏览页不再直读章节（在线漫画先下载再读，设计稿 2026-09-12）', () {
+    test('Aidoku 源浏览页点章一律经作品页（直读 / 下载都由作品页分流）', () {
       final String browse =
           _read(<String>['aidoku', 'aidoku_source_browse_page.dart']);
-      // 章节一律经作品页入队下载；源浏览页里不许再长出一条「点章即在线读」的路。
+      // 2026-09-26 起未下载的章也能在线直读，但分流（已下载读盘 / 未下载直读 / 锁章
+      // 问下载）只在作品页 + 阅读器里做一次；源浏览页不许自己拼一条旁路直开阅读器。
       expect(browse, isNot(contains('AidokuReaderChapter(')));
       expect(browse, isNot(contains('MangaFushiPage(')));
       expect(browse, contains('MangaSeriesPage('));
     });
 
     test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {
-      final int start = sources.indexOf(
+      final int start = online.indexOf(
         'class _AidokuRepositoryUrlDialogState',
       );
-      final int end = sources.indexOf(
+      final int end = online.indexOf(
         'class _AidokuRepositorySourcesDialog',
       );
       expect(start, isNonNegative);
       expect(end, greaterThan(start));
 
-      final String dialogSource = sources.substring(start, end);
+      final String dialogSource = online.substring(start, end);
       expect(dialogSource, contains('=> AlertDialog('));
       expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
     });
 
-    test('扩展提供的在线来源设置也在同一视图内', () {
-      expect(sources, contains('_buildOnlineSource('));
-      expect(sources, contains('t.mihon_sources_title'));
+    test('扩展提供的在线来源设置也在同一张面内（「来源」节）', () {
+      expect(online, contains('MihonInstalledSourcesSection('));
+      expect(online, contains('if (section == OnlineSourcesSection.sources)'));
+      expect(sources, isNot(contains('MihonInstalledSourcesSection(')));
     });
 
     // BUG-1431，用户口径：「mokuro 不应该单独显示，应该和漫画扩展同一层级」。
     // 它此前是「本地扫描根」一节里的一行（和 Hibiki 互联并排），但它是个网站。
     test('mokuro.moe 归「漫画源」一节，不再挂在本地扫描根下', () {
-      expect(sources, contains('MokuroMoeSourceRow()'));
+      expect(online, contains('MokuroMoeSourceRow('));
       expect(
-        sources.indexOf('MokuroMoeSourceRow()'),
-        greaterThan(sources.indexOf('t.mihon_sources_title')),
-        reason: '它必须排在「漫画源」小标题之后，与扩展提供的在线源同节',
+        online.indexOf('MokuroMoeSourceRow('),
+        greaterThan(
+          online.indexOf('if (section == OnlineSourcesSection.sources)'),
+        ),
+        reason: '它必须落在「来源」节里，与扩展提供的在线源同节',
       );
+      expect(sources, isNot(contains('MokuroMoeSourceRow')));
       final String localRoots = maskComments(
         File(p.join('lib', 'src', 'pages', 'implementations',
                 'media_sources_view.dart'))
@@ -115,8 +141,8 @@ void main() {
   });
 
   group('iOS / Linux 导航结构与其它平台相同', () {
-    test('「来源」视图在扩展宿主不可用时降级内容，而不是不存在', () {
-      final String sources = _read(<String>['manga_sources_page.dart']);
+    test('漫画在线来源面在扩展宿主不可用时降级内容，而不是不存在', () {
+      final String sources = _read(<String>['manga_online_sources_view.dart']);
       // AppModel.mihonManager 在 iOS/Linux 抛 UnsupportedError：读它之前必须有门。
       expect(
         sources,

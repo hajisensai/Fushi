@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -34,11 +35,7 @@ class InterconnectAssetUnreachableError implements Exception {
 /// 个 3s 去卡整包下载，会把「活着但网慢的 peer」判成「设备死了」。
 const Duration kInterconnectAssetTransferTimeout = Duration(seconds: 30);
 
-Never _throwAssetUnreachable(
-  Uri uri,
-  Object error,
-  StackTrace stack,
-) {
+Never _throwAssetUnreachable(Uri uri, Object error, StackTrace stack) {
   debugPrint('[Fushi] interconnect audio asset unreachable: $uri ($error)');
   Error.throwWithStackTrace(
     InterconnectAssetUnreachableError(uri: uri, cause: error),
@@ -60,14 +57,21 @@ Never _throwAssetUnreachable(
 /// （TODO-961 gap①：注入的 keep-alive client 不得旁路证书钉扎）。
 ///
 /// 现在新增一个互联端点 = 调一次 [post]，不再复制传输代码。
+///
+/// 互联请求的**建连**超时。不设时，建连阶段也吃整次请求的超时（制卡 60 s）：对端
+/// 关机 / 走 Tailscale 或公网地址时 SYN 石沉大海，要等满整次超时，而且以
+/// `TimeoutException` 收尾——与「请求已发出、等应答超时」混在一起，被当成「可能已
+/// 送达」，卡就进不了待发队列。设了之后建连失败以 SocketException 快速返回。
+const Duration kInterconnectConnectTimeout = Duration(seconds: 10);
+
 class InterconnectPostTransport {
   InterconnectPostTransport({
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient;
+  }) : _repo = repo,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient;
 
   final SyncRepository _repo;
 
@@ -81,7 +85,10 @@ class InterconnectPostTransport {
   final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
 
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
+      createPinnedHttpPackageClient(
+        expectedFingerprint: expectedFingerprint,
+        connectionTimeout: kInterconnectConnectTimeout,
+      );
 
   /// 向所有已启用候选按序 POST [body] 到 [path]，返回第一个拿到的可用 JSON 响应。
   ///
@@ -100,33 +107,53 @@ class InterconnectPostTransport {
   /// [onlyCandidate] limits a source-edit continuation to the exact URL, pin and
   /// effective credential used for the original read. Revocation/re-pairing
   /// invalidates the session; it never permits fallback to a different library.
+  /// [onRejectedResponse] observes reachable but unusable responses without
+  /// changing fallback or 401 semantics. Callers may surface the last rejection
+  /// if no later candidate succeeds. Response text is never passed through.
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
     required Duration timeout,
     required String authErrorMessage,
     FushiClientUrl? onlyCandidate,
+    void Function(int statusCode, Map<String, dynamic>? json)?
+    onRejectedResponse,
   }) async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
+    List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList();
     final String? fallbackToken = await _repo.getFushiClientToken();
     if (onlyCandidate != null) {
+      final String? onlyHost = onlyCandidate.hostId;
       candidates.removeWhere(
         (FushiClientUrl candidate) =>
-            candidate.url != onlyCandidate.url ||
-            candidate.fingerprintSha256 != onlyCandidate.fingerprintSha256 ||
+            // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host
+            // 的任一地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
+            (onlyHost != null
+                ? candidate.hostId != onlyHost
+                : (candidate.url != onlyCandidate.url ||
+                    candidate.fingerprintSha256 !=
+                        onlyCandidate.fingerprintSha256)) ||
             interconnectTokenFor(candidate, fallbackToken) !=
                 onlyCandidate.token,
       );
     }
     if (candidates.isEmpty) {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
-      return (json: null, allUnreachable: false, candidate: null);
+      return (
+        json: null,
+        allUnreachable: false,
+        mayHaveDelivered: false,
+        candidate: null,
+      );
     }
+    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）。
+    candidates = await rankInterconnectCandidates(candidates);
 
     bool attempted = false;
     bool anyResponse = false;
+    // 请求发出后等应答超时：对端可能已经处理了这次请求。
+    bool anyTimedOut = false;
     // BUG-1550：某台对端拒了我的凭据不该株连其余对端；记下来，全部试完还没结果才抛。
     SyncAuthError? authError;
     for (final FushiClientUrl candidate in candidates) {
@@ -140,8 +167,9 @@ class InterconnectPostTransport {
       final String? fp = candidate.fingerprintSha256;
       final bool usePinned =
           uri.isScheme('https') && fp != null && fp.isNotEmpty;
-      final http.Client client =
-          usePinned ? _pinnedClientFactory(fp) : _httpClient;
+      final http.Client client = usePinned
+          ? _pinnedClientFactory(fp)
+          : _httpClient;
       attempted = true;
       try {
         final http.Response response = await client
@@ -169,27 +197,26 @@ class InterconnectPostTransport {
           );
           continue;
         }
-        if (response.statusCode == 404 || response.statusCode == 405) {
-          continue;
-        }
         if (response.statusCode < 200 || response.statusCode >= 300) {
+          onRejectedResponse?.call(
+            response.statusCode,
+            _responseObject(response),
+          );
           continue;
         }
-        final dynamic decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
+        final Map<String, dynamic>? decoded = _responseObject(response);
+        if (decoded != null) {
           return (
             json: decoded,
             allUnreachable: false,
+            mayHaveDelivered: true,
             candidate: candidate.copyWith(token: token),
           );
         }
-        if (decoded is Map) {
-          return (
-            json: Map<String, dynamic>.from(decoded),
-            allUnreachable: false,
-            candidate: candidate.copyWith(token: token),
-          );
-        }
+        onRejectedResponse?.call(response.statusCode, null);
+      } on TimeoutException {
+        anyTimedOut = true;
+        continue;
       } catch (_) {
         continue;
       } finally {
@@ -206,6 +233,7 @@ class InterconnectPostTransport {
     return (
       json: null,
       allUnreachable: attempted && !anyResponse,
+      mayHaveDelivered: anyResponse || anyTimedOut,
       candidate: null,
     );
   }
@@ -242,8 +270,9 @@ class InterconnectPostTransport {
 
     final String? fp = candidate.fingerprintSha256;
     final bool usePinned = uri.isScheme('https') && fp != null && fp.isNotEmpty;
-    final http.Client client =
-        usePinned ? _pinnedClientFactory(fp) : _httpClient;
+    final http.Client client = usePinned
+        ? _pinnedClientFactory(fp)
+        : _httpClient;
     try {
       // 连接阶段：只到响应头。这一段超时才是「设备死了」。
       // followRedirects 必须关掉——上面的 origin + path 白名单只校验了初始 URI，
@@ -254,14 +283,18 @@ class InterconnectPostTransport {
           .timeout(timeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.stream.drain<void>();
-        debugPrint('[Fushi] interconnect audio asset returned HTTP '
-            '${response.statusCode}: $uri');
+        debugPrint(
+          '[Fushi] interconnect audio asset returned HTTP '
+          '${response.statusCode}: $uri',
+        );
         return null;
       }
       final int? declaredLength = response.contentLength;
       if (declaredLength != null && declaredLength > maxBytes) {
-        debugPrint('[Fushi] interconnect audio asset rejected: declared '
-            'length $declaredLength exceeds $maxBytes bytes ($uri)');
+        debugPrint(
+          '[Fushi] interconnect audio asset rejected: declared '
+          'length $declaredLength exceeds $maxBytes bytes ($uri)',
+        );
         return null;
       }
       // 传输阶段：独立预算，超时 = 「可达但慢」= 无音频，不是不可达。
@@ -273,8 +306,10 @@ class InterconnectPostTransport {
           maxBytes: maxBytes,
         ).timeout(transferTimeout);
       } on TimeoutException {
-        debugPrint('[Fushi] interconnect audio asset transfer exceeded '
-            '${transferTimeout.inSeconds}s (peer reachable, link slow): $uri');
+        debugPrint(
+          '[Fushi] interconnect audio asset transfer exceeded '
+          '${transferTimeout.inSeconds}s (peer reachable, link slow): $uri',
+        );
         return null;
       }
       if (body == null) return null;
@@ -282,10 +317,7 @@ class InterconnectPostTransport {
         debugPrint('[Fushi] interconnect audio asset was empty: $uri');
         return null;
       }
-      return (
-        bytes: body,
-        contentType: response.headers['content-type'],
-      );
+      return (bytes: body, contentType: response.headers['content-type']);
     } on TimeoutException catch (error, stack) {
       _throwAssetUnreachable(uri, error, stack);
     } on HandshakeException catch (error, stack) {
@@ -310,8 +342,10 @@ class InterconnectPostTransport {
     final BytesBuilder bytes = BytesBuilder(copy: false);
     await for (final List<int> chunk in stream) {
       if (bytes.length + chunk.length > maxBytes) {
-        debugPrint('[Fushi] interconnect audio asset rejected: streamed '
-            'body exceeds $maxBytes bytes ($uri)');
+        debugPrint(
+          '[Fushi] interconnect audio asset rejected: streamed '
+          'body exceeds $maxBytes bytes ($uri)',
+        );
         return null;
       }
       bytes.add(chunk);
@@ -320,18 +354,27 @@ class InterconnectPostTransport {
   }
 }
 
+Map<String, dynamic>? _responseObject(http.Response response) {
+  try {
+    final Object? decoded = jsonDecode(response.body);
+    return decoded is Map<String, dynamic> ? decoded : null;
+  } on FormatException {
+    return null;
+  }
+}
+
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。
+/// [mayHaveDelivered]：至少一个候选拿到了响应，或请求发出后等应答超时——对端
+/// 可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。
 typedef InterconnectPostOutcome = ({
   Map<String, dynamic>? json,
   bool allUnreachable,
+  bool mayHaveDelivered,
   FushiClientUrl? candidate,
 });
 
-typedef InterconnectBytesOutcome = ({
-  Uint8List bytes,
-  String? contentType,
-});
+typedef InterconnectBytesOutcome = ({Uint8List bytes, String? contentType});
 
 bool _sameOrigin(Uri a, Uri b) =>
     a.scheme.toLowerCase() == b.scheme.toLowerCase() &&

@@ -1383,6 +1383,35 @@ void main() {
       expect(launch.gameTarget, isTrue);
       expect(launch.localeLaunch, isTrue);
     });
+    // BUG-2704：加载器初始化门等用户操作时的 WAIT 记录。两侧同一契约：native 打印格式
+    // 与 Dart 解析器必须一起改。
+    test('native loader gate prints the WAIT records the host parses', () {
+      final String producer = File(
+        '../native/galgame_hook/injector/injector_main.cpp',
+      ).readAsStringSync();
+      expect(producer, contains('"WAIT pid=%lu reason=%s\\n"'));
+      expect(producer, contains('waiting_user ? "user" : "none"'));
+      expect(producer, contains('"WAIT pid=%lu reason=none\\n"'));
+    });
+    test('user-wait records are parsed strictly', () {
+      expect(parseInjectorUserWait('WAIT pid=3333 reason=user\n'), isTrue);
+      expect(parseInjectorUserWait('WAIT pid=3333 reason=none\r\n'), isFalse);
+      expect(
+        parseInjectorUserWait(
+          'WAIT pid=3333 reason=user\nWAIT pid=3333 reason=none\n',
+        ),
+        isFalse,
+      );
+      for (final String malformed in <String>[
+        'WAIT pid=0 reason=user\n',
+        'WAIT pid=3333 reason=launcher\n',
+        'WAIT pid=3333\n',
+        'LAUNCH pid=3333 arch=x86 role=game\n',
+        ' WAIT pid=3333 reason=user\n',
+      ]) {
+        expect(parseInjectorUserWait(malformed), isNull, reason: malformed);
+      }
+    });
     test('注入结果之前就能拿到已创建的游戏 PID', () {
       expect(parseInjectorLaunchedPid('LAUNCH pid=20096 arch=x64\n'), 20096);
     });
@@ -1484,6 +1513,26 @@ void main() {
       await File(join(dir.path, 'Scene.pck')).writeAsBytes(<int>[1]);
 
       expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('Steam 语言包 Siglus（GameexeZH.dat + SceneZH.pck）启用 PC hooks', () async {
+      // CLANNAD Steam 版：SiglusEngine_Steam.exe，选简体中文时目录里没有无后缀的那一对。
+      final File exe = File(join(dir.path, 'SiglusEngine_Steam.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
+      await File(join(dir.path, 'GameexeZH.dat')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'SceneZH.pck')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('Siglus 语言后缀必须成对：GameexeEN.dat + SceneZH.pck 不启用', () async {
+      final File exe = File(join(dir.path, 'summer.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
+      await File(join(dir.path, 'GameexeEN.dat')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'SceneZH.pck')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'Scene_old.pck')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
     });
 
     test('改名普通 PE 只有一个 Siglus 数据文件时不启用 PC hooks', () async {

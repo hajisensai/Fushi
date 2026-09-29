@@ -66,6 +66,33 @@ void main() {
 
       expect(_classifyWithRealPredicates(root.path), ImportCarrier.mangaFolder);
     });
+
+    // BUG-2785：mokuro 标准产物「卷.mokuro + 同名页图子目录」。页图判据递归进子目录
+    // 抢先认成页图目录，OCR 静默丢失。真文件系统判据下钉死新的优先级。
+    test('卷.mokuro + 同名页图子目录 → mangaMokuro，且能换出那个 .mokuro 文件', () {
+      File(p.join(root.path, 'vol1.mokuro')).writeAsStringSync('{}');
+      Directory(p.join(root.path, 'vol1')).createSync();
+      File(p.join(root.path, 'vol1', '001.png')).writeAsBytesSync(_pngBytes());
+
+      expect(MangaModule.directoryHasPageImages(root.path), isTrue,
+          reason: '前提：页图判据会递归看到子目录里的图（这正是抢先误判的来源）');
+      expect(MangaModule.directoryMokuroFileCount(root.path), 1);
+      expect(_classifyWithRealPredicates(root.path), ImportCarrier.mangaMokuro);
+      expect(MangaModule.directorySingleMokuroPath(root.path),
+          p.join(root.path, 'vol1.mokuro'));
+    });
+
+    test('两个 .mokuro → mangaBatchFolder；换不出单个文件', () {
+      for (final String vol in <String>['vol1', 'vol2']) {
+        File(p.join(root.path, '$vol.mokuro')).writeAsStringSync('{}');
+        Directory(p.join(root.path, vol)).createSync();
+        File(p.join(root.path, vol, '001.png')).writeAsBytesSync(_pngBytes());
+      }
+
+      expect(_classifyWithRealPredicates(root.path),
+          ImportCarrier.mangaBatchFolder);
+      expect(MangaModule.directorySingleMokuroPath(root.path), isNull);
+    });
   });
 
   group('候选枚举', () {
@@ -266,6 +293,7 @@ ImportCarrier _classifyWithRealPredicates(String path) => classifyImportCarrier(
       isImageArchive: MangaModule.isImageArchive,
       directoryHasPageImages: MangaModule.directoryHasPageImages,
       directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
     );
 
 Uint8List _pngBytes() =>

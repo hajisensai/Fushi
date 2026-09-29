@@ -30,6 +30,7 @@ on:
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
       - '.github/workflows/build-multiplatform.yml'
+      - '.github/actions/setup-fushi-anki-sync/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   pull_request:
@@ -236,6 +237,25 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # 互联 P2P 隧道（iroh）Linux .so：一份产物两处用——Flutter Linux bundle
+      # （fushi/linux/CMakeLists.txt copy-if-present 进 bundle/lib/）与下面的
+      # fushi_server bundle（bin/../lib/）。失败口径同 libtorrent：构建失败即 job 失败。
+      # rust-cache 的 key 按平台分；缓存未命中只会变慢，没有任何步骤的成败挂在 cache-hit 上。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-linux-x64
+      - name: Build fushi_p2p (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_linux_so.sh
+          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
       - name: Flutter Linux CMake toolchain shim
         working-directory: fushi
         shell: bash
@@ -310,6 +330,13 @@ jobs:
           fi
           echo "::endgroup::"
           exit 1
+      - name: Verify fushi_p2p is in the Linux bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          so=fushi/build/linux/x64/debug/bundle/lib/libfushi_p2p.so
+          test -f "$so" || { echo "::error::$so missing — fushi/linux/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/linux-x64"; exit 1; }
+          ls -la "$so"
       # 无头服务端（packages/fushi_server）：纯 Dart，dart build 出带 native assets
       # （sqlite3）的 CLI bundle。这是 fushi_engine「闭包里没有 dart:ui」的最终门——
       # flutter analyze / 守卫测试都只是它的镜像。--help 冒烟不开 DB。
@@ -321,6 +348,17 @@ jobs:
             --output build/fushi_server_linux
           ls -la build/fushi_server_linux/bundle
           build/fushi_server_linux/bundle/bin/fushi_server --help
+      # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）：
+      # 发布包里它随 app / 服务端可执行文件同级（release-desktop.yml / release-server.yml）。
+      # PR 门编 debug（不走 LTO，只为抓编译/补丁断裂），装进服务端 bundle/bin，
+      # build.sh 顺带生成 SOURCE.txt 并对装好的副本跑 version 冒烟。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build fushi-anki-sync (Linux, debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin
       # 第 4 期：无头服务端的两块随包原生库，都落 bundle/lib/（服务端按
       # `<exe>/../lib/<裸名>` 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
       #
@@ -354,7 +392,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}
       - name: Build embedded torrent bridge for fushi_server (Linux, static)
         shell: bash
         env:
@@ -379,6 +422,27 @@ jobs:
           test -f "$FUSHI_TORRENT_LIB" || { echo "::error::.so not found at $FUSHI_TORRENT_LIB"; exit 1; }
           dart pub get
           dart test
+      # (c) 互联 P2P 隧道 .so（上面 Linux 桌面构建前已编好）。随后拿 **bundle 里那一份**
+      # 跑 packages/fushi_p2p 的真隧道测试（同进程两端点经直连地址互拨，不依赖外网）：
+      # 验的是实际发出去的文件能 dlopen、绑定与 C ABI 对得上。main.yml / release.yml 的
+      # 包测试没有原生产物，这个包在那里整组 skip，所以这里是 Linux 上唯一的真 ABI 门。
+      - name: Bundle fushi_p2p into fushi_server and run its FFI tests (Linux)
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_p2p.so
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$FUSHI_P2P_LIB")"
+          cp "$GITHUB_WORKSPACE/native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so" "$FUSHI_P2P_LIB"
+          dart pub get
+          # 库加载失败时这组测试整组 skip 而不是红（tryLoad 永不抛），退出码照样是 0。
+          # 所以除了退出码，还要断言 skip 原因没出现，否则「库坏了」会读成绿。
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
       - name: Bundle onnxruntime (CPU) for fushi_server (Linux)
         shell: bash
         run: |
@@ -478,18 +542,51 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # 互联 P2P 隧道（iroh）universal dylib：Runner 的「Bundle fushi_p2p dylib」构建阶段
+      # （fushi/macos/bundle_fushi_p2p.sh）copy-if-present 进 Contents/Frameworks。
+      # 编 universal 而不是只编本机架构：发布包是 universal，x86_64 切片在 PR 上也要编一遍。
+      - name: Set up Rust (fushi_p2p, macOS targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-macos
+      - name: Build fushi_p2p (macOS universal dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_macos_dylib.sh
+          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
       - name: Build macOS (debug)
         working-directory: fushi
         run: >-
           flutter build macos --debug
+      # 缓存理由同 windows job 的 Mihon 步骤。缓存里是未签名的原始输出，ad-hoc 签名
+      # 只作用于拷进 .app 的副本；ditto 原样保留 jlink 镜像里的符号链接与权限位。
+      # key 与 release-desktop.yml macos job 逐字一致。
+      - name: Restore pinned Mihon desktop runtimes
+        id: mihon_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mihon-runtime
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and verify pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x tool/mihon/build_desktop_runtime.sh
+          built="$RUNNER_TEMP/mihon-runtime"
+          if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
+            chmod +x tool/mihon/build_desktop_runtime.sh
+            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          fi
           app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
-          tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          rm -rf -- "$runtime_dir"
+          ditto "$built" "$runtime_dir"
           while IFS= read -r candidate; do
             if file "$candidate" | grep -q 'Mach-O'; then
               codesign --force --sign - --timestamp=none "$candidate"
@@ -499,28 +596,19 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
-      # BUG-1922：与 release-desktop.yml 的 macos job 成对存在。这条 debug job 是
-      # PR 上唯一的 macOS 打包门，如果它不打 Aidoku runtime，就再没有任何一处能在
-      # 合入前发现 bundle 里少了这个 helper。
-      #
-      # 这里显式用 host 而不是默认的 universal：debug 构建的 fushi.app 本体只有
-      # runner 的架构（实测 `app archs: arm64`），多出来的 x86_64 切片不被下面的
-      # 架构覆盖门、也不被任何别的断言使用——纯空转，实测多花约 9 分钟。x86_64
-      # 交叉编译本身能不能过，由 release-desktop.yml 的 macos job 兜底：它在每次
-      # push 到 develop / main 时都跑，那里的 app 本体是 universal，架构门是强门。
-      # 若将来 debug 构建也变成 universal，下面的架构门会立刻红——那是正确的红。
-      - name: Bundle and verify pinned Aidoku runtime
+      # fushi-anki-sync：PR 门只编本机架构 debug 抓编译断裂；universal（--universal，
+      # arm64 + x86_64 lipo）由 release-desktop.yml 的发布构建负责。放置与签名同发布包。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync (debug)
         shell: bash
         run: |
           set -euo pipefail
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-          chmod +x tool/aidoku/build_macos_runtime.sh
           app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
-          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
-          FUSHI_AIDOKU_ARCHS=host tool/aidoku/build_macos_runtime.sh "$runtime_dir"
-          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
-          chmod +x tool/aidoku/verify_macos_runtime.sh
-          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
+          target_dir="$app_dir/Contents/MacOS"
+          bash native/fushi_anki_sync/build.sh --debug --install-dir "$target_dir"
+          mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
+          codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Verify macOS fushidicts dylib bundle
@@ -547,6 +635,28 @@ jobs:
               raise SystemExit("fushidicts_create returned null")
           lib.fushidicts_destroy(handle)
           print("fushidicts dylib smoke ok")
+          PY
+      - name: Verify macOS fushi_p2p dylib bundle
+        working-directory: fushi
+        run: |
+          set -euo pipefail
+          app_dir="build/macos/Build/Products/Debug/fushi.app"
+          dylib="$app_dir/Contents/Frameworks/libfushi_p2p.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
+          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
+          lipo -info "$dylib"
+          otool -L "$dylib"
+          bash ../native/fushi_p2p/verify_abi.sh "$dylib" nm
+          DYLIB_PATH="$dylib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DYLIB_PATH"])
+          lib.fp2p_version.restype = ctypes.c_char_p
+          version = lib.fp2p_version()
+          if not version:
+              raise SystemExit("fp2p_version returned null")
+          print("fushi_p2p dylib smoke ok:", version.decode())
           PY
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
@@ -610,18 +720,54 @@ jobs:
       # Disable it until the native_splash chain is satisfiable / we adopt SPM. (TODO-1129)
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
+      # 互联 P2P 隧道（iroh）iOS 静态库：iOS 不能加载自带 dylib，以 staticlib 经
+      # -force_load 链进 Runner（native/fushi_p2p/build_ios_staticlib.sh 生成的 xcconfig
+      # 由 fushi/ios/Flutter/*.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_P2P_LDFLAGS)）。
+      # 这里是设备构建，只编 device 切片。
+      - name: Set up Rust (fushi_p2p, iOS device target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-apple-ios
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-ios
+      - name: Build fushi_p2p (iOS device staticlib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_ios_staticlib.sh device
       - name: Build iOS (debug, no codesign)
         working-directory: fushi
         run: >-
           flutter build ios --debug --no-codesign
+      # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
+      # DynamicLibrary.process().lookup 在用户手里才抛。直接查 Runner 主二进制的导出表。
+      # Xcode 的 debug 构建会把 app 代码放进 Runner.debug.dylib（ENABLE_DEBUG_DYLIB），有就查它。
+      - name: Verify fushi_p2p symbols are linked into Runner (iOS)
+        working-directory: fushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/ios/iphoneos/Runner.app"
+          bin="$app/Runner"
+          if [ -f "$app/Runner.debug.dylib" ]; then bin="$app/Runner.debug.dylib"; fi
+          bash ../native/fushi_p2p/verify_abi.sh "$bin" nm
   windows:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
+      # Windows 只缓存 pub、不缓存 SDK：run 36365037668 实测 1.8 GB SDK 缓存在 NTFS 上
+      # 解包就要 125 s，与直接下官方 zip 同量级，却常驻占掉 10 GB 配额的 18%，把 vcpkg /
+      # helper 这类真正省时间的原生产物缓存挤出 LRU。Linux（15 s）/ macOS（27 s）解包快，
+      # SDK 缓存照留。release-desktop.yml 的 windows job 同一取舍。
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
-          cache: true
+          cache: false
+          pub-cache: true
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
@@ -665,8 +811,8 @@ jobs:
       # 另一种镜像永远冷编（`Restored 0 package(s)` + 22 min + ~110 个 tarball，其中
       # ~45 个来自 mirror.msys2.org / ftpmirror.gnu.org / www.nasm.us / download.qt.io
       # 这 4 个不受控主机）。key 带上 ImageVersion 后两种镜像各占一个条目，都走
-      # `Restored 72 package(s)` 的零下载路径（4 min）。二进制缓存故意不留 restore-keys：
-      # 前缀命中回来的是另一镜像的归档，实测一个都用不上。
+      # `Restored 72 package(s)` 的零下载路径（4 min）。二进制缓存的 restore-keys 只回退
+      # 到**同一镜像**（前缀含 ImageVersion）：跨镜像前缀命中回来的归档实测一个都用不上。
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh
@@ -702,7 +848,12 @@ jobs:
           # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
           # 一个都用不上；不 bump 的话 actions/cache 命中即不回存，会每次冷编
           # （TODO-2668 记的同一处病灶）。
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
@@ -741,6 +892,39 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "dart pub get failed ($LASTEXITCODE)" }
           dart test
           if ($LASTEXITCODE -ne 0) { throw "fushi_torrent FFI tests failed" }
+      # 互联 P2P 隧道（iroh）Windows DLL：产物落 native/fushi_p2p/prebuilt/windows-x64/，
+      # 供下面 flutter build windows 的 copy-if-present 随包。失败口径同 libtorrent：
+      # 构建失败即 job 失败。随后用它跑 packages/fushi_p2p 的真隧道 FFI 测试。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-windows-x64
+      - name: Build fushi_p2p DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
+      # bash 而不是 pwsh：要 tee 日志再断言没有被 skip（库加载失败时整组 skip、退出码 0）。
+      - name: Run fushi_p2p FFI tests against the freshly built DLL
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}\native\fushi_p2p\prebuilt\windows-x64\fushi_p2p.dll
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_P2P_LIB" || { echo "::error::DLL not found at $FUSHI_P2P_LIB"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
       # Windows is the ONLY platform that renders EPUB via the forked
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).
@@ -748,14 +932,47 @@ jobs:
         working-directory: fushi
         run: >-
           flutter build windows --debug
+      - name: Verify fushi_p2p is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Debug\fushi_p2p.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      # BUG-2726: the game-stream input regression (SGRE native gamepad channel,
+      # releases that skip visibility checks) is excluded from the runner's
+      # default build because it touches real HWNDs; build and run it here with
+      # the MSVC tree `flutter build windows` just configured.
+      - name: Run game-stream input regression
+        shell: pwsh
+        run: |
+          cmake --build fushi\build\windows\x64 --config Debug --target fushi_windows_game_stream_input_gate
+          if ($LASTEXITCODE -ne 0) { throw "game-stream input regression failed ($LASTEXITCODE)" }
+      # Mihon runtime 完全由 vendored 源码（m_extension_server + 离线 jogamp 仓库）+ 构建
+      # 脚本决定（JDK / 服务端 commit 均在脚本里钉死；脚本再多读仓库里别的目录，必须同步
+      # 加进 key）：输入没变就复用上次产物，省掉 gradle + jlink 的 150~220 s。产物先落缓存目录
+      # 再拷进 bundle，签名/校验只动 bundle 里的副本，缓存永远是原始构建输出。
+      # key 与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
+      - name: Restore pinned Mihon desktop runtime
+        id: mihon_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\mihon-runtime
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and verify pinned Mihon desktop runtime
         shell: pwsh
         run: |
-          .\tool\mihon\build_desktop_runtime.ps1 `
-            -OutputDirectory "fushi\build\windows\x64\runner\Debug\mihon_bridge" `
-            -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
-          if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
+          $built = "$env:RUNNER_TEMP\mihon-runtime"
+          if ('${{ steps.mihon_runtime_cache.outputs.cache-hit }}' -ne 'true') {
+            .\tool\mihon\build_desktop_runtime.ps1 `
+              -OutputDirectory $built `
+              -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+            if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
+          }
           $runtime = "fushi\build\windows\x64\runner\Debug\mihon_bridge"
+          if (Test-Path -LiteralPath $runtime) { Remove-Item -LiteralPath $runtime -Recurse -Force }
+          Copy-Item -LiteralPath $built -Destination $runtime -Recurse
           foreach ($required in @(
             "runtime\bin\java.exe",
             "m-extension-server.jar",
@@ -768,14 +985,31 @@ jobs:
             }
           }
           .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
+      # helper 双架构 cmake + ctest 每次 270~400 s。key = runner 镜像 + native/galgame_hook
+      # 全树哈希。镜像决定 MSVC / CMake / 自带 .NET 运行时，工具链一变就重编并重跑 ctest；
+      # 树哈希**含测试**：只改 ctest 用例也必须 miss 重跑，所以不能拿只覆盖出包输入的
+      # helper_source_fingerprint 当 key。actions/cache 只在 job 成功时回存，所以命中
+      # = 这棵树已经完整编译并通过过 -RunTests，跳过是重复劳动而不是跳过门。
+      # install_into_bundle.ps1 仍会按当前源码指纹复核 dist，缓存串号在那里 fail-closed。
+      # 本步必须排在 build_distribution.ps1 之前：此时 build/ 与 dist/ 还不存在，哈希只
+      # 覆盖入库文件（hashFiles 不认 .gitignore）。
+      # key 与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
+      - name: Restore galgame helper archives
+        id: galgame_helper_cache
+        uses: actions/cache@v4
+        with:
+          path: native/galgame_hook/dist
+          key: ${{ runner.os }}-galgame-helper-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/galgame_hook/**') }}
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
           # 同 release-desktop.yml 的孪生副本：这段今天是「意外安全」的（块内只有
           # 这一条 native 命令，后面全是不重置 $LASTEXITCODE 的 cmdlet），但只要
           # 有人插入第二条 native 命令，双架构 ctest 的判决就被静默顶掉。显式断言。
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
-          if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
+          if ('${{ steps.galgame_helper_cache.outputs.cache-hit }}' -ne 'true') {
+            powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
+            if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
+          }
           # BUG-1449：见 release-desktop.yml 同处注释。helper 作为普通文件直接装进
           # voice_hook\<arch>\，与本体同源；解压/校验走共用脚本，不要复制粘贴回来。
           powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug"
@@ -812,5 +1046,14 @@ jobs:
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug" `
             -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
+      # fushi-anki-sync：同 release-desktop.yml 的发布步骤，PR 门编 debug 抓编译断裂，
+      # 装进 Debug bundle（fushi.exe 同级）并由 build.ps1 跑 version 冒烟。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync (debug)
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -DebugBuild -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Debug"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke

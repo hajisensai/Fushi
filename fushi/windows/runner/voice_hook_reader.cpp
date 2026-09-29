@@ -2308,6 +2308,42 @@ uint32_t VoiceHookReader::PublishLookupShieldTransaction(
       transaction_id, active_buttons, allow_risk);
 }
 
+uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(
+    HWND game, uint64_t transaction_id, bool down) {
+  if (game == nullptr || transaction_id == 0) return 0;
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock() ||
+      LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
+    return 0;
+  }
+  // 与 attached 快路同一纪律：回调里不做任何 HWND 查询。|game| 由登记点在窗口线程
+  // 按会话 pid 解出（FindProcessClientWindow 只会返回该 pid 的窗口）；它若在按住
+  // 期间死掉，注入侧按 invalid target 判 fail-open，这里发了也只是空转一代。
+  return TryPublishLookupShieldRequestOnce(
+      st.header, fushi_voice_hook::kLookupShieldOwnerPopup,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(game)),
+      transaction_id,
+      down ? fushi_voice_hook::kLookupShieldButtonLeft : 0u, false);
+}
+
+bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(
+    HWND game, uint64_t transaction_id) {
+  if (game == nullptr || transaction_id == 0) return true;
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return false;
+  if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
+    return true;
+  }
+  const fushi_voice_hook::LookupShieldRequestSnapshot stable =
+      fushi_voice_hook::ReadLookupShieldRequest(st.header);
+  // 写入中：读不到稳定快照，下次再问。
+  if (!stable.valid) return false;
+  return stable.owner_kind != fushi_voice_hook::kLookupShieldOwnerPopup ||
+         stable.transaction_id != transaction_id;
+}
+
 VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
   VoiceHookLookupShieldStatus out;
   ReaderState& st = State();
@@ -2354,6 +2390,83 @@ VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
     out.observed_mask = observed;
     out.fault_mask = fault;
     out.status_flags = flags;
+    break;
+  }
+  return out;
+}
+
+
+uint32_t VoiceHookReader::PublishGameStreamInput(
+    HWND target, uint64_t transaction_id, uint32_t active_buttons,
+    uint64_t deadline_tick_ms) {
+  if (target == nullptr || transaction_id == 0 || deadline_tick_ms == 0 ||
+      (active_buttons & ~fushi_voice_hook::kGameStreamInputButtonMask) != 0) {
+    return 0;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  if (!ProtocolMatches(h)) return 0;
+  DWORD target_pid = 0;
+  const bool live_target =
+      IsWindow(target) &&
+      GetWindowThreadProcessId(target, &target_pid) != 0 &&
+      target_pid != 0 && target_pid == st.pid;
+  if (!live_target) {
+    const fushi_voice_hook::GameStreamInputRequestSnapshot current =
+        fushi_voice_hook::ReadGameStreamInputRequest(h);
+    const uint64_t raw_target =
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
+    if (active_buttons != 0 || !current.valid ||
+        current.target_hwnd != raw_target ||
+        current.transaction_id != transaction_id) {
+      return 0;
+    }
+  }
+  return fushi_voice_hook::PublishGameStreamInputRequest(
+      h, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)),
+      transaction_id, active_buttons, deadline_tick_ms);
+}
+
+VoiceHookGameStreamInputStatus VoiceHookReader::GameStreamInputStatus() {
+  VoiceHookGameStreamInputStatus out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  if (!ProtocolMatches(h)) {
+    out.error = VoiceHookLookupError::kNotOpen;
+    return out;
+  }
+  const fushi_voice_hook::GameStreamInputRequestSnapshot request =
+      fushi_voice_hook::ReadGameStreamInputRequest(h);
+  if (!request.valid) return out;
+  out.request_seq = request.seq;
+  out.target_hwnd = request.target_hwnd;
+  out.transaction_id = request.transaction_id;
+  out.deadline_tick_ms = request.deadline_tick_ms;
+  out.active_buttons = request.active_buttons;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint32_t before = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_status_seq);
+    if ((before & fushi_voice_hook::kGameStreamInputRequestWriteInProgress) !=
+        0) {
+      continue;
+    }
+    const uint32_t applied = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_applied_seq);
+    const uint32_t status = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_status);
+    const uint32_t observed = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_observed_buttons);
+    MemoryBarrier();
+    const uint32_t after = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_status_seq);
+    if (before == 0 || before != after || applied != request.seq) {
+      continue;
+    }
+    out.applied_seq = applied;
+    out.status = status;
+    out.observed_buttons = observed;
     break;
   }
   return out;

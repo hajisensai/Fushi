@@ -148,6 +148,7 @@ Fushi 基于以下项目与生态：
 | [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android 原生日语阅读器 |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ 词典引擎 |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | 有声书同步方案 |
+| [Tsubasa](https://github.com/SonicSandbox/Tsubasa-sync) | 字幕按参考轨对时间轴的算法（GPL-3.0）；下载字幕按内嵌轨自动对齐的算法参照 |
 | [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式、变换表与查词体验参考 |
 | [Lapis](https://github.com/donkuri/lapis) | Anki 笔记类型 |
 | [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Android 制卡集成 |
@@ -186,6 +187,7 @@ Fushi 基于以下项目与生态：
 | 项目 | 说明 |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | 漫画源扩展生态 |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 动画源扩展生态（extensions-lib 14–16，与漫画共用同一运行时） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫画扩展运行时 |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫画源运行时 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 浏览器扩展流媒体字幕桥接参考 |

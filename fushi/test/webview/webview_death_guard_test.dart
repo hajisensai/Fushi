@@ -94,4 +94,25 @@ void main() {
     expect(guard.deathCount, 1);
     expect(rebuilds, 1);
   });
+
+  test('BUG-2759 WebKit 内容进程终止走同一套抢救 → 重建，并与 renderer 死亡共用预算', () async {
+    final List<String> order = <String>[];
+    final List<String> reports = <String>[];
+    final WebViewDeathGuard guard = WebViewDeathGuard(
+      surface: 'popup',
+      flushBeforeRebuild: () async => order.add('flush'),
+      afterRebuild: () => order.add('rebuild'),
+      maxRebuilds: 1,
+      reporter: (_, String message) => reports.add(message),
+    );
+    final Key first = guard.rebuildKey;
+    await guard.handleWebContentTerminated();
+    expect(order, <String>['flush', 'rebuild']);
+    expect(guard.rebuildKey, isNot(first));
+    expect(reports.first, contains('WebKit content process terminated'));
+    // 预算与 Android renderer 死亡共享：第二次死亡只抢救不重建。
+    await guard.handleDeath();
+    expect(guard.epoch, 1);
+    expect(guard.isRebuildBudgetExhausted, isTrue);
+  });
 }

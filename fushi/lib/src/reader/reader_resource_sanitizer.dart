@@ -115,6 +115,37 @@ class ReaderResourceSanitizer {
     return '$block$html';
   }
 
+  static final RegExp _headOpenPattern =
+      RegExp('<head[^>]*>', caseSensitive: false);
+  static final RegExp _headClosePattern =
+      RegExp(r'</head\s*>', caseSensitive: false);
+
+  /// Injects the reader's head markup into a served chapter document:
+  /// [headStart] right after `<head>` (the FOUC cloak must apply before any
+  /// book CSS paints) and [headEnd] right before `</head>`, so reader styles
+  /// win `!important` ties against the book's CSS and a reader viewport meta
+  /// comes after any book-supplied one (WebKit applies the last viewport meta).
+  /// Without a `</head>` both go after `<head>`; without a `<head>` both are
+  /// prepended to the whole document.
+  static String injectReaderHead(
+    String html, {
+    required String headStart,
+    required String headEnd,
+  }) {
+    final RegExpMatch? headOpen = _headOpenPattern.firstMatch(html);
+    final RegExpMatch? headClose = _headClosePattern.firstMatch(html);
+    if (headOpen != null && headClose != null) {
+      return '${html.substring(0, headOpen.end)}\n$headStart'
+          '${html.substring(headOpen.end, headClose.start)}\n$headEnd\n'
+          '${html.substring(headClose.start)}';
+    }
+    if (headOpen != null) {
+      return '${html.substring(0, headOpen.end)}\n$headStart\n$headEnd'
+          '${html.substring(headOpen.end)}';
+    }
+    return '$headStart\n$headEnd\n$html';
+  }
+
   /// Normalizes XHTML served as text/html so a self-closing NON-void element
   /// (`<script/>` blanking the page — BUG-079; `<a id=".."/>` wrapping the whole
   /// chapter's prose and killing tap-lookup — BUG-737) becomes an explicit

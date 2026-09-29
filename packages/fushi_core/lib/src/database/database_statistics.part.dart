@@ -10,9 +10,56 @@ const String kVideoWatchCoveragePrefPrefix = 'video_watch_coverage_';
 String videoWatchCoveragePrefKey(String bookUid) =>
     '$kVideoWatchCoveragePrefPrefix$bookUid';
 
+/// 远端 host-playlist（同一 id 多集，TODO-885）按集的覆盖并集键（BUG-2587）：
+/// [episodeIndex] == 0 回退到整书 [videoWatchCoveragePrefKey]（与单视频 / 合集成员
+/// 完全同键），index>0 才带 `#ep<index>` 后缀——与断点键
+/// `videoRemotePositionEpisodePrefKey` 同一约定。各集片内区间从 0 起算，共用一份
+/// 并集会把第 2 集起整段判成「已看过」而一秒不计。
+String videoWatchCoverageEpisodePrefKey(String bookUid, int episodeIndex) =>
+    episodeIndex <= 0
+        ? videoWatchCoveragePrefKey(bookUid)
+        : '${videoWatchCoveragePrefKey(bookUid)}#ep$episodeIndex';
+
 /// 「统计日」重置整点的偏好键（int 0..23，默认 0）。见
 /// [FushiDatabase.statDayResetHour]。
 const String kStatDayResetHourPrefKey = 'stats_day_reset_hour';
+
+/// `galgames.play_status` 里「玩过」的值（Bangumi 收藏 type 2，见 [Galgames.playStatus]）。
+const int kGalgamePlayStatusPlayed = 2;
+
+/// v115：`galgames.completed_at` 的**唯一**判据（排行榜「读完时刻」）。
+///
+/// - 从非「玩过」变成「玩过」→ [now]（新行按上一状态 0 处理）；
+/// - 保持「玩过」→ 原值不动（含 null：迁移回填不出日期的存量「玩过」保持日期未知，
+///   不能因为用户随手重存一次就被盖成今天）；
+/// - 离开「玩过」→ null。
+///
+/// 只有 [FushiDatabase.setGalgamePlayStatus] 与 [FushiDatabase.upsertGalgame] 调它；
+/// 调用方不直接写 `completedAt`。
+int? resolveGalgameCompletedAt({
+  required int previousStatus,
+  required int? previousCompletedAt,
+  required int nextStatus,
+  required int now,
+}) {
+  if (nextStatus != kGalgamePlayStatusPlayed) return null;
+  if (previousStatus == kGalgamePlayStatusPlayed) return previousCompletedAt;
+  return now;
+}
+
+/// 激活 Profile 的偏好键（与 fushi 层 `ProfileRepository` 同一把 key）。统计
+/// 分区键 `profile_id` 的写入时来源，见 [FushiDatabase.resolveActiveProfileId]。
+const String kActiveProfileIdPrefKey = 'active_profile_id';
+
+/// v105：legacy 统计家族（`reading_statistics` / `video_watch_statistics` /
+/// `*_hourly_logs` / `activity_events` 的 read|watch|game 行）归属的 Profile id。
+/// legacy 表冻结不加列，升级那一刻激活的 Profile 认领全部旧历史；读取面只对这个
+/// Profile 露出 legacy 行。缺失（fresh 库从没升级过）= 没有归属 = 对所有 Profile
+/// 可见（legacy 行只可能经旧端同步 / 备份进来，本就无从归属）。
+///
+/// 设备本地键：值是本库自增 id，绝不随 Profile 快照 / 备份 / 同步出境
+/// （fushi 层 `ProfileKeys` / `SyncRepository.deviceLocalPrefKeys` 各排除一次）。
+const String kStatLegacyProfileIdPrefKey = 'stats_legacy_profile_id';
 
 mixin _FushiDbStatistics
     on
@@ -336,30 +383,98 @@ mixin _FushiDbStatistics
     return id;
   }
 
+  // ── Profile 分区（v105：统计按 Profile 隔离）────────────────────
+  // resolveActiveProfileId / getStatLegacyProfileId / legacyStatsVisibleTo /
+  // _stampStudySegmentProfile 住 _FushiDbTagsSync（Profile CRUD 所在层；
+  // _FushiDbContentMisc 的删除原语也要用，mixin 只能向下看）。
+
+  /// v105 迁移专用：存量统计行认领的 Profile。激活的 > 最早建的 > 新建 'Default'
+  /// （迁移里没有 fushi 层，没法连带快照；'Default' 是 `ensureDefaultProfile`
+  /// 同名默认，它随后看到已有 Profile 就只校验激活 id，不会再建第二个）。
+  /// 只用裸 SQL：迁移时的 drift 生成查询未必与磁盘形态一致。
+  Future<int> _statOwnerProfileForV105() async {
+    if (!await _tableExists('profiles')) return 0;
+    Future<int?> existingId(int id) async {
+      final List<QueryRow> rows = await customSelect(
+        'SELECT id FROM profiles WHERE id = ?',
+        variables: <Variable<Object>>[Variable.withInt(id)],
+      ).get();
+      return rows.isEmpty ? null : rows.first.read<int>('id');
+    }
+
+    if (await _tableExists('preferences')) {
+      final List<QueryRow> prefRows = await customSelect(
+        'SELECT "value" FROM preferences WHERE "key" = ?',
+        variables: <Variable<Object>>[
+          Variable.withString(kActiveProfileIdPrefKey),
+        ],
+      ).get();
+      final int fromPref = prefRows.isEmpty
+          ? -1
+          : (int.tryParse(prefRows.first.read<String>('value')) ?? -1);
+      if (fromPref > 0 && await existingId(fromPref) != null) return fromPref;
+    }
+    final List<QueryRow> first = await customSelect(
+      'SELECT id FROM profiles ORDER BY created_at ASC, id ASC LIMIT 1',
+    ).get();
+    if (first.isNotEmpty) return first.first.read<int>('id');
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await customStatement(
+      'INSERT INTO profiles (name, created_at, updated_at) VALUES (?, ?, ?)',
+      <Object>['Default', now, now],
+    );
+    final List<QueryRow> created = await customSelect(
+      'SELECT id FROM profiles ORDER BY id DESC LIMIT 1',
+    ).get();
+    final int id = created.first.read<int>('id');
+    if (await _tableExists('preferences')) {
+      await customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value", updated_at) '
+        'VALUES (?, ?, ?)',
+        <Object>[kActiveProfileIdPrefKey, id.toString(), now],
+      );
+    }
+    return id;
+  }
+
   /// **唯一写入口**：按 [uid] 绝对值 upsert。同 uid 重复写同值 = no-op；
   /// 写入方持有段累计器，绝不在这里做 `+=`。
+  ///
+  /// v105：`profile_id` 缺席时盖当前激活 Profile；**冲突更新不改归属**（段的
+  /// Profile 在开段那一刻定死，见 tables.dart）。
   ///
   /// BUG-2214 / BUG-2220：墓碑语义 = 「删除 `startAt < deletedAt` 的段」。同身份
   /// 若有墓碑且本行 `startAt < deletedAt`，本次写**静默丢弃**（返回不抛）：用户删
   /// 该媒体统计时仍在跑的时钟，其开放段（startAt 在删除之前）的后续 tick 不得把已
   /// 删的段写回；时钟下一次开新段（`startAt >= deletedAt`）天然存活，墓碑不需要、
   /// 也永不因后来的段退场。
-  Future<void> upsertStudySegment(StudySegmentsCompanion row) =>
+  Future<void> upsertStudySegment(StudySegmentsCompanion input) =>
       transaction(() async {
+        final StudySegmentsCompanion row =
+            await _stampStudySegmentProfile(input);
         if (await _isStudySegmentTombstoned(row)) return;
-        await into(studySegments).insertOnConflictUpdate(row);
+        await into(studySegments).insert(
+          row,
+          onConflict: DoUpdate(
+            (old) => row.copyWith(profileId: const Value.absent()),
+            target: [studySegments.uid],
+          ),
+        );
       });
 
-  /// [row] 是否被同身份墓碑压制（`startAt < deletedAt`）。身份 / startAt 缺席的
-  /// 行不判压制（写入方契约要求三者必填，缺席只会出现在测试桩）。
+  /// [row] 是否被**同 Profile** 同身份墓碑压制（`startAt < deletedAt`）。身份 /
+  /// startAt 缺席的行不判压制（写入方契约要求三者必填，缺席只会出现在测试桩）；
+  /// [row] 须已盖好 profileId（[_stampStudySegmentProfile]）。
   Future<bool> _isStudySegmentTombstoned(StudySegmentsCompanion row) async {
     if (!row.mediaKind.present ||
         !row.mediaKey.present ||
         !row.startAt.present) {
       return false;
     }
+    final int profileId = row.profileId.present ? row.profileId.value : 0;
     final StudySegmentTombstoneRow? tomb = await (select(studySegmentTombstones)
           ..where((t) =>
+              t.profileId.equals(profileId) &
               t.mediaKind.equals(row.mediaKind.value) &
               t.mediaKey.equals(row.mediaKey.value)))
         .getSingleOrNull();
@@ -368,12 +483,21 @@ mixin _FushiDbStatistics
 
   /// 闭区间 [fromDateKey, toDateKey]（`yyyy-MM-dd` 字典序即时间序）内的全部段；
   /// 任一端 null = 不设界。
+  ///
+  /// v105：默认只取 [profileId]（null = 当前激活 Profile）的段；只有同步 / 备份
+  /// 导出这种要搬**整库**的调用方传 `allProfiles: true`。
   Future<List<StudySegmentRow>> getStudySegments({
     String? fromDateKey,
     String? toDateKey,
-  }) {
+    int? profileId,
+    bool allProfiles = false,
+  }) async {
     final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
         select(studySegments);
+    if (!allProfiles) {
+      final int scope = profileId ?? await resolveActiveProfileId();
+      q.where((t) => t.profileId.equals(scope));
+    }
     if (fromDateKey != null) {
       q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
     }
@@ -396,28 +520,38 @@ mixin _FushiDbStatistics
     return (select(studySegments)..where((t) => t.uid.isIn(uids))).get();
   }
 
-  /// 某媒体的全部段（详情 / 删除前预览）。
+  /// 某媒体在 [profileId]（null = 当前激活 Profile）下的全部段（详情 / 删除前预览）。
   Future<List<StudySegmentRow>> getStudySegmentsForMedia({
     required String mediaKind,
     required String mediaKey,
-  }) =>
-      (select(studySegments)
-            ..where((t) =>
-                t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
-          .get();
+    int? profileId,
+  }) async {
+    final int scope = profileId ?? await resolveActiveProfileId();
+    return (select(studySegments)
+          ..where((t) =>
+              t.profileId.equals(scope) &
+              t.mediaKind.equals(mediaKind) &
+              t.mediaKey.equals(mediaKey)))
+        .get();
+  }
 
   /// 同步 / 备份落地用：按 uid 批量 upsert，**只在对端 `updatedAt` 严格更新时覆盖**
   /// （LWW；同值重放 no-op、旧值不降级）。一次事务。
+  ///
+  /// v105：新行的 profile_id 由调用方按对端 Profile **名字**解析好传进来（缺席盖
+  /// 当前激活）；已有行的归属不随 LWW 改（段第一次落到哪个 Profile 就是哪个）。
   Future<void> upsertStudySegmentsIfNewer(
     Iterable<StudySegmentsCompanion> rows,
   ) =>
       transaction(() async {
-        for (final StudySegmentsCompanion row in rows) {
+        for (final StudySegmentsCompanion input in rows) {
+          final StudySegmentsCompanion row =
+              await _stampStudySegmentProfile(input);
           if (await _isStudySegmentTombstoned(row)) continue;
           await into(studySegments).insert(
             row,
             onConflict: DoUpdate(
-              (old) => row,
+              (old) => row.copyWith(profileId: const Value.absent()),
               target: [studySegments.uid],
               where: (old) =>
                   old.updatedAt.isSmallerThanValue(row.updatedAt.value),
@@ -433,19 +567,25 @@ mixin _FushiDbStatistics
   /// 不减），并删掉本地该身份下 `startAt < deletedAt` 的段（删除跨端传播；删除之后
   /// 开始的段不动）。判据用段的 `startAt` 而不是 `updatedAt`：后者随 tick 前进，
   /// 一个跨越删除时刻仍在跑的段会靠它「复活」整块历史（BUG-2214）。
+  ///
+  /// v105：碑与被删的段都限定在 [profileId]（null = 当前激活 Profile）之内。
   Future<void> applyStudySegmentTombstone({
     required String mediaKind,
     required String mediaKey,
     required int deletedAt,
+    int? profileId,
   }) =>
       transaction(() async {
+        final int scope = profileId ?? await resolveActiveProfileId();
         await upsertStudySegmentTombstone(
           mediaKind: mediaKind,
           mediaKey: mediaKey,
           deletedAt: deletedAt,
+          profileId: scope,
         );
         await (delete(studySegments)
               ..where((t) =>
+                  t.profileId.equals(scope) &
                   t.mediaKind.equals(mediaKind) &
                   t.mediaKey.equals(mediaKey) &
                   t.startAt.isSmallerThanValue(deletedAt)))
@@ -461,12 +601,16 @@ mixin _FushiDbStatistics
   /// 某媒体种类每个 media_key 的最后一段 end_at（书架 / 视频页「最近阅读 / 观看」
   /// 时刻；legacy 行的 lastModified 由调用方另并）。被用户删成零值的段
   /// （[zeroStudySegmentsOnDays]）不算「最近看过」。
+  /// v105：只看当前激活 Profile 的段（B Profile 没看过的，在 B 的书架上就不算
+  /// 「最近看过」）。
   Future<Map<String, int>> getLatestStudyEndAtByMedia(String mediaKind) async {
+    final int profileId = await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT media_key, MAX(end_at) AS last_end FROM study_segments '
-      'WHERE media_kind = ? AND (duration_ms > 0 OR chars > 0 OR pages > 0) '
+      'WHERE profile_id = ? AND media_kind = ? '
+      'AND (duration_ms > 0 OR chars > 0 OR pages > 0) '
       'GROUP BY media_key',
-      variables: [Variable.withString(mediaKind)],
+      variables: [Variable.withInt(profileId), Variable.withString(mediaKind)],
       readsFrom: {studySegments},
     ).get();
     return <String, int>{
@@ -477,11 +621,17 @@ mixin _FushiDbStatistics
 
   /// galgame_sessions 按 (game_id, date_key) 的时长合计（秒）：喂统一事实面
   /// （日明细按游戏分节、热力图游戏时长）。
+  /// v105：只取 [profileId]（null = 当前激活 Profile）的会话。
+  ///
+  /// v113：游戏已从库移除的孤儿会话照样计入；[getGalgameSessionTitles] 给它们的
+  /// 显示名快照。
   Future<List<(String gameId, String dateKey, int totalSeconds)>>
-      getGalgameDailySecondsByGame() async {
+      getGalgameDailySecondsByGame({int? profileId}) async {
+    final int scope = profileId ?? await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT game_id, date_key, COALESCE(SUM(duration_seconds), 0) AS s '
-      'FROM galgame_sessions GROUP BY game_id, date_key',
+      'FROM galgame_sessions WHERE profile_id = ? GROUP BY game_id, date_key',
+      variables: [Variable.withInt(scope)],
       readsFrom: {galgameSessions},
     ).get();
     return <(String, String, int)>[
@@ -492,6 +642,20 @@ mixin _FushiDbStatistics
           row.read<int>('s'),
         ),
     ];
+  }
+
+  /// v113：游玩会话行上的游戏显示名快照（`game_id -> game_title`，只含非空快照，
+  /// 即已从库移除的游戏）。统计读取端在库内反查不到游戏时用它显示名字。
+  Future<Map<String, String>> getGalgameSessionTitles() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT game_id, MAX(game_title) AS title FROM galgame_sessions '
+      "WHERE game_title != '' GROUP BY game_id",
+      readsFrom: {galgameSessions},
+    ).get();
+    return <String, String>{
+      for (final QueryRow row in rows)
+        row.read<String>('game_id'): row.read<String>('title'),
+    };
   }
 
   // upsertStudySegmentTombstone 住 _FushiDbContentMisc（deleteStudySegmentsForMedia /
@@ -516,20 +680,73 @@ mixin _FushiDbStatistics
       (select(galgames)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   /// 新增或整行覆盖一条游戏。
-  Future<void> upsertGalgame(GalgamesCompanion entry) =>
-      into(galgames).insertOnConflictUpdate(entry);
+  ///
+  /// v115：`completedAt` 不由调用方给——[entry] 带了 `playStatus` 时经
+  /// [resolveGalgameCompletedAt] 按库内旧行重算（调用方携带的 `completedAt` 一律被
+  /// 覆盖）；没带 `playStatus` 时整列不动。
+  Future<void> upsertGalgame(GalgamesCompanion entry) => transaction(() async {
+        GalgamesCompanion row = entry;
+        if (entry.playStatus.present) {
+          final GalgameRow? previous = await getGalgame(entry.id.value);
+          row = entry.copyWith(
+            completedAt: Value<int?>(
+              resolveGalgameCompletedAt(
+                previousStatus: previous?.playStatus ?? 0,
+                previousCompletedAt: previous?.completedAt,
+                nextStatus: entry.playStatus.value,
+                now: DateTime.now().millisecondsSinceEpoch,
+              ),
+            ),
+          );
+        } else if (entry.completedAt.present) {
+          row = entry.copyWith(completedAt: const Value<int?>.absent());
+        }
+        await into(galgames).insertOnConflictUpdate(row);
+      });
 
-  /// 删除一条游戏。`galgame_sources` / `galgame_sessions` 经 FK cascade 连带清理；
-  /// 标签映射 v77 起是逻辑外键，同事务显式清。
-  Future<int> deleteGalgame(String id) => transaction(() async {
+  /// 删除一条游戏。`galgame_sources` 经 FK cascade 连带清理；标签映射 v77 起是
+  /// 逻辑外键，同事务显式清。
+  ///
+  /// `galgame_sessions`（游玩时长）v113 起**不**随游戏删：会话属于统计，只有
+  /// [deleteGameStatisticsForId] / 统计页的显式删除才删。这里同事务把显示名快照进
+  /// 该游戏全部 Profile 的会话行（`game_title`），游戏行没了统计页仍有名字可显示。
+  /// [sessionTitle] 是调用方握着的当前显示名（含用户改名 / 刮削名覆盖层）；为空
+  /// 时回落 `galgames.name`（exe 推导的本地默认名）。
+  Future<int> deleteGalgame(String id, {String? sessionTitle}) =>
+      transaction(() async {
+        final String? fallback = (sessionTitle == null || sessionTitle.isEmpty)
+            ? (await getGalgame(id))?.name
+            : sessionTitle;
+        if (fallback != null && fallback.isNotEmpty) {
+          await (update(galgameSessions)..where((t) => t.gameId.equals(id)))
+              .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
+        }
         await deleteTagAssignmentsForHost(TagHostKind.game, id);
         return (delete(galgames)..where((t) => t.id.equals(id))).go();
       });
 
   /// 只改游玩状态（0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑）。
-  Future<int> setGalgamePlayStatus(String id, int status) =>
-      (update(galgames)..where((t) => t.id.equals(id)))
-          .write(GalgamesCompanion(playStatus: Value<int>(status)));
+  ///
+  /// v115：同事务按 [resolveGalgameCompletedAt] 维护 `completedAt`。[now] 只给测试
+  /// 钉时刻用，生产取当前时刻。
+  Future<int> setGalgamePlayStatus(String id, int status, {int? now}) =>
+      transaction(() async {
+        final GalgameRow? previous = await getGalgame(id);
+        if (previous == null) return 0;
+        return (update(galgames)..where((t) => t.id.equals(id))).write(
+          GalgamesCompanion(
+            playStatus: Value<int>(status),
+            completedAt: Value<int?>(
+              resolveGalgameCompletedAt(
+                previousStatus: previous.playStatus,
+                previousCompletedAt: previous.completedAt,
+                nextStatus: status,
+                now: now ?? DateTime.now().millisecondsSinceEpoch,
+              ),
+            ),
+          ),
+        );
+      });
 
   /// 只改用户覆盖层 JSON（null = 清空全部自定义，展示回落到刮削值/本地默认名）。
   Future<int> setGalgameCustomData(String id, String? json) =>
@@ -591,29 +808,44 @@ mixin _FushiDbStatistics
             ..where((t) => t.gameId.equals(gameId) & t.source.equals(source)))
           .go();
 
-  /// 落一条游玩会话。返回自增 id。
-  Future<int> insertGalgameSession(GalgameSessionsCompanion entry) =>
-      into(galgameSessions).insert(entry);
+  /// 落一条游玩会话。返回自增 id。v105：`profile_id` 缺席时盖当前激活 Profile。
+  Future<int> insertGalgameSession(GalgameSessionsCompanion entry) async {
+    final GalgameSessionsCompanion row = entry.profileId.present
+        ? entry
+        : entry.copyWith(profileId: Value(await resolveActiveProfileId()));
+    return into(galgameSessions).insert(row);
+  }
 
-  /// 某游戏的会话流水，按起始时间倒序（详情页时间线，支持分页）。
+  /// 某游戏的会话流水，按起始时间倒序（详情页时间线，支持分页）。v105：只看
+  /// [profileId]（null = 当前激活 Profile）。
   Future<List<GalgameSessionRow>> getGalgameSessions(
     String gameId, {
     int limit = 50,
     int offset = 0,
-  }) =>
-      (select(galgameSessions)
-            ..where((t) => t.gameId.equals(gameId))
-            ..orderBy([(t) => OrderingTerm.desc(t.startMs)])
-            ..limit(limit, offset: offset))
-          .get();
+    int? profileId,
+  }) async {
+    final int scope = profileId ?? await resolveActiveProfileId();
+    return (select(galgameSessions)
+          ..where((t) => t.profileId.equals(scope) & t.gameId.equals(gameId))
+          ..orderBy([(t) => OrderingTerm.desc(t.startMs)])
+          ..limit(limit, offset: offset))
+        .get();
+  }
 
-  /// 全库最近 [limit] 条游玩会话（按结束时刻倒序）：v92 起游玩不再写 activity 行，
-  /// 首页活动流 / 游戏首页时间线从这里合成「游玩」事件。
-  Future<List<GalgameSessionRow>> getRecentGalgameSessions({int limit = 200}) =>
-      (select(galgameSessions)
-            ..orderBy([(t) => OrderingTerm.desc(t.endMs)])
-            ..limit(limit))
-          .get();
+  /// 最近 [limit] 条游玩会话（按结束时刻倒序）：v92 起游玩不再写 activity 行，
+  /// 首页活动流 / 游戏首页时间线从这里合成「游玩」事件。v105：只看 [profileId]
+  /// （null = 当前激活 Profile）。
+  Future<List<GalgameSessionRow>> getRecentGalgameSessions({
+    int limit = 200,
+    int? profileId,
+  }) async {
+    final int scope = profileId ?? await resolveActiveProfileId();
+    return (select(galgameSessions)
+          ..where((t) => t.profileId.equals(scope))
+          ..orderBy([(t) => OrderingTerm.desc(t.endMs)])
+          ..limit(limit))
+        .get();
+  }
 
   /// 删除单条会话（详情页「删掉这次记录」）。
   Future<int> deleteGalgameSession(int id) =>
@@ -623,24 +855,32 @@ mixin _FushiDbStatistics
   ///
   /// 游戏库（[galgames]）与首页活动时间线（[activityEvents]）是独立用户数据，
   /// 不能因统计页的「清空」操作被连带删除。
+  ///
+  /// v105：只清当前激活 Profile 的那份（别的 Profile 的游玩史不是本 Profile 的
+  /// 「全部」）。
   Future<int> clearAllGalgameStatistics() => transaction(() async {
+        final int profileId = await resolveActiveProfileId();
         // v92：hook 字数段（chars-only）与游玩会话同属「游戏统计」，一起清。
-        await clearStudySegments(kActivityMediaGame);
-        return delete(galgameSessions).go();
+        await clearStudySegments(kActivityMediaGame, profileId: profileId);
+        return (delete(galgameSessions)
+              ..where((t) => t.profileId.equals(profileId)))
+            .go();
       });
 
-  /// 全库每个游戏的时长合计（秒）+ 会话次数 + 最后游玩毫秒戳。
+  /// 当前激活 Profile 下每个游戏的时长合计（秒）+ 会话次数 + 最后游玩毫秒戳。
   ///
   /// 库页排序（按总时长 / 按最后游玩）与详情页 KPI 都吃这一个查询，取代上游的
   /// `game_statistics` 投影表。
   Future<Map<String, (int totalSeconds, int sessionCount, int lastPlayedMs)>>
       getGalgamePlayTotals() async {
+    final int profileId = await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT game_id, '
       'COALESCE(SUM(duration_seconds), 0) AS total_seconds, '
       'COUNT(*) AS session_count, '
       'COALESCE(MAX(end_ms), 0) AS last_played_ms '
-      'FROM galgame_sessions GROUP BY game_id',
+      'FROM galgame_sessions WHERE profile_id = ? GROUP BY game_id',
+      variables: [Variable.withInt(profileId)],
       readsFrom: {galgameSessions},
     ).get();
     return <String, (int, int, int)>{
@@ -660,12 +900,15 @@ mixin _FushiDbStatistics
     required String fromDateKey,
     required String toDateKey,
   }) async {
+    final int profileId = await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT date_key, COALESCE(SUM(duration_seconds), 0) AS total_seconds '
       'FROM galgame_sessions '
-      'WHERE game_id = ? AND date_key >= ? AND date_key <= ? '
+      'WHERE profile_id = ? AND game_id = ? '
+      'AND date_key >= ? AND date_key <= ? '
       'GROUP BY date_key',
       variables: [
+        Variable.withInt(profileId),
         Variable.withString(gameId),
         Variable.withString(fromDateKey),
         Variable.withString(toDateKey),
@@ -684,11 +927,13 @@ mixin _FushiDbStatistics
   /// 不能反过来充当时长统计投影。返回全部历史日期，读取端按今日/周/月窗口筛选。
   Future<Map<String, (int totalSeconds, int sessionCount)>>
       getAllGalgameDailyTotals() async {
+    final int profileId = await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT date_key, '
       'COALESCE(SUM(duration_seconds), 0) AS total_seconds, '
       'COUNT(*) AS session_count '
-      'FROM galgame_sessions GROUP BY date_key',
+      'FROM galgame_sessions WHERE profile_id = ? GROUP BY date_key',
+      variables: [Variable.withInt(profileId)],
       readsFrom: {galgameSessions},
     ).get();
     return <String, (int, int)>{
@@ -702,10 +947,11 @@ mixin _FushiDbStatistics
 
   /// 某天全部游戏的时长合计（秒），供首页「今日游戏时长」。
   Future<int> getGalgameSecondsForDay(String dateKey) async {
+    final int profileId = await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT COALESCE(SUM(duration_seconds), 0) AS total_seconds '
-      'FROM galgame_sessions WHERE date_key = ?',
-      variables: [Variable.withString(dateKey)],
+      'FROM galgame_sessions WHERE profile_id = ? AND date_key = ?',
+      variables: [Variable.withInt(profileId), Variable.withString(dateKey)],
       readsFrom: {galgameSessions},
     ).get();
     return rows.isEmpty ? 0 : rows.first.read<int>('total_seconds');
@@ -858,6 +1104,10 @@ mixin _FushiDbStatistics
     required String dateKey,
     String? bookKey,
     String title = '',
+    String sentence = '',
+    int? sectionIndex,
+    int? normCharOffset,
+    int? normCharLength,
   }) =>
       transaction(() async {
         final existing = await (select(favoriteWords)
@@ -883,6 +1133,11 @@ mixin _FushiDbStatistics
             sourceType: sourceType,
             bookKey: Value(bookKey),
             title: Value(title),
+            // v114：收藏上下文（原句 + 定位锚点），口径见 [FavoriteWords.sentence]。
+            sentence: Value(sentence),
+            sectionIndex: Value(sectionIndex),
+            normCharOffset: Value(normCharOffset),
+            normCharLength: Value(normCharLength),
             dateKey: dateKey,
             createdAt: DateTime.now().millisecondsSinceEpoch,
           ),

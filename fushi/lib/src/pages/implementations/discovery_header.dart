@@ -40,6 +40,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
     required this.onSearchSubmitted,
     super.key,
     this.leading,
+    this.trailing = const <Widget>[],
     this.onSearchChanged,
     this.onSearchCleared,
     this.searchFocusId = const FushiFocusId('discovery-search'),
@@ -67,6 +68,9 @@ class DiscoveryHeaderControls extends StatelessWidget {
   /// 控件行之上的附加行（如媒体域分段按钮）。
   final Widget? leading;
 
+  /// 搜索框之后、同一行的附加按钮（页头不渲染时页头动作挪到这里，如刷新）。
+  final List<Widget> trailing;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -92,6 +96,20 @@ class DiscoveryHeaderControls extends StatelessWidget {
                   key: const ValueKey<String>('discovery_source_menu'),
                   initialSelection: selectedSourceId,
                   requestFocusOnTap: false,
+                  // 与右侧搜索框同一几何：DropdownMenu 默认是 56 高的 MD3
+                  // 文本框，比 [kFushiSearchFieldHeight] 的搜索框高出一截、字号也
+                  // 大一号，同一行两个输入控件高低不齐。压到同高 + 同一排版令牌。
+                  textStyle: tokens.type.listTitle,
+                  inputDecorationTheme:
+                      Theme.of(context).inputDecorationTheme.copyWith(
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: tokens.spacing.rowHorizontal,
+                            ),
+                            constraints: const BoxConstraints.tightFor(
+                              height: kFushiSearchFieldHeight,
+                            ),
+                          ),
                   onSelected: (String? value) =>
                       onSourceSelected(value ?? kDiscoveryAllSourcesId),
                   dropdownMenuEntries: <DropdownMenuEntry<String>>[
@@ -122,6 +140,10 @@ class DiscoveryHeaderControls extends StatelessWidget {
                   onClear: onSearchCleared,
                 ),
               ),
+              for (final Widget action in trailing) ...<Widget>[
+                SizedBox(width: tokens.spacing.gap),
+                action,
+              ],
             ],
           ),
         ],

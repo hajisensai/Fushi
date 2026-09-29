@@ -41,6 +41,15 @@ List<File> mangaCarrierFilesIn(Directory dir) {
   return files;
 }
 
+/// [mangaCarrierFilesIn] 里的 `.mokuro`（同样只看直接子层）。
+///
+/// 目录载体判定要单独数它（BUG-2785）：`卷.mokuro` + 同名页图子目录是 mokuro 的
+/// 标准产物，`.mokuro` 在场时它比页图更能说明这个目录是什么。
+List<File> mangaMokuroFilesIn(Directory dir) => <File>[
+      for (final File file in mangaCarrierFilesIn(dir))
+        if (p.extension(file.path).toLowerCase() == '.mokuro') file,
+    ];
+
 /// 目录里有没有页图。判据与真正执行导入的枚举同源，不另写一套。
 bool mangaDirectoryHasPageImages(String path) {
   final Directory dir = Directory(path);
@@ -211,4 +220,5 @@ ImportCarrier _classifyCarrierFile(String path) => classifyImportCarrier(
       isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
       directoryHasPageImages: (String _) => false,
       directoryCarrierFileCount: (String _) => 0,
+      directoryMokuroFileCount: (String _) => 0,
     );

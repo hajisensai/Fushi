@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
+import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -14,6 +16,9 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart';
+import 'package:fushi/src/sync/plex_video_client.dart' show PlexServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
@@ -115,6 +120,23 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
+          _externalServicePage(
+            id: 'services.subdl',
+            title: 'SubDL',
+            scope: VideoExternalProviderScope.subdl,
+            status: (SettingsContext c) => !c.appModel.videoSubtitleSubdlEnabled
+                ? t.settings_service_disabled
+                : c.appModel.videoSubtitleSubdlApiKey.trim().isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            entries: <SettingsBodySearchEntry>[
+              SettingsBodySearchEntry(
+                id: 'services.subdl.api_key',
+                title: t.video_external_api_key,
+                hasRevealTarget: true,
+              ),
+            ],
+          ),
           SettingsCustomItem(
             id: 'services.subtitle_preferences',
             searchTitle: 'AJATT · ${t.video_setting_jimaku_default_language}',
@@ -169,6 +191,15 @@ SettingsDestination buildServicesDestination() {
                 : t.settings_service_configured,
             body: (SettingsContext c) => const OpdsServerSettingsSection(),
           ),
+          _servicePage(
+            id: 'services.alist_sites',
+            title: t.discovery_alist_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAListSites.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const AListSiteSettingsSection(),
+          ),
         ],
       ),
       SettingsSection(
@@ -178,26 +209,19 @@ SettingsDestination buildServicesDestination() {
           SettingsNavigationItem(
             id: 'services.metadata.configure',
             title: 'AniDB',
+            // 状态与「测试登录」/ 协调器共用同一份配置快照判「配齐」：客户端名
+            // 留空走内置身份也算配齐，别按四个偏好键各自判空（BUG-2586）。
             subtitleBuilder: (SettingsContext c) {
-              if (!(c.appModel.prefsRepo.getPref(
-                    kVideoAniDbHashEnabledPref,
-                    defaultValue: false,
-                  )
-                  as bool)) {
+              final VideoSourceScrapeGlobalConfig config =
+                  VideoSourceScrapeGlobalConfig.fromPreferences(
+                    c.appModel.prefsRepo,
+                    resolvedTmdbApiKey: '',
+                    uiLocaleTag: kFallbackVideoMetadataLocale,
+                  );
+              if (!config.hashEnabled) {
                 return t.settings_service_disabled;
               }
-              return <String>[
-                    kVideoAniDbUsernamePref,
-                    kVideoAniDbPasswordPref,
-                    kVideoMetadataAniDbClientNamePref,
-                    kVideoMetadataAniDbClientVersionPref,
-                  ].every(
-                    (String key) =>
-                        (c.appModel.prefsRepo.getPref(key, defaultValue: '')
-                                as String)
-                            .trim()
-                            .isNotEmpty,
-                  )
+              return config.anidbHashReady
                   ? t.settings_service_configured
                   : t.settings_service_not_configured;
             },
@@ -315,6 +339,14 @@ SettingsDestination buildServicesDestination() {
                             );
                           },
                     ),
+                    // 填完账号能当场验证登录（BUG-2581）：以前只有跑一次刮削、翻报告才知道。
+                    SettingsActionItem(
+                      id: 'services.metadata.anidb_login_test',
+                      title: t.video_anidb_login_test,
+                      subtitle: t.video_anidb_login_test_hint,
+                      icon: Icons.login_outlined,
+                      onTap: testAniDbLogin,
+                    ),
                   ],
                 ),
               ],
@@ -377,13 +409,19 @@ SettingsDestination buildServicesDestination() {
       ),
       SettingsSection(
         id: 'services.media',
-        title: t.jellyfin_settings_title,
+        title: t.video_library_media_servers,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'services.media_server.jellyfin',
             searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
             builder: (SettingsContext c) =>
                 _JellyfinSettingsLink(settingsContext: c),
+          ),
+          SettingsCustomItem(
+            id: 'services.media_server.plex',
+            searchTitle: 'Plex · ${t.video_library_media_servers}',
+            builder: (SettingsContext c) =>
+                _PlexSettingsLink(settingsContext: c),
           ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
@@ -554,5 +592,67 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
                   : t.settings_service_configured,
               onTap: _open,
             ),
+  );
+}
+
+/// Plex 入口行：与 [_JellyfinSettingsLink] 同形，只读本地配置判「已配置」。
+class _PlexSettingsLink extends StatefulWidget {
+  const _PlexSettingsLink({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_PlexSettingsLink> createState() => _PlexSettingsLinkState();
+}
+
+class _PlexSettingsLinkState extends State<_PlexSettingsLink> {
+  late Future<bool> _configured;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _configured = SyncRepository(widget.settingsContext.appModel.database)
+        .getMediaServers()
+        .then(
+          (List<MediaServerConfig> servers) =>
+              servers.any((MediaServerConfig s) => s is PlexServerConfig),
+        );
+  }
+
+  Future<void> _open() async {
+    // 与 Jellyfin 入口同理必须走 `.subPage`（BUG-2485）。
+    await pushSettingsPage(
+      widget.settingsContext,
+      (_) => SettingsDetailPage.subPage(
+        () => SettingsDestination(
+          id: SettingsDestinationId.services,
+          title: 'Plex',
+          icon: Icons.cloud_outlined,
+          sections: const <SettingsSection>[],
+          body: (SettingsContext c) => PlexConfigWidget(settingsContext: c),
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(_load);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _configured,
+    builder: (BuildContext context, AsyncSnapshot<bool> snapshot) =>
+        AdaptiveSettingsNavigationRow(
+          title: 'Plex',
+          subtitle: snapshot.connectionState != ConnectionState.done
+              ? t.video_library_media_servers
+              : snapshot.data == true
+              ? t.settings_service_configured
+              : t.settings_service_not_configured,
+          onTap: _open,
+        ),
   );
 }

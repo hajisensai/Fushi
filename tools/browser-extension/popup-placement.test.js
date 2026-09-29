@@ -298,3 +298,105 @@ test('BUG-1726 布线：ResizeObserver 复算 + maxHeight 侧夹 + 拖拽手动�
   assert.ok(src.includes('fushiPlaceObserver.disconnect()'),
     '关窗必须 disconnect 落点观察器');
 });
+
+// ── BUG-2773：弹窗先落字幕下方显示、尾批长高后又翻到上方（用户录屏：「最终弹窗之前又往下弹了」）──
+// 根因：place() 在 rAF 首帧量高度时 popup.js 只建了首词条 + 1 个词典块（尾批仍在 MessageChannel
+// 宏任务里追加），fushiComputePlacement 按这个矮高度判「下方放得下」→ 落字幕下方并立即 reveal；
+// 随后 ResizeObserver 见弹窗长高重跑落点，下方放不下了 → 翻到词上方。修复：① 未锁边且尾批在途
+// （window._renderInProgress）时按 theme 上限选边、按实测高度定位；② reveal 时把所选一侧锁进
+// fushiPlaceSide，此后复算只在同侧夹高，不再翻边。
+// 驱动真实的 fushiApplyPlacement（量 host/容器 rect → 选边 → 写回 host.style），不是抄一份逻辑。
+function loadApplySandbox(vp) {
+  const ctx = loadSandbox();
+  ctx.window.innerWidth = vp.width;
+  ctx.window.innerHeight = vp.height;
+  const state = { height: 0 };
+  const rect = () => ({ x: 0, y: 0, left: 0, top: 0, width: 400, height: state.height });
+  ctx.__host = { style: { zoom: '' }, getBoundingClientRect: rect };
+  ctx.__container = { style: {}, getBoundingClientRect: rect };
+  vm.runInContext(`
+    fushiHost = __host; fushiContainer = __container;
+    fushiEnsureResizeGrip = function () {}; fushiPositionResizeGrip = function () {};
+    fushiThemeMaxHeightPx = 360; fushiHostBaseMaxHeight = 'min(360px, 80vh)';
+    fushiPlaceSide = null; fushiPlacedSide = null;
+  `, ctx);
+  return {
+    ctx,
+    setAnchor: (a) => vm.runInContext(`fushiPlaceAnchor = ${JSON.stringify(a)};`, ctx),
+    apply: (height, inProgress) => {
+      state.height = height;
+      ctx.window._renderInProgress = inProgress;
+      vm.runInContext('fushiApplyPlacement();', ctx);
+      return parseFloat(ctx.__host.style.top);
+    },
+    // 与 fushiRender 的 reveal 同一句：显示即锁边。
+    reveal: () => vm.runInContext('fushiPlaceSide = fushiPlacedSide;', ctx),
+    side: () => vm.runInContext('fushiPlacedSide', ctx),
+  };
+}
+
+test('BUG-2773 尾批在途的首帧按最终高度选边：底部字幕查词直接落上方，长高全程不翻边', () => {
+  const vp = { width: 1200, height: 800 };
+  const anchor = { x: 300, y: 560, height: 24 }; // 字幕词 560..584，下方只剩 208px，放不下 360
+  const h = loadApplySandbox(vp);
+  h.setAnchor(anchor);
+  const firstTop = h.apply(150, true); // 首帧：只有首词条，尾批在途
+  assert.strictEqual(h.side(), 'above', '首帧按矮高度落到了字幕下方——尾批长高后必然翻边');
+  assert.ok(firstTop + 150 <= anchor.y - 4 + 0.5, `首帧弹窗压词：top=${firstTop}`);
+  h.reveal();
+  for (const grown of [220, 300, 360]) {
+    const top = h.apply(grown, grown < 360);
+    assert.strictEqual(h.side(), 'above', `长高到 ${grown} 时翻边了`);
+    assert.ok(top + grown <= anchor.y - 4 + 0.5 && top >= 8 - 0.5,
+      `长高到 ${grown} 后压词或出视口：top=${top}`);
+  }
+});
+
+test('BUG-2773 显示后锁边：落下方的短结果再长高也只在下方夹高，不跳到上方', () => {
+  const vp = { width: 1200, height: 800 };
+  const anchor = { x: 300, y: 560, height: 24 };
+  const h = loadApplySandbox(vp);
+  h.setAnchor(anchor);
+  h.apply(120, false); // 渲染已完成的短结果：下方放得下
+  assert.strictEqual(h.side(), 'below');
+  h.reveal();
+  const top = h.apply(300, false); // 之后图片/字体加载把它撑高
+  assert.strictEqual(h.side(), 'below', '已显示的弹窗被翻到了上方');
+  assert.strictEqual(top, anchor.y + anchor.height + 4);
+  const maxH = h.ctx.__host.style.maxHeight;
+  assert.ok(/^min\(min\(360px, 80vh\), 20\d(\.\d+)?px\)$/.test(maxH),
+    `锁在下方时必须夹到下方可用空间（不出视口）：maxHeight=${maxH}`);
+});
+
+test('BUG-2773 空间充足时尾批在途仍落词下方（原行为不回归）', () => {
+  const vp = { width: 1200, height: 800 };
+  const anchor = { x: 300, y: 100, height: 24 }; // 词在上部：下方 668px 放得下 theme 上限
+  const h = loadApplySandbox(vp);
+  h.setAnchor(anchor);
+  h.apply(150, true);
+  assert.strictEqual(h.side(), 'below');
+});
+
+test('BUG-2773 纯函数强制侧：锁定一侧放不下时夹高，仍不压词不出视口', () => {
+  const place = loadPlacement();
+  const vp = { width: 1200, height: 800 };
+  const below = place({ x: 300, y: 560, height: 24 }, { width: 400, height: 360 }, vp, 'below');
+  assert.strictEqual(below.side, 'below');
+  assert.strictEqual(below.top, 588);
+  assert.ok(below.top + below.maxHeight <= vp.height - 8 + 0.5);
+  const above = place({ x: 300, y: 90, height: 24 }, { width: 400, height: 360 }, vp, 'above');
+  assert.strictEqual(above.side, 'above');
+  assert.ok(above.top >= 8 - 0.5 && above.top + above.maxHeight <= 90 - 4 + 0.5);
+});
+
+test('BUG-2773 布线：reveal 锁边、新查词与关窗清锁', () => {
+  const src = fs.readFileSync(CONTENT, 'utf8');
+  const revealAt = src.indexOf('const reveal = () => {');
+  assert.ok(revealAt > 0 &&
+    src.slice(revealAt, revealAt + 300).includes('fushiPlaceSide = fushiPlacedSide;'),
+    'reveal 必须把本次落点的一侧锁进 fushiPlaceSide');
+  assert.ok((src.match(/fushiPlaceSide = null;/g) || []).length >= 2,
+    '新查词（fushiRender）与关窗都必须清掉锁边，否则下一次查词沿用上一窗的一侧');
+  assert.ok(src.includes('window._renderInProgress && themeCap > height'),
+    '未锁边时必须按尾批在途状态用 theme 上限选边');
+});

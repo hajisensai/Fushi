@@ -17,9 +17,9 @@ bool shouldShowVideoOnlineServicesReminder(PreferencesRepository preferences) {
       VideoSourceScrapeGlobalConfig.fromPreferences(preferences,
           resolvedTmdbApiKey: '',
           uiLocaleTag: kFallbackVideoMetadataLocale);
-  final bool aniDbReady = config.hashEnabled &&
-      config.anidbUsername.isNotEmpty &&
-      config.anidbPassword.isNotEmpty;
+  // 与设置页状态、协调器同一判据（BUG-2586）：自定义客户端名不合规时登录
+  // 根本发不出去，不能只看账号密码填没填。
+  final bool aniDbReady = config.anidbHashReady;
   final bool jimakuReady =
       preferences.jimakuEnabled && preferences.jimakuApiKey.trim().isNotEmpty;
   final OpenSubtitlesConfig subtitles =

@@ -208,14 +208,122 @@ class ReaderContentStyles {
   /// 结果逐字节相同），留余量给 normal 行高更大的字体。Blink 本就不长高，且旧版
   /// Android WebView 的 ruby 实现不同，故仍**按平台门控**只发给 Apple 端；
   /// `-webkit-line-box-contain` 在任何平台都不再发出（BUG-611 / BUG-2482 两道守卫）。
+  ///
+  /// BUG-2724：WebKit 把注音盒的**边框盒底**贴在基字的「内容区」顶（竖排是右缘），
+  /// 而 Hiragino 的 ascent 比汉字墨迹高出一截，注音盒自己又带 `line-height: normal`
+  /// 的半行距（WebKit 不理会 rt 上的 line-height）——两截空白全落在注音与本行之间，
+  /// 注音看起来离本行远、贴近上一行/上一列。iOS 26.5 模拟器 Safari 实拍（真阅读器
+  /// CSS、22px、行高 1.65）：注音墨迹离本行 3.3px、离上一行 5.3px（竖排 3.0 / 4.7）。
+  /// WebKit 的 ruby 布局里注音边框盒底 = 基字顶 − `margin-block-end`，所以负的
+  /// `margin-block-end` 正好把注音朝基字方向挪（横排向下、竖排向左，逻辑属性一条
+  /// 通吃两种书写方向）；`position: relative` + `inset-block-start` 对 ruby-text 盒
+  /// 无效（实测 1em 也纹丝不动），`margin-block-start` 只改流中高度、不动位置。
+  /// 取 −0.2em（以注音字号计，随字号缩放）：本行 1.3 / 上一行 7.3px（竖排 1.0 /
+  /// 6.7），40px Hiragino Sans 与行高 2.2 下本行仍 1.0–1.7px、不压基字。它同时让
+  /// 注音在流中的高度再少 0.2em，与上面的抵消同向，不会让行盒重新长高。
+  ///
+  /// BUG-2779：上面两截空白都由**字体度量**决定，`-0.2em` 只对 Hiragino 成立（它的
+  /// 内容区几乎就是 em 盒）。换 Klee One（ascent+descent = 1.45em）后 iOS 模拟器实测
+  /// 注音 em 盒离基字 em 盒 6.08px、贴上一列，用户真机同样。CSS 拿不到字体 ascent，
+  /// 所以由 `reader_ruby_metrics_script.dart` 在页面里量真实 ruby，把两截空白折成注音
+  /// 字号的倍数写进 `--fushi-ruby-pull`，这里再多压 0.1em（注音 em 盒压进基字 em 盒
+  /// 0.1em——假名墨迹不满 em 盒，视觉上正好紧贴；Hiragino 下与旧 `-0.2em` 相差 < 0.1px）。
+  /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
+  /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
         TargetPlatform.iOS || TargetPlatform.macOS => '''
-/* BUG-2472 / BUG-2482: WebKit only — see _webKitRubyAnnotationCss. */
+/* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2779: WebKit only — see _webKitRubyAnnotationCss. */
+:root {
+  --fushi-ruby-snap: 1;
+}
 ruby > rt, ruby > rtc {
   margin-block-start: -2em !important;
+  margin-block-end: calc(-1em * var(--fushi-ruby-pull, 0.1) - 0.1em) !important;
 }
 ''',
         _ => '',
+      };
+
+  /// BUG-2761：Mac / iOS 分页翻页时，**每页首行的振假名**被画到上一页底部，本页首行
+  /// 只剩注音的下半截。根因是上面 BUG-2472 的负 `margin-block-start` 让注音不占行盒
+  /// 高度，而注音比根行盒上半 leading 高（22 号、行高 1.65：注音要 ≈10px，leading
+  /// 只有 ≈6px）——列中间的行无所谓（注音悬在上一行的下半 leading 里），但列顶那一行
+  /// 的注音就伸出了本列内容盒顶。WebKit 多列按「流线程坐标落在哪一列」分列绘制，
+  /// 非首列的顶边不外扩：伸出列顶的那截注音被本列裁掉，却落在上一列的流区间里、画在
+  /// 上一页底部（Mac 27 WKWebView 生产 CSS 实测：横排 21 处、竖排 9 处注音盒跨列；
+  /// Blink 按行片段所在列绘制，不受影响）。
+  ///
+  /// 修法利用 CSS 分页的**边距截断**：分栏处（非强制断点）相邻的外边距被截成 0。
+  /// 每个 `p` 在注音一侧（`padding-block-start`）预留 R，再由 `p::after` 的
+  /// `margin-block-end: -R` 抵消——这条负边距穿过 `p` 的块尾和下一段的上边距折叠在
+  /// 一起：页中间两者相抵，段落位置与改动前逐像素相同（书自带的段落边距照常参与
+  /// 折叠，不被覆盖）；段落落在页顶时那段折叠边距被截断，R 留下来成为注音的位置。
+  /// 竖排的块首是右侧，逻辑属性一条通吃两种书写方向。
+  ///
+  /// R 按行高算：需要的是「注音盒伸出行盒的量」，行高越大 leading 越能容下注音。
+  /// 取 `max(0, 0.65 − (lineHeight − 1) / 2)` em（行高 1.65 → 0.325em、1.0 → 0.65em、
+  /// ≥ 2.3 → 0），比实测伸出量多留约 0.1em 给注音字号大一点的书。只在分页模式发：
+  /// 连续滚动与 VN 不经多列分页，没有跨列问题。
+  static String _webKitPaginatedRubyReserveCss(double lineHeight) {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        break;
+      default:
+        return '';
+    }
+    final double reserveEm = math.max(0, 0.65 - (lineHeight - 1) / 2);
+    if (reserveEm <= 0) return '';
+    final String r = '${(reserveEm * 1000).round() / 1000}em';
+    return '''
+/* BUG-2761: WebKit paginated only — see _webKitPaginatedRubyReserveCss. */
+p {
+  padding-block-start: $r;
+}
+p::after {
+  content: "";
+  display: block;
+  margin-block-end: -$r;
+}
+''';
+  }
+
+  /// 触屏「压掉原生长按选区」的规则（TODO-1279），按渲染引擎分流。
+  ///
+  /// BUG-2607：WebKit 不绘制 `user-select: none` 文字上的 `::highlight()`——
+  /// Playwright WebKit 探针对同一条 Range：裸段落像素命中 0.559、
+  /// `user-select:none`（带/不带 -webkit- 前缀、写在元素或由祖先继承）**全部 0.000**、
+  /// 祖先 none 但元素 text 回到 0.559、只有 `-webkit-touch-callout:none` 不受影响。
+  /// iOS 的主指针是 coarse，所以 1279 这条全局 `user-select:none` 一落地，阅读器所有
+  /// 走 CSS Custom Highlight 的层——查词 `fushi-selection`、长按划选、收藏句
+  /// `fushi-hl-*`、搜索 `fushi-search`——在 iOS 上一律不可见（用户截图：有声书里划句
+  /// 只见两枚手柄 + 菜单、无高亮；有声书当前句是元素 class 背景，不受影响，所以看
+  /// 起来像「只有划选坏了」）。Blink 不受影响，Android 照旧。
+  ///
+  /// iOS 上「不让长按建立原生选区」改由平台开关承担：阅读器 WebView 设
+  /// `InAppWebViewSettings.isTextInteractionEnabled = false`
+  /// （`WKPreferences.isTextInteractionEnabled`，iOS 14.5+，见 webview.part.dart），
+  /// 这是 WKWebView 关掉文本选择手势的原生真值，与 CSS 无关、不影响 ::highlight 绘制，
+  /// 也不影响 caretRangeFromPoint / Range 等程序化 API（app 自绘选区只用这些）。
+  /// 这里 iOS 只留 `-webkit-touch-callout: none`（链接/图片长按气泡，探针证明无害）。
+  /// macOS 主指针是 fine，本块不生效，桌面原生选区/Ctrl+C/右键导出不受影响。
+  static String _touchNativeSelectionCss() => switch (defaultTargetPlatform) {
+        TargetPlatform.iOS => '''
+@media (pointer: coarse) {
+  html, body, body * {
+    -webkit-touch-callout: none !important;
+  }
+}
+''',
+        _ => '''
+@media (pointer: coarse) {
+  html, body, body * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
+}
+''',
       };
 
   static String _bodyFontFamily(String? customCssFamilies, String? language) {
@@ -484,6 +592,11 @@ svg.block-img.blurred {
 
     final String readerStylePriority =
         settings.prioritizeReaderStyles ? '' : ' !important';
+    // BUG-2761：只有多列分页有跨列问题，连续滚动与 VN 不发。
+    final String rubyPageTopReserveCss =
+        settings.isVnMode || settings.isContinuousMode
+            ? ''
+            : _webKitPaginatedRubyReserveCss(settings.lineHeight);
 
     return '''
 $resolvedFontFaces
@@ -682,7 +795,7 @@ ruby {
   display: ruby !important;
   ruby-position: over !important;
 }
-${_webKitRubyAnnotationCss()}ruby rp {
+${_webKitRubyAnnotationCss()}${rubyPageTopReserveCss}ruby rp {
   display: none !important;
 }
 ruby rb {
@@ -705,15 +818,10 @@ ruby rt, ruby rp {
    长按拖选只留我们的查词高亮；细指针（鼠标，pointer: fine——桌面 WebView2 / WKWebView /
    Linux）不受影响，桌面 Ctrl+C 复制与右键导出所依赖的 window.getSelection() 原生选区
    照旧。这是 CSS 层的根因修复，不再靠 selectstart 的 <400ms 时窗 preventDefault
-   （长按天然 >400ms 会逃逸）去追着压制。 */
-@media (pointer: coarse) {
-  html, body, body * {
-    -webkit-user-select: none !important;
-    user-select: none !important;
-    -webkit-touch-callout: none !important;
-  }
-}
-/* BUG-765 续：移动端选区起止手柄的强调色跟随主题。reader_selection_scripts.dart 里
+   （长按天然 >400ms 会逃逸）去追着压制。
+   BUG-2607：iOS 不走这条 user-select 规则——WebKit 对 user-select:none 的文字
+   **不绘制任何 ::highlight()**，见 _touchNativeSelectionCss。 */
+${_touchNativeSelectionCss()}/* BUG-765 续：移动端选区起止手柄的强调色跟随主题。reader_selection_scripts.dart 里
    自绘的起/止手柄用 var(--fushi-sel-handle) 引用本变量；主题切换重注入本 CSS 时手柄
    颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */
@@ -1100,7 +1208,14 @@ body {
   $vpalCss
 }
 .fushi-vn-stage {
-  position: fixed !important;
+  /* BUG-2638: absolute, NOT fixed. macOS WebKit composites a fixed stage as
+     its own layer, and when a vertical-rl screen swap changes the content
+     box size it only invalidates the OLD content rect — the new screen's
+     columns outside it stay unpainted (glyphs sliced) until some unrelated
+     repaint. The VN document never scrolls (html/body are 100vw x 100vh with
+     overflow hidden and the chapter lives in a detached sourceRoot), so the
+     initial containing block is the viewport and the geometry is identical. */
+  position: absolute !important;
   inset: 0 !important;
   box-sizing: border-box !important;
   /* Reserve the reader chrome (top/bottom bars) + the user's vertical margins

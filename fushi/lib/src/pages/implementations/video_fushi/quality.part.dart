@@ -76,16 +76,70 @@ extension _VideoQuality on _VideoFushiPageState {
 
   bool get _isYoutubeStream => _currentYoutubeWatchUrl != null;
 
-  /// 画质入口是否可见：HLS master（多档码率）或 YouTube 流（懒解析多档）。
-  bool get _hasQualityMenu => _hlsVariants.isNotEmpty || _isYoutubeStream;
+  /// 服务端转码画质档能力：媒体服务器（Jellyfin / Emby 按 DeviceProfile + 码率上限
+  /// 决定直播放还是转码）与互联 host（按档切段转码成 HLS）共用这一条。不支持的来源
+  /// 为 null。
+  RemoteVideoQualityLimit? get _mediaServerQuality {
+    // 能力接口不是 RemoteVideoClient 的子类型，`is` 不能在 RemoteVideoClient 上提升，
+    // 先退成 Object（与 _reportRemotePlaybackStopped 同款写法）。
+    final Object? client = _effectiveRemoteClient;
+    if (client is! RemoteVideoQualityLimit) return null;
+    // 实现了接口不等于此刻有档可选：互联 client 恒实现它，但对端跑不了 ffmpeg
+    // （移动端 host）或用户关了转码开关时档位表是空的。空表还显菜单，用户点进去
+    // 只会看到一屏空白。
+    return client.qualityPresets.isEmpty ? null : client;
+  }
 
-  /// 画质档数量（YouTube 优先，其次 HLS）。控件槽据此判是否显数字/入口。
-  int get _qualityOptionCount => _youtubeVariants.isNotEmpty
-      ? _youtubeVariants.length
-      : _hlsVariants.length;
+  /// 视频源扩展的「线路」能力：同一集多条候选（hoster × 画质），起播由 client 按
+  /// 扩展的 `preferred` / 排序默认选，用户在画质菜单里换。非扩展来源为 null。
+  RemoteVideoStreamVariants? get _streamVariantsClient {
+    final Object? client = _effectiveRemoteClient;
+    return client is RemoteVideoStreamVariants ? client : null;
+  }
 
-  /// 当前画质档标签（控件槽副标题）：YouTube > HLS；YouTube 尚未解析显「自动」占位。
+  /// 当前集的线路候选；只有一条时没有可换的，菜单不显。
+  List<RemoteVideoStreamVariant> get _streamVariants {
+    final List<RemoteVideoStreamVariant> variants =
+        _streamVariantsClient?.streamVariants ??
+            const <RemoteVideoStreamVariant>[];
+    return variants.length > 1 ? variants : const <RemoteVideoStreamVariant>[];
+  }
+
+  /// 画质入口是否可见：HLS master（多档码率）、YouTube 流（懒解析多档）、媒体服务器
+  /// （服务器侧转码档）或视频源扩展的多条线路。
+  bool get _hasQualityMenu =>
+      _hlsVariants.isNotEmpty ||
+      _isYoutubeStream ||
+      _mediaServerQuality != null ||
+      _streamVariants.isNotEmpty;
+
+  /// 画质档数量（媒体服务器 > 扩展线路 > YouTube > HLS）。控件槽据此判是否显数字/入口。
+  int get _qualityOptionCount {
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server != null) return server.qualityPresets.length;
+    if (_streamVariants.isNotEmpty) return _streamVariants.length;
+    return _youtubeVariants.isNotEmpty
+        ? _youtubeVariants.length
+        : _hlsVariants.length;
+  }
+
+  /// 当前画质档标签（控件槽副标题）：媒体服务器 > 扩展线路 > YouTube > HLS；YouTube
+  /// 尚未解析显「自动」占位。
   String? get _qualityCurrentLabel {
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server != null) {
+      final int index = server.qualityPresetIndex;
+      return index < 0 || index >= server.qualityPresets.length
+          ? t.video_quality_auto
+          : server.qualityPresets[index].label;
+    }
+    final List<RemoteVideoStreamVariant> variants = _streamVariants;
+    if (variants.isNotEmpty) {
+      final int index = _streamVariantsClient!.streamVariantIndex;
+      return index < 0 || index >= variants.length
+          ? null
+          : variants[index].label;
+    }
     if (_youtubeVariants.isNotEmpty) {
       return (_selectedYoutubeVariantIndex < 0 ||
               _selectedYoutubeVariantIndex >= _youtubeVariants.length)
@@ -176,7 +230,7 @@ extension _VideoQuality on _VideoFushiPageState {
         : await relayYoutubeStreamUrl(audioRaw, headers);
     if (!mounted) return;
     final VideoPlayerController? controller = _controller;
-    final int posMs = controller?.positionMs ?? 0;
+    final int posMs = controller?.resumePositionMs ?? 0;
     final List<AudioCue> cues = controller != null
         ? List<AudioCue>.of(controller.cues)
         : const <AudioCue>[];
@@ -202,6 +256,202 @@ extension _VideoQuality on _VideoFushiPageState {
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
+  /// 切到媒体服务器第 [index] 档（-1 = 自动）：偏好落库、写进 client，先关掉当前
+  /// 会话（服务器上的转码任务随之停），再按新档重新协商起播、回到当前位置。
+  // ── 互联「自动」档的自适应 ──────────────────────────────────────────────
+
+  /// 当前远端 client 是不是支持自适应的互联 host（有档可选才谈得上自适应）。
+  InterconnectSyncBackend? get _adaptiveQualityClient {
+    final Object? client = _effectiveRemoteClient;
+    if (client is! InterconnectSyncBackend) return null;
+    return client.qualityPresets.isEmpty ? null : client;
+  }
+
+  /// 起播 / 换集后重新开始观察。
+  ///
+  /// 只在用户选「自动」时跑：显式选了某一档就是选定了，自动改掉它会让设置看起来
+  /// 自己会动。
+  void _restartAdaptiveQuality() {
+    _stopAdaptiveQuality();
+    final InterconnectSyncBackend? client = _adaptiveQualityClient;
+    if (client == null) return;
+    if (client.qualityPresetIndex >= 0) return;
+    // 按 host 链路重算（换 peer / 从公网回到局域网都要重新起步），不是无脑 ??=。
+    client.ensureAdaptiveQualityStart();
+    _adaptiveQuality.reset();
+    _adaptiveSeenSeekGeneration = _controller?.seekGeneration ?? 0;
+    _adaptiveQualityTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickAdaptiveQuality(),
+    );
+  }
+
+  void _stopAdaptiveQuality() {
+    _adaptiveQualityTimer?.cancel();
+    _adaptiveQualityTimer = null;
+  }
+
+  /// 一拍采样：把播放器的缓冲状态喂给决策器，它说换就换。
+  void _tickAdaptiveQuality() {
+    if (!mounted || _adaptiveQualitySwitching) return;
+    final InterconnectSyncBackend? client = _adaptiveQualityClient;
+    final VideoPlayerController? controller = _controller;
+    if (client == null || controller == null) {
+      _stopAdaptiveQuality();
+      return;
+    }
+    // 用户在播放途中显式选了档 → 自动接管结束。
+    if (client.qualityPresetIndex >= 0) {
+      _stopAdaptiveQuality();
+      return;
+    }
+    // seek 引起的缓冲不是网况（BUG-2731）。放在「暂停不评估」之前：暂停时 seek、
+    // 按播放后才缓冲，也要算到这次 seek 头上。
+    final int seekGeneration = controller.seekGeneration;
+    if (seekGeneration != _adaptiveSeenSeekGeneration) {
+      _adaptiveSeenSeekGeneration = seekGeneration;
+      _adaptiveQuality.noteSeek();
+    }
+    // 暂停时不评估：暂停本来就不下载，缓冲深度与卡顿都不反映网况。
+    if (!controller.isPlaying) return;
+
+    final AdaptiveQualityDecision? decision = _adaptiveQuality.tick(
+      currentIndex: client.adaptiveQualityIndex ?? -1,
+      buffering: controller.isBuffering,
+      cacheSeconds: controller.networkCacheSeconds.value,
+    );
+    if (decision == null) return;
+    unawaited(_applyAdaptiveQuality(client, decision));
+  }
+
+  /// 执行自适应换档：换的是「自动」策略下的当前取值，**不动用户偏好**。
+  ///
+  /// 重取流的流程与用户手动换档同一条（停旧会话 → 重新协商 → 回到原位置），差别只在
+  /// 不写偏好、OSD 文案说明是自动调整的。
+  Future<void> _applyAdaptiveQuality(
+    InterconnectSyncBackend client,
+    AdaptiveQualityDecision decision,
+  ) async {
+    _adaptiveQualitySwitching = true;
+    try {
+      final int posMs = _controller?.resumePositionMs ?? 0;
+      client.adaptiveQualityIndex = decision.targetIndex;
+      await _reportRemotePlaybackStopped(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        positionMs: posMs,
+        generation: _remotePlaybackGeneration,
+      );
+      if (!mounted) return;
+      await _loadRemoteEpisode(
+        _currentEpisode < 0 ? 0 : _currentEpisode,
+        // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时换档」
+        // 直接归零回片头。
+        startIntent: EpisodeStartIntent.explicitCue,
+        initialPositionMsOverride: posMs,
+      );
+      if (!mounted) return;
+      // `qualityPresets` 在 host 不支持转码时是空表，而 `_hostTranscodeAvailable`
+      // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
+      // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
+      // 变成未捕获的 zone error。
+      final List<MediaServerQualityPreset> presets = client.qualityPresets;
+      final String label = decision.targetIndex < 0 ||
+              decision.targetIndex >= presets.length
+          ? t.video_quality_auto
+          : presets[decision.targetIndex].label;
+      _showOsd(
+        decision.reason == AdaptiveQualityReason.stall
+            ? t.video_quality_auto_lowered(label: label)
+            : t.video_quality_auto_raised(label: label),
+        icon: Icons.network_check,
+      );
+    } finally {
+      _adaptiveQualitySwitching = false;
+    }
+  }
+
+  /// 画质档偏好的落点按来源分流。
+  ///
+  /// 互联与媒体服务器（Jellyfin/Emby）的档位阶梯**不同**（互联整体更低，它要解决的
+  /// 是人在外面用手机网络），共用一个下标会让同一个数字在两边指向不同画质——用户在
+  /// Emby 上选的 `2` 跑到互联上就成了另一档。
+  int _readQualityPresetIndex(Object client) => client is InterconnectSyncBackend
+      ? appModel.prefsRepo.interconnectQualityPresetIndex
+      : appModel.prefsRepo.mediaServerQualityPresetIndex;
+
+  Future<void> _writeQualityPresetIndex(Object client, int index) =>
+      client is InterconnectSyncBackend
+          ? appModel.prefsRepo.setInterconnectQualityPresetIndex(index)
+          : appModel.prefsRepo.setMediaServerQualityPresetIndex(index);
+
+  Future<void> _switchMediaServerQuality(int index) async {
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server == null || index >= server.qualityPresets.length) return;
+    final int target = index < 0 ? -1 : index;
+    if (target == server.qualityPresetIndex) {
+      _hideVideoSidePanel();
+      return;
+    }
+    final int posMs = _controller?.resumePositionMs ?? 0;
+    _hideVideoSidePanel();
+    await _writeQualityPresetIndex(server, target);
+    if (!mounted) return;
+    _rebuild(() => server.qualityPresetIndex = target);
+    // 用户显式选档 = 自动接管结束；选回「自动」则把自适应的当前取值清掉，让它从
+    // 起点判据重新开始，而不是接着上次自动降到的那一档跑。
+    if (server is InterconnectSyncBackend) {
+      if (target >= 0) {
+        _stopAdaptiveQuality();
+      } else {
+        server.adaptiveQualityIndex = null;
+      }
+    }
+    await _reportRemotePlaybackStopped(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      positionMs: posMs,
+      generation: _remotePlaybackGeneration,
+    );
+    if (!mounted) return;
+    await _loadRemoteEpisode(
+      _currentEpisode < 0 ? 0 : _currentEpisode,
+      startIntent: EpisodeStartIntent.explicitCue,
+      initialPositionMsOverride: posMs,
+    );
+    if (!mounted) return;
+    final List<MediaServerQualityPreset> presets = server.qualityPresets;
+    final String label = target < 0 || target >= presets.length
+        ? t.video_quality_auto
+        : presets[target].label;
+    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+  }
+
+  /// 切到视频源扩展的第 [index] 条线路：选择记进 client（钉到当前集），再按当前集
+  /// 重新取流起播、回到当前位置——与媒体服务器换档同一条路（[_loadRemoteEpisode]
+  /// 会重新读 client 的防盗链头，这条线路的头随之下发）。同条早退；重载后弹 OSD。
+  Future<void> _switchStreamVariant(int index) async {
+    final RemoteVideoStreamVariants? client = _streamVariantsClient;
+    if (client == null) return;
+    final List<RemoteVideoStreamVariant> variants = client.streamVariants;
+    if (index < 0 || index >= variants.length) return;
+    if (index == client.streamVariantIndex) {
+      _hideVideoSidePanel();
+      return;
+    }
+    final int posMs = _controller?.resumePositionMs ?? 0;
+    final String label = variants[index].label;
+    _hideVideoSidePanel();
+    client.streamVariantIndex = index;
+    await _loadRemoteEpisode(
+      _currentEpisode < 0 ? 0 : _currentEpisode,
+      startIntent: EpisodeStartIntent.explicitCue,
+      initialPositionMsOverride: posMs,
+    );
+    if (!mounted) return;
+    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+  }
+
   /// 切到第 [index] 档画质（-1=自动/master ABR）：换 variant URL 重载，保持当前播放位置
   /// 与现有字幕 cue。同档早退；重载后弹 OSD。
   Future<void> _switchHlsVariant(int index) async {
@@ -214,7 +464,7 @@ extension _VideoQuality on _VideoFushiPageState {
     }
     final String target = index < 0 ? master : _hlsVariants[index].url;
     final VideoPlayerController? controller = _controller;
-    final int posMs = controller?.positionMs ?? 0;
+    final int posMs = controller?.resumePositionMs ?? 0;
     final List<AudioCue> cues = controller != null
         ? List<AudioCue>.of(controller.cues)
         : const <AudioCue>[];
@@ -244,6 +494,71 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 的各档（解析中显 spinner）；否则显 HLS 档；空态显示标题占位。
   Widget _buildQualitySidePanel(VideoPlayerController controller) {
     final ColorScheme cs = _videoChromeColorScheme(context);
+    // 媒体服务器分支：固定阶梯（自动 + 各档），当前档打勾。
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server != null) {
+      final List<MediaServerQualityPreset> presets = server.qualityPresets;
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: <Widget>[
+          _buildMediaServerQualityTile(
+            cs,
+            icon: Icons.auto_awesome,
+            label: t.video_quality_auto,
+            index: -1,
+            selected: server.qualityPresetIndex < 0,
+          ),
+          for (int i = 0; i < presets.length; i++)
+            _buildMediaServerQualityTile(
+              cs,
+              icon: Icons.high_quality,
+              label: presets[i].label,
+              index: i,
+              selected: server.qualityPresetIndex == i,
+            ),
+        ],
+      );
+    }
+    // 视频源扩展分支：当前集的各条线路（扩展排好的顺序），正在播的打勾；线路本身
+    // 是 HLS master 时把它的码率档接在下面（换线路与换档互不覆盖）。
+    final List<RemoteVideoStreamVariant> streamVariants = _streamVariants;
+    if (streamVariants.isNotEmpty) {
+      final int current = _streamVariantsClient!.streamVariantIndex;
+      final List<HlsVariant> hls = _hlsVariants;
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: <Widget>[
+          for (int i = 0; i < streamVariants.length; i++)
+            ListTile(
+              key: ValueKey<String>('video-quality-stream-variant-$i'),
+              dense: true,
+              leading: const Icon(Icons.alt_route),
+              title: Text(streamVariants[i].label),
+              selected: current == i,
+              selectedColor: cs.primary,
+              trailing:
+                  current == i ? Icon(Icons.check, color: cs.primary) : null,
+              onTap: () => unawaited(_switchStreamVariant(i)),
+            ),
+          if (hls.isNotEmpty) ...<Widget>[
+            const Divider(),
+            _buildQualityTile(
+              cs,
+              icon: Icons.auto_awesome,
+              label: t.video_quality_auto,
+              index: -1,
+            ),
+            for (int i = 0; i < hls.length; i++)
+              _buildQualityTile(
+                cs,
+                icon: Icons.high_quality,
+                label: hls[i].qualityLabel,
+                index: i,
+              ),
+          ],
+        ],
+      );
+    }
     // YouTube 分支：懒解析。解析中显 spinner；已解析显各档；解析失败/无分离流留占位。
     if (_isYoutubeStream) {
       if (_youtubeVariants.isEmpty && _youtubeVariantsLoading) {
@@ -346,6 +661,25 @@ extension _VideoQuality on _VideoFushiPageState {
       selectedColor: cs.primary,
       trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
       onTap: () => unawaited(_switchHlsVariant(index)),
+    );
+  }
+
+  Widget _buildMediaServerQualityTile(
+    ColorScheme cs, {
+    required IconData icon,
+    required String label,
+    required int index,
+    required bool selected,
+  }) {
+    return ListTile(
+      key: ValueKey<String>('video-quality-media-server-$index'),
+      dense: true,
+      leading: Icon(icon),
+      title: Text(label),
+      selected: selected,
+      selectedColor: cs.primary,
+      trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
+      onTap: () => unawaited(_switchMediaServerQuality(index)),
     );
   }
 

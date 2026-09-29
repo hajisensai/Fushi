@@ -30,7 +30,11 @@ import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/reader/popup_swipe_close_script.dart'
+    show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
+    show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -41,6 +45,37 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
+
+/// Per-lookup placement facts supplied by a native hit surface.
+///
+/// Both rectangles are screen physical pixels. Keeping them in one immutable
+/// value makes a lookup self-contained: an attached desktop lookup cannot
+/// observe a stale global physical cap from a previous galCard
+/// session, and the native anchor is never reinterpreted with the main
+/// Flutter view's DPR.
+@immutable
+class GlobalLookupPhysicalPlacement {
+  const GlobalLookupPhysicalPlacement({
+    required this.anchorScreenRect,
+    this.destinationViewportScreenRect,
+  });
+
+  /// The hit glyph rectangle in screen physical pixels.
+  final Rect anchorScreenRect;
+
+  /// The presentation client viewport in screen physical pixels.
+  final Rect? destinationViewportScreenRect;
+
+  bool get isValid {
+    final Rect? viewport = destinationViewportScreenRect;
+    return anchorScreenRect.isFinite &&
+        !anchorScreenRect.isEmpty &&
+        (viewport == null ||
+            (viewport.isFinite &&
+                !viewport.isEmpty &&
+                viewport.intersect(anchorScreenRect) == anchorScreenRect));
+  }
+}
 
 /// Single global overlay per process.
 class GlobalLookupController {
@@ -58,7 +93,11 @@ class GlobalLookupController {
   @visibleForTesting
   static bool? platformOverride;
 
-  static bool get isSupported => platformOverride ?? Platform.isWindows;
+  /// Windows: runner GlobalLookupWindow (WebView2). macOS: Runner
+  /// GlobalLookupOverlay.swift (NSPanel + WKWebView) on the SAME channel
+  /// contract. Linux has no native overlay yet.
+  static bool get isSupported =>
+      platformOverride ?? (Platform.isWindows || Platform.isMacOS);
 
   /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
   /// 覆盖窗还是退回主窗 tab，请求不丢。
@@ -86,6 +125,11 @@ class GlobalLookupController {
   // the OS hotkey immediately, instead of the key being a compile-time const.
   FushiShortcutRegistry? _registry;
   bool _started = false;
+  // macOS cannot read another app's selection until the user grants
+  // Accessibility access. The first explicit global-lookup trigger opens the
+  // system permission pane; do that once per process and let the user return
+  // to the source app before we try to capture its selection.
+  bool _macAccessibilityPrompted = false;
   // TODO-1233 -- optional consumer notified when the overlay is GENUINELY
   // dismissed (foreground hook / click-outside / JS dismiss), so a caller can
   // hang a resume-on-dismiss. The video subtitle lookup (path A) would use this
@@ -118,7 +162,8 @@ class GlobalLookupController {
     int physicalDx,
     int physicalDy,
     int physicalRootHeight,
-  )? onRoutedRevealed;
+  )?
+  onRoutedRevealed;
 
   /// Interactive gal-card pixels changed after the first reveal.  The route
   /// owner coalesces these notifications into bitmap recaptures.
@@ -165,7 +210,8 @@ class GlobalLookupController {
     double left,
     double top,
     int attempt,
-  })? _pendingGalCapture;
+  })?
+  _pendingGalCapture;
   Timer? _galCaptureReadySafety;
   int _galCaptureGeneration = 0;
   // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
@@ -391,7 +437,8 @@ class GlobalLookupController {
         .then((_) => _registerHotKeysNow())
         // 上一轮失败不能卡死整条链（内部已逐条 catch，这里只兜底）。
         .catchError(
-            (Object e) => glog('hotkey: registration round FAILED: $e'));
+          (Object e) => glog('hotkey: registration round FAILED: $e'),
+        );
     _hotKeyRegistration = next;
     return next;
   }
@@ -399,15 +446,17 @@ class GlobalLookupController {
   /// 串行链上的一轮实际注册，只由 [_registerHotKeysFromRegistry] 调用。
   Future<void> _registerHotKeysNow() async {
     // Drop everything registered last round (idempotent: safe when empty).
-    final List<MapEntry<ShortcutAction, HotKey>> previous =
-        _hotKeys.entries.toList(growable: false);
+    final List<MapEntry<ShortcutAction, HotKey>> previous = _hotKeys.entries
+        .toList(growable: false);
     _hotKeys.clear();
     for (final MapEntry<ShortcutAction, HotKey> entry in previous) {
       try {
         await hotKeyManager.unregister(entry.value);
       } catch (e) {
-        glog('hotkey: unregister previous ${entry.key.key} '
-            'FAILED (non-fatal): $e');
+        glog(
+          'hotkey: unregister previous ${entry.key.key} '
+          'FAILED (non-fatal): $e',
+        );
       }
     }
     final FushiShortcutRegistry? registry = _registry;
@@ -436,8 +485,10 @@ class GlobalLookupController {
     }
     final HotKey? hotKey = _hotKeyFromBinding(set.keyboardBindings.first);
     if (hotKey == null) {
-      glog('hotkey: ${action.key} binding has no mappable physical key — '
-          'not registered');
+      glog(
+        'hotkey: ${action.key} binding has no mappable physical key — '
+        'not registered',
+      );
       return;
     }
     _hotKeys[action] = hotKey;
@@ -483,6 +534,9 @@ class GlobalLookupController {
   ///     「功能模块 → 查词」关掉时推独立查词路由承载同一个 HomeDictionaryPage。这是
   ///     一次**用户显式发起**的查词，绝不能被模块门静默吞掉（吞掉的表现是窗口弹到
   ///     前台却什么都没变，比没有这个热键更糟）。
+  ///     `focusSearch: true`：用户按这个键就是为了打字（Flow Launcher 式用法），页面
+  ///     弹出来还得先点一下搜索框等于热键只做了一半——与携带待查词的悬浮字幕点词
+  ///     不同，本动作不取任何文本，抢焦点不会打断任何事。
   Future<void> openLookupPageInMainWindow() async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -490,7 +544,7 @@ class GlobalLookupController {
       return;
     }
     await DesktopLookupService.instance.bringMainWindowToFront();
-    model.requestHomeDictionaryTab();
+    model.requestHomeDictionaryTab(focusSearch: true);
     glog('openLookupPage: main window fronted + dictionary tab requested');
   }
 
@@ -598,15 +652,43 @@ class GlobalLookupController {
     );
   }
 
-  /// Absolute folder that holds popup.html on Windows:
-  /// <exeDir>/data/flutter_assets/assets/popup.
-  String _popupAssetsDir() => p.join(
-        p.dirname(Platform.resolvedExecutable),
-        'data',
-        'flutter_assets',
-        'assets',
-        'popup',
+  /// Absolute folder that holds popup.html — see [popupAssetsDirFor].
+  String _popupAssetsDir() =>
+      popupAssetsDirFor(Platform.resolvedExecutable, isMacOS: Platform.isMacOS);
+
+  /// Absolute popup assets folder for the native overlay to serve:
+  ///   · Windows / Linux: `<exeDir>/data/flutter_assets/assets/popup`;
+  ///   · macOS: `<App>.app/Contents/Frameworks/App.framework/Resources/
+  ///     flutter_assets/assets/popup` (the executable lives in Contents/MacOS;
+  ///     same bundle layout webview_asset_url.dart probes for in-app assets).
+  ///
+  /// [context] is the path style to resolve with (defaults to the running
+  /// platform's); tests pass `p.windows` / `p.posix` explicitly so the
+  /// Windows layout can be asserted on a Linux CI runner and vice versa.
+  @visibleForTesting
+  static String popupAssetsDirFor(
+    String resolvedExecutable, {
+    required bool isMacOS,
+    p.Context? context,
+  }) {
+    final p.Context ctx = context ?? p.context;
+    final String exeDir = ctx.dirname(resolvedExecutable);
+    if (isMacOS) {
+      return ctx.normalize(
+        ctx.join(
+          exeDir,
+          '..',
+          'Frameworks',
+          'App.framework',
+          'Resources',
+          'flutter_assets',
+          'assets',
+          'popup',
+        ),
       );
+    }
+    return ctx.join(exeDir, 'data', 'flutter_assets', 'assets', 'popup');
+  }
 
   /// TODO-1066 — app 外查词的**触发源无关**入口：抓前台程序当前选中的文本，
   /// 查词，弹出覆盖窗卡片。
@@ -642,6 +724,15 @@ class GlobalLookupController {
         glog('hotkey: appModel null — abort');
         return;
       }
+      if (Platform.isMacOS && !await _ensureMacAccessibilityForSelection()) {
+        // Showing the permission pane changes the foreground application, so
+        // capturing now would read the wrong app. The user can press the same
+        // hotkey again after granting access.
+        if (_isCurrentRoute) {
+          glog('hotkey: macOS Accessibility permission required — abort');
+        }
+        return;
+      }
       // TODO-1079 (D) — collapse native + Dart reveal state to known-hidden
       // BEFORE the (possibly slow) selection capture, so a re-press makes the
       // previous card vanish immediately. _lookupExternal hides again right
@@ -673,11 +764,12 @@ class GlobalLookupController {
         // stillWanted：剪贴板捕获是串行的全局事务（见 SelectionCapture 的闸门）。
         // 手柄按钮/鼠标侧键比键盘热键容易连击，排队期间本次若已被新触发取代，就
         // 别再去动一次剪贴板——反正结果下一行就会被丢弃。
-        text = (await SelectionCapture.captureForegroundSelection(
-                  stillWanted: () => _isCurrentRoute,
-                ) ??
-                '')
-            .trim();
+        text =
+            (await SelectionCapture.captureForegroundSelection(
+                      stillWanted: () => _isCurrentRoute,
+                    ) ??
+                    '')
+                .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
       }
@@ -689,12 +781,43 @@ class GlobalLookupController {
       await _lookupExternal(
         text,
         sentence: sentence,
+        physicalPlacement: null,
         autoRead: true,
         miningHandler: null,
       );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
+  }
+
+  /// Returns whether macOS can read/capture the foreground app's selection.
+  /// The permission request is only made after an explicit global-lookup
+  /// trigger, never during app startup or silently in the capture fallback.
+  ///
+  /// 未授权时**每次**触发都要留下用户看得见的痕迹：授权面板只开一次（再开一次
+  /// 也只是把同一个系统设置页翻到前台，徒增骚扰），但之后每一次热键 / 手柄 /
+  /// 鼠标侧键触发都往 [ErrorLogService] 记一条——这条链路的失败形态是「按了键
+  /// 什么都没发生」，只写 glog 临时诊断文件等于静默吞掉（TODO-1086 已为热键注册
+  /// 失败立过同一条规矩）。
+  Future<bool> _ensureMacAccessibilityForSelection() async {
+    if (!Platform.isMacOS) return true;
+    if (await SelectionCapture.isAccessibilityTrusted()) return true;
+    if (!_macAccessibilityPrompted) {
+      _macAccessibilityPrompted = true;
+      final bool granted = await SelectionCapture.requestAccessibilityTrust();
+      glog('hotkey: macOS Accessibility request granted=$granted');
+      if (granted && await SelectionCapture.isAccessibilityTrusted()) {
+        return true;
+      }
+    }
+    glog('hotkey: macOS Accessibility not granted, selection capture skipped');
+    ErrorLogService.instance.log(
+      'GlobalLookupController.macAccessibility',
+      'Global lookup could not read the foreground selection: Fushi is not '
+          'trusted for Accessibility. Grant it in System Settings > Privacy & '
+          'Security > Accessibility, then trigger the lookup again.',
+    );
+    return false;
   }
 
   /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word
@@ -706,7 +829,7 @@ class GlobalLookupController {
   /// coordinates). Returns false when the overlay cannot take the lookup
   /// (unsupported platform / [start] never ran / blank term) so the caller
   /// falls back to its existing in-app route — a tap is never silently lost.
-  /// [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形下方（台词浮窗
+  /// [anchorScreenRect]（屏幕逻辑 px）：给出时卡片放在该矩形上/下侧、不压字（台词浮窗
   /// 点词=被点文字处），null 保持 OS 光标语义。
   /// 游戏内查词的**物理像素**尺寸上限（宽, 高）。null = 不限（桌面浮窗）。
   ///
@@ -733,9 +856,10 @@ class GlobalLookupController {
   }) {
     _physicalCap =
         (width == null || height == null || width <= 0 || height <= 0)
-            ? null
-            : (w: width, h: height);
-    _physicalLayoutWorkArea = (workWidth == null ||
+        ? null
+        : (w: width, h: height);
+    _physicalLayoutWorkArea =
+        (workWidth == null ||
             workHeight == null ||
             workWidth <= 0 ||
             workHeight <= 0)
@@ -752,8 +876,8 @@ class GlobalLookupController {
   /// 二选一——真机上就是「游戏内过小、浮窗过大」。这里按 route 分流，形态各读各的键。
   LookupSize _effectiveLookupSizeForCurrentRoute(AppModel model) =>
       GlobalLookupChannel.currentRoute.source == 'galCard'
-          ? model.galCardLookupEffectiveSize
-          : model.overlayLookupEffectiveSize;
+      ? model.galCardLookupEffectiveSize
+      : model.overlayLookupEffectiveSize;
 
   /// 卡片尺寸上界（物理像素）。真机上它决定「最大宽/高」这个设置到底生不生效。
   @visibleForTesting
@@ -771,7 +895,13 @@ class GlobalLookupController {
       _effectiveLookupSizeForCurrentRoute(model);
 
   LookupSize _clampToPhysicalCap(LookupSize size, AppModel model, double dpr) {
-    final ({int w, int h})? cap = _physicalCap;
+    // setPhysicalCap belongs to the galCard route. Desktop lookups, including
+    // attached hits, must not inherit a cap left behind by a previous game
+    // card session.
+    final ({int w, int h})? cap =
+        GlobalLookupChannel.currentRoute.source == 'galCard'
+        ? _physicalCap
+        : null;
     if (cap == null) return size;
     final double factor = model.appUiScale * dpr;
     if (factor <= 0) return size;
@@ -790,6 +920,7 @@ class GlobalLookupController {
     String text, {
     String sentence = '',
     Rect? anchorScreenRect,
+    GlobalLookupPhysicalPlacement? physicalPlacement,
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
@@ -804,6 +935,7 @@ class GlobalLookupController {
         text,
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
+        physicalPlacement: physicalPlacement,
         autoRead: autoRead,
         miningHandler: miningHandler,
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
@@ -815,6 +947,7 @@ class GlobalLookupController {
     String text, {
     required String sentence,
     required Rect? anchorScreenRect,
+    required GlobalLookupPhysicalPlacement? physicalPlacement,
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
@@ -823,6 +956,7 @@ class GlobalLookupController {
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
       return false;
     }
+    if (physicalPlacement != null && !physicalPlacement.isValid) return false;
     _activateRoute(GlobalLookupChannel.currentRoute);
     glog('lookupText: "$term"');
     // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
@@ -843,6 +977,7 @@ class GlobalLookupController {
       term,
       sentence: sentence,
       anchorScreenRect: anchorScreenRect,
+      physicalPlacement: physicalPlacement,
       autoRead: autoRead,
       miningHandler: miningHandler,
       consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
@@ -892,14 +1027,18 @@ class GlobalLookupController {
   /// Never throws (logs and returns false, matching the old _onHotKey contract).
   ///
   /// [anchorScreenRect]（屏幕逻辑 px）：台词浮窗点词给出被点文字的屏幕矩形，
-  /// 卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是光标点右下。
+  /// 卡片放在文字正下方、下方放不下则翻到上方（同 in-app 嵌套卡观感），
+  /// 而不是光标点右下。
   /// null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
   /// showAt 在 atCursor:false 时直接用传入点并以该点算工作区偏移，级联种子
   /// （cursorWorkX/Y）自动对齐锚点，无需 native 改动。
+  /// [physicalPlacement] supplies attached hits in physical screen pixels;
+  /// its root anchor uses the existing above/below placement in the viewport.
   Future<bool> _lookupExternal(
     String text, {
     required String sentence,
     Rect? anchorScreenRect,
+    required GlobalLookupPhysicalPlacement? physicalPlacement,
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
@@ -984,7 +1123,7 @@ class GlobalLookupController {
       // cascade LAYOUT BOUNDS (window-local CSS px) so a nested child card has
       // room to cascade beside the root during measurement; D2's union bbox
       // (overlaySize) then reveals/resizes the window down to the real extent.
-      // The root card itself stays anchorless (its anchor is null) and lands at
+      // Legacy roots stay anchorless (their anchor is null) and land at
       // the window-local origin clamped into the work area (TODO-1231
       // computeRootShellOffset), so a single-frame lookup still reveals exactly
       // at the card size after the bbox trims the bounds — no regression.
@@ -999,16 +1138,51 @@ class GlobalLookupController {
       _layoutBoundsH = cardH * kGlobalLookupLayoutBoundsHeightFactor;
       final int w0 = (_layoutBoundsW * dpr).round();
       final int h0 = (_layoutBoundsH * dpr).round();
-      // 真机第 5 轮 — 有文字锚点时窗口放在被点文字左下（物理 px），native 以
-      // 该点所在显示器算工作区/偏移；无锚点保持 atCursor（+8,+8 光标偏移）。
+      // Both anchor kinds seed the window at the physical word origin; the
+      // anchored root frame handles above/below avoidance.
+      // Native chooses the monitor from this point; anchorless calls use cursor.
       // 布局工作区上限：游戏内查词时可用空间是**游戏视口**，不是显示器工作区。
       // 不传就会按 2560x1440 排版、排完再被裁（runner 超尺寸是裁不是缩）。
-      final ({int w, int h, int x, int y})? workArea = _physicalLayoutWorkArea;
-      final int capW = workArea?.w ?? 0;
-      final int capH = workArea?.h ?? 0;
-      final int capX = workArea?.x ?? 0;
-      final int capY = workArea?.y ?? 0;
-      final GlobalLookupShowResult shown = anchorScreenRect == null
+      final bool usePhysicalAnchor = physicalPlacement != null;
+      final Rect? effectiveAnchor =
+          physicalPlacement?.anchorScreenRect ?? anchorScreenRect;
+      // 两种锚点统一到物理像素：逻辑锚点（台词浮窗 / 剪贴板面板点词）曾把窗口
+      // 种在词下方且根卡不带锚，下方放不下时根卡只被夹回工作区——整卡上推正好
+      // 压在被点的词上（浮窗贴屏幕底时必现）。现在与 attached 一样种在词左上角，
+      // 根卡带锚交给 computeFrameRect 择上/下侧。
+      final Rect? anchorPhysical = effectiveAnchor == null
+          ? null
+          : usePhysicalAnchor
+          ? effectiveAnchor
+          : Rect.fromLTRB(
+              effectiveAnchor.left * dpr,
+              effectiveAnchor.top * dpr,
+              effectiveAnchor.right * dpr,
+              effectiveAnchor.bottom * dpr,
+            );
+      final Rect? destinationViewport =
+          physicalPlacement?.destinationViewportScreenRect;
+      final int showX = anchorPhysical?.left.round() ?? 0;
+      final int showY = anchorPhysical?.top.round() ?? 0;
+      // A galCard lookup keeps using its session-owned layout viewport. An
+      // attached desktop lookup gets a viewport from the same native hit event;
+      // all other desktop lookups must use the monitor work area reported by
+      // showAt rather than a stale galCard value.
+      final ({int w, int h, int x, int y})? galWorkArea =
+          GlobalLookupChannel.currentRoute.source == 'galCard'
+          ? _physicalLayoutWorkArea
+          : null;
+      final int capW =
+          destinationViewport?.width.round() ?? galWorkArea?.w ?? 0;
+      final int capH =
+          destinationViewport?.height.round() ?? galWorkArea?.h ?? 0;
+      final int capX = destinationViewport == null
+          ? galWorkArea?.x ?? 0
+          : showX - destinationViewport.left.round();
+      final int capY = destinationViewport == null
+          ? galWorkArea?.y ?? 0
+          : showY - destinationViewport.top.round();
+      final GlobalLookupShowResult shown = effectiveAnchor == null
           ? await GlobalLookupChannel.showAt(
               x: 0,
               y: 0,
@@ -1021,8 +1195,8 @@ class GlobalLookupController {
               capOriginY: capY,
             )
           : await GlobalLookupChannel.showAt(
-              x: (anchorScreenRect.left * dpr).round(),
-              y: ((anchorScreenRect.bottom + 4) * dpr).round(),
+              x: showX,
+              y: showY,
               width: w0,
               height: h0,
               atCursor: false,
@@ -1032,16 +1206,16 @@ class GlobalLookupController {
               capOriginY: capY,
             );
       // BUG-2372 诊断线 —— 「弹窗没锚在被点的词上」这类报告，光看截图量不出
-      // 锚点到卡片的真实偏移。把锚点（逻辑 px）、dpr、真正投给 native 的物理
+      // 锚点到卡片的真实偏移。把锚点坐标域、dpr、真正投给 native 的物理
       // 坐标、以及 native 回报的工作区/原点一次记全；配合随后的 reveal(box)
       // 就能把卡片的最终屏幕位置反算到像素，不必再让用户反复截图。
       glog(
-        'lookup: anchor=${anchorScreenRect == null ? 'null(atCursor)' : '('
-            '${anchorScreenRect.left},${anchorScreenRect.top},'
-            '${anchorScreenRect.width}x${anchorScreenRect.height})'} '
+        'lookup: anchor=${effectiveAnchor == null ? 'null(atCursor)' : '('
+                  '${effectiveAnchor.left},${effectiveAnchor.top},'
+                  '${effectiveAnchor.width}x${effectiveAnchor.height})'} '
+        'anchorSpace=${usePhysicalAnchor ? 'physical' : 'logical'} '
         'dpr=$dpr appUiScale=${model.appUiScale} '
-        'showAt=(${anchorScreenRect == null ? 'cursor' : '${(anchorScreenRect.left * dpr).round()},'
-            '${((anchorScreenRect.bottom + 4) * dpr).round()}'}) '
+        'showAt=(${effectiveAnchor == null ? 'cursor' : '$showX,$showY'}) '
         'cardCss=${overlaySize.width}x${overlaySize.height} '
         'cap=(${capW}x$capH @$capX,$capY) '
         'reply=(work=${shown.workWidth}x${shown.workHeight} '
@@ -1064,6 +1238,18 @@ class GlobalLookupController {
       // reserve-to-edge clamp invariant). Fall back to the main dpr when the
       // native monitor query failed (monitorDpr 0).
       final double workDpr = shown.monitorDpr > 0 ? shown.monitorDpr : dpr;
+      if (anchorPhysical != null && _stack.frames.isNotEmpty) {
+        // The existing root-frame layout chooses above/below the hit and fits
+        // the card to that side. Its anchor is window-local CSS pixels; the
+        // viewport origin offset below lifts it into the common layout space.
+        final Rect hit = anchorPhysical;
+        _frameAnchors[_stack.frames.first.id] = Rect.fromLTWH(
+          (hit.left - showX) / workDpr,
+          (hit.top - showY) / workDpr,
+          hit.width / workDpr,
+          hit.height / workDpr,
+        );
+      }
       _screenWorkW = shown.workWidth > 0 ? shown.workWidth / workDpr : 0;
       _screenWorkH = shown.workHeight > 0 ? shown.workHeight / workDpr : 0;
       // TODO-893 v2 (symptom 3) — same dpr boundary: the native cursor/work
@@ -1216,7 +1402,11 @@ class GlobalLookupController {
     }
     return WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
         ? WidgetsBinding
-            .instance.platformDispatcher.views.first.devicePixelRatio
+              .instance
+              .platformDispatcher
+              .views
+              .first
+              .devicePixelRatio
         : 1.0;
   }
 
@@ -1266,8 +1456,9 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route) || event.message == null) {
       return;
     }
-    final GlobalLookupRoute route =
-        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
+    final GlobalLookupRoute route = event.route.lookupEpoch == 0
+        ? _activeRoute!
+        : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onJsMessage(event.message!));
   }
 
@@ -1275,8 +1466,9 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route)) {
       return;
     }
-    final GlobalLookupRoute route =
-        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
+    final GlobalLookupRoute route = event.route.lookupEpoch == 0
+        ? _activeRoute!
+        : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route));
   }
 
@@ -1419,12 +1611,12 @@ class GlobalLookupController {
         final Object? args = message['args'];
         final int? readyWidth =
             args is List && args.isNotEmpty && args[0] is num
-                ? (args[0] as num).toInt()
-                : null;
+            ? (args[0] as num).toInt()
+            : null;
         final int? readyHeight =
             args is List && args.length > 1 && args[1] is num
-                ? (args[1] as num).toInt()
-                : null;
+            ? (args[1] as num).toInt()
+            : null;
         final int? readyGeometryEpoch = args is List && args.length > 2
             ? parseGlobalLookupGeometryEpoch(args[2])
             : null;
@@ -1550,8 +1742,32 @@ class GlobalLookupController {
     // 下滑（桌面 pointer/mouse）后 callHandler('topPullReleased')；是否真正关闭
     // 尊重用户「滑动关闭弹窗」(enableSwipeToClose) 偏好——关时忽略，与 in-app
     // 弹窗一致（Windows 默认 false，鼠标框选与下滑同形）。
+    // BUG-2770：JS 带上指针种类，触摸 / 触控笔改看触摸半边
+    // （enableTouchSwipeToClose，未设置时默认开）——瞬态覆盖窗是 windowed WebView2，
+    // 触屏手指在这里就是真 touch 事件，此前却被鼠标默认值一并关掉。
     if (handler == 'topPullReleased') {
-      if (ReaderFushiSource.instance.enableSwipeToClose) {
+      final Object? args = message['args'];
+      if (popupTopPullDismissAllowed(
+        pointerKind: args is List && args.isNotEmpty ? args.first : null,
+        mouseSwipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+        touchSwipeEnabled: ReaderFushiSource.instance.enableTouchSwipeToClose,
+      )) {
+        GlobalLookupChannel.hide();
+      }
+      return;
+    }
+    // BUG-2770：覆盖窗横滑关闭（kPopupTouchSideSwipeReleaseJs 只认单指触摸）。
+    // 与应用内正文横滑同口径：触摸半边开关 + swipeDismissThreshold(灵敏度)。
+    if (handler == 'sideSwipeReleased') {
+      final Object? args = message['args'];
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      if (popupSideSwipeDismissAllowed(
+        pointerKind: args is List && args.isNotEmpty ? args.first : null,
+        dx: args is List && args.length > 1 ? args[1] : null,
+        threshold: swipeDismissThreshold(source.dismissSwipeSensitivity),
+        mouseSwipeEnabled: source.enableSwipeToClose,
+        touchSwipeEnabled: source.enableTouchSwipeToClose,
+      )) {
         GlobalLookupChannel.hide();
       }
       return;
@@ -1665,8 +1881,9 @@ class GlobalLookupController {
     final Object? args = message['args'];
     if (args is List && args.length >= 3) {
       final Object? rawToken = args[2];
-      final int? token =
-          rawToken is num ? rawToken.toInt() : int.tryParse('$rawToken');
+      final int? token = rawToken is num
+          ? rawToken.toInt()
+          : int.tryParse('$rawToken');
       if (token != null) {
         final Completer<Rect?>? completer = _pendingWordAnchors.remove(token);
         if (completer != null && !completer.isCompleted) {
@@ -1736,8 +1953,9 @@ class GlobalLookupController {
     if (query.isEmpty) {
       return;
     }
-    final Rect? anchor =
-        (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
+    final Rect? anchor = (args.length >= 2)
+        ? _anchorRectFromArg(args[1])
+        : null;
     final String? sourceFrameId = message['__frameId'] as String?;
     final GlobalLookupNestedParent? source = resolveNestedLookupParent(
       _stack,
@@ -1782,12 +2000,12 @@ class GlobalLookupController {
       unawaited(
         model.database
             .addLookupCount(
-          sourceType: overlayStatSourceType(),
-          dateKey: statTodayKey(),
-        )
+              sourceType: overlayStatSourceType(),
+              dateKey: statTodayKey(),
+            )
             .catchError((Object e, StackTrace st) {
-          glog('lookup-count: EXCEPTION $e\n$st');
-        }),
+              glog('lookup-count: EXCEPTION $e\n$st');
+            }),
       );
     } catch (e, st) {
       glog('lookup-count: EXCEPTION (sync) $e\n$st');
@@ -2003,8 +2221,9 @@ class GlobalLookupController {
   /// Drops cached results for frames no longer in the stack (after a close /
   /// truncate), so the result map does not leak removed layers.
   void _pruneFrameResults() {
-    final Set<String> live =
-        _stack.frames.map((GlobalLookupFrame f) => f.id).toSet();
+    final Set<String> live = _stack.frames
+        .map((GlobalLookupFrame f) => f.id)
+        .toSet();
     _frameResults.removeWhere((String id, _) => !live.contains(id));
     _frameAnchors.removeWhere((String id, _) => !live.contains(id));
   }
@@ -2200,8 +2419,9 @@ class GlobalLookupController {
     }
     // BUG-2128 — root card height rides the same box; 0 = host did not report.
     final double rootHeightCss = num2(box['rootHeight']) ?? 0;
-    final int rootHeight =
-        rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
+    final int rootHeight = rootHeightCss > 0
+        ? (rootHeightCss * dpr).round()
+        : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
     // never slides the window top-left back inward (which raced the host's
     // compensating layer shift across the DWM/WebView2 boundary and lurched the
@@ -2516,8 +2736,9 @@ class GlobalLookupController {
 
   return (
     revision: asInt(args.first),
-    hostGeometryEpoch:
-        args.length > 1 ? parseGlobalLookupGeometryEpoch(args[1]) : null,
+    hostGeometryEpoch: args.length > 1
+        ? parseGlobalLookupGeometryEpoch(args[1])
+        : null,
   );
 }
 

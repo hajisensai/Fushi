@@ -17,6 +17,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show RootIsolateToken;
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/media/video/ffmpeg_kit_backend.dart';
+import 'package:fushi/src/ocr/gal_lookup_calibration_ocr.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -28,7 +29,11 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show ffmpegRemoteInputRouteResolver;
+import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
+import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
 
 /// `AppPaths` 静态便捷层 → 引擎 [EnginePaths]。三个根逐一委派，子目录派生规则
 /// 在引擎基类里与 `AppPaths.documentsSubdirectory` 同构。
@@ -36,7 +41,8 @@ class AppPathsEngineBridge extends EnginePaths {
   const AppPathsEngineBridge();
 
   @override
-  Future<Directory> documentsRootDirectory() => AppPaths.documentsRootDirectory();
+  Future<Directory> documentsRootDirectory() =>
+      AppPaths.documentsRootDirectory();
 
   @override
   Future<Directory> supportRootDirectory() => AppPaths.supportRootDirectory();
@@ -48,7 +54,8 @@ class AppPathsEngineBridge extends EnginePaths {
 /// 写后驱逐：与 `MediaCoverService` 历来的收口同一份双键 evict（裸 FileImage +
 /// resizedFileImage），只动这一条路径的条目，不清整表——刮削几百张封面时整表
 /// clear 会把书架滚动变成重解码风暴。
-Future<void> _evictImageCacheForFile(File file) => evictLocalCoverCache(file.path);
+Future<void> _evictImageCacheForFile(File file) =>
+    evictLocalCoverCache(file.path);
 
 /// 删前释放：与 develop 上 `VideoStorage._evictImageCacheForFile` 逐字同义——
 /// 整表 clear 是「锁释放提示」（Windows 上解码器持有的句柄让 delete 失败），
@@ -78,6 +85,9 @@ void installEngineHostBindings() {
   // 词典导入/删除前释放 FFI 引擎的文件映射（BUG-1756）。
   releaseDictionaryMappings = FushiDicts.releaseAllMappings;
   ffmpegPlatformBackendProvider = _platformFfmpegBackend;
+  // 制卡 ffmpeg 的远端输入经本机中继（在线视频源伪装分片，BUG-2642 残留）：
+  // 视频页登记，引擎按输入地址来查。
+  ffmpegRemoteInputRouteResolver = ffmpegRelayRouteFor;
   // fushi_audio 的两个插件级装配点（charset 探测 method channel、just_audio 时长探测 +
   // path_provider 文档根）：纯 Dart 一半住 fushi_audio_core，插件实现由这里写入。
   installPlatformCharsetDetector();
@@ -86,4 +96,9 @@ void installEngineHostBindings() {
   ocrSessionFactoryBuilder = buildOrtOcrFactory;
   ocrIsolateBootstrap = fushiOcrIsolateBootstrap;
   ocrIsolateBootstrapArg = RootIsolateToken.instance;
+  installMangaPanelDetectorFactory();
+  // Calibration OCR is an offline assist.  Installing the callback does not
+  // download models or create an ONNX session; both happen only when the user
+  // invokes screenshot alignment and the small pack is already present.
+  installGalCalibrationOcrAssist();
 }

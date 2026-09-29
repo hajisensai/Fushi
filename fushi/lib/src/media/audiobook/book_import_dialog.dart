@@ -156,6 +156,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       isImageArchive: widget.imageArchiveProbe ?? MangaModule.isImageArchive,
       directoryHasPageImages: MangaModule.directoryHasPageImages,
       directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
     );
     final String? epub = widget.initialEpubPath;
     if (epub != null) {

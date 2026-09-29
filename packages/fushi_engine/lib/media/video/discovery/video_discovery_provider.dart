@@ -58,6 +58,39 @@ class VideoMediaReference {
   final int? bangumiId;
   final Map<String, String> externalIds;
 
+  /// 把 [leading] 排到别名最前（去重、跳过空值与展示标题），其余字段不变。
+  ///
+  /// 资源搜索的默认检索词从别名里挑第一个罗马字候选（见
+  /// `preferredNyaaSearchQueries`），详情拿到罗马音 / 英文名后用它前置。
+  VideoMediaReference withLeadingAliases(Iterable<String?> leading) {
+    final List<String> merged = <String>[];
+    final Set<String> seen = <String>{title.trim()};
+    for (final String? value in <String?>[...leading, ...aliases]) {
+      final String trimmed = value?.trim() ?? '';
+      if (trimmed.isEmpty || !seen.add(trimmed)) continue;
+      merged.add(trimmed);
+    }
+    return VideoMediaReference(
+      providerId: providerId,
+      mediaId: mediaId,
+      mediaKind: mediaKind,
+      discoveryCategory: discoveryCategory,
+      title: title,
+      originalTitle: originalTitle,
+      aliases: merged,
+      year: year,
+      season: season,
+      episode: episode,
+      tmdbId: tmdbId,
+      imdbId: imdbId,
+      tvdbId: tvdbId,
+      anidbId: anidbId,
+      anilistId: anilistId,
+      bangumiId: bangumiId,
+      externalIds: externalIds,
+    );
+  }
+
   /// 只调整资源/订阅使用的内容分类，保留原作品身份及 movie/tv 命名空间。
   VideoMediaReference withDiscoveryCategory(VideoDiscoveryCategory category) =>
       VideoMediaReference(

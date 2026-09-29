@@ -26,6 +26,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart'
+    show installInterconnectP2pClient;
+import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
@@ -37,6 +41,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
+import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -49,6 +54,7 @@ import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi/src/settings/settings_schema.dart'
@@ -57,22 +63,33 @@ import 'package:fushi/src/storage/data_root_migration_view.dart';
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show backupImportRestart, dataRootMigrationRestart;
+    show
+        backupImportRestart,
+        dataRootMigrationRestart,
+        runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
+import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
+import 'package:fushi/src/platform/app_shortcuts.dart';
+import 'package:fushi/src/platform/app_shortcut_router.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -109,6 +126,11 @@ String? _pendingExternalVideoPath;
 /// 经 [DesktopLookupService.triggerLookup] 排队查词。null = 本次启动非深链查词。
 String? _pendingLookupDeepLinkWord;
 final List<String> _pendingCardSourceUrls = <String>[];
+
+/// `fushi://pair?…` 配对链接（扫码 / NFC 贴纸 / 系统相机 / 协议启动）。app 初始化
+/// 完成前到达的先暂存，首帧后逐条弹确认框再配对
+/// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
+final List<String> _pendingPairLinks = <String>[];
 
 /// 外部打开新视频时的自动封面锁边界。maintenance 已开始时 [action] 仍可按
 /// `allowAutoCover == false` 建立无封面的媒体行，但不得产生自动封面文件。
@@ -180,6 +202,10 @@ void main([List<String> args = const <String>[]]) {
         _pendingCardSourceUrls.add(arg);
         break;
       }
+      if (FushiPairLink.tryParse(arg) != null) {
+        _pendingPairLinks.add(arg);
+        break;
+      }
       final String? word = lookupWordFromDeepLink(arg);
       if (word != null) {
         _pendingLookupDeepLinkWord = word;
@@ -195,6 +221,9 @@ void main([List<String> args = const <String>[]]) {
     /// Necessary to initialise Flutter when running native code before
     /// starting the application.
     final binding = WidgetsFlutterBinding.ensureInitialized();
+    // 测试根（FUSHI_TEST_ROOT）下 SharedPreferences 也要隔离，且必须抢在下面第一次
+    // 读 prefs 之前：否则集成测试写的 Anki 设置会落进用户真实的 prefs 文件。
+    isolateSharedPreferencesUnderTestRoot();
     // Fushi 改名：app-support 根一次性搬迁（Windows
     // %APPDATA%\Hibiki\Hibiki -> %APPDATA%\Fushi\Fushi；macOS
     // ~/Library/Application Support/com.example.hibiki -> app.fushi.reader）。
@@ -482,6 +511,9 @@ void main([List<String> args = const <String>[]]) {
     // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
     await Future.wait<void>(<Future<void>>[
       DebugLogService.instance.init(),
+      // 用户 2026-09-22：视频卡顿 / 查词卡的分析日志。默认关闭（开关在设置 › 诊断），
+      // init 只读一次偏好 + 解析日志文件位置，关着时后续全链路零开销。
+      VideoDiagLog.instance.init(),
       // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
       // 供设置项同步渲染。非 Android 静默降级为不支持。
       RenderBackendService.instance.init(),
@@ -492,6 +524,9 @@ void main([List<String> args = const <String>[]]) {
       // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
       // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
       PresentStallLog.foldIntoErrorLog(),
+      // BUG-2588：把上次运行主线程停泵看门狗抓 hang dump 的记录折进错误日志（仅
+      // Windows），让「卡死后强杀」在日志里与 native 崩溃分开、并指向可分享的 hang-*.dmp。
+      HangWatchdogLog.foldIntoErrorLog(),
     ]);
 
     /// Initialise local file-based logging (mobile only).
@@ -523,7 +558,11 @@ void main([List<String> args = const <String>[]]) {
     appModel.browserLookupProfileApplier = () => container
         .read(profileViewModelProvider.notifier)
         .autoApplyBinding(mediaType: ProfileMediaKind.browser);
+    appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
+    // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
+    // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+    installInterconnectP2pClient(SyncRepository(appModel.database));
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────
     // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
@@ -574,6 +613,8 @@ void main([List<String> args = const <String>[]]) {
                 session.finish('load error: ${error.type}'),
             // 接管 renderer 死亡：Android 侧只要注册了这个回调，
             // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+            onWebContentProcessDidTerminate: (controller) =>
+                session.finish('webkit content process terminated'),
             onRenderProcessGone: (controller, detail) =>
                 session.finish('renderer gone (didCrash=${detail.didCrash})'),
           );
@@ -705,7 +746,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
   bool _lookupDeepLinkHandled = false;
+
+  /// 初始化完成后补发一次待发制卡 / 补一次 Anki 同步（桌面冷启动不一定有
+  /// resumed 生命周期事件）。只触发一次。
+  bool _startupPendingMinesFlushed = false;
+
+  /// 长按 app 图标点下的快捷方式（`fushi://shortcut/<id>`）。冷启动时 URL 比
+  /// `initialise()` 先到，而 HomePage.initState 会把 [homeShellTabNotifier]
+  /// 重置成启动 tab，所以先排队，等 home 挂载后的首帧再落地。
+  late final AppShortcutQueue _appShortcuts = AppShortcutQueue(
+    isActive: () => mounted,
+    run: _runAppShortcut,
+  );
   StreamSubscription<String>? _sourceUrlSubscription;
+  /// 跨设备中转收到新卡（本机是落地设备）→ 补发，见 [PendingMineRelay.arrivals]。
+  StreamSubscription<int>? _pendingMineArrivals;
   bool _sourceNavigationScheduled = false;
   bool _sourceNavigationRunning = false;
   String? _openingCardSourceUrl;
@@ -793,6 +848,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    _pendingMineArrivals =
+        PendingMineRelay.arrivals.listen((_) => _flushPendingMines());
     // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
     // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
     // libmpv/ANGLE/WGC churn 污染进程共享 D3D device），落盘取证 + 一次性自动重启。
@@ -838,10 +895,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
     // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    // 只在有 Aidoku 宿主的平台装：iOS 的宿主已按 App Store 合规移除
-    // （[StoreRestrictedCapability.onlineMangaSource]），那里装个解题器等于给一个
-    // 不存在的源留后门。`AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源
-    // 匹配用它的 `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
+    // 只在有 Aidoku 宿主的构建里装（iOS 按 App Store 合规、macOS 随 Rust CLI 一并
+    // 移除后当前没有宿主）：没有源却装个解题器等于给一个不存在的源留后门。
+    // `AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源匹配用它的
+    // `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
     if (AidokuRuntimeFactory.isSupported) {
       installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
     }
@@ -900,10 +957,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return swallowEngineDeepLinkRoute(routeInformation);
   }
 
+  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
+  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
+  void _flushPendingMines() {
+    if (!ref.read(appProvider).isInitialised) return;
+    // 「Anki 同步客户端」后端：上次没同步成功（离线等）的卡留在它自己的日志里，
+    // 回到前台补一次。没登录时 syncNow 在读账号那一步就停，不会拉起 helper。
+    final PlatformServices platform = ref.read(platformServicesProvider);
+    if (platform.useAnkiSyncClient) platform.ankiSyncSession?.scheduleSync();
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    if (repo is! PendingMiningAnkiRepository) return;
+    // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
+    unawaited(repo.flush().then((_) {}, onError: (Object _) {}));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      _flushPendingMines();
       if (Platform.isIOS) {
         unawaited(_consumeAnkiMobileInfoReturn(
           AnkiMobileInfoReturnTrigger.appResumed,
@@ -1123,6 +1195,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   @override
   void dispose() {
     _sourceUrlSubscription?.cancel();
+    _pendingMineArrivals?.cancel();
     _intentsSubscription?.cancel();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
@@ -1166,6 +1239,23 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _queueCardSourceUrl(data);
       return true;
     }
+    if (FushiPairLink.tryParse(data) != null) {
+      _queuePairLink(data);
+      return true;
+    }
+    final AppShortcut? shortcut = AppShortcut.tryParse(data);
+    if (shortcut != null) {
+      _queueAppShortcut(shortcut);
+      return true;
+    }
+    // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
+    // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
+    // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
+    final String? lookupWord = lookupWordFromDeepLink(data);
+    if (lookupWord != null) {
+      deliverExternalLookup(lookupWord);
+      return true;
+    }
     final String normalized = data.toLowerCase();
     if (normalized.startsWith('fushi://auth/')) {
       await _handleOAuthRedirect(data);
@@ -1176,9 +1266,81 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     if (normalized.startsWith(fushiAnkiSuccessCallback.toLowerCase())) {
+      await _recordAnkiMobileMinedNote(data);
       return true;
     }
     return false;
+  }
+
+  void _queueAppShortcut(AppShortcut shortcut) {
+    final bool ready = mounted && ref.read(appProvider).isInitialised;
+    _appShortcuts.enqueue(shortcut, ready: ready);
+    // 未初始化：初始化完成后的根 build 会调 [AppShortcutQueue.schedule]。
+    if (mounted && !ready) setState(() {});
+  }
+
+  Future<void> _runAppShortcut(AppShortcut shortcut) {
+    final AppModel appModel = ref.read(appProvider);
+    return runAppShortcut(
+      shortcut,
+      visibility: appModel.moduleVisibility,
+      onboardingCompleted: appModel.onboardingCompleted,
+      navigator: appModel.navigatorKey.currentState,
+      selectHomeTab: (HomeTab tab) => homeShellTabNotifier.value = tab,
+      // 用户点「查词」就是要打字：送进搜索框。
+      openLookup: () => appModel.requestHomeDictionaryTab(focusSearch: true),
+    );
+  }
+
+  bool _pairLinkScheduled = false;
+  bool _pairLinkRunning = false;
+
+  void _queuePairLink(String url) {
+    if (!_pendingPairLinks.contains(url)) _pendingPairLinks.add(url);
+    if (!mounted) return;
+    if (!ref.read(appProvider).isInitialised) {
+      setState(() {});
+      return;
+    }
+    _schedulePairLinks();
+  }
+
+  void _schedulePairLinks() {
+    if (_pairLinkScheduled || _pairLinkRunning || _pendingPairLinks.isEmpty) {
+      return;
+    }
+    _pairLinkScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pairLinkScheduled = false;
+      if (mounted) unawaited(_drainPairLinks());
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// 逐条弹「连接到 <设备>？」确认框再配对：链接可能来自任何网页，绝不静默配对。
+  Future<void> _drainPairLinks() async {
+    if (_pairLinkRunning) return;
+    _pairLinkRunning = true;
+    try {
+      while (mounted && _pendingPairLinks.isNotEmpty) {
+        final FushiPairLink? link =
+            FushiPairLink.tryParse(_pendingPairLinks.removeAt(0));
+        final AppModel appModel = ref.read(appProvider);
+        final BuildContext? navContext =
+            appModel.navigatorKey.currentContext;
+        if (link == null || navContext == null || !navContext.mounted) {
+          continue;
+        }
+        try {
+          await runInterconnectLinkPairingFlow(navContext, appModel, link);
+        } catch (error, stackTrace) {
+          ErrorLogService.instance.log('PairLink.open', error, stackTrace);
+          FushiToast.show(msg: t.sync_pair_failed);
+        }
+      }
+    } finally {
+      _pairLinkRunning = false;
+    }
   }
 
   void _queueCardSourceUrl(String url) {
@@ -1229,6 +1391,34 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       }
     } finally {
       _sourceNavigationRunning = false;
+    }
+  }
+
+  /// AnkiMobile 加完卡回跳（`fushi://ankiSuccess?expression=…`）。
+  ///
+  /// 这是 iOS 上**唯一**能确知「这张卡真的进了 Anki」的时刻：手册对 `x-success` 的
+  /// 定义是「after the note is added」，而 `mineEntry` 那边只能确认「AnkiMobile 被
+  /// 拉起来了」。此前这条回调收到就丢，于是 [AnkiMobileMinedLedger] 无从建立、
+  /// `isDuplicate` 只能恒 `false`——iOS 用户永远看不到「已制卡」的 ✓。
+  ///
+  /// 不判后端类型：这个 scheme 只可能由我们发给 AnkiMobile 的 `x-success` 触发。
+  /// 落账失败只吞掉记日志，绝不打断回跳（用户此刻正在看着 app 从 AnkiMobile 切回来）。
+  Future<void> _recordAnkiMobileMinedNote(String data) async {
+    final Uri? uri = Uri.tryParse(data);
+    final String? expression = uri?.queryParameters['expression'];
+    if (expression == null || expression.isEmpty) return;
+    try {
+      await AnkiMobileMinedLedger.instance.record(expression);
+    } catch (e, stack) {
+      debugPrint('AnkiMobile mined ledger record failed: $e\n$stack');
+    }
+    // 待发队列的「全部发送」：回跳是这张卡真正进了 Anki 的唯一证据，据此出队并发下一张。
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    if (repo is! PendingMiningAnkiRepository) return;
+    try {
+      await repo.confirmAnkiMobileDelivery(expression);
+    } catch (e, stack) {
+      debugPrint('Pending mine AnkiMobile confirm failed: $e\n$stack');
     }
   }
 
@@ -1331,6 +1521,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (videoPath.isEmpty) return null;
     if (SourceUrlChannel.isSourceUrl(videoPath)) {
       _queueCardSourceUrl(videoPath);
+      return null;
+    }
+    if (FushiPairLink.tryParse(videoPath) != null) {
+      _queuePairLink(videoPath);
       return null;
     }
     // BUG-1666：单实例转交的是「候选 argv 字符串」，不只视频路径——Anki 卡片上的
@@ -1586,7 +1780,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     // Fields like locales/theme are late and only available
     // after initialise() completes. Return a minimal app while loading and
-    // render the spinner directly instead of going through LoadingPage.
+    // render the startup splash mark directly instead of going through
+    // LoadingPage.
     //
     // Use system brightness to match the native splash and avoid a white
     // flash when the user has dark mode enabled.
@@ -1973,6 +2168,20 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     _scheduleCardSourceNavigation();
+    _schedulePairLinks();
+    _appShortcuts.schedule();
+    // 长按图标菜单跟着模块开关与界面语言走：两者一变根 build 就重跑（模块开关
+    // notifyListeners / 语言切换重建整树），发布器按签名去重，平时不过通道。
+    AppShortcutsPublisher.instance.sync(
+      AppShortcut.available(appModel.moduleVisibility),
+      labelOf: (AppShortcut shortcut) => homeNavItemFor(shortcut.homeTab).label,
+      disabledMessage: t.module_disabled_hint,
+    );
+
+    if (!_startupPendingMinesFlushed) {
+      _startupPendingMinesFlushed = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _flushPendingMines());
+    }
 
     // app 已初始化完成（走到这里说明 home 即将渲染）：若本次启动是「从 app 外
     // 打开视频」，在首帧后建/取 VideoBook 并打开播放页。只触发一次。
@@ -2018,7 +2227,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           // lit by keyboard/gamepad navigation on one page is not carried onto the
           // freshly-entered page (BUG-398).
           navigatorObservers: <NavigatorObserver>[
-            appModel.focusHighlightObserver
+            appModel.focusHighlightObserver,
+            floatingBallRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -2100,9 +2310,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
                           // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
                           // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                          // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）
+                          // 在查词宿主之下：球点出的查词弹窗要盖在球上。
                           child: Stack(
                             children: <Widget>[
                               child!,
+                              const AppFloatingBallHost(),
                               const FloatingLyricLookupHost(),
                             ],
                           ),

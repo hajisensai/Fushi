@@ -56,6 +56,17 @@ CREATE TABLE book_tags (
   created_at INTEGER NOT NULL
 )
 ''');
+          // 标签移除墓碑自 v41 就在（v57 起列名 deleted_at），真实 v58 库必有此表；
+          // 给游戏挂 / 摘标签会清 / 立墓碑（游戏标签也进互联同步），缺它就不是 v58 shape。
+          rawDb.execute('''
+CREATE TABLE book_tag_membership_tombstones (
+  item_key TEXT NOT NULL,
+  media_type TEXT NOT NULL,
+  tag_name TEXT NOT NULL,
+  deleted_at INTEGER NOT NULL,
+  PRIMARY KEY (item_key, media_type, tag_name)
+)
+''');
           rawDb.execute('''
 CREATE TABLE galgame_sessions (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -85,7 +96,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 104,
+    expect(db.schemaVersion, 116,
         reason: 'v59 新建 galgame_tag_mappings（BUG-1113 游戏接入共享标签池）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');

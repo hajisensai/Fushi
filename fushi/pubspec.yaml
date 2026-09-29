@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.7.0+1342
+version: 2.8.0+1349
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
+      ref: 2168e85cc69b564eef36c57db36e9dbb82528ab3
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: d6acf83df5789dd4b789f14e2fe7880901eb07dd
+      ref: 2168e85cc69b564eef36c57db36e9dbb82528ab3
   archive: ^3.6.1
   async_zip: ^0.1.0
   basic_utils: ^5.7.0
@@ -95,6 +95,12 @@ dependencies:
   # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
   flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
+  # WebRTC 游戏串流（Windows 主机 + Android 接收端）。
+  # 钉精确版本，不用 caret：WGC 客户区采集的入口只在
+  # ci/patches/hosted/flutter_webrtc-1.6.2+hotfix.3/ 那份补丁里，而补丁目录按
+  # 精确版本命名、apply-patches.sh 对目标缺失只打一行 WARNING 不判红。约束一旦
+  # 漂到 1.6.3 就是「编译照过、运行时零帧」。升版本时同步改补丁目录名。
+  flutter_webrtc: 1.6.2+hotfix.3
   flutter_staggered_grid_view: ^0.7.0
   fluttertoast: ^8.2.1
   drift: ">=2.33.0 <2.34.0"
@@ -140,6 +146,8 @@ dependencies:
   restart_app: ^1.1.2
   share_plus: ^7.2.2
   shared_preferences: ^2.2.2
+  # 测试根下的 SharedPreferences 隔离存储（startup/test_root_shared_preferences.dart）。
+  shared_preferences_platform_interface: ^2.3.1
   slang: ^3.13.0
   slang_flutter: ^3.13.0
   sliver_tools: ^0.2.12
@@ -174,6 +182,8 @@ dependencies:
   hotkey_manager: ^0.2.3
   screen_retriever: ^0.2.0
   window_manager: ^0.5.1
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.2
 dev_dependencies:
   build_runner: ^2.3.3
   just_audio_platform_interface: ^4.6.0
@@ -215,6 +225,7 @@ flutter:
     - assets/anki/
     - assets/browser_extension/
     - assets/browser_extension/vendor/
+    - assets/browser_extension/locales/
     # 内置网页播放器（WebView2 站点播放）主世界胶水；站点 bridge / 字幕 provider 复用
     # 上面的扩展镜像（同一份文件，见 lib/src/media/video/web_video_bridge.dart）。
     - assets/web_video/
@@ -223,6 +234,8 @@ flutter:
     - assets/gamepad/switch/
     - assets/fonts/
     - assets/licenses/
+    # 小说在线源（LNReader 插件）宿主：lnreader_libs.js 由 tool/lnreader/ 重建。
+    - assets/lnreader/
     - assets/meta/
     - assets/popup/
     - assets/transforms/

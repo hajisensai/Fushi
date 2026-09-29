@@ -134,16 +134,12 @@ void main() {
     });
 
     test('JSON 归档后 keepIds 继续合并 v78 未完成 embedded 旧任务', () {
+      // loadEmbeddedTorrentResumeIds = Drift 任务行 + 当前来源（BUG-2776）。
       expect(
-        appModel.contains('...legacyEmbeddedTorrentResumeIds('),
+        appModel.contains('...await loadEmbeddedTorrentResumeIds(database)'),
         isTrue,
         reason: 'Importer 会归档 plans JSON；若只读空 store，首次 host 恢复会把仍由 '
-            'v78 接管的旧任务 resume 当成孤儿删除',
-      );
-      expect(
-        appModel.contains('await database.getVideoDownloadJobs()'),
-        isTrue,
-        reason: 'resume keepIds 必须从 Drift 真相源重建，不能依赖已归档 JSON',
+            'v78 接管的旧任务 resume 当成孤儿删除；keepIds 必须从 Drift 真相源重建',
       );
     });
 

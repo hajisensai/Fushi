@@ -3,7 +3,8 @@ import 'dart:typed_data';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
-abstract class MihonBridgeRuntime implements MihonRuntime {
+abstract class MihonBridgeRuntime
+    implements MihonRuntime, AnimeMihonRuntime, MihonWebUrlRuntime {
   /// [source] 是本次调用**打给哪个源**。桌面端据它挑出该源站的登录 cookie 注入
   /// 请求头（BUG-2425）——sidecar 侧的 domain 也是从 `source.getBaseUrl()` 推的，
   /// 两边必须看同一个 baseUrl，否则注进去的 cookie 域对不上、等于没注。
@@ -45,16 +46,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
       _sourceArguments(source, preferences),
       source: source,
     );
-    final List<Object?> filters = response is List<Object?>
-        ? response
-        : ((response as Map<Object?, Object?>?)?['filterList']
-                as List<Object?>? ??
-            const <Object?>[]);
-    return filters
-        .whereType<Map<Object?, Object?>>()
-        .map((Map<Object?, Object?> value) =>
-            _filterFromJson(value.cast<String, Object?>()))
-        .toList(growable: false);
+    return _filtersFromResponse(response);
   }
 
   @override
@@ -230,6 +222,272 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
         source: source,
       ),
     );
+  }
+
+  // ── Aniyomi（视频）调用面 ───────────────────────────────────────────
+  // 与上面的漫画方法一一对应，只换 wire 方法名与模型；sidecar 与 Android 宿主
+  // 两边的分发表都按这些名字实现（`MihonInvoker.invokeMethod` /
+  // `MihonChannelHandler.invoke`）。
+
+  @override
+  Future<List<MihonSource>> listAnimeSources(
+    MihonExtensionRef extension, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'sourcesAnime',
+      <String, Object?>{},
+    );
+    return _asMapList(response)
+        .map((Map<String, Object?> json) =>
+            MihonSource.fromJson(extension.packageName, json))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<MihonFilter>> getAnimeFilters(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'filtersAnime',
+      _sourceArguments(source, preferences),
+      source: source,
+    );
+    return _filtersFromResponse(response);
+  }
+
+  @override
+  Future<MihonAnimePage> getPopularAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async =>
+      MihonAnimePage.fromJson(
+        _asMap(
+          await invokeBridge(
+            extension,
+            'getPopularAnime',
+            <String, Object?>{
+              ..._sourceArguments(source, preferences),
+              'page': page,
+            },
+            source: source,
+          ),
+        ),
+      );
+
+  @override
+  Future<MihonAnimePage> getLatestAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async =>
+      MihonAnimePage.fromJson(
+        _asMap(
+          await invokeBridge(
+            extension,
+            'getLatestAnime',
+            <String, Object?>{
+              ..._sourceArguments(source, preferences),
+              'page': page,
+            },
+            source: source,
+          ),
+        ),
+      );
+
+  @override
+  Future<MihonAnimePage> searchAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    required String query,
+    List<MihonFilter> filters = const <MihonFilter>[],
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async =>
+      MihonAnimePage.fromJson(
+        _asMap(
+          await invokeBridge(
+            extension,
+            'getSearchAnime',
+            <String, Object?>{
+              ..._sourceArguments(source, preferences),
+              'page': page,
+              'search': query,
+              'filterList': filters
+                  .map((MihonFilter filter) => filter.toBridgeJson())
+                  .toList(growable: false),
+            },
+            source: source,
+          ),
+        ),
+      );
+
+  @override
+  Future<MihonAnime> getAnimeDetails(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final MihonAnime parsed = MihonAnime.fromJson(
+      _asMap(
+        await invokeBridge(
+          extension,
+          'getDetailsAnime',
+          <String, Object?>{
+            ..._sourceArguments(source, preferences),
+            'animeData': anime.toJson(),
+          },
+          source: source,
+        ),
+      ),
+    );
+    return anime.mergedWithDetails(parsed);
+  }
+
+  @override
+  Future<List<MihonEpisode>> getEpisodes(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'getEpisodeList',
+      <String, Object?>{
+        ..._sourceArguments(source, preferences),
+        'animeData': anime.toJson(),
+      },
+      source: source,
+    );
+    return _asMapList(response)
+        .map(MihonEpisode.fromJson)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<MihonVideo>> getVideos(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonEpisode episode, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'getVideoList',
+      <String, Object?>{
+        ..._sourceArguments(source, preferences),
+        'episodeData': episode.toJson(),
+      },
+      source: source,
+    );
+    return _asMapList(response)
+        .map(MihonVideo.fromJson)
+        .where((MihonVideo video) => video.resolvedUrl.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<String> getMangaWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonManga manga, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'getMangaUrl',
+      <String, Object?>{
+        ..._sourceArguments(source, preferences),
+        'mangaData': manga.toJson(),
+      },
+      source: source,
+    );
+    return response?.toString() ?? '';
+  }
+
+  @override
+  Future<String> getAnimeWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'getAnimeUrl',
+      <String, Object?>{
+        ..._sourceArguments(source, preferences),
+        'animeData': anime.toJson(),
+      },
+      source: source,
+    );
+    return response?.toString() ?? '';
+  }
+
+  @override
+  Future<List<MihonPreference>> getAnimePreferences(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    List<MihonPreference> persisted = const <MihonPreference>[],
+  }) async =>
+      _preferencesFromResponse(
+        await invokeBridge(
+          extension,
+          'preferencesAnime',
+          _sourceArguments(source, persisted),
+          source: source,
+        ),
+      );
+
+  @override
+  Future<List<MihonPreference>> setAnimePreference(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPreference preference, {
+    required List<MihonPreference> persisted,
+  }) async {
+    final List<MihonPreference> merged = <MihonPreference>[
+      for (final MihonPreference item in persisted)
+        if (item.key != preference.key) item,
+      preference,
+    ];
+    return _preferencesFromResponse(
+      await invokeBridge(
+        extension,
+        'setPreferenceAnime',
+        <String, Object?>{
+          'preferences': mihonBridgePreferences(
+            source,
+            merged,
+            changedPreferenceKey: preference.key,
+          ),
+        },
+        source: source,
+      ),
+    );
+  }
+
+  /// 两种响应信封（裸数组 / `{filterList: [...]}`）都收，漫画与视频共用。
+  static List<MihonFilter> _filtersFromResponse(Object? response) {
+    final List<Object?> filters = response is List<Object?>
+        ? response
+        : ((response as Map<Object?, Object?>?)?['filterList']
+                as List<Object?>? ??
+            const <Object?>[]);
+    return filters
+        .whereType<Map<Object?, Object?>>()
+        .map((Map<Object?, Object?> value) =>
+            _filterFromJson(value.cast<String, Object?>()))
+        .toList(growable: false);
   }
 
   Map<String, Object?> _sourceArguments(

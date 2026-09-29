@@ -1,10 +1,13 @@
 library;
 
+import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -13,6 +16,7 @@ import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 发现页的生产聚合服务。
 ///
@@ -53,10 +57,18 @@ class VideoDiscoveryService {
     // 两者共用本类只是因为它们查的是同一批 API。
     final bool discoveryAvailable =
         StoreRestrictedCapability.externalDiscovery.isAvailable;
+    // 发现页的搜索源只收「能当目录浏览」的资料源：AniDB（2026-09-20 起装进生产
+    // registry 作默认刮削主源）的 `search` 是本地标题目录，没有封面 / 简介 / 评分，
+    // 摆进发现页只是一列裸标题；它在这里的用途仅限 [metadataProviders]——发现结果
+    // 的 AniDB 身份解析（`discovery_anidb_identity.dart`）。发现与刮削是不同域。
+    final List<VideoMetadataProvider> searchable = <VideoMetadataProvider>[
+      for (final VideoMetadataProvider provider in catalog.providers)
+        if (isDiscoverySearchKind(provider.providerKind)) provider,
+    ];
     return VideoDiscoveryService(
       providers: <VideoDiscoveryProvider>[
         if (discoveryAvailable)
-          for (final VideoMetadataProvider provider in catalog.providers)
+          for (final VideoMetadataProvider provider in searchable)
             if (provider.providerKind == VideoMetadataProviderKind.tmdb)
               // Preserve TMDB's discovery paging and filter capabilities.
               TmdbVideoDiscoveryProvider(
@@ -77,13 +89,24 @@ class VideoDiscoveryService {
         ...catalog.providers,
         anilist,
       ],
+      // AniList 也是搜索源：它只属于发现域（不进刮削 registry），但单靠 MAL 撑
+      // 番剧搜索时，Jikan 一挂（它常年间歇性 504）且 TMDB 没配 key，搜索就一条
+      // 都出不来；AniList 的 `SEARCH_MATCH` 还认中文/日文别名，结果带 MAL id，
+      // 与 MAL 结果按强 ID 合并、不会重复。
       searchProviderIds: <String>{
-        for (final VideoMetadataProvider provider in catalog.providers)
+        for (final VideoMetadataProvider provider in searchable)
           provider.providerKind.name,
+        kAniListDiscoveryProviderId,
       },
       closesProviders: true,
     );
   }
+
+  /// 生产 registry 里哪些刮削 provider 可作发现页搜索源：AniDB 不算（见
+  /// [VideoDiscoveryService.production]）。守卫
+  /// `video_discovery_aggregated_sources_guard_test` 钉住。
+  static bool isDiscoverySearchKind(VideoMetadataProviderKind kind) =>
+      kind != VideoMetadataProviderKind.anidb;
 
   final List<VideoDiscoveryProvider> _providers;
   final Map<VideoMetadataProviderKind, VideoMetadataProvider>
@@ -241,6 +264,59 @@ class VideoDiscoveryService {
           : _supplementDetails(merged, supplement);
     }
     return merged;
+  }
+
+  /// 「整套下载」：[item] 所在系列的全部剧集与剧场版（见 `video_franchise.dart`）。
+  ///
+  /// TMDB collection（要 key）与 MAL 关联链（不要 key，只对动画走）两份合并；
+  /// 两个来源都不可用返回 null。单个来源失败只记诊断、不拖垮另一个。
+  Future<VideoFranchise?> loadFranchise(VideoDiscoveryItem item) async {
+    if (_closed) return null;
+    VideoFranchise? tmdb;
+    for (final VideoDiscoveryProvider provider in _providers) {
+      if (provider is VideoFranchiseSource) {
+        tmdb = await _guardFranchise(
+          'tmdb',
+          () => resolveVideoFranchise(provider as VideoFranchiseSource, item),
+        );
+        break;
+      }
+    }
+    VideoFranchise? mal;
+    final VideoMetadataProvider? malProvider =
+        _metadataProviders[VideoMetadataProviderKind.mal];
+    if (malProvider is MalVideoMetadataProvider &&
+        item.reference.discoveryCategory == VideoDiscoveryCategory.anime) {
+      mal = await _guardFranchise(
+        'mal',
+        () => resolveMalFranchise(_MalFranchiseSource(malProvider), item),
+      );
+    }
+    // 动画的剧集以 MAL 为准：TMDB 把一部动画按「整部剧（含全部季）」收，MAL 按
+    // 每季一个作品收——两边都进清单，同一批集会被整部剧和分季重复下载。
+    if (tmdb != null && mal != null && mal.series.isNotEmpty) {
+      tmdb = VideoFranchise(
+        name: tmdb.name,
+        series: const <VideoDiscoveryItem>[],
+        movies: tmdb.movies,
+      );
+    }
+    return mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
+  }
+
+  Future<VideoFranchise?> _guardFranchise(
+    String source,
+    Future<VideoFranchise?> Function() body,
+  ) async {
+    try {
+      return await body();
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoDiscoveryService.loadFranchise.$source',
+        '$error\n$stack',
+      );
+      return null;
+    }
   }
 
   List<VideoMetadataLookup> _detailLookups(VideoDiscoveryItem item) {
@@ -600,12 +676,21 @@ class _MergedDiscoveryItem {
 /// 集数才能判定谁对。而集数是可选字段、各 adapter 填充不对称（搜索摘要普遍不带
 /// 集数），所以集数缺失时必须承认「不知道」，不能默认成 TV —— 默认成 TV 会把本该
 /// 合并的单集作品重新拆成两张卡（BUG-1531 的反面）。未知与任何类型都不算冲突。
+///
+/// 唯一的例外是**正在放送**：电影没有「放送中」这个状态（TMDB 电影状态只有
+/// released / post production 等），一部 TV/ONA 正在逐集播出，就足以断定它是
+/// 剧集。修前集数未知的放送中动画会被同名同年的 TMDB 电影身份弱匹配吞掉，整组
+/// 按电影下载、整理（BUG-2760）。
 VideoMetadataMediaKind? _aggregationKind(VideoDiscoveryItem item) {
   if (item.reference.mediaKind == VideoMetadataMediaKind.movie) {
     return VideoMetadataMediaKind.movie;
   }
   if (item.reference.discoveryCategory == VideoDiscoveryCategory.anime) {
     final int? episodeCount = item.metadataWork?.episodeCount;
+    if (episodeCount == null &&
+        item.metadataWork?.airingStatus == VideoAiringStatus.airing) {
+      return item.reference.mediaKind;
+    }
     if (episodeCount == null) return null;
     if (episodeCount == 1) return VideoMetadataMediaKind.movie;
   }
@@ -894,3 +979,27 @@ VideoDiscoveryRequest _requestAtPage(VideoDiscoveryRequest request, int page) =>
       genre: request.genre,
       region: request.region,
     );
+
+/// MAL provider → 系列关联来源的薄适配。
+class _MalFranchiseSource implements VideoFranchiseRelationSource {
+  _MalFranchiseSource(this._provider);
+
+  final MalVideoMetadataProvider _provider;
+
+  @override
+  Future<MalRelatedWorks?> fetchRelatedWorks(String malId) =>
+      _provider.fetchRelatedWorks(malId);
+
+  @override
+  Future<List<VideoMetadataWork>> searchAnime(String title) async {
+    final List<VideoMetadataWork> works = <VideoMetadataWork>[];
+    for (final VideoMetadataMediaKind kind in VideoMetadataMediaKind.values) {
+      works.addAll(
+        await _provider.search(
+          VideoMetadataSearchRequest(title: title, mediaKind: kind, limit: 5),
+        ),
+      );
+    }
+    return works;
+  }
+}

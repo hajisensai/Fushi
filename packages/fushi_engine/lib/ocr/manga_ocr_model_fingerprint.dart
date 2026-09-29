@@ -1,7 +1,7 @@
 /// 已安装漫画 OCR 模型的**内容身份**，以及由它派生的逐页缓存签名。
 ///
-/// 为什么需要：`kLocalMangaOcrEngineSignature`（`local-onnx-v2-oriented`）是手
-/// 维护常量，只描述坐标口径版本；而 `manga_ocr_model_manifest.dart` 的下载直链
+/// 为什么需要：`kLocalMangaOcrEngineSignature` 是手动维护的算法/坐标口径版本，
+/// 不代表模型身份；而 `manga_ocr_model_manifest.dart` 的下载直链
 /// 指向 HuggingFace 的 **`main` 可变 ref** 且清单里没有 sha256。上游一旦重新导出
 /// 模型，新装用户下到的是另一份权重，缓存目录名却纹丝不动 —— 断点续跑会把新旧
 /// 模型的结果混进同一卷，向导的「整卷已缓存」探测还会直接跳过重跑，全程无人察觉
@@ -54,8 +54,9 @@ Future<String?> resolveMangaOcrModelFingerprint(
   Directory modelsDir, {
   List<MangaOcrModelFile> manifest = kMangaOcrModelManifest,
 }) async {
-  final File sidecar =
-      File(p.join(modelsDir.path, kMangaOcrModelFingerprintFileName));
+  final File sidecar = File(
+    p.join(modelsDir.path, kMangaOcrModelFingerprintFileName),
+  );
   final Map<String, Object?> memo = await _readSidecar(sidecar);
   final Map<String, Object?> nextMemo = <String, Object?>{};
   final List<String> parts = <String>[];
@@ -106,13 +107,16 @@ Future<String?> resolveMangaOcrModelFingerprint(
 Future<String> resolveLocalMangaOcrEngineSignature(
   Directory modelsDir, {
   List<MangaOcrModelFile> manifest = kMangaOcrModelManifest,
+  String baseSignature = kLocalMangaOcrEngineSignature,
 }) async {
-  final String? fingerprint =
-      await resolveMangaOcrModelFingerprint(modelsDir, manifest: manifest);
+  final String? fingerprint = await resolveMangaOcrModelFingerprint(
+    modelsDir,
+    manifest: manifest,
+  );
   if (fingerprint == null) {
-    return kLocalMangaOcrEngineSignature;
+    return baseSignature;
   }
-  return '$kLocalMangaOcrEngineSignature-$fingerprint';
+  return '$baseSignature-$fingerprint';
 }
 
 /// 用默认模型目录解析签名（只读缓存的消费方：向导探测 / 重开恢复）。

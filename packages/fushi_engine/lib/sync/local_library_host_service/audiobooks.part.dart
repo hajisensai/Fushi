@@ -18,12 +18,19 @@ mixin _LocalLibraryHostAudiobooks
     // 清单内联断点 + 调轴（互联完整支持批次）：与视频清单同范式，sweep/下载回填
     // 免逐本 GET（旧实现 N 本书 = N 次网络往返）。一趟 prefs 批读。
     final Map<String, String> allPrefs = await _db.getAllPrefs();
-    RemoteAudiobookInfo build(String bookKey, String uid, String? title) {
+    RemoteAudiobookInfo build(
+      String bookKey,
+      String uid,
+      String? title, {
+      required int importedAt,
+      required bool hasAudio,
+    }) {
       final String identity = bookKey.isNotEmpty ? bookKey : uid;
       return RemoteAudiobookInfo(
         bookKey: bookKey,
         uid: uid,
         title: title,
+        hasAudio: hasAudio,
         positionMs: PrefCodec.decode<int>(
             allPrefs[audiobookPositionPrefKey(identity)] ?? '', 0),
         positionUpdatedAtMs: PrefCodec.decode<int>(
@@ -32,13 +39,28 @@ mixin _LocalLibraryHostAudiobooks
             allPrefs[audiobookDelayPrefKey(identity)] ?? '', 0),
         delayUpdatedAtMs: PrefCodec.decode<int>(
             allPrefs[audiobookDelayAtPrefKey(identity)] ?? '', 0),
+        // `SrtBooks.importedAt`：client 书架的远端占位卡据此排进「导入时间」序
+        // （与 [RemoteBookInfo.importedAt] 同范式）。
+        importedAt: importedAt,
       );
     }
 
+    // `hasAudio` 是清单里**唯一**问磁盘的字段（BUG-2551）：其余全是 DB 行的投影，
+    // 而「有行」不等于「有音频」。判据与导出打包同源（[audiobookAudioIsIntact]），
+    // 否则 client 会收到「清单说有、包里是空」的自相矛盾清单。
     for (final AudiobookRow r in rows) {
       final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
       if (srt == null) continue;
-      result.add(build(r.bookKey, srt.uid, srt.title));
+      result.add(build(
+        r.bookKey,
+        srt.uid,
+        srt.title,
+        importedAt: srt.importedAt,
+        hasAudio: await audiobookAudioIsIntact(
+          audioPathsJson: r.audioPathsJson,
+          audioRoot: r.audioRoot,
+        ),
+      ));
       emittedUids.add(srt.uid);
     }
     // 纯 SRT（standalone）有声书：bookKey 为空、不落 Audiobooks 行，身份 = uid。
@@ -46,7 +68,16 @@ mixin _LocalLibraryHostAudiobooks
     for (final SrtBookRow srt in srtRows) {
       if (srt.bookKey.isNotEmpty) continue; // srt-backed 已在上面枚举
       if (!emittedUids.add(srt.uid)) continue; // 去重（防重复 uid）
-      result.add(build('', srt.uid, srt.title));
+      result.add(build(
+        '',
+        srt.uid,
+        srt.title,
+        importedAt: srt.importedAt,
+        hasAudio: await audiobookAudioIsIntact(
+          audioPathsJson: srt.audioPathsJson,
+          audioRoot: srt.audioRoot,
+        ),
+      ));
     }
     return result;
   }

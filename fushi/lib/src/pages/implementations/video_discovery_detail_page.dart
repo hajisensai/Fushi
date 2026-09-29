@@ -2,12 +2,35 @@ import 'dart:async';
 
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
+
+/// 详情页标题下方可复制的拉丁字母标题：罗马音在前、英文名在后，与展示标题 /
+/// 原名重复的（忽略大小写）不再列出。
+List<String> videoDiscoveryLatinTitles(VideoDiscoveryItem item) {
+  final VideoMetadataWork? work = item.metadataWork;
+  final Set<String> seen = <String>{
+    item.reference.title.trim().toLowerCase(),
+    if (item.reference.originalTitle case final String original)
+      original.trim().toLowerCase(),
+  };
+  return <String>[
+    for (final String? value in <String?>[
+      work?.romajiTitle,
+      work?.englishTitle,
+    ])
+      if (value != null &&
+          value.trim().isNotEmpty &&
+          seen.add(value.trim().toLowerCase()))
+        value.trim(),
+  ];
+}
 
 typedef VideoDiscoveryAction = Future<void> Function(
   BuildContext context,
@@ -37,6 +60,7 @@ class VideoDiscoveryActions {
     this.onOpenDownloads,
     this.onOpenSubscriptions,
     this.onCancelDownloads,
+    this.onAiAcquire,
   });
 
   final VideoDiscoveryDetailLoader? loadDetails;
@@ -54,6 +78,13 @@ class VideoDiscoveryActions {
   /// 「查看下载」都只在发现**列表**页渲染。用户「感觉下的源不对劲，想再下一个，
   /// 但是下不了，只能取消或者等下载结束」——连取消都得先自己找到下载页。
   final Future<void> Function(List<String> jobIds)? onCancelDownloads;
+
+  /// 打开「AI 下视频」对话页（发现页搜索行的入口）。null = 不渲染入口：AI 提供商
+  /// 未指派、下载中心 / 外部发现在本平台不可用（iOS 合规）、或后端 runtime 没起。
+  ///
+  /// 参数是搜索框里已经输入的文字（空 = 没输入）：对话页拿它直接开聊，用户不用
+  /// 把刚打过的作品名再打一遍。
+  final ValueChanged<String?>? onAiAcquire;
 }
 
 class VideoDiscoveryAcquisitionState {
@@ -336,6 +367,9 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                             style: tokens.type.listSubtitle,
                           ),
                         ],
+                        for (final String latinTitle
+                            in videoDiscoveryLatinTitles(item))
+                          _buildCopyableTitle(latinTitle, tokens),
                         SizedBox(height: tokens.spacing.gap),
                         Text(
                           _metadataLine(item),
@@ -762,6 +796,39 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 罗马音 / 英文名一行：文字可选中，右侧按钮一键复制（资源站多按罗马音或
+  /// 英文名发布，搜不到时拿去别处搜）。
+  Widget _buildCopyableTitle(String value, FushiDesignTokens tokens) {
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Flexible(
+            child: SelectableText(
+              value,
+              maxLines: 1,
+              style: tokens.type.listSubtitle,
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap / 2),
+          FushiIconButton(
+            icon: Icons.copy,
+            size: 16,
+            tooltip: t.copy,
+            onTap: () async {
+              await Clipboard.setData(ClipboardData(text: value));
+              FushiToast.show(
+                msg: t.copied_to_clipboard,
+                severity: ToastSeverity.success,
+              );
+            },
           ),
         ],
       ),

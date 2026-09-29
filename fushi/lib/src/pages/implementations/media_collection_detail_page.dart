@@ -7,6 +7,13 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/collections/collection_detail_layout.dart';
+import 'package:fushi/src/media/collections/collection_drag.dart'
+    show CollectionAddOutcome, addMediaRefToCollection;
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
@@ -19,11 +26,11 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
-import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -33,8 +40,6 @@ import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
-import 'package:fushi/src/media/video/video_library_overview.dart'
-    show formatVideoPosition;
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -49,7 +54,9 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -70,7 +77,9 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.onChanged,
     this.onDeleteMembersMedia,
     this.deleteMembersLocalFilesSubtitle,
+    this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
+    this.onChooseTmdbOrdering,
     super.key,
   });
 
@@ -106,6 +115,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
   final Future<void> Function(
     List<VideoBookRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia;
 
   /// 非 null 时，「同时删除其中的视频」勾选下再给一行「同时删除本地文件」二级
@@ -113,10 +123,19 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// null = 该合集没有可删的本机原件（如全是远端流），不摆这一行。
   final String? deleteMembersLocalFilesSubtitle;
 
+  /// 非 null 时再给一行「同时删除统计数据」二级勾选（默认不勾、不被记忆），其状态
+  /// 经 [onDeleteMembersMedia] 的 `deleteStatistics` 参数落地。null = 该入口不提供。
+  final String? deleteMembersStatisticsSubtitle;
+
   /// 「重新刮削资料与封面」：由库页注入（刮削 controller 的生命周期归 HomePage，
   /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
   final Future<void> Function(MediaCollectionRow collection)?
       onRescrapeCollection;
+
+  /// 「TMDB 集编排」（备选排序，Shoko `PreferredAlternateOrderingID`）：同样由
+  /// 库页注入（要刮削 controller 重刮）。null = 菜单项不渲染。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onChooseTmdbOrdering;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -127,12 +146,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     with
         CollectionDetailShared<MediaCollectionDetailPage>,
         TickerProviderStateMixin {
-  /// 集列表宽卡固定高（16:9 缩略图 + 两行简介刚好放下；列宽随可用宽自适应）。
-  static const double _kEpisodeCardHeight = 128;
-
-  /// 集列表切两列的最小可用宽（用户点名 hayase 的宽屏两列形态，TODO-2491）。
-  static const double _kEpisodeTwoColumnMinWidth = 900;
-
   late String _name;
 
   /// 本合集**有序**成员槽（本地行 + 只在对端的远端占位）——本页唯一的成员真相源。
@@ -202,8 +215,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// v77 作品级人物关系；无规范资料时为 null，hero 保持既有 v68 投影形态。
   VideoMetadataWorkCredits? _workCredits;
   VideoMetadataWorkRow? _canonicalWork;
-  Map<String, VideoMetadataEpisodeRow> _canonicalEpisodeByUid =
-      const <String, VideoMetadataEpisodeRow>{};
+  /// 成员文件 → 绑到它的规范分集行（按季、集有序）。v110 起一文件可绑多集
+  /// （AniDB 一文件多集），列表首条是主集；单集文件恒为一条。
+  Map<String, List<VideoMetadataEpisodeRow>> _canonicalEpisodesByUid =
+      const <String, List<VideoMetadataEpisodeRow>>{};
   String? _canonicalCoverPath;
   String? _canonicalCoverRemoteUrl;
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
@@ -274,8 +289,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final List<VideoMetadataTermRow> workTerms = canonicalWork == null
         ? const <VideoMetadataTermRow>[]
         : await widget.database.getVideoMetadataTermsForWork(canonicalWork.id);
-    final Map<String, VideoMetadataEpisodeRow> canonicalEpisodes =
-        <String, VideoMetadataEpisodeRow>{};
+    final Map<String, List<VideoMetadataEpisodeRow>> canonicalEpisodes =
+        <String, List<VideoMetadataEpisodeRow>>{};
     final List<VideoMetadataImageRow> canonicalImages = canonicalWork == null
         ? const <VideoMetadataImageRow>[]
         : await widget.database.getVideoMetadataImages(
@@ -287,7 +302,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         for (final VideoMetadataEpisodeRow episode
             in await widget.database.getVideoMetadataEpisodes(season.id)) {
           if (episode.bookUid case final String uid) {
-            canonicalEpisodes[uid] = episode;
+            (canonicalEpisodes[uid] ??= <VideoMetadataEpisodeRow>[])
+                .add(episode);
           }
         }
       }
@@ -305,12 +321,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             !localExtraUids.contains(slot.entryKey))
         .toList(growable: false);
     // 集级刮削资料（一集一行、episodeNumber 非空才算集级；见 [_episodeMetaByUid]）。
+    // 合集没有自己的作品行时（成员按 AniDB 作品拆成了各自的电影作品），成员自己
+    // 的作品级投影（episodeNumber 为空）也拿来当卡片标题 / 简介——那就是这部
+    // 电影的资料。
     final Map<String, VideoScrapeMetaRow> episodeMeta =
         <String, VideoScrapeMetaRow>{};
     for (final VideoBookRow member in members) {
       final VideoScrapeMetaRow? row =
           await widget.database.getVideoScrapeMeta(member.bookUid);
-      if (row != null && row.episodeNumber != null) {
+      if (row != null && (row.episodeNumber != null || canonicalWork == null)) {
         episodeMeta[member.bookUid] = row;
       }
     }
@@ -325,7 +344,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       };
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
-      _canonicalEpisodeByUid = canonicalEpisodes;
+      _canonicalEpisodesByUid = canonicalEpisodes;
       _workCredits = workCredits;
       _canonicalWork = canonicalWork;
       _workTerms = workTerms;
@@ -500,9 +519,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 回填进 title（那不是集名，与 episode_rename.dart 同判据），此时不当集名用。
   /// 无集级资料 → null，调用方回落 [VideoBookRow.title]（文件名现状，零变化）。
   String? _scrapedEpisodeTitle(CollectionEpisodeSlot slot) {
-    final String? canonical =
-        _canonicalEpisodeByUid[slot.entryKey]?.title?.trim();
-    if (canonical != null && canonical.isNotEmpty) return canonical;
+    // 一文件多集：各集集名用「 / 」并列（Shoko 的 01-02 合集文件同样两集都列）。
+    final String canonical = <String>[
+      for (final VideoMetadataEpisodeRow episode
+          in _canonicalEpisodesByUid[slot.entryKey] ??
+              const <VideoMetadataEpisodeRow>[])
+        if (episode.title?.trim() case final String title when title.isNotEmpty)
+          title,
+    ].join(' / ');
+    if (canonical.isNotEmpty) return canonical;
     final VideoScrapeMetaRow? meta = _episodeMetaByUid[slot.entryKey];
     if (meta == null) return null;
     final String title = meta.title.trim();
@@ -544,11 +569,27 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return _episodeNumbersCache;
   }
 
+  /// 绑定文件的 AniDB 原生集号（刮削时经 ED2K 哈希识别写进分集行，Shoko 式两套
+  /// 编号并存）；没有身份 → null 不占位。
+  String? _episodeIdentityLabel(CollectionEpisodeSlot slot) {
+    final String epno = <String>[
+      for (final VideoMetadataEpisodeRow episode
+          in _canonicalEpisodesByUid[slot.entryKey] ??
+              const <VideoMetadataEpisodeRow>[])
+        if (episode.anidbEpisodeNumber?.trim() case final String number
+            when number.isNotEmpty)
+          number,
+    ].join(' / ');
+    if (epno.isEmpty) return null;
+    return t.collection_episode_anidb_number(number: epno);
+  }
+
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(CollectionEpisodeSlot slot) {
-    final String? summary = (_canonicalEpisodeByUid[slot.entryKey]?.overview ??
-            _episodeMetaByUid[slot.entryKey]?.summary)
-        ?.trim();
+    final String? summary =
+        (_canonicalEpisodesByUid[slot.entryKey]?.firstOrNull?.overview ??
+                _episodeMetaByUid[slot.entryKey]?.summary)
+            ?.trim();
     return (summary == null || summary.isEmpty) ? null : summary;
   }
 
@@ -926,6 +967,72 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
+  /// 把视频文件拖进本合集详情页 = 导入并**直接**归入本合集。
+  ///
+  /// 此前拖放只在视频库首页生效，导完还得回头手动「加入合集」。这里逐个处理：
+  /// 同一物理文件已在库（[VideoBookRepository.findByVideoPath]）就复用那一行，
+  /// 不再弹导入框、也不派生第二身份；未入库的走与首页同一个 [VideoImportDialog]
+  /// 预填导入（字幕配对口径同首页：单视频取第一条字幕、多视频按文件名主干配）。
+  /// 某一条取消只跳过该条。归入合集走共享的 [addMediaRefToCollection]（查重提示
+  /// + 失败提示都在它里面，永不抛）。
+  ///
+  /// 只收视频文件：文件夹 / 播放列表 / 种子在首页各有去处，合集页里没有「归入
+  /// 本合集」的明确语义，给可见提示而不是静默。
+  Future<void> _handleCollectionFileDrop(
+    List<String> paths,
+    Offset globalPosition,
+  ) async {
+    final DroppedFiles files = classifyDroppedFiles(
+      paths,
+      isDirectory: (String path) => Directory(path).existsSync(),
+    );
+    debugPrint(
+      '[fushi-drop] [collection-detail] videos=${files.videos.length} '
+      'subtitles=${files.subtitles.length} collection=${widget.collection.id}',
+    );
+    if (files.videos.isEmpty) {
+      FushiToast.show(
+        msg: t.drag_drop_unsupported_on_collection,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final VideoBookRepository repo = VideoBookRepository(widget.database);
+    int added = 0;
+    for (final String video in files.videos) {
+      if (!mounted) return;
+      String? bookUid = (await repo.findByVideoPath(video))?.bookUid;
+      if (bookUid == null) {
+        if (!mounted) return;
+        final String? subtitle = files.videos.length == 1
+            ? (files.subtitles.isNotEmpty ? files.subtitles.first : null)
+            : subtitleForVideoByStem(video, files.subtitles);
+        bookUid = await showAppDialog<String>(
+          context: context,
+          builder: (_) => VideoImportDialog(
+            repo: repo,
+            initialVideoPath: video,
+            initialSubtitlePath: subtitle,
+          ),
+        );
+      }
+      if (bookUid == null) continue;
+      final CollectionAddOutcome outcome = await addMediaRefToCollection(
+        database: widget.database,
+        collectionId: widget.collection.id,
+        mediaRef: MediaRef(kind: MediaKind.video, entryKey: bookUid),
+      );
+      if (outcome == CollectionAddOutcome.added) added++;
+    }
+    if (added == 0 || !mounted) return;
+    await _reload();
+    widget.onChanged();
+    FushiToast.show(
+      msg: t.batch_add_to_collection_success(n: added),
+      severity: ToastSeverity.success,
+    );
+  }
+
   /// 「相关作品 → 去下载」：预填关系边标题打开番剧下载对话框（搜番段）。
   void _downloadRelation(CollectionRelationRow relation) {
     showDialog<void>(
@@ -960,7 +1067,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return container
         .read(appProvider)
         .moduleVisibility
-        .isEnabled(ModuleId.downloads);
+        .isEnabled(ModuleId.browse);
   }
 
   /// 本页所在树上的 Riverpod 容器；没有 [ProviderScope] 时返回 null。
@@ -1176,6 +1283,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           canDeleteMembers && _members.any(videoBookHasLocalFiles)
               ? widget.deleteMembersLocalFilesSubtitle
               : null,
+      statisticsSubtitle:
+          canDeleteMembers ? widget.deleteMembersStatisticsSubtitle : null,
     );
     if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
@@ -1186,6 +1295,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       await widget.onDeleteMembersMedia!(
         List<VideoBookRow>.of(_members),
         result.deleteLocalFiles,
+        result.deleteStatistics,
       );
     }
     await deleteMediaCollectionWithAssets(
@@ -1193,36 +1303,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (!mounted) return;
     widget.onChanged();
     Navigator.of(context).maybePop();
-  }
-
-  /// 单集封面缩略图（16:9 槽）：有封面文件则渲染，否则 letterbox 占位图标。
-  /// 每集是独立视频行，[VideoBookRow.coverPath] 由导入 / 后台补齐（home_video_page
-  /// `_maybeBackfillCovers`）逐集抽帧填充；刮削可把它覆盖成 2:3 竖版海报——
-  /// BUG-1299：走 [PortraitCoverImage] 的横槽自适应（横版截帧铺满、竖版海报
-  /// 模糊垫底 + contain），不再 `BoxFit.cover` 把海报裁成中间一条。
-  Widget _episodeThumb(
-    CollectionEpisodeSlot slot,
-    ColorScheme cs, {
-    double w = 96,
-    double h = 54,
-  }) {
-    final ImageProvider? cover = _episodeCover(slot);
-    if (cover != null) {
-      return ClipRRect(
-        borderRadius: FushiBorderRadius.card,
-        child: SizedBox(
-          width: w,
-          height: h,
-          child: PortraitCoverImage(
-            image: cover,
-            landscapeSlot: true,
-            // 抽帧文件损坏 / 读取失败时退回占位，绝不抛。
-            errorBuilder: (BuildContext _) => _thumbPlaceholder(w, h, cs),
-          ),
-        ),
-      );
-    }
-    return _thumbPlaceholder(w, h, cs);
   }
 
   /// 集缩略图 provider：本地行走既有封面链；远端集先认 host 已同步下来的本地封面
@@ -1265,184 +1345,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     context.openEpisode(remote, members, members.indexOf(remote));
   }
 
-  Widget _thumbPlaceholder(double w, double h, ColorScheme cs) => Container(
-        width: w,
-        height: h,
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
-          borderRadius: FushiBorderRadius.card,
-        ),
-        child: Icon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
-      );
-
-  Widget _buildHero(
-    BuildContext context,
-    ColorScheme cs,
-    FushiDesignTokens tokens,
-  ) {
-    final Size screen = MediaQuery.sizeOf(context);
-    final double height = (screen.height * 0.60).clamp(460.0, 680.0);
-    final ImageProvider? cover = _heroCover;
-    final CollectionEpisodeSlot episode = _slots[_continueIndex];
-    final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    // 可读性渐变：压在封面之上、竖版海报前景之下（层序由 [LandscapeCoverImage]
-    // 保证，见该组件文档）。无封面时直接铺在底色上，与引入组件前一致。
-    final List<Widget> overlays = <Widget>[
-      const DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: <double>[0, 0.48, 1],
-            colors: <Color>[
-              Color(0x52000000),
-              Color(0x22000000),
-              Color(0xE8000000),
-            ],
-          ),
-        ),
-      ),
-      DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: rtl ? Alignment.centerRight : Alignment.centerLeft,
-            end: rtl ? Alignment.centerLeft : Alignment.centerRight,
-            stops: const <double>[0, 0.66, 1],
-            colors: const <Color>[
-              Color(0xC9000000),
-              Color(0x26000000),
-              Color(0x7A000000),
-            ],
-          ),
-        ),
-      ),
-    ];
-    final ImageProvider? backdrop = _heroBackdrop;
-    return SizedBox(
-      key: const ValueKey<String>('video-work-hero-card'),
-      width: double.infinity,
-      height: height,
-      child: ClipRect(
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(color: cs.surfaceContainerHighest),
-            // 背景分两条路，取决于**这次刮削的源有没有横版图**：
-            // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
-            //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
-            // ② 无 backdrop（离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
-            //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
-            //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
-            //    图在同一屏出现两次。
-            if (backdrop != null) ...<Widget>[
-              // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
-              // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
-              // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
-              KeyedSubtree(
-                key: const ValueKey<String>('collection-hero-backdrop'),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 700),
-                  child: Image(
-                    key: ValueKey<int>(_heroBackdropIndex),
-                    image: backdrop,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) =>
-                        ColoredBox(color: cs.surfaceContainerHighest),
-                  ),
-                ),
-              ),
-              ...overlays,
-            ] else if (cover != null)
-              LandscapeCoverImage(
-                key: const ValueKey<String>('collection-hero-cover'),
-                image: cover,
-                overlays: overlays,
-                // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
-                foregroundPadding: EdgeInsetsDirectional.only(
-                  top: tokens.spacing.gap,
-                  bottom: tokens.spacing.section,
-                  end: tokens.spacing.page,
-                ),
-                errorBuilder: (BuildContext _) =>
-                    ColoredBox(color: cs.surfaceContainerHighest),
-              )
-            else
-              ...overlays,
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.section,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final Widget info = ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: _buildHeroInfo(context, tokens, episode),
-                  );
-                  // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
-                  // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
-                  final bool showPoster = backdrop != null &&
-                      cover != null &&
-                      constraints.maxWidth >= 900;
-                  if (!showPoster) {
-                    return Align(
-                      alignment: AlignmentDirectional.bottomStart,
-                      child: info,
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      _buildHeroPosterCard(cover, height),
-                      SizedBox(width: tokens.spacing.section),
-                      Expanded(
-                        child: Align(
-                          alignment: AlignmentDirectional.bottomStart,
-                          child: info,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// hero 左侧的竖版海报卡（仅在有横版背景时出现，见 [_buildHero]）。
-  ///
-  /// 2:3 是海报的**正确槽向**——这才是 BUG-1298 的正解：不是把海报硬塞进宽幅槽再想
-  /// 办法补救，而是让宽幅槽拿横图、让海报回到它自己的比例里。
-  Widget _buildHeroPosterCard(ImageProvider cover, double heroHeight) {
-    final double posterHeight = (heroHeight * 0.78).clamp(280.0, 500.0);
-    return ClipRRect(
-      borderRadius: FushiBorderRadius.card,
-      child: SizedBox(
-        key: const ValueKey<String>('collection-hero-poster'),
-        height: posterHeight,
-        width: posterHeight * 2 / 3,
-        child: PortraitCoverImage(image: cover),
-      ),
-    );
-  }
-
-  /// hero 文字区：标题 / 原名 / 元数据行 / 标签 / 简介 / 继续看 / 播放。
+  /// 详情页 hero：数据求值留在本页（背景轮换 / 徽标 / 标签 / 人物 / 续播集），
+  /// 视觉交给共享的 [CollectionDetailHero]（与媒体服务器详情页同一套）。
   ///
   /// 刮削资料缺失时逐项跳过（不占位、不显示「未知」）：未刮过的合集看到的就是引入
   /// 本功能前的老形态——标题 + 进度 + 播放，逐像素不变（Never break userspace）。
-  Widget _buildHeroInfo(
-    BuildContext context,
-    FushiDesignTokens tokens,
-    CollectionEpisodeSlot episode,
-  ) {
-    final TextTheme text = Theme.of(context).textTheme;
+  Widget _buildHero() {
+    final CollectionEpisodeSlot episode = _slots[_continueIndex];
     final ScrapeMetadata? meta = _scrapeMeta;
     final String? originalTitle =
         _canonicalWork?.originalTitle ?? meta?.originalTitle;
@@ -1450,127 +1359,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 一份只会形成用户截图中的重复内容。旧 v68 资料没有规范详情宿主时才保留
     // hero 回退，避免老库凭空丢信息。
     final bool useLegacyHeroDetails = _canonicalWork == null;
-    final String? summary = useLegacyHeroDetails ? meta?.summary?.trim() : null;
-    final String? airDate =
-        (_canonicalWork?.premiereDate ?? meta?.airDate)?.trim();
-    final List<ScrapeTag> scrapeTags =
-        useLegacyHeroDetails ? _heroScrapeTags(meta) : const <ScrapeTag>[];
-    final List<VideoMetadataCreditSummary> credits = useLegacyHeroDetails
-        ? _heroCredits()
-        : const <VideoMetadataCreditSummary>[];
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        // 放送日期行（hayase 式：小字压在大标题上方）。未刮过没有 → 不占位。
-        if (airDate != null && airDate.isNotEmpty) ...<Widget>[
-          Text(
-            airDate,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.labelMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-        ],
-        // v68：有标题 logo 时替代纯文字大标题（Jellyfin `.detailLogo` 同款）。
-        // Semantics 保留合集名——logo 是图，读屏与测试都还能按名字找到它；
-        // logo 解码失败回落文字标题，绝不留一块空白当标题。
-        if (_heroLogo case final ImageProvider logo)
-          Semantics(
-            label: _name,
-            image: true,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 110, maxWidth: 460),
-              child: Image(
-                key: const ValueKey<String>('collection-hero-logo'),
-                image: logo,
-                fit: BoxFit.contain,
-                alignment: AlignmentDirectional.bottomStart,
-                errorBuilder: (_, __, ___) => _buildHeroTitleText(text),
-              ),
-            ),
-          )
-        else
-          _buildHeroTitleText(text),
-        // 原名与合集名相同就不重复占一行（刮削回写后二者常常一致）。
-        if (originalTitle != null &&
-            originalTitle.isNotEmpty &&
-            originalTitle != _name) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            originalTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.72),
-            ),
-          ),
-        ],
-        SizedBox(height: tokens.spacing.gap),
-        // 徽标行（hayase 式）：观看进度恒在（不依赖刮削），话数/评分有刮削资料
-        // 才逐项出现（缺的不占位、不写「未知」）。
-        _buildHeroBadgeChips(_heroBadgeParts(meta)),
-        if (scrapeTags.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          _buildHeroTagChips(scrapeTags),
-        ],
-        if (credits.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          _buildHeroCreditChips(credits),
-        ],
-        if (summary != null && summary.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.card),
-          // Flexible + ellipsis：简介长度不可控，hero 高度是钳死的，必须让它先收缩
-          // 再截断，否则长简介直接把 Column 撑出 RenderFlex overflow。
-          Flexible(
-            child: Text(
-              summary,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: text.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.78),
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-        SizedBox(height: tokens.spacing.card),
-        Text(
+    return CollectionDetailHero(
+      backdrop: _heroBackdrop,
+      backdropIndex: _heroBackdropIndex,
+      cover: _heroCover,
+      logo: _heroLogo,
+      title: _canonicalWork?.title ?? _name,
+      // 读屏与测试按合集名找 logo。
+      semanticsName: _name,
+      // 原名与合集名相同就不重复占一行（刮削回写后二者常常一致）。
+      originalTitle: originalTitle == _name ? null : originalTitle,
+      airDate: _canonicalWork?.premiereDate ?? meta?.airDate,
+      // 徽标行（hayase 式）：观看进度恒在（不依赖刮削），话数/评分有刮削资料
+      // 才逐项出现（缺的不占位、不写「未知」）。
+      badgeParts: _heroBadgeParts(meta),
+      tagNames: useLegacyHeroDetails
+          ? <String>[for (final ScrapeTag tag in _heroScrapeTags(meta)) tag.name]
+          : const <String>[],
+      credits: useLegacyHeroDetails
+          ? <CollectionHeroCredit>[
+              for (final VideoMetadataCreditSummary credit in _heroCredits())
+                CollectionHeroCredit(
+                  kind: credit.creditKind,
+                  name: credit.displayName,
+                ),
+            ]
+          : const <CollectionHeroCredit>[],
+      summary: useLegacyHeroDetails ? meta?.summary : null,
+      continueLabel:
           '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
           '${_episodeDisplayTitle(episode)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: text.labelLarge?.copyWith(
-            color: Colors.white.withValues(alpha: 0.82),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        SizedBox(height: tokens.spacing.card),
-        FilledButton.icon(
-          icon: const Icon(Icons.play_arrow_rounded),
-          label: Text(t.collection_play),
-          onPressed: () => _openSlot(episode),
-        ),
-      ],
-    );
-  }
-
-  /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）。
-  Widget _buildHeroTitleText(TextTheme text) {
-    return Text(
-      _canonicalWork?.title ?? _name,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: text.displaySmall?.copyWith(
-        color: Colors.white,
-        fontWeight: FontWeight.w700,
-        height: 1.08,
-      ),
+      onPlay: () => _openSlot(episode),
     );
   }
 
@@ -1578,7 +1397,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   ///
   /// 逐项存在才出（缺的不留空档、不写「未知」）。观看进度恒在——它不依赖刮削，是
   /// 本页固有信息，未刮过的合集这一行就只剩它，与旧形态一致。年份不进徽标：
-  /// 放送日期已单独一行压在标题上方（[_buildHeroInfo]）。
+  /// 放送日期已单独一行压在标题上方（[CollectionDetailHero.airDate]）。
   List<String> _heroBadgeParts(ScrapeMetadata? meta) {
     final List<String> parts = <String>[];
     final int? year = _canonicalWork?.year;
@@ -1608,37 +1427,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return parts;
   }
 
-  /// 徽标 chips（hayase 式胶囊；与作品标签 chips 同形但语义不同：这排是**数字
-  /// 事实**——话数/评分/进度，那排是题材标签）。
-  Widget _buildHeroBadgeChips(List<String> parts) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: <Widget>[
-        for (final String part in parts)
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.32),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              child: Text(
-                part,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  height: 1.2,
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   /// hero 展示的**作品标签**（题材/类型，来自刮削源，按热度降序取前 6）。
   ///
   /// 与合集自己的**用户标签**（`buildDetailTagChips`，hero 下方那排）是两条正交轴：
@@ -1647,39 +1435,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   List<ScrapeTag> _heroScrapeTags(ScrapeMetadata? meta) {
     final List<ScrapeTag> tags = meta?.tags ?? const <ScrapeTag>[];
     return tags.take(6).toList();
-  }
-
-  /// 作品标签 chips。
-  ///
-  /// 用 [Wrap] 而不是单行 Row：标签长短不一，钳成一行会让第二个起就被 ellipsis 吃掉。
-  /// 取前 6 个已使最坏情况稳定在两行内，配合调用方的 [Flexible] 不会撑爆 hero。
-  Widget _buildHeroTagChips(List<ScrapeTag> tags) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: <Widget>[
-        for (final ScrapeTag tag in tags)
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              child: Text(
-                tag.name,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.2,
-                  color: Colors.white.withValues(alpha: 0.88),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
   }
 
   /// 人物关系在固定高 hero 内只占一条横向轨道；各类最多两项，既能让导演、演员、
@@ -1700,73 +1455,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     ];
   }
 
-  Widget _buildHeroCreditChips(List<VideoMetadataCreditSummary> credits) {
-    return SizedBox(
-      key: const ValueKey<String>('collection-hero-credits'),
-      height: 28,
-      child: HorizontalDragScrollable(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: <Widget>[
-              for (int index = 0; index < credits.length; index++) ...<Widget>[
-                if (index > 0) const SizedBox(width: 6),
-                DecoratedBox(
-                  key: ValueKey<String>(
-                    'collection-hero-credit-${credits[index].creditKind}-$index',
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.32),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.24),
-                    ),
-                  ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(
-                          _heroCreditIcon(credits[index].creditKind),
-                          size: 13,
-                          color: Colors.white.withValues(alpha: 0.76),
-                        ),
-                        const SizedBox(width: 5),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 220),
-                          child: Text(
-                            credits[index].displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.2,
-                              color: Colors.white.withValues(alpha: 0.9),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  IconData _heroCreditIcon(String creditKind) => switch (creditKind) {
-        'director' => Icons.movie_creation_outlined,
-        'voice_actor' => Icons.record_voice_over_outlined,
-        _ => Icons.person_outline,
-      };
-
-  Widget _buildWorkDetailsSection(FushiDesignTokens tokens) {
+  /// 作品资料区：事实行在本页求值，视觉交给共享 [CollectionWorkDetailsSection]。
+  Widget _buildWorkDetailsSection() {
     final VideoMetadataWorkRow? work = _canonicalWork;
     final Map<String, List<String>> terms = <String, List<String>>{};
     for (final VideoMetadataTermRow term in _workTerms) {
@@ -1797,78 +1487,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               .join(' · '),
         ),
     ];
-    final String? overview = work?.overview?.trim();
-    if ((overview == null || overview.isEmpty) && facts.isEmpty) {
-      return Padding(
-        key: const ValueKey<String>('video-work-details-pending'),
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.section,
-          tokens.spacing.page,
-          0,
-        ),
-        child: FushiCard(
-          padding: EdgeInsets.all(tokens.spacing.section),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                t.video_work_details,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              SizedBox(height: tokens.spacing.card),
-              Text(
-                t.video_work_metadata_pending,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    return Padding(
-      key: const ValueKey<String>('video-work-details'),
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.section,
-        tokens.spacing.page,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(t.video_work_details,
-              style: Theme.of(context).textTheme.titleLarge),
-          if (overview != null && overview.isNotEmpty) ...<Widget>[
-            SizedBox(height: tokens.spacing.card),
-            SelectableText(
-              overview,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    height: 1.55,
-                  ),
-            ),
-          ],
-          for (final (String label, String value) in facts)
-            Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.card),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(
-                    width: 116,
-                    child: Text(
-                      label,
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                  ),
-                  Expanded(child: SelectableText(value)),
-                ],
-              ),
-            ),
-        ],
-      ),
+    return CollectionWorkDetailsSection(
+      overview: work?.overview,
+      facts: facts,
+      pendingText: t.video_work_metadata_pending,
     );
   }
 
@@ -1904,95 +1526,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     String title,
     List<VideoMetadataCreditSummary> credits,
     FushiDesignTokens tokens,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
-        ),
-        SizedBox(height: tokens.spacing.card),
-        SizedBox(
-          height: 224,
-          child: HorizontalDragScrollable(
-            child: ListView.separated(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              scrollDirection: Axis.horizontal,
-              itemCount: credits.length,
-              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
-              itemBuilder: (BuildContext context, int index) {
-                final VideoMetadataCreditSummary credit = credits[index];
-                final String? path = credit.person.profilePath;
-                final String? url = credit.person.profileUrl;
-                final ImageProvider? image =
-                    path != null && File(path).existsSync()
-                        ? FileImage(File(path))
-                        : (url == null ? null : AppCachedHttpImage(url));
-                return SizedBox(
-                  key: ValueKey<String>(
-                      'video-work-credit-${credit.person.personKey}-$index'),
-                  width: 132,
-                  child: FushiCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Expanded(
-                          child: image == null
-                              ? const ColoredBox(
-                                  color: Color(0x1FFFFFFF),
-                                  child: Icon(Icons.person_outline, size: 42),
-                                )
-                              : Image(
-                                  image: image,
-                                  fit: BoxFit.cover,
-                                  // BUG-2496：坏头像文件解码失败退回占位，不当致命错误。
-                                  errorBuilder: (_, Object error, __) {
-                                    ErrorLogService.instance.logDiagnostic(
-                                      'MediaCollectionDetailPage.credit.coverDecode',
-                                      '${path ?? url}: $error',
-                                    );
-                                    return const ColoredBox(
-                                      color: Color(0x1FFFFFFF),
-                                      child: Icon(Icons.person_outline,
-                                          size: 42),
-                                    );
-                                  },
-                                ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
-                          child: Text(
-                            credit.person.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(9, 0, 9, 9),
-                          child: Text(
-                            credit.character?.name ??
-                                (credit.roleName.isEmpty
-                                    ? credit.creditKind
-                                    : credit.roleName),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  ) =>
+      VideoCreditRail(title: title, credits: credits, tokens: tokens);
 
   Widget _buildExtrasSection(FushiDesignTokens tokens) {
     if (_workExtras.isEmpty) return const SizedBox.shrink();
@@ -2150,11 +1685,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  Widget _buildEpisodeSection(
-    BuildContext context,
-    ColorScheme cs,
-    FushiDesignTokens tokens,
-  ) {
+  Widget _buildEpisodeSection(FushiDesignTokens tokens) {
     return Padding(
       padding: EdgeInsets.only(
         top: tokens.spacing.section,
@@ -2163,17 +1694,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: Text(
-              t.video_episode_list,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
+          CollectionSectionTitle(t.video_episode_list),
           // 多季合集：季 tab 紧贴标题行、在集列表之上——用户一进详情页就看得见分季。
-          if (_hasSeasonTabs) _buildSeasonTabs(context, cs, tokens),
+          if (_hasSeasonTabs) _buildSeasonTabs(),
           SizedBox(height: tokens.spacing.rowVertical),
           // hayase 式宽列表卡（TODO-2491 用户拍板）：每集一张横向卡（16:9 缩略图 +
           // 「N. 集名」+ 集简介 + 观看进度），**默认全量可见、不再折叠**；宽屏两列。
@@ -2187,7 +1710,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               '${_selectedSection == null ? '' : '-${_selectedSection!.groupKey}'}',
             ),
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: _buildEpisodeGrid(cs, tokens),
+            child: _buildEpisodeGrid(),
           ),
         ],
       ),
@@ -2197,54 +1720,39 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 季 tab 条（MD3 可滚动 [TabBar]）：多季合集**首屏**就能看见并切季，切换后
   /// 下面的剧集轨与管理列表一起换成该季（分季若只做在默认折叠的管理
   /// 列表里，用户进页面根本看不见）。单季合集不渲染本条（[_hasSeasonTabs] 门）。
-  Widget _buildSeasonTabs(
-    BuildContext context,
-    ColorScheme cs,
-    FushiDesignTokens tokens,
-  ) {
-    return Padding(
-      key: const ValueKey<String>('collection-season-tabs'),
-      padding: EdgeInsets.only(top: tokens.spacing.gap),
-      child: TabBar(
-        controller: _seasonTabs,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-        labelColor: cs.primary,
-        unselectedLabelColor: cs.onSurfaceVariant,
-        indicatorColor: cs.primary,
-        dividerColor: Colors.transparent,
-        tabs: <Widget>[
-          for (final CollectionSeasonSection<CollectionEpisodeSlot> section
-              in _sections)
-            Tab(
-              key:
-                  ValueKey<String>('collection-season-tab-${section.groupKey}'),
-              text: _groupLabel(section.groupKey),
-            ),
-        ],
-      ),
+  Widget _buildSeasonTabs() {
+    return CollectionSeasonTabBar(
+      controller: _seasonTabs!,
+      labels: <String>[
+        for (final CollectionSeasonSection<CollectionEpisodeSlot> section
+            in _sections)
+          _groupLabel(section.groupKey),
+      ],
+      tabKeys: <Key>[
+        for (final CollectionSeasonSection<CollectionEpisodeSlot> section
+            in _sections)
+          ValueKey<String>('collection-season-tab-${section.groupKey}'),
+      ],
     );
   }
 
-  /// 集列表（hayase 式宽卡网格）：宽度 ≥ [_kEpisodeTwoColumnMinWidth] 两列，
+  /// 集列表（hayase 式宽卡网格）：宽度 ≥ [kCollectionEpisodeTwoColumnMinWidth] 两列，
   /// 否则一列。拖拽重排/右键/长按菜单由 [FushiReorderableGrid] 统一接管（鼠标
   /// 按住即拖 + 右键菜单；触摸长按起拖、原地松手出菜单——BUG-778 缩放安全一族）。
   /// 分季时只列本季（[_visibleMembers]），拖拽是节内重排，由 [_onReorder] 拼回
   /// 全序落盘。
-  Widget _buildEpisodeGrid(ColorScheme cs, FushiDesignTokens tokens) {
+  Widget _buildEpisodeGrid() {
     final List<CollectionEpisodeSlot> visible = _visibleSlots;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         const double spacing = 12;
-        final int columns =
-            constraints.maxWidth >= _kEpisodeTwoColumnMinWidth ? 2 : 1;
+        final int columns = collectionEpisodeColumns(constraints.maxWidth);
         final double columnWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return FushiReorderableGrid(
           itemCount: visible.length,
           crossAxisCount: columns,
-          childAspectRatio: columnWidth / _kEpisodeCardHeight,
+          childAspectRatio: columnWidth / kCollectionEpisodeCardHeight,
           crossAxisSpacing: spacing,
           mainAxisSpacing: spacing,
           feedbackBorderRadius: FushiBorderRadius.card,
@@ -2255,158 +1763,54 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           onContextMenu: (int i, Offset globalPosition) =>
               _showEpisodeMenu(visible[i], globalPosition),
           itemBuilder: (BuildContext context, int i) =>
-              _buildEpisodeCard(context, visible[i], i, cs, tokens),
+              _buildEpisodeCard(context, visible[i], i),
         );
       },
     );
   }
 
-  /// 单张集卡：左 16:9 缩略图 + 右「N. 集名」/集简介两行/观看状态，底部进度条。
-  ///
-  /// 进度条只画**真实事实**：看完 → 满格；`VideoBooks` 不持久化视频总时长
-  /// （TODO-1346 同一约束），看了一半算不出百分比——不造假条，改在状态行给
-  /// 「看到 mm:ss」（lastPositionMs 是真数据）。
-  ///
-  /// 纯视觉（手势归 [FushiReorderableGrid]），故整卡 [IgnorePointer]；键盘/手柄
-  /// 焦点不走指针，[FushiFocusTarget] 照常可聚焦、Enter 开播。
+  /// 单张集卡：序号 / 集名 / 集简介 / 观看状态 / 规格摘要在本页求值，视觉交给
+  /// 共享 [CollectionEpisodeCard]（hayase 式宽卡，整卡 IgnorePointer——手势归
+  /// [FushiReorderableGrid]）；键盘/手柄焦点不走指针，[FushiFocusTarget] 照常可
+  /// 聚焦、Enter 开播。
   Widget _buildEpisodeCard(
     BuildContext context,
     CollectionEpisodeSlot episode,
     int index,
-    ColorScheme cs,
-    FushiDesignTokens tokens,
   ) {
-    final bool completed = episode.completed;
-    final bool started = episode.positionMs > 0 && !completed;
-    final bool isContinue = episode.entryKey == _continueKey;
-    final String? summary = _episodeSummary(episode);
-    const double pad = 10;
-    const double thumbHeight = _kEpisodeCardHeight - pad * 2;
-    const double thumbWidth = thumbHeight * 16 / 9;
-    final Widget card = IgnorePointer(
-      child: Material(
-        color: isContinue
-            ? cs.primaryContainer.withValues(alpha: 0.35)
-            : cs.surfaceContainerLow,
-        borderRadius: FushiBorderRadius.card,
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.all(pad),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Stack(
-                    children: <Widget>[
-                      _episodeThumb(episode, cs, w: thumbWidth, h: thumbHeight),
-                      // 云角标 = 这一集只在对端（与库页远端占位卡同一枚角标）。
-                      if (episode.isRemote)
-                        const Positioned(
-                          right: 4,
-                          bottom: 4,
-                          child: CoverBadge(icon: Icons.cloud_outlined),
-                        ),
-                    ],
-                  ),
-                  SizedBox(width: tokens.spacing.rowVertical),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          // BUG-1544：序号跟随文件名解析出的真实集数（缺集时
-                          // 不再用顺位号冒充）；解析不出时回退顺位号。
-                          '${_episodeDisplayNumber(episode, index)}. '
-                          '${_episodeDisplayTitle(episode)}',
-                          // BUG-1546：无刮削集名时标题是整条发布文件名（VCB-Studio
-                          // 一类动辄 80+ 字符），单行省略后关键的集号/规格全被吃掉，
-                          // 用户分不清 PV/特典各条目。放两行再省略；卡高 128 下
-                          // 「两行标题 + 两行简介 + 状态行」仍在 Spacer 余量内。
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        // 集简介两行（集级刮削 summary；无则不占位）。
-                        if (summary != null) ...<Widget>[
-                          SizedBox(height: tokens.spacing.gap / 2),
-                          Text(
-                            summary,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.3,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                        const Spacer(),
-                        Row(
-                          children: <Widget>[
-                            if (completed)
-                              Icon(
-                                Icons.check_circle,
-                                color: cs.primary,
-                                size: 16,
-                              )
-                            else if (started) ...<Widget>[
-                              Icon(
-                                Icons.play_circle_outline,
-                                color: cs.onSurfaceVariant,
-                                size: 16,
-                              ),
-                              SizedBox(width: tokens.spacing.gap / 2),
-                              Text(
-                                t.collection_episode_watched_at(
-                                  position: formatVideoPosition(
-                                    episode.positionMs,
-                                  ),
-                                ),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                            // v95：该集的规格摘要（`1080p · HDR10 · HEVC`）。
-                            // 挤进状态行右端而不是新起一行——卡高 _kEpisodeCardHeight
-                            // 是钳死的，两行标题+两行简介已经把 Spacer 余量吃满，
-                            // 多一行会把简介顶掉。Flexible + 内部单行 ellipsis 保证
-                            // 长文件名的规格串不会撑爆这一行。
-                            Flexible(
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: VideoSpecsInlineLine(
-                                  service: widget.videoSpecs,
-                                  filePath: episode.local?.videoPath,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+    Widget buildCard(Widget? downloadBadge) => CollectionEpisodeCard(
+          thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
+          // BUG-1544：序号跟随文件名解析出的真实集数（缺集时不再用顺位号冒充）；
+          // 解析不出时回退顺位号。
+          number: '${_episodeDisplayNumber(episode, index)}',
+          title: _episodeDisplayTitle(episode),
+          identityLabel: _episodeIdentityLabel(episode),
+          summary: _episodeSummary(episode),
+          completed: episode.completed,
+          positionMs: episode.positionMs,
+          isContinue: episode.entryKey == _continueKey,
+          // 云角标 = 这一集只在对端（与库页远端占位卡同一枚角标）。
+          isRemote: episode.isRemote,
+          downloadBadge: downloadBadge,
+          // v95：该集的规格摘要（`1080p · HDR10 · HEVC`），挤在状态行右端。
+          trailingStatus: VideoSpecsInlineLine(
+            service: widget.videoSpecs,
+            filePath: episode.local?.videoPath,
+          ),
+        );
+    // 远端集 + 库页注入了下载管理器 → 集卡跟着该集任务快照重绘（进度环 / 失败
+    // 角标）。任务键 = 远端集 id = entryKey，与库页远端占位卡同一张表；管理器是
+    // ChangeNotifier，用 ListenableBuilder 订阅而不是把本页改成 Consumer（既有
+    // 测试不挂 ProviderScope）。
+    final InterconnectDownloadManager? downloads = widget.remote?.downloads;
+    final Widget card = downloads == null || !episode.isRemote
+        ? buildCard(null)
+        : ListenableBuilder(
+            listenable: downloads,
+            builder: (BuildContext context, Widget? _) => buildCard(
+              _episodeDownloadBadge(downloads.taskFor(episode.entryKey)),
             ),
-            if (completed)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: LinearProgressIndicator(
-                  value: 1,
-                  minHeight: 3,
-                  backgroundColor: Colors.transparent,
-                  color: cs.primary,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
+          );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -2422,6 +1826,31 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         child: card,
       ),
     );
+  }
+
+  /// 某远端集的下载态角标：进行中 → 进度环；失败 → 失败角标（tooltip 带真实错误
+  /// 文本）；无任务 / 已完成 → null（集卡照旧画云角标）。与库页远端占位卡
+  /// `_remoteDownloadBadge` 同一套徽章、同一套 key 前缀，测试同一把 finder。
+  Widget? _episodeDownloadBadge(InterconnectDownloadTask? task) {
+    if (task == null) return null;
+    switch (task.status) {
+      case InterconnectDownloadStatus.running:
+        return RemoteDownloadProgressBadge(
+          key: ValueKey<String>('collection_episode_downloading_${task.id}'),
+          progress: task.progress,
+          tooltip: t.remote_video_downloading,
+        );
+      case InterconnectDownloadStatus.failed:
+        return RemoteDownloadFailedBadge(
+          key: ValueKey<String>('collection_episode_download_failed_${task.id}'),
+          tooltip: task.error == null || task.error!.isEmpty
+              ? t.remote_video_download_failed
+              : '${t.remote_video_download_failed}: ${task.error}',
+        );
+      case InterconnectDownloadStatus.paused:
+      case InterconnectDownloadStatus.completed:
+        return null;
+    }
   }
 
   /// 集卡上下文菜单（右键 / 触摸长按原地松手）。坐标经 Overlay `globalToLocal`
@@ -2466,6 +1895,34 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ],
             ),
           ),
+        // 「清除观看进度」：只对本地行且确有观看痕迹的集出现（远端占位集的进度
+        // 归 host，本地没得清）。用户误点开下一集又退出后，「继续看」会被钉在那一集
+        // （BUG-1542 的最近播放锚点），这条动作让它回到上一集看完后的下一集。
+        if (episode.local case final VideoBookRow local
+            when videoBookHasWatchTrace(local))
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.clearWatchProgress,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.restart_alt_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.video_watch_progress_clear),
+              ],
+            ),
+          ),
+        // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
+        // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
+        if (episode.local != null && _canonicalWork?.mediaType == 'tv')
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.pinEpisode,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.push_pin_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_episode_link_manual),
+              ],
+            ),
+          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -2484,11 +1941,48 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.mediaInfo:
         await _showEpisodeMediaInfo(episode);
+      case _EpisodeMenuAction.clearWatchProgress:
+        await _clearEpisodeWatchProgress(episode);
+      case _EpisodeMenuAction.pinEpisode:
+        await _pinEpisodeBinding(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
         break;
     }
+  }
+
+  /// 手动指定这个文件对应的季集（Shoko UserVerified）：写覆盖表并立刻改绑分集行，
+  /// 重载后集卡的集名 / AniDB 角标跟着新行走。
+  Future<void> _pinEpisodeBinding(CollectionEpisodeSlot episode) async {
+    final VideoBookRow? local = episode.local;
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (local == null || work == null) return;
+    final bool changed = await pinVideoEpisodeBinding(
+      context: context,
+      database: widget.database,
+      workId: work.id,
+      bookUid: local.bookUid,
+    );
+    if (!changed || !mounted) return;
+    widget.onChanged();
+    await _reload();
+  }
+
+  /// 清除某一集的观看进度（行级四列 + 互联 LWW 镜像键，见
+  /// [VideoBookRepository.clearWatchProgress]），然后重查成员槽：集卡「已看到」
+  /// 徽标 / 完成勾、头部「继续看」目标都从成员进度现场推导，重载即刷新。
+  Future<void> _clearEpisodeWatchProgress(CollectionEpisodeSlot episode) async {
+    final VideoBookRow? local = episode.local;
+    if (local == null) return;
+    await VideoBookRepository(widget.database).clearWatchProgress(local.bookUid);
+    if (!mounted) return;
+    widget.onChanged();
+    FushiToast.show(
+      msg: t.video_watch_progress_cleared,
+      severity: ToastSeverity.success,
+    );
+    await _reload();
   }
 
   /// 某一集的完整技术规格弹窗。
@@ -2531,6 +2025,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.onRescrapeCollection?.call(_collection);
         if (mounted) await _reload();
         return;
+      case _CollectionManageAction.tmdbOrdering:
+        await widget.onChooseTmdbOrdering?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.sortBySeason:
         await _sortBySeason();
         return;
@@ -2555,6 +2053,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         return;
       case _CollectionManageAction.scrapeForHost:
         await widget.remote?.scrapeForHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.tmdbOrderingOnHost:
+        await widget.remote?.chooseTmdbOrderingOnHost?.call(_collection);
         if (mounted) await _reload();
         return;
       case _CollectionManageAction.splitBySeason:
@@ -2644,6 +2146,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 Icons.image_search,
                 t.collection_rescrape,
               ),
+            // TMDB 备选排序只对已刮出剧集作品行的合集有意义。
+            if (widget.onChooseTmdbOrdering != null)
+              _manageMenuItem(
+                _CollectionManageAction.tmdbOrdering,
+                Icons.low_priority,
+                t.collection_tmdb_ordering,
+                enabled: _canonicalWork?.mediaType == 'tv',
+              ),
             const PopupMenuDivider(),
             _manageMenuItem(
               _CollectionManageAction.sortBySeason,
@@ -2694,6 +2204,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 Icons.cloud_upload_outlined,
                 t.remote_collection_scrape_push_to_host,
               ),
+            if (widget.remote?.chooseTmdbOrderingOnHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.tmdbOrderingOnHost,
+                Icons.low_priority,
+                t.remote_collection_tmdb_ordering_on_host,
+              ),
             _manageMenuItem(
               _CollectionManageAction.splitBySeason,
               Icons.call_split,
@@ -2734,9 +2250,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Scaffold(
+    final Widget page = Scaffold(
       appBar: _buildAppBar(),
       body: _loading
           ? SafeArea(
@@ -2752,14 +2267,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               : CustomScrollView(
                   slivers: <Widget>[
                     SliverToBoxAdapter(
-                      child: _buildHero(context, cs, tokens),
+                      child: _buildHero(),
                     ),
                     SliverToBoxAdapter(
                       child: _centeredContent(buildDetailTagChips()),
                     ),
                     SliverToBoxAdapter(
                       child: _centeredContent(
-                        _buildWorkDetailsSection(tokens),
+                        _buildWorkDetailsSection(),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -2784,7 +2299,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     ),
                     SliverToBoxAdapter(
                       child: _centeredContent(
-                        _buildEpisodeSection(context, cs, tokens),
+                        _buildEpisodeSection(tokens),
                       ),
                     ),
                     SliverSafeArea(
@@ -2796,6 +2311,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                   ],
                 ),
     );
+    // 整页（含空合集占位）都是拖放落点：把视频文件拖进来即导入并归入本合集。
+    // 本页是独立路由，被播放页 / 对话框盖住时由 FushiFileDropTarget 的
+    // ModalRoute 门挡掉；移动端透传 child。
+    return FushiFileDropTarget(
+      debugLabel: 'collection-detail',
+      onDrop: _handleCollectionFileDrop,
+      child: page,
+    );
   }
 }
 
@@ -2803,6 +2326,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 enum _EpisodeMenuAction {
   download,
   mediaInfo,
+  clearWatchProgress,
+  pinEpisode,
   removeFromCollection,
 }
 
@@ -2810,6 +2335,8 @@ enum _CollectionManageAction {
   setCover,
   resetCover,
   rescrape,
+  tmdbOrdering,
+  tmdbOrderingOnHost,
   sortBySeason,
   subtitles,
   renameEpisodes,

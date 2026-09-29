@@ -763,7 +763,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
             headers: await _headersFor(source),
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 45));
+          .timeout(kMihonBridgeRequestTimeout);
       // 先吸收 cookie 再判状态码：源返回 403 往往正是「会话过期并换发了新
       // cookie」那一刻，此时丢掉回传的增量会让下一次重试继续用作废的旧值。
       await _absorbResponseCookies(source, response.headers);

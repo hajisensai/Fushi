@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
+import 'package:fushi/src/startup/startup_splash_mark.dart';
 import 'package:fushi/utils.dart' show t;
 
 /// TODO-1260：启动加载逃生口渲染契约。裸 loading 分支此前只有无超时的转圈；看门狗超时
@@ -12,16 +15,62 @@ void main() {
 
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  testWidgets('未超时 → 只显示转圈，无重试按钮', (WidgetTester tester) async {
+  testWidgets('未超时 → 延续系统 splash 图标，不裸转圈，无重试按钮', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(LoadingWatchdogView(
       timedOut: false,
       colorScheme: cs,
       onRetry: () {},
     )));
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(StartupSplashMark), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing,
+        reason: '启动加载态不得再首帧就画大转圈');
+    expect(find.byType(LinearProgressIndicator), findsNothing,
+        reason: '快速启动（多数情况）不应闪出任何进度指示');
     expect(find.text(t.retry), findsNothing);
     expect(find.text(t.loading_slow_title), findsNothing);
+
+    // 慢启动：超过揭示延迟才淡入细进度条。
+    await tester.pump(kStartupProgressRevealDelay);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('品牌标与 Android 12+ 系统 splash 同尺寸且居中，进度条出现不挪动图标',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(LoadingWatchdogView(
+      timedOut: false,
+      colorScheme: cs,
+      onRetry: () {},
+    )));
+    final Finder circle = find.byType(ClipOval);
+    final Rect before = tester.getRect(circle);
+    expect(before.size, const Size.square(kStartupSplashIconDiameter));
+    expect(before.center, tester.getCenter(find.byType(Scaffold)));
+
+    await tester.pump(kStartupProgressRevealDelay);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getRect(circle), before);
+    expect(
+      tester.getRect(find.byType(LinearProgressIndicator)).top,
+      greaterThan(before.bottom),
+    );
+  });
+
+  test('splash 前景图已登记为 Flutter 资源，且与原生 splash 同源同配色', () {
+    expect(
+        File('assets/meta/splash_foreground.png').readAsBytesSync(),
+        File('android/app/src/main/res/drawable-xxxhdpi/ic_splash_minimal_foreground.png')
+            .readAsBytesSync());
+    final String styles = File('android/app/src/main/res/values-v31/styles.xml')
+        .readAsStringSync();
+    expect(
+      styles.contains(
+          '<item name="android:windowSplashScreenIconBackgroundColor">#E6E2F6</item>'),
+      isTrue,
+      reason: '原生 splash 圆底色变了就要同步 kStartupSplashIconBackground',
+    );
+    expect(kStartupSplashIconBackground, const Color(0xFFE6E2F6));
   });
 
   testWidgets('超时(桌面) → 显示掉线盘说明 + 重试按钮（逃生口出现）', (WidgetTester tester) async {

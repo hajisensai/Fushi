@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
@@ -27,6 +28,8 @@ class SubtitleEpisodeSearchSpec {
     required this.seriesKey,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.episode,
+    this.season,
   });
 
   /// 预填搜索词（文件名解析出的番名 / 刮削名）。
@@ -40,6 +43,14 @@ class SubtitleEpisodeSearchSpec {
 
   /// 本地视频路径（OSDb 指纹用；远端流 null）。
   final String? videoPath;
+
+  /// BUG-2626：预填的集号；null = 输入框留空（列出全部版本，旧行为）。调用方算不出
+  /// 可靠集号时必须传 null，不要拿播放序凑——填错的集号会把用户引到另一集的字幕上。
+  final int? episode;
+
+  /// 文件名 / 远端标题解析出的季号；null = 不知道。面板据此在 AniList 同名多季的
+  /// 候选里挑对应那一季（相关度首条恒为第一季）。
+  final int? season;
 }
 
 /// 「整个合集」作用域的输入。
@@ -69,6 +80,9 @@ abstract interface class SubtitleWorkbenchHost {
   String? get defaultContentLanguage;
   FushiDatabase get database;
   Future<void> persistRemoteSubtitle(String bookUid, String path);
+
+  /// 下载落盘前按视频内嵌字幕轨对时间轴；null = 不对齐。
+  AutomaticSubtitleAligner? get subtitleAligner;
 }
 
 /// 生产宿主：全部转发到 [AppModel]。
@@ -112,6 +126,11 @@ class AppSubtitleWorkbenchHost implements SubtitleWorkbenchHost {
   @override
   Future<void> persistRemoteSubtitle(String bookUid, String path) =>
       appModel.setRemoteSubtitleSource(bookUid, 0, path);
+
+  /// 开关在 [AppModel.alignDownloadedSubtitle] 里每次现读。
+  @override
+  AutomaticSubtitleAligner? get subtitleAligner =>
+      appModel.alignDownloadedSubtitle;
 }
 
 class SubtitleWorkbenchPage extends StatefulWidget {
@@ -191,7 +210,10 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       showTitle: false,
       seed: spec.seed,
       videoPath: spec.videoPath,
+      subtitleAligner: host.subtitleAligner,
       initialQuery: spec.initialQuery,
+      initialEpisode: spec.episode,
+      initialSeason: spec.season,
       initialApiKey: host.jimakuApiKey,
       onApiKeyChanged: host.setJimakuApiKey,
       subtitleRegistry: () => host.subtitleRegistry,
@@ -224,6 +246,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       globalDefaultContentLanguage: host.defaultContentLanguage,
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
+      subtitleAligner: host.subtitleAligner,
     );
   }
 

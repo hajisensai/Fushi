@@ -4,7 +4,8 @@
 //      并按 kPositionReportIntervalMs = 10000 节流；
 //  [2] recursiveVideoItems 真分页（每轮传 'StartIndex' / 'Limit'，翻到
 //      TotalRecordCount 为止），并按 kMaxRecursiveItems = 20000 熔断
-//      （熔断现在还要把 truncated 报出来，BUG-1891）；
+//      （熔断现在还要把 truncated 报出来，BUG-1891；上限是 Movie/Episode
+//      两轮的**跨轮总额**，不是每轮各 2 万）；
 //  [3] 清单请求 Fields = 'ProductionYear'——**刻意不带 MediaSources**
 //      （BUG-1891：它是全库枚举里最贵的一段），sizeBytes / subtitleFileName /
 //      精确文本字幕轨改由 remoteVideoDetail 在单条目消费点按需补齐；
@@ -320,11 +321,42 @@ void main() {
       );
 
       expect(JellyfinApi.kMaxRecursiveItems, 20000);
-      // 拆轮（BUG-2254）后 Movie/Episode 各自熔断在 20000：条目与请求数都 ×2。
-      expect(result.items, hasLength(JellyfinApi.kMaxRecursiveItems * 2));
-      expect(calls, 40);
+      // 上限是跨轮总额：Movie 轮 20 页吃满 20000 后，Episode 轮一发都不打。
+      // 拆轮（BUG-2254）前上限就是「这次枚举最多 2 万条」，拆轮不该把它悄悄翻倍
+      // 成 4 万条内存 + 80 次重查询。
+      expect(result.items, hasLength(JellyfinApi.kMaxRecursiveItems));
+      expect(calls, 20);
       expect(result.truncated, isTrue,
           reason: 'BUG-1891：熔断此前是静默截断——用户拿到「前 20000 条」却以为拉全了');
+    });
+
+    test('跨轮总额：Movie 轮正常收工但已到上限时，Episode 轮不再发请求', () async {
+      final List<String> types = <String>[];
+      final JellyfinApi api = _api(MockClient((http.Request req) async {
+        types.add(req.url.queryParameters['IncludeItemTypes']!);
+        final int limit = int.parse(req.url.queryParameters['Limit']!);
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'Items': <Object?>[
+              for (int i = 0; i < limit; i++) _tinyJson('m${types.length}-$i'),
+            ],
+            // 恰好等于上限：Movie 轮按 totalCount 自然收工，不是被熔断打断。
+            'TotalRecordCount': JellyfinApi.kMaxRecursiveItems,
+          }),
+          200,
+        );
+      }));
+
+      final JellyfinRecursiveResult result = await api.recursiveVideoItems(
+        userId: 'u1',
+        pageSize: 10000,
+        pageInterval: Duration.zero,
+      );
+
+      expect(types, <String>['Movie', 'Movie']);
+      expect(result.items, hasLength(JellyfinApi.kMaxRecursiveItems));
+      expect(result.truncated, isTrue,
+          reason: 'Episode 轮没跑就是没拿全，必须报 truncated 而不是装作拉完了');
     });
 
     test('分页之间有最小间隔：40 次重查询不再零间隔连发（BUG-1891）', () {

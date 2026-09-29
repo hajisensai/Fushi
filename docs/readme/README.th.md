@@ -149,6 +149,7 @@ Fushi ต่อยอดจากโปรเจกต์และระบบ�
 | โปรเจกต์ | คำอธิบาย |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | ระบบนิเวศส่วนขยายแหล่งมังงะ |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | ระบบนิเวศส่วนขยายแหล่งอนิเมะ (extensions-lib 14–16 รันไทม์เดียวกัน) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | รันไทม์ส่วนขยายมังงะสำหรับเดสก์ท็อป |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI ของรันไทม์แหล่งมังงะ |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | ต้นแบบสะพานเชื่อมซับไตเติลสตรีมมิงสำหรับส่วนขยายเบราว์เซอร์ |

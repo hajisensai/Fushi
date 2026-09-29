@@ -66,6 +66,18 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# The pinned libwebrtc desktop converter uses GetWindowRect rather than the
+# captured buffer's row pitch; PMv2 Windows processes can silently lose every
+# frame. Feed our existing WGC client-area capture into its custom video source.
+# Only Fushi's explicit window-stream constraint selects this adapter.
+target_sources(flutter_webrtc_plugin PRIVATE
+  "runner/game_stream_webrtc_capture.cpp"
+  "runner/window_capture.cpp")
+target_include_directories(flutter_webrtc_plugin PRIVATE "runner")
+target_compile_definitions(flutter_webrtc_plugin PRIVATE FUSHI_GAME_STREAM_WGC)
+target_link_libraries(flutter_webrtc_plugin PRIVATE
+  d3d11 dxgi dwmapi windowsapp windowscodecs shlwapi)
+
 # === fushidicts native dictionary engine ===
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
 add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")
@@ -145,6 +157,21 @@ foreach(_dll ${FUSHI_TORRENT_DLLS})
       COMPONENT Runtime)
   endif()
 endforeach()
+
+# === 互联 P2P 隧道（iroh，可选）===
+# native/fushi_p2p/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_p2p.dll，
+# 存在则随包。缺失时 P2P 能力判不可用（设置里不出现开关），其余互联照常——故意
+# 不像 libtorrent 那样在 Release 强制：P2P 缺库是可降级的（能力整块隐藏，不会像
+# 内置 torrent 那样「宣称有后端却打不开」），没装 Rust 的开发机照样能出 Release 包。
+# 发布包的保证在流水线侧：release-desktop.yml 先跑 build_windows_dll.ps1（失败即红），
+# 出包后再核对 bundle 里确有 fushi_p2p.dll
+# （docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §9）。
+set(FUSHI_P2P_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll")
+if(EXISTS "${FUSHI_P2P_DLL}")
+  install(FILES "${FUSHI_P2P_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
 
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be

@@ -83,6 +83,15 @@ class _Hypothesis {
 
 /// 对 [logits] 求 log-softmax。
 Float64List logSoftmax(Float32List logits) {
+  final double logSumExp = _logSumExp(logits);
+  final Float64List result = Float64List(logits.length);
+  for (int i = 0; i < logits.length; i++) {
+    result[i] = logits[i] - logSumExp;
+  }
+  return result;
+}
+
+double _logSumExp(Float32List logits) {
   double maxLogit = double.negativeInfinity;
   for (int i = 0; i < logits.length; i++) {
     if (logits[i] > maxLogit) {
@@ -93,12 +102,7 @@ Float64List logSoftmax(Float32List logits) {
   for (int i = 0; i < logits.length; i++) {
     sumExp += math.exp(logits[i] - maxLogit);
   }
-  final double logSumExp = maxLogit + math.log(sumExp);
-  final Float64List result = Float64List(logits.length);
-  for (int i = 0; i < logits.length; i++) {
-    result[i] = logits[i] - logSumExp;
-  }
-  return result;
+  return maxLogit + math.log(sumExp);
 }
 
 /// no-repeat-ngram：若在 [sequence] 末尾再生成某 token 会复现序列中已出现过的
@@ -136,8 +140,10 @@ Future<BeamSearchResult> beamSearchDecode({
     for (int i = 0; i < numBeams; i++) <int>[config.startTokenId],
   ];
   // 首步除 beam0 外全部 -inf，避免 numBeams 条相同序列占满候选（对齐 HF）。
-  final List<double> beamScores =
-      List<double>.filled(numBeams, double.negativeInfinity);
+  final List<double> beamScores = List<double>.filled(
+    numBeams,
+    double.negativeInfinity,
+  );
   beamScores[0] = 0;
 
   final List<_Hypothesis> finished = <_Hypothesis>[];
@@ -176,32 +182,34 @@ Future<BeamSearchResult> beamSearchDecode({
     assert(logitsPerBeam.length == numBeams);
     final int vocabSize = logitsPerBeam[0].length;
 
-    // 每条 beam：log-softmax + no-repeat-ngram 屏蔽 + 累计分。
-    final List<Float64List> nextScores = <Float64List>[];
-    for (int b = 0; b < numBeams; b++) {
-      final Float64List logProbs = logSoftmax(logitsPerBeam[b]);
-      final Set<int> banned =
-          bannedNgramTokens(sequences[b], config.noRepeatNgramSize);
-      for (final int token in banned) {
-        logProbs[token] = double.negativeInfinity;
-      }
-      for (int v = 0; v < vocabSize; v++) {
-        logProbs[v] += beamScores[b];
-      }
-      nextScores.add(logProbs);
-    }
-
-    // 全局取 top 2*numBeams 候选（beam, token, score）。
+    // 直接扫描归一化后的分数，保留全局 top 2*numBeams；避免每步分配
+    // numBeams*vocabSize 的 Float64List 及单独累计分、回读候选的两轮遍历。
     final int candidateCount = math.min(2 * numBeams, numBeams * vocabSize);
     final List<int> topBeam = List<int>.filled(candidateCount, 0);
     final List<int> topToken = List<int>.filled(candidateCount, 0);
-    final List<double> topScore =
-        List<double>.filled(candidateCount, double.negativeInfinity);
+    final List<double> topScore = List<double>.filled(
+      candidateCount,
+      double.negativeInfinity,
+    );
     for (int b = 0; b < numBeams; b++) {
-      final Float64List scores = nextScores[b];
+      final double beamScore = beamScores[b];
+      if (beamScore == double.negativeInfinity) {
+        continue;
+      }
+      final Float32List logits = logitsPerBeam[b];
+      // HF 在 log-softmax 之后屏蔽 ngram，禁止词的质量仍须参与归一化。
+      final double logSumExp = _logSumExp(logits);
+      final Set<int> banned = bannedNgramTokens(
+        sequences[b],
+        config.noRepeatNgramSize,
+      );
       for (int v = 0; v < vocabSize; v++) {
-        final double s = scores[v];
+        // 保持先减归一化因子、再加累计分的运算顺序，避免浮点舍入改选路。
+        final double s = (logits[v] - logSumExp) + beamScore;
         if (s <= topScore[candidateCount - 1]) {
+          continue;
+        }
+        if (banned.contains(v)) {
           continue;
         }
         // 插入排序进 top 列表（candidateCount 很小）。
@@ -293,8 +301,5 @@ Future<BeamSearchResult> beamSearchDecode({
   best ??= _Hypothesis(<int>[config.startTokenId], 0);
 
   // 去掉起始 token。
-  return BeamSearchResult(
-    tokens: best.tokens.sublist(1),
-    score: best.score,
-  );
+  return BeamSearchResult(tokens: best.tokens.sublist(1), score: best.score);
 }

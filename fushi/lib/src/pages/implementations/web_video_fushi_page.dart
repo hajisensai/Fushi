@@ -29,6 +29,7 @@ import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -378,6 +379,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   @override
   String get dictionarySourceType => kStatSourceVideo;
+
+  @override
+  ModuleId? get popupDockModule => ModuleId.video;
 
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
@@ -1440,6 +1444,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                           _popNestedPopupAt(_popup.lastVisibleIndex),
                       swipeEnabled:
                           ReaderFushiSource.instance.enableSwipeToClose,
+                      // BUG-2770：触摸半边未设置时所有平台默认开。
+                      touchSwipeEnabled:
+                          ReaderFushiSource.instance.enableTouchSwipeToClose,
                       sensitivity:
                           ReaderFushiSource.instance.dismissSwipeSensitivity,
                       // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
@@ -1505,7 +1512,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       previousFrame: () => unawaited(_seekRelative(-40)),
       nextFrame: () => unawaited(_seekRelative(40)),
       screenshot: noop,
+      // 网页视频页没有 media_kit 帧可取（画面在 WebView 里），两条截图动作同样落空。
+      screenshotSubtitled: noop,
       toggleFullscreen: () => unawaited(_toggleFullscreen()),
+      // 内置网页播放器没有小窗：画面是站点自己的播放器在 WebView2 里渲染的，
+      // 把主窗缩成小窗只会得到一个塞不下网页布局的窗口，系统画中画更拿不到这条
+      // 纹理。诚实 no-op（与本页其它拿不到的能力同待遇，见 toggleShaderCompare）。
+      toggleMiniWindow: noop,
+      // 没有小窗自然也没有小窗 chrome。
+      toggleMiniChrome: noop,
       toggleSubtitleList: _toggleList,
       searchSubtitleList: () {
         if (!_listVisible) _toggleList();
@@ -1864,6 +1879,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         unawaited(_js('window.__fushiWebVideo.replayCues()'));
         unawaited(_syncDomSubtitles());
       },
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_deathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(

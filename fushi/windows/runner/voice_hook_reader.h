@@ -299,6 +299,26 @@ struct VoiceHookLookupShieldStatus {
   }
 };
 
+// v25 game-stream target-process sampled input status. This is independent from
+// lookup_shield and is used by runner GameStreamInput to fail closed unless the
+// injected target process has sampled the exact request generation.
+struct VoiceHookGameStreamInputStatus {
+  VoiceHookLookupError error = VoiceHookLookupError::kNone;
+  uint32_t request_seq = 0;
+  uint32_t applied_seq = 0;
+  uint64_t target_hwnd = 0;
+  uint64_t transaction_id = 0;
+  uint64_t deadline_tick_ms = 0;
+  uint32_t active_buttons = 0;
+  uint32_t status = 0;
+  uint32_t observed_buttons = 0;
+
+  bool ok() const { return error == VoiceHookLookupError::kNone; }
+  bool acknowledged() const {
+    return ok() && request_seq != 0 && request_seq == applied_seq;
+  }
+};
+
 // Coherent geometry-registry snapshot used by host-side auto arbitration.
 // lookup_diag is advisory and is not part of provider identity/lifecycle.
 struct VoiceHookLookupGeometryStatus {
@@ -515,10 +535,32 @@ class VoiceHookReader {
                                              uint32_t active_buttons,
                                              bool allow_risk);
 
+  // BUG-2613 — 覆盖窗口左键事务（owner=Popup）的回调安全发布：WH_MOUSE_LL 专用，
+  // try_lock + 单次 CAS、不做 HWND 查询，写者忙即返回 0 让调用方 fail-open。
+  // |down|=true 发布 active_buttons=Left，false 发布同一 transaction_id 的 release。
+  // |game| 由登记点在窗口线程按会话 pid 解出（见 SetOverlayClickShieldGameResolver）。
+  uint32_t TryPublishOverlayClickShieldTransaction(HWND game,
+                                                   uint64_t transaction_id,
+                                                   bool down);
+  // BUG-2613 — 覆盖窗口事务的 release 发布失败后问：这笔事务是否已成孤儿——
+  // gate 已关（会话结束）或请求槽已被别的 owner / 事务接管。true = 调用方放弃
+  // 事务（fail-open）；false = 只是写者忙（或 try_lock 没拿到），保留待重试。
+  // 同样是回调安全：try_lock + 一次快照读，不做 HWND 查询。
+  bool OverlayClickShieldTransactionOrphaned(HWND game,
+                                             uint64_t transaction_id);
+
   // 同一拍读取 coherent request + hook 状态，供 attached 工作台显示
   // verified/partial/known-uncovered/faulted 与琥珀色 risk 标记。
   VoiceHookLookupShieldStatus LookupShieldStatus();
   VoiceHookLookupGeometryStatus LookupGeometryStatus();
+  // Publish a bounded remote held-button mask for target-process sampled input.
+  // |target| must belong to the currently opened mapping PID. The injected side
+  // may apply it only while the same HWND is foreground and alive. Returns 0
+  // when no compatible mapping is open or the HWND is not session-bound.
+  uint32_t PublishGameStreamInput(HWND target, uint64_t transaction_id,
+                                  uint32_t active_buttons,
+                                  uint64_t deadline_tick_ms);
+  VoiceHookGameStreamInputStatus GameStreamInputStatus();
   // 本会话是否有一段协议匹配的共享内存（查词区可以没有）。准入上报只需要这个，
   // 不需要查词区——「本引擎没做查词传感器」正是必须能报出来的那一类会话。
   bool HasSession();

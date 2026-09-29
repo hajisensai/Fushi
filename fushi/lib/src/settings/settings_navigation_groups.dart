@@ -32,7 +32,8 @@ class SettingsNavigationGroup {
 SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId id,
 ) => switch (id) {
-  SettingsDestinationId.appearance => SettingsNavigationGroupId.interface,
+  SettingsDestinationId.appearance ||
+  SettingsDestinationId.floatingBall => SettingsNavigationGroupId.interface,
   SettingsDestinationId.reading ||
   SettingsDestinationId.manga ||
   SettingsDestinationId.video ||
@@ -41,7 +42,8 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.lookup ||
   SettingsDestinationId.cardCreation => SettingsNavigationGroupId.learning,
   SettingsDestinationId.downloads ||
-  SettingsDestinationId.services => SettingsNavigationGroupId.connections,
+  SettingsDestinationId.services ||
+  SettingsDestinationId.ai => SettingsNavigationGroupId.connections,
   SettingsDestinationId.profiles ||
   SettingsDestinationId.syncBackup ||
   SettingsDestinationId.interconnect ||

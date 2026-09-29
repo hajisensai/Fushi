@@ -3,10 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import '../../../helpers/source_guard.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 
-/// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（MAL 搜索 + AniList + TMDB），
+/// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（MAL / AniList / TMDB 搜索与推荐），
 /// 来源选择不随代理状态分叉降级。
 ///
 /// 两层钉法：
@@ -28,18 +29,37 @@ void main() {
       <String>{'mal', 'anilist', 'tmdb'},
     );
     expect(providerIds, isNot(contains('bangumi')));
+    // AniDB 自 2026-09-20 起装进生产 registry（默认刮削主源），但它的 search 只是
+    // 本地标题目录，不进发现页；发现与刮削是不同域。
+    expect(providerIds, isNot(contains('anidb')));
     final VideoMetadataProviderRegistry catalog =
         VideoMetadataProviderRegistry.production(
       const VideoSourceScrapeGlobalConfig(tmdbApiKey: 'test-key'),
     );
     addTearDown(catalog.close);
     expect(
-      service.searchProviderIdsForTesting,
-      catalog.providers
-          .map((VideoMetadataProvider p) => p.providerKind.name)
-          .toSet(),
+      catalog.providers.map((VideoMetadataProvider p) => p.providerKind),
+      contains(VideoMetadataProviderKind.anidb),
+      reason: '生产 registry 里确有 AniDB，发现页是主动排除而不是恰好没装',
     );
-    expect(service.searchProviderIdsForTesting, isNot(contains('anilist')));
+    // BUG-2750：AniList（发现域来源，不进刮削 registry）也是搜索源——只靠 MAL
+    // 时 Jikan 一 504、TMDB 又没配 key，发现页搜索就一条都出不来。
+    expect(
+      service.searchProviderIdsForTesting,
+      <String>{
+        ...catalog.providers
+            .where((VideoMetadataProvider p) =>
+                VideoDiscoveryService.isDiscoverySearchKind(p.providerKind))
+            .map((VideoMetadataProvider p) => p.providerKind.name),
+        'anilist',
+      },
+    );
+    expect(
+      catalog.providers.map((VideoMetadataProvider p) => p.providerKind),
+      isNot(contains(VideoMetadataProviderKind.anilist)),
+      reason: 'AniList 只作发现搜索源，不得进入刮削 registry',
+    );
+    expect(service.searchProviderIdsForTesting, isNot(contains('anidb')));
   });
 
   test('discovery source selection has no dependency on proxy configuration',

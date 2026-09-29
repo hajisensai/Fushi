@@ -70,7 +70,7 @@ bool maybeHandleOverlayDeferredBridge({
     case 'favoriteEntry':
     case 'favoriteCheck':
       unawaited(_handleFavoriteBridge(
-          model, handler! as String, message, resolveBridge));
+          model, handler! as String, message, resolveBridge, sentenceContext));
       return true;
     case 'mineEntry':
       unawaited(_handleMineBridge(
@@ -247,6 +247,7 @@ Future<void> _handleFavoriteBridge(
   String handler,
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
+  String sentenceContext,
 ) async {
   final int? id = _bridgeIdOf(message);
   bool reply = false;
@@ -260,6 +261,8 @@ Future<void> _handleFavoriteBridge(
         toggle: handler == 'favoriteEntry',
         expression: expression,
         reading: reading,
+        glossary: data['glossary']?.toString() ?? '',
+        sentence: sentenceContext,
       );
     }
   } catch (e, st) {
@@ -287,6 +290,8 @@ Future<bool> _toggleOrCheckFavorite(
   required bool toggle,
   required String expression,
   required String reading,
+  required String glossary,
+  required String sentence,
 }) =>
     overlayToggleOrCheckFavoriteWord(
       db: model.database,
@@ -295,6 +300,8 @@ Future<bool> _toggleOrCheckFavorite(
       reading: reading,
       addSourceType: overlayStatSourceType(),
       dateKey: statTodayKey(),
+      glossary: glossary,
+      sentence: sentence,
     );
 
 /// TODO-1188 follow-up — resolves a DEFERRED mineEntry bridge call and pushes
@@ -373,7 +380,7 @@ Future<Map<String, Object?>> _mineEntry(
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
-  final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
+  final BaseAnkiRepository repo = model.miningAnkiRepository;
   final MineOutcome outcome = await repo.mineEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
@@ -381,22 +388,22 @@ Future<Map<String, Object?>> _mineEntry(
       source: AnkiMiningSource.book,
     ),
   );
-  // 与 in-app onMineEntry 同判据：仅 MineResult.success 回 ankiConnect=true +
-  // noteId（AnkiConnect 非空进「最新可改」态；AnkiDroid 恒 null=优雅降级）。
-  final bool success = outcome.result == MineResult.success;
-  if (success) {
+  // 与 in-app 入口（texthooker 页）同判据：describeMineOutcome 决定成败与记不记，
+  // 回包由 MinePopupResult 构造——成功回 ankiConnect + noteId，进了待发队列回
+  // queued（popup.js 画 ✓ 不回查），重复回 duplicate（BUG-1908）。
+  final described = describeMineOutcome(outcome);
+  if (described.record) {
     unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
   }
-  // BUG-1908：失败原因必须回到浮窗。app 外的裸浮窗连 Flutter toast 都没有
-  // （FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
-  final String? message = success ? null : describeMineOutcome(outcome).message;
+  final MinePopupResult reply = described.success
+      ? MinePopupResult.mined(outcome)
+      : MinePopupResult.failed(outcome);
   return <String, Object?>{
-    'ankiConnect': success,
-    'noteId': success ? outcome.noteId : null,
-    if (message != null && message.isNotEmpty) 'message': message,
-    // BUG-1908：见 MinePopupResult.duplicate —— 让浮窗把「卡已存在」与「真的没制成」
-    // 分开，而不必回查 Anki（TODO-448 禁止失败后回查）。
-    if (outcome.result == MineResult.duplicate) 'duplicate': true,
+    ...reply.toJson(),
+    // BUG-1908：失败原因必须回到浮窗。app 外的裸浮窗连 Flutter toast 都没有
+    // （FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
+    if (!described.success && described.message.isNotEmpty)
+      'message': described.message,
   };
 }
 
@@ -449,8 +456,7 @@ Future<void> _handleDuplicateBridge(
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
     if (model != null && expression.isNotEmpty) {
-      final BaseAnkiRepository repo =
-          model.platformServices.createAnkiRepository();
+      final BaseAnkiRepository repo = model.miningAnkiRepository;
       reply = await repo.isDuplicate(expression, reading);
     }
   } catch (e, st) {
@@ -484,8 +490,7 @@ Future<void> _handleFindMinedMatchesBridge(
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
     if (model != null && expression.isNotEmpty) {
-      final BaseAnkiRepository repo =
-          model.platformServices.createAnkiRepository();
+      final BaseAnkiRepository repo = model.miningAnkiRepository;
       final List<MinedNoteRef> matches =
           await repo.findMatchingNotes(expression, reading);
       reply = <Map<String, Object?>>[
@@ -521,8 +526,7 @@ Future<void> _handleOpenMinedNoteBridge(
     final int? noteId =
         (rawNoteId is num) ? rawNoteId.toInt() : int.tryParse('$rawNoteId');
     if (model != null && noteId != null) {
-      final BaseAnkiRepository repo =
-          model.platformServices.createAnkiRepository();
+      final BaseAnkiRepository repo = model.miningAnkiRepository;
       reply = await repo.openNoteInAnki(noteId);
     }
   } catch (e, st) {
@@ -554,8 +558,7 @@ Future<void> _handleOpenInAnkiBridge(
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
     if (model != null && expression.isNotEmpty) {
-      final BaseAnkiRepository repo =
-          model.platformServices.createAnkiRepository();
+      final BaseAnkiRepository repo = model.miningAnkiRepository;
       reply = (await repo.openWordInAnki(expression, reading)).name;
     }
   } catch (e, st) {
@@ -585,8 +588,7 @@ Future<void> _handleOverwriteTargetBridge(
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
     if (model != null && expression.isNotEmpty) {
-      final BaseAnkiRepository repo =
-          model.platformServices.createAnkiRepository();
+      final BaseAnkiRepository repo = model.miningAnkiRepository;
       reply = await repo.findOverwriteTargetNoteId(expression, reading);
     }
   } catch (e, st) {
@@ -663,7 +665,7 @@ Future<Map<String, Object?>> _updateEntry(
   String sentenceContext,
 ) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-  final BaseAnkiRepository repo = model.platformServices.createAnkiRepository();
+  final BaseAnkiRepository repo = model.miningAnkiRepository;
   final MineOutcome outcome = await repo.updateMinedNote(
     noteId: noteId,
     rawPayloadJson: jsonEncode(fields),

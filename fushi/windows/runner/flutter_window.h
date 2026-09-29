@@ -12,9 +12,12 @@
 #include "attached_text_surface_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
+#include "game_stream_input.h"
 #include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
+#include "ime_language_switch.h"
 #include "win32_window.h"
+#include "window_capture_reply_queue.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -75,6 +78,18 @@ class FlutterWindow : public Win32Window {
   // Wires the ime_guard MethodChannel to ime_association_guard_.
   void RegisterImeGuardChannel();
 
+  // 查词输入框的输入法语言：Dart 说「现在期望日语」，我们在已安装的键盘布局里找
+  // 日语那个并切过去，离开查词时切回用户原来的。见 ime_language_switch.h。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      lookup_ime_channel_;
+  ImeLanguageSwitcher ime_language_switcher_;
+  // Dart 最后一次表达的期望语言。窗口失活时我们会还原用户原来的输入法，重新激活
+  // 时按这个值再切回去——否则用户 Alt-Tab 出去一趟回来，查词页面还开着但输入法
+  // 已经不是他选的那个了。
+  std::wstring desired_lookup_ime_tag_;
+
+  void RegisterLookupImeChannel();
+
   // Drives the standalone always-on-top desktop lyric strip (the Windows
   // counterpart of Android's FloatingLyricService). See floating_lyric_window.h.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
@@ -126,6 +141,7 @@ class FlutterWindow : public Win32Window {
   // frame (PNG) off a worker thread. See window_capture.cpp / .h.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_capture_channel_;
+  std::unique_ptr<fushi::WindowCaptureReplyQueue> window_capture_replies_;
   void RegisterWindowCaptureChannel();
 
   // Windows HDR passthrough (docs/plans/2026-08-30-video-hdr-passthrough.md):
@@ -146,6 +162,12 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       magpie_channel_;
   void RegisterMagpieChannel();
+
+  // Delivers game-stream input only to the explicitly bound foreground HWND.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      game_stream_input_channel_;
+  std::unique_ptr<fushi::GameStreamInput> game_stream_input_;
+  void RegisterGameStreamInputChannel();
 
   // RegisterWindowMessageW(L"MagpieScalingChanged") 拿到的运行时消息号。
   // 0 = 尚未注册 / 注册失败，MessageHandler 据此永不误匹配。

@@ -17,6 +17,8 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 // remote_subtitle_search_handlers 是 #1399 把 Jimaku 专用处理器泛化后的版本，
 // 仍住在 fushi（它接的是 app 侧已配置的字幕源）；其余几个随本 PR 搬进 engine。
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
+    show BrowserVideoSample;
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
@@ -25,6 +27,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
+import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -54,6 +57,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/lookup/audio',
   '/api/mine',
   '/api/duplicate',
+  '/api/anki/open',
 };
 
 /// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
@@ -78,17 +82,20 @@ class YomitanApiServer {
     required ReadingResolver readingResolver,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
-    Map<String, String> Function()? themeColorsProvider,
+    RemoteThemeColorsProvider? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     bool Function()? autoReadOnLookupProvider,
     String? Function()? extensionBuildProvider,
+    String Function()? appLocaleProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
+    void Function(BrowserVideoSample sample)? onExtensionStudy,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
+    ExtensionFontApi? fontApi,
     String? apiKey,
     bool allowLan = false,
   }) : _requestedPort = port,
@@ -101,13 +108,16 @@ class YomitanApiServer {
        _audioSourcesProvider = audioSourcesProvider,
        _autoReadOnLookupProvider = autoReadOnLookupProvider,
        _extensionBuildProvider = extensionBuildProvider,
+       _appLocaleProvider = appLocaleProvider,
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
        _onExtensionPopupSize = onExtensionPopupSize,
+       _onExtensionStudy = onExtensionStudy,
        _onExtensionSeen = onExtensionSeen,
        _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
+       _fontApi = fontApi,
        _apiKey = apiKey,
        _allowLan = allowLan;
 
@@ -117,8 +127,9 @@ class YomitanApiServer {
   final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
-  // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。
-  final Map<String, String> Function()? _themeColorsProvider;
+  // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。参数是
+  // 扩展显式要求的明暗（请求体 `colorScheme`），null = 跟随 app 当前明暗。
+  final RemoteThemeColorsProvider? _themeColorsProvider;
   // 单词音频：当前 app 已启用的音频源供给器，随查词响应下发给扩展弹窗。
   final List<String> Function()? _audioSourcesProvider;
 
@@ -127,12 +138,20 @@ class YomitanApiServer {
   final bool Function()? _autoReadOnLookupProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // app 当前 UI 语言供给器（Slang languageTag）：随 /api/extension/status 的 `locale` 与
+  // 查词响应的 `appLocale` 下发，扩展据此选文案；未注入时两处都省略字段（向后兼容）。
+  final String Function()? _appLocaleProvider;
   // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，按 revision 门控随查词响应下发给扩展弹窗。
   final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后，content.js 经 bridge 回写最终基准
   // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
   // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
+  // 扩展视频沉浸时间进学习统计：content 脚本在网页视频播放时每 ~1s +
+  // play/pause/seek/ended 时刻打 /api/extension/study，解析成 [BrowserVideoSample]
+  // 交给这个 sink（app 侧 BrowserVideoStudyBridge → VideoWatchTracker + StudyClock）。
+  // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写库副作用）。
+  final void Function(BrowserVideoSample sample)? _onExtensionStudy;
   // 浏览器扩展连接探活：任一扩展端点被命中即回调（app 侧记录 last-seen 时间戳，
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
@@ -155,6 +174,10 @@ class YomitanApiServer {
   /// 新手引导「试一试」页的 HTML 供给器：请求到达时才生成（例句随用户已装词典的
   /// 词头语言走，文案随当前 app 语言走）。未注入时该路由 404。
   final String Function()? _extensionTestPageProvider;
+
+  /// 扩展字幕外观「字体」下拉框的真源：app 字体目录 + 推荐字体下载
+  /// （`/api/extension/fonts` / `fonts/file` / `fonts/download`）。未注入时三路 404。
+  final ExtensionFontApi? _fontApi;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -319,6 +342,24 @@ class YomitanApiServer {
         },
       );
     }
+    // 扩展 `@font-face` 拉字体字节是裸 GET/HEAD → 405 门之前处理。**仍走鉴权中间件**
+    // （它已接受查询串 `token=`），不进免鉴权白名单：字体文件是用户数据目录里的东西。
+    if (path == '/api/extension/fonts/file') {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      return _handleExtensionFontFile(request, headOnly: method == 'HEAD');
+    }
+    if (path == '/api/extension/fonts/dictionary') {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      return _handleExtensionFontFile(
+        request,
+        headOnly: method == 'HEAD',
+        dictionary: true,
+      );
+    }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
     }
@@ -354,12 +395,21 @@ class YomitanApiServer {
         return _lookupRoutes.handleAnkiNoteType(request, path);
       case '/api/duplicate':
         return _lookupRoutes.handleDuplicate(request);
+      // Issue #1409：弹窗 ↗「在 Anki 中打开」（与 app 内 openInAnki 桥同一 repo 方法）。
+      case '/api/anki/open':
+        return _lookupRoutes.handleOpenInAnki(request);
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
+      case '/api/extension/study':
+        return _handleExtensionStudy(request);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
         return _handleSiteCookies(request);
+      case '/api/extension/fonts':
+        return _handleExtensionFonts(request);
+      case '/api/extension/fonts/download':
+        return _handleExtensionFontDownload(request);
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
@@ -443,6 +493,7 @@ class YomitanApiServer {
       );
     }
     final String? extensionBuild = _extensionBuildProvider?.call();
+    final String? locale = _appLocaleProvider?.call();
     // BUG-2480：app 正在等某站会话时随探活回包带出去，扩展据此决定要不要
     // `chrome.cookies.getAll` 后回传 `/api/extension/site-cookies`。
     final BrowserCookieImportRequest? cookieImport =
@@ -452,9 +503,108 @@ class YomitanApiServer {
       'ready': true,
       'port': port,
       if (extensionBuild != null) 'extensionBuild': extensionBuild,
+      if (locale != null) 'locale': locale,
       if (cookieImport != null) 'cookieImport': cookieImport.toJson(),
     });
   }
+
+  /// 扩展字幕外观「字体」下拉框的数据源：目录里真实存在的字体 + 推荐字体表
+  /// （逐项标注 installed）。body 可空。
+  Future<shelf.Response> _handleExtensionFonts(shelf.Request request) async {
+    final ExtensionFontApi? api = _fontApi;
+    if (api == null) return shelf.Response.notFound('Not Found');
+    final List<ExtensionFontEntry> fonts = await api.listFonts();
+    final List<ExtensionRecommendedFont> recommended = await api
+        .listRecommended();
+    return jsonResponse(<String, dynamic>{
+      'fonts': <Map<String, dynamic>>[
+        for (final ExtensionFontEntry font in fonts) font.toJson(),
+      ],
+      'recommended': <Map<String, dynamic>>[
+        for (final ExtensionRecommendedFont font in recommended) font.toJson(),
+      ],
+    });
+  }
+
+  /// GET/HEAD `?id=<font_id>`：按**目录 id** 回字体字节（不接受任意路径）。
+  /// `Access-Control-Allow-Origin: *`：网页里 `@font-face` 跨源加载必需。
+  ///
+  /// [dictionary] = 查词弹窗词典字体（`/api/extension/fonts/dictionary?path=`）：
+  /// 按 `path` 经 [ExtensionFontApi.findDictionaryFont] 的白名单解析。
+  Future<shelf.Response> _handleExtensionFontFile(
+    shelf.Request request, {
+    required bool headOnly,
+    bool dictionary = false,
+  }) async {
+    final ExtensionFontApi? api = _fontApi;
+    if (api == null) return shelf.Response.notFound('Not Found');
+    final String key = dictionary ? 'path' : 'id';
+    final String? id = request.url.queryParameters[key];
+    if (id == null || id.isEmpty) return shelf.Response.notFound('Not found');
+    final ExtensionFontEntry? font = dictionary
+        ? await api.findDictionaryFont(id)
+        : await api.findFont(id);
+    if (font == null) return shelf.Response.notFound('Not found');
+    final File file = File(font.path);
+    if (!await file.exists()) return shelf.Response.notFound('Not found');
+    final int length = await file.length();
+    return shelf.Response.ok(
+      headOnly ? null : file.openRead(),
+      headers: <String, String>{
+        'Content-Type': ExtensionFontEntry.contentTypeForExt(font.ext),
+        'Content-Length': '$length',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'private, max-age=86400',
+      },
+    );
+  }
+
+  /// body `{name}`：下载推荐表里的字体进 app 字体目录（已装则直接回已有条目）。
+  /// 404 `unknown_font` / 502 `download_failed`。
+  Future<shelf.Response> _handleExtensionFontDownload(
+    shelf.Request request,
+  ) async {
+    final ExtensionFontApi? api = _fontApi;
+    if (api == null) return shelf.Response.notFound('Not Found');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? name = body['name'];
+    if (name is! String || name.isEmpty) {
+      return shelf.Response(400, body: 'Missing name');
+    }
+    final ExtensionFontDownloadOutcome outcome = await api.downloadRecommended(
+      name,
+    );
+    switch (outcome.status) {
+      case ExtensionFontDownloadStatus.ok:
+        return jsonResponse(<String, dynamic>{
+          'ok': true,
+          'fonts': <Map<String, dynamic>>[
+            for (final ExtensionFontEntry font in outcome.fonts) font.toJson(),
+          ],
+        });
+      case ExtensionFontDownloadStatus.unknownFont:
+        return _jsonError(404, <String, dynamic>{
+          'ok': false,
+          'error': 'unknown_font',
+        });
+      case ExtensionFontDownloadStatus.downloadFailed:
+        return _jsonError(502, <String, dynamic>{
+          'ok': false,
+          'error': 'download_failed',
+          'detail': outcome.detail ?? '',
+        });
+    }
+  }
+
+  static shelf.Response _jsonError(int status, Map<String, dynamic> body) =>
+      shelf.Response(
+        status,
+        body: jsonEncode(body),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      );
 
   /// BUG-2480：扩展回传站点 cookie。nonce 必须与当前登记一致（409），否则任何
   /// 拿到本地端口的进程都能往源站 jar 里塞会话。
@@ -502,6 +652,7 @@ class YomitanApiServer {
           autoReadOnLookupProvider: _autoReadOnLookupProvider,
           extensionBuildProvider: _extensionBuildProvider,
           popupDictionaryCssProvider: _popupDictionaryCssProvider,
+          appLocaleProvider: _appLocaleProvider,
         );
     handlerWatch.stop();
 
@@ -542,7 +693,7 @@ class YomitanApiServer {
   }
 
   // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
-  // /api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
+  // /api/anki/open、/api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
   // FushiSyncServer 共用）；扩展默认指向本 server（19633），故那是真正被命中的路径。
 
   /// A（BUG-783 后续）：浏览器扩展抓 YouTube 网页视频**真整集字幕**端点——复用 app 内已
@@ -601,6 +752,23 @@ class YomitanApiServer {
       return shelf.Response(400, body: 'Missing maxWidth/maxHeight');
     }
     sink(w.toDouble(), h.toDouble());
+    return jsonResponse(<String, dynamic>{'ok': true});
+  }
+
+  /// 扩展视频沉浸时间样本（POST `/api/extension/study`，体见 [BrowserVideoSample]）。
+  /// 与 popup-size 同一 [_authMiddleware] 鉴权、**不在**免鉴权白名单里——这是一条
+  /// 写学习统计的入口，绝不无鉴权开放。体不合契约（含 `mediaKind` 不是 `video`）
+  /// 400；未注入 sink 404；成功 `{ok:true}`。
+  Future<shelf.Response> _handleExtensionStudy(shelf.Request request) async {
+    final void Function(BrowserVideoSample)? sink = _onExtensionStudy;
+    if (sink == null) return shelf.Response.notFound('Study sink off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final BrowserVideoSample? sample = BrowserVideoSample.tryParse(body);
+    if (sample == null) {
+      return shelf.Response(400, body: 'Invalid study sample');
+    }
+    sink(sample);
     return jsonResponse(<String, dynamic>{'ok': true});
   }
 

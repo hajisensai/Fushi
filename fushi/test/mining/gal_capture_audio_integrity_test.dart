@@ -394,6 +394,97 @@ void main() {
       endpoints.dispose();
     });
 
+    // BUG-2706：同一 Fushi 进程里第二次启动同一款游戏。上一次会话的线程（thread id 含
+    // 进程身份，已是死线程）还留在全量目录里、累计行数更多；恢复必须只在本会话目录里
+    // 挑，否则选中死线程，本会话一行台词都来不了。
+    test('文本线程记忆：二次启动只从本会话线程里恢复，不选上一次的死线程', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      // 每次启动都是新进程：新的共享内存、只含本进程的线程。用一个可替换的引擎
+      // 引用来建模，而不是让同一个假引擎把上一次的线程一路带进第二次会话。
+      _FakeEngine engine = _FakeEngine(
+        readyFormat: kPcm,
+        enforceTextSelection: true,
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) =>
+            engine,
+        loopbackSourceFactory: () => _NullLoopback(),
+        textPollInterval: const Duration(milliseconds: 5),
+        trackRefreshInterval: const Duration(milliseconds: 20),
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+        r'd:\games\fake.exe': const GalCaptureMemory(
+          textThreadFingerprint: 'code:ENHVXN-8@2198',
+        ),
+      };
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
+      );
+      GalHookedLine line(int seq, int threadId, String text) => GalHookedLine(
+            seq: seq,
+            timestampMs: 1000 * seq,
+            text: text,
+            threadId: threadId,
+            sourceKind: 2,
+            eventKind: text.isEmpty
+                ? GalTextEventKind.threadDiscovered
+                : GalTextEventKind.line,
+            hookName: 'EmbedKrkrZ',
+            hookCode: 'ENHVXN-8@2198',
+          );
+
+      // 第一次启动：线程 7 出了很多行，被按记忆恢复。
+      await controller.launchGame(r'D:\Games\fake.exe');
+      engine.enqueue(line(1, 7, ''));
+      for (int i = 2; i <= 7; i++) {
+        engine.enqueue(line(i, 7, '一回目$i'));
+      }
+      await waitUntil(() => controller.selectedNativeTextThreadId == 7);
+      await controller.stopCapture();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // 第二次启动：同一 hook 面的新线程 8（新进程），只出够门限的 3 行。
+      engine = _FakeEngine(readyFormat: kPcm, enforceTextSelection: true);
+      await controller.launchGame(r'D:\Games\fake.exe');
+      engine.enqueue(line(10, 8, ''));
+      for (int i = 11; i <= 13; i++) {
+        engine.enqueue(line(i, 8, '二回目$i'));
+      }
+      await waitUntil(() =>
+          controller.selectedNativeTextThreadId != null &&
+          controller.selectedNativeTextThreadId != 7);
+      expect(controller.selectedNativeTextThreadId, 8);
+      expect(
+        controller.textThreads
+            .map((TexthookerTextThread t) => t.nativeThreadId),
+        isNot(contains(7)),
+        reason: '会话级目录不得混入上一次启动的死线程',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
     test('无配音 vs 疑似漏抓：按该句时刻候选轨能量分类', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();

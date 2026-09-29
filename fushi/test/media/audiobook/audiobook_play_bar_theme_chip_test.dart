@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,13 +9,12 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
-import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show readerAudiobookUsesSideSheet;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -37,11 +38,18 @@ AppModel _testAppModel({FushiDatabase? database}) {
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
     });
+  // 阅读器快捷设置里已有在 visible/value 里读偏好的条目（查词瞬时滚动步长），
+  // 生产路径抽屉只在 initialise() 之后打开、偏好必已就绪；夹具同样装上。
+  final PreferencesRepository prefsRepo = PreferencesRepository(db);
+  final Directory tmpDir =
+      Directory.systemTemp.createTempSync('fushi_play_bar_theme_chip_');
   final AppModel appModel = AppModel(testPlatformServices())
-    ..themeNotifier = themeNotifier;
+    ..themeNotifier = themeNotifier
+    ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tmpDir);
   addTearDown(() async {
     themeNotifier.dispose();
     await db.close();
+    tmpDir.deleteSync(recursive: true);
   });
   return appModel;
 }
@@ -197,7 +205,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.reader_theme), findsOneWidget);
-    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+        findsOneWidget);
     final Finder close = find.byKey(
       const ValueKey<String>('fushi_side_sheet_close'),
     );
@@ -307,33 +316,14 @@ void main() {
   });
 
   // BUG-2166 批：桌面 ッツ 形态把书内设置从「宽窗 master-detail」改成了左右
-  // 抽屉。路由真相源是 readerAudiobookUsesSideSheet（reader_desktop_chrome.dart），它
-  // 与 master-detail 外壳判宽用的是**同一对阈值** 560×440 —— 所以窗口一旦够宽
-  // 就走抽屉，sheet 形态永远到不了宽窗分支（代码注释里也写明「宽窗不再有
-  // master-detail」）。原来这两条测试是直接 pump ReaderQuickSettingsSheet
-  // 绕过路由、硬造了一个生产里不存在的组合。
+  // 抽屉（2026-09-27 起有声书面板在手机上也走侧栏，路由由
+  // reader_quick_settings_sheet_static_test 的源码守卫钉住）。原来这两条测试是
+  // 直接 pump ReaderQuickSettingsSheet 绕过路由、硬造了一个生产里不存在的组合。
   //
-  // 这里把它们换成对**新形态**的覆盖（此前 sideSheet* 在 test/ 下零覆盖），
-  // 并加一条纯函数断言把路由真相源钉住。BUG-096 的「固定头 + 可滚内容」原
+  // 这里把它们换成对**新形态**的覆盖（此前 sideSheet* 在 test/ 下零覆盖）。BUG-096 的「固定头 + 可滚内容」原
   // 不变式另有 master_detail_settings_sheet_test 与
   // video_player_settings_master_detail_guard_test 两处仍在守。
-  test('有声书面板容器独立于各平台共用的设置抽屉', () {
-    // 有声书宽窗 → 右侧侧栏；窄窗 → bottom sheet，保持手机的空间利用。
-    expect(
-        readerAudiobookUsesSideSheet(
-            desktop: false, window: const Size(1000, 800)),
-        isTrue);
-    expect(
-        readerAudiobookUsesSideSheet(
-            desktop: false, window: const Size(420, 1600)),
-        isFalse);
-    // 桌面端有声书恒走侧栏。
-    expect(
-        readerAudiobookUsesSideSheet(desktop: true, window: const Size(420, 400)),
-        isTrue);
-  });
-
-  testWidgets('桌面「设置」抽屉：三组分段同屏、无 push 返回箭头', (tester) async {
+  testWidgets('桌面「设置」抽屉：三组标签页同屏、无 push 返回箭头', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -362,9 +352,15 @@ void main() {
     );
     await tester.pump();
 
-    // 「设置」抽屉：顶部一条分段条把分类摊平同屏切换（导航 / 有声书不在这里，
-    // 它们各有自己的 presentation），默认落在第一组「布局显示」上。
-    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    // 「设置」抽屉：标题下一条标签栏把分类摊平同屏切换（导航 / 有声书不在这里，
+    // 它们各有自己的 presentation），默认落在第一组「布局显示」上。不再用分段条。
+    expect(find.byType(FushiSegmentedStrip<String>), findsNothing);
+    final TabBar tabBar = tester.widget<TabBar>(find.descendant(
+      of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+      matching: find.byType(TabBar),
+    ));
+    expect(tabBar.tabs, hasLength(3));
+    expect(tabBar.controller!.index, 0);
     expect(find.text(t.section_layout), findsWidgets);
     // 导航分类被排除（它是 sideSheetNavigation 的地盘）。
     expect(find.text(t.reading_progress), findsNothing);
@@ -374,6 +370,66 @@ void main() {
     // 默认组即 layout：主题行直接可见，不需要再点一层。
     expect(find.text(t.reader_theme), findsOneWidget);
     expect(find.byType(AdaptiveSettingsSegmentedRow<Object>), findsWidgets);
+  });
+
+  testWidgets('桌面「设置」抽屉：恢复记住的标签页，点击 / 滑动切换都回写', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final List<String> changes = <String>[];
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [],
+                readerProgress: const (1, 3),
+                onJumpSection: (_, __) async {},
+                onExitReader: () {},
+                webViewController: _FakeInAppWebViewController(),
+                appModel: _testAppModel(),
+                ref: ref,
+                isFushiReader: true,
+                initialSideSheetTab: 'lookup',
+                onSideSheetTabChanged: changes.add,
+                presentation:
+                    ReaderQuickSettingsPresentation.sideSheetAppearance,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 上次停在「查词」：直接落在该页，不回写。
+    expect(find.text(t.auto_read_on_lookup), findsOneWidget);
+    expect(find.text(t.reader_theme), findsNothing);
+    expect(changes, isEmpty);
+
+    // 点击标签：动画开始 / 结束两次通知只回写一次。
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+      matching: find.text(t.section_layout),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.reader_theme), findsOneWidget);
+    expect(find.text(t.auto_read_on_lookup), findsNothing);
+    expect(changes, <String>['layout']);
+
+    // 向左滑到下一页「阅读操作」。
+    await tester.fling(
+      find.byKey(const PageStorageKey<String>('fushi_side_sheet_tab_layout')),
+      const Offset(-600, 0),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.reader_theme), findsNothing);
+    expect(changes, <String>['layout', 'behavior']);
   });
 
   testWidgets('reader exit is deferred and only scheduled once',

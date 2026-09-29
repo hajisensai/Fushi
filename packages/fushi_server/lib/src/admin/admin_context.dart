@@ -35,10 +35,13 @@ class AdminContext {
 
   ServerConfig get config => _config;
 
-  /// 改配置 = 改内存 + 写回文件。端口/TLS/绑定这类要重启才生效，WebUI 会提示。
+  /// 改配置 = 改内存 + 写回文件 + 推给正在跑的 host。端口/TLS/绑定这类要重启才
+  /// 生效，WebUI 会提示；公网地址 / P2P / 中继由 [HeadlessHost.applyConfig] 即时
+  /// 生效（返回时 P2P 起停已落地）。
   Future<void> updateConfig(ServerConfig next) async {
     _config = next;
     await next.save(configFile);
+    await host.applyConfig(next);
   }
 
   // ── 扫描：同一时刻只跑一次 ────────────────────────────────────────

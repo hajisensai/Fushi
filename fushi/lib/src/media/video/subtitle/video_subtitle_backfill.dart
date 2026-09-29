@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -40,6 +41,7 @@ class SubtitleBackfillTarget {
     this.scrapedRuntimeMinutes,
     this.contentLanguage,
     this.originalLanguage,
+    this.explicitLanguage,
   });
 
   /// 视频稳定身份（`VideoBooks.bookUid`），只用于日志与调用方对账。
@@ -64,6 +66,11 @@ class SubtitleBackfillTarget {
   /// 刮削出的作品原语言（TMDB `original_language` 等）。[contentLanguage] 没设时
   /// 的第二档；比 mkv 音轨 tag 可靠（打包者常写错或不写）。
   final String? originalLanguage;
+
+  /// 用户对**这部作品**明确选过的字幕语言（每系列记忆 `jimaku_pref_langs`，AI 下载
+  /// 与字幕工作台都写它）。非空即硬过滤 + 排序首选，压过全局默认字幕语言；
+  /// 与 [contentLanguage] 不同：那是「视频说什么语言」，这是「要什么语言的字幕」。
+  final String? explicitLanguage;
 }
 
 /// 单个目标的补字幕结果。
@@ -103,6 +110,16 @@ class SubtitleBackfillResult {
   bool get installed => outcome == SubtitleBackfillOutcome.installed;
 }
 
+/// 真下载前对候选做一次**可选**的重排（当前只有 AI 重排接这条缝，见
+/// `ai_video_search_assistant.dart` 的 `aiSubtitleBackfillReorder`）。
+///
+/// 返回值必须是入参的**全量排列**——它只改顺序、不改集合，[VideoSubtitleBackfillService.maxCandidates]
+/// 的语义（最多真下几条）不受影响。抛异常按「原序」处理。
+typedef SubtitleBackfillReorder = Future<List<VideoSubtitleCandidate>> Function(
+  List<VideoSubtitleCandidate> candidates,
+  SubtitleBackfillTarget target,
+);
+
 /// 给刮削后仍缺字幕的视频自动补一条字幕。
 class VideoSubtitleBackfillService {
   VideoSubtitleBackfillService({
@@ -110,9 +127,14 @@ class VideoSubtitleBackfillService {
     Iterable<String> preferredLanguages = const <String>[],
     this.defaultContentLanguage,
     this.maxCandidates = 4,
+    this.aiReorder,
+    this.subtitleAligner,
   }) : preferredLanguages = List<String>.unmodifiable(preferredLanguages);
 
   final VideoSubtitleRegistry registry;
+
+  /// 写 sidecar 前按视频内嵌字幕轨对时间轴；null = 不对齐。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   /// 用户在设置里**显式**选的字幕语言。非空即硬过滤（进搜索请求）。
   final List<String> preferredLanguages;
@@ -123,6 +145,9 @@ class VideoSubtitleBackfillService {
   /// 最多真下几条候选做校验。理由同下载流水线的
   /// `kSubtitleVerifyMaxCandidates`：候选可能几十条，全下一遍是对来源站的滥用。
   final int maxCandidates;
+
+  /// 真下载前的可选重排（AI）。null = 按语言偏好排完就取前 [maxCandidates] 条。
+  final SubtitleBackfillReorder? aiReorder;
 
   Future<SubtitleBackfillResult> backfill(
     SubtitleBackfillTarget target,
@@ -154,7 +179,9 @@ class VideoSubtitleBackfillService {
           media: target.media,
           season: target.media.season,
           episode: target.media.episode,
-          languages: preferredLanguages,
+          languages: target.explicitLanguage == null
+              ? preferredLanguages
+              : <String>[target.explicitLanguage!],
           fingerprint: LocalVideoFingerprint(
             fileSize: await video.length(),
             fileName: p.basename(video.path),
@@ -182,17 +209,34 @@ class VideoSubtitleBackfillService {
     // 默认取**视频自己的语言**。这里是排序不是过滤：只有英文字幕的日语番仍然
     // 配得上，只是排在后面。硬过滤只属于用户显式选的语言（已进 request.languages）。
     final String? preferred = resolveSubtitleDownloadLanguage(
-      explicitSubtitlePreference: preferredLanguages.firstOrNull,
+      explicitSubtitlePreference:
+          target.explicitLanguage ?? preferredLanguages.firstOrNull,
       videoContentLanguage: target.contentLanguage,
       contentMetadataLanguage:
           target.originalLanguage ?? facts.primaryAudioLanguage,
       globalDefaultContentLanguage: defaultContentLanguage,
     );
-    final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
+    List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
       result.items,
       preferred,
       (VideoSubtitleCandidate c) => c.language,
     );
+    // AI 重排只在语言排序之后、截 maxCandidates 之前插一刀：它决定的是「先下哪几条」，
+    // 不改集合也不改上限。失败 / 未配置 / 返回的不是全量排列都退回本地顺序。
+    final SubtitleBackfillReorder? reorder = aiReorder;
+    if (reorder != null && ordered.length > 1) {
+      try {
+        final List<VideoSubtitleCandidate> reordered =
+            await reorder(ordered, target);
+        if (reordered.length == ordered.length &&
+            reordered.toSet().containsAll(ordered)) {
+          ordered = reordered;
+        }
+      } on Object catch (error) {
+        debugPrint('[subtitle-backfill] ai reorder failed for '
+            '${target.bookUid}: $error');
+      }
+    }
     String? lastRejection;
     final int limit =
         ordered.length < maxCandidates ? ordered.length : maxCandidates;
@@ -286,7 +330,23 @@ class VideoSubtitleBackfillService {
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
-    await temp.writeAsBytes(download.bytes, flush: true);
+    final AutomaticSubtitleAligner? aligner = subtitleAligner;
+    // 后台自动路径：网络路径（UNC / smb:// …）不抽内嵌轨——整片 demux 走网络等于
+    // 把整部视频拉一遍。原样写。
+    await temp.writeAsBytes(
+      aligner == null || isNetworkMediaPath(video.path)
+          ? download.bytes
+          : await aligner(download.bytes, video.path),
+      flush: true,
+    );
+    // 对齐可能要几十秒（整片抽轨）：这期间用户 / 另一条路径可能已经落了同名
+    // sidecar，rename 会把它覆盖掉。再查一次，已存在就放弃这份。
+    if (dest.existsSync()) {
+      try {
+        await temp.delete();
+      } catch (_) {}
+      return target;
+    }
     await temp.rename(target);
     return target;
   }

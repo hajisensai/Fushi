@@ -26,15 +26,17 @@ void main() {
     expect(file.existsSync(), isTrue, reason: '守卫语料文件必须存在：${file.path}');
   });
 
-  test('① _popToDownloadsTab 先判可达再 popUntil（绝不先毁导航栈再发现去不了）', () {
-    final int body = source.indexOf('bool _popToDownloadsTab(int tabIndex) {');
+  // 2026-09-27 起「下载」模块改名「浏览」：出口改名 _popToBrowseTab / _openBrowseTab，
+  // 目标从整数下标换成 BrowseTab 枚举（+ 下载页签内的任务 / 订阅段）。
+  test('① _popToBrowseTab 先判可达再 popUntil（绝不先毁导航栈再发现去不了）', () {
+    final int body = source.indexOf('bool _popToBrowseTab(');
     expect(body, greaterThan(0),
-        reason: 'popUntil + 切下载 tab 必须收口在唯一出口 _popToDownloadsTab');
-    final int end = source.indexOf('\n  }', body);
+        reason: 'popUntil + 切浏览 tab 必须收口在唯一出口 _popToBrowseTab');
+    final int end = source.indexOf('\n  }', source.indexOf(') {', body));
     expect(end, greaterThan(body));
     final String fn = source.substring(body, end);
 
-    final int gate = fn.indexOf('if (!_downloadsReachable) return false;');
+    final int gate = fn.indexOf('if (!_browseReachable) return false;');
     final int pop = fn.indexOf('popUntil');
     expect(gate, greaterThan(-1), reason: '必须有可达性早退');
     expect(pop, greaterThan(-1), reason: '必须仍用 popUntil 收口（与栈深无关）');
@@ -45,34 +47,39 @@ void main() {
     );
   });
 
-  test('② _openDownloadsTab 只能从可达性门控过的两处调用', () {
+  test('② _openBrowseTab 只能从可达性门控过的两处调用', () {
     final List<int> calls = <int>[];
-    for (int i = source.indexOf('_openDownloadsTab(');
+    for (int i = source.indexOf('_openBrowseTab(');
         i >= 0;
-        i = source.indexOf('_openDownloadsTab(', i + 1)) {
+        i = source.indexOf('_openBrowseTab(', i + 1)) {
       calls.add(i);
     }
     expect(calls.length, 2,
-        reason: '期望恰好两处：声明 + _popToDownloadsTab 内。'
-            '所有端口都必须经 _popToDownloadsTab —— 它同时管可达性门控与「先回到 '
-            'home 这一层路由」，而 _openDownloadsTab 只 setState 切 tab、不动导航栈。'
-            '新增调用点必须走 _popToDownloadsTab，然后更新本守卫。');
+        reason: '期望恰好两处：声明 + _popToBrowseTab 内。'
+            '所有端口都必须经 _popToBrowseTab —— 它同时管可达性门控与「先回到 '
+            'home 这一层路由」，而 _openBrowseTab 只 setState 切 tab、不动导航栈。'
+            '新增调用点必须走 _popToBrowseTab，然后更新本守卫。');
 
+    final String flat = source.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      source.contains('void _openDownloadsTab(int tabIndex) {'),
+      source.contains('void _openBrowseTab('),
       isTrue,
       reason: '第一处是声明本身',
     );
     expect(
-      source.contains('    _openDownloadsTab(tabIndex);\n    return true;'),
+      flat.contains(
+        '_openBrowseTab(tab, downloadsSection: downloadsSection); return true;',
+      ),
       isTrue,
-      reason: '第二处在 _popToDownloadsTab 的可达分支里',
+      reason: '第二处在 _popToBrowseTab 的可达分支里',
     );
     expect(
-      source.contains(
-          'onOpenDownloads: downloadsReachable ? () => _popToDownloadsTab(0) : null,'),
+      flat.contains(
+        'onOpenDownloads: browseReachable '
+        '? () => _popToBrowseTab(BrowseTab.downloads) : null,',
+      ),
       isTrue,
-      reason: '「查看下载」端口必须走 _popToDownloadsTab：作品**详情页**永远是 '
+      reason: '「查看下载」端口必须走 _popToBrowseTab：作品**详情页**永远是 '
           'pushed route，只切 tab 的话 tab 在底下换了、用户还停在详情页上，'
           '看起来什么都没发生。内联在 home 里的发现页已在栈顶，popUntil 是 no-op。',
     );
@@ -85,7 +92,7 @@ void main() {
     final String flat = source.replaceAll(RegExp(r'\s+'), ' ');
     expect(
       flat.contains(
-        'onOpenSubscriptions: downloadsReachable '
+        'onOpenSubscriptions: browseReachable '
         '? _openVideoDiscoverySubscriptionsPanel : null,',
       ),
       isTrue,
@@ -94,9 +101,11 @@ void main() {
   });
 
   test('② 已订阅回退分支去不了下载页时给提示，而不是无声消失', () {
+    final String flat = source.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      source.contains('if (!_popToDownloadsTab(2)) {\n'
-          '        _showVideoDiscoveryMessage(context, t.module_downloads_hidden_hint);'),
+      flat.contains('if (!_popToBrowseTab( BrowseTab.downloads, '
+          'downloadsSection: BrowseDownloadsSection.subscriptions, )) { '
+          '_showVideoDiscoveryMessage(context, t.module_downloads_hidden_hint);'),
       isTrue,
       reason: '端口不接线时订阅按钮会退化成 onSubscribe，这条分支仍可达，'
           '去不了下载页必须给一句可操作提示。',
@@ -165,7 +174,7 @@ void main() {
       expect(
         source
             .substring(handler, handlerEnd)
-            .contains('_revealDictionary(carryingPendingLookup: true)'),
+            .contains('_revealDictionary(carryingPendingLookup: true'),
         isTrue,
         reason: 'homeDictionaryTabRequest（桌面取词 / 悬浮字幕点词 / 扩展回流）必须走 '
             '_revealDictionary，且必须带 carryingPendingLookup: true —— 它携带一次'

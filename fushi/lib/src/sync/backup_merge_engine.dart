@@ -2,10 +2,13 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath, kNetworkStreamSchemes;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -87,9 +90,10 @@ class BackupMergeEngine {
   /// Source-device absolute video paths whose file actually travelled inside the
   /// backup (= `BackupMeta.videoFiles.keys`). A merged `video_books` row is only
   /// materialised when it is REACHABLE on this device: either a streaming book
-  /// (its `video_path` is an `http(s)` URL, self-contained — re-opens by URL) or
-  /// a local-file book whose file is in this set (so `_copyTreeIfAbsent` lands it
-  /// and `_rebaseVideoPaths` re-points it). A local video whose file never
+  /// (its `video_path` is a network stream URL — http(s) / rtsp … —
+  /// self-contained, re-opens by URL) or a local-file book whose file is in this
+  /// set (so `_copyTreeIfAbsent` lands it and `_rebaseVideoPaths` re-points
+  /// it). A local video whose file never
   /// travelled would otherwise import as a dead "empty video" shell that can
   /// never play (TODO-1261). The preview counter applies the SAME predicate so
   /// the confirm dialog's "will add N" matches what the merge actually inserts.
@@ -99,9 +103,7 @@ class BackupMergeEngine {
   /// streaming URLs plus local files carried by the backup. Empty carried set →
   /// streaming only. Callers append this to the row's own NOT EXISTS guard.
   String get _reachableVideoPredicate {
-    final StringBuffer buf = StringBuffer(
-      "(s.video_path LIKE 'http://%' OR s.video_path LIKE 'https://%'",
-    );
+    final StringBuffer buf = StringBuffer('($_networkOnlyVideoPathSql');
     if (_carriedVideoSourcePaths.isNotEmpty) {
       final String placeholders =
           List<String>.filled(_carriedVideoSourcePaths.length, '?').join(', ');
@@ -110,6 +112,19 @@ class BackupMergeEngine {
     buf.write(')');
     return buf.toString();
   }
+
+  /// 「网络流视频行」的 SQL 片段（src 别名 `s`）：[kNetworkStreamSchemes] 每个协议一条
+  /// `s.video_path LIKE '<scheme>://%'`，OR 起来。与导出侧
+  /// `BackupService._isStreamingVideoPath`（= [isNetworkOnlyVideoPath]）是**同一判据**
+  /// ——http(s) 之外，IPTV 频道的 rtsp / rtmp / udp … 地址同样自包含、按 URL 重开，
+  /// 不需要随包文件；本地 `.strm` 是磁盘上的真实文件，照常走「随包文件」分支。
+  /// SQLite 的 LIKE 对 ASCII 大小写不敏感，与 Dart 侧的小写化比较一致。协议集是
+  /// 编译期常量、只含小写字母，直接拼进 SQL 不涉及转义（`_` / `%` 都不出现）。
+  /// 在线视频源入库集（`anime-source://`，起播时向扩展取流）同属网络行。
+  static final String _networkOnlyVideoPathSql = <String>[
+    ...kNetworkStreamSchemes,
+    kAnimeSourceVideoPathScheme,
+  ].map((String scheme) => "s.video_path LIKE '$scheme://%'").join(' OR ');
 
   /// Positional args matching the `?` placeholders in [_reachableVideoPredicate]
   /// (the carried local-file paths, in a stable order). Same order as the set is
@@ -167,6 +182,9 @@ class BackupMergeEngine {
       // the UI. Self-guards against missing src tables (pre-migration backups).
       await _mergeMediaCollections();
       if (_wants('progress')) await _mergeReaderPositions();
+      // v105：Profile 先于统计并入——段 / 游玩会话按 Profile **名字**落到本机
+      // 同名 Profile，src 独有的 Profile 得先按名建出来，统计才有归属可落。
+      await _mergeProfilesAndChildren();
       if (_wants('statistics')) {
         await _mergeReadingStatistics();
         await _mergeVideoWatchStatistics();
@@ -190,7 +208,6 @@ class BackupMergeEngine {
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
-      await _mergeProfilesAndChildren();
       // v80：media_items → media_open_history，PK 是 (media_source, media_id)
       // 双列，_insertMissing 的单键形装不下，展开写。
       await _db.customStatement(
@@ -211,6 +228,7 @@ class BackupMergeEngine {
       // v82：书自定义 CSS / 图片揭开状态（uid 键 LWW）。无 dialog toggle——
       // 存在性 guard 让「书没随备份来」时自然 no-op（与 collections/tags 同规）。
       await _mergeBookCustomCss();
+      await _mergeMangaReaderOverrides();
       await _mergeRevealedImages();
       // BUG-1488：用户给书改的名字（override_title pref）是内容，跟着书走。
       await _mergeOverrideTitlePrefs();
@@ -314,17 +332,38 @@ class BackupMergeEngine {
   /// and end instant, so re-importing the same backup is idempotent. Src
   /// sessions whose game has no host on this device are skipped (never a
   /// dangling `game_id`).
+  ///
+  /// v105：`profile_id` 经 [_profileMapJoin] 按 Profile 名落到本机 id；src 里没有
+  /// 归属（0）的行落进当前激活 Profile。
   Future<void> _mergeGalgameSessions() async {
+    final String profileId = await _mappedProfileId('s', 'sp', 'tp');
     await _db.customStatement(
       'INSERT INTO galgame_sessions '
-      '(game_id, start_ms, end_ms, duration_seconds, date_key) '
-      'SELECT m.dst_id, s.start_ms, s.end_ms, s.duration_seconds, s.date_key '
+      '(game_id, start_ms, end_ms, duration_seconds, date_key, profile_id) '
+      'SELECT m.dst_id, s.start_ms, s.end_ms, s.duration_seconds, s.date_key, '
+      '$profileId '
       'FROM $_srcAlias.galgame_sessions AS s '
       'JOIN $_gameMapTable AS m ON m.src_id = s.game_id '
+      '${_profileMapJoin('s', 'sp', 'tp')}'
       'WHERE NOT EXISTS (SELECT 1 FROM galgame_sessions AS t '
       'WHERE t.game_id = m.dst_id AND t.start_ms = s.start_ms '
       'AND t.end_ms = s.end_ms)',
     );
+  }
+
+  /// v105：把 src 行（别名 [s]，列 `profile_id`）的 Profile 经名字映射到本机
+  /// `profiles.id` 的 LEFT JOIN 片段：src profiles 别名 [sp]、本机 profiles 别名
+  /// [tp]。src 里 profile_id = 0 / Profile 已删的行两侧都 NULL。
+  String _profileMapJoin(String s, String sp, String tp) =>
+      'LEFT JOIN $_srcAlias.profiles AS $sp ON $sp.id = $s.profile_id '
+      'LEFT JOIN profiles AS $tp ON $tp.name = $sp.name ';
+
+  /// v105：配合 [_profileMapJoin] 的目标 profile_id 表达式——映射到了用本机同名
+  /// Profile，否则落当前激活 Profile（`_mergeProfilesAndChildren` 已先按名建出
+  /// src 独有的 Profile，所以只有 src 无归属的行会走兜底）。
+  Future<String> _mappedProfileId(String s, String sp, String tp) async {
+    final int active = await _db.resolveActiveProfileId();
+    return 'COALESCE($tp.id, $active)';
   }
 
   /// SQL fragment (src alias [s]) resolving a `media_kind`/`media_key` pair to
@@ -530,7 +569,8 @@ class BackupMergeEngine {
 
   /// Inserts every backup `video_books` row the target lacks, but ONLY when it
   /// is REACHABLE on this device ([_reachableVideoPredicate]): a streaming book
-  /// (self-contained http(s) URL) or a local file the backup actually carried.
+  /// (self-contained network stream URL) or a local file the backup actually
+  /// carried.
   /// A local-file video whose file never travelled is skipped so it never lands
   /// as a dead "empty video" shell that can't play (TODO-1261). `video_books`
   /// has no autoincrement id (PK is `book_uid`), so every column travels.
@@ -1095,28 +1135,36 @@ class BackupMergeEngine {
   /// 游戏段 / 碑的 media_key 是 src 的 galgames.id，经 [_gameMapTable] 落到本机
   /// 对应游戏；没有宿主的游戏行跳过（不造悬空键）。
   /// 旧备份（v92 前）没有这两张表：ATTACH 前已迁到当前 schema，两侧必有表。
+  ///
+  /// v105：段与碑都带 `profile_id`，经 [_profileMapJoin] 按 Profile 名落到本机
+  /// id（src 无归属的落当前激活 Profile）；LWW 覆盖**不改**已有段的归属（与 DAO
+  /// `upsertStudySegmentsIfNewer` 同律）；碑只压同 Profile 的段。
   Future<void> _mergeStudySegments() async {
     final String key = _mappedMediaKey('s', 'm');
     final String join = _gameMapJoin('s', 'm');
     final String hasHost = _hasHost('s', 'm');
-    // 几个 src 游戏可能映射到同一个本机游戏 → 同 (kind, key) 多条碑，取 MAX。
+    final String profileJoin = _profileMapJoin('s', 'sp', 'tp');
+    final String profileId = await _mappedProfileId('s', 'sp', 'tp');
+    // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
     await _db.customStatement(
       'INSERT OR IGNORE INTO study_segment_tombstones '
-      '(media_kind, media_key, deleted_at) '
-      'SELECT s.media_kind, $key, MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join'
+      '(profile_id, media_kind, media_key, deleted_at) '
+      'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
+      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
       'WHERE $hasHost '
-      'GROUP BY s.media_kind, $key',
+      'GROUP BY $profileId, s.media_kind, $key',
     );
     await _db.customStatement(
       'UPDATE study_segment_tombstones SET deleted_at = ('
       'SELECT MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join'
-      'WHERE s.media_kind = study_segment_tombstones.media_kind '
+      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+      'WHERE $profileId = study_segment_tombstones.profile_id '
+      'AND s.media_kind = study_segment_tombstones.media_kind '
       'AND $key = study_segment_tombstones.media_key) '
       'WHERE EXISTS (SELECT 1 '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join'
-      'WHERE s.media_kind = study_segment_tombstones.media_kind '
+      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+      'WHERE $profileId = study_segment_tombstones.profile_id '
+      'AND s.media_kind = study_segment_tombstones.media_kind '
       'AND $key = study_segment_tombstones.media_key '
       'AND s.deleted_at > study_segment_tombstones.deleted_at)',
     );
@@ -1135,18 +1183,24 @@ class BackupMergeEngine {
       'chars',
       'pages',
       'updated_at',
+      'profile_id',
     ];
-    String srcCol(String c) => c == 'media_key' ? '$key AS media_key' : 's.$c';
+    String srcCol(String c) => switch (c) {
+          'media_key' => '$key AS media_key',
+          'profile_id' => '$profileId AS profile_id',
+          _ => 's.$c',
+        };
     final String colList = cols.join(', ');
     final String srcColList = cols.map(srcCol).join(', ');
     await _db.customStatement(
       'INSERT INTO study_segments ($colList) '
-      'SELECT $srcColList FROM $_srcAlias.study_segments AS s $join'
+      'SELECT $srcColList FROM $_srcAlias.study_segments AS s $join$profileJoin'
       'WHERE $hasHost '
       'AND NOT EXISTS (SELECT 1 FROM study_segments AS t WHERE t.uid = s.uid)',
     );
+    // 归属不随 LWW 改：profile_id 不在 SET 列里。
     final String setClause = cols
-        .where((String c) => c != 'uid')
+        .where((String c) => c != 'uid' && c != 'profile_id')
         .map((String c) =>
             '$c = (SELECT ${srcCol(c)} FROM $_srcAlias.study_segments AS s '
             '${c == 'media_key' ? join : ''}'
@@ -1161,7 +1215,8 @@ class BackupMergeEngine {
     await _db.customStatement(
       'DELETE FROM study_segments WHERE EXISTS ('
       'SELECT 1 FROM study_segment_tombstones AS t '
-      'WHERE t.media_kind = study_segments.media_kind '
+      'WHERE t.profile_id = study_segments.profile_id '
+      'AND t.media_kind = study_segments.media_kind '
       'AND t.media_key = study_segments.media_key '
       'AND t.deleted_at > study_segments.start_at)',
     );
@@ -1437,6 +1492,33 @@ class BackupMergeEngine {
     );
   }
 
+  /// v109：漫画按作品覆盖设置 LWW 合并（按稳定 uid 换键）。
+  Future<void> _mergeMangaReaderOverrides() async {
+    if (!await _srcTableExists('manga_reader_overrides')) return;
+    await _db.customStatement(
+      'INSERT INTO manga_reader_overrides '
+      '(book_uid, overrides_json, updated_at, deleted) '
+      'SELECT $_srcBookUidRekey, s.overrides_json, s.updated_at, s.deleted '
+      'FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE EXISTS (SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
+      'AND NOT EXISTS (SELECT 1 FROM manga_reader_overrides AS t '
+      'WHERE t.book_uid = $_srcBookUidRekey)',
+    );
+    await _db.customStatement(
+      'UPDATE manga_reader_overrides SET '
+      'overrides_json = (SELECT s.overrides_json FROM '
+      '$_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid), '
+      'deleted = (SELECT s.deleted FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid), '
+      'updated_at = (SELECT s.updated_at FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid '
+      'AND s.updated_at > manga_reader_overrides.updated_at)',
+    );
+  }
+
   /// v82：图片揭开状态合并（per {book_uid, image_key}，revealedAt 取较新；
   /// 语义上「任一端揭开即揭开」，union + LWW 刷新时刻）。此前不进 merge。
   Future<void> _mergeRevealedImages() async {
@@ -1601,6 +1683,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v103：漫画下载队列。任务指向的是本机磁盘上的章目录（半成品），另一台
       // 设备既没有那份目录也不该替它续跑，合并进来只会造一堆永远跑不完的任务。
       'manga_download_jobs',
+      // v116：设备端待发制卡队列。载荷文件只在本机 <support>/pending_mine_queue/，
+      // 补发目标也是本机配置的后端——合并进来只会造出没有载荷、发不出去的空行。
+      'pending_mine_queue',
     ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device

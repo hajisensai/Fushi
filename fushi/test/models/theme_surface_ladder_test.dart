@@ -44,19 +44,14 @@ void main() {
     'surfaceContainerHighest',
   ];
 
+  bool isPureBlack(ColorScheme s) => s.surface == const Color(0xFF000000);
+
   /// 全部内置预设 × 亮暗，外加一个中性派生（monochrome）方案。
   Map<String, ColorScheme> allSchemes() {
     final Map<String, ColorScheme> out = <String, ColorScheme>{};
-    ThemeNotifier.themePresets.forEach((
-      String key,
-      ({Color seed, Brightness brightness, DynamicSchemeVariant variant}) v,
-    ) {
+    ThemeNotifier.themePresets.forEach((String key, ThemePreset v) {
       for (final Brightness b in Brightness.values) {
-        out['$key/${b.name}'] = buildFushiColorScheme(
-          seedColor: v.seed,
-          brightness: b,
-          variant: v.variant,
-        );
+        out['$key/${b.name}'] = ThemeNotifier.buildPresetColorScheme(v, b);
       }
     });
     for (final Brightness b in Brightness.values) {
@@ -84,6 +79,11 @@ void main() {
       for (int i = 1; i < l.length; i++) {
         final double prev = l[i - 1].computeLuminance();
         final double cur = l[i].computeLuminance();
+        // 纯黑方案的页面底已经是 #000，最低层没有更暗的地方可去，二者相等。
+        if (i == 1 && isPureBlack(s)) {
+          expect(cur, prev, reason: '$name: 纯黑的最低层应与页面底同为 #000');
+          continue;
+        }
         expect(
           light ? cur < prev : cur > prev,
           isTrue,
@@ -184,9 +184,12 @@ void main() {
     // highest 压到 tone 87 之后，M3 baseline 的 dim(87) 会不再比 highest 暗，
     // 所以这两个必须跟着阶梯一起调。
     allSchemes().forEach((String name, ColorScheme s) {
+      // 纯黑页面底已是 #000，dim 只能与它相等。
       expect(
         s.surfaceDim.computeLuminance(),
-        lessThan(s.surface.computeLuminance()),
+        isPureBlack(s)
+            ? equals(s.surface.computeLuminance())
+            : lessThan(s.surface.computeLuminance()),
         reason: '$name: surfaceDim 没比页面底暗',
       );
       expect(
@@ -250,9 +253,46 @@ void main() {
     );
     // 预设 / 自定义分支：未钉死 surface 时的出口。
     expect(
-      src.contains('_hibikiSchemeCache[key] = applyFushiSurfaceLadder('),
+      RegExp(
+        r'_hibikiSchemeCache\[key\] = pureBlack\s*\?\s*'
+        r'applyFushiPureBlackSurfaceLadder\(withRoles\)\s*:\s*'
+        r'applyFushiSurfaceLadder\(withRoles\)',
+      ).hasMatch(src),
       isTrue,
       reason: 'buildFushiColorScheme 未钉死 surface 的出口必须过阶梯',
     );
+  });
+
+  test('纯黑阶梯：页面底真黑，亮色回落到统一阶梯', () {
+    const Color seed = Color(0xFF3F51B5);
+    final ColorScheme dark = applyFushiPureBlackSurfaceLadder(
+      ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+    );
+    expect(dark.surface, const Color(0xFF000000));
+    expect(dark.surfaceDim, const Color(0xFF000000));
+    final ColorScheme lightBase =
+        ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light);
+    expect(
+      applyFushiPureBlackSurfaceLadder(lightBase).surface,
+      applyFushiSurfaceLadder(lightBase).surface,
+    );
+  });
+
+  test('极亮端不漂色相：暖色主题的页面底不能解成冷色', () {
+    // 米黄（色相 74°）在 tone 99.5 直接 Hct.from 会解出偏紫的 #fffdff。
+    for (final double tone in <double>[99.5, 100, 0.5]) {
+      final Color c = hctToneKeepingHue(74, 6, tone);
+      final Hct h = Hct.fromInt(c.toARGB32());
+      final double d = (h.hue - 74).abs() % 360;
+      final double gap = d > 180 ? 360 - d : d;
+      final int argb = c.toARGB32();
+      final int r = (argb >> 16) & 0xFF, bl = argb & 0xFF;
+      expect(
+        gap <= 10 || (r - bl).abs() <= 1,
+        isTrue,
+        reason: 'tone $tone 解出 ${argb.toRadixString(16)}（色相 ${h.hue}）',
+      );
+      expect(bl, lessThanOrEqualTo(r), reason: 'tone $tone 解成了冷色');
+    }
   });
 }

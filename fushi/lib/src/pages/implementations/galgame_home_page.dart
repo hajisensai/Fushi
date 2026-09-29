@@ -18,10 +18,14 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/sync/game_stream_mining.dart';
+import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -104,18 +108,47 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 启动流程再入守卫（同库页：一次启动含多个 await，避免重复点叠出多开对话框）。
   bool _launching = false;
+  bool _gameStreamBusy = false;
+  FushiGameStreamHost? _streamHost;
+
+  bool get _gameStreamStarted => _streamHost?.started ?? false;
+  String? get _gameStreamDevice =>
+      _streamHost?.session?.clientName ?? _streamHost?.session?.clientId;
+
+  void _onStreamChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onSyncChanged() {
+    final FushiGameStreamHost? host =
+        _appModel.syncServerController.activeGameStreamHost;
+    if (!identical(_streamHost, host)) {
+      _streamHost?.removeListener(_onStreamChanged);
+      _streamHost = host;
+      host?.addListener(_onStreamChanged);
+    }
+    _onStreamChanged();
+  }
 
   @override
   void initState() {
     super.initState();
     _repo.addListener(_onRepoChanged);
     _games = _repo.games;
+    if (Platform.isWindows) {
+      _appModel.syncServerController.addListener(_onSyncChanged);
+      _onSyncChanged();
+    }
     unawaited(_reload());
   }
 
   @override
   void dispose() {
     _repo.removeListener(_onRepoChanged);
+    _streamHost?.removeListener(_onStreamChanged);
+    if (Platform.isWindows) {
+      _appModel.syncServerController.removeListener(_onSyncChanged);
+    }
     super.dispose();
   }
 
@@ -157,13 +190,16 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     int week = 0;
     final List<Future<void>> futures = <Future<void>>[];
     for (int i = 0; i < 7; i++) {
-      final String key =
-          FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
+      final String key = FushiTimeFormat.dayKey(
+        now.subtract(Duration(days: i)),
+      );
       // 单线程 Dart 里各 .then 回调不会在 += 语句中途交错，累加安全。
-      futures.add(_db.getGalgameSecondsForDay(key).then((int seconds) {
-        week += seconds;
-        if (i == 0) today = seconds;
-      }));
+      futures.add(
+        _db.getGalgameSecondsForDay(key).then((int seconds) {
+          week += seconds;
+          if (i == 0) today = seconds;
+        }),
+      );
     }
     await Future.wait(futures);
     return _GameKpis(
@@ -185,9 +221,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     // ∪ hook 字数段 ∪ galgame_sessions 合成的游玩事件）；游玩不再写 activity 行。
     final StatFacts facts = await loadStatFacts(_db);
     final List<ActivityEventRow> gameRows = facts.activityRows
-        .where((ActivityEventRow r) =>
-            r.mediaType == kActivityMediaGame &&
-            (r.eventType == kActivityGame || r.eventType == kActivityAdded))
+        .where(
+          (ActivityEventRow r) =>
+              r.mediaType == kActivityMediaGame &&
+              (r.eventType == kActivityGame || r.eventType == kActivityAdded),
+        )
         .toList();
     final List<ActivityEventRow> synthesizedAdds = <ActivityEventRow>[
       for (final GalgameEntry g in games)
@@ -216,11 +254,12 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 最近玩过的前 4 个游戏（按 lastPlayedMs 倒序）。
   List<GalgameEntry> get _recentlyPlayed {
-    final List<GalgameEntry> played = _games
-        .where((GalgameEntry g) => g.lastPlayedMs > 0)
-        .toList()
-      ..sort((GalgameEntry a, GalgameEntry b) =>
-          b.lastPlayedMs.compareTo(a.lastPlayedMs));
+    final List<GalgameEntry> played =
+        _games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()
+          ..sort(
+            (GalgameEntry a, GalgameEntry b) =>
+                b.lastPlayedMs.compareTo(a.lastPlayedMs),
+          );
     return played.take(4).toList();
   }
 
@@ -264,10 +303,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        FushiToast.show(
-          msg: t.game_exe_missing,
-          severity: ToastSeverity.error,
-        );
+        FushiToast.show(msg: t.game_exe_missing, severity: ToastSeverity.error);
         return;
       }
       final bool is32Bit =
@@ -296,8 +332,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         workdir: game.workdir,
         gameId: game.id,
         gameTitle: game.displayName,
-        japaneseLocaleMode:
-            galJapaneseLocaleModeFromKey(game.japaneseLocaleMode),
+        japaneseLocaleMode: galJapaneseLocaleModeFromKey(
+          game.japaneseLocaleMode,
+        ),
         // BUG-2047：内容语言是转区 auto 判定的人工真值，entry 本来就在手上。
         contentLanguage: game.language,
       );
@@ -342,6 +379,51 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     }
   }
 
+  Future<void> _toggleGameStream() async {
+    if (!Platform.isWindows || _gameStreamBusy) return;
+    final FushiSyncServerController sync = _appModel.syncServerController;
+    setState(() => _gameStreamBusy = true);
+    try {
+      if (_gameStreamStarted) {
+        await sync.stopGameStream();
+        sync.configureGameStreamMining(null);
+        return;
+      }
+      final GalHookSessionState hookState =
+          (widget.sessionController ?? GalHookSessionController.instance).state;
+      final ExternalWindowInfo? window = hookState.boundWindow;
+      if (!hookState.isActive || window == null || window.hwnd == 0) {
+        FushiToast.show(
+          msg: t.game_stream_hook_required,
+          severity: ToastSeverity.warning,
+        );
+        return;
+      }
+      final FushiGameStreamMiningAdapter mining = _appModel
+          .createGameStreamMiningAdapter();
+      sync.configureGameStreamMining(mining);
+      final Future<void> starting = sync.startGameStream(hwnd: window.hwnd);
+      _onSyncChanged();
+      await starting;
+      if (mounted) {
+        FushiToast.show(
+          msg: t.game_stream_waiting,
+          severity: ToastSeverity.success,
+        );
+      }
+    } catch (error) {
+      if (!_gameStreamStarted) sync.configureGameStreamMining(null);
+      if (mounted) {
+        FushiToast.show(
+          msg: '${t.game_stream_failed}: $error',
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _gameStreamBusy = false);
+    }
+  }
+
   /// 打开详情页；返回后重载（把详情页的编辑 / 刮削同步回首屏）。
   Future<void> _openDetail(GalgameEntry game) async {
     await Navigator.of(context).push(
@@ -372,6 +454,26 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               onSelectMonitor: widget.onShowMonitor,
             ),
             // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
+            actions: <Widget>[
+              if (Platform.isWindows)
+                OutlinedButton.icon(
+                  onPressed: _gameStreamBusy ? null : _toggleGameStream,
+                  icon: Icon(
+                    _gameStreamStarted
+                        ? Icons.stop_circle_outlined
+                        : Icons.cast_connected,
+                  ),
+                  label: Text(
+                    _gameStreamBusy
+                        ? t.game_stream_busy
+                        : _gameStreamStarted
+                            ? (_gameStreamDevice == null
+                                ? t.game_stream_stop
+                                : '${t.game_stream_stop} · ${t.game_stream_connected}: $_gameStreamDevice')
+                            : t.game_stream_start,
+                  ),
+                ),
+            ],
           ),
           Expanded(
             child: _games.isEmpty ? _buildEmpty(context) : _buildBody(context),
@@ -388,14 +490,17 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.videogame_asset_outlined,
-              size: 64, color: colors.onSurfaceVariant),
+          Icon(
+            Icons.videogame_asset_outlined,
+            size: 64,
+            color: colors.onSurfaceVariant,
+          ),
           const SizedBox(height: 16),
           Text(
             t.game_empty,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -578,24 +683,26 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 _StatusPill(label: statusLabel),
                 const SizedBox(height: 12),
                 // TODO-2497：两行仍放不下时，桌面悬停显示完整游戏名。
-                Builder(builder: (BuildContext context) {
-                  final TextStyle? heroTitleStyle =
-                      theme.textTheme.headlineLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  );
-                  return ShelfTitleOverflowTooltip(
-                    title: game.displayName,
-                    style: heroTitleStyle,
-                    maxLines: 2,
-                    child: Text(
-                      game.displayName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                Builder(
+                  builder: (BuildContext context) {
+                    final TextStyle? heroTitleStyle =
+                        theme.textTheme.headlineLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    );
+                    return ShelfTitleOverflowTooltip(
+                      title: game.displayName,
                       style: heroTitleStyle,
-                    ),
-                  );
-                }),
+                      maxLines: 2,
+                      child: Text(
+                        game.displayName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: heroTitleStyle,
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 6),
                 Text(
                   subParts.join('   ·   '),
@@ -709,24 +816,26 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       // TODO-2497：两行仍放不下时，桌面悬停显示完整游戏名。
-                      Builder(builder: (BuildContext context) {
-                        final TextStyle? cardTitleStyle =
-                            theme.textTheme.titleSmall?.copyWith(
-                          color: colors.onSurface,
-                          fontWeight: FontWeight.w600,
-                        );
-                        return ShelfTitleOverflowTooltip(
-                          title: game.displayName,
-                          style: cardTitleStyle,
-                          maxLines: 2,
-                          child: Text(
-                            game.displayName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                      Builder(
+                        builder: (BuildContext context) {
+                          final TextStyle? cardTitleStyle =
+                              theme.textTheme.titleSmall?.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          );
+                          return ShelfTitleOverflowTooltip(
+                            title: game.displayName,
                             style: cardTitleStyle,
-                          ),
-                        );
-                      }),
+                            maxLines: 2,
+                            child: Text(
+                              game.displayName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: cardTitleStyle,
+                            ),
+                          );
+                        },
+                      ),
                       if (game.developer != null &&
                           game.developer!.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 4),
@@ -773,8 +882,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final List<ActivityDateGroup> groups = aggregateActivityEvents(filtered);
     final DateTime now = DateTime.now();
     final String todayKey = FushiTimeFormat.dayKey(now);
-    final String yesterdayKey =
-        FushiTimeFormat.dayKey(now.subtract(const Duration(days: 1)));
+    final String yesterdayKey = FushiTimeFormat.dayKey(
+      now.subtract(const Duration(days: 1)),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -871,8 +981,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     // P4：渲染时应用库内显示名（entry.title 是活动落库时的标题快照，聚合键恒
     // raw；改名后时间轴跟着显示新名，查不到条目回落快照）。game 已按
     // mediaKey/显示名反查。
-    final String timelineTitle =
-        displayTitleForGame(entry: game, rawTitle: entry.title);
+    final String timelineTitle = displayTitleForGame(
+      entry: game,
+      rawTitle: entry.title,
+    );
     final TextStyle? timelineTitleStyle = theme.textTheme.bodyLarge?.copyWith(
       color: colors.onSurface,
       fontWeight: FontWeight.w500,
@@ -890,10 +1002,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             left: 5,
             top: 18,
             bottom: 0,
-            child: Container(
-              width: 2,
-              color: colors.outlineVariant,
-            ),
+            child: Container(width: 2, color: colors.outlineVariant),
           ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1135,10 +1244,7 @@ class _RecentThumb extends StatelessWidget {
         child: SizedBox(
           width: 44,
           height: 58,
-          child: ClipRRect(
-            borderRadius: FushiBorderRadius.chip,
-            child: cover,
-          ),
+          child: ClipRRect(borderRadius: FushiBorderRadius.chip, child: cover),
         ),
       ),
     );
@@ -1158,10 +1264,7 @@ class _RecentThumb extends StatelessWidget {
           },
         ),
       },
-      child: FushiFocusTarget(
-        id: focusId,
-        child: thumb,
-      ),
+      child: FushiFocusTarget(id: focusId, child: thumb),
     );
   }
 }
@@ -1187,10 +1290,7 @@ class _TimelineAvatar extends StatelessWidget {
     return SizedBox(
       width: 36,
       height: 36,
-      child: ClipRRect(
-        borderRadius: FushiBorderRadius.chip,
-        child: child,
-      ),
+      child: ClipRRect(borderRadius: FushiBorderRadius.chip, child: child),
     );
   }
 }

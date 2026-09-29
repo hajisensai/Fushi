@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// BUG-763/766：「制卡·选择句子上下文」原生顶层对话框（[SentenceContextDialog]）行为测试。
 /// 旧模态画在查词弹窗 WebView 内、无头测试照不到；改原生对话框后可用 widget 测试钉死行为。
@@ -12,6 +16,10 @@ void main() {
   late int stubNext;
   late List<List<int>> setCalls; // 记录 (prev,next) 调用
   late int confirmCalls;
+  // BUG-2627：onConfirm 现在回传「有没有真的点到那颗制卡按钮」。桩可切 false 模拟
+  // 「回点时弹窗层已经不在了」。confirmOrder 记录关窗相对于制卡的先后。
+  late bool confirmResult;
+  late Completer<bool>? confirmGate;
   // 手改句子文本：记录 (slot,index,text) 调用，并把改动落进桩，让下一次 preview
   // 像真宿主那样吐出改后的文本。
   late List<List<Object>> editCalls;
@@ -38,8 +46,14 @@ void main() {
     };
   }
 
+  // BUG-2627：失败提示走 FushiToast 的桌面自绘 overlay，它要经 navigatorKey 找
+  // overlay；不接这把钥匙 toast 会**静默丢掉**（正是这条修复要消灭的那种静默）。
+  final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+
   Future<Widget> harness() async {
+    FushiToast.navigatorKey = navKey;
     return MaterialApp(
+      navigatorKey: navKey,
       home: Scaffold(
         body: Builder(
           builder: (BuildContext ctx) => Center(
@@ -55,7 +69,11 @@ void main() {
                     stubNext = n;
                     return p + n;
                   },
-                  onConfirm: () => confirmCalls++,
+                  onConfirm: () async {
+                    confirmCalls++;
+                    if (confirmGate != null) return confirmGate!.future;
+                    return confirmResult;
+                  },
                   editSentence: supportsEdit
                       ? (SentenceContextSlot slot, int index,
                           String text) async {
@@ -84,6 +102,8 @@ void main() {
     stubNext = 0;
     setCalls = <List<int>>[];
     confirmCalls = 0;
+    confirmResult = true;
+    confirmGate = null;
     editCalls = <List<Object>>[];
     prevEdits = <int, String>{};
     nextEdits = <int, String>{};
@@ -143,6 +163,72 @@ void main() {
     expect(confirmCalls, 1);
     // 对话框已关（标题消失）。
     expect(find.text(t.popup_ctx_modal_title), findsNothing);
+  });
+
+  testWidgets('BUG-2627：制卡往返跑完之前对话框不许关（保护窗口内完成回点）',
+      (WidgetTester tester) async {
+    // 把 onConfirm 卡住，模拟「Dart → 弹窗 WebView → 回点」这次往返还在路上。
+    confirmGate = Completer<bool>();
+    await open(tester);
+    await tester.tap(find.text(t.popup_ctx_confirm));
+    await tester.pump();
+    expect(confirmCalls, 1);
+    // 往返未回：对话框必须还开着——宿主的 runWithLookupPopupHidden 正是靠它还开着
+    // 才保证那层弹窗活着（barrier 不渲染、悬停离开自动关栈被 hiddenByDialog 挡住）。
+    expect(find.text(t.popup_ctx_modal_title), findsOneWidget,
+        reason: '先 pop 再回点 = 把往返丢进保护已撤的窗口，正是 BUG-2627 的根因');
+    // 期间不能再按第二次，也不能改上下文（整屏进 busy）。
+    expect(
+      tester
+          .widget<FilledButton>(
+              find.widgetWithText(FilledButton, t.popup_ctx_confirm))
+          .onPressed,
+      isNull,
+    );
+    confirmGate!.complete(true);
+    await tester.pumpAndSettle();
+    expect(confirmCalls, 1, reason: '一次确认只回点一次');
+    expect(find.text(t.popup_ctx_modal_title), findsNothing);
+  });
+
+  testWidgets('BUG-2627：往返未回时 Esc 不关窗（保护不能被提前撤掉，回点结果也不能没人接）',
+      (WidgetTester tester) async {
+    confirmGate = Completer<bool>();
+    await open(tester);
+    await tester.tap(find.text(t.popup_ctx_confirm));
+    await tester.pump();
+    expect(confirmCalls, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text(t.popup_ctx_modal_title), findsOneWidget,
+        reason: '忙时 pop 掉对话框 = 弹窗保护提前撤 + 回点结果无论真假都不弹提示');
+    confirmGate!.complete(true);
+    await tester.pumpAndSettle();
+    expect(find.text(t.popup_ctx_modal_title), findsNothing,
+        reason: '往返回来后照常关窗');
+  });
+
+  testWidgets('BUG-2627：没点到制卡按钮时关窗并如实提示，不再静默',
+      (WidgetTester tester) async {
+    confirmResult = false; // 弹窗层已被关栈 / 词条没了 / 按钮 disabled
+    await open(tester);
+    await tester.tap(find.text(t.popup_ctx_confirm));
+    await tester.pumpAndSettle();
+    expect(confirmCalls, 1);
+    expect(find.text(t.popup_ctx_modal_title), findsNothing);
+    expect(find.text(t.popup_ctx_confirm_failed), findsOneWidget,
+        reason: '制卡没落地必须有可见反馈，否则用户只看到「点了没反应」');
+    // toast 自带 2s 自动消失表；不等它到期，teardown 会因「widget 树已销毁仍有
+    // pending timer」而红——那是 harness 噪声，不是被测行为。
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('BUG-2627：制卡落地时不弹失败提示', (WidgetTester tester) async {
+    await open(tester);
+    await tester.tap(find.text(t.popup_ctx_confirm));
+    await tester.pumpAndSettle();
+    expect(find.text(t.popup_ctx_confirm_failed), findsNothing);
   });
 
   testWidgets('取消还原到打开时的上下文快照并关窗', (WidgetTester tester) async {

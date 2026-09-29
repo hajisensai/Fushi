@@ -5,6 +5,8 @@
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
@@ -100,6 +102,62 @@ void main() {
     });
   });
 
+  // BUG-长按选择不灵敏：命中测试分两层，是这次修复的核心。查词与选文本对「这个点
+  // 算不算命中」的要求相反——查词落在空白/标点上必须放弃（否则拿标点去查词），而选
+  // 文本落在标点上完全正当。旧实现让两者共用带 isScanBoundary 剔除的同一个函数，于是
+  // 长按落在标点、句读、行首缩进上时 lpsAllowed 直接 false，**连计时器都不 arm**，
+  // 表现就是「长按半天没反应、也没有高亮」——「不灵敏」与「没高亮」其实是同一个根因。
+  group('命中测试分层：查词剔除词边界，选择不剔除', () {
+    final String js = ReaderSelectionScripts.source();
+
+    String bodyOf(String open, String close) {
+      final int a = js.indexOf(open);
+      expect(a, greaterThanOrEqualTo(0), reason: '找不到 $open');
+      final int b = js.indexOf(close, a + open.length);
+      expect(b, greaterThan(a), reason: '找不到 $open 之后的 $close');
+      return js.substring(a, b);
+    }
+
+    test('几何命中层存在且**不**做 scan 边界剔除', () {
+      expect(
+        js,
+        contains('getSelectableCharacterAtPoint: function'),
+        reason: '缺选择用的几何命中层',
+      );
+      final String body = bodyOf(
+        'getSelectableCharacterAtPoint: function',
+        'getSentenceContext: function',
+      );
+      expect(
+        body,
+        isNot(contains('isScanBoundary')),
+        reason: '选择命中不得剔除标点/空白——选中句号是正当操作',
+      );
+      expect(
+        body,
+        contains('charRangeVisible'),
+        reason: 'BUG-1797 的可见性收口必须留在几何层，否则页边距上的点又能选中',
+      );
+    });
+
+    test('查词命中仍在几何层之上剔除词边界（零回归）', () {
+      final String body = bodyOf(
+        'getCharacterAtPoint: function',
+        'getSelectableCharacterAtPoint: function',
+      );
+      expect(
+        body,
+        contains('this.getSelectableCharacterAtPoint(x, y)'),
+        reason: '查词命中须复用几何层，不得另抄一份几何',
+      );
+      expect(
+        body,
+        contains('isScanBoundary'),
+        reason: '查词仍必须在空白/标点上放弃，否则会拿标点去查词',
+      );
+    });
+  });
+
   group('长按拖选手势 IIFE（longPressDragGestureScript）', () {
     final String js = ReaderSelectionScripts.longPressDragGestureScript();
 
@@ -107,10 +165,25 @@ void main() {
       expect(js, contains('setTimeout'));
       expect(
         js,
-        contains('var LPS_DELAY = 400;'),
+        contains('var LPS_DELAY = 280;'),
         reason: '默认长按时限须对齐 Hoshi/Android 的轻快体感',
       );
+      expect(
+        js,
+        contains('var LPS_SLOP_SQ = 256;'),
+        reason:
+            'BUG-长按选择不灵敏：容差 16px（16²）。旧值 10px 要求手指在整个长按时限内'
+            '始终停在 10px 半径内，比单击还难触发；同时必须小于翻页距离阈值（24px），'
+            '否则「想滑动翻页」的手势会被长按抢走。',
+      );
       expect(js, contains('LPS_DELAY'), reason: '缺长按时限');
+      expect(
+        js,
+        contains('getSelectableCharacterAtPoint(x, y)'),
+        reason:
+            'arm 门控必须走选择命中：走查词命中时，长按落在标点/句读/行首缩进上'
+            '连计时器都不 arm，用户感受就是「长按没反应」。',
+      );
       expect(js, contains('LPS_SLOP_SQ'), reason: '缺移动阈值');
       // 未及长按时限先移动过阈值 => 判为滑动/滚动，撤销 arm（放弃拖选，让翻页/滚动）。
       expect(
@@ -179,6 +252,14 @@ void main() {
     }
 
     test('触屏 user-select:none（pointer: coarse）仍在--拖选走 app 高亮不复活原生选区', () async {
+      // BUG-2607：这条 CSS 规则只属于 Blink 触屏（Android）。iOS 改由
+      // WKPreferences.isTextInteractionEnabled=false 压原生选区（WebKit 不绘制
+      // user-select:none 文字上的 ::highlight），钉在
+      // reader_ios_highlight_user_select_bug2607_test.dart。
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+      });
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );

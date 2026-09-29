@@ -38,6 +38,7 @@ on:
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/**'
+      - '.github/actions/setup-fushi-anki-sync/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   release:
@@ -59,9 +60,9 @@ on:
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
-      # TestFlight 上传只在手动 beta/formal 发布时发生（见 ios job 的
-      # "Resolve Apple signing mode"）。push 的 debug 通道每次提交都会跑，
-      # 传上去只会白烧 App Store Connect 的处理配额并把构建号推高。
+      # TestFlight 上传两条路（见 ios job 的 "Resolve Apple signing mode"）：
+      # 手动 workflow_dispatch 的 beta/formal 直接放行、debug 只在 testflight_only=true
+      # 时放行；push 的 debug 通道约每三次传一次（发布序列 % 3 == 0 的那次）。
       upload_testflight:
         description: 'Upload a signed iOS build to TestFlight (beta/formal only; needs the Apple secrets).'
         required: false
@@ -72,6 +73,16 @@ on:
       # 「只有一半平台的正式版」。改一边就要改另一边（守卫测试钉住这条对偶）。
       build_only:
         description: 'Build the channel artifacts but publish nothing: no GitHub Release, no update manifest, no TestFlight upload. Artifacts stay downloadable from the run page. Use to hand a release candidate out for testing before committing to the publish.'
+        required: false
+        default: false
+        type: boolean
+      # 手动补传一份 debug 包到 TestFlight 的开关：只做「签名 iOS + 传 TestFlight」，
+      # 其余全跳——Windows / macOS / publish 三个 job 不跑，ios job 里的未签名 IPA 也不
+      # 打（那份 push 时已经发到 rolling debug 上了）。它与 build_only 正交：build_only
+      # 是「什么都不外发」，testflight_only 是「只外发 TestFlight」；两者同时为 true 时
+      # build_only 赢（TestFlight 门里 build_only 判在前）。
+      testflight_only:
+        description: 'Only sign the iOS build and upload it to TestFlight; publish nothing else (manual extra debug upload between the every-third-push ones).'
         required: false
         default: false
         type: boolean
@@ -106,12 +117,21 @@ concurrency:
   # 里 windows/macos/ios 早就并行上传同一个 release）；update-manifest 推送有「重取远端
   # tip 再合并」循环（TODO-781）。同一条 workflow 内仍按 tag/sha 串行，同 tag 两次 dispatch
   # 不会互相踩。守卫：fushi/test/build/release_workflow_concurrency_guard_test.dart。
-  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  #
+  # testflight_only 单独成组（2026-09-25 用户要求「TF 直接并行跑」）：那条 run 只签 iOS、
+  # 只传 TestFlight，windows / macos / publish 全跳，不碰 GitHub Release 也不碰
+  # update-manifest，上面「同 tag/sha 串行防互踩资产」的理由对它不成立。而它恰恰总是
+  # 补在一次 push 之后、同一个 sha 上 dispatch 的——不拆组就得排在那条完整桌面/Apple
+  # 构建后面干等（#2268 等 #2267），还会被同组下一个 pending 顶掉。拆组不引入新的
+  # 撞号：TF 构建号 = 发布序列，同 sha 上 push 那条若也传了 TF（序列被 3 整除），串行时
+  # 后传的一样被 App Store Connect 拒，排队从来挡不住它。后缀追加在末尾，前缀仍是两条
+  # workflow 共用的那个字面量（check_release_policy.ps1 按包含校验）。
+  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
   cancel-in-progress: false
 
 jobs:
   windows:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: windows-2022
     permissions:
       contents: write
@@ -122,10 +142,12 @@ jobs:
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1
+      # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
-          cache: true
+          cache: false
+          pub-cache: true
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -380,8 +402,9 @@ jobs:
       # 所以根因不是「vcpkg 的重试判定写错了」——那是外部缺陷、我们改不了——而是
       # 这条路径本来就不该下载任何东西：key 带上 ImageVersion 后两种镜像各占一个
       # 条目，都走 `Restored 72` 的零下载路径，取件抖动面归零、顺带每次省 ~18 min。
-      # 二进制缓存故意不留 restore-keys：前缀命中回来的是另一镜像的归档，实测
-      # `Restored 0`，纯白下 81MB，还会连同新归档一起回存、越滚越大。
+      # 二进制缓存的 restore-keys 只回退到**同一镜像**（前缀含 ImageVersion）：跨镜像
+      # 前缀命中回来的是另一镜像的归档，实测 `Restored 0`，纯白下 81MB，还会连同新归档
+      # 一起回存、越滚越大。
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh
@@ -420,7 +443,12 @@ jobs:
           # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
           # 一个都用不上；不 bump 的话 actions/cache 命中即不回存，会每次冷编
           # （TODO-2668 记的同一处病灶）。
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
@@ -433,6 +461,25 @@ jobs:
           # baseline 可用性由 build_windows_dll.ps1 的 Assert-VcpkgBaseline 前置检查。
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
+      # 互联 P2P 隧道（iroh）DLL：产物落 native/fushi_p2p/prebuilt/windows-x64/，由
+      # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同上面的 libtorrent：
+      # **构建失败即 job 失败**，不降级出一个悄悄少了 P2P 的安装包；出包后下面还会核对
+      # bundle 里确有这个 DLL（CMake 那头故意不在 Release 强制，保证在流水线这头）。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-windows-x64
+      - name: Build fushi_p2p DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
@@ -479,15 +526,45 @@ jobs:
             fushi/build/windows/x64/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
           retention-days: 14
+      # fushi_p2p 在 CMake 里是 copy-if-present（缺库只是运行期隐藏 P2P，不 brick），
+      # 所以「编了却没进 bundle」不会让任何一步变红。这里把它钉成发布前的硬检查。
+      - name: Verify fushi_p2p is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Release\fushi_p2p.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      # 缓存理由与 key 契约见 build-multiplatform.yml windows job 同名步骤（key 逐字一致）。
+      # 下面 Sign Windows bundle binaries 签的是拷进 bundle 的副本，缓存里保持未签原样。
+      - name: Restore pinned Mihon desktop runtime
+        id: mihon_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\mihon-runtime
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |
-          .\tool\mihon\build_desktop_runtime.ps1 `
-            -OutputDirectory "fushi\build\windows\x64\runner\Release\mihon_bridge" `
-            -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
-          if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
-          .\tool\mihon\verify_desktop_runtime.ps1 `
-            -RuntimeDirectory "fushi\build\windows\x64\runner\Release\mihon_bridge"
+          $built = "$env:RUNNER_TEMP\mihon-runtime"
+          if ('${{ steps.mihon_runtime_cache.outputs.cache-hit }}' -ne 'true') {
+            .\tool\mihon\build_desktop_runtime.ps1 `
+              -OutputDirectory $built `
+              -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+            if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
+          }
+          $runtime = "fushi\build\windows\x64\runner\Release\mihon_bridge"
+          if (Test-Path -LiteralPath $runtime) { Remove-Item -LiteralPath $runtime -Recurse -Force }
+          Copy-Item -LiteralPath $built -Destination $runtime -Recurse
+          .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
+      # 缓存理由与 key 契约见 build-multiplatform.yml windows job 同名步骤（key 逐字一致）。
+      - name: Restore galgame helper archives
+        id: galgame_helper_cache
+        uses: actions/cache@v4
+        with:
+          path: native/galgame_hook/dist
+          key: ${{ runner.os }}-galgame-helper-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/galgame_hook/**') }}
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -499,8 +576,10 @@ jobs:
           # 但这份正确性完全依赖「后面没有第二条 native 命令」：任何人在下方插入
           # 一条 git / 7z / certutil，`-RunTests` 里双架构 22 个 ctest 的判决就会
           # 被静默顶掉。显式断言后这个隐性前提消失。
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
-          if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
+          if ('${{ steps.galgame_helper_cache.outputs.cache-hit }}' -ne 'true') {
+            powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
+            if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
+          }
           # BUG-1449：把 helper 作为**普通文件**直接装进 bundle 的 voice_hook\<arch>\，
           # 不再随包发 zip 让运行时解压。zip + 侧车 + 运行时安装那套是 helper 还走网络
           # 下载时的设计；随包之后它只剩一个后果——磁盘上多出一份需要与本体保持同步的
@@ -542,6 +621,19 @@ jobs:
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release" `
             -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
+      # fushi-anki-sync（native/fushi_anki_sync）：链接 Anki 官方 rslib 的独立 helper 进程，
+      # Dart 侧在 fushi.exe 同级找 fushi-anki-sync.exe。它是 AGPL-3.0-or-later，所以旁边
+      # 必带 fushi-anki-sync.SOURCE.txt（指向本次 checkout 的 commit 与上游 tag），由
+      # build.ps1 从 SOURCE.txt.in 生成并对装好的副本跑一次 version 冒烟。
+      # 排在签名步骤之前：「Sign Windows bundle binaries」递归签整个 Release 目录，
+      # fushi.iss 的 `Source: {#SourceDir}\*` 整目录收包，不需要改 iss。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Release"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
@@ -1024,7 +1116,7 @@ jobs:
           retention-days: 14
 
   macos:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -1260,6 +1352,26 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # 互联 P2P 隧道（iroh）universal dylib（arm64 + x86_64，与 Flutter 的 universal
+      # release 对齐）：Runner 的「Bundle fushi_p2p dylib」构建阶段 copy-if-present 进
+      # Contents/Frameworks，之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
+      # 失败口径同 Windows：构建失败即 job 失败；出包后再核对 Frameworks 里确有此库。
+      - name: Set up Rust (fushi_p2p, macOS targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-macos
+      - name: Build fushi_p2p (macOS universal dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_macos_dylib.sh
+          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
       - name: Build macOS release
         working-directory: fushi
         run: >-
@@ -1267,14 +1379,41 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+      - name: Verify fushi_p2p is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_p2p.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
+          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
+          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上 P2P 静默不可用。
+          archs=" $(lipo -archs "$dylib") "
+          for arch in arm64 x86_64; do
+            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
+          done
+          bash native/fushi_p2p/verify_abi.sh "$dylib" nm
+      # 缓存理由与 key 契约见 build-multiplatform.yml macos job 同名步骤（key 逐字一致）。
+      # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
+      - name: Restore pinned Mihon desktop runtimes
+        id: mihon_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mihon-runtime
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x tool/mihon/build_desktop_runtime.sh
+          built="$RUNNER_TEMP/mihon-runtime"
+          if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
+            chmod +x tool/mihon/build_desktop_runtime.sh
+            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          fi
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
-          tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          rm -rf -- "$runtime_dir"
+          ditto "$built" "$runtime_dir"
           while IFS= read -r candidate; do
             if file "$candidate" | grep -q 'Mach-O'; then
               codesign --force --sign - --timestamp=none "$candidate"
@@ -1282,29 +1421,6 @@ jobs:
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
-          codesign --force --deep --sign - --timestamp=none "$app_dir"
-          codesign --verify --deep --strict --verbose=2 "$app_dir"
-      # BUG-1922：这一步以前根本不存在。tool/aidoku/build_macos_runtime.sh 只被本地
-      # 的 script/build_and_run.sh 调用，两条 macOS CI job 里一步都没有，于是发出去
-      # 的 fushi.app 里 Contents/Resources/aidoku_runtime/ 压根是空的。
-      # DesktopAidokuRuntime._bundledExecutable()（aidoku_runtime.dart）只认这个固定
-      # 路径、没有任何回退，所以用户一碰 Aidoku 仓库（刷新 / 删掉再添加 / 装扩展）
-      # 就吃 AidokuRuntimeException(RUNTIME_MISSING)，而 CI 一路全绿。
-      #
-      # 必须排在下面的 Developer ID 签名之前：那一步按 Mach-O 判定把 bundle 里每个
-      # 可执行体重签一遍，runtime 只要先躺进 bundle 就会被一并签好、一并公证。
-      - name: Bundle and sign pinned Aidoku runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-          chmod +x tool/aidoku/build_macos_runtime.sh
-          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
-          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
-          tool/aidoku/build_macos_runtime.sh "$runtime_dir"
-          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
-          chmod +x tool/aidoku/verify_macos_runtime.sh
-          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
@@ -1376,8 +1492,40 @@ jobs:
               esac
             done
           done
+      # fushi-anki-sync：与 Windows 同一个 helper，放 Contents/MacOS/（Platform.resolvedExecutable
+      # 所在目录，Dart 按它找）。app 是 universal，helper 也必须是 —— build.sh --universal
+      # 分别编 arm64 / x86_64 再 lipo，下面按 app 本体的架构逐个核对（BUG-1668 同一不变式）。
+      # AGPL 源码说明放 Contents/Resources/ 而不是 MacOS/：Apple 的 bundle 规则是
+      # Contents/MacOS 只放代码，那里的非 Mach-O 文件会被 codesign 当代码签（签名写进
+      # 扩展属性），打 zip 丢了扩展属性就验不过。
+      # 必须排在 Developer ID 签名之前（那一步按 `file` 找出 Contents 下全部 Mach-O 重签）。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync (universal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          target_dir="$app_dir/Contents/MacOS"
+          bash native/fushi_anki_sync/build.sh --universal --install-dir "$target_dir"
+          mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
+          codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          app_archs="$(lipo -archs "$target_dir/fushi")"
+          helper_archs="$(lipo -archs "$target_dir/fushi-anki-sync")"
+          echo "app archs: $app_archs / fushi-anki-sync archs: $helper_archs"
+          for want in $app_archs; do
+            case " $helper_archs " in
+              *" $want "*) ;;
+              *)
+                echo "::error title=Bundled helper arch mismatch::fushi-anki-sync 缺 $want（app: $app_archs / helper: $helper_archs）。该架构的 Mac 上 Anki 同步会整条不可用。"
+                exit 1
+                ;;
+            esac
+          done
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
-      # **必须排在上面 Mihon / ffmpeg 两步之后**：那两步往 bundle 里塞可执行文件
+      # **必须排在上面 Mihon / ffmpeg / fushi-anki-sync 三步之后**：这几步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
       # Developer ID 签名会被那个 ad-hoc 签名整个盖掉。
       # 每一项 Apple 凭据都是可选的：没有它们（fork，或本仓开发者账号存在之前）
@@ -1415,6 +1563,36 @@ jobs:
           fi
           echo "macos_signed=$SIGN" >> "$GITHUB_OUTPUT"
           echo "Developer ID signing: $SIGN"
+      # ---- ad-hoc 包钉稳定的指定要求（TCC 授权跨更新保留）------------------
+      # 没有 Developer ID 时 app 是 `--sign -` 的 ad-hoc 签名，它默认的指定要求
+      # （designated requirement）是 `cdhash H"…"`——每次构建都变。TCC（辅助功能、
+      # 屏幕录制等隐私授权）记下的正是授权那一刻的指定要求，于是每次应用内更新后
+      # 新版本都满足不了旧记录：全局查词读前台选区要的辅助功能授权每更新一次就得
+      # 重新勾一次（设置里那一项看着还是开的，实际已失效）。
+      # 修法：最外层 bundle 显式嵌入只按 bundle id 判定的指定要求，后续所有构建都
+      # 满足同一条要求，授权一次长期有效。只重签外层（不带 --deep），内层 Mach-O
+      # 保持各自默认要求，`--verify --deep --strict` 照常通过。
+      # Developer ID 路径不需要：它的默认指定要求锚在 Team ID 上，本就跨构建稳定。
+      - name: Pin stable designated requirement for ad-hoc macOS app
+        if: steps.signing.outputs.macos_signed != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_dir/Contents/Info.plist")"
+          if [ "$bundle_id" != "app.fushi.reader" ]; then
+            echo "::error title=Unexpected bundle id::$bundle_id（TCC 授权按 bundle id 钉，改包名等于让所有用户重新授权，须同步这里）"
+            exit 1
+          fi
+          codesign --force --sign - --timestamp=none \
+            -r="designated => identifier \"$bundle_id\"" "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          designated="$(codesign -d -r- "$app_dir" 2>&1 | grep '^designated')"
+          echo "$designated"
+          if [ "$designated" != "designated => identifier \"$bundle_id\"" ]; then
+            echo "::error title=Designated requirement not pinned::$designated"
+            exit 1
+          fi
       - name: Import Developer ID certificate
         if: steps.signing.outputs.macos_signed == 'true'
         shell: bash
@@ -1832,14 +2010,45 @@ jobs:
       # Flutter 3.44's experimental SPM integration here too. (TODO-1129)
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
+      # 互联 P2P 隧道（iroh）iOS 静态库（device 切片）：iOS 不能加载自带 dylib，以 staticlib
+      # 经 -force_load 链进 Runner。build_ios_staticlib.sh 顺带生成 xcconfig 片段，由
+      # fushi/ios/Flutter/Release.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_P2P_LDFLAGS)。
+      # 不挂 testflight_only 条件：未签名 IPA 与 TestFlight 签名 IPA 两条出包路径都要它。
+      # P2P 互联不属于 store_compliance.dart 的三类受限能力，App Store 包照带。
+      # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 符号。
+      - name: Set up Rust (fushi_p2p, iOS device target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-apple-ios
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-ios
+      - name: Build fushi_p2p (iOS device staticlib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_ios_staticlib.sh device
       - name: Build iOS release app (no codesign)
+        if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
         run: >-
           flutter build ios --release --no-codesign
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+      # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
+      # Release 配置下 dead-strip 与 strip 都开着，所以查的是真正要发出去的 Runner。
+      - name: Verify fushi_p2p symbols are linked into Runner (iOS release)
+        if: github.event.inputs.testflight_only != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
       - name: Prepare unsigned iOS IPA release asset
+        if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
         shell: bash
         env:
@@ -1865,7 +2074,7 @@ jobs:
       # all Release publishing, so iOS builds in parallel with Windows/macOS and
       # never blocks (or is blocked by) the other platforms.
       - name: Upload iOS IPA artifact
-        if: always()
+        if: always() && github.event.inputs.testflight_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-ios
@@ -1895,6 +2104,8 @@ jobs:
           RELEASE_CHANNEL: ${{ steps.channel.outputs.channel }}
           INPUT_UPLOAD_TESTFLIGHT: ${{ github.event.inputs.upload_testflight }}
           INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
+          INPUT_TESTFLIGHT_ONLY: ${{ github.event.inputs.testflight_only }}
+          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
         run: |
           set -euo pipefail
           CREDS=false
@@ -1903,23 +2114,67 @@ jobs:
              && [ -n "$APPSTORE_API_ISSUER_ID" ] && [ -n "$APPSTORE_API_PRIVATE_KEY" ]; then
             CREDS=true
           fi
-          # 只在手动 beta/formal 发布时上传。push 触发的 debug 通道每次提交都会跑，
-          # 传 TestFlight 只会白烧 App Store Connect 的处理配额并把构建号推高，
-          # 而构建号在同一个 CFBundleShortVersionString 下必须单调，浪费不可回收。
+          # 两条路上传：
+          #   1. 手动 workflow_dispatch：beta / formal 直接放行；debug 要 testflight_only=true
+          #      （手动 dispatch 一个普通 debug 重发不会顺手传 TestFlight）。
+          #   2. push 的 debug 通道：约每三次传一次——发布序列（= 构建号 = commit 计数，
+          #      tool/release_sequence.sh）能被 3 整除的那次（2026-09-16 用户拍板「发三次
+          #      调试版触发一次 TestFlight」）。不每次都传：push 一天跑 5~13 次，全传会让
+          #      App Store Connect 的处理排队压后真正想发的 beta、TestFlight 列表被 debug
+          #      构建淹掉（每个挂 90 天）、每条 push 再多一趟 15 分钟签名构建。用发布序列
+          #      而不是 run 号：本仓不变式是 run 号永远不当序列（check_release_policy.ps1
+          #      整个禁用），且这样从 TestFlight 的构建号就能看出哪次是自动传的。每次 push
+          #      涨的 commit 数不固定，所以是「约」每三次。
+          #      （09-14 ~ 09-16 曾用定时通道 testflight-debug.yml 每 8 小时查 App Store
+          #      Connect 补传，已撤：两条节律并存会重复上传。）
           # build_only 也必须挡住这条：TestFlight 上传是**不可回收**的外发——
           # 同一个 CFBundleShortVersionString 下构建号必须单调，传上去就再也拿不
           # 回来，而 build_only 的语义是「先出包给人测、还没决定要不要发」。
+          CHANNEL_OK=false
+          if [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; then
+            CHANNEL_OK=true
+          elif [ "$RELEASE_CHANNEL" = debug ] && [ "${INPUT_TESTFLIGHT_ONLY:-}" = true ]; then
+            CHANNEL_OK=true
+          fi
           TESTFLIGHT=false
           if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
-             && { [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; } \
+             && [ "$CHANNEL_OK" = true ] \
              && [ "${INPUT_BUILD_ONLY:-}" != true ] \
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
             TESTFLIGHT=true
           fi
+          # push 的 debug 通道：约每三次一次。缺密钥就关门（fork 照常绿），不警告不红。
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$RELEASE_CHANNEL" = debug ]; then
+            if [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
+              # 这句不用 `[ … ] && echo … || echo …`：守卫
+              # release_workflow_bash_portability_guard_test 禁掉了该惯用法，因为它在
+              # pipefail 管道 / brace-group 末尾且 test 为假时会把整步静默杀掉。
+              if [ "$CREDS" = true ]; then
+                TESTFLIGHT_NOTE=enabled
+              else
+                TESTFLIGHT_NOTE='skipped, Apple secrets incomplete'
+              fi
+              echo "debug push, build $RELEASE_SEQUENCE is divisible by 3: TestFlight upload $TESTFLIGHT_NOTE"
+            else
+              echo "debug push, build $RELEASE_SEQUENCE: TestFlight only when the build number is divisible by 3 (next at $(( (RELEASE_SEQUENCE / 3 + 1) * 3 )))"
+            fi
+          fi
+          if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = push ] \
+             && [ "$RELEASE_CHANNEL" = debug ] \
+             && [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
+            TESTFLIGHT=true
+          fi
           if [ "$CREDS" = false ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ] \
-             && { [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; }; then
+             && [ "$CHANNEL_OK" = true ]; then
             echo "::warning title=TestFlight upload skipped::Apple signing secrets are incomplete. See docs/agent/apple-signing.md for the required secret names."
+          fi
+          # testflight_only 的 run 唯一目的就是上传；密钥不全时「绿着跳过」等于白烧一趟
+          # macOS runner 还什么都没发。「缺密钥不红」只给 push / beta / formal 保 fork，
+          # 这条必须红。
+          if [ "${INPUT_TESTFLIGHT_ONLY:-}" = true ] && [ "$TESTFLIGHT" != true ]; then
+            echo "::error title=TestFlight-only run cannot upload::testflight_only=true but the upload gate is closed (creds=$CREDS channel=$RELEASE_CHANNEL build_only=${INPUT_BUILD_ONLY:-} upload_testflight=${INPUT_UPLOAD_TESTFLIGHT:-true})."
+            exit 1
           fi
           echo "testflight=$TESTFLIGHT" >> "$GITHUB_OUTPUT"
           echo "TestFlight upload: $TESTFLIGHT (channel=$RELEASE_CHANNEL event=$GITHUB_EVENT_NAME creds=$CREDS)"
@@ -2042,6 +2297,13 @@ jobs:
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+      - name: Verify fushi_p2p symbols are linked into Runner (App Store archive)
+        if: steps.signing.outputs.testflight == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/verify_abi.sh \
+            fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner nm
       - name: Upload to TestFlight
         if: steps.signing.outputs.testflight == 'true'
         working-directory: fushi
@@ -2111,7 +2373,9 @@ jobs:
 
   publish:
     needs: [windows, macos, ios]
-    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' }}
+    # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
+    # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

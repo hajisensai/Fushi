@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 
 void main() {
   group('ReaderControlLayout 模型', () {
-    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 3；底栏为空', () {
+    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 3；底栏为空；悬浮球三键', () {
       final ReaderControlLayout d = ReaderControlLayout.defaults;
       expect(d.itemsIn(ReaderControlSlot.topLeft), <ReaderControlItem>[
         ReaderControlItem.back,
@@ -26,7 +26,42 @@ void main() {
       ]);
       expect(d.hasBottomItems, isFalse);
       expect(d.showsTitle, isTrue);
-      expect(d.core.removedItems, isEmpty);
+      // 计时开关与有声书传输键出厂全在托盘（悬浮球的按钮在 设置 → 悬浮球 里配）。
+      expect(d.core.removedItems, <ReaderControlItem>{
+        ReaderControlItem.studyTimer,
+        ReaderControlItem.audiobookPrev,
+        ReaderControlItem.audiobookPlayPause,
+        ReaderControlItem.audiobookNext,
+        ReaderControlItem.audiobookSeekBack,
+        ReaderControlItem.audiobookSeekForward,
+        ReaderControlItem.audiobookFollow,
+      });
+    });
+
+    test('传输键可进顶栏 / 底栏；旧布局里的悬浮球槽解码时丢弃，按钮回落出厂位置', () {
+      expect(
+          ReaderControlItem.audiobookPrev
+              .canMoveToSlot(ReaderControlSlot.topLeft),
+          isTrue);
+      expect(
+          ReaderControlItem.audiobookPrev
+              .canMoveToSlot(ReaderControlSlot.topCenter),
+          isFalse);
+      for (final ReaderControlItem i in ReaderControlItem.values) {
+        expect(i.isAudiobookTransport,
+            i.recoverySlot == ReaderControlSlot.bottomCenter,
+            reason: '$i：传输键 ⟺ 回落槽是底栏中间');
+      }
+      // 悬浮球槽已移出按钮布局（设置 → 悬浮球 是唯一入口）：旧 JSON 里的
+      // floatingBall 槽按未知槽丢弃，里面的按钮回到出厂位置。
+      final ReaderControlLayout legacy = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"],'
+        '"floatingBall":["gallery","audiobookPrev"]}}',
+      );
+      expect(legacy.itemsIn(ReaderControlSlot.topLeft),
+          contains(ReaderControlItem.gallery));
+      expect(legacy.core.removedItems,
+          contains(ReaderControlItem.audiobookPrev));
     });
 
     test('encode / decode 往返；空 / 坏 JSON 回出厂', () {
@@ -39,7 +74,8 @@ void main() {
       final Map<String, dynamic> raw = jsonDecode(json) as Map<String, dynamic>;
       expect(raw['version'], 1);
       expect((raw['slots'] as Map)['bottomRight'], <String>['gallery']);
-      expect(raw['removed'], <String>['fullscreen']);
+      // 出厂就在托盘的三颗传输键也在 removed 里，这里只钉本次移除的那颗。
+      expect(raw['removed'], contains('fullscreen'));
       final ReaderControlLayout back = ReaderControlLayout.decode(json);
       expect(back, moved);
       expect(back.hasBottomItems, isTrue);
@@ -111,7 +147,7 @@ void main() {
   });
 
   group('ReaderControlLayoutEditor', () {
-    testWidgets('渲染舞台六槽 + 调色板 + 托盘，宽窄两档不溢出', (WidgetTester tester) async {
+    testWidgets('渲染舞台七槽（含悬浮球）+ 调色板 + 托盘，宽窄两档不溢出', (WidgetTester tester) async {
       for (final double width in <double>[900, 360]) {
         tester.view.physicalSize = Size(width, 1400);
         tester.view.devicePixelRatio = 1.0;
@@ -153,6 +189,9 @@ void main() {
         expect(readerControlItemIcon(i), isA<IconData>());
       }
       expect(ReaderControlSlot.editableSlots, hasLength(6));
+      for (final ReaderControlSlot s in ReaderControlSlot.values) {
+        expect(readerControlSlotLabel(s), isNotEmpty);
+      }
     });
   });
 }

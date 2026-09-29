@@ -77,7 +77,7 @@ function makeEl(tag) {
  * 切出「浮层三函数 + pointerdown 收起」那一段真源码并执行。
  * 起点是浮层那段注释的第一行，终点是它下面第一个不属于浮层的函数。
  */
-function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canHover = true } = {}) {
+function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canHover = true, visibleHeight } = {}) {
   const src = fs.readFileSync(POPUP, 'utf8');
   const START = '/** 当前钉住的那枚 .deinflection-tag';
   const END = 'function createFuriganaSegment';
@@ -107,6 +107,15 @@ function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canH
     'createDeinflectionTag 切片里没有 onclick/onmouseenter，锚点已漂移');
   slice += '\n' + tagSlice;
 
+  // 第三段：BUG-2734 的可见视口高度 helper（住在文件头部，切片外）。执行真源码而不是
+  // 在 ctx 里按语义手写一份——手写的替身永远和被测逻辑一起「对」。
+  const VIS_START = 'function __fushiVisibleViewportHeight(){';
+  const visStart = src.indexOf(VIS_START);
+  assert.ok(visStart >= 0, '切片锚失效：找不到 __fushiVisibleViewportHeight');
+  const visEnd = src.indexOf('\n}\n', visStart);
+  assert.ok(visEnd > visStart, '切片锚失效：__fushiVisibleViewportHeight 没有收尾');
+  slice += '\n' + src.slice(visStart, visEnd + 3);
+
   const root = makeEl('div');
   const docListeners = {};
   const ctx = {
@@ -123,6 +132,7 @@ function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canH
     },
     window: {
       innerHeight: viewportHeight,
+      __fushiVisibleViewportHeight: visibleHeight,
       __fushiPopupViewportWidth: viewportWidth,
       matchMedia: (q) => ({ matches: q.includes('hover') ? canHover : false }),
     },
@@ -410,6 +420,42 @@ test('zoom = 1 时坐标与折算前逐字节等价（不引入回归）', () =>
   env.ctx.showGrammarTooltip(tag, false);
   assert.strictEqual(tooltipOf(env).style.left, '100px');
   assert.strictEqual(tooltipOf(env).style.top, '66px');
+});
+
+// ── BUG-2734：宿主把外壳收矮、WebView 仍按最大高度布局时，浮层必须落在可见区内 ──
+// 视口（innerHeight）450，用户只看得到上面 150。锚点底边 60、浮层高 100：按 innerHeight
+// 判断「下方放得下」会把它放在 66..166——下半截落进被裁掉、也滚不到的区域。
+
+test('BUG-2734：外壳被收矮时，浮层按可见高度收进可见区', () => {
+  const env = loadTooltip({ zoom: 1, viewportWidth: 800, viewportHeight: 450, visibleHeight: 150 });
+  const tag = makeTag(env, 'causative', '说明',
+    { left: 100, top: 40, right: 160, bottom: 60, width: 60, height: 20 });
+  makeElRectPatch(env, { width: 200, height: 100 });
+
+  env.ctx.showGrammarTooltip(tag, false);
+
+  const top = parseFloat(tooltipOf(env).style.top);
+  assert.ok(top + 100 <= 150 - 8, `浮层底边 ${top + 100} 越过可见区 150`);
+  assert.ok(top >= 8, `浮层顶边 ${top} 越过可见区上沿`);
+  assert.strictEqual(tooltipOf(env).style.maxHeight, (150 - 2 * 8) + 'px',
+    'max-height 也按可见高度，长说明在可见区内自己滚');
+});
+
+test('BUG-2734：未注入可见高度（浏览器扩展 / 其它宿主）时照旧按 innerHeight', () => {
+  const env = loadTooltip({ zoom: 1, viewportWidth: 800, viewportHeight: 450 });
+  const tag = makeTag(env, 'causative', '说明',
+    { left: 100, top: 40, right: 160, bottom: 60, width: 60, height: 20 });
+  makeElRectPatch(env, { width: 200, height: 100 });
+
+  env.ctx.showGrammarTooltip(tag, false);
+  assert.strictEqual(tooltipOf(env).style.top, '66px');
+});
+
+test('BUG-2734：注入值大于 innerHeight / 非法时不放大视口', () => {
+  for (const visibleHeight of [900, 0, -5, NaN, 'abc']) {
+    const env = loadTooltip({ zoom: 1, viewportWidth: 800, viewportHeight: 450, visibleHeight });
+    assert.strictEqual(env.ctx.__fushiVisibleViewportHeight(), 450, String(visibleHeight));
+  }
 });
 
 /**

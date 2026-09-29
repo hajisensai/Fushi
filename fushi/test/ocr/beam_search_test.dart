@@ -83,6 +83,116 @@ void main() {
       expect(result.tokens, <int>[2, 3]);
     });
 
+    test('并列候选保持 beam 顺序与 token 顺序', () async {
+      final List<List<List<int>>> observed = <List<List<int>>>[];
+      final BeamSearchResult result = await beamSearchDecode(
+        config: const BeamSearchConfig(
+          startTokenId: kStart,
+          eosTokenId: kEos,
+          numBeams: 2,
+          noRepeatNgramSize: 0,
+          maxLength: 3,
+        ),
+        stepLogits: (List<List<int>> sequences) async {
+          observed.add(sequences);
+          return <Float32List>[
+            for (final List<int> sequence in sequences)
+              Float32List.fromList(<double>[
+                for (int token = 0; token < kVocab; token++)
+                  token >= (sequence.length == 1 ? 2 : 4)
+                      ? 0
+                      : double.negativeInfinity,
+              ]),
+          ];
+        },
+      );
+      expect(observed[1], <List<int>>[
+        <int>[kStart, 2],
+        <int>[kStart, 3],
+      ]);
+      expect(result.tokens, <int>[2, 4]);
+      expect(result.score, closeTo(-math.log(8) / 9, 1e-12));
+    });
+
+    test('不同 beam 各自归一化，不让 logits 绝对值影响选路', () async {
+      final BeamSearchResult result = await beamSearchDecode(
+        config: const BeamSearchConfig(
+          startTokenId: kStart,
+          eosTokenId: kEos,
+          numBeams: 2,
+          noRepeatNgramSize: 0,
+          maxLength: 3,
+        ),
+        stepLogits: scriptedLogits((List<int> sequence, int token) {
+          if (sequence.length == 1) {
+            if (token == 2) return math.log(0.6);
+            if (token == 3) return math.log(0.4);
+          } else if (sequence.last == 2 && (token == 4 || token == 5)) {
+            return 100;
+          } else if (sequence.last == 3 && token == 4) {
+            return 0;
+          }
+          return null;
+        }, defaultLogit: double.negativeInfinity),
+      );
+      // 2→4 / 2→5 各 0.3；3→4 为 0.4，尽管前者原始 logit 高出 100。
+      expect(result.tokens, <int>[3, 4]);
+      expect(result.score, closeTo(math.log(0.4) / 9, 1e-8));
+    });
+
+    test('禁止 token 仍参与 softmax，且不修改调用方的 logits', () async {
+      final Float32List start = Float32List.fromList(<double>[
+        double.negativeInfinity,
+        double.negativeInfinity,
+        math.log(0.6),
+        math.log(0.4),
+        double.negativeInfinity,
+        double.negativeInfinity,
+      ]);
+      final Float32List repeat = Float32List.fromList(<double>[
+        double.negativeInfinity,
+        double.negativeInfinity,
+        20,
+        double.negativeInfinity,
+        0,
+        double.negativeInfinity,
+      ]);
+      final Float32List continuation = Float32List.fromList(<double>[
+        double.negativeInfinity,
+        double.negativeInfinity,
+        double.negativeInfinity,
+        double.negativeInfinity,
+        0,
+        double.negativeInfinity,
+      ]);
+      final List<List<double>> original = <List<double>>[
+        start.toList(),
+        repeat.toList(),
+        continuation.toList(),
+      ];
+      final BeamSearchResult result = await beamSearchDecode(
+        config: const BeamSearchConfig(
+          startTokenId: kStart,
+          eosTokenId: kEos,
+          numBeams: 2,
+          noRepeatNgramSize: 1,
+          maxLength: 3,
+        ),
+        stepLogits: (List<List<int>> sequences) async => <Float32List>[
+          for (final List<int> sequence in sequences)
+            sequence.length == 1
+                ? start
+                : sequence.last == 2
+                    ? repeat
+                    : continuation,
+        ],
+      );
+      // 路径 2 的概率质量集中在被禁的 2 上；不能先屏蔽再归一化，使其
+      // 唯一可行后继 4 变成概率 1，否则首步较低的正确路径 3 会被误淘汰。
+      expect(result.tokens, <int>[3, 4]);
+      expect(<Float32List>[start, repeat, continuation], original);
+    });
+
     test('beam 选路：首步次优 token 的后续更好时胜出（贪心会选错）', () async {
       // 首步：2 的 logit 略高于 3（贪心选 2）；
       // [.,2] 的后续三路均分（每步 ~-1.1 logprob）；

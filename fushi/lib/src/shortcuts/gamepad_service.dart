@@ -845,10 +845,12 @@ EditableText? focusedEditableText() {
 ///    still progress: down/right = next, up/left = previous.
 ///
 ///
-/// With a Hibiki focus root, controller failure only falls through to
-/// directional geometry. Reading-order fallback stays disabled there so a
-/// shelf edge can escape to the side rail or top bar without sliding sideways
-/// through shelf items.
+/// With a Hibiki focus root the controller is the ONLY engine: its candidate
+/// set covers registered targets and native focusables of the current focus
+/// scope alike, so when it finds nothing in [direction] the press only gets the
+/// edge-scroll takeover below and otherwise stops at the edge. There is no
+/// reading-order slide, so a shelf edge can escape to the side rail or top bar
+/// without sliding sideways through shelf items.
 ///
 /// Returns whether focus actually changed.
 bool gamepadMoveFocusInDirection(
@@ -861,12 +863,11 @@ bool gamepadMoveFocusInDirection(
     if (controller.move(fushiFocusDirectionFromTraversal(direction))) {
       return true;
     }
-    // No registered target in this direction: take over and scroll the focused
-    // control's nearest scrollable by a screen-fraction, so a long list/page
-    // does not dead-end at its last focusable. Axis-matched so a left/right
-    // press never scrolls a vertical list. At the scroll extent this returns
-    // false and the press falls through to the (disabled) reading-order
-    // fallback — i.e. it simply stops at the edge.
+    // No target in this direction: take over and scroll the focused control's
+    // nearest scrollable by a screen-fraction, so a long list/page does not
+    // dead-end at its last focusable. Axis-matched so a left/right press never
+    // scrolls a vertical list. At the scroll extent this returns false — i.e.
+    // it simply stops at the edge.
     final BuildContext? focusContext =
         controller.activeContext ?? FocusManager.instance.primaryFocus?.context;
     if (controller.activeIsOnlyFocusableInNearestScrollable &&
@@ -878,11 +879,11 @@ bool gamepadMoveFocusInDirection(
         )) {
       return true;
     }
-    return _movePrimaryFocusInDirection(
-      context,
-      direction,
-      allowReadingOrderFallback: false,
-    );
+    // 手柄焦点重写：控制器的候选集已经包含当前作用域里的原生控件，它说「该方向
+    // 没有目标」就是没有。旧实现在这里再跑一遍框架 focusInDirection——第二套
+    // 引擎会落到控制器刻意排除的节点上（整页 key sink、受管复合控件的内部节点），
+    // 同一次按键两套引擎结论不一致正是「焦点乱跳」的来源。
+    return false;
   }
 
   return _movePrimaryFocusInDirection(

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
@@ -13,6 +14,9 @@ import 'package:fushi_engine/media/video/download/video_download_backend_identit
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -49,32 +53,49 @@ Future<_ManualDownloadBackend> _resolveBackend(AppModel appModel) async {
   }
 }
 
-/// 手动添加下载任务的唯一入口（下载页页头「添加任务」）。
+/// 手动添加下载任务的唯一入口（下载页页头「添加任务」+ 各库页拖入 `.torrent`）。
 ///
 /// 前置条件（后端可达 + 身份可解析）在开框前解析好：解析失败给一条可读提示，
 /// 不让用户填完表单才发现后端没配。
+///
+/// [torrentPaths] 非空 = 拖入种子文件：每个种子各开一次对话框预填（对话框结构上
+/// 是单任务的，标题/内容类型/目标来源要逐个确认），用户取消其中一个即停止后续
+/// ——取消是「别再问了」，不是「跳过这个」。[initialDiscoveryKind] 按落点表面预填
+/// 内容类型（null = 视频，与对话框自身约定一致），用户仍可在框里改。
 Future<void> showManualDownloadTaskDialog({
   required BuildContext context,
   required AppModel appModel,
   InterconnectDownloadClient? remoteClient,
+  List<String> torrentPaths = const <String>[],
+  DiscoveryMediaKind? initialDiscoveryKind,
 }) async {
   // 互联 host 代下载（设计 §3.3）：有已配对 host 宣告 downloads 能力时，本机没配
   // 下载后端也能打开对话框，把磁链交给 host。探测失败按「没有远端」处理。
   final InterconnectDownloadClient remote = remoteClient ??
       InterconnectDownloadClient(repo: SyncRepository(appModel.database));
-  HostDownloadTarget? remoteTarget;
-  try {
-    remoteTarget = await remote.probe();
-  } catch (_) {
-    remoteTarget = null;
+  // 「下载执行设备」偏好指向的 host 优先（并作为对话框的默认落点）；没设 / 连不上
+  // 时退回「第一台宣告能力的 host」——对话框里有下拉，用户看得见投给了谁。
+  final DownloadExecutionResolution execution =
+      await resolveDownloadExecution(appModel, client: remote);
+  HostDownloadTarget? remoteTarget =
+      execution is DownloadExecutionRemote ? execution.target : null;
+  if (remoteTarget == null) {
+    try {
+      remoteTarget = await remote.probe();
+    } catch (_) {
+      remoteTarget = null;
+    }
   }
+  final bool preferRemote = execution is DownloadExecutionRemote;
   if (!context.mounted) return;
   _ManualDownloadBackend resolved = await _resolveBackend(appModel);
-  if (!resolved.usable && remoteTarget != null) {
+  // 远端只收磁链（`_canSubmit` 的远端分支拒绝 `.torrent`）：带种子进来时不走
+  // 「仅远端」捷径，否则开出来的框一个都提交不了；照常引导配本机后端。
+  if (!resolved.usable && remoteTarget != null && torrentPaths.isEmpty) {
     final List<MediaSourceRow> sources =
         await appModel.getManagedVideoDownloadSources();
     if (!context.mounted) return;
-    await showAppDialog<void>(
+    await showAppDialog<bool>(
       context: context,
       builder: (BuildContext _) => ManualDownloadTaskDialog(
         pipeline: null,
@@ -83,6 +104,8 @@ Future<void> showManualDownloadTaskDialog({
         defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
         remoteClient: remote,
         remoteTarget: remoteTarget,
+        initialUseRemote: preferRemote,
+        initialDiscoveryKind: initialDiscoveryKind,
       ),
     );
     return;
@@ -114,23 +137,37 @@ Future<void> showManualDownloadTaskDialog({
   final List<MediaSourceRow> sources =
       await appModel.getManagedVideoDownloadSources();
   if (!context.mounted) return;
-  await showAppDialog<void>(
-    context: context,
-    builder: (BuildContext _) => ManualDownloadTaskDialog(
-      pipeline: pipeline,
-      target: target,
-      sources: sources,
-      defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
-      remoteClient: remote,
-      remoteTarget: remoteTarget,
-    ),
-  );
+  Future<bool?> open(String? torrentPath) => showAppDialog<bool>(
+        context: context,
+        builder: (BuildContext _) => ManualDownloadTaskDialog(
+          pipeline: pipeline,
+          target: target,
+          sources: sources,
+          defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
+          remoteClient: remote,
+          remoteTarget: remoteTarget,
+          initialUseRemote: preferRemote,
+          initialTorrentPath: torrentPath,
+          initialDiscoveryKind: initialDiscoveryKind,
+        ),
+      );
+  if (torrentPaths.isEmpty) {
+    await open(null);
+    return;
+  }
+  for (final String torrentPath in torrentPaths) {
+    final bool? submitted = await open(torrentPath);
+    if (submitted != true || !context.mounted) return;
+  }
 }
 
-/// 粘贴磁力 / 选 .torrent 文件 → [VideoDownloadPipelineService.enqueueManual]。
+/// 粘贴磁力 / 选或拖入 .torrent 文件 → [VideoDownloadPipelineService.enqueueManual]。
 ///
 /// 内容类型决定入库路径：视频走完整视频流程（需要目标受管来源），小说/漫画/
 /// 有声书/游戏在下载完成后整包交发现导入执行器按域入库。
+///
+/// 关闭结果：提交成功 pop `true`；取消 / 关闭 pop `null`。调用方按它决定要不要
+/// 继续排队开下一个种子（见 [showManualDownloadTaskDialog]）。
 class ManualDownloadTaskDialog extends StatefulWidget {
   const ManualDownloadTaskDialog({
     required this.pipeline,
@@ -139,8 +176,19 @@ class ManualDownloadTaskDialog extends StatefulWidget {
     required this.defaultSourceId,
     this.remoteClient,
     this.remoteTarget,
+    this.initialUseRemote = false,
+    this.initialTorrentPath,
+    this.initialDiscoveryKind,
     super.key,
   });
+
+  /// 拖入 / 外部指定的种子文件：开框后立刻读取并预填，与点「选 .torrent 文件」
+  /// 选中同一个文件的结果完全一致。读不到或不是合法 metainfo 给同一条
+  /// `download_task_add_invalid` 提示，框保持打开让用户改选。
+  final String? initialTorrentPath;
+
+  /// 初始内容类型（null = 视频）。拖入种子时按落点表面预填。
+  final DiscoveryMediaKind? initialDiscoveryKind;
 
   /// 本机下载管线；null = 本机没配后端（只能投给远端 host）。
   final VideoDownloadPipelineService? pipeline;
@@ -149,6 +197,10 @@ class ManualDownloadTaskDialog extends StatefulWidget {
   /// 互联代下载：有 host 时对话框多一个「下载到」选择。
   final InterconnectDownloadClient? remoteClient;
   final HostDownloadTarget? remoteTarget;
+
+  /// 「下载到」默认选 [remoteTarget]（用户在下载设置里把执行设备指到了它）。
+  /// 本机没有管线时无论此值如何都只能选远端。
+  final bool initialUseRemote;
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
 
@@ -183,7 +235,11 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     super.initState();
     _sourceId = widget.defaultSourceId ??
         (widget.sources.isEmpty ? null : widget.sources.first.id);
-    _useRemote = widget.pipeline == null && widget.remoteTarget != null;
+    _useRemote = widget.remoteTarget != null &&
+        (widget.initialUseRemote || widget.pipeline == null);
+    _discoveryKind = widget.initialDiscoveryKind;
+    final String? torrentPath = widget.initialTorrentPath;
+    if (torrentPath != null) unawaited(_loadTorrentFile(torrentPath));
   }
 
   @override
@@ -204,8 +260,11 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       _hasPayload &&
       _titleController.text.trim().isNotEmpty &&
       (_useRemote
-          // 远端只收磁链 + 视频（.torrent 文件与非视频域不过线）。
-          ? _metainfo == null && _magnetHash != null && _isVideo
+          // 远端只收磁链（.torrent 文件不过线）；非视频域要 host 宣告能按域入库
+          // （app 当 host 收全部四个域，无头 fushi_server 只收视频）。
+          ? _metainfo == null &&
+              _magnetHash != null &&
+              widget.remoteTarget?.supportsKind(_discoveryKind?.name) == true
           : widget.pipeline != null && (!_isVideo || _sourceId != null));
 
   void _prefillTitle(String? candidate) {
@@ -238,13 +297,30 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     final PlatformFile file = picked.files.first;
     Uint8List? bytes = file.bytes;
     if (bytes == null && file.path != null) {
-      try {
-        bytes = await File(file.path!).readAsBytes();
-      } on Object {
-        bytes = null;
-      }
+      bytes = await _readTorrentBytes(file.path!);
     }
     if (!mounted) return;
+    _applyTorrentBytes(bytes, file.name);
+  }
+
+  /// 拖入 / 预填路径的种子：读文件 → 与选择器同一套解析与落字段。
+  Future<void> _loadTorrentFile(String path) async {
+    final Uint8List? bytes = await _readTorrentBytes(path);
+    if (!mounted) return;
+    _applyTorrentBytes(bytes, p.basename(path));
+  }
+
+  Future<Uint8List?> _readTorrentBytes(String path) async {
+    try {
+      return await File(path).readAsBytes();
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 种子字节 → metainfo → 填字段（清磁力框、预填标题）。选择器、拖入、初始
+  /// 路径三条入口的唯一汇合点：无效种子的提示、标题预填规则只写一遍。
+  void _applyTorrentBytes(Uint8List? bytes, String fileName) {
     if (bytes == null || bytes.isEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(t.download_task_add_invalid)),
@@ -262,10 +338,22 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     }
     setState(() {
       _metainfo = metainfo;
-      _metainfoFileName = file.name;
+      _metainfoFileName = fileName;
       _magnetController.clear();
-      _prefillTitle(metainfo.suggestedName ?? file.name);
+      // 远端只收磁链：手里有本机后端时自动切回本机，否则用户得自己发现
+      // 「提交按钮为什么灰着」。没有本机后端时保持远端，让 _canSubmit 挡住。
+      if (_useRemote && widget.pipeline != null) _useRemote = false;
+      _prefillTitle(metainfo.suggestedName ?? fileName);
     });
+  }
+
+  /// 拖文件进本对话框：只认 `.torrent`（第一个），其余忽略——磁力是文本、不会经
+  /// 文件拖放通道进来；视频/字幕等在这里没有语义。
+  void _handleDialogDrop(List<String> paths, Offset _) {
+    if (_submitting) return;
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    if (files.torrents.isEmpty) return;
+    unawaited(_loadTorrentFile(files.torrents.first));
   }
 
   Future<void> _submit() async {
@@ -289,7 +377,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         ),
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(t.download_task_add_submitted)),
       );
@@ -317,9 +405,10 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         magnetUri: _magnetController.text.trim(),
         title: _titleController.text.trim(),
         mediaKind: _mediaKind.name,
+        discoveryKind: _discoveryKind?.name,
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(t.download_task_add_submitted)),
       );
@@ -339,6 +428,17 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 模态框开着时页级 drop target 被 `isCurrent` 守卫挡住，拖种子进框必须由框
+    // 自己接（与四个导入对话框同一范式）。
+    return FushiFileDropTarget(
+      enabled: !_submitting,
+      debugLabel: 'manual-download-dialog',
+      onDrop: _handleDialogDrop,
+      child: _buildDialog(context, tokens),
+    );
+  }
+
+  Widget _buildDialog(BuildContext context, FushiDesignTokens tokens) {
     return AlertDialog(
       title: Text(t.download_task_add),
       content: ConstrainedBox(

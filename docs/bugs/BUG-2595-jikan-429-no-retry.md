@@ -1,0 +1,6 @@
+## BUG-2595 · Jikan 429 一次即失败，单个限流炸出多条季集/演职员缺失警告
+- **报告**：2026-09-19（用户：「很多刮削给干限流了」；同 sweep summary 里 Re:Zero「MAL 演职员资料抓取不完整」「第 4 季（MAL 54857）资料拉取失败」、無職転生 / BLEACH「MAL 季集资料不完整：实际取得 0 集」）
+- **真实性**：✅ 真 bug（真实代码路径）。`packages/fushi_engine/lib/media/video/metadata/mal_video_metadata_provider.dart`：transport 强制 `maxAttempts: 1`（`:26-32`），`MalVideoMetadataRequestGate._load`（改前 `:428-435`）对 429 只把全局 `_nextStart` 推到 `Retry-After`，**本请求直接 completeError**，不重试；gate 间隔 1 req/s 正好贴着 Jikan 60 req/min 上限，长 sweep（一个作品 `full + characters + staff` 3 次、多季再乘）计数一抖就是 429。一次 429 在协调器侧同时变成「演职员不完整」（`_optionalCredits` 吞掉）、「第 N 季拉取失败」（`workAt` 判 provider failure → null）、「季集 0 集」（`fetchSeasons/fetchEpisodes` 抛后统计为空）三条警告，而下一个请求其实冷却后已能正常通过。
+- **[x] ① 已修复** — gate 对 429 按 `Retry-After`（缺省 60 s）冷却后**就地重发同一请求**（`maxRateLimitRetries` 默认 2），冷却仍是全局的（队列后续请求一起等）；间隔 1 s → 1.1 s 留 10% 余量。PR #1550（`f264f396926`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/mal_video_metadata_provider_test.dart`：「429 waits out Retry-After, retries the same request in place and keeps the global cooldown」（一次 429 后 12 s 原样重发成功、调用方不再拿到异常、随后命中缓存）；「persistent 429 gives up after the retry budget」（首发 + 2 次重试后仍 429 才抛）；gate 间隔断言改 1100 ms。
+- **备注**：Shoko 不走 Jikan，此条无 Shoko 对照；AniDB 侧限流误判见 BUG-2592。

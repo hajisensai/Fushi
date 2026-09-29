@@ -96,13 +96,33 @@ void main() {
     });
   });
 
-  // 组件写对了，页面没接上去照样是坏的。这条锁调用点。
+  // 组件写对了，页面没接上去照样是坏的。这条锁调用点：hero 视觉现在住在共享布局
+  // `CollectionDetailHero`（本地系列 + 媒体服务器详情页同一套），封面分流在它的
+  // build 里；本地页面的 `_buildHero` 只算数据、把 `_heroCover` 喂给它。两段各锁一半。
   test('合集详情页 hero 必须走 LandscapeCoverImage，不得回退裸 cover — BUG-1298', () {
-    const String path =
+    const String pagePath =
         'lib/src/pages/implementations/media_collection_detail_page.dart';
-    final String body = _functionSource(
-      File(path).readAsStringSync(),
+    final String page = _functionSource(
+      File(pagePath).readAsStringSync(),
       'Widget _buildHero(',
+    );
+    expect(
+      page,
+      contains('CollectionDetailHero('),
+      reason: '本地详情页 hero 必须消费共享布局，不得自己再画一份',
+    );
+    expect(
+      page,
+      contains('cover: _heroCover'),
+      reason: '封面必须交给共享 hero 分流朝向，页面里不得自行渲染',
+    );
+
+    const String layoutPath =
+        'lib/src/media/collections/collection_detail_layout.dart';
+    final String layout = File(layoutPath).readAsStringSync();
+    final String body = _functionSource(
+      layout.substring(layout.indexOf('class CollectionDetailHero ')),
+      'Widget build(BuildContext context) {',
     );
 
     expect(
