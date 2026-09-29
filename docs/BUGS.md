@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2548 条。点号进各自文件。
+> 共 2550 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2778](bugs/BUG-2778-webkit-ruby-audio-highlight-gaps.md) | ✅ | ✅ | WebKit 有声书跟随高亮在振假名处断开/叠色 |
+| [BUG-2777](bugs/BUG-2777-ios-ruby-font-metrics-gap.md) | ✅ | ✅ | iOS 换字体后振假名仍偏向上一列（固定 -0.2em 只对 Hiragino 成立） |
 | [BUG-2771](bugs/BUG-2771-video-metadata-startup-reload.md) | ✅ | ✅ | 每次打开 app 视频资料重新加载且刮削期间严重卡顿 |
 | [BUG-2770](bugs/BUG-2770-win-touch-popup-swipe-close.md) | ✅ | ✅ | Windows 触屏不能滑动关闭查词弹窗 |
 | [BUG-2769](bugs/BUG-2769-gal-touch-click-lookup.md) | ✅ | ✅ | Windows 触屏在 galgame 里点按不触发单击查词 |

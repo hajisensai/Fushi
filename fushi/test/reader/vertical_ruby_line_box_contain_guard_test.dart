@@ -51,13 +51,15 @@ final RegExp _kNegativeRtMarginBlockStart = RegExp(
 final RegExp _kAnyNegativeMarginBlockStart = RegExp(r'margin-block-start:\s*-');
 
 /// BUG-2724：「含 `rt` 的选择器块里带一个负的 `margin-block-end`」——WebKit
-/// 注音贴回本行的不变式，同样不钉数值与写法。
+/// 注音贴回本行的不变式，同样不钉数值与写法（字面负值或以负项开头的 `calc()`，
+/// BUG-2777 起是后者）。
 final RegExp _kNegativeRtMarginBlockEnd = RegExp(
-    r'rt\b[^{}]*\{[^}]*margin-block-end:\s*-\s*[\d.]+[a-z]+',
+    r'rt\b[^{}]*\{[^}]*margin-block-end:\s*(?:-\s*[\d.]+[a-z]+|calc\(\s*-)',
     dotAll: true);
 
-/// 非 Apple 端：压根没有负的 `margin-block-end`。
-final RegExp _kAnyNegativeMarginBlockEnd = RegExp(r'margin-block-end:\s*-');
+/// 非 Apple 端：压根没有负的 `margin-block-end`（字面负值或负项 `calc()`）。
+final RegExp _kAnyNegativeMarginBlockEnd =
+    RegExp(r'margin-block-end:\s*(?:-|calc\(\s*-)');
 
 void main() {
   group('BUG-611 竖排 ruby 不被 -webkit-line-box-contain 抹掉标注预留', () {
@@ -167,6 +169,60 @@ void main() {
               writingMode: 'vertical-rl', viewMode: 'paginated'));
           expect(css, isNot(matches(_kAnyNegativeMarginBlockEnd)),
               reason: '$p：Blink 的注音本就紧贴基字，这条 WebKit 位置补偿不得发给它');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test(
+        'BUG-2777：Apple 端注音负块尾边距吃运行时量出的字体度量变量（缺省即 '
+        'BUG-2724 的 -0.2em），并打出给度量脚本的开关；其它平台都不发', () async {
+      // 变量缺省值必须让 calc 退回旧的 -0.2em：脚本没跑到（首帧 / 无 ruby）时行为不变。
+      final RegExp pullRule = RegExp(
+          r'rt\b[^{}]*\{[^}]*margin-block-end:\s*calc\(\s*-1em\s*\*\s*'
+          r'var\(--fushi-ruby-pull,\s*([\d.]+)\)\s*-\s*([\d.]+)em\s*\)',
+          dotAll: true);
+      final RegExp snap = RegExp(r'--fushi-ruby-snap:\s*1');
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          for (final String vm in <String>['paginated', 'continuous', 'vn']) {
+            debugDefaultTargetPlatformOverride = p;
+            try {
+              final String css = _stripCssComments(
+                  await _readerCss(writingMode: wm, viewMode: vm));
+              final RegExpMatch? m = pullRule.firstMatch(css);
+              expect(m, isNotNull,
+                  reason: '$p/$wm/$vm：注音与基字之间的空白由字体 ascent/descent 决定，'
+                      '固定 em 值只对 Hiragino 成立（Klee One 下 iOS 实测离本列 8.3px、'
+                      '贴上一列）；必须吃 reader_ruby_metrics_script 量出的 '
+                      '--fushi-ruby-pull');
+              expect(double.parse(m!.group(1)!) + double.parse(m.group(2)!),
+                  closeTo(0.2, 1e-9),
+                  reason: '$p/$wm/$vm：变量缺省时必须等于 BUG-2724 已验证的 -0.2em');
+              expect(css, matches(snap),
+                  reason: '$p/$wm/$vm：度量脚本只认这个开关，缺了它变量永远不写');
+            } finally {
+              debugDefaultTargetPlatformOverride = null;
+            }
+          }
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css, isNot(matches(snap)),
+              reason: '$p：Blink 注音本就贴基字，度量脚本不得在这里写变量');
+          expect(css.contains('--fushi-ruby-pull'), isFalse);
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
