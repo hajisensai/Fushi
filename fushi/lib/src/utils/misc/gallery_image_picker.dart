@@ -24,9 +24,10 @@ import 'package:image_picker/image_picker.dart';
 /// 因此：移动端（Android/iOS）维持 image_picker 的系统相册体验；桌面端
 /// （Windows/macOS/Linux）走 file_picker 的 `FileType.image` 原生文件对话框。
 ///
-/// 相机拍照（`ImageSource.camera`）不在本入口范围内——它没有 file_picker
-/// 等价物，且唯一调用点 `camera_enhancement.dart` 已有 `isMobilePlatform`
-/// 门禁，桌面不可达。
+/// 相机拍照（`ImageSource.camera`）没有 file_picker 等价物：悬浮球「拍照查词」
+/// 走本文件的 [pickCameraPhotoBytes]（桌面端抛 [UnsupportedError]，调用方须
+/// 先按平台门控）；`camera_enhancement.dart` 有自己的 `isMobilePlatform` 门禁，
+/// 桌面不可达。
 enum GalleryImagePickerBackend {
   /// 移动端：image_picker 系统相册。
   imagePicker,
@@ -64,8 +65,9 @@ GalleryImagePickerBackend galleryImagePickerBackendFor(
 Future<File?> pickGalleryImageFile() async {
   switch (galleryImagePickerBackendFor(defaultTargetPlatform)) {
     case GalleryImagePickerBackend.imagePicker:
-      final XFile? pickedFile =
-          await ImagePicker().pickImage(source: ImageSource.gallery);
+      final XFile? pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+      );
       final String? mobilePath = pickedFile?.path;
       if (mobilePath == null || mobilePath.isEmpty) return null;
       return File(mobilePath);
@@ -77,5 +79,27 @@ Future<File?> pickGalleryImageFile() async {
       final String? pickedPath = result.files.first.path;
       if (pickedPath == null || pickedPath.isEmpty) return null;
       return File(pickedPath);
+  }
+}
+
+/// 用系统相机拍一张，返回照片字节；用户在相机里取消返回 null。
+///
+/// 只有移动端有相机后端（Android 系统拍照 intent / iOS
+/// `UIImagePickerController`）；桌面端没有等价物，调用即抛 [UnsupportedError]
+/// ——入口按钮必须先按平台门控（悬浮球见 `FloatingBallGlobalAction.availableOn`）。
+/// 相机不可用 / iOS 拒绝过权限时 image_picker 抛 `PlatformException`，原样上抛。
+///
+/// [maxSide] 限制长边像素（交给 image_picker 缩放，EXIF 方向保留）。
+Future<Uint8List?> pickCameraPhotoBytes({required int maxSide}) async {
+  switch (galleryImagePickerBackendFor(defaultTargetPlatform)) {
+    case GalleryImagePickerBackend.imagePicker:
+      final XFile? photo = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: maxSide.toDouble(),
+        maxHeight: maxSide.toDouble(),
+      );
+      return photo?.readAsBytes();
+    case GalleryImagePickerBackend.filePicker:
+      throw UnsupportedError('camera capture is mobile-only');
   }
 }
