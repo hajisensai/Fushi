@@ -68,6 +68,10 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// 书内统计侧栏。
   statistics('statistics', recoverySlot: ReaderControlSlot.topLeft),
 
+  /// 暂停 / 继续阅读统计计时（与状态行计时键、快捷键 P 同一入口）。出厂在托盘，
+  /// 悬浮球出厂带上它（见 设置 → 悬浮球 → 阅读器）；可拖去顶栏 / 底栏。
+  studyTimer('studyTimer', recoverySlot: ReaderControlSlot.topRight),
+
   /// 书名（只能在顶栏中间）。
   title('title', recoverySlot: ReaderControlSlot.topCenter),
 

@@ -26,8 +26,9 @@ void main() {
       ]);
       expect(d.hasBottomItems, isFalse);
       expect(d.showsTitle, isTrue);
-      // 有声书传输键出厂全在托盘（悬浮球的按钮在 设置 → 悬浮球 里配）。
+      // 计时开关与有声书传输键出厂全在托盘（悬浮球的按钮在 设置 → 悬浮球 里配）。
       expect(d.core.removedItems, <ReaderControlItem>{
+        ReaderControlItem.studyTimer,
         ReaderControlItem.audiobookPrev,
         ReaderControlItem.audiobookPlayPause,
         ReaderControlItem.audiobookNext,

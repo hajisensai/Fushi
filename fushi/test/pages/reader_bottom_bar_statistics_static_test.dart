@@ -46,7 +46,7 @@ void main() {
       expect(at, greaterThanOrEqualTo(0));
       final String stats = action.substring(
         at,
-        action.indexOf('case ReaderControlItem.title:', at),
+        action.indexOf('case ReaderControlItem.', at + 1),
       );
       expect(stats, contains("semanticsId: 'hibiki.reader.header.statistics'"),
           reason: '集成测试按这个 identifier 找控件');
@@ -55,7 +55,30 @@ void main() {
       expect(stats, contains('t.reading_statistics'),
           reason: '沿用既有 i18n key，不新造');
       expect(stats, isNot(contains('_toggleStudyClockManualPause')),
-          reason: '点击语义恒为「打开统计」，停 / 续表在侧栏与状态行计时块上做');
+          reason: '点击语义恒为「打开统计」，停 / 续表在侧栏、状态行计时块与计时开关键上做');
+    });
+
+    test('计时开关键（悬浮球 / 顶底栏可放）走同一个停 / 续入口，恒渲染', () {
+      final int at = action.indexOf('case ReaderControlItem.studyTimer:');
+      expect(at, greaterThanOrEqualTo(0));
+      final String timer = action.substring(
+        at,
+        action.indexOf('case ReaderControlItem.', at + 1),
+      );
+      expect(timer, contains('onPressed: _toggleStudyClockManualPause'),
+          reason: '与状态行计时键、快捷键同一入口，不另起一套停表逻辑');
+      expect(
+          timer, contains("semanticsId: 'hibiki.reader.control.study_timer'"));
+      expect(timer, contains('_studyClockManualPause'),
+          reason: '图标 / 文案必须跟手动暂停旗走，否则按了不变样');
+      expect(timer, contains('t.reader_stats_clock_pause'));
+      expect(timer, contains('t.reader_stats_clock_resume'));
+      final String alwaysGroup = render.substring(
+        render.indexOf('case ReaderControlItem.back:'),
+        render.indexOf('return true;'),
+      );
+      expect(alwaysGroup, contains('case ReaderControlItem.studyTimer:'),
+          reason: '计时与有没有有声书无关，任何书都要能停 / 续');
     });
 
     test('统计按钮任何模式都渲染；目录 / 插图只在正文模式', () {

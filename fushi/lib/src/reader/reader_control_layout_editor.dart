@@ -24,6 +24,8 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return Icons.collections_outlined;
     case ReaderControlItem.statistics:
       return Icons.insights_outlined;
+    case ReaderControlItem.studyTimer:
+      return Icons.timer_outlined;
     case ReaderControlItem.title:
       return Icons.title;
     case ReaderControlItem.audiobook:
@@ -59,6 +61,8 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.reader_gallery_tooltip;
     case ReaderControlItem.statistics:
       return t.reading_statistics;
+    case ReaderControlItem.studyTimer:
+      return t.shortcut_action_reader_toggle_study_clock;
     case ReaderControlItem.title:
       return t.reader_control_title;
     case ReaderControlItem.audiobook:
