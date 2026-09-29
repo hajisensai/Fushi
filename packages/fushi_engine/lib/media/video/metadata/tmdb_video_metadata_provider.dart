@@ -688,6 +688,8 @@ class TmdbVideoMetadataProvider
         originalTitle,
         ..._alternativeTitles(item, kind),
       ]).where((String alias) => alias != title).toList(),
+      romajiTitle: _romajiTitle(item, kind),
+      englishTitle: _englishTitle(item, kind),
       year: metadataYear(premiered),
       premiered: premiered,
       plot: metadataString(item['overview']),
@@ -750,6 +752,92 @@ class TmdbVideoMetadataProvider
               ? metadataString(data['name'])
               : metadataString(data['title']),
     ]);
+  }
+
+  /// 日本区 alternative title 里标了 `romaji` 的那条；没有标注时退到日本区
+  /// 第一条纯拉丁字母的别名（TMDB 常把罗马音录成无类型的 JP 别名）。
+  String? _romajiTitle(
+    Map<String, Object?> item,
+    VideoMetadataMediaKind kind,
+  ) {
+    final List<Map<String, Object?>> japanese = <Map<String, Object?>>[
+      for (final Object? node in _alternativeTitleNodes(item, kind))
+        if (metadataObject(node) case final Map<String, Object?> entry)
+          if (metadataString(entry['iso_3166_1'])?.toUpperCase() == 'JP')
+            entry,
+    ];
+    for (final Map<String, Object?> entry in japanese) {
+      final String? title = metadataString(entry['title']);
+      if (title != null &&
+          metadataString(entry['type'])?.toLowerCase() == 'romaji') {
+        return title;
+      }
+    }
+    for (final Map<String, Object?> entry in japanese) {
+      final String? title = metadataString(entry['title']);
+      if (title != null && isLatinScriptTitle(title)) return title;
+    }
+    return null;
+  }
+
+  /// 英文译名（`translations` 的 en，优先 en-US）；缺译名时退到美 / 英区的
+  /// 拉丁字母别名；原语就是英语时直接取原名。
+  String? _englishTitle(
+    Map<String, Object?> item,
+    VideoMetadataMediaKind kind,
+  ) {
+    final String titleKey =
+        kind == VideoMetadataMediaKind.tv ? 'name' : 'title';
+    if (metadataString(item['original_language']) == 'en') {
+      final String? original = metadataString(
+        item[kind == VideoMetadataMediaKind.tv
+            ? 'original_name'
+            : 'original_title'],
+      );
+      if (original != null) return original;
+    }
+    final Map<String, Object?> translations =
+        metadataObject(item['translations']) ?? const <String, Object?>{};
+    String? anyEnglish;
+    for (final Object? node in metadataList(translations['translations'])) {
+      final Map<String, Object?>? entry = metadataObject(node);
+      if (entry == null || metadataString(entry['iso_639_1']) != 'en') {
+        continue;
+      }
+      final String? value =
+          metadataString(metadataObject(entry['data'])?[titleKey]);
+      if (value == null) continue;
+      if (metadataString(entry['iso_3166_1'])?.toUpperCase() == 'US') {
+        return value;
+      }
+      anyEnglish ??= value;
+    }
+    if (anyEnglish != null) return anyEnglish;
+    for (final Object? node in _alternativeTitleNodes(item, kind)) {
+      final Map<String, Object?>? entry = metadataObject(node);
+      final String? country =
+          metadataString(entry?['iso_3166_1'])?.toUpperCase();
+      final String? value = metadataString(entry?['title']);
+      if ((country == 'US' || country == 'GB') &&
+          value != null &&
+          isLatinScriptTitle(value)) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  List<Object?> _alternativeTitleNodes(
+    Map<String, Object?> item,
+    VideoMetadataMediaKind kind,
+  ) {
+    final Map<String, Object?> alternative =
+        metadataObject(item['alternative_titles']) ?? const <String, Object?>{};
+    return metadataList(
+      kind == VideoMetadataMediaKind.tv
+          ? alternative['results']
+          : alternative['titles'],
+    );
   }
 
   VideoMetadataSeason _mapSeason(

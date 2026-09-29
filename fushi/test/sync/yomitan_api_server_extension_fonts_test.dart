@@ -53,6 +53,13 @@ class _FakeFontApi implements ExtensionFontApi {
     return null;
   }
 
+  final Map<String, ExtensionFontEntry> dictionaryFonts =
+      <String, ExtensionFontEntry>{};
+
+  @override
+  Future<ExtensionFontEntry?> findDictionaryFont(String path) async =>
+      dictionaryFonts[path];
+
   @override
   Future<ExtensionFontDownloadOutcome> downloadRecommended(String name) async {
     downloadRequests.add(name);
@@ -299,6 +306,38 @@ void main() {
         auth: _basic('k123'),
       );
       expect(resp.statusCode, 405);
+    });
+
+    test('词典字体端点：按 path 经白名单解析，只认 findDictionaryFont 放行的路径', () async {
+      await startServer();
+      api.dictionaryFonts[api.fonts.first.path] = api.fonts.first;
+      final String base = 'http://127.0.0.1:${server.port}';
+      final String path = Uri.encodeQueryComponent(api.fonts.first.path);
+      final HttpClientResponse ok = await _request('GET',
+          '$base/api/extension/fonts/dictionary?path=$path&v=1-2&token=k123');
+      expect(ok.statusCode, 200);
+      expect(ok.headers.value('content-type'), 'font/ttf');
+      expect(ok.headers.value('access-control-allow-origin'), '*');
+      expect(await _collectBytes(ok), ttfBytes);
+      // 不在白名单（没启用在词典字体里）的路径 / 缺 path → 404；目录 id 不串用。
+      final String other =
+          Uri.encodeQueryComponent(p.join(tmp.path, 'other.ttf'));
+      expect(
+          (await _request('GET',
+                  '$base/api/extension/fonts/dictionary?path=$other&token=k123'))
+              .statusCode,
+          404);
+      expect(
+          (await _request('GET',
+                  '$base/api/extension/fonts/dictionary?id=font_1&token=k123'))
+              .statusCode,
+          404);
+      // 鉴权照旧。
+      expect(
+          (await _request(
+                  'GET', '$base/api/extension/fonts/dictionary?path=$path'))
+              .statusCode,
+          401);
     });
 
     test('MIME 按扩展名映射，未知扩展名回 octet-stream', () {

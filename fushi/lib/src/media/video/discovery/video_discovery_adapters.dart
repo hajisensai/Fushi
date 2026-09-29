@@ -950,6 +950,8 @@ query Discovery(
         for (final Object? synonym in metadataList(item['synonyms']))
           metadataString(synonym),
       ]).where((String value) => value != title).toList(),
+      romajiTitle: romaji,
+      englishTitle: english,
       year: metadataYear(premiered),
       premiered: premiered,
       endDate: _date(item['endDate']),

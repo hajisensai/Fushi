@@ -347,6 +347,9 @@ class MalVideoMetadataProvider
           for (final Object? node in metadataList(item['title_synonyms']))
             metadataString(node),
         ]).where((String alias) => alias != title).toList(),
+        // Jikan 的 `title` 是 MAL 默认标题（日本作品即罗马音）。
+        romajiTitle: metadataString(item['title']),
+        englishTitle: metadataString(item['title_english']),
         year: metadataInt(item['year']) ?? metadataYear(premiered),
         premiered: premiered,
         endDate: _date(metadataObject(item['aired'])?['to']),

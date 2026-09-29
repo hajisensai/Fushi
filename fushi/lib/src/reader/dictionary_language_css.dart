@@ -71,6 +71,11 @@ String dictionaryLanguageFontCss({
   /// 全局设置里的默认内容语言（`PreferencesRepository.defaultContentLanguage`）。
   /// 只影响第 1 层的兜底链：用户设了就按那个语言建链，没设才退回硬编码顺序。
   String? defaultLanguage,
+
+  /// 第 1 层兜底链挂在哪。app 内弹窗整份文档就是词典，用 `html, body`；浏览器扩展的
+  /// 弹窗活在网页的 shadow root 里，那里没有 html/body，根是 `#entries-container`
+  /// （与 content-css 生成器对 popup.css 的 html/body 重定根同一个选择器）。
+  String rootSelector = 'html, body',
 }) {
   final StringBuffer out = StringBuffer();
 
@@ -82,7 +87,7 @@ String dictionaryLanguageFontCss({
     fallbackWhenUnknown: true,
   );
   if (rootChain.isNotEmpty) {
-    out.writeln('html, body { font-family: $rootChain !important; }');
+    out.writeln('$rootSelector { font-family: $rootChain !important; }');
   }
 
   // 第 2 层：词典级。同一语言的多本词典合并成一条选择器，省得规则数随词典数线性

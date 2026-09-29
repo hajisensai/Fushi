@@ -966,6 +966,41 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 底部停靠在各媒体页里是否生效（总开关 [popupBottomDocked] 之下的按模块细分）。
+  /// 不是所有场景都需要停靠：例如只想在视频里固定弹窗、小说里仍跟随选区。
+  /// 顺序 = 设置页展示顺序。
+  static const List<ModuleId> kPopupBottomDockedModules = <ModuleId>[
+    ModuleId.books,
+    ModuleId.manga,
+    ModuleId.video,
+    ModuleId.games,
+  ];
+
+  /// 按模块细分的持久化键。显式列出而不是拼 `module.name`（[ModuleId.prefKey]
+  /// 的纪律：键永不随枚举改名漂移）；不在 [kPopupBottomDockedModules] 里的模块
+  /// 返回 `null`，只听总开关。
+  static String? popupBottomDockedKeyFor(ModuleId module) => switch (module) {
+        ModuleId.books => 'popup_bottom_docked_books',
+        ModuleId.manga => 'popup_bottom_docked_manga',
+        ModuleId.video => 'popup_bottom_docked_video',
+        ModuleId.games => 'popup_bottom_docked_games',
+        _ => null,
+      };
+
+  /// 默认 ON：升级上来的用户打开总开关时行为与旧版（全局停靠）一致。
+  bool popupBottomDockedIn(ModuleId module) {
+    final String? key = popupBottomDockedKeyFor(module);
+    if (key == null) return true;
+    return getPref(key, defaultValue: true) as bool;
+  }
+
+  Future<void> setPopupBottomDockedIn(ModuleId module, bool value) async {
+    final String? key = popupBottomDockedKeyFor(module);
+    if (key == null) return;
+    await setPref(key, value);
+    notifyListeners();
+  }
+
   /// 用户请求（Flow Launcher 式用法）：app 外热键把主窗置顶到查词页、查完按「返回
   /// 上一级」（默认 Esc）直接把窗口收回去，不用碰鼠标就回到之前的程序。默认 OFF——
   /// 首页根路由上 globalBack 原本是 no-op，开了才把这一步接成「最小化主窗」；只对

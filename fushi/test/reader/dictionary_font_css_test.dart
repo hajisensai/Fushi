@@ -77,6 +77,15 @@ void main() {
       // 关键：一个 base64 字节都不许出现，否则这条路就白走了。
       expect(result.fontFaces, isNot(contains('base64')));
       expect(result.fontFaces, isNot(contains('AAECAw==')));
+      // 结构化同源版本（浏览器扩展逐条 new FontFace 用）：裸家族名 + 同一个 src。
+      expect(result.faceSources, hasLength(1));
+      expect(result.faceSources.single.family, 'MyFont');
+      expect(result.faceSources.single.format, 'truetype');
+      expect(
+        result.faceSources.single.src,
+        startsWith('https://fushi.local/dictfonts/'),
+      );
+      expect(result.fontFaces, contains(result.faceSources.single.src));
     });
 
     test('与内联模式产出同一组 families（门槛必须一致）', () async {
