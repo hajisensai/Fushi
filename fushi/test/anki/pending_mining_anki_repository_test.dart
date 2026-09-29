@@ -332,16 +332,32 @@ void main() {
     );
   });
 
-  test('上传过的卡送达后标 landed：不在待发列表里，但行留给中转清理远端', () async {
+  test('BUG-2778：本机制、已上传到中转的卡不在本机补发，留给落地设备', () async {
     await mine(repoOver(_FakeBackend(batchMining: true)), 'up');
     final PendingMineRow row = (await store.all()).single;
     await (db.update(db.pendingMineQueue)
           ..where(($PendingMineQueueTable t) => t.id.equals(row.id)))
         .write(const PendingMineQueueCompanion(uploaded: Value<bool>(true)));
 
-    await repoOver(_FakeBackend()).flush();
+    final _FakeBackend backend = _FakeBackend();
+    await repoOver(backend).flush();
 
-    expect(await store.count(), 0);
+    expect(backend.expressions, isEmpty, reason: '否则两台设备各落一张');
+    expect(await store.sendable(), isEmpty);
+    final PendingMineRow kept = (await store.rows()).single;
+    expect(kept.status, PendingMineStatus.pending);
+    expect(await store.markSending(row.id), isFalse);
+  });
+
+  test('上传过的卡被标送达（用户删 / 快照过期）：标 landed，行留给中转清理远端', () async {
+    await mine(repoOver(_FakeBackend(batchMining: true)), 'up');
+    final PendingMineRow row = (await store.all()).single;
+    await (db.update(db.pendingMineQueue)
+          ..where(($PendingMineQueueTable t) => t.id.equals(row.id)))
+        .write(const PendingMineQueueCompanion(uploaded: Value<bool>(true)));
+
+    await store.markDelivered(row);
+
     expect(await store.all(), isEmpty);
     final PendingMineRow landed = (await store.rows()).single;
     expect(landed.status, PendingMineStatus.landed);

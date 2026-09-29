@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart'
     show PendingMineRow, PendingMineStatus;
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 import 'package:fushi_engine/anki_sync/pending_mine_store.dart';
@@ -48,6 +49,14 @@ class PendingMineRelayReport {
 ///
 /// 收敛纪律：每一步先把本地意图落库，再改远端；任何两步之间进程被杀，下一轮都能
 /// 从库里的状态继续。重复落地（落地后、写回执前被杀）由落地设备 Anki 查重兜底。
+///
+/// 幂等键是记录 id（BUG-2778）：
+/// * 已上传的卡只由落地设备落，制卡设备本机不再补发（[PendingMineStore.sendable]）；
+///   本机自己成了落地设备时先撤回远端记录，再回到本机补发。
+/// * 同一张卡可能经多条同步通道（每条通道各一个本类实例）各传一份。落地设备落过
+///   的 id 留本地墓碑（[PendingMineStore.hasLanded]），任一通道再见到同 id 不收，
+///   只写回执、撤记录。
+/// * 远端 id 来自对端文件名，不合 [PendingMineStore.isValidId] 的记录直接跳过。
 class PendingMineRelay {
   PendingMineRelay({
     required PendingMineStore store,
@@ -142,6 +151,14 @@ class PendingMineRelay {
         if (id == null || local.contains(id)) continue;
         if (entries.containsKey('$id$_landedSuffix')) continue;
         try {
+          if (await _store.hasLanded(id)) {
+            // 本机已经落过这张（另一条同步通道送来的同一张卡）：不再收，写回执让
+            // 制卡设备出队，撤掉这条通道上的副本。
+            await _writeReceipt(assets, ns, id);
+            await assets.deleteAsset(e.value.id);
+            acknowledged++;
+            continue;
+          }
           if (await _receive(assets, id, e.value)) received++;
         } catch (err) {
           // 单张坏卡 / 超限不能挡住其余的卡与后面的回执。
@@ -236,7 +253,15 @@ class PendingMineRelay {
       return _Step.acknowledged;
     }
 
-    if (landingId == null || landingId == _deviceId) return _Step.none;
+    if (landingId == _deviceId) {
+      // 本机成了落地设备：上传过的卡撤回远端记录，交回本机补发。先撤远端再清标记——
+      // 两步之间被杀，下一轮照样「上传过、记录不在」→ 再清一次标记。
+      if (!row.uploaded) return _Step.none;
+      if (record != null) await assets.deleteAsset(record.id);
+      await _store.clearUploaded(row.id);
+      return _Step.none;
+    }
+    if (landingId == null) return _Step.none;
     if (row.status == PendingMineStatus.sending) return _Step.none;
     // 已上传且远端记录还在：等落地设备。上传过但记录不在（上次 PUT 失败）：重传。
     if (row.uploaded && record != null) return _Step.none;
@@ -260,8 +285,9 @@ class PendingMineRelay {
       return _Step.none;
     }
     // 先落库「已上传」的意图：与补发并发时，补发看到它就不会直接删行（远端那份
-    // 就有人撤）。PUT 失败时下一轮按「上传过但记录不在」重传。
-    await _store.markUploaded(row.id);
+    // 就有人撤）。PUT 失败时下一轮按「上传过但记录不在」重传。本机补发已经认领了
+    // 这张（sending）时不成立——不上传，免得两边各落一张。
+    if (!await _store.markUploaded(row.id)) return _Step.none;
     await assets.putJsonAsset(ns, '${row.id}$_recordSuffix', body);
     return _Step.uploaded;
   }
@@ -277,19 +303,17 @@ class PendingMineRelay {
     final AssetEntry? record = entries['${row.id}$_recordSuffix'];
     if (row.status == PendingMineStatus.landed) {
       // 不看本机此刻是不是落地设备：交过的卡回执照样要写。
-      await assets.putJsonAsset(
-        ns,
-        '${row.id}$_landedSuffix',
-        <String, Object?>{'landedAt': _clock(), 'landedBy': _deviceId},
-      );
+      await _writeReceipt(assets, ns, row.id);
       if (record != null) await assets.deleteAsset(record.id);
       await _store.remove(row.id);
       return true;
     }
     // 制卡设备自己交给 Anki 了 / 用户在那边删了：远端记录已撤，本机别再落。
-    // 本轮刚收下的行，其记录必在 entries 里，不会走到这里。
+    // 本轮刚收下的行，其记录必在 entries 里，不会走到这里。正在交给 Anki 的
+    // （sending）不能删：删了它，落完后 markDelivered 找不到行、留不下墓碑，别的
+    // 通道再送来同一张就会再落一次（BUG-2778）。
     if (record == null) {
-      await _store.remove(row.id);
+      if (row.status != PendingMineStatus.sending) await _store.remove(row.id);
       return false;
     }
     // 落地设备易主：还没交的卡交给新落地设备（它会从远端记录收下），本机别再落，
@@ -299,6 +323,12 @@ class PendingMineRelay {
     }
     return false;
   }
+
+  Future<void> _writeReceipt(SyncAssetStore assets, String ns, String id) =>
+      assets.putJsonAsset(ns, '$id$_landedSuffix', <String, Object?>{
+        'landedAt': _clock(),
+        'landedBy': _deviceId,
+      });
 
   Future<bool> _receive(SyncAssetStore assets, String id, AssetEntry e) async {
     final Object? json = await assets.getJsonAsset(e.id);
@@ -321,13 +351,23 @@ class PendingMineRelay {
   }
 
   /// `<id>.json` → id；回执、认领与其它文件返回 null。
+  ///
+  /// 文件名来自同步后端，任何能写这块目录的一方都能放进来：id 要拼进本机载荷
+  /// 路径，不合白名单（`..`、分隔符、过长）的一律丢弃并记日志（BUG-2778）。
   static String? _recordId(String name) {
     if (name.startsWith(_claimPrefix) || name.endsWith(_landedSuffix)) {
       return null;
     }
     if (!name.endsWith(_recordSuffix)) return null;
     final String id = name.substring(0, name.length - _recordSuffix.length);
-    return id.isEmpty ? null : id;
+    if (!PendingMineStore.isValidId(id)) {
+      engineLog.logDiagnostic(
+        'PendingMineRelay.recordId',
+        'skip relay record with invalid id: ${jsonEncode(name)}',
+      );
+      return null;
+    }
+    return id;
   }
 }
 

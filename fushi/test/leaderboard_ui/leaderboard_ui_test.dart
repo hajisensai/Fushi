@@ -239,9 +239,19 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  /// 同 [settle]，但每轮给真实 zone 留出落盘时间（账户文件读写是真 IO）。
-  Future<void> settleIo(WidgetTester tester) async {
-    for (int i = 0; i < 10; i++) {
+  /// 同 [settle]，但每轮给真实 zone 留出落盘时间（账户文件读写是真 IO），转满 10 轮
+  /// 后再一直转到 [done] 成立（上限 [maxRounds] 轮）。
+  ///
+  /// 不押固定轮数：账户落盘是「写临时文件 + flush → 起 `chmod` 子进程 → rename」，
+  /// CI 机器忙时子进程起得慢，固定 10 轮 × 10ms 会在落盘前就去读账户文件（读到
+  /// null）。到上限仍不成立就交给后面的 expect 如实报错。
+  Future<void> settleIo(
+    WidgetTester tester,
+    bool Function() done, {
+    int maxRounds = 300,
+  }) async {
+    // 至少转满原先的 10 轮（让后续的尾活照旧有机会跑），再按条件续转。
+    for (int i = 0; i < maxRounds && (i < 10 || !done()); i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
@@ -670,7 +680,8 @@ void main() {
     );
     expect(submit.onPressed, isNotNull, reason: '登录不强制勾同意');
     await tester.tap(byKey('leaderboard-signin-submit'));
-    await settleIo(tester);
+    // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
+    await settleIo(tester, () => service.status == LeaderboardStatus.active);
     expect(service.status, LeaderboardStatus.active);
     final LeaderboardLocalAccount? saved = await tester
         .runAsync<LeaderboardLocalAccount?>(
@@ -699,7 +710,8 @@ void main() {
     await tester.tap(byKey('leaderboard-signin-consent'));
     await tester.pump();
     await tester.tap(byKey('leaderboard-signin-submit'));
-    await settleIo(tester);
+    // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
+    await settleIo(tester, () => service.status == LeaderboardStatus.active);
     final LeaderboardLocalAccount? saved = await tester
         .runAsync<LeaderboardLocalAccount?>(
           () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
@@ -887,7 +899,7 @@ void main() {
     await settle(tester);
     expect(byKey('leaderboard-public-data'), findsOneWidget);
     await tester.tap(byKey('leaderboard-upload-consent-ok'));
-    await settleIo(tester);
+    await settleIo(tester, () => service.account?.uploadEnabled ?? false);
     expect(service.account!.uploadEnabled, isTrue);
     expect(service.account!.consentAt, now);
   });

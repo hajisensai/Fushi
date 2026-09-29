@@ -46,6 +46,30 @@ class PendingMineStore {
 
   static final Random _random = Random.secure();
 
+  /// 记录 id 的白名单：本机 [newId] 只产 32 位十六进制；远端中转发来的 id 来自
+  /// 对端文件名，不可信——id 要拼进本机载荷路径（`<root>/<id>.json`）与墓碑路径，
+  /// 含 `..`、分隔符或过长的一律拒收（BUG-2778 路径穿越）。
+  static final RegExp _idPattern = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+
+  /// [id] 能不能当本机记录 id（能安全拼进文件路径）。
+  static bool isValidId(String id) => _idPattern.hasMatch(id);
+
+  static String _checkedId(String id) {
+    if (!isValidId(id)) {
+      throw ArgumentError.value(id, 'id', 'invalid pending mine record id');
+    }
+    return id;
+  }
+
+  /// 已落地墓碑保留多久。同一张卡可能经多条同步通道各传一份（BUG-2778），
+  /// 任一通道落地后其它通道的副本要靠墓碑认出来；每条通道见到副本就会顺手清掉
+  /// 远端，所以只需覆盖「最久不同步的那条通道」的间隔。
+  static const Duration landedTombstoneRetention = Duration(days: 180);
+
+  /// 墓碑目录名（`<root>/landed/<id>`，空文件）。不用 `.json` 后缀：
+  /// [sweepOrphanPayloads] 只扫根目录的 `.json` / `.tmp`，子目录不受影响。
+  static const String _landedDirName = 'landed';
+
   /// 128 位随机十六进制 id。
   static String newId() {
     final StringBuffer b = StringBuffer();
@@ -56,7 +80,30 @@ class PendingMineStore {
   }
 
   Future<File> _payloadFile(String id) async =>
-      File(p.join((await _root()).path, '$id.json'));
+      File(p.join((await _root()).path, '${_checkedId(id)}.json'));
+
+  Future<File> _tombstoneFile(String id) async => File(
+    p.join((await _root()).path, _landedDirName, _checkedId(id)),
+  );
+
+  /// 这张卡（按幂等键 = 记录 id）是否已经在本机落地过。非法 id 按「已落地」处理：
+  /// 反正不会收。
+  Future<bool> hasLanded(String id) async {
+    if (!isValidId(id)) return true;
+    try {
+      return (await _tombstoneFile(id)).existsSync();
+    } on FileSystemException {
+      return false;
+    }
+  }
+
+  /// 记下「这张来自其他设备的卡已在本机落地」。本地持久、与行无关：行删了之后，
+  /// 任何一条同步通道再把同 id 的副本送来，[insertRemote] 都会拒收。
+  Future<void> _markLanded(String id) async {
+    final File f = await _tombstoneFile(id);
+    await f.parent.create(recursive: true);
+    if (!f.existsSync()) await f.writeAsBytes(const <int>[], flush: true);
+  }
 
   /// 冻结一张卡：写载荷文件，再插一行 `pending`。返回新 id。
   Future<String> enqueue(
@@ -88,6 +135,11 @@ class PendingMineStore {
     required String originDeviceId,
     required String payloadJson,
   }) async {
+    if (!isValidId(id)) {
+      throw ArgumentError.value(id, 'id', 'invalid pending mine record id');
+    }
+    // 幂等键：本机已经落过这张（另一条通道送来过），不再收（BUG-2778）。
+    if (await hasLanded(id)) return false;
     if (await byId(id) != null) return false;
     await _writeRecord(
       id,
@@ -103,9 +155,30 @@ class PendingMineStore {
     return true;
   }
 
-  /// 本机的卡已上传到跨设备中转命名空间。
-  Future<void> markUploaded(String id) =>
-      _update(id, const PendingMineQueueCompanion(uploaded: Value<bool>(true)));
+  /// 本机的卡要上传到跨设备中转命名空间：先落「已上传」的意图。
+  ///
+  /// 只在这张卡此刻没在本机补发（`pending` / `failed`）时才成立，返回是否成立。
+  /// 与 [markSending] 在同一个事务里互斥：一张卡要么交给落地设备、要么本机补发，
+  /// 不会两边各落一张（BUG-2778）。
+  Future<bool> markUploaded(String id) => _db.transaction(() async {
+    final PendingMineRow? row = await byId(id);
+    if (row == null) return false;
+    if (row.uploaded) return true;
+    if (row.status != PendingMineStatus.pending &&
+        row.status != PendingMineStatus.failed) {
+      return false;
+    }
+    await (_db.update(_db.pendingMineQueue)
+          ..where(($PendingMineQueueTable t) => t.id.equals(id)))
+        .write(const PendingMineQueueCompanion(uploaded: Value<bool>(true)));
+    return true;
+  });
+
+  /// 撤回上传：远端记录已删掉，这张卡回到本机补发（本机成了落地设备时）。
+  Future<void> clearUploaded(String id) => _update(
+    id,
+    const PendingMineQueueCompanion(uploaded: Value<bool>(false)),
+  );
 
   /// 载荷原文（跨设备中转上传用）；读不到返回 null。
   Future<String?> readPayloadJson(String id) async {
@@ -160,13 +233,17 @@ class PendingMineStore {
 
   /// 可以补发的卡：`pending`，以及上次补发到一半进程就没了的 `sending`。
   /// `failed` 要等用户点「重试」；`landed` 已经交给 Anki 了。
-  Future<List<PendingMineRow>> sendable() async => (await rows())
-      .where(
-        (PendingMineRow r) =>
-            r.status == PendingMineStatus.pending ||
-            r.status == PendingMineStatus.sending,
-      )
-      .toList(growable: false);
+  ///
+  /// 本机制的、已经上传到跨设备中转的卡不在其中：它已交给落地设备，本机再补发
+  /// 就是两台设备各落一张（BUG-2778）。落地设备易主成本机时，中转会先撤回远端
+  /// 记录、清掉 `uploaded`，它才回到这里。
+  Future<List<PendingMineRow>> sendable() async =>
+      (await rows()).where(_isSendable).toList(growable: false);
+
+  static bool _isSendable(PendingMineRow r) =>
+      (r.status == PendingMineStatus.pending ||
+          r.status == PendingMineStatus.sending) &&
+      !(r.uploaded && r.originDeviceId == null);
 
   /// 待发卡张数（与 [all] 同口径）。
   Future<int> count() async => (await all()).length;
@@ -194,14 +271,27 @@ class PendingMineStore {
     }
   }
 
-  Future<void> markSending(String id) => _update(
-    id,
-    PendingMineQueueCompanion(
-      status: const Value<String>(PendingMineStatus.sending),
-      lastAttemptAt: Value<int?>(_clock()),
-    ),
-    bumpAttempts: true,
-  );
+  /// 认领一张卡开始补发，返回是否认领成功。已被中转上传（交给别的设备落地）、
+  /// 已落地或已不存在的卡返回 false，调用方跳过它——判据读库里此刻的行，与
+  /// [markUploaded] 在事务里互斥（BUG-2778）。
+  Future<bool> markSending(String id) => _db.transaction(() async {
+    final PendingMineRow? row = await byId(id);
+    if (row == null ||
+        row.status == PendingMineStatus.landed ||
+        (row.uploaded && row.originDeviceId == null)) {
+      return false;
+    }
+    await (_db.update(
+      _db.pendingMineQueue,
+    )..where(($PendingMineQueueTable t) => t.id.equals(id))).write(
+      PendingMineQueueCompanion(
+        status: const Value<String>(PendingMineStatus.sending),
+        lastAttemptAt: Value<int?>(_clock()),
+        attempts: Value<int>(row.attempts + 1),
+      ),
+    );
+    return true;
+  });
 
   /// 这次没送出去（后端不可达等），回到 `pending` 等下一次补发。
   Future<void> markPending(String id, {String? error}) => _update(
@@ -229,10 +319,15 @@ class PendingMineStore {
   ///
   /// 判据读**库里此刻**的行，不信调用方手上的快照：补发与跨设备中转并发时，快照里
   /// 的 `uploaded` 可能已经过期——按过期的 false 直接删行，远端那份就没人撤了。
+  ///
+  /// 来自其他设备的卡另外留一块本地墓碑（[hasLanded]），行删掉之后其它同步通道
+  /// 再送来同 id 的副本也不会再落（BUG-2778）。
   Future<void> markDelivered(PendingMineRow row) async {
     final bool remoteCopy = await _db.transaction(() async {
       final PendingMineRow? now = await byId(row.id);
       if (now == null) return false;
+      // 墓碑先于行状态落盘：两步之间被杀，最坏多一块墓碑，不会漏。
+      if (now.originDeviceId != null) await _markLanded(now.id);
       final bool remote = now.originDeviceId != null || now.uploaded;
       if (remote) {
         await (_db.update(
@@ -263,10 +358,11 @@ class PendingMineStore {
   }
 
   /// 删掉没有对应行的载荷文件与写到一半的 `.tmp`（崩在「写文件」与「插行」之间、
-  /// 或「删行」与「删文件」之间留下的）。
+  /// 或「删行」与「删文件」之间留下的），以及过了保留期的已落地墓碑。
   Future<void> sweepOrphanPayloads() => _locked<void>(() async {
     final Directory dir = await _root();
     if (!dir.existsSync()) return;
+    _sweepExpiredTombstones(Directory(p.join(dir.path, _landedDirName)));
     final Set<String> ids = (await rows())
         .map((PendingMineRow r) => r.id)
         .toSet();
@@ -286,24 +382,24 @@ class PendingMineStore {
     }
   });
 
-  Future<void> _update(
-    String id,
-    PendingMineQueueCompanion changes, {
-    bool bumpAttempts = false,
-  }) async {
-    await _db.transaction(() async {
-      final PendingMineRow? row =
-          await (_db.select(_db.pendingMineQueue)
-                ..where(($PendingMineQueueTable t) => t.id.equals(id)))
-              .getSingleOrNull();
-      if (row == null) return;
-      await (_db.update(
-        _db.pendingMineQueue,
-      )..where(($PendingMineQueueTable t) => t.id.equals(id))).write(
-        bumpAttempts
-            ? changes.copyWith(attempts: Value<int>(row.attempts + 1))
-            : changes,
-      );
-    });
+  void _sweepExpiredTombstones(Directory dir) {
+    if (!dir.existsSync()) return;
+    final DateTime cutoff = DateTime.fromMillisecondsSinceEpoch(
+      _clock(),
+    ).subtract(landedTombstoneRetention);
+    for (final FileSystemEntity e in dir.listSync()) {
+      if (e is! File) continue;
+      try {
+        if (e.lastModifiedSync().isBefore(cutoff)) e.deleteSync();
+      } on FileSystemException {
+        // 下次再清。
+      }
+    }
+  }
+
+  Future<void> _update(String id, PendingMineQueueCompanion changes) async {
+    await (_db.update(
+      _db.pendingMineQueue,
+    )..where(($PendingMineQueueTable t) => t.id.equals(id))).write(changes);
   }
 }
