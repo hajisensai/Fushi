@@ -60,28 +60,117 @@ class RenderedMinedFields {
   final String? audioWarning;
 }
 
-/// 封面媒体扩展名里会被渲染成 `[sound:]` 而非 `<img>` 的那几种（视频片段）。
+/// 封面媒体扩展名里属于**视频片段**的那几种（不渲染成 `<img>`）。
 const Set<String> kAnkiVideoCoverExtensions = <String>{'mp4', 'webm'};
+
+/// 视频片段里在卡片内 `<video>` **内嵌**播放的扩展名（其余视频走 `[sound:]`）。
+///
+/// 只有 WebM：Anki 桌面的 Qt WebEngine 不带专利编解码器，**没有 H.264 也没有 AAC**，
+/// `<video>` 放 MP4 会失败；VP9/AV1 + Opus 的 WebM 在 Anki 桌面与 AnkiDroid WebView 都
+/// 能内嵌解码。Anki 的媒体检查认 `<video src>`（rslib `text.rs` 的媒体标签正则含
+/// `video`），不会把片段当成未使用媒体删掉。
+const Set<String> kAnkiInlineVideoCoverExtensions = <String>{'webm'};
+
+String _lowerExtension(String name) {
+  final int dot = name.lastIndexOf('.');
+  return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+}
+
+/// 路径 / 文件名是否为卡片内嵌播放的视频片段（见 [kAnkiInlineVideoCoverExtensions]）。
+bool isAnkiInlineVideoCover(String? pathOrName) =>
+    pathOrName != null &&
+    kAnkiInlineVideoCoverExtensions.contains(_lowerExtension(pathOrName));
 
 /// 纯函数：把已写入 Anki 媒体库的封面文件名 [mediaName] 渲染成卡片字段里的引用串。
 ///
 /// - 图片（jpg / png / gif / webp / avif…）→ `<img src="name">`（`src` 做 HTML 转义；
 ///   文件名由内容哈希定，实际不含特殊字符，转义只是守底线）；
-/// - 视频（[kAnkiVideoCoverExtensions]：galgame 视频片段 mp4）→ `[sound:name]`——
-///   Anki 桌面对 `[sound:]` 里的视频文件用 mpv 弹窗播放，AnkiDroid 用内置 VideoView；
-///   而 `<video>` 标签在 Anki 桌面的 Qt WebEngine 里**没有 H.264 解码器**，不可用。
+/// - 内嵌视频（[kAnkiInlineVideoCoverExtensions]：WebM 音画同步片段）→
+///   [inlineVideoCoverHtml]，翻面自动播放一次、带播放条；
+/// - 其余视频（MP4）→ `[sound:name]`——Anki 桌面用 mpv 弹窗播放，AnkiDroid 用内置
+///   VideoView（`<video>` 在 Anki 桌面没有 H.264 解码器，见上）。
 ///
 /// AnkiConnect 与 AnkiDroid 两个 backend 必须都经这里出引用串，杜绝一边会播视频、
-/// 另一边把 mp4 塞进 `<img>` 变成坏图。
+/// 另一边把视频塞进 `<img>` 变成坏图。
 String coverMediaRef(String mediaName) {
-  final int dot = mediaName.lastIndexOf('.');
-  final String extension =
-      dot < 0 ? '' : mediaName.substring(dot + 1).toLowerCase();
+  final String extension = _lowerExtension(mediaName);
+  if (kAnkiInlineVideoCoverExtensions.contains(extension)) {
+    return inlineVideoCoverHtml(mediaName);
+  }
   if (kAnkiVideoCoverExtensions.contains(extension)) {
     return '[sound:$mediaName]';
   }
   return '<img src="${const HtmlEscape().convert(mediaName)}">';
 }
+
+/// 在所有内嵌片段里挑**可见**的那一个从头播放、其余暂停的 JS（单行、无反斜杠 /
+/// 反引号 / `${`）。
+///
+/// 为什么要挑：Lapis 背面把 `{{Picture}}` 渲染三次，由 CSS 按布局只显示一处——三个
+/// `<video>` 都在 DOM 里，写 `autoplay` 属性会让隐藏的两个也出声（三重叠音）。
+///
+/// 为什么禁那三种字符：句子音频字段里的重播按钮会被 Lapis 插进一个 JS 模板字面量
+/// （`addAudioButtons` 里的 `` `{{ExpressionAudio}}…{{SentenceAudio}}` ``），反引号 /
+/// `${` / 反斜杠都会改写或截断那段字面量。守卫见 `inline_video_cover_test.dart`。
+const String _inlineVideoPlayVisibleJs =
+    "var vs=Array.prototype.slice.call(document.querySelectorAll('video.fushi-inline-video'));"
+    'var v=vs.filter(function(e){return e.offsetParent!==null;})[0]||vs[0];'
+    'vs.forEach(function(e){if(e!==v){e.pause();}});'
+    'if(v){v.currentTime=0;var p=v.play();if(p&&p.catch){p.catch(function(){});}}';
+
+/// 内嵌片段的卡片 HTML：`<video>`（无 `autoplay` 属性，理由见
+/// [_inlineVideoPlayVisibleJs]）+ 翻面时只播可见那一个的脚本。
+///
+/// 脚本随字段渲染几次就执行几次，靠 `data-fushi-started` 只让第一次生效；`setTimeout 0`
+/// 等整张卡插入 DOM、CSS 生效后再判可见性。`play()` 被拒（卡组关了自动播放 → Anki 恢复
+/// 「播放需要用户手势」）时静默吞掉，留播放条给用户手动点。
+String inlineVideoCoverHtml(String mediaName) =>
+    '<video class="fushi-inline-video" '
+    'src="${const HtmlEscape().convert(mediaName)}" '
+    'preload="auto" playsinline controls style="max-width:100%"></video>'
+    '<script>(function(){setTimeout(function(){'
+    "var vs=document.querySelectorAll('video.fushi-inline-video');"
+    "if(!vs.length||vs[0].getAttribute('data-fushi-started'))return;"
+    "for(var i=0;i<vs.length;i++){vs[i].setAttribute('data-fushi-started','1');}"
+    '$_inlineVideoPlayVisibleJs'
+    '},0);})();</script>';
+
+/// 页面上**没有**内嵌片段时，改用句子音频字段里的隐藏 `<audio>` 播放同一个片段文件的
+/// 声音（单行、无反斜杠 / 反引号 / `${`）。
+const String _inlineAudioPlayJs =
+    "var a=document.querySelector('audio.fushi-inline-audio');"
+    'if(a){a.currentTime=0;var q=a.play();if(q&&q.catch){q.catch(function(){});}}';
+
+/// 内嵌片段的句子音频字段：重播按钮 + 一个隐藏 `<audio>`（同一个片段文件）。
+///
+/// - 按钮：页面上有内嵌片段 → 片段回到开头音画一起重播；没有（Lapis「音频卡」正面只
+///   渲染 `{{SentenceAudio}}`、自定义模板把 Picture 放在另一面）→ 播隐藏 `<audio>`。
+/// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时自动播放一次（音频卡正面照旧
+///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）。
+///
+/// 为什么用内联事件属性而不是 `<script>`：Lapis 背面把 `{{SentenceAudio}}` 插进一个
+/// `<script>` 块里的 JS 模板字面量，字段里出现 `</script>` 会让 HTML 解析器提前结束那个
+/// 脚本块，整张卡背面脚本失效。守卫见 `inline_video_cover_test.dart`。
+///
+/// 带 `replay-button` 类：内置 Lapis 的「点例句重播」逻辑查找
+/// `.fushi-sentence-audio .replay-button` 并 `click()`，于是点例句同样重播，不必改模板；
+/// 带 `fushi-synced-video-replay` 类：Lapis 靠它判断这张卡是同步片段卡。
+String inlineVideoSentenceAudioHtml(String mediaName) =>
+    '<button type="button" class="replay-button fushi-synced-video-replay '
+    'fushi-inline-video-replay" aria-label="Replay video" '
+    'onclick="event.stopPropagation();'
+    "if(document.querySelector('video.fushi-inline-video')){"
+    '$_inlineVideoPlayVisibleJs}else{$_inlineAudioPlayJs}'
+    'return false;">&#9654;</button>'
+    '<audio class="fushi-inline-audio" '
+    'src="${const HtmlEscape().convert(mediaName)}" preload="auto" '
+    'oncanplay="'
+    "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-inline-audio[data-fushi-started]'))"
+    'return;'
+    "this.setAttribute('data-fushi-started','1');"
+    'var q=this.play();if(q&&q.catch){q.catch(function(){});}'
+    '"></audio>';
 
 /// Replay the native sentence video without adding a second autoplay entry.
 /// Uses client-created buttons instead of undocumented client URL schemes.
@@ -492,6 +581,24 @@ mixin AnkiNoteComposer {
     );
   }
 
+  /// 从 [inlineVideoCoverHtml] 渲染出的封面引用里取回媒体库文件名（`src` 反转义）；
+  /// 不是内嵌片段引用时 null。
+  static String? _inlineVideoMediaName(String? coverRef) {
+    if (coverRef == null) return null;
+    final RegExpMatch? m = RegExp(
+      r'^<video class="fushi-inline-video" src="([^"]*)"',
+    ).firstMatch(coverRef);
+    if (m == null) return null;
+    return m
+        .group(1)!
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&#47;', '/')
+        .replaceAll('&amp;', '&');
+  }
+
   /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
   ///
   /// 两 backend 的差异只在「媒体引用怎么准备」（AnkiConnect 远程上传后内联
@@ -516,7 +623,20 @@ mixin AnkiNoteComposer {
     // A muxed video owns sentence playback. Keep only one native sound tag:
     // Lapis renders Picture three times, but SentenceAudio is interpolated once
     // after ExpressionAudio and its already-rendered replay buttons are copied.
-    if (context.synchronizedVideo && coverRef != null) {
+    //
+    // 内嵌片段（WebM）反过来：画面本身就在 Picture 的 `<video>` 里播，句子音频字段只放
+    // 重播按钮 + 隐藏 <audio>（[inlineVideoSentenceAudioHtml]），不再有任何 `[sound:]`——否则 Anki 原生
+    // 队列会把同一段声音再放一遍。
+    final String? inlineVideoName = _inlineVideoMediaName(coverRef);
+    if (context.synchronizedVideo &&
+        inlineVideoName != null &&
+        isAnkiInlineVideoCover(context.coverPath)) {
+      sentenceAudioRef = AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+        settings.fieldMappings,
+      )
+          ? inlineVideoSentenceAudioHtml(inlineVideoName)
+          : null;
+    } else if (context.synchronizedVideo && coverRef != null) {
       if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
         settings.fieldMappings,
       )) {

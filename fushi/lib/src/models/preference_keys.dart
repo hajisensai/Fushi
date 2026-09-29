@@ -156,6 +156,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_window_bg_opacity',
   'gal_hook_toolbar_auto_hide',
   'gal_mining_animated_format',
+  'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
   'galgame_library',
@@ -234,6 +235,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
   'mining_audio_tail_pad_ms',
+  // 封面模式没显式设过时的本安装默认（全新安装 video_clip，存量升级 gif），见
+  // PreferencesRepository.settleMiningImageModeInstallDefault。
+  'mining_image_mode_install_default',
   'mining_image_quality',
   'module_books_enabled',
   'module_browser_extension_enabled',
@@ -357,6 +361,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 超限由服务器转码。
   'video_media_server_quality_preset',
   'video_mining_animated_format',
+  'video_mining_clip_format',
   'video_mining_image_mode',
   'video_mining_still_format',
   'video_mpv_config',

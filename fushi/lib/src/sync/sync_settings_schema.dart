@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -39,6 +40,15 @@ import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi/src/sync/interconnect_link_pairing.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show InterconnectP2pRuntime, parseInterconnectP2pUrl;
+import 'package:fushi/src/sync/interconnect_p2p_path_badge.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
@@ -83,6 +93,7 @@ export 'package:fushi/src/sync/manual_sync_ui.dart' show summarizeSyncReport;
 part 'sync_settings_schema/account.part.dart';
 part 'sync_settings_schema/backend_config.part.dart';
 part 'sync_settings_schema/interconnect.part.dart';
+part 'sync_settings_schema/interconnect_link.part.dart';
 part 'sync_settings_schema/actions.part.dart';
 part 'sync_settings_schema/backup.part.dart';
 part 'sync_settings_schema/data_root.part.dart';
@@ -1058,7 +1069,9 @@ class _SyncSettingsState {
   }
 
   Future<void> _reloadPeerCount() async {
-    final int count = (await _repo.getFushiClientUrls()).length;
+    final int count =
+        interconnectPeerRepresentatives(await _repo.getFushiClientUrls())
+            .length;
     if (peerCount == count) return;
     peerCount = count;
     _settingsContext.refresh();
@@ -1147,7 +1160,7 @@ class _SyncSettingsState {
       serverPort = await _repo.getServerPort();
       final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
       hasClientConnection = urls.isNotEmpty;
-      peerCount = urls.length;
+      peerCount = interconnectPeerRepresentatives(urls).length;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

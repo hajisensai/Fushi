@@ -1,0 +1,6 @@
+## BUG-2758 · Windows 触控板两指捏合被当成上下滚动（条漫缩放与滑动冲突）
+- **报告**：2026-09-28（用户：条漫（滚动）模式下两指放大跟上下滑冲突了）
+- **真实性**：✅ 真 bug（代码路径确认）。精密触控板的两指手势在 Flutter 里是 `PointerPanZoomUpdate`，同时带 `panDelta` 与 `scale`。Windows WebView fork `packages/flutter_inappwebview_windows/lib/src/in_app_webview/custom_platform_view.dart` 的 `onPointerPanZoomUpdate` 只把 `panDelta` 经 `setScrollDelta` 当普通滚轮转给 WebView2，`scale` 整个丢掉：捏合时指尖中点的位移被当成上下滚动，缩放永远到不了页面（条漫里就是「捏合变成上下滑」，跨页模式下还会被滚轮翻页）。漫画页 JS 的 Ctrl+滚轮处理（`fushi/lib/src/media/manga/manga_overlay_html.dart`）另把碎 delta 攒够 40 才走一格 10%，即使捏合被转进来也要张开约 1.5 倍才缩放 10%。
+- **[x] ① 已修复** — fork 新增 `TrackpadGestureRouter`（`trackpad_gesture_router.dart`）：一次 PanZoom 手势只归一种语义，`scale` 偏离 1 超过 3% 即判捏合，此后到手势结束只发缩放、不发平移；捏合按 Chromium 口径合成带 Ctrl 的滚轮（`deltaY = -100·ln(比例)`），原生侧新增 `setPinchDelta`（`windows/in_app_webview/in_app_webview.cpp`，`sendScroll` 支持额外虚拟键、捏合独立余量）。漫画 JS 的 Ctrl+滚轮按单事件幅值分流：鼠标一格（≥40）维持网格步进，精密增量（<40）按 `exp(-dy/100·ZOOM_SENS)` 连续跟手，与触屏捏合同口径；删掉只剩死代码的 40 累计器。
+- **[x] ② 已加自动化测试** — `packages/flutter_inappwebview_windows/test/trackpad_gesture_router_test.dart`（滚动 / 越阈值判捏合 / 捏合中不滚动 / 缩小方向 / 新手势重新分类）；`fushi/test/media/manga/manga_overlay_html_test.dart` 滚轮缩放契约更新（精密分支连续、鼠标一格仍网格）。
+- **备注**：原生改动已在本机 `flutter build windows --debug` 编译通过；没有触控板实机，捏合手感未实机验证。若用户说的是触摸屏（手指直接在屏幕上），走的是 JS 触屏捏合路径，与本修复无关，需要再确认。

@@ -15,6 +15,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
@@ -347,7 +348,11 @@ class InterconnectSyncBackend extends SyncBackend
     }
     _candidates = candidates;
     _token = token;
+    _learnRepo = repo;
   }
+
+  /// 选路成功后用来学习 host 地址集的仓库（最近一次 [_loadConfig] 的那个）。
+  SyncRepository? _learnRepo;
 
   /// 会话身份指纹：只包含影响「该连哪个地址、用什么凭据」的字段。`deviceName`
   /// 是纯展示名，改它不该触发全候选重探测，故不进签名。
@@ -413,8 +418,12 @@ class InterconnectSyncBackend extends SyncBackend
       throw SyncAuthError('Fushi server credentials not configured',
           kind: SyncAuthFailureKind.pairingNotConfigured);
     }
+    // 同一台 host 的多条地址先组内并发选路，把可达者排到组首；老条目（无 hostId）
+    // 原样不探测（docs/specs/2026-09-28-interconnect-remote-reach.md §2）。
+    final List<FushiClientUrl> ranked =
+        await rankInterconnectCandidates(_candidates);
     final FushiClientUrl chosen =
-        await resolveReachableFushiCandidate(_candidates, _token ?? '', _probe);
+        await resolveReachableFushiCandidate(ranked, _token ?? '', _probe);
     // BUG-1550：连接用的是**选中那台**的凭据（自带优先），不再是唯一全局 token。
     // resolveReachableFushiCandidate 已保证选中的候选必有可用凭据。
     final String token = interconnectTokenFor(chosen, _token)!;
@@ -443,6 +452,10 @@ class InterconnectSyncBackend extends SyncBackend
     }
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _sessionResolved = true;
+    final SyncRepository? repo = _learnRepo;
+    if (repo != null) {
+      InterconnectAddressLearner(repo).refreshInBackground(chosen);
+    }
   }
 
   /// BUG-2455：https host 的 TOFU 指纹登记给 app 内置中继，让 native 播放器
@@ -496,7 +509,9 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
-    await repo.setFushiClientUrls(const <FushiClientUrl>[]);
+    await repo.updateFushiClientUrls(
+      (List<FushiClientUrl> _) => const <FushiClientUrl>[],
+    );
     // Also wipe the legacy single-url key, else getFushiClientUrls would
     // migrate it back on the next read.
     // ignore: deprecated_member_use_from_same_package
@@ -762,6 +777,41 @@ class InterconnectSyncBackend extends SyncBackend
   // restoreCache / cachedRootFolderId / cachedFolderIds / cacheBookFolderIds
   // / evictFolderId 收敛进 [SyncFolderCache] mixin；本后端覆写 [normalizeFolderId]
   // 保持尾斜杠规范化（BUG-845，见类顶部）。
+
+  /// 本后端的 folderId 是**绝对 URL**，嵌着落盘那一刻的基址；持久化缓存却只按
+  /// 后端类型分区。同一台 host 可经多条地址到达（LAN / IPv6 / 组网 / P2P 本地
+  /// 转发口——后者每次运行端口都不同），所以恢复时只收与当前基址同源的条目，其余
+  /// 按缓存未命中处理、下一轮按名重新查。否则上次的转发口若已被别的进程占用，
+  /// WebDAV 会把 Basic token 发给它（docs/specs/2026-09-28-interconnect-remote-reach.md）。
+  @override
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
+    final String? base = _ops?.baseUrl;
+    if (base == null) {
+      // 还没有连接句柄：此刻无从判同源。原样恢复是安全的——[_ensureResolved]
+      // 首次建句柄时会 clearCache()，这批条目在被用来发请求之前就被清掉。
+      super.restoreCache(
+        rootFolderId: rootFolderId,
+        titleToFolderId: titleToFolderId,
+      );
+      return;
+    }
+    final String prefix = base.endsWith('/') ? base : '$base/';
+    bool sameOrigin(String id) => id.startsWith(prefix);
+    super.restoreCache(
+      rootFolderId:
+          (rootFolderId != null && sameOrigin(rootFolderId)) ? rootFolderId : null,
+      titleToFolderId: titleToFolderId == null
+          ? null
+          : <String, String>{
+              for (final MapEntry<String, String> e in titleToFolderId.entries)
+                if (sameOrigin(e.value)) e.key: e.value,
+            },
+    );
+  }
+
   @override
   void clearCache() {
     super.clearCache();

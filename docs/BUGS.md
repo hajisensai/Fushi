@@ -29,10 +29,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2558 条。点号进各自文件。
+> 共 2567 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2788](bugs/BUG-2788-gal-touch-card-steals-foreground.md) | ✅ | ✅ | Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台） |
+| [BUG-2787](bugs/BUG-2787-ios-manga-ocr-tap-blank-popup.md) | ✅ | ✅ | iOS 漫画 OCR 后点字只弹出空白框 |
+| [BUG-2786](bugs/BUG-2786-ios-mokuro-import-sidecar-images-missing.md) | ✅ | ✅ | iOS 上导入 .mokuro 文件必失败（选单文件只拷进来 .mokuro、选文件夹无沙盒外读权限） |
+| [BUG-2785](bugs/BUG-2785-manga-folder-with-mokuro-imported-as-images.md) | ✅ | ✅ | 漫画框选「卷.mokuro + 同名页图子目录」的文件夹被当页图目录导入，OCR 静默丢失 |
+| [BUG-2784](bugs/BUG-2784-lookup-symbol-only-query-blank-popup.md) | ✅ | ✅ | 点到纯符号（♡ ♪ ～ ‼）时查词弹窗是空白框 |
+| [BUG-2783](bugs/BUG-2783-manga-ocr-wide-vertical-bubble-routed-horizontal.md) | ✅ | ✅ | 两列竖排气泡（宽 ≥ 高）被当横排识别、落库也标横排 |
+| [BUG-2782](bugs/BUG-2782-manga-gesture-zoom-overwrites-default.md) | ✅ | ✅ | 漫画页内缩放回写「默认缩放」，16:10 笔记本「适应屏幕」装不下整页 |
 | [BUG-2781](bugs/BUG-2781-audio-paused-chapter-reload-yank.md) | ✅ | ✅ | 暂停有声书时翻到别章被拽回音频章（iOS VN 插图章回翻闪回） |
 | [BUG-2780](bugs/BUG-2780-webkit-ruby-audio-highlight-gaps.md) | ✅ | ✅ | WebKit 有声书跟随高亮在振假名处断开/叠色 |
 | [BUG-2779](bugs/BUG-2779-ios-ruby-font-metrics-gap.md) | ✅ | ✅ | iOS 换字体后振假名仍偏向上一列（固定 -0.2em 只对 Hiragino 成立） |
@@ -55,6 +62,8 @@
 | [BUG-2762](bugs/BUG-2762-interconnect-dictionary-duplicate.md) | ✅ | ✅ | 互联页「上传到互联对端」里词典出现两次 |
 | [BUG-2761](bugs/BUG-2761-webkit-paginated-ruby-page-top-bleed.md) | ✅ | ✅ | Mac/iOS 分页每页首行振假名画到上一页底部 |
 | [BUG-2760](bugs/BUG-2760-ai-download-movie-pack-extras.md) | ✅ | ✅ | AI 下载多集合集包被判电影：整套进 Extras 只导入一集 |
+| [BUG-2759](bugs/BUG-2759-ios-webview-content-process-death-unhandled.md) | ✅ | ✅ | iOS/macOS WebView 内容进程被回收后没人接管，常驻查词弹窗永久空白 |
+| [BUG-2758](bugs/BUG-2758-manga-trackpad-pinch-scrolls-instead-of-zoom.md) | ✅ | ✅ | Windows 触控板两指捏合被当成上下滚动（条漫缩放与滑动冲突） |
 | [BUG-2757](bugs/BUG-2757-favorite-sentence-no-word.md) | ✅ | ✅ | 查词弹窗顶栏收藏句子后收藏夹看不到对应的单词 |
 | [BUG-2756](bugs/BUG-2756-favorite-word-no-context.md) | ✅ | ✅ | 收藏夹里的收藏词只有词形，没有释义和上下文 |
 | [BUG-2755](bugs/BUG-2755-download-savepath-follow-source.md) | ✅ | ✅ | 删除/更换来源后视频下载仍落旧位置 |

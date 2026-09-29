@@ -202,6 +202,15 @@ List<PpTextLine> filterThinLines(List<PpTextLine> lines, {double ratio = 0.6}) {
   ];
 }
 
+/// 整块判竖排：切出的行里竖行**严格过半**（BUG-2783 路由用）。
+///
+/// 与 [orderLinesForReading] 的「不少于一半」刻意不同：一横一竖的混排块
+/// 仍走逐行路径（2026-09-13 实测过的行为），只有明确的多列竖排才整块交回。
+bool linesAreVerticalMajority(List<PpTextLine> lines) {
+  final int verticalCount = lines.where((PpTextLine l) => l.vertical).length;
+  return verticalCount * 2 > lines.length;
+}
+
 /// 阅读顺序：竖排占多数 → 按列从右到左；否则从上到下、从左到右。
 List<PpTextLine> orderLinesForReading(List<PpTextLine> lines) {
   final List<PpTextLine> sorted = List<PpTextLine>.from(lines);

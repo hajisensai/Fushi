@@ -29,8 +29,9 @@ void main() {
       );
     });
 
-    test('出厂按钮：阅读器三颗有声书传输键，漫画 / 视频全部专属按钮，都带全局按钮', () {
+    test('出厂按钮：阅读器计时开关 + 三颗有声书传输键，漫画 / 视频全部专属按钮，都带全局按钮', () {
       expect(FloatingBallScope.reader.defaultButtons, <String>[
+        ReaderControlItem.studyTimer.storageValue,
         ReaderControlItem.audiobookPrev.storageValue,
         ReaderControlItem.audiobookPlayPause.storageValue,
         ReaderControlItem.audiobookNext.storageValue,
@@ -56,6 +57,24 @@ void main() {
       expect(
         FloatingBallScope.reader.sceneButtonIds,
         hasLength(ReaderControlItem.values.length - 1),
+      );
+    });
+
+    test('阅读计时开关可在阅读器场景勾选 / 取消（出厂勾上，按目录序落在传输键之前）', () {
+      const FloatingBallScope scope = FloatingBallScope.reader;
+      final String timer = ReaderControlItem.studyTimer.storageValue;
+      expect(scope.catalog, contains(timer));
+      expect(scope.decodeButtons(''), contains(timer));
+      // 用户取消勾选后读回不再含它，其余按钮不受影响。
+      final List<String> without = <String>[
+        for (final String id in scope.defaultButtons)
+          if (id != timer) id,
+      ];
+      expect(scope.decodeButtons(scope.encodeButtons(without)), without);
+      // 出厂列表本身就按目录序排好（decode 按目录序重排不改变它）。
+      expect(
+        scope.decodeButtons(scope.encodeButtons(scope.defaultButtons)),
+        scope.defaultButtons,
       );
     });
 

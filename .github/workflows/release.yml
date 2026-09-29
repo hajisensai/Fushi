@@ -457,7 +457,12 @@ jobs:
       with:
         path: ~/.cache/vcpkg/archives
         # v1 -> v2：同 Windows，manifest 钉版换了 ABI hash（BUG-1772）。
-        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+        # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+        # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+        # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
     - name: Build embedded libtorrent Android .so (vcpkg)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
       timeout-minutes: 90
@@ -469,6 +474,44 @@ jobs:
         chmod +x native/fushi_torrent/build_android_so.sh
         bash native/fushi_torrent/build_android_so.sh \
           "$VCPKG_INSTALLATION_ROOT" "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+
+    # 互联 P2P 隧道（iroh）的 Android .so：cargo-ndk 交叉编，产物落
+    # native/fushi_p2p/prebuilt/android/<abi>/，由 build.gradle 的 jniLibs
+    # copy-if-present 随包。失败口径与上面的 libtorrent 一致：**构建失败即 job 失败**，
+    # 不降级出一个悄悄少了 P2P 的包（缺库只是运行期能力隐藏，出包时没人会发现）。
+    #
+    # ABI 范围与 APK 对齐：debug APK 只出 arm64，split release APK 出 arm64-v8a /
+    # armeabi-v7a / x86_64 三个。Rust 交叉编译便宜（缓存命中约 1 min），不像
+    # libtorrent 那样只编 arm64。工具链/缓存与 native-p2p-gate.yml 逐字一致。
+    - name: Set up Rust (fushi_p2p, Android targets)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: '1.95.0'
+        targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+    - name: Cache Rust build (fushi_p2p)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_p2p -> target
+        key: fushi-p2p-android
+    - name: Install cargo-ndk
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk@4.1.2
+    - name: Build fushi_p2p Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_p2p/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for abi in arm64-v8a armeabi-v7a x86_64; do
+          bash native/fushi_p2p/verify_abi.sh "native/fushi_p2p/prebuilt/android/$abi/libfushi_p2p.so" "$nm_bin"
+        done
 
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
     # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or
@@ -602,6 +645,39 @@ jobs:
         for f in "$APK_DIR"/app-*-release.apk; do
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
           cp "$f" "$OUT_DIR/fushi-${BUILD_VERSION_NAME}-${ABI}.apk"
+        done
+
+    # jniLibs 是 copy-if-present：.so 没落到 prebuilt/ 时 Gradle 静默跳过，APK 照出、
+    # P2P 能力在用户那里整块消失。这里按「APK 里 app 能跑的每个 ABI（有 libflutter.so
+    # 的 lib/<abi>/），都必须有那个 ABI 的 libfushi_p2p.so」逐包核对，把「编了但没进包」
+    # 挡在发布前。判据用 libflutter.so 而不是「任何 lib/ 目录」：第三方插件可能自带
+    # Flutter 根本不支持的 ABI 目录（如 x86），那上面 app 本身就起不来。
+    - name: Verify fushi_p2p is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! printf '%s\n' "$listing" | grep -qx "lib/$abi/libfushi_p2p.so"; then
+              echo "::error title=fushi_p2p missing from APK::$apk lib/$abi/ has no libfushi_p2p.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_p2p.so"
+          done
         done
 
     # TODO-866: the prepared APKs in build/release-artifacts/ are otherwise only

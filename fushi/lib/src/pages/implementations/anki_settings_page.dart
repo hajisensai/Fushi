@@ -29,7 +29,11 @@ import 'package:fushi/src/anki/sync_client/anki_sync_client_section.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningPadMaxMs;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
+    show
+        MiningAnimatedFormat,
+        MiningClipFormat,
+        MiningStillFormat,
+        VideoMiningImageMode;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -49,6 +53,16 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   @override
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
+
+/// 片段格式选项的文案。五端随包 ffmpeg 都带 libvpx-vp9 + libopus（桌面 ffmpeg-min、
+/// Android AAR、iOS xcframework），两档 WebM 在各端都能内嵌；AV1 只有桌面有 SVT-AV1，
+/// 移动端按 [MiningClipFormat.encodeAttempts] 降级 VP9——文案本身已写明「仅桌面端」。
+@visibleForTesting
+String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
+  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
+  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
+  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
+};
 
 class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
@@ -705,6 +719,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
         ),
+        // 非 videoClip 模式下这一行不参与制卡，理由同下面两行照常渲染。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_mining_clip_format',
+          child: _buildVideoMiningClipFormatPicker(),
+        ),
         // videoClip 模式下这两行不参与制卡，但仍渲染：设置行按 item-id 被覆盖守卫
         // 枚举，按模式从树上抽掉会让焦点驱动的守卫在切换那一刻账目对不上。
         SettingsSearchTarget(
@@ -723,6 +742,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_image_mode',
             child: _buildGalMiningImageModePicker(),
+          ),
+          SettingsSearchTarget(
+            id: 'card_creation.anki.gal_mining_clip_format',
+            child: _buildGalMiningClipFormatPicker(),
           ),
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_animated_format',
@@ -830,15 +853,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  /// 视频制卡封面模式：gif=字幕区间动图（默认）；currentFrame=
+  /// 视频制卡封面模式：videoClip（默认）将同一时间段的画面与例句声音封装为一个片段
+  /// （格式见 [_buildVideoMiningClipFormatPicker]）；gif=字幕区间动图；currentFrame=
   /// 制卡那一刻的当前解码帧（点词已自动暂停）；subtitleStart=当前字幕 cue 起始时间点的帧。
-  /// videoClip 将同一时间段的画面与例句声音封装为一个 MP4，由 Anki 媒体播放器播放。
   /// 全局设置，透传 [AppModel.videoMiningImageMode]，所有视频制卡生效。
   Widget _buildVideoMiningImageModePicker() {
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
       title: t.video_mining_image_mode,
       subtitle: appModel.videoMiningImageMode.isVideoClip
-          ? t.video_mining_image_mode_video_clip_hint
+          ? t.video_mining_image_mode_video_clip_inline_hint
           : null,
       icon: Icons.photo_library_outlined,
       controlBelow: true,
@@ -1046,6 +1069,48 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     title: t.gal_mining_still_format,
     selected: appModel.galMiningStillFormat,
     onChanged: appModel.setGalMiningStillFormat,
+  );
+
+  /// 音画同步片段**容器 + 编码**（与动图 / 静图两轴正交，只在封面模式为 videoClip 时
+  /// 生效）。视频 / gal 各存一份（同上两轴的分法），共用一套 option 文案。
+  ///
+  /// 默认值不在这里：偏好层按「老用户是不是显式选过 MP4 片段」推导（见
+  /// `PreferencesRepository.videoMiningClipFormat`）。
+  Widget _buildClipFormatPicker({
+    required String title,
+    required MiningClipFormat selected,
+    required void Function(MiningClipFormat) onChanged,
+  }) {
+    return AdaptiveSettingsPickerRow<MiningClipFormat>(
+      title: title,
+      subtitle: t.mining_clip_format_hint,
+      icon: Icons.movie_outlined,
+      controlBelow: true,
+      selected: selected,
+      options: [
+        for (final MiningClipFormat format in MiningClipFormat.values)
+          AdaptiveSettingsPickerOption<MiningClipFormat>(
+            value: format,
+            label: miningClipFormatLabel(format),
+          ),
+      ],
+      onChanged: (MiningClipFormat format) {
+        onChanged(format);
+        setState(() {});
+      },
+    );
+  }
+
+  Widget _buildVideoMiningClipFormatPicker() => _buildClipFormatPicker(
+    title: t.video_mining_clip_format,
+    selected: appModel.videoMiningClipFormat,
+    onChanged: appModel.setVideoMiningClipFormat,
+  );
+
+  Widget _buildGalMiningClipFormatPicker() => _buildClipFormatPicker(
+    title: t.gal_mining_clip_format,
+    selected: appModel.galMiningClipFormat,
+    onChanged: appModel.setGalMiningClipFormat,
   );
 
   Widget _buildAnkiBackupImportRow() {

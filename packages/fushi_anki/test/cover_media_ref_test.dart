@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-/// galgame「视频片段」封面：mp4 / webm 的封面引用必须渲染成 `[sound:]`（Anki 桌面
-/// 用 mpv 播、AnkiDroid 用内置 VideoView 播），图片仍是 `<img src>`。两 backend 都经
+/// 视频片段封面：mp4 的封面引用必须渲染成 `[sound:]`（Anki 桌面用 mpv 播、AnkiDroid
+/// 用内置 VideoView 播；webm 走卡片内 `<video>`，见 inline_video_cover_test），图片仍是
+/// `<img src>`。两 backend 都经
 /// [coverMediaRef] 一处分流——本测既钉纯函数，也走完整 mineEntry 链证明两端真用了它。
 void main() {
   group('coverMediaRef', () {
@@ -28,7 +29,7 @@ void main() {
       );
     });
 
-    test('mp4 / webm → [sound:]（大小写不敏感）', () {
+    test('mp4 → [sound:]（大小写不敏感）；webm 内嵌见 inline_video_cover_test', () {
       expect(
         coverMediaRef('fushi_cover_abc.mp4'),
         '[sound:fushi_cover_abc.mp4]',
@@ -37,7 +38,7 @@ void main() {
         coverMediaRef('fushi_cover_abc.MP4'),
         '[sound:fushi_cover_abc.MP4]',
       );
-      expect(coverMediaRef('clip.webm'), '[sound:clip.webm]');
+      expect(coverMediaRef('clip.webm'), startsWith('<video'));
     });
 
     test('无扩展名 / 未知扩展名仍按图片处理', () {

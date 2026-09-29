@@ -41,6 +41,34 @@ int main() {
       !ShouldRestoreChildFocus(WA_ACTIVE, true, false),
       "a recycled HWND owned by another window must never receive focus");
 
+  passed &= Expect(
+      OverlayNoActivateReply(WM_POINTERACTIVATE) == PA_NOACTIVATE,
+      "BUG-2788: a touch press must not activate the lookup card");
+  passed &= Expect(
+      OverlayNoActivateReply(WM_MOUSEACTIVATE) == MA_NOACTIVATE,
+      "BUG-2788: the pointer-down WM_MOUSEACTIVATE must not activate it");
+  passed &= Expect(OverlayNoActivateReply(WM_ACTIVATE) == 0,
+                   "other messages are left to the window procedure");
+
+  const LONG_PTR overlay_style =
+      WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+  passed &= Expect(
+      ShouldVetoOverlayActivation(true, overlay_style, false, false),
+      "BUG-2788: Chromium's touch SetFocus must not activate the card");
+  passed &= Expect(
+      !ShouldVetoOverlayActivation(true, overlay_style, false, true),
+      "the context menu's explicit foreground grab must still activate");
+  passed &= Expect(
+      !ShouldVetoOverlayActivation(true, overlay_style, true, false),
+      "focus moves inside a card that already is foreground pass");
+  passed &= Expect(
+      !ShouldVetoOverlayActivation(true, WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+                                   false, false),
+      "a lookup window without WS_EX_NOACTIVATE keeps normal activation");
+  passed &= Expect(
+      !ShouldVetoOverlayActivation(false, overlay_style, false, false),
+      "other windows on the platform thread (main window) are never vetoed");
+
   if (!passed) {
     std::cerr << "window_activation_policy_test FAILED\n";
     return 1;

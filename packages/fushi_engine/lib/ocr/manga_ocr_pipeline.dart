@@ -132,8 +132,10 @@ class MangaOcrPipeline {
     OcrCancelToken? cancelToken,
     OcrProgressCallback? onProgress,
   }) async {
-    final List<OcrPageResult?> results =
-        List<OcrPageResult?>.filled(pageCount, null);
+    final List<OcrPageResult?> results = List<OcrPageResult?>.filled(
+      pageCount,
+      null,
+    );
     int completed = 0;
     for (final int page in mangaOcrPageOrder(pageCount, startPage)) {
       cancelToken?.throwIfCancelled();
@@ -173,8 +175,10 @@ class MangaOcrPipeline {
       for (final DetectedTextRegion region in detections.textRegions)
         region.rect,
     ];
-    final List<int> order =
-        computeReadingOrder(boxes, rightToLeft: rightToLeft);
+    final List<int> order = computeReadingOrder(
+      boxes,
+      rightToLeft: rightToLeft,
+    );
 
     final List<OcrBlock> blocks = <OcrBlock>[];
     final OcrRecognizer recognizer = _recognizer;
@@ -187,29 +191,33 @@ class MangaOcrPipeline {
         for (int index = start; index < end; index++)
           detections.textRegions[order[index]],
       ];
-      final List<String> texts = recognizer is BatchOcrRecognizer
-          ? await recognizer.recognizeBatch(image, <OcrRect>[
-              for (final DetectedTextRegion region in regions) region.rect,
-            ])
-          : <String>[await recognizer.recognize(image, regions.single.rect)];
+      final List<OcrRecognition> recognized = await _recognizeRegions(
+        recognizer,
+        image,
+        regions,
+      );
       cancelToken?.throwIfCancelled();
-      if (texts.length != regions.length) {
-        throw StateError('OCR batch returned ${texts.length} results '
-            'for ${regions.length} regions');
+      if (recognized.length != regions.length) {
+        throw StateError(
+          'OCR batch returned ${recognized.length} results '
+          'for ${regions.length} regions',
+        );
       }
       for (int i = 0; i < regions.length; i++) {
-        final String text = texts[i];
+        final String text = recognized[i].text;
         if (text.isEmpty) {
           continue;
         }
         final DetectedTextRegion region = regions[i];
-        blocks.add(OcrBlock(
-          box: region.rect,
-          vertical: isVerticalBlock(region.rect),
-          lines: <String>[text],
-          score: region.score,
-          insideBubble: region.insideBubble,
-        ));
+        blocks.add(
+          OcrBlock(
+            box: region.rect,
+            vertical: recognized[i].vertical,
+            lines: <String>[text],
+            score: region.score,
+            insideBubble: region.insideBubble,
+          ),
+        );
       }
     }
     return OcrPageResult(
@@ -218,5 +226,33 @@ class MangaOcrPipeline {
       imageHeight: image.height,
       blocks: _suppressRecognizedContainedBlocks(blocks),
     );
+  }
+
+  /// 块方向只有一个拥有者：识别器定了（[OrientedOcrRecognizer]）就用它的，
+  /// 否则按检测框外形（[isVerticalBlock]）兜底（BUG-2783）。
+  static Future<List<OcrRecognition>> _recognizeRegions(
+    OcrRecognizer recognizer,
+    img.Image image,
+    List<DetectedTextRegion> regions,
+  ) async {
+    final List<OcrRect> boxes = <OcrRect>[
+      for (final DetectedTextRegion region in regions) region.rect,
+    ];
+    if (recognizer is OrientedOcrRecognizer) {
+      return recognizer.recognizeOriented(image, boxes);
+    }
+    final List<String> texts = recognizer is BatchOcrRecognizer
+        ? await recognizer.recognizeBatch(image, boxes)
+        : <String>[await recognizer.recognize(image, boxes.single)];
+    if (texts.length != boxes.length) {
+      throw StateError(
+        'OCR batch returned ${texts.length} results '
+        'for ${boxes.length} regions',
+      );
+    }
+    return <OcrRecognition>[
+      for (int i = 0; i < boxes.length; i++)
+        OcrRecognition(text: texts[i], vertical: isVerticalBlock(boxes[i])),
+    ];
   }
 }

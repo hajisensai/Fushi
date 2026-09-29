@@ -1,0 +1,6 @@
+## BUG-2785 · 漫画框选「卷.mokuro + 同名页图子目录」的文件夹被当页图目录导入，OCR 静默丢失
+- **报告**：2026-09-28（排查 BUG-2786 时沿代码路径发现，全平台）
+- **真实性**：✅ 真 bug（代码路径确认）。mokuro 的标准产物是「`卷.mokuro` + 同名页图子目录」，用户在漫画框「选文件夹」选的正是装着这两样的目录。`fushi/lib/src/media/import/import_carrier.dart:116`（修复前）目录分支第一条就问 `directoryHasPageImages`，而它的判据 `mangaDirectoryHasPageImages`（`fushi/lib/src/media/manga/import/manga_folder_batch.dart`）走 `enumerateMangaPages`，会递归压平进子目录，于是这个目录先被认成 `mangaFolder`，`.mokuro` 根本没被看一眼 → 按裸页图导入，OCR 文字层静默丢失（导入成功、没有任何报错，只是整本没字可查）。
+- **[x] ① 已修复** — `classifyImportCarrier` 新增必填判据 `directoryMokuroFileCount`（目录**直接子层**的 `.mokuro` 数，`MangaModule.directoryMokuroFileCount` → `mangaMokuroFilesIn`），在页图判据**之前**问：恰好 1 个 → `ImportCarrier.mangaMokuro`，≥2 个 → `mangaBatchFolder`（逐卷各带各的 OCR），0 个 → 原顺序不变。`manga_import_dialog.dart` 的 `_importPathFor` 在收下路径（`_adoptPath` / 预填 `initState`）时经 `MangaModule.directorySingleMokuroPath` 把目录换成那个 `.mokuro` 文件。书籍框的转交（`book_import_dialog.dart`）同一判据、同样转进漫画框。提交哈希：见本轮提交（与 BUG-2786 同一提交）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/import/import_carrier_test.dart` 组「目录里有 .mokuro（BUG-2785）」三例（1 个 → mangaMokuro / ≥2 → batch / 0 → 页图优先不变）；`fushi/test/media/manga/manga_folder_batch_test.dart` 真文件系统两例（`vol1.mokuro + vol1/001.png` → mangaMokuro 且能换出 `.mokuro` 路径；两卷 → batch 且换不出单个文件）。
+- **备注**：只看直接子层是有意的：`series/vol1/vol1.mokuro` 这种深一层的布局不改变原判定（与 `mangaCarrierFilesIn` 的「一层」约定一致）。

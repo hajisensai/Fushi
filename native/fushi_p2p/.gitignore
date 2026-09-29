@@ -1,0 +1,4 @@
+# Rust 构建树与脚本产物 —— 不入库。
+target/
+prebuilt/
+*.log

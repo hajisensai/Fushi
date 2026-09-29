@@ -127,6 +127,35 @@ class _NestedLineRecognizer extends PpOcrLineRecognizer {
   }
 }
 
+/// 固定吐出给定区域的检测器（pipeline 方向落库用）。
+class _FixedRegionDetector implements OcrDetector {
+  _FixedRegionDetector(this.rects);
+
+  final List<OcrRect> rects;
+
+  @override
+  Future<PageDetections> detect(img.Image page) async => PageDetections(
+        textRegions: <DetectedTextRegion>[
+          for (final OcrRect rect in rects)
+            DetectedTextRegion(
+              rect: rect,
+              score: 0.9,
+              classId: 1,
+              insideBubble: true,
+            ),
+        ],
+        bubbles: const <OcrRect>[],
+      );
+}
+
+/// BUG-2783：两列竖排气泡，宽 200 ≥ 高 100。PP 切出两条竖列 + 一截被切断的
+/// 短列碎片（30×30，单看会被当成横行）。
+List<PpTextLine> _twoColumnVerticalBubble() => <PpTextLine>[
+      _line(150, 5, 180, 95),
+      _line(100, 5, 130, 95),
+      _line(100, 60, 130, 90),
+    ];
+
 void main() {
   final img.Image page = img.Image(width: 400, height: 300);
 
@@ -373,5 +402,72 @@ void main() {
     expect(await r.recognize(page, box), 'whole');
     expect(rec.lines, hasLength(1));
     expect(mangaOcr.calls, <OcrRect>[box]);
+  });
+
+  test('BUG-2783 宽 ≥ 高的多列竖排：整块交 manga-ocr、标竖排，PP rec 不跑', () async {
+    final _FakeMangaOcr mangaOcr = _FakeMangaOcr();
+    final _FakeLineRecognizer rec = _FakeLineRecognizer();
+    final RoutingOcrRecognizer r = RoutingOcrRecognizer(
+      mangaOcr: mangaOcr,
+      lineDetector: _FakeLineDetector(_twoColumnVerticalBubble()),
+      lineRecognizer: rec,
+    );
+    const OcrRect box = OcrRect(left: 50, top: 100, right: 250, bottom: 200);
+    final List<OcrRecognition> out = await r.recognizeOriented(page, <OcrRect>[
+      box,
+    ]);
+    expect(out.single.text, 'M');
+    expect(out.single.vertical, isTrue);
+    expect(mangaOcr.calls, <OcrRect>[box]);
+    expect(rec.lines, isEmpty);
+  });
+
+  test('BUG-2783 批路由：竖排多列块进整框批次并保留方向，横排块标横排', () async {
+    final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr();
+    final _FakeLineDetector detector = _FakeLineDetector(<PpTextLine>[])
+      ..sequence = <List<PpTextLine>>[
+        _twoColumnVerticalBubble(),
+        <PpTextLine>[_line(0, 0, 180, 40)],
+      ];
+    final RoutingOcrRecognizer routed = RoutingOcrRecognizer(
+      mangaOcr: manga,
+      lineDetector: detector,
+      lineRecognizer: _FakeLineRecognizer(),
+    );
+    expect(routed, isA<BatchOcrRecognizer>());
+    const List<OcrRect> boxes = <OcrRect>[
+      OcrRect(left: 50, top: 100, right: 250, bottom: 200),
+      OcrRect(left: 20, top: 0, right: 220, bottom: 50),
+      OcrRect(left: 300, top: 0, right: 340, bottom: 150),
+    ];
+    final List<OcrRecognition> out = await routed.recognizeOriented(
+      page,
+      boxes,
+    );
+    expect(out.map((OcrRecognition r) => r.text), <String>[
+      'GPU@50',
+      'P',
+      'GPU@300',
+    ]);
+    expect(out.map((OcrRecognition r) => r.vertical), <bool>[
+      true,
+      false,
+      true,
+    ]);
+    expect(manga.batches.single, <OcrRect>[boxes[0], boxes[2]]);
+  });
+
+  test('BUG-2783 pipeline 采用识别器给的方向，宽的竖排块落库为 vertical', () async {
+    const OcrRect wide = OcrRect(left: 50, top: 100, right: 250, bottom: 200);
+    final OcrPageResult result = await MangaOcrPipeline(
+      detector: _FixedRegionDetector(<OcrRect>[wide]),
+      recognizer: RoutingOcrRecognizer(
+        mangaOcr: _FakeMangaOcr(),
+        lineDetector: _FakeLineDetector(_twoColumnVerticalBubble()),
+        lineRecognizer: _FakeLineRecognizer(),
+      ),
+    ).processPage(pageIndex: 0, image: page);
+    expect(result.blocks.single.lines.single, 'M');
+    expect(result.blocks.single.vertical, isTrue);
   });
 }

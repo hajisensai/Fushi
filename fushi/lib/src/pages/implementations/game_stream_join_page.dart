@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
@@ -59,10 +60,13 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
       _hosts.clear();
     });
     try {
+      // 每台 host 一次：同一台机器的多条地址只取组内最先可达的那条。
       final List<FushiClientUrl> peers =
-          (await widget.repository.getFushiClientUrls())
-              .where((FushiClientUrl peer) => peer.enabled)
-              .toList();
+          await resolveInterconnectPeerConnections(
+        (await widget.repository.getFushiClientUrls())
+            .where((FushiClientUrl peer) => peer.enabled)
+            .toList(),
+      );
       for (final FushiClientUrl peer in peers) {
         final FushiGameStreamClient client = FushiGameStreamClient(
           transport: InterconnectGameStreamTransport(repo: widget.repository),

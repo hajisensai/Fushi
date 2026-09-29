@@ -1,2 +1,5 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+// 互联 P2P 隧道（iroh）静态库：native/fushi_p2p/build_ios_staticlib.sh 生成，没编过就缺席
+// （FUSHI_P2P_LDFLAGS 为空、不链接、P2P 能力判不可用）。见 Runner 的 OTHER_LDFLAGS。
+#include? "../../../native/fushi_p2p/prebuilt/ios/fushi_p2p.xcconfig"

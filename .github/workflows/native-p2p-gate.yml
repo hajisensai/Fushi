@@ -1,0 +1,81 @@
+# 互联 P2P 隧道原生库（native/fushi_p2p，Rust + iroh）的 **PR 阶段 Android 编译门**。
+#
+# ── 补的是哪个缺口（与 native-torrent-gate.yml 同一形态）──────────────────────────
+#   build_windows_dll.ps1 / build_linux_so.sh / build_macos_dylib.sh / build_ios_staticlib.sh
+#       -> build-multiplatform.yml 的 windows / linux / macos / ios job（有 `pull_request`
+#          触发、paths 含 `native/**`、`packages/**`），Windows / Linux 还顺带跑
+#          packages/fushi_p2p 的真隧道 FFI 测试。⇒ 这四端 PR 上本来就有真编译门。
+#   build_android_so.sh
+#       -> **只**被 release.yml 消费，而 release.yml 没有 `pull_request` 触发。一个只改
+#          `native/fushi_p2p/**` 的 PR，Android 交叉编译（cargo-ndk + NDK clang，三个 ABI）
+#          在合进主干之前从未跑过。本 workflow 就补这一条边。
+#
+# ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
+#   * 不重复跑上面四端（白烧 runner 换零新增信息）。
+#   * 不碰发布路径：全程只读，不上传产物、不建 tag、不碰任何 release。
+#   * 不验运行期行为：只到「编得出、ELF 架构对、fp2p_* 符号齐」。真隧道行为由
+#     build-multiplatform.yml 的 Linux / Windows FFI 测试兜。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────────
+# `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
+name: native-p2p-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_p2p/**'
+      - 'packages/fushi_p2p/**'
+      - '.github/workflows/native-p2p-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      # 工具链与缓存形态与 release.yml 的同名步骤逐字一致，PR 能复用 develop 存下的缓存。
+      - name: Set up Rust (fushi_p2p, Android targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-android
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - name: Build fushi_p2p Android .so (arm64-v8a, armeabi-v7a, x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+      - name: Verify .so architecture and exported C ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+          for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+            abi="${pair%%:*}"; want="${pair#*:}"
+            so="native/fushi_p2p/prebuilt/android/$abi/libfushi_p2p.so"
+            machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+            echo "$abi: ELF machine = $machine"
+            case "$machine" in
+              *"$want"*) : ;;
+              *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+            esac
+            bash native/fushi_p2p/verify_abi.sh "$so" "$nm_bin"
+          done

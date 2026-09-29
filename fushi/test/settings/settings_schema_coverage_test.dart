@@ -983,6 +983,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Game card screenshot format':
       'test/mining/gal_hook_mining_coordinator_test.dart + '
       'test/mining/mining_still_format_test.dart',
+  // 音画同步片段格式：ffmpeg 参数按格式分派（视频页 / gal 窗口）+ 偏好推导（老 MP4 片段
+  // 用户保持 MP4）+ 编码器缺失 AV1→VP9→MP4 降级且扩展名跟随实际产物 + WebM 卡片内嵌渲染。
+  'cardCreation/Video clip format': 'test/mining/mining_clip_format_test.dart + '
+      'test/mining/synchronized_video_mining_test.dart + '
+      'test/mining/immersion_capture_video_test.dart + '
+      '../packages/fushi_anki/test/inline_video_cover_test.dart',
+  'cardCreation/Game clip format': 'test/mining/mining_clip_format_test.dart + '
+      'test/mining/synchronized_video_mining_test.dart',
   // 同步后端选择：syncChannelScopeOf 是 resolveSyncBackend 的逆（选哪个就解析出哪个），
   // 外加 applyBackupBackendChange 真改变通道归属。
   'syncBackup/Storage backend':
@@ -1056,6 +1064,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'interconnect/Interconnect encryption (HTTPS/TLS)':
       'test/sync/interconnect_tls_entry_guard_test.dart + '
       'test/sync/tls/fushi_tls_identity_test.dart',
+  // 互联 P2P 隧道（host 侧许可，默认关）：写设备本地键（changed=true），生效点是
+  // FushiServerController 起 iroh 端点 + host 信任区监听口；harness 里没有 server
+  // 也没有原生库，探不到。专项测试咬住信任区判据（隧道请求按公网走 PIN、审批框标
+  // 「P2P tunnel」）与真隧道端到端；跨 NAT 真打洞仍是设备 backlog。
+  'interconnect/Allow remote connections over a P2P tunnel':
+      'test/sync/interconnect_p2p_tunnel_test.dart + '
+          'INTEGRATION: 跨 NAT 真机打洞',
   // 远端查词：与 lookup 分类共享同一份 item 定义。⚠️ 门本身
   // （AppModel._searchRemoteDictionary 开头的 remoteLookupEnabled 短路）没有守卫，
   // 仍是设备 backlog；下面两个文件只覆盖偏好往返与开关打开后的客户端链路。

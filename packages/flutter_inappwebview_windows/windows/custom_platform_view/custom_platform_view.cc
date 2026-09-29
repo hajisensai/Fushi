@@ -26,6 +26,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetPointerUpdate = "setPointerUpdate";
   constexpr auto kMethodSetPointerButton = "setPointerButton";
   constexpr auto kMethodSetScrollDelta = "setScrollDelta";
+  constexpr auto kMethodSetPinchDelta = "setPinchDelta";
   constexpr auto kMethodSetFpsLimit = "setFpsLimit";
   constexpr auto kMethodSetShaders = "setShaders";
 
@@ -366,6 +367,16 @@ namespace flutter_inappwebview_plugin
       const auto delta = GetPointFromArgs(method_call.arguments());
       if (delta && view) {
         view->setScrollDelta(delta->first, delta->second);
+        return result->Success();
+      }
+      return result->Error(kErrorInvalidArgs);
+    }
+
+    // setPinchDelta: double（触控板捏合 → Ctrl+滚轮，BUG-2758）
+    if (method_name.compare(kMethodSetPinchDelta) == 0) {
+      const auto delta = std::get_if<double>(method_call.arguments());
+      if (delta && view) {
+        view->setPinchDelta(*delta);
         return result->Success();
       }
       return result->Error(kErrorInvalidArgs);

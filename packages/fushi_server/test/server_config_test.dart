@@ -32,6 +32,24 @@ void main() {
     expect(b.libraries[1].enabled, isFalse);
   });
 
+  test('远程可达三项（公网地址 / P2P / 自建中继）往返一致，默认 P2P 关', () {
+    final ServerConfig defaults =
+        ServerConfig.parse('port: 1\n', configDir: '/etc/fushi');
+    expect(defaults.p2p, isFalse, reason: '开 P2P 会连 iroh 公共中继，必须显式开');
+    expect(defaults.publicUrls, isEmpty);
+    expect(defaults.p2pRelays, isEmpty);
+
+    final ServerConfig a = ServerConfig.defaults(dataDir: '/srv/d').copyWith(
+      publicUrls: <String>['https://home.example:8443', 'http://[2408::5]:38765'],
+      p2p: true,
+      p2pRelays: <String>['https://relay.example/'],
+    );
+    final ServerConfig b = ServerConfig.parse(a.toYaml(), configDir: '/etc/fushi');
+    expect(b.publicUrls, a.publicUrls);
+    expect(b.p2p, isTrue);
+    expect(b.p2pRelays, a.p2pRelays);
+  });
+
   test('缺项取默认，相对 data_dir 按配置目录解析', () {
     final ServerConfig c = ServerConfig.parse('port: 1234\n', configDir: '/etc/fushi');
     expect(c.port, 1234);

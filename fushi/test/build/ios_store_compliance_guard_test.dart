@@ -562,16 +562,32 @@ void main() {
       );
     });
 
-    test('CI 不再为 iOS 装 Rust target', () {
+    // 曾断言「workflow 里不出现 aarch64-apple-ios / apple-darwin」：当时 Apple 的 Rust
+    // target 只为 Aidoku runtime 而装，字符串缺席就等于「不构建 Aidoku」。互联 P2P
+    // 隧道（native/fushi_p2p，docs/specs/2026-09-28-interconnect-remote-reach.md）
+    // 起 iOS 静态库 / macOS dylib 也要这些 target，那个近似判据不再成立。改钉真正
+    // 要守的事实：装 Apple Rust target 的 job 只能是在构建 fushi_p2p，且全程不碰 Aidoku。
+    test('CI 的 Apple Rust target 只服务 fushi_p2p，不构建 Aidoku runtime', () {
       for (final String path in <String>[
         '../.github/workflows/build-multiplatform.yml',
         '../.github/workflows/release-desktop.yml',
       ]) {
-        expect(
-          read(path),
-          isNot(contains('aarch64-apple-ios')),
-          reason: '$path 里的 iOS Rust toolchain 只为 Aidoku runtime 而装。',
-        );
+        final String workflow = read(path);
+        expect(workflow.toLowerCase(), isNot(contains('aidoku')), reason: path);
+        final Map<String, String> jobs = workflowJobs(workflow);
+        expect(jobs, isNotEmpty, reason: '切不出 job 时下面的核对就是空转');
+        for (final MapEntry<String, String> job in jobs.entries) {
+          if (!job.value.contains('apple-ios') &&
+              !job.value.contains('apple-darwin')) {
+            continue;
+          }
+          expect(
+            job.value,
+            contains('native/fushi_p2p'),
+            reason: '$path 的 job ${job.key} 装了 Apple Rust target，却不是在构建 '
+                'fushi_p2p——Apple 上唯一允许的 Rust 构建就是它。',
+          );
+        }
       }
     });
 
@@ -606,4 +622,35 @@ void main() {
       );
     });
   });
+}
+
+/// 把 GitHub Actions workflow 按顶层 job 切开（job 名 → 该 job 的全文）。只认
+/// `jobs:` 下两格缩进的 `<name>:` 行作 job 起点，足够本守卫按 job 归属判断。
+Map<String, String> workflowJobs(String workflow) {
+  final Map<String, String> jobs = <String, String>{};
+  final RegExp jobHeader = RegExp(r'^  ([A-Za-z0-9_-]+):\s*$');
+  bool inJobs = false;
+  String? current;
+  final StringBuffer buffer = StringBuffer();
+  void flush() {
+    if (current != null) jobs[current] = buffer.toString();
+    buffer.clear();
+  }
+
+  for (final String line in workflow.split('\n')) {
+    if (line.startsWith('jobs:')) {
+      inJobs = true;
+      continue;
+    }
+    if (!inJobs) continue;
+    final RegExpMatch? m = jobHeader.firstMatch(line.trimRight());
+    if (m != null) {
+      flush();
+      current = m.group(1);
+      continue;
+    }
+    buffer.writeln(line);
+  }
+  flush();
+  return jobs;
 }

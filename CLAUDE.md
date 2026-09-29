@@ -43,7 +43,7 @@
   - `installAsrHostBindings()` 在 `main()` 里调一次，**不放 `AppModel.initialise()`**：弹窗词典与悬浮词典是另外两个 entry point，不经 `initialise()`。
   - 转录产物是单时间轴 SRT 喂既有匹配链路，旁边同序写逐 token 时间 sidecar `transcript.tokens.jsonl`；`attachAsrCueTokenTiming`（`audiobook_alignment_service.dart`）把它挂到 `AudioCue.tokenTiming` 上，**行数与 cue 数不符时一条都不挂**（行号错位比没有更糟，下游照样跑完、照样落库，只是跳播全偏）。
   - OCR 也经 `fushi/lib/src/ocr/ocr_inference.dart` 复用同一套 ONNX 抽象（那层的 re-export 是**窄的 show 清单**，整份 re-export 会和本仓同名符号撞成 ambiguous import）。
-- 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
+- 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。**远程可达（2026-09-28）**：host 经需鉴权的 `GET /api/host/addresses` 公布地址集（LAN / IPv6 / 组网 / 公网 / `p2p://`），client 的 `FushiClientUrl.hostId` 把同一台 host 的多条地址归组、`learned` 条目随 host 自动增删；选路统一走 `interconnect_peer_addresses.dart` 的 `rankInterconnectCandidates`（组内并发、ping 核对 hostId、直连全败才建 P2P 隧道），「记住某台 host」的地方一律按 hostId 认而不是按 URL；扫码 / 深链 / NFC 配对走一次性票据（`fushi_pair_link.dart`），`fushi://pair` 深链**必须**先弹确认框。隧道流量落在 server 的信任区监听口（`fushi.zone=p2p`），配对判据按公网处理。设计见 `docs/specs/2026-09-28-interconnect-remote-reach.md`。
 - galgame 制卡：Flutter 侧 `fushi/lib/src/lookup/`（overlay 浮窗）+ `fushi/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip，再由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地，运行期不下载任何组件。helper **不链接进 `fushi.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
 - 动画刮削上游参考：`references/ShokoServer/`（官方 ShokoServer git submodule，只作只读架构参考，不参与本仓构建/运行）；Aniyomi / Mihon 扩展适配参考：`references/mangayomi/`（kodjodevf/mangayomi git submodule，同一 M-Extension-Server sidecar 血统，只读，看它的 `lib/eval/mihon/service.dart` 与 `lib/services/get_video_list.dart`）。
@@ -96,6 +96,7 @@
 - 能力阶段必须分开记录：`process_found → helper_ready → ipc_ready → text_ready → resource/pcm_ready → paired → e2e_verified`；不得用前一阶段推断后一阶段，也不得把 ready、捕获、纯人声分类、哈希一致和端到端混成一个“成功”。
 - 每轮只修原始路径上第一个未通过边界。引擎/保护壳/加载时序特例必须收进 profile/adapter；共享中间件不得仅凭 DLL 名启用，且须有跨引擎负向测试。
 - **「游戏适配成功」的定义（用户 2026-09-26 拍板）**：做新游戏 / 新引擎适配时，只有在原始启动路径上同时满足以下四条才算成功，缺一条就只能报「部分适配」并写明缺哪条：① **文本**：能 hook 到当前台词正文（选定线程是干净正文，不是伪影）；② **音频**：能拿到与该句对应的语音（引擎资源或 PCM；纯 Loopback 降级不算）；③ **内嵌查词**：游戏画面内能弹出 Fushi 查词卡；④ **点击查词不推进**：点击内嵌查词不会推进游戏进度。汇报时四条逐条给出证据，不得用「注入成功」「Hook installed」「能启动」代替。
+- **Windows 触屏与滑动是第④条的必测输入（用户 2026-09-29 拍板）**：「点击查词不推进」必须同时对鼠标与 Windows 触摸成立，只测鼠标不算通过。触摸点按会被系统提升成背靠背的 `WM_LBUTTONDOWN/UP`（亚帧，采样型引擎的按键轮询可能看不到按下，BUG-2769）；长按会被系统当成右键（实测 0.6 s 即弹出游戏右键菜单）；滑动走 `WM_POINTER*` 与提升出的拖动。覆盖窗 / 查词卡的 `WS_EX_NOACTIVATE` **挡不住触摸激活**（`WM_POINTERACTIVATE`/`WM_MOUSEACTIVATE` 与 WebView2 的 `SetFocus` 都会把卡片变前台，游戏失去前台后宿主「点卡外吞点击」随之失效，BUG-2788）——新增或改动任何覆盖在游戏上的窗口，都要保证触摸下它不抢游戏的前台。真机验收至少覆盖：触摸点字查词、触摸卡内（点词 / 滚动）后再触摸卡外、卡上横滑关卡、卡外滑动、长按；每步记下前台窗口与台词是否推进。本机有触摸数字化器，用 `InjectTouchInput`（`PT_TOUCH`）真实注入，套路见 [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md) §7。
 - **游戏适配只做引擎级适配（用户 2026-09-26 拍板）**：某款游戏出问题时，修的是它所属引擎（及引擎版本/变体，如 KiriKiri2-BCB / KiriKiri Z / 加壳 exe）的通用判据与通用生命周期，让同引擎的其它游戏一起受益；**禁止新增按单个游戏的 exe 哈希 / 文件名 / 标题写死的 profile、延迟附着表或特判分支**来「修好这一款」。判据必须来自引擎结构特征（导出表、插件 ABI、运行时模块、窗口/加载时序信号等），并用同引擎多个版本的样本 + 非本引擎的负向样本验证。确实只能靠外部不可控差异区分时，先说明为什么没有引擎级判据、影响范围和清理条件，并征得用户同意。存量按哈希的 profile 视为待收编的技术债，碰到时优先改成引擎级判据。
 - Loopback 只是显式降级，不能证明引擎 Hook、逐句配对或纯人声已验证；任何必需测试、双架构构建、replay 或真机门被跳过/阻塞，只能标 `implemented_unverified`，不得宣称“已支持/已修好”。
 - 支持升级必须回到原始启动路径完成“当前文本 → 对应语音 → 当前画面 → 真卡写入”E2E；宣称原始逐句资源时还须记录与源 entry 的字节哈希一致性，并只通过 `native/galgame_hook/engine-support.yaml` 真相源更新支持状态。
@@ -165,6 +166,8 @@
 | `packages/fushi_platform/` | Dart | TTS/平台集成/存储路径抽象 | [CLAUDE.md](packages/fushi_platform/CLAUDE.md) |
 | `packages/flutter_inappwebview_windows/` | Dart+C++ | inappwebview Windows fork | [CLAUDE.md](packages/flutter_inappwebview_windows/CLAUDE.md) |
 | `packages/fushi_torrent/` | Dart | 内置 torrent 引擎 FFI 绑定 + `EmbeddedTorrentEngine`（path 依赖） | — |
+| `packages/fushi_p2p/` | Dart | 互联 P2P 隧道（iroh，dumbpipe 形态）纯 Dart FFI；引擎侧运行时 `fushi_engine/lib/sync/interconnect_p2p.dart`，原生库缺失时能力判不可用 | 设计 `docs/specs/2026-09-28-interconnect-remote-reach.md` |
+| `native/fushi_p2p/` | Rust | iroh 1.x TCP-over-P2P 转发 C ABI；`build_windows_dll.ps1` / `build_android_so.*` / `build_linux_so.sh` 产出到 `prebuilt/`（不入库），Windows CMake / Android jniLibs 有则随包 | [README.md](native/fushi_p2p/README.md) |
 | `packages/fushi_engine/` | Dart | 无 Flutter 的共享引擎：互联 host / 库服务 / OCR / ASR 任务 / 下载管线 / EPUB 导入 / 视频元数据（app 与服务端共用；纯度守卫在 fushi/test/build） | 设计 `docs/specs/2026-09-08-fushi-server-headless-design.md` |
 | `packages/fushi_server/` | Dart | 无头服务端 CLI + WebUI（Linux/Windows/macOS）；`dart build cli` 出 bundle，CI linux job 随包 torrent bridge `.so` + onnxruntime | [README.md](packages/fushi_server/README.md) |
 | `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |

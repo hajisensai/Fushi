@@ -883,8 +883,22 @@ void main() {
               'var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));'),
           isTrue,
           reason: '滚轮步长必须是 10 个百分点（乘灵敏度）的定量网格，不能是乘法缩放');
-      expect(doc.contains('Math.exp('), isFalse,
-          reason: '乘法指数缩放已废弃：一格缩多少不能取决于本机 deltaY 绝对值');
+      // 鼠标一格（>=40）的网格步进不能退回按幅值乘法缩放；指数只允许出现在
+      // 精密手势分支（BUG-2758），并且以 -dy/100 还原 fork 合成的捏合比例。
+      expect('Math.exp('.allMatches(doc).length, 1,
+          reason: '乘法指数缩放只属于精密手势分支，鼠标一格仍走网格');
+      final int precise = doc.indexOf('if (Math.abs(dy) < PRECISE_ZOOM_DELTA) {');
+      expect(precise, greaterThan(0));
+      expect(
+          doc
+              .substring(precise, precise + 160)
+              .contains('_zoomAbout(ZOOM * Math.exp(-dy / 100 * ZOOM_SENS), '
+                  'e.clientX, e.clientY);'),
+          isTrue,
+          reason: '触控板捏合（-100·ln 比例的碎 delta）必须连续跟手，'
+              '攒够 40 才走 10% 要张开约 1.5 倍');
+      expect(doc.contains('var PRECISE_ZOOM_DELTA = 40;'), isTrue,
+          reason: '鼠标一格恒 >=40，精密增量恒 <40');
       expect(
           doc.contains('(Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP'), isTrue,
           reason: '放大必须对齐到网格，否则捏合留下的非整值会一路歪下去');
@@ -893,15 +907,6 @@ void main() {
           reason: '缩小必须对齐到网格');
       expect(doc.contains('var cur = Math.round(ZOOM * 1000) / 10;'), isTrue,
           reason: '必须先消掉浮点毛刺，否则 1.2000000000000002 缩小一步会原地不动');
-      // 「一格」的判定复用翻页滚轮的累计口径（阈值 40 + 反向清账）：鼠标一格无论
-      // deltaY 是 57/67/100 都 >=40 恒好一步，触控板碎 delta 攒够才走。
-      expect(doc.contains('if (_zoomAccum < 40) return 0;'), isTrue,
-          reason: '必须按累计位移判定一格，否则触控板碎 delta 要么失灵要么暴走');
-      expect(
-          doc.contains(
-              'if (dir !== _zoomDir) { _zoomAccum = 0; _zoomDir = dir; }'),
-          isTrue,
-          reason: '反向必须立刻清账，否则来回滚会被上一方向的余量吃掉');
       expect(doc.contains('e.deltaMode === 1'), isTrue,
           reason: 'deltaMode 必须归一化，否则行/页模式步长完全不同');
     });

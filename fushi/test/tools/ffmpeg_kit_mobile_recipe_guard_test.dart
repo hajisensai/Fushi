@@ -29,6 +29,8 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show MiningClipFormat;
 
 /// 移动端 configure 里必须出现的独立开关。
 ///
@@ -36,11 +38,27 @@ import 'package:flutter_test/flutter_test.dart';
 ///   移动端导出真机 `Unknown encoder 'libx264'`，整条制卡视频链路失败。
 /// - `--enable-openssl`：BUG-891 远端制卡的 https 输入（min 变体默认无任何 TLS 后端，
 ///   缺它 → `Protocol not found`）。重编 ffmpeg-kit 时最容易漏掉的就是它。
+/// - `--enable-libvpx` / `--enable-libopus`：制卡音画同步片段默认 WebM(VP9 + Opus)，卡片内
+///   `<video>` 播放（Anki 桌面 Qt WebEngine 无 H.264/AAC）。缺了移动端每张片段卡都先编
+///   WebM 失败、再降级 MP4。ffmpeg-kit 的开关叫 `--enable-opus`，写进 FFmpeg configure
+///   串的是 `--enable-libopus`。
 const List<String> _requiredMobileFlags = <String>[
   '--enable-gpl',
   '--enable-libx264',
   '--enable-openssl',
+  '--enable-libvpx',
+  '--enable-libopus',
 ];
+
+/// configure 声明了 ≠ 编码器真链进去了：FFmpeg 找不到 libvpx 时会**静默**关掉它的四个
+/// 编解码器，`--enable-libvpx` 却照样留在 configure 串里。所以同时查 libavcodec 里 FFmpeg
+/// 的封装名与库自身才有的串（libvpx 的编码器名 / libopus 的错误信息表）。
+const Map<String, String> _requiredWebmCodecStrings = <String, String>{
+  'libvpx-vp9': 'FFmpeg 的 VP9 编码器封装',
+  'WebM Project VP9 Encoder': 'libvpx 自身的 VP9 编码器名（证明真链进了 libvpx）',
+  'libopus': 'FFmpeg 的 Opus 编码器封装',
+  'request not implemented': 'libopus 自身的错误信息表（FFmpeg 源码里没有这个串）',
+};
 
 /// 从当前 cwd 向上找含 vendored ffmpeg-kit 的仓库根。
 Directory _repoRoot() {
@@ -107,7 +125,7 @@ void main() {
             configuration.contains(flag),
             isTrue,
             reason: '$abi 的 configure 串里没有 $flag —— 入库 AAR 比 Dart 侧契约旧，'
-                '需在构建机重跑 android.sh 并重新 vendor',
+                '需重跑 .github/workflows/ffmpeg-kit-mobile.yml 并重新 vendor',
           );
         }
 
@@ -119,6 +137,10 @@ void main() {
             reason: '$abi libavcodec.so 里没有 libx264 —— configure 写了但没链上');
         expect(codec.contains('x264 - core'), isTrue,
             reason: '$abi 缺 x264 自身的版本串，说明链接的不是真正的 x264 库');
+        _requiredWebmCodecStrings.forEach((String needle, String what) {
+          expect(codec.contains(needle), isTrue,
+              reason: '$abi libavcodec.so 里没有「$needle」（$what）');
+        });
       });
     }
 
@@ -141,6 +163,10 @@ void main() {
               'Hibiki 自身即 GPL-3.0，两者一致');
       expect(aar.findFile('res/raw/license_x264.txt'), isNotNull,
           reason: 'x264 的许可文件必须随产物分发');
+      expect(aar.findFile('res/raw/license_libvpx.txt'), isNotNull,
+          reason: 'libvpx 的许可文件必须随产物分发');
+      expect(aar.findFile('res/raw/license_opus.txt'), isNotNull,
+          reason: 'opus 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/source.txt'), isNotNull,
           reason: 'GPL/LGPL 要求的「源码获取途径」声明不得丢失');
     });
@@ -171,7 +197,7 @@ void main() {
             configuration.contains(flag),
             isTrue,
             reason: '$label 的 configure 串里没有 $flag —— 入库 framework 比 Dart 侧'
-                '契约旧，需在构建机重跑 ios.sh --xcframework 并重新 vendor',
+                '契约旧，需重跑 .github/workflows/ffmpeg-kit-mobile.yml 并重新 vendor',
           );
         }
 
@@ -184,6 +210,10 @@ void main() {
             reason: '$label libavcodec 里没有 libx264');
         expect(codec.contains('x264 - core'), isTrue,
             reason: '$label 缺 x264 自身的版本串');
+        _requiredWebmCodecStrings.forEach((String needle, String what) {
+          expect(codec.contains(needle), isTrue,
+              reason: '$label libavcodec 里没有「$needle」（$what）');
+        });
       });
     });
   });
@@ -193,6 +223,40 @@ void main() {
   // 错误实现（比如路径读错读成了别的文件、或 latin1 解码出一堆巧合）同样会全绿。
   // 这里断言几个**确定不该出现**的东西，把判据本身钉住。
   group('负向对照：判据本身没有失真', () {
+    test('移动端无任何 AV1 编码器，与 MiningClipFormat.webmAv1 的 VP9 兜底一致', () {
+      // 设置页 AV1 文案写「仅桌面端」、移动端靠 encodeAttempts 退 VP9 仍内嵌。哪天移动端
+      // 真带上 SVT-AV1 / libaom / rav1e，这条红，提醒回去改文案与降级说明。
+      final Archive aar = ZipDecoder().decodeBytes(File(
+              '${root.path}/third_party/ffmpeg_kit_flutter/android/libs/'
+              'ffmpeg-kit.aar')
+          .readAsBytesSync());
+      final Map<String, List<int>> codecs = <String, List<int>>{
+        for (final String abi in <String>['arm64-v8a', 'armeabi-v7a'])
+          'Android $abi':
+              aar.findFile('jni/$abi/libavcodec.so')!.content as List<int>,
+        for (final String dir in <String>[
+          'ios-arm64_arm64e',
+          'ios-arm64_x86_64-simulator',
+        ])
+          'iOS $dir': File('${root.path}/third_party/ffmpeg_kit_flutter/ios/'
+                  'Frameworks/libavcodec.xcframework/$dir/'
+                  'libavcodec.framework/libavcodec')
+              .readAsBytesSync(),
+      };
+      codecs.forEach((String label, List<int> bytes) {
+        final String codec = _asSearchableText(bytes);
+        for (final String av1 in <String>['libsvtav1', 'libaom-av1', 'librav1e']) {
+          expect(codec.contains(av1), isFalse,
+              reason: '$label 带上了 $av1——移动端 AV1 已可编，'
+                  '回去重审 mining_clip_format_webm_av1 的「仅桌面端」文案');
+        }
+        // 反证：同一份字节里 VP9 封装必须扫得到，否则上面的 isFalse 是假绿。
+        expect(codec.contains('libvpx-vp9'), isTrue, reason: label);
+      });
+      expect(MiningClipFormat.webmAv1.encodeAttempts[1],
+          MiningClipFormat.webmVp9);
+    });
+
     test('硬件编码器确实未编入（当前配方明确关闭）', () {
       final File aarFile = File(
         '${root.path}/third_party/ffmpeg_kit_flutter/android/libs/'

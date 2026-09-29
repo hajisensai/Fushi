@@ -40,7 +40,9 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
@@ -76,6 +78,16 @@ part 'fushi_sync_server/game_stream.part.dart';
 /// coordinated server+client+discovery protocol change that must be designed
 /// and verified on real devices; it is intentionally NOT bolted on here. Until
 /// then, treat LAN sync as unencrypted and only use it on a network you trust.
+
+/// 请求上下文里标记信任区的键：P2P 隧道监听口进来的请求为 `'p2p'`。
+const String kFushiRequestZone = 'fushi.zone';
+
+/// P2P 隧道请求在配对审批 / 已配对设备列表里显示的来源（而不是 127.0.0.1）。
+const String kFushiP2pRemoteAddress = 'P2P tunnel';
+
+/// 请求上下文里隧道对端 NodeId 的键（只在 [kFushiRequestZone] 为 `'p2p'` 且
+/// [FushiSyncServer.p2pPeerResolver] 查得到时存在）。
+const String kFushiP2pPeer = 'fushi.p2p.peer';
 
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
@@ -386,11 +398,84 @@ class FushiSyncServer {
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
 
+  /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
+  /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
+  /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
+  /// §1）。null（老调用方 / 单测）→ 不公布，client 行为同升级前。
+  String? hostId;
+
+  /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
+  Future<List<String>> Function()? publicUrlsProvider;
+
+  /// 网卡之外的附加地址（P2P 节点等），每次 capabilities 实时读。
+  List<InterconnectHostAddress> Function()? extraAddressesProvider;
+
+  /// 测试缝：替换网卡枚举。
+  @visibleForTesting
+  Future<List<NetworkInterface>> Function()? interfaceLister;
+
+  /// 当前有效的一次性配对票据（同时只有一张：重新打开二维码即作废旧的）。
+  FushiPairTicket? _pairTicket;
+
+  /// 签发一次性配对票据（host 屏上显示二维码 / 复制链接时调用），旧票据随之作废。
+  /// secret 为 24 字节随机数（192 bit），代替 PIN 进 HMAC，不可爆破。
+  FushiPairTicket issuePairTicket({Duration ttl = const Duration(minutes: 5)}) {
+    final FushiPairTicket ticket = FushiPairTicket(
+      id: FushiPairingProtocol.generateNonce(),
+      secret: FushiPairingProtocol.generateNonce(),
+      expiresAt: _now().add(ttl),
+    );
+    _pairTicket = ticket;
+    return ticket;
+  }
+
+  /// 关掉二维码时调用：票据立即作废，已凭票据开出、还没 confirm 的会话一并作废。
+  void revokePairTicket() {
+    _pairTicket = null;
+    _pairSessions.removeWhere(
+      (String _, FushiPairSession s) => s.ticketId != null,
+    );
+  }
+
+  /// 组装配对链接（二维码 / 复制链接 / NFC 贴纸共用）。[ticket] 为 null 时是不带
+  /// 票据的长期链接（贴纸）。没有 hostId 的 host 无从被分组，抛 [StateError]。
+  Future<FushiPairLink> buildPairLink({FushiPairTicket? ticket}) async {
+    final String? id = hostId;
+    if (id == null) throw StateError('host id not configured');
+    return FushiPairLink(
+      hostId: id,
+      addresses: await _hostAddresses(),
+      deviceName: _deviceName,
+      fingerprint: _hostFingerprint,
+      ticketId: ticket?.id,
+      ticketSecret: ticket?.secret,
+    );
+  }
+
+  /// 本 host 当前可公布的地址集。只在 LAN 开放时有意义——仅本机监听时公布网卡
+  /// 地址等于告诉 client 一堆连不上的地址。
+  Future<List<InterconnectHostAddress>> _hostAddresses() async {
+    if (!_allowLan || _server == null) return const <InterconnectHostAddress>[];
+    return listInterconnectHostAddresses(
+      port: port,
+      tls: _securityContext != null,
+      publicUrls:
+          await (publicUrlsProvider?.call() ?? Future<List<String>>.value(
+              const <String>[])),
+      extra: extraAddressesProvider?.call() ??
+          const <InterconnectHostAddress>[],
+      interfaceLister: interfaceLister,
+    );
+  }
+
   /// [pairedPeerTokensProvider] 结果的缓存（避免每个请求打一次 DB）。null=未加载。
   /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null，下次 auth 重新拉取。
   Set<String>? _cachedPeerTokens;
 
   bool get isRunning => _server != null;
+
+  /// 是否以 HTTPS 对外服务（P2P 地址据此带 `?tls=1`）。
+  bool get usesTls => _securityContext != null;
   int get port => _server?.port ?? _requestedPort;
 
   static String generateToken() {
@@ -414,17 +499,9 @@ class FushiSyncServer {
     // port-in-use error — and since it runs before serve(), a failure leaves no
     // half-bound socket to roll back.
     await Directory(syncDataDir).create(recursive: true);
-    final handler = const shelf.Pipeline()
-        .addMiddleware(_gzipTextMiddleware())
-        .addMiddleware(_authMiddleware())
-        .addHandler(_handleRequest);
+    final shelf.Handler handler = _buildHandler();
     try {
-      _server = await shelf_io.serve(
-        handler,
-        _allowLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
-        _requestedPort,
-        securityContext: _securityContext,
-      );
+      _server = await _bindListener(handler);
     } on SocketException catch (e) {
       if (isAddressInUseError(e)) {
         throw SyncServerPortInUseException(_requestedPort);
@@ -433,12 +510,138 @@ class FushiSyncServer {
     }
   }
 
+  shelf.Handler _buildHandler() => const shelf.Pipeline()
+      .addMiddleware(_gzipTextMiddleware())
+      .addMiddleware(_authMiddleware())
+      .addHandler(_handleRequest);
+
+  /// P2P 隧道的信任区监听口（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+  HttpServer? _p2pServer;
+
+  /// 为 P2P 隧道单独开一个 loopback 监听口，与主监听口同一个 handler，但请求带
+  /// `fushi.zone = p2p` 标记。隧道流量在 host 看来来自 127.0.0.1——不单独标出来，
+  /// 配对判据会把它当「本机 / 局域网」免 PIN，任何拿到 NodeId 的人都能配上。
+  /// 返回监听端口（重复调用返回同一个）。同样起 TLS：隧道里仍是端到端钉扎的
+  /// 自签证书，与直连同一套信任。
+  Future<int> startP2pListener() {
+    final HttpServer? existing = _p2pServer;
+    if (existing != null) return Future<int>.value(existing.port);
+    return _p2pStarting ??=
+        _bindP2pListener().whenComplete(() => _p2pStarting = null);
+  }
+
+  Future<int>? _p2pStarting;
+
+  /// 隧道监听口上一条连接的对端端口 → 隧道对端 NodeId。原生隧道把每条流转发成
+  /// 一条到本监听口的 TCP 连接并登记其源端口（`fp2p_host_peer`）；装配方（app 的
+  /// controller / 无头 host）起 P2P 时接上，停时置 null。
+  String? Function(int remotePort)? p2pPeerResolver;
+
+  /// 本请求的隧道对端 NodeId（查不到 → null）。
+  String? _resolveTunnelPeer(shelf.Request request) {
+    final String? Function(int remotePort)? resolve = p2pPeerResolver;
+    final Object? info = request.context['shelf.io.connection_info'];
+    if (resolve == null || info is! HttpConnectionInfo) return null;
+    return resolve(info.remotePort);
+  }
+
+  /// 主机已停就拒绝；bind 期间主机被停（[stop] 在 await 之间落地）就把刚绑上的
+  /// 口立刻关掉——否则留下一个挂着完整 handler 的孤儿监听口，iroh 继续把公网流量
+  /// 转进来，「主机已关闭」之后对端仍能访问库（审查问题 5）。
+  Future<int> _bindP2pListener() async {
+    if (_server == null) throw StateError('sync server is not running');
+    final shelf.Handler inner = _buildHandler();
+    final HttpServer server = await shelf_io.serve(
+      (shelf.Request request) {
+        final String? peer = _resolveTunnelPeer(request);
+        return inner(
+          request.change(context: <String, Object>{
+            kFushiRequestZone: 'p2p',
+            if (peer != null) kFushiP2pPeer: peer,
+          }),
+        );
+      },
+      InternetAddress.loopbackIPv4,
+      0,
+      securityContext: _securityContext,
+    );
+    if (_server == null) {
+      await server.close(force: true);
+      throw StateError('sync server stopped while binding the P2P listener');
+    }
+    _p2pServer = server;
+    return server.port;
+  }
+
+  Future<void> stopP2pListener() async {
+    final Future<int>? starting = _p2pStarting;
+    if (starting != null) {
+      // 在飞的 bind 落地后再关，免得它在我们关完之后才把口挂上。
+      await starting.then<void>((_) {}, onError: (Object _) {});
+    }
+    final HttpServer? server = _p2pServer;
+    _p2pServer = null;
+    await server?.close(force: true);
+  }
+
+  /// 仅本机 → loopback v4。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
+  /// 同时收 v4 与 v6）：国内家宽普遍没有公网 v4 却有公网 v6，只监听 v4 等于把这
+  /// 条最便宜的直连路堵死。v4 对端在双栈 socket 上报成 `::ffff:a.b.c.d`，由
+  /// [FushiPairingProtocol.unmapIPv4MappedAddress] 还原。
+  ///
+  /// 系统禁用了 IPv6（内核关掉 / 容器无 v6 栈）时 `::` 根本绑不上，这是平台能力
+  /// 边界，回落只监听 v4——行为与升级前一致。端口被占不在此回落：它在 v4 上同样会
+  /// 撞，交给调用方报 [SyncServerPortInUseException]。
+  Future<HttpServer> _bindListener(shelf.Handler handler) async {
+    if (!_allowLan) {
+      return shelf_io.serve(
+        handler,
+        InternetAddress.loopbackIPv4,
+        _requestedPort,
+        securityContext: _securityContext,
+      );
+    }
+    // 明文 host 维持升级前的只监听 v4（在 NAT 之后）：双栈会让它在全局 IPv6 上
+    // 直接对公网可达，token 与数据明文跑在公网上，用户却没有任何开关。开了 TLS
+    // 才双栈——此时公网上的对端也只能经指纹钉扎的 TLS 进来。
+    if (_securityContext == null) {
+      return shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv4,
+        _requestedPort,
+      );
+    }
+    try {
+      return await shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv6,
+        _requestedPort,
+        securityContext: _securityContext,
+      );
+    } on SocketException catch (e) {
+      if (isAddressInUseError(e)) rethrow;
+      engineLog.logDiagnostic(
+        'FushiSyncServer.bind',
+        'IPv6 dual-stack bind failed, IPv4 only: $e',
+      );
+      return shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv4,
+        _requestedPort,
+        securityContext: _securityContext,
+      );
+    }
+  }
+
   /// 导出包缓存（epub/词典/有声书/本地音频 GET 的 Range 续传字节稳定性基础）。
   final ExportPackageCache _exportCache = ExportPackageCache();
 
   Future<void> stop() async {
-    await _server?.close(force: true);
+    final HttpServer? main = _server;
+    // 先摘主句柄：在飞的隧道口 bind 落地时据此发现主机已停并自行关掉。
     _server = null;
+    await stopP2pListener();
+    await main?.close(force: true);
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
@@ -561,6 +764,10 @@ class FushiSyncServer {
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       return _handleCapabilities();
+    }
+    if (reqPath == '/api/host/addresses') {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleHostAddresses();
     }
     // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
     // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。

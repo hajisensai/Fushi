@@ -88,6 +88,8 @@ public class MainActivity extends AudioServiceActivity {
     // 系统画中画。持有 Activity，所以是实例而不是静态注册：onDestroy 要断开它，
     // onPictureInPictureModeChanged 要把系统的进出事件转发给它。
     private PictureInPictureChannelHandler pictureInPictureChannelHandler;
+    // 互联配对链接写 NFC 贴纸：读卡模式挂在 Activity 上，同样是实例、onDestroy 断开。
+    private NfcTagWriterChannelHandler nfcTagWriterChannelHandler;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
     // BUG-427/TODO-852: when API 26+ has no install permission we route the
@@ -146,6 +148,7 @@ public class MainActivity extends AudioServiceActivity {
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
         pictureInPictureChannelHandler = new PictureInPictureChannelHandler(context);
+        nfcTagWriterChannelHandler = new NfcTagWriterChannelHandler(context);
         // Manga extensions are an optional subsystem. Its constructor wires up
         // Injekt, whose reified type resolution is only as sound as the R8 keep
         // rules (a stale keep rule once made this throw on every launch and
@@ -230,6 +233,10 @@ public class MainActivity extends AudioServiceActivity {
         }
         // Activity 销毁后再往 Dart 侧 invoke 是对死引擎说话；置空后
         // notifyModeChanged 退化成安全 no-op。
+        if (nfcTagWriterChannelHandler != null) {
+            nfcTagWriterChannelHandler.destroy();
+            nfcTagWriterChannelHandler = null;
+        }
         if (pictureInPictureChannelHandler != null) {
             pictureInPictureChannelHandler.destroy();
             pictureInPictureChannelHandler = null;
@@ -626,6 +633,9 @@ public class MainActivity extends AudioServiceActivity {
 
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
+        if (nfcTagWriterChannelHandler != null) {
+            nfcTagWriterChannelHandler.register(flutterEngine);
+        }
         if (pictureInPictureChannelHandler != null) {
             pictureInPictureChannelHandler.register(flutterEngine);
         }

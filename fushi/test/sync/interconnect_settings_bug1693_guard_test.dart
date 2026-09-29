@@ -67,13 +67,19 @@ void main() {
   });
 
   test('③ URL 集合一变就剪掉不再对应任何行的 _reachable 条目', () {
-    final String body =
-        methodBody(corpus, '  Future<void> _persistUrls() async');
+    // 收口点原叫 _persistUrls（整表写本页快照）；地址列表读改写串行化后改为
+    // _mutateUrls（在库里最新列表上执行变换，docs/specs/2026-09-28-interconnect-remote-reach.md §9）。
+    final String body = methodBody(corpus, '  Future<void> _mutateUrls(');
     expect(
       containsCodeLine(body, '_reachable.removeWhere('),
       isTrue,
-      reason: '所有 URL 变更（删除/改址/重排）必经 _persistUrls；不在这里剪，'
+      reason: '所有 URL 变更（删除/改址/重排）必经 _mutateUrls；不在这里剪，'
           '删掉再重加同一地址就会立刻显示上一轮的 ✓/✗',
+    );
+    expect(
+      containsCodeLine(corpus, '_persistUrls('),
+      isFalse,
+      reason: '旧的整表覆盖入口不许回来：它会用本页快照覆盖后台学到的地址',
     );
   });
 

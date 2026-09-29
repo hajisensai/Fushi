@@ -26,6 +26,9 @@ dependencies:
     path: ../fushi_platform
   fushi_torrent:
     path: ../fushi_torrent
+  # 互联 P2P 隧道（iroh，纯 Dart FFI；原生库缺失时能力判不可用）。
+  fushi_p2p:
+    path: ../fushi_p2p
   # 与 fushi/pubspec.yaml 钉同一 sha（OCR 与 ASR 共用 OnnxSessionFactory 抽象）。
   fushi_asr_core:
     git:

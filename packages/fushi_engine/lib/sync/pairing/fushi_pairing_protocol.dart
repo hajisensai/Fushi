@@ -31,6 +31,8 @@ class FushiPairSession {
     required this.remoteAddress,
     required this.createdAt,
     this.clientDeviceId,
+    this.ticketId,
+    this.tunnelPeer,
   });
 
   /// 不透明会话 id（client 在 confirm 时回传以定位本会话）。
@@ -62,6 +64,16 @@ class FushiPairSession {
 
   /// 会话创建时刻（TTL 判定基准，TTL 加固在 M3，本阶段先记录）。
   final DateTime createdAt;
+
+  /// 本会话凭 host 签发的一次性配对票据（扫码 / 复制链接）发起时的票据 id；
+  /// 此时 [pin] 是票据 secret，host 屏上打开二维码即视为已批准，不再弹审批框。
+  /// null = 普通 PIN / LAN 配对。
+  final String? ticketId;
+
+  /// 经 P2P 隧道进来的会话：对端的 iroh NodeId（密码学身份，不可冒用）。直连会话
+  /// 为 null。限流按它分桶——隧道请求在 TCP 层一律来自 127.0.0.1，没有它就只能
+  /// 所有隧道对端共用一个桶，一个人撞 PIN 就把其他人全锁在外面。
+  final String? tunnelPeer;
 
   /// 单次消费标志：一旦 confirm（无论成功/失败）即置位，第二次 confirm 直接拒，
   /// 防 nonce 重放。
@@ -147,8 +159,11 @@ class FushiPairingProtocol {
   /// (10/8, 172.16/12, 192.168/16, 169.254/16 link-local, 127/8) 与 IPv6 环回
   /// (::1) / 唯一本地地址 (fc00::/7) / link-local (fe80::/10)。
   static bool isPrivateLanAddress(String? remoteAddress) {
-    final String? addr = remoteAddress?.trim();
-    if (addr == null || addr.isEmpty) return false;
+    final String? trimmed = remoteAddress?.trim();
+    if (trimmed == null || trimmed.isEmpty) return false;
+    // 双栈监听（IPv6 socket 同时收 v4）下，v4 对端被报成 `::ffff:a.b.c.d`——按它
+    // 字面判会把整个 LAN 当公网，强制 PIN。先还原成 v4 再判。
+    final String addr = unmapIPv4MappedAddress(trimmed);
     // IPv6：环回与本地段。
     if (addr.contains(':')) {
       final String lower = addr.toLowerCase();
@@ -172,6 +187,18 @@ class FushiPairingProtocol {
     if (a == 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
     if (a == 169 && b == 254) return true; // 169.254.0.0/16 link-local
     return false;
+  }
+
+  /// IPv4 映射的 IPv6 地址（`::ffff:192.168.1.5`，双栈 socket 上的 v4 对端）还原为
+  /// 点分 v4；其余地址原样返回。来源地址的**唯一**规范化入口：LAN 判定、限速来源
+  /// key、`lastSeenIp` 落库都必须看到同一种写法，否则同一台设备经 v4/v6 两条路来
+  /// 会被当成两个来源。
+  static String unmapIPv4MappedAddress(String address) {
+    final String lower = address.toLowerCase();
+    const String prefix = '::ffff:';
+    if (!lower.startsWith(prefix)) return address;
+    final String rest = lower.substring(prefix.length);
+    return rest.split('.').length == 4 ? rest : address;
   }
 
   /// 去空白、转小写以归一化 proof hex 串后比对。

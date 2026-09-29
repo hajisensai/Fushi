@@ -39,13 +39,13 @@ class VideoMiningHistorySnapshot {
     required int? cueStartMs,
     required int? cueEndMs,
     required this.dateKey,
-  })  : expression = fields['expression'] ?? '',
-        reading = fields['reading'] ?? '',
-        glossary = fields['glossary'] ?? '',
-        normCharOffset = cueStartMs,
-        normCharLength = cueStartMs == null || cueEndMs == null
-            ? null
-            : (cueEndMs - cueStartMs).clamp(0, 1 << 31).toInt();
+  }) : expression = fields['expression'] ?? '',
+       reading = fields['reading'] ?? '',
+       glossary = fields['glossary'] ?? '',
+       normCharOffset = cueStartMs,
+       normCharLength = cueStartMs == null || cueEndMs == null
+           ? null
+           : (cueEndMs - cueStartMs).clamp(0, 1 << 31).toInt();
 
   final String expression;
   final String reading;
@@ -59,21 +59,28 @@ class VideoMiningHistorySnapshot {
   final String dateKey;
 }
 
-/// 视频制卡的封面模式（用户在 Anki 设置里选择，默认 [gif]）：
-/// - [gif]：字幕区间动图（现默认，`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
+/// 视频制卡的封面模式（用户在 Anki 设置里选择；全新安装默认 [videoClip]，存量用户 [gif]）：
+/// - [gif]：字幕区间动图（`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
 ///   静态帧，并弹「降级为静态帧」OSD。
 /// - [currentFrame]：制卡那一刻的当前解码帧（`controller.screenshot`，点词已自动暂停）。
 ///   用户主动选的静态图，非降级 → 不弹降级 OSD。
 /// - [subtitleStart]：当前字幕 cue 起始时间点的帧（`extractVideoFrameViaFfmpeg`，
 ///   `atSeconds = clipStartMs/1000`）。同为主动选择的静态图。
-/// - [videoClip]：普通视频从源文件按同一时间段截取画面与声音，封装为一个 MP4，
-///   由 Anki 媒体播放器保持音画同步。galgame 场景卡仍把台词出现到制卡这段时间的
-///   游戏窗口录制帧编成 MP4（H.264 + 句子音频 AAC 混流，`galgame_window_video.dart`）；
-///   录制未启动 / 帧不足时仍由 galgame 协调器降级动图。
+/// - [videoClip]：同一时间段的画面与句子声音封装成**一个**片段文件，音画天然同步。
+///   容器/编码由 [MiningClipFormat] 选（默认 WebM，卡片内 `<video>` 播放；MP4 走 Anki
+///   原生播放器）。galgame 场景卡把台词出现到制卡这段时间的游戏窗口录制帧与句子音频
+///   混流（`galgame_window_video.dart`）；录制未启动 / 帧不足时由 galgame 协调器降级动图。
+///   拿不到可裁视频的来源（无字幕时间窗、浏览器只给截图/音轨）按动图模式的阶梯降级，
+///   不声称同步。
 ///
-/// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]（未知值回退 [gif]，
-/// 向后兼容）。远端来源（Netflix providedCoverBytes / YouTube）请求不设本字段，保持 [gif]
-/// 默认——它们直接给字节或走既有阶梯，不受影响。
+/// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]。
+///
+/// ⚠️ [fromWireName] 对 null / 未知返回 [videoClip]，但偏好层**不直接**拿它当默认：
+/// 所有者 2026-09-28 拍板「存量用户不翻、新装才用片段」——没显式设过封面模式时，全新
+/// 安装取 [videoClip]，升级上来的存量用户取改动前的 [gif]（见 app 侧
+/// `PreferencesRepository.settleMiningImageModeInstallDefault`）。用户显式选过的值原样保留。
+/// [ImmersionMiningRequest.imageMode] 的值对象默认仍是 [gif]——不读偏好的调用方
+/// （内置网页视频页等）行为不变。
 enum VideoMiningImageMode {
   gif('gif'),
   currentFrame('current_frame'),
@@ -85,12 +92,12 @@ enum VideoMiningImageMode {
   /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
   final String wireName;
 
-  /// 从偏好字符串解析；未知/null → [gif]（默认，向后兼容）。
+  /// 从偏好字符串解析；未知/null → [videoClip]（默认，见枚举文档）。
   static VideoMiningImageMode fromWireName(String? name) {
     for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
       if (mode.wireName == name) return mode;
     }
-    return VideoMiningImageMode.gif;
+    return VideoMiningImageMode.videoClip;
   }
 
   /// 是否为静态截图模式（用户主动选静态图，非 GIF 降级）。动图与视频片段都不是。
@@ -98,8 +105,80 @@ enum VideoMiningImageMode {
       this == VideoMiningImageMode.currentFrame ||
       this == VideoMiningImageMode.subtitleStart;
 
-  /// 是否为音画同步的视频片段模式（MP4）。
+  /// 是否为音画同步的视频片段模式（格式见 [MiningClipFormat]）。
   bool get isVideoClip => this == VideoMiningImageMode.videoClip;
+}
+
+/// 音画同步片段（[VideoMiningImageMode.videoClip]）的**容器 + 编码**，与动图 / 静图格式
+/// 两轴互不相干：那两轴只管无声的封面图，本轴只管「画面 + 句子声音一个文件」的那条链。
+///
+/// | 格式 | 卡片里怎么播 | 取舍 |
+/// |---|---|---|
+/// | [webmVp9]（默认） | `<video>` 内嵌，翻面自动播放、点例句重播 | Anki 桌面 Qt WebEngine / AnkiDroid WebView 都能解 |
+/// | [webmAv1] | 同上 | 体积最小（约为 VP9 的 60%），编码耗时约为 VP9 的 2 倍；移动端 ffmpeg-kit（Android / iOS）无 SVT-AV1 → 降级 VP9，仍内嵌 |
+/// | [mp4H264] | `[sound:]` 交给 Anki 原生播放器（Windows 弹独立窗口） | 兼容兜底；iOS 默认 |
+///
+/// 为什么内嵌只能是 WebM：Anki 桌面的 Qt WebEngine 不带专利编解码器，**没有 H.264 也没有
+/// AAC**，`<video>` 放 MP4 会失败（见 `coverMediaRef`）。渲染方式由产物扩展名决定
+/// （`webm` 内嵌、`mp4` 原生），不另走 wire 标记——转发 / 草稿 / 队列只携带文件与扩展名。
+///
+/// 编码失败按 [encodeAttempts] 降级（与 [MiningAnimatedFormat.encodeAttempts] 同范式），
+/// 卡上扩展名跟随**实际编成**的格式。
+enum MiningClipFormat {
+  webmVp9('webm_vp9', 'webm'),
+  webmAv1('webm_av1', 'webm'),
+  mp4H264('mp4_h264', 'mp4');
+
+  const MiningClipFormat(this.wireName, this.fileExtension);
+
+  /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
+  final String wireName;
+
+  /// 输出文件扩展名（不含点）。决定 muxer，也决定卡片上怎么播（见 [playsInline]）。
+  final String fileExtension;
+
+  /// 卡片内 `<video>` 内嵌播放（WebM）；否则走 Anki 原生 `[sound:]` 播放器。
+  bool get playsInline => fileExtension == 'webm';
+
+  /// 编码尝试链：AV1 → VP9 → MP4，VP9 → MP4，MP4 自身是链尾（H.264 + AAC 五端都编得出）。
+  List<MiningClipFormat> get encodeAttempts => switch (this) {
+    MiningClipFormat.webmAv1 => const <MiningClipFormat>[
+      MiningClipFormat.webmAv1,
+      MiningClipFormat.webmVp9,
+      MiningClipFormat.mp4H264,
+    ],
+    MiningClipFormat.webmVp9 => const <MiningClipFormat>[
+      MiningClipFormat.webmVp9,
+      MiningClipFormat.mp4H264,
+    ],
+    MiningClipFormat.mp4H264 => const <MiningClipFormat>[
+      MiningClipFormat.mp4H264,
+    ],
+  };
+
+  /// 平台默认值：iOS → [mp4H264]（AnkiMobile 靠导入裸 URL 拿媒体、iOS 播不了 WebM），
+  /// 其余 → [webmVp9]。纯逻辑带 [isIOS] 参数，测试宿主上 `Platform.isIOS` 恒 false。
+  static MiningClipFormat defaultFor({required bool isIOS}) =>
+      isIOS ? MiningClipFormat.mp4H264 : MiningClipFormat.webmVp9;
+
+  /// 从偏好字符串解析；未知/null → [fallback]。
+  static MiningClipFormat fromWireName(
+    String? name, {
+    required MiningClipFormat fallback,
+  }) {
+    for (final MiningClipFormat format in MiningClipFormat.values) {
+      if (format.wireName == name) return format;
+    }
+    return fallback;
+  }
+}
+
+/// 路径扩展名是否为音画同步片段容器（任一 [MiningClipFormat.fileExtension]）。
+bool isMiningClipPath(String path) {
+  final String lower = path.toLowerCase();
+  return MiningClipFormat.values.any(
+    (MiningClipFormat f) => lower.endsWith('.${f.fileExtension}'),
+  );
 }
 
 /// 制卡封面**动图的编码格式**，与 [VideoMiningImageMode] 正交：后者选「用不用动图 +
@@ -201,8 +280,8 @@ enum MiningAnimatedFormat {
   /// `extractAnimatedClipWithFallback`。
   List<MiningAnimatedFormat> get encodeAttempts =>
       this == MiningAnimatedFormat.gif
-          ? const <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
-          : <MiningAnimatedFormat>[this, MiningAnimatedFormat.gif];
+      ? const <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
+      : <MiningAnimatedFormat>[this, MiningAnimatedFormat.gif];
 
   /// 从偏好字符串解析；未知/null → [avif]（新默认）。
   static MiningAnimatedFormat fromWireName(String? name) {
@@ -329,6 +408,7 @@ class ImmersionMiningRequest {
     this.imageMode = VideoMiningImageMode.gif,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.stillFormat = MiningStillFormat.jpg,
+    this.clipFormat = MiningClipFormat.mp4H264,
     this.mediaSourceTlsPinSha256,
     this.mediaSourceHttpHeaders = const {},
     this.mediaSourceRouteReady,
@@ -380,7 +460,8 @@ class ImmersionMiningRequest {
   final Future<MineOutcome> Function({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  })? sourceReviewMine;
+  })?
+  sourceReviewMine;
 
   /// 当前解码帧兜底（本地路径链全失败时）。本地传 `controller.screenshot`。
   final Future<Uint8List?> Function()? stillFallback;
@@ -394,8 +475,8 @@ class ImmersionMiningRequest {
   /// true = 无音频则中止制卡（本地/YouTube 默认）；false = 允许无音频卡（Netflix 2A 截图卡）。
   final bool requireAudio;
 
-  /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。默认 [VideoMiningImageMode.gif]
-  /// = 现状。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
+  /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。值对象默认
+  /// [VideoMiningImageMode.gif]（不读偏好的调用方行为不变；偏好默认是 videoClip）。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
   final VideoMiningImageMode imageMode;
 
   /// 动图编码格式（见 [MiningAnimatedFormat]）。仅 [imageMode] 为
@@ -414,6 +495,14 @@ class ImmersionMiningRequest {
   /// 硬编码 `.jpg`，没显式指定的调用点/测试逐字节等价），用户可见的默认由
   /// `MiningStillFormat.fromWireName(null)` 给出（同为 jpg），真实调用点显式透传偏好。
   final MiningStillFormat stillFormat;
+
+  /// 音画同步片段格式（见 [MiningClipFormat]）。仅 [imageMode] 为
+  /// [VideoMiningImageMode.videoClip] 时生效。
+  ///
+  /// 值对象默认 [MiningClipFormat.mp4H264] = 改动前唯一的产出形态（没显式指定的调用点/
+  /// 测试逐字节等价）；用户可见的默认由偏好层给出（平台默认 WebM VP9），真实调用点一律
+  /// 显式透传偏好。与 [animatedFormat] 的默认取法一致。
+  final MiningClipFormat clipFormat;
 
   /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Hibiki 主机的 https 流，这里带上
   /// 该 host 经 TOFU 钉扎的证书 SHA-256 指纹（`aa:bb:..`）。引擎把它透传给 ffmpeg 抽取器的
@@ -454,7 +543,8 @@ class ImmersionMiningRequest {
     required int startMs,
     required int endMs,
     required String outputPath,
-  })? remoteAudioClipper;
+  })?
+  remoteAudioClipper;
 
   /// 远端 [mediaSource] 的**本地缓冲副本**（见 [CachedMediaSnapshot]）。调用方在点击当下
   /// 就让播放器落盘（那一刻数据还在缓冲里），引擎在队列里轮到本任务时等它：拿到副本
@@ -477,7 +567,8 @@ class ImmersionMiningRequest {
   final Future<MineOutcome> Function({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  })? stageNote;
+  })?
+  stageNote;
 
   /// 换成对本地缓冲副本抽取的请求：媒体源指向 [snapshot]，所有「怎么连远端」的参数
   /// （请求头 / 中继登记 / TLS 指纹 / host 端裁音频）一并清掉；副本里只有播放器当前
@@ -508,6 +599,7 @@ class ImmersionMiningRequest {
         imageMode: imageMode,
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
+        clipFormat: clipFormat,
         mediaTimeOffsetMs: snapshot.zeroMs,
         stageNote: stageNote,
       );
@@ -538,50 +630,50 @@ class ImmersionMiningRequest {
   /// 入队前冻结所有可变输入。视频页可能在任务真正执行前已经换集或关闭弹窗；队列里的
   /// 卡必须继续使用点击制卡那一刻的字段和外部媒体字节，不能读到调用方后续修改。
   ImmersionMiningRequest frozen() => ImmersionMiningRequest(
-        fields: Map<String, String>.unmodifiable(
-          Map<String, String>.from(fields),
-        ),
-        clipStartMs: clipStartMs,
-        clipEndMs: clipEndMs,
-        stillFrameAtMs: stillFrameAtMs,
-        sentence: sentence,
-        mediaSource: mediaSource,
-        audioSource: audioSource,
-        cueSentence: cueSentence,
-        documentTitle: documentTitle,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: audioStreamCount,
-        source: source,
-        bookTitleTag: bookTitleTag,
-        collectionTag: collectionTag,
-        updateNoteId: updateNoteId,
-        sourceLink: sourceLink,
-        sourceLinkResolver: sourceLinkResolver,
-        sourceReviewMine: sourceReviewMine,
-        stillFallback: stillFallback,
-        providedCoverBytes: providedCoverBytes == null
-            ? null
-            : Uint8List.fromList(providedCoverBytes!),
-        providedCoverName: providedCoverName,
-        providedAudioBytes: providedAudioBytes == null
-            ? null
-            : Uint8List.fromList(providedAudioBytes!),
-        providedAudioName: providedAudioName,
-        requireAudio: requireAudio,
-        imageMode: imageMode,
-        animatedFormat: animatedFormat,
-        stillFormat: stillFormat,
-        mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
-        // 与 [fields] 同理：入队前把头也冻成不可变副本，换集/关窗后队列里的卡仍用点击
-        // 那一刻的头（换集会让 client 的 httpHeaderFields 指向新一集的 hoster）。
-        mediaSourceHttpHeaders:
-            Map<String, String>.unmodifiable(mediaSourceHttpHeaders),
-        mediaSourceRouteReady: mediaSourceRouteReady,
-        remoteAudioClipper: remoteAudioClipper,
-        cachedMediaSnapshot: cachedMediaSnapshot,
-        mediaTimeOffsetMs: mediaTimeOffsetMs,
-        stageNote: stageNote,
-      );
+    fields: Map<String, String>.unmodifiable(Map<String, String>.from(fields)),
+    clipStartMs: clipStartMs,
+    clipEndMs: clipEndMs,
+    stillFrameAtMs: stillFrameAtMs,
+    sentence: sentence,
+    mediaSource: mediaSource,
+    audioSource: audioSource,
+    cueSentence: cueSentence,
+    documentTitle: documentTitle,
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+    source: source,
+    bookTitleTag: bookTitleTag,
+    collectionTag: collectionTag,
+    updateNoteId: updateNoteId,
+    sourceLink: sourceLink,
+    sourceLinkResolver: sourceLinkResolver,
+    sourceReviewMine: sourceReviewMine,
+    stillFallback: stillFallback,
+    providedCoverBytes: providedCoverBytes == null
+        ? null
+        : Uint8List.fromList(providedCoverBytes!),
+    providedCoverName: providedCoverName,
+    providedAudioBytes: providedAudioBytes == null
+        ? null
+        : Uint8List.fromList(providedAudioBytes!),
+    providedAudioName: providedAudioName,
+    requireAudio: requireAudio,
+    imageMode: imageMode,
+    animatedFormat: animatedFormat,
+    stillFormat: stillFormat,
+    clipFormat: clipFormat,
+    mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
+    // 与 [fields] 同理：入队前把头也冻成不可变副本，换集/关窗后队列里的卡仍用点击
+    // 那一刻的头（换集会让 client 的 httpHeaderFields 指向新一集的 hoster）。
+    mediaSourceHttpHeaders: Map<String, String>.unmodifiable(
+      mediaSourceHttpHeaders,
+    ),
+    mediaSourceRouteReady: mediaSourceRouteReady,
+    remoteAudioClipper: remoteAudioClipper,
+    cachedMediaSnapshot: cachedMediaSnapshot,
+    mediaTimeOffsetMs: mediaTimeOffsetMs,
+    stageNote: stageNote,
+  );
 }
 
 /// 引擎产出。[outcome] 用 Object? 承 MineOutcome，避免此值对象文件依赖 anki_models 全量。

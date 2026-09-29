@@ -87,12 +87,26 @@ void main() {
     final String masked = maskComments(addOrEdit);
     final int dialog = masked.indexOf('showAppDialog<String>(');
     final int guard = masked.indexOf('if (!mounted) return;');
-    final int setStateAt = masked.indexOf('setState(');
+    // 列表改动经 _mutateUrls 落库并回写 State（地址列表读改写串行化后，
+    // _addOrEditUrl 不再直接 setState）。
+    final int mutateAt = masked.indexOf('_mutateUrls(');
     expect(dialog, isNonNegative);
+    expect(mutateAt, isNonNegative, reason: '编辑结果必须经 _mutateUrls 落库');
     expect(guard, isNonNegative,
         reason: '弹窗是 async gap，宿主 section 可能已被门控隐藏并 dispose');
     expect(guard, greaterThan(dialog), reason: 'mounted 守卫必须在弹窗之后');
-    expect(guard, lessThan(setStateAt),
-        reason: 'setState 之前没有守卫 = dispose 后 setState 崩溃');
+    expect(guard, lessThan(mutateAt),
+        reason: '改列表之前没有守卫 = dispose 后照样写库、再 setState 崩溃');
+
+    // _mutateUrls 自己 await 了库写入：回来后同样要先查 mounted 再 setState。
+    final String mutate =
+        maskComments(methodBody(corpus, '  Future<void> _mutateUrls('));
+    final int awaitAt = mutate.indexOf('await ');
+    final int mutateGuard = mutate.indexOf('if (!mounted) return;');
+    final int mutateSetState = mutate.indexOf('setState(');
+    expect(awaitAt, isNonNegative);
+    expect(mutateGuard, greaterThan(awaitAt));
+    expect(mutateGuard, lessThan(mutateSetState),
+        reason: '库写入是 async gap，回来后 widget 可能已 dispose');
   });
 }

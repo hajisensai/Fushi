@@ -1527,6 +1527,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     switch (item) {
       case ReaderControlItem.back:
       case ReaderControlItem.statistics:
+      case ReaderControlItem.studyTimer:
       case ReaderControlItem.title:
       case ReaderControlItem.settings:
         return true;
@@ -1624,6 +1625,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
           semanticsId: 'hibiki.reader.header.statistics',
           onPressed: _openReadingStatistics,
+        );
+      case ReaderControlItem.studyTimer:
+        // 与状态行计时键 [ReaderStudyClockButton]、快捷键同一入口；图标按手动暂停
+        // 旗换（[_toggleStudyClockManualPause] 经 _rebuild 翻旗，顶栏 / 悬浮球
+        // 随之重建），文案是「按下去会怎样」。
+        final bool paused = _studyClockManualPause;
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_study_timer_button'),
+          icon: paused ? Icons.timer_off_outlined : Icons.timer_outlined,
+          label: _labelWithShortcut(
+            paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
+            ShortcutAction.readerToggleStudyClock,
+          ),
+          semanticsId: 'hibiki.reader.control.study_timer',
+          onPressed: _toggleStudyClockManualPause,
         );
       case ReaderControlItem.title:
         // 书名不是按钮：顶栏由 showsTitle 决定画不画，底栏槽位不接受它。

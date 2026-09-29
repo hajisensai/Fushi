@@ -172,6 +172,41 @@ void main() {
     expect(find.byType(FushiPlaceholderMessage), findsOneWidget);
   });
 
+  // BUG-2784：点到 ♡ / ♪ / ～ 这类纯符号，查词前的清洗把查询词剥成空串，查询
+  // 跑完、返回一个 searchTerm 为空的新结果。旧判据「searchTerm 非空才算查过」把它
+  // 当成空闲占位，热槽上既没有词条也没有「未找到」盖板——一个空白框。
+  testWidgets('BUG-2784 热槽 + 查询词被清洗成空串的真实结果：显示「未找到」盖板', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(_layer(
+        keepWebViewWarm: true,
+        result: DictionarySearchResult(searchTerm: ''),
+      )),
+    );
+    await tester.pump();
+
+    expect(find.byType(DictionaryPopupWebView), findsOneWidget);
+    expect(find.byType(FushiPlaceholderMessage), findsOneWidget,
+        reason: '查过了、没东西可查也是「未找到」，不能露出空 WebView');
+  });
+
+  testWidgets('BUG-2784 热槽空闲占位单例：不出现「未找到」盖板', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(_layer(
+        keepWebViewWarm: true,
+        result: kPopupSearchingPlaceholderResult,
+      )),
+    );
+    await tester.pump();
+
+    expect(find.byType(DictionaryPopupWebView), findsOneWidget);
+    expect(find.byType(FushiPlaceholderMessage), findsNothing,
+        reason: '停驻的热槽还没查过任何词，盖「未找到」是误报');
+  });
+
   testWidgets('热槽 + 搜索中：仍是进度盖板，不出现「未找到」', (
     WidgetTester tester,
   ) async {

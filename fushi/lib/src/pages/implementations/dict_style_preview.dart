@@ -209,6 +209,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         },
         onLoadStop: (_, __) => unawaited(_bootstrap()),
         // 非 null 本身就是救命动作：Java 侧据此 return true，不再连坐杀 app。
+        onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+            unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:
             (InAppWebViewController _, RenderProcessGoneDetail detail) =>
                 unawaited(

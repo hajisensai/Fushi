@@ -14,8 +14,12 @@ export 'anki_note_composer.dart'
     show
         AudioFetchOutcome,
         RenderedMinedFields,
+        kAnkiInlineVideoCoverExtensions,
         kAnkiVideoCoverExtensions,
         coverMediaRef,
+        inlineVideoCoverHtml,
+        inlineVideoSentenceAudioHtml,
+        isAnkiInlineVideoCover,
         synchronizedVideoReplayHtml;
 
 abstract class BaseAnkiRepository with AnkiNoteComposer {

@@ -1862,35 +1862,35 @@ String _mangaGestureJs({
   // 所以序列恒为 100→110→120…，而不是 100→112→125…；捏合留下的非整值也会被拉回网格。
   // ZOOM_SENS 仍然管用（设置项承诺它覆盖滚轮），改为缩放**步长本身**而非指数底数。
   var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));
-  // 「一格」的判定复用本文件翻页滚轮的同一套累计口径（阈值 40 + 反向清账，见下方
-  // BUG-051 段）：鼠标一格无论 deltaY 是 57/67/100 都 >=40，恒好一步；触控板的碎
-  // delta 攒够 40 才走一步。跨过阈值即清零、不留余数——留余数会让 deltaY=57 这类值
-  // 攒出 1,1,2,1,1,2 的非匀速台阶，正好毁掉「一格 = 10%」这个承诺。
-  var _zoomAccum = 0;
-  var _zoomDir = 0;
-  function _wheelZoomNotch(e){
+  // 两种输入、两种语义，判据只看单个事件的幅值（BUG-2758）：
+  // - 鼠标一格：deltaY 恒 >=40（57/67/100/120），一格 = 恰好一个网格步。
+  // - 精密手势：触控板捏合在 Windows fork 与 Chromium 原生窗口里都合成为
+  //   Ctrl+滚轮，deltaY = -100·ln(本次缩放比)，每个事件只有几个像素、连续到达；
+  //   Ctrl+两指滚动同样是碎 delta。它表达的是「手指张开了多少」，必须连续跟手，
+  //   与触屏捏合同口径（比例^ZOOM_SENS）。此前把它攒够 40 才走一格网格步，
+  //   要张开约 1.5 倍才缩放 10%，而且 fork 根本没把捏合转进来。
+  var PRECISE_ZOOM_DELTA = 40;
+  function _wheelDeltaPx(e){
     var dy = e.deltaY || 0;
     if (e.deltaMode === 1) dy *= 16;
     else if (e.deltaMode === 2) dy *= window.innerHeight;
-    if (dy === 0) return 0;
-    var dir = dy > 0 ? -1 : 1;
-    if (dir !== _zoomDir) { _zoomAccum = 0; _zoomDir = dir; }
-    _zoomAccum += Math.abs(dy);
-    if (_zoomAccum < 40) return 0;
-    _zoomAccum = 0;
-    return dir;
+    return dy;
   }
   document.addEventListener('wheel', function(e){
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    var dir = _wheelZoomNotch(e);
-    if (dir === 0) return;
+    var dy = _wheelDeltaPx(e);
+    if (dy === 0) return;
+    if (Math.abs(dy) < PRECISE_ZOOM_DELTA) {
+      _zoomAbout(ZOOM * Math.exp(-dy / 100 * ZOOM_SENS), e.clientX, e.clientY);
+      return;
+    }
     // 先把 ZOOM 化成保留 1 位小数的百分比再上下取整：ZOOM 是浮点，1.2 常存成
     // 1.2000000000000002，直接 Math.ceil(120.00000000000003 / 10) 会得 13 而不是 12，
     // 缩小一步就变成原地不动（_zoomAbout 的 0.0005 死区把它吃掉）。
     var cur = Math.round(ZOOM * 1000) / 10;
-    var next = dir > 0
+    var next = dy < 0
       ? (Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP
       : (Math.ceil(cur / ZOOM_STEP) - 1) * ZOOM_STEP;
     _zoomAbout(next / 100, e.clientX, e.clientY);

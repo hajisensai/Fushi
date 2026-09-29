@@ -545,8 +545,8 @@ class _VideoResourceSearchSurfaceState
     }
     if (!widget.subscription && widget.remoteDownloadTargets.isNotEmpty) {
       _remoteDownloadTarget = widget.remoteDownloadTargets.firstWhereOrNull(
-            (HostDownloadTarget t) =>
-                t.baseUrl == widget.defaultRemoteDownloadUrl,
+            // 按「是不是那台 host」认，而不是 URL 字面：选路可能经另一条地址到达。
+            (HostDownloadTarget t) => t.isPeer(widget.defaultRemoteDownloadUrl),
           ) ??
           (widget.sources.isEmpty ? widget.remoteDownloadTargets.first : null);
     }

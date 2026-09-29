@@ -95,6 +95,7 @@ typedef SynchronizedVideoExtractor = Future<VideoClipExportResult> Function({
   required String outputPath,
   required String? tlsPinSha256,
   required Map<String, String> httpHeaders,
+  required MiningClipFormat format,
 });
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
@@ -309,8 +310,10 @@ class ImmersionMiningEngine {
     required String outputPath,
     required String? tlsPinSha256,
     required Map<String, String> httpHeaders,
+    required MiningClipFormat format,
   }) =>
       exportSynchronizedVideoClip(
+        format: format,
         videoPath: videoPath,
         audioPath: audioPath,
         audioStartMs: 0,
@@ -453,8 +456,15 @@ class ImmersionMiningEngine {
         abortReason: 'Video source identity could not be verified: $error',
       );
     }
-    final bool synchronizedVideo =
-        req.source == AnkiMiningSource.video && req.imageMode.isVideoClip;
+    // 同步片段要「可裁的视频 + 句子时间窗」，或外部已给好的片段文件（Netflix 录制）；
+    // 两者都没有（无字幕 cue、浏览器只给截图）时按动图模式的阶梯降级（下方 switch 的
+    // videoClip 分支），不中止也不声称同步——videoClip 是默认模式，拿不到画面的来源
+    // 不能因此整张卡失败。
+    // galgame（source: game）只会以「外部已给好的片段」进来（窗口录制 + 语音混流），
+    // 它没有可裁的源（hasRange 恒 false），所以下面的判据自然只认 providedVideo。
+    final bool wantsSynchronizedVideo = req.imageMode.isVideoClip &&
+        (req.source == AnkiMiningSource.video ||
+            req.source == AnkiMiningSource.game);
     // 抽取用的是媒体文件自己的时间轴：缓冲副本的 0 点是播放器轴上的某一刻
     // （[ImmersionMiningRequest.mediaTimeOffsetMs]），远端流 / 本地文件为 0。
     // 卡面的 clip 窗（下方 AnkiMiningContext）仍写播放器轴原值。
@@ -504,16 +514,12 @@ class ImmersionMiningEngine {
     // 变体，见 [ffmpegRemoteInputFor]）；本地路径与未登记的地址原样。
     final String? src =
         req.mediaSource == null ? null : ffmpegRemoteInputFor(req.mediaSource!);
-    final bool providedVideo = synchronizedVideo &&
+    final bool providedVideo = wantsSynchronizedVideo &&
         coverPath != null &&
-        coverPath.toLowerCase().endsWith('.mp4');
-    if (synchronizedVideo && !providedVideo && !req.hasRange) {
-      return const ImmersionMiningResult(
-        aborted: true,
-        abortReason:
-            'synchronized video requires a video source and sentence range',
-      );
-    }
+        isMiningClipPath(coverPath);
+    // 可变：导出失败时降级成「动图 + 单独句子音频」，不再声称同步（见下方导出分支）。
+    bool synchronizedVideo =
+        wantsSynchronizedVideo && (providedVideo || req.hasRange);
 
     // 三种封面来源封成本地闭包（各自带前置守卫，源不可用即返 null）。三个 [VideoMiningImageMode]
     // 只是它们的不同优先级排列，把原来手写的三段 `if (coverPath == null && ...)` 阶梯归一成
@@ -622,22 +628,27 @@ class ImmersionMiningEngine {
       return null;
     });
 
+    // 现状阶梯：GIF 主 → 起点单帧降级 → 当前帧兜底（逐字等价于旧三段 if）。
+    // 同步片段导出失败时也走它（见下方），所以收成一个本地闭包。
+    Future<void> runAnimatedLadder() async {
+      coverPath = await tryGif();
+      if (coverPath == null) {
+        coverPath = await tryStartFrame();
+        if (coverPath != null) degradedToStill = true;
+      }
+      if (coverPath == null) {
+        coverPath = await tryCurrentFrame();
+        // 无区间(无cue)截当前帧不算降级，不弹「降级为静态」OSD。
+        if (coverPath != null) degradedToStill = req.hasRange;
+      }
+    }
+
     if (coverPath == null && !synchronizedVideo) {
       switch (req.imageMode) {
         case VideoMiningImageMode.gif:
         // 普通视频的同步模式已在外层分流；保留其他来源既有的动图降级阶梯。
         case VideoMiningImageMode.videoClip:
-          // 现状阶梯：GIF 主 → 起点单帧降级 → 当前帧兜底（逐字等价于旧三段 if）。
-          coverPath = await tryGif();
-          if (coverPath == null) {
-            coverPath = await tryStartFrame();
-            if (coverPath != null) degradedToStill = true;
-          }
-          if (coverPath == null) {
-            coverPath = await tryCurrentFrame();
-            // 无区间(无cue)截当前帧不算降级，不弹「降级为静态」OSD。
-            if (coverPath != null) degradedToStill = req.hasRange;
-          }
+          await runAnimatedLadder();
         case VideoMiningImageMode.subtitleStart:
           // 用户选「字幕开头截图」：起点单帧优先，失败退当前帧。主动选静态图，非降级。
           coverPath = await tryStartFrame();
@@ -665,32 +676,48 @@ class ImmersionMiningEngine {
       }
       exportedVideoDir = await Directory(tempDir).createTemp('synced_video_');
       final VideoClipExportResult video;
+      final String trimmedAudio = audioPath;
       try {
-        video = await _synchronizedVideo(
-          videoPath: src!,
-          audioPath: audioPath,
-          startMs: extractStartMs,
-          endMs: extractEndMs,
-          outputPath: '${exportedVideoDir.path}/immersion_video.mp4',
-          tlsPinSha256: req.mediaSourceTlsPinSha256,
-          httpHeaders: req.mediaSourceHttpHeaders,
-        );
+        // 首选格式编不出来（捆绑 ffmpeg 缺 VP9/Opus/AV1）按 encodeAttempts 降级，
+        // 卡上扩展名跟随实际编成的格式。
+        video = (await exportWithClipFormatFallback(
+          format: req.clipFormat,
+          outputStem: '${exportedVideoDir.path}/immersion_video',
+          onDegrade: (MiningClipFormat failed, VideoClipExportResult r) =>
+              engineLog.logDiagnostic(
+            'Anki.synchronizedVideo.degrade',
+            '${failed.wireName}: ${r.detail ?? r.failure?.name}',
+          ),
+          attempt: (MiningClipFormat format, String outputPath) =>
+              _synchronizedVideo(
+            videoPath: src!,
+            audioPath: trimmedAudio,
+            startMs: extractStartMs,
+            endMs: extractEndMs,
+            outputPath: outputPath,
+            tlsPinSha256: req.mediaSourceTlsPinSha256,
+            httpHeaders: req.mediaSourceHttpHeaders,
+            format: format,
+          ),
+        ))
+            .result;
       } catch (_) {
         await _cleanupSynchronizedVideo(exportedVideoDir);
         rethrow;
       }
       if (!video.isSuccess) {
         await _cleanupSynchronizedVideo(exportedVideoDir);
-        final String reason = video.detail ?? video.failure!.name;
-        reportCover(reason);
-        return ImmersionMiningResult(
-          aborted: true,
-          abortReason:
-              _withRootCause('synchronized video export failed', reason),
-        );
+        exportedVideoDir = null;
+        reportCover(video.detail ?? video.failure!.name);
+        // 片段模式是默认值：源没有视频轨（纯音频文件）、远端流超时等导出失败时，退回
+        // 动图模式的阶梯并保留已裁好的句子音频——照常出卡，但不声称同步。改默认之前这些
+        // 卡走 gif 模式本来就能出，这里中止等于让它们整张失败。
+        synchronizedVideo = false;
+        await runAnimatedLadder();
+      } else {
+        coverPath = video.outputPath;
+        audioPath = coverPath;
       }
-      coverPath = video.outputPath;
-      audioPath = coverPath;
     }
 
     // TODO-1303：无音频中止——需要音频却最终没有音轨（不建无音频卡）。音频来自两条路：

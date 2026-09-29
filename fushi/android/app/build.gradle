@@ -183,6 +183,10 @@ android {
         // Gradle 静默跳过，app 运行期 EmbeddedTorrentHost.open 因 .so 缺失返回
         // null → 自动回退外接 qBittorrent。构建本身不依赖 vcpkg/NDK 交叉编译。
         main.jniLibs.srcDirs += '../../../native/fushi_torrent/prebuilt/android'
+        // 互联 P2P 隧道（iroh，copy-if-present）：native/fushi_p2p/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_p2p.so 则随包；缺失时 P2P 能力判
+        // 不可用，其余互联照常。
+        main.jniLibs.srcDirs += '../../../native/fushi_p2p/prebuilt/android'
     }
 
     defaultConfig {
