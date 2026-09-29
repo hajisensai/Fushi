@@ -22,11 +22,18 @@ void main() {
 
   test('查词浮窗不再在自己的线程上装低级鼠标钩子', () {
     final String window = read('global_lookup_window.cpp');
-    expect(
-      window.contains('SetWindowsHookEx'),
-      isFalse,
-      reason: 'BUG-1048：钩子必须交给 low_level_mouse_hook 的专用线程安装',
-    );
+    // BUG-1048：WH_MOUSE_LL 必须交给 low_level_mouse_hook 的专用线程安装。
+    // BUG-2782：窗口线程上唯一允许的钩子是线程级 WH_CBT（只否决本线程查词卡被
+    // 触摸激活，不进全系统输入路径）；它必须是线程级的，不能装成全局钩子。
+    final List<String> installs = RegExp(r'SetWindowsHookExW?\(([^;]*);')
+        .allMatches(window)
+        .map((Match m) => m.group(1)!)
+        .toList();
+    expect(installs, hasLength(1),
+        reason: 'BUG-1048：鼠标钩子必须交给 low_level_mouse_hook 的专用线程安装');
+    expect(installs.single, contains('WH_CBT'));
+    expect(installs.single, contains('GetCurrentThreadId()'),
+        reason: 'WH_CBT 必须是本线程钩子');
     expect(
       window.contains('fushi::ArmLowLevelMouseHook'),
       isTrue,

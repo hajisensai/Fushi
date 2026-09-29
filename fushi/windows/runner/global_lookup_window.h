@@ -285,6 +285,11 @@ class GlobalLookupWindow {
                                           HWND hwnd, LONG id_object,
                                           LONG id_child, DWORD thread,
                                           DWORD time);
+  // BUG-2782 — 平台线程上的 WH_CBT：否决 Chromium 在触摸时对卡片子窗的
+  // SetFocus 连带激活卡片（见 window_activation_policy.h 的第 2 条路径）。
+  static LRESULT CALLBACK ActivationGuardProc(int code, WPARAM wparam,
+                                              LPARAM lparam);
+  static void EnsureActivationGuard();
   // BUG-1048 — 处理钩子线程投递过来的「全局点击」消息（见 low_level_mouse_hook.h）：
   // 落在窗口外 -> 关闭浮窗；落在窗口内 -> 交给 web host 自己命中测试。跑在窗口线程，
   // 钩子线程只搬坐标，不碰任何 C++ 对象。
@@ -428,6 +433,9 @@ class GlobalLookupWindow {
   // 覆盖窗的点击外关闭。
   bool mouse_hook_armed_ = false;
   static GlobalLookupWindow* s_hook_owner_;
+  static HHOOK s_activation_guard_hook_;
+  // 本实例正主动抢前台（自绘右键菜单）：ActivationGuardProc 只放行这一窗口期。
+  bool self_activation_allowed_ = false;
   bool visible_ = false;
   bool revealed_ = false;
   bool capture_suppressed_ = false;
