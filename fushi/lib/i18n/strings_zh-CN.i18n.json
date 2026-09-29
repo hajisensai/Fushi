@@ -5215,8 +5215,6 @@
   "manga_panel_none": "未检测到分镜",
   "manga_panel_model_unavailable": "分镜模型不可用",
   "manga_panel_detect_failed": "分镜检测失败",
-  "ai_feature_video_acquire": "AI 下视频",
-  "ai_feature_video_acquire_summary": "跟 AI 说作品名，由它解析你的要求、在多义作品与版本里选择，然后下载或订阅",
   "ai_video_download_section": "AI 下视频",
   "ai_video_download_quality": "默认画质",
   "ai_video_download_quality_hint": "AI 下载助手选版本时使用；「最高可用」= 结果里分辨率最高的那一档，「每次询问」= 每次都问。",
@@ -5788,7 +5786,7 @@
   "ai_video_acquire_remote_executor": "在 $device 上执行",
   "ai_video_acquire_failure_remote_unavailable": "与执行设备的连接中断，请确认它在线后重试。",
   "ai_video_acquire_remote_unsupported": "$device 不支持 AI 下视频，请更新那台设备上的 Fushi。",
-  "ai_video_acquire_remote_no_provider": "$device 还没有给「AI 下视频」指派 AI 提供商，请在那台设备的「设置 › AI」里指派。",
+  "ai_video_acquire_remote_no_provider": "$device 还没有给「AI 下载」指派 AI 提供商，请在那台设备的「设置 › AI」里指派。",
   "ai_video_acquire_remote_not_ready": "$device 的下载还没配好（下载后端或受管视频来源）。",
   "video_library_delete_rows_failed": "$n 个视频删除失败，仍保留在媒体库中。",
   "video_library_delete_failed": "删除失败：$reason",
@@ -5838,8 +5836,6 @@
   "ai_media_acquire_download": "下载",
   "ai_media_acquire_started": "已开始下载",
   "ai_media_acquire_queries": "搜索词：$queries",
-  "ai_feature_media_acquire": "AI 下载（小说 / 漫画 / 游戏）",
-  "ai_feature_media_acquire_summary": "在「浏览 › 发现」里说出想要的小说、漫画或游戏，AI 把它变成搜索词并推荐匹配结果，每次下载由你确认。",
   "leaderboard_tab": "排行",
   "leaderboard_intro_title": "排行榜与 Fushi 账户",
   "leaderboard_intro_body": "注册后可以和好友、所有人比较读完了多少。注册之前不会上传任何东西。",
@@ -6076,5 +6072,7 @@
   "anki_sync_client_relogin": "重新登录",
   "anki_sync_client_discard_confirm": "还有 $count 张卡没有同步到 Anki。放弃这些卡并退出登录？放弃后无法找回。",
   "anki_sync_client_discard_action": "放弃并退出",
-  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error"
+  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error",
+  "ai_feature_acquire": "AI 下载",
+  "ai_feature_acquire_summary": "跟 AI 说想要什么：视频，或在「浏览 › 发现」里的小说、漫画、游戏。它解析你的要求、在匹配的作品与版本里选择；视频随后下载或订阅，其它媒体每次下载由你确认。"
 }
