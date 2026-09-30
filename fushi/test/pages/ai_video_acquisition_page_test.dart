@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
+import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';

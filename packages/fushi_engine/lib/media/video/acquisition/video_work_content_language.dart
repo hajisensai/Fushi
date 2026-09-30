@@ -9,7 +9,7 @@ library;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 
 /// 制作国 → 语言。只列能**唯一**推出语言的国家；多语国家（CA / CH / BE…）不列，
 /// 列了就是猜。

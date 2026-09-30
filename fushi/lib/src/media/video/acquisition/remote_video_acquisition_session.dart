@@ -4,8 +4,8 @@ library;
 
 import 'dart:async';
 
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';

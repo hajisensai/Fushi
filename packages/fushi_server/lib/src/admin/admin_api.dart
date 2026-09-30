@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/anki_sync/anki_box_landing.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -22,6 +23,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' s
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
@@ -536,6 +538,10 @@ class AdminApi {
         'p2p': ctx.config.p2p,
         'p2pRelays': ctx.config.p2pRelays,
         'p2pStatus': ctx.host.p2pStatus(),
+        // AI 提供商（「AI 下视频」助手会话用）：API key 只报「设过没有」；保存即生效。
+        // null = 没配（能力位报 no_provider，不发任何 AI 请求）。
+        'ai': ctx.config.ai?.toAdminJson(),
+        'aiPresets': <String>[for (final AiProviderPreset preset in kAiProviderPresets) preset.id, kAiCustomPresetId],
         // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
         'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe', 'metadataLocale', 'tmdbApiKey'],
       });
@@ -565,6 +571,7 @@ class AdminApi {
         'reason': 'p2p_unavailable',
       }, status: 409);
     }
+    final ({ServerAiConfig? ai, bool clear})? ai = _aiFromBody(body['ai'], ctx.config.ai);
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -591,9 +598,65 @@ class AdminApi {
       scanScrape: body['scanScrape'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty ? null : body['tmdbApiKey'].toString().trim(),
+      ai: ai?.ai,
+      clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
     return _settings();
+  }
+
+  /// `ai`：缺省 = 不改。`preset` 为空 / null = 关掉（删掉 `ai:` 段）；缺 `preset` 键 =
+  /// 沿用当前预设。`protocol` / `baseUrl` / `model` 空 = 跟随预设；`apiKey` 空 = 不改
+  /// （与 qBittorrent 密码同口径：表单不回显旧值）。配出来不能用（未知预设、地址
+  /// 非法、非 HTTPS 又没放行明文…）整个请求 400，不落半截；只缺 key / 模型的「没配全」
+  /// 照存（能力位报 no_provider），用户可以分两次填。
+  static ({ServerAiConfig? ai, bool clear})? _aiFromBody(Object? raw, ServerAiConfig? current) {
+    if (raw == null) return null;
+    if (raw is! Map) throw const FormatException('ai must be an object');
+    final Map<String, Object?> m = <String, Object?>{for (final MapEntry<Object?, Object?> e in raw.entries) '${e.key}': e.value};
+    String? text(String key) {
+      final Object? v = m[key];
+      if (v != null && v is! String) throw FormatException('ai.$key must be a string');
+      final String t = (v as String? ?? '').trim();
+      return t.isEmpty ? null : t;
+    }
+
+    bool? flag(String key) {
+      final Object? v = m[key];
+      if (v != null && v is! bool) throw FormatException('ai.$key must be a boolean');
+      return v as bool?;
+    }
+
+    final String? preset = m.containsKey('preset') ? text('preset') : current?.preset;
+    if (preset == null) return (ai: null, clear: true);
+    final String? protocolKey = text('protocol');
+    AiWireProtocol? protocol;
+    if (protocolKey != null) {
+      protocol = AiWireProtocol.values.where((AiWireProtocol p) => p.storageKey == protocolKey).firstOrNull;
+      if (protocol == null) throw FormatException('ai.protocol "$protocolKey" is not a known protocol');
+    }
+    final String? effort = text('reasoningEffort');
+    if (effort != null && !AiReasoningEffort.values.any((AiReasoningEffort e) => e.storageKey == effort)) {
+      throw FormatException('ai.reasoningEffort "$effort" is not one of none / low / medium / high');
+    }
+    final ServerAiConfig base = current ?? ServerAiConfig(preset: preset);
+    final ServerAiConfig next = base.copyWith(
+      preset: preset,
+      protocol: protocol,
+      clearProtocol: protocol == null && m.containsKey('protocol'),
+      baseUrl: text('baseUrl'),
+      clearBaseUrl: text('baseUrl') == null && m.containsKey('baseUrl'),
+      model: text('model'),
+      clearModel: text('model') == null && m.containsKey('model'),
+      apiKey: text('apiKey'),
+      reasoningEffort: effort == null ? null : AiReasoningEffort.fromStorageKey(effort),
+      allowInsecureHttp: flag('allowInsecureHttp'),
+      webKnowledge: flag('webKnowledge'),
+    );
+    // 只缺 key / 模型算「没配全」，照存；地址 / 预设层面的错误直接拒。
+    final String? invalid = next.invalidReason();
+    if (invalid != null) throw FormatException('ai: $invalid');
+    return (ai: next, clear: false);
   }
 
   /// `publicUrls` / `p2pRelays`：缺省 = 不改；否则必须是字符串数组，逐条去空白、

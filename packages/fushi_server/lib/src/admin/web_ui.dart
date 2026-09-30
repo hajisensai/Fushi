@@ -405,6 +405,9 @@ const FIELDS = [
   ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
+  ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],
+  ['ai.model','AI 模型（空 = 预设起点模型）','text'],['ai.baseUrl','AI 接口地址（空 = 预设地址）','text'],['ai.protocol','AI 协议（空 = 跟随预设）','select:,openAiCompatible,anthropicMessages,geminiGenerateContent'],
+  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],
 ];
 let settingsCache=null;
 async function loadSettings(){
@@ -412,15 +415,17 @@ async function loadSettings(){
   // 远程访问卡片有自己的保存键：主表单保存后只刷新 P2P 状态，不冲掉它未保存的编辑。
   if(first) renderRemoteReach(s); else renderP2pState(s.p2pStatus);
   const found = s.torrent && s.torrent.embeddedLibraryFound;
-  $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ const v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-'); if(k==='torrent.library'&&!v) label += found ? `（已找到 ${found}）` : '（未找到随包库）';
+  $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ let v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-'); if(k==='torrent.library'&&!v) label += found ? `（已找到 ${found}）` : '（未找到随包库）';
+    if(k==='ai.webKnowledge'&&!s.ai) v=true; if(k==='ai.preset'&&s.ai) label += s.ai.status==='ready' ? '（可用）' : `（未配全：${s.ai.problem||''}）`;
+    if(type.startsWith('dyn:')) return `<label class="f">${esc(label)}<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(o)}</option>`).join('')}</select></label>`;
     if(type==='bool') return `<label class="f">${esc(label)}<select id="${id}"><option value="true" ${v?'selected':''}>开</option><option value="false" ${!v?'selected':''}>关</option></select></label>`;
     if(type.startsWith('select:')) return `<label class="f">${esc(label)}<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></label>`;
     if(type==='password') return `<label class="f">${esc(label)} ${s.qbittorrent.passwordSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`;
-    if(type.startsWith('secret:')) return `<label class="f">${esc(label)} ${s[type.slice(7)]?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`;
+    if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; return `<label class="f">${esc(label)} ${isSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`; }
     return `<label class="f">${esc(label)}<input type="${type}" id="${id}" value="${esc(v??'')}"></label>`; }).join('');
 }
 $('#btn-settings-save').onclick = guard(async()=>{
-  const body={qbittorrent:{},torrent:{}};
+  const body={qbittorrent:{},torrent:{},ai:{}};
   for(const [k,,type] of FIELDS){ const el=$('#f-'+k.replace('.','-')); let v=el.value; if(type==='bool') v=(v==='true'); else if(type==='number') v=Number(v); if(type!=='bool'&&type!=='number'&&v==='') v=null;
     if(k.includes('.')) body[k.split('.')[0]][k.split('.')[1]]=v; else body[k]=v; }
   // 路径类字段：空串代表「清掉」——但 copyWith 的 null 是「不改」，所以传空串让服务端按空处理

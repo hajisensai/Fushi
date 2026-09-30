@@ -11,13 +11,13 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_feature.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_reply_json.dart';
-import 'package:fushi/src/ai/web_knowledge.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_reply_json.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 
 export 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
@@ -183,7 +183,7 @@ Future<AiVideoIdentityDecision> requestAiVideoIdentity({
 /// 联网资料（设置 › AI › 联网资料）开着时先抓一小段背景一起给模型；抓失败不影响
 /// 识别本身。[webFactory] 同样只给测试注入。
 AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
-  PreferencesRepository prefsRepo, {
+  AiSettingsSource prefsRepo, {
   AiChatClient Function()? clientFactory,
   WebKnowledgeClient Function()? webFactory,
 }) => (AiVideoIdentityQuery query) async {
@@ -206,7 +206,7 @@ AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
       references: await fetchAiIdentityReferences(web, query),
     );
   } catch (error, stack) {
-    ErrorLogService.instance.logDiagnostic(
+    engineLog.logDiagnostic(
       'VideoSourceScrapeCoordinator.aiIdentity',
       '${query.localTitles.join(' / ')}: $error\n$stack',
     );

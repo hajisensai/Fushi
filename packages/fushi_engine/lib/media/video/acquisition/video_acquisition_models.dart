@@ -16,9 +16,9 @@ import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
-import 'package:fushi/src/media/video/download/video_discovery_selection.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 
 // ---------------------------------------------------------------------------
 // 值域

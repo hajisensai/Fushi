@@ -28,11 +28,11 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_resource_picker.dart';
-import 'package:fushi/src/media/video/acquisition/video_work_content_language.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_resource_picker.dart';
+import 'package:fushi_engine/media/video/acquisition/video_work_content_language.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 
 /// reducer 的返回：新状态 + 要执行的效果（按顺序）。
 typedef VideoAcquisitionReduction = (

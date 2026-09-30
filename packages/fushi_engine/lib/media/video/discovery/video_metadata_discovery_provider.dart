@@ -1,4 +1,4 @@
-import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider_display_name.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -31,7 +31,7 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
   String get id => _provider.providerKind.name;
 
   @override
-  String get displayName => videoMetadataProviderLabel(_provider.providerKind);
+  String get displayName => videoMetadataProviderDisplayName(_provider.providerKind);
 
   @override
   final int priority;

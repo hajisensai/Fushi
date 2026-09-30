@@ -34,6 +34,7 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
@@ -216,6 +217,9 @@ class HeadlessHost {
       // 无头服务端的 host 偏好读侧（「允许为对端转码视频」等），与 app 侧同一张
       // `preferences` 表、同一份默认值。
       prefs: prefs,
+      // 「AI 下视频」助手会话：手机把下载执行设备设成服务端时整场在这里跑。没配
+      // `ai:` 段时能力位如实报 no_provider（路由照挂，客户端好区分「不懂」与「没配」）。
+      assistant: createServerAssistantHost(config: () => config, prefs: prefs, db: db, downloads: downloads),
     )
       ..onPairRequest = _approvePairing
       ..onPairPinGenerated = _generatePin

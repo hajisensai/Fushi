@@ -230,6 +230,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 - **代下载只收视频**：`downloads.kinds` 只有 `video`（没有发现导入执行器）。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。
 - CLI 没有 `jobs` / `download` 子命令：由 admin API / WebUI 代替。
+- **AI 助手会话（2026-09-30 补）**：服务端现在也挂 `/api/assistant`（AI 下视频），状态机 / AI 调用层 / 发现服务 / 端口装配随之从 app 下沉到引擎（`fushi_engine/lib/ai/`、`media/video/acquisition/`、`media/video/discovery/`、`sync/assistant/video_acquisition_assistant_host.dart`），app 与服务端共用 `createHostVideoAcquisitionService`。服务端的 AI 配置是 yaml `ai:` 段（**只有一家、只指派给「AI 下载」**），不是 app 那套「提供商清单 + 功能指派」偏好键；没配时能力位 `no_provider`、零 AI 请求。仍不做的：服务端管线没接字幕源，会话里选了「配字幕」也不装；刮削的 AI 身份识别不在服务端装配。
 
 第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
 

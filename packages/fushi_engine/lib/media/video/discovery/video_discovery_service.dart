@@ -1,11 +1,11 @@
 library;
 
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
-import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/anilist_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
@@ -13,10 +13,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
-import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_metadata_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// 发现页的生产聚合服务。
 ///
@@ -47,18 +46,20 @@ class VideoDiscoveryService {
             ? null
             : Set<String>.unmodifiable(searchProviderIds);
 
+  /// [discoveryAvailable] 是宿主的商店合规门（app 传
+  /// `StoreRestrictedCapability.externalDiscovery.isAvailable`，无头服务端恒 true）：
+  /// 必填，任何装配点都得显式声明，漏传编译不过。
   factory VideoDiscoveryService.production(
-    VideoSourceScrapeGlobalConfig config,
-  ) {
+    VideoSourceScrapeGlobalConfig config, {
+    required bool discoveryAvailable,
+  }) {
     final VideoMetadataProviderRegistry catalog =
         VideoMetadataProviderRegistry.production(config);
     final AniListVideoMetadataProvider anilist = AniListVideoMetadataProvider();
-    // iOS 上不登记任何**发现** provider（[StoreRestrictedCapability.externalDiscovery]）；
+    // iOS 上不登记任何**发现** provider（app 的 `StoreRestrictedCapability.externalDiscovery`）；
     // metadata provider 照常保留——那条链路服务的是本地媒体库的刮削（MAL / TMDB /
     // AniDB 补全已入库文件的作品资料），与「浏览站上有什么可看」不是一回事，
     // 两者共用本类只是因为它们查的是同一批 API。
-    final bool discoveryAvailable =
-        StoreRestrictedCapability.externalDiscovery.isAvailable;
     // 发现页的搜索源只收「能当目录浏览」的资料源：AniDB（2026-09-20 起装进生产
     // registry 作默认刮削主源）的 `search` 是本地标题目录，没有封面 / 简介 / 评分，
     // 摆进发现页只是一列裸标题；它在这里的用途仅限 [metadataProviders]——发现结果
@@ -361,7 +362,7 @@ class VideoDiscoveryService {
     try {
       return await body();
     } on Object catch (error, stack) {
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoDiscoveryService.loadFranchise.$source',
         '$error\n$stack',
       );

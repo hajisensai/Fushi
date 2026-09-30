@@ -226,16 +226,31 @@ void main() {
     });
 
     test('视频域的发现 provider 过门，元数据 provider 不过门', () {
+      // 发现服务 2026-09-30 起下沉到引擎（无头服务端也用），门变成 production 的
+      // 必填参数：引擎里没有 app 的合规判据，每个 app 装配点必须显式把
+      // externalDiscovery 传进去——漏传编译不过，传错由下面逐个装配点钉死。
       final String source = compactCode(
-        read('lib/src/media/video/discovery/video_discovery_service.dart'),
-      );
-      expect(
-        source,
-        contains(
-          'finalbooldiscoveryAvailable='
-          'StoreRestrictedCapability.externalDiscovery.isAvailable;',
+        read(
+          '../packages/fushi_engine/lib/media/video/discovery/'
+          'video_discovery_service.dart',
         ),
       );
+      expect(source, contains('requiredbooldiscoveryAvailable,'));
+      for (final String caller in <String>[
+        'lib/src/pages/implementations/home_page.dart',
+        'lib/src/media/video/acquisition/app_video_acquisition_assembly.dart',
+      ]) {
+        final String wiring = compactCode(read(caller));
+        final int calls = 'VideoDiscoveryService.production('
+            .allMatches(wiring)
+            .length;
+        final int gated = 'discoveryAvailable:'
+                'StoreRestrictedCapability.externalDiscovery.isAvailable,'
+            .allMatches(wiring)
+            .length;
+        expect(calls, greaterThan(0), reason: caller);
+        expect(gated, calls, reason: '$caller 的每个发现服务装配点都要过门');
+      }
       expect(
         source,
         contains('if(discoveryAvailable)AniListVideoDiscoveryProvider(),'),

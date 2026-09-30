@@ -7,7 +7,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 
 /// 可以指派 AI 提供商的功能。
 ///

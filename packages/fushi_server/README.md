@@ -112,6 +112,15 @@ qbittorrent:                  # engine=qbittorrent 或 auto 无内置库时用
   url: "http://127.0.0.1:8080"
   username: "admin"
   password: "..."
+ai:                           # 「AI 下视频」助手会话用的 AI 提供商（见下文）；整段省略 = 不用 AI、不发任何 AI 请求
+  preset: "openai"            # openai / anthropic / gemini / deepseek / qwen / zhipu / … / custom（全部自填）
+  api_key: "sk-..."
+  # model: ""                 # 空 = 预设的起点模型
+  # base_url: ""              # 空 = 预设地址（custom 必填）
+  # protocol: ""              # 空 = 跟随预设：openAiCompatible / anthropicMessages / geminiGenerateContent
+  reasoning_effort: "none"    # none / low / medium / high
+  allow_insecure_http: false  # 本地推理服务（Ollama / LM Studio）走 http://localhost 时才需要
+  web_knowledge: true         # 联网资料（内置维基站）辅助识别作品 / 列系列
 libraries:
   - id: "anime"
     path: "/srv/media/anime"
@@ -182,6 +191,20 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 ```
 
 `reason` 在未生效时说明原因：`unavailable`（没原生库）/ `disabled` / `host_stopped` / `loopback_bind`（`bind` 只监听本机）/ `start_failed`（看 `lastError` 与日志）。
+
+### AI 下视频（`/api/assistant`）
+
+手机「设置 → 下载 → 下载执行设备」选了这台服务端后，首页「AI 下视频」的整场对话都在服务端跑：
+一句话交给**服务端自己配的** AI（`ai:` 段）解析，搜作品走服务端的资料源（同刮削：TMDB 需要 `tmdb_api_key`），
+搜资源走服务端的索引器（内置 + Torznab），选定后直接进服务端下载管线（`<data>/documents/downloads`）或建订阅。
+手机只收与语言无关的快照、按自己的语言渲染，并按手机的界面语言写 AI 提示词。
+
+- 没有 `ai:` 段或没配全（缺 key / 模型）时，能力位报 `no_provider`，手机据此提示去服务端配置；**不发任何 AI 请求**。
+- 下载后端没起来（没内置引擎也没 qBittorrent）时报 `not_ready`。
+- WebUI「设置」页的 AI 几项改完**保存即生效**，不用重启；API key 与 qBittorrent 密码同口径：不回显、留空不改。
+  admin API：`GET/PUT settings` 的 `ai` 对象（`preset` 置空即关；`apiKey` 只回 `apiKeySet`）。
+- 服务端那一家 AI 只指派给「AI 下载」：刮削的 AI 身份识别、补字幕重排等其它 AI 功能在服务端不装配。
+- 选了「配字幕」时服务端当前不会装字幕（服务端管线没接字幕源）；每系列字幕语言选择会记进偏好表备用。
 
 ### 视频刮削
 

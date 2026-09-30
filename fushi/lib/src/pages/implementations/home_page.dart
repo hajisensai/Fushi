@@ -43,18 +43,18 @@ import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/app_assistant_host.dart';
+import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/media/torrent/magnet_utils.dart'
     show magnetUriFromInfoHash;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
 import 'package:fushi/src/media/video/acquisition/remote_video_acquisition_session.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
-import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
@@ -75,8 +75,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
-import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
@@ -1601,8 +1601,11 @@ class _HomePageState extends BasePageState<HomePage>
       return existing;
     }
     _videoDiscoveryService?.close();
-    final VideoDiscoveryService service =
-        VideoDiscoveryService.production(config);
+    final VideoDiscoveryService service = VideoDiscoveryService.production(
+      config,
+      discoveryAvailable:
+          StoreRestrictedCapability.externalDiscovery.isAvailable,
+    );
     final VideoDiscoveryController controller =
         _ProductionVideoDiscoveryController(service);
     _videoDiscoveryService = service;
@@ -2211,7 +2214,7 @@ class _HomePageState extends BasePageState<HomePage>
         _showRemoteAiAcquisitionBlocked(
           context,
           target,
-          error.detail ?? kAppAssistantReasonNotReady,
+          error.detail ?? kHostAssistantReasonNotReady,
         );
       } else {
         _showVideoDiscoveryMessage(
@@ -2257,9 +2260,9 @@ class _HomePageState extends BasePageState<HomePage>
     _showVideoDiscoveryMessage(
       context,
       switch (reason) {
-        kAppAssistantReasonNoProvider =>
+        kHostAssistantReasonNoProvider =>
           t.ai_video_acquire_remote_no_provider(device: target.label),
-        kAppAssistantReasonNotReady =>
+        kHostAssistantReasonNotReady =>
           t.ai_video_acquire_remote_not_ready(device: target.label),
         _ => t.ai_video_acquire_remote_unsupported(device: target.label),
       },

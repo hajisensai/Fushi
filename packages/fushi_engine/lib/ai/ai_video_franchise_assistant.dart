@@ -14,17 +14,17 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:collection/collection.dart' show mergeSort;
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_reply_json.dart';
-import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart'
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_reply_json.dart';
+import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart'
     show resolveVideoAcquireAiProvider;
-import 'package:fushi/src/ai/ai_video_search_assistant.dart'
+import 'package:fushi_engine/ai/ai_video_search_assistant.dart'
     show AiClientFactory;
-import 'package:fushi/src/ai/web_knowledge.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -291,7 +291,7 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
       VideoFranchise(name: franchise, series: series, movies: movies),
     ]);
   } on Object catch (error, stack) {
-    ErrorLogService.instance.logDiagnostic(
+    engineLog.logDiagnostic(
       'VideoAcquisition.franchiseWeb',
       '$franchise: $error\n$stack',
     );
@@ -304,7 +304,7 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
 /// [expandVideoFranchiseFromWeb] 直接返回资料源结果。
 Future<VideoFranchise?> Function(VideoDiscoveryItem item)
 createPreferencesVideoFranchiseLoader(
-  PreferencesRepository prefs, {
+  AiSettingsSource prefs, {
   required Future<VideoFranchise?> Function(VideoDiscoveryItem item) base,
   required Future<ProviderBatchResult<VideoDiscoveryPage>> Function(
     VideoDiscoveryRequest request,

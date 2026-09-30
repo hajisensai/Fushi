@@ -12,14 +12,14 @@ library;
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:fushi/src/ai/ai_chat_client.dart' show AiChatFailure;
-import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
-import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
+import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -303,7 +303,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     } catch (error, stack) {
       // 找不到系列 = 按单部继续（reducer 会说一声）；原因必须留痕。
       lastError = error;
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.loadFranchise',
         '${item.reference.title}: $error\n$stack',
       );
@@ -326,7 +326,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       try {
         work = await _ports.loadDetails(item);
       } catch (error, stack) {
-        ErrorLogService.instance.logDiagnostic(
+        engineLog.logDiagnostic(
           'VideoAcquisition.franchiseDetails',
           '${reference.title}: $error\n$stack',
         );
@@ -336,7 +336,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       presence = await _ports.queryPresence(reference);
       subscribed = await _ports.isSubscribed(reference);
     } catch (error, stack) {
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.franchisePresence',
         '${reference.title}: $error\n$stack',
       );
@@ -352,7 +352,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       items = result.items;
     } catch (error, stack) {
       lastError = error;
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.franchiseResources',
         '${reference.title}: $error\n$stack',
       );
@@ -412,7 +412,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         failed++;
         firstError ??= error;
         firstStack ??= stack;
-        ErrorLogService.instance.logDiagnostic(
+        engineLog.logDiagnostic(
           'VideoAcquisition.franchiseSubmit',
           '${entry.item.reference.title}: $error\n$stack',
         );
@@ -521,7 +521,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     try {
       titles = await _ports.resolveAlias(query);
     } catch (error, stack) {
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.resolveAlias',
         '$query: $error\n$stack',
       );
@@ -570,7 +570,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       // `lastError` 只在 failed 那句出现时才被页面读，这里不产生 failed。
       lastError = error;
       decision = null;
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.decideIdentity',
         '$error\n$stack',
       );
@@ -588,7 +588,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       // 详情拉不到就用搜索项自带的资料；放送状态未知时对话层会照样问模式。
       // Jikan 整站 504 就落在这里，必须留痕。
       lastError = error;
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.loadDetails',
         '${item.reference.title}: $error\n$stack',
       );
@@ -600,7 +600,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       // 「已在库 / 已订阅」查不到时按未知继续——后果是可能重复建订阅，所以这条
       // 至少要进诊断日志，不能当 null 静默吞掉。
       lastError = error;
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoAcquisition.presence',
         '${item.reference.title}: $error\n$stack',
       );
