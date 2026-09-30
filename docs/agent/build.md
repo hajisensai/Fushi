@@ -206,6 +206,27 @@ develop/main 产出的件（PR run 另外认同一 PR head 自己产出的件）
 取不到就照旧从源码编，所以它不会重演 TODO-416「跨 workflow artifact 过期即静默缺件」。
 vcpkg 的两条 actions/cache 只在 libtorrent 持久库 miss 时才挂。
 
+同一个持久库也覆盖 macOS / iOS / Linux：fushi_p2p（macOS universal dylib、iOS device
+staticlib、Linux .so）、fushi-anki-sync（macOS universal release / 各平台 PR 用的 debug）、
+Linux 静态 torrent bridge。规则：
+
+- **名字只有一种算法**：`.github/actions/native-store-names/names.sh`（已提交树的
+  `git ls-tree` blob 哈希 + ImageOS/ImageVersion + fushi_p2p Rust 钉版 + job 的 CC/CXX）。
+  所有生产方与消费方都 `uses: ./.github/actions/native-store-names`，不许在 workflow 里内联
+  拼名字；fushi_p2p 的 Rust 工具链也从它的 `p2p_rust` 输出读。本地干跑：
+  `bash .github/actions/native-store-names/names.sh linux`。构建开始读新目录时把它加进
+  names.sh 的路径表。
+- **每份 PR 门读的件在 develop 上都有生产方**：与发布同名的件（Windows 五样、macOS p2p、
+  iOS p2p）由 `release-desktop.yml` 在 develop push 上存；PR 专用变体（三平台 anki-sync
+  debug、Linux p2p / 静态 torrent bridge）由 `native-cache-warm.yml` 在 develop push（改到
+  输入时，按平台只起需要的 runner）与每日 schedule（补 runner 镜像换代）上 restore → 未命中才
+  编 → 跑与 PR 门同一套校验 → 存。build-multiplatform 自己不在 develop 上跑，没有这条的话每条
+  新 PR 首跑都冷编。
+- 命中时只跳工具链与编译，ABI 符号表 / FFI 真调用测试 / version 冒烟 / 签名核对照跑在还原出来的
+  件上；save 只排在这些校验之后。
+- 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
+  「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
+
 ## 依赖补丁
 
 Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：

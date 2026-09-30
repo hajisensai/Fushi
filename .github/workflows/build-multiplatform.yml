@@ -35,6 +35,7 @@ on:
       - '.github/actions/setup-fushi-anki-sync/**'
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/native-artifact-store/**'
+      - '.github/actions/native-store-names/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -193,11 +194,25 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     env:
       CC: gcc-14
       CXX: g++-14
     steps:
       - uses: actions/checkout@v6
+      # 原生产物持久库的名字（.github/actions/native-artifact-store）：唯一算法在
+      # .github/actions/native-store-names/names.sh（已提交树的 blob 哈希 + runner 镜像 +
+      # 工具链钉版，含本 job 的 CC/CXX）。PR 用的这几份件（p2p .so / anki-sync debug /
+      # 静态 torrent bridge）由 native-cache-warm.yml 在 develop 上按同一个 action 预先存好，
+      # 所以 PR 首跑就能命中；PR 改了对应源码树才会 miss 并现编。
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: linux
       - name: Install Linux build deps
         run: |
           sudo apt-get update
@@ -269,20 +284,34 @@ jobs:
       # （fushi/linux/CMakeLists.txt copy-if-present 进 bundle/lib/）与下面的
       # fushi_server bundle（bin/../lib/）。失败口径同 libtorrent：构建失败即 job 失败。
       # rust-cache 的 key 按平台分；缓存未命中只会变慢，没有任何步骤的成败挂在 cache-hit 上。
+      # 持久库命中时跳过 Rust 工具链与 cargo；ABI 校验与下面的真隧道 FFI 测试照跑。
+      - name: Restore fushi_p2p .so from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/linux-x64
       - name: Set up Rust (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-linux-x64
       - name: Build fushi_p2p (Linux x64)
         shell: bash
+        env:
+          STORE_HIT: ${{ steps.p2p_store.outputs.hit }}
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/build_linux_so.sh
+          if [ "$STORE_HIT" != "true" ]; then
+            bash native/fushi_p2p/build_linux_so.sh
+          fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
       - name: Flutter Linux CMake toolchain shim
         working-directory: fushi
@@ -380,13 +409,37 @@ jobs:
       # 发布包里它随 app / 服务端可执行文件同级（release-desktop.yml / release-server.yml）。
       # PR 门编 debug（不走 LTO，只为抓编译/补丁断裂），装进服务端 bundle/bin，
       # build.sh 顺带生成 SOURCE.txt 并对装好的副本跑 version 冒烟。
+      # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过：只跳工具链与
+      # cargo，安装 + SOURCE.txt + version 冒烟照跑（--prebuilt-binary，同 build.ps1）。
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: ${{ runner.temp }}/fushi-anki-sync-prebuilt
       - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build fushi-anki-sync (Linux, debug)
         shell: bash
+        env:
+          STORE_HIT: ${{ steps.anki_sync_store.outputs.hit }}
         run: |
           set -euo pipefail
-          bash native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin
+          prebuilt=()
+          if [ "$STORE_HIT" = "true" ]; then
+            prebuilt=(--prebuilt-binary "$RUNNER_TEMP/fushi-anki-sync-prebuilt/fushi-anki-sync")
+          fi
+          bash native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin ${prebuilt[@]+"${prebuilt[@]}"}
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: native/fushi_anki_sync/target/debug/fushi-anki-sync
       # 第 4 期：无头服务端的两块随包原生库，都落 bundle/lib/（服务端按
       # `<exe>/../lib/<裸名>` 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
       #
@@ -398,8 +451,19 @@ jobs:
       # (b) onnxruntime CPU 版：与 third_party/flutter_onnxruntime/linux 钉同一版本
       #     1.22.0（asr_onnx_ffi 的 kOrtApiVersion=22 要求 ≥1.22）。要 CUDA 的用户
       #     自行换成 GPU 包并在配置 onnxruntime_library 指过去（README「GPU」一节）。
+      #
+      # 持久库（同上）排在 vcpkg 两层缓存前面：命中时整段 vcpkg 构建（7~8 min）与两次
+      # 缓存解包都跳过，ABI 校验、FFI 测试与随包冒烟照跑在还原出来的 .so 上。
+      - name: Restore torrent bridge .so from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/linux-x64
       - name: Resolve vcpkg cache identity (fushi_server)
         id: vcpkg_cache_id_server
+        if: steps.torrent_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -408,6 +472,7 @@ jobs:
           echo "vcpkg cache identity (runner ImageVersion): $image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent linux)
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -417,6 +482,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
       - name: Cache vcpkg binary archives (libtorrent linux)
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
@@ -430,12 +496,23 @@ jobs:
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+          STORE_HIT: ${{ steps.torrent_store.outputs.hit }}
         run: |
           set -euo pipefail
-          chmod +x native/fushi_torrent/build_linux_so.sh
-          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
+          if [ "$STORE_HIT" != "true" ]; then
+            chmod +x native/fushi_torrent/build_linux_so.sh
+            bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
+          fi
           so=native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so
           bash .github/scripts/verify_torrent_abi.sh "$so" nm
+          # build_linux_so.sh 的「静态链真生效」自检在命中持久库时不会跑，这里对实际要随包
+          # 的那份再核一次（先落文件再 grep，不走管道）。
+          ldd "$so" > "$RUNNER_TEMP/torrent_ldd.txt" || true
+          if grep -Eq 'torrent-rasterbar|libssl|libcrypto|libboost' "$RUNNER_TEMP/torrent_ldd.txt"; then
+            echo "::error::$so still links libtorrent/ssl/boost dynamically"
+            cat "$RUNNER_TEMP/torrent_ldd.txt"
+            exit 1
+          fi
           mkdir -p build/fushi_server_linux/bundle/lib
           cp "$so" build/fushi_server_linux/bundle/lib/
       # 与 windows job 同一理由：这是 Linux 上唯一能把 Dart FFI 绑定按真实 ABI 调一遍
@@ -450,6 +527,14 @@ jobs:
           test -f "$FUSHI_TORRENT_LIB" || { echo "::error::.so not found at $FUSHI_TORRENT_LIB"; exit 1; }
           dart pub get
           dart test
+      - name: Save torrent bridge .so to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/linux-x64
       # (c) 互联 P2P 隧道 .so（上面 Linux 桌面构建前已编好）。随后拿 **bundle 里那一份**
       # 跑 packages/fushi_p2p 的真隧道测试（同进程两端点经直连地址互拨，不依赖外网）：
       # 验的是实际发出去的文件能 dlopen、绑定与 C ABI 对得上。main.yml / release.yml 的
@@ -471,6 +556,14 @@ jobs:
             echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
             exit 1
           fi
+      - name: Save fushi_p2p .so to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/linux-x64
       - name: Bundle onnxruntime (CPU) for fushi_server (Linux)
         shell: bash
         run: |
@@ -530,8 +623,20 @@ jobs:
   macos:
     runs-on: macos-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     steps:
       - uses: actions/checkout@v6
+      # 名字的唯一算法见 linux job 同名步骤。p2p universal dylib 与 release-desktop.yml
+      # macos job 同名（同一脚本、同一产物），develop 上的发布构建存的件这里直接复用；
+      # anki-sync debug 是 PR 专用变体，由 native-cache-warm.yml 在 develop 上预存。
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: macos
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -574,21 +679,35 @@ jobs:
       # 互联 P2P 隧道（iroh）universal dylib：Runner 的「Bundle fushi_p2p dylib」构建阶段
       # （fushi/macos/bundle_fushi_p2p.sh）copy-if-present 进 Contents/Frameworks。
       # 编 universal 而不是只编本机架构：发布包是 universal，x86_64 切片在 PR 上也要编一遍。
+      # 持久库命中时跳过 Rust 工具链与 cargo；ABI 校验与出包后的 dylib 核对照跑。
+      - name: Restore fushi_p2p dylib from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/macos
       - name: Set up Rust (fushi_p2p, macOS targets)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
       - name: Build fushi_p2p (macOS universal dylib)
         shell: bash
+        env:
+          STORE_HIT: ${{ steps.p2p_store.outputs.hit }}
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/build_macos_dylib.sh
+          if [ "$STORE_HIT" != "true" ]; then
+            bash native/fushi_p2p/build_macos_dylib.sh
+          fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
       - name: Build macOS (debug)
         working-directory: fushi
@@ -627,19 +746,42 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # fushi-anki-sync：PR 门只编本机架构 debug 抓编译断裂；universal（--universal，
       # arm64 + x86_64 lipo）由 release-desktop.yml 的发布构建负责。放置与签名同发布包。
+      # 持久库命中只跳工具链与 cargo；安装、SOURCE.txt、version 冒烟与签名校验照跑。
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: ${{ runner.temp }}/fushi-anki-sync-prebuilt
       - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build and bundle fushi-anki-sync (debug)
         shell: bash
+        env:
+          STORE_HIT: ${{ steps.anki_sync_store.outputs.hit }}
         run: |
           set -euo pipefail
           app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
           target_dir="$app_dir/Contents/MacOS"
-          bash native/fushi_anki_sync/build.sh --debug --install-dir "$target_dir"
+          prebuilt=()
+          if [ "$STORE_HIT" = "true" ]; then
+            prebuilt=(--prebuilt-binary "$RUNNER_TEMP/fushi-anki-sync-prebuilt/fushi-anki-sync")
+          fi
+          bash native/fushi_anki_sync/build.sh --debug --install-dir "$target_dir" ${prebuilt[@]+"${prebuilt[@]}"}
           mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
           codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: native/fushi_anki_sync/target/debug/fushi-anki-sync
       - name: Verify macOS fushidicts dylib bundle
         working-directory: fushi
         run: |
@@ -687,6 +829,14 @@ jobs:
               raise SystemExit("fp2p_version returned null")
           print("fushi_p2p dylib smoke ok:", version.decode())
           PY
+      - name: Save fushi_p2p dylib to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/macos
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
 
@@ -695,8 +845,19 @@ jobs:
   ios:
     runs-on: macos-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     steps:
       - uses: actions/checkout@v6
+      # 名字的唯一算法见 linux job 同名步骤；与 release-desktop.yml ios job 同名（同一
+      # device staticlib），develop 上的发布构建存的件这里直接复用。
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: ios
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -753,18 +914,29 @@ jobs:
       # 互联 P2P 隧道（iroh）iOS 静态库：iOS 不能加载自带 dylib，以 staticlib 经
       # -force_load 链进 Runner（native/fushi_p2p/build_ios_staticlib.sh 生成的 xcconfig
       # 由 fushi/ios/Flutter/*.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_P2P_LDFLAGS)）。
-      # 这里是设备构建，只编 device 切片。
+      # 这里是设备构建，只编 device 切片。持久库存的是整个 prebuilt/ios（.a + 系统库清单 +
+      # 生成的 xcconfig），命中时跳过 Rust；出包后的 Runner 符号核对照跑。
+      - name: Restore fushi_p2p staticlib from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/ios
       - name: Set up Rust (fushi_p2p, iOS device target)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-ios
       - name: Build fushi_p2p (iOS device staticlib)
+        if: steps.p2p_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -785,6 +957,14 @@ jobs:
           bin="$app/Runner"
           if [ -f "$app/Runner.debug.dylib" ]; then bin="$app/Runner.debug.dylib"; fi
           bash ../native/fushi_p2p/verify_abi.sh "$bin" nm
+      - name: Save fushi_p2p staticlib to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/ios
   windows:
     runs-on: windows-2022
     timeout-minutes: 120
@@ -852,36 +1032,19 @@ jobs:
           # BOM 会跟着糊进第一个 key，GITHUB_OUTPUT 的 key=value 解析当场失效。
           "image=$image" >> $env:GITHUB_OUTPUT
       # 原生产物持久库（.github/actions/native-artifact-store）：名字 = 全部构建输入的哈希
-      # （源码树 + runner 镜像 + 工具链钉版），在**任何东西被构建之前**算好一次：此时
-      # gitignore 的 build/ prebuilt/ target/ dist/ .anki-src/ 都还不存在，所以不写排除模式
-      # （release_workflow_path_filter_guard 要求每个 hashFiles 模式都能匹配到文件）；
-      # 之后这些目录出现在树里，再算就不是同一个值了。
+      # （已提交源码树的 blob 哈希 + runner 镜像 + 工具链钉版）。唯一算法在
+      # .github/actions/native-store-names/names.sh，生产方（develop 上的 release-desktop /
+      # native-cache-warm）与消费方（PR 门）都只 uses 这个 action，名字不可能两边各算一套
+      # （守卫 fushi/test/build/native_store_names_single_source_guard_test.dart）。
       # 为什么不用 actions/cache：仓库 10 GB 配额常年超额，整个缓存约 1 小时换一轮，
       # 这几条 Windows 条目几乎总在下一次读之前被 LRU 驱逐（实测数据见该 action 头注释）。
-      # 名字在两条 workflow 里逐字一致，develop 上 release-desktop 存的件 PR 门直接复用。
+      # torrent / p2p / mihon / galgame / anki-sync release 由 develop 上的 release-desktop
+      # 存、PR 门直接复用；PR 专用的 anki-sync debug 由 native-cache-warm.yml 预存。
       - name: Resolve native artifact store names
         id: native_store
-        shell: pwsh
-        env:
-          IMAGE: ${{ steps.vcpkg_cache_id.outputs.image }}
-          TORRENT_HASH: ${{ hashFiles('native/fushi_torrent/**') }}
-          P2P_HASH: ${{ hashFiles('native/fushi_p2p/**') }}
-          MIHON_HASH: ${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
-          GALGAME_HASH: ${{ hashFiles('native/galgame_hook/**') }}
-          ANKI_SYNC_HASH: ${{ hashFiles('native/fushi_anki_sync/**', '.github/actions/setup-fushi-anki-sync/**') }}
-        run: |
-          foreach ($v in 'TORRENT_HASH', 'P2P_HASH', 'MIHON_HASH', 'GALGAME_HASH', 'ANKI_SYNC_HASH') {
-            if ([string]::IsNullOrWhiteSpace((Get-Item "env:$v").Value)) { throw "$v is empty: hashFiles matched nothing" }
-          }
-          # fushi_p2p 的 Rust 工具链钉在下面 dtolnay 步骤的 toolchain（1.95.0），改那里要同步改这里。
-          @(
-            "torrent=win-x64-fushi-torrent-dll-v1-$env:IMAGE-$env:TORRENT_HASH"
-            "p2p=win-x64-fushi-p2p-dll-v1-rust1.95.0-$env:IMAGE-$env:P2P_HASH"
-            "mihon=win-x64-mihon-runtime-v1-$env:MIHON_HASH"
-            "galgame=win-galgame-helper-dist-v1-$env:IMAGE-$env:GALGAME_HASH"
-            "anki_sync_release=win-x64-fushi-anki-sync-release-v1-$env:IMAGE-$env:ANKI_SYNC_HASH"
-            "anki_sync_debug=win-x64-fushi-anki-sync-debug-v1-$env:IMAGE-$env:ANKI_SYNC_HASH"
-          ) | ForEach-Object { Write-Host $_; $_ >> $env:GITHUB_OUTPUT }
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: windows
       - name: Restore libtorrent DLLs from native artifact store
         id: torrent_store
         uses: ./.github/actions/native-artifact-store
@@ -979,7 +1142,7 @@ jobs:
         if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
@@ -1042,7 +1205,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "game-stream input regression failed ($LASTEXITCODE)" }
       # Mihon runtime 完全由 vendored 源码（m_extension_server + 离线 jogamp 仓库）+ 构建
       # 脚本决定（JDK / 服务端 commit 均在脚本里钉死；脚本再多读仓库里别的目录，必须同步
-      # 加进 Resolve native artifact store names 的 MIHON_HASH）：输入没变就复用上次产物，
+      # 加进 .github/actions/native-store-names/names.sh 的 MIHON 路径表）：输入没变就复用上次产物，
       # 省掉 gradle + jlink 的 150~220 s。产物先落 $RUNNER_TEMP\mihon-runtime 再拷进 bundle，
       # 签名/校验只动 bundle 里的副本，存进持久库的永远是原始构建输出。
       # 名字与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
@@ -1093,8 +1256,8 @@ jobs:
       # install_into_bundle.ps1 都成功之后才存（下面的 Save 步骤），所以命中
       # = 这棵树已经完整编译并通过过 -RunTests，跳过是重复劳动而不是跳过门。
       # install_into_bundle.ps1 仍会按当前源码指纹复核 dist，串号在那里 fail-closed。
-      # 哈希在 Resolve native artifact store names 里算：那时 build/ 与 dist/ 还不存在，
-      # 只覆盖入库文件（hashFiles 不认 .gitignore）。
+      # 哈希由 native-store-names 按已提交树（git ls-tree）算，与磁盘上的 build/ dist/
+      # 等生成物无关。
       # 名字与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
       - name: Restore galgame helper archives
         id: galgame_helper_store

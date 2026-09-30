@@ -1,31 +1,35 @@
-# 把 Linux 版 libtorrent（vcpkg，x64-linux-fpic）的二进制缓存预热到 develop 上。
+# 在 develop（可信 ref）上预先产出「PR 门要用、但 develop 上别的 workflow 从来不产」的原生件，
+# 存进原生产物持久库（.github/actions/native-artifact-store），让每条新 PR 的**首跑**就命中。
 #
-# 病灶（run 36365037668 实测）：build-multiplatform.yml 的 linux job 只在 PR 上跑
-# （push 只挂 main），GitHub 缓存又按 ref 分桶 —— PR 只能读 base 分支和默认分支的
-# 缓存，读不到别的 PR 的。于是 develop 上从来没有这份缓存，每个 PR 都
-# `Restored 0 package(s)` 从 openssl 冷编 577 s，再在自己的 refs/pull/N/merge 里存
-# 一份谁也用不上的副本（同一 key 三条 330 MB）。Windows / Android 没这个问题，
-# 因为 release-desktop.yml / release.yml 在 develop push 上跑，缓存自然落在 develop。
+# 病灶（信任缺口）：持久库只信 develop / main 的 run（外加同一 PR head 自己的 run）。
+# build-multiplatform.yml 在 develop push 上不跑（只挂 PR 与 main），它的 PR 专用变体于是
+# 在可信 ref 上永远没有人存 —— 每条新 PR 第一次跑都冷编，只有同一 PR 的再次 push 才命中：
+#   * linux：静态 torrent bridge（vcpkg，7~8.4 min）、fushi_p2p .so（2.1~2.6 min）、
+#     fushi-anki-sync debug（1.2~1.5 min）；
+#   * macOS：fushi-anki-sync debug（本机架构，2.1~3.1 min，占 5 个 macOS 槽之一）；
+#   * windows：fushi-anki-sync debug（3.2 min）。
+# 与 release-desktop.yml 共名的件（Windows torrent / p2p / Mihon / galgame、macOS universal
+# p2p dylib、iOS device p2p staticlib）不在这里：release-desktop 在每次 develop push 上就会
+# restore-or-build-and-save 它们，这里再编只会白占槽位（尤其 macOS）。
 #
-# 本 workflow 只做一件事：先 lookup-only 探一下 key，命中就结束（不下载，~20 s）；
-# 未命中（vcpkg manifest 变了，或 runner 换了新镜像）才真编一遍并存进缓存，此后所有 PR
-# 直接命中。
+# 名字：生产方与消费方都只 uses ./.github/actions/native-store-names（唯一算法
+# names.sh），环境（CC/CXX、runner 镜像）也必须与消费 job 一致 —— CC/CXX 折进了名字的哈希，
+# 抄漏了只会得到一个谁也不读的名字，而不会喂错件。守卫：
+# fushi/test/build/native_store_names_single_source_guard_test.dart。
 #
-# 触发（2026-09-30 精简 CI）：
-# * develop push 只在 native/fushi_torrent/**（key 里 hashFiles 的 vcpkg 清单 / ports /
-#   triplets 都在这下面）或本文件变动时跑——以前每次 develop push 都起一台 runner 探一下，
-#   绝大多数是空转。
-# * 失效的另一半是 runner 镜像换代（key 带 ImageVersion，约每周一次），它与任何 push 无关，
-#   所以加每日 schedule 兜底（不是每周：镜像换代后最多一天就补回来，而不是最坏拖到下周；
-#   命中时一次只是 ~20 s 的探测）。注意定时任务只读**默认分支 main** 上的 workflow 文件并
-#   在 main 的 ref 上跑，缓存存进 main 桶——PR 同样能读默认分支的缓存，所以效果等价；但
-#   main 只在正式发布时同步，这条 schedule 要等下一次同步到 main 后才生效。在那之前镜像
-#   换代可手动 workflow_dispatch（选 develop）补救。
+# 每个件都是：restore（命中即结束）→ 未命中才构建 → 跑与 PR 门同一套校验（ABI 符号表、
+# FFI 真调用测试、version 冒烟）→ 校验过了才 save。坏件绝不入库：PR 门读到的件会被 PR
+# 自己再校验一次，但入库的坏件会让之后每条 PR 都红到源码树变化为止。
 #
-# 环境、镜像身份计算、key 必须与 build-multiplatform.yml linux job 逐字一致：编译器
-# 与工具链决定 vcpkg 每个包的 ABI hash，差一点存下来的归档就一个都对不上。
+# 触发：
+# * develop push 且改到了这些件的输入（下面 paths）；再由 changes job 按实际改动的文件
+#   决定开哪几个平台的 job —— macOS 槽只有 5 个，只改 torrent / p2p 时不起 macOS runner。
+# * 每日 schedule：名字带 runner ImageVersion，镜像换代（约每周）与任何 push 无关，靠它
+#   一天内补齐。注意定时任务只读**默认分支 main** 上的 workflow 文件并在 main 上跑（main
+#   同样是可信 ref）；main 只在正式发布时同步，在那之前镜像换代可手动 workflow_dispatch
+#   （选 develop）补救。命中时每个 job 只是一次 restore（几十秒）。
 #
-# 本 workflow 不发布任何东西：只构建、只写 Actions 缓存。
+# 本 workflow 不发布任何东西：只构建、只写持久库（workflow artifact）与 vcpkg 缓存。
 name: native-cache-warm
 
 on:
@@ -37,18 +41,78 @@ on:
     branches: ['develop']
     paths:
       - 'native/fushi_torrent/**'
+      - 'native/fushi_p2p/**'
+      - 'native/fushi_anki_sync/**'
+      - '.github/actions/setup-fushi-anki-sync/**'
+      - '.github/actions/native-artifact-store/**'
+      - '.github/actions/native-store-names/**'
+      - '.github/scripts/verify_torrent_abi.sh'
       - '.github/workflows/native-cache-warm.yml'
 
 permissions:
   contents: read
+  # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+  actions: read
 
-# 冷编约 10~40 min；排队而不取消，免得连续 push 把正在存的缓存掐掉。
+# 冷编约 10~40 min；排队而不取消，免得连续 push 把正在存的件掐掉。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  libtorrent-linux:
+  # 哪些平台的输入真的变了。push 以外（schedule / dispatch）一律全开：那是在补镜像换代。
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      linux: ${{ steps.diff.outputs.linux }}
+      macos: ${{ steps.diff.outputs.macos }}
+      windows: ${{ steps.diff.outputs.windows }}
+    steps:
+      - name: Classify changed inputs
+        id: diff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          all=false
+          files="$RUNNER_TEMP/changed.txt"
+          : > "$files"
+          if [ "$EVENT" != "push" ] || [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            all=true
+          elif ! gh api "repos/$REPO/compare/$BEFORE...$SHA" > "$RUNNER_TEMP/compare.json"; then
+            echo "::warning::compare $BEFORE...$SHA failed; warming every platform"
+            all=true
+          else
+            jq -r '.files[].filename' "$RUNNER_TEMP/compare.json" > "$files"
+            # compare 最多列 300 个文件；列满了就不能据此排除任何平台。
+            if [ "$(jq '.files | length' "$RUNNER_TEMP/compare.json")" -ge 300 ]; then all=true; fi
+          fi
+          echo "changed files:"; cat "$files"
+          infra='^\.github/(actions/native-artifact-store/|actions/native-store-names/|workflows/native-cache-warm\.yml$)'
+          anki='^(native/fushi_anki_sync/|\.github/actions/setup-fushi-anki-sync/)'
+          linux_only='^(native/fushi_torrent/|native/fushi_p2p/|\.github/scripts/verify_torrent_abi\.sh$)'
+          touched() { [ "$all" = true ] || grep -Eq "$1" "$files"; }
+          if touched "$infra|$anki|$linux_only"; then linux=true; else linux=false; fi
+          if touched "$infra|$anki"; then macos=true; else macos=false; fi
+          if touched "$infra|$anki"; then windows=true; else windows=false; fi
+          echo "linux=$linux macos=$macos windows=$windows"
+          {
+            echo "linux=$linux"
+            echo "macos=$macos"
+            echo "windows=$windows"
+          } >> "$GITHUB_OUTPUT"
+
+  # build-multiplatform.yml linux job 的三份 PR 专用件。环境（runner、CC/CXX、apt 依赖）与
+  # 那个 job 逐字一致：CC/CXX 进了名字的哈希，vcpkg 的 ABI hash 也吃编译器。
+  linux:
+    needs: changes
+    if: needs.changes.outputs.linux == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -56,8 +120,52 @@ jobs:
       CXX: g++-14
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: linux
+      - name: Restore torrent bridge .so from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/linux-x64
+      - name: Restore fushi_p2p .so from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/linux-x64
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: ${{ runner.temp }}/fushi-anki-sync-prebuilt
+      - name: Install Linux build deps
+        if: steps.torrent_store.outputs.hit != 'true' || steps.p2p_store.outputs.hit != 'true' || steps.anki_sync_store.outputs.hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build clang cmake pkg-config \
+            gcc-14 g++-14 libstdc++-14-dev \
+            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
+      # FFI 真调用测试（与 PR 门同一套）要 Dart；只在真要构建 torrent / p2p 时装。
+      - uses: subosito/flutter-action@v2
+        if: steps.torrent_store.outputs.hit != 'true' || steps.p2p_store.outputs.hit != 'true'
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+
+      # ---- 静态 torrent bridge（vcpkg）。两层 vcpkg 缓存的 key 与 build-multiplatform.yml
+      # linux job 逐字一致（那边持久库 miss 时——即 PR 改了 native/fushi_torrent——还靠它们）。
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
+        if: steps.torrent_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -65,23 +173,8 @@ jobs:
           image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
           echo "vcpkg cache identity (runner ImageVersion): $image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
-      - name: Probe vcpkg binary archives (libtorrent linux)
-        id: probe
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.cache/vcpkg/archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
-          lookup-only: true
-      - name: Install Linux build deps
-        if: steps.probe.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build clang cmake pkg-config \
-            gcc-14 g++-14 libstdc++-14-dev \
-            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
       - name: Cache vcpkg source distfiles (libtorrent linux)
-        if: steps.probe.outputs.cache-hit != 'true'
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -91,15 +184,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
       - name: Cache vcpkg binary archives (libtorrent linux)
-        if: steps.probe.outputs.cache-hit != 'true'
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
-      - name: Build embedded torrent bridge (Linux, static)
-        if: steps.probe.outputs.cache-hit != 'true'
+      - name: Build and verify embedded torrent bridge (Linux, static)
+        if: steps.torrent_store.outputs.hit != 'true'
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
@@ -107,3 +200,151 @@ jobs:
           set -euo pipefail
           chmod +x native/fushi_torrent/build_linux_so.sh
           bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
+          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so nm
+      - name: Run fushi_torrent FFI tests against the freshly built .so
+        if: steps.torrent_store.outputs.hit != 'true'
+        shell: bash
+        working-directory: packages/fushi_torrent
+        env:
+          FUSHI_TORRENT_LIB: ${{ github.workspace }}/native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_TORRENT_LIB" || { echo "::error::.so not found at $FUSHI_TORRENT_LIB"; exit 1; }
+          dart pub get
+          dart test
+      - name: Save torrent bridge .so to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/linux-x64
+
+      # ---- fushi_p2p .so
+      - name: Set up Rust (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+      - name: Build and verify fushi_p2p (Linux x64)
+        if: steps.p2p_store.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_linux_so.sh
+          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
+      - name: Run fushi_p2p FFI tests against the freshly built .so
+        if: steps.p2p_store.outputs.hit != 'true'
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}/native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so
+        run: |
+          set -euo pipefail
+          dart pub get
+          # 库加载失败时整组 skip、退出码 0；断言 skip 原因没出现（同 PR 门）。
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
+      - name: Save fushi_p2p .so to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/linux-x64
+
+      # ---- fushi-anki-sync debug（build.sh 装到临时目录并跑 version 冒烟，同 PR 门）
+      - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and smoke fushi-anki-sync (Linux, debug)
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_anki_sync/build.sh --debug --install-dir "$RUNNER_TEMP/fushi-anki-sync-smoke"
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: native/fushi_anki_sync/target/debug/fushi-anki-sync
+
+  # build-multiplatform.yml macos job 的 anki-sync debug（本机架构）。只在 anki-sync 的输入
+  # 或持久库基建变了、或定时补镜像换代时才起 macOS runner。
+  macos:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: macos
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: ${{ runner.temp }}/fushi-anki-sync-prebuilt
+      - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and smoke fushi-anki-sync (macOS, debug)
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_anki_sync/build.sh --debug --install-dir "$RUNNER_TEMP/fushi-anki-sync-smoke"
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: native/fushi_anki_sync/target/debug/fushi-anki-sync
+
+  # build-multiplatform.yml windows job 的 anki-sync debug（release 变体由 release-desktop 存）。
+  windows:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: windows
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: ${{ runner.temp }}\fushi-anki-sync-prebuilt
+      - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and smoke fushi-anki-sync (Windows, debug)
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -DebugBuild -InstallDirectory "$env:RUNNER_TEMP\fushi-anki-sync-smoke"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: native\fushi_anki_sync\target\debug\fushi-anki-sync.exe
