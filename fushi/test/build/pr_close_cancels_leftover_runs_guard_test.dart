@@ -11,8 +11,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 钉住的边界，任何一条松了要么失效、要么误伤：
 /// * 只取消 `pull_request` / `pull_request_target` 触发的 run，develop 的 push 发布不碰；
-/// * 校验 `head_repository` 是本仓库——分支**名**不唯一，fork 上同名分支（例如
-///   `develop`）发起的 PR 也会被 `branch=` 匹配到；
+/// * 校验 run 的 `head_repository` 就是这个 PR 的 head 仓库——分支**名**不唯一，
+///   别的 fork 上同名分支（例如 `develop`）发起的 PR 也叫这个名；
+/// * 触发器是 `pull_request_target` 且不跳过 fork：79% 的 PR 来自 fork，其
+///   `pull_request` token 只读，旧写法对它们整条跳过，PR CI 82% 的 runner 时间
+///   都花在合并之后（2026-09-30 实测）；
 /// * 不取消本 workflow 自己（它还要接着删这个 PR 的缓存）；
 /// * 只按 status 查询，分支在 bash 里比：runs API 带 `branch=` 回过过期结果集
 ///   （2026-09-30 拿到 09-07 的数据），分支名也因此不进 URL / jq。
@@ -23,6 +26,15 @@ void main() {
     ).readAsStringSync();
 
     expect(yaml, contains('types: [closed]'));
+    expect(yaml, contains('\n  pull_request_target:\n    types: [closed]'));
+    expect(yaml, isNot(contains('\n  pull_request:\n')));
+    expect(yaml, isNot(contains('head.repo.full_name == github.repository')));
+    expect(
+      yaml,
+      contains(
+        r'HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}',
+      ),
+    );
     expect(yaml, contains('actions: write'));
     expect(yaml, contains("Cancel this PR's still-queued / running CI"));
     expect(
@@ -31,7 +43,7 @@ void main() {
         'select(.event == "pull_request" or .event == "pull_request_target")',
       ),
     );
-    expect(yaml, contains(r'[ "$head_repo" = "$REPO" ] || continue'));
+    expect(yaml, contains(r'[ "$head_repo" = "$HEAD_REPO" ] || continue'));
     expect(yaml, contains(r'[ "$name" = "$SELF_WORKFLOW" ] && continue'));
     expect(yaml, contains(r'[ "$head_branch" = "$HEAD_BRANCH" ] || continue'));
     for (final String param in <String>['-f branch=', '?branch=', '&branch=']) {
