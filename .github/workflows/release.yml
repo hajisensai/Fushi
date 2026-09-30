@@ -35,10 +35,11 @@ on:
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
       - 'tool/merge_update_manifest.py'
-      - 'tool/cancel_superseded_runs.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
+      - '.github/actions/native-artifact-store/**'
+      - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '!packages/fushi_server/**'
@@ -99,35 +100,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 新 push 到来时，把同分支上「此刻开始不足 5 分钟 / 还没开始」的旧 push run 取消掉
-  # （2026-09-30 修正：按旧 run 的 job 实际开始时刻、以本 run 创建时刻为基准；
-  # 本 job 自己排队时旧 run 已跑超过 9 分钟则不砍，防砍在上传途中）
-  # （2026-09-30，按实测 develop 20/65 次 push 间隔 < 5 分钟、省约 28% runner）。
-  # 只看 push 事件，正式版 / 手动 dispatch 不受影响；5 分钟内任何 job 都还没到上传
-  # 步骤，不会砍出半发布状态。原理与判据见 tool/cancel_superseded_runs.sh；与本
-  # workflow 的 concurrency 组（按 sha、不取消）互不冲突，那条仍原样保留。
-  # 守卫：fushi/test/build/release_workflow_supersede_guard_test.dart。
-  cancel-superseded:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-      contents: read
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        sparse-checkout: tool/cancel_superseded_runs.sh
-        sparse-checkout-cone-mode: false
-    - name: Cancel superseded push runs (< 5 min old at this push, < 9 min now)
-      env:
-        GH_TOKEN: ${{ github.token }}
-        REPO: ${{ github.repository }}
-        RUN_ID: ${{ github.run_id }}
-        SUPERSEDE_WINDOW_MINUTES: '5'
-        SUPERSEDE_MAX_ELAPSED_MINUTES: '9'
-      run: bash tool/cancel_superseded_runs.sh
-
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -501,8 +473,59 @@ jobs:
         image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
         echo "vcpkg cache identity (runner ImageVersion): $image"
         echo "image=$image" >> "$GITHUB_OUTPUT"
-    - name: Cache vcpkg source distfiles (libtorrent android)
+    # 原生产物持久库（.github/actions/native-artifact-store，与 build-multiplatform.yml /
+    # release-desktop.yml 的 windows job 同一套）：输入没变就直接取上次 develop/main 编好的
+    # .so，省掉 libtorrent vcpkg 交叉编（~7 min）+ fushi_p2p cargo-ndk（~6 min）。
+    # 2026-09-30 实测 run 36659762478：build job 28.0 min，这两步合计 13.0 min。
+    # 仓库 10 GB 缓存配额约 1 小时换一轮，所以不用 actions/cache 存成品（理由见该 action
+    # 头注释与 docs/agent/build.md「CI 缓存配额」）。
+    #
+    # 名字 = 全部构建输入：源码树哈希（native/fushi_torrent/** 含 CMakeLists / vcpkg.json
+    # 钉版 / overlay ports+triplets / 构建脚本；native/fushi_p2p/** 含 Cargo.lock / 构建脚本）
+    # + 实际使用的 NDK 版本 + 镜像内 vcpkg 修订 + Rust / cargo-ndk 钉版 + runner 镜像版本
+    # + ABI 列表。在**任何东西被构建之前**算：此时 gitignore 的 prebuilt/ build-android-*/
+    # target/ 都还不存在，之后再算就不是同一个值。
+    # 取到的件和现编的件走**同一组**产物校验步骤（下面两个 Verify），不因为是恢复来的就少验。
+    # 任何 miss（没有、过期、非可信来源、SHA256SUMS 不符、下载失败）都回落到现编。
+    - name: Resolve native artifact store names (Android)
+      id: native_store
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      env:
+        IMAGE: ${{ steps.vcpkg_cache_id.outputs.image }}
+        TORRENT_HASH: ${{ hashFiles('native/fushi_torrent/**') }}
+        P2P_HASH: ${{ hashFiles('native/fushi_p2p/**') }}
+      run: |
+        set -euo pipefail
+        for v in TORRENT_HASH P2P_HASH IMAGE; do
+          if [ -z "${!v:-}" ]; then echo "::error::$v is empty (hashFiles matched nothing?)"; exit 1; fi
+        done
+        sanitize() { printf '%s' "$1" | tr -c '0-9A-Za-z._-' '-'; }
+        # NDK：取 ANDROID_NDK_LATEST_HOME 的 Pkg.Revision（两个构建脚本都吃这个 NDK）；
+        # 读不到就退回目录名（镜像里目录名就是版本号）。
+        ndk="$(sed -n 's/^Pkg\.Revision[[:space:]]*=[[:space:]]*//p' "$ANDROID_NDK_LATEST_HOME/source.properties" 2>/dev/null | head -n 1 || true)"
+        if [ -z "$ndk" ]; then ndk="$(basename "$ANDROID_NDK_LATEST_HOME")"; fi
+        ndk="$(sanitize "$ndk")"
+        # 镜像内固化的 vcpkg 修订（vcpkg 工具本身与 ports 树；libtorrent 等依赖的版本
+        # 钉在 vcpkg.json，已在 TORRENT_HASH 里）。
+        vcpkg_rev="$(git -C "$VCPKG_INSTALLATION_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+        vcpkg_rev="$(sanitize "$vcpkg_rev")"
+        # Rust / cargo-ndk 钉版必须与下面 dtolnay/rust-toolchain 与 install-action 的
+        # toolchain / tool 同步改；ABI 列表必须与两个构建脚本的实参同步改。
+        {
+          echo "torrent=android-fushi-torrent-so-v1-arm64-v8a-ndk${ndk}-vcpkg${vcpkg_rev}-${IMAGE}-${TORRENT_HASH}"
+          echo "p2p=android-fushi-p2p-so-v1-arm64-v8a.armeabi-v7a.x86_64-rust1.95.0-cargondk4.1.2-ndk${ndk}-${IMAGE}-${P2P_HASH}"
+        } | tee -a "$GITHUB_OUTPUT"
+    - name: Restore libtorrent Android .so from native artifact store
+      id: torrent_store
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: ./.github/actions/native-artifact-store
+      with:
+        mode: restore
+        name: ${{ steps.native_store.outputs.torrent }}
+        path: native/fushi_torrent/prebuilt/android
+    - name: Cache vcpkg source distfiles (libtorrent android)
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.torrent_store.outputs.hit != 'true' }}
       uses: actions/cache@v4
       with:
         path: |
@@ -512,7 +535,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-
     - name: Cache vcpkg binary archives (libtorrent android)
-      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.torrent_store.outputs.hit != 'true' }}
       uses: actions/cache@v4
       with:
         path: ~/.cache/vcpkg/archives
@@ -524,7 +547,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
     - name: Build embedded libtorrent Android .so (vcpkg)
-      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.torrent_store.outputs.hit != 'true' }}
       timeout-minutes: 90
       shell: bash
       env:
@@ -534,6 +557,40 @@ jobs:
         chmod +x native/fushi_torrent/build_android_so.sh
         bash native/fushi_torrent/build_android_so.sh \
           "$VCPKG_INSTALLATION_ROOT" "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+    # 现编与恢复共用的产物校验（与 native-torrent-gate.yml 的 android-arm64 同一组断言）：
+    # 恢复来的件只核过 SHA256SUMS（= 与存入时逐字节一致），这里再验它确实是我们要的
+    # 东西——在、导出头文件声明的每个 ht_* 符号、AArch64、LOAD 段 16KB 对齐。
+    - name: Verify libtorrent Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        so="native/fushi_torrent/prebuilt/android/arm64-v8a/libfushi_torrent_ffi.so"
+        test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+        file "$so"
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        bash .github/scripts/verify_torrent_abi.sh "$so" "$nm_bin"
+        machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+        echo "ELF machine: $machine"
+        case "$machine" in
+          *AArch64*) : ;;
+          *) echo "::error title=wrong target arch::期望 AArch64，实际 $machine"; exit 1 ;;
+        esac
+        load_aligns="$(readelf -lW "$so" | awk '$1 == "LOAD" { print $NF }')"
+        if ! grep -qx '0x4000' <<< "$load_aligns"; then
+          echo "::error title=16KB alignment lost::LOAD segment 不是 0x4000 对齐（检查 CMakeLists 的 max-page-size）"
+          exit 1
+        fi
+        ls -lh "$so"
+    - name: Save libtorrent Android .so to native artifact store
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.torrent_store.outputs.hit != 'true' }}
+      continue-on-error: true
+      uses: ./.github/actions/native-artifact-store
+      with:
+        mode: save
+        name: ${{ steps.native_store.outputs.torrent }}
+        path: native/fushi_torrent/prebuilt/android
 
     # 互联 P2P 隧道（iroh）的 Android .so：cargo-ndk 交叉编，产物落
     # native/fushi_p2p/prebuilt/android/<abi>/，由 build.gradle 的 jniLibs
@@ -543,35 +600,58 @@ jobs:
     # ABI 范围与 APK 对齐：debug APK 只出 arm64，split release APK 出 arm64-v8a /
     # armeabi-v7a / x86_64 三个。Rust 交叉编译便宜（缓存命中约 1 min），不像
     # libtorrent 那样只编 arm64。工具链/缓存与 native-p2p-gate.yml 逐字一致。
-    - name: Set up Rust (fushi_p2p, Android targets)
+    # 持久库命中时 Rust 工具链 / rust-cache / cargo-ndk 一概不装（名字里已钉它们的版本）。
+    - name: Restore fushi_p2p Android .so from native artifact store
+      id: p2p_store
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: ./.github/actions/native-artifact-store
+      with:
+        mode: restore
+        name: ${{ steps.native_store.outputs.p2p }}
+        path: native/fushi_p2p/prebuilt/android
+    - name: Set up Rust (fushi_p2p, Android targets)
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: '1.95.0'
         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
     - name: Cache Rust build (fushi_p2p)
-      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: native/fushi_p2p -> target
         key: fushi-p2p-android
     - name: Install cargo-ndk
-      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       uses: taiki-e/install-action@v2
       with:
         tool: cargo-ndk@4.1.2
     - name: Build fushi_p2p Android .so (cargo-ndk)
-      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       timeout-minutes: 45
       shell: bash
       run: |
         set -euo pipefail
         bash native/fushi_p2p/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 现编与恢复共用：每个 ABI 的 .so 都要导出 Dart 绑定 lookup 的全部 fp2p_* 符号。
+    - name: Verify fushi_p2p Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
         nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
         if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
         for abi in arm64-v8a armeabi-v7a x86_64; do
           bash native/fushi_p2p/verify_abi.sh "native/fushi_p2p/prebuilt/android/$abi/libfushi_p2p.so" "$nm_bin"
         done
+    - name: Save fushi_p2p Android .so to native artifact store
+      if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
+      continue-on-error: true
+      uses: ./.github/actions/native-artifact-store
+      with:
+        mode: save
+        name: ${{ steps.native_store.outputs.p2p }}
+        path: native/fushi_p2p/prebuilt/android
 
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
     # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or

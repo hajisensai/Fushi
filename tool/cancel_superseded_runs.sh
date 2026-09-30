@@ -1,114 +1,115 @@
 #!/usr/bin/env bash
-# Cancel older push-triggered runs of THIS workflow on THIS branch that a newer
-# push has superseded while they were still young (< SUPERSEDE_WINDOW_MINUTES
-# since they started, or not started at all).
+# Cancel an older develop/main release run once a newer push has queued its own
+# run behind it -- but only while the old run is still young.
 #
-# Why (2026-09-30, measured on 9/27-9/29): develop got 65 pushes, 20 of them
-# < 5 min after the previous one; the release workflows group concurrency by
-# sha with cancel-in-progress: false, so every push ran to completion. Runner
-# slots (public repo: ~20 concurrent jobs, 5 macOS) are the bottleneck, so the
-# dead runs showed up as 30-86 min job queues for everyone else. Cancelling runs
-# superseded within 5 min frees ~28% of the release workflows' runner time.
+# Called by .github/workflows/supersede-develop-releases.yml on every push to
+# develop/main. It is deliberately NOT a job inside the release workflows: since
+# #1798 those group their push runs per branch (cancel-in-progress: false), so a
+# new run -- and any job in it -- stays pending until the running one finishes,
+# by which time there is nothing left to cancel. A separate workflow is outside
+# that group and starts right away.
 #
-# Why only "young" runs and not plain cancel-in-progress: a run older than the
-# window may already be uploading (TestFlight, GitHub Release assets, the update
-# manifest push); killing it there leaves half-published state. Within 5 minutes
-# no release job has got anywhere near its publish steps (Android build alone is
-# ~17 min, desktop legs 15-35 min). Formal releases are never touched: only runs
-# whose event is `push` are considered, and only when this run is a push too.
+# Rule (optimum of a simulation over the 542 release-triggering develop pushes of
+# 2026-09, with the measured sharded run durations; see the PR/commit message):
+#   cancel the running push run of the same workflow + branch when its first real
+#   job started less than SUPERSEDE_WINDOW_MINUTES (8) before the NEW run was
+#   created, and less than SUPERSEDE_MAX_ELAPSED_MINUTES (10) before now.
+#   * T = 8 minimises push -> published latency (Android mean 36.6 -> 32.2 min,
+#     p90 51.8 -> 42.7; desktop 42.6 -> 37.6 / 59.6 -> 50.0) while still saving
+#     ~7% runner (macOS 32.6 -> 30.3 min/h). "Always cancel" starves publishing
+#     during push bursts (p90 90-100 min); 5-11 is a flat optimum.
+#   * The 10 min cap keeps us away from uploads: the earliest publish step seen is
+#     at ~10.7 min into the Android build job; desktop publish waits for all legs.
+#   Runs are judged by their JOBS' start (run_started_at is only the creation time
+#   and keeps ticking while jobs wait for runners).
+# If the push did not trigger a release run (path filters), nothing supersedes the
+# running one: it is still the newest release-relevant commit, so it is kept.
 #
-# Env: GH_TOKEN (needs actions: write), REPO (owner/name), RUN_ID (this run),
-#      SUPERSEDE_WINDOW_MINUTES (default 5), SUPERSEDE_MAX_ELAPSED_MINUTES
-#      (default 9), SUPERSEDE_DRY_RUN=1 to only list,
-#      SUPERSEDE_FORCE_AFTER_SECONDS (default 90) before force-cancel,
-#      SUPERSEDE_STATUSES / SUPERSEDE_NOW to override the scanned statuses and
-#      the current time (replaying a past decision in a dry run).
+# Queries filter only by status and compare branch / event / sha in bash: with
+# `branch=` the runs API has served stale result sets (09-07 data on 09-30).
+# A plain cancel does not stop `if: always()` jobs / steps (desktop publish, macOS
+# signing), so runs still going after SUPERSEDE_FORCE_AFTER_SECONDS are
+# force-cancelled.
+#
+# Env: GH_TOKEN (actions: write), REPO (owner/name), HEAD_SHA (this push),
+#      BRANCH (develop/main), WORKFLOWS (space-separated workflow file names),
+#      SUPERSEDE_WINDOW_MINUTES (8), SUPERSEDE_MAX_ELAPSED_MINUTES (10),
+#      SUPERSEDE_FORCE_AFTER_SECONDS (90), SUPERSEDE_WAIT_FOR_RUN_SECONDS (90).
+#      Testing: SUPERSEDE_DRY_RUN=1, SUPERSEDE_NOW=<iso time>.
 set -euo pipefail
 
 : "${REPO:?REPO is required}"
-: "${RUN_ID:?RUN_ID is required}"
-window="${SUPERSEDE_WINDOW_MINUTES:-5}"
-max_elapsed="${SUPERSEDE_MAX_ELAPSED_MINUTES:-9}"
+: "${HEAD_SHA:?HEAD_SHA is required}"
+: "${BRANCH:?BRANCH is required}"
+: "${WORKFLOWS:?WORKFLOWS is required}"
+window="${SUPERSEDE_WINDOW_MINUTES:-8}"
+max_elapsed="${SUPERSEDE_MAX_ELAPSED_MINUTES:-10}"
+force_after="${SUPERSEDE_FORCE_AFTER_SECONDS:-90}"
+wait_for_run="${SUPERSEDE_WAIT_FOR_RUN_SECONDS:-90}"
+statuses="requested pending waiting queued in_progress"
 
-read -r workflow_id branch event created <<<"$(gh api "repos/$REPO/actions/runs/$RUN_ID" \
-  --jq '[.workflow_id, .head_branch, .event, .created_at] | @tsv')"
-
-if [ "$event" != "push" ]; then
-  echo "Run $RUN_ID is a '$event' run; superseding only applies to push runs."
-  exit 0
-fi
-
-# Two clocks, both measured on the older run's JOBS (run_started_at is just the
-# run's creation time and says nothing about work done while jobs wait for a
-# runner):
-#  * superseded: its earliest job started less than $window min before THIS run
-#    was created -- "the new push arrived before the old one had run 5 min".
-#    Measuring against "now" instead (the first version) missed exactly that
-#    case on 2026-09-29: this job itself waited 6 min for a runner, so the old
-#    run looked 8 min old and survived though the push came 2.3 min after it.
-#  * still safe to kill: its earliest job started less than $max_elapsed min
-#    ago. Fastest publishing step measured 2026-09-27..29: the Android build
-#    job's upload at the end of a >= 10.7 min job; desktop publish waits for
-#    all legs (>= 12 min). A run past this cap may be uploading -> leave it.
-push_cutoff="$(date -u -d "$created - ${window} minutes" +%Y-%m-%dT%H:%M:%SZ)"
-safety_cutoff="$(date -u -d "${SUPERSEDE_NOW:-now} - ${max_elapsed} minutes" +%Y-%m-%dT%H:%M:%SZ)"
-echo "Push runs of workflow $workflow_id on '$branch' older than run $RUN_ID (created $created): cancel those whose first job started after $push_cutoff and after $safety_cutoff, or that have not started."
-
-# Do NOT add `event=push` to the query: combined with `branch=` the runs API
-# serves a stale result set (2026-09-30 on this repo: branch+event+status
-# returned runs from 09-07 while branch+status returned 09-29). Filter the
-# event in jq instead.
-older="$(
-  for status in ${SUPERSEDE_STATUSES:-requested pending waiting queued in_progress}; do
-    gh api "repos/$REPO/actions/workflows/$workflow_id/runs?branch=$branch&status=$status&per_page=50" \
-      --jq ".workflow_runs[] | select(.event == \"push\" and .id < $RUN_ID) | .id"
+# All active runs of one workflow as TSV: id, sha, branch, event, status, created_at.
+active_runs() {
+  local wf="$1" st
+  for st in $statuses; do
+    gh api -X GET "repos/$REPO/actions/workflows/$wf/runs" -f status="$st" -f per_page=100 --paginate \
+      --jq '.workflow_runs[] | [.id, .head_sha, .head_branch, .event, .status, .created_at] | @tsv'
   done | sort -u
-)"
-
-candidates=""
-for id in $older; do
-  # Earliest start among the run's real jobs (its own cancel-superseded job
-  # starts at once and did no build work). Empty = nothing has started yet.
-  first="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" \
-    --jq '[.jobs[] | select(.name != "cancel-superseded" and .started_at != null) | .started_at] | min // ""')"
-  if [ -z "$first" ]; then
-    echo "run $id: no job started yet -> superseded"
-    candidates="$candidates $id"
-  elif [[ "$first" > "$push_cutoff" && "$first" > "$safety_cutoff" ]]; then
-    echo "run $id: first job started $first -> superseded"
-    candidates="$candidates $id"
-  else
-    echo "run $id: first job started $first -> keep (ran too long before the push, or may be publishing)"
-  fi
-done
-
-if [ -z "$candidates" ]; then
-  echo "Nothing superseded."
-  exit 0
-fi
+}
 
 requested=""
-for id in $candidates; do
-  if [ "${SUPERSEDE_DRY_RUN:-}" = "1" ]; then
-    echo "[dry run] would cancel run $id"
+for wf in $WORKFLOWS; do
+  # 1. The run this push created (it may appear a few seconds after the push).
+  new_id=""; new_created=""
+  deadline=$(( $(date +%s) + wait_for_run ))
+  while :; do
+    while IFS=$'\t' read -r id sha br ev st created; do
+      if [ "$sha" = "$HEAD_SHA" ] && [ "$br" = "$BRANCH" ] && [ "$ev" = "push" ]; then
+        new_id="$id"; new_created="$created"
+      fi
+    done < <(active_runs "$wf")
+    [ -n "$new_id" ] && break
+    [ "$(date +%s)" -ge "$deadline" ] && break
+    sleep 10
+  done
+  if [ -z "$new_id" ]; then
+    echo "$wf: this push ($HEAD_SHA) created no active run -> the running one is still the newest; nothing to do."
     continue
   fi
-  # A run can finish between the listing and the cancel (409); that is fine.
-  if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null; then
-    echo "::notice title=Superseded run cancelled::run $id (newer push run $RUN_ID arrived within ${window} min of its start)"
-    requested="$requested $id"
-  else
-    echo "::warning title=Cancel skipped::run $id could not be cancelled (probably already finished)"
-  fi
+
+  push_cutoff="$(date -u -d "$new_created - ${window} minutes" +%Y-%m-%dT%H:%M:%SZ)"
+  safety_cutoff="$(date -u -d "${SUPERSEDE_NOW:-now} - ${max_elapsed} minutes" +%Y-%m-%dT%H:%M:%SZ)"
+  echo "$wf: new run $new_id (created $new_created). Cancel older $BRANCH push runs whose first job started after $push_cutoff and after $safety_cutoff, or not started."
+
+  # 2. Older active push runs on the same branch.
+  while IFS=$'\t' read -r id sha br ev st created; do
+    [ "$br" = "$BRANCH" ] && [ "$ev" = "push" ] && [ "$id" -lt "$new_id" ] || continue
+    first="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" \
+      --jq '[.jobs[] | select(.started_at != null) | .started_at] | min // ""')"
+    if [ -z "$first" ]; then
+      verdict="superseded (no job started yet)"
+    elif [[ "$first" > "$push_cutoff" && "$first" > "$safety_cutoff" ]]; then
+      verdict="superseded (first job started $first)"
+    else
+      echo "  run $id: first job started $first -> keep (ran >= ${window} min before the push, or may be publishing)"
+      continue
+    fi
+    if [ "${SUPERSEDE_DRY_RUN:-}" = "1" ]; then
+      echo "  run $id: $verdict -> [dry run] would cancel"
+      continue
+    fi
+    # A run can finish between the listing and the cancel (409); that is fine.
+    if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null; then
+      echo "::notice title=Superseded run cancelled::$wf run $id: $verdict; newer push run $new_id"
+      requested="$requested $id"
+    else
+      echo "::warning title=Cancel skipped::run $id could not be cancelled (probably already finished)"
+    fi
+  done < <(active_runs "$wf")
 done
 [ -n "$requested" ] || exit 0
 
-# A plain cancel does NOT stop jobs / steps guarded by `if: always()`: the
-# desktop `publish` job (needs all legs, `if: always() && ...`) and the macOS
-# signing steps keep running -- on 2026-09-30 three superseded desktop runs sat
-# "in_progress" after cancel until force-cancelled. Wait once for all requested
-# runs together, then force-cancel whatever is still running.
-force_after="${SUPERSEDE_FORCE_AFTER_SECONDS:-90}"
+# 3. Force-cancel whatever ignored the plain cancel (always() jobs / steps).
 deadline=$(( $(date +%s) + force_after ))
 pending="$requested"
 while [ -n "$pending" ] && [ "$(date +%s)" -lt "$deadline" ]; do

@@ -539,8 +539,8 @@ final class DesktopFloatingBallController: NSObject {
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "startSystemBall":
-      start(call.arguments as? [String: Any] ?? [:])
-      result(true)
+      // 回真实结果（面板是否在），与 Windows 同一契约。
+      result(start(call.arguments as? [String: Any] ?? [:]))
     case "stopSystemBall":
       destroy()
       result(nil)
@@ -559,7 +559,8 @@ final class DesktopFloatingBallController: NSObject {
 
   // MARK: 生命周期
 
-  private func start(_ args: [String: Any]) {
+  @discardableResult
+  private func start(_ args: [String: Any]) -> Bool {
     actions = (args["actions"] as? [String]) ?? []
     labels = (args["labels"] as? [String: String]) ?? [:]
     var decodedIcons: [String: NSImage] = [:]
@@ -594,6 +595,7 @@ final class DesktopFloatingBallController: NSObject {
       collapseImmediately()
       applyBallAppearance()
     }
+    return ballPanel != nil
   }
 
   /// 销毁全部窗口（stopSystemBall / 用户点关闭 / app 退出）。

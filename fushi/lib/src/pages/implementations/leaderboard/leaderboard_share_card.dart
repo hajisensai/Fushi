@@ -94,25 +94,35 @@ String? leaderboardShareWindowStart(LeaderboardWindow window, DateTime now) {
 /// 周期锚点同口径，见 [leaderboardShareWindowStart]）；总 = 截至 [now] 的**本地**日期
 /// `YYYY-MM-DD`——「总」没有服务端周期锚点，「截至哪天」是给用户看的日期，按 UTC 算
 /// 会让东八区早上 8 点前分享的卡片写成前一天。
-String leaderboardSharePeriodLabel(LeaderboardWindow window, DateTime now) =>
-    switch (window) {
-      LeaderboardWindow.week => leaderboardShareWindowStart(window, now)!,
-      LeaderboardWindow.month => leaderboardShareWindowStart(
-        window,
-        now,
-      )!.substring(0, 7),
-      LeaderboardWindow.all => _shareDateKey(now.toLocal()),
-    };
+///
+/// 本地日期 = [now] 的 UTC 时刻 + [localOffset]（用户时区在该时刻的偏移，生产取
+/// `now.toLocal().timeZoneOffset`）。偏移显式传入而不是读进程时区：跑在 UTC 机器上
+/// 的测试里 `toLocal()` 与 `toUtc()` 同值，分不出「本地」与「UTC」两种实现。
+String leaderboardSharePeriodLabel(
+  LeaderboardWindow window,
+  DateTime now, {
+  required Duration localOffset,
+}) => switch (window) {
+  LeaderboardWindow.week => leaderboardShareWindowStart(window, now)!,
+  LeaderboardWindow.month => leaderboardShareWindowStart(
+    window,
+    now,
+  )!.substring(0, 7),
+  LeaderboardWindow.all => _shareDateKey(now.toUtc().add(localOffset)),
+};
 
 /// 从服务端取 [window] 周期内的读完数与字数，组装卡片数据。
 ///
 /// 周 / 月：数书架里读完日期落在周期内的作品，字数取同周期字数榜的 `me`。
 /// 总：读完数与字数取用户卡片的累计值（不受翻页上限影响），书架只取一页做封面。
+/// [localOffset] 只影响「总」的截至日期（见 [leaderboardSharePeriodLabel]），缺省取
+/// 用户时区在 [now] 时刻的偏移。
 Future<LeaderboardShareCardData> loadLeaderboardShareCardData(
   LeaderboardClient client,
   LeaderboardAccount self, {
   LeaderboardWindow window = LeaderboardWindow.month,
   DateTime? now,
+  Duration? localOffset,
 }) async {
   final DateTime at = now ?? DateTime.now();
   final String? start = leaderboardShareWindowStart(window, at);
@@ -166,7 +176,11 @@ Future<LeaderboardShareCardData> loadLeaderboardShareCardData(
   return LeaderboardShareCardData(
     accountTag: self.tag,
     window: window,
-    periodLabel: leaderboardSharePeriodLabel(window, at),
+    periodLabel: leaderboardSharePeriodLabel(
+      window,
+      at,
+      localOffset: localOffset ?? at.toLocal().timeZoneOffset,
+    ),
     finishedCount: finished,
     chars: chars,
     covers: List<LeaderboardWork>.unmodifiable(covers),

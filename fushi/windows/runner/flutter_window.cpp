@@ -2112,9 +2112,10 @@ void FlutterWindow::RegisterFloatingBallChannel() {
           }
           const bool dock_left = StringFromValue(args, "dock", "right") == "left";
           const double fraction = DoubleFromValue(args, "fraction", 1.0 / 3.0);
-          floating_ball_window_->Start(config, dock_left, fraction, GetHandle());
-          // 契约：恒 true（建窗失败是本机 D2D / 窗口站的问题，Dart 无从补救）。
-          result->Success(flutter::EncodableValue(true));
+          // 回真实结果：建窗 / D2D 失败时 Dart 不记签名，下次同步再试。
+          const bool started =
+              floating_ball_window_->Start(config, dock_left, fraction, GetHandle());
+          result->Success(flutter::EncodableValue(started));
         } else if (method == "stopSystemBall") {
           floating_ball_window_->Stop();
           result->Success();

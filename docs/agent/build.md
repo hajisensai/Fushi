@@ -205,6 +205,11 @@ artifact（不占缓存配额，develop/main 保留 30 天、PR 7 天），下�
 develop/main 产出的件（PR run 另外认同一 PR head 自己产出的件），并先核 SHA256SUMS。
 取不到就照旧从源码编，所以它不会重演 TODO-416「跨 workflow artifact 过期即静默缺件」。
 vcpkg 的两条 actions/cache 只在 libtorrent 持久库 miss 时才挂。
+`release.yml` 的 Android `build` job 同样把 libtorrent `.so`（arm64-v8a）与 fushi_p2p
+`.so`（arm64-v8a / armeabi-v7a / x86_64）存进这个库（名字另含实际 NDK 版本、镜像内 vcpkg
+修订、Rust / cargo-ndk 钉版与 ABI 列表）：命中时跳过 vcpkg 缓存、Rust 工具链、rust-cache、
+cargo-ndk 与两次交叉编（2026-09-30 实测合计约 13 min），恢复件与现编件过同一组产物校验
+（`verify_torrent_abi.sh` + AArch64 + 16KB 对齐；`verify_abi.sh` 逐 ABI）。
 
 同一个持久库也覆盖 macOS / iOS / Linux：fushi_p2p（macOS universal dylib、iOS device
 staticlib、Linux .so）、fushi-anki-sync（macOS universal release / 各平台 PR 用的 debug）、

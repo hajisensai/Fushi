@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -12,7 +13,9 @@ import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -329,43 +332,119 @@ void main() {
     });
   });
 
-  testWidgets(
-    '桌面应用外球：打开开关即起原生球，带已着色图标 PNG、球面与存盘位置；吸附后落库',
-    (WidgetTester tester) async {
-      final List<MethodCall> calls = <MethodCall>[];
+  // 桌面应用外球：平台门走测试缝，任何平台（含 Linux CI）都跑这组。
+  group('桌面应用外球', () {
+    late List<MethodCall> calls;
+    late _RecordingActionTarget target;
+
+    /// 原生侧的桩：记下每次调用；[takeClosed] / [startReply] 给
+    /// `takeSystemBallClosedByUser` / `startSystemBall` 一个可控的回话（竞态用例
+    /// 靠它把起球闭包卡在对应的 await 上）。
+    ///
+    /// 可控回话的 Completer 必须在 `tester.runAsync` 里建：fake zone 里建的
+    /// Completer 完成时把回调排进 fake zone 的微任务队列，要等 runAsync 结束后
+    /// 的下一次 pump 才冲刷——闭包在观察窗内根本醒不过来，断言就成了空壳。
+    void mockNative(
+      WidgetTester tester, {
+      Future<bool> Function()? takeClosed,
+      Future<bool> Function()? startReply,
+      bool started = true,
+    }) {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         FloatingBallChannel.channel,
         (MethodCall call) async {
           calls.add(call);
-          return call.method == 'startSystemBall' ? true : null;
+          return switch (call.method) {
+            'startSystemBall' =>
+              startReply == null ? started : await startReply(),
+            'takeSystemBallClosedByUser' =>
+              takeClosed == null ? false : await takeClosed(),
+            _ => null,
+          };
         },
       );
-      addTearDown(() {
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          FloatingBallChannel.channel,
-          null,
-        );
-        FloatingBallChannel.debugResetHandler();
-      });
-      await prefs.setFloatingBallSystemPosition('left', 0.4);
-      await pumpHost(tester);
-      // 起球前要画图标（toImage / toByteData）、读球面资源：这些只在真实异步里
-      // 走得完，所以开关在 runAsync 里打开，宿主的同步链就跑在真实 zone 里。
+    }
+
+    setUp(() {
+      calls = <MethodCall>[];
+      debugLatestSystemBallSync = null;
+      target = _RecordingActionTarget();
+      debugDesktopSystemBallPlatformOverride = true;
+      desktopSystemBallActionTarget = target;
+    });
+
+    tearDown(() {
+      debugDesktopSystemBallPlatformOverride = null;
+      desktopSystemBallActionTarget = const DesktopSystemBallActionTarget();
+      FloatingBallChannel.debugResetHandler();
+    });
+
+    List<MethodCall> starts() => <MethodCall>[
+      for (final MethodCall c in calls)
+        if (c.method == 'startSystemBall') c,
+    ];
+
+    List<String> startedActions(MethodCall start) => <String>[
+      for (final Object? a
+          in (start.arguments as Map<Object?, Object?>)['actions']!
+              as List<Object?>)
+        a! as String,
+    ];
+
+    /// 在真实异步里等 [done] 成立（起球要画图标 PNG、读球面资源，只在真实
+    /// zone 里走得完）。
+    Future<void> waitFor(bool Function() done) async {
+      for (int i = 0; i < 100 && !done(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+
+    /// 原生报一条消息给 Dart（点了按钮 / 吸附了位置）。
+    Future<void> fromNative(
+      WidgetTester tester,
+      String method,
+      Map<String, Object?> args,
+    ) async {
+      final ByteData message = const StandardMethodCodec().encodeMethodCall(
+        MethodCall(method, args),
+      );
       await tester.runAsync(() async {
-        await prefs.setFloatingBallSystem(true);
-        for (int i = 0; i < 50; i++) {
-          if (calls.any((MethodCall c) => c.method == 'startSystemBall')) break;
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-        }
+        await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          FloatingBallChannel.channel.name,
+          message,
+          (_) {},
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pump();
-      final MethodCall start = calls.lastWhere(
-        (MethodCall c) => c.method == 'startSystemBall',
+    }
+
+    testWidgets('打开开关即起原生球，带已着色图标 PNG、球面与存盘位置；吸附后落库', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
       );
+      await prefs.setFloatingBallSystemPosition('left', 0.4);
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        await waitFor(() => starts().isNotEmpty);
+      });
+      await tester.pump();
+      final MethodCall start = starts().last;
       final Map<Object?, Object?> args =
           start.arguments as Map<Object?, Object?>;
       // 桌面应用外球的按钮：查词 / 应用外查词（查选区）/ 剪贴板。
-      expect(args['actions'], <String>['lookup', 'popup_lookup', 'clipboard']);
+      expect(startedActions(start), <String>[
+        'lookup',
+        'popup_lookup',
+        'clipboard',
+      ]);
       final Map<Object?, Object?> images =
           args['iconImages']! as Map<Object?, Object?>;
       expect(
@@ -381,21 +460,10 @@ void main() {
       );
 
       // 原生报吸附后的位置：Dart 落库。
-      final ByteData moved = const StandardMethodCodec().encodeMethodCall(
-        const MethodCall('systemBallPositionChanged', <String, Object?>{
-          'dock': 'right',
-          'fraction': 0.8,
-        }),
-      );
-      await tester.runAsync(() async {
-        await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-          FloatingBallChannel.channel.name,
-          moved,
-          (_) {},
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+      await fromNative(tester, 'systemBallPositionChanged', <String, Object?>{
+        'dock': 'right',
+        'fraction': 0.8,
       });
-      await tester.pump();
       expect(prefs.floatingBallSystemDock, 'right');
       expect(prefs.floatingBallSystemVerticalFraction, 0.8);
 
@@ -403,7 +471,320 @@ void main() {
       await tester.runAsync(() => prefs.setFloatingBallSystem(false));
       await tester.pump();
       expect(calls.last.method, 'stopSystemBall');
-    },
-    skip: !(Platform.isWindows || Platform.isMacOS),
-  );
+    });
+
+    testWidgets('查词模块关着：应用外球不下发「查词」「应用外查词」，模块打开后重新同步补上', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setModuleEnabled(ModuleId.lookup, false);
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        await waitFor(() => starts().isNotEmpty);
+      });
+      await tester.pump();
+      expect(startedActions(starts().last), <String>['clipboard']);
+
+      await tester.runAsync(() async {
+        await prefs.setModuleEnabled(ModuleId.lookup, true);
+        await waitFor(() => starts().length >= 2);
+      });
+      await tester.pump();
+      expect(startedActions(starts().last), <String>[
+        'lookup',
+        'popup_lookup',
+        'clipboard',
+      ]);
+    });
+
+    bool tookClosedFlag() =>
+        calls.any((MethodCall c) => c.method == 'takeSystemBallClosedByUser');
+
+    testWidgets('起球途中关掉开关：发 stop，醒来的起球闭包不再把球拉起来', (WidgetTester tester) async {
+      late Completer<bool> take;
+      mockNative(tester, takeClosed: () => take.future);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        take = Completer<bool>();
+        await prefs.setFloatingBallSystem(true);
+        final Future<void> sync = debugLatestSystemBallSync!;
+        await waitFor(tookClosedFlag);
+        // 起球闭包卡在第一个 await 上时，用户关了开关。
+        await prefs.setFloatingBallSystem(false);
+        take.complete(false);
+        // 闭包醒来会画图标、读球面（桌面分支），再走到 start 前的门：等它真的
+        // 跑完再断言。
+        await sync;
+      });
+      await tester.pump();
+      expect(
+        calls.map((MethodCall c) => c.method),
+        contains('stopSystemBall'),
+        reason: '签名还没落时关开关也要停',
+      );
+      expect(starts(), isEmpty, reason: '过期的起球闭包不得再调 start');
+    });
+
+    testWidgets('start 回话前关掉开关：过期代不记签名，再打开同样配置照常起球', (
+      WidgetTester tester,
+    ) async {
+      late Completer<bool> firstStart;
+      mockNative(
+        tester,
+        startReply: () =>
+            starts().length == 1 ? firstStart.future : Future<bool>.value(true),
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        firstStart = Completer<bool>();
+        await prefs.setFloatingBallSystem(true);
+        final Future<void> first = debugLatestSystemBallSync!;
+        await waitFor(() => starts().isNotEmpty);
+        // 原生还在建窗，用户关了开关；随后原生回报「起来了」。
+        await prefs.setFloatingBallSystem(false);
+        firstStart.complete(true);
+        await first;
+        // 再打开：配置与上一代一模一样。
+        await prefs.setFloatingBallSystem(true);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(
+        starts(),
+        hasLength(2),
+        reason: '过期代若记下签名，这次同样配置的起球会被当成已下发跳过——开关开着却没有球',
+      );
+    });
+
+    testWidgets('一次性「用户关过系统球」标记落在已过期的那一代：照样关掉开关，不再起球', (
+      WidgetTester tester,
+    ) async {
+      final List<Completer<bool>> takes = <Completer<bool>>[];
+      mockNative(
+        tester,
+        takeClosed: () {
+          final Completer<bool> c = Completer<bool>();
+          takes.add(c);
+          return c.future;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        final Future<void> gen1 = debugLatestSystemBallSync!;
+        await waitFor(() => takes.isNotEmpty);
+        // 第一代还在等标记的回话，配置变了：第二代起球，也去取标记。
+        await prefs.setFloatingBallButtons(FloatingBallScope.system, <String>[
+          'clipboard',
+        ]);
+        final Future<void> gen2 = debugLatestSystemBallSync!;
+        await waitFor(() => takes.length >= 2);
+        // Android 读即清：原生先回第一代 true（标记已清），第二代只剩 false。
+        takes[0].complete(true);
+        await gen1;
+        takes[1].complete(false);
+        await gen2;
+      });
+      await tester.pump();
+      expect(prefs.floatingBallSystem, isFalse, reason: '用户在系统球上点过关闭');
+      expect(starts(), isEmpty, reason: '不得违背用户刚做的「关闭」把球拉起来');
+    });
+
+    testWidgets('连续两次同步、先发的闭包后醒：以最新配置为准，旧闭包作废', (WidgetTester tester) async {
+      final List<Completer<bool>> takes = <Completer<bool>>[];
+      mockNative(
+        tester,
+        takeClosed: () {
+          final Completer<bool> c = Completer<bool>();
+          takes.add(c);
+          return c.future;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        final Future<void> gen1 = debugLatestSystemBallSync!;
+        await waitFor(() => takes.isNotEmpty);
+        // 第一代还卡着，用户改了按钮：第二代起球。
+        await prefs.setFloatingBallButtons(FloatingBallScope.system, <String>[
+          'clipboard',
+        ]);
+        final Future<void> gen2 = debugLatestSystemBallSync!;
+        await waitFor(() => takes.length >= 2);
+        // 第二代先醒、先起完；第一代后醒。
+        takes[1].complete(false);
+        await gen2;
+        takes[0].complete(false);
+        await gen1;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(1), reason: '旧代不得再起一次盖掉新配置');
+      expect(startedActions(starts().single), <String>['clipboard']);
+    });
+
+    testWidgets('原生回报起不来：不记签名，同样的配置下次同步会再试', (WidgetTester tester) async {
+      mockNative(tester, started: false);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        await waitFor(() => starts().isNotEmpty);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        // 与球无关的偏好变化触发一次同步：配置没变，但上次没起来，得再试。
+        await prefs.setFloatingBallInApp(false);
+        await waitFor(() => starts().length >= 2);
+      });
+      await tester.pump();
+      expect(starts(), hasLength(2));
+    });
+
+    group('动作分发', () {
+      setUp(() {
+        target.overlayAvailable = true;
+      });
+
+      Future<void> tapAction(
+        WidgetTester tester,
+        String id, {
+        List<double> anchor = const <double>[1800, 900, 1896, 996],
+      }) => fromNative(tester, 'systemBallAction', <String, Object?>{
+        'id': id,
+        'anchor': anchor,
+      });
+
+      void mockClipboard(WidgetTester tester, String text) {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (MethodCall call) async => call.method == 'Clipboard.getData'
+              ? <String, Object?>{'text': text}
+              : null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+      }
+
+      testWidgets('查词：唤起主窗并请求打开查词页、聚焦搜索框', (WidgetTester tester) async {
+        await pumpHost(tester);
+        final int before = appModel.homeDictionaryTabRequest.value.seq;
+        await tapAction(tester, 'lookup');
+        expect(target.log, <String>['front']);
+        expect(appModel.homeDictionaryTabRequest.value.seq, before + 1);
+        expect(appModel.homeDictionaryTabRequest.value.focusSearch, isTrue);
+      });
+
+      testWidgets('应用外查词：查前台程序的选区，不唤起主窗', (WidgetTester tester) async {
+        await pumpHost(tester);
+        await tapAction(tester, 'popup_lookup');
+        expect(target.log, <String>['selection']);
+      });
+
+      testWidgets('剪贴板：锚点按物理像素交给覆盖窗（不当逻辑像素再乘 DPR）', (
+        WidgetTester tester,
+      ) async {
+        mockClipboard(tester, ' 猫 ');
+        await pumpHost(tester);
+        await tapAction(tester, 'clipboard');
+        expect(target.log, <String>['lookupText']);
+        final _LookupTextCall call = target.lookups.single;
+        expect(call.text, '猫');
+        expect(call.anchorScreenRect, isNull, reason: '逻辑像素通道不得带锚点');
+        expect(
+          call.physicalPlacement?.anchorScreenRect,
+          const Rect.fromLTRB(1800, 900, 1896, 996),
+        );
+      });
+
+      testWidgets('剪贴板：覆盖窗不可用时退回主窗查词弹窗', (WidgetTester tester) async {
+        target.overlayAvailable = false;
+        mockClipboard(tester, '犬');
+        await pumpHost(tester);
+        await tapAction(tester, 'clipboard');
+        expect(target.log, <String>['front']);
+        expect(FloatingLyricLookupNotifier.instance.consume()?.text, '犬');
+      });
+
+      testWidgets('打开 Fushi：只唤起主窗', (WidgetTester tester) async {
+        await pumpHost(tester);
+        final int before = appModel.homeDictionaryTabRequest.value.seq;
+        await tapAction(tester, 'open_app');
+        expect(target.log, <String>['front']);
+        expect(appModel.homeDictionaryTabRequest.value.seq, before);
+      });
+    });
+  });
+}
+
+class _LookupTextCall {
+  _LookupTextCall(this.text, this.anchorScreenRect, this.physicalPlacement);
+
+  final String text;
+  final Rect? anchorScreenRect;
+  final GlobalLookupPhysicalPlacement? physicalPlacement;
+}
+
+/// 记下宿主把每颗按钮分发到了哪条路、带了什么参数。
+class _RecordingActionTarget extends DesktopSystemBallActionTarget {
+  bool overlayAvailable = true;
+  final List<String> log = <String>[];
+  final List<_LookupTextCall> lookups = <_LookupTextCall>[];
+
+  @override
+  bool get overlayLookupAvailable => overlayAvailable;
+
+  @override
+  Future<void> lookupSelection() async => log.add('selection');
+
+  @override
+  Future<bool> lookupText(
+    String text, {
+    Rect? anchorScreenRect,
+    GlobalLookupPhysicalPlacement? physicalPlacement,
+  }) async {
+    log.add('lookupText');
+    lookups.add(_LookupTextCall(text, anchorScreenRect, physicalPlacement));
+    return true;
+  }
+
+  @override
+  Future<void> bringMainWindowToFront() async => log.add('front');
 }

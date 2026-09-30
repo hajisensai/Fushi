@@ -14,7 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// * 校验 `head_repository` 是本仓库——分支**名**不唯一，fork 上同名分支（例如
 ///   `develop`）发起的 PR 也会被 `branch=` 匹配到；
 /// * 不取消本 workflow 自己（它还要接着删这个 PR 的缓存）；
-/// * 分支名走 `-f branch=`，不拼进 URL / jq。
+/// * 只按 status 查询，分支在 bash 里比：runs API 带 `branch=` 回过过期结果集
+///   （2026-09-30 拿到 09-07 的数据），分支名也因此不进 URL / jq。
 void main() {
   test('cache-cleanup.yml 在 PR 关闭时取消该 PR 分支的剩余 CI', () {
     final String yaml = File(
@@ -32,8 +33,10 @@ void main() {
     );
     expect(yaml, contains(r'[ "$head_repo" = "$REPO" ] || continue'));
     expect(yaml, contains(r'[ "$name" = "$SELF_WORKFLOW" ] && continue'));
-    expect(yaml, contains(r'-f branch="$HEAD_BRANCH"'));
-    expect(yaml, isNot(contains(r'runs?branch=$HEAD_BRANCH')));
+    expect(yaml, contains(r'[ "$head_branch" = "$HEAD_BRANCH" ] || continue'));
+    for (final String param in <String>['-f branch=', '?branch=', '&branch=']) {
+      expect(yaml, isNot(contains(param)), reason: param);
+    }
     // 普通 cancel 停不下 always() job：等一轮后对还在跑的 force-cancel。
     expect(yaml, contains(r'/actions/runs/$id/cancel"'));
     expect(yaml, contains(r'/actions/runs/$id/force-cancel'));

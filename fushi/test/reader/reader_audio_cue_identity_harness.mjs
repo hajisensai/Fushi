@@ -18,7 +18,7 @@ try {
     assert.ok(start >= 0 && end > start, 'production reader object exists');
     const source = 'const C = {};\n' + scripts.units + '\n' +
       shell.slice(start, end + 3) + '\n' + scripts.selection;
-    const result = await driver.evalOnPage('<!doctype html><meta charset="utf-8"><body>', `(() => {
+    const result = await driver.evalOnPage('<!doctype html><meta charset="utf-8"><body>', `(async () => {
       (0, eval)(${JSON.stringify(source)});
       window.flutter_inappwebview = {callHandler: (name, payload) => {
         window.lastPayload = JSON.parse(payload);
@@ -96,6 +96,34 @@ try {
       selection.selectFromPosition(missing, 0, 1);
       check(window.lastPayload.audioCuePayload === null && native(missing, 0, 1).audioCuePayload === null,
         'unmapped text has no previous-cue fallback');
+      // BUG-2806 review: the gap-fill shadow is a measured pixel value, so a relayout
+      // while the cue stays active (paused) must re-measure it. Real layout, real
+      // observers: swap the reader stylesheet the way _applyStylesLive does.
+      reader.resetSentenceAudioCues();
+      const style = document.createElement('style');
+      style.id = 'fushi-reader-style';
+      // Chrome stretches the in-ruby wrapper across the annotation, so the gap is
+      // made with em-based ruby padding: it scales with the font size, like the
+      // WebKit annotation overhang it stands in for.
+      const rubyGap = 'ruby { padding-inline: 0.5em; }';
+      style.textContent = 'body { font-size: 20px; } ' + rubyGap;
+      document.head.appendChild(style);
+      document.body.innerHTML = '<p>ほら<ruby>漢</ruby>字だ</p>';
+      reader.applySentenceAudioCues([{id:'gap', text:'ほら漢字だ', start:0, length:5}]);
+      reader.highlightSentenceAudioCue('gap', false);
+      const baseWrapper = document.querySelector('ruby .fushi-sentence-audio-cue');
+      const small = baseWrapper.style.boxShadow;
+      if (!small) throw Error('ruby padding leaves a gap to fill at 20px');
+      const settle = () => new Promise((r) => setTimeout(r, 0));
+      style.textContent = 'body { font-size: 40px; } ' + rubyGap;
+      await settle();
+      const relaid = baseWrapper.style.boxShadow;
+      reader.paintSentenceAudioRubyGaps();
+      check(relaid !== small && relaid === baseWrapper.style.boxShadow,
+        'stylesheet swap re-measures the gap fill');
+      style.textContent = 'body { font-size: 40px; }';
+      await settle();
+      check(baseWrapper.style.boxShadow === '', 'a swap that closes the gap removes the fill');
       return results;
     })()`);
     count += result.length;

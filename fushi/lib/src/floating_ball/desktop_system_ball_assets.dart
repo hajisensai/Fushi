@@ -10,6 +10,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 图标 PNG 的边长：22 逻辑像素 × 3，原生按显示器缩放往下取样。
 const int kDesktopSystemBallIconPx = 66;
@@ -45,26 +46,49 @@ Future<Uint8List?> renderFloatingBallIconPng(
     Offset((size - painter.width) / 2, (size - painter.height) / 2),
   );
   painter.dispose();
-  final ui.Image image = await recorder.endRecording().toImage(size, size);
+  final ui.Picture picture = recorder.endRecording();
   try {
-    final ByteData? data = await image.toByteData(
-      format: ui.ImageByteFormat.png,
-    );
-    return data?.buffer.asUint8List();
+    final ui.Image image = await picture.toImage(size, size);
+    try {
+      final ByteData? data = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      return data?.buffer.asUint8List();
+    } finally {
+      image.dispose();
+    }
   } finally {
-    image.dispose();
+    picture.dispose();
   }
 }
 
+/// 画单颗图标的函数形状（[renderFloatingBallIconPng] 的签名）。
+typedef FloatingBallIconRenderer =
+    Future<Uint8List?> Function(IconData icon, Color color);
+
 /// 按钮 id → 图标 PNG；某颗画失败就不带它（原生侧退化成只画底色圆）。
+/// [render] 只给测试替换单颗的画法，用来钉住逐颗容错。
 Future<Map<String, Uint8List>> renderFloatingBallIconPngs(
   Map<String, IconData> icons,
-  Color color,
-) async {
+  Color color, {
+  @visibleForTesting FloatingBallIconRenderer? render,
+}) async {
+  final FloatingBallIconRenderer draw =
+      render ??
+      (IconData icon, Color color) => renderFloatingBallIconPng(icon, color);
   final Map<String, Uint8List> out = <String, Uint8List>{};
   for (final MapEntry<String, IconData> e in icons.entries) {
-    final Uint8List? png = await renderFloatingBallIconPng(e.value, color);
-    if (png != null) out[e.key] = png;
+    try {
+      final Uint8List? png = await draw(e.value, color);
+      if (png != null) out[e.key] = png;
+    } catch (error, stack) {
+      // 一颗画不出来不拖累其余按钮与起球；记下来，别静默。
+      ErrorLogService.instance.log(
+        'floating_ball.icon_png.${e.key}',
+        error,
+        stack,
+      );
+    }
   }
   return out;
 }
@@ -76,7 +100,9 @@ Future<Uint8List?> loadFloatingBallImage([AssetBundle? bundle]) async {
       kDesktopSystemBallImageAsset,
     );
     return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-  } catch (_) {
+  } on FlutterError catch (error, stack) {
+    // AssetBundle.load 找不到资源抛 FlutterError（「Unable to load asset」）。
+    ErrorLogService.instance.log('floating_ball.ball_image', error, stack);
     return null;
   }
 }

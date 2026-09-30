@@ -80,11 +80,9 @@ SettingsDestination buildFloatingBallDestination() {
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
 
-bool get _isDesktopSystemBallPlatform => Platform.isWindows || Platform.isMacOS;
-
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
   isAndroid: Platform.isAndroid,
-  isDesktop: _isDesktopSystemBallPlatform,
+  isDesktop: isDesktopSystemBallPlatform,
 );
 
 SettingsSection _buttonsSection(FloatingBallScope scope) {
@@ -102,7 +100,7 @@ SettingsSection _buttonsSection(FloatingBallScope scope) {
           id: 'floating_ball.${scope.storageValue}.$id',
           title: _buttonLabel(scope, id),
           icon: _buttonIcon(scope, id),
-          visible: (SettingsContext c) => _buttonAvailable(scope, id),
+          visible: (SettingsContext c) => _buttonAvailable(c, scope, id),
           value: (SettingsContext c) =>
               _prefs(c).floatingBallButtons(scope).contains(id),
           onChanged: (SettingsContext c, bool value) async {
@@ -142,8 +140,9 @@ bool _scopeVisible(SettingsContext c, FloatingBallScope scope) {
 }
 
 /// 全局按钮按平台与场景能力出现（截屏识字 / 拍照查词只有 Android / iOS；桌面
-/// 应用外球另有一套，见 [FloatingBallGlobalAction.availableIn]）；专属按钮恒可配。
-bool _buttonAvailable(FloatingBallScope scope, String id) {
+/// 应用外球另有一套、并受查词模块开关约束，见
+/// [FloatingBallGlobalAction.availableIn]）；专属按钮恒可配。
+bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
   final FloatingBallGlobalAction? global = FloatingBallGlobalAction.fromStorage(
     id,
   );
@@ -152,7 +151,10 @@ bool _buttonAvailable(FloatingBallScope scope, String id) {
         scope,
         isAndroid: Platform.isAndroid,
         isIOS: Platform.isIOS,
-        isDesktop: _isDesktopSystemBallPlatform,
+        isDesktop: isDesktopSystemBallPlatform,
+        lookupModuleEnabled: c.appModel.moduleVisibility.isEnabled(
+          ModuleId.lookup,
+        ),
       );
 }
 
