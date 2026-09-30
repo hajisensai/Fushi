@@ -183,6 +183,11 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       VideoAcquisitionSayKind.workNotFound => t.ai_video_acquire_work_not_found(
         query: arg('query'),
       ),
+      VideoAcquisitionSayKind.workAliasResolved =>
+        t.ai_video_acquire_work_alias_resolved(
+          query: arg('query'),
+          titles: arg('titles'),
+        ),
       VideoAcquisitionSayKind.aiPicked => t.ai_video_acquire_ai_picked(
         title: arg('title'),
         confidence: _percent(a['confidence']),

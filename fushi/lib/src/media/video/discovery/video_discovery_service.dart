@@ -29,7 +29,9 @@ class VideoDiscoveryService {
         const <VideoMetadataProvider>[],
     bool closesProviders = false,
     Set<String>? searchProviderIds,
-  })  : _providers = List<VideoDiscoveryProvider>.unmodifiable(
+    String? metadataLocale,
+  })  : _metadataLocale = metadataLocale,
+        _providers = List<VideoDiscoveryProvider>.unmodifiable(
           providers.toList()
             ..sort(
               (VideoDiscoveryProvider a, VideoDiscoveryProvider b) =>
@@ -85,10 +87,7 @@ class VideoDiscoveryService {
               ),
         if (discoveryAvailable) AniListVideoDiscoveryProvider(),
       ],
-      metadataProviders: <VideoMetadataProvider>[
-        ...catalog.providers,
-        anilist,
-      ],
+      metadataProviders: <VideoMetadataProvider>[...catalog.providers, anilist],
       // AniList 也是搜索源：它只属于发现域（不进刮削 registry），但单靠 MAL 撑
       // 番剧搜索时，Jikan 一挂（它常年间歇性 504）且 TMDB 没配 key，搜索就一条
       // 都出不来；AniList 的 `SEARCH_MATCH` 还认中文/日文别名，结果带 MAL id，
@@ -99,6 +98,10 @@ class VideoDiscoveryService {
         kAniListDiscoveryProviderId,
       },
       closesProviders: true,
+      // 详情合并按资料语言选文本（与刮削协调器 `supplementVideoMetadata(...,
+      // preferredLanguage: _locale)` 同一判据）；TMDB provider 也是按这个 locale
+      // 请求的，所以「TMDB 文本 = 资料语言」这条约定成立。
+      metadataLocale: config.locale,
     );
   }
 
@@ -113,6 +116,10 @@ class VideoDiscoveryService {
       _metadataProviders;
   final bool _closesProviders;
   final Set<String>? _searchProviderIds;
+
+  /// 资料语言（BCP-47）。详情合并时决定简介 / 标语 / 类型取哪个来源；`null`
+  /// 时退化成「主源优先、空才补」。
+  final String? _metadataLocale;
   bool _closed = false;
 
   /// 聚合来源清单（按 priority 排序后的 provider id）。
@@ -144,9 +151,13 @@ class VideoDiscoveryService {
             provider.id,
       };
 
+  /// 聚合所有支持该请求的来源。[onProgress]：每有一个来源返回（且还有来源没
+  /// 返回）就以「已返回来源」的合并结果回调一次，页面据此先显示快的来源，不必等
+  /// 最慢的那个；返回值恒是全部来源到齐后的最终结果。
   Future<ProviderBatchResult<VideoDiscoveryPage>> load(
-    VideoDiscoveryRequest request,
-  ) async {
+    VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<VideoDiscoveryPage> partial)? onProgress,
+  }) async {
     if (_closed) {
       return ProviderBatchResult<VideoDiscoveryPage>.failure(
         const ExternalProviderFailure(
@@ -176,11 +187,38 @@ class VideoDiscoveryService {
       );
     }
 
-    final List<_ProviderResponse> responses =
-        await Future.wait(<Future<_ProviderResponse>>[
-      for (final VideoDiscoveryProvider provider in selected)
-        _invokeWindow(provider, request),
+    // 按 selected 的顺序占位：合并结果只取决于「哪些来源已返回」，与返回先后
+    // 无关（round-robin 的轮次顺序固定），渐进结果与最终结果同一口径。
+    final List<_ProviderResponse?> slots = List<_ProviderResponse?>.filled(
+      selected.length,
+      null,
+    );
+    int pending = selected.length;
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < selected.length; i++)
+        _invokeWindow(selected[i], request).then((_ProviderResponse response) {
+          slots[i] = response;
+          pending -= 1;
+          if (pending > 0 && onProgress != null && !_closed) {
+            onProgress(
+              _aggregate(<_ProviderResponse>[
+                for (final _ProviderResponse? slot in slots)
+                  if (slot != null) slot,
+              ], request),
+            );
+          }
+        }),
     ]);
+    return _aggregate(<_ProviderResponse>[
+      for (final _ProviderResponse? slot in slots) slot!,
+    ], request);
+  }
+
+  /// 把已返回来源的响应合并成一页。
+  ProviderBatchResult<VideoDiscoveryPage> _aggregate(
+    List<_ProviderResponse> responses,
+    VideoDiscoveryRequest request,
+  ) {
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
     int successfulProviders = 0;
     bool hasMore = false;
@@ -257,13 +295,22 @@ class VideoDiscoveryService {
         anime: anime,
       ).compareTo(_primaryRank(b.provider.name, anime: anime)),
     );
+    // 所有补充源统一走引擎的有序合并（与刮削协调器同一套规则）：简介 / 类型按
+    // 资料语言选来源，人物跨源按人名 / 原名识别同一人。写法桥在合并前从全部来源
+    // 一次收齐（AniList 同一条人物同时带罗马字与原文名），每一步合并共用，身份
+    // 判定才不依赖来源排序（BUG-2797）。
+    final VideoMetadataCreditNameBridge creditNames =
+        VideoMetadataCreditNameBridge.fromWorks(works);
     VideoMetadataWork merged = works.first;
     for (final VideoMetadataWork supplement in works.skip(1)) {
-      merged = supplement.provider == VideoMetadataProviderKind.tmdb
-          ? supplementVideoMetadataWithTmdb(merged, supplement)
-          : _supplementDetails(merged, supplement);
+      merged = supplementVideoMetadata(
+        merged,
+        supplement,
+        preferredLanguage: _metadataLocale,
+        creditNames: creditNames,
+      );
     }
-    return merged;
+    return _withSourceTitlesAsAliases(merged, works);
   }
 
   /// 「整套下载」：[item] 所在系列的全部剧集与剧场版（见 `video_franchise.dart`）。
@@ -772,80 +819,21 @@ int _primaryRank(String providerId, {required bool anime}) {
   };
 }
 
-VideoMetadataWork _supplementDetails(
-  VideoMetadataWork primary,
-  VideoMetadataWork supplement,
+/// 发现详情的别名池收齐各来源的标题：下载搜索与去重靠 title / original /
+/// aliases 三处命中，补充源的译名（TMDB 中文名、AniList 原名）不能在合并里丢掉。
+VideoMetadataWork _withSourceTitlesAsAliases(
+  VideoMetadataWork merged,
+  Iterable<VideoMetadataWork> sources,
 ) {
-  final Map<String, VideoMetadataId> ids = <String, VideoMetadataId>{};
-  for (final VideoMetadataId id in <VideoMetadataId>[
-    ...primary.ids,
-    ...supplement.ids,
-  ]) {
-    ids.putIfAbsent('${id.type.toLowerCase()}:${id.value}', () => id);
-  }
-  final Map<String, VideoMetadataCredit> credits =
-      <String, VideoMetadataCredit>{};
-  for (final VideoMetadataCredit credit in <VideoMetadataCredit>[
-    ...primary.credits,
-    ...supplement.credits,
-  ]) {
-    final VideoMetadataPerson person = credit.person;
-    final String personKey = person.id ?? person.name.toLowerCase();
-    final String characterKey =
-        credit.character?.id ?? credit.character?.name.toLowerCase() ?? '';
-    credits.putIfAbsent(
-      '${credit.kind.name}:$personKey:$characterKey',
-      () => credit,
-    );
-  }
-  final Map<String, VideoMetadataImage> images = <String, VideoMetadataImage>{};
-  for (final VideoMetadataImage image in <VideoMetadataImage>[
-    ...primary.images,
-    ...supplement.images,
-  ]) {
-    images.putIfAbsent('${image.kind.name}:${image.url}', () => image);
-  }
-  return primary.copyWith(
-    originalTitle: primary.originalTitle ?? supplement.originalTitle,
-    tagline: primary.tagline ?? supplement.tagline,
-    aliases: _uniqueStrings(<String>[
-      ...primary.aliases,
-      supplement.title,
-      if (supplement.originalTitle case final String original) original,
-      ...supplement.aliases,
-    ]),
-    year: primary.year ?? supplement.year,
-    premiered: primary.premiered ?? supplement.premiered,
-    endDate: primary.endDate ?? supplement.endDate,
-    plot: primary.plot ?? supplement.plot,
-    rating: primary.rating ?? supplement.rating,
-    ratingVotes: primary.ratingVotes ?? supplement.ratingVotes,
-    runtimeMinutes: primary.runtimeMinutes ?? supplement.runtimeMinutes,
-    contentRating: primary.contentRating ?? supplement.contentRating,
-    status: primary.status ?? supplement.status,
-    originalLanguage: primary.originalLanguage ?? supplement.originalLanguage,
-    homepage: primary.homepage ?? supplement.homepage,
-    seasonCount: primary.seasonCount ?? supplement.seasonCount,
-    episodeCount: primary.episodeCount ?? supplement.episodeCount,
-    genres: _uniqueStrings(<String>[...primary.genres, ...supplement.genres]),
-    studios: _uniqueStrings(<String>[
-      ...primary.studios,
-      ...supplement.studios,
-    ]),
-    countries: _uniqueStrings(<String>[
-      ...primary.countries,
-      ...supplement.countries,
-    ]),
-    keywords: _uniqueStrings(<String>[
-      ...primary.keywords,
-      ...supplement.keywords,
-    ]),
-    ids: ids.values.toList(growable: false),
-    credits: credits.values.toList(growable: false),
-    images: images.values.toList(growable: false),
-    seasons: primary.seasons.isEmpty ? supplement.seasons : primary.seasons,
-    extras: primary.extras.isEmpty ? supplement.extras : primary.extras,
-  );
+  final String title = merged.title.trim();
+  final List<String> aliases = _uniqueStrings(<String>[
+    ...merged.aliases,
+    for (final VideoMetadataWork source in sources) ...<String>[
+      source.title,
+      if (source.originalTitle case final String original) original,
+    ],
+  ]).where((String alias) => alias != title).toList(growable: false);
+  return merged.copyWith(aliases: aliases);
 }
 
 List<VideoDiscoveryItem> _roundRobin(List<List<VideoDiscoveryItem>> sources) {

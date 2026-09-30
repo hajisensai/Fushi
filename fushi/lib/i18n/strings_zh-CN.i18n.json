@@ -6124,6 +6124,7 @@
   "leaderboard_board_me_pending": "我的数据：${value} · 榜单 ${time} 刷新后排名",
   "floating_ball_action_camera_ocr": "拍照查词",
   "floating_ball_camera_unavailable": "无法打开相机",
+  "ai_video_acquire_work_alias_resolved": "没直接搜到「$query」，查了资料，按「$titles」再找。",
   "video_resource_source_result": "${name}：${n} 条（${queries}）",
   "video_resource_source_failed": "${name}：失败（${reason}）",
   "video_resource_source_skipped": "${name}：未参与（该来源无法搜索这个查询词）",
