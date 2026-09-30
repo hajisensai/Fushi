@@ -24,15 +24,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
+import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/utils.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
@@ -97,13 +100,20 @@ const IconData kFloatingBallCloseIcon = Icons.close;
 /// 原生系统球「打开 Fushi」按钮的图标。
 const IconData kFloatingBallOpenAppIcon = Icons.open_in_new;
 
-/// 原生系统球的按钮图标（Material Icons 码位）。常量 IconData 在 Dart 里被引用，
-/// 图标字体按码位裁剪时这些字形才会留下，原生侧才取得到。
-Map<String, int> floatingBallNativeIcons() => <String, int>{
+/// 原生系统球每颗按钮的图标（与应用内球同一颗 IconData）。
+Map<String, IconData> floatingBallNativeIconData() => <String, IconData>{
   for (final FloatingBallGlobalAction action in FloatingBallGlobalAction.values)
-    action.storageValue: floatingBallGlobalActionIcon(action).codePoint,
-  'open_app': kFloatingBallOpenAppIcon.codePoint,
-  'close': kFloatingBallCloseIcon.codePoint,
+    action.storageValue: floatingBallGlobalActionIcon(action),
+  'open_app': kFloatingBallOpenAppIcon,
+  'close': kFloatingBallCloseIcon,
+};
+
+/// 原生系统球的按钮图标（Material Icons 码位，Android 用）。常量 IconData 在
+/// Dart 里被引用，图标字体按码位裁剪时这些字形才会留下，原生侧才取得到。
+Map<String, int> floatingBallNativeIcons() => <String, int>{
+  for (final MapEntry<String, IconData> e
+      in floatingBallNativeIconData().entries)
+    e.key: e.value.codePoint,
 };
 
 /// 原生系统球的配色：取当前主题，与应用内球同源（按钮底色 = surface 叠 6%
@@ -117,6 +127,26 @@ Map<String, int> floatingBallNativeColors(ColorScheme colors) => <String, int>{
 /// 本平台有没有这个全局按钮的能力。
 bool floatingBallGlobalActionAvailable(FloatingBallGlobalAction action) =>
     action.availableOn(isAndroid: Platform.isAndroid, isIOS: Platform.isIOS);
+
+/// Windows / macOS：应用外悬浮球是 runner 自绘的置顶窗口（与应用内球同时在）。
+bool get isDesktopSystemBallPlatform => Platform.isWindows || Platform.isMacOS;
+
+/// 本平台有没有应用外悬浮球。
+bool get floatingBallSystemBallSupported =>
+    FloatingBallScope.systemBallSupported(
+      isAndroid: Platform.isAndroid,
+      isDesktop: isDesktopSystemBallPlatform,
+    );
+
+/// 应用外球上有没有这颗全局按钮（桌面另有一套，见
+/// [FloatingBallGlobalAction.availableIn]）。
+bool floatingBallSystemActionAvailable(FloatingBallGlobalAction action) =>
+    action.availableIn(
+      FloatingBallScope.system,
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+      isDesktop: isDesktopSystemBallPlatform,
+    );
 
 class AppFloatingBallHost extends ConsumerStatefulWidget {
   const AppFloatingBallHost({super.key});
@@ -157,7 +187,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
-    if (Platform.isIOS || Platform.isAndroid) {
+    if (Platform.isIOS || Platform.isAndroid || isDesktopSystemBallPlatform) {
       unawaited(
         FloatingBallChannel.installHandler(
           onLookup: deliverExternalLookup,
@@ -165,6 +195,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
+          onSystemBallAction: _onDesktopSystemBallAction,
+          onSystemBallPositionChanged: _onDesktopSystemBallMoved,
         ),
       );
     }
@@ -203,14 +235,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (_systemSignature != null) {
       unawaited(FloatingBallChannel.setAppForeground(foreground));
     }
-    // 从「显示在其他应用上层」授权页回来：再试一次起系统球。
-    if (foreground) _syncSystemBall(force: true);
+    // 从「显示在其他应用上层」授权页回来：再试一次起系统球。桌面没有这道权限，
+    // 主窗每次拿回焦点都重发一遍（重画图标、收起菜单）只是白做。
+    if (foreground && Platform.isAndroid) _syncSystemBall(force: true);
   }
 
-  /// 按偏好起停 Android 原生系统球。
+  /// 按偏好起停原生系统球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。
   void _syncSystemBall({bool force = false}) {
     final PreferencesRepository? prefs = _prefs;
-    if (prefs == null || !Platform.isAndroid) return;
+    if (prefs == null || !floatingBallSystemBallSupported) return;
     if (!prefs.floatingBallSystem) {
       if (_systemSignature != null) {
         _systemSignature = null;
@@ -225,7 +258,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       ))
         if (FloatingBallGlobalAction.fromStorage(id)
             case final FloatingBallGlobalAction action
-            when floatingBallGlobalActionAvailable(action))
+            when floatingBallSystemActionAvailable(action))
           action.storageValue,
     ];
     final Map<String, String> labels = floatingBallNativeLabels();
@@ -244,12 +277,28 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         await prefs.setFloatingBallSystem(false);
         return;
       }
+      // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
+      // Dart 持久化后交给它。
+      final bool desktop = isDesktopSystemBallPlatform;
+      final Map<String, Uint8List>? iconImages = desktop
+          ? await renderFloatingBallIconPngs(
+              floatingBallNativeIconData(),
+              Color(colors['onSurface'] ?? 0xFF1D1B20),
+            )
+          : null;
+      final Uint8List? ballImage = desktop
+          ? await loadFloatingBallImage()
+          : null;
       final bool started = await FloatingBallChannel.startSystemBall(
         actions: actions,
         labels: labels,
         icons: icons,
         colors: colors,
         ocrLanguage: kFloatingBallOcrLanguage,
+        iconImages: iconImages,
+        ballImage: ballImage,
+        dock: desktop ? prefs.floatingBallSystemDock : null,
+        fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
       );
       // 没权限起不来：不记签名，回到前台时再试。
       _systemSignature = started ? signature : null;
@@ -284,6 +333,46 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _prefs = prefs;
     prefs.addListener(_onPrefsChanged);
     _syncSystemBall(force: true);
+  }
+
+  /// 桌面系统球上点了某个动作（原生只画与报事件，动作都在这里执行）。[anchor] 是
+  /// 球在屏幕上的矩形（物理像素、左上原点），查词卡锚在球旁边。
+  void _onDesktopSystemBallAction(String id, Rect? anchor) {
+    unawaited(() async {
+      final GlobalLookupController lookup = GlobalLookupController.instance;
+      switch (id) {
+        case 'lookup':
+          // 同「唤起主窗并打开查词页」热键；不依赖全局查词已 start（查词模块关掉
+          // 时也能用）。
+          await DesktopLookupService.instance.bringMainWindowToFront();
+          ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
+        case 'popup_lookup':
+          // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。
+          if (lookup.isAvailable) {
+            await lookup.triggerSelectionLookup(source: 'floatingBall');
+          }
+        case 'clipboard':
+          final ClipboardData? data = await Clipboard.getData(
+            Clipboard.kTextPlain,
+          );
+          final String text = data?.text?.trim() ?? '';
+          if (text.isEmpty) return;
+          if (lookup.isAvailable) {
+            await lookup.lookupText(text, anchorScreenRect: anchor);
+          } else {
+            // 全局查词没开：退回主窗里的查词弹窗。
+            await DesktopLookupService.instance.bringMainWindowToFront();
+            FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+          }
+        case 'open_app':
+          await DesktopLookupService.instance.bringMainWindowToFront();
+      }
+    }());
+  }
+
+  /// 桌面系统球拖动吸附后：落库（位置由 Dart 持久化，下次起球带回去）。
+  void _onDesktopSystemBallMoved(String dock, double fraction) {
+    unawaited(_prefs?.setFloatingBallSystemPosition(dock, fraction));
   }
 
   /// 系统球 / 常驻通知上点了关闭：服务已经自己停了，把「应用外」开关同步关掉。

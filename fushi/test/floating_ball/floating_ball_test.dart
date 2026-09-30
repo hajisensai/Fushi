@@ -29,7 +29,7 @@ const List<String> _globals = <String>[
 
 void main() {
   group('FloatingBallScope', () {
-    test('应用外只在 Android 可配', () {
+    test('应用外只在 Android 与桌面（Windows / macOS）可配', () {
       expect(
         FloatingBallScope.availableOn(isAndroid: false),
         isNot(contains(FloatingBallScope.system)),
@@ -37,6 +37,45 @@ void main() {
       expect(
         FloatingBallScope.availableOn(isAndroid: true),
         FloatingBallScope.values,
+      );
+      expect(
+        FloatingBallScope.availableOn(isAndroid: false, isDesktop: true),
+        FloatingBallScope.values,
+      );
+    });
+
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板，没有截屏与拍照', () {
+      Set<FloatingBallGlobalAction> onDesktop(FloatingBallScope scope) =>
+          <FloatingBallGlobalAction>{
+            for (final FloatingBallGlobalAction a
+                in FloatingBallGlobalAction.values)
+              if (a.availableIn(
+                scope,
+                isAndroid: false,
+                isIOS: false,
+                isDesktop: true,
+              ))
+                a,
+          };
+      expect(onDesktop(FloatingBallScope.system), <FloatingBallGlobalAction>{
+        FloatingBallGlobalAction.lookup,
+        FloatingBallGlobalAction.popupLookup,
+        FloatingBallGlobalAction.clipboard,
+      });
+      // 应用内的球仍按平台能力（桌面没有独立查词窗）。
+      expect(onDesktop(FloatingBallScope.general), <FloatingBallGlobalAction>{
+        FloatingBallGlobalAction.lookup,
+        FloatingBallGlobalAction.clipboard,
+      });
+      // Android 的应用外球不受影响。
+      expect(
+        FloatingBallGlobalAction.screenOcr.availableIn(
+          FloatingBallScope.system,
+          isAndroid: true,
+          isIOS: false,
+          isDesktop: false,
+        ),
+        isTrue,
       );
     });
 
@@ -551,9 +590,9 @@ void main() {
 
     tearDown(FloatingBallChannel.debugResetHandler);
 
-    Future<void> push(String method) async {
+    Future<void> push(String method, [Object? arguments]) async {
       final ByteData message = const StandardMethodCodec().encodeMethodCall(
-        MethodCall(method),
+        MethodCall(method, arguments),
       );
       await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .handlePlatformMessage(
@@ -576,6 +615,57 @@ void main() {
       await push('systemBallClosedByUser');
       expect(openLookupPage, 1);
       expect(closedByUser, 1);
+    });
+
+    test('桌面系统球：动作带锚点矩形、吸附后报位置', () async {
+      final List<String> actions = <String>[];
+      Rect? anchor;
+      String? dock;
+      double? fraction;
+      await FloatingBallChannel.installHandler(
+        onLookup: (_) {},
+        onScreenOcrFinished: () {},
+        onSystemBallAction: (String id, Rect? a) {
+          actions.add(id);
+          anchor = a;
+        },
+        onSystemBallPositionChanged: (String d, double f) {
+          dock = d;
+          fraction = f;
+        },
+      );
+      await push('systemBallAction', <String, Object?>{
+        'id': 'clipboard',
+        'anchor': <num>[10, 20, 106, 116],
+      });
+      await push('systemBallAction', <String, Object?>{'id': 'open_app'});
+      await push('systemBallPositionChanged', <String, Object?>{
+        'dock': 'left',
+        'fraction': 0.25,
+      });
+      expect(actions, <String>['clipboard', 'open_app']);
+      // 第二次没带锚点：null，不沿用上一次。
+      expect(anchor, isNull);
+      expect(dock, 'left');
+      expect(fraction, 0.25);
+    });
+
+    test('桌面系统球：锚点形状不对就当没有', () async {
+      final List<Rect?> anchors = <Rect?>[];
+      await FloatingBallChannel.installHandler(
+        onLookup: (_) {},
+        onScreenOcrFinished: () {},
+        onSystemBallAction: (String id, Rect? a) => anchors.add(a),
+      );
+      await push('systemBallAction', <String, Object?>{
+        'id': 'lookup',
+        'anchor': <num>[1, 2, 3, 4],
+      });
+      await push('systemBallAction', <String, Object?>{
+        'id': 'lookup',
+        'anchor': <Object>[1, 'x', 3, 4],
+      });
+      expect(anchors, <Rect?>[const Rect.fromLTRB(1, 2, 3, 4), null]);
     });
   });
 }

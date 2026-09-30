@@ -680,6 +680,7 @@ bool FlutterWindow::OnCreate() {
   RegisterImeGuardChannel();
   RegisterLookupImeChannel();
   RegisterFloatingLyricChannel();
+  RegisterFloatingBallChannel();
   RegisterGalHookTextChannel();
   RegisterGlobalLookupChannel();
   RegisterForegroundSelectionChannel();
@@ -1996,6 +1997,136 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
           floating_lyric_window_->SetHoverAutoLookup(
               BoolFromValue(args, "enabled", false));
           result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+}
+
+void FlutterWindow::RegisterFloatingBallChannel() {
+  // 只注册一次：重复 make_unique 会把旧窗口连同它的回调一起析构掉，Dart 手里的球
+  // 就凭空消失了。
+  if (floating_ball_channel_) {
+    return;
+  }
+  floating_ball_window_ = std::make_unique<FloatingBallWindow>();
+  floating_ball_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.fushi.reader/floating_ball",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  // 原生 → Dart。窗口过程跑在本（平台）线程，回调里直接 InvokeMethod 是安全的。
+  floating_ball_window_->SetActionCallback(
+      [this](const std::string& id, const RECT& anchor) {
+        // anchor = 球在屏幕上的矩形：物理像素、左上原点（与 global_lookup 同约定）。
+        flutter::EncodableList rect{
+            flutter::EncodableValue(static_cast<int32_t>(anchor.left)),
+            flutter::EncodableValue(static_cast<int32_t>(anchor.top)),
+            flutter::EncodableValue(static_cast<int32_t>(anchor.right)),
+            flutter::EncodableValue(static_cast<int32_t>(anchor.bottom)),
+        };
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("id"), flutter::EncodableValue(id)},
+            {flutter::EncodableValue("anchor"),
+             flutter::EncodableValue(std::move(rect))},
+        };
+        floating_ball_channel_->InvokeMethod(
+            "systemBallAction",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+  floating_ball_window_->SetClosedCallback([this]() {
+    floating_ball_channel_->InvokeMethod(
+        "systemBallClosedByUser", std::make_unique<flutter::EncodableValue>());
+  });
+  floating_ball_window_->SetPositionCallback(
+      [this](bool dock_left, double fraction) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("dock"),
+             flutter::EncodableValue(dock_left ? "left" : "right")},
+            {flutter::EncodableValue("fraction"),
+             flutter::EncodableValue(fraction)},
+        };
+        floating_ball_channel_->InvokeMethod(
+            "systemBallPositionChanged",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+
+  floating_ball_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const std::string& method = call.method_name();
+        if (method == "startSystemBall") {
+          FloatingBallWindow::Config config;
+          auto find = [args](const char* key) -> const flutter::EncodableValue* {
+            if (args == nullptr) return nullptr;
+            const auto it = args->find(flutter::EncodableValue(key));
+            return it == args->end() ? nullptr : &it->second;
+          };
+          if (const auto* v = find("actions")) {
+            if (const auto* list = std::get_if<flutter::EncodableList>(v)) {
+              for (const auto& item : *list) {
+                if (const auto* s = std::get_if<std::string>(&item)) {
+                  config.actions.push_back(*s);
+                }
+              }
+            }
+          }
+          if (const auto* v = find("labels")) {
+            if (const auto* map = std::get_if<flutter::EncodableMap>(v)) {
+              for (const auto& [key, value] : *map) {
+                const auto* k = std::get_if<std::string>(&key);
+                const auto* s = std::get_if<std::string>(&value);
+                if (k != nullptr && s != nullptr) {
+                  config.labels[*k] = Utf8ToWideString(*s);
+                }
+              }
+            }
+          }
+          if (const auto* v = find("iconImages")) {
+            if (const auto* map = std::get_if<flutter::EncodableMap>(v)) {
+              for (const auto& [key, value] : *map) {
+                const auto* k = std::get_if<std::string>(&key);
+                const auto* bytes = std::get_if<std::vector<uint8_t>>(&value);
+                if (k != nullptr && bytes != nullptr) {
+                  config.icon_images[*k] = *bytes;
+                }
+              }
+            }
+          }
+          if (const auto* v = find("ballImage")) {
+            if (const auto* bytes = std::get_if<std::vector<uint8_t>>(v)) {
+              config.ball_image = *bytes;
+            }
+          }
+          if (const auto* v = find("colors")) {
+            if (const auto* colors = std::get_if<flutter::EncodableMap>(v)) {
+              // 不透明 ARGB 超出 int32，按 int64 到达；两种都收。
+              config.surface = ArgbFromValue(colors, "surface", config.surface);
+              config.on_surface =
+                  ArgbFromValue(colors, "onSurface", config.on_surface);
+              config.primary = ArgbFromValue(colors, "primary", config.primary);
+            }
+          }
+          const bool dock_left = StringFromValue(args, "dock", "right") == "left";
+          const double fraction = DoubleFromValue(args, "fraction", 1.0 / 3.0);
+          floating_ball_window_->Start(config, dock_left, fraction, GetHandle());
+          // 契约：恒 true（建窗失败是本机 D2D / 窗口站的问题，Dart 无从补救）。
+          result->Success(flutter::EncodableValue(true));
+        } else if (method == "stopSystemBall") {
+          floating_ball_window_->Stop();
+          result->Success();
+        } else if (method == "isSystemBallRunning") {
+          result->Success(
+              flutter::EncodableValue(floating_ball_window_->IsRunning()));
+        } else if (method == "setAppForeground") {
+          // 桌面上应用内外两颗球共存，前台状态不影响原生球。
+          result->Success();
+        } else if (method == "takeSystemBallClosedByUser") {
+          // 关闭即时推给 Dart（进程就是 app），没有待取的持久标记。
+          result->Success(flutter::EncodableValue(false));
         } else {
           result->NotImplemented();
         }
@@ -4181,6 +4312,16 @@ void FlutterWindow::OnDestroy() {
   fushi::SetGlobalMouseTrigger(nullptr, fushi::kGlobalMouseTriggerNone);
   if (game_stream_input_) {
     game_stream_input_->Unbind();
+  }
+  // 应用外悬浮球的回调走 floating_ball_channel_：趁 messenger 还活着先拆窗
+  // （Stop 不触发回调），再撤通道。
+  if (floating_ball_window_) {
+    floating_ball_window_->Stop();
+    floating_ball_window_.reset();
+  }
+  if (floating_ball_channel_) {
+    floating_ball_channel_->SetMethodCallHandler(nullptr);
+    floating_ball_channel_.reset();
   }
   // Attached surface callbacks invoke gal_hook_text_channel_; tear the HWND and
   // its follow timer down while the Flutter messenger is still alive.

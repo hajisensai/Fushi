@@ -124,6 +124,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.in_app',
   'floating_ball.mode',
   'floating_ball.system',
+  // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
+  // `.dock` / `.y` 分开存：两颗球可以同时在。
+  'floating_ball.system_dock',
+  'floating_ball.system_y',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   'floating_lyric_button_bg_opacity',

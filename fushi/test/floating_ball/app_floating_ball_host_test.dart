@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -55,6 +56,9 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
     FloatingBallSceneRegistry.instance.debugReset();
     FloatingLyricLookupNotifier.instance.debugReset();
+    // 通道回调是进程级一次性安装：不重置的话后面的用例里原生消息会打到前一个
+    // 用例已销毁的宿主上。
+    FloatingBallChannel.debugResetHandler();
     pendingExternalLookup.value = null;
     db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     prefs = PreferencesRepository(db);
@@ -324,4 +328,82 @@ void main() {
       'primary': 0xFF303132,
     });
   });
+
+  testWidgets(
+    '桌面应用外球：打开开关即起原生球，带已着色图标 PNG、球面与存盘位置；吸附后落库',
+    (WidgetTester tester) async {
+      final List<MethodCall> calls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        FloatingBallChannel.channel,
+        (MethodCall call) async {
+          calls.add(call);
+          return call.method == 'startSystemBall' ? true : null;
+        },
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        );
+        FloatingBallChannel.debugResetHandler();
+      });
+      await prefs.setFloatingBallSystemPosition('left', 0.4);
+      await pumpHost(tester);
+      // 起球前要画图标（toImage / toByteData）、读球面资源：这些只在真实异步里
+      // 走得完，所以开关在 runAsync 里打开，宿主的同步链就跑在真实 zone 里。
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        for (int i = 0; i < 50; i++) {
+          if (calls.any((MethodCall c) => c.method == 'startSystemBall')) break;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pump();
+      final MethodCall start = calls.lastWhere(
+        (MethodCall c) => c.method == 'startSystemBall',
+      );
+      final Map<Object?, Object?> args =
+          start.arguments as Map<Object?, Object?>;
+      // 桌面应用外球的按钮：查词 / 应用外查词（查选区）/ 剪贴板。
+      expect(args['actions'], <String>['lookup', 'popup_lookup', 'clipboard']);
+      final Map<Object?, Object?> images =
+          args['iconImages']! as Map<Object?, Object?>;
+      expect(
+        images.keys.toSet(),
+        containsAll(<String>['lookup', 'clipboard', 'open_app', 'close']),
+      );
+      expect((args['ballImage']! as Uint8List).length, greaterThan(100));
+      expect(args['dock'], 'left');
+      expect(args['fraction'], 0.4);
+      expect(
+        (args['colors']! as Map<Object?, Object?>).keys,
+        contains('primary'),
+      );
+
+      // 原生报吸附后的位置：Dart 落库。
+      final ByteData moved = const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('systemBallPositionChanged', <String, Object?>{
+          'dock': 'right',
+          'fraction': 0.8,
+        }),
+      );
+      await tester.runAsync(() async {
+        await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          FloatingBallChannel.channel.name,
+          moved,
+          (_) {},
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      expect(prefs.floatingBallSystemDock, 'right');
+      expect(prefs.floatingBallSystemVerticalFraction, 0.8);
+
+      // 关掉开关：停原生球。
+      await tester.runAsync(() => prefs.setFloatingBallSystem(false));
+      await tester.pump();
+      expect(calls.last.method, 'stopSystemBall');
+    },
+    skip: !(Platform.isWindows || Platform.isMacOS),
+  );
 }

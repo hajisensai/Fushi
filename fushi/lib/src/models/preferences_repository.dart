@@ -712,8 +712,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// 应用外悬浮球（Android 系统球）。默认关。旧版选过 `system` 的用户保持开。
-  /// 只在 Android 生效；别的平台读到 true（例如备份从 Android 恢复）也不起球。
+  /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
+  /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {
     final Object? value = getPref('floating_ball.system', defaultValue: null);
     if (value is bool) return value;
@@ -763,6 +763,20 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
         FloatingBallScope.general => 'floating_ball.buttons.general',
         FloatingBallScope.system => 'floating_ball.buttons.system',
       };
+
+  /// 桌面应用外悬浮球的停靠边与纵向比例（与应用内球分开存：两颗球可以同时在）。
+  /// Android 原生球的位置存在原生偏好里，不走这里。
+  String get floatingBallSystemDock =>
+      getPref('floating_ball.system_dock', defaultValue: 'right') as String;
+
+  double get floatingBallSystemVerticalFraction =>
+      (getPref('floating_ball.system_y', defaultValue: 0.35) as num).toDouble();
+
+  Future<void> setFloatingBallSystemPosition(
+      String dock, double fraction) async {
+    await setPref('floating_ball.system_dock', dock);
+    await setPref('floating_ball.system_y', fraction);
+  }
 
   /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。
   String get floatingBallDock =>

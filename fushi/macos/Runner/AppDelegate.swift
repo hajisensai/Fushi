@@ -10,6 +10,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var pendingSourceUrls: [String] = []
   private var sourceUrlEventSink: FlutterEventSink?
   private var globalLookupOverlay: GlobalLookupOverlayController?
+  private var desktopFloatingBall: DesktopFloatingBallController?
   /// Dart 最后一次表达的查词输入法语言。app 重新回到前台时按它再切回去——否则
   /// 用户 Cmd-Tab 出去一趟回来，查词页面还开着但输入法已经不是他选的那个了。
   private var desiredLookupImeTag: String?
@@ -91,6 +92,12 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       globalLookupOverlay = GlobalLookupOverlayController(
         binaryMessenger: controller.engine.binaryMessenger
       ) { [weak self] in self?.mainFlutterWindow }
+
+      // 应用外悬浮球（与 Android / iOS 同名通道 app.fushi.reader/floating_ball）：
+      // 原生只画球与按钮列、报点击与位置，动作全在 Dart 执行。见
+      // FushiDesktopFloatingBall.swift 与 docs/specs/2026-09-30-desktop-system-floating-ball.md。
+      desktopFloatingBall = DesktopFloatingBallController(
+        binaryMessenger: controller.engine.binaryMessenger)
 
       // 查词输入框的输入法语言。macOS 的输入源是系统全局状态，所以除了「切过去」
       // 还必须「切回来」——页面走掉时 Dart 发 null，app 失去前台时我们自己还原
@@ -308,6 +315,9 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       url.stopAccessingSecurityScopedResource()
     }
     activeSecurityScopedURLs.removeAll()
+    // 应用外悬浮球的面板随进程收掉。
+    desktopFloatingBall?.destroy()
+    desktopFloatingBall = nil
     super.applicationWillTerminate(notification)
   }
 

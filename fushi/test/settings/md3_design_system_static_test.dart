@@ -654,6 +654,9 @@ void main() {
           'Theme preview content intentionally displays generated surface roles.',
       'lib/src/pages/implementations/custom_theme_page.dart':
           'Theme preview studio intentionally displays user-selected colors.',
+      'lib/src/floating_ball/desktop_system_ball_assets.dart':
+          'Rasterizes Material icon glyphs into PNGs for the native desktop '
+          'ball window; the font size is the bitmap edge, not UI type.',
       'lib/src/pages/implementations/reading_statistics_page.dart':
           'Chart and metric preview content keeps small chart typography.',
       // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
@@ -1180,6 +1183,9 @@ void main() {
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
       'lib/src/anki/anki_mined_card_action_sheet.dart': <String>{'ListTile('},
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
+      'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/lookup/gal_hook_text_overlay_controller.dart': <String>{
         'fontSize:',
       },

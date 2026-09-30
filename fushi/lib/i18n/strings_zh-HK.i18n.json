@@ -6123,6 +6123,7 @@
   "leaderboard_board_me_pending": "You: ${value} · ranked after the next board refresh (${time})",
   "floating_ball_action_camera_ocr": "Photo lookup",
   "floating_ball_camera_unavailable": "Couldn't open the camera",
+  "floating_ball_system_hint_desktop": "Keeps floating above other programs after you switch away from Fushi",
   "reader_focus_mode_label": "專注模式",
   "reader_focus_mode_exit": "退出專注模式",
   "reader_focus_mode_bars_locked": "專注模式已開啟，頂欄和底欄不會顯示",
