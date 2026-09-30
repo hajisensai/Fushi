@@ -366,6 +366,10 @@ class GlobalLookupWindow {
   // liveness re-arm timer, so that leak does not decay: it keeps a pure
   // pass-through hook alive on the chain forever. One funnel, two callers.
   void ReleaseDismissHooks();
+  // BUG-1471 / BUG-2746 — the single rollback for a hook armed synchronously
+  // before reveal when that reveal then fails (arm / wheel source not
+  // acknowledged, SetWindowPos failed). Reveal and RevealStack share it.
+  void RollBackRevealArm();
 
   /// 显示期间周期性重申置顶（BUG-1479）。
   ///
