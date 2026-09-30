@@ -209,7 +209,7 @@ void main() {
       }
     }
 
-    // BUG-2794：TMDB 新建的动画条目（实测「BLEACH 千年血戦篇 -禍進譚-」）genre 为空，
+    // BUG-2805：TMDB 新建的动画条目（实测「BLEACH 千年血戦篇 -禍進譚-」）genre 为空，
     // 旧判定把它当真人剧 → 资源搜索整个排除 Nyaa，页面只剩 apibay 一家。
     test('untagged Japanese TMDB entries stay in the anime resource domain',
         () async {

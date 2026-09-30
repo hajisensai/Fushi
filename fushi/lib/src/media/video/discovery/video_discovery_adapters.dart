@@ -1127,7 +1127,7 @@ ExternalProviderFailure _providerFailure({
     );
 
 /// TMDB 条目的发现域。这个域直接决定资源搜索打哪些索引器（Nyaa 只进 anime
-/// 域），判错的代价是资源页静默少掉一整个源（BUG-2794）。
+/// 域），判错的代价是资源页静默少掉一整个源（BUG-2805）。
 ///
 /// - 带 Animation（16）→ anime。
 /// - **genre 整个为空** + 原语言日语 → 也按 anime：TMDB 新建的动画条目（新季、
