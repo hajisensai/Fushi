@@ -102,6 +102,11 @@ concurrency:
 
 jobs:
   build:
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -1115,7 +1120,11 @@ jobs:
   # log_upload/dandanplay placeholders are committed, so their stubs are needed
   # only to bake real secrets when present (kept here for parity with `build`).
   tests:
-    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
     # 2026-09-12：60 → 90。全量套件（25k+ 条）实测 57~58 分钟跑完，60 分钟上限只剩
     # 2 分钟余量，合入 #1438/#1430② 多几条测试后连续四次 60 分钟整点被 cancel——
