@@ -646,6 +646,11 @@ class ReaderSettings {
   Future<void> setAutoHideChromeMillis(int v) =>
       _set<int>('auto_hide_chrome_millis', normalizeAutoHideChromeMillis(v));
 
+  /// 关掉顶栏和底栏，由应用内悬浮球接管（返回 / 设置 / 开回栏的键固定在球上）。
+  /// 默认 false。只在应用内悬浮球开着时生效，判据见 `readerToolbarsHidden`。
+  bool get hideToolbars => _get<bool>('hide_toolbars', false);
+  Future<void> setHideToolbars(bool v) => _set<bool>('hide_toolbars', v);
+
   bool get invertSwipeDirection => _get<bool>('invert_swipe_direction', true);
   Future<void> toggleInvertSwipeDirection() =>
       _set<bool>('invert_swipe_direction', !invertSwipeDirection);

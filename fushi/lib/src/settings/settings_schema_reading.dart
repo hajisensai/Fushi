@@ -776,6 +776,29 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeChanged(settingsContext);
             },
           ),
+          // 关掉顶栏和底栏，由应用内悬浮球接管（返回 / 设置 / 开回栏固定在球上）。
+          // 偏好只在应用内悬浮球开着时生效（readerToolbarsHidden），所以拨开时球若
+          // 关着就一并打开（setHideReaderToolbars）；球后来被关掉则栏自动回来，
+          // 副标题说明原因。改变栏的占位 → 走重锚通道。
+          SettingsSwitchItem(
+            id: 'reading_controls.hide_toolbars',
+            title: t.reader_toolbars_hide,
+            icon: Icons.web_asset_off_outlined,
+            subtitleBuilder: (SettingsContext c) =>
+                c.readerSource.hideToolbars &&
+                        !c.appModel.prefsRepo.floatingBallInApp
+                    ? t.reader_toolbars_hide_ball_off
+                    : t.reader_toolbars_hide_subtitle,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 21,
+            ),
+            value: (SettingsContext c) => c.readerSource.hideToolbars,
+            onChanged: (SettingsContext c, bool value) async {
+              await setHideReaderToolbars(c.appModel, value);
+              notifyReaderChromeReanchored(c);
+            },
+          ),
           SettingsSwitchItem(
             id: 'reading_controls.keep_screen_awake',
             title: t.keep_screen_awake,

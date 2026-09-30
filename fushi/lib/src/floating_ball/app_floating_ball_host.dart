@@ -747,8 +747,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushCameraOcr();
 
     final FloatingBallSceneSnapshot scene = _registry.current;
+    // 页面把必需入口托付给了球（阅读器关掉顶栏和底栏）：球必须在，本页不能被
+    // 「关闭」——哪怕是之前在这页的弹层上点的关闭（那时场景不是当前，关闭键还在）。
+    final bool pinned = scene.pinnedIds.isNotEmpty;
     // 离开了点「关闭」的那一页：恢复。只清字段、不 setState（正在 build）。
-    if (_dismissed && !identical(scene.owner, _dismissedOwner)) {
+    if (_dismissed && (pinned || !identical(scene.owner, _dismissedOwner))) {
       _dismissed = false;
       _dismissedOwner = null;
     }
@@ -758,16 +761,21 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         _dismissed) {
       return const SizedBox.shrink();
     }
-    final List<ReaderHeaderAction> buttons = prefs
-        .floatingBallButtons(scene.scope)
-        .map((String id) => _resolveButton(id, scene))
-        .nonNulls
-        .toList();
+    final List<ReaderHeaderAction> buttons = <ReaderHeaderAction>[
+      for (final String id in scene.pinnedIds)
+        if (scene.actions[id] case final ReaderHeaderAction action) action,
+      ...prefs
+          .floatingBallButtons(scene.scope)
+          .where((String id) => !scene.pinnedIds.contains(id))
+          .map((String id) => _resolveButton(id, scene))
+          .nonNulls,
+    ];
     // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。
     if (buttons.isEmpty) return const SizedBox.shrink();
-    // 「关闭悬浮球」恒在、排最上（离球最远，防误触）；勾选的按钮在下、末颗紧贴球。
+    // 「关闭悬浮球」排最上（离球最远，防误触）；按钮在下、末颗紧贴球。接管中的
+    // 页面没有关闭键，固定按钮占最上面那几格。
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
-      _closeInAppAction(scene),
+      if (!pinned) _closeInAppAction(scene),
       ...buttons,
     ];
     final Size window = MediaQuery.sizeOf(context);

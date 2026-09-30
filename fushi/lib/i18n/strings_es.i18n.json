@@ -6124,9 +6124,6 @@
   "floating_ball_action_camera_ocr": "Photo lookup",
   "floating_ball_camera_unavailable": "Couldn't open the camera",
   "floating_ball_system_hint_desktop": "Keeps floating above other programs after you switch away from Fushi",
-  "reader_focus_mode_label": "Focus mode",
-  "reader_focus_mode_exit": "Exit focus mode",
-  "reader_focus_mode_bars_locked": "Focus mode is on — toolbars stay hidden",
   "leaderboard_share_card_week": "Week of ${date} on Fushi",
   "leaderboard_share_card_all": "As of ${date} on Fushi",
   "leaderboard_share_card_finished_week": "Finished ${n} this week",
@@ -6140,5 +6137,9 @@
   "video_resource_failure_timeout": "timed out",
   "video_resource_failure_network": "network error",
   "video_resource_failure_rate_limited": "rate limited",
-  "video_resource_failure_other": "request failed"
+  "video_resource_failure_other": "request failed",
+  "reader_toolbars_hide": "Ocultar barras superior e inferior",
+  "reader_toolbars_show": "Mostrar barras superior e inferior",
+  "reader_toolbars_hide_subtitle": "La bola flotante toma el control: atrás, ajustes y un botón para recuperar las barras permanecen en ella",
+  "reader_toolbars_hide_ball_off": "La bola flotante de la app está desactivada, así que las barras siguen visibles"
 }

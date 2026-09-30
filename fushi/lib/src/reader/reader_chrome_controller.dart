@@ -20,20 +20,21 @@ class ReaderChromeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 专注模式：开着时顶栏与底栏（含悬浮态的临时唤出）一律不画，且任何唤出 /
-  /// 切换手势都打不开它们——只有关掉专注模式才恢复。
+  /// 顶栏与底栏被关掉（偏好 `hide_toolbars` 且应用内悬浮球开着，判据
+  /// `readerToolbarsHidden`，页面同步进来）：开着时顶栏与底栏（含悬浮态的临时
+  /// 唤出）一律不画，任何唤出 / 切换手势都打不开它们——入口改由悬浮球接管。
   ///
   /// 它**不改** [showChrome]：那是用户对挤压态底栏的持久意图，同时是 JS 点词
-  /// 门控的镜像（chrome 收起时点正文 = 唤出 chrome 而非查词）。专注模式要的是
-  /// 「栏不在、点词照常」，所以页面的布局判据读 `showChrome && !focusMode`，
-  /// 点词门控仍读原值；退出后栏回到进入前的状态。
-  bool _focusMode = false;
-  bool get focusMode => _focusMode;
-  set focusMode(bool value) {
-    if (_focusMode == value) return;
-    _focusMode = value;
+  /// 门控的镜像（chrome 收起时点正文 = 唤出 chrome 而非查词）。栏关掉时要的是
+  /// 「栏不在、点词照常」，所以页面的布局判据读 `showChrome && !toolbarsHidden`，
+  /// 点词门控仍读原值；开回来后栏回到关掉前的状态。
+  bool _toolbarsHidden = false;
+  bool get toolbarsHidden => _toolbarsHidden;
+  set toolbarsHidden(bool value) {
+    if (_toolbarsHidden == value) return;
+    _toolbarsHidden = value;
     if (value) {
-      // 进入时把已唤出的悬浮栏一并收掉，并停掉 VN 推进武装的收起计时。
+      // 关掉时把已唤出的悬浮栏一并收掉，并停掉 VN 推进武装的收起计时。
       cancelAutoHide();
       _transientVisible = false;
     }
@@ -42,12 +43,12 @@ class ReaderChromeController extends ChangeNotifier {
 
   /// 悬浮 chrome 被点击唤出后的临时可见态；计时到 / 再点一下收起。
   ///
-  /// 专注模式下只能收、不能唤出（置 true 被忽略）。
+  /// 栏被关掉时只能收、不能唤出（置 true 被忽略）。
   bool _transientVisible = false;
   bool get transientVisible => _transientVisible;
   set transientVisible(bool value) {
     if (_transientVisible == value) return;
-    if (value && _focusMode) return;
+    if (value && _toolbarsHidden) return;
     _transientVisible = value;
     notifyListeners();
   }
@@ -96,7 +97,7 @@ class ReaderChromeController extends ChangeNotifier {
   /// 武装的计时会把这次刚点出来的栏收走。
   void showTransient() {
     cancelAutoHide();
-    if (_transientVisible || _focusMode) return;
+    if (_transientVisible || _toolbarsHidden) return;
     _transientVisible = true;
     notifyListeners();
   }
@@ -106,7 +107,7 @@ class ReaderChromeController extends ChangeNotifier {
   /// 只剩「点空白已被别的动作占死、收起没有第二条手势通道」的场景还该用它
   /// （EPUB 的 VN 翻页）；常规显隐一律用 [showTransient] + [hideTransient]。
   void reveal(Duration autoHideAfter) {
-    if (_focusMode) return;
+    if (_toolbarsHidden) return;
     _transientVisible = true;
     notifyListeners();
     armAutoHide(autoHideAfter);

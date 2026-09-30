@@ -8,6 +8,7 @@
 /// 按钮挑出要显示的。路由切换经 [floatingBallRouteObserver] 通知宿主重算。
 library;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
@@ -22,6 +23,7 @@ class _SceneEntry {
   FloatingBallScope get scope => state.widget.scope;
   Map<String, ReaderHeaderAction> get actions => state.widget.actions;
   bool get hidesBall => state.widget.hideBall;
+  List<String> get pinnedIds => state.widget.pinnedIds;
 
   bool get isCurrent {
     if (!state.mounted) return false;
@@ -43,6 +45,7 @@ class FloatingBallSceneSnapshot {
     required this.scope,
     required this.actions,
     required this.hidesBall,
+    this.pinnedIds = const <String>[],
     this.owner,
   });
 
@@ -61,6 +64,10 @@ class FloatingBallSceneSnapshot {
 
   /// 页面要求此刻不显示悬浮球（例如全屏播放锁定时）。
   final bool hidesBall;
+
+  /// 页面把自己的必需入口托付给球（[FloatingBallScene.pinnedIds]）：非空时这些
+  /// 按钮不看勾选、恒在最上面，球也不给「关闭」键。
+  final List<String> pinnedIds;
 
   /// 「这一次页面」的身份：场景所在的路由，没场景的页面取最上层的整页路由。
   /// 宿主据此判断用户是否已经离开了点「关闭悬浮球」的那个页面（离开即恢复）。
@@ -90,6 +97,7 @@ class FloatingBallSceneRegistry extends ChangeNotifier {
         scope: entry.scope,
         actions: entry.actions,
         hidesBall: entry.hidesBall,
+        pinnedIds: entry.pinnedIds,
         owner: entry.owner,
       );
     }
@@ -153,6 +161,7 @@ class FloatingBallScene extends StatefulWidget {
     required this.scope,
     required this.actions,
     this.hideBall = false,
+    this.pinnedIds = const <String>[],
     this.child = const SizedBox.shrink(),
     super.key,
   });
@@ -165,6 +174,11 @@ class FloatingBallScene extends StatefulWidget {
 
   /// true 时本页此刻不显示悬浮球。
   final bool hideBall;
+
+  /// 本页此刻把必需入口交给球接管（例如阅读器关掉了顶栏和底栏：返回 / 设置 /
+  /// 开回栏只剩球上这一处）。这些 id 必须在 [actions] 里；宿主不看用户勾选、把它们
+  /// 排在最上面，且不给「关闭悬浮球」——关掉球就等于把人关在页面里。
+  final List<String> pinnedIds;
 
   final Widget child;
 
@@ -189,6 +203,7 @@ class _FloatingBallSceneState extends State<FloatingBallScene> {
     // 变化，例如播放 ⇄ 暂停）才值得让宿主重建。
     if (oldWidget.hideBall != widget.hideBall ||
         oldWidget.scope != widget.scope ||
+        !listEquals(oldWidget.pinnedIds, widget.pinnedIds) ||
         !sameFloatingBallActions(oldWidget.actions, widget.actions)) {
       _registry._scheduleNotify();
     }
