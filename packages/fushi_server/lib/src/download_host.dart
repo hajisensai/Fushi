@@ -257,6 +257,8 @@ class ServerDownloadHost implements HostDownloadHost {
       );
 
   Future<void> stop() async {
+    // 等在途的索引器重载落地，否则它会在 stop 之后再起一套没人关的管线。
+    await _reloadOps;
     final VideoDownloadSubscriptionService? subscriptions = _subscriptionService;
     _subscriptionService = null;
     _subscriptions = null;
