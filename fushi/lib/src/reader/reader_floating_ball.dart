@@ -257,6 +257,14 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
   /// 累加，不做全局坐标换算。
   Offset? _dragBallTopLeft;
 
+  /// 松手后正在吸附回边（只有这段位置变化要补间）。
+  ///
+  /// 旧实现给包围盒的**任何**位置变化都补 220ms：进视频页时沉浸式隐藏系统栏 /
+  /// 横竖屏切换让视口一变，球就从中间一路动画回原位（用户 2026-09-30「加载视频，
+  /// 会让悬浮球从中间回到刚才的位置」）。视口变化应当直接落位，只有拖动松手的
+  /// 吸附是用户想看到的那一下动画。
+  bool _snapping = false;
+
   bool get _expanded =>
       _expand.status == AnimationStatus.forward ||
       _expand.status == AnimationStatus.completed;
@@ -324,6 +332,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
       _dragBallTopLeft = null;
       _dock = dock;
       _fraction = fraction;
+      _snapping = widget.animate;
     });
     widget.onDockChanged(dock, fraction);
   }
@@ -352,8 +361,11 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
         }
         final Offset ballCenter = layout.ballCenterInBox;
         return AnimatedPositioned(
-          duration: dragging || !widget.animate ? Duration.zero : _snapDuration,
+          duration: _snapping && !dragging ? _snapDuration : Duration.zero,
           curve: Curves.easeOutCubic,
+          onEnd: () {
+            if (_snapping) setState(() => _snapping = false);
+          },
           left: boxTopLeft.dx,
           top: boxTopLeft.dy,
           width: layout.boxWidth,

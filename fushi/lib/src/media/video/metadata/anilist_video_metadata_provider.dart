@@ -372,9 +372,14 @@ query ($id: Int!) {
     );
   }
 
+  /// 人物 / 角色的显示名取 `name.full`（罗马字），原文 `name.native` 另落
+  /// `originalName`——与 TMDB `name` / `original_name` 同一约定。两个写法都要
+  /// 留住：发现详情合并时 AniList 这一条就是「MAL 罗马字 = TMDB 汉字」的写法桥
+  /// （`VideoMetadataCreditNameBridge`）；只留 native 会让它与 MAL 罗马字条目
+  /// 对不上，桥也搭不起来（BUG-2797）。
   String? _name(Object? value) {
     final Map<String, Object?>? names = metadataObject(value);
-    return metadataString(names?['native']) ?? metadataString(names?['full']);
+    return metadataString(names?['full']) ?? metadataString(names?['native']);
   }
 
   String? _date(Object? value) {

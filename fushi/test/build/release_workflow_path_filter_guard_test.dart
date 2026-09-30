@@ -99,7 +99,7 @@ void main() {
         final int indent = filterHeader.group(1)!.length;
         final String inline = filterHeader.group(3)!.trim();
         final List<_FilterEntry> entries = <_FilterEntry>[];
-        // 行内形态：`paths: ['fushi/**']`（contributors.yml 就是这么写的）。
+        // 行内形态：`paths: ['fushi/**']`（已删除的 contributors.yml 曾这么写，保留支持）。
         // `&anchor` / `*alias` 是 YAML 锚点，不含字面量路径。
         if (inline.isNotEmpty &&
             !inline.startsWith('&') &&
@@ -172,6 +172,58 @@ void main() {
     }
   });
 
+  // 2026-09-30 精简 CI：两条发布 workflow 的 push 路径从 `tool/**` + `.github/workflows/**`
+  // 收窄成逐个列出的真实依赖（改 tool/bug.dart 或别的 workflow 不再在 develop 上跑一整轮
+  // 发布）。收窄的反面风险是「新加了一个被调用的脚本、忘了进清单」——改它不再出包，
+  // 与「没人推代码」同形。所以这里按 workflow 正文里**实际调用**的脚本 / action 反向对账。
+  group('发布 workflow 的 push 路径逐个覆盖实际依赖', () {
+    for (final String name in releaseWorkflows) {
+      test('$name：调用到的 tool/ 脚本与本地 action 都被 push 路径覆盖', () {
+        final List<_FilterEntry> entries = pushPaths[name] ?? <_FilterEntry>[];
+        expect(entries, isNotEmpty, reason: '$name 找不到 push paths 清单');
+        final List<String> globs =
+            entries.map((_FilterEntry e) => e.value).toList();
+
+        final List<String> deps =
+            _referencedDependencies(File('${workflowsDir.path}/$name'));
+        // 反向锚：一个都没扫到说明提取正则坏了，下面的覆盖断言会空转。
+        expect(deps, contains('tool/release_sequence.sh'),
+            reason: '$name 的依赖提取没扫到 tool/release_sequence.sh，提取逻辑失效');
+        expect(deps, contains('.github/actions/provide-baked-secrets/action.yml'),
+            reason: '$name 的依赖提取没扫到 provide-baked-secrets action，提取逻辑失效');
+
+        final List<String> uncovered = deps
+            .where((String dep) => !_pathsFilterMatches(globs, dep))
+            .toList();
+        expect(uncovered, isEmpty,
+            reason: '$name 调用了这些文件，但 push paths 不覆盖它们：改它们不会触发发布构建，'
+                '而症状与「没人推代码」完全同形。把它们逐个加进 push paths：\n'
+                '${uncovered.join("\n")}');
+      });
+
+      test('$name：push 路径不再挂整目录通配、且列出两条发布 workflow', () {
+        final List<String> globs = (pushPaths[name] ?? <_FilterEntry>[])
+            .map((_FilterEntry e) => e.value)
+            .toList();
+        expect(globs, isNot(contains('tool/**')),
+            reason: '`tool/**` 会让 tool/bug.dart 这类与发布无关的脚本改动在 develop 上'
+                '跑一整轮发布；逐个列出实际调用的脚本（上一条测试会对账）。');
+        expect(globs, isNot(contains('.github/workflows/**')),
+            reason: '`.github/workflows/**` 会让改任何一条别的 workflow 都跑一整轮发布；'
+                'workflow 守卫由 ci-config-gate.yml 负责。');
+        // check_release_policy.ps1 在两条发布 workflow 的第一步同时校验两份文件，
+        // 改一份就可能让另一条的第一步红，必须当场暴露。
+        expect(
+            globs,
+            containsAll(<String>[
+              '.github/workflows/release.yml',
+              '.github/workflows/release-desktop.yml',
+            ]),
+            reason: '$name 的 push paths 必须同时列出两条发布 workflow');
+      });
+    }
+  });
+
   test('所有路径过滤项都指向磁盘上真实存在的路径', () {
     final List<String> offenders = <String>[];
     for (final _FilterEntry entry in allFilterEntries) {
@@ -225,6 +277,67 @@ String? _literalPrefix(String glob) {
     kept.add(segment);
   }
   return kept.isEmpty ? null : kept.join('/');
+}
+
+/// workflow 正文（去掉 `#` 注释行）里实际调用到的仓库文件，统一成仓库根相对路径：
+/// * `tool/…` / `./tool/…` / `.\tool\…` 形态的脚本（`.sh` / `.ps1` / `.py` / `.dart`）。
+///   同名文件若不在根 `tool/` 而在 `fushi/tool/`（`working-directory: fushi` 下的
+///   `dart run tool/…`），按 `fushi/tool/…` 计；
+/// * `uses: ./.github/actions/<name>` 本地 composite action → 其 `action.yml`。
+List<String> _referencedDependencies(File workflow) {
+  final RegExp script = RegExp(
+      r'(?<![\w/.-])(?:\.[/\\])?tool[/\\]([\w./\\-]+?\.(?:sh|ps1|py|dart))\b');
+  final RegExp action = RegExp(r'uses:\s*\./(\.github/actions/[\w.-]+)');
+  final Set<String> deps = <String>{};
+  for (final String line in workflow.readAsLinesSync()) {
+    if (line.trimLeft().startsWith('#')) continue;
+    for (final RegExpMatch m in script.allMatches(line)) {
+      final String rel = 'tool/${m.group(1)!.replaceAll(r'\', '/')}';
+      if (File('../$rel').existsSync()) {
+        deps.add(rel);
+      } else if (File(rel).existsSync()) {
+        deps.add('fushi/$rel');
+      } else {
+        deps.add(rel); // 不存在也报出来：调用了不存在的脚本本身就该暴露。
+      }
+    }
+    for (final RegExpMatch m in action.allMatches(line)) {
+      deps.add('${m.group(1)!}/action.yml');
+    }
+  }
+  return deps.toList()..sort();
+}
+
+/// GitHub Actions `paths` 语义：按顺序匹配，`!` 开头的负向模式把之前的命中撤销。
+bool _pathsFilterMatches(List<String> globs, String path) {
+  bool matched = false;
+  for (final String glob in globs) {
+    final bool negative = glob.startsWith('!');
+    final String pattern = negative ? glob.substring(1) : glob;
+    if (_globToRegExp(pattern).hasMatch(path)) matched = !negative;
+  }
+  return matched;
+}
+
+RegExp _globToRegExp(String glob) {
+  final StringBuffer b = StringBuffer('^');
+  for (int i = 0; i < glob.length; i++) {
+    final String c = glob[i];
+    if (c == '*') {
+      if (i + 1 < glob.length && glob[i + 1] == '*') {
+        b.write('.*');
+        i++;
+      } else {
+        b.write('[^/]*');
+      }
+    } else if (c == '?') {
+      b.write('[^/]');
+    } else {
+      b.write(RegExp.escape(c));
+    }
+  }
+  b.write(r'$');
+  return RegExp(b.toString());
 }
 
 /// 一条路径过滤项 / hashFiles 模式及其出处。

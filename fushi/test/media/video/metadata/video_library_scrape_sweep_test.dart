@@ -19,6 +19,9 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
   final List<List<String>> plannedTitles = <List<String>>[];
   final List<String> runScopes = <String>[];
 
+  /// true = 每部作品都因资料源临时不可用（504）而失败。
+  bool transientFailure = false;
+
   @override
   Future<SourceScrapeReport> scrapeSource(
     SourceLibraryRow source, {
@@ -36,6 +39,24 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
         work.title,
     ]);
     runScopes.add(runScope);
+    if (transientFailure) {
+      final List<VideoSourceScrapeWork> works =
+          plannedWorks ?? const <VideoSourceScrapeWork>[];
+      return SourceScrapeReport(
+        sourceIds: <int>[source.id],
+        totalWorks: works.length,
+        failedWorks: works.length,
+        errors: <SourceScrapeIssue>[
+          for (final VideoSourceScrapeWork work in works)
+            SourceScrapeIssue(
+              workTitle: work.title,
+              message: 'MAL anime/1/full HTTP 504',
+              providerUnavailable: true,
+              workKey: work.stableKey,
+            ),
+        ],
+      );
+    }
     return SourceScrapeReport(
       sourceIds: <int>[source.id],
       totalWorks: plannedWorks?.length ?? 0,
@@ -355,6 +376,60 @@ void main() {
     // 每一轮 sweep 重新塞进批次，白占 AniDB 的进程级限流队列。
     expect(runner.sourceIds, hasLength(1));
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
+  });
+
+  test('只因资料源临时不可用（504）失败的作品不记「已尝试」，下次触发就重试（BUG-2796）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    runner.transientFailure = true;
+
+    final VideoLibraryScrapeSweep service = sweep();
+    await service.sweepOnce();
+    await service.sweepOnce();
+
+    expect(runner.sourceIds, hasLength(2),
+        reason: '临时故障不是「查无」，不能被记账挡 7 天');
+  });
+
+  test('下载任务确认过身份的作品即使标题只是集号标签也自动补刮（BUG-2796）', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('ep-1', 'D:/A/S01E01.mkv', sourceId, title: 'S01E01');
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await db.upsertVideoDownloadJob(
+      VideoDownloadJobsCompanion.insert(
+        jobId: 'job-1',
+        resourceProvider: 'nyaa',
+        selectedResourceId: 'release',
+        metadataProvider: const Value<String?>('mal'),
+        externalId: const Value<String?>('63337'),
+        mediaKind: 'tv',
+        title: 'FX戦士くるみちゃん',
+        backendKind: 'embedded',
+        fingerprint: 'fp',
+        lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await db.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: 'job-1',
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'S01E01.mkv',
+        currentRelativePath: 'S01E01.mkv',
+        finalAbsolutePath: const Value<String?>('D:/A/S01E01.mkv'),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    await sweep().sweepOnce();
+
+    expect(runner.plannedTitles.single, <String>['S01E01']);
   });
 
   test('同一进程内新入库的作品会被后续 sweep 认领（BUG-2199）', () async {

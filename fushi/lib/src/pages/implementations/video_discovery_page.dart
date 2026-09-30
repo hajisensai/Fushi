@@ -17,9 +17,12 @@ import 'package:fushi/utils.dart';
 /// request out to TMDB and AniList, but the UI receives one redacted
 /// partial-success result and does not depend on provider clients directly.
 abstract interface class VideoDiscoveryController {
+  /// [onProgress]：部分来源先返回时的合并结果（见 `VideoDiscoveryService.load`）。
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
-    discovery.VideoDiscoveryRequest request,
-  );
+    discovery.VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial)?
+        onProgress,
+  });
 
   /// [ExternalProviderFailure.providerId] -> 用户可见来源名。
   ///
@@ -37,8 +40,10 @@ class EmptyVideoDiscoveryController implements VideoDiscoveryController {
 
   @override
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
-    discovery.VideoDiscoveryRequest request,
-  ) async {
+    discovery.VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial)?
+        onProgress,
+  }) async {
     return ProviderBatchResult<discovery.VideoDiscoveryPage>.success(
       <discovery.VideoDiscoveryPage>[
         discovery.VideoDiscoveryPage(
@@ -52,9 +57,7 @@ class EmptyVideoDiscoveryController implements VideoDiscoveryController {
 }
 
 typedef VideoDiscoveryImageResolver = ImageProvider? Function(
-  discovery.VideoDiscoveryItem item,
-  bool landscape,
-);
+    discovery.VideoDiscoveryItem item, bool landscape);
 
 class VideoDiscoveryPage extends StatefulWidget {
   const VideoDiscoveryPage({
@@ -207,16 +210,31 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
+    // 每次重载都是新的查询 / 筛选：上一次的列表不属于它，必须立刻撤下，否则
+    // 「搜索结果」标题下会继续摆着旧的热门列表，直到最慢的来源返回。
     setState(() {
       _loading = true;
       _loadingMore = false;
       _totalFailure = false;
       _page = 1;
+      _works = const <discovery.VideoDiscoveryItem>[];
+      _popular = const <discovery.VideoDiscoveryItem>[];
+      _seasonalAnime = const <discovery.VideoDiscoveryItem>[];
+      _failures = const <ExternalProviderFailure>[];
+      _hasMore = false;
     });
 
     if (_hasActiveSearchOrFilter) {
       final ProviderBatchResult<discovery.VideoDiscoveryPage> result =
-          await _safeLoad(_request(page: 1));
+          await _safeLoad(
+        _request(page: 1),
+        onProgress: (ProviderBatchResult<discovery.VideoDiscoveryPage> part) {
+          if (!mounted || generation != _generation) return;
+          final _FlattenedDiscoveryBatch flattened = _flatten(part);
+          if (flattened.items.isEmpty) return;
+          setState(() => _works = flattened.items);
+        },
+      );
       if (!mounted || generation != _generation) return;
       final _FlattenedDiscoveryBatch flattened = _flatten(result);
       setState(() {
@@ -313,10 +331,12 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   }
 
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> _safeLoad(
-    discovery.VideoDiscoveryRequest request,
-  ) async {
+    discovery.VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial)?
+        onProgress,
+  }) async {
     try {
-      return await _controller.load(request);
+      return await _controller.load(request, onProgress: onProgress);
     } on Object catch (error) {
       return ProviderBatchResult<discovery.VideoDiscoveryPage>.failure(
         ExternalProviderFailure.fromException(
@@ -334,9 +354,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     return _FlattenedDiscoveryBatch(
       items: _deduplicate(
         result.items
-            .expand(
-              (discovery.VideoDiscoveryPage page) => page.items,
-            )
+            .expand((discovery.VideoDiscoveryPage page) => page.items)
             .toList(growable: false),
       ),
       hasMore: result.items.any(
@@ -491,8 +509,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       icon: const Icon(Icons.calendar_month_outlined),
                     );
               final List<Widget> trailing = <Widget>[
-                for (final Widget entry in <Widget?>[calendarEntry, aiEntry]
-                    .whereType<Widget>()) ...<Widget>[
+                for (final Widget entry in <Widget?>[
+                  calendarEntry,
+                  aiEntry,
+                ].whereType<Widget>()) ...<Widget>[
                   SizedBox(width: tokens.spacing.gap),
                   entry,
                 ],
@@ -906,6 +926,16 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
             ),
           ),
         ),
+        // 已显示先返回的来源，其余来源还在路上。
+        if (_loading)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              child: const LinearProgressIndicator(
+                key: ValueKey<String>('video-discovery-partial-loading'),
+              ),
+            ),
+          ),
         if (_works.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -989,10 +1019,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => VideoDiscoveryDetailPage(
-          item: item,
-          actions: widget.actions,
-        ),
+        builder: (_) =>
+            VideoDiscoveryDetailPage(item: item, actions: widget.actions),
       ),
     );
   }
@@ -1180,10 +1208,7 @@ class _DiscoveryMediaCard extends StatelessWidget {
 }
 
 class _FlattenedDiscoveryBatch {
-  const _FlattenedDiscoveryBatch({
-    required this.items,
-    required this.hasMore,
-  });
+  const _FlattenedDiscoveryBatch({required this.items, required this.hasMore});
 
   final List<discovery.VideoDiscoveryItem> items;
   final bool hasMore;
