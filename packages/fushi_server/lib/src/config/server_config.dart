@@ -78,6 +78,8 @@ class ServerConfig {
     this.p2p = false,
     this.p2pRelays = const <String>[],
     this.scanPrune = true,
+    this.scanScrape = true,
+    this.tmdbApiKey,
   });
 
   static const int defaultPort = 38765;
@@ -175,6 +177,15 @@ class ServerConfig {
   /// 库行不记源文件路径的书 / 漫画根不受影响；关闭只停清理，导入行为不变。
   final bool scanPrune;
 
+  /// 扫描后是否对「从未识别过」的视频作品自动补刮（默认开；与 app「视频 → 媒体库
+  /// → 自动补刮」同一个 `VideoLibraryScrapeSweep`）。关掉只停自动刮削，客户端经互联
+  /// 发起的重刮 / 手动指定照常可用。
+  final bool scanScrape;
+
+  /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
+  /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
+  final String? tmdbApiKey;
+
   /// 允许经 P2P 隧道远程连接（iroh；默认关：会连 iroh 公共中继与发现服务）。
   final bool p2p;
 
@@ -207,6 +218,8 @@ class ServerConfig {
     bool? p2p,
     List<String>? p2pRelays,
     bool? scanPrune,
+    bool? scanScrape,
+    String? tmdbApiKey,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -235,6 +248,8 @@ class ServerConfig {
         p2p: p2p ?? this.p2p,
         p2pRelays: p2pRelays ?? this.p2pRelays,
         scanPrune: scanPrune ?? this.scanPrune,
+        scanScrape: scanScrape ?? this.scanScrape,
+        tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -291,6 +306,8 @@ class ServerConfig {
       p2p: _bool(map['p2p']) ?? base.p2p,
       p2pRelays: _strings(map['p2p_relays']),
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
+      scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
+      tmdbApiKey: map['tmdb_api_key']?.toString(),
     );
   }
 
@@ -334,6 +351,8 @@ class ServerConfig {
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
     b.writeln('metadata_locale: ${_q(metadataLocale)}');
     b.writeln('scan_prune: $scanPrune');
+    b.writeln('scan_scrape: $scanScrape');
+    if ((tmdbApiKey ?? '').isNotEmpty) b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {

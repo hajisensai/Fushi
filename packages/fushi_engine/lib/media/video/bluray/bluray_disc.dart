@@ -31,7 +31,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-import 'bluray_playlist.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 
 /// 标题的绝对时长下限。低于此的几乎只可能是厂标、警告画面或菜单循环。
 const Duration kBlurayMinimumTitleDuration = Duration(seconds: 60);

@@ -28,7 +28,7 @@ class _Library implements GameStreamLibraryHost {
   bool enabled = true;
   final List<String> launched = <String>[];
   Completer<void>? gate;
-  Object? failWith;
+  Exception? failWith;
 
   @override
   bool get launchEnabled => enabled;

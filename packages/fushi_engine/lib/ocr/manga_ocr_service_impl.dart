@@ -1373,8 +1373,9 @@ class MangaOcrServiceImpl
   Future<bool> _manifestComplete() async {
     final Directory dir = await _modelsDirProvider();
     if (localModel == MangaOcrLocalModel.mangaOcrCuda &&
-        !await MangaOcrCudaRuntime(dir).isReady())
+        !await MangaOcrCudaRuntime(dir).isReady()) {
       return false;
+    }
     return _manifest.every(
       (MangaOcrModelFile model) =>
           isMangaOcrModelFileReady(File(p.join(dir.path, model.fileName))),

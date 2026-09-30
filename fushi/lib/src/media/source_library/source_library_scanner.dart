@@ -76,9 +76,9 @@ import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
+import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 
 /// 书文件扩展名（小写、不带点）。
 ///

@@ -14,9 +14,9 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-import '../video_duration_probe.dart';
-import 'bluray_playlist.dart';
-import 'bluray_source.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 
 /// 读 [playlistPath] 指向的 MPLS 并折成 [VideoProbeFacts]。
 ///

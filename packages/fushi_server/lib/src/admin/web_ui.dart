@@ -185,6 +185,14 @@ let current='status';
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{ current=b.dataset.s; document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('main section').forEach(s=>s.classList.toggle('on',s.id==='s-'+current)); refresh(); });
 
 // ── 状态 ──
+function scrapeSummary(sc){
+  if(!sc) return '—';
+  const tail = sc.tmdbAvailable ? '' : ' · 未配置 TMDB key';
+  if(sc.busy) return `进行中 ${sc.current}/${sc.total}` + (sc.work ? ' ' + sc.work : '') + tail;
+  const r = sc.lastReport;
+  const last = r ? ` · 上次 ${r.succeeded}/${r.totalWorks} 部成功` + (r.pendingConfirmations ? `，${r.pendingConfirmations} 部待指定` : '') : '';
+  return (sc.enabled ? '空闲' : '自动补刮已关闭') + last + tail;
+}
 async function loadStatus(){
   const s = await api('status');
   $('#devname').textContent = s.deviceName + ' · ' + s.listen;
@@ -197,6 +205,7 @@ async function loadStatus(){
     ['订阅', s.subscriptionCount==null ? '—' : s.subscriptionCount],
     ['上传配额', fmtBytes(s.uploadUsedBytes)+' / '+fmtBytes(s.uploadQuotaBytes)],
     ['P2P 隧道', p2pSummary(s.p2p)],
+    ['刮削', scrapeSummary(s.scrape)],
   ];
   $('#status-grid').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
   const notes = (s.lastScanNotes && s.lastScanNotes.length) ? ' — ' + s.lastScanNotes.join('; ') : '';
@@ -392,7 +401,8 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 // ── 设置 ──
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
-  ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],
+  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
 ];
@@ -406,6 +416,7 @@ async function loadSettings(){
     if(type==='bool') return `<label class="f">${esc(label)}<select id="${id}"><option value="true" ${v?'selected':''}>开</option><option value="false" ${!v?'selected':''}>关</option></select></label>`;
     if(type.startsWith('select:')) return `<label class="f">${esc(label)}<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></label>`;
     if(type==='password') return `<label class="f">${esc(label)} ${s.qbittorrent.passwordSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`;
+    if(type.startsWith('secret:')) return `<label class="f">${esc(label)} ${s[type.slice(7)]?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`;
     return `<label class="f">${esc(label)}<input type="${type}" id="${id}" value="${esc(v??'')}"></label>`; }).join('');
 }
 $('#btn-settings-save').onclick = guard(async()=>{

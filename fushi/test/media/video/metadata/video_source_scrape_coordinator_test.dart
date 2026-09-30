@@ -14,7 +14,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloade
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';

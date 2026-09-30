@@ -4,6 +4,12 @@
 /// `EpubImporter`），所以客户端经 `/api/library/videos` / `/books` 看到的行与
 /// 本机导入的一模一样。漫画根（kind=manga）走引擎 `MangaImporter`：`.mokuro`
 /// 卷与纯页图目录，卷归组规则与 app 共用引擎 `planMangaFolders`。
+///
+/// 视频根与 app 的本地视频来源同构：每个根登记一行 `media_sources`（本地、递归），
+/// 入库行带 `sourceId`，入库后按引擎 `VideoFolderGroupCoordinator` 把分集归成作品
+/// 合集、`VideoSourceMetadataIndexer` 吃进 NFO。刮削计划器（`VideoSourceWorkPlanner`）
+/// 只认「带 sourceId 的行 + 合集成员关系」，以前服务端扫描两样都不写，所以扫进来的
+/// 视频永远规划不出作品、也就永远不会被刮削。
 library;
 
 import 'dart:io';
@@ -16,10 +22,13 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
@@ -94,7 +103,7 @@ class LibraryScanner {
       }
       switch (root.kind) {
         case 'video':
-          final _VideoScan scan = await _scanVideos(dir, summary);
+          final _VideoScan scan = await _scanVideos(dir, root, summary);
           if (pruneMissing) await _pruneVideoRoot(dir, root.id, scan, summary);
         case 'book':
           await _scanBooks(dir, summary);
@@ -112,7 +121,9 @@ class LibraryScanner {
 
   /// 扫描一个视频根，返回**磁盘上现存**的视频文件路径集合（归一）与导入前已在库
   /// 的行 uid（对账的基线），供对账复用。
-  Future<_VideoScan> _scanVideos(Directory dir, ScanSummary summary) async {
+  Future<_VideoScan> _scanVideos(Directory dir, LibraryRootConfig root, ScanSummary summary) async {
+    final SourceLibraryRow source = await _ensureVideoSource(dir, root);
+    final List<String> createdPaths = <String>[];
     final List<File> files = <File>[];
     await for (final FileSystemEntity e in dir.list(recursive: true, followLinks: false)) {
       if (e is! File) continue;
@@ -158,7 +169,9 @@ class LibraryScanner {
           embeddedSubtitleTrack:
               sidecar == null ? const Value<int?>(0) : const Value<int?>(null),
           importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          sourceId: Value<int?>(source.id),
         ));
+        createdPaths.add(file.path);
         summary.videosAdded++;
         if (extractCovers) {
           final String? cover = await extractVideoCover(
@@ -172,7 +185,67 @@ class LibraryScanner {
         engineLog.log('LibraryScanner.video', e, stack);
       }
     }
+    await _organizeVideoSource(
+      source,
+      <String>[for (final File file in files) file.path],
+      createdPaths,
+      summary,
+    );
     return _VideoScan(found: found, baselineBookUids: baselineKeys);
+  }
+
+  /// 视频根 → 一行本地 `media_sources`（按归一后的绝对路径复用）。标签取库根 id。
+  Future<SourceLibraryRow> _ensureVideoSource(Directory dir, LibraryRootConfig root) async {
+    final String rootPath = p.normalize(dir.absolute.path);
+    for (final SourceLibraryRow row in await db.getMediaSourcesByKind('video')) {
+      if (row.transport == 'local' && p.equals(p.normalize(row.rootPath), rootPath)) return row;
+    }
+    final int id = await db.insertMediaSource(MediaSourcesCompanion(
+      label: Value(root.id),
+      mediaKind: const Value('video'),
+      transport: const Value('local'),
+      rootPath: Value(rootPath),
+      recursive: const Value(true),
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+    return (await db.getMediaSourceById(id))!;
+  }
+
+  /// 入库之后的整理，与 app `SourceLibraryScanner` 视频分支同序：归组（顺带把存量
+  /// 无来源的行回填到本来源）→ NFO 索引 → 记来源扫描结果。花絮（`classifyLocalVideoExtra`）
+  /// 在作品识别模式下不进归组，由索引器挂到作品上。
+  Future<void> _organizeVideoSource(
+    SourceLibraryRow source,
+    List<String> videoPaths,
+    List<String> createdPaths,
+    ScanSummary summary,
+  ) async {
+    String? error;
+    try {
+      await VideoFolderGroupCoordinator(database: db, repository: _videos).groupPaths(
+        videoPaths: <String>[
+          for (final String path in videoPaths)
+            if (source.videoGroupingMode == 'folder' || classifyLocalVideoExtra(path) == null) path,
+        ],
+        createdVideoPaths: createdPaths,
+        sourceId: source.id,
+        groupingMode: source.videoGroupingMode,
+        sourceRoot: source.rootPath,
+      );
+      if (source.videoGroupingMode != 'folder') {
+        await VideoSourceMetadataIndexer(db).index(source);
+      }
+    } catch (e, stack) {
+      error = '$e';
+      summary.errors.add('${source.label}: 归组 / NFO 索引失败: $e');
+      engineLog.log('LibraryScanner.organize', e, stack);
+    }
+    await db.updateMediaSourceScanResult(
+      id: source.id,
+      mediaCount: createdPaths.length,
+      lastScannedAt: DateTime.now(),
+      lastScanError: error,
+    );
   }
 
   /// 对一个视频根做一次对账（见 [pruneMissingVideoRows]）。

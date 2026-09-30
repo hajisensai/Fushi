@@ -215,6 +215,7 @@ class AdminApi {
       'lastScan': ctx.lastScan?.toString(),
       'lastScanNotes': ctx.lastScan?.pruneNotes ?? const <String>[],
       'lastScanAt': ctx.lastScanAt?.toIso8601String(),
+      'scrape': ctx.host.videoScrape?.status(),
       'downloads': await ctx.host.downloads?.capability(),
       'subscriptions': await ctx.host.subscriptions?.capability(),
       'subscriptionCount': (await ctx.host.subscriptions?.list())?.length,
@@ -510,6 +511,10 @@ class AdminApi {
         'lanRequiresPin': ctx.config.lanRequiresPin,
         'subtitleLanguage': ctx.config.subtitleLanguage,
         'metadataLocale': ctx.config.metadataLocale,
+        'scanPrune': ctx.config.scanPrune,
+        'scanScrape': ctx.config.scanScrape,
+        // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
+        'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
         'ffmpeg': ctx.config.ffmpegPath,
         'ffprobe': ctx.config.ffprobePath,
         'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -531,7 +536,8 @@ class AdminApi {
         'p2p': ctx.config.p2p,
         'p2pRelays': ctx.config.p2pRelays,
         'p2pStatus': ctx.host.p2pStatus(),
-        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe'],
+        // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
+        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe', 'metadataLocale', 'tmdbApiKey'],
       });
 
   Future<shelf.Response> _putSettings(Map<String, dynamic> body) async {
@@ -549,6 +555,9 @@ class AdminApi {
     final Object? p2pRaw = body['p2p'];
     if (p2pRaw != null && p2pRaw is! bool) throw const FormatException('p2p must be a boolean');
     final bool? p2p = p2pRaw as bool?;
+    for (final String key in const <String>['scanPrune', 'scanScrape']) {
+      if (body[key] != null && body[key] is! bool) throw FormatException('$key must be a boolean');
+    }
     // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
     if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
       return _json(<String, Object?>{
@@ -578,6 +587,10 @@ class AdminApi {
       publicUrls: publicUrls,
       p2p: p2p,
       p2pRelays: p2pRelays,
+      scanPrune: body['scanPrune'] as bool?,
+      scanScrape: body['scanScrape'] as bool?,
+      // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
+      tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty ? null : body['tmdbApiKey'].toString().trim(),
     );
     await ctx.updateConfig(next);
     return _settings();

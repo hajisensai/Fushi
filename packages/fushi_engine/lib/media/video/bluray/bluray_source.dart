@@ -31,8 +31,8 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-import 'bluray_clip_info.dart';
-import 'bluray_playlist.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_clip_info.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 
 /// 一条 MPLS 解析出的可播放源。
 class BluraySource {
