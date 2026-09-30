@@ -87,6 +87,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/siglus_voice_export.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
+  "hook/adapters/bgi_lookup.inc"
+  "hook/adapters/bgi_lookup_core.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
   "hook/adapters/artemis_lookup.inc"
@@ -994,6 +996,22 @@ add_test(NAME fushi_reallive_lookup_test
 # fail-closed branch, Shift_JIS codes, the page tracker, layer placement and
 # covers, suffix mapping, projection, client->design mapping and the
 # message-level click claim.
+# BGI/Ethornell message text lane + in-game lookup core: structural site
+# resolution on synthetic x86 images of both generations (1.5 __thiscall and
+# 1.6 __stdcall SetTextImpl, Ex vtable cross-proof through the anchored layout,
+# screen mode tables) with every fail-closed branch, owner ABI decoding from
+# drawable / display functions, CP932 line parsing, page glyph mapping,
+# projection, hit testing and the message-level click claim.
+add_executable(fushi_bgi_lookup_test
+  "tests/bgi_lookup_test.cpp"
+)
+target_include_directories(fushi_bgi_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_bgi_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_bgi_lookup_test
+  COMMAND fushi_bgi_lookup_test)
+
 add_executable(fushi_catsystem2_lookup_test
   "tests/catsystem2_lookup_test.cpp"
 )

@@ -123,6 +123,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdUnityMono",
     ): ("unity_mono", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdBgi",
+    ): ("bgi_ethornell", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

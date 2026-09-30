@@ -12,6 +12,9 @@
 // SE archive (data03110.arc: 143 of 146 members stereo); that title's voice
 // lives in data04xxx.arc, as does the 2011 PackFile-generation trial's.
 #include "bgi_ethornell_profile.h"
+// 正文文本道 + 游戏内查词（SetTextImpl 捕获、字形几何、主窗口过程点击认领）在
+// bgi_lookup.inc，结构判据与纯逻辑在 bgi_lookup_core.h（由 dll_main.cpp 在顶层引入）。
+#include "bgi_lookup.inc"
 
 constexpr size_t kBgiPathChars = 520;
 // Every `.arc` is tracked now (classification happens later on the worker),
@@ -326,11 +329,35 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
     return fushi_voice_hook::MatchesBgiEthornellProfile(nullptr);
   }
   bool install() override {
+    // 文本道与查词站点只来自 exe 自身结构、与语音归档无关：身份成立就装（语音层失败时
+    // 文本照常）。结构不符的映像一个钩子也不装。
+    if (probe()) text_installed_ = InstallBgiLookup() || text_installed_;
     ready_ = TryHookBgiArcVoice();
     installed_ = installed_ || ready_;
     return ready_;
   }
-  void ProcessPendingEvents() { ProcessBgiVoiceTasks(); }
+  void ProcessPendingEvents() {
+    ProcessBgiVoiceTasks();
+    ProcessBgiLookupTick();
+  }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (BgiLookupSensorInstalled()) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // Sites were resolved and rejected: terminal for this executable, so the
+    // host gets the digest to report instead of waiting for a gate.
+    if (BgiLookupSitesRejected()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      strncpy_s(report.executable_sha256,
+                fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
+      return report;
+    }
+    // The registry only asks after probe() held (identity is structural).
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -338,6 +365,8 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
+    ShutdownBgiLookup();
+    text_installed_ = false;
     StopBgiArcVoice();
     installed_ = false;
     ready_ = false;
@@ -350,4 +379,5 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
  private:
   bool installed_ = false;
   bool ready_ = false;
+  bool text_installed_ = false;
 };

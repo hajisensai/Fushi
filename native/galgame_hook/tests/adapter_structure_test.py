@@ -431,8 +431,9 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(12, len(publishers), publishers)
+        self.assertEqual(13, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
+        self.assertIn("bgi_lookup.inc", publishers)
         self.assertIn("unity_mono_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
@@ -491,7 +492,10 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(12, len(seen), seen)
+        self.assertEqual(13, len(seen), seen)
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["bgi_lookup.inc"]
+        )
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["unity_mono_lookup.inc"]
@@ -2111,6 +2115,64 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("ResolvePrecedingSelectedText(", bind)
         self.assertIn("ResolveFollowingSelectedText(", bind)
         self.assertIn("SelectedLineOrder(hook_name)", bind)
+
+    def test_bgi_lookup_is_structural_and_callbacks_stay_bounded(self) -> None:
+        """BGI 文本道 + 查词：站点只来自结构；游戏线程 / 消息线程回调不做 IO / 转码 / 分配。"""
+        core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "bgi_lookup_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "bgi_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "bgi_ethornell_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        for forbidden in ("sha256", "bcrypt", "eustia", "senmomo", "august",
+                          "getmodulefilename", "bgi.exe"):
+            self.assertNotIn(forbidden, core.lower())
+            self.assertNotIn(forbidden, runtime.lower())
+        # The Impl is proven through the anchored layout's vtable slot, and the
+        # owner class through its own drawable / display functions.
+        resolve = self._function_body(core, "inline SiteResult ResolveSites(")
+        for proof in ("ResolveImpl(", "ResolveExVtable(", "ResolveScreenTables("):
+            self.assertIn(proof, resolve)
+        vtable = self._function_body(core, "inline SiteResult ResolveExVtable(")
+        for proof in ("kAnchor", "EnclosingFunction(", "layout_slot_disp"):
+            self.assertIn(proof, vtable)
+        owner = self._function_body(core, "bool DecodeOwnerAbi(")
+        for proof in ("DecodeDrawable(", "DecodeTerm(", "best_function"):
+            self.assertIn(proof, owner)
+        # Game-thread capture and message-thread claim: bounded copies only.
+        for name in ("void CaptureBgiText(",
+                     "int __fastcall BgiImplThisDetour(",
+                     "int __stdcall BgiImplStdDetour(",
+                     "LRESULT CALLBACK BgiWndProcDetour(",
+                     "bool BgiPressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("BgiLookupLog(", "CreateFile", "WriteFile",
+                              "malloc(", "std::wstring", "PublishHit(",
+                              "MultiByteToWideChar", "WriteTextLaneEvent",
+                              "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        # Conversion and lane publication stay on the worker.
+        worker = self._function_body(runtime, "void ProcessBgiTextEvent(")
+        self.assertIn("MultiByteToWideChar", worker)
+        self.assertIn("PublishBgiTextLine(", worker)
+        # The claim never skips the host's native-input admission.
+        eligible = self._function_body(runtime, "bool BgiPressEligible(")
+        self.assertIn("NativeInputAllowed(", eligible)
+        self.assertIn("BgiShieldActive(", eligible)
+        self.assertIn("GetForegroundWindow()", eligible)
+        self.assertIn("BgiOwnerMatchesModel(", eligible)
+        # The adapter installs the lane only when its structural identity holds.
+        install = self._function_body(adapter, "  bool install() override {")
+        self.assertIn("if (probe()) text_installed_ = InstallBgiLookup()", install)
 
     def test_unity_mono_lookup_is_structural_and_callbacks_stay_bounded(
         self,

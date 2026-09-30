@@ -353,6 +353,8 @@ constexpr uint32_t kTextSourceSgre = 5;
 // smash/fzmedia (TYPE-MOON "smash" framework: Fate/stay night REMASTERED family)
 // exact text published by the native KAG text-layer layout hook.
 constexpr uint32_t kTextSourceSmashFzmedia = 6;
+// BGI/Ethornell exact text published by the native message SetTextImpl hook.
+constexpr uint32_t kTextSourceBgi = 7;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -892,6 +894,8 @@ constexpr uint32_t kLookupGeometryProviderIdCatSystem2 = 19u;
 // Unity (Mono) per-glyph TextMesh message framework exact layout provider
 // (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
+// BGI/Ethornell message-page exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

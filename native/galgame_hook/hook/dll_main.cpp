@@ -64,6 +64,7 @@
 #include "adapters/artemis_lookup_core.h"
 #include "adapters/reallive_lookup_core.h"
 #include "adapters/catsystem2_lookup_core.h"
+#include "adapters/bgi_lookup_core.h"
 #include "adapters/catsystem2_voice_core.h"
 #include "lookup_selected_text.h"
 #include "asar_runtime.h"

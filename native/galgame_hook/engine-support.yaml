@@ -122,8 +122,8 @@
         "engine_id": "bgi_ethornell",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact message-page provider (kLookupGeometryProviderIdBgi). Sites resolve only from structure (both generations, see text.bgi_message_set_text_hook): SetTextImpl, the Ex vtable, the owner field (+0x20) and the cell-list sentinel (+0x7c) come from the Impl's own instructions; the screen mode index and width/height tables from the `mov eax,[reg*4+W]` / `[W+0x20]` / `mov eax,[W-4]` triple. At SetTextImpl return the detour copies the laid-out cells (0x48-byte records linked at +0x44 from sentinel+0x44; owner-local pen +0x10/+0x14, glyph surface +0x28/+0x2c) because the message object is destroyed after the reveal while the text stays on the owner's layer until the next line. The owner's class is admitted only when its vtable slot 2 decodes as one of the two known drawable predicates (1.5: visible flags +4/+8 and transparency +0x98 < 256; 1.6: +0x20/+0x10 set, +0x18 clear, +0xc4 < 256, +0xc8 > 0) and exactly one vtable function decodes as the display-position composer (sum of pair getters; 1.6's camera term refused while its flag is set). A glyph is offered only when its line has no inline markup, the cell count equals the displayed unit count (an engine-inserted leading quote is a displayed unit outside the published text), the owner is still that class, drawn by the engine's predicate and at the model's display position, and the selected line equals the render-order suffix of the page; only a client with the design aspect is admitted and design pixels are projected to physical client pixels. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed in the main window procedure (found at runtime as the only visible ANSI top-level window of the process whose procedure lies in the game image) together with its WM_LBUTTONUP; the press is refused when a newer line was captured, the owner changed, the host's native-input admission is missing or a card shields the game. 2026-09-30 Frida probes on the 2011 Ethornell 1.519.6 trial (1280x720 design, windowed): cells {16+27i, 12, 29x29} on the owner at 300,560 matched the screenshot glyphs at 316,572; right-click hide and the backlog faded the owner's transparency to 256; a WM_LBUTTONDOWN/UP pair swallowed at the window procedure did not advance while unswallowed clicks did (the per-frame GetAsyncKeyState poll only releases the latch; masking it alone did not stop the advance). The resolver and the owner-ABI decoder were also run offline on a 2016 Ethornell 1.626 trial (not installed, never run). Offline: x86/x64 build and fushi_bgi_lookup_test. 2026-09-30 injector-side on the original trial exe (SHA-256 EEDC03B1...381047538, x86, windowed 1280x720 client, launched by fushi_voice_injector --japanese-locale with hook DLL SHA-256 E673177F...D4C4183): sites resolved in 5.3 ms, window procedure +0x6c2f0 hooked, owner class decoded (3 drawable terms, display slot 11, 3 position terms); a mini host (lookup enabled, NativeOnly admission, BGI exact lane selected) received models of 16/33/36 glyphs (first glyph design 316,572 27x29, second row y 610) and kind 2 id 21 hits (char 4 of a 33-unit line at 424,572; char 32 of a 36-unit line on the second row at 424,610) and the page did not advance; a click off the glyphs advanced; right-click hide and the backlog retired the model (drawable false) and closing them re-offered it. That run drove the window with SendInput clicks from a helper script; the Fushi host accept4 route is not verified (the runner and Dart allowlists for id 21 need a host rebuild)."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -1478,9 +1478,19 @@
       "text": {
         "capabilities": [
           {
+            "kind": "bgi_message_set_text_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 7, hook 'BGI exact', ENGINE:BGI:message_set_text): the message object's SetTextImpl is resolved structurally for both calling-convention generations (1.5x __thiscall ret 0x10 / 1.6x __stdcall ret 0x14) from its unique vcall shape through the Ex vtable layout slot, cross-proved against the vtable a constructor installs whose layout wrapper calls the function owning the leading-control-byte switch; the detour copies the CP932 line (bounded) and the worker strips control bytes / inline tags, converts to UTF-16 and publishes one lane per message owner (owner class + base position). 2026-09-30 Frida probes on the 2011 Ethornell 1.519.6 trial (original Fushi-host launch, LocaleEmulator) showed one clean whole line per SetTextImpl (render=1) plus an empty clear on a sibling object, and that LunaHook's EmbedBGI on the layout function emitted nothing on that path. Resolver run offline on that exe and on a 2016 Ethornell 1.626 trial resolved both generations. 2026-09-30 injector-side on that trial (same run as lookup_acceptance.geometry): the BGI exact lane published each dialogue line whole (e.g. 「ここ数日、街に雨は降っていない。」, then two two-row lines) 70-200 ms before the EmbedBGI lane carried the same text. No Fushi-host text_ready run with this DLL is recorded yet."
+          },
+          {
             "kind": "luna_auto_or_pc_hooks",
             "status": "implemented_unverified",
             "verification": "Generic Luna plumbing is present; no stable BGI dialogue thread has been selected on the official sample yet."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact message-page provider kLookupGeometryProviderIdBgi (21), see lookup_acceptance.geometry. Offline: x86/x64 build and fushi_bgi_lookup_test; no Fushi-host accept4 run is recorded."
           }
         ],
         "codepage": "CP932 / game-specific",
