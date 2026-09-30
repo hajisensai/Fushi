@@ -6140,5 +6140,7 @@
   "video_resource_failure_timeout": "timed out",
   "video_resource_failure_network": "network error",
   "video_resource_failure_rate_limited": "rate limited",
-  "video_resource_failure_other": "request failed"
+  "video_resource_failure_other": "request failed",
+  "manga_ocr_accelerator_download": "Baixar pacote de aceleração ($size)",
+  "manga_ocr_accelerator_desc": "Os mesmos resultados de reconhecimento, cerca de duas vezes mais rápido neste dispositivo."
 }

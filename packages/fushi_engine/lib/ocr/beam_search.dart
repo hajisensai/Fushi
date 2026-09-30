@@ -31,6 +31,14 @@ import 'dart:typed_data';
 typedef BeamStepLogits = Future<List<Float32List>> Function(
     List<List<int>> sequences);
 
+/// KV cache 解码的每步回调：比 [BeamStepLogits] 多给每条 beam 的来源下标。
+///
+/// [sourceBeams] 与 [sequences] 等长：`sourceBeams[i]` 是第 i 条 beam 由上一步
+/// 的哪一条延续而来（首步全 0），KV cache 据此重排 past（HF `_reorder_cache` /
+/// `beam_idx`）。返回值同 [BeamStepLogits]。
+typedef BeamStepLogitsWithOrigin = Future<List<Float32List>> Function(
+    List<List<int>> sequences, List<int> sourceBeams);
+
 class BeamSearchConfig {
   const BeamSearchConfig({
     required this.startTokenId,
@@ -130,15 +138,23 @@ Set<int> bannedNgramTokens(List<int> sequence, int ngramSize) {
 }
 
 /// 运行 beam search，返回最优假设。
+///
+/// [stepLogits] 与 [stepLogitsWithOrigin] 恰好给一个：无 cache 的解码器每步重跑
+/// 整个序列，只要 [stepLogits]；KV cache 解码器还要知道每条 beam 的来源。两者
+/// 选路逻辑完全相同，只是回调多一个参数。
 Future<BeamSearchResult> beamSearchDecode({
   required BeamSearchConfig config,
-  required BeamStepLogits stepLogits,
+  BeamStepLogits? stepLogits,
+  BeamStepLogitsWithOrigin? stepLogitsWithOrigin,
 }) async {
+  assert((stepLogits == null) != (stepLogitsWithOrigin == null),
+      'pass exactly one of stepLogits / stepLogitsWithOrigin');
   final int numBeams = config.numBeams;
 
   List<List<int>> sequences = <List<int>>[
     for (int i = 0; i < numBeams; i++) <int>[config.startTokenId],
   ];
+  List<int> sourceBeams = List<int>.filled(numBeams, 0);
   // 首步除 beam0 外全部 -inf，避免 numBeams 条相同序列占满候选（对齐 HF）。
   final List<double> beamScores = List<double>.filled(
     numBeams,
@@ -178,7 +194,9 @@ Future<BeamSearchResult> beamSearchDecode({
   int curLen = 1;
 
   while (curLen < config.maxLength && !searchDone) {
-    final List<Float32List> logitsPerBeam = await stepLogits(sequences);
+    final List<Float32List> logitsPerBeam = stepLogitsWithOrigin != null
+        ? await stepLogitsWithOrigin(sequences, sourceBeams)
+        : await stepLogits!(sequences);
     assert(logitsPerBeam.length == numBeams);
     final int vocabSize = logitsPerBeam[0].length;
 
@@ -229,6 +247,7 @@ Future<BeamSearchResult> beamSearchDecode({
     // 分配下一轮 beam；EOS 候选（rank < numBeams）收编为完成假设。
     final List<List<int>> nextSequences = <List<int>>[];
     final List<double> nextBeamScores = <double>[];
+    final List<int> nextSourceBeams = <int>[];
     for (int rank = 0; rank < candidateCount; rank++) {
       if (topScore[rank] == double.negativeInfinity) {
         break;
@@ -244,6 +263,7 @@ Future<BeamSearchResult> beamSearchDecode({
       }
       nextSequences.add(<int>[...sequences[beam], token]);
       nextBeamScores.add(topScore[rank]);
+      nextSourceBeams.add(beam);
       if (nextSequences.length == numBeams) {
         break;
       }
@@ -257,9 +277,11 @@ Future<BeamSearchResult> beamSearchDecode({
       // 极端退化（词表过小 + ngram 屏蔽）：复制最后一条占位。
       nextSequences.add(List<int>.from(nextSequences.last));
       nextBeamScores.add(double.negativeInfinity);
+      nextSourceBeams.add(nextSourceBeams.last);
     }
 
     sequences = nextSequences;
+    sourceBeams = nextSourceBeams;
     for (int b = 0; b < numBeams; b++) {
       beamScores[b] = nextBeamScores[b];
     }

@@ -1045,7 +1045,30 @@ class _MangaOcrSettingsSectionState
             Align(
               alignment: Alignment.centerLeft,
               child: ready
-                  ? _deleteButton()
+                  ? Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: <Widget>[
+                        // 经典模型的提速组件（KV cache decoder）：结果不变、识别约快
+                        // 一倍。模型已就绪时补下它，下载器会跳过已就绪的文件。
+                        if (status?.acceleratorMissing ?? false)
+                          FilledButton.tonalIcon(
+                            key: const ValueKey<String>(
+                              'manga_ocr_accelerator_download',
+                            ),
+                            onPressed: _importing ? null : _startDownload,
+                            icon: const Icon(Icons.bolt_outlined, size: 18),
+                            label: Text(
+                              t.manga_ocr_accelerator_download(
+                                size: _formatBytes(
+                                  status!.acceleratorMissingBytes,
+                                ),
+                              ),
+                            ),
+                          ),
+                        _deleteButton(),
+                      ],
+                    )
                   : Wrap(
                       spacing: 8,
                       runSpacing: 4,
@@ -1067,6 +1090,15 @@ class _MangaOcrSettingsSectionState
                     ),
             ),
           ),
+          if (ready && (status?.acceleratorMissing ?? false)) ...<Widget>[
+            const SizedBox(height: 4),
+            _inset(
+              Text(
+                t.manga_ocr_accelerator_desc,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
           // 模型不全但磁盘上有残留（中断的 `.part`、换档后的遗留档）时，除了
           // 「继续下载」也得能直接清掉——否则那几百 MB 在 UI 上无处可删。
           if (!ready && (status?.hasAnyFiles ?? false)) ...<Widget>[
