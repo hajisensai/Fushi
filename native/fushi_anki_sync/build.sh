@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build fushi-anki-sync (Linux / macOS). Same steps as build.ps1; see README.md.
 #
-#   build.sh [--debug] [--universal] [--install-dir DIR]
+#   build.sh [--debug] [--universal] [--install-dir DIR] [--prebuilt-binary FILE]
 #
 #   --universal    macOS only: build aarch64 + x86_64 and lipo them into one binary
 #                  (the Flutter macOS app is universal; a single-arch helper would be
@@ -9,6 +9,11 @@
 #   --install-dir  copy the binary and its AGPL source notice (fushi-anki-sync.SOURCE.txt)
 #                  into DIR, then smoke-test the installed copy. CI uses this to bundle
 #                  the helper next to the app / server executable.
+#   --prebuilt-binary  skip clone / patch / cargo and install + smoke-test FILE instead
+#                  (requires --install-dir). CI passes it when .github/actions/native-artifact-store
+#                  restored a binary built from this exact directory tree, so the source
+#                  notice and the smoke test below still run against what actually ships.
+#                  Same contract as build.ps1 -PrebuiltBinary.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +24,7 @@ SRC="$HERE/.anki-src"
 PROFILE=release
 UNIVERSAL=0
 INSTALL_DIR=""
+PREBUILT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --debug) PROFILE=debug ;;
@@ -27,8 +33,12 @@ while [ $# -gt 0 ]; do
       INSTALL_DIR="${2:?--install-dir needs a directory}"
       shift
       ;;
+    --prebuilt-binary)
+      PREBUILT="${2:?--prebuilt-binary needs a file}"
+      shift
+      ;;
     *)
-      echo "unknown argument: $1 (usage: build.sh [--debug] [--universal] [--install-dir DIR])" >&2
+      echo "unknown argument: $1 (usage: build.sh [--debug] [--universal] [--install-dir DIR] [--prebuilt-binary FILE])" >&2
       exit 2
       ;;
   esac
@@ -43,57 +53,75 @@ if [ -n "$INSTALL_DIR" ]; then
     *) INSTALL_DIR="$PWD/$INSTALL_DIR" ;;
   esac
 fi
-
-if [ ! -d "$SRC/.git" ]; then
-  git clone --depth 1 --branch "$ANKI_TAG" https://github.com/ankitects/anki "$SRC"
-  git -C "$SRC" submodule update --init --depth 1 ftl/core-repo ftl/qt-repo
-fi
-
-head="$(git -C "$SRC" rev-parse HEAD)"
-if [ "$head" != "$ANKI_COMMIT" ]; then
-  echo ".anki-src is at $head, expected $ANKI_COMMIT (tag $ANKI_TAG). Delete .anki-src and rebuild." >&2
-  exit 1
-fi
-
-for patch in "$HERE"/patches/*.patch; do
-  if git -C "$SRC" apply --reverse --check "$patch" 2>/dev/null; then
-    continue  # already applied
+if [ -n "$PREBUILT" ]; then
+  if [ -z "$INSTALL_DIR" ]; then
+    echo "--prebuilt-binary requires --install-dir (there is nothing to build)." >&2
+    exit 2
   fi
-  git -C "$SRC" apply "$patch"
-done
-
-if [ -z "${PROTOC:-}" ] && ! command -v protoc >/dev/null 2>&1; then
-  echo "protoc not found: set PROTOC (Anki pins v31.1) or put it on PATH." >&2
-  exit 1
+  case "$PREBUILT" in
+    /*) ;;
+    *) PREBUILT="$PWD/$PREBUILT" ;;
+  esac
+  if [ ! -f "$PREBUILT" ]; then
+    echo "prebuilt fushi-anki-sync not found at $PREBUILT" >&2
+    exit 1
+  fi
 fi
 
 FUSHI_ANKI_SYNC_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$HERE/Cargo.toml" | head -n1)"
 export FUSHI_ANKI_SYNC_VERSION
 
-cd "$HERE"
-# Unquoted on purpose: empty in debug builds (bash 3.2 on macOS rejects "${arr[@]}"
-# of an empty array under set -u).
-release_flag="--release"
-[ "$PROFILE" = debug ] && release_flag=""
-if [ "$UNIVERSAL" = 1 ]; then
-  if [ "$(uname -s)" != Darwin ]; then
-    echo "--universal is macOS only." >&2
-    exit 2
-  fi
-  mac_targets="aarch64-apple-darwin x86_64-apple-darwin"
-  rustup target add $mac_targets
-  slices=""
-  for target in $mac_targets; do
-    cargo build $release_flag --target "$target"
-    slices="$slices target/$target/$PROFILE/fushi-anki-sync"
-  done
-  mkdir -p "target/universal/$PROFILE"
-  BIN="target/universal/$PROFILE/fushi-anki-sync"
-  lipo -create $slices -output "$BIN"
-  lipo -archs "$BIN"
+if [ -n "$PREBUILT" ]; then
+  BIN="$PREBUILT"
 else
-  cargo build $release_flag
-  BIN="target/$PROFILE/fushi-anki-sync"
+  if [ ! -d "$SRC/.git" ]; then
+    git clone --depth 1 --branch "$ANKI_TAG" https://github.com/ankitects/anki "$SRC"
+    git -C "$SRC" submodule update --init --depth 1 ftl/core-repo ftl/qt-repo
+  fi
+
+  head="$(git -C "$SRC" rev-parse HEAD)"
+  if [ "$head" != "$ANKI_COMMIT" ]; then
+    echo ".anki-src is at $head, expected $ANKI_COMMIT (tag $ANKI_TAG). Delete .anki-src and rebuild." >&2
+    exit 1
+  fi
+
+  for patch in "$HERE"/patches/*.patch; do
+    if git -C "$SRC" apply --reverse --check "$patch" 2>/dev/null; then
+      continue  # already applied
+    fi
+    git -C "$SRC" apply "$patch"
+  done
+
+  if [ -z "${PROTOC:-}" ] && ! command -v protoc >/dev/null 2>&1; then
+    echo "protoc not found: set PROTOC (Anki pins v31.1) or put it on PATH." >&2
+    exit 1
+  fi
+
+  cd "$HERE"
+  # Unquoted on purpose: empty in debug builds (bash 3.2 on macOS rejects "${arr[@]}"
+  # of an empty array under set -u).
+  release_flag="--release"
+  [ "$PROFILE" = debug ] && release_flag=""
+  if [ "$UNIVERSAL" = 1 ]; then
+    if [ "$(uname -s)" != Darwin ]; then
+      echo "--universal is macOS only." >&2
+      exit 2
+    fi
+    mac_targets="aarch64-apple-darwin x86_64-apple-darwin"
+    rustup target add $mac_targets
+    slices=""
+    for target in $mac_targets; do
+      cargo build $release_flag --target "$target"
+      slices="$slices target/$target/$PROFILE/fushi-anki-sync"
+    done
+    mkdir -p "target/universal/$PROFILE"
+    BIN="target/universal/$PROFILE/fushi-anki-sync"
+    lipo -create $slices -output "$BIN"
+    lipo -archs "$BIN"
+  else
+    cargo build $release_flag
+    BIN="target/$PROFILE/fushi-anki-sync"
+  fi
 fi
 
 if [ -z "$INSTALL_DIR" ]; then
