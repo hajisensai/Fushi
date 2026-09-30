@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2590 条。点号进各自文件。
+> 共 2591 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |
 | [BUG-2817](bugs/BUG-2817-release-asset-tag-app-build.md) | ✅ | ✅ | 发布模型资产 release 触发整套应用构建并把安装包挂到该 release |
 | [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
 | [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |
