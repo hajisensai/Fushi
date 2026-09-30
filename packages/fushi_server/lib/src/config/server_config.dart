@@ -77,6 +77,7 @@ class ServerConfig {
     this.publicUrls = const <String>[],
     this.p2p = false,
     this.p2pRelays = const <String>[],
+    this.scanPrune = true,
   });
 
   static const int defaultPort = 38765;
@@ -169,6 +170,11 @@ class ServerConfig {
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
 
+  /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
+  ///
+  /// 库行不记源文件路径的书 / 漫画根不受影响；关闭只停清理，导入行为不变。
+  final bool scanPrune;
+
   /// 允许经 P2P 隧道远程连接（iroh；默认关：会连 iroh 公共中继与发现服务）。
   final bool p2p;
 
@@ -200,6 +206,7 @@ class ServerConfig {
     List<String>? publicUrls,
     bool? p2p,
     List<String>? p2pRelays,
+    bool? scanPrune,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -227,6 +234,7 @@ class ServerConfig {
         publicUrls: publicUrls ?? this.publicUrls,
         p2p: p2p ?? this.p2p,
         p2pRelays: p2pRelays ?? this.p2pRelays,
+        scanPrune: scanPrune ?? this.scanPrune,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -282,6 +290,7 @@ class ServerConfig {
       publicUrls: _strings(map['public_urls']),
       p2p: _bool(map['p2p']) ?? base.p2p,
       p2pRelays: _strings(map['p2p_relays']),
+      scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
     );
   }
 
@@ -324,6 +333,7 @@ class ServerConfig {
     b.writeln('admin_bind: ${_q(adminBind)}');
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
     b.writeln('metadata_locale: ${_q(metadataLocale)}');
+    b.writeln('scan_prune: $scanPrune');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {

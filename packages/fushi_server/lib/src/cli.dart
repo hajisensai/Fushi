@@ -59,6 +59,10 @@ class _Runtime {
   }
 }
 
+/// 显式给出的三态布尔 flag：没给返回 null（由配置决定，不把 CLI 默认值当成用户意图）。
+bool? _explicitFlag(ArgResults results, String name) =>
+    results.wasParsed(name) ? results[name] as bool : null;
+
 ArgParser _buildParser() {
   final ArgParser parser = ArgParser()
     ..addOption('config', abbr: 'c', help: '配置文件路径', defaultsTo: kDefaultConfigFileName)
@@ -68,10 +72,18 @@ ArgParser _buildParser() {
     ..addOption('data-dir', help: '数据目录（默认配置文件旁的 data/）')
     ..addOption('port', help: '监听端口', defaultsTo: '${ServerConfig.defaultPort}')
     ..addOption('device-name', help: '广播给对端的设备名');
-  parser
-      .addCommand('serve')
-      .addFlag('scan', help: '启动后扫描一次库', defaultsTo: true);
-  parser.addCommand('scan');
+  parser.addCommand('serve')
+    ..addFlag('scan', help: '启动后扫描一次库', defaultsTo: true)
+    ..addFlag(
+      'prune',
+      help: '扫描后回收「文件已消失」的条目（--no-prune 关闭；缺省读配置 scan_prune）',
+      negatable: true,
+    );
+  parser.addCommand('scan').addFlag(
+        'prune',
+        help: '回收「文件已消失」的条目（--no-prune 关闭；缺省读配置 scan_prune）',
+        negatable: true,
+      );
   parser.addCommand('status');
   parser.addCommand('pair');
   parser.addCommand('admin');
@@ -118,9 +130,15 @@ Future<int> runFushiServerCli(List<String> args) async {
     case 'init':
       return _init(configFile, command);
     case 'serve':
-      return _withRuntime(configFile, verbose, (_Runtime rt) => _serve(rt, scan: command['scan'] as bool));
+      return _withRuntime(
+          configFile,
+          verbose,
+          (_Runtime rt) => _serve(rt,
+              scan: command['scan'] as bool,
+              prune: _explicitFlag(command, 'prune')));
     case 'scan':
-      return _withRuntime(configFile, verbose, _scan);
+      return _withRuntime(configFile, verbose,
+          (_Runtime rt) => _scan(rt, prune: _explicitFlag(command, 'prune')));
     case 'status':
       return _withRuntime(configFile, verbose, _status);
     case 'pair':
@@ -213,7 +231,7 @@ Future<int> _withRuntime(
   }
 }
 
-Future<int> _serve(_Runtime rt, {required bool scan}) async {
+Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
   final HeadlessHost host = HeadlessHost(
     config: rt.config,
     paths: rt.paths,
@@ -259,7 +277,7 @@ Future<int> _serve(_Runtime rt, {required bool scan}) async {
     }
   }
   if (scan && rt.config.libraries.isNotEmpty) {
-    unawaited(_scanInBackground(adminCtx));
+    unawaited(_scanInBackground(adminCtx, prune));
   }
   final Completer<void> stop = Completer<void>();
   void onSignal(ProcessSignal s) {
@@ -281,16 +299,16 @@ Future<int> _serve(_Runtime rt, {required bool scan}) async {
   return 0;
 }
 
-Future<void> _scanInBackground(AdminContext ctx) async {
+Future<void> _scanInBackground(AdminContext ctx, bool? prune) async {
   try {
-    final ScanSummary summary = await ctx.scanLibraries();
+    final ScanSummary summary = await ctx.scanLibraries(prune: prune);
     stdout.writeln('库扫描完成: $summary');
   } catch (e, stack) {
     ctx.log.log('serve.scan', e, stack);
   }
 }
 
-Future<int> _scan(_Runtime rt) async {
+Future<int> _scan(_Runtime rt, {bool? prune}) async {
   if (rt.config.libraries.isEmpty) {
     stderr.writeln('配置里没有 libraries[]，无事可扫。');
     return 0;
@@ -298,6 +316,7 @@ Future<int> _scan(_Runtime rt) async {
   final ScanSummary summary = await LibraryScanner(
     db: rt.db,
     subtitleLanguage: rt.config.subtitleLanguage,
+    pruneMissing: prune ?? rt.config.scanPrune,
   ).scanAll(rt.config.libraries);
   stdout.writeln('库扫描完成: $summary');
   for (final String err in summary.errors) {
