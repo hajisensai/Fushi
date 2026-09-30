@@ -20,6 +20,10 @@ typedef _LoadHandler = Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>
   discovery.VideoDiscoveryRequest request,
 );
 
+typedef _ProgressCallback = void Function(
+  ProviderBatchResult<discovery.VideoDiscoveryPage> partial,
+);
+
 class _FakeDiscoveryController implements VideoDiscoveryController {
   _FakeDiscoveryController(this.handler);
 
@@ -27,11 +31,16 @@ class _FakeDiscoveryController implements VideoDiscoveryController {
   final List<discovery.VideoDiscoveryRequest> requests =
       <discovery.VideoDiscoveryRequest>[];
 
+  /// 每次 load 收到的渐进回调（测试据此模拟「快的来源先回来」）。
+  final List<_ProgressCallback?> progress = <_ProgressCallback?>[];
+
   @override
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
-    discovery.VideoDiscoveryRequest request,
-  ) {
+    discovery.VideoDiscoveryRequest request, {
+    _ProgressCallback? onProgress,
+  }) {
     requests.add(request);
+    progress.add(onProgress);
     return handler(request);
   }
 
@@ -451,6 +460,95 @@ void main() {
 
     expect(find.text('新请求结果'), findsOneWidget);
     expect(find.text('过期请求结果'), findsNothing);
+  });
+
+  testWidgets('搜索一开始旧的热门列表立即撤下，不在「搜索结果」下冒充结果',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>> search =
+        Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>>();
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) => request.isSearch
+          ? search.future
+          : Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
+              _result(<discovery.VideoDiscoveryItem>[
+                _item('hot', '热门作品'),
+              ]),
+            ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    expect(find.text('热门作品'), findsWidgets);
+
+    final Finder editable = find.descendant(
+      of: find.byKey(const ValueKey<String>('video-discovery-search')),
+      matching: find.byType(EditableText),
+    );
+    await tester.enterText(editable, 'FX戦士くるみちゃん');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(find.text('热门作品'), findsNothing, reason: '搜索还没返回也不能显示旧列表');
+
+    search.complete(_result(<discovery.VideoDiscoveryItem>[
+      _item('fx', 'FX戦士くるみちゃん'),
+    ]));
+    await tester.pumpAndSettle();
+    expect(find.text('FX戦士くるみちゃん'), findsWidgets);
+    expect(find.text('热门作品'), findsNothing);
+  });
+
+  testWidgets('快的来源先显示并挂细进度条，全部返回后进度条消失',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>> search =
+        Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>>();
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) => request.isSearch
+          ? search.future
+          : Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
+              _result(const <discovery.VideoDiscoveryItem>[]),
+            ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    final Finder editable = find.descendant(
+      of: find.byKey(const ValueKey<String>('video-discovery-search')),
+      matching: find.byType(EditableText),
+    );
+    await tester.enterText(editable, 'Frieren');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    final _ProgressCallback onProgress = controller.progress.last!;
+    onProgress(_result(<discovery.VideoDiscoveryItem>[
+      _item('tmdb', '快来源结果'),
+    ]));
+    await tester.pump();
+    expect(find.text('快来源结果'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-partial-loading')),
+      findsOneWidget,
+    );
+
+    search.complete(_result(<discovery.VideoDiscoveryItem>[
+      _item('tmdb', '快来源结果'),
+      _item('mal', '慢来源结果'),
+    ]));
+    await tester.pumpAndSettle();
+    expect(find.text('慢来源结果'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-partial-loading')),
+      findsNothing,
+    );
   });
 
   testWidgets('筛选态隐藏推荐横栏并显示搜索结果网格', (WidgetTester tester) async {

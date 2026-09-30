@@ -7,6 +7,7 @@ import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi/src/ai/web_knowledge.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -165,6 +166,15 @@ void main() {
       for (final VideoAcquisitionScope scope in VideoAcquisitionScope.values) {
         expect(prompt, contains('"${scope.storageKey}"'));
       }
+    });
+
+    test('「帮我下 X」不算选了模式：放送中的作品要留给 app 去问下载还是订阅', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      expect(prompt, contains('does NOT state a mode'));
+      expect(prompt, contains('帮我下X'));
+      expect(prompt, isNot(contains('"download" for "download / get')));
     });
 
     test('quality "best" / "1440p" 是合法档位', () {
@@ -594,6 +604,88 @@ void main() {
         ),
         throwsA(isA<AiChatFailure>()),
       );
+    });
+  });
+
+  group('别名 → 正式名（联网资料）', () {
+    setUp(WebKnowledgeClient.resetFailureCooldowns);
+
+    /// 只开中文维基；响应形状取自 2026-09-29 对 zh.wikipedia.org 的实测。
+    WebKnowledgeClient zhWiki({required bool hit}) => WebKnowledgeClient(
+      sites: <WebKnowledgeSite>[kBuiltinWebKnowledgeSites.first],
+      client: MockClient((http.Request request) async {
+        final String action = request.url.queryParameters['action'] ?? '';
+        final Object body = action == 'opensearch'
+            ? <Object?>[
+                'fx外汇战士',
+                if (hit) <String>['FX战士久留美'] else <String>[],
+                if (hit) <String>[''] else <String>[],
+                if (hit)
+                  <String>['https://zh.wikipedia.org/wiki/FX战士久留美']
+                else
+                  <String>[],
+              ]
+            : <String, Object?>{
+                'query': <String, Object?>{
+                  'pages': <Object?>[
+                    <String, Object?>{
+                      'title': 'FX战士久留美',
+                      'extract':
+                          '《FX战士久留美》（日语：FX戦士くるみちゃん）是日本的漫画作品，'
+                          '2023年改编为电视动画。',
+                    },
+                  ],
+                },
+              };
+        return http.Response.bytes(utf8.encode(jsonEncode(body)), 200);
+      }),
+    );
+
+    test('资料命中 → 资料正文进提示词，返回 AI 抄出的正式名（去掉原话）', () async {
+      Map<String, Object?>? sent;
+      final List<String> titles = await requestAiVideoAlias(
+        client: _clientReplying(
+          '{"queries": ["FX戦士くるみちゃん", "fx外汇战士", "FX战士久留美"]}',
+          onRequest: (Map<String, Object?> body) => sent = body,
+        ),
+        provider: _provider(),
+        web: zhWiki(hit: true),
+        query: 'fx外汇战士',
+      );
+      expect(titles, <String>['FX戦士くるみちゃん', 'FX战士久留美']);
+      final String prompt = jsonEncode(sent);
+      expect(prompt, contains('FX戦士くるみちゃん'));
+      expect(prompt, contains('fx外汇战士'));
+    });
+
+    test('资料站没有结果 → 空，且不发 AI 请求', () async {
+      bool called = false;
+      final List<String> titles = await requestAiVideoAlias(
+        client: _clientReplying(
+          '{"queries": ["X"]}',
+          onRequest: (_) => called = true,
+        ),
+        provider: _provider(),
+        web: zhWiki(hit: false),
+        query: 'fx外汇战士',
+      );
+      expect(titles, isEmpty);
+      expect(called, isFalse);
+    });
+
+    test('没启用资料站 → 空，且不发 AI 请求', () async {
+      bool called = false;
+      final List<String> titles = await requestAiVideoAlias(
+        client: _clientReplying(
+          '{"queries": ["X"]}',
+          onRequest: (_) => called = true,
+        ),
+        provider: _provider(),
+        web: WebKnowledgeClient(sites: const <WebKnowledgeSite>[]),
+        query: 'fx外汇战士',
+      );
+      expect(titles, isEmpty);
+      expect(called, isFalse);
     });
   });
 }

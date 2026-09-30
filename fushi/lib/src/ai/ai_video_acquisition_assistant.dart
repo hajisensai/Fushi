@@ -188,8 +188,13 @@ Rules:
   season numbers, episode numbers, resolution or codec tags. Do not guess
   titles you are unsure of; give only what the user wrote in that case. Leave
   the list empty when no work is mentioned.
-- "mode": "download" for "download / get / grab it now"; "subscribe" for
-  "follow / subscribe / keep getting new episodes".
+- "mode": only when the user explicitly chooses between one-off and following.
+  "download" when they say they want just what is out now and do not want to
+  follow new episodes (e.g. "just the existing episodes", "no need to follow",
+  "只要现在有的", "不用追"). "subscribe" for "follow / subscribe / keep getting
+  new episodes" ("订阅", "追更"). A plain request to download or get a work
+  ("download X", "get X", "帮我下X", "下载X") does NOT state a mode: omit it,
+  the app asks when the work is still airing.
 - "quality": map "best / highest / as good as possible" to "best", "4K" /
   "2160" to "2160p", "2K" / "1440" to "1440p", "1080" / "full HD" to "1080p",
   "720" to "720p", "480" / "SD" / "small" to "480p", "any / whatever" to "any".
@@ -425,6 +430,112 @@ Future<AiVideoIdentityDecision> requestAiVideoAcquisitionIdentity({
   );
   return parseAiVideoIdentityDecision(reply, allowedKeys: query.candidateKeys);
 }
+
+// ---------------------------------------------------------------------------
+// 别名 → 正式名（联网资料）
+// ---------------------------------------------------------------------------
+
+/// 别名解析最多喂几页、每页多少字：条目开头一段就有各语言标题。
+const int kAiAliasReferenceMaxPages = 4;
+const int kAiAliasReferenceMaxChars = 2500;
+
+/// 系统提示：模型只从 app 抓回的资料里**抄**标题，不凭记忆补。用户说的俗称 /
+/// 译名 / 缩写没被元数据站收录时，靠这一步把它换成元数据站认识的正式名。
+const String kAiVideoAliasSystemPrompt = '''
+The user used a name for a video work (anime, TV series or movie) that the
+metadata sites could not find. It may be a nickname, an unofficial translation,
+an abbreviation or a typo. The app fetched encyclopedia excerpts by searching
+that name. You find which work the user meant and list its official titles.
+
+Answer with a single JSON object and nothing else: {"queries": ["...", "..."]}
+
+Rules:
+- Copy titles that are written in the excerpts: the original title (usually
+  Japanese for anime), the official English title, the official Chinese title,
+  romaji. 1 to 4 entries, each at most 80 characters.
+- Only list titles of the one work the user's name refers to. If the excerpts
+  describe unrelated works, or you cannot tell which work is meant, answer
+  {"queries": []}.
+- Never invent titles that are not in the excerpts. No season numbers, episode
+  numbers, years or quotes.
+''';
+
+String buildAiVideoAliasUserPrompt(
+  String query,
+  List<WebKnowledgePage> pages,
+) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+  'name': query,
+  'reference': <Map<String, Object?>>[
+    for (final WebKnowledgePage page in pages)
+      <String, Object?>{
+        'source': page.url.toString(),
+        'title': page.title,
+        'text': page.text,
+      },
+  ],
+});
+
+/// 跑一次别名解析。没有资料页 → 空（不发 AI 请求）；AI 失败原样抛。
+Future<List<String>> requestAiVideoAlias({
+  required AiChatClient client,
+  required AiProviderConfig provider,
+  required WebKnowledgeClient web,
+  required String query,
+}) async {
+  if (!web.isEnabled || query.trim().isEmpty) return const <String>[];
+  final List<WebKnowledgePage> pages = pickDiverseWebKnowledgePages(
+    // 每站两页：opensearch 若只命中一个不相干的前缀条目，第二个名额留给全文检索。
+    await web.search(
+      query,
+      pagesPerSource: 2,
+      maxCharsPerPage: kAiAliasReferenceMaxChars,
+    ),
+    kAiAliasReferenceMaxPages,
+  );
+  if (pages.isEmpty) return const <String>[];
+  final String reply = await client.complete(
+    provider: provider,
+    messages: <AiChatMessage>[
+      AiChatMessage.system(kAiVideoAliasSystemPrompt),
+      AiChatMessage.user(buildAiVideoAliasUserPrompt(query, pages)),
+    ],
+    maxTokens: 512,
+  );
+  return parseAiSearchQueries(reply, exclude: <String>[query]);
+}
+
+/// 生产装配：别名 → 正式名。未指派提供商 / 未启用资料站 → 空列表不联网；失败
+/// 记诊断后原样抛（编排器吞成「没找到」）。
+Future<List<String>> Function(String query)
+createPreferencesVideoAcquisitionAliasResolver(
+  PreferencesRepository prefsRepo, {
+  AiClientFactory? clientFactory,
+  WebKnowledgeClient Function()? webFactory,
+}) => (String query) async {
+  final AiProviderConfig? provider = resolveVideoAcquireAiProvider(prefsRepo);
+  if (provider == null) return const <String>[];
+  final AiChatClient client = clientFactory?.call() ?? AiChatClient();
+  final WebKnowledgeClient web =
+      webFactory?.call() ??
+      WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites);
+  try {
+    return await requestAiVideoAlias(
+      client: client,
+      provider: provider,
+      web: web,
+      query: query,
+    );
+  } catch (error, stack) {
+    ErrorLogService.instance.logDiagnostic(
+      'VideoAcquisition.alias',
+      '$query: $error\n$stack',
+    );
+    rethrow;
+  } finally {
+    client.close();
+    web.close();
+  }
+};
 
 // ---------------------------------------------------------------------------
 // 生产装配

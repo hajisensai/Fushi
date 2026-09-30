@@ -8,10 +8,16 @@
 # 5. With -InstallDirectory: copy fushi-anki-sync.exe and its AGPL source notice
 #    (fushi-anki-sync.SOURCE.txt) there and smoke-test the installed copy. CI uses this
 #    to bundle the helper next to fushi.exe / fushi_server.exe.
+#
+# -PrebuiltBinary skips steps 1-4 and installs/smoke-tests that exe instead. CI passes it
+# when .github/actions/native-artifact-store restored an exe built from this exact
+# directory tree (the store name hashes native/fushi_anki_sync/** plus the toolchain
+# action), so the notice and smoke test below still run against what actually ships.
 [CmdletBinding()]
 param(
     [switch]$DebugBuild,
-    [string]$InstallDirectory
+    [string]$InstallDirectory,
+    [string]$PrebuiltBinary
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,44 +47,47 @@ function Invoke-Checked {
     if ($code -ne 0) { throw "$Exe $($Arguments -join ' ') failed ($code)" }
 }
 
-if (-not (Test-Path (Join-Path $Src '.git'))) {
-    Invoke-Checked git @('clone', '--depth', '1', '--branch', $AnkiTag, 'https://github.com/ankitects/anki', $Src)
-    Invoke-Checked git @('-C', $Src, 'submodule', 'update', '--init', '--depth', '1', 'ftl/core-repo', 'ftl/qt-repo')
-}
-
-$head = (& git -C $Src rev-parse HEAD).Trim()
-if ($head -ne $AnkiCommit) {
-    throw ".anki-src is at $head, expected $AnkiCommit (tag $AnkiTag). Delete .anki-src and rebuild."
-}
-
-foreach ($patch in Get-ChildItem (Join-Path $Here 'patches') -Filter *.patch | Sort-Object Name) {
-    $code = Invoke-Native git @('-C', $Src, 'apply', '--reverse', '--check', $patch.FullName)
-    if ($code -eq 0) { continue }  # already applied
-    Invoke-Checked git @('-C', $Src, 'apply', $patch.FullName)
-}
-
-if (-not $env:PROTOC -and -not $env:PROTOC_BINARY -and -not (Get-Command protoc -ErrorAction SilentlyContinue)) {
-    throw 'protoc not found: set $env:PROTOC to protoc.exe (Anki pins v31.1) or put it on PATH.'
-}
-# Anki's proto build appends ".exe" to $env:PROTOC on Windows but uses PROTOC_BINARY
-# verbatim (rslib/proto/rust.rs set_protoc_path) — pass the path through untouched.
-if ($env:PROTOC -and -not $env:PROTOC_BINARY) { $env:PROTOC_BINARY = $env:PROTOC }
-
 $version = (Select-String -Path (Join-Path $Here 'Cargo.toml') -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
 $env:FUSHI_ANKI_SYNC_VERSION = $version
 
-Push-Location $Here
-try {
-    $cargoArgs = if ($DebugBuild) { @('build') } else { @('build', '--release') }
-    Invoke-Checked cargo $cargoArgs
-} finally {
-    Pop-Location
+if (-not $PrebuiltBinary) {
+    if (-not (Test-Path (Join-Path $Src '.git'))) {
+        Invoke-Checked git @('clone', '--depth', '1', '--branch', $AnkiTag, 'https://github.com/ankitects/anki', $Src)
+        Invoke-Checked git @('-C', $Src, 'submodule', 'update', '--init', '--depth', '1', 'ftl/core-repo', 'ftl/qt-repo')
+    }
+
+    $head = (& git -C $Src rev-parse HEAD).Trim()
+    if ($head -ne $AnkiCommit) {
+        throw ".anki-src is at $head, expected $AnkiCommit (tag $AnkiTag). Delete .anki-src and rebuild."
+    }
+
+    foreach ($patch in Get-ChildItem (Join-Path $Here 'patches') -Filter *.patch | Sort-Object Name) {
+        $code = Invoke-Native git @('-C', $Src, 'apply', '--reverse', '--check', $patch.FullName)
+        if ($code -eq 0) { continue }  # already applied
+        Invoke-Checked git @('-C', $Src, 'apply', $patch.FullName)
+    }
+
+    if (-not $env:PROTOC -and -not $env:PROTOC_BINARY -and -not (Get-Command protoc -ErrorAction SilentlyContinue)) {
+        throw 'protoc not found: set $env:PROTOC to protoc.exe (Anki pins v31.1) or put it on PATH.'
+    }
+    # Anki's proto build appends ".exe" to $env:PROTOC on Windows but uses PROTOC_BINARY
+    # verbatim (rslib/proto/rust.rs set_protoc_path) — pass the path through untouched.
+    if ($env:PROTOC -and -not $env:PROTOC_BINARY) { $env:PROTOC_BINARY = $env:PROTOC }
+
+    Push-Location $Here
+    try {
+        $cargoArgs = if ($DebugBuild) { @('build') } else { @('build', '--release') }
+        Invoke-Checked cargo $cargoArgs
+    } finally {
+        Pop-Location
+    }
 }
 
 if (-not $InstallDirectory) { exit 0 }
 
 $profileDir = if ($DebugBuild) { 'debug' } else { 'release' }
-$bin = Join-Path $Here "target\$profileDir\fushi-anki-sync.exe"
+$bin = if ($PrebuiltBinary) { $PrebuiltBinary } else { Join-Path $Here "target\$profileDir\fushi-anki-sync.exe" }
+if (-not (Test-Path -LiteralPath $bin -PathType Leaf)) { throw "fushi-anki-sync.exe not found at $bin" }
 New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
 # [IO.File] resolves relative paths against the process cwd, not the PowerShell location.
 $InstallDirectory = (Resolve-Path -LiteralPath $InstallDirectory).Path
