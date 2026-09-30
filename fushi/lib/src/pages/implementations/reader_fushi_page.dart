@@ -2044,6 +2044,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 在场时不重复弹，免得连点时提示条反复闪。
   ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _focusModeHint;
 
+  /// 一次**明确的退书**（[_exitBookPastFocusMode]）正在经 maybePop 走 PopScope：
+  /// 此时跳过「返回先退专注模式」那一级。只在那次 maybePop 期间为真。
+  bool _explicitExitInFlight = false;
+
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
   // 一下立即收起置 false。顶部与底栏共用同一旗与同一计时器（决策#1 时长共用、决策#2
@@ -3093,6 +3097,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
+    // 专注模式提示条挂在根 ScaffoldMessenger 上，不关会跟到下一页去。
+    _focusModeHint?.close();
     _chrome.removeListener(_onChromeControllerChanged);
     _chrome.dispose();
     _clearGamepadAHold();
@@ -3472,7 +3478,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                   if (didPop) return;
                   // 专注模式下「返回」先退专注模式、留在书里（与 Esc 先退全屏同理）：
                   // 栏都收着，这是键盘 / 手柄 / 系统返回键最直接的出口。
-                  if (_focusMode) {
+                  // 明确的退书入口（[_exitBookPastFocusMode]）不走这一级。
+                  if (_focusMode && !_explicitExitInFlight) {
                     _setFocusMode(false);
                     return;
                   }
@@ -3515,7 +3522,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             session: _sourceReviewSession!,
                             runHidden: runWithLookupPopupHidden,
                             onReturn: () {
-                              Navigator.of(context).maybePop();
+                              unawaited(_exitBookPastFocusMode());
                             },
                           ),
                         ),
@@ -3651,7 +3658,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                                   tooltip: t.back,
                                   icon: const Icon(Icons.arrow_back),
                                   onPressed: () =>
-                                      Navigator.of(context).maybePop(),
+                                      unawaited(_exitBookPastFocusMode()),
                                 ),
                               ),
                             ),

@@ -2158,6 +2158,9 @@ updateLive: function(patch) {
               return;
             }
             if (!shiftKey && !ReaderFushiSource.instance.highlightOnTap) {
+              // 点词关着：这一下没被任何动作消费（JS 门控 lookup=false 时点空白也
+              // 走这里，永远到不了 onTapEmpty）。专注模式下它是触屏唯一的退出通道。
+              if (_focusMode) _showFocusModeBarsLockedHint();
               // Tap consumed without a selection/popup — reclaim reader focus.
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;

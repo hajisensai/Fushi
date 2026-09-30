@@ -2210,10 +2210,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         msg: t.srt_book_reimport_body_rebuilt,
         severity: ToastSeverity.info,
       );
-      // 这是必须离开本书的退出：先清专注模式，否则 PopScope 会把它当成「返回先退
-      // 专注模式」留在已作废的正文上。
-      _chrome.focusMode = false;
-      Navigator.of(context).maybePop();
+      // 这是必须离开本书的退出：不能被 PopScope 当成「返回先退专注模式」留在
+      // 已作废的正文上。
+      unawaited(_exitBookPastFocusMode());
       return;
     }
 
