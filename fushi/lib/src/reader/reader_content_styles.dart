@@ -927,6 +927,13 @@ ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   color: var(--fushi-sentence-audio-text-color) !important;
   background-color: var(--fushi-sentence-audio-background-color) !important;
 }
+/* BUG-2806 起基字 wrapper 在 <ruby> 里面：子元素背景画在 ruby 的查词背景之上，
+   BUG-125 的「查词优先」要由 wrapper 让位（连同内联的补缝 box-shadow）。 */
+ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
+  color: inherit !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
 /* 链接色**恒** !important，不跟随「优先书籍样式」。这是阅读器唯一强制链接色的地方：
    撤掉后书自带的 `a{color:#000}`（EPUB 里极常见）在深色主题（背景 #0A0A0A）下就是
    黑底黑字，脚注/注释跳转链接直接不可见。开关的正当理由是「出版商 CSS 是为它自带的
@@ -1022,6 +1029,11 @@ ruby.fushi-sentence-audio-ruby-active {
 ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   text-decoration-style: solid !important;
   text-decoration-thickness: 0.14em !important;
+}
+/* 基字 wrapper 在查词 ruby 里（BUG-2806）：只留查词的粗实线。 */
+ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
+  text-decoration-line: none !important;
+  box-shadow: none !important;
 }
 ::highlight(fushi-search) {
   background-color: transparent;

@@ -179,8 +179,17 @@ function baseTextNodes(root) {
   return out;
 }
 
-function makeReader(cueRoots) {
+// Fake ResizeObserver: records what is observed; tests fire `trigger()` by hand.
+class FakeResizeObserver {
+  constructor(cb) { this.cb = cb; this.targets = new Set(); this.disconnected = 0; FakeResizeObserver.last = this; }
+  observe(t) { this.targets.add(t); }
+  disconnect() { this.targets.clear(); this.disconnected++; }
+  trigger() { this.cb([]); }
+}
+
+function makeReader(cueRoots, opts) {
   const sandbox = {
+    ResizeObserver: opts && opts.resizeObserver ? FakeResizeObserver : undefined,
     document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {} },
     getComputedStyle: (n) => ({
       display: n.display || 'inline', getPropertyValue: () => '',
@@ -193,7 +202,8 @@ function makeReader(cueRoots) {
   };
   vm.createContext(sandbox);
   const methods = ['applySentenceAudioCues', 'sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode',
-    'fillSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps']
+    'fillSentenceAudioRubyGaps', 'observeSentenceAudioRubyGaps', 'paintSentenceAudioRubyGaps',
+    'eraseSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps']
     .map(extractMethod).join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
   const R = sandbox.R;
@@ -359,6 +369,43 @@ function kids(n) { return n.childNodes.filter((c) => c.nodeType === 1 || c.nodeV
   ws[2].rects = [{ left: 60, right: 82, top: 0, bottom: 66 }];
   R.fillSentenceAudioRubyGaps(ws);
   ws.forEach((w) => assert.ok(!w.style.boxShadow, 'no shadow for overhanging / cross-column neighbours'));
+}
+
+// ── 9. gap fill is re-measured when the layout changes while the cue stays active ──
+// (toggling furigana resizes the ruby, changing the font size resizes the wrapper;
+// a paused cue is never re-highlighted, so the stale shadow would stay forever.)
+{
+  const r = ruby('漢', 'かんじかんじ');
+  const p = el('p', ['ほら', r, '字だ']);
+  const R = makeReader({ c9: p }, { resizeObserver: true });
+  R.applySentenceAudioCues([{ id: 'c9' }]);
+  const ws = R.cueWrappers.get('c9');
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 58, bottom: 80 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 94, bottom: 138 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  const obs = FakeResizeObserver.last;
+  assert.ok(obs, 'an observer is created when ResizeObserver exists');
+  assert.ok(obs.targets.has(ws[1]) && obs.targets.has(r), 'observes the wrappers and the ruby they sit in');
+  assert.ok(ws[1].style.boxShadow, 'gap filled initially');
+  // furigana hidden: the ruby collapses to its base, the gaps disappear.
+  ws[1].rects = [{ left: 100, right: 122, top: 44, bottom: 66 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
+  obs.trigger();
+  assert.ok(!ws[1].style.boxShadow, 'stale shadow removed after relayout');
+  // furigana back with a different gap.
+  ws[1].rects = [{ left: 100, right: 122, top: 50, bottom: 72 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 78, bottom: 122 }];
+  obs.trigger();
+  assert.strictEqual(ws[1].style.boxShadow,
+    '0px -6px 0 0 var(--fushi-sentence-audio-background-color), ' +
+    '0px 6px 0 0 var(--fushi-sentence-audio-background-color)',
+    'shadow re-measured to the new gap');
+  R.clearSentenceAudioRubyGaps();
+  assert.strictEqual(obs.targets.size, 0, 'observation stops when the cue is cleared');
+  assert.strictEqual(ws[1].style.boxShadow, '');
+  obs.trigger();
+  assert.strictEqual(ws[1].style.boxShadow, '', 'a late callback after clear paints nothing');
 }
 
 console.log('all assertions passed');
