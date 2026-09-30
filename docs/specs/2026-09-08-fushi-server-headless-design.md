@@ -235,7 +235,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 
 - **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表，目前没有 WebUI 编辑面。
 - **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器还在 app 侧、rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
-- **Linux 桌面版 Fushi 仍未随包内置引擎**：服务端那份静态 `.so` 可直接复用，但 runner CMake copy-if-present 未接（另起 job）。
+- **Linux 桌面版 Fushi 的内置引擎只在本机构建时随包**：runner CMake 已 copy-if-present `native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so`（与服务端同一份静态 `.so`，`build_linux_so.sh` 产出）进 `bundle/lib/`，`EmbeddedTorrentEngine` 在 Linux 先按 `<exe>/lib/` 绝对路径加载（守卫 `fushi/test/build/linux_torrent_bundle_guard_test.dart`）；缺了回退外接 qBittorrent。但**没有任何 CI / 发布流水线构建 Linux app**（所有者 2026-09-30 拍板，守卫 `multiplatform_pr_gating_guard_test.dart` 禁 `flutter build linux`），所以流水线侧取回 `.so` 的步骤不做；哪天恢复 Linux app 发布，构建前从 native artifact store 取 `names.sh linux` 的 `torrent` 件即可，不必重编。
 - **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。
 - **audiobooks 库服务仍返回空集**（第 0 期既定），有声书不经 host 托管。
 - **发布链路（2026-09-14 改为独立仓 `hajisensai/fushi-server` 回调本仓 `workflow_call`）**：首个 beta 由那边 `release.yml` dispatch 触发；结果见该仓 Releases。
