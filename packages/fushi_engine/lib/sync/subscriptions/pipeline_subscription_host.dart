@@ -61,7 +61,10 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
         for (final VideoResourceProvider p in registry.providers)
           if (!registry.disabledProviderIds.contains(p.id))
             if (p is TorznabClient)
-              for (final TorznabIndexerConfig cfg in p.indexers)
+              // 停用的索引器不参与搜索，公布出去也订阅不到（BUG-2818）。过滤
+              // 写在迭代源上：这里再嵌一层 collection-if 会吃掉下面的 else。
+              for (final TorznabIndexerConfig cfg
+                  in p.indexers.where((TorznabIndexerConfig c) => c.enabled))
                 '${p.id}:${cfg.id}'
             else
               p.id,
