@@ -154,7 +154,11 @@ concurrency:
 
 jobs:
   windows:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: windows-2022
     timeout-minutes: 150
     permissions:
@@ -1219,7 +1223,11 @@ jobs:
           retention-days: 14
 
   macos:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -1929,7 +1937,11 @@ jobs:
           retention-days: 14
 
   ios:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -2568,7 +2580,8 @@ jobs:
     needs: [windows, macos, ios]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
-    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
