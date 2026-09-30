@@ -7,7 +7,7 @@ description: >-
   requested platform are empty.
 inputs:
   platform:
-    description: windows | macos | ios | linux
+    description: windows | macos | ios | linux | android
     required: true
 outputs:
   torrent:
@@ -31,6 +31,9 @@ outputs:
   p2p_rust:
     description: Rust toolchain pin for fushi_p2p; the `Set up Rust (fushi_p2p...)` steps read it from here.
     value: ${{ steps.names.outputs.p2p_rust }}
+  cargo_ndk:
+    description: cargo-ndk pin for the Android fushi_p2p build (release.yml reads it from here).
+    value: ${{ steps.names.outputs.cargo_ndk }}
 runs:
   using: composite
   steps:

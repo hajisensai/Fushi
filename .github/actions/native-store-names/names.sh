@@ -26,12 +26,14 @@
 # A build starts reading another directory => add it to the path lists below.
 set -euo pipefail
 
-platform="${1:?usage: names.sh <windows|macos|ios|linux>}"
+platform="${1:?usage: names.sh <windows|macos|ios|linux|android>}"
 
 # fushi_p2p Rust toolchain. Every `Set up Rust (fushi_p2p...)` step takes
 # `toolchain: ${{ steps.native_store.outputs.p2p_rust }}`, so bumping it here both
 # changes what is built and invalidates every p2p name at once.
 P2P_RUST=1.95.0
+# cargo-ndk used to cross-build fushi_p2p for Android (release.yml reads it from here).
+CARGO_NDK=4.1.2
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -102,12 +104,24 @@ case "$platform" in
       "anki_sync_debug=linux-x64-fushi-anki-sync-debug-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
     )
     ;;
+  android)
+    # release.yml's Android build job (the only producer and consumer). The NDK and
+    # the runner's vcpkg checkout are build inputs the tree hash cannot see.
+    ndk="$(sed -n 's/^Pkg\.Revision[[:space:]]*=[[:space:]]*//p' "${ANDROID_NDK_LATEST_HOME:-}/source.properties" 2>/dev/null | head -n 1 || true)"
+    [ -n "$ndk" ] || ndk="$(basename "${ANDROID_NDK_LATEST_HOME:-unknown-ndk}")"
+    ndk="$(sanitize "$ndk")"
+    vcpkg_rev="$(sanitize "$(git -C "${VCPKG_INSTALLATION_ROOT:-/nonexistent}" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)")"
+    names+=(
+      "torrent=android-arm64-fushi-torrent-so-v2-ndk$ndk-vcpkg$vcpkg_rev-$image-$(tree_hash "ndk=$ndk vcpkg=$vcpkg_rev" "${TORRENT[@]}")"
+      "p2p=android-fushi-p2p-so-v2-3abi-rust$P2P_RUST-cargondk$CARGO_NDK-ndk$ndk-$image-$(tree_hash "ndk=$ndk rust=$P2P_RUST cargo-ndk=$CARGO_NDK" "${P2P[@]}")"
+    )
+    ;;
   *)
-    echo "::error title=native-store-names::unknown platform '$platform' (windows|macos|ios|linux)" >&2
+    echo "::error title=native-store-names::unknown platform '$platform' (windows|macos|ios|linux|android)" >&2
     exit 2
     ;;
 esac
-names+=("p2p_rust=$P2P_RUST")
+names+=("p2p_rust=$P2P_RUST" "cargo_ndk=$CARGO_NDK")
 
 for line in "${names[@]}"; do
   echo "$line"

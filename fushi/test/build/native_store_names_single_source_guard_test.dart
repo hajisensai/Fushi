@@ -291,7 +291,9 @@ Set<String> _allKeys(List<_Job> jobs) => <String>{
 };
 
 final RegExp _jobHeader = RegExp(r'^  ([A-Za-z0-9_-]+):\s*$');
-final RegExp _stepStart = RegExp(r'^      - ');
+// 步骤列表项可能是四格（release.yml）也可能是六格（其余 workflow）起头；只认六格时
+// release.yml 的持久库步骤整个看不见，守卫对它形同虚设（2026-09-30 实测）。
+final RegExp _stepStart = RegExp(r'^( {4}| {6})- ');
 final RegExp _storeName = RegExp(
   r'^\$\{\{ steps\.native_store\.outputs\.([a-z0-9_]+) \}\}$',
 );
@@ -303,6 +305,7 @@ List<_Job> _parseJobs(String workflow, String yaml) {
   final List<_Job> jobs = <_Job>[];
   _Job? job;
   List<String>? step;
+  int stepIndent = 6;
   void closeStep() {
     final _Job? j = job;
     final List<String>? s = step;
@@ -324,14 +327,16 @@ List<_Job> _parseJobs(String workflow, String yaml) {
     }
     final _Job? current = job;
     if (current == null) continue;
-    if (_stepStart.hasMatch(line)) {
+    final RegExpMatch? stepMatch = _stepStart.firstMatch(line);
+    if (stepMatch != null) {
       closeStep();
+      stepIndent = stepMatch.group(1)!.length;
       step = <String>[line];
       continue;
     }
     if (step != null) {
-      // step 体是八格及以上缩进（或空行 / 注释）；回到四格就是 job 级的键了。
-      if (line.startsWith('        ') || line.trim().isEmpty) {
+      // step 体比列表项多缩进两格及以上（或空行 / 注释）；回到 job 级就收尾。
+      if (line.startsWith(' ' * (stepIndent + 2)) || line.trim().isEmpty) {
         step!.add(line);
         continue;
       }
@@ -427,10 +432,11 @@ class _StoreStep {
 
   final _Step step;
 
-  /// `with:` 下的 `name:`（十格缩进；step 自己的 `- name:` 是六格）。
+  /// `with:` 下的 `name:`。step 自己的名字在首行 `- name:` 上，所以跳过首行；缩进随
+  /// workflow 不同（release.yml 八格、其余十格），不按固定缩进认。
   String get rawName {
-    for (final String l in step.lines) {
-      final RegExpMatch? m = RegExp(r'^          name:\s*(.+)$').firstMatch(l);
+    for (final String l in step.lines.skip(1)) {
+      final RegExpMatch? m = RegExp(r'^\s+name:\s*(.+)$').firstMatch(l);
       if (m != null) return m.group(1)!.trim();
     }
     return '<no name>';

@@ -39,6 +39,7 @@ on:
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/native-artifact-store/**'
+      - '.github/actions/native-store-names/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -490,32 +491,11 @@ jobs:
     - name: Resolve native artifact store names (Android)
       id: native_store
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      shell: bash
-      env:
-        IMAGE: ${{ steps.vcpkg_cache_id.outputs.image }}
-        TORRENT_HASH: ${{ hashFiles('native/fushi_torrent/**') }}
-        P2P_HASH: ${{ hashFiles('native/fushi_p2p/**') }}
-      run: |
-        set -euo pipefail
-        for v in TORRENT_HASH P2P_HASH IMAGE; do
-          if [ -z "${!v:-}" ]; then echo "::error::$v is empty (hashFiles matched nothing?)"; exit 1; fi
-        done
-        sanitize() { printf '%s' "$1" | tr -c '0-9A-Za-z._-' '-'; }
-        # NDK：取 ANDROID_NDK_LATEST_HOME 的 Pkg.Revision（两个构建脚本都吃这个 NDK）；
-        # 读不到就退回目录名（镜像里目录名就是版本号）。
-        ndk="$(sed -n 's/^Pkg\.Revision[[:space:]]*=[[:space:]]*//p' "$ANDROID_NDK_LATEST_HOME/source.properties" 2>/dev/null | head -n 1 || true)"
-        if [ -z "$ndk" ]; then ndk="$(basename "$ANDROID_NDK_LATEST_HOME")"; fi
-        ndk="$(sanitize "$ndk")"
-        # 镜像内固化的 vcpkg 修订（vcpkg 工具本身与 ports 树；libtorrent 等依赖的版本
-        # 钉在 vcpkg.json，已在 TORRENT_HASH 里）。
-        vcpkg_rev="$(git -C "$VCPKG_INSTALLATION_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
-        vcpkg_rev="$(sanitize "$vcpkg_rev")"
-        # Rust / cargo-ndk 钉版必须与下面 dtolnay/rust-toolchain 与 install-action 的
-        # toolchain / tool 同步改；ABI 列表必须与两个构建脚本的实参同步改。
-        {
-          echo "torrent=android-fushi-torrent-so-v1-arm64-v8a-ndk${ndk}-vcpkg${vcpkg_rev}-${IMAGE}-${TORRENT_HASH}"
-          echo "p2p=android-fushi-p2p-so-v1-arm64-v8a.armeabi-v7a.x86_64-rust1.95.0-cargondk4.1.2-ndk${ndk}-${IMAGE}-${P2P_HASH}"
-        } | tee -a "$GITHUB_OUTPUT"
+      # 名字配方只在 .github/actions/native-store-names/names.sh 写一次（与桌面 / PR 各端
+      # 同源；Rust / cargo-ndk 钉版也从这里读），守卫 native_store_names_single_source_guard。
+      uses: ./.github/actions/native-store-names
+      with:
+        platform: android
     - name: Restore libtorrent Android .so from native artifact store
       id: torrent_store
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
@@ -613,7 +593,7 @@ jobs:
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain: '1.95.0'
+        toolchain: ${{ steps.native_store.outputs.p2p_rust }}
         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
     - name: Cache Rust build (fushi_p2p)
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
@@ -625,7 +605,7 @@ jobs:
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       uses: taiki-e/install-action@v2
       with:
-        tool: cargo-ndk@4.1.2
+        tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
     - name: Build fushi_p2p Android .so (cargo-ndk)
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
       timeout-minutes: 45
