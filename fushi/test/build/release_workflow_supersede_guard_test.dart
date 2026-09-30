@@ -80,4 +80,22 @@ void main() {
       contains(r'"$first" > "$push_cutoff" && "$first" > "$safety_cutoff"'),
     );
   });
+
+  test('普通 cancel 停不下 always() job 时改用 force-cancel', () {
+    final String script = File(
+      '../tool/cancel_superseded_runs.sh',
+    ).readAsStringSync();
+    // 2026-09-30：桌面 publish（if: always()）与 macOS 签名步骤在 cancel 后一直
+    // in_progress，只能 force-cancel。先统一等一轮，再对还在跑的强制取消。
+    expect(script, contains(r'/actions/runs/$id/cancel'));
+    expect(script, contains(r'/actions/runs/$id/force-cancel'));
+    expect(
+      script,
+      contains(r'force_after="${SUPERSEDE_FORCE_AFTER_SECONDS:-90}"'),
+    );
+    expect(
+      script.indexOf(r'/actions/runs/$id/cancel'),
+      lessThan(script.indexOf(r'/actions/runs/$id/force-cancel')),
+    );
+  });
 }

@@ -34,6 +34,13 @@ void main() {
     expect(yaml, contains(r'[ "$name" = "$SELF_WORKFLOW" ] && continue'));
     expect(yaml, contains(r'-f branch="$HEAD_BRANCH"'));
     expect(yaml, isNot(contains(r'runs?branch=$HEAD_BRANCH')));
+    // 普通 cancel 停不下 always() job：等一轮后对还在跑的 force-cancel。
+    expect(yaml, contains(r'/actions/runs/$id/cancel"'));
+    expect(yaml, contains(r'/actions/runs/$id/force-cancel'));
+    expect(
+      yaml.indexOf(r'/actions/runs/$id/cancel"'),
+      lessThan(yaml.indexOf(r'/actions/runs/$id/force-cancel')),
+    );
     // 取消必须排在删缓存之前：先把还在跑、可能继续写缓存的 run 停掉。
     expect(
       yaml.indexOf("Cancel this PR's still-queued / running CI"),
