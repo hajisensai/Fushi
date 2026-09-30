@@ -1063,7 +1063,9 @@ class _VideoResourceSearchSurfaceState
               Wrap(
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
-                children: preferredNyaaSearchQueries(
+                // 与 Nyaa 实际补查的作品拼写同一份（BUG-2818）：元数据排第一的
+                // 罗马字不一定是发布组的写法，其余拼写也得点得到。
+                children: nyaaSearchQueries(
                   VideoResourceSearchRequest(media: _media),
                 )
                     .map(

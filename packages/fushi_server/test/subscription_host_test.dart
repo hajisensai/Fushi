@@ -148,6 +148,36 @@ void main() {
         <String>['nyaa', 'torznab:jackett']);
   });
 
+  test('capability：停用的 Torznab indexer 不公布，其它 provider 照报（BUG-2818）', () async {
+    TorznabIndexerConfig indexer(String id, {required bool enabled}) =>
+        TorznabIndexerConfig(
+          id: id,
+          name: id,
+          endpoint: Uri.parse('https://$id/api'),
+          apiKey: 'k',
+          enabled: enabled,
+        );
+    final VideoResourceRegistry withTorznab = VideoResourceRegistry(<Object>[
+      ...registry.providers,
+      TorznabClient(
+        indexers: <TorznabIndexerConfig>[
+          indexer('on', enabled: true),
+          indexer('off', enabled: false),
+        ],
+        client: http.Client(),
+      ),
+    ].cast());
+    final PipelineSubscriptionHost h = PipelineSubscriptionHost(
+      db: db,
+      registry: withTorznab,
+      backendTarget: () => target,
+      targetSourceId: () => 7,
+      backendName: 'embedded',
+      service: service,
+    );
+    expect((await h.capability())['providers'], <String>['nyaa', 'torznab:on']);
+  });
+
   test('setEnabled / delete：未知 id 404；停用清租约、启用重排期', () async {
     final VideoDownloadSubscriptionRow row = await host.create(req(id: 's1'));
     await host.setEnabled('s1', false);

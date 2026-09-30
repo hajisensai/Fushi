@@ -134,7 +134,24 @@ class NyaaVideoResourceProvider implements VideoResourceProvider {
 List<String> preferredNyaaSearchQueries(VideoResourceSearchRequest request) {
   final String explicitQuery = request.query?.trim() ?? '';
   if (explicitQuery.isNotEmpty) return <String>[explicitQuery];
+  return _nyaaWorkQueries(request, maxRomanized: 1);
+}
 
+/// 同一作品最多查几种拉丁拼写（BUG-2818）。
+///
+/// 元数据排在最前的「罗马字」不一定是发布组用的写法：TMDB 的 JP 区别名可能是
+/// 官方风格化写法 `FX Senshi KURUMICHAN`，发布名却一律是 `FX Senshi Kurumi-chan`
+/// ——Nyaa 把 `KURUMICHAN` 当成另一个词，0 条。只查第一个拉丁拼写 = 押宝在元数据
+/// 的排序上；罗马字 / 英文名 / 主标题各查一次才不依赖它。上限是请求预算：Nyaa
+/// 逐词串行请求，每多一种拼写多一次往返。
+const int kNyaaMaxRomanizedQueries = 3;
+
+/// 作品标题候选（别名 → 原名 → 标题 → 有效查询词，大小写不敏感去重）按书写系统
+/// 分组：拉丁拼写取前 [maxRomanized] 个、日文取一个，都没有才退回其它标题一个。
+List<String> _nyaaWorkQueries(
+  VideoResourceSearchRequest request, {
+  required int maxRomanized,
+}) {
   final VideoMediaReference? media = request.media;
   final List<String> candidates = <String>[
     if (media != null) ...media.aliases,
@@ -161,7 +178,7 @@ List<String> preferredNyaaSearchQueries(VideoResourceSearchRequest request) {
     }
   }
   return <String>[
-    ...romanized.take(1),
+    ...romanized.take(maxRomanized),
     ...japanese.take(1),
     if (romanized.isEmpty && japanese.isEmpty) ...fallback.take(1),
   ];
@@ -181,10 +198,15 @@ List<String> preferredNyaaSearchQueries(VideoResourceSearchRequest request) {
 ///   极低）。
 /// 用户手输的拉丁词（`Frieren S2 1080p`）是在收窄，不补查，免得把收窄冲掉。
 /// 没有作品身份（纯关键词搜索）时只有显式词可查。
+///
+/// 作品拼写查全部不同的拉丁拼写（至多 [kNyaaMaxRomanizedQueries] 个）加日文原名，
+/// 不像 [preferredNyaaSearchQueries] 那样只各取一个（BUG-2818）。
 List<String> nyaaSearchQueries(VideoResourceSearchRequest request) {
   final String explicit = request.query?.trim() ?? '';
   final VideoMediaReference? media = request.media;
-  if (explicit.isEmpty) return preferredNyaaSearchQueries(request);
+  if (explicit.isEmpty) {
+    return _nyaaWorkQueries(request, maxRomanized: kNyaaMaxRomanizedQueries);
+  }
   if (media == null) return <String>[explicit];
   final String normalized = _nyaaTitleKey(explicit);
   final bool knownTitle = <String?>[
@@ -198,8 +220,9 @@ List<String> nyaaSearchQueries(VideoResourceSearchRequest request) {
   final Set<String> seen = <String>{normalized};
   return <String>[
     explicit,
-    for (final String candidate in preferredNyaaSearchQueries(
+    for (final String candidate in _nyaaWorkQueries(
       VideoResourceSearchRequest(media: media),
+      maxRomanized: kNyaaMaxRomanizedQueries,
     ))
       if (seen.add(_nyaaTitleKey(candidate))) candidate,
   ];

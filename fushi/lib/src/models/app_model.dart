@@ -5244,19 +5244,23 @@ class AppModel with ChangeNotifier {
 
   Future<void> _startVideoDownloadPipeline() async {
     if (_videoDownloadPipelineService != null) return;
-    final http.Client torznabHttpClient = await createDownloadHttpClient();
+    final List<TorznabIndexerConfig> torznabIndexers =
+        prefsRepo.videoResourceTorznabConfigs;
     // 内置索引器一律按 kBuiltinVideoResourceSources 全表注册；「用不用」由 registry
     // 的停用清单决定，而不是靠这里少建一个对象——否则设置页开关就得重启 app 才生效。
+    // Torznab 不同：没有启用的索引器它就不是一个源（保存索引器配置会重建整条
+    // 运行时），判据见 [torznabHasEnabledIndexer]（BUG-2818）。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
       for (final BuiltinVideoResourceSource source
           in kBuiltinVideoResourceSources)
         source.create(await createDownloadHttpClient()),
-      TorznabClient(
-        indexers: prefsRepo.videoResourceTorznabConfigs,
-        client: torznabHttpClient,
-        closesClient: true,
-      ),
+      if (torznabHasEnabledIndexer(torznabIndexers))
+        TorznabClient(
+          indexers: torznabIndexers,
+          client: await createDownloadHttpClient(),
+          closesClient: true,
+        ),
     ];
     // 字幕来源的装配判据在 [createConfiguredVideoSubtitleProviders] 一处（浏览器
     // 扩展的查字幕桥用的是同一份工厂，不再自己判「哪家算配好了」）。

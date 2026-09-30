@@ -197,7 +197,9 @@ class ServerDownloadHost implements HostDownloadHost {
       <VideoResourceProvider>[
         for (final BuiltinVideoResourceProviderSpec spec in kBuiltinVideoResourceProviderSpecs)
           spec.create(createAppHttpIoClient()),
-        TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
+        // 没有启用的索引器就不注册（判据与 app 同一处，见 torznabHasEnabledIndexer，BUG-2818）。
+        if (torznabHasEnabledIndexer(torznab))
+          TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
       ],
       disabledProviderIds: readVideoResourceDisabledSourceIds(prefs),
     );
