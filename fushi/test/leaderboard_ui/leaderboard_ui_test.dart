@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -15,7 +16,8 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_share_ca
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
-import 'package:fushi/utils.dart' show FushiDestructiveConfirmDialog;
+import 'package:fushi/utils.dart'
+    show FushiDestructiveConfirmDialog, FushiSelectableChip;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -58,6 +60,9 @@ class _FakeServer {
   /// 为 true 时回自己的用户卡 / 书架（分享卡片取数用）；默认 404。
   bool selfShareData = false;
 
+  /// 非 null 时每个请求先交给它：返回 false 则回 503（测试用 Completer 控制先后）。
+  Future<bool> Function(http.Request r)? hold;
+
   http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
     utf8.encode(jsonEncode(body)),
     status,
@@ -78,6 +83,10 @@ class _FakeServer {
 
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
+    final Future<bool> Function(http.Request r)? gate = hold;
+    if (gate != null && !await gate(r)) {
+      return _json(<String, dynamic>{'error': 'unavailable'}, 503);
+    }
     final String path = r.url.path;
     if (accountGone && r.headers.containsKey('X-Fushi-Account')) {
       return _json(<String, dynamic>{'error': 'unknown_account'}, 401);
@@ -791,6 +800,37 @@ void main() {
     );
   });
 
+  test('分享周期标签：「总」是本地日期，周 / 月仍按 UTC 周期锚点', () {
+    // 本地 10-01 的凌晨与深夜：换成 UTC 分别落在 09-30（东半球）/ 10-02（西半球），
+    // 按 UTC 取日期的实现在任何非 UTC 时区至少错一条。
+    for (final DateTime local in <DateTime>[
+      DateTime(2026, 10, 1, 0, 30),
+      DateTime(2026, 10, 1, 7),
+      DateTime(2026, 10, 1, 23, 30),
+    ]) {
+      expect(
+        leaderboardSharePeriodLabel(LeaderboardWindow.all, local),
+        '2026-10-01',
+        reason: '$local',
+      );
+      // 同一时刻换成 UTC 表示，截至日期不变。
+      expect(
+        leaderboardSharePeriodLabel(LeaderboardWindow.all, local.toUtc()),
+        '2026-10-01',
+        reason: '${local.toUtc()}',
+      );
+    }
+    final DateTime utc = DateTime.utc(2026, 9, 30, 23, 30);
+    expect(
+      leaderboardSharePeriodLabel(LeaderboardWindow.week, utc),
+      leaderboardShareWindowStart(LeaderboardWindow.week, utc),
+    );
+    expect(
+      leaderboardSharePeriodLabel(LeaderboardWindow.month, utc),
+      '2026-09',
+    );
+  });
+
   test('分享卡片取数（周）：只数本周一以来读完，字数取周榜 me', () async {
     final List<Uri> seen = <Uri>[];
     final LeaderboardShareCardData data = await loadLeaderboardShareCardData(
@@ -823,7 +863,7 @@ void main() {
       ], seen),
       shareSelf,
       window: LeaderboardWindow.all,
-      now: DateTime.utc(2026, 9, 30, 8),
+      now: DateTime(2026, 9, 30, 12),
     );
     expect(data.window, LeaderboardWindow.all);
     // 累计 = book 30 + manga 12 + video 0 + game 4；字数不算作品。
@@ -905,6 +945,143 @@ void main() {
     expect(clipboard, <String>['https://rank.example/u/$_selfId']);
     // 等提示 Toast 的计时器走完，免得测试收尾时留有挂起计时器。
     await tester.pump(const Duration(seconds: 5));
+  });
+
+  /// 对话框底部按钮（adaptiveDialogAction）的 onPressed 是否非空。
+  bool shareActionEnabled(WidgetTester tester, String key) => tester
+      .widget<ButtonStyleButton>(
+        find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is ButtonStyleButton,
+          ),
+        ),
+      )
+      .enabled;
+
+  testWidgets('分享对话框：周期错误按周期存，同周期请求在途时切回复用，不被旧失败盖住', (
+    WidgetTester tester,
+  ) async {
+    server.selfShareData = true;
+    final LeaderboardService service = await activeService(tester);
+    await tester.runAsync(service.refreshSelf);
+    // 周榜请求（= 「周」卡片取数）逐个挂起，由测试决定成败与先后。
+    final List<Completer<bool>> weekGates = <Completer<bool>>[];
+    server.hold = (http.Request r) {
+      if (r.url.path != '/v1/rank' ||
+          r.url.queryParameters['window'] != 'week') {
+        return Future<bool>.value(true);
+      }
+      final Completer<bool> gate = Completer<bool>();
+      weekGates.add(gate);
+      return gate.future;
+    };
+    Finder chip(String label) =>
+        find.byKey(ValueKey<String>('leaderboard-share-window-$label'));
+
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardShareDialog(initialWindow: LeaderboardWindow.week),
+      ),
+    );
+    await settle(tester);
+    expect(weekGates, hasLength(1));
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
+
+    // 周还在加载 → 切到总（取到数据）→ 切回周：复用在途请求，不再发第二次。
+    await tester.tap(chip(t.leaderboard_window_all));
+    await settle(tester);
+    expect(
+      find.text(t.leaderboard_share_card_finished_all(n: 42)),
+      findsOneWidget,
+    );
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isTrue);
+    await tester.tap(chip(t.leaderboard_window_week));
+    await settle(tester);
+    expect(weekGates, hasLength(1));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
+
+    // 周失败：只在周这一格显示错误，分享不可点；总那一格照旧是卡片。
+    weekGates.single.complete(false);
+    await settle(tester);
+    expect(find.byType(LeaderboardErrorView), findsOneWidget);
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
+    await tester.tap(chip(t.leaderboard_window_all));
+    await settle(tester);
+    expect(find.byType(LeaderboardErrorView), findsNothing);
+    expect(
+      find.text(t.leaderboard_share_card_finished_all(n: 42)),
+      findsOneWidget,
+    );
+
+    // 切回周 = 重取；第二次成功后显示卡片而不是残留的错误，分享可点。
+    await tester.tap(chip(t.leaderboard_window_week));
+    await settle(tester);
+    expect(weekGates, hasLength(2));
+    weekGates.last.complete(true);
+    await settle(tester);
+    expect(find.byType(LeaderboardErrorView), findsNothing);
+    expect(
+      find.text(t.leaderboard_share_card_finished_week(n: 1)),
+      findsOneWidget,
+    );
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('分享对话框：没有主页链接时「复制链接」与「分享」禁用', (WidgetTester tester) async {
+    final LeaderboardService service = await activeService(tester);
+    // 不拉 self：主页链接无从拼出。
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardShareDialog(initialWindow: LeaderboardWindow.week),
+      ),
+    );
+    await settle(tester);
+    expect(shareActionEnabled(tester, 'leaderboard-share-copy-link'), isFalse);
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
+  });
+
+  testWidgets('排行页切到「总」后点页头分享：对话框初始就是「总」', (WidgetTester tester) async {
+    tallView(tester);
+    server.selfShareData = true;
+    final LeaderboardService service = await activeService(tester);
+    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await settle(tester);
+
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('leaderboard-window-${t.leaderboard_window_all}'),
+      ),
+    );
+    await settle(tester);
+    final Finder share = find.byKey(
+      const ValueKey<String>('leaderboard-header-share'),
+    );
+    expect(tester.widget<OutlinedButton>(share).onPressed, isNotNull);
+    await tester.tap(share);
+    await settle(tester);
+
+    expect(find.byType(LeaderboardShareDialog), findsOneWidget);
+    expect(
+      tester
+          .widget<FushiSelectableChip>(
+            find.byKey(
+              ValueKey<String>(
+                'leaderboard-share-window-${t.leaderboard_window_all}',
+              ),
+            ),
+          )
+          .selected,
+      isTrue,
+    );
+    expect(
+      find.text(t.leaderboard_share_card_finished_all(n: 42)),
+      findsOneWidget,
+    );
   });
 
   Finder byKey(String k) => find.byKey(ValueKey<String>(k));
