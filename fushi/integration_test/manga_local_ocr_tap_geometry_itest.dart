@@ -8,8 +8,8 @@
 ///   --dart-define=MANGA_VOLUME_SEED=<卷目录副本：manga.json + images/ +
 ///       manga_ocr_out/_pages/local-onnx-v4-…>（页图 mtime 必须与原卷一致，
 ///       逐页缓存按大小 + mtime 校验）
-///   --dart-define=MANGA_PROBE_PAGE=<0 起页号，默认 5>
-///   --dart-define=MANGA_PROBE_TEXT=<该页上一个多列气泡的整块文本>
+///   --dart-define=MANGA_PROBE_TEXT=<某页上一个多列气泡的整块文本>（页号按这段
+///       文本在种子卷里定位：卷里有没有封面页会让写死的页号差一）
 ///
 /// 缺素材时跳过（CI 没有这些私有文件）。
 library;
@@ -41,7 +41,6 @@ import 'test_helpers.dart';
 
 const String _modelSeed = String.fromEnvironment('OCR_MODEL_SEED');
 const String _volumeSeed = String.fromEnvironment('MANGA_VOLUME_SEED');
-const int _probePage = int.fromEnvironment('MANGA_PROBE_PAGE', defaultValue: 5);
 const String _probeText = String.fromEnvironment(
   'MANGA_PROBE_TEXT',
   defaultValue: '母の子守唄で眠ったことは一度もなかった',
@@ -111,6 +110,14 @@ void main() {
       debugPrint('[tap-geometry] seed signature=$beforeSignature');
       expect(beforeSignature, startsWith('local-onnx-v4-'));
       final List<Map<String, Object?>> beforePages = _pages(before);
+      final int probePage = beforePages.indexWhere(
+        (Map<String, Object?> page) => (page['blocks']! as List<Object?>).any(
+          (Object? block) =>
+              _blockText((block! as Map).cast<String, Object?>()) == _probeText,
+        ),
+      );
+      if (probePage < 0) fail('probe text not in the seed volume: $_probeText');
+      debugPrint('[tap-geometry] probe page=$probePage');
 
       final String key =
           'tap-geometry-${DateTime.now().microsecondsSinceEpoch}';
@@ -141,7 +148,7 @@ void main() {
       );
       await ReaderPositionRepository(
         appModel.database,
-      ).save(bookUid: book.uid, sectionIndex: _probePage, normCharOffset: 0);
+      ).save(bookUid: book.uid, sectionIndex: probePage, normCharOffset: 0);
 
       final String engineBefore = appModel.mangaOcrEnginePreference;
       final String spreadBefore = appModel.mangaSpreadPreference;
@@ -216,7 +223,7 @@ void main() {
         final Map<String, Object?> target =
             <Map<String, Object?>>[
               for (final Object? block
-                  in afterPages[_probePage]['blocks']! as List<Object?>)
+                  in afterPages[probePage]['blocks']! as List<Object?>)
                 (block! as Map).cast<String, Object?>(),
             ].firstWhere(
               (Map<String, Object?> block) => _blockText(block) == _probeText,
@@ -258,7 +265,7 @@ void main() {
           final double py = top + (bottom - top) / count / 2;
           final Object? raw = await reader.debugEvaluateJavascript('''
 (function(){
-  var page = document.querySelector('.manga-page[data-page="$_probePage"]');
+  var page = document.querySelector('.manga-page[data-page="$probePage"]');
   if (!page) return JSON.stringify({error: 'page not in window'});
   var r = page.getBoundingClientRect();
   var x = r.left + $px / Number(page.getAttribute('data-pw')) * r.width;
