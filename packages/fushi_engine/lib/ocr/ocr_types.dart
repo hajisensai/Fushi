@@ -121,6 +121,7 @@ class OcrBlock {
     required this.box,
     required this.vertical,
     required this.lines,
+    this.lineBoxes,
     this.score = 0,
     this.insideBubble = false,
   });
@@ -130,28 +131,53 @@ class OcrBlock {
   /// 竖排判定（长宽比启发式，见 pipeline）。
   final bool vertical;
 
-  /// 识别文本；manga-ocr 对整块输出单串，故通常只有一个元素。
+  /// 识别文本，阅读序。有行几何时一列（竖排）/一行（横排）一个元素，与
+  /// [lineBoxes] 等长同序；没有时是整块一串（旧缓存、行检测什么也没检到）。
   /// 语义对齐 mokuro 的 `blocks[].lines`。
   final List<String> lines;
 
+  /// 每行在页面上的框（页面像素坐标），对应 mokuro 的 `lines_coords`。阅读器
+  /// 覆盖层靠它把字落到正确的列上；null = 没有行几何，覆盖层退回整块均铺。
+  final List<OcrRect>? lineBoxes;
+
   final double score;
   final bool insideBubble;
+
+  /// 整块文本（各行按阅读序拼接）。
+  String get text => lines.join();
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'box': box.toJson(),
         'vertical': vertical,
         'lines': lines,
+        if (lineBoxes != null)
+          'lineBoxes': <Map<String, dynamic>>[
+            for (final OcrRect rect in lineBoxes!) rect.toJson(),
+          ],
         'score': score,
         'insideBubble': insideBubble,
       };
 
-  static OcrBlock fromJson(Map<String, dynamic> json) => OcrBlock(
-        box: OcrRect.fromJson(json['box'] as Map<String, dynamic>),
-        vertical: json['vertical'] as bool,
-        lines: (json['lines'] as List<dynamic>).cast<String>(),
-        score: (json['score'] as num?)?.toDouble() ?? 0,
-        insideBubble: json['insideBubble'] as bool? ?? false,
-      );
+  static OcrBlock fromJson(Map<String, dynamic> json) {
+    final List<String> lines = (json['lines'] as List<dynamic>).cast<String>();
+    final List<dynamic>? rawBoxes = json['lineBoxes'] as List<dynamic>?;
+    // 行框必须与行一一对应；对不上（手改 / 截断的缓存）就当没有行几何。
+    final List<OcrRect>? lineBoxes =
+        rawBoxes != null && rawBoxes.length == lines.length
+            ? <OcrRect>[
+                for (final dynamic raw in rawBoxes)
+                  OcrRect.fromJson(raw as Map<String, dynamic>),
+              ]
+            : null;
+    return OcrBlock(
+      box: OcrRect.fromJson(json['box'] as Map<String, dynamic>),
+      vertical: json['vertical'] as bool,
+      lines: lines,
+      lineBoxes: lineBoxes,
+      score: (json['score'] as num?)?.toDouble() ?? 0,
+      insideBubble: json['insideBubble'] as bool? ?? false,
+    );
+  }
 }
 
 /// 单页 OCR 结果（阅读顺序已排好）。
@@ -203,12 +229,24 @@ abstract interface class BatchOcrRecognizer implements OcrRecognizer {
   Future<List<String>> recognizeBatch(img.Image page, List<OcrRect> boxes);
 }
 
-/// 一个框的识别结果 + 识别过程中确定的排版方向。
+/// 一个框的识别结果 + 识别过程中确定的排版方向（可选带行几何）。
 class OcrRecognition {
-  const OcrRecognition({required this.text, required this.vertical});
+  const OcrRecognition({
+    required this.text,
+    required this.vertical,
+    this.lines,
+    this.lineBoxes,
+  }) : assert((lines == null) == (lineBoxes == null));
 
   final String text;
   final bool vertical;
+
+  /// 按行切开的 [text]（阅读序，`lines.join() == text`），与 [lineBoxes]
+  /// 等长；null = 识别器没给行几何，pipeline 落成整块单行。
+  final List<String>? lines;
+
+  /// 每行的页面坐标框，见 [OcrBlock.lineBoxes]。
+  final List<OcrRect>? lineBoxes;
 }
 
 /// 可选能力：识别时顺带判定了块方向（例如块内切行后按行投票）的识别器。

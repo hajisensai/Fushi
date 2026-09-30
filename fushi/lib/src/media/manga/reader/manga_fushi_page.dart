@@ -29,6 +29,8 @@ import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
+    show isMangaOcrRelayoutPending;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -1090,6 +1092,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 已缓存的页直接命中。
   bool _volumeOcrSettled = false;
 
+  /// 本卷已由本地引擎识别过，但结果是只缺行几何的旧版（BUG-2813：多列气泡里点字
+  /// 会命中别的列）。开书时自动排一次本地整卷任务，逐页只补几何、文字不重认；
+  /// 只交给本地引擎，偏好解析到别的引擎就不动它（不会因此上传 Lens）。
+  bool _volumeOcrRelayoutPending = false;
+
   /// 裁白边读像素失败已记过日志（见 `onMangaImageTransformUnavailable`）。
   bool _imageTransformFailureLogged = false;
 
@@ -1879,6 +1886,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _volumeOcrSettled =
           payload.ocr != null ||
           payload.images.any((MokuroImage image) => image.blocks.isNotEmpty);
+      _volumeOcrRelayoutPending = isMangaOcrRelayoutPending(payload.ocr);
       _mode = mode;
       _spreads = spreads;
       _currentSpread = restoredSpread;
@@ -3663,10 +3671,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _loadFailed ||
         _noChapterOcr ||
         _sourceReviewActive ||
-        _volumeOcrSettled ||
+        (_volumeOcrSettled && !_volumeOcrRelayoutPending) ||
         _volumeOcrStarting) {
       return;
     }
+    // 已识别、只缺行几何的本地卷：只补几何，不是新的一次识别——不看触发方式，
+    // 也不接受除本地引擎之外的任何引擎（BUG-2813）。
+    final bool relayout = _volumeOcrSettled && _volumeOcrRelayoutPending;
     final String directory = row.extractDir;
     final String enginePreference = appModel.mangaOcrEnginePreference;
     if (_lensAutoOcrDeclinedFor != null &&
@@ -3674,7 +3685,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _lensAutoOcrDeclinedFor = null;
     }
     if (!userInitiated &&
-        (_readerPreferences.ocrTrigger == 'manual' ||
+        ((!relayout && _readerPreferences.ocrTrigger == 'manual') ||
             _volumeOcrScheduledDirs.contains(directory))) {
       return;
     }
@@ -3696,6 +3707,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             registry: _ocrRegistry,
             preference: MangaOcrEnginePreferenceKey.fromKey(enginePreference),
             lensLanguage: appModel.mangaOcrLensLanguage,
+            requiredEngine: relayout ? MangaOcrEngineId.localOnnx : null,
             confirmLensUpload: () async {
               if (!userInitiated && _lensAutoOcrDeclined) return false;
               if (!mounted) return false;
@@ -3720,6 +3732,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           _volumeOcrScheduledDirs.add(directory);
           if (_volumeOcrNoEngine) setState(() => _volumeOcrNoEngine = false);
           _syncVolumeOcrJob();
+        case MangaReaderVolumeOcrNotApplicable():
+          // 行几何升级只交给本地引擎；偏好已换成别的引擎就保持原样。
+          _volumeOcrScheduledDirs.add(directory);
+        case MangaReaderVolumeOcrNoEngine() when relayout:
+          // 本地模型被删了：旧结果照常可用，不挂「没有引擎」胶囊。
+          _volumeOcrScheduledDirs.add(directory);
         case MangaReaderVolumeOcrNoEngine():
           if (userInitiated) {
             FushiToast.show(
@@ -3881,6 +3899,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     setState(() {
       _payload = payload;
       _volumeOcrSettled = true;
+      _volumeOcrRelayoutPending = isMangaOcrRelayoutPending(payload.ocr);
       _wholeVolumeOcrDone = event.pagesTotal;
       _wholeVolumeOcrTotal = event.pagesTotal;
       _wholeVolumeOcrRunning = false;

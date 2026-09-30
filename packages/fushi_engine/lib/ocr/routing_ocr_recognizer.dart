@@ -22,6 +22,12 @@
 /// manga-ocr，与竖长块同一条已验证路径；逐列切反而会被 PP 切断、短列误判成
 /// 横行（BUG-2783）。块方向由这里一次决定并经 [OrientedOcrRecognizer] 交回
 /// pipeline，不再由 pipeline 按长宽比另猜。
+///
+/// 行几何（选词命中）：整块交 manga-ocr 的块，识别**文本不变**，识别完再用
+/// PP det 检出的列把文本按列长切开（`ocr_line_layout.dart`），连同列框交回
+/// pipeline 落成 `lines` + `lineBoxes`——阅读器覆盖层据此把字落到正确的列上。
+/// 路由时已经检过行的宽块直接复用那次结果，只有竖长块多跑一次 PP det。横排
+/// 路径本来就逐行识别，逐行文本与行框原样交回。
 library;
 
 import 'dart:math' as math;
@@ -29,6 +35,7 @@ import 'dart:math' as math;
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/ocr_line_layout.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
@@ -41,7 +48,47 @@ const int kRoutingLinePadding = 4;
 /// （「は？」「宮城！」这类短句）继续走 manga-ocr。
 bool routesToHorizontalPath(OcrRect box) => box.width >= box.height;
 
-class RoutingOcrRecognizer implements OrientedOcrRecognizer {
+/// 块裁图 + 裁图坐标 → 页面坐标的换算。
+class _BlockCrop {
+  const _BlockCrop(this.image, this.x, this.y);
+
+  final img.Image image;
+  final int x;
+  final int y;
+
+  OcrRect toPage(OcrRect rect) => OcrRect(
+    left: x + rect.left,
+    top: y + rect.top,
+    right: x + rect.right,
+    bottom: y + rect.bottom,
+  );
+}
+
+/// 把 [box] 夹进页面后裁出来；夹完没有面积返回 null。
+_BlockCrop? _cropBlock(img.Image page, OcrRect box) {
+  final OcrRect clamped = box.clamp(
+    page.width.toDouble(),
+    page.height.toDouble(),
+  );
+  final int x = clamped.left.floor();
+  final int y = clamped.top.floor();
+  final int w = math.min(math.max(1, clamped.width.ceil()), page.width - x);
+  final int h = math.min(math.max(1, clamped.height.ceil()), page.height - y);
+  if (w <= 0 || h <= 0) return null;
+  return _BlockCrop(img.copyCrop(page, x: x, y: y, width: w, height: h), x, y);
+}
+
+/// `_routeBlock` 的结论：识别结果（`text` 为空 = 整块交 manga-ocr）+ 路由时已检出
+/// 的行框（已滤振假名、页面坐标），供整块识别后的排版复用；null = 路由没跑行检测。
+class _RoutedBlock {
+  const _RoutedBlock(this.recognition, {this.lineHints});
+
+  final OcrRecognition recognition;
+  final List<OcrRect>? lineHints;
+}
+
+class RoutingOcrRecognizer
+    implements OrientedOcrRecognizer, LineLayoutOcrRecognizer {
   factory RoutingOcrRecognizer({
     required OcrRecognizer mangaOcr,
     required PpOcrLineDetector lineDetector,
@@ -87,73 +134,139 @@ class RoutingOcrRecognizer implements OrientedOcrRecognizer {
     for (final OcrRect box in boxes) await _recognizeOne(page, box),
   ];
 
+  @override
+  Future<OcrRecognition> layoutRecognized(
+    img.Image page,
+    OcrRect box,
+    String text, {
+    required bool vertical,
+  }) => _withLineLayout(page, box, text, vertical: vertical);
+
   Future<OcrRecognition> _recognizeOne(img.Image page, OcrRect box) async {
-    final OcrRecognition routed = await _routeBlock(page, box);
-    if (routed.text.isNotEmpty) return routed;
-    return OcrRecognition(
-      text: await _mangaOcr.recognize(page, box),
-      vertical: routed.vertical,
+    final _RoutedBlock routed = await _routeBlock(page, box);
+    if (routed.recognition.text.isNotEmpty) return routed.recognition;
+    return _withLineLayout(
+      page,
+      box,
+      await _mangaOcr.recognize(page, box),
+      vertical: routed.recognition.vertical,
+      lineHints: routed.lineHints,
     );
   }
 
-  /// 定块方向，横排块顺带逐行识别。返回空 `text` = 整块交 manga-ocr，
-  /// `vertical` 恒为该块的方向结论。
-  Future<OcrRecognition> _routeBlock(img.Image page, OcrRect box) async {
+  /// 整块识别出的 [text] 按块内的列/行切开，带上行几何。
+  ///
+  /// [lineHints] 是路由时已检出的行框（页面坐标）；null 时在这里跑一次行检测。
+  /// 没检到行 / 没有可见字时原样返回单串（pipeline 落成整块单行）。
+  Future<OcrRecognition> _withLineLayout(
+    img.Image page,
+    OcrRect box,
+    String text, {
+    required bool vertical,
+    List<OcrRect>? lineHints,
+  }) async {
+    if (text.isEmpty) return OcrRecognition(text: text, vertical: vertical);
+    List<OcrRect>? rects = lineHints;
+    if (rects == null) {
+      final _BlockCrop? crop = _cropBlock(page, box);
+      if (crop == null) return OcrRecognition(text: text, vertical: vertical);
+      rects = <OcrRect>[
+        for (final PpTextLine line in filterThinLines(
+          await _lineDetector.detect(crop.image),
+        ))
+          crop.toPage(line.rect),
+      ];
+    }
+    final OcrLineLayout? layout = layoutOcrTextOnLines(
+      text,
+      orderOcrLinesForReading(
+        mergeOcrLineFragments(rects, vertical: vertical),
+        vertical: vertical,
+      ),
+      vertical: vertical,
+    );
+    return OcrRecognition(
+      text: text,
+      vertical: vertical,
+      lines: layout?.lines,
+      lineBoxes: layout?.boxes,
+    );
+  }
+
+  /// 定块方向，横排块顺带逐行识别（逐行文本 + 行框一并交回）。结论里 `text`
+  /// 为空 = 整块交 manga-ocr，`vertical` 恒为该块的方向结论。
+  Future<_RoutedBlock> _routeBlock(img.Image page, OcrRect box) async {
     if (!routesToHorizontalPath(box)) {
-      return OcrRecognition(text: '', vertical: isVerticalBlock(box));
+      return _RoutedBlock(
+        OcrRecognition(text: '', vertical: isVerticalBlock(box)),
+      );
     }
-    final OcrRect clamped = box.clamp(
-      page.width.toDouble(),
-      page.height.toDouble(),
-    );
-    final int x = clamped.left.floor();
-    final int y = clamped.top.floor();
-    final int w = math.min(math.max(1, clamped.width.ceil()), page.width - x);
-    final int h = math.min(math.max(1, clamped.height.ceil()), page.height - y);
-    if (w <= 0 || h <= 0) {
-      return const OcrRecognition(text: '', vertical: false);
+    final _BlockCrop? crop = _cropBlock(page, box);
+    if (crop == null) {
+      return const _RoutedBlock(OcrRecognition(text: '', vertical: false));
     }
-    final img.Image crop = img.copyCrop(page, x: x, y: y, width: w, height: h);
+    final int x = crop.x;
+    final int y = crop.y;
+    final int w = crop.image.width;
+    final int h = crop.image.height;
     final List<PpTextLine> detected = filterThinLines(
-      await _lineDetector.detect(crop),
+      await _lineDetector.detect(crop.image),
     );
+    final List<OcrRect> lineHints = <OcrRect>[
+      for (final PpTextLine line in detected) crop.toPage(line.rect),
+    ];
     if (linesAreVerticalMajority(detected)) {
-      return const OcrRecognition(text: '', vertical: true);
+      return _RoutedBlock(
+        const OcrRecognition(text: '', vertical: true),
+        lineHints: lineHints,
+      );
     }
     final List<PpTextLine> lines = orderLinesForReading(detected);
-    final StringBuffer out = StringBuffer();
+    final List<String> texts = <String>[];
+    final List<OcrRect> boxes = <OcrRect>[];
     for (final PpTextLine line in lines) {
       final OcrRect r = line.rect.clamp(w.toDouble(), h.toDouble());
       if (r.width < 1 || r.height < 1) {
         continue;
       }
+      final String lineText;
       if (line.vertical) {
         // 竖行回到页面坐标、外扩边距，仍由 manga-ocr 识别。
-        out.write(
-          await _mangaOcr.recognize(
-            page,
-            OcrRect(
-              left: x + r.left - kRoutingLinePadding,
-              top: y + r.top - kRoutingLinePadding,
-              right: x + r.right + kRoutingLinePadding,
-              bottom: y + r.bottom + kRoutingLinePadding,
-            ),
+        lineText = await _mangaOcr.recognize(
+          page,
+          OcrRect(
+            left: x + r.left - kRoutingLinePadding,
+            top: y + r.top - kRoutingLinePadding,
+            right: x + r.right + kRoutingLinePadding,
+            bottom: y + r.bottom + kRoutingLinePadding,
           ),
         );
-        continue;
+      } else {
+        final int lx = r.left.floor();
+        final int ly = r.top.floor();
+        final img.Image lineCrop = img.copyCrop(
+          crop.image,
+          x: lx,
+          y: ly,
+          width: math.min(math.max(1, r.width.ceil()), w - lx),
+          height: math.min(math.max(1, r.height.ceil()), h - ly),
+        );
+        lineText = await _lineRecognizer.recognizeLine(lineCrop);
       }
-      final int lx = r.left.floor();
-      final int ly = r.top.floor();
-      final img.Image lineCrop = img.copyCrop(
-        crop,
-        x: lx,
-        y: ly,
-        width: math.min(math.max(1, r.width.ceil()), w - lx),
-        height: math.min(math.max(1, r.height.ceil()), h - ly),
-      );
-      out.write(await _lineRecognizer.recognizeLine(lineCrop));
+      if (lineText.isEmpty) continue;
+      texts.add(lineText);
+      boxes.add(crop.toPage(r));
     }
-    return OcrRecognition(text: out.toString(), vertical: false);
+    final String text = texts.join();
+    return _RoutedBlock(
+      OcrRecognition(
+        text: text,
+        vertical: false,
+        lines: text.isEmpty ? null : texts,
+        lineBoxes: text.isEmpty ? null : boxes,
+      ),
+      lineHints: lineHints,
+    );
   }
 }
 
@@ -183,8 +296,11 @@ class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
     img.Image page,
     List<OcrRect> boxes,
   ) async {
-    final List<OcrRecognition> results = <OcrRecognition>[
+    final List<_RoutedBlock> routed = <_RoutedBlock>[
       for (final OcrRect box in boxes) await _routeBlock(page, box),
+    ];
+    final List<OcrRecognition> results = <OcrRecognition>[
+      for (final _RoutedBlock block in routed) block.recognition,
     ];
     final List<int> mangaIndices = <int>[
       for (int index = 0; index < results.length; index++)
@@ -203,9 +319,12 @@ class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
     }
     for (int index = 0; index < mangaIndices.length; index++) {
       final int slot = mangaIndices[index];
-      results[slot] = OcrRecognition(
-        text: mangaResults[index],
+      results[slot] = await _withLineLayout(
+        page,
+        boxes[slot],
+        mangaResults[index],
         vertical: results[slot].vertical,
+        lineHints: routed[slot].lineHints,
       );
     }
     return results;

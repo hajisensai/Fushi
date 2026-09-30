@@ -1,0 +1,16 @@
+## BUG-2813 · 漫画本地 OCR 点字命中错列：整块文本沿整块均铺
+- **报告**：2026-09-30（用户：「优化漫画的 OCR 效果，现在选词不准确速度慢」；用户当天刚用本地 ONNX 整卷识别《君が一等星に光るまで 01》183 页）
+- **真实性**：✅ 真 bug。本地 ONNX 管线每块只产出**一整串文本、没有行坐标**：`manga_ocr_pipeline.dart` 建 `OcrBlock(lines: <String>[text])`，`manga_ocr_folder_job.dart` 的 `buildMangaPayloadFromResults` 不写 `lines_coords`；阅读器覆盖层 `mangaEffectiveTextRegions`（`manga_overlay_html.dart`）拿不到行几何，只能把整串字沿**整块高度**均铺——多列竖排气泡里点第二列顶部，命中的是第一列第一个字。用户这本书 64% 的文字块是多列/多行。
+  - 量化（2026-09-30，80 页有 Google Lens 逐字框的页作真值，5267 次模拟点击、对齐后判「点到的位置是不是那个字」、振假名除外）：修复前 **14.2%** 正确。
+- **[x] ① 已修复**（提交见 PR）— 识别文本一个字都不改，只补行几何：
+  - `packages/fushi_engine/lib/ocr/ocr_line_layout.dart`（新）：合并被 PP 切碎的同列片段 → 阅读序（竖排右→左）→ 按每列「长 ÷ 厚」估字格数、最大余数法把整串切到各列，切点只落在字素簇边界，`lines.join()` 恒等于原文。
+  - `routing_ocr_recognizer.dart`：整块交 manga-ocr 的块识别后用 PP det 检出的列排版（宽块复用路由时已检出的行，只有竖长块多跑一次 PP det）；横排路径把逐行文本与行框原样交回。
+  - `ocr_types.dart` / `manga_ocr_pipeline.dart`：`OcrRecognition` / `OcrBlock` 带 `lines` + `lineBoxes`（拼不回原文时退回单行）；包含去重改按整块文本判断（原 `lines.single` 遇多行会抛）。
+  - `manga_ocr_folder_job.dart`：`lineBoxes` 写成 mokuro `lines_coords`，覆盖层既有的逐行路径直接消费；管线版本 v4 → `v5-line-geometry`。
+  - 旧卷升级：同一模型指纹的 v4 逐页缓存只补几何、不重新识别（`MangaOcrPipeline.processBook(legacyCaches:)` + `LineLayoutOcrRecognizer`）；阅读器对「本地 v4 结果」的卷开书时自动排一次，**只交给本地引擎**（`startMangaReaderVolumeOcr(requiredEngine:)`，偏好是 Lens 时什么都不排、不弹上传同意框）；「重新识别本卷」会连同 v4 缓存一起作废，保证真的重认。
+  - 实测：真实 Dart 实现 + 真 PP-OCRv6 det（FFI，用户安装版同一份 onnxruntime.dll）跑用户这本书的 v4 缓存：1215 块中 1184 块拿到行几何；点击位置正确率 **14.2% → 80.8%**（以 Lens 真实列与真实字数切分的上限是 85.8%）。补几何每页约 184 ms + 解码 200 ms（JIT），整卷一次性升级约 70 秒。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/ocr_line_layout_test.dart`（合并/阅读序/切分/字素簇/丢空列）、`fushi/test/ocr/routing_ocr_recognizer_test.dart`（竖长块按列切开带页面坐标、横排逐行交回、批路由排版复用）、`fushi/test/ocr/manga_ocr_pipeline_test.dart`（行几何落块与 JSON 往返、拼不回退单行、旧缓存只补几何不检测不识别、页尺寸不符整页重认、多行块包含去重）、`fushi/test/ocr/manga_ocr_folder_job_test.dart`（签名推导、待升级判据、`lines_coords` 往返、只有 v4 缓存的卷端到端升级）、`fushi/test/media/manga/manga_local_ocr_tap_geometry_test.dart`（引擎产物 → manga.json → 覆盖层命中框整链：点左列第一格命中第二列首字）、`fushi/test/media/manga/manga_reader_auto_ocr_relayout_test.dart`（限定本地引擎：偏好 Lens 不排不问）。
+- **备注**：
+  - 剩余误差来自列内字形不等宽（`!?` 横排进一格、`…`）让个别列差一格；试过按墨迹投影切字格，实测反而更差（76%），没有采用。
+  - 同日对比：Chimahon 按行/列框均分，Mangatan 的本地（Hayai）路径把整块当一行——与修复前的我们同构，同样会点错列。
+  - 选型与提速（CTC 漫画识别器、manga-ocr KV cache）另见本 PR 说明 / `docs/reviews/2026-09-30-manga-ocr-select-speed.md`。

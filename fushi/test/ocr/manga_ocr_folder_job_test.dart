@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -524,4 +525,203 @@ void main() {
       expect(detector.detectedSizes, <String>['55x80']);
     });
   });
+
+  group('BUG-2813 行几何与旧版缓存升级', () {
+    test('relayoutableMangaOcrEngineSignatures：同模型指纹的 v4 签名', () {
+      expect(
+        relayoutableMangaOcrEngineSignatures(
+          '$kLocalMangaOcrEngineSignature-36f475259340',
+        ),
+        <String>['local-onnx-v4-antialias-text-dedup-36f475259340'],
+      );
+      expect(
+        relayoutableMangaOcrEngineSignatures(kLocalMangaOcrEngineSignature),
+        <String>['local-onnx-v4-antialias-text-dedup'],
+      );
+      expect(
+        relayoutableMangaOcrEngineSignatures('google-lens-v2-niratan-ja'),
+        isEmpty,
+      );
+      expect(
+        relayoutableMangaOcrEngineSignatures(
+          '${kLocalMangaOcrEngineSignature}x',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('isMangaOcrRelayoutPending：只认本地引擎的 v4 结果', () {
+      MangaOcrMetadata meta(String engine, String signature) =>
+          MangaOcrMetadata(
+            engine: engine,
+            engineSignature: signature,
+            schemaVersion: 1,
+          );
+      expect(
+        isMangaOcrRelayoutPending(
+          meta('local_onnx', 'local-onnx-v4-antialias-text-dedup-36f475259340'),
+        ),
+        isTrue,
+      );
+      expect(
+        isMangaOcrRelayoutPending(
+          meta('local_onnx', '$kLocalMangaOcrEngineSignature-36f475259340'),
+        ),
+        isFalse,
+      );
+      expect(
+        isMangaOcrRelayoutPending(
+          meta('google_lens', 'local-onnx-v4-antialias-text-dedup'),
+        ),
+        isFalse,
+      );
+      expect(isMangaOcrRelayoutPending(null), isFalse);
+    });
+
+    test('行框写成 mokuro lines_coords，解析回来一一对应', () {
+      final List<MangaOcrPageFile> pages = <MangaOcrPageFile>[
+        MangaOcrPageFile(file: File('p1.png'), relativeUrl: 'p1.png'),
+      ];
+      const OcrPageResult result = OcrPageResult(
+        pageIndex: 0,
+        imageWidth: 400,
+        imageHeight: 600,
+        blocks: <OcrBlock>[
+          OcrBlock(
+            box: OcrRect(left: 100, top: 50, right: 180, bottom: 250),
+            vertical: true,
+            lines: <String>['あいう', 'えお'],
+            lineBoxes: <OcrRect>[
+              OcrRect(left: 140, top: 50, right: 180, bottom: 250),
+              OcrRect(left: 100, top: 50, right: 140, bottom: 190),
+            ],
+          ),
+        ],
+      );
+      final MokuroPayload payload = buildMangaPayloadFromResults(
+        pages,
+        <OcrPageResult>[result],
+      );
+      final MokuroBlock block = parseMangaJson(
+        jsonEncode(mangaPayloadToJson(payload)),
+      ).images.single.blocks.single;
+      expect(block.lines, <String>['あいう', 'えお']);
+      expect(block.linesCoords, <List<List<double>>>[
+        <List<double>>[
+          <double>[140, 50],
+          <double>[180, 50],
+          <double>[180, 250],
+          <double>[140, 250],
+        ],
+        <List<double>>[
+          <double>[100, 50],
+          <double>[140, 50],
+          <double>[140, 190],
+          <double>[100, 190],
+        ],
+      ]);
+    });
+
+    test('只有 v4 缓存的卷：整卷任务逐页只补几何，不检测不识别，产物带 lines_coords', () async {
+      final Directory root =
+          Directory.systemTemp.createTempSync('manga_relayout_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      _writePng(p.join(root.path, 'p1.png'), 40, 80);
+      _writePng(p.join(root.path, 'p2.png'), 50, 80);
+      const String suffix = '-36f475259340';
+      final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+      final MangaOcrFilePageCache legacy = MangaOcrFilePageCache(
+        cacheDir: Directory(
+          p.join(
+            root.path,
+            kMangaOcrOutDirName,
+            kMangaOcrPagesCacheDirName,
+            'local-onnx-v4-antialias-text-dedup$suffix',
+          ),
+        ),
+        pageNames: <String>[
+          for (final MangaOcrPageFile page in pages) page.relativeUrl
+        ],
+        pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
+      );
+      for (int i = 0; i < pages.length; i++) {
+        await legacy.write(
+          'manga_ocr',
+          OcrPageResult(
+            pageIndex: i,
+            imageWidth: i == 0 ? 40 : 50,
+            imageHeight: 80,
+            blocks: const <OcrBlock>[
+              OcrBlock(
+                box: OcrRect(left: 1, top: 1, right: 30, bottom: 79),
+                vertical: true,
+                lines: <String>['あいうえ'],
+              ),
+            ],
+          ),
+        );
+      }
+      final _FakeDetector detector = _FakeDetector();
+      final _RelayoutRecognizer recognizer = _RelayoutRecognizer();
+      final String outPath = await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: '$kLocalMangaOcrEngineSignature$suffix',
+        detector: detector,
+        recognizer: recognizer,
+      );
+      expect(detector.detectedSizes, isEmpty);
+      expect(recognizer.recognizeCalls, 0);
+      expect(recognizer.layoutCalls, 2);
+      final MokuroPayload payload = parseMangaJson(
+        File(outPath).readAsStringSync(),
+      );
+      expect(payload.ocr!.engineSignature,
+          '$kLocalMangaOcrEngineSignature$suffix');
+      for (final MokuroImage image in payload.images) {
+        final MokuroBlock block = image.blocks.single;
+        expect(block.lines, <String>['あい', 'うえ']);
+        expect(block.linesCoords, hasLength(2));
+      }
+      // 再跑一次：当前版本缓存已齐，什么都不做。
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: '$kLocalMangaOcrEngineSignature$suffix',
+        detector: detector,
+        recognizer: recognizer,
+      );
+      expect(recognizer.layoutCalls, 2);
+    });
+  });
+}
+
+/// 只会给已识别文本补两列几何的识别器；被要求识别就报错。
+class _RelayoutRecognizer implements LineLayoutOcrRecognizer {
+  int recognizeCalls = 0;
+  int layoutCalls = 0;
+
+  @override
+  Future<String> recognize(img.Image page, OcrRect box) async {
+    recognizeCalls++;
+    throw StateError('relayout must not re-recognise');
+  }
+
+  @override
+  Future<OcrRecognition> layoutRecognized(
+    img.Image page,
+    OcrRect box,
+    String text, {
+    required bool vertical,
+  }) async {
+    layoutCalls++;
+    final double mid = (box.left + box.right) / 2;
+    return OcrRecognition(
+      text: text,
+      vertical: vertical,
+      lines: <String>[text.substring(0, 2), text.substring(2)],
+      lineBoxes: <OcrRect>[
+        OcrRect(left: mid, top: box.top, right: box.right, bottom: box.bottom),
+        OcrRect(left: box.left, top: box.top, right: mid, bottom: box.bottom),
+      ],
+    );
+  }
 }

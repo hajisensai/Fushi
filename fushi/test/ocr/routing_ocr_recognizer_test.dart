@@ -62,10 +62,13 @@ class _FakeLineDetector extends PpOcrLineDetector {
   final List<img.Image> crops = <img.Image>[];
   List<List<PpTextLine>>? sequence;
 
+  /// 按调用顺序依次吐 [sequence]；用完（或没给）后一律吐 [lines]——整块识别后的
+  /// 行几何排版会再调一次检测（BUG-2813）。
   @override
   Future<List<PpTextLine>> detect(img.Image crop) async {
     crops.add(crop);
-    return sequence == null ? lines : sequence!.removeAt(0);
+    final List<List<PpTextLine>>? queue = sequence;
+    return queue == null || queue.isEmpty ? lines : queue.removeAt(0);
   }
 }
 
@@ -222,7 +225,9 @@ void main() {
     ]);
     expect(manga.batches.single, <OcrRect>[boxes[0], boxes[2], boxes[3]]);
     expect(manga.calls, isEmpty);
-    expect(detector.crops, hasLength(2));
+    // 两个宽块各路由检测一次；竖长块 boxes[0] 识别出字后再为排版检测一次
+    // （boxes[2] 空串不排版，boxes[3] 复用路由时的空检测结果）。
+    expect(detector.crops, hasLength(3));
     expect(lineRecognizer.lines, hasLength(1));
   });
 
@@ -328,7 +333,7 @@ void main() {
     );
   });
 
-  test('竖排块：只调 manga-ocr，PP 一步不跑', () async {
+  test('竖排块：识别只调整块 manga-ocr、PP rec 不跑；PP det 只为排版跑一次', () async {
     final _FakeMangaOcr mangaOcr = _FakeMangaOcr();
     final _FakeLineDetector det = _FakeLineDetector(<PpTextLine>[]);
     final _FakeLineRecognizer rec = _FakeLineRecognizer();
@@ -340,8 +345,59 @@ void main() {
     const OcrRect box = OcrRect(left: 10, top: 10, right: 60, bottom: 200);
     expect(await r.recognize(page, box), 'M');
     expect(mangaOcr.calls, <OcrRect>[box]);
-    expect(det.crops, isEmpty);
+    expect(det.crops.single.width, 50);
     expect(rec.lines, isEmpty);
+  });
+
+  test('BUG-2813 竖排多列块：文本不变，按检出的列切开并带回页面坐标列框', () async {
+    final _FakeMangaOcr mangaOcr = _FakeMangaOcr()
+      ..reply = '母の子守唄で眠ったことは一度もなかった';
+    // 裁图（块 100×220，左上角在页面 (200,40)）内三列，列宽 30、振假名一条细列。
+    final _FakeLineDetector det = _FakeLineDetector(<PpTextLine>[
+      _line(10, 0, 40, 210), // 左列 7 字格
+      _line(70, 0, 100, 180), // 右列 6 字格
+      _line(40, 0, 70, 180), // 中列 6 字格
+      _line(100, 20, 108, 60), // 振假名：厚 8 < 0.6 × 30，排版前滤掉
+    ]);
+    final RoutingOcrRecognizer r = RoutingOcrRecognizer(
+      mangaOcr: mangaOcr,
+      lineDetector: det,
+      lineRecognizer: _FakeLineRecognizer(),
+    );
+    const OcrRect box = OcrRect(left: 200, top: 40, right: 310, bottom: 260);
+    final OcrRecognition out = (await r.recognizeOriented(page, <OcrRect>[
+      box,
+    ]))
+        .single;
+    expect(out.text, '母の子守唄で眠ったことは一度もなかった');
+    expect(out.vertical, isTrue);
+    expect(out.lines, <String>['母の子守唄で', '眠ったことは', '一度もなかった']);
+    expect(out.lineBoxes!.map((OcrRect b) => b.left), <double>[270, 240, 210]);
+    expect(out.lineBoxes!.first.top, 40);
+    expect(out.lineBoxes!.last.bottom, 250);
+    expect(mangaOcr.calls, <OcrRect>[box]);
+  });
+
+  test('BUG-2813 横排路径：逐行文本与页面坐标行框原样交回', () async {
+    final _FakeLineRecognizer rec = _FakeLineRecognizer()..reply = 'ab';
+    final RoutingOcrRecognizer r = RoutingOcrRecognizer(
+      mangaOcr: _FakeMangaOcr(),
+      lineDetector: _FakeLineDetector(<PpTextLine>[
+        _line(10, 40, 290, 70),
+        _line(10, 0, 290, 30),
+      ]),
+      lineRecognizer: rec,
+    );
+    const OcrRect box = OcrRect(left: 50, top: 100, right: 350, bottom: 200);
+    final OcrRecognition out = (await r.recognizeOriented(page, <OcrRect>[
+      box,
+    ]))
+        .single;
+    expect(out.text, 'abab');
+    expect(out.vertical, isFalse);
+    expect(out.lines, <String>['ab', 'ab']);
+    expect(out.lineBoxes!.map((OcrRect b) => b.top), <double>[100, 140]);
+    expect(out.lineBoxes!.first.left, 60);
   });
 
   test('横排块：切行后横行走 PP rec、竖行回页面坐标带边距喂 manga-ocr、按阅读序拼接', () async {

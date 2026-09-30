@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2589 条。点号进各自文件。
+> 共 2590 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
+| [BUG-2813](bugs/BUG-2813-manga-local-ocr-tap-column.md) | ✅ | ✅ | 漫画本地 OCR 点字命中错列：整块文本沿整块均铺 |
 | [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |
 | [BUG-2808](bugs/BUG-2808-reader-focus-mode-exit.md) | ✅ | ✅ | 专注模式下触屏拿不到退出通道 |
 | [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
