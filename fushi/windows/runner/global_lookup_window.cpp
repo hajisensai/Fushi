@@ -1184,6 +1184,14 @@ bool GlobalLookupWindow::OwnsLiveWindow() const {
              GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
 }
 
+// BUG-1471 / BUG-2746 — 上屏前同步 Arm 的钩子，在上屏失败（Arm 未确认 / 滚轮 source
+// 未确认 / SetWindowPos 失败）时的唯一撤销出口。Reveal 与 RevealStack 的四条失败
+// 路径都走这里，解钩只剩「常规 ReleaseDismissHooks」与「上屏失败回滚」两处。
+void GlobalLookupWindow::RollBackRevealArm() {
+  fushi::DisarmLowLevelMouseHook(hwnd_);
+  mouse_hook_armed_ = false;
+}
+
 void GlobalLookupWindow::ReleaseDismissHooks() {
   if (foreground_hook_ != nullptr) {
     UnhookWinEvent(foreground_hook_);
@@ -1414,8 +1422,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
              " visible=" + std::to_string(visible_ ? 1 : 0));
   if (prearm_direct_click_swallow) {
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
+      RollBackRevealArm();
       if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner) ||
           consume_outside_owner != pending_outside_click_owner_) {
         if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner)) Hide();
@@ -1442,8 +1449,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
     // to RevealOverProcessClient's bitmap fallback; otherwise the still
     // off-screen prewarm HWND reports no card while continuing to eat clicks.
     if (prearm_direct_click_swallow) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
+      RollBackRevealArm();
     }
     revealed_ = false;
     visible_ = false;
@@ -1535,8 +1541,7 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     consume_armed = fushi::ArmLowLevelMouseHookAndWait(
         hwnd_, pending_outside_click_owner_);
     if (!consume_armed) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
+      RollBackRevealArm();
       if (fushi::LowLevelMouseWheelSourceRequired(pending_outside_click_owner_)) {
         Hide();
         NativeGlog("lookup revealStack declined: wheel source not acknowledged");
@@ -1548,8 +1553,7 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                     SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
     if (consume_armed) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
+      RollBackRevealArm();
     }
     // A geometry epoch is an acknowledgement of the HWND bounds, not merely of
     // native control flow. Leave the host gate closed so the same epoch can be
