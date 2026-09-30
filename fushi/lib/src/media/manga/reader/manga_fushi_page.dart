@@ -4581,6 +4581,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  /// 集成测试探针：在正文 WebView 里跑一段脚本（BUG-2813 点字命中取证）。
+  @visibleForTesting
+  Future<Object?> debugEvaluateJavascript(String source) async =>
+      _controller?.evaluateJavascript(source: source);
+
   @visibleForTesting
   Future<Object?> debugReaderDomSnapshot() async =>
       _controller?.evaluateJavascript(
