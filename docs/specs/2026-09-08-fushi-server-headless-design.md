@@ -233,7 +233,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 
 第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
 
-- **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表，目前没有 WebUI 编辑面。
+- **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表；2026-09-30 起 WebUI「订阅」页有编辑面（`GET|PUT /api/admin/resource-indexers`，读写都走引擎 `video_resource_prefs.dart`，与 app 同一编码），保存后 `ServerDownloadHost.reloadResourceIndexers()` 整套重建 registry + 管线 + 订阅服务（与 app `reloadVideoDownloadPipelineRuntime` 同形，torrent 后端不动），互联 server 捕获的订阅面是转发对象，能力位 `providers` 与在场校验随之更新，不需重启。
 - **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器还在 app 侧、rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
 - **Linux 桌面版 Fushi 仍未随包内置引擎**：服务端那份静态 `.so` 可直接复用，但 runner CMake copy-if-present 未接（另起 job）。
 - **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。

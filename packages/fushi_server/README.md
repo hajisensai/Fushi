@@ -158,6 +158,7 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 | `GET jobs` / `DELETE jobs/<id>` | 互联任务（ASR 等） |
 | `GET|POST downloads` / `POST downloads/<id>/cancel|retry` / `DELETE downloads/<id>` | 代下载 |
 | `GET|POST subscriptions` / `POST subscriptions/check` / `POST subscriptions/<id>/enable|check` / `DELETE subscriptions/<id>` | 内容订阅（WebUI 只按搜索词建；客户端发现页建的带完整作品身份） |
+| `GET|PUT resource-indexers` | 资源索引器：内置源启停（`builtin: {nyaa: true, apibay: false, …}`）+ Torznab indexer 清单（`torznab: [{id?, name, endpoint, apiKey?, clearApiKey?, enabled, priority, allowInsecureHttp, categories}]`，整表替换）。API key 不回显（只报 `apiKeySet`），留空沿用同 id 旧值；endpoint 带 `?apikey=` 自动拆出。任一条非法整个请求 400、不落半截。保存后下载管线与订阅服务按新 registry 立即重启（torrent 后端不动），响应的 `providers` 即新的订阅能力位 |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
 | `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
@@ -240,7 +241,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 ## 服务端**不**做什么
 
 - 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
-- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，目前经互联「配置文件」同步或直接改库）。
+- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，与 app 同一编码；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效，也可经互联「配置文件」同步）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
 - 不托管本地音频库（查词发音源，属查词域）：能力位 `liveLibrary.audio` 仍报 true、列表恒空，客户端「上传本地音频到 host」会在传完后报错——客户端目前不读这一位，待补门控。
 - 书 / 漫画根不做扫描对账：它们的正文拷进数据目录、行里不记源文件路径，判不出源文件是否被删。

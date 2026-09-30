@@ -20,9 +20,11 @@ import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
@@ -136,6 +138,10 @@ class AdminApi {
       case ('DELETE', _) when path.startsWith('/api/admin/subscriptions/'):
         await _subscriptionsHost().delete(Uri.decodeComponent(path.substring('/api/admin/subscriptions/'.length)));
         return _json(const <String, Object?>{'ok': true});
+      case ('GET', '/api/admin/resource-indexers'):
+        return _resourceIndexers();
+      case ('PUT', '/api/admin/resource-indexers'):
+        return _putResourceIndexers(await _body(request));
       case ('GET', '/api/admin/models'):
         return _models();
       case ('POST', '/api/admin/models/pull'):
@@ -419,6 +425,30 @@ class AdminApi {
     final VideoDownloadSubscriptionRow row =
         await _subscriptionsHost().create(HostSubscriptionCreateRequest.fromJson(body));
     return _json(<String, Object?>{'subscription': videoDownloadSubscriptionToWire(row)});
+  }
+
+  // ── 资源索引器（内置源启停 + Torznab）─────────────────────────────────
+
+  /// `providers` = 运行中 registry 实际可用的 provider id（与订阅能力位同源）；
+  /// 互联 host 没起来时为 null。`applied`：保存会不会立刻作用到正在跑的 host。
+  shelf.Response _resourceIndexers() {
+    final ServerDownloadHost? downloads = ctx.host.downloads;
+    return _json(<String, Object?>{
+      ...resourceIndexerSettingsToJson(ctx.host.prefs),
+      'providers': downloads?.availableResourceProviderIds,
+      'applied': downloads != null,
+    });
+  }
+
+  Future<shelf.Response> _putResourceIndexers(Map<String, dynamic> body) async {
+    // 先整份校验（非法 → FormatException → 400），通过了才落库：不落半截。
+    final ResourceIndexerUpdate update = parseResourceIndexerUpdate(ctx.host.prefs, body);
+    if (!update.isEmpty) {
+      await writeResourceIndexerUpdate(ctx.host.prefs, update);
+      // 对正在跑的 host 立即生效（registry 整套换新；没起来则下次 serve 启动时读到）。
+      await ctx.host.downloads?.reloadResourceIndexers();
+    }
+    return _resourceIndexers();
   }
 
   // ── 模型 ─────────────────────────────────────────────────────────────

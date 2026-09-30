@@ -122,6 +122,13 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <p class="small muted" id="sub-cap">从 Fushi 客户端的发现页订阅会带完整作品身份（原名/别名/交叉 ID）；这里只按搜索词匹配。</p></div>
 <div class="card"><h2>订阅</h2><div class="row"><button class="b sec" id="btn-sub-check-all">全部立即检查</button></div>
 <table><thead><tr><th>标题</th><th>搜索词</th><th>源</th><th>状态</th><th>集数</th><th>最近</th><th></th></tr></thead><tbody id="subs"></tbody></table></div>
+<div class="card"><h2>资源索引器</h2>
+<p class="small muted">订阅与代下载在这些源里搜资源。与 Fushi app「视频资源」设置是同一份配置；保存后对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
+<div class="row" id="ri-builtin"></div>
+<h2 style="margin-top:16px">Torznab（Jackett / Prowlarr）</h2>
+<div id="ri-torznab"></div>
+<div class="row"><button class="b sec" id="btn-ri-add">添加 indexer</button><button class="b" id="btn-ri-save">保存</button><button class="b sec" id="btn-ri-reset">放弃修改</button></div>
+<p class="small muted" id="ri-state"></p></div>
 </section>
 
 <section id="s-models">
@@ -300,6 +307,43 @@ async function loadSubscriptions(){
 $('#btn-sub-add').onclick = guard(async()=>{ const after=$('#sub-after').value.trim(); await post('subscriptions',{title:$('#sub-title').value, searchQuery:$('#sub-query').value, mediaKind:$('#sub-kind').value, resourceProvider:$('#sub-provider').value, startAfterEpisode: after?Number(after):undefined}); $('#sub-title').value=''; $('#sub-query').value=''; toast('已创建'); loadSubscriptions(); });
 $('#btn-sub-check-all').onclick = guard(async()=>{ await post('subscriptions/check'); toast('已触发检查'); loadSubscriptions(); });
 
+// ── 资源索引器（内置源启停 + Torznab；表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
+let riLoaded=false;
+function riRow(x){
+  return `<div class="ri-row" data-id="${esc(x.id||'')}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0"><div class="grid">
+    <label class="f">名称<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
+    <label class="f">地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）<input type="text" data-k="endpoint" value="${esc(x.endpoint||'')}"></label>
+    <label class="f">API key ${x.apiKeySet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
+    <label class="f">优先级（小的先搜）<input type="number" data-k="priority" value="${esc(x.priority??100)}"></label>
+    <label class="f">分类（逗号分隔，可空）<input type="text" data-k="categories" value="${esc((x.categories||[]).join(','))}"></label></div>
+    <div class="row"><label><input type="checkbox" data-k="enabled" ${x.enabled!==false?'checked':''}> 启用</label><label><input type="checkbox" data-k="allowInsecureHttp" ${x.allowInsecureHttp?'checked':''}> 允许明文 HTTP（仅受信任局域网）</label>${x.apiKeySet?'<label><input type="checkbox" data-k="clearApiKey"> 清除已存的 key</label>':''}<button class="b danger" data-ri-rm>移除</button></div></div>`;
+}
+function bindRiRemove(){ $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove()); }
+function renderIndexers(r){
+  $('#ri-builtin').innerHTML = (r.builtin||[]).map(b=>`<label><input type="checkbox" data-builtin="${esc(b.id)}" ${b.enabled?'checked':''}> ${esc(b.name)}</label>`).join('');
+  $('#ri-torznab').innerHTML = (r.torznab||[]).map(riRow).join('') || '<p class="muted small" id="ri-empty">还没有 Torznab indexer。</p>';
+  bindRiRemove();
+  $('#ri-state').textContent = r.applied ? `当前可用：${(r.providers||[]).join(', ')||'无'}` : '互联 host 未运行：保存后下次启动 serve 生效。';
+}
+async function loadIndexers(force){ if(riLoaded && !force) return; const r = await api('resource-indexers'); riLoaded=true; renderIndexers(r); }
+$('#btn-ri-add').onclick = ()=>{ const e=$('#ri-empty'); if(e) e.remove(); $('#ri-torznab').insertAdjacentHTML('beforeend', riRow({})); bindRiRemove(); };
+$('#btn-ri-reset').onclick = guard(()=>loadIndexers(true));
+$('#btn-ri-save').onclick = guard(async()=>{
+  const builtin = {};
+  document.querySelectorAll('#ri-builtin [data-builtin]').forEach(el=>{ builtin[el.dataset.builtin] = el.checked; });
+  const torznab = Array.from(document.querySelectorAll('#ri-torznab .ri-row')).map((row,i)=>{
+    const v = (k)=>row.querySelector(`[data-k="${k}"]`);
+    const pr = v('priority').value.trim();
+    if (pr!=='' && !/^-?\d+$/.test(pr)) throw new Error(`第 ${i+1} 个 indexer 的优先级必须是整数`);
+    const clear = v('clearApiKey');
+    return {id: row.dataset.id || undefined, name: v('name').value, endpoint: v('endpoint').value, apiKey: v('apiKey').value, clearApiKey: clear ? clear.checked : false,
+      priority: pr==='' ? undefined : Number(pr), categories: v('categories').value, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
+  });
+  $('#btn-ri-save').disabled=true;
+  try { const r = await put('resource-indexers', {builtin, torznab}); renderIndexers(r); toast(r.applied ? '已保存并生效' : '已保存'); loadSubscriptions(); }
+  finally { $('#btn-ri-save').disabled=false; }
+});
+
 // ── 模型 ──
 async function loadModels(){
   const r = await api('models');
@@ -468,7 +512,7 @@ async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); co
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);
