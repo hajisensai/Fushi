@@ -30,6 +30,8 @@ void main() {
       'kDiagCatSystem2PcmHooksReady',
       'kDiagMalieLibpHooksReady',
       'kDiagUnityResourceExtractorReady',
+      // Unity Mono 的播放入口位在次诊断字（reserved_hook_diagnostics）上。
+      'kDiagUnityAudioPlaybackHookReady',
     ]) {
       expect(body, contains(bit), reason: '$bit 不在资源音频就绪判据里');
       expect(

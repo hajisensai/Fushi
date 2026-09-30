@@ -10,6 +10,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 #include <string>
 
 namespace {
@@ -46,7 +47,27 @@ void MakeMonoTree(const std::wstring& root, bool managed, bool mono) {
   }
 }
 
+// 2017+ 的 MonoBleedingEdge 布局：<root>\MonoBleedingEdge\EmbedRuntime\<runtime>，
+// 在 exe 同级、不在 _Data 下。
+void MakeBleedingEdgeRuntime(const std::wstring& root, const wchar_t* runtime) {
+  CreateDirectoryW((root + L"\\MonoBleedingEdge").c_str(), nullptr);
+  CreateDirectoryW((root + L"\\MonoBleedingEdge\\EmbedRuntime").c_str(), nullptr);
+  Touch(root + L"\\MonoBleedingEdge\\EmbedRuntime\\" + runtime);
+}
+
 void RemoveTree(const std::wstring& root) {
+  for (const wchar_t* runtime :
+       {L"mono-2.0-bdwgc.dll", L"mono-2.0-sgen.dll", L"mono.dll"}) {
+    DeleteFileW((root + L"\\MonoBleedingEdge\\EmbedRuntime\\" + runtime).c_str());
+  }
+  DeleteFileW(
+      (root + L"\\Game_Data\\MonoBleedingEdge\\EmbedRuntime\\mono-2.0-bdwgc.dll")
+          .c_str());
+  RemoveDirectoryW((root + L"\\Game_Data\\MonoBleedingEdge\\EmbedRuntime").c_str());
+  RemoveDirectoryW((root + L"\\Game_Data\\MonoBleedingEdge").c_str());
+  RemoveDirectoryW((root + L"\\MonoBleedingEdge\\EmbedRuntime").c_str());
+  RemoveDirectoryW((root + L"\\MonoBleedingEdge").c_str());
+  DeleteFileW((root + L"\\UnityPlayer.dll").c_str());
   DeleteFileW((root + L"\\GameAssembly.dll").c_str());
   DeleteFileW((root + L"\\Game_Data\\Managed\\Assembly-CSharp.dll").c_str());
   DeleteFileW((root + L"\\Game_Data\\Mono\\mono.dll").c_str());
@@ -118,7 +139,69 @@ int main() {
     RemoveDirectoryW((root + L"\\Game_Data\\Managed\\Assembly-CSharp.dll").c_str());
     RemoveTree(root);
   }
-  // 8. 测试进程自己的目录不是 Unity Mono 游戏 → 进程级探测为假。
+  // 8. 2017+ MonoBleedingEdge 布局（真实样本形态：exe 同级 UnityPlayer.dll +
+  //    MonoBleedingEdge\EmbedRuntime\mono-2.0-bdwgc.dll，_Data 下只有 Managed、没有 Mono）
+  //    → 匹配。bdwgc 与 sgen 两种 GC 构建都认。
+  for (const wchar_t* runtime : {L"mono-2.0-bdwgc.dll", L"mono-2.0-sgen.dll"}) {
+    const std::wstring root = MakeTempRoot(L"bleeding");
+    MakeMonoTree(root, true, false);
+    Touch(root + L"\\UnityPlayer.dll");
+    MakeBleedingEdgeRuntime(root, runtime);
+    assert(fushi_voice_hook::MatchesUnityMonoLayout(root, L"Game"));
+    // 同目录的 UnityCrashHandler32.exe 之类：主名对不上 `_Data` → 不认领。
+    assert(!fushi_voice_hook::MatchesUnityMonoLayout(root, L"UnityCrashHandler32"));
+    RemoveTree(root);
+  }
+  // 9. MonoBleedingEdge 布局同样守 IL2CPP 互斥门：同级有 GameAssembly.dll → 不匹配。
+  {
+    const std::wstring root = MakeTempRoot(L"bleeding_il2cpp");
+    MakeMonoTree(root, true, false);
+    Touch(root + L"\\UnityPlayer.dll");
+    MakeBleedingEdgeRuntime(root, L"mono-2.0-bdwgc.dll");
+    Touch(root + L"\\GameAssembly.dll");
+    assert(!fushi_voice_hook::MatchesUnityMonoLayout(root, L"Game"));
+    RemoveTree(root);
+  }
+  // 10. IL2CPP 构建的典型形态（UnityPlayer.dll + GameAssembly.dll，_Data 下无 Managed）
+  //     → 不匹配。
+  {
+    const std::wstring root = MakeTempRoot(L"il2cpp_plain");
+    CreateDirectoryW((root + L"\\Game_Data").c_str(), nullptr);
+    Touch(root + L"\\UnityPlayer.dll");
+    Touch(root + L"\\GameAssembly.dll");
+    assert(!fushi_voice_hook::MatchesUnityMonoLayout(root, L"Game"));
+    RemoveTree(root);
+  }
+  // 11. MonoBleedingEdge 运行时在、但没有 Managed 程序集 → 不匹配（fail closed）。
+  {
+    const std::wstring root = MakeTempRoot(L"bleeding_nomanaged");
+    CreateDirectoryW((root + L"\\Game_Data").c_str(), nullptr);
+    MakeBleedingEdgeRuntime(root, L"mono-2.0-bdwgc.dll");
+    assert(!fushi_voice_hook::MatchesUnityMonoLayout(root, L"Game"));
+    RemoveTree(root);
+  }
+  // 12. 位置/名字不对的运行时不算：MonoBleedingEdge 挂在 _Data 下、或 EmbedRuntime 里放的
+  //     是别名 mono.dll → 都不是这一代的真实布局，不匹配（不做子串宽匹配）。
+  {
+    const std::wstring root = MakeTempRoot(L"bleeding_misplaced");
+    MakeMonoTree(root, true, false);
+    CreateDirectoryW((root + L"\\Game_Data\\MonoBleedingEdge").c_str(), nullptr);
+    CreateDirectoryW((root + L"\\Game_Data\\MonoBleedingEdge\\EmbedRuntime").c_str(),
+                     nullptr);
+    Touch(root + L"\\Game_Data\\MonoBleedingEdge\\EmbedRuntime\\mono-2.0-bdwgc.dll");
+    MakeBleedingEdgeRuntime(root, L"mono.dll");
+    assert(!fushi_voice_hook::MatchesUnityMonoLayout(root, L"Game"));
+    RemoveTree(root);
+  }
+  // 13. 非 Unity 目录：exe 同级只有个名叫 UnityPlayer.dll 的文件，没有 _Data\Managed、
+  //     也没有任何 Mono 运行时 → 不匹配。
+  {
+    const std::wstring root = MakeTempRoot(L"nonunity");
+    Touch(root + L"\\UnityPlayer.dll");
+    assert(!fushi_voice_hook::MatchesUnityMonoLayout(root, L"Game"));
+    RemoveTree(root);
+  }
+  // 14. 测试进程自己的目录不是 Unity Mono 游戏 → 进程级探测为假。
   assert(!fushi_voice_hook::MatchesUnityMonoProfile(nullptr));
   std::printf("unity_mono_adapter_test: ok\n");
   return 0;

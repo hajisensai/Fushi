@@ -855,6 +855,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupCoordTrace = "";
 			global.fushiLookupCoordTraceSeq = 0;
 			global.fushiLookupCoordTraceBudget = 4;
+			// 标题画面上没有字形的点击会先耗光预算；registry 第一次出现字形时补满一次，
+			// 让真正点在台词上的前几击也有 trace。
+			global.fushiLookupCoordTraceRefilled = false;
 			// Capture 已产出字形、却没有发布可命中 entry 时，用这一条 bounded trace
 			// 区分「无 drawCh 分组 / span 不匹配 / 宿主不可见 / 锚点未解析」。只记录
 			// 数量、布尔状态与跨度，不读取或拼接台词/字形内容。
@@ -939,6 +942,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupInstanceRejectMixed = 0;
 			global.fushiLookupInstanceRejectFull = 0;
 			global.fushiLookupInstanceAlreadyClass = 0;
+			// 最近一次 shape 拒绝时候选对象的成员位图（-1 = 尚无拒绝）：
+			// 1 render,2 done,4 drawCh,8 getCharacters,16 clear,32 processCh,
+			// 64 drawText,128 textRender 字段,256 是 TextRender 类本身。
+			global.fushiLookupInstanceRejectMembers = -1;
+			// 最近一次 getRender 返回值的成员位图（同上位定义；1024 = void/无效）。
+			global.fushiLookupInstanceGetRenderMembers = -1;
+			// BUG-2721：私有 msgwin 插件登记了却不画正文（getRender 恒 void、renders 恒空）。
+			// Void = 观察到 getRender 返回过 void；Yielded = 返回过有效实例；Inert = 已降级。
+			global.fushiLookupMsgwinVoidSeen = false;
+			global.fushiLookupMsgwinYielded = false;
+			global.fushiLookupMsgwinInert = false;
+			// 降级检查最近一次的退出点（诊断）：0 未跑,1 已降级,2 未见 void/已产出,3 无插件,
+			// 4 renders 非空,5 本次降级,6 异常。
+			global.fushiLookupMsgwinDemoteExit = 0;
+			// classic 实例包装触发计数（诊断）：processCh / drawText。
+			global.fushiLookupClassicProcessChCalls = 0;
+			global.fushiLookupClassicDrawTextCalls = 0;
 			// Registry entry 本身会被 8 槽 LRU 复用。lease 把一次 renderer→entry
 			// 绑定与 entry 对象地址分开；迟到回调即使仍持有旧 entry 引用，也不能在
 			// 复用后改写另一个 renderer 的 slot。
@@ -2075,6 +2095,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupRefreshCaptureBridges = function()
 			{
 				global.fushiLookupInstallGetRenderBridge();
+				global.fushiLookupDemoteInertMsgwin();
 				global.fushiLookupSweepMsgwinRenders();
 				global.fushiLookupSweepLayerRenderers();
 				// classic KAG3：numMessageLayers 变化新建的消息层在这之后才存在；非 classic
@@ -3238,7 +3259,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				layer.drawText = function(x, y, text, color, opacity, antialiased)
 				{
 					var result = (this.fushiLookupOriginalDrawText incontextof this)(...);
-					global.fushiLookupCaptureDrawText(this, x, y, text);
+					global.fushiLookupClassicDrawTextCalls++;
+					if((global.fushiLookupClassicSource & 1) != 0)
+						global.fushiLookupCaptureDrawText(this, x, y, text);
 					return result;
 				} incontextof layer;
 				// processCh 是 KAG3 MessageLayer 的脚本方法（不是每个 Layer 都有）；同样只作
@@ -3274,12 +3297,17 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							var gap = global.fushiLookupNumOr(this, "lineSpacing");
 							if(gap !== void && gap > 0) py += gap;
 						}
+						global.fushiLookupClassicProcessChCalls++;
 						var result = (this.fushiLookupOriginalProcessCh incontextof this)(...);
 						// 与 drawText 路共用同一条采集：它本来就按 text.length == 1 处理
 						// 单字（影/边重绘去重那条判据），逐字符喂正合它的形状。
-						if(px !== void && py !== void)
-							global.fushiLookupCaptureDrawText(this, px, py, ch);
-						global.fushiLookupCaptureProcessCh(this, ch);
+						// 位 0 关着（msgwin 插件恢复主导，BUG-2721）时实例包装只透传不采集。
+						if((global.fushiLookupClassicSource & 1) != 0)
+						{
+							if(px !== void && py !== void)
+								global.fushiLookupCaptureDrawText(this, px, py, ch);
+							global.fushiLookupCaptureProcessCh(this, ch);
+						}
 						return result;
 					} incontextof layer;
 				}
@@ -3691,6 +3719,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				var lx = primary.cursorX;
 				var ly = primary.cursorY;
 				var registry = global.fushiLookupRegistry;
+				if(submit && !global.fushiLookupCoordTraceRefilled)
+				{
+					for(var ri = 0; ri < registry.count; ri++)
+					{
+						if(registry[ri].glyphs.count == 0) continue;
+						global.fushiLookupCoordTraceRefilled = true;
+						global.fushiLookupCoordTraceBudget = 32;
+						break;
+					}
+				}
 				var traceOn = submit && global.fushiLookupCoordTraceBudget > 0;
 				var trace = "";
 				var traced = 0;
@@ -4234,6 +4272,37 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 )TJS" LR"TJS(
 
+			global.fushiLookupMemberBits = function(candidate)
+			{
+				var m = 0;
+				try
+				{
+					if(candidate !== void && candidate !== null && isvalid candidate)
+					{
+						if(typeof candidate.render == "Object") m = m | 1;
+						if(typeof candidate.done == "Object") m = m | 2;
+						if(typeof candidate.drawCh == "Object") m = m | 4;
+						if(typeof candidate.getCharacters == "Object") m = m | 8;
+						if(typeof candidate.clear == "Object") m = m | 16;
+						if(typeof candidate.processCh == "Object") m = m | 32;
+						if(typeof candidate.drawText == "Object") m = m | 64;
+						if(typeof candidate.textRender == "Object") m = m | 128;
+						if(candidate === global.TextRender) m = m | 256;
+					}
+					else m = m | 1024;
+				}
+				catch(e) { m = m | 512; }
+				return m;
+			};
+
+			global.fushiLookupNoteRejectMembers = function(candidate)
+			{
+				global.fushiLookupInstanceRejectMembers =
+					global.fushiLookupMemberBits(candidate);
+			};
+
+)TJS" LR"TJS(
+
 			// 原子地给一个既有 textRender 实例加 bridge。state=0 是重入闸门，
 			// state=1 已安装，state=2 保留 original 并允许在同一 record 上重试。
 			global.fushiLookupPatchRendererInstance = function(renderer)
@@ -4250,6 +4319,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						typeof renderer.getCharacters != "Object")
 					{
 						global.fushiLookupInstanceRejectShape++;
+						global.fushiLookupNoteRejectMembers(renderer);
 						return false;
 					}
 					// `LangRender` 类还被 StandLayer 等 UI 共用；只许补它的消息实例。
@@ -4570,6 +4640,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 )TJS" LR"TJS(
 
+			global.fushiLookupRegistryShape = function()
+			{
+				var records = 0, glyphs = 0;
+				try
+				{
+					var registry = global.fushiLookupRegistry;
+					for(var i = 0; i < registry.count; i++)
+					{
+						var entry = registry[i];
+						if(entry === void || entry.glyphs === void) continue;
+						if(entry.glyphs.count > 0) records++;
+						glyphs += entry.glyphs.count;
+					}
+				}
+				catch(e) { return "x"; }
+				return records + "/" + glyphs;
+			};
+
 			global.fushiLookupAuditInstanceShape = function()
 			{
 				var flags = 0, count = -1, seen = 0, textRender = 0;
@@ -4632,7 +4720,17 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.fushiLookupInstanceRejectShape + "/" +
 					global.fushiLookupInstanceRejectClass + "/" +
 					global.fushiLookupInstanceRejectMixed + "/" +
-					global.fushiLookupInstanceRejectFull + ",base=" +
+					global.fushiLookupInstanceRejectFull + ",rm=" +
+					global.fushiLookupInstanceRejectMembers + ",gm=" +
+					global.fushiLookupInstanceGetRenderMembers + ",in=" +
+					(global.fushiLookupMsgwinInert ? 1 : 0) + ",vs=" +
+					(global.fushiLookupMsgwinVoidSeen ? 1 : 0) + ",y=" +
+					(global.fushiLookupMsgwinYielded ? 1 : 0) + ",dx=" +
+					global.fushiLookupMsgwinDemoteExit + ",cs=" +
+					global.fushiLookupClassicSource + ",pc=" +
+					global.fushiLookupClassicProcessChCalls + "/" +
+					global.fushiLookupClassicDrawTextCalls + ",rg=" +
+					global.fushiLookupRegistryShape() + ",base=" +
 					global.fushiLookupInstanceAlreadyClass;
 				if(shape != global.fushiLookupInstanceShapeLast)
 				{
@@ -4681,6 +4779,65 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 渲染器实例，交给同一个单实例补丁。**不做成员枚举**（Dictionary.assign 会踩
 			// 会抛的 getter，BUG-2116）：每个字段先 typeof 再读，全部在 try 里。
 			// msgwin 插件路径存在时由它负责，这里不重复。
+			// BUG-2721：「私有 msgwin 插件存在」不等于「它在画正文」。PARQUET（2021，
+			// ゆずソフトSOUR）登记了 kag.renderMsgwinPlugin，但每句的 getRender 都返回
+			// void、renders 恒空，正文仍由 MessageLayer 走 processCh 画——安装期的二选一
+			// 分派因此把它判给了永远采不到的 msgwin 支。判据取插件自己的行为而不是时序：
+			// **观察到** getRender 返回 void、从未返回过有效实例、renders 仍空，才降级到
+			// BUG-2708 的图层渲染器 / classic processCh 采集。降级可逆：之后 getRender 一旦
+			// 产出有效实例就恢复 msgwin 主导并关掉 classic 位 0，实例包装随之只透传。
+			global.fushiLookupDemoteInertMsgwin = function()
+			{
+				if(global.fushiLookupMsgwinInert) { global.fushiLookupMsgwinDemoteExit = 1; return; }
+				if(!global.fushiLookupMsgwinVoidSeen || global.fushiLookupMsgwinYielded)
+				{
+					global.fushiLookupMsgwinDemoteExit = 2;
+					return;
+				}
+				try
+				{
+					var plugin = global.fushiLookupResolveMsgwinPlugin();
+					if(plugin === void || plugin === null || !isvalid plugin)
+					{
+						global.fushiLookupMsgwinDemoteExit = 3;
+						return;
+					}
+					var renders = global.fushiLookupField(plugin, "renders");
+					if(typeof renders == "Object" && renders !== null && isvalid renders &&
+						renders.count > 0)
+					{
+						global.fushiLookupMsgwinDemoteExit = 4;
+						return;
+					}
+					global.fushiLookupMsgwinInert = true;
+					global.fushiLookupMsgwinDemoteExit = 5;
+					global.fushiLookupNoteError("instance.msgwin",
+						%[message:"inert: getRender void, no renders; classic fallback"]);
+					if(global.fushiLookupSweepLayerRenderers() == 0)
+					{
+						global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+						global.fushiLookupSweepClassicLayers();
+					}
+				}
+				catch(e)
+				{
+					global.fushiLookupMsgwinDemoteExit = 6;
+					global.fushiLookupNoteError("instance.msgwin", e);
+				}
+			};
+
+			global.fushiLookupRestoreActiveMsgwin = function()
+			{
+				global.fushiLookupMsgwinYielded = true;
+				if(!global.fushiLookupMsgwinInert) return;
+				global.fushiLookupMsgwinInert = false;
+				global.fushiLookupClassicSource = global.fushiLookupClassicSource & ~1;
+				global.fushiLookupNoteError("instance.msgwin",
+					%[message:"active again: getRender yielded; classic capture off"]);
+			};
+
+)TJS" LR"TJS(
+
 			global.fushiLookupLayerRendererFields = ["textRender", "textRenderer", "renderer"];
 			global.fushiLookupSweepLayerRenderers = function()
 			{
@@ -4688,7 +4845,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				try
 				{
 					if(typeof global.TextRender != "Object") return 0;
-					if(global.fushiLookupResolveMsgwinPlugin() !== void) return 0;
+					if(global.fushiLookupResolveMsgwinPlugin() !== void &&
+						!global.fushiLookupMsgwinInert) return 0;
 					var kag = global.kag;
 					if(kag === void || kag === null || !isvalid kag) return 0;
 					var fields = global.fushiLookupLayerRendererFields;
@@ -4773,6 +4931,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					var result = (original incontextof this)(...);
 					try
 					{
+						global.fushiLookupInstanceGetRenderMembers =
+							global.fushiLookupMemberBits(result);
+						if(result === void || result === null || !isvalid result)
+							global.fushiLookupMsgwinVoidSeen = true;
+						else
+							global.fushiLookupRestoreActiveMsgwin();
 						// 运行时标识符证明常见返回值是 MsgwinRender；若这个变体直接
 						// 返回 textRender，本身的严格三方法闸门也能安全覆盖。
 						if(!global.fushiLookupPatchMsgwinRender(result))

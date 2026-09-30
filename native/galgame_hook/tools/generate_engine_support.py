@@ -50,6 +50,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "sgre",
     "smash_fzmedia",
     "cmvs",
+    "unity_mono",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -106,6 +107,26 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdCmvs",
     ): ("cmvs", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdArtemis",
+    ): ("artemis_pfs", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdReallive",
+    ): ("reallive", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdCatSystem2",
+    ): ("catsystem2", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdUnityMono",
+    ): ("unity_mono", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdBgi",
+    ): ("bgi_ethornell", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",
@@ -277,6 +298,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "process_loopback": "loopback_observed",
     "qlie_wuvorbis_float_per_source_pcm": "pcm_observed",
     "qlie_wuvorbis_per_source_pcm": "pcm_observed",
+    "reallive_nwk_nwa_resource": "resource_observed",
     "resource_audio": "resource_observed",
     "smash_fzmedia_fcd_ogg_resource": "resource_observed",
     "tyrano_asar_voice_resource": "resource_observed",
