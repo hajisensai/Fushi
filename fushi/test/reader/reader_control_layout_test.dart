@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 
 void main() {
   group('ReaderControlLayout 模型', () {
-    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 3；底栏为空；悬浮球三键', () {
+    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 4；底栏为空；悬浮球三键', () {
       final ReaderControlLayout d = ReaderControlLayout.defaults;
       expect(d.itemsIn(ReaderControlSlot.topLeft), <ReaderControlItem>[
         ReaderControlItem.back,
@@ -22,6 +22,7 @@ void main() {
       expect(d.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
         ReaderControlItem.audiobook,
         ReaderControlItem.fullscreen,
+        ReaderControlItem.focusMode,
         ReaderControlItem.settings,
       ]);
       expect(d.hasBottomItems, isFalse);
@@ -36,6 +37,23 @@ void main() {
         ReaderControlItem.audiobookSeekForward,
         ReaderControlItem.audiobookFollow,
       });
+    });
+
+    test('专注模式键之前存下的布局：解码后按出厂位置补进顶栏右侧', () {
+      final ReaderControlLayout legacy = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topLeft":["back"],'
+        '"topRight":["fullscreen","settings"]}}',
+      );
+      expect(legacy.itemsIn(ReaderControlSlot.topRight),
+          contains(ReaderControlItem.focusMode));
+      expect(legacy.core.removedItems,
+          isNot(contains(ReaderControlItem.focusMode)));
+      // 用户显式拖进托盘的，不回填。
+      final ReaderControlLayout removed = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topRight":["settings"]},'
+        '"removed":["focusMode"]}',
+      );
+      expect(removed.core.removedItems, contains(ReaderControlItem.focusMode));
     });
 
     test('传输键可进顶栏 / 底栏；旧布局里的悬浮球槽解码时丢弃，按钮回落出厂位置', () {
