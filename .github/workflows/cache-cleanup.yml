@@ -31,7 +31,49 @@ jobs:
     # 本仓的开发模式是同仓分支 PR，fork 直接跳过即可。
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
+      # 2026-09-30：PR 的 concurrency 只在同一个 PR 再推提交时才 cancel-in-progress，
+      # 合并/关闭**不会**取消它还在排队或在跑的 CI。本仓 PR 大多开了很快就合，于是
+      # 已合并 PR 的整套 CI（Android 5 个 job + 多平台 5 个 + 合并门）照样一条条跑完：
+      # 实测同一时刻排队/在跑的 PR run 里 15 个分支只有 1 个 PR 还开着，另外 14 个
+      # 已合并 PR 占着约 39 条 run，还有一个卡死的 appSmoke 占了一个槽位 250 分钟。
+      # 这些结果永远没人看。PR 一关就把它们取消，槽位还给开着的 PR 和 develop。
+      # 只动本 PR 分支上 pull_request / pull_request_target 触发的 run；push（develop
+      # 发布）与本 workflow 自己（Cleanup PR caches）一律不碰。
+      - name: Cancel this PR's still-queued / running CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          SELF_WORKFLOW: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+          # 分支名走 -f 参数（gh 负责 URL 编码），不拼进 URL / jq；事件在 jq 里筛：
+          # runs API 同时带 branch= 与 event= 时会回过期结果集（见 cancel_superseded_runs.sh）。
+          ids="$(
+            for status in requested pending waiting queued in_progress; do
+              gh api -X GET "repos/$REPO/actions/runs" -f branch="$HEAD_BRANCH" -f status="$status" -f per_page=100 \
+                --jq '.workflow_runs[] | select(.event == "pull_request" or .event == "pull_request_target") | "\(.id)\t\(.head_repository.full_name)\t\(.name)"'
+            done | sort -u
+          )"
+          cancelled=0
+          while IFS=$'\t' read -r id head_repo name; do
+            [ -n "${id:-}" ] || continue
+            # 分支**名**不唯一：fork 上同名的 develop / feature 分支发起的 PR 也会被
+            # branch= 匹配到。只认本仓库分支上的 run（本 job 本来就只为同仓 PR 跑）。
+            [ "$head_repo" = "$REPO" ] || continue
+            [ "$name" = "$SELF_WORKFLOW" ] && continue
+            if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
+              echo "Cancelled run $id ($name)"
+              cancelled=$((cancelled + 1))
+            else
+              echo "Run $id ($name) could not be cancelled (probably already finished)"
+            fi
+          done <<< "$ids"
+          echo "Cancelled $cancelled leftover CI run(s) for closed PR branch $HEAD_BRANCH." \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - name: Delete caches scoped to this PR ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
