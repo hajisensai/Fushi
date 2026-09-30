@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2597 条。点号进各自文件。
+> 共 2598 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |
 | [BUG-2817](bugs/BUG-2817-release-asset-tag-app-build.md) | ✅ | ✅ | 发布模型资产 release 触发整套应用构建并把安装包挂到该 release |
 | [BUG-2816](bugs/BUG-2816-server-book-manga-prune.md) | ✅ | ✅ | 无头服务端书/漫画根不对账：删掉源 EPUB/漫画卷后条目永远残留 |
+| [BUG-2815](bugs/BUG-2815-server-local-audio-host.md) | ✅ | ✅ | 无头服务端不托管本地音频库：列表恒空、上传传完才报 UnsupportedError |
 | [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
 | [BUG-2813](bugs/BUG-2813-manga-local-ocr-tap-column.md) | ✅ | ✅ | 漫画本地 OCR 点字命中错列：整块文本沿整块均铺 |
 | [BUG-2812](bugs/BUG-2812-headless-scan-never-scraped.md) | ✅ | ✅ | 无头服务端扫描入库的视频从不刮削 |

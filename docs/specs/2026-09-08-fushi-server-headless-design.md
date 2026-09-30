@@ -225,7 +225,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 
 ### 与原设计的偏差（明说；第 6 批之后仍成立的）
 
-- **本地音频库不托管**：`liveLibrary.audio` 仍报 true（客户端不读这一位），列表恒空、推送在传完后报 `UnsupportedError`。本地音频是查词发音源（查词域，服务端不做），要么客户端按能力位门控上传，要么服务端做成与词典包一样的存储中转——两条都未做。
+- ~~本地音频库不托管~~（BUG-2815 已补）：服务端对本地音频库做与词典包一样的存储中转——引擎 `LocalAudioLibraryStore`（库副本 `<support>/local_audio_<n>.db` + `local_audio_dbs` 偏好，与 app `LocalAudioManager` 同目录同键）接上 host 服务的清单 / 导入 / 删除三件，`liveLibrary.audio` 报 true 与实际一致。服务端仍不做查词发音。顺带：host 服务的本地音频清单改为现读（`localAudioEntriesProvider`），此前 app 传的是互联启动时的快照，之后增删的库对端看不见。
 - **书 / 漫画根的对账只认服务端扫描认领过的书**（BUG-2816 起对账，此前完全不对账）：书行本身仍不记源文件路径（没升 schema），关系记在 `preferences` 的来源扫描索引 `media_source_scan_index_<sourceId>`（源相对路径 → 书 uid）里，书行带 `sourceId`。客户端上传 / 手动导入的同名书、升级前源文件就已删掉的存量书认领不上，不会被回收。
 - **代下载不收游戏、接不了 PDF**（2026-09-30 起不再「只收视频」）：发现导入执行器（`DiscoveryImportExecutor` / 解压器 / `MangaArchiveImporter`）与 EPUB / 文本 / 漫画图包 / 有声书四个域原语已下沉引擎（`media/discovery/import/discovery_engine_importers.dart`，app 与服务端共用），`downloads.kinds` = `video` + `novel` / `manga` / `audiobook`。仍不做：`game`（服务端没有游戏库，exe 登记只在 app 有意义，能力位不宣告、投了 400）；小说包里的 PDF（`PdfImporter` 依赖 pdfrx 插件，任务以新原因码 `unsupportedOnThisHost` 进 needsAttention，不假装导入）；cbr / cb7 / rar 依赖服务端自备 7-Zip。服务端此前没装 `AudiobookStorage.documentsRootResolver`，有声书落盘会抛 StateError——现在在 `installServerHostBindings` 接到 `<documents>`。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。

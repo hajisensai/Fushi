@@ -694,7 +694,9 @@ class AppModel with ChangeNotifier {
           fileName: path.basename(bookFile.path),
         );
       },
-      localAudioEntries: localAudioDbs,
+      // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
+      // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
+      localAudioEntriesProvider: () => localAudioDbs,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),

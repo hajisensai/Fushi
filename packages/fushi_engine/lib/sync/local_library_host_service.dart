@@ -174,7 +174,7 @@ abstract class _LocalLibraryHostBase
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
 /// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
-/// | [localAudioEntries] | 当前已注册的本地音频来源列表（T3.1）| `AppModel.localAudioEntries` |
+/// | [localAudioEntriesProvider] | 现读已注册的本地音频来源列表（T3.1 / BUG-2815；[localAudioEntries] 是旧的快照形态）| `() => AppModel.localAudioDbs` / 服务端 `LocalAudioLibraryStore.entries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
 /// | [audioDatabaseRoot] | importAudiobook 音频文件落盘根目录（T3.1）| AppModel 的 audiobook root |
@@ -202,6 +202,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     Future<String?> Function(File epubFile)? importBookFromFile,
     Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
+    List<LocalAudioDbEntry> Function()? localAudioEntriesProvider,
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
@@ -230,7 +231,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
         _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
         _importBookFromFile = importBookFromFile,
         _cleanupBookOnDisk = cleanupBookOnDisk,
-        _localAudioEntries = localAudioEntries,
+        _localAudioEntriesSnapshot = localAudioEntries,
+        _localAudioEntriesProvider = localAudioEntriesProvider,
         _localAudioStagingDir = localAudioStagingDir,
         _onLocalAudioImported = onLocalAudioImported,
         _audioDatabaseRoot = audioDatabaseRoot,
@@ -304,9 +306,15 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 
   // ── 本地音频（T3.1）──────────────────────────────────────────────────────
 
-  /// 当前已注册的本地音频来源列表。生产传 AppModel.localAudioEntries。
+  /// 当前已注册的本地音频来源列表：有 [localAudioEntriesProvider] 时**每次现读**
+  /// （BUG-2815：host 服务在互联启动时只构造一次，传快照会让之后新增 / 删除的
+  /// 库在清单与导出里都看不见），否则退回构造时的 [localAudioEntries] 快照。
   @override
-  final List<LocalAudioDbEntry> _localAudioEntries;
+  List<LocalAudioDbEntry> get _localAudioEntries =>
+      _localAudioEntriesProvider?.call() ?? _localAudioEntriesSnapshot;
+
+  final List<LocalAudioDbEntry> _localAudioEntriesSnapshot;
+  final List<LocalAudioDbEntry> Function()? _localAudioEntriesProvider;
 
   /// importLocalAudio 解包用临时目录。null 时用 Directory.systemTemp。
   @override
