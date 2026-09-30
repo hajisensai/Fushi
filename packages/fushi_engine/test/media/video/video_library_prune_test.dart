@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:path/path.dart' as p;
@@ -183,7 +184,13 @@ void main() {
         'fushi_prune_',
       );
       addTearDown(() => root.delete(recursive: true));
-      // 20 条候选、全部缺失：超过 ratio 0.5 且超过 absoluteFloor 10。
+      // 25 条候选、20 条缺失：超过 ratio 0.5 且超过 absoluteFloor 10。
+      // 留 5 个真文件，免得先被「库根空了」那道护栏拦下。
+      for (int i = 0; i < 5; i++) {
+        final String path = p.join(root.path, 'here$i.mkv');
+        File(path).writeAsStringSync('x');
+        await addVideo(path);
+      }
       for (int i = 0; i < 20; i++) {
         await addVideo(p.join(root.path, 'v$i.mkv'));
       }
@@ -196,7 +203,156 @@ void main() {
       expect(report.skipped, isTrue);
       expect(report.deleted, 0);
       expect(report.skipReason, contains('exceeds threshold'));
-      expect(await repo.listAll(), hasLength(20));
+      expect(await repo.listAll(), hasLength(25));
+    });
+
+    test('库根在但一个视频都没有（空挂载点）→ 小库也不删', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      // 两条，低于比例护栏的绝对下限——没有这道门就会整库删光。
+      await addVideo(p.join(root.path, 'a.mkv'));
+      await addVideo(p.join(root.path, 'b.mkv'));
+
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+      );
+
+      expect(report.skipped, isTrue);
+      expect(report.skipReason, contains('no video files'));
+      expect(await repo.listAll(), hasLength(2));
+    });
+
+    test('子目录留下空壳（子挂载点掉线）→ 其下条目不判失效；整个目录删掉 → 判失效', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final String here = p.join(root.path, 'here.mkv');
+      File(here).writeAsStringSync('x');
+      await addVideo(here);
+      // disk2 掉线：挂载点目录还在，但是空的。
+      final Directory mount = Directory(p.join(root.path, 'disk2'))
+        ..createSync();
+      final String onMount = await addVideo(
+        p.join(mount.path, 'show', 'ep1.mkv'),
+      );
+      // 用户把一整季连目录删掉：最近的现存上级是非空的库根。
+      final String deletedSeason = await addVideo(
+        p.join(root.path, 'season2', 's2e1.mkv'),
+      );
+
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+      );
+
+      expect(report.unreachable, 1);
+      expect(report.deleted, 1);
+      expect(await db.getVideoBookByBookUid(onMount), isNotNull);
+      expect(await db.getVideoBookByBookUid(deletedSeason), isNull);
+    });
+
+    test('给了基线：本轮新入库的行不进分母（整库改名不能卡着阈值放行）', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final Set<String> baseline = <String>{};
+      // 改名前 20 条，文件已不在旧路径。
+      for (int i = 0; i < 20; i++) {
+        baseline.add(await addVideo(p.join(root.path, 'A', 'old$i.mkv')));
+      }
+      // 本轮扫描在新路径下等量入库。
+      for (int i = 0; i < 20; i++) {
+        final String path = p.join(root.path, 'B', 'new$i.mkv');
+        File(path)
+          ..createSync(recursive: true)
+          ..writeAsStringSync('x');
+        await addVideo(path);
+      }
+
+      // 不给基线：20/40 = 0.5，恰好不越过阈值，旧行全删——这正是要堵的洞。
+      final VideoPruneReport diluted = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+        dryRun: true,
+      );
+      expect(diluted.skipped, isFalse);
+
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+        baselineBookUids: baseline,
+      );
+      expect(report.considered, 20);
+      expect(report.skipped, isTrue);
+      expect(report.skipReason, contains('exceeds threshold'));
+      expect(await repo.listAll(), hasLength(40));
+    });
+
+    test('多集合集行只看主路径判不了整行失效 → 不动', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final String here = p.join(root.path, 'here.mkv');
+      File(here).writeAsStringSync('x');
+      await addVideo(here);
+      final String uid = await addVideo(p.join(root.path, 'ep1.mkv'));
+      await repo.updatePlaylistJson(uid, '["ep1.mkv","ep2.mkv"]');
+
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+      );
+
+      expect(report.deleted, 0);
+      expect(await db.getVideoBookByBookUid(uid), isNotNull);
+    });
+
+    test('刮削资料清理在跑（拿不到租约）→ 跳过并如实报告', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final String here = p.join(root.path, 'here.mkv');
+      File(here).writeAsStringSync('x');
+      await addVideo(here);
+      await addVideo(p.join(root.path, 'gone.mkv'));
+      final VideoScrapeOperationLease maintenance =
+          VideoScrapeOperationGate.tryEnterMaintenance()!;
+      addTearDown(maintenance.release);
+
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+      );
+
+      expect(report.skipped, isTrue);
+      expect(report.skipReason, contains('maintenance'));
+      expect(report.missing, 1);
+      expect(await repo.listAll(), hasLength(2));
+    });
+
+    test('force（显式「移除并清理」）：库根整个删掉了也照清', () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'fushi_prune_',
+      );
+      await addVideo(p.join(root.path, 'a.mkv'));
+      await addVideo(p.join(root.path, 'b.mkv'));
+      root.deleteSync(recursive: true);
+
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: repo,
+        root: root,
+        force: true,
+      );
+
+      expect(report.deleted, 2);
+      expect(await repo.listAll(), isEmpty);
     });
 
     test('force 越过护栏后照删；dryRun 只算不删', () async {
@@ -211,6 +367,7 @@ void main() {
       final VideoPruneReport dry = await pruneMissingVideoRows(
         repository: repo,
         root: root,
+        force: true,
         dryRun: true,
       );
       expect(dry.missing, 20);
@@ -231,6 +388,9 @@ void main() {
         'fushi_prune_',
       );
       addTearDown(() => root.delete(recursive: true));
+      final String keep = p.join(root.path, 'keep.mkv');
+      File(keep).writeAsStringSync('x');
+      await addVideo(keep);
       final String path = p.join(root.path, 'a.mkv');
       File(path).writeAsStringSync('x');
       await addVideo(path);

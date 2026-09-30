@@ -51,6 +51,14 @@ class ScanSummary {
       '${pruneSkipped > 0 ? ', prune-skipped $pruneSkipped' : ''}';
 }
 
+/// 一个视频根的扫描产物：磁盘上现存的归一路径 + 导入前已在库的行 uid（对账基线）。
+class _VideoScan {
+  _VideoScan({required this.found, required this.baselineBookUids});
+
+  final Set<String> found;
+  final Set<String> baselineBookUids;
+}
+
 class LibraryScanner {
   LibraryScanner({
     required this.db,
@@ -86,8 +94,8 @@ class LibraryScanner {
       }
       switch (root.kind) {
         case 'video':
-          final Set<String> found = await _scanVideos(dir, summary);
-          if (pruneMissing) await _pruneVideoRoot(dir, root.id, found, summary);
+          final _VideoScan scan = await _scanVideos(dir, summary);
+          if (pruneMissing) await _pruneVideoRoot(dir, root.id, scan, summary);
         case 'book':
           await _scanBooks(dir, summary);
           _noteUnreconciled(root.id, 'book');
@@ -102,8 +110,9 @@ class LibraryScanner {
     return summary;
   }
 
-  /// 扫描一个视频根，返回**磁盘上现存**的视频文件路径集合（归一），供对账复用。
-  Future<Set<String>> _scanVideos(Directory dir, ScanSummary summary) async {
+  /// 扫描一个视频根，返回**磁盘上现存**的视频文件路径集合（归一）与导入前已在库
+  /// 的行 uid（对账的基线），供对账复用。
+  Future<_VideoScan> _scanVideos(Directory dir, ScanSummary summary) async {
     final List<File> files = <File>[];
     await for (final FileSystemEntity e in dir.list(recursive: true, followLinks: false)) {
       if (e is! File) continue;
@@ -114,6 +123,8 @@ class LibraryScanner {
     final List<VideoBookRow> existingRows = await _videos.listAll();
     final Set<String> existingKeys =
         existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    // 下面的循环会往 existingKeys 里追加本轮新行，基线要在这之前单独留一份。
+    final Set<String> baselineKeys = Set<String>.of(existingKeys);
     // 物理路径集合一次算好、循环内查集合。此前逐文件调 `isDuplicateVideoPath`
     // （它内部每次都 `listAll()` 全表读），整个扫描是 O(n²)。比对语义与
     // `VideoBookRepository.isDuplicateVideoPath` 一致：两侧都 [normalizeVideoPath]。
@@ -161,22 +172,25 @@ class LibraryScanner {
         engineLog.log('LibraryScanner.video', e, stack);
       }
     }
-    return found;
+    return _VideoScan(found: found, baselineBookUids: baselineKeys);
   }
 
   /// 对一个视频根做一次对账（见 [pruneMissingVideoRows]）。
   ///
   /// 护栏 / 刮削租约拦下只记 note，不算错误：扫描因环境暂时无法安全清理，不是失败。
+  /// 只在**本轮导入前**就在库里的行上判失效：本轮新导入的行文件必然在，把它们算进
+  /// 分母会让整库改名 / 搬家（旧行全失效、新行等量入库）刚好卡在比例阈值上放行。
   Future<void> _pruneVideoRoot(
     Directory dir,
     String rootId,
-    Set<String> found,
+    _VideoScan scan,
     ScanSummary summary,
   ) async {
     final VideoPruneReport report = await pruneMissingVideoRows(
       repository: _videos,
       root: dir,
-      foundPaths: found,
+      foundPaths: scan.found,
+      baselineBookUids: scan.baselineBookUids,
       threshold: pruneThreshold,
       force: pruneForce,
     );
@@ -190,6 +204,12 @@ class LibraryScanner {
       return;
     }
     summary.videosPruned += report.deleted;
+    if (report.unreachable > 0) {
+      summary.pruneNotes.add(
+        '$rootId: kept ${report.unreachable} missing video row(s) under an '
+        'empty or unreadable folder (unmounted disk?)',
+      );
+    }
     if (report.missing > 0) {
       engineLog.logDiagnostic(
         'LibraryScanner.prune',

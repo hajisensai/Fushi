@@ -76,7 +76,7 @@ ArgParser _buildParser() {
     ..addFlag('scan', help: '启动后扫描一次库', defaultsTo: true)
     ..addFlag(
       'prune',
-      help: '扫描后回收「文件已消失」的条目（--no-prune 关闭；缺省读配置 scan_prune）',
+      help: '扫描后回收「文件已消失」的条目（--no-prune 关闭，对本进程所有扫描生效；缺省读配置 scan_prune）',
       negatable: true,
     );
   parser.addCommand('scan').addFlag(
@@ -258,6 +258,7 @@ Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
     identity: rt.identity,
     host: host,
     startedAt: DateTime.now(),
+    pruneOverride: prune,
   );
   AdminServer? admin;
   if (rt.config.adminPort > 0) {
@@ -277,7 +278,7 @@ Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
     }
   }
   if (scan && rt.config.libraries.isNotEmpty) {
-    unawaited(_scanInBackground(adminCtx, prune));
+    unawaited(_scanInBackground(adminCtx));
   }
   final Completer<void> stop = Completer<void>();
   void onSignal(ProcessSignal s) {
@@ -299,9 +300,9 @@ Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
   return 0;
 }
 
-Future<void> _scanInBackground(AdminContext ctx, bool? prune) async {
+Future<void> _scanInBackground(AdminContext ctx) async {
   try {
-    final ScanSummary summary = await ctx.scanLibraries(prune: prune);
+    final ScanSummary summary = await ctx.scanLibraries();
     stdout.writeln('库扫描完成: $summary');
   } catch (e, stack) {
     ctx.log.log('serve.scan', e, stack);

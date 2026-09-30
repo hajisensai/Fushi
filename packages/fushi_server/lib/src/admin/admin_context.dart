@@ -22,6 +22,7 @@ class AdminContext {
     required this.identity,
     required this.host,
     required this.startedAt,
+    this.pruneOverride,
   }) : _config = config;
 
   ServerConfig _config;
@@ -32,6 +33,10 @@ class AdminContext {
   final ServerIdentity identity;
   final HeadlessHost host;
   final DateTime startedAt;
+
+  /// 启动参数 `serve --prune` / `--no-prune`（没给为 null）：本进程内**所有**扫描
+  /// （启动扫描与 WebUI 触发的）都按它，优先于配置里的 `scan_prune`。
+  final bool? pruneOverride;
 
   ServerConfig get config => _config;
 
@@ -57,8 +62,8 @@ class AdminContext {
     final Future<ScanSummary> f = LibraryScanner(
       db: db,
       subtitleLanguage: config.subtitleLanguage,
-      // 缺省读配置里的 `scan_prune`（默认开）；请求里显式给了就按请求。
-      pruneMissing: prune ?? config.scanPrune,
+      // 优先级：请求里显式给的 > 启动参数 > 配置里的 `scan_prune`（默认开）。
+      pruneMissing: prune ?? pruneOverride ?? config.scanPrune,
     ).scanAll(config.libraries).then((ScanSummary s) {
       lastScan = s;
       lastScanAt = DateTime.now();

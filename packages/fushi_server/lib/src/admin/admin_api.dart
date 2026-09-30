@@ -298,9 +298,13 @@ class AdminApi {
 
   /// 移除一个库根。
   ///
-  /// [purge] 为真时，**在移除配置前**对该根跑一次扫描对账（`pruneMissingVideoRows`），
-  /// 回收「行还在、文件已消失」的条目及其刮削资料。不删任何文件；护栏与扫描对账
-  /// 同一套（库根不存在 / 失效占比过高则拒绝，如实回报原因）。
+  /// [purge] 为真时，**在移除配置前**对该根跑一次对账（`pruneMissingVideoRows`），
+  /// 回收「行还在、文件已消失」的条目及其刮削资料。不删任何文件。
+  ///
+  /// 这是显式的用户意图，所以用 `force`：扫描时的推测性护栏（库根不存在 / 空挂载点 /
+  /// 失效占比）在这里不拦——最常见的用法恰恰是「整个目录已经删了，把它连库一起清掉」。
+  /// 判据仍只有「文件确实不存在」。对账没做成（租约被占 / 删除出错）就**不移除**
+  /// 配置、回 409：移除后这些行不在任何库根下，再也没有机会被清理。
   ///
   /// 只有 `video` 根支持：书 / 漫画根的行不记源文件路径，判不出失效。
   Future<shelf.Response> _removeLibrary(String id, {bool purge = false}) async {
@@ -318,6 +322,7 @@ class AdminApi {
       final VideoPruneReport report = await pruneMissingVideoRows(
         repository: VideoBookRepository(ctx.db),
         root: Directory(library.path),
+        force: true,
       );
       purgeResult = <String, Object?>{
         'considered': report.considered,
@@ -325,7 +330,16 @@ class AdminApi {
         'deleted': report.deleted,
         'skipped': report.skipped,
         if (report.skipReason != null) 'reason': report.skipReason,
+        if (report.errors.isNotEmpty) 'errors': report.errors,
       };
+      if (report.skipped || report.errors.isNotEmpty) {
+        final String why = report.skipReason ?? report.errors.join('; ');
+        return _json(<String, Object?>{
+          'error': 'purge incomplete ($why); library root kept',
+          ..._librariesJson(),
+          'purge': purgeResult,
+        }, status: 409);
+      }
     }
     await ctx.updateConfig(ctx.config.copyWith(
       libraries: ctx.config.libraries.where((LibraryRootConfig l) => l.id != id).toList(),

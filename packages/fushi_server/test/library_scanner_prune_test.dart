@@ -97,6 +97,38 @@ void main() {
     expect(await VideoBookRepository(db).listAll(), hasLength(1));
   });
 
+  test('整库改名 / 搬家：本轮新入库的行不稀释护栏，旧行（进度与刮削身份）保留', () async {
+    final Directory a = Directory(p.join(libraryRoot.path, 'A'))..createSync();
+    for (int i = 0; i < 20; i++) {
+      File(p.join(a.path, 'ep$i.mkv')).writeAsStringSync('x');
+    }
+    await scan();
+    a.renameSync(p.join(libraryRoot.path, 'B'));
+
+    final ScanSummary second = await scan();
+
+    // 旧 20 行全失效、新 20 行入库：若把新行算进分母，20/40 刚好不越过 0.5，
+    // 旧行会被整批删掉。只按导入前的基线算，20/20 被护栏拦下。
+    expect(second.videosAdded, 20);
+    expect(second.videosPruned, 0);
+    expect(second.pruneSkipped, 1);
+    expect(second.pruneNotes.single, contains('exceeds threshold'));
+    expect(await VideoBookRepository(db).listAll(), hasLength(40));
+  });
+
+  test('库根下的视频全删光（空挂载点形态）→ 不清理并留 note', () async {
+    final String only = p.join(libraryRoot.path, 'only.mkv');
+    File(only).writeAsStringSync('x');
+    await scan();
+    File(only).deleteSync();
+
+    final ScanSummary second = await scan();
+
+    expect(second.videosPruned, 0);
+    expect(second.pruneNotes.single, contains('no video files'));
+    expect(await VideoBookRepository(db).listAll(), hasLength(1));
+  });
+
   test('重扫同一根不产生重复行（去重仍生效）', () async {
     File(p.join(libraryRoot.path, 'a.mkv')).writeAsStringSync('x');
 
