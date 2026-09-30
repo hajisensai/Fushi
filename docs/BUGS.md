@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2592 条。点号进各自文件。
+> 共 2594 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,8 @@
 | [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |
 | [BUG-2817](bugs/BUG-2817-release-asset-tag-app-build.md) | ✅ | ✅ | 发布模型资产 release 触发整套应用构建并把安装包挂到该 release |
 | [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
+| [BUG-2811](bugs/BUG-2811-vn-ruby-pull-never-measured.md) | ✅ | ✅ | VN 模式注音拉力从未量成功（首屏无注音、换屏不重量），Klee One 注音离基字远 |
+| [BUG-2810](bugs/BUG-2810-webkit-ruby-pull-fragmented-rt.md) | ✅ | ✅ | iOS 分页打开书振假名压进基字（度量脚本量到跨栏被切开的注音盒，拉力顶到 1.5） |
 | [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |
 | [BUG-2808](bugs/BUG-2808-reader-focus-mode-exit.md) | ✅ | ✅ | 专注模式下触屏拿不到退出通道 |
 | [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
