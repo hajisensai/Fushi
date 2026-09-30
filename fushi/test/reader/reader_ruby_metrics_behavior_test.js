@@ -80,11 +80,24 @@ function run(opts) {
     style: { setProperty: (k, v) => { props[k] = v; } },
   };
   const rafQueue = [];
+  // BUG-2810 (VN): which rubies are currently in the body, and the observers the
+  // script registered, so a test can drive later screen swaps / style swaps.
+  let rubiesInBody = !opts.noRuby;
+  let probes = 0;
+  const observers = [];
+  function FakeMutationObserver(cb) {
+    this.observe = (target) => observers.push({ target, cb });
+  }
+  const body = {
+    getElementsByTagName: () => { probes++; return rubiesInBody ? rubies.map((r) => r.ruby) : []; },
+  };
+  const styleEl = { id: 'fushi-reader-style' };
   const sandbox = {
-    window: {},
+    window: { MutationObserver: FakeMutationObserver },
+    MutationObserver: FakeMutationObserver,
     document: {
       documentElement: root,
-      body: { getElementsByTagName: () => (opts.noRuby ? [] : rubies.map((r) => r.ruby)) },
+      body,
       createRange: () => {
         const range = {
           setStart(n, i) { range.node = n; range.start = i; },
@@ -116,7 +129,7 @@ function run(opts) {
           },
         }),
       }),
-      getElementById: () => null,
+      getElementById: (id) => (id === 'fushi-reader-style' ? styleEl : null),
       fonts: null,
       createTreeWalker: (root) => {
         const texts = [];
@@ -139,8 +152,20 @@ function run(opts) {
   };
   vm.createContext(sandbox);
   vm.runInContext(script, sandbox);
-  while (rafQueue.length) rafQueue.shift()();
+  const flush = () => { while (rafQueue.length) rafQueue.shift()(); };
+  flush();
   if (opts.measured) opts.measured.push(...measured);
+  if (opts.then) {
+    const fire = (target) => observers.filter((o) => o.target === target).forEach((o) => o.cb([]));
+    opts.then({
+      pull: () => props['--fushi-ruby-pull'],
+      showRubies: (v) => { rubiesInBody = v; },
+      clearPull: () => { delete props['--fushi-ruby-pull']; },
+      bodyMutation: () => { fire(body); flush(); },
+      styleMutation: () => { fire(styleEl); flush(); },
+      probes: () => probes,
+    });
+  }
   return props['--fushi-ruby-pull'];
 }
 
@@ -221,5 +246,36 @@ run({
   rubies: [{ ...whole, baseText: '\u{20BB7}野' }],
 });
 assert.deepStrictEqual(measured, ['平', '\u{20BB7}'], 'first non-blank code point of the base');
+
+// BUG-2810 (VN): VN moves the chapter into a detached source root and the body
+// only ever holds the current screen. When the reader opens on a screen without
+// furigana nothing can be measured at install time, and before the fix the probe
+// never ran again — on the iOS simulator the variable stayed unset in VN mode and
+// Klee One annotations sat 0.98em from their base. Body mutations (screen swaps)
+// must retry until one measurement succeeds, then stop costing anything.
+run({
+  noRuby: true, wm: 'vertical-rl', fs: 42, rfs: 18.9, canvas: klee, rubies: [whole],
+  then(ctl) {
+    assert.strictEqual(ctl.pull(), undefined, 'first VN screen has no furigana → nothing yet');
+    ctl.bodyMutation();
+    assert.strictEqual(ctl.pull(), undefined, 'still no furigana on the next screen');
+    ctl.showRubies(true);
+    ctl.bodyMutation();
+    assert.strictEqual(ctl.pull(), '0.770', 'a screen with furigana gets measured');
+    const probes = ctl.probes();
+    ctl.clearPull();
+    ctl.bodyMutation();
+    assert.strictEqual(ctl.probes(), probes, 'once measured, screen swaps do not re-probe');
+    assert.strictEqual(ctl.pull(), undefined);
+    // A live style / font swap invalidates the value: re-measure, and keep
+    // retrying on screen swaps if the current screen has no furigana.
+    ctl.showRubies(false);
+    ctl.styleMutation();
+    assert.strictEqual(ctl.pull(), undefined);
+    ctl.showRubies(true);
+    ctl.bodyMutation();
+    assert.strictEqual(ctl.pull(), '0.770', 'after a style swap the next furigana screen re-measures');
+  },
+});
 
 console.log('all assertions passed');
