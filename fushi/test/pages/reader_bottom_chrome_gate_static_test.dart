@@ -42,12 +42,13 @@ void main() {
     expect(
       shouldPaint,
       contains('chromeExpanded: _chromeBarsExpanded'),
-      reason: '底栏可见性仍须随 _showChrome（经专注模式闸门 _chromeBarsExpanded）。',
+      reason: '底栏可见性仍须随 _showChrome（经栏关掉闸门 _chromeBarsExpanded）。',
     );
     expect(
       src,
-      contains('bool get _chromeBarsExpanded => _showChrome && !_focusMode;'),
-      reason: '布局判据 = 用户意图 _showChrome 且未开专注模式；专注模式不得去翻 '
+      contains(
+          'bool get _chromeBarsExpanded => _showChrome && !_toolbarsHidden;'),
+      reason: '布局判据 = 用户意图 _showChrome 且栏没被关掉；关栏不得去翻 '
           '_showChrome（它还是 JS 点词门控的镜像）。',
     );
     final String pureGate = _functionSource(

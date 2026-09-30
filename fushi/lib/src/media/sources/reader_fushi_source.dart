@@ -1629,6 +1629,17 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 关掉顶栏和底栏、由应用内悬浮球接管（per-reader，分层同上）。默认 false。
+  /// 是否真的生效还要看应用内悬浮球开没开（`readerToolbarsHidden`）。
+  bool get hideToolbars =>
+      readerSettings?.hideToolbars ??
+      getPreference<bool>(key: 'hide_toolbars', defaultValue: false);
+
+  Future<void> setHideToolbars(bool value) async {
+    await (readerSettings?.setHideToolbars(value) ??
+        setPreference<bool>(key: 'hide_toolbars', value: value));
+  }
+
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────
 
   double get readerFontSize =>

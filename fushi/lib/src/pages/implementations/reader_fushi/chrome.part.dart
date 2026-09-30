@@ -1040,10 +1040,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 底栏仍是挤压模式时（悬浮开关关闭）没有临时可见态，保留 [_toggleChrome] 旧
   /// 语义；只开顶部进度悬浮、底栏挤压的混合形态同样走挤压分支，与指针路径一致。
   void _toggleChromeFromShortcut() {
-    if (_focusMode) {
-      _showFocusModeBarsLockedHint();
-      return;
-    }
+    // 顶栏和底栏被关掉：它们不存在，快捷键也唤不出来（开回来走悬浮球或设置）。
+    if (_toolbarsHidden) return;
     if (_bottomBarFloating) {
       // _bottomBarFloating ⇒ _anyChromeFloating，所以这里恒被消费；断言锁住这个
       // 蕴含关系，防止将来有人把 _anyChromeFloating 的定义改窄后此路静默变 no-op。
@@ -1056,11 +1054,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   void _toggleChrome() {
-    // 专注模式：栏唤不出来也收不起来（本就收着），只提示怎么退出。
-    if (_focusMode) {
-      _showFocusModeBarsLockedHint();
-      return;
-    }
+    // 顶栏和底栏被关掉：栏唤不出来也收不起来（本就不在）。
+    if (_toolbarsHidden) return;
     _rebuild(() {
       _showChrome = !_showChrome;
     });
@@ -1086,87 +1081,49 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
   }
 
-  // ── 专注模式 ───────────────────────────────────────────────────────
-  // 开启：顶栏 / 底栏（含悬浮态临时唤出）一律收起，且任何唤出 / 切换入口
-  // （点空白、点顶部进度、M / 手柄 Y、VN 空白点、歌词 / 双页空白点）都打不开它们；
-  // 只有关掉专注模式才恢复进入前的状态。状态本身在 [ReaderChromeController.focusMode]，
-  // 布局判据经 [_chromeBarsExpanded]，点词门控经 [_tapGateChrome]。
+  // ── 关掉顶栏和底栏（悬浮球接管）────────────────────────────────────
+  // 偏好 `hide_toolbars`（设置 → 阅读界面，或顶栏 / 底栏 / 悬浮球上的同一颗键）
+  // 在应用内悬浮球开着时生效（[readerToolbarsHidden]）：顶栏 / 底栏（含悬浮态临时
+  // 唤出）一律不画，任何唤出 / 切换入口（点空白、点顶部进度、M / 手柄 Y、VN 空白
+  // 点、歌词 / 双页空白点）都打不开它们。状态镜像在
+  // [ReaderChromeController.toolbarsHidden]，布局判据经 [_chromeBarsExpanded]，
+  // 点词门控经 [_tapGateChrome]。
   //
-  // 退出通道（栏都没了，按钮自己也跟着看不见）：悬浮球里的同一颗键、返回
-  // （Esc / 系统返回 / 手柄 B 先退专注模式再退书，见 PopScope），以及点空白时弹出
-  // 的提示条上的「退出专注模式」——触屏没有返回键时（iOS）靠的就是这一条。
-  // 所以**每一次没被别的动作消费的正文点击**都必须弹它：点空白（onTapEmpty）、
-  // 关了点词时的点正文（onTap 的 !highlightOnTap 分支）、VN 点击推进的空白点
-  // （决策表 advanceAndOfferFocusModeExit，推进照常、提示附带）。
+  // 出口全在悬浮球上：阅读器场景把返回 / 设置 / 开回栏固定在球上
+  // （[kReaderToolbarsTakeoverItems]），球不给「关闭」键
+  // （[_buildReaderFloatingBallScene]）；返回键（Esc / 系统返回 / 手柄 B）照常退书。
 
-  void _toggleFocusMode() => _setFocusMode(!_focusMode);
-
-  void _setFocusMode(bool enabled) {
-    // 提示条挂在根 ScaffoldMessenger 上，本页被拆后它可能还在，
-    // 它的「退出」动作会对着已 dispose 的页面调进来。
+  /// 按偏好与应用内悬浮球开关同步 [_toolbarsHidden]；没变就什么都不做（偏好仓库
+  /// 任一键变化都会调进来）。变了就重下 chrome 预留并重锚（挤压态的栏占位随之
+  /// 变化；悬浮态预留恒 0，这里是 no-op），并同步点词门控。[reanchor] 为 false
+  /// 时由调用方自己重下预留（设置页的重锚通道）。
+  void _syncToolbarsHidden({bool reanchor = true}) {
     if (!mounted) return;
-    if (_focusMode == enabled) return;
+    final bool hidden = readerToolbarsHidden(
+      hideToolbarsPreference: ReaderFushiSource.instance.hideToolbars,
+      inAppFloatingBallEnabled: appModelNoUpdate.prefsRepo.floatingBallInApp,
+    );
+    if (_toolbarsHidden == hidden) return;
     _rebuild(() {
-      _chrome.focusMode = enabled;
+      _chrome.toolbarsHidden = hidden;
     });
-    if (!enabled) {
-      _focusModeHint?.close();
+    if (reanchor) {
+      unawaited(
+        _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('ReaderFushi.syncToolbarsHidden', e, s);
+        }),
+      );
     }
-    // 挤压态的栏占位随之变化：重下 inset 并重锚，保住连续模式的滚动位置
-    // （与改预留高的 chrome 偏好同一条通道）。悬浮态预留恒 0，这里是 no-op。
-    unawaited(
-      _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderFushi.setFocusMode', e, s);
-      }),
-    );
-    // 点词门控镜像读 [_tapGateChrome]（含专注模式位），翻转即同步。
+    // 点词门控镜像读 [_tapGateChrome]（含栏关掉位），翻转即同步。
     _syncTapGateJs();
+  }
+
+  /// 顶栏 / 底栏 / 悬浮球上那颗开关键的执行体。
+  Future<void> _setHideToolbars(bool hide) async {
+    await setHideReaderToolbars(appModelNoUpdate, hide);
+    if (!mounted) return;
+    _syncToolbarsHidden();
     _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
-  }
-
-  /// 专注模式下有人想唤出栏（点空白 / 切栏快捷键）：弹一条带「退出专注模式」
-  /// 动作的提示。已在场时不重复弹。
-  void _showFocusModeBarsLockedHint() {
-    if (!mounted || _focusModeHint != null) return;
-    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-    final OwnedSnackBar hint = OwnedSnackBar.show(
-      messenger,
-      SnackBar(
-        key: const ValueKey<String>('fushi_reader_focus_mode_hint'),
-        content: Text(t.reader_focus_mode_bars_locked),
-        duration: const Duration(seconds: 4),
-        // 带动作的 SnackBar 默认常驻；这里只是提示，到时自己消失。
-        persist: false,
-        action: SnackBarAction(
-          label: t.reader_focus_mode_exit,
-          onPressed: () => _setFocusMode(false),
-        ),
-      ),
-    );
-    _focusModeHint = hint;
-    unawaited(
-      hint.closed.whenComplete(() {
-        if (identical(_focusModeHint, hint)) _focusModeHint = null;
-      }),
-    );
-  }
-
-  /// 明确的退书（面板「退出」、源审查横幅「返回」、未载入页的返回键、重导入后
-  /// 必须离开本书）：一次退到底，不被 PopScope 的「返回先退专注模式」截成两下。
-  ///
-  /// 那一级只属于**含糊的返回**（Esc / 系统返回 / 手柄 B）。这里不去翻
-  /// `focusMode`：页面马上离场，翻了就会在退场动画里把挤压栏画回来，而 JS 侧
-  /// inset 还按专注模式下发着；只让 PopScope 在这一次 maybePop 期间放行。
-  /// 提示条挂在根 ScaffoldMessenger 上，必须先关，否则跟到书架页。
-  Future<void> _exitBookPastFocusMode() async {
-    _focusModeHint?.close();
-    _explicitExitInFlight = true;
-    try {
-      await Navigator.of(context).maybePop();
-    } finally {
-      _explicitExitInFlight = false;
-    }
   }
 
   Future<void> _applyChromeInsets() async {
@@ -1283,11 +1240,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 它一起停掉，否则计时到点会对着已收起的栏再通知一次。
   bool _handleFloatingChromeReveal() {
     if (!_anyChromeFloating) return false;
-    // 专注模式：本次点击照样算被消费（不落到别的分支），但栏不出来。
-    if (_focusMode) {
-      _showFocusModeBarsLockedHint();
-      return true;
-    }
+    // 栏被关掉：本次点击照样算被消费（不落到别的分支），但栏不出来。
+    if (_toolbarsHidden) return true;
     _cancelChromeAutoHide();
     _rebuild(() {
       _chromeTransientVisible = !_chromeTransientVisible;
@@ -1324,18 +1278,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
-    // 专注模式由决策表裁决（照常推进 + 附带退出提示），这里不另开分支。
+    // 栏被关掉由决策表裁决（只推进），这里不另开分支。
     dispatchReaderVnBlankTapAction(
       readerVnBlankTapAction(
         chromeExpanded: _showChrome,
         bottomBarFloating: _bottomBarFloating,
         transientVisible: _chromeTransientVisible,
-        focusMode: _focusMode,
+        toolbarsHidden: _toolbarsHidden,
       ),
       expandChrome: _toggleChrome,
       revealChrome: _revealFloatingChromeForVnAdvance,
       advance: () => unawaited(_paginate(ReaderNavigationDirection.forward)),
-      offerFocusModeExit: _showFocusModeBarsLockedHint,
     );
   }
 
@@ -1648,7 +1601,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
       case ReaderControlItem.fullscreen:
         return desktopWindowFullscreenSupported;
-      case ReaderControlItem.focusMode:
+      case ReaderControlItem.toolbars:
         return true;
       // 有声书传输键：没挂控制器就没有可控的音频，整颗不出现（不论拖在哪个槽）。
       case ReaderControlItem.audiobookPrev:
@@ -1775,18 +1728,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
           semanticsId: 'hibiki.reader.bottom.fullscreen',
           onPressed: () => unawaited(_changeReaderWindowFullscreen()),
         );
-      case ReaderControlItem.focusMode:
-        // 栏里的这颗只会在「未开启」时被看见（开启后栏整个收起）；悬浮球里的
-        // 同一颗两态都在，图标 / 文案按运行态给出「按下去会怎样」。
-        final bool focus = _focusMode;
+      case ReaderControlItem.toolbars:
+        // 栏里的这颗只会在「栏还在」时被看见；栏关掉后它被固定在悬浮球上
+        // （[kReaderToolbarsTakeoverItems]），那时就是开回栏的入口。图标 / 文案按
+        // 运行态给出「按下去会怎样」。
+        final bool hidden = _toolbarsHidden;
         return ReaderHeaderAction(
-          key: const ValueKey<String>('fushi_reader_focus_mode_button'),
-          icon: focus
-              ? Icons.center_focus_weak_outlined
-              : Icons.center_focus_strong_outlined,
-          label: focus ? t.reader_focus_mode_exit : t.reader_focus_mode_label,
-          semanticsId: 'hibiki.reader.control.focus_mode',
-          onPressed: _toggleFocusMode,
+          key: const ValueKey<String>('fushi_reader_toolbars_button'),
+          icon: hidden
+              ? Icons.web_asset_outlined
+              : Icons.web_asset_off_outlined,
+          label: hidden ? t.reader_toolbars_show : t.reader_toolbars_hide,
+          semanticsId: 'hibiki.reader.control.toolbars',
+          onPressed: () => unawaited(_setHideToolbars(!hidden)),
         );
       case ReaderControlItem.settings:
         return ReaderHeaderAction(
@@ -1986,9 +1940,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// （出厂是有声书的上一句 / 播放暂停 / 下一句），执行体与顶栏 / 底栏同一个
   /// [_readerControlAction]。首章加载前不给按钮；此刻渲染不了的按钮（例如书没挂
   /// 有声书时的传输键）不登记，宿主就跳过它。球本身画在根上的应用内悬浮球宿主里。
+  ///
+  /// 顶栏和底栏被关掉时球接管它们：[kReaderToolbarsTakeoverItems]（返回 / 设置 /
+  /// 开回栏）不看勾选固定在球上，歌词模式再加模式切换键（顶栏在歌词模式也强制
+  /// 保留它：那是回正文最直接的入口）；宿主据此不给「关闭悬浮球」。
   Widget _buildReaderFloatingBallScene() {
     return FloatingBallScene(
       scope: FloatingBallScope.reader,
+      pinnedIds: <String>[
+        if (_hasEverLoaded && _toolbarsHidden) ...<String>[
+          for (final ReaderControlItem item in kReaderToolbarsTakeoverItems)
+            item.storageValue,
+          if (_lyricsMode) ReaderControlItem.modeToggle.storageValue,
+        ],
+      ],
       actions: <String, ReaderHeaderAction>{
         if (_hasEverLoaded)
           for (final ReaderControlItem item in ReaderControlItem.values)
@@ -2267,8 +2232,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // （caret.part.dart 的 readerExitBook，schema v6 从 readerDismissDict
       // 拆出）走的是同一条退出路径。
       onExitReader: () {
-        // 面板里的「退出」是明确的退书：跳过 PopScope 的「先退专注模式」那一级。
-        unawaited(_exitBookPastFocusMode());
+        unawaited(Navigator.of(context).maybePop());
       },
       webViewController: _controller!,
       appModel: appModel,

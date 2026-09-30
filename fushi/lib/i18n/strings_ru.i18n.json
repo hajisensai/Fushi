@@ -6124,9 +6124,6 @@
   "floating_ball_action_camera_ocr": "Photo lookup",
   "floating_ball_camera_unavailable": "Couldn't open the camera",
   "floating_ball_system_hint_desktop": "Keeps floating above other programs after you switch away from Fushi",
-  "reader_focus_mode_label": "Focus mode",
-  "reader_focus_mode_exit": "Exit focus mode",
-  "reader_focus_mode_bars_locked": "Focus mode is on — toolbars stay hidden",
   "leaderboard_share_card_week": "Week of ${date} on Fushi",
   "leaderboard_share_card_all": "As of ${date} on Fushi",
   "leaderboard_share_card_finished_week": "Finished ${n} this week",
@@ -6162,5 +6159,9 @@
   "font_preview_chain_position": "No. $index in the chain",
   "custom_fonts_system_add_count": "Add $count",
   "lookup_dictionary_font_hint": "Fonts for dictionary popups, with a live Japanese preview",
-  "video_setting_subtitle_font_hint": "Font for subtitles, with a live Japanese preview"
+  "video_setting_subtitle_font_hint": "Font for subtitles, with a live Japanese preview",
+  "reader_toolbars_hide": "Скрыть верхнюю и нижнюю панели",
+  "reader_toolbars_show": "Показать верхнюю и нижнюю панели",
+  "reader_toolbars_hide_subtitle": "Плавающий шар берёт управление на себя: «Назад», настройки и кнопка возврата панелей закреплены на нём",
+  "reader_toolbars_hide_ball_off": "Плавающий шар в приложении выключен, поэтому панели остаются видимыми"
 }

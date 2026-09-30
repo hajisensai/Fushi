@@ -6124,9 +6124,6 @@
   "floating_ball_action_camera_ocr": "拍照查词",
   "floating_ball_camera_unavailable": "无法打开相机",
   "floating_ball_system_hint_desktop": "切到其他程序后悬浮球仍浮在最上层",
-  "reader_focus_mode_label": "专注模式",
-  "reader_focus_mode_exit": "退出专注模式",
-  "reader_focus_mode_bars_locked": "专注模式已开启，顶栏和底栏不会显示",
   "leaderboard_share_card_week": "${date} 起一周 · Fushi",
   "leaderboard_share_card_all": "截至 ${date} · Fushi",
   "leaderboard_share_card_finished_week": "本周读完 ${n} 部",
@@ -6162,5 +6159,9 @@
   "font_preview_chain_position": "第 $index 顺位",
   "custom_fonts_system_add_count": "添加 $count 款",
   "lookup_dictionary_font_hint": "词典弹窗使用的字体，可实时预览日文效果",
-  "video_setting_subtitle_font_hint": "字幕使用的字体，可实时预览日文效果"
+  "video_setting_subtitle_font_hint": "字幕使用的字体，可实时预览日文效果",
+  "reader_toolbars_hide": "隐藏顶栏和底栏",
+  "reader_toolbars_show": "显示顶栏和底栏",
+  "reader_toolbars_hide_subtitle": "由悬浮球接管：返回、设置和「显示顶栏和底栏」固定在球上",
+  "reader_toolbars_hide_ball_off": "应用内悬浮球已关闭，顶栏和底栏照常显示"
 }

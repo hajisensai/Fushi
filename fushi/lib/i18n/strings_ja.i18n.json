@@ -6124,9 +6124,6 @@
   "floating_ball_action_camera_ocr": "Photo lookup",
   "floating_ball_camera_unavailable": "Couldn't open the camera",
   "floating_ball_system_hint_desktop": "Keeps floating above other programs after you switch away from Fushi",
-  "reader_focus_mode_label": "集中モード",
-  "reader_focus_mode_exit": "集中モードを終了",
-  "reader_focus_mode_bars_locked": "集中モード中は上下のバーを表示しません",
   "leaderboard_share_card_week": "Week of ${date} on Fushi",
   "leaderboard_share_card_all": "As of ${date} on Fushi",
   "leaderboard_share_card_finished_week": "Finished ${n} this week",
@@ -6162,5 +6159,9 @@
   "font_preview_chain_position": "No. $index in the chain",
   "custom_fonts_system_add_count": "Add $count",
   "lookup_dictionary_font_hint": "Fonts for dictionary popups, with a live Japanese preview",
-  "video_setting_subtitle_font_hint": "Font for subtitles, with a live Japanese preview"
+  "video_setting_subtitle_font_hint": "Font for subtitles, with a live Japanese preview",
+  "reader_toolbars_hide": "上部バーと下部バーを隠す",
+  "reader_toolbars_show": "上部バーと下部バーを表示",
+  "reader_toolbars_hide_subtitle": "フローティングボールが代わりを担います：戻る・設定・バーを戻すボタンがボール上に固定されます",
+  "reader_toolbars_hide_ball_off": "アプリ内フローティングボールがオフのため、バーは表示されたままです"
 }
