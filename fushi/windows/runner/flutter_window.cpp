@@ -36,6 +36,7 @@
 #include "global_mouse_trigger.h"
 #include "ime_space_dispatch.h"
 #include "low_level_mouse_hook.h"
+#include "system_font_list.h"
 #include "utils.h"
 #include "window_capture.h"
 #include "window_recorder.h"
@@ -690,6 +691,7 @@ bool FlutterWindow::OnCreate() {
   RegisterVoiceHookChannel();
   RegisterMagpieChannel();
   RegisterGameStreamInputChannel();
+  RegisterSystemFontListChannel(flutter_controller_->engine()->messenger());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
