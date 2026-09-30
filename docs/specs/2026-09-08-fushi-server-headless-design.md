@@ -227,7 +227,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 
 - **本地音频库不托管**：`liveLibrary.audio` 仍报 true（客户端不读这一位），列表恒空、推送在传完后报 `UnsupportedError`。本地音频是查词发音源（查词域，服务端不做），要么客户端按能力位门控上传，要么服务端做成与词典包一样的存储中转——两条都未做。
 - **书 / 漫画根的对账只认服务端扫描认领过的书**（BUG-2816 起对账，此前完全不对账）：书行本身仍不记源文件路径（没升 schema），关系记在 `preferences` 的来源扫描索引 `media_source_scan_index_<sourceId>`（源相对路径 → 书 uid）里，书行带 `sourceId`。客户端上传 / 手动导入的同名书、升级前源文件就已删掉的存量书认领不上，不会被回收。
-- **代下载只收视频**：`downloads.kinds` 只有 `video`（没有发现导入执行器）。
+- **代下载不收游戏、接不了 PDF**（2026-09-30 起不再「只收视频」）：发现导入执行器（`DiscoveryImportExecutor` / 解压器 / `MangaArchiveImporter`）与 EPUB / 文本 / 漫画图包 / 有声书四个域原语已下沉引擎（`media/discovery/import/discovery_engine_importers.dart`，app 与服务端共用），`downloads.kinds` = `video` + `novel` / `manga` / `audiobook`。仍不做：`game`（服务端没有游戏库，exe 登记只在 app 有意义，能力位不宣告、投了 400）；小说包里的 PDF（`PdfImporter` 依赖 pdfrx 插件，任务以新原因码 `unsupportedOnThisHost` 进 needsAttention，不假装导入）；cbr / cb7 / rar 依赖服务端自备 7-Zip。服务端此前没装 `AudiobookStorage.documentsRootResolver`，有声书落盘会抛 StateError——现在在 `installServerHostBindings` 接到 `<documents>`。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。
 - CLI 没有 `jobs` / `download` 子命令：由 admin API / WebUI 代替。
 - **AI 助手会话（2026-09-30 补）**：服务端现在也挂 `/api/assistant`（AI 下视频），状态机 / AI 调用层 / 发现服务 / 端口装配随之从 app 下沉到引擎（`fushi_engine/lib/ai/`、`media/video/acquisition/`、`media/video/discovery/`、`sync/assistant/video_acquisition_assistant_host.dart`），app 与服务端共用 `createHostVideoAcquisitionService`。服务端的 AI 配置是 yaml `ai:` 段（**只有一家、只指派给「AI 下载」**），不是 app 那套「提供商清单 + 功能指派」偏好键；没配时能力位 `no_provider`、零 AI 请求。仍不做的：服务端管线没接字幕源，会话里选了「配字幕」也不装；刮削的 AI 身份识别不在服务端装配。
@@ -235,7 +235,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
 
 - **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表，目前没有 WebUI 编辑面。
-- **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器还在 app 侧、rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
+- **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器 `MangaArchiveImporter` 已在引擎、代下载已在用，但扫描器没有接；rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
 - **Linux 桌面版 Fushi 仍未随包内置引擎**：服务端那份静态 `.so` 可直接复用，但 runner CMake copy-if-present 未接（另起 job）。
 - **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。
 - **audiobooks 库服务仍返回空集**（第 0 期既定），有声书不经 host 托管。

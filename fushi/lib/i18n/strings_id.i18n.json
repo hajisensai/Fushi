@@ -6166,5 +6166,6 @@
   "reader_toolbars_hide_ball_off": "Bola mengambang dalam aplikasi nonaktif, jadi bilah tetap tampil",
   "dictionary_pitch_source_count": "$count dictionaries",
   "manga_ocr_ctc_model": "Manga CTC (cepat)",
-  "manga_ocr_ctc_desc": "Membaca setiap kolom teks secara terpisah dengan model PP-OCRv6 yang disetel untuk manga. Unduhan jauh lebih kecil dan lebih cepat daripada manga-ocr; pada halaman uji kami akurasinya setara atau lebih baik, termasuk halaman dengan banyak furigana. Model: Kellenok/PP-OCRv6_manga (dilatih dengan Manga109-s dan AnimeText)."
+  "manga_ocr_ctc_desc": "Membaca setiap kolom teks secara terpisah dengan model PP-OCRv6 yang disetel untuk manga. Unduhan jauh lebih kecil dan lebih cepat daripada manga-ocr; pada halaman uji kami akurasinya setara atau lebih baik, termasuk halaman dengan banyak furigana. Model: Kellenok/PP-OCRv6_manga (dilatih dengan Manga109-s dan AnimeText).",
+  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead."
 }

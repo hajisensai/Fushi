@@ -6166,5 +6166,6 @@
   "reader_toolbars_hide_ball_off": "應用程式內懸浮球已關閉，頂欄和底欄照常顯示",
   "dictionary_pitch_source_count": "$count 本辭典",
   "manga_ocr_ctc_model": "漫畫 CTC（快速）",
-  "manga_ocr_ctc_desc": "用漫畫微調的 PP-OCRv6 模型逐列識別：下載體積比 manga-ocr 小得多、速度更快；實測準確率不低於 manga-ocr，注音密集的頁面也是。模型：Kellenok/PP-OCRv6_manga（以 Manga109-s 與 AnimeText 訓練）。"
+  "manga_ocr_ctc_desc": "用漫畫微調的 PP-OCRv6 模型逐列識別：下載體積比 manga-ocr 小得多、速度更快；實測準確率不低於 manga-ocr，注音密集的頁面也是。模型：Kellenok/PP-OCRv6_manga（以 Manga109-s 與 AnimeText 訓練）。",
+  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead."
 }

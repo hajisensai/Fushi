@@ -6166,5 +6166,6 @@
   "reader_toolbars_hide_ball_off": "De zwevende bal in de app staat uit, dus de balken blijven zichtbaar",
   "dictionary_pitch_source_count": "$count dictionaries",
   "manga_ocr_ctc_model": "Manga-CTC (snel)",
-  "manga_ocr_ctc_desc": "Leest elke tekstkolom afzonderlijk met een op manga afgestemd PP-OCRv6-model. Veel kleinere download en sneller dan manga-ocr; op onze testpagina’s minstens even nauwkeurig, ook bij veel furigana. Model: Kellenok/PP-OCRv6_manga (getraind met Manga109-s en AnimeText)."
+  "manga_ocr_ctc_desc": "Leest elke tekstkolom afzonderlijk met een op manga afgestemd PP-OCRv6-model. Veel kleinere download en sneller dan manga-ocr; op onze testpagina’s minstens even nauwkeurig, ook bij veel furigana. Model: Kellenok/PP-OCRv6_manga (getraind met Manga109-s en AnimeText).",
+  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead."
 }

@@ -4,8 +4,11 @@
 /// 与 app 的 `AppModel.startAnimeDownloadService` 同一条管线、同一张
 /// `video_download_jobs` 表；区别只在装配：后端按 `torrent.engine` 三态解析
 /// （auto：找得到 libfushi_torrent_ffi 就内置，否则配了 qBittorrent 就外接）、
-/// 目标视频源固定为 `<documents>/downloads`（首次启动自动建 media_sources 行）、
-/// 非视频类内容不代下（没有发现导入执行器）。
+/// 目标视频源固定为 `<documents>/downloads`（首次启动自动建 media_sources 行）。
+///
+/// 非视频域（小说 / 漫画 / 有声书）下载完整包交给引擎的发现导入执行器按域入库
+/// （见 `discovery_import_host.dart`）；游戏与小说包里的 PDF 服务端接不了，能力位
+/// `kinds` 如实不宣告 `game`，投了按 400 拒。
 library;
 
 import 'dart:io';
@@ -30,7 +33,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart' show DiscoveryMediaKind;
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/discovery_import_host.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
@@ -46,6 +51,8 @@ class ServerDownloadHost implements HostDownloadHost {
     required this.prefs,
     required this.identity,
     required this.scrape,
+    this.backendOverride,
+    this.pollInterval = const Duration(seconds: 5),
   });
 
   final ServerConfig config;
@@ -56,6 +63,13 @@ class ServerDownloadHost implements HostDownloadHost {
 
   /// 进程共享的刮削（协调器由 [HeadlessHost] 持有并关闭，这里只借用）。
   final ServerVideoScrape scrape;
+
+  /// 测试缝：直接用这个 torrent 后端（跳过 libtorrent / qBittorrent 探测，按内置
+  /// 引擎身份建任务）。生产传 null。
+  final TorrentBackend? backendOverride;
+
+  /// 管线轮询间隔（测试缩短；生产 5 秒，与 app 同）。
+  final Duration pollInterval;
 
   VideoDownloadPipelineService? _pipeline;
   VideoResourceRegistry? _registry;
@@ -114,6 +128,7 @@ class ServerDownloadHost implements HostDownloadHost {
 
   /// `torrent.engine` 三态 → 实际后端。探测只加载库、不建 session。
   String? _resolveEngine() {
+    if (backendOverride != null) return ServerConfig.torrentEngineEmbedded;
     final String want = config.torrentEngine;
     final bool embeddedOk = EmbeddedTorrentHost.probeAvailable(libraryPath: _torrentLibraryPath);
     switch (want) {
@@ -152,6 +167,9 @@ class ServerDownloadHost implements HostDownloadHost {
       scrapeCoordinator: scrape.coordinator,
       manualTorrentDirectory: Directory(p.join(paths.support.path, 'manual_torrents')),
       workerId: 'fushi-server-${identity.deviceId}',
+      pollInterval: pollInterval,
+      // 非视频域：整包按域入库（书 / 漫画 / 有声书），见 discovery_import_host.dart。
+      discoveryImporter: serverDiscoveryImporter(db),
       // 目标来源失效的任务重试时改绑到服务端自己的下载来源（BUG-2755）。
       defaultTargetSourceId: () async => _sourceId,
     )..start();
@@ -266,6 +284,8 @@ class ServerDownloadHost implements HostDownloadHost {
       );
 
   Future<VideoDownloadBackendBinding?> _resolveBackend(VideoDownloadJobRow job) async {
+    final TorrentBackend? override = backendOverride;
+    if (override != null) return VideoDownloadBackendBinding(backend: override, identity: _identity());
     switch (_resolvedBackend) {
       case ServerConfig.torrentEngineEmbedded:
         final EmbeddedTorrentHost? host = await _ensureEmbedded();
@@ -289,7 +309,7 @@ class ServerDownloadHost implements HostDownloadHost {
   Future<Map<String, Object?>> capability() async => <String, Object?>{
         'supported': configured,
         'backend': _resolvedBackend ?? 'none',
-        'kinds': <String>['video'],
+        'kinds': <String>['video', ...kServerDownloadDiscoveryKinds],
       };
 
   @override
@@ -302,10 +322,14 @@ class ServerDownloadHost implements HostDownloadHost {
     String mediaKind = 'movie',
     String? discoveryKind,
   }) async {
-    // 无头服务端没有发现导入执行器（小说/漫画/有声书/游戏的按域入库都在 app 里），
-    // 能力位 `kinds` 只报 video；客户端照规矩不会投，投了按 400 拒。
+    // 能力位 `kinds` 之外的域（游戏，或不认识的值）：客户端照规矩不会投，投了按 400 拒。
+    // 判据与能力位同一个集合，两边不会各说各话。
+    DiscoveryMediaKind? kind;
     if (discoveryKind != null) {
-      throw ArgumentError('this host only downloads video (got discoveryKind=$discoveryKind)');
+      if (!kServerDownloadDiscoveryKinds.contains(discoveryKind)) {
+        throw ArgumentError('this host does not import "$discoveryKind"');
+      }
+      kind = DiscoveryMediaKind.values.byName(discoveryKind);
     }
     final VideoDownloadPipelineService? pipeline = _pipeline;
     final int? sourceId = _sourceId;
@@ -316,8 +340,10 @@ class ServerDownloadHost implements HostDownloadHost {
       title: title,
       backendTarget: VideoDownloadBackendTarget(identity: _identity(), category: _qbConfig.category),
       magnetUri: magnetUri,
+      discoveryKind: kind,
       mediaKind: mediaKind == 'tv' ? VideoMetadataMediaKind.tv : VideoMetadataMediaKind.movie,
-      targetSourceId: sourceId,
+      // 非视频任务不进受管视频来源（文件留在下载目录原地，整包按域入库）。
+      targetSourceId: kind == null ? sourceId : null,
     ));
   }
 

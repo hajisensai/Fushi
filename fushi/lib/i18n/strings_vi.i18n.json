@@ -6166,5 +6166,6 @@
   "reader_toolbars_hide_ball_off": "Bóng nổi trong ứng dụng đang tắt nên các thanh vẫn hiển thị",
   "dictionary_pitch_source_count": "$count dictionaries",
   "manga_ocr_ctc_model": "Manga CTC (nhanh)",
-  "manga_ocr_ctc_desc": "Nhận dạng từng cột chữ riêng bằng mô hình PP-OCRv6 được tinh chỉnh cho manga. Dung lượng tải nhỏ hơn nhiều và nhanh hơn manga-ocr; trên các trang chúng tôi đã đo, độ chính xác tương đương hoặc tốt hơn, kể cả trang nhiều furigana. Mô hình: Kellenok/PP-OCRv6_manga (huấn luyện với Manga109-s và AnimeText)."
+  "manga_ocr_ctc_desc": "Nhận dạng từng cột chữ riêng bằng mô hình PP-OCRv6 được tinh chỉnh cho manga. Dung lượng tải nhỏ hơn nhiều và nhanh hơn manga-ocr; trên các trang chúng tôi đã đo, độ chính xác tương đương hoặc tốt hơn, kể cả trang nhiều furigana. Mô hình: Kellenok/PP-OCRv6_manga (huấn luyện với Manga109-s và AnimeText).",
+  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead."
 }
