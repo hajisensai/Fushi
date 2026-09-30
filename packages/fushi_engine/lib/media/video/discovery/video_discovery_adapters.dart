@@ -1,8 +1,8 @@
 library;
 
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider_display_name.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
@@ -44,7 +44,7 @@ class TmdbVideoDiscoveryProvider
 
   @override
   String get displayName =>
-      videoMetadataProviderLabel(VideoMetadataProviderKind.tmdb);
+      videoMetadataProviderDisplayName(VideoMetadataProviderKind.tmdb);
 
   @override
   int get priority => 20;
@@ -634,7 +634,7 @@ class TmdbVideoDiscoveryProvider
       // 系列查询是加法：失败退回单部作品，但必须留痕（限流 / key 失效时用户只会
       // 看到「没找到系列」）。错误文本不含凭据：key 只在 query 里，transport 的
       // 异常已脱敏。
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'TmdbVideoDiscoveryProvider.$operation',
         '$error',
       );

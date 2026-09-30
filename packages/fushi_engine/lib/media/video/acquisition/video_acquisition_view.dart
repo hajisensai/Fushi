@@ -13,13 +13,12 @@
 /// 标签这类字面量事实（压制组 · 分辨率 · 片源 · 体积）在投影时拼好。
 library;
 
-import 'package:fushi/src/media/discovery/discovery_labels.dart'
-    show formatDiscoveryBytes;
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart'
+import 'package:fushi_engine/media/discovery/discovery_format.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart'
     show videoAcquisitionWorkActions;
-import 'package:fushi/src/media/video/acquisition/video_acquisition_resource_picker.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_resource_picker.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart'
     show VideoDownloadBackendUnavailable;

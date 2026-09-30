@@ -1,38 +1,40 @@
-/// app 当互联 host 时的「AI 助手会话」：手机经 `/api/assistant` 把一句话交给本机，
-/// 本机用**自己的** AI 指派、资源搜索与下载管线把事办完（第一个功能：AI 下视频）。
+/// 互联 host 的「AI 下视频」助手会话：手机经 `/api/assistant` 把一句话交给 host，
+/// host 用**自己的** AI 指派、资源搜索与下载管线把事办完。
 ///
-/// 这里只做两件事：能力 / 前置判断（缺什么回稳定短码，手机据此给出具体引导），以
-/// 及把 [VideoAcquisitionService] 包成引擎的 [HostAssistantSession]（快照 = 与语言
-/// 无关的 [VideoAcquisitionView]，动作 = 对话页的那几个按钮）。全部依赖按闭包现取：
-/// 下载管线是 fire-and-forget 起的，host 可能先绑上端口。
+/// app（`app_video_acquisition_assembly.dart`）与无头服务端
+/// （`fushi_server/lib/src/assistant_host.dart`）各自装配一份：这里只做两件事——
+/// 能力 / 前置判断（缺什么回稳定短码，手机据此给出具体引导），以及把
+/// [VideoAcquisitionService] 包成引擎的 [HostAssistantSession]（快照 = 与语言无关的
+/// [VideoAcquisitionView]，动作 = 对话页的那几个按钮）。全部依赖按闭包现取：下载
+/// 管线是 fire-and-forget 起的，host 可能先绑上端口。
 library;
 
 import 'dart:async';
 
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 
 /// 能力位 `reason` 短码。
-const String kAppAssistantReasonNoProvider = 'no_provider';
-const String kAppAssistantReasonNotReady = 'not_ready';
-const String kAppAssistantReasonDisabled = 'disabled';
+const String kHostAssistantReasonNoProvider = 'no_provider';
+const String kHostAssistantReasonNotReady = 'not_ready';
+const String kHostAssistantReasonDisabled = 'disabled';
 
 /// 开一场本机执行的 AI 下视频会话：service + 会话结束时要释放的资源（发现服务等）。
-typedef AppVideoAcquisitionOpener
+typedef VideoAcquisitionOpener
     = Future<({VideoAcquisitionService service, void Function() release})>
         Function(String locale);
 
-class AppAssistantHost implements HostAssistantProvider {
-  AppAssistantHost({
+class VideoAcquisitionAssistantHost implements HostAssistantProvider {
+  VideoAcquisitionAssistantHost({
     required Future<String?> Function() videoAcquireBlocker,
-    required AppVideoAcquisitionOpener openVideoAcquisition,
+    required VideoAcquisitionOpener openVideoAcquisition,
   })  : _videoAcquireBlocker = videoAcquireBlocker,
         _openVideoAcquisition = openVideoAcquisition;
 
-  /// null = 现在就能开；否则是缺什么（[kAppAssistantReasonNoProvider] 等）。
+  /// null = 现在就能开；否则是缺什么（[kHostAssistantReasonNoProvider] 等）。
   final Future<String?> Function() _videoAcquireBlocker;
-  final AppVideoAcquisitionOpener _openVideoAcquisition;
+  final VideoAcquisitionOpener _openVideoAcquisition;
 
   @override
   Future<Map<String, Object?>> capability() async {

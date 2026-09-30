@@ -9,13 +9,13 @@ library;
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart' show immutable;
+import 'package:meta/meta.dart' show immutable;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 
 @immutable
 class VideoDiscoveryDownloadSelection {

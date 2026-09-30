@@ -26,8 +26,8 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:html/dom.dart' as html_dom;
@@ -299,7 +299,7 @@ class WebKnowledgeClient {
   bool get isEnabled => _sites.isNotEmpty;
 
   /// 在每个启用的站点里搜 [query]，取前 [pagesPerSource] 个条目的纯文本正文，每页截断到 [maxCharsPerPage]。
-  /// 任何站点失败只记诊断日志（ErrorLogService.instance.logDiagnostic）并跳过，不抛。
+  /// 任何站点失败只记诊断日志（engineLog.logDiagnostic）并跳过，不抛。
   ///
   /// 站点之间并行、站点内逐页串行（对单站点保持礼貌的并发度）；结果按 [sites]
   /// 顺序排列，与网络返回先后无关。清单型站点（ANN / TVmaze）每个查询恒为一页。
@@ -362,7 +362,7 @@ class WebKnowledgeClient {
     } catch (error, stack) {
       // 已抓到的页照样返回：一条正文失败不该连累同站点前面成功的。
       _cooldownUntil[site.id] = _now().add(failureCooldown);
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'WebKnowledgeClient.${site.id}',
         '$query: $error\n$stack',
       );

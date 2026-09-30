@@ -15,11 +15,11 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart'
     show formatDiscoveryBytes;
-import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;

@@ -29,6 +29,8 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider_display_name.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show ffmpegRemoteInputRouteResolver;
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
@@ -80,6 +82,8 @@ void installEngineHostBindings() {
   fushiDebugPrint = debugPrint;
   engineLog = ErrorLogService.instance;
   enginePaths = const AppPathsEngineBridge();
+  // 发现来源 chip 的资料源名走 i18n 出口（引擎默认是不翻译的品牌名）。
+  videoMetadataProviderDisplayName = videoMetadataProviderLabel;
   evictImageCacheForFile = _evictImageCacheForFile;
   releaseImageCacheBeforeDelete = _releaseImageCacheBeforeDelete;
   // 词典导入/删除前释放 FFI 引擎的文件映射（BUG-1756）。

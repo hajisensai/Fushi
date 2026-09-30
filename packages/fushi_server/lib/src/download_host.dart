@@ -84,6 +84,25 @@ class ServerDownloadHost implements HostDownloadHost {
 
   Directory get downloadRoot => Directory(p.join(paths.documents.path, 'downloads'));
 
+  // ── 「AI 下视频」助手会话（assistant_host.dart）的装配面：与 app 的
+  // `createAppVideoAcquisitionService` 接同一组端口。后端没起来时前三项为 null。
+
+  VideoDownloadPipelineService? get pipeline => _pipeline;
+  VideoResourceRegistry? get registry => _registry;
+
+  /// `<documents>/downloads` 的托管来源行；[start] 没起管线时 null。
+  Future<MediaSourceRow?> downloadSource() async {
+    final int? id = _sourceId;
+    return id == null ? null : db.getMediaSourceById(id);
+  }
+
+  /// 提交那一刻的下载后端目标（与 `/api/downloads` 入队同一份身份）。
+  VideoDownloadBackendTarget backendTarget() =>
+      VideoDownloadBackendTarget(identity: _identity(), category: _qbConfig.category);
+
+  /// 建订阅后立即检查一次；订阅服务没起时什么也不做。
+  Future<void> checkSubscriptionsNow() async => _subscriptionService?.checkNow();
+
   QbConnectionConfig get _qbConfig => QbConnectionConfig(
         backend: _resolvedBackend == ServerConfig.torrentEngineEmbedded
             ? QbConnectionConfig.backendEmbedded

@@ -14,8 +14,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_text_process_assistant.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/utils.dart';

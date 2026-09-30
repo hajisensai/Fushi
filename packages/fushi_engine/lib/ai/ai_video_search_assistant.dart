@@ -17,15 +17,14 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_feature.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_reply_json.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_reply_json.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 
 /// 解析「视频搜索辅助」当前可用的提供商；null = 未指派 / 已删 / 没配全。
 ///
@@ -38,7 +37,7 @@ typedef AiProviderResolver = AiProviderConfig? Function();
 typedef AiClientFactory = AiChatClient Function();
 
 /// 从偏好里解析视频搜索辅助的提供商。调用方须先确认偏好已就绪。
-AiProviderConfig? resolveVideoSearchAiProvider(PreferencesRepository prefs) =>
+AiProviderConfig? resolveVideoSearchAiProvider(AiSettingsSource prefs) =>
     prefs.aiFeatureAssignments.resolve(
       AiFeature.videoSearch,
       prefs.aiProviders,
@@ -474,47 +473,4 @@ void _writeMedia(StringBuffer buffer, VideoMediaReference? media) {
     buffer.writeln('Original title: ${jsonEncode(media.originalTitle)}');
   }
   if (media.year != null) buffer.writeln('Year: ${media.year}');
-}
-
-// ---------------------------------------------------------------------------
-// 自动补字幕的接线
-// ---------------------------------------------------------------------------
-
-/// 给 [VideoSubtitleBackfillService.aiReorder] 用的重排闭包。
-///
-/// 提供商在**每次调用时**解析（用户改设置不用重建服务）；未指派或 AI 失败都回退
-/// 原序——补字幕是后台任务，AI 只能锦上添花，绝不能把它变成新的失败点。
-SubtitleBackfillReorder aiSubtitleBackfillReorder({
-  required AiProviderResolver resolveProvider,
-  AiClientFactory? clientFactory,
-}) {
-  return (
-    List<VideoSubtitleCandidate> candidates,
-    SubtitleBackfillTarget target,
-  ) async {
-    final AiProviderConfig? provider = resolveProvider();
-    if (provider == null || candidates.length < 2) return candidates;
-    final AiChatClient client = clientFactory?.call() ?? AiChatClient();
-    try {
-      final AiRankResult rank = await requestAiSubtitleRank(
-        client: client,
-        provider: provider,
-        candidates: candidates,
-        context: AiSubtitleRankContext(
-          media: target.media,
-          localFileName: target.videoPath.split(RegExp(r'[/\\]')).last,
-          episode: target.media.episode,
-          preferredLanguages: <String>[
-            if (target.contentLanguage?.trim().isNotEmpty == true)
-              target.contentLanguage!,
-          ],
-        ),
-      );
-      return rank.reorder(candidates);
-    } on AiChatFailure {
-      return candidates;
-    } finally {
-      client.close();
-    }
-  };
 }

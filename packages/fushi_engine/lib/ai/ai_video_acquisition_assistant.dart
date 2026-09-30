@@ -19,21 +19,21 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_feature.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_reply_json.dart';
-import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
-import 'package:fushi/src/ai/ai_video_search_assistant.dart';
-import 'package:fushi/src/ai/web_knowledge.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_reply_json.dart';
+import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 
 /// 从偏好里解析「AI 下视频」的提供商；null = 未指派 / 已删 / 没配全。
-AiProviderConfig? resolveVideoAcquireAiProvider(PreferencesRepository prefs) =>
+AiProviderConfig? resolveVideoAcquireAiProvider(AiSettingsSource prefs) =>
     prefs.aiFeatureAssignments.resolve(AiFeature.acquire, prefs.aiProviders);
 
 /// 一句话解析的输入：用户原文 + 当前会话的最小快照，让模型知道「在回答哪个问题」。
@@ -508,7 +508,7 @@ Future<List<String>> requestAiVideoAlias({
 /// 记诊断后原样抛（编排器吞成「没找到」）。
 Future<List<String>> Function(String query)
 createPreferencesVideoAcquisitionAliasResolver(
-  PreferencesRepository prefsRepo, {
+  AiSettingsSource prefsRepo, {
   AiClientFactory? clientFactory,
   WebKnowledgeClient Function()? webFactory,
 }) => (String query) async {
@@ -526,7 +526,7 @@ createPreferencesVideoAcquisitionAliasResolver(
       query: query,
     );
   } catch (error, stack) {
-    ErrorLogService.instance.logDiagnostic(
+    engineLog.logDiagnostic(
       'VideoAcquisition.alias',
       '$query: $error\n$stack',
     );
@@ -551,7 +551,7 @@ typedef VideoAcquisitionIntentParser =
 /// 失败先记诊断日志再原样抛出：编排器据此回退成「请点选」（chip 不经 LLM），
 /// 流程照样能走完。
 VideoAcquisitionIntentParser createPreferencesVideoAcquisitionIntentParser(
-  PreferencesRepository prefsRepo, {
+  AiSettingsSource prefsRepo, {
   AiClientFactory? clientFactory,
 }) => (VideoAcquisitionIntentQuery query) async {
   final AiProviderConfig? provider = resolveVideoAcquireAiProvider(prefsRepo);
@@ -564,7 +564,7 @@ VideoAcquisitionIntentParser createPreferencesVideoAcquisitionIntentParser(
       query: query,
     );
   } catch (error, stack) {
-    ErrorLogService.instance.logDiagnostic(
+    engineLog.logDiagnostic(
       'VideoAcquisition.intent',
       '${query.stage}: $error\n$stack',
     );
@@ -577,7 +577,7 @@ VideoAcquisitionIntentParser createPreferencesVideoAcquisitionIntentParser(
 /// 生产装配：多义作品选择。语义同 [createPreferencesVideoAcquisitionIntentParser]，
 /// 只是指派槽位是 [AiFeature.acquire] 而非刮削的 `videoIdentify`。
 AiVideoIdentityDecider createPreferencesVideoAcquisitionIdentityDecider(
-  PreferencesRepository prefsRepo, {
+  AiSettingsSource prefsRepo, {
   AiClientFactory? clientFactory,
   WebKnowledgeClient Function()? webFactory,
 }) => (AiVideoIdentityQuery query) async {
@@ -595,7 +595,7 @@ AiVideoIdentityDecider createPreferencesVideoAcquisitionIdentityDecider(
       references: await fetchAiIdentityReferences(web, query),
     );
   } catch (error, stack) {
-    ErrorLogService.instance.logDiagnostic(
+    engineLog.logDiagnostic(
       'VideoAcquisition.identity',
       '${query.localTitles.join(' / ')}: $error\n$stack',
     );

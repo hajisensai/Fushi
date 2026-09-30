@@ -15,8 +15,8 @@ import 'package:fushi_engine/media/video/download/subscription_release_scope.dar
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/download/video_discovery_selection.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -33,10 +33,10 @@ import 'package:fushi/src/pages/implementations/video_resource_version_group_lis
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 
-export 'package:fushi/src/media/video/download/video_discovery_selection.dart';
+export 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
 
 // 集数解析下沉后的源兼容出口（订阅聚合与既有测试从本文件 import 它）。
-export 'package:fushi/src/media/video/download/video_resource_version_groups.dart'
+export 'package:fushi_engine/media/video/download/video_resource_version_groups.dart'
     show episodeNumberFromReleaseTitle;
 
 typedef VideoDiscoveryDownloadSubmit = Future<void> Function(

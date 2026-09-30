@@ -6,7 +6,7 @@
 library;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:fushi/src/media/video/download/video_discovery_selection.dart'
+import 'package:fushi_engine/media/video/download/video_discovery_selection.dart'
     show
         VideoDiscoveryDownloadSelection,
         VideoDiscoverySubscriptionSelection,

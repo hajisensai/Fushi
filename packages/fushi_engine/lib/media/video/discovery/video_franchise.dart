@@ -20,7 +20,7 @@ import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.da
     show MalRelatedWorks, MalRelation;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// `/search/collection` 的一条结果。
 class TmdbCollectionHit {
@@ -206,7 +206,7 @@ Future<VideoFranchise?> resolveMalFranchise(
     } on Object catch (error, stack) {
       // 走到第 40 部碰上一次 5xx / 限流重试用尽：停在这里、交出已经收集到的，
       // 而不是让前面 39 部一起作废。
-      ErrorLogService.instance.logDiagnostic(
+      engineLog.logDiagnostic(
         'VideoFranchise.malTraversal',
         'stopped at mal:$id after ${visited.length - 1} works: $error\n$stack',
       );

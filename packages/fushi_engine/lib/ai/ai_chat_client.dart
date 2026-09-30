@@ -11,7 +11,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 

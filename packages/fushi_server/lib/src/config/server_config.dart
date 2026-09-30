@@ -7,6 +7,7 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -80,6 +81,7 @@ class ServerConfig {
     this.scanPrune = true,
     this.scanScrape = true,
     this.tmdbApiKey,
+    this.ai,
   });
 
   static const int defaultPort = 38765;
@@ -192,6 +194,10 @@ class ServerConfig {
   /// 自建 iroh-relay 地址；空 = iroh 公共中继。
   final List<String> p2pRelays;
 
+  /// AI 提供商（`ai:` 段，见 server_ai_config.dart）；null = 没指派，「AI 下视频」
+  /// 助手能力位报 `no_provider`、不发任何 AI 请求。保存即生效。
+  final ServerAiConfig? ai;
+
   ServerConfig copyWith({
     int? port,
     String? bind,
@@ -220,6 +226,8 @@ class ServerConfig {
     bool? scanPrune,
     bool? scanScrape,
     String? tmdbApiKey,
+    ServerAiConfig? ai,
+    bool clearAi = false,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -250,6 +258,7 @@ class ServerConfig {
         scanPrune: scanPrune ?? this.scanPrune,
         scanScrape: scanScrape ?? this.scanScrape,
         tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
+        ai: clearAi ? null : ai ?? this.ai,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -308,6 +317,7 @@ class ServerConfig {
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
+      ai: ServerAiConfig.fromYaml(map['ai']),
     );
   }
 
@@ -369,6 +379,7 @@ class ServerConfig {
       b.writeln('  - ${_q(u)}');
     }
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
+    ai?.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
     if (torrentLibraryPath != null) b.writeln('  library: ${_q(torrentLibraryPath!)}');
