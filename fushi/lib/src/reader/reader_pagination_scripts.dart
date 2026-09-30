@@ -2863,8 +2863,13 @@ $_sharedJs
     var startAlignedScroll = firstContentEdge === null ? 0 : this.alignContentStartToPage(context, firstContentEdge);
     var lastContentScroll = lastContentEdge <= 0 ? 0 : Math.floor(Math.max(0, lastContentEdge - 1) / context.pageSize) * context.pageSize;
     var maxScroll = Math.min(maxAlignedScroll, lastContentScroll);
-    // A chrome inset can make the real browser scroll endpoint fall between
-    // two absolute page-grid lines. If content continues beyond the last
+    // The real browser scroll endpoint can fall between two absolute
+    // page-grid lines. BUG-2818: WebKit's scroll extent omits the multicol
+    // body's inline-end padding (right margin / bottom margin + chrome inset),
+    // so the last aligned page was out of reach and every chapter's last page
+    // rendered shifted by that margin; the Apple paginated CSS now pads the
+    // flow with one trailing column (_webKitPaginatedScrollEndCss), and this
+    // branch is only a fallback. If content continues beyond the last
     // reachable aligned line, expose exactly that physical endpoint as one
     // partial terminal page. This keeps every intermediate turn on N*pitch,
     // makes the final turn finite, and never creates a blank page after the

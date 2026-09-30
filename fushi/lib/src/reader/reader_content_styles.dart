@@ -295,6 +295,43 @@ p::after {
 ''';
   }
 
+  /// BUG-2818：Mac / iOS 分页每章**最后一页**整体错开一个页边距、满行末字被切掉。
+  ///
+  /// 分页把整章排成一根多列 body、按页步长（列宽 + 列间距）滚动，第 k 页落在
+  /// `k × 页步长`。能滚到哪儿由 `scrollWidth − clientWidth`（竖排 `scrollHeight −
+  /// clientHeight`）决定。Blink 的滚动范围包含多列容器行内方向末端的 padding（横排右
+  /// 边距、竖排下边距 + 底部 chrome inset），恰好够到末页；**WebKit 不含这截 padding**，
+  /// 物理终点比末页对齐位置少一个末端边距。末页只能停在物理终点（`buildPaginationMetrics`
+  /// 的「部分末页」分支），整页往前错开这个边距：横排右移、行尾被 clip-path 切掉，
+  /// 竖排下移、列尾被切掉。
+  /// macOS 27 WKWebView 实测（生产 macOS 横排分页 CSS、真书章节、1145 宽、左右边距 55px）：
+  /// scrollWidth 25401，按 Blink 口径应为 25456；末页对齐位置 24311，物理终点 24256，
+  /// 差 55 = 右边距。竖排（上下边距 30 + chrome inset 40 / 30）差 60 = 下边距 + 底部 inset。
+  ///
+  /// 修法：正文末尾补一个强制另起一栏的 1px 空块，把滚动范围撑出一整栏，末页对齐位置
+  /// 就在物理范围之内了。它不含文字和媒体，`buildPaginationMetrics` 的末页由内容边界
+  /// （`lastContentScroll`）决定，这一栏不会变成可翻到的空白页。高度为 0 的块 WebKit
+  /// 不为它另开一栏（实测无效），所以是 1px；用逻辑属性 `block-size`，一条规则通吃
+  /// 横竖两种书写方向。只在 Apple 端的分页模式发：连续滚动与 VN 不经多列分页，Blink
+  /// 的滚动范围本就够到末页。
+  static String _webKitPaginatedScrollEndCss() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return '''
+/* BUG-2818: WebKit paginated only — see _webKitPaginatedScrollEndCss. */
+body::after {
+  content: "" !important;
+  display: block !important;
+  block-size: 1px !important;
+  break-before: column !important;
+}
+''';
+      default:
+        return '';
+    }
+  }
+
   /// 触屏「压掉原生长按选区」的规则（TODO-1279），按渲染引擎分流。
   ///
   /// BUG-2607：WebKit 不绘制 `user-select: none` 文字上的 `::highlight()`——
@@ -604,6 +641,11 @@ svg.block-img.blurred {
         settings.isVnMode || settings.isContinuousMode
             ? ''
             : _webKitPaginatedRubyReserveCss(settings.lineHeight);
+    // BUG-2818：末页够不着也只发生在多列分页。
+    final String paginatedScrollEndCss =
+        settings.isVnMode || settings.isContinuousMode
+            ? ''
+            : _webKitPaginatedScrollEndCss();
 
     return '''
 $resolvedFontFaces
@@ -675,7 +717,7 @@ html {
   background: transparent;
 }
 $layoutCss
-$paragraphSpacingCss
+$paginatedScrollEndCss$paragraphSpacingCss
 img.block-img {
   /* max-width / max-height = 页面容纳约束，恒 !important（见文件内说明）。 */
   max-width: var(--fushi-image-max-width, $imageMaxWidth) !important;
