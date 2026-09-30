@@ -264,6 +264,13 @@ ruby > rt, ruby > rtc {
   /// 取 `max(0, 0.65 − (lineHeight − 1) / 2)` em（行高 1.65 → 0.325em、1.0 → 0.65em、
   /// ≥ 2.3 → 0），比实测伸出量多留约 0.1em 给注音字号大一点的书。只在分页模式发：
   /// 连续滚动与 VN 不经多列分页，没有跨列问题。
+  ///
+  /// BUG-2799：一正一负两半必须**同进同退**。本样式表注在书的样式表之后，但书里更高
+  /// 权重的规则（`.main p { padding: 0 }`、`p.x`、inline style 等 reset 很常见）会压掉
+  /// 不带 `!important` 的 `padding-block-start`，而 `p::after` 的负边距书几乎不碰——于是
+  /// 每个段落边界都净少 R（行高 1.65 时段间列距只剩段内的 0.80，用户 iOS 竖排截图即
+  /// 此比例）。所以两半都 `!important`：阅读器接管 `p` 块首 padding 与 `p::after`，
+  /// 书里给 `p` 的块首 padding（极少见）在 Apple 分页下被 R 取代。
   static String _webKitPaginatedRubyReserveCss(double lineHeight) {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
@@ -276,14 +283,14 @@ ruby > rt, ruby > rtc {
     if (reserveEm <= 0) return '';
     final String r = '${(reserveEm * 1000).round() / 1000}em';
     return '''
-/* BUG-2761: WebKit paginated only — see _webKitPaginatedRubyReserveCss. */
+/* BUG-2761 / BUG-2799: WebKit paginated only — see _webKitPaginatedRubyReserveCss. */
 p {
-  padding-block-start: $r;
+  padding-block-start: $r !important;
 }
 p::after {
-  content: "";
-  display: block;
-  margin-block-end: -$r;
+  content: "" !important;
+  display: block !important;
+  margin-block-end: -$r !important;
 }
 ''';
   }

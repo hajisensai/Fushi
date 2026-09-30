@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 void main() {
   group('VideoMetadataResolver strict single-source gate', () {
@@ -714,6 +715,67 @@ void main() {
       },
     );
 
+    group('providerUnavailable 区分临时故障与没配置', () {
+      Future<VideoMetadataResolution> resolveConfirmed(
+        List<VideoMetadataProvider> providers,
+      ) =>
+          VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(providers),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.mal,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Show'],
+              confirmedLookup: const VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.mal,
+                externalId: '63337',
+                mediaKind: VideoMetadataMediaKind.tv,
+              ),
+            ),
+          );
+
+      test('已确认身份的源回 504 → 临时故障', () async {
+        final VideoMetadataResolution result =
+            await resolveConfirmed(<VideoMetadataProvider>[
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.mal,
+            fetchError: const VideoMetadataNetworkException(
+              'MAL anime/63337/full HTTP 504',
+              statusCode: 504,
+            ),
+          ),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isTrue);
+      });
+
+      test('4xx 不是临时故障', () async {
+        final VideoMetadataResolution result =
+            await resolveConfirmed(<VideoMetadataProvider>[
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.mal,
+            fetchError: const VideoMetadataNetworkException(
+              'MAL anime/63337/full HTTP 404',
+              statusCode: 404,
+            ),
+          ),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isFalse);
+      });
+
+      test('没配置不是临时故障（重试也不会变）', () async {
+        final VideoMetadataResolution result = await resolveConfirmed(
+          const <VideoMetadataProvider>[],
+        );
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isFalse);
+      });
+    });
+
     test('unconfigured selected provider fails before network', () async {
       final VideoMetadataResolution result = await VideoMetadataResolver(
         registry: VideoMetadataProviderRegistry(
@@ -924,12 +986,16 @@ class _FakeProvider implements VideoMetadataProvider {
     this.searchResults = const <VideoMetadataWork>[],
     this.works = const <String, VideoMetadataWork>{},
     this.available = true,
+    this.fetchError,
   });
 
   final VideoMetadataProviderKind kind;
   final List<VideoMetadataWork> searchResults;
   final Map<String, VideoMetadataWork> works;
   final bool available;
+
+  /// 非 null 时 [fetchWork] 抛它（模拟资料源网络故障）。
+  final Exception? fetchError;
   int searchCalls = 0;
   int fetchCalls = 0;
 
@@ -950,6 +1016,8 @@ class _FakeProvider implements VideoMetadataProvider {
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
     fetchCalls++;
+    final Exception? error = fetchError;
+    if (error != null) throw error;
     return works[lookup.externalId];
   }
 
