@@ -800,35 +800,59 @@ void main() {
     );
   });
 
-  test('分享周期标签：「总」是本地日期，周 / 月仍按 UTC 周期锚点', () {
-    // 本地 10-01 的凌晨与深夜：换成 UTC 分别落在 09-30（东半球）/ 10-02（西半球），
-    // 按 UTC 取日期的实现在任何非 UTC 时区至少错一条。
-    for (final DateTime local in <DateTime>[
-      DateTime(2026, 10, 1, 0, 30),
-      DateTime(2026, 10, 1, 7),
-      DateTime(2026, 10, 1, 23, 30),
-    ]) {
+  test('分享周期标签：「总」是本地日期（按传入偏移），周 / 月仍按 UTC 周期锚点', () {
+    // 偏移显式传入，与跑测试的机器时区无关（CI 是 UTC：toLocal() == toUtc()，
+    // 靠进程时区的断言在那里分不出本地 / UTC 两种实现）。每例 UTC 日期都与本地日期
+    // 不同，按 UTC 取日期的实现两例都红。
+    const Duration east = Duration(hours: 8);
+    const Duration west = Duration(hours: -8);
+    for (final (DateTime instant, Duration offset, String expected)
+        in <(DateTime, Duration, String)>[
+          // UTC 09-30 16:30 = 东八区 10-01 00:30。
+          (DateTime.utc(2026, 9, 30, 16, 30), east, '2026-10-01'),
+          // UTC 10-02 07:30 = 西八区 10-01 23:30。
+          (DateTime.utc(2026, 10, 2, 7, 30), west, '2026-10-01'),
+        ]) {
       expect(
-        leaderboardSharePeriodLabel(LeaderboardWindow.all, local),
-        '2026-10-01',
-        reason: '$local',
+        leaderboardSharePeriodLabel(
+          LeaderboardWindow.all,
+          instant,
+          localOffset: offset,
+        ),
+        expected,
+        reason: '$instant $offset',
       );
-      // 同一时刻换成 UTC 表示，截至日期不变。
+      // 同一时刻换成本机本地表示，截至日期不变（只认时刻 + 偏移）。
       expect(
-        leaderboardSharePeriodLabel(LeaderboardWindow.all, local.toUtc()),
-        '2026-10-01',
-        reason: '${local.toUtc()}',
+        leaderboardSharePeriodLabel(
+          LeaderboardWindow.all,
+          instant.toLocal(),
+          localOffset: offset,
+        ),
+        expected,
+        reason: '${instant.toLocal()} $offset',
       );
     }
+    // 周 / 月是服务端周期锚点：不随用户偏移变。
     final DateTime utc = DateTime.utc(2026, 9, 30, 23, 30);
-    expect(
-      leaderboardSharePeriodLabel(LeaderboardWindow.week, utc),
-      leaderboardShareWindowStart(LeaderboardWindow.week, utc),
-    );
-    expect(
-      leaderboardSharePeriodLabel(LeaderboardWindow.month, utc),
-      '2026-09',
-    );
+    for (final Duration offset in <Duration>[Duration.zero, east, west]) {
+      expect(
+        leaderboardSharePeriodLabel(
+          LeaderboardWindow.week,
+          utc,
+          localOffset: offset,
+        ),
+        '2026-09-28',
+      );
+      expect(
+        leaderboardSharePeriodLabel(
+          LeaderboardWindow.month,
+          utc,
+          localOffset: offset,
+        ),
+        '2026-09',
+      );
+    }
   });
 
   test('分享卡片取数（周）：只数本周一以来读完，字数取周榜 me', () async {
@@ -863,13 +887,16 @@ void main() {
       ], seen),
       shareSelf,
       window: LeaderboardWindow.all,
-      now: DateTime(2026, 9, 30, 12),
+      // UTC 09-30 20:00 = 东八区 10-01 04:00：截至日期是本地的 10-01，不是 UTC 的
+      // 09-30（偏移传入 → 取数链路的本地日期也与机器时区无关）。
+      now: DateTime.utc(2026, 9, 30, 20),
+      localOffset: const Duration(hours: 8),
     );
     expect(data.window, LeaderboardWindow.all);
     // 累计 = book 30 + manga 12 + video 0 + game 4；字数不算作品。
     expect(data.finishedCount, 46);
     expect(data.chars, 888888);
-    expect(data.periodLabel, '2026-09-30');
+    expect(data.periodLabel, '2026-10-01');
     // 不受周期截断：老作品也进封面拼图。
     expect(data.covers.map((LeaderboardWork w) => w.id), <String>['w1', 'w2']);
     // 书架回了 next 也不继续翻；不请求字数榜。
@@ -1031,9 +1058,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('分享对话框：没有主页链接时「复制链接」与「分享」禁用', (WidgetTester tester) async {
+  testWidgets('分享对话框：卡片已在、主页链接没了（退出本机账户）时「复制链接」与「分享」禁用', (
+    WidgetTester tester,
+  ) async {
+    server.selfShareData = true;
     final LeaderboardService service = await activeService(tester);
-    // 不拉 self：主页链接无从拼出。
+    await tester.runAsync(service.refreshSelf);
     await tester.pumpWidget(
       wrap(
         service,
@@ -1041,6 +1071,20 @@ void main() {
       ),
     );
     await settle(tester);
+    // 前提：卡片已取到、两颗按钮都可点。
+    expect(find.byType(LeaderboardShareCard), findsOneWidget);
+    expect(shareActionEnabled(tester, 'leaderboard-share-copy-link'), isTrue);
+    expect(shareActionEnabled(tester, 'leaderboard-share-image'), isTrue);
+
+    // 对话框开着时本机账户被退出：self / client 清空 → 主页链接拼不出，而已取到的
+    // 卡片数据仍在缓存里照常显示。此时分享按钮的禁用只能来自 url == null。
+    // 不能 `runAsync(service.signOutLocally)`：退出排在串行写队列上，队列里的前一段
+    // future 属于 fake zone，真实 zone 里 await 它永远等不到。在 fake zone 里发起，
+    // 交替给真实 zone 落盘时间。
+    unawaited(service.signOutLocally());
+    await settleIo(tester, () => service.self == null);
+    expect(service.self, isNull);
+    expect(find.byType(LeaderboardShareCard), findsOneWidget);
     expect(shareActionEnabled(tester, 'leaderboard-share-copy-link'), isFalse);
     expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
   });
