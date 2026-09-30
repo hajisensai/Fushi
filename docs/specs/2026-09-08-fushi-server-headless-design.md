@@ -231,6 +231,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。
 - CLI 没有 `jobs` / `download` 子命令：由 admin API / WebUI 代替。
 - **AI 助手会话（2026-09-30 补）**：服务端现在也挂 `/api/assistant`（AI 下视频），状态机 / AI 调用层 / 发现服务 / 端口装配随之从 app 下沉到引擎（`fushi_engine/lib/ai/`、`media/video/acquisition/`、`media/video/discovery/`、`sync/assistant/video_acquisition_assistant_host.dart`），app 与服务端共用 `createHostVideoAcquisitionService`。服务端的 AI 配置是 yaml `ai:` 段（**只有一家、只指派给「AI 下载」**），不是 app 那套「提供商清单 + 功能指派」偏好键；没配时能力位 `no_provider`、零 AI 请求。仍不做的：服务端管线没接字幕源，会话里选了「配字幕」也不装；刮削的 AI 身份识别不在服务端装配。
+- **互联「配置文件」（Profile）在服务端是寄存中转，不是配置的消费者**（2026-09-30 补）：此前服务端没接 `LocalLibraryHostService` 的三条 Profile 回调，端点恒 403。现在 `PUT` 寄存为 `<support>/interconnect_profiles/<id>.fushiprofile.json`、`GET` 交出 WebUI 指定（缺省最近收到）的那份，开关 `profile_transfer` 默认关、WebUI 可控。**刻意不落 `profiles` 表、不 apply**：服务端无阅读器 / 制卡可用这些设置，且 `profiles` 表非空会让 `resolveActiveProfileId`（统计分区键）从 0 漂到寄存的 Profile、`AggregateSyncService` 的 Profile 名↔id 映射也会变。解析 / 校验 / 准入判据 / 信封格式下沉到引擎 `profile/profile_document.dart`，与 app `ProfileRepository` 同一份。服务端的 Torznab 配置**不能**经这条通道设（出境时按凭据剔除），只能在 WebUI「订阅」页编辑（见下文「实例接管」条）或直接改库——README 旧说法已更正。
 
 第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
 

@@ -34,6 +34,10 @@ class ServerPaths extends EnginePaths {
 
   Directory get logs => Directory(p.join(dataDir, 'logs'));
 
+  /// 已配对设备经互联「配置文件」端点推来寄存的配置方案（见 `ServerProfileHub`）。
+  Directory get interconnectProfiles =>
+      Directory(p.join(support.path, 'interconnect_profiles'));
+
   /// 内置 torrent 引擎的 fastResume 目录（与 app 的 `<support>/torrent/resume` 同义）。
   Directory get torrentResume => Directory(p.join(support.path, 'torrent', 'resume'));
 

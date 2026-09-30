@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
@@ -12,54 +13,12 @@ import 'package:fushi/src/sync/backup_service.dart'
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
-/// 配置方案导入失败：文件损坏 / 类型魔数不符 / 版本不兼容 / 结构非法。
-///
-/// 故意在写任何 DB 之前抛出（解析 + 校验阶段），使导入对 DB 是全有或全无，
-/// 一个坏文件绝不留下半个 Profile（事务零破坏）。
-class ProfileImportException implements Exception {
-  ProfileImportException(this.message);
-  final String message;
-  @override
-  String toString() => 'ProfileImportException: $message';
-}
+// 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
+export 'package:fushi_engine/profile/profile_document.dart'
+    show ProfileExport, ProfileImportException, ProfileSettingEntry;
 
 /// 导入模式：新建一个 Profile（默认，重名加后缀），或覆盖一个已有 Profile。
 enum ProfileImportMode { createNew, overwrite }
-
-/// 单 Profile 导出文件的解析结果（已剔除凭据、已 A1 剥字体绝对路径）。
-class ProfileExport {
-  ProfileExport({
-    required this.profileName,
-    required this.formatVersion,
-    required this.schemaVersion,
-    required this.settings,
-  });
-
-  /// 文件类型魔数：辨识这是 Hibiki 配置方案导出，而非任意 JSON / 整库备份。
-  static const String fileType = 'hibiki.profile';
-
-  /// 当前导出文件格式版本。结构变化时 +1；导入按此判兼容。
-  static const int currentFormatVersion = 1;
-
-  final String profileName;
-  final int formatVersion;
-  final int schemaVersion;
-
-  /// 每条 `{category, key, value}`；category ∈ {anki, pref, ...}。
-  final List<ProfileSettingEntry> settings;
-}
-
-/// 单条配置项（category/key/value），对应 profile_settings 行。
-class ProfileSettingEntry {
-  ProfileSettingEntry({
-    required this.category,
-    required this.key,
-    required this.value,
-  });
-  final String category;
-  final String key;
-  final String value;
-}
 
 class ProfileRepository {
   ProfileRepository(
@@ -464,34 +423,30 @@ class ProfileRepository {
     final List<ProfileSettingRow> rows =
         await _db.getProfileSettings(profileId);
 
-    final List<Map<String, String>> settings = <Map<String, String>>[];
+    final List<ProfileSettingEntry> settings = <ProfileSettingEntry>[];
     for (final ProfileSettingRow row in rows) {
       // 凭据红线：唯一前置防线，剔除全部凭据 / 设备本地 key。
       if (row.category == ProfileKeys.categoryPref &&
           _isCredentialOrDeviceLocalPref(row.key)) {
         continue;
       }
-      final String value = _exportFontPathStrippedValue(
+      settings.add(ProfileSettingEntry(
         category: row.category,
         key: row.key,
-        value: row.value,
-        fontsRootDirectory: fontsRootDirectory,
-      );
-      settings.add(<String, String>{
-        'category': row.category,
-        'key': row.key,
-        'value': value,
-      });
+        value: _exportFontPathStrippedValue(
+          category: row.category,
+          key: row.key,
+          value: row.value,
+          fontsRootDirectory: fontsRootDirectory,
+        ),
+      ));
     }
 
-    final Map<String, dynamic> doc = <String, dynamic>{
-      'type': ProfileExport.fileType,
-      'formatVersion': ProfileExport.currentFormatVersion,
-      'schemaVersion': _db.schemaVersion,
-      'profileName': profile.name,
-      'settings': settings,
-    };
-    return const JsonEncoder.withIndent('  ').convert(doc);
+    return encodeProfileDocument(
+      profileName: profile.name,
+      schemaVersion: _db.schemaVersion,
+      settings: settings,
+    );
   }
 
   /// A1 字体路径剥离：把字体配置 JSON 里指向本机 `custom_fonts/` 的绝对路径
@@ -528,79 +483,7 @@ class ProfileRepository {
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法
   /// 一律抛 [ProfileImportException]（**在写 DB 之前**）。
-  ProfileExport parseProfileExport(String json) {
-    final dynamic decoded;
-    try {
-      decoded = jsonDecode(json);
-    } catch (e) {
-      throw ProfileImportException('not valid JSON: $e');
-    }
-    if (decoded is! Map) {
-      throw ProfileImportException('top-level value is not an object');
-    }
-    final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
-
-    if (map['type'] != ProfileExport.fileType) {
-      throw ProfileImportException(
-          'unexpected file type: ${map['type']} (expected '
-          '${ProfileExport.fileType})');
-    }
-    final Object? rawFormat = map['formatVersion'];
-    final int formatVersion = rawFormat is int ? rawFormat : -1;
-    if (formatVersion <= 0 ||
-        formatVersion > ProfileExport.currentFormatVersion) {
-      throw ProfileImportException('unsupported format version: $rawFormat');
-    }
-    final Object? rawName = map['profileName'];
-    if (rawName is! String || rawName.trim().isEmpty) {
-      throw ProfileImportException('missing or empty profileName');
-    }
-    final Object? rawSettings = map['settings'];
-    if (rawSettings is! List) {
-      throw ProfileImportException('settings is not a list');
-    }
-    final Object? rawSchema = map['schemaVersion'];
-    final int schemaVersion = rawSchema is int ? rawSchema : 0;
-
-    final List<ProfileSettingEntry> entries = <ProfileSettingEntry>[];
-    for (final dynamic e in rawSettings) {
-      if (e is! Map) {
-        throw ProfileImportException('settings entry is not an object');
-      }
-      final Object? category = e['category'];
-      final Object? key = e['key'];
-      final Object? value = e['value'];
-      if (category is! String || key is! String || value is! String) {
-        throw ProfileImportException(
-            'settings entry has non-string category/key/value');
-      }
-      entries.add(ProfileSettingEntry(
-        category: category,
-        key: key,
-        value: value,
-      ));
-    }
-
-    return ProfileExport(
-      profileName: rawName,
-      formatVersion: formatVersion,
-      schemaVersion: schemaVersion,
-      settings: entries,
-    );
-  }
-
-  /// 把一个唯一的 Profile 名衍生出来：若 [base] 已被占用，追加 ` (2)`、` (3)`…
-  /// 直到不冲突（`Profiles.name` 有 unique 约束，重名插入会抛）。
-  Future<String> _uniqueProfileName(String base) async {
-    final List<ProfileRow> existing = await _db.getAllProfiles();
-    final Set<String> taken = existing.map((ProfileRow p) => p.name).toSet();
-    if (!taken.contains(base)) return base;
-    int n = 2;
-    while (taken.contains('$base ($n)')) {
-      n++;
-    }
-    return '$base ($n)';
-  }
+  ProfileExport parseProfileExport(String json) => parseProfileDocument(json);
 
   /// 从导出 JSON 导回一个 Profile。
   ///
@@ -622,13 +505,7 @@ class ProfileRepository {
 
     switch (mode) {
       case ProfileImportMode.createNew:
-        final String name = await _uniqueProfileName(export.profileName);
-        final int newId = await createProfile(name);
-        await _db.replaceProfileSettings(
-          newId,
-          _companionsFor(export.settings, newId),
-        );
-        return newId;
+        return importProfileDocumentAsNew(_db, export);
       case ProfileImportMode.overwrite:
         if (targetProfileId == null) {
           throw ProfileImportException(
@@ -641,31 +518,11 @@ class ProfileRepository {
         }
         await _db.replaceProfileSettings(
           targetProfileId,
-          _companionsFor(export.settings, targetProfileId),
+          profileSettingCompanions(export.settings, targetProfileId),
         );
         return targetProfileId;
     }
   }
-
-  /// 把解析出的设置项绑定到真实 profileId，构造 insert companions。
-  List<ProfileSettingsCompanion> _companionsFor(
-    List<ProfileSettingEntry> entries,
-    int profileId,
-  ) =>
-      entries
-          // v63 只拒绝旧全局超分键的 pref 分类。不要改成过滤全部
-          // isExcludedPref：其它排除键有各自的跨版本/设备本地语义，扩大过滤会
-          // 无授权地改变旧 Profile JSON 的导入行为；同名非 pref 分类也必须保留。
-          .where((ProfileSettingEntry e) =>
-              e.category != ProfileKeys.categoryPref ||
-              e.key != ProfileKeys.obsoleteGalgameUpscalingModePrefKey)
-          .map((ProfileSettingEntry e) => ProfileSettingsCompanion.insert(
-                profileId: profileId,
-                category: e.category,
-                key: e.key,
-                value: e.value,
-              ))
-          .toList();
 
   // ── TODO-1077 dictionary_metadata snapshot serialization ────────────
 

@@ -79,6 +79,10 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <section id="s-pairing">
 <div class="card"><h2>配对请求</h2><div id="pairing-pending"><p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p></div></div>
 <div class="card"><h2>已配对设备</h2><table><thead><tr><th>设备</th><th>peer id</th><th>最近地址</th><th>配对时间</th><th></th></tr></thead><tbody id="peers"></tbody></table></div>
+<div class="card"><h2>配置文件寄存</h2>
+<div class="row"><span id="prof-state" class="small"></span><span class="sp"></span><button class="b sec" id="btn-prof-toggle"></button></div>
+<p class="small muted">已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。</p>
+<table><thead><tr><th>名称</th><th>设置项</th><th>收到时间</th><th>状态</th><th></th></tr></thead><tbody id="profiles"></tbody></table></div>
 </section>
 
 <section id="s-libraries">
@@ -229,7 +233,20 @@ async function loadPairing(){
     : '<p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p>';
   $('#peers').innerHTML = p.peers.map(x=>`<tr><td>${esc(x.deviceName||'—')}</td><td class="small muted">${esc(x.peerId)}</td><td>${esc(x.lastSeenIp||'')}</td><td>${fmtTime(x.pairedAtMs)}</td><td><button class="b danger" data-revoke="${esc(x.peerId)}">吊销</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">无</td></tr>';
   $('#peers').querySelectorAll('[data-revoke]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('吊销该设备？')) return; await del('pairing/peers/'+encodeURIComponent(b.dataset.revoke)); loadPairing(); }));
+  await loadProfiles();
 }
+async function loadProfiles(){
+  const r = await api('profiles');
+  $('#prof-state').innerHTML = r.enabled ? (r.tls ? '<span class="tag ok">已允许</span>' : '<span class="tag">已允许，但 TLS 关着——端点在明文下拒绝访问</span>') : '<span class="tag">未允许（默认）</span>';
+  $('#btn-prof-toggle').textContent = r.enabled ? '禁止设备推送 / 拉取' : '允许设备推送 / 拉取';
+  $('#btn-prof-toggle').dataset.enabled = r.enabled ? '1' : '0';
+  $('#profiles').innerHTML = (r.profiles||[]).map(x=>`<tr><td>${esc(x.name)}</td><td>${x.settingCount}</td><td>${fmtTime(x.receivedAt)}</td><td>${x.shared?'<span class="tag ok">分发中</span>':''}</td><td class="row">${x.shared?'':`<button class="b sec" data-prof="share" data-id="${x.id}">设为分发</button>`}<button class="b danger" data-prof="delete" data-id="${x.id}">删除</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有设备推送过配置</td></tr>';
+  $('#profiles').querySelectorAll('[data-prof]').forEach(b=>b.onclick=guard(async()=>{ const id=b.dataset.id;
+    if(b.dataset.prof==='delete'){ if(!confirm('删除这份寄存的配置？')) return; await del('profiles/'+id); }
+    else { await post('profiles/'+id+'/share'); }
+    loadProfiles(); }));
+}
+$('#btn-prof-toggle').onclick = guard(async()=>{ const on = $('#btn-prof-toggle').dataset.enabled!=='1'; if(on && !confirm('允许已配对设备把配置推到本机寄存、并从本机拉走？')) return; await put('settings',{profileTransfer:on}); settingsCache=null; toast(on?'已允许':'已禁止'); loadProfiles(); });
 
 // ── 库 ──
 async function loadLibraries(){
@@ -446,7 +463,7 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
   ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],
-  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
   ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],

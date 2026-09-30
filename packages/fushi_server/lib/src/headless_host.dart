@@ -39,6 +39,7 @@ import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
@@ -107,6 +108,14 @@ class HeadlessHost {
   ServerAnkiLanding? _anki;
   ServerVideoScrape? _videoScrape;
   final _AsyncMutex _mutex = _AsyncMutex();
+
+  /// 互联「配置文件」寄存处（对端推来 / 拉走的配置方案；WebUI 列表与指定也走它）。
+  late final ServerProfileHub profiles = ServerProfileHub(
+    directory: paths.interconnectProfiles,
+    readPinnedId: () => prefs.getRaw(ServerProfileHub.pinnedPrefKey),
+    writePinnedId: (String? id) =>
+        prefs.setRaw(ServerProfileHub.pinnedPrefKey, id ?? ''),
+  );
 
   /// [start] 时的绑定地址是否只监听本机（重启前改了 `bind` 也按实际监听判）。
   bool _loopbackOnly = false;
@@ -495,7 +504,8 @@ class HeadlessHost {
     databaseDirectory: paths.support,
   );
 
-  /// 组装互联库服务（[start] 用；公开给测试直接驱动 host 服务而不起 HTTP）。
+  /// 互联 host 的库服务装配（[start] 用；测试也直接拿它挂到自建的 TLS
+  /// [FushiSyncServer] 上驱动端点，免得起整套下载 / ASR / 局域网广播）。
   LocalLibraryHostService buildLibraryService() => LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: paths.dictionaryResources,
@@ -531,6 +541,11 @@ class HeadlessHost {
         extractVideoCover: (
                 {required String videoPath, required String bookUid}) =>
             extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+        // 互联「配置文件」搬运：服务端只寄存、不 apply（见 ServerProfileHub）。开关每次
+        // 现读配置（`profile_transfer`，默认关），WebUI 改完即生效；关着时端点回 403。
+        isProfileTransferEnabled: () async => config.profileTransfer,
+        exportActiveProfileJson: profiles.exportShared,
+        importProfileJson: profiles.importJson,
         // 书名覆盖：服务端没有 MediaSource 内存缓存，只写 DB（LWW 判据同 app）。
         adoptOverrideTitle: ({
           required String bookKey,

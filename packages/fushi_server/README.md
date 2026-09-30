@@ -11,6 +11,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（Nyaa / apibay / Knaben / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
+| 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
 | WebUI / admin API | `http(s)://<host>:38780/` | 状态、配对 PIN、库根管理、上传、任务、下载、模型、设置、日志 |
 
 设计文档：[`docs/specs/2026-09-08-fushi-server-headless-design.md`](../../docs/specs/2026-09-08-fushi-server-headless-design.md)。
@@ -97,6 +98,7 @@ metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海
 scan_scrape: true             # 扫描后自动补刮「从未识别过」的视频作品（见下文「视频刮削」）
 # tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
 scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
+profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -170,6 +172,7 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 | `GET|PUT resource-indexers` | 资源索引器：内置源启停（`builtin: {nyaa: true, apibay: false, …}`）+ Torznab indexer 清单（`torznab: [{id?, name, endpoint, apiKey?, clearApiKey?, enabled, priority, allowInsecureHttp, categories}]`，整表替换）。API key 不回显（只报 `apiKeySet`），留空沿用同 id 旧值；endpoint 带 `?apikey=` 自动拆出。任一条非法整个请求 400、不落半截。保存后下载管线与订阅服务按新 registry 立即重启（torrent 后端不动），响应的 `providers` 即新的订阅能力位 |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
 | `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
+| `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
 | `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
@@ -239,6 +242,21 @@ NFO sidecar，随后自动补刮一轮（`scan_scrape`，默认开）。补刮�
 - 认领不上的（同名书是客户端上传 / 手动导入的，或存量书的源文件在升级前就已删掉）不进索引，永远不会被
   对账删掉——宁可留着，也不按猜测删用户的进度。
 - 用户在客户端删掉的书，源文件还在时下次扫描照常重新导入（与以前一样）。
+### 配置文件寄存（`profile_transfer`）
+
+互联「配置文件」端点 `/api/interconnect/profile` 与 app 当 host 时同一条（TLS + 已配对 token +
+host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTransfer` 仍报 true 好让客户端分清
+「关着」与「不支持」）。服务端的语义是**寄存中转**，不是配置的消费者：
+
+- `PUT`：对端推来的配置方案按 app 同一份解析 / 校验 / 准入判据（引擎 `profile/profile_document.dart`）
+  校验后寄存为 `<data>/support/interconnect_profiles/<id>.fushiprofile.json`（可直接在 app「配置管理」
+  导入）；重名加 ` (2)` 后缀；坏载荷 400、零落盘。
+- `GET`：交出 WebUI 指定「分发中」的那一份，没指定就是最近收到的；一份都没有回 409。
+- **不进 `profiles` 表、不应用到服务端**：服务端没有阅读器 / 制卡 / 快捷键可用这些设置；而且
+  `profiles` 表非空会让统计分区键从 0 漂到寄存的 Profile、影响互联统计。
+- 不从服务端自己的偏好生成配置，所以这条通道带不出服务端任何凭据；寄存物的凭据已由发送端剔除。
+- 默认关：没开关的入站写就是隐形写入通道（与 app「允许已配对设备读写本机配置」同一默认）。
+  WebUI「配对」页的「配置文件寄存」卡片可一键开关、指定分发、删除。
 
 ### 上传协议
 
@@ -278,7 +296,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 
 - 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
 - 不做查词发音：本地音频库（`/api/library/localaudio`）同词典包一样只做存储中转——客户端推上来的库落 `<data_dir>/support/local_audio_<n>.db`、登记进 `preferences` 表的 `local_audio_dbs`（与 app 同键同形），其它客户端可列出 / 拉取 / 删除；服务端自己不播发音。
-- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，与 app 同一编码；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效，也可经互联「配置文件」同步）。
+- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，与 app 同一编码；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效；不能经互联「配置文件」设——Torznab 配置含 API key，出境时按凭据剔除，服务端寄存的配置文件也不应用到自己身上）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
 - 书 / 漫画根的对账只认本服务端扫描认领过的书：客户端上传 / 手动导入的同名书、以及升级前源文件就已删掉的存量书，不会因源文件消失被回收（见「扫描对账」）。
 

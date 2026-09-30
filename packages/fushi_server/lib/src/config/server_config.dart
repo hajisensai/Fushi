@@ -80,6 +80,7 @@ class ServerConfig {
     this.p2pRelays = const <String>[],
     this.scanPrune = true,
     this.scanScrape = true,
+    this.profileTransfer = false,
     this.tmdbApiKey,
     this.ai,
   });
@@ -184,6 +185,12 @@ class ServerConfig {
   /// 发起的重刮 / 手动指定照常可用。
   final bool scanScrape;
 
+  /// 允许已配对设备经互联「配置文件」端点把配置方案（Profile）推给本机寄存、或从本机
+  /// 拉走（`/api/interconnect/profile`，只在 TLS 下可达）。默认关：与 app 的
+  /// 「允许已配对设备读写本机配置」同一条安全默认——没开关的入站写就是隐形写入通道
+  /// （BUG-988）。运行期现读，WebUI 改完即生效。
+  final bool profileTransfer;
+
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
   final String? tmdbApiKey;
@@ -225,6 +232,7 @@ class ServerConfig {
     List<String>? p2pRelays,
     bool? scanPrune,
     bool? scanScrape,
+    bool? profileTransfer,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
@@ -257,6 +265,7 @@ class ServerConfig {
         p2pRelays: p2pRelays ?? this.p2pRelays,
         scanPrune: scanPrune ?? this.scanPrune,
         scanScrape: scanScrape ?? this.scanScrape,
+        profileTransfer: profileTransfer ?? this.profileTransfer,
         tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
         ai: clearAi ? null : ai ?? this.ai,
       );
@@ -316,6 +325,7 @@ class ServerConfig {
       p2pRelays: _strings(map['p2p_relays']),
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
+      profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
     );
@@ -362,6 +372,7 @@ class ServerConfig {
     b.writeln('metadata_locale: ${_q(metadataLocale)}');
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
+    b.writeln('profile_transfer: $profileTransfer');
     if ((tmdbApiKey ?? '').isNotEmpty) b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
