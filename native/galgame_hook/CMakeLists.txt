@@ -934,6 +934,10 @@ target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
 
+add_executable(fushi_bgi_arc_test "tests/bgi_arc_test.cpp")
+target_include_directories(fushi_bgi_arc_test PRIVATE "hook")
+add_test(NAME fushi_bgi_arc_test COMMAND fushi_bgi_arc_test)
+
 add_executable(fushi_lookup_selected_text_test "tests/lookup_selected_text_test.cpp")
 target_include_directories(fushi_lookup_selected_text_test PRIVATE "include")
 add_test(NAME fushi_lookup_selected_text_test COMMAND fushi_lookup_selected_text_test)

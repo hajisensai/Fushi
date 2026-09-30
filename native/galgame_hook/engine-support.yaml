@@ -1513,7 +1513,9 @@
       "known_limitations": [
         "The official trial archive and BGI wrapper were measured directly, but the adapter has not yet crossed a voiced line in the installed game, so clean voice is not claimed.",
         "The initial profile intentionally tracks data031*.arc only; BGI titles that use another archive number require measured evidence before widening the classifier.",
-        "The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker."
+        "The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker.",
+        "Per-line voice archives are recognised by content convention (every member a mono bw wrapper), measured on two AUGUST trials: the 2011 PackFile-generation Eustia Web trial (17 voice archives, 3529 members) and the 2016 ARC20 senmomo trial (19 voice archives, 4371 members); BGM, SE, ambience and mixed archives in both were rejected. A BGI title with an all-mono SE archive or stereo voice would be misclassified.",
+        "The former data031*.arc name rule pointed at the senmomo trial SE archive (data03110.arc, 143 of 146 members stereo); its voice lives in data04xxx.arc. The adapter no longer uses that name rule (every *.arc handle is tracked and classified on the worker); the process-strategy note and audio format that still mention data031*.arc are evidence-gated claim fields and stay unchanged until a runtime ledger backs the new contract."
       ],
       "adapter_path": "hook/adapters/bgi_ethornell_adapter.inc",
       "fixture_paths": [],
