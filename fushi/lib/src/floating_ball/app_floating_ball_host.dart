@@ -434,8 +434,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
       case 'popup_lookup':
         // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。按钮只在
-        // 查词模块开着时下发；模块是本次运行中途才打开的（全局查词要下次启动才
-        // 装钩子）就记一笔，而不是静默。
+        // 查词模块开着时下发，而模块一开覆盖窗就起（含会话中途打开，见
+        // [GlobalLookupController.followLookupModule]）；走到 else 是真异常，
+        // 记一笔而不是静默。
         if (target.overlayLookupAvailable) {
           await target.lookupSelection();
         } else {

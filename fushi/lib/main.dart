@@ -641,13 +641,12 @@ void main([List<String> args = const <String>[]]) {
           // 闩（`_started`）、生产路径没有 stop，所以关掉模块要到下次启动才
           // 真的不装钩子；这正是用户选的「不切断进行中的任务」。
           final ModuleVisibility modules = appModel.moduleVisibility;
-          if (modules.isEnabled(ModuleId.lookup)) {
-            // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
-            // WebView2 预热，四条通道全部依附于这一次 start()。关掉查词模块
-            // 就不该再往系统里装钩子（快捷键设置页的 globalExternal 分区同步
-            // 隐藏，见 shortcut_settings_page）。
-            await GlobalLookupController.instance.start(appModel: appModel);
-          }
+          // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
+          // WebView2 预热，四条通道全部依附于同一次 start()。查词模块关着就
+          // 不往系统里装钩子（快捷键设置页的 globalExternal 分区同步隐藏，见
+          // shortcut_settings_page）；模块门在 followLookupModule 里判，会话
+          // 中途打开模块时它沿同一条 start() 补起。
+          await GlobalLookupController.instance.followLookupModule(appModel);
           if (modules.isEnabled(ModuleId.games) &&
               GalHookTextOverlayController.isSupported) {
             await GalHookTextOverlayController.instance
