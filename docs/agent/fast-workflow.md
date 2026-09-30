@@ -343,6 +343,8 @@ dart run tool/flutter_test_failures.dart --no-pub \
   $(dart run tool/tests_for_changes.dart --base=origin/develop)
 ```
 
+> **推送前不必手串这两条**：`dart run tool/pre_push_check.dart`（CLAUDE.md「验证」首条）已经把它们、本节的目录枚举守卫整批、直接 import 受影响的测试、全量 analyze 与改动包测试合成一条命令，改动为空时直接退出、不会退化成跑全量。这里的手工串法留给只想看某棵树触发面的场合。
+
 ⚠️ 最后那条里 `$( )` **展开为空时不是空跑**：`flutter_test_failures.dart` 不带目标就跑全量。`--base` 选错（比如指到自己这条分支的 tip、diff 为空）会白等十几分钟，而输出看起来完全正常。跑之前先单独执行一遍上面第一条，确认它真的吐出了路径。
 
 判据一句话：
