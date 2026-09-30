@@ -2,91 +2,97 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 守卫：两条发布 workflow 在 push 时把「被新 push 取代、且开始不足 5 分钟」的旧 run 取消。
+/// 守卫：develop / main 的新 push 把「正在跑、但还很年轻」的旧发布 run 取消掉。
 ///
-/// 起因（2026-09-30 实测 9/27–9/29）：develop 65 次 push 里 20 次间隔 < 5 分钟，而发布
-/// workflow 的 concurrency 按 sha 分组、`cancel-in-progress: false`，每次 push 都完整跑完。
-/// 公开仓库的瓶颈是并发 runner 槽位，死 run 占着槽位让别人的 job 排队 30~86 分钟。
-///
-/// 守的三件事，任何一件松了都是静默失效：
-/// * job 只在 `push` 上跑——正式版（`release: published`）与手动 dispatch 绝不能被取消；
-/// * 窗口是 5 分钟——放宽到「无条件取消」会把正在上传 TestFlight / Release 资产 / 更新清单
-///   的 run 砍成半发布状态；
-/// * 脚本查询不带 `event=push`——与 `branch=` 同用时 runs API 回的是过期结果集
-///   （同日实测停在 09-07），候选永远为空而 job 照样绿。
-///
-/// 2026-09-30 合入后的真实闭环又抓到一处：旧版拿「现在 − 5 分钟」比 `run_started_at`。
-/// 可本 job 自己要排队等 runner（实测 6 分钟），等它开跑，间隔只有 2.3 分钟的旧 run
-/// 已「跑了 8 分钟」，于是没砍；而 `run_started_at` 只是 run 的创建时刻，job 在排队时
-/// 它照样走表。所以判据改为：旧 run **job 的实际开始时刻**对比**本 run 的创建时刻**
-/// （5 分钟），外加一道「此刻已跑满 9 分钟就不砍」的安全上限——最快的上传步骤在
-/// Android build job（≥ 10.7 分钟）末尾，桌面 publish 要等三条腿（≥ 12 分钟）。
+/// 演进（都是 2026-09-30 真实 CI 上抓到的）：
+/// 1. 最初是两条发布 workflow 里各一个 `cancel-superseded` job。所有者的 #1798 随后把
+///    push run 按分支分组（cancel-in-progress: false）：新 run 连同其中任何 job 都 pending
+///    到旧 run 跑完，那个 job 永远等不到该出手的时刻——静默失效，每次还白占一个 job。
+///    所以取消逻辑搬进独立的 `supersede-develop-releases.yml`：不在发布的 concurrency
+///    组里，push 一来就跑；发布 workflow 里**不许**再长回这个 job。
+/// 2. 判据按 2026-09 全月 542 次触发发布的 develop push + 分片后实测耗时模拟取最优：
+///    旧 run 第一个 job 开始得比新 run 创建早不足 8 分钟（5~11 是平台区；「总是砍」
+///    会在 push 密集时饿死发布，p90 等待翻倍），且此刻不足 10 分钟（最早的上传在
+///    Android build job 约 10.7 分钟处，别砍在上传途中）。量的是 job 实际开始时刻，
+///    不是 `run_started_at`（那只是创建时刻，job 排队时照样走表）。
+/// 3. runs API 带 `branch=` 回过过期结果集（09-30 拿到 09-07 的数据），候选永远为空而
+///    job 照样绿——查询只按 status 过滤，分支 / 事件 / sha 在 bash 里比。
+/// 4. 普通 cancel 停不下 `if: always()` 的 job / step（桌面 publish、macOS 签名），等一轮
+///    后 force-cancel。
 void main() {
-  const List<String> releaseWorkflows = <String>[
-    'release.yml',
-    'release-desktop.yml',
-  ];
+  final String script = File(
+    '../tool/cancel_superseded_runs.sh',
+  ).readAsStringSync();
+  final String workflow = File(
+    '../.github/workflows/supersede-develop-releases.yml',
+  ).readAsStringSync();
 
-  for (final String name in releaseWorkflows) {
-    test('$name 在 push 上取消 5 分钟内被取代的旧 run', () {
+  for (final String name in <String>['release.yml', 'release-desktop.yml']) {
+    test('$name 里没有（必然失效的）取消 job', () {
       final String yaml = File('../.github/workflows/$name').readAsStringSync();
-      final int at = yaml.indexOf('\n  cancel-superseded:\n');
-      expect(at, isNot(-1), reason: '$name 没有 cancel-superseded job');
-      final int next = yaml.indexOf(RegExp(r'\n  [a-z][a-z0-9-]*:\n'), at + 1);
-      final String job = yaml.substring(at, next == -1 ? yaml.length : next);
-
-      expect(job, contains("if: github.event_name == 'push'"));
-      expect(job, contains('actions: write'));
-      expect(job, contains("SUPERSEDE_WINDOW_MINUTES: '5'"));
-      expect(job, contains("SUPERSEDE_MAX_ELAPSED_MINUTES: '9'"));
-      expect(job, contains('run: bash tool/cancel_superseded_runs.sh'));
-      expect(job, isNot(contains('SUPERSEDE_DRY_RUN')));
+      expect(yaml, isNot(contains('cancel-superseded:')));
+      expect(yaml, isNot(contains('cancel_superseded_runs.sh')));
     });
   }
 
-  test('脚本只取消本分支更早的 push run，且查询不带 event=push', () {
-    final String script = File(
-      '../tool/cancel_superseded_runs.sh',
-    ).readAsStringSync();
-
-    expect(script, contains('if [ "\$event" != "push" ]; then'));
-    expect(script, contains(r'select(.event == \"push\" and .id < $RUN_ID)'));
-    expect(script, contains(r'runs?branch=$branch&status=$status'));
-    expect(script, isNot(contains('&event=push')));
+  test('独立 workflow：push 触发、不进发布的 concurrency 组、参数 8 / 10', () {
+    expect(workflow, contains("branches: ['main', 'develop']"));
+    expect(workflow, contains('actions: write'));
+    // 进了任何 concurrency 组都可能被 pending 住；发布组更是必然。
+    expect(workflow, isNot(contains('\nconcurrency:')));
+    expect(workflow, isNot(contains('fushi-release-')));
+    expect(workflow, contains('WORKFLOWS: release.yml release-desktop.yml'));
+    expect(workflow, contains("SUPERSEDE_WINDOW_MINUTES: '8'"));
+    expect(workflow, contains("SUPERSEDE_MAX_ELAPSED_MINUTES: '10'"));
+    expect(workflow, contains(r'HEAD_SHA: ${{ github.sha }}'));
+    expect(workflow, contains('run: bash tool/cancel_superseded_runs.sh'));
+    expect(workflow, isNot(contains('SUPERSEDE_DRY_RUN')));
   });
 
-  test('脚本按旧 run 的 job 实际开始时刻、以本 run 创建时刻为基准判断', () {
-    final String script = File(
-      '../tool/cancel_superseded_runs.sh',
-    ).readAsStringSync();
+  test('脚本：只按 status 查询，分支 / 事件 / sha 在 bash 里比', () {
+    expect(script, contains(r'-f status="$st"'));
+    for (final String param in <String>[
+      '-f branch=',
+      '?branch=',
+      '&branch=',
+      '-f event=',
+      '?event=',
+      '&event=',
+    ]) {
+      expect(script, isNot(contains(param)), reason: param);
+    }
+    expect(
+      script,
+      contains(
+        r'[ "$sha" = "$HEAD_SHA" ] && [ "$br" = "$BRANCH" ] && [ "$ev" = "push" ]',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'[ "$br" = "$BRANCH" ] && [ "$ev" = "push" ] && [ "$id" -lt "$new_id" ] || continue',
+      ),
+    );
+    // 这次 push 没触发发布（paths 过滤）就什么都不砍：旧 run 仍是最新的有效发布。
+    expect(script, contains('created no active run'));
+  });
 
-    // 以本 run 的 created_at 为基准，而不是本 job 开跑的「现在」。
+  test('脚本：job 实际开始时刻 vs 新 run 创建时刻，外加安全上限', () {
+    expect(script, contains(r'window="${SUPERSEDE_WINDOW_MINUTES:-8}"'));
     expect(
       script,
-      contains('[.workflow_id, .head_branch, .event, .created_at]'),
+      contains(r'max_elapsed="${SUPERSEDE_MAX_ELAPSED_MINUTES:-10}"'),
     );
-    expect(script, contains(r'date -u -d "$created - ${window} minutes"'));
-    // 量的是旧 run 的 job（去掉它自己的 cancel-superseded），不是 run_started_at。
+    expect(script, contains(r'date -u -d "$new_created - ${window} minutes"'));
     expect(script, contains(r'/actions/runs/$id/jobs'));
-    expect(script, contains('select(.name != "cancel-superseded"'));
-    expect(script, isNot(contains('run_started_at //')));
-    // 安全上限两个条件都要满足才砍。
-    expect(
-      script,
-      contains(r'max_elapsed="${SUPERSEDE_MAX_ELAPSED_MINUTES:-9}"'),
-    );
+    expect(script, isNot(contains('.run_started_at')));
     expect(
       script,
       contains(r'"$first" > "$push_cutoff" && "$first" > "$safety_cutoff"'),
     );
   });
 
-  test('普通 cancel 停不下 always() job 时改用 force-cancel', () {
-    final String script = File(
-      '../tool/cancel_superseded_runs.sh',
-    ).readAsStringSync();
-    // 2026-09-30：桌面 publish（if: always()）与 macOS 签名步骤在 cancel 后一直
-    // in_progress，只能 force-cancel。先统一等一轮，再对还在跑的强制取消。
+  test('脚本：普通 cancel 停不下 always() job 时改用 force-cancel', () {
     expect(script, contains(r'/actions/runs/$id/cancel'));
     expect(script, contains(r'/actions/runs/$id/force-cancel'));
     expect(
