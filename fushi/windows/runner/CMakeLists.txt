@@ -43,6 +43,7 @@ add_executable(${BINARY_NAME} WIN32
   "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
+  "system_font_list.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"

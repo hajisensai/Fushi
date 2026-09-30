@@ -18,7 +18,8 @@
 /// - **不删任何用户文件**（`deleteLocalFiles: false`）；**不写跨设备删除墓碑**
 ///   （`DeleteScope.keepLocalOnly`）——这是「本机文件没了」的本地事实，不该把对端
 ///   的条目一起删掉。
-/// - 破坏性操作带护栏：库根不存在、失效占比过高都拒绝执行（除非 `force`）。
+/// - 破坏性操作带护栏：库根不存在、失效占比过高都拒绝执行（除非 `force`）；
+///   护栏与书 / 漫画根共用（`library_prune_guard.dart`）。
 library;
 
 import 'dart:io';
@@ -27,6 +28,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/source_library/library_prune_guard.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -34,86 +36,6 @@ import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
-
-/// 单次对账的护栏阈值：失效占比超过 [ratio] **且**失效数超过 [absoluteFloor] 时
-/// 拒绝执行（除非调用方显式 `force`）。
-///
-/// 两个条件同时成立才拦，是为了让**小库**能被完整清理（用户删光一个小库是正常意图），
-/// 而**大库**在「挂载点空了 / NFS 掉了」这类事故下不会被整批删光。[absoluteFloor]
-/// 是「多少条以下不设比例门」的绝对下限。
-class VideoPruneThreshold {
-  const VideoPruneThreshold({this.ratio = 0.5, this.absoluteFloor = 10});
-
-  final double ratio;
-  final int absoluteFloor;
-
-  /// [stale] / [considered] 是否突破护栏。
-  bool exceeded({required int stale, required int considered}) =>
-      stale > absoluteFloor && considered > 0 && stale / considered > ratio;
-}
-
-/// 一次对账的结果。
-class VideoPruneReport {
-  const VideoPruneReport({
-    required this.considered,
-    required this.missing,
-    required this.deleted,
-    this.unreachable = 0,
-    this.skipped = false,
-    this.skipReason,
-    this.errors = const <String>[],
-  });
-
-  /// 候选行数（落在 root 内；给了基线时只算本轮扫描前就在库里的行）。
-  final int considered;
-
-  /// 其中文件确已不存在的行数。
-  final int missing;
-
-  /// 文件找不到、但所在子树疑似脱挂（最近的现存上级目录是空的或列不出来）
-  /// 而**没有**判失效的行数。见 [pruneMissingVideoRows]。
-  final int unreachable;
-
-  /// 实际删除的行数。
-  final int deleted;
-
-  /// 是否被护栏 / 刮削租约拦下（未执行删除）。
-  final bool skipped;
-  final String? skipReason;
-  final List<String> errors;
-
-  @override
-  String toString() => skipped
-      ? 'prune skipped ($skipReason; considered $considered, missing $missing)'
-      : 'pruned $deleted/$missing (considered $considered'
-            '${unreachable > 0 ? ', unreachable $unreachable' : ''})';
-}
-
-/// [filePath] 所在子树是否疑似「挂载点掉了」：从文件的上级目录往上找到第一个现存
-/// 目录（不越过 [rootPath]），它若是**空的**或**列不出来**（权限 / IO 错误），就当
-/// 不可达而不是「文件被删」。
-///
-/// 用户删一整季通常连目录一起删，最近的现存上级是非空的库根或父目录 → 照常判失效；
-/// 子挂载点（`/media/disk2`）掉线后留下的是一个空目录 → 这里拦住，不把那块盘上的
-/// 条目整批删掉。整个库根为空另由 [pruneMissingVideoRows] 拦。
-bool isVideoPathInDetachedSubtree(String filePath, String rootPath) {
-  final String root = p.normalize(rootPath);
-  String dir = p.dirname(p.normalize(filePath));
-  while (p.isWithin(root, dir)) {
-    final Directory d = Directory(dir);
-    if (d.existsSync()) {
-      try {
-        return d.listSync(followLinks: false).isEmpty;
-      } on FileSystemException {
-        return true;
-      }
-    }
-    final String parent = p.dirname(dir);
-    if (parent == dir) break;
-    dir = parent;
-  }
-  return false;
-}
 
 /// 枚举 [root] 下现存的视频文件路径（[normalizeVideoPath] 归一）。纯文件系统读。
 Future<Set<String>> enumerateLocalVideoPaths(
@@ -198,14 +120,14 @@ List<VideoBookRow> selectStaleVideoRows({
 /// 显式用户意图用）：
 /// - 库根不存在 → 拒绝；
 /// - 库根在但一个视频文件都枚举不到 → 拒绝（空挂载点）；
-/// - 失效行所在子树疑似脱挂（[isVideoPathInDetachedSubtree]）→ 该行不判失效；
+/// - 失效行所在子树疑似脱挂（[isPathInDetachedSubtree]）→ 该行不判失效；
 /// - 失效占比越过 [threshold] → 拒绝。
-Future<VideoPruneReport> pruneMissingVideoRows({
+Future<LibraryPruneReport> pruneMissingVideoRows({
   required VideoBookRepository repository,
   required Directory root,
   Set<String>? foundPaths,
   Set<String>? baselineBookUids,
-  VideoPruneThreshold threshold = const VideoPruneThreshold(),
+  LibraryPruneThreshold threshold = const LibraryPruneThreshold(),
   bool force = false,
   bool dryRun = false,
   bool Function(String path)? exists,
@@ -219,32 +141,29 @@ Future<VideoPruneReport> pruneMissingVideoRows({
         row,
   ];
   if (candidates.isEmpty) {
-    return const VideoPruneReport(considered: 0, missing: 0, deleted: 0);
+    return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
   }
   final bool rootExists = await root.exists();
-  // 库根不存在：绝不 prune。NFS 未挂载 / USB 拔掉会把整库删光，
-  // 这是本模块最大的事故面。
-  if (!rootExists && !force) {
-    return VideoPruneReport(
-      considered: candidates.length,
-      missing: 0,
-      deleted: 0,
-      skipped: true,
-      skipReason: 'library root missing: ${root.path}',
-    );
-  }
   final Set<String> found =
       foundPaths ??
       (rootExists ? await enumerateLocalVideoPaths(root) : <String>{});
-  // 库根在、但一个视频都没有：空挂载点和「用户删光了」长得一样，而前者删错的代价
-  // 是整库的进度与刮削身份。小库也拦（比例护栏的绝对下限在这里不适用）。
-  if (found.isEmpty && !force) {
-    return VideoPruneReport(
+  // 库根不存在 / 空挂载点：绝不 prune。NFS 未挂载 / USB 拔掉会把整库删光，
+  // 这是本模块最大的事故面（护栏与书 / 漫画根共用）。
+  final String? rootSkip = force
+      ? null
+      : libraryRootSkipReason(
+          rootPath: root.path,
+          rootExists: rootExists,
+          foundAny: found.isNotEmpty,
+          mediaNoun: 'video files',
+        );
+  if (rootSkip != null) {
+    return LibraryPruneReport(
       considered: candidates.length,
       missing: 0,
       deleted: 0,
       skipped: true,
-      skipReason: 'library root has no video files (unmounted?): ${root.path}',
+      skipReason: rootSkip,
     );
   }
   final List<VideoBookRow> missingRows = selectStaleVideoRows(
@@ -254,33 +173,35 @@ Future<VideoPruneReport> pruneMissingVideoRows({
   );
   final List<VideoBookRow> stale = <VideoBookRow>[
     for (final VideoBookRow row in missingRows)
-      if (force || !isVideoPathInDetachedSubtree(row.videoPath, root.path)) row,
+      if (force || !isPathInDetachedSubtree(row.videoPath, root.path)) row,
   ];
   final int unreachable = missingRows.length - stale.length;
   if (stale.isEmpty) {
-    return VideoPruneReport(
+    return LibraryPruneReport(
       considered: candidates.length,
       missing: 0,
       deleted: 0,
       unreachable: unreachable,
     );
   }
-  if (!force &&
-      threshold.exceeded(stale: stale.length, considered: candidates.length)) {
-    return VideoPruneReport(
+  final String? thresholdSkip = force
+      ? null
+      : threshold.skipReason(
+          stale: stale.length,
+          considered: candidates.length,
+        );
+  if (thresholdSkip != null) {
+    return LibraryPruneReport(
       considered: candidates.length,
       missing: stale.length,
       deleted: 0,
       unreachable: unreachable,
       skipped: true,
-      skipReason:
-          'stale ${stale.length}/${candidates.length} exceeds threshold '
-          '(ratio ${threshold.ratio}, floor ${threshold.absoluteFloor}); '
-          'pass force to override',
+      skipReason: thresholdSkip,
     );
   }
   if (dryRun) {
-    return VideoPruneReport(
+    return LibraryPruneReport(
       considered: candidates.length,
       missing: stale.length,
       deleted: 0,
@@ -293,7 +214,7 @@ Future<VideoPruneReport> pruneMissingVideoRows({
   final VideoScrapeOperationLease? lease =
       VideoScrapeOperationGate.tryEnterOperation();
   if (lease == null) {
-    return VideoPruneReport(
+    return LibraryPruneReport(
       considered: candidates.length,
       missing: stale.length,
       deleted: 0,
@@ -320,7 +241,7 @@ Future<VideoPruneReport> pruneMissingVideoRows({
   } finally {
     lease.release();
   }
-  return VideoPruneReport(
+  return LibraryPruneReport(
     considered: candidates.length,
     missing: stale.length,
     deleted: deleted,

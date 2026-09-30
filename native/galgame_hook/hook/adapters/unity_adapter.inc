@@ -279,16 +279,15 @@ void PublishUnityText(uint64_t thread_id, void* text_component,
                       hook_code, fushi_voice_hook::kTextEventLine);
 }
 
-void RecordUnityTmpText(void* text_component, void* string_object,
-                        const char* hook_name, const wchar_t* hook_code,
-                        bool stable_across_components = false) {
-  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
-      g_il2cpp_string_length == nullptr) {
-    return;
-  }
-  const wchar_t* chars = g_il2cpp_string_chars(string_object);
-  const int source_length = g_il2cpp_string_length(string_object);
-  if (chars == nullptr || source_length <= 0) return;
+// 与脚本运行时无关的发布入口：IL2CPP（il2cpp_string_*）与 Mono（mono_string_*，
+// unity_mono_adapter.inc）各自把托管字符串解成 UTF-16 指针 + 长度后都走这里，所以两条
+// 路径的富文本剥离、UI 伪影门和线程身份口径完全一致。返回是否真的发布了一行。
+bool RecordUnityTextChars(void* text_component, const wchar_t* chars,
+                          int source_length, const char* hook_name,
+                          const wchar_t* hook_code,
+                          bool stable_across_components = false,
+                          uint64_t stable_identity_key = 0) {
+  if (chars == nullptr || source_length <= 0) return false;
 
   // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
   // 由 component 指针充当线程 id，让 UI 像 Luna 一样选择“正文 TextMeshPro 组件”。
@@ -314,21 +313,39 @@ void RecordUnityTmpText(void* text_component, void* string_object,
       if (c >= 0x3000) has_cjk = true;
     }
   }
-  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
+  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) {
+    return false;
+  }
   // Most Unity text components are independent UI fields, so their object
   // identity must remain part of the selectable thread. Naninovel recreates
   // its main RevealableText component when loading/switching scenes, though:
   // using that transient pointer as the thread id silently strands the user's
   // selection on the old scene. Keep the real component in event metadata,
   // but give known scene-stable dialogue sources an engine-level identity.
+  // A stable source may still carry a role key (Unity Mono per-glyph message
+  // framework: the body and the name plate are two objects of one class and
+  // must not share a lane) that survives the component being recreated.
   const uint64_t component_identity =
       stable_across_components
-          ? 0
+          ? stable_identity_key
           : reinterpret_cast<uint64_t>(text_component);
   const uint64_t thread_id = fushi_voice_hook::NativeTextThreadIdFrom(
       component_identity, hook_code, hook_name);
   PublishUnityText(thread_id, text_component, clean, length, true, hook_name,
                    hook_code);
+  return true;
+}
+
+void RecordUnityTmpText(void* text_component, void* string_object,
+                        const char* hook_name, const wchar_t* hook_code,
+                        bool stable_across_components = false) {
+  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  RecordUnityTextChars(text_component, g_il2cpp_string_chars(string_object),
+                       g_il2cpp_string_length(string_object), hook_name,
+                       hook_code, stable_across_components);
 }
 
 void FlushUnityTextMeshLine() {
@@ -384,18 +401,21 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 
-void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
-  if (g_header == nullptr || clip == nullptr) return;
-  wchar_t clip_name[kUnityClipNameChars] = {0};
-  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+// 最近一次打开的 `*voice*.bundle` 路径（CreateFile 钩子记下）；空串 = 本会话还没见过。
+void CopyLastUnityVoiceBundle(wchar_t* out, size_t out_chars) {
+  if (out == nullptr || out_chars == 0) return;
+  out[0] = 0;
+  if (!g_cs_ready) return;
+  EnterCriticalSection(&g_cs);
+  wcsncpy_s(out, out_chars, g_last_unity_voice_bundle, _TRUNCATE);
+  LeaveCriticalSection(&g_cs);
+}
 
-  wchar_t bundle_path[kUnityBundlePathChars] = {0};
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    wcsncpy_s(bundle_path, g_last_unity_voice_bundle, _TRUNCATE);
-    LeaveCriticalSection(&g_cs);
-  }
-
+// Unity 资源语音事件（clip 名 + voice bundle）写共享环；IL2CPP 与 Mono
+// （unity_mono_adapter.inc）两条运行时共用，injector 侧据此抽取解码。HookWorker 调用。
+void PublishUnityVoiceEvent(const wchar_t* clip_name, const wchar_t* bundle_path,
+                            uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip_name == nullptr || clip_name[0] == 0) return;
   const uint64_t index = static_cast<uint64_t>(InterlockedExchangeAdd64(
       reinterpret_cast<volatile LONGLONG*>(
           &g_header->unity_voice_write_count),
@@ -405,9 +425,20 @@ void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
   event->seq = 0;
   event->timestamp_ms = timestamp_ms;
   wcsncpy_s(event->clip_name, clip_name, _TRUNCATE);
-  wcsncpy_s(event->bundle_path, bundle_path, _TRUNCATE);
+  wcsncpy_s(event->bundle_path, bundle_path == nullptr ? L"" : bundle_path,
+            _TRUNCATE);
   MemoryBarrier();
   event->seq = index + 1;
+}
+
+void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip == nullptr) return;
+  wchar_t clip_name[kUnityClipNameChars] = {0};
+  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+
+  wchar_t bundle_path[kUnityBundlePathChars] = {0};
+  CopyLastUnityVoiceBundle(bundle_path, kUnityBundlePathChars);
+  PublishUnityVoiceEvent(clip_name, bundle_path, timestamp_ms);
 }
 
 void EnqueueUnityAudioClip(void* source, void* clip) {

@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// [EpubCueMatcher]（生产入口 = 第一遍 Dice 匹配 + 锚点间隙回填）的对照测试。

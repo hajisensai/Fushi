@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -28,6 +29,7 @@ import 'package:test/test.dart';
 ///   库根下，再也没有机会被清理。
 /// - 对账没做成（拿不到刮削租约）→ 409，库根保留。
 /// - `serve --no-prune` 管本进程所有扫描，不只是启动那一次。
+/// - 书 / 漫画根也能 purge（BUG-2816；此前一律 400）。
 void main() {
   late Directory tmp;
   late FushiDatabase db;
@@ -44,10 +46,12 @@ void main() {
     repo = VideoBookRepository(db);
     configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
     enginePaths = ServerPaths(p.join(tmp.path, 'data'));
+    EpubStorage.debugBaseDirectoryOverride = null;
   });
 
   tearDown(() async {
     await db.close();
+    EpubStorage.debugBaseDirectoryOverride = null;
     enginePaths = const UninstalledEnginePaths();
     try {
       await tmp.delete(recursive: true);
@@ -181,5 +185,58 @@ void main() {
     final ScanSummary explicit = await ctx.scanLibraries(prune: true);
     expect(explicit.videosPruned, 1);
     expect(await repo.listAll(), hasLength(1));
+  });
+
+  test('漫画根：整个目录删掉后 purge 回收扫描认领过的卷，再移除库根', () async {
+    final Directory root = Directory(p.join(tmp.path, 'manga'));
+    File(p.join(root.path, 'vol', 'images', 'p001.jpg'))
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    File(p.join(root.path, 'vol', 'Vol.mokuro')).writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'Vol',
+        'pages': <Object?>[
+          <String, Object?>{
+            'img_width': 800,
+            'img_height': 1200,
+            'img_path': 'images/p001.jpg',
+            'blocks': <Object?>[],
+          },
+        ],
+      }),
+    );
+    final (:AdminApi api, :AdminContext ctx) = await build(
+      libraries: <LibraryRootConfig>[
+        LibraryRootConfig(id: 'm', path: root.path, kind: 'manga'),
+      ],
+    );
+    expect((await ctx.scanLibraries()).mangaAdded, 1);
+    root.deleteSync(recursive: true);
+
+    final (:int status, :Map<String, dynamic> json) = await purge(api, 'm');
+
+    expect(status, 200);
+    expect((json['purge'] as Map)['deleted'], 1);
+    expect(await db.getAllEpubBooks(), isEmpty);
+    expect(ctx.config.libraries, isEmpty);
+  });
+
+  test('从没扫描过的书根：purge 没有可清理的条目，照常移除', () async {
+    final (:AdminApi api, :AdminContext ctx) = await build(
+      libraries: <LibraryRootConfig>[
+        LibraryRootConfig(
+          id: 'b',
+          path: p.join(tmp.path, 'books'),
+          kind: 'book',
+        ),
+      ],
+    );
+
+    final (:int status, :Map<String, dynamic> json) = await purge(api, 'b');
+
+    expect(status, 200);
+    expect((json['purge'] as Map)['considered'], 0);
+    expect(ctx.config.libraries, isEmpty);
   });
 }

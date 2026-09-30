@@ -2158,9 +2158,6 @@ updateLive: function(patch) {
               return;
             }
             if (!shiftKey && !ReaderFushiSource.instance.highlightOnTap) {
-              // 点词关着：这一下没被任何动作消费（JS 门控 lookup=false 时点空白也
-              // 走这里，永远到不了 onTapEmpty）。专注模式下它是触屏唯一的退出通道。
-              if (_focusMode) _showFocusModeBarsLockedHint();
               // Tap consumed without a selection/popup — reclaim reader focus.
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
@@ -2211,11 +2208,8 @@ updateLive: function(patch) {
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
-            // 专注模式：栏唤不出来。挤压态点空白本来不响应，但此时它是触屏唯一
-            // 能拿到「退出专注模式」的手势，所以不论形态都弹提示条。
-            if (_focusMode) {
-              _showFocusModeBarsLockedHint();
-            } else if (_anyChromeFloating) {
+            // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
+            if (_anyChromeFloating) {
               _handleFloatingChromeReveal();
             } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
               _toggleChrome();

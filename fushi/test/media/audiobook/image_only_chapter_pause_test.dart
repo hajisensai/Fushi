@@ -190,7 +190,7 @@ void main() {
     late String src;
     setUpAll(() {
       src = File(
-        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
+        'lib/src/media/audiobook/audiobook_controller.dart',
       ).readAsStringSync();
     });
 

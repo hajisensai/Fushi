@@ -304,6 +304,88 @@ void main() {
     expect(ball(), findsOneWidget);
   });
 
+  group('页面把必需入口托付给球（阅读器关掉顶栏和底栏）', () {
+    /// 阅读器场景：登记返回 / 设置 / 开回栏 + 播放键；[pinned] 为 true 时前三颗
+    /// 固定在球上。
+    Widget readerScene({required bool pinned}) => FloatingBallScene(
+      scope: FloatingBallScope.reader,
+      pinnedIds: pinned
+          ? const <String>['back', 'settings', 'toolbars']
+          : const <String>[],
+      actions: <String, ReaderHeaderAction>{
+        'back': _action('scene_back'),
+        'settings': _action('scene_settings'),
+        'toolbars': _action('scene_toolbars'),
+        'audiobookPlayPause': _action('scene_play_pause'),
+      },
+    );
+
+    testWidgets('不看勾选、排在最上；没有关闭键；勾选全关也照样有球', (WidgetTester tester) async {
+      await prefs.setFloatingBallButtons(FloatingBallScope.reader, <String>[
+        'audiobookPlayPause',
+        'settings',
+      ]);
+      await pumpHost(tester, home: readerScene(pinned: true));
+      await tester.pump();
+      await expand(tester);
+      expect(byKey('floating_ball_action_close'), findsNothing);
+      final List<double> ys = <String>[
+        'scene_back',
+        'scene_settings',
+        'scene_toolbars',
+        'scene_play_pause',
+      ].map((String k) => tester.getCenter(byKey(k)).dy).toList();
+      for (int i = 1; i < ys.length; i++) {
+        expect(ys[i - 1], lessThan(ys[i]), reason: '固定按钮在上、勾选的在下');
+      }
+      // 勾选里也有「设置」：不重复出现。
+      expect(byKey('scene_settings'), findsOneWidget);
+
+      await prefs.setFloatingBallButtons(
+        FloatingBallScope.reader,
+        const <String>[],
+      );
+      await tester.pumpAndSettle();
+      expect(ball(), findsOneWidget, reason: '球是此刻唯一的返回 / 设置入口');
+    });
+
+    testWidgets('本页先前点过「关闭」：接管一开始球立即回来', (WidgetTester tester) async {
+      final ValueNotifier<bool> pinned = ValueNotifier<bool>(false);
+      addTearDown(pinned.dispose);
+      await pumpHost(
+        tester,
+        home: ValueListenableBuilder<bool>(
+          valueListenable: pinned,
+          builder: (BuildContext context, bool value, Widget? child) =>
+              readerScene(pinned: value),
+        ),
+      );
+      await tester.pump();
+      await expand(tester);
+      await tester.tap(byKey('floating_ball_action_close'));
+      await tester.pumpAndSettle();
+      expect(ball(), findsNothing);
+
+      pinned.value = true;
+      await tester.pumpAndSettle();
+      expect(ball(), findsOneWidget);
+
+      // 接管结束（栏开回来）：关闭键回来了，而且不会沿用接管前的那次「关闭」。
+      pinned.value = false;
+      await tester.pumpAndSettle();
+      expect(ball(), findsOneWidget);
+      await expand(tester);
+      expect(byKey('floating_ball_action_close'), findsOneWidget);
+    });
+
+    testWidgets('设置里关掉应用内悬浮球：照样不画（页面据此不关栏）', (WidgetTester tester) async {
+      await prefs.setFloatingBallInApp(false);
+      await pumpHost(tester, home: readerScene(pinned: true));
+      await tester.pump();
+      expect(ball(), findsNothing);
+    });
+  });
+
   test('原生系统球的图标表：每个全局按钮与应用内同一颗，外加打开 / 关闭', () {
     final Map<String, int> icons = floatingBallNativeIcons();
     for (final FloatingBallGlobalAction action

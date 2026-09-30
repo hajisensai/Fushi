@@ -1514,6 +1514,11 @@
     user-select: none;
 }
 
+/* 合并行的「N 本辞典」药丸：点击就地展开 / 收起各来源药丸（触屏没有悬停）。 */
+.pitch-dict-count {
+    cursor: pointer;
+}
+
 /* TODO-1354（按 Niratan 文字位置对齐，参考 W1ght/Niratan compactPitchAccents）：音高
    读音条从「circle 项目符号 + 每条各占一行」改为「行内单行、' | ' 分隔」。旧版把每条
    音高（多词典 / 多读法）渲染成 list-item 竖排，音高数字 [n] 跟着各自换行、与来源药丸

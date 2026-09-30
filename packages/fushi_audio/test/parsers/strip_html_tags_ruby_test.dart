@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/src/parsers/strip_html_tags.dart';
 
 /// BUG-1161：`stripHtmlTags` 曾经无差别「删标签留内容」，把注音（振假名）读音拼进

@@ -99,6 +99,9 @@ void main() {
         'lib/src/media/video/subtitle_transcript_text.dart': 1,
         // BUG-442：词典查询输入长度上限保护，是校验不是记账。
         'lib/src/models/app_model.dart': 1,
+        // galgame 文本线程记忆：按最近预览行码点长度的中位数（典型行长）区分同一
+        // hook code 下的名字牌 / 正文兄弟线程，是线程消歧不是记账。
+        'lib/src/mining/gal_hook_session_controller.dart': 1,
         // BUG-2091 字幕查词高亮：把引擎回报的匹配长度（**码点**数）折算成 grapheme
         // 数，供高亮区间用。是长度换算不是记账——查词字数走的是制卡那条路。
         'lib/src/pages/implementations/video_fushi_page.dart': 1,

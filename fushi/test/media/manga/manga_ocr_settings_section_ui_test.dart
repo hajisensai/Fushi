@@ -21,10 +21,15 @@ class _FakeOcrService implements MangaOcrService {
     this.diskBytesOverride,
     this.obtainedBytesOverride,
     this.downloadEvents,
+    this.acceleratorMissingBytes = 0,
   });
 
   final bool supported;
   bool ready;
+
+  /// 提速组件还差的字节数；下载流跑完即清零（与真实服务「一次下齐」同形）。
+  int acceleratorMissingBytes;
+  int downloadCalls = 0;
 
   /// 磁盘占用与「清单是否齐全」解耦：残留 `.part`/遗留档就是「不 ready 但占着
   /// 磁盘」，这正是引擎用不到时仍须可删的那一档。
@@ -52,10 +57,13 @@ class _FakeOcrService implements MangaOcrService {
         totalBytes: 40 * 1024 * 1024,
         obtainedBytes:
             obtainedBytesOverride ?? (ready ? 40 * 1024 * 1024 : 0),
+        acceleratorMissingBytes: acceleratorMissingBytes,
       );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() async* {
+    downloadCalls++;
+    acceleratorMissingBytes = 0;
     final StreamController<MangaOcrDownloadEvent>? scripted = downloadEvents;
     if (scripted != null) {
       yield* scripted.stream;
@@ -200,6 +208,54 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('ready model without the speed-up pack offers to download it',
+      (WidgetTester tester) async {
+    final _FakeOcrService service = _FakeOcrService(
+      ready: true,
+      acceleratorMissingBytes: 94 * 1024 * 1024,
+    );
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: service,
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder button =
+        find.byKey(const ValueKey<String>('manga_ocr_accelerator_download'));
+    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
+    expect(button, findsOneWidget);
+    expect(find.text(t.manga_ocr_accelerator_desc), findsOneWidget);
+
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(service.downloadCalls, 1);
+    expect(button, findsNothing, reason: '下齐之后不再提示');
+    expect(find.text(t.manga_ocr_accelerator_desc), findsNothing);
+  });
+
+  testWidgets('speed-up pack prompt is absent when nothing is missing',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('manga_ocr_accelerator_download')),
+        findsNothing);
+    expect(find.text(t.manga_ocr_accelerator_desc), findsNothing);
+  });
+
   testWidgets('lens language dropdown persists the chosen language',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);
@@ -278,6 +334,35 @@ void main() {
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
     expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+  });
+
+  testWidgets('per-column CTC is offered on every platform and persists',
+      (WidgetTester tester) async {
+    String stored = 'manga_ocr';
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      localModelGetter: () => stored,
+      localModelSetter: (String value) async => stored = value,
+    )));
+    await tester.pumpAndSettle();
+    final Finder field =
+        find.byKey(const ValueKey<String>('manga_ocr_local_model'));
+    expect(field, findsOneWidget);
+    await tester.ensureVisible(field);
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    // CUDA / Baberu 只在 Windows 列出；CTC 与经典 manga-ocr 五端都有。
+    expect(find.text(t.manga_ocr_baberu_model),
+        Platform.isWindows ? findsWidgets : findsNothing);
+    expect(find.text(t.manga_ocr_cuda_model),
+        Platform.isWindows ? findsWidgets : findsNothing);
+    await tester.tap(find.text(t.manga_ocr_ctc_model).last);
+    await tester.pumpAndSettle();
+    expect(stored, 'manga_ctc');
+    expect(find.text(t.manga_ocr_ctc_desc), findsOneWidget);
   });
 
   testWidgets('Baberu local model choice persists across reopening on Windows',

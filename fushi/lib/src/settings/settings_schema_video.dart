@@ -18,6 +18,9 @@ import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
@@ -611,6 +614,28 @@ SettingsDestination buildVideoDestination() {
                 settingsContext.appModel.videoRespectAssStyle,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await setVideoRespectAssStyleDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+          ),
+          // 字幕字体：以视频字幕作用域打开字体库（新加的字体挂到字幕、预览区默认显示
+          // 字幕样张）。只在全局设置里出现——播放中的快捷设置面板不适合跳整页。
+          SettingsNavigationItem(
+            id: 'video.subtitle.font',
+            title: t.custom_fonts_catalog_title,
+            subtitle: t.video_setting_subtitle_font_hint,
+            icon: Icons.font_download_outlined,
+            showIcon: true,
+            visible: (SettingsContext c) => videoQuickSettingsHostOf(c) == null,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 65,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const CustomFontsPage(target: FontTarget.videoSubtitle),
+              );
               settingsContext.refresh();
             },
           ),

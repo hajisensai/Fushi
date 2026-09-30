@@ -6,21 +6,21 @@ import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
+import 'package:fushi/src/pages/implementations/font_preview/system_font_browser_page.dart';
+import 'package:fushi/src/pages/implementations/font_preview/system_font_catalog.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
-
-// 字体扩展名的唯一真相在 FontDownloadService（页面与扩展端点共用）。
-const Set<String> _fontExtensions = kFontFileExtensions;
 
 /// A font added from a target-specific entry point must immediately belong to
 /// that target. Previously every add path silently assigned [FontTarget.body],
@@ -385,194 +385,6 @@ List<RecommendedFont> get recommendedFontsCatalog => [
   ),
 ];
 
-// ── 系统字体扫描 ─────────────────────────────────────────────────────────────
-
-const _fontsChannel = FushiChannels.fonts;
-List<String>? _cachedSystemFonts;
-
-Future<List<String>> _getSystemFonts() async {
-  if (_cachedSystemFonts != null && _cachedSystemFonts!.isNotEmpty) {
-    return _cachedSystemFonts!;
-  }
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    _cachedSystemFonts = await _getDesktopSystemFonts();
-  } else {
-    try {
-      final result = await _fontsChannel.invokeMethod<List<dynamic>>(
-        'listSystemFonts',
-      );
-      debugPrint('[fushi-fonts] channel returned ${result?.length} fonts');
-      _cachedSystemFonts = result?.cast<String>() ?? [];
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.listSystemFonts', e, stack);
-      debugPrint('[fushi-fonts] channel error: $e');
-      _cachedSystemFonts = [];
-    }
-  }
-  return _cachedSystemFonts!;
-}
-
-Future<List<String>> _getDesktopSystemFonts() async {
-  final fontDirs = <String>[];
-  if (Platform.isWindows) {
-    fontDirs.add(r'C:\Windows\Fonts');
-    final localAppData = Platform.environment['LOCALAPPDATA'];
-    if (localAppData != null) {
-      fontDirs.add(p.join(localAppData, r'Microsoft\Windows\Fonts'));
-    }
-  } else if (Platform.isMacOS) {
-    fontDirs.addAll(['/System/Library/Fonts', '/Library/Fonts']);
-    final home = Platform.environment['HOME'];
-    if (home != null) fontDirs.add('$home/Library/Fonts');
-  } else if (Platform.isLinux) {
-    fontDirs.addAll(['/usr/share/fonts', '/usr/local/share/fonts']);
-    final home = Platform.environment['HOME'];
-    if (home != null) fontDirs.add('$home/.local/share/fonts');
-  }
-
-  final names = <String>{};
-  for (final dirPath in fontDirs) {
-    final dir = Directory(dirPath);
-    if (!dir.existsSync()) continue;
-    try {
-      await for (final entity in dir.list(recursive: true)) {
-        if (entity is! File) continue;
-        final ext = p.extension(entity.path).toLowerCase();
-        if (!_fontExtensions.contains(ext)) continue;
-        final name = p
-            .basenameWithoutExtension(entity.path)
-            .replaceAll(RegExp(r'[-_]'), ' ')
-            .replaceAll(
-              RegExp(
-                r'\s+(Regular|Bold|Italic|Light|Medium|Thin|'
-                r'Black|ExtraBold|SemiBold|ExtraLight|Condensed|Expanded)$',
-                caseSensitive: false,
-              ),
-              '',
-            );
-        if (name.isNotEmpty) names.add(name);
-      }
-    } catch (e) {
-      debugPrint('[fushi-fonts] error scanning $dirPath: $e');
-    }
-  }
-  final sorted = names.toList()..sort();
-  debugPrint('[fushi-fonts] desktop scan found ${sorted.length} fonts');
-  return sorted;
-}
-
-// ── 系统字体选择页 ────────────────────────────────────────────────────────────
-
-class _SystemFontPickerPage extends StatefulWidget {
-  const _SystemFontPickerPage({required this.alreadyAdded});
-  final Set<String> alreadyAdded;
-
-  @override
-  State<_SystemFontPickerPage> createState() => _SystemFontPickerPageState();
-}
-
-class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
-  List<String> _allFonts = [];
-  List<String> _filtered = [];
-  bool _loading = true;
-  final _searchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFonts();
-  }
-
-  Future<void> _loadFonts() async {
-    final fonts = await _getSystemFonts();
-    if (!mounted) return;
-    setState(() {
-      _allFonts = fonts;
-      _filtered = fonts;
-      _loading = false;
-    });
-  }
-
-  void _onSearch(String query) {
-    // G6：与库页搜索同一归一化口径（日文字体族名常含全角/片假名差异）。
-    setState(() {
-      _filtered = filterByMediaSearch(
-        _allFonts,
-        query,
-        (String f) => <String>[f],
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<Widget> fontRows = _loading
-        ? <Widget>[
-            AdaptiveSettingsRow(
-              title: t.custom_fonts_downloading,
-              icon: Icons.hourglass_empty,
-              trailing: adaptiveIndicator(context: context),
-            ),
-          ]
-        : _filtered.isEmpty
-        ? <Widget>[
-            AdaptiveSettingsRow(
-              title: t.custom_fonts_empty,
-              icon: Icons.font_download_outlined,
-            ),
-          ]
-        : _filtered.map((String name) {
-            final bool added = widget.alreadyAdded.contains(name);
-            // Single-choice list: added fonts show a trailing check,
-            // pickable fonts are plain tappable rows. No navigation chevron
-            // — tapping pops this page with the font name, it does not drill
-            // into a subpage, so a `chevron_right` would falsely imply one.
-            return AdaptiveSettingsRow(
-              title: name,
-              icon: Icons.font_download_outlined,
-              trailing: added ? Icon(Icons.check, color: scheme.outline) : null,
-              onTap: added ? null : () => Navigator.pop(context, name),
-            );
-          }).toList();
-
-    return AdaptiveSettingsScaffold(
-      title: Text(t.custom_fonts_add_system),
-      children: [
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsRow(
-              title: t.custom_fonts_search_hint,
-              icon: Icons.search,
-              controlBelow: true,
-              trailing: SizedBox(
-                width: double.infinity,
-                child: FushiTextField(
-                  controller: _searchController,
-                  hintText: t.custom_fonts_search_hint,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.rowHorizontal,
-                    vertical: tokens.spacing.rowVertical,
-                  ),
-                  onChanged: _onSearch,
-                ),
-              ),
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(children: fontRows),
-      ],
-    );
-  }
-}
-
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 
 class CustomFontsPage extends BasePage {
@@ -688,6 +500,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   void initState() {
     super.initState();
     _fontsReady = _initializeFonts();
+    _loadSystemFamilyKeys();
   }
 
   Future<void> _initializeFonts() async {
@@ -1044,26 +857,146 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     await _downloadRecommendedFonts(fonts);
   }
 
+  /// 系统字体浏览页：每款字体用自己渲染日文样张，可多选一次加入。浏览页底部样张
+  /// 按当前预览中的用途渲染；加入后挂到进页作用域（[_newFontTargets]），与其余
+  /// 三个新增入口同一口径。
   Future<void> _addSystemFont() async {
-    final selected = await Navigator.push<String>(
+    final List<String>? selected = await Navigator.push<List<String>>(
       context,
       adaptivePageRoute(
         context: context,
-        builder: (_) => _SystemFontPickerPage(alreadyAdded: _addedFontNames),
+        builder: (_) => SystemFontBrowserPage(
+          alreadyAdded: _addedFontNames,
+          target: _previewTarget,
+        ),
       ),
     );
-    if (selected == null || !mounted) return;
+    if (selected == null || selected.isEmpty || !mounted) return;
     setState(() {
-      _fonts.add(
-        CustomFontCatalogRow(
-          id: null,
-          name: selected,
-          path: null,
-          targetEnabled: _newFontTargets(),
-        ),
-      );
+      for (final String family in selected) {
+        _fonts.add(
+          CustomFontCatalogRow(
+            id: null,
+            name: family,
+            path: null,
+            targetEnabled: _newFontTargets(),
+          ),
+        );
+      }
     });
     _save();
+  }
+
+  // ── 预览 ────────────────────────────────────────────────────────────────────
+
+  /// 预览区当前展示的用途；进页时 = 作用域 [CustomFontsPage.target]，用户可在
+  /// 预览区切换。只影响预览，不改变新增字体挂到哪个用途。
+  late FontTarget _previewTarget = widget.target;
+
+  /// 行 identity → 解析出的引擎族名（null = 解析失败）。只增不删：同名同路径的
+  /// 条目族名不会变，删掉再加回来也直接复用。
+  final Map<String, String?> _resolvedFamilies = <String, String?>{};
+  final Set<String> _resolving = <String>{};
+
+  /// 本机系统字体族名（小写），用于标出「系统里没有」的系统字体条目；
+  /// null = 还没枚举完或平台给不出可信名单，此时不下结论。
+  Set<String>? _systemFamilyKeys;
+
+  Future<void> _loadSystemFamilyKeys() async {
+    final SystemFontList list = await SystemFontCatalog.load();
+    if (!mounted || !list.namesReliable || list.families.isEmpty) return;
+    setState(() {
+      _systemFamilyKeys = <String>{
+        for (final SystemFontFamily f in list.families) f.family.toLowerCase(),
+      };
+    });
+  }
+
+  /// 为还没解析过的行排队解析族名（文件字体要经 FontLoader 注册），完成后刷新。
+  void _ensureResolved() {
+    for (final CustomFontCatalogRow row in _fonts) {
+      final String key = row.identity;
+      if (_resolvedFamilies.containsKey(key) || !_resolving.add(key)) continue;
+      resolveCatalogFontFamily(name: row.name, path: row.path).then(
+        (String? family) {
+          if (!mounted) return;
+          setState(() {
+            _resolving.remove(key);
+            _resolvedFamilies[key] = family;
+          });
+        },
+      );
+    }
+  }
+
+  FontSpecimenState _specimenStateFor(CustomFontCatalogRow row) {
+    if (!_resolvedFamilies.containsKey(row.identity)) {
+      return FontSpecimenState.loading;
+    }
+    return _resolvedFamilies[row.identity] == null
+        ? FontSpecimenState.unavailable
+        : FontSpecimenState.ready;
+  }
+
+  /// 预览用途下已启用的条目，按用户顺序。
+  List<CustomFontCatalogRow> get _previewEnabledRows => <CustomFontCatalogRow>[
+    for (final CustomFontCatalogRow row in _fonts)
+      if (row.targetEnabled[_previewTarget] == true) row,
+  ];
+
+  bool _missingOnSystem(CustomFontCatalogRow row) {
+    final Set<String>? keys = _systemFamilyKeys;
+    return keys != null && !row.isFile && !keys.contains(row.name.toLowerCase());
+  }
+
+  Widget _buildPreviewSection() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<String> families = effectiveFontTargetFamilies(
+      _previewTarget,
+      <FontPreviewCandidate>[
+        for (final CustomFontCatalogRow row in _previewEnabledRows)
+          FontPreviewCandidate(
+            family: _resolvedFamilies[row.identity],
+            path: row.path,
+          ),
+      ],
+    );
+    return AdaptiveSettingsSection(
+      title: t.font_preview_title,
+      children: [
+        Padding(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: [
+                  for (final FontTarget target in FontTarget.values)
+                    if (isFontTargetAvailableOnPlatform(target))
+                      FushiSelectableChip(
+                        key: ValueKey<String>('font-preview-target-${target.name}'),
+                        label: fontTargetLabel(target),
+                        selected: _previewTarget == target,
+                        onSelected: (_) =>
+                            setState(() => _previewTarget = target),
+                      ),
+                ],
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              FontTargetPreview(
+                target: _previewTarget,
+                families: families,
+                subtitleStyle: VideoSubtitleStyle.decode(
+                  appModel.videoSubtitleStyle,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _removeFont(int index) async {
@@ -1112,6 +1045,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
 
   @override
   Widget build(BuildContext context) {
+    _ensureResolved();
     return AdaptiveSettingsScaffold(
       // 带作用域进来时把用途写进标题：用户从「设置·游戏·Hook 文本字体」点进来，
       // 看到的是同一个全量字体库，不说明的话没法知道自己新导入的字体会挂到哪。
@@ -1122,6 +1056,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                 '${fontTargetLabel(widget.target)}',
       ),
       children: [
+        if (!_fontsLoading) _buildPreviewSection(),
         AdaptiveSettingsSection(
           children: [
             AdaptiveSettingsNavigationRow(
@@ -1198,9 +1133,14 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                   onReorder: _onReorder,
                   itemBuilder: (context, index) {
                     final CustomFontCatalogRow entry = _fonts[index];
+                    final int chainIndex = _previewEnabledRows.indexOf(entry);
                     return CustomFontCatalogTile(
                       name: entry.name,
                       isFile: entry.isFile,
+                      previewFamily: _resolvedFamilies[entry.identity],
+                      previewState: _specimenStateFor(entry),
+                      chainPosition: chainIndex < 0 ? null : chainIndex + 1,
+                      missingOnSystem: _missingOnSystem(entry),
                       targets: entry.targets,
                       index: index,
                       isLast: index == _fonts.length - 1,
@@ -1473,12 +1413,28 @@ class CustomFontCatalogTile extends StatefulWidget {
     required this.onMoveDown,
     this.initiallyExpandRoles = false,
     this.unsupportedTargets = const <FontTarget, String>{},
+    this.previewFamily,
+    this.previewState = FontSpecimenState.ready,
+    this.chainPosition,
+    this.missingOnSystem = false,
     super.key,
   });
 
   final String name;
   final bool isFile;
   final Set<FontTarget> targets;
+
+  /// 这个条目在引擎里的族名：名字与对照样字用它渲染，一眼看出字形。
+  /// null 且 [previewState] 为 ready 时退回界面字体（例如单测里不解析）。
+  final String? previewFamily;
+  final FontSpecimenState previewState;
+
+  /// 在预览区当前用途的回退链里排第几（1 起）；null = 该用途没启用它。
+  final int? chainPosition;
+
+  /// 系统字体条目在本机系统字体清单里找不到（名字是旧版按文件名猜的，或字体
+  /// 已被卸载）——它对任何用途都不会生效，需要让用户看见。
+  final bool missingOnSystem;
 
   /// 进页时就展开用途开关。从非默认作用域（如「设置·游戏·Hook 文本字体」）进来时
   /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
@@ -1628,11 +1584,13 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
               children: [
                 dragHandle,
                 Expanded(
-                  child: Text(
-                    widget.name,
-                    style: titleStyle,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+                  child: FontSpecimenLine(
+                    label: widget.name,
+                    family: widget.previewFamily,
+                    state: widget.previewState,
+                    labelStyle: titleStyle,
+                    selected: widget.chainPosition != null,
+                    unavailableLabel: t.font_preview_font_unavailable,
                   ),
                 ),
                 SizedBox(width: tokens.spacing.gap),
@@ -1642,8 +1600,15 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                widget.isFile ? t.font_source_file : t.font_source_system,
-                style: subtitleStyle,
+                <String>[
+                  widget.isFile ? t.font_source_file : t.font_source_system,
+                  if (widget.chainPosition != null)
+                    t.font_preview_chain_position(index: widget.chainPosition!),
+                  if (widget.missingOnSystem) t.custom_fonts_system_not_found,
+                ].join(' · '),
+                style: widget.missingOnSystem
+                    ? subtitleStyle?.copyWith(color: scheme.error)
+                    : subtitleStyle,
                 overflow: TextOverflow.ellipsis,
                 maxLines: 2,
               ),

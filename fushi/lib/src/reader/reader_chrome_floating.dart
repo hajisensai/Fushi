@@ -170,6 +170,17 @@ bool bottomBarVisible({
   return chromeExpanded;
 }
 
+/// 「关掉顶栏和底栏」此刻是否真的生效——页面布局、唤栏闸门与悬浮球接管的唯一判据。
+///
+/// 栏关掉后，返回 / 设置 / 开回栏这几条出口全靠应用内悬浮球（阅读器场景把它们
+/// 固定在球上、球也不给「关闭」键）。所以应用内悬浮球关着时偏好**不生效**：栏照常
+/// 显示，否则触屏（尤其 iOS：没有系统返回键）会被关在一本没有任何 chrome 的书里。
+bool readerToolbarsHidden({
+  required bool hideToolbarsPreference,
+  required bool inAppFloatingBallEnabled,
+}) =>
+    hideToolbarsPreference && inAppFloatingBallEnabled;
+
 /// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
 enum ReaderVnBlankTapAction {
   /// 挤压态底栏被收起（`_showChrome == false`）：只把底栏展开，**不翻页**。
@@ -188,15 +199,9 @@ enum ReaderVnBlankTapAction {
   /// 不重锚，所以同一下里翻页 + 唤栏互不干扰。
   advanceAndRevealChrome,
 
-  /// 底栏本来就常驻可见（挤压态且已展开）：只推进到下一屏。
+  /// 底栏本来就常驻可见（挤压态且已展开），或顶栏和底栏已被关掉（悬浮球接管，
+  /// [readerToolbarsHidden]）：只推进到下一屏。
   advance,
-
-  /// 专注模式：栏被锁定、唤不出来，空白点只剩「推进」这一个主动作（否则隐藏态的
-  /// 第一下会被当成「只唤栏不推进」吞掉，VN 永远推不动）。推进之外**附带**弹出
-  /// 「退出专注模式」提示：VN 开了点击推进时，空白点走 `onVnBlankTap` 这条桥、
-  /// 根本到不了 `onTapEmpty`，而触屏（尤其 iOS：没有系统返回键、侧滑被
-  /// `canPop: false` 关掉）唯一的退出通道就是这条提示。
-  advanceAndOfferFocusModeExit,
 }
 
 /// BUG-1195 / BUG-1245：VN 模式空白点击的分派。
@@ -219,10 +224,12 @@ ReaderVnBlankTapAction readerVnBlankTapAction({
   required bool chromeExpanded,
   required bool bottomBarFloating,
   required bool transientVisible,
-  required bool focusMode,
+  required bool toolbarsHidden,
 }) {
-  // 专注模式先于一切：此时栏的三态（挤压收起 / 悬浮隐藏 / 悬浮可见）都不存在。
-  if (focusMode) return ReaderVnBlankTapAction.advanceAndOfferFocusModeExit;
+  // 栏被关掉先于一切：此时栏的三态（挤压收起 / 悬浮隐藏 / 悬浮可见）都不存在，
+  // 空白点只剩「推进」这一个含义（否则隐藏态的第一下会被当成「只唤栏不推进」
+  // 吞掉，VN 永远推不动）。回到栏的入口在悬浮球上。
+  if (toolbarsHidden) return ReaderVnBlankTapAction.advance;
   // 悬浮态与 [bottomBarVisible] 同一口径：不读 chromeExpanded（那是挤压态的
   // 持久开关，在悬浮态可能以 false 残留）。
   if (bottomBarFloating) {
@@ -241,7 +248,6 @@ void dispatchReaderVnBlankTapAction(
   required void Function() expandChrome,
   required void Function() revealChrome,
   required void Function() advance,
-  required void Function() offerFocusModeExit,
 }) {
   switch (action) {
     case ReaderVnBlankTapAction.expandChrome:
@@ -253,9 +259,6 @@ void dispatchReaderVnBlankTapAction(
       advance();
     case ReaderVnBlankTapAction.advance:
       advance();
-    case ReaderVnBlankTapAction.advanceAndOfferFocusModeExit:
-      advance();
-      offerFocusModeExit();
   }
 }
 

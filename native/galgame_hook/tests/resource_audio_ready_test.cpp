@@ -37,5 +37,11 @@ int main() {
   assert(!HasReadyGameResourceAudio(0, kDiagUnityResourceExtractorReady));
   assert(HasReadyGameResourceAudio(
       0, kDiagUnityIl2CppHooksReady | kDiagUnityResourceExtractorReady));
+  // Unity Mono: the playback hook word lives in reserved_hook_diagnostics and
+  // still needs the injector's extractor.
+  using fushi_voice_hook::kDiagUnityAudioPlaybackHookReady;
+  assert(!HasReadyGameResourceAudio(0, 0, kDiagUnityAudioPlaybackHookReady));
+  assert(HasReadyGameResourceAudio(0, kDiagUnityResourceExtractorReady,
+                                   kDiagUnityAudioPlaybackHookReady));
   return 0;
 }

@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_session.dart';
@@ -118,7 +119,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/utils/misc/coalesced_async_runner.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
-import 'package:fushi/src/utils/misc/owned_snack_bar.dart';
+import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/serial_task_queue.dart';
@@ -1531,6 +1532,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   void _onChromeControllerChanged() => _rebuild(() {});
 
+  /// 偏好仓库任一键变了：只关心应用内悬浮球开关（见 [_syncToolbarsHidden]，
+  /// 状态没变时它立即返回）。放在 State 本体而不是 part 的 extension 里：
+  /// extension 方法每次取址都是新闭包，removeListener 对不上号。
+  void _onPrefsRepoChanged() => _syncToolbarsHidden();
+
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
   /// 由本 State 子类持有的下面三个转发器统一承接（仅转发，零行为变化），供 caret
@@ -2027,27 +2033,21 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _showChrome => _chrome.showChrome;
   set _showChrome(bool value) => _chrome.showChrome = value;
 
-  /// 专注模式（[ReaderChromeController.focusMode]）：顶栏 / 底栏收起且唤不出来。
-  bool get _focusMode => _chrome.focusMode;
+  /// 顶栏和底栏被关掉（[ReaderChromeController.toolbarsHidden]，由
+  /// [_syncToolbarsHidden] 按偏好与应用内悬浮球开关同步）：栏不画、唤不出来，
+  /// 入口由悬浮球接管。
+  bool get _toolbarsHidden => _chrome.toolbarsHidden;
 
   /// 挤压态顶栏 / 底栏此刻是否展开占位——布局判据（绘制、预留、独立文档留白）
-  /// 一律读它，而不是裸 [_showChrome]：专注模式下栏必须不在，但 [_showChrome]
+  /// 一律读它，而不是裸 [_showChrome]：栏被关掉时必须不在，但 [_showChrome]
   /// 本身还是 JS 点词门控的镜像，不能为了藏栏去翻它（翻了点正文就变成「唤栏」
   /// 而不是查词）。
-  bool get _chromeBarsExpanded => _showChrome && !_focusMode;
+  bool get _chromeBarsExpanded => _showChrome && !_toolbarsHidden;
 
   /// JS 点词门控（`__fushiTapGate.chrome` / setup 的 `showChrome`）与 onTap 的
-  /// 「点正文 = 唤出挤压态 chrome」判据：为真时点正文直接查词。专注模式下栏
-  /// 唤不出来，点正文必须照常查词，哪怕进入前栏是收起的。
-  bool get _tapGateChrome => _showChrome || _focusMode;
-
-  /// 专注模式「栏已锁定」提示条（点空白 / 切栏快捷键时弹出，带退出动作）。
-  /// 在场时不重复弹，免得连点时提示条反复闪。
-  OwnedSnackBar? _focusModeHint;
-
-  /// 一次**明确的退书**（[_exitBookPastFocusMode]）正在经 maybePop 走 PopScope：
-  /// 此时跳过「返回先退专注模式」那一级。只在那次 maybePop 期间为真。
-  bool _explicitExitInFlight = false;
+  /// 「点正文 = 唤出挤压态 chrome」判据：为真时点正文直接查词。栏被关掉时唤不
+  /// 出来，点正文必须照常查词，哪怕关掉前栏是收起的。
+  bool get _tapGateChrome => _showChrome || _toolbarsHidden;
 
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
@@ -2385,6 +2385,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewSession?.addListener(_onSourceReviewChanged);
     // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
     _chrome.addListener(_onChromeControllerChanged);
+    // 应用内悬浮球开关变了（设置 → 悬浮球、备份恢复、同步）：栏关掉只在球开着时
+    // 生效，球一关栏就要回来。
+    appModelNoUpdate.prefsRepo.addListener(_onPrefsRepoChanged);
     assert(() {
       ReaderFushiPage.debugOpenQuickSettings = () async {
         unawaited(_showAppearanceSheet());
@@ -2443,6 +2446,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       setState(() {
         _chromeTransientVisible = false;
       });
+      // 「关掉顶栏和底栏」也走这条通道：下面的重下 inset + 重锚一并覆盖它改变的
+      // 预留高，这里只同步状态与点词门控。
+      _syncToolbarsHidden(reanchor: false);
       unawaited(
         _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
           ErrorLogService.instance.log(
@@ -2526,6 +2532,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     await profileSettingsFuture;
     if (!mounted) return;
     _settings = ReaderFushiSource.readerSettings;
+    // 设置已就绪、WebView 还没建：先把「顶栏和底栏关掉」同步进 chrome 状态机，
+    // 首屏 HTML 的 chrome 预留与点词门控直接按它求值。
+    _syncToolbarsHidden();
     _openTrace.mark('settings');
 
     final _BookLocateResult located = await bookLocateFuture;
@@ -3098,10 +3107,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
-    // 专注模式提示条挂在根 ScaffoldMessenger 上，不关会跟到下一页去。dispose 在锁树
-    // 阶段，读屏开着时直接 close 会对 messenger setState 而抛错，推到帧后再关。
-    _focusModeHint?.closeAfterOwnerDisposed();
     _chrome.removeListener(_onChromeControllerChanged);
+    appModelNoUpdate.prefsRepo.removeListener(_onPrefsRepoChanged);
     _chrome.dispose();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
@@ -3478,13 +3485,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
-                  // 专注模式下「返回」先退专注模式、留在书里（与 Esc 先退全屏同理）：
-                  // 栏都收着，这是键盘 / 手柄 / 系统返回键最直接的出口。
-                  // 明确的退书入口（[_exitBookPastFocusMode]）不走这一级。
-                  if (_focusMode && !_explicitExitInFlight) {
-                    _setFocusMode(false);
-                    return;
-                  }
                   // BUG-782 加固：窗口期内第二次退出触发（ESC/手柄 B 连按、退出
                   // 按钮后再 ESC）会再跑一条退出——首条 pop 掉阅读器后，第二条的
                   // nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动同步
@@ -3524,7 +3524,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             session: _sourceReviewSession!,
                             runHidden: runWithLookupPopupHidden,
                             onReturn: () {
-                              unawaited(_exitBookPastFocusMode());
+                              Navigator.of(context).maybePop();
                             },
                           ),
                         ),
@@ -3660,7 +3660,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                                   tooltip: t.back,
                                   icon: const Icon(Icons.arrow_back),
                                   onPressed: () =>
-                                      unawaited(_exitBookPastFocusMode()),
+                                      Navigator.of(context).maybePop(),
                                 ),
                               ),
                             ),

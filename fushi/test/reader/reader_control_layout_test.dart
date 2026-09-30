@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 
 void main() {
   group('ReaderControlLayout 模型', () {
-    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 4；底栏为空；悬浮球三键', () {
+    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 3；底栏为空；悬浮球三键', () {
       final ReaderControlLayout d = ReaderControlLayout.defaults;
       expect(d.itemsIn(ReaderControlSlot.topLeft), <ReaderControlItem>[
         ReaderControlItem.back,
@@ -22,14 +22,15 @@ void main() {
       expect(d.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
         ReaderControlItem.audiobook,
         ReaderControlItem.fullscreen,
-        ReaderControlItem.focusMode,
         ReaderControlItem.settings,
       ]);
       expect(d.hasBottomItems, isFalse);
       expect(d.showsTitle, isTrue);
-      // 计时开关与有声书传输键出厂全在托盘（悬浮球的按钮在 设置 → 悬浮球 里配）。
+      // 计时开关、顶栏 / 底栏开关与有声书传输键出厂全在托盘（悬浮球的按钮在
+      // 设置 → 悬浮球 里配）。
       expect(d.core.removedItems, <ReaderControlItem>{
         ReaderControlItem.studyTimer,
+        ReaderControlItem.toolbars,
         ReaderControlItem.audiobookPrev,
         ReaderControlItem.audiobookPlayPause,
         ReaderControlItem.audiobookNext,
@@ -39,21 +40,32 @@ void main() {
       });
     });
 
-    test('专注模式键之前存下的布局：解码后按出厂位置补进顶栏右侧', () {
-      final ReaderControlLayout legacy = ReaderControlLayout.decode(
+    test('专注模式键已删除：存过它的布局解码时丢弃，其余按钮原位', () {
+      final ReaderControlLayout stale = ReaderControlLayout.decode(
         '{"version":1,"slots":{"topLeft":["back"],'
-        '"topRight":["fullscreen","settings"]}}',
+        '"topRight":["audiobook","fullscreen","focusMode","settings"]}}',
       );
-      expect(legacy.itemsIn(ReaderControlSlot.topRight),
-          contains(ReaderControlItem.focusMode));
-      expect(legacy.core.removedItems,
-          isNot(contains(ReaderControlItem.focusMode)));
-      // 用户显式拖进托盘的，不回填。
-      final ReaderControlLayout removed = ReaderControlLayout.decode(
-        '{"version":1,"slots":{"topRight":["settings"]},'
-        '"removed":["focusMode"]}',
-      );
-      expect(removed.core.removedItems, contains(ReaderControlItem.focusMode));
+      expect(stale.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
+        ReaderControlItem.audiobook,
+        ReaderControlItem.fullscreen,
+        ReaderControlItem.settings,
+      ]);
+      // 新增的顶栏 / 底栏开关按出厂位置（托盘）补进来，不会冒到顶栏上。
+      expect(stale.core.removedItems, contains(ReaderControlItem.toolbars));
+    });
+
+    test('栏关掉后悬浮球必带：返回 / 设置（布局必需项）+ 开回栏的键', () {
+      expect(kReaderToolbarsTakeoverItems, <ReaderControlItem>[
+        ReaderControlItem.back,
+        ReaderControlItem.settings,
+        ReaderControlItem.toolbars,
+      ]);
+      for (final ReaderControlItem item in ReaderControlItem.values) {
+        if (item.pinnedRequired) {
+          expect(kReaderToolbarsTakeoverItems, contains(item),
+              reason: '${item.storageValue} 是栏的必需项，栏没了就只能在球上');
+        }
+      }
     });
 
     test('传输键可进顶栏 / 底栏；旧布局里的悬浮球槽解码时丢弃，按钮回落出厂位置', () {

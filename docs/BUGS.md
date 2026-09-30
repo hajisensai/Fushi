@@ -29,13 +29,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2591 条。点号进各自文件。
+> 共 2601 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2819](bugs/BUG-2819-webkit-paginated-last-page-shift.md) | ✅ | ✅ | Mac/iOS 翻页每章最后一页整体错开一个边距、行尾被切（WebKit 滚动范围不含分栏容器末端 padding） |
 | [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |
 | [BUG-2817](bugs/BUG-2817-release-asset-tag-app-build.md) | ✅ | ✅ | 发布模型资产 release 触发整套应用构建并把安装包挂到该 release |
+| [BUG-2816](bugs/BUG-2816-server-book-manga-prune.md) | ✅ | ✅ | 无头服务端书/漫画根不对账：删掉源 EPUB/漫画卷后条目永远残留 |
+| [BUG-2815](bugs/BUG-2815-server-local-audio-host.md) | ✅ | ✅ | 无头服务端不托管本地音频库：列表恒空、上传传完才报 UnsupportedError |
 | [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
+| [BUG-2813](bugs/BUG-2813-manga-local-ocr-tap-column.md) | ✅ | ✅ | 漫画本地 OCR 点字命中错列：整块文本沿整块均铺 |
+| [BUG-2812](bugs/BUG-2812-headless-scan-never-scraped.md) | ✅ | ✅ | 无头服务端扫描入库的视频从不刮削 |
+| [BUG-2811](bugs/BUG-2811-vn-ruby-pull-never-measured.md) | ✅ | ✅ | VN 模式注音拉力从未量成功（首屏无注音、换屏不重量），Klee One 注音离基字远 |
+| [BUG-2810](bugs/BUG-2810-webkit-ruby-pull-fragmented-rt.md) | ✅ | ✅ | iOS 分页打开书振假名压进基字（度量脚本量到跨栏被切开的注音盒，拉力顶到 1.5） |
 | [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |
 | [BUG-2808](bugs/BUG-2808-reader-focus-mode-exit.md) | ✅ | ✅ | 专注模式下触屏拿不到退出通道 |
 | [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
@@ -111,6 +118,7 @@
 | [BUG-2735](bugs/BUG-2735-galgame-remove-cascades-sessions.md) | ✅ | ✅ | 从库移除游戏经 FK cascade 删光所有 Profile 的游玩会话 |
 | [BUG-2734](bugs/BUG-2734-video-lookup-popup-entrance-wheel.md) | ✅ | ✅ | 视频查词框弹出动画跳变、滚轮手感与 galgame 查词框不一致 |
 | [BUG-2733](bugs/BUG-2733-gal-wgc-yellow-border.md) | ✅ | ✅ | galgame 全屏时游戏窗口四周常驻一圈黄线（WGC 捕获框） |
+| [BUG-2732](bugs/BUG-2732-reallive-nwk-voice-ready.md) | ✅ | ✅ | RealLive NWK 语音已导出却被 DirectSound 流（BGM）冒领配对 |
 | [BUG-2731](bugs/BUG-2731-video-swipe-seek-undone.md) | ✅ | ✅ | 移动端横滑跳转后被自适应画质重开流抹回原位 |
 | [BUG-2730](bugs/BUG-2730-bilibili-pcdn-referer.md) | ✅ | ✅ | B 站网页制卡 PCDN 节点 403：按 host 推 Referer 追不上域名轮换 |
 | [BUG-2729](bugs/BUG-2729-game-stream-weak-network.md) | ✅ | ✅ | 串流弱网：码率下限卡死拥塞控制、默认值被固化 |
@@ -121,8 +129,10 @@
 | [BUG-2724](bugs/BUG-2724-ios-furigana-gap.md) | ✅ | ✅ | iOS 振假名离本行远、贴近上一行/上一列 |
 | [BUG-2723](bugs/BUG-2723-gallery-header-overflow.md) | ✅ | ✅ | 插图册顶栏在手机竖屏挤爆：计数被压成 0 宽、英文等长文案整行溢出 |
 | [BUG-2722](bugs/BUG-2722-gallery-toc-sections.md) | ✅ | ✅ | 插图册按 spine 章分节：同文件多话的插图归错话、连续插图页拆成多个同名节 |
+| [BUG-2721](bugs/BUG-2721-krkr-inert-msgwin-plugin.md) | ✅ | ✅ | KiriKiri：登记了却不画正文的 msgwin 插件让查词采集永远落空 |
 | [BUG-2720](bugs/BUG-2720-emby-secondary-subtitle.md) | ✅ | ✅ | Emby 兼容层上副字幕选内嵌轨必失败 |
 | [BUG-2719](bugs/BUG-2719-home-body-layout-switch-remount.md) | ✅ | ✅ | 关掉视频后视频库回到「首页」分区而不是上次的分区 |
+| [BUG-2718](bugs/BUG-2718-cmvs-runner-provider-allowlist.md) | ✅ | ✅ | CMVS 精确布局的查词命中被 runner 白名单丢弃 |
 | [BUG-2717](bugs/BUG-2717-interconnect-host-sync-lock.md) | ✅ | ✅ | 互联 host 的对端聚合/合集写排在本机整轮同步后面，手机每轮 15s 超时 |
 | [BUG-2716](bugs/BUG-2716-kirikiri-sticky-tail-after-midloop-attach.md) | ✅ | ✅ | KiriKiri 循环音效中途附着时 P P T 粘尾不剥，整段游戏内查词被拒 |
 | [BUG-2715](bugs/BUG-2715-selection-longpress-null-crash.md) | ✅ | ✅ | 日志面板内容变化或视口变高后长按空白处选区端点空断言崩溃 |

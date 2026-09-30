@@ -51,29 +51,10 @@ void main() {
     return source.substring(startIdx, endIdx);
   }
 
-  /// 明确退书的唯一助手（专注模式下一次退到底）：它自己必须走 maybePop。
-  const String exitHelperCall = '_exitBookPastFocusMode()';
-  bool helperGoesThroughMaybePop(String source) {
-    const String sig = 'Future<void> _exitBookPastFocusMode() async {';
-    final int start = source.indexOf(sig);
-    if (start < 0) return false;
-    final int end = source.indexOf('\n  }\n', start);
-    final String body = source.substring(start, end);
-    return body.contains('Navigator.of(context).maybePop()') &&
-        !body.contains('Navigator.of(context).pop(') &&
-        !body.contains('Navigator.pop(context');
-  }
-
-  /// 回调直接 maybePop，或经上面的助手（助手体本身被逐字校验）。
-  bool goesThroughMaybePop(String window, String source) =>
-      window.contains('maybePop(') ||
-      (window.contains(exitHelperCall) && helperGoesThroughMaybePop(source));
-
   test('onExitReader 回调必须走 maybePop（触发 PopScope→onWillPop 链）', () {
-    final String source = readSource();
-    final String slice = readExitCallbackSlice(source);
+    final String slice = readExitCallbackSlice(readSource());
     expect(
-      goesThroughMaybePop(slice, source),
+      slice.contains('maybePop('),
       isTrue,
       reason: '退出必须经 maybePop() 触发 PopScope 的 onWillPop 闸门，'
           '否则 flush / closeMedia(invalidate) / 自动同步全跳过（BUG-782）',
@@ -113,7 +94,7 @@ void main() {
           (cursor + 200) > source.length ? source.length : cursor + 200;
       final String window = source.substring(cursor, windowEnd);
       expect(
-        goesThroughMaybePop(window, source),
+        window.contains('maybePop('),
         isTrue,
         reason: '第 $occurrences 处 onExitReader 附近必须出现 maybePop()',
       );

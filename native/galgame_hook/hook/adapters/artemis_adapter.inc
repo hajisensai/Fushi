@@ -2,7 +2,10 @@
 // hook worker before the game resumes. ReadFile callbacks only binary-search an
 // immutable table and enqueue bounded {entry, tick} metadata. File IO, XOR
 // decryption, Ogg validation and output remain on AdapterRegistry::Poll.
+// The in-game lookup provider (glyph geometry + click claim) lives in
+// artemis_lookup.inc; its structural rules are in artemis_lookup_core.h.
 #include "artemis_profile.h"
+#include "artemis_lookup.inc"
 
 constexpr size_t kArtemisPathChars = 520;
 constexpr size_t kArtemisNameBytes = 192;
@@ -380,11 +383,40 @@ class ArtemisPfsAdapter final : public fushi_voice_hook::EngineAdapter {
     return fushi_voice_hook::MatchesArtemisProfile(nullptr);
   }
   bool install() override {
+    // Lookup first: its sites come from the executable's structure alone and
+    // resolve in milliseconds, so its inline hooks land while the injector
+    // still holds the game suspended.  The PF8 index parse below reads
+    // multi-GB archives and routinely outlives the startup budget; hooks
+    // installed after resume race the renderer's D3D initialisation (one run
+    // hung with HookWorker inside MinHook's thread freeze, GetThreadContext,
+    // while the main thread was compiling shaders).  A rejected image
+    // installs nothing.
+    if (probe()) InstallArtemisLookup();
     ready_ = TryHookArtemisPfsVoice();
     installed_ = installed_ || ready_;
     return ready_;
   }
-  void ProcessPendingEvents() { ProcessArtemisVoiceTasks(); }
+  void ProcessPendingEvents() {
+    ProcessArtemisVoiceTasks();
+    ProcessArtemisLookupTick();
+  }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (ArtemisLookupSensorInstalled()) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // Sites were resolved and rejected: terminal for this executable, so the
+    // host gets the digest to report instead of waiting for a gate.
+    if (ArtemisLookupSitesRejected()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      strncpy_s(report.executable_sha256,
+                fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
+      return report;
+    }
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -392,6 +424,7 @@ class ArtemisPfsAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
+    ShutdownArtemisLookup();
     StopArtemisPfsVoice();
     installed_ = false;
     ready_ = false;
