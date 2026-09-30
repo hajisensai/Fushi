@@ -1,4 +1,4 @@
-## BUG-2792 · 无头服务端删掉视频文件后条目与刮削资料残留
+## BUG-2809 · 无头服务端删掉视频文件后条目与刮削资料残留
 - **报告**：2026-09-30（用户：lllzt）
 - **真实性**：✅ 真 bug。扫描器只做**单向**导入，从不反向回收「库里有、磁盘上没有」的行：
   `packages/fushi_server/lib/src/library_scanner.dart` 的 `_scanVideos` 只遍历磁盘上现存的
@@ -10,7 +10,7 @@
   触发点。客户端经 `/api/library/videos` 读的 `allVideoBooks()` 也不做文件存在性过滤
   （`packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart:25`），
   所以条目照旧列得出来、`status` 的 `videos` 计数也不归零。
-- **[x] ① 已修复** — `d27fec76a0`：新增引擎对账模块
+- **[x] ① 已修复** — `5580661fb9b`：新增引擎对账模块
   `packages/fushi_engine/lib/media/video/video_library_prune.dart`（枚举现存文件 → 挑失效行 →
   走 `deleteVideoBooksAndReclaimAssets` 回收），扫描器接入并加护栏；顺带把 O(n²) 的去重改成
   一次性路径集合。
