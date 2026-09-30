@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2585 条。点号进各自文件。
+> 共 2586 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
 | [BUG-2806](bugs/BUG-2806-ios-ruby-overhang-audio-wrap.md) | ✅ | ✅ | iOS 翻进新章节后振假名词突然撑开（有声书跟随高亮把 ruby 移进 span，WebKit 取消注音悬挂） |
 | [BUG-2805](bugs/BUG-2805-discover-nyaa-missing-tmdb-no-genre.md) | ✅ | ✅ | 发现页搜索资源有时只剩一个源、没有 Nyaa |
 | [BUG-2804](bugs/BUG-2804-p2p-apk-verify-sigpipe.md) | ✅ | ✅ | 发布校验 fushi_p2p 是否进 APK 时 pipefail + grep -q 触发 SIGPIPE 假红 |

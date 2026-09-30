@@ -91,6 +91,9 @@ class LeaderboardService extends ChangeNotifier {
   final Future<http.Client> Function() _httpClientFactory;
   final Uri _defaultBaseUrl;
   final int Function() _clockMs;
+
+  /// 当前时刻（毫秒）：与同步 / 同意记录同一个可注入时钟，界面按周期取数时用它。
+  int nowMs() => _clockMs();
   final Future<Uint8List?> Function(LocalShelfEntry entry) _coverThumb;
   final Future<Uint8List> Function(String path) _avatarEncoder;
   final Future<LocalShelf> Function(
