@@ -78,6 +78,21 @@ set1（485 块、5564 个参考字，参考为 Lens）：
 
 按最好的一轮算：KV 提速组件约为经典的 2.0–2.4 倍，逐列 CTC 约为经典的 8.7 倍、KV 的 4.2 倍。
 
+### 4.2 真 app 复测：Windows 插件后端（2026-09-30 深夜）
+
+`fushi/tool/run_windows_itest.ps1` 离屏跑真 app（`flutter_onnxruntime` 插件后端，与安装版同一条推理路径），同一条链路、同一时段依次跑：
+
+- `manga_local_ocr_tap_geometry_itest.dart`（#1836 分支头）：用户这本书（183 页、v4 本地结果）的副本开书 → 阅读器自动排一次本地任务，78 s 把 manga.json 升到 v5（只补几何：183 页每块文字逐字不变，1184/1215 块拿到 `lines_coords`）→ 在真实 WebView 里点三列竖排气泡第 2、3 列首字格的中心，覆盖层命中「眠」「一」。
+- `manga_ocr_volume_e2e_itest.dart` 真页冒烟（同样那 5 页，本分支头）：
+
+| 模型 | 整卷 5 页 | 相对经典 |
+|---|---:|---:|
+| manga-ocr 经典 decoder | 48.6 s | 1× |
+| manga-ocr + KV 提速组件 | 21.7 s | 2.2× |
+| 逐列 CTC | 6.9 s | 7.0× |
+
+经典与 KV 的 65 块逐块文本完全相同（插件会话的句柄路径 `OcrHandleSession` 在真插件上跑通）；三种模型的 65 块全部带行几何，CTC 的缓存签名 `local-onnx-ctc-kellenok-v0.2-…` 与 manga-ocr 分开。插件后端的绝对耗时比 4.1 的 FFI 测速低得多（那次在多会话高负载时段），倍数与 4.1 大体一致。
+
 ## 5. 建议
 
 1. **几何修复（已做）** 是「选词不准」的主因修复，所有本地模型（经典 / Baberu / CUDA）都受益，已识别的卷开书时自动只补几何、不重认。
