@@ -184,7 +184,10 @@ void main() {
       dispose,
       src.indexOf('super.dispose();', dispose),
     );
-    expect(disposeBody, contains('_focusModeHint?.close();'));
+    // dispose 在锁树阶段：读屏开着时直接 close() 会同步对根 ScaffoldMessenger
+    // setState 而抛错，必须走帧后关闭（行为测试见 test/utils/owned_snack_bar_test.dart）。
+    expect(disposeBody, contains('_focusModeHint?.closeAfterOwnerDisposed();'));
+    expect(disposeBody, isNot(contains('_focusModeHint?.close();')));
   });
 
   group('明确的退书一次到底，不被「先退专注模式」截成两下', () {
