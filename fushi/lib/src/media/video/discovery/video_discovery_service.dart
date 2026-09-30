@@ -296,13 +296,18 @@ class VideoDiscoveryService {
       ).compareTo(_primaryRank(b.provider.name, anime: anime)),
     );
     // 所有补充源统一走引擎的有序合并（与刮削协调器同一套规则）：简介 / 类型按
-    // 资料语言选来源，人物跨源按人名 / 原名识别同一人。
+    // 资料语言选来源，人物跨源按人名 / 原名识别同一人。写法桥在合并前从全部来源
+    // 一次收齐（AniList 同一条人物同时带罗马字与原文名），每一步合并共用，身份
+    // 判定才不依赖来源排序（BUG-2797）。
+    final VideoMetadataCreditNameBridge creditNames =
+        VideoMetadataCreditNameBridge.fromWorks(works);
     VideoMetadataWork merged = works.first;
     for (final VideoMetadataWork supplement in works.skip(1)) {
       merged = supplementVideoMetadata(
         merged,
         supplement,
         preferredLanguage: _metadataLocale,
+        creditNames: creditNames,
       );
     }
     return _withSourceTitlesAsAliases(merged, works);

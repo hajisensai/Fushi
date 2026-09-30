@@ -1249,4 +1249,242 @@ void main() {
       expect(merged, hasLength(2));
     });
   });
+
+  group('BUG-2797 AniList 写法桥：罗马字与汉字认成同一人', () {
+    VideoMetadataCredit credit(
+      String provider,
+      String name,
+      String role, {
+      String? originalName,
+      String? roleOriginal,
+      String? photo,
+      String? id,
+      VideoMetadataCreditKind kind = VideoMetadataCreditKind.voiceActor,
+    }) => VideoMetadataCredit(
+      kind: kind,
+      person: VideoMetadataPerson(
+        id: id,
+        name: name,
+        originalName: originalName,
+        profileUrl: photo,
+        ids: <VideoMetadataId>[
+          if (id != null) VideoMetadataId(type: provider, value: id),
+        ],
+      ),
+      character: VideoMetadataCharacter(name: role, originalName: roleOriginal),
+      roleName: role,
+    );
+    VideoMetadataWork work(
+      VideoMetadataProviderKind provider,
+      List<VideoMetadataCredit> credits,
+    ) => VideoMetadataWork(
+      provider: provider,
+      kind: VideoMetadataMediaKind.tv,
+      title: provider.name,
+      credits: credits,
+    );
+
+    final VideoMetadataWork mal =
+        work(VideoMetadataProviderKind.mal, <VideoMetadataCredit>[
+          credit('mal', 'Suzuki, Aina', 'Fukuga, Kurumi', id: '1'),
+          credit('mal', 'Tomita, Miyu', 'Some, Else', id: '2'),
+        ]);
+    final VideoMetadataWork tmdb =
+        work(VideoMetadataProviderKind.tmdb, <VideoMetadataCredit>[
+          credit(
+            'tmdb',
+            '鈴木愛奈',
+            '福賀くるみ',
+            originalName: '鈴木愛奈',
+            photo: 'tmdb-suzuki',
+            id: '10',
+            kind: VideoMetadataCreditKind.actor,
+          ),
+          credit(
+            'tmdb',
+            '富田美憂',
+            '誰か',
+            originalName: '富田美憂',
+            photo: 'tmdb-tomita',
+            id: '20',
+            kind: VideoMetadataCreditKind.actor,
+          ),
+        ]);
+    final VideoMetadataWork anilist =
+        work(VideoMetadataProviderKind.anilist, <VideoMetadataCredit>[
+          credit(
+            'anilist',
+            'Aina Suzuki',
+            'Kurumi Fukuga',
+            originalName: '鈴木愛奈',
+            roleOriginal: '福賀くるみ',
+            id: '100',
+          ),
+          credit(
+            'anilist',
+            'Miyu Tomita',
+            'Else Some',
+            originalName: '富田美憂',
+            roleOriginal: '誰か',
+            id: '200',
+          ),
+        ]);
+
+    List<VideoMetadataCredit> mergeInOrder(List<VideoMetadataWork> works) {
+      final VideoMetadataCreditNameBridge names =
+          VideoMetadataCreditNameBridge.fromWorks(works);
+      VideoMetadataWork merged = works.first;
+      for (final VideoMetadataWork supplement in works.skip(1)) {
+        merged = supplementVideoMetadata(
+          merged,
+          supplement,
+          creditNames: names,
+        );
+      }
+      return merged.credits;
+    }
+
+    void expectBridged(List<VideoMetadataCredit> credits) {
+      expect(
+        credits.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>['Suzuki, Aina', 'Tomita, Miyu'],
+        reason: '主源（MAL）条目保留，TMDB 汉字条目不再追加第二遍',
+      );
+      final VideoMetadataCredit suzuki = credits.first;
+      expect(suzuki.person.id, '1', reason: '主源 id 不被覆盖');
+      expect(suzuki.person.originalName, '鈴木愛奈');
+      expect(suzuki.person.profileUrl, 'tmdb-suzuki', reason: 'TMDB 照片补进主条目');
+      expect(
+        suzuki.person.ids.map((VideoMetadataId id) => '${id.type}:${id.value}'),
+        containsAll(<String>['mal:1', 'tmdb:10', 'anilist:100']),
+      );
+      expect(suzuki.character?.originalName, '福賀くるみ');
+      expect(credits[1].person.profileUrl, 'tmdb-tomita');
+    }
+
+    test('MAL 罗马字 + TMDB 汉字 + AniList 双写法 → 一条人物，原名 / 照片 / id 带齐', () {
+      expectBridged(mergeInOrder(<VideoMetadataWork>[mal, tmdb, anilist]));
+    });
+
+    test('交换补充源顺序结果不变（桥先收集再合并，不依赖 AniList 排在中间）', () {
+      expectBridged(mergeInOrder(<VideoMetadataWork>[mal, anilist, tmdb]));
+    });
+
+    test('纯函数：桥由第三方来源提供时两边直接认成同一人', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        mal.credits,
+        tmdb.credits,
+        names: VideoMetadataCreditNameBridge.fromWorks(<VideoMetadataWork>[
+          mal,
+          tmdb,
+          anilist,
+        ]),
+      );
+      expect(merged, hasLength(2));
+      expect(merged.first.person.profileUrl, 'tmdb-suzuki');
+      expect(merged.first.person.originalName, '鈴木愛奈');
+    });
+
+    test('没有桥时维持现状：不追加重复，也不误合并', () {
+      final List<VideoMetadataCredit> merged = mergeInOrder(<VideoMetadataWork>[
+        mal,
+        tmdb,
+      ]);
+      expect(
+        merged.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>['Suzuki, Aina', 'Tomita, Miyu'],
+      );
+      expect(
+        merged.first.person.profileUrl,
+        isNull,
+        reason: '证明不了同一人，不能把 TMDB 照片挂上去',
+      );
+    });
+
+    test('同一声优两个角色：角色桥把 TMDB 汉字角色并到对应的罗马字角色上', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[
+          credit('mal', 'Suzuki, Aina', 'Alpha, Ichiro', id: '1'),
+          credit('mal', 'Suzuki, Aina', 'Beta, Jiro', id: '1'),
+        ],
+        <VideoMetadataCredit>[
+          credit(
+            'tmdb',
+            '鈴木愛奈',
+            '次郎',
+            photo: 'tmdb-photo',
+            kind: VideoMetadataCreditKind.actor,
+          ),
+        ],
+        names: VideoMetadataCreditNameBridge.fromCredits(<VideoMetadataCredit>[
+          credit(
+            'anilist',
+            'Aina Suzuki',
+            'Ichiro Alpha',
+            originalName: '鈴木愛奈',
+            roleOriginal: '一郎',
+          ),
+          credit(
+            'anilist',
+            'Aina Suzuki',
+            'Jiro Beta',
+            originalName: '鈴木愛奈',
+            roleOriginal: '次郎',
+          ),
+        ]),
+      );
+      expect(merged, hasLength(2));
+      expect(merged[0].person.profileUrl, isNull, reason: '一郎不是这条');
+      expect(merged[1].person.profileUrl, 'tmdb-photo');
+      expect(merged[1].character?.name, 'Beta, Jiro');
+    });
+
+    test('罗马字同名的两个人：桥有歧义时不用，不把两人并成一个', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[credit('mal', 'Kobayashi, Yuu', 'Role A')],
+        <VideoMetadataCredit>[
+          credit(
+            'tmdb',
+            '小林優',
+            '役B',
+            photo: 'tmdb-photo',
+            kind: VideoMetadataCreditKind.actor,
+          ),
+        ],
+        names: VideoMetadataCreditNameBridge.fromCredits(<VideoMetadataCredit>[
+          credit('anilist', 'Yuu Kobayashi', 'Role A', originalName: '小林ゆう'),
+          credit('anilist', 'Yuu Kobayashi', 'Role B', originalName: '小林優'),
+        ]),
+      );
+      expect(merged, hasLength(1));
+      expect(merged.single.person.profileUrl, isNull);
+    });
+
+    test('同一条目里的两个原文写法（繁简 / 译名 + original_name）不算歧义', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[credit('mal', 'Suzuki, Aina', 'Fukuga, Kurumi')],
+        <VideoMetadataCredit>[
+          credit(
+            'tmdb',
+            '铃木爱奈',
+            '福贺久留美',
+            originalName: '鈴木愛奈',
+            photo: 'tmdb-photo',
+            kind: VideoMetadataCreditKind.actor,
+          ),
+        ],
+        names: VideoMetadataCreditNameBridge.fromCredits(<VideoMetadataCredit>[
+          credit('tmdb', '铃木爱奈', '福贺久留美', originalName: '鈴木愛奈'),
+          credit(
+            'anilist',
+            'Aina Suzuki',
+            'Kurumi Fukuga',
+            originalName: '鈴木愛奈',
+          ),
+        ]),
+      );
+      expect(merged, hasLength(1));
+      expect(merged.single.person.profileUrl, 'tmdb-photo');
+    });
+  });
 }

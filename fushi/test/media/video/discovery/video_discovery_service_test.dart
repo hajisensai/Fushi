@@ -924,6 +924,134 @@ void main() {
       expect(result?.plot, 'MAL synopsis');
     });
 
+    // anime：MAL → AniList → TMDB；tv：TMDB → AniList → MAL。后者主条目的
+    // name / originalName 都是汉字，AniList 只能补空、罗马字写法进不了主条目，
+    // MAL 那条只能靠合并前收齐的写法桥认出来。
+    for (final (
+          VideoDiscoveryCategory category,
+          VideoMetadataProviderKind primary,
+          String primaryName,
+        )
+        in <(VideoDiscoveryCategory, VideoMetadataProviderKind, String)>[
+          (
+            VideoDiscoveryCategory.anime,
+            VideoMetadataProviderKind.mal,
+            'Suzuki, Aina',
+          ),
+          (VideoDiscoveryCategory.tv, VideoMetadataProviderKind.tmdb, '鈴木愛奈'),
+        ]) {
+      test('BUG-2797 AniList bridges MAL romaji and TMDB kanji cast into one '
+          'entry with every photo and id (${category.name})', () async {
+        VideoMetadataCredit voice(
+          String provider,
+          VideoMetadataCreditKind kind,
+          String name,
+          String role, {
+          required String id,
+          String? originalName,
+          String? roleOriginal,
+          String? photo,
+        }) => VideoMetadataCredit(
+          kind: kind,
+          person: VideoMetadataPerson(
+            id: id,
+            name: name,
+            originalName: originalName,
+            profileUrl: photo,
+            ids: <VideoMetadataId>[VideoMetadataId(type: provider, value: id)],
+          ),
+          character: VideoMetadataCharacter(
+            name: role,
+            originalName: roleOriginal,
+          ),
+          roleName: role,
+        );
+        VideoMetadataWork work(
+          VideoMetadataProviderKind provider,
+          List<VideoMetadataCredit> credits,
+        ) => VideoMetadataWork(
+          provider: provider,
+          kind: VideoMetadataMediaKind.tv,
+          title: '${provider.name} title',
+          credits: credits,
+        );
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: const <VideoDiscoveryProvider>[],
+          metadataLocale: 'zh-CN',
+          metadataProviders: <VideoMetadataProvider>[
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.tmdb,
+              work: work(VideoMetadataProviderKind.tmdb, <VideoMetadataCredit>[
+                voice(
+                  'tmdb',
+                  VideoMetadataCreditKind.actor,
+                  '鈴木愛奈',
+                  '福賀くるみ',
+                  id: '10',
+                  originalName: '鈴木愛奈',
+                  photo: 'tmdb-suzuki',
+                ),
+              ]),
+            ),
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.anilist,
+              work:
+                  work(VideoMetadataProviderKind.anilist, <VideoMetadataCredit>[
+                    voice(
+                      'anilist',
+                      VideoMetadataCreditKind.voiceActor,
+                      'Aina Suzuki',
+                      'Kurumi Fukuga',
+                      id: '100',
+                      originalName: '鈴木愛奈',
+                      roleOriginal: '福賀くるみ',
+                    ),
+                  ]),
+            ),
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.mal,
+              work: work(VideoMetadataProviderKind.mal, <VideoMetadataCredit>[
+                voice(
+                  'mal',
+                  VideoMetadataCreditKind.voiceActor,
+                  'Suzuki, Aina',
+                  'Fukuga, Kurumi',
+                  id: '1',
+                ),
+              ]),
+            ),
+          ],
+        );
+
+        final VideoMetadataWork? result = await service.loadDetails(
+          VideoDiscoveryItem(
+            reference: VideoMediaReference(
+              providerId: 'mal',
+              mediaId: '42',
+              mediaKind: VideoMetadataMediaKind.tv,
+              discoveryCategory: category,
+              title: 'mal title',
+              tmdbId: 7,
+              anilistId: 5,
+              externalIds: const <String, String>{'mal': '42'},
+            ),
+          ),
+        );
+
+        expect(result?.provider, primary);
+        final VideoMetadataCredit suzuki = result!.credits.single;
+        expect(suzuki.person.name, primaryName, reason: '主源条目保留');
+        expect(suzuki.person.originalName, '鈴木愛奈');
+        expect(suzuki.person.profileUrl, 'tmdb-suzuki');
+        expect(
+          suzuki.person.ids.map(
+            (VideoMetadataId id) => '${id.type}:${id.value}',
+          ),
+          containsAll(<String>['mal:1', 'anilist:100', 'tmdb:10']),
+        );
+      });
+    }
+
     test(
         'BUG-2795 details follow the metadata language: TMDB zh plot, '
         'single-language genres, no duplicate cast', () async {
