@@ -5,6 +5,7 @@
 #include "voice_hook_reader.h"
 
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
+#include "../../../native/galgame_hook/include/lookup_wheel_source.h"
 
 #include <atomic>
 #include <chrono>
@@ -58,6 +59,83 @@ constexpr ULONGLONG kSynchronousArmFreshnessMs =
 // 钩子线程与调用线程共享的唯一可变状态：目标窗口。回调只读它，故用 atomic 而不是锁——
 // 钩子回调必须尽快返回，任何可能阻塞（锁竞争、堆分配）的东西都不该出现在这条路径上。
 std::atomic<HWND> g_target{nullptr};
+
+// A distinct LL-hook lifetime for the KiriKiri Z-only wheel source. Popup close
+// clears g_target but keeps this producer alive until the game process ends.
+struct WheelRelayBinding {
+  DWORD game_pid = 0;
+  HANDLE mapping = nullptr, acknowledged = nullptr, process = nullptr;
+  bool owns_source = false;
+  fushi_voice_hook::LookupWheelSource* source = nullptr;
+  ~WheelRelayBinding() {
+    if (source) {
+      if (owns_source) fushi_voice_hook::StoreWheelWord(&source->ready, 0);
+      UnmapViewOfFile(source);
+    }
+    if (mapping) CloseHandle(mapping);
+    if (acknowledged) CloseHandle(acknowledged);
+    if (process) CloseHandle(process);
+  }
+};
+using WheelRelays = std::vector<std::shared_ptr<WheelRelayBinding>>;
+std::shared_ptr<const WheelRelays> g_wheel_relays;
+
+void PruneExitedWheelRelays() {
+  auto old = std::atomic_load_explicit(&g_wheel_relays, std::memory_order_acquire);
+  if (!old) return;
+  auto next = std::make_shared<WheelRelays>();
+  for (const auto& relay : *old)
+    if (WaitForSingleObject(relay->process, 0) == WAIT_TIMEOUT) next->push_back(relay);
+  if (next->size() == old->size()) return;
+  std::shared_ptr<const WheelRelays> replacement = next->empty() ? nullptr : next;
+  std::atomic_compare_exchange_strong_explicit(&g_wheel_relays, &old, replacement,
+      std::memory_order_acq_rel, std::memory_order_acquire);
+}
+
+// Only the installing thread changes generation; ready=2 blocks raw fallback
+// while HHOOK is absent, and rebind discards input from the lost interval.
+void PauseWheelRelays() {
+  auto relays = std::atomic_load_explicit(&g_wheel_relays, std::memory_order_acquire);
+  if (!relays) return;
+  for (const auto& relay : *relays) {
+    auto* source = relay->source;
+    fushi_voice_hook::StoreWheelWord(&source->ready, 2);
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(&source->sequence));
+    fushi_voice_hook::StoreWheelTotal(&source->generation,
+        fushi_voice_hook::LoadWheelTotal(&source->generation) + 1);
+    fushi_voice_hook::StoreWheelTotal(&source->consumer_generation, 0);
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(&source->sequence));
+  }
+}
+void ResumeWheelRelays() {
+  auto relays = std::atomic_load_explicit(&g_wheel_relays, std::memory_order_acquire);
+  if (relays) for (const auto& relay : *relays)
+    fushi_voice_hook::StoreWheelWord(&relay->source->ready, 1);
+}
+
+// Publish at the actual return boundary: all physical vertical wheel events
+// are observed, and only the branch which really swallows one marks it owned.
+struct WheelRelayEvent {
+  std::shared_ptr<WheelRelayBinding> binding;
+  LONG delta = 0;
+  bool owned = false;
+  WheelRelayEvent(WPARAM message, const MSLLHOOKSTRUCT* info) {
+    if (message != WM_MOUSEWHEEL || (info->flags & LLMHF_INJECTED) != 0) return;
+    DWORD foreground_pid = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &foreground_pid);
+    auto relays = std::atomic_load_explicit(&g_wheel_relays, std::memory_order_acquire);
+    if (relays) for (const auto& relay : *relays)
+      if (relay->game_pid == foreground_pid &&
+          fushi_voice_hook::LoadWheelWord(&relay->source->ready) == 1) {
+        binding = relay; break;
+      }
+    delta = static_cast<short>(HIWORD(info->mouseData));
+  }
+  ~WheelRelayEvent() {
+    if (binding && !owned) fushi_voice_hook::PublishOutsideWheel(binding->source, delta);
+  }
+};
+
 // Non-null only when an attached surface deliberately fell back to the
 // HHOOK+v19 risk path because an exact sampled-input contract was declared but
 // could not be published.  Keep this separate from g_target so callers never
@@ -330,7 +408,8 @@ bool IsButtonUpMessage(WPARAM message) {
 // 卸载路径（宽限期定时器 / 存活性补装）都问这里，而不是只看 g_target。
 bool HookWanted() {
   return g_target.load(std::memory_order_relaxed) != nullptr ||
-         g_overlay_shield_count.load(std::memory_order_relaxed) != 0;
+         g_overlay_shield_count.load(std::memory_order_relaxed) != 0 ||
+         std::atomic_load_explicit(&g_wheel_relays, std::memory_order_acquire) != nullptr;
 }
 
 // 光标下的窗口是否为已登记的覆盖窗口（或其子窗，WebView2 的宿主子 HWND 就是这种）。
@@ -1444,6 +1523,7 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     return CallNextHookEx(nullptr, code, wparam, lparam);
   }
   const MSLLHOOKSTRUCT* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
+  WheelRelayEvent wheel_event(wparam, info);
   const uint32_t button_bit =
       (is_button_down || is_button_up)
           ? ButtonBitForMessage(wparam, info->mouseData)
@@ -1680,6 +1760,7 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   PostMessage(target, kLowLevelMouseWheelMessage,
               PackMouseHookPoint(info->pt.x, info->pt.y),
               PackMouseHookWheel(wheel));
+  wheel_event.owned = true;
   // 返回非 0 = 事件到此为止：不进入任何线程的输入队列，前台的 galgame 也就收不到
   // WM_MOUSEWHEEL。这是整个修复的落点，改成 CallNextHookEx 就等于没修。
   return 1;
@@ -1740,14 +1821,17 @@ void HookThreadMain() {
         const ULONGLONG now = GetTickCount64();
         if (callback_tick == 0 ||
             now - callback_tick > kSynchronousArmFreshnessMs) {
+          PauseWheelRelays();
           UnhookWindowsHookEx(hook);
           hook = nullptr;
           g_hook_active.store(false, std::memory_order_release);
         }
       }
       if (hook == nullptr) {
+        PauseWheelRelays();
         hook = SetWindowsHookEx(WH_MOUSE_LL, &HookProc,
                                 GetModuleHandle(nullptr), 0);
+        if (hook) ResumeWheelRelays();
       }
       g_hook_active.store(hook != nullptr, std::memory_order_release);
       if (ack_generation != 0 && g_arm_applied_event != nullptr) {
@@ -1757,6 +1841,7 @@ void HookThreadMain() {
       }
     } else if (msg.message == WM_TIMER && liveness_timer != 0 &&
                msg.wParam == liveness_timer) {
+      PruneExitedWheelRelays();
       POINT cursor{};
       const BOOL got_cursor = GetCursorPos(&cursor);
       const ULONGLONG seen_tick =
@@ -1765,8 +1850,10 @@ void HookThreadMain() {
         if (hook == nullptr) {
           // armed 但没有钩子：Arm 那次 SetWindowsHookEx 失败，或 kThreadArm 根本没
           // 送达（PostThreadMessage 会失败，旧实现没检查返回值）。补装。
+          PauseWheelRelays();
           hook = SetWindowsHookEx(WH_MOUSE_LL, &HookProc,
                                   GetModuleHandle(nullptr), 0);
+          if (hook) ResumeWheelRelays();
           g_hook_active.store(hook != nullptr, std::memory_order_release);
         } else if (got_cursor &&
                    (cursor.x != last_cursor.x || cursor.y != last_cursor.y) &&
@@ -1776,9 +1863,11 @@ void HookThreadMain() {
           // 链上更靠前的钩子吞掉——后者重装排到链首同样是正解）。
           // 反向不成立的那半（光标没动 → 本就无事件）已被 cursor 比较排除，因此
           // 「用户只是没动鼠标」永远不会触发重装。
+          PauseWheelRelays();
           UnhookWindowsHookEx(hook);
           hook = SetWindowsHookEx(WH_MOUSE_LL, &HookProc,
                                   GetModuleHandle(nullptr), 0);
+          if (hook) ResumeWheelRelays();
           g_hook_active.store(hook != nullptr, std::memory_order_release);
         }
       }
@@ -2275,6 +2364,77 @@ bool AttachedArmFail(const char *reason) {
 }
 }  // namespace
 
+bool WheelConsumerAcknowledged(const WheelRelayBinding& relay) {
+  const auto snapshot = fushi_voice_hook::ReadWheelSource(relay.source);
+  return snapshot.coherent && snapshot.ready &&
+      fushi_voice_hook::LoadWheelTotal(&relay.source->consumer_generation) == snapshot.generation;
+}
+bool WaitForWheelConsumer(const WheelRelayBinding& relay) {
+  const ULONGLONG deadline = GetTickCount64() + 2000;
+  while (!WheelConsumerAcknowledged(relay)) {
+    ResetEvent(relay.acknowledged);
+    if (WheelConsumerAcknowledged(relay)) return true;
+    const auto now = GetTickCount64();
+    if (now >= deadline || WaitForSingleObject(relay.acknowledged,
+          static_cast<DWORD>(deadline - now)) != WAIT_OBJECT_0) return false;
+  }
+  return true;
+}
+bool EnsureLookupWheelRelay(HWND game) {
+  if (!LowLevelMouseWheelSourceRequired(game)) return true;
+  DWORD pid = 0; GetWindowThreadProcessId(game, &pid);
+  PruneExitedWheelRelays();
+  auto current = std::atomic_load_explicit(&g_wheel_relays, std::memory_order_acquire);
+  if (current) for (const auto& relay : *current)
+    if (relay->game_pid == pid) return WaitForWheelConsumer(*relay);
+  if (current && current->size() >= 16) return false;
+  auto relay = std::make_shared<WheelRelayBinding>();
+  relay->game_pid = pid;
+  relay->process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+  wchar_t name[128]{};
+  if (!relay->process || !fushi_voice_hook::WheelSourceName(pid, relay->process, name, 128)) return false;
+  relay->mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+      0, sizeof(fushi_voice_hook::LookupWheelSource), name);
+  if (!relay->mapping) return false;
+  const bool existed = GetLastError() == ERROR_ALREADY_EXISTS;
+  relay->source = static_cast<fushi_voice_hook::LookupWheelSource*>(MapViewOfFile(
+      relay->mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(*relay->source)));
+  if (!relay->source) return false;
+  if (existed) {
+    HANDLE old_host = OpenProcess(SYNCHRONIZE, FALSE,
+        fushi_voice_hook::LoadWheelWord(&relay->source->host_pid));
+    const bool alive = old_host && WaitForSingleObject(old_host, 0) == WAIT_TIMEOUT;
+    if (old_host) CloseHandle(old_host);
+    if (alive && fushi_voice_hook::LoadWheelWord(&relay->source->ready) != 0) return false;
+  }
+  wcscat_s(name, L"_ready");
+  relay->acknowledged = CreateEventW(nullptr, TRUE, FALSE, name);
+  if (!relay->acknowledged) return false;
+  ResetEvent(relay->acknowledged);
+  auto* source = relay->source;
+  // Preserve the old seqlock rather than clearing storage under its reader.
+  fushi_voice_hook::StoreWheelWord(&source->ready, 0);
+  uint32_t sequence = fushi_voice_hook::LoadWheelWord(&source->sequence);
+  fushi_voice_hook::StoreWheelWord(&source->sequence, sequence | 1u);
+  fushi_voice_hook::StoreWheelWord(&source->magic, fushi_voice_hook::kLookupWheelSourceMagic);
+  fushi_voice_hook::StoreWheelWord(&source->game_pid, pid);
+  fushi_voice_hook::StoreWheelWord(&source->host_pid, GetCurrentProcessId());
+  LARGE_INTEGER generation{}; QueryPerformanceCounter(&generation);
+  fushi_voice_hook::StoreWheelTotal(&source->generation, generation.QuadPart);
+  fushi_voice_hook::StoreWheelTotal(&source->outside_total, 0);
+  fushi_voice_hook::StoreWheelTotal(&source->consumer_generation, 0);
+  fushi_voice_hook::StoreWheelWord(&source->consumer_ready, 0);
+  fushi_voice_hook::StoreWheelWord(&source->sequence, (sequence | 1u) + 1);
+  relay->owns_source = true;
+  auto next = std::make_shared<WheelRelays>();
+  if (current) *next = *current;
+  next->push_back(relay);
+  std::shared_ptr<const WheelRelays> published = next;
+  std::atomic_store_explicit(&g_wheel_relays, published, std::memory_order_release);
+  fushi_voice_hook::StoreWheelWord(&source->ready, 1);
+  return WaitForWheelConsumer(*relay);
+}
+
 bool ArmLowLevelMouseHookWithSampledShield(HWND target, HWND game_owner,
                                            bool target_only,
                                            bool allow_sampled_risk,
@@ -2368,6 +2528,13 @@ bool ArmLowLevelMouseHookWithSampledShield(HWND target, HWND game_owner,
     RemovePropW(target, kConsumeOutsideOwnerProperty);
     return false;
   }
+  if (!target_only && !EnsureLookupWheelRelay(game_owner)) {
+    RevokeDirectInputShieldIfIdle(target);
+    RemovePropW(target, kSampledShieldTargetOnlyProperty);
+    RemovePropW(target, kSampledShieldOwnerProperty);
+    RemovePropW(target, kConsumeOutsideOwnerProperty);
+    return AttachedArmFail("wheel_source_not_acknowledged");
+  }
   g_attached_risky_target.store(risk_fallback ? target : nullptr,
                                 std::memory_order_release);
   g_target.store(target, std::memory_order_release);
@@ -2375,6 +2542,11 @@ bool ArmLowLevelMouseHookWithSampledShield(HWND target, HWND game_owner,
 }
 
 }  // namespace
+
+bool LowLevelMouseWheelSourceRequired(HWND game) {
+  return game && GetPropW(game, fushi_voice_hook::kLookupWheelSourceRequiredProperty) ==
+      reinterpret_cast<HANDLE>(1);
+}
 
 bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
   return ArmLowLevelMouseHookWithSampledShield(
@@ -2423,6 +2595,7 @@ void FinalizeLowLevelMouseDirectInputShield(HWND target) {
   std::lock_guard<std::mutex> guard(g_binding_mutex);
   RevokeDirectInputShieldIfIdle(target);
 }
+
 
 void DisarmLowLevelMouseHook(HWND expected_target) {
   if (expected_target == nullptr) return;

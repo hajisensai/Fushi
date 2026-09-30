@@ -219,6 +219,9 @@ void FinalizeLowLevelMouseDirectInputShield(HWND target);
 // instance's newer binding.
 void DisarmLowLevelMouseHook(HWND target);
 
+// The captured engine has demonstrated the relative Z-only DirectInput path.
+bool LowLevelMouseWheelSourceRequired(HWND game);
+
 }  // namespace fushi
 
 #endif  // RUNNER_LOW_LEVEL_MOUSE_HOOK_H_

@@ -47,6 +47,8 @@ add_library(fushi_voice_hook SHARED
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
   "hook/generic_input_shield.inc"
+  "hook/generic_direct_input_wheel.inc"
+  "include/lookup_wheel_source.h"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/artemis_pfs.h"
@@ -733,6 +735,10 @@ target_compile_definitions(fushi_generic_input_shield_test PRIVATE
   "FUSHI_NATIVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
 add_test(NAME fushi_generic_input_shield_test
   COMMAND fushi_generic_input_shield_test)
+
+add_executable(fushi_direct_input_wheel_test tests/direct_input_wheel_test.cpp)
+target_include_directories(fushi_direct_input_wheel_test PRIVATE include)
+add_test(NAME fushi_direct_input_wheel_test COMMAND fushi_direct_input_wheel_test)
 
 add_executable(fushi_unity_text_mesh_reassembler_test
   tests/unity_text_mesh_reassembler_test.cpp)
