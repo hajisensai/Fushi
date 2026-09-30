@@ -654,6 +654,9 @@ void main() {
           'Theme preview content intentionally displays generated surface roles.',
       'lib/src/pages/implementations/custom_theme_page.dart':
           'Theme preview studio intentionally displays user-selected colors.',
+      'lib/src/pages/implementations/font_preview/font_target_preview.dart':
+          'Font preview specimens size sample content (ruby, subtitle, game '
+          'dialogue) relative to the rendered sample, not UI type.',
       'lib/src/floating_ball/desktop_system_ball_assets.dart':
           'Rasterizes Material icon glyphs into PNGs for the native desktop '
           'ball window; the font size is the bitmap edge, not UI type.',
@@ -1289,6 +1292,10 @@ void main() {
         'VisualDensity.compact',
         'surfaceContainerHighest',
       },
+      // 字体样张：振假名、视频字幕、游戏台词的字号按样张内容等比推导（字幕照播放器
+      // 1080p 基准缩放），是内容尺寸而非界面字号。
+      'lib/src/pages/implementations/font_preview/font_target_preview.dart':
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
         'surfaceContainerHighest',
       },
@@ -3120,13 +3127,14 @@ void main() {
   });
 
   test('system font picker search uses shared MD3 spacing tokens', () {
+    // 系统字体选择页已换成独立文件里的浏览页（每款字体用自己渲染日文样张）。
     final String source = File(
-      'lib/src/pages/implementations/custom_fonts_page.dart',
+      'lib/src/pages/implementations/font_preview/system_font_browser_page.dart',
     ).readAsStringSync();
     final String pickerSource = _sectionSource(
       source,
-      'class _SystemFontPickerPageState',
-      'class CustomFontsPage',
+      'class _SystemFontBrowserPageState',
+      source.length,
     );
 
     expect(pickerSource, contains('FushiDesignTokens.of(context)'));
