@@ -6158,5 +6158,7 @@
   "custom_fonts_system_names_approximate": "Font names were guessed from file names and may be inaccurate.",
   "custom_fonts_system_not_found": "Not found on this device",
   "font_preview_chain_position": "No. $index in the chain",
-  "custom_fonts_system_add_count": "Add $count"
+  "custom_fonts_system_add_count": "Add $count",
+  "lookup_dictionary_font_hint": "Fonts for dictionary popups, with a live Japanese preview",
+  "video_setting_subtitle_font_hint": "Font for subtitles, with a live Japanese preview"
 }

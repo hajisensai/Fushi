@@ -6158,5 +6158,7 @@
   "custom_fonts_system_names_approximate": "字体名由文件名推断，可能不准确。",
   "custom_fonts_system_not_found": "本机未找到此字体",
   "font_preview_chain_position": "第 $index 顺位",
-  "custom_fonts_system_add_count": "添加 $count 款"
+  "custom_fonts_system_add_count": "添加 $count 款",
+  "lookup_dictionary_font_hint": "词典弹窗使用的字体，可实时预览日文效果",
+  "video_setting_subtitle_font_hint": "字幕使用的字体，可实时预览日文效果"
 }
