@@ -22,6 +22,12 @@ on:
 permissions:
   contents: read
 
+# PR 被 force-push / 追加提交时取消上一轮（只读测试，取消无副作用）；
+# develop push 与手动 dispatch 跑完为止。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest

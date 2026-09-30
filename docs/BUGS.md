@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2581 条。点号进各自文件。
+> 共 2582 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,7 @@
 | [BUG-2802](bugs/BUG-2802-flaky-manga-prefetch.md) | ✅ | ✅ | 在线漫画直读预取测试靠 80ms 墙钟等待，CI 高负载下间歇红 |
 | [BUG-2801](bugs/BUG-2801-flaky-leaderboard-401.md) | ✅ | ✅ | 排行榜 401 unknown_account：UI 读榜后本机退出是 fire-and-forget，测试按固定轮数等落盘在 CI 高负载下偶发红 |
 | [BUG-2800](bugs/BUG-2800-ai-video-acquire-alias.md) | ✅ | ✅ | AI下视频说别名找不到作品 |
+| [BUG-2798](bugs/BUG-2798-ci-trim-redundant-runs.md) | ✅ | ✅ | CI 冗余触发与排队：无关改动跑满长构建、develop 连推每次跑满发布 |
 | [BUG-2797](bugs/BUG-2797-credit-bridge-anilist.md) | ✅ | ✅ | 发现详情演职员 MAL 罗马字与 TMDB 汉字认不出同一人（AniList 写法桥） |
 | [BUG-2796](bugs/BUG-2796-ai-download-scrape-missing.md) | ✅ | ✅ | AI下载后作品页尚未刮削 |
 | [BUG-2795](bugs/BUG-2795-discovery-detail-merge-language.md) | ✅ | ✅ | 发现详情合并不看资料语言：MAL 英文简介、中日英类型混排、声优重复 |

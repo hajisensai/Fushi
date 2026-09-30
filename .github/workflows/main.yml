@@ -10,6 +10,18 @@ name: Build Android APK
 on:
   pull_request:
     branches: ['main', 'develop']
+    # 路径清单 = 本 workflow 真正读到的东西，不多不少（2026-09-30 精简 CI）：
+    # * 只列**自己**的 workflow 文件和自己 `uses:` / `bash` 到的共享件。以前挂整个
+    #   `.github/workflows/**`，改任何一条别的 workflow 都会白跑这 ~90 分钟；workflow
+    #   与发布脚本的守卫测试改由轻量的 ci-config-gate.yml 专门跑。
+    # * 无头服务端 packages/fushi_server/** 不进 app：app 不依赖它，它的
+    #   analyze / 包测试 / `dart build cli` 冒烟由 server-gate.yml 负责。负向模式必须
+    #   排在 `packages/**` 之后才生效。
+    # * **故意不排除 `*.md`**：本 workflow 是 PR 上唯一跑 fushi/test 全量的门，而
+    #   fushi_rename_guard（扫 CLAUDE.md / docs/agent / native 下的 .md）、
+    #   onnxruntime_*_guard（读 third_party/flutter_onnxruntime/PATCHES.md）、
+    #   popup_mine_key_binding（读浏览器扩展 README）等守卫把 .md 当语料；排掉 .md
+    #   等于让只改 .md 的 PR 绕过这些守卫。docs/ 与仓库根的 .md 本就不在清单里。
     paths:
       - 'fushi/**'
       - 'packages/**'
@@ -17,9 +29,16 @@ on:
       # 编译挂了要等下一个不相关改动才暴露。
       - 'native/**'
       - 'ci/**'
-      - '.github/workflows/**'
+      # 根 pubspec.yaml 的 dependency_overrides 把一批插件 path 指向 third_party/
+      # （ffmpeg_kit_flutter / flutter_inappwebview_android / media_kit_* /
+      # flutter_onnxruntime …），改它们直接改变 Android 构建产物，以前却不触发本门。
+      - 'third_party/**'
+      - 'tool/release_sequence.sh'
+      - '.github/workflows/main.yml'
+      - '.github/actions/provide-baked-secrets/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      - '!packages/fushi_server/**'
   workflow_dispatch:
 
 permissions:

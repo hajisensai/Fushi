@@ -10,17 +10,38 @@ on:
   # docs-only push is harmless.
   # Fushi 改名过渡期曾暂停 push 自动发布（2026-08-07 用户指示），
   # 2026-08-13 用户指示恢复。
+  #
+  # 2026-09-30 精简 CI：push 路径 = 本 workflow 真正读到的文件，逐个列出。以前挂整个
+  # `tool/**` 与 `.github/workflows/**`，改 tool/bug.dart 或任何一条别的 workflow 都会在
+  # develop 上跑一整轮发布构建。workflow / 发布脚本自身的守卫由 ci-config-gate.yml 在
+  # PR 与 push 上跑；无头服务端由 server-gate.yml 负责（APK 不含它）。
+  # 两条发布 workflow 互相列对方：check_release_policy.ps1 在发布第一步同时校验两份，
+  # 改一份就可能让另一条的第一步红，必须当场暴露。
+  # 守卫：fushi/test/build/release_workflow_path_filter_guard_test.dart（清单与实际
+  # 调用的 tool/ 脚本逐个对账）。
   push:
     branches: ['main', 'develop']
     paths:
       - 'fushi/**'
       - 'packages/**'
+      # Android 构建真正用到的原生源码：fushidicts 走 build.gradle 的 CMake，
+      # torrent / p2p 在本 workflow 里编成 .so 进 jniLibs。
+      - 'native/fushidicts/**'
+      - 'native/fushi_torrent/**'
+      - 'native/fushi_p2p/**'
       - 'ci/**'
-      - 'tool/**'
       - 'third_party/**'
-      - '.github/workflows/**'
+      - 'tool/check_release_policy.ps1'
+      - 'tool/release_sequence.sh'
+      - 'tool/publish_update_manifest.sh'
+      - 'tool/merge_update_manifest.py'
+      - 'tool/cancel_superseded_runs.sh'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-desktop.yml'
+      - '.github/actions/provide-baked-secrets/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      - '!packages/fushi_server/**'
   release:
     types: [published]
   workflow_dispatch:
@@ -64,7 +85,17 @@ concurrency:
   # 里 windows/macos/ios 早就并行上传同一个 release）；update-manifest 推送有「重取远端
   # tip 再合并」循环（TODO-781）。同一条 workflow 内仍按 tag/sha 串行，同 tag 两次 dispatch
   # 不会互相踩。守卫：fushi/test/build/release_workflow_concurrency_guard_test.dart。
-  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  #
+  # push 事件按**分支**分组（2026-09-30）：此前 push 也按 sha 分组，develop 上每推一次就
+  # 各自跑满一整轮 debug 发布，连推 5 次 = 5 轮全跑完、中间 4 轮的产物马上被最新那轮覆盖。
+  # 改成同分支一组后：正在跑的那轮照样跑完（仍是 cancel-in-progress: false——半路取消会让
+  # rolling debug 资产与 update-manifest 只写一半），只有**排队中**的旧 pending 被后来者顶掉。
+  # 被跳过的 commit 无害：debug 序号 = commit 数（tool/release_sequence.sh），跳号本就发生在
+  # 每次 docs-only push 上（见上面 TODO-1208）；最新那轮包含它们的全部改动，tests job 也跑在
+  # 最新那轮的树上。代价：最新 commit 的 debug 包最多要等正在跑的那一轮结束才开跑。
+  # release / workflow_dispatch 仍按 tag/sha，正式版与手动发布不受影响。
+  # 组名前缀仍带 workflow 名：Android 与桌面在同一分支上也各自一组、互不取消（09-03 教训）。
+  group: fushi-release-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
 
 jobs:
