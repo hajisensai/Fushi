@@ -23,7 +23,7 @@
 - **B 启动结果被吞**：`fushi/windows/runner/flutter_window.cpp` 修前 l.2117 恒回 `EncodableValue(true)`；macOS `FushiDesktopFloatingBall.swift` 恒回 `true`。建窗 / D2D 失败时 Dart 仍记签名、以后不再重试。修：回 `Start()` / `ballPanel != nil` 的真实结果。
 - **C 剪贴板查词锚点单位错**：`app_floating_ball_host.dart` 修前 l.361 把原生给的物理像素球矩形当逻辑 `anchorScreenRect` 传，高 DPI 下卡片偏位。修：包成 `GlobalLookupPhysicalPlacement(anchorScreenRect: anchor)` 走 `physicalPlacement`。
 - **D 启停竞态**：修前 l.248 起的 `_syncSystemBall` 在 await（渲染图标 / 读球图 / 原生 start）期间被关掉，旧闭包回来仍把球起出来，且「关」只按签名判断。修：`_systemGeneration` 代数 + `_systemRequested`，每个 await 后 `stale()` 复核，`_stopSystemBall` 按「是否请求过」而非签名判断。
-- **E 查词模块关闭仍给查词按钮**：`floating_ball_config.dart` 的 `availableIn` 与 host 修前 l.351 只按平台判 `popup_lookup`。修：新增必填 `lookupModuleEnabled`，桌面外球 `lookup` / `popup_lookup` 都随查词模块（`lookup` 也要门：模块关时 `_revealDictionary` 什么都不做）；设置页与 host 同读 `moduleVisibility.isEnabled(ModuleId.lookup)`，模块开关变动经 prefs 通知 → host 重同步。已知限制：会话中途开模块，`GlobalLookupController` 要下次启动才起，此时点应用外查词记错误日志 `floating_ball.popup_lookup`（不再静默）。
+- **E 查词模块关闭仍给查词按钮**：`floating_ball_config.dart` 的 `availableIn` 与 host 修前 l.351 只按平台判 `popup_lookup`。修：新增必填 `lookupModuleEnabled`，桌面外球 `lookup` / `popup_lookup` 都随查词模块（`lookup` 也要门：模块关时 `_revealDictionary` 什么都不做）；设置页与 host 同读 `moduleVisibility.isEnabled(ModuleId.lookup)`，模块开关变动经 prefs 通知 → host 重同步。~~已知限制：会话中途开模块，`GlobalLookupController` 要下次启动才起~~——见下方「二轮审查」第 3 条，已根治。
 - **F 桌面分支零测试**：修前 host 测试 l.407 整组 `skip`。修：`floating_ball_config.dart` 加 `@visibleForTesting debugDesktopSystemBallPlatformOverride` + `desktopSystemBallActionTarget` 注入缝，补启停 / 位置 / 模块门 / 两条竞态 / start=false 重试 / 五种动作分发测试。
 - **G 资源失败**：`desktop_system_ball_assets.dart` 修前 l.48 `endRecording()` 的 Picture 不 dispose、l.66 单个图标渲染失败炸整批、l.79 `catch (_)` 吞一切。修：Picture finally dispose、逐图标 try/catch 记日志、球图只 `on FlutterError` 记日志其余上抛。
 - **H 拖动阈值不随 DPI**：修前 l.1091 用 `GetSystemMetrics(SM_CXDRAG)`（裸像素 4）。**首版（c4e8e1c465）改成 `GetSystemMetricsForDpi(SM_CXDRAG, dpi)` 是空操作**——实测它对 SM_CXDRAG 不缩放（96/120/144/192/288 DPI 恒回 4，同调用 CXICON 32→96 正常缩放），守卫还把空操作钉住了。返工（de08aa059a）：`MulDiv(GetSystemMetrics(SM_CXDRAG), dpi, USER_DEFAULT_SCREEN_DPI)`，守卫改钉该形式并禁 `GetSystemMetricsForDpi(SM_CXDRAG`。
@@ -31,10 +31,34 @@
 
 **测试**：`fushi/test/floating_ball/app_floating_ball_host_test.dart`（桌面组）、`desktop_system_ball_native_guard_test.dart`（新增，A/B/H 源码守卫）、`desktop_system_ball_assets_test.dart`、`floating_ball_test.dart`。`flutter analyze` 全量无问题；`flutter test test/floating_ball` exit 0 / +69；`test/settings` + `preference_keys_guard_test.dart` exit 0 / +593。
 
-**变异实测**（先提交再变异，`git checkout` 还原）：C / D（两条竞态）/ E / G（两条）/ A / B / H（`GetSystemMetricsForDpi` 与「算了不用」两种变异）全部由对应测试抓红；F：把平台回落改成 `Platform.isLinux` 但尊重覆盖 → 桌面组 24 条照跑全绿，忽略覆盖 → 10 条红。
+**变异实测**（先提交再变异，`git checkout` 还原）：C / D（**更正：此处不实**，「起球途中关开关」那条是空壳，见下方「二轮审查」第 1 条）/ E / G（两条）/ A / B / H（`GetSystemMetricsForDpi` 与「算了不用」两种变异）全部由对应测试抓红；F：把平台回落改成 `Platform.isLinux` 但尊重覆盖 → 桌面组 24 条照跑全绿，忽略覆盖 → 10 条红。
 
 **构建 / 原生**：`flutter build windows --debug` exit 0（本机缺 ATL，按既有配方设 `CL` / `_LINK_`）；原生 ctest 全部 exit 0（含 activation_policy、floating_ball_geometry）。
 
 **真机触摸验收**（隔离实例：`FUSHI_TEST_ROOT=%TEMP%\fushi_ball_touch_root`、`FUSHI_TEST_HIDDEN=1`、`FUSHI_TEST_ONSCREEN=1`，未碰用户生产实例；`InjectTouchInput` PT_TOUCH，144 DPI，前台记事本）：de08aa059a 构建上触摸球 → 前台仍记事本、菜单展开；触摸 popup_lookup 按钮 → 前台仍记事本、菜单收起，两步 PASS。
 - **A 的负向对照未能区分**：删掉两处 `WM_POINTERACTIVATE` 重编后同一脚本前台也不丢（本机注入触摸下原症状不复现），故 A 的「触摸不抢前台」效果为 **implemented_unverified**，只有源码守卫与策略 ctest 兜底。
 - **H 运行时不可用触摸验证**：触摸经系统提升成鼠标时抖动先被系统触摸 slop 吸收（144 DPI 下抖 8 px 仍判点击，修与不修一样），真正走到这条阈值的是鼠标 / 触控笔；本轮未注入鼠标（会动用户真实光标），H 运行时为 **implemented_unverified**，由守卫 + 变异兜底。
+
+### 2026-09-30 二轮审查修复（分支 `fix/desktop-ball-review-followups`，基于 `28dc106b37`）
+
+1. **【中】竞态用例是空壳（更正上文「D 全部抓红」）**：`app_floating_ball_host_test.dart`「起球途中关掉开关」里 `expect(starts(), isEmpty)` 在删掉起球闭包全部 `if (stale()) return;` 后仍绿。根因实测：`take` 这个 Completer 建在 fake-async zone，`complete()` 虽在 `runAsync` 里调，回调却排进 fake zone 的微任务队列，要到 runAsync 结束后的下一次 `pump` 才冲刷——闭包在观察窗内根本醒不过来（把 Completer 挪回 runAsync 外 + 删 start 前的门 → 仍绿，已复现）。修：可控回话的 Completer 一律在 `runAsync` 里建；宿主暴露 `@visibleForTesting debugLatestSystemBallSync`（最近一次起球闭包的 Future），用例 `await` 它确认闭包真的跑完再断言，不再 sleep 600 ms 碰运气；整组本来就走桌面分支（`debugDesktopSystemBallPlatformOverride = true`，闭包会真的画图标、读球面）。
+   - 门的取舍：原 4 处 stale 判断里，take 之后 / 图标渲染之后两处与「读球面之后」那处之间只隔着本地数据产出（标记已按第 2 条先处理、图标 PNG、球面字节），过期代多做完它们不留任何可观察痕迹（无原生调用、无状态写），逐 await 设门只是重复同一个判断——**删掉**，收成两道：start 前一道、start 回话后一道。
+2. **【中低，Android】一次性「用户关过系统球」标记被过期代丢掉**：`takeSystemBallClosedByUser` 在 Android 读即清（`FloatingBallChannel.java:243` → `FloatingBallService.takeClosedByUser`），修前先判 stale 再处理，过期代拿到 true 被丢、下一代只剩 false → 重新起球、开关保持开。修：先消费一次性值（true 时清 `_systemSignature`，开关还开着就 `setFloatingBallSystem(false)`），再判过期。
+3. **【低】会话中途开查词模块，「应用外查词」按钮出现但点了无反馈**：根因是覆盖窗只在 `main.dart` 启动链里按模块开关判一次（`GlobalLookupController.start` 的唯一调用点），中途打开模块没有任何路径去起它。`start` 本身是幂等单向闩、首帧后任意时刻调都安全，所以**根治**而非改按钮条件：新增 `GlobalLookupController.followLookupModule(appModel)`——启动链调一次，现在开着就起，并监听 `AppModel`（`setModuleEnabled` 必经 `notifyListeners`），模块中途打开时沿同一条 `start` 补起（先判 `_started` 闩再调，不重复建窗、不刷 glog）；监听路径的失败 glog + `ErrorLogService` 落盘。关模块不停——沿用启动链既有的「不切断进行中的任务」取舍（生产路径本来就没有 stop，做对称 stop 要拆热键 / RawInput / 手柄入口 / WebView2，超出本条范围且与用户既定语义相反）。悬浮球 `popup_lookup` 的 else 分支保留日志，但它现在是真异常而不是预期状态。
+4. **【低】`renderFloatingBallIconPngs` 逐图标容错无测试**：加 `@visibleForTesting render` 参数（单颗画法可替换），补行为测试。
+
+**测试**：
+- `fushi/test/floating_ball/app_floating_ball_host_test.dart`：「起球途中关掉开关：发 stop，醒来的起球闭包不再把球拉起来」（重写）、「start 回话前关掉开关：过期代不记签名，再打开同样配置照常起球」（新）、「一次性「用户关过系统球」标记落在已过期的那一代：照样关掉开关，不再起球」（新）、「连续两次同步、先发的闭包后醒」（改为 await 闭包）。
+- `fushi/test/lookup/global_lookup_follow_module_test.dart`（新）：中途打开查词模块即起覆盖窗、再通知不重复 `prepare`、关模块不停。
+- `fushi/test/floating_ball/desktop_system_ball_assets_test.dart`：「一颗图标画不出来：只少这一颗并记日志，其余照常；画出 null 的静默跳过」（新）。
+
+**变异实测**（先提交再变异，`git checkout` 还原）：
+- 删 start 前的门 → 「起球途中关掉开关」「连续两次同步」「一次性标记落在过期代」3 条红；
+- 删 start 回话后的门 → 「start 回话前关掉开关」红；
+- 把 stale 判断挪回 closedByUser 之前（修前顺序）→ 「一次性标记落在过期代」红；
+- 逐图标 catch 改 `rethrow`（修前整批炸）→ 逐图标容错用例红；
+- 去掉 `followLookupModule` 的监听 → 覆盖窗用例红；去掉其中的模块门 → 同一用例红。
+
+**提交**：`900cdb0cf8`（1+2）、`34d2620a6b`（4）、`9873d8eb70`（3）。
+
+**验证**：改动文件 `flutter analyze` 无问题；`flutter test test/floating_ball test/settings test/lookup --no-pub` exit 0 / +1659（0 失败）。
