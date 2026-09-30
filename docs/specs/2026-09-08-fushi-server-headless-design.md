@@ -221,12 +221,12 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 | 3 | `8e193edbe5` | admin 端口独立、token/cookie 鉴权、`/api/admin/*` 九组、单页 WebUI、分块可续上传 + 配额 |
 | 4 | `38da0dde35` | `torrent.engine` 三态 + 内置 libtorrent 随包；ORT 随包 + CUDA 说明；CI 编 `.so`/下 ORT/真进程冒烟；README |
 | 5（用户复审后追加，2026-09-08） | 见 git log | ① 内容订阅进 host：`/api/subscriptions`（引擎接口/路由）、`ServerSubscriptionHost`（后端四元组与落地源由 host 覆写）、host 真 provider registry（Torznab/Nyaa provider 搬进引擎、内置表去 i18n、偏好读侧下沉）+ `VideoDownloadSubscriptionService` 在 host 上跑；客户端发现页订阅加「运行位置：本机 / host」，下载页订阅 tab 顶部混排 host 订阅；WebUI「订阅」页。② `libraries[].kind: manga`：页图目录归组规则下沉引擎 `manga_folder_plan.dart`，服务端扫 `.mokuro` 卷 + 页图目录。③ ffmpeg：引擎解析层加宿主显式路径第 0 级（`ffmpegPathOverride` / `ffprobePathOverride`），配置 `ffmpeg:` / `ffprobe:` 真正生效。④ Linux `.so` 改 vcpkg 静态链（`build_linux_so.sh` + `x64-linux-fpic` triplet + `-static-libstdc++`），目标机零 libtorrent 依赖。⑤ `release-server.yml` 专用发布（beta/formal，永不 Latest）。 |
-| 6（2026-09-30，BUG-2809 / BUG-2812） | 见 git log | ① 扫描对账：文件已消失的视频条目回收（带空挂载点 / 子挂载点 / 比例护栏，`scan_prune`；接手第三方 PR #1817 后补修）。② **第 0 期「扫描器接刮削协调器」此前没有落地**：扫描器写行不带 `sourceId`、不归合集，刮削计划器对服务端的库规划出零个作品；协调器只在下载管线里建、无 torrent 后端时不建；库服务的 `scrapeController` 没接，客户端远程重刮恒空。现在视频根登记为本地来源、入库带 `sourceId`、按引擎 `VideoFolderGroupCoordinator` 归组 + `VideoSourceMetadataIndexer` 吃 NFO（两者从 app 下沉到引擎，app 与服务端共用），进程共享一套 `ServerVideoScrape`（协调器 + 任务控制器 + `VideoLibraryScrapeSweep`），扫描后只补刮从未识别过的作品；配置 `scan_scrape` / `tmdb_api_key`（服务端没有 app 的内置 TMDB key）。 |
+| 6（2026-09-30，BUG-2809 / BUG-2812） | 见 git log | ① 扫描对账：文件已消失的视频条目回收（带空挂载点 / 子挂载点 / 比例护栏，`scan_prune`；接手第三方 PR #1817 后补修）。② **第 0 期「扫描器接刮削协调器」此前没有落地**：扫描器写行不带 `sourceId`、不归合集，刮削计划器对服务端的库规划出零个作品；协调器只在下载管线里建、无 torrent 后端时不建；库服务的 `scrapeController` 没接，客户端远程重刮恒空。现在视频根登记为本地来源、入库带 `sourceId`、按引擎 `VideoFolderGroupCoordinator` 归组 + `VideoSourceMetadataIndexer` 吃 NFO（两者从 app 下沉到引擎，app 与服务端共用），进程共享一套 `ServerVideoScrape`（协调器 + 任务控制器 + `VideoLibraryScrapeSweep`），扫描后只补刮从未识别过的作品；配置 `scan_scrape` / `tmdb_api_key`（服务端没有 app 的内置 TMDB key）。③（BUG-2816）书 / 漫画根也对账：根登记为 book / manga 来源、入库带 `sourceId`，引擎 `BookSourceIndex` 记源 → 书 uid，护栏与视频共用（`library_prune_guard.dart`），admin purge 支持书 / 漫画根。 |
 
 ### 与原设计的偏差（明说；第 6 批之后仍成立的）
 
 - **本地音频库不托管**：`liveLibrary.audio` 仍报 true（客户端不读这一位），列表恒空、推送在传完后报 `UnsupportedError`。本地音频是查词发音源（查词域，服务端不做），要么客户端按能力位门控上传，要么服务端做成与词典包一样的存储中转——两条都未做。
-- **书 / 漫画根不对账**：行里不记源文件路径，判不出源文件是否被删。
+- **书 / 漫画根的对账只认服务端扫描认领过的书**（BUG-2816 起对账，此前完全不对账）：书行本身仍不记源文件路径（没升 schema），关系记在 `preferences` 的来源扫描索引 `media_source_scan_index_<sourceId>`（源相对路径 → 书 uid）里，书行带 `sourceId`。客户端上传 / 手动导入的同名书、升级前源文件就已删掉的存量书认领不上，不会被回收。
 - **代下载只收视频**：`downloads.kinds` 只有 `video`（没有发现导入执行器）。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。
 - CLI 没有 `jobs` / `download` 子命令：由 admin API / WebUI 代替。
