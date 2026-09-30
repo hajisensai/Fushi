@@ -3,12 +3,11 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 import 'package:flutter_charset_detector/flutter_charset_detector.dart';
-
-import 'text_file_io.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// `flutter_charset_detector` method-channel 插件对 [PlatformCharsetDecoder]
-/// 的实现。**重文件**：只由全 barrel `fushi_audio.dart` 导出，不进
-/// `fushi_audio_core.dart`——无头服务端不能拖进 `package:flutter/services.dart`。
+/// 的实现。住在 app 而不是 `fushi_audio`：`fushi_audio` 已不依赖 Flutter SDK
+/// （无头服务端直接消费它），插件实现经 [platformCharsetDecoder] 装配点注入。
 ///
 /// 插件在本平台不可用（桌面三端无联邦实现 → [MissingPluginException]；测试替身
 /// / 未来新平台 → [UnimplementedError]）或原生侧识别失败（[PlatformException]）

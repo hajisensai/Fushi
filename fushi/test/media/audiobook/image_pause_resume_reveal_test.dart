@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （插图后那句），否则 reveal 停在插图上、audio-follow 对不上当前句。
 void main() {
   final String src = File(
-    'lib/src/audiobook/audiobook_controller.dart',
+    'lib/src/media/audiobook/audiobook_controller.dart',
   ).readAsStringSync();
 
   test('triggerImagePause resume re-reveals current cue via snapReaderToAudio',

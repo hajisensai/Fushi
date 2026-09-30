@@ -90,6 +90,23 @@ void main() {
     expect(scanTree(lib), isEmpty);
   });
 
+  // 2026-09-30 起 fushi_core / fushi_audio 整包去 Flutter：不再只靠子 barrel 的
+  // export 闭包兜底，而是整棵 lib/ 零禁用 import（原重文件已搬到 app 的
+  // fushi/lib/src/media/audiobook/）。
+  test('fushi_core / fushi_audio 整包源码零 Flutter / 插件 / 反向 app import', () {
+    final Map<String, int> measured = <String, int>{
+      'fushi_core': 37,
+      'fushi_audio': 38,
+    };
+    for (final MapEntry<String, int> e in measured.entries) {
+      final Directory lib = Directory('../packages/${e.key}/lib');
+      expect(lib.existsSync(), isTrue, reason: '${lib.path} 不存在');
+      expectScanScale(countDart(lib),
+          what: '${e.key}/lib 下的 .dart', atLeast: 25, measured: e.value);
+      expect(scanTree(lib), isEmpty, reason: e.key);
+    }
+  });
+
   test('fushi_server 源码零 Flutter / 插件 / 反向 app import', () {
     final Directory lib = Directory('../packages/fushi_server/lib');
     final Directory bin = Directory('../packages/fushi_server/bin');
@@ -136,10 +153,36 @@ void main() {
       '../packages/fushi_engine/pubspec.yaml',
       '../packages/fushi_server/pubspec.yaml',
       '../packages/fushi_core/pubspec.yaml',
+      '../packages/fushi_audio/pubspec.yaml',
     ]) {
       final String text = File(path).readAsStringSync();
       expect(RegExp(r'^\s+flutter:\s*\n\s+sdk:\s*flutter', multiLine: true).hasMatch(text), isFalse,
           reason: '$path 声明了 flutter sdk 依赖');
+    }
+  });
+
+  test('fushi_core / fushi_audio 的 pubspec 连 dev 依赖与 environment 都不带 Flutter', () {
+    // dev_dependencies 里的 flutter_test 同样让解析依赖需要 Flutter SDK；包测试改用
+    // package:test（CI 的 flutter_test_failures.dart runner 对纯 Dart 包照样能跑）。
+    for (final String path in <String>[
+      '../packages/fushi_core/pubspec.yaml',
+      '../packages/fushi_audio/pubspec.yaml',
+    ]) {
+      final String text = File(path).readAsStringSync();
+      expect(RegExp(r'^\s*sdk:\s*flutter\s*$', multiLine: true).hasMatch(text), isFalse,
+          reason: '$path 仍有 `sdk: flutter` 依赖（含 dev_dependencies）');
+      expect(RegExp(r'^\s+flutter:\s*"', multiLine: true).hasMatch(text), isFalse,
+          reason: '$path 的 environment 仍约束 flutter 版本');
+      for (final String plugin in <String>[
+        'just_audio',
+        'audio_session',
+        'path_provider',
+        'flutter_charset_detector',
+        'sqlite3_flutter_libs',
+      ]) {
+        expect(RegExp('^\\s+$plugin:', multiLine: true).hasMatch(text), isFalse,
+            reason: '$path 仍依赖 method-channel 插件 $plugin');
+      }
     }
   });
 }

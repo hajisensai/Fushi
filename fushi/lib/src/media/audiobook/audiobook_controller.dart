@@ -3,11 +3,8 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio/just_audio.dart';
-import 'audiobook_model.dart';
-import '../matching/collection_audio_matcher.dart';
-import '../parsers/json_alignment_parser.dart';
-import '../matching/subtitle_rematch_codec.dart';
 
 /// 有声书播放控制器。
 ///

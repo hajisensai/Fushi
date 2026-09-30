@@ -72,7 +72,9 @@ Flutter SDK（构建工具链），运行时二进制不含 Flutter**。服务�
 出现 `package:flutter`、`dart:ui`、任何 method-channel 插件 import；
 `dart compile exe` 是最终门（`dart:ui` 一旦进闭包直接编不过）。
 把 `fushi_core` / `fushi_audio` 的 pubspec 彻底去 Flutter 是后续独立清理，
-不在本项目内。
+不在本项目内。**（2026-09-30 已完成：两包 pubspec 不再声明 `sdk: flutter`，
+见 §7 第 7 批；`fushi_anki` / `fushi_dictionary` / `fushi_platform` 仍声明 flutter，
+所以解析依赖仍需 Flutter SDK。）**
 
 ### 3.2 平台边界钩子（引擎侧全局装配点，与 `asr_host.dart` 同一范式）
 
@@ -152,6 +154,13 @@ WebUI / admin API 用独立 admin token（首次启动生成写入配置文件�
 3. `fushi_core`：`debugPrint` → `fushiCoreLog` 钩子；`fushi_text_selection.dart`
    搬回 app。`fushi_audio`：`foundation` 的 `debugPrint/listEquals/
    visibleForTesting` → 钩子 / `collection` / `meta`；charset 插件级改注入。
+   **状态（2026-09-30）**：源码层早已零 Flutter（`fushiDebugPrint` 装配点；
+   `fushi_text_selection.dart` 实际落在 `fushi_dictionary`）；pubspec 层本批收尾——
+   `fushi_core` 去掉 dev 依赖 `flutter_test`；`fushi_audio` 把三个平台重文件
+   （`audiobook_controller.dart` / `audiobook_storage_platform.dart` /
+   `platform_charset_detector.dart`）平移到 app `fushi/lib/src/media/audiobook/`，
+   并删掉 `flutter` / `just_audio` / `audio_session` / `path_provider` /
+   `flutter_charset_detector` 依赖。
 4. `packages/fushi_server`：
    - `bin/fushi_server.dart`：`serve` / `pair` / `scan` / `jobs` / `download` /
      `transcribe` / `models` / `admin` 子命令（`package:args`）。
@@ -222,9 +231,11 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 | 4 | `38da0dde35` | `torrent.engine` 三态 + 内置 libtorrent 随包；ORT 随包 + CUDA 说明；CI 编 `.so`/下 ORT/真进程冒烟；README |
 | 5（用户复审后追加，2026-09-08） | 见 git log | ① 内容订阅进 host：`/api/subscriptions`（引擎接口/路由）、`ServerSubscriptionHost`（后端四元组与落地源由 host 覆写）、host 真 provider registry（Torznab/Nyaa provider 搬进引擎、内置表去 i18n、偏好读侧下沉）+ `VideoDownloadSubscriptionService` 在 host 上跑；客户端发现页订阅加「运行位置：本机 / host」，下载页订阅 tab 顶部混排 host 订阅；WebUI「订阅」页。② `libraries[].kind: manga`：页图目录归组规则下沉引擎 `manga_folder_plan.dart`，服务端扫 `.mokuro` 卷 + 页图目录。③ ffmpeg：引擎解析层加宿主显式路径第 0 级（`ffmpegPathOverride` / `ffprobePathOverride`），配置 `ffmpeg:` / `ffprobe:` 真正生效。④ Linux `.so` 改 vcpkg 静态链（`build_linux_so.sh` + `x64-linux-fpic` triplet + `-static-libstdc++`），目标机零 libtorrent 依赖。⑤ `release-server.yml` 专用发布（beta/formal，永不 Latest）。 |
 | 6（2026-09-30，BUG-2809 / BUG-2812） | 见 git log | ① 扫描对账：文件已消失的视频条目回收（带空挂载点 / 子挂载点 / 比例护栏，`scan_prune`；接手第三方 PR #1817 后补修）。② **第 0 期「扫描器接刮削协调器」此前没有落地**：扫描器写行不带 `sourceId`、不归合集，刮削计划器对服务端的库规划出零个作品；协调器只在下载管线里建、无 torrent 后端时不建；库服务的 `scrapeController` 没接，客户端远程重刮恒空。现在视频根登记为本地来源、入库带 `sourceId`、按引擎 `VideoFolderGroupCoordinator` 归组 + `VideoSourceMetadataIndexer` 吃 NFO（两者从 app 下沉到引擎，app 与服务端共用），进程共享一套 `ServerVideoScrape`（协调器 + 任务控制器 + `VideoLibraryScrapeSweep`），扫描后只补刮从未识别过的作品；配置 `scan_scrape` / `tmdb_api_key`（服务端没有 app 的内置 TMDB key）。③（BUG-2816）书 / 漫画根也对账：根登记为 book / manga 来源、入库带 `sourceId`，引擎 `BookSourceIndex` 记源 → 书 uid，护栏与视频共用（`library_prune_guard.dart`），admin purge 支持书 / 漫画根。 |
+| 7（2026-09-30） | 见提交记录 | `fushi_core` / `fushi_audio` 去 Flutter SDK：两包 pubspec 不再声明 `sdk: flutter`（含 dev 依赖，包测试改 `package:test`）；`fushi_audio` 的播放控制器 / 存储平台装配 / 字符集插件实现搬到 app `fushi/lib/src/media/audiobook/`，经包内既有装配点（`AudiobookStorage.documentsRootResolver` / `audioDurationProbeMs`、`platformCharsetDecoder`）由 `engine_bindings.dart` 注入，app 行为不变；`fushi_audio.dart` 全 barrel 与 `fushi_audio_core.dart` 等价。纯度守卫扩到两包整棵 `lib/` + pubspec 零 `sdk: flutter` / 插件。 |
 
 ### 与原设计的偏差（明说；第 6 批之后仍成立的）
 
+- **解析依赖仍需 Flutter SDK**：`fushi_core` / `fushi_audio` 已零 Flutter（第 7 批），但服务端 / 引擎依赖的 `fushi_anki` / `fushi_dictionary` / `fushi_platform` 仍声明 `sdk: flutter`（其 lib 里还有插件 / Flutter 实现，只靠 `*_core.dart` 子 barrel 隔离），所以 workspace 解析依赖仍要 Flutter SDK；要做到「只装 Dart SDK 就能 `dart build cli`」还得把这三个包按同一办法拆。
 - ~~本地音频库不托管~~（BUG-2815 已补）：服务端对本地音频库做与词典包一样的存储中转——引擎 `LocalAudioLibraryStore`（库副本 `<support>/local_audio_<n>.db` + `local_audio_dbs` 偏好，与 app `LocalAudioManager` 同目录同键）接上 host 服务的清单 / 导入 / 删除三件，`liveLibrary.audio` 报 true 与实际一致。服务端仍不做查词发音。顺带：host 服务的本地音频清单改为现读（`localAudioEntriesProvider`），此前 app 传的是互联启动时的快照，之后增删的库对端看不见。
 - **书 / 漫画根的对账只认服务端扫描认领过的书**（BUG-2816 起对账，此前完全不对账）：书行本身仍不记源文件路径（没升 schema），关系记在 `preferences` 的来源扫描索引 `media_source_scan_index_<sourceId>`（源相对路径 → 书 uid）里，书行带 `sourceId`。客户端上传 / 手动导入的同名书、升级前源文件就已删掉的存量书认领不上，不会被回收。
 - **代下载不收游戏、接不了 PDF**（2026-09-30 起不再「只收视频」）：发现导入执行器（`DiscoveryImportExecutor` / 解压器 / `MangaArchiveImporter`）与 EPUB / 文本 / 漫画图包 / 有声书四个域原语已下沉引擎（`media/discovery/import/discovery_engine_importers.dart`，app 与服务端共用），`downloads.kinds` = `video` + `novel` / `manga` / `audiobook`。仍不做：`game`（服务端没有游戏库，exe 登记只在 app 有意义，能力位不宣告、投了 400）；小说包里的 PDF（`PdfImporter` 依赖 pdfrx 插件，任务以新原因码 `unsupportedOnThisHost` 进 needsAttention，不假装导入）；cbr / cb7 / rar 依赖服务端自备 7-Zip。服务端此前没装 `AudiobookStorage.documentsRootResolver`，有声书落盘会抛 StateError——现在在 `installServerHostBindings` 接到 `<documents>`。
