@@ -40,6 +40,7 @@ import 'package:fushi_server/src/lan_advertiser.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
 /// 当前待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。
@@ -102,6 +103,7 @@ class HeadlessHost {
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
   ServerAnkiLanding? _anki;
+  ServerVideoScrape? _videoScrape;
   final _AsyncMutex _mutex = _AsyncMutex();
 
   /// [start] 时的绑定地址是否只监听本机（重启前改了 `bind` 也按实际监听判）。
@@ -127,6 +129,9 @@ class HeadlessHost {
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
   HostSubscriptionHost? get subscriptions => _downloads?.subscriptions;
+
+  /// 进程共享的视频刮削（扫描补刮 / 下载导入 / 客户端远程重刮共用）。[start] 之后非空。
+  ServerVideoScrape? get videoScrape => _videoScrape;
 
   /// Anki 落地（手机的待发卡经互联同步进来，这里写进 Anki 并同步）。
   ServerAnkiLanding? get anki => _anki;
@@ -174,6 +179,14 @@ class HeadlessHost {
     await jobs.load();
     _jobs = jobs;
 
+    // 视频刮削：一个进程一套，与 app 的 HomePage 同一装配形状（见 video_scrape_host.dart）。
+    final ServerVideoScrape videoScrape = ServerVideoScrape(
+      db: db,
+      prefs: prefs,
+      config: () => config,
+    );
+    _videoScrape = videoScrape;
+
     // 代下载（第 2 期）：qBittorrent 配了才起管线；没配也挂接口，能力位如实报 supported=false。
     final ServerDownloadHost downloads = ServerDownloadHost(
       config: config,
@@ -181,6 +194,7 @@ class HeadlessHost {
       db: db,
       prefs: prefs,
       identity: identity,
+      scrape: videoScrape,
     );
     await downloads.start();
     _downloads = downloads;
@@ -397,6 +411,9 @@ class HeadlessHost {
     final ServerDownloadHost? downloads = _downloads;
     _downloads = null;
     await downloads?.stop();
+    // 下载管线借用它，管线停了再关。
+    _videoScrape?.close();
+    _videoScrape = null;
     await pairingEvents.close();
   }
 
@@ -489,6 +506,9 @@ class HeadlessHost {
         localAudioStagingDir: paths.temp,
         audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
         videoSubtitleLangCode: config.subtitleLanguage,
+        // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
+        // 这些请求在服务端恒返回空结果或 notPlanned。
+        scrapeController: () async => _videoScrape?.controller,
         uploadedVideoRoot: Directory(p.join(paths.documents.path, 'remote_videos')),
         extractVideoCover: (
                 {required String videoPath, required String bookUid}) =>

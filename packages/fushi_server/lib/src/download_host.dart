@@ -13,7 +13,6 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
-import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -28,8 +27,6 @@ import 'package:fushi_engine/media/video/download/video_download_subscription_se
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
@@ -38,6 +35,7 @@ import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
 class ServerDownloadHost implements HostDownloadHost {
@@ -47,6 +45,7 @@ class ServerDownloadHost implements HostDownloadHost {
     required this.db,
     required this.prefs,
     required this.identity,
+    required this.scrape,
   });
 
   final ServerConfig config;
@@ -55,8 +54,10 @@ class ServerDownloadHost implements HostDownloadHost {
   final ServerPrefs prefs;
   final ServerIdentity identity;
 
+  /// 进程共享的刮削（协调器由 [HeadlessHost] 持有并关闭，这里只借用）。
+  final ServerVideoScrape scrape;
+
   VideoDownloadPipelineService? _pipeline;
-  VideoSourceScrapeCoordinator? _scrape;
   VideoResourceRegistry? _registry;
   VideoDownloadSubscriptionService? _subscriptionService;
   PipelineSubscriptionHost? _subscriptions;
@@ -121,16 +122,6 @@ class ServerDownloadHost implements HostDownloadHost {
     }
     await downloadRoot.create(recursive: true);
     _sourceId = await _ensureDownloadSource();
-    final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
-      database: db,
-      config: VideoSourceScrapeGlobalConfig.fromPreferences(
-        prefs,
-        resolvedTmdbApiKey: (prefs.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String).trim(),
-        // 无头服务端没有界面语言，资料语言来自 `metadata_locale` 配置项。
-        uiLocaleTag: config.metadataLocale,
-      ),
-    );
-    _scrape = scrape;
     // 资源索引器：与 app 同一张内置表 + 同一个 Torznab 偏好键（同一张 preferences 表），
     // 停用清单同源。订阅服务的在场校验看它，客户端搜到的 provider id 才对得上。
     final VideoResourceRegistry registry = _buildRegistry();
@@ -139,7 +130,7 @@ class ServerDownloadHost implements HostDownloadHost {
       database: db,
       resourceRegistry: registry,
       backendResolver: _resolveBackend,
-      scrapeCoordinator: scrape,
+      scrapeCoordinator: scrape.coordinator,
       manualTorrentDirectory: Directory(p.join(paths.support.path, 'manual_torrents')),
       workerId: 'fushi-server-${identity.deviceId}',
       // 目标来源失效的任务重试时改绑到服务端自己的下载来源（BUG-2755）。
@@ -220,8 +211,6 @@ class ServerDownloadHost implements HostDownloadHost {
     final VideoDownloadPipelineService? pipeline = _pipeline;
     _pipeline = null;
     if (pipeline != null) await pipeline.dispose(drainTimeout: const Duration(seconds: 5));
-    _scrape?.close();
-    _scrape = null;
     _backend?.close();
     _backend = null;
     final EmbeddedTorrentHost? embedded = _embedded;

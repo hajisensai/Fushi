@@ -67,9 +67,19 @@ class AdminContext {
     ).scanAll(config.libraries).then((ScanSummary s) {
       lastScan = s;
       lastScanAt = DateTime.now();
+      _scrapeAfterScan();
       return s;
     }).whenComplete(() => _scanInFlight = null);
     _scanInFlight = f;
     return f;
+  }
+
+  /// 扫描完补刮一轮（后台，不占 [scanning]；进度看 status 的 `scrape`）。只刮从未
+  /// 识别过的作品，`scan_scrape: false` 时补刮器自己短路；已有批次在跑就放弃本轮。
+  void _scrapeAfterScan() {
+    if (!config.libraries.any((LibraryRootConfig l) => l.kind == 'video')) return;
+    final Future<void>? sweep = host.videoScrape?.sweep();
+    if (sweep == null) return;
+    unawaited(sweep.catchError((Object e, StackTrace st) => log.log('AdminContext.scrape', e, st)));
   }
 }

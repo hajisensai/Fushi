@@ -80,7 +80,7 @@ import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';

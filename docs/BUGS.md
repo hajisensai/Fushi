@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2588 条。点号进各自文件。
+> 共 2589 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2812](bugs/BUG-2812-headless-scan-never-scraped.md) | ✅ | ✅ | 无头服务端扫描入库的视频从不刮削 |
 | [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |
 | [BUG-2808](bugs/BUG-2808-reader-focus-mode-exit.md) | ✅ | ✅ | 专注模式下触屏拿不到退出通道 |
 | [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |

@@ -93,7 +93,10 @@ admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
 admin_token: "..."            # init 生成；忘了用 `fushi_server admin reset-token`
 subtitle_language: "ja"       # 扫描视频时 sidecar 字幕匹配语言
-metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海报语言由它派生；偏好表显式设过 video_metadata_locale 时以偏好为准
+metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海报语言由它派生；偏好表显式设过 video_metadata_locale 时以偏好为准；改了重启生效
+scan_scrape: true             # 扫描后自动补刮「从未识别过」的视频作品（见下文「视频刮削」）
+# tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
+scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -132,8 +135,8 @@ WebUI「设置」页改的就是这个文件；端口 / TLS / 绑定 / torrent /
 
 ```
 fushi_server init                      生成配置
-fushi_server serve [--scan]            起服务（Ctrl-C / SIGTERM 优雅停）
-fushi_server scan                      扫描 libraries[] 入库（不起服务）
+fushi_server serve [--scan] [--[no-]prune]   起服务（Ctrl-C / SIGTERM 优雅停）；--no-prune 对本进程所有扫描生效
+fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，随后同步补刮（不起服务）
 fushi_server status                    打印库/配对概况
 fushi_server pair ls | revoke <peerId> 已配对设备
 fushi_server admin reset-token         重生成 admin_token
@@ -180,6 +183,26 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 
 `reason` 在未生效时说明原因：`unavailable`（没原生库）/ `disabled` / `host_stopped` / `loopback_bind`（`bind` 只监听本机）/ `start_failed`（看 `lastError` 与日志）。
 
+### 视频刮削
+
+`video` 库根与 app 的本地视频来源同构：每个根登记一行来源，扫描时分集按作品归成合集、吃进
+NFO sidecar，随后自动补刮一轮（`scan_scrape`，默认开）。补刮与 app「视频 → 媒体库 → 自动补刮」
+是同一个组件：只刮**从未认领过规范身份**的作品，按作品落盘记账（`<data>/support/video_scrape_sweep_ledger.json`），
+查无 / 歧义的作品 7 天内不再自动重试，所以重复扫描不会把整库重刮一遍。
+
+- 资料源与 app 相同（默认主源 AniDB，TMDB 补充 / 兜底）。**TMDB 需要自己配 `tmdb_api_key`**
+  （服务端没有 app 的内置 key）；AniDB 读偏好表里的账号 / 客户端，缺了就判不可用，不冒用别人的客户端标识。
+- 查无 / 歧义的作品留在待确认队列：在客户端经互联「手动指定身份 / 重新刮削」（以前服务端没接这条，恒返回空）。
+- 下载管线导入后的刮削、客户端远程重刮与扫描补刮共用同一个协调器与同一把互斥门。
+- WebUI 状态页「刮削」一行显示进度与上次结果；`GET status` 的 `scrape` 字段同源。
+
+### 扫描对账（`scan_prune`）
+
+文件被删掉的视频条目会在扫描后回收（行 + 刮削资料 + 封面；不删任何用户文件、不写跨设备删除墓碑）。
+护栏：库根不存在、库根下一个视频都没有（空挂载点）、失效占比超过一半且多于 10 条时拒绝；失效文件所在
+目录只剩空壳或读不出来（子挂载点掉线）时这些行保留。拦下的原因在状态页可见。库根列表的「移除并清理」
+是显式操作，越过这些推测性护栏；清理没做成（刮削资料清理在跑等）时返回 409、库根保留。
+
 ### 上传协议
 
 `PUT /api/admin/upload?library=<id>&path=Season1/ep01.mkv`，body 是一段字节，头
@@ -219,6 +242,8 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
 - 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，目前经互联「配置文件」同步或直接改库）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
+- 不托管本地音频库（查词发音源，属查词域）：能力位 `liveLibrary.audio` 仍报 true、列表恒空，客户端「上传本地音频到 host」会在传完后报错——客户端目前不读这一位，待补门控。
+- 书 / 漫画根不做扫描对账：它们的正文拷进数据目录、行里不记源文件路径，判不出源文件是否被删。
 
 ## 开发
 
