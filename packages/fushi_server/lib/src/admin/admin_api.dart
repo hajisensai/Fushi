@@ -13,6 +13,9 @@ import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
+import 'package:fushi_engine/media/source_library/book_library_prune.dart';
+import 'package:fushi_engine/media/source_library/library_prune_guard.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
@@ -299,15 +302,17 @@ class AdminApi {
 
   /// 移除一个库根。
   ///
-  /// [purge] 为真时，**在移除配置前**对该根跑一次对账（`pruneMissingVideoRows`），
-  /// 回收「行还在、文件已消失」的条目及其刮削资料。不删任何文件。
+  /// [purge] 为真时，**在移除配置前**对该根跑一次对账（视频根 `pruneMissingVideoRows`、
+  /// 书 / 漫画根 `pruneMissingBookRows`），回收「行还在、源文件已消失」的条目及其刮削
+  /// 资料 / 正文副本。不删任何用户文件。
   ///
   /// 这是显式的用户意图，所以用 `force`：扫描时的推测性护栏（库根不存在 / 空挂载点 /
   /// 失效占比）在这里不拦——最常见的用法恰恰是「整个目录已经删了，把它连库一起清掉」。
   /// 判据仍只有「文件确实不存在」。对账没做成（租约被占 / 删除出错）就**不移除**
   /// 配置、回 409：移除后这些行不在任何库根下，再也没有机会被清理。
   ///
-  /// 只有 `video` 根支持：书 / 漫画根的行不记源文件路径，判不出失效。
+  /// 书 / 漫画根只认本服务端扫描时记进来源索引的书（`BookSourceIndex`）；该根从没被
+  /// 扫描过（没有来源行）就没有可清理的条目。
   Future<shelf.Response> _removeLibrary(String id, {bool purge = false}) async {
     final LibraryRootConfig? library = ctx.config.libraries
         .cast<LibraryRootConfig?>()
@@ -315,16 +320,7 @@ class AdminApi {
     if (library == null) return _err(404, 'unknown library $id');
     Map<String, Object?>? purgeResult;
     if (purge) {
-      if (library.kind != 'video') {
-        throw FormatException(
-          'library "$id" is kind=${library.kind}; only video roots can be purged',
-        );
-      }
-      final VideoPruneReport report = await pruneMissingVideoRows(
-        repository: VideoBookRepository(ctx.db),
-        root: Directory(library.path),
-        force: true,
-      );
+      final LibraryPruneReport report = await _purgeRoot(library);
       purgeResult = <String, Object?>{
         'considered': report.considered,
         'missing': report.missing,
@@ -349,6 +345,32 @@ class AdminApi {
       ..._librariesJson(),
       if (purgeResult != null) 'purge': purgeResult,
     });
+  }
+
+  /// 按库根 kind 分派的 force 对账（见 [_removeLibrary]）。
+  Future<LibraryPruneReport> _purgeRoot(LibraryRootConfig library) async {
+    final SourceLibraryKind? kind = SourceLibraryKind.tryParse(library.kind);
+    switch (kind) {
+      case SourceLibraryKind.video:
+        return pruneMissingVideoRows(
+          repository: VideoBookRepository(ctx.db),
+          root: Directory(library.path),
+          force: true,
+        );
+      case SourceLibraryKind.book:
+      case SourceLibraryKind.manga:
+        final SourceLibraryRow? source = await LibraryScanner.findLocalSource(ctx.db, library.path, kind!);
+        if (source == null) return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
+        return pruneMissingBookRows(
+          db: ctx.db,
+          sourceId: source.id,
+          root: Directory(library.path),
+          kind: kind,
+          force: true,
+        );
+      case null:
+        throw FormatException('library "${library.id}" has unsupported kind=${library.kind}');
+    }
   }
 
   shelf.Response _scan(Map<String, dynamic> body) {

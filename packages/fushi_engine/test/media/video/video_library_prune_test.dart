@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/source_library/library_prune_guard.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:path/path.dart' as p;
@@ -150,7 +151,7 @@ void main() {
 
       File(dropPath).deleteSync(); // 用户手动删掉视频文件
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -168,7 +169,7 @@ void main() {
       await addVideo('/mnt/nfs-missing/a.mkv');
       await addVideo('/mnt/nfs-missing/b.mkv');
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: Directory('/mnt/nfs-missing'),
       );
@@ -195,7 +196,7 @@ void main() {
         await addVideo(p.join(root.path, 'v$i.mkv'));
       }
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -215,7 +216,7 @@ void main() {
       await addVideo(p.join(root.path, 'a.mkv'));
       await addVideo(p.join(root.path, 'b.mkv'));
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -244,7 +245,7 @@ void main() {
         p.join(root.path, 'season2', 's2e1.mkv'),
       );
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -275,14 +276,14 @@ void main() {
       }
 
       // 不给基线：20/40 = 0.5，恰好不越过阈值，旧行全删——这正是要堵的洞。
-      final VideoPruneReport diluted = await pruneMissingVideoRows(
+      final LibraryPruneReport diluted = await pruneMissingVideoRows(
         repository: repo,
         root: root,
         dryRun: true,
       );
       expect(diluted.skipped, isFalse);
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
         baselineBookUids: baseline,
@@ -304,7 +305,7 @@ void main() {
       final String uid = await addVideo(p.join(root.path, 'ep1.mkv'));
       await repo.updatePlaylistJson(uid, '["ep1.mkv","ep2.mkv"]');
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -326,7 +327,7 @@ void main() {
           VideoScrapeOperationGate.tryEnterMaintenance()!;
       addTearDown(maintenance.release);
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -345,7 +346,7 @@ void main() {
       await addVideo(p.join(root.path, 'b.mkv'));
       root.deleteSync(recursive: true);
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
         force: true,
@@ -364,7 +365,7 @@ void main() {
         await addVideo(p.join(root.path, 'v$i.mkv'));
       }
 
-      final VideoPruneReport dry = await pruneMissingVideoRows(
+      final LibraryPruneReport dry = await pruneMissingVideoRows(
         repository: repo,
         root: root,
         force: true,
@@ -374,7 +375,7 @@ void main() {
       expect(dry.deleted, 0);
       expect(await repo.listAll(), hasLength(20));
 
-      final VideoPruneReport forced = await pruneMissingVideoRows(
+      final LibraryPruneReport forced = await pruneMissingVideoRows(
         repository: repo,
         root: root,
         force: true,
@@ -396,11 +397,11 @@ void main() {
       await addVideo(path);
       File(path).deleteSync();
 
-      final VideoPruneReport first = await pruneMissingVideoRows(
+      final LibraryPruneReport first = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
-      final VideoPruneReport second = await pruneMissingVideoRows(
+      final LibraryPruneReport second = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
@@ -421,7 +422,7 @@ void main() {
       );
       await addVideo(outside);
 
-      final VideoPruneReport report = await pruneMissingVideoRows(
+      final LibraryPruneReport report = await pruneMissingVideoRows(
         repository: repo,
         root: root,
       );
