@@ -209,6 +209,89 @@ void main() {
       }
     }
 
+    // BUG-2805：TMDB 新建的动画条目（实测「BLEACH 千年血戦篇 -禍進譚-」）genre 为空，
+    // 旧判定把它当真人剧 → 资源搜索整个排除 Nyaa，页面只剩 apibay 一家。
+    test('untagged Japanese TMDB entries stay in the anime resource domain',
+        () async {
+      final List<Uri> nyaaRequests = <Uri>[];
+      final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
+        apiKey: 'test-key',
+        client: MockClient((http.Request request) async {
+          final bool tv = request.url.path.endsWith('/search/tv');
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, Object?>{
+                'page': 1,
+                'total_pages': 1,
+                'results': <Object?>[
+                  if (tv) ...<Object?>[
+                    <String, Object?>{
+                      'id': 1,
+                      'name': 'BLEACH 千年血戦篇 -禍進譚-',
+                      'original_language': 'ja',
+                      'genre_ids': <int>[],
+                    },
+                    <String, Object?>{
+                      'id': 2,
+                      'name': 'Untagged English Show',
+                      'original_language': 'en',
+                      'genre_ids': <int>[],
+                    },
+                    <String, Object?>{
+                      'id': 3,
+                      'name': 'その着せ替え人形は恋をする',
+                      'original_language': 'ja',
+                      'genre_ids': <int>[18, 35],
+                    },
+                  ],
+                ],
+              }),
+            ),
+            200,
+          );
+        }),
+      );
+      addTearDown(provider.close);
+      final ProviderBatchResult<VideoDiscoveryPage> page =
+          await provider.search(const VideoDiscoveryRequest(query: 'q'));
+      final Map<String, VideoDiscoveryItem> byId = <String, VideoDiscoveryItem>{
+        for (final VideoDiscoveryItem item in page.items.single.items)
+          item.reference.mediaId: item,
+      };
+      expect(
+        byId['1']!.reference.discoveryCategory,
+        VideoDiscoveryCategory.anime,
+      );
+      expect(byId['2']!.reference.discoveryCategory, VideoDiscoveryCategory.tv);
+      // genre 明确给了且没有 Animation = TMDB 认定的真人作品，语言不改判。
+      expect(byId['3']!.reference.discoveryCategory, VideoDiscoveryCategory.tv);
+
+      final VideoResourceRegistry registry =
+          VideoResourceRegistry(<VideoResourceProvider>[
+        NyaaVideoResourceProvider(
+          closesClient: true,
+          client: NyaaClient(
+            minRequestInterval: Duration.zero,
+            client: MockClient((http.Request request) async {
+              nyaaRequests.add(request.url);
+              return http.Response.bytes(
+                utf8.encode(nyaaSearchHtml(const <NyaaHtmlRow>[])),
+                200,
+              );
+            }),
+          ),
+        ),
+      ]);
+      addTearDown(registry.close);
+      for (final String id in <String>['1', '2', '3']) {
+        await registry.search(
+          VideoResourceSearchRequest(media: byId[id]!.reference, query: 'q'),
+        );
+      }
+      expect(nyaaRequests, hasLength(1));
+      expect(nyaaRequests.single.queryParameters['c'], '1_0');
+    });
+
     test('interleaves movies and series in the all category', () async {
       final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
         apiKey: 'secret-key',
