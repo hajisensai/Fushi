@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Masquer les barres supérieure et inférieure",
   "reader_toolbars_show": "Afficher les barres supérieure et inférieure",
   "reader_toolbars_hide_subtitle": "La bulle flottante prend le relais : retour, réglages et un bouton pour réafficher les barres y restent",
-  "reader_toolbars_hide_ball_off": "La bulle flottante de l’app est désactivée, les barres restent donc visibles"
+  "reader_toolbars_hide_ball_off": "La bulle flottante de l’app est désactivée, les barres restent donc visibles",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

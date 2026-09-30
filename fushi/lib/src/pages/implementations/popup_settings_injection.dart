@@ -1028,6 +1028,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
+    window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};

@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "ซ่อนแถบบนและแถบล่าง",
   "reader_toolbars_show": "แสดงแถบบนและแถบล่าง",
   "reader_toolbars_hide_subtitle": "ลูกบอลลอยจะทำหน้าที่แทน: ย้อนกลับ การตั้งค่า และปุ่มเรียกแถบกลับมาจะอยู่บนลูกบอล",
-  "reader_toolbars_hide_ball_off": "ลูกบอลลอยในแอปปิดอยู่ แถบจึงยังแสดงอยู่"
+  "reader_toolbars_hide_ball_off": "ลูกบอลลอยในแอปปิดอยู่ แถบจึงยังแสดงอยู่",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

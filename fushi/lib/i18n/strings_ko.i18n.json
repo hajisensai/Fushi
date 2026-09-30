@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "상단 바와 하단 바 숨기기",
   "reader_toolbars_show": "상단 바와 하단 바 표시",
   "reader_toolbars_hide_subtitle": "플로팅 볼이 대신합니다: 뒤로, 설정, 바를 다시 표시하는 버튼이 볼에 고정됩니다",
-  "reader_toolbars_hide_ball_off": "앱 내 플로팅 볼이 꺼져 있어 바가 계속 표시됩니다"
+  "reader_toolbars_hide_ball_off": "앱 내 플로팅 볼이 꺼져 있어 바가 계속 표시됩니다",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

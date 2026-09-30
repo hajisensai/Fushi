@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Hide top and bottom bars",
   "reader_toolbars_show": "Show top and bottom bars",
   "reader_toolbars_hide_subtitle": "The floating ball takes over: back, settings and a button to bring the bars back stay on it",
-  "reader_toolbars_hide_ball_off": "The in-app floating ball is off, so the bars stay visible"
+  "reader_toolbars_hide_ball_off": "The in-app floating ball is off, so the bars stay visible",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Boven- en onderbalk verbergen",
   "reader_toolbars_show": "Boven- en onderbalk tonen",
   "reader_toolbars_hide_subtitle": "De zwevende bal neemt het over: terug, instellingen en een knop om de balken terug te halen blijven erop",
-  "reader_toolbars_hide_ball_off": "De zwevende bal in de app staat uit, dus de balken blijven zichtbaar"
+  "reader_toolbars_hide_ball_off": "De zwevende bal in de app staat uit, dus de balken blijven zichtbaar",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

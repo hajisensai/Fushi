@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Obere und untere Leiste ausblenden",
   "reader_toolbars_show": "Obere und untere Leiste einblenden",
   "reader_toolbars_hide_subtitle": "Der schwebende Ball übernimmt: Zurück, Einstellungen und eine Taste zum Wiedereinblenden bleiben darauf",
-  "reader_toolbars_hide_ball_off": "Der schwebende Ball in der App ist aus, daher bleiben die Leisten sichtbar"
+  "reader_toolbars_hide_ball_off": "Der schwebende Ball in der App ist aus, daher bleiben die Leisten sichtbar",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

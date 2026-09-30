@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "上部バーと下部バーを隠す",
   "reader_toolbars_show": "上部バーと下部バーを表示",
   "reader_toolbars_hide_subtitle": "フローティングボールが代わりを担います：戻る・設定・バーを戻すボタンがボール上に固定されます",
-  "reader_toolbars_hide_ball_off": "アプリ内フローティングボールがオフのため、バーは表示されたままです"
+  "reader_toolbars_hide_ball_off": "アプリ内フローティングボールがオフのため、バーは表示されたままです",
+  "dictionary_pitch_source_count": "$count 冊の辞書"
 }

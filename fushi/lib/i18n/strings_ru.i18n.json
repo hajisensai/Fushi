@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Скрыть верхнюю и нижнюю панели",
   "reader_toolbars_show": "Показать верхнюю и нижнюю панели",
   "reader_toolbars_hide_subtitle": "Плавающий шар берёт управление на себя: «Назад», настройки и кнопка возврата панелей закреплены на нём",
-  "reader_toolbars_hide_ball_off": "Плавающий шар в приложении выключен, поэтому панели остаются видимыми"
+  "reader_toolbars_hide_ball_off": "Плавающий шар в приложении выключен, поэтому панели остаются видимыми",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Sembunyikan bilah atas dan bawah",
   "reader_toolbars_show": "Tampilkan bilah atas dan bawah",
   "reader_toolbars_hide_subtitle": "Bola mengambang mengambil alih: kembali, pengaturan, dan tombol untuk memunculkan bilah tetap ada di sana",
-  "reader_toolbars_hide_ball_off": "Bola mengambang dalam aplikasi nonaktif, jadi bilah tetap tampil"
+  "reader_toolbars_hide_ball_off": "Bola mengambang dalam aplikasi nonaktif, jadi bilah tetap tampil",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "إخفاء الشريطين العلوي والسفلي",
   "reader_toolbars_show": "إظهار الشريطين العلوي والسفلي",
   "reader_toolbars_hide_subtitle": "تتولى الكرة العائمة المهمة: الرجوع والإعدادات وزر إعادة الشريطين تبقى عليها",
-  "reader_toolbars_hide_ball_off": "الكرة العائمة داخل التطبيق متوقفة، لذا يبقى الشريطان ظاهرين"
+  "reader_toolbars_hide_ball_off": "الكرة العائمة داخل التطبيق متوقفة، لذا يبقى الشريطان ظاهرين",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

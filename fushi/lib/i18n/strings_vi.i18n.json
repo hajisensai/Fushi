@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Ẩn thanh trên và thanh dưới",
   "reader_toolbars_show": "Hiện thanh trên và thanh dưới",
   "reader_toolbars_hide_subtitle": "Bóng nổi đảm nhiệm thay: quay lại, cài đặt và nút hiện lại các thanh luôn nằm trên bóng",
-  "reader_toolbars_hide_ball_off": "Bóng nổi trong ứng dụng đang tắt nên các thanh vẫn hiển thị"
+  "reader_toolbars_hide_ball_off": "Bóng nổi trong ứng dụng đang tắt nên các thanh vẫn hiển thị",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

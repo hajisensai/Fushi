@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Nascondi barre superiore e inferiore",
   "reader_toolbars_show": "Mostra barre superiore e inferiore",
   "reader_toolbars_hide_subtitle": "La sfera fluttuante subentra: indietro, impostazioni e un pulsante per riportare le barre restano su di essa",
-  "reader_toolbars_hide_ball_off": "La sfera fluttuante nell’app è disattivata, quindi le barre restano visibili"
+  "reader_toolbars_hide_ball_off": "La sfera fluttuante nell’app è disattivata, quindi le barre restano visibili",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

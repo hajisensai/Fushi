@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "Ocultar barras superior e inferior",
   "reader_toolbars_show": "Mostrar barras superior e inferior",
   "reader_toolbars_hide_subtitle": "La bola flotante toma el control: atrás, ajustes y un botón para recuperar las barras permanecen en ella",
-  "reader_toolbars_hide_ball_off": "La bola flotante de la app está desactivada, así que las barras siguen visibles"
+  "reader_toolbars_hide_ball_off": "La bola flotante de la app está desactivada, así que las barras siguen visibles",
+  "dictionary_pitch_source_count": "$count dictionaries"
 }

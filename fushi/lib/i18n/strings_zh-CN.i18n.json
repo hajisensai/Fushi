@@ -6163,5 +6163,6 @@
   "reader_toolbars_hide": "隐藏顶栏和底栏",
   "reader_toolbars_show": "显示顶栏和底栏",
   "reader_toolbars_hide_subtitle": "由悬浮球接管：返回、设置和「显示顶栏和底栏」固定在球上",
-  "reader_toolbars_hide_ball_off": "应用内悬浮球已关闭，顶栏和底栏照常显示"
+  "reader_toolbars_hide_ball_off": "应用内悬浮球已关闭，顶栏和底栏照常显示",
+  "dictionary_pitch_source_count": "$count 本辞典"
 }
