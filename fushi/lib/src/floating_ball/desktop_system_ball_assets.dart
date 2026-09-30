@@ -62,15 +62,24 @@ Future<Uint8List?> renderFloatingBallIconPng(
   }
 }
 
+/// 画单颗图标的函数形状（[renderFloatingBallIconPng] 的签名）。
+typedef FloatingBallIconRenderer =
+    Future<Uint8List?> Function(IconData icon, Color color);
+
 /// 按钮 id → 图标 PNG；某颗画失败就不带它（原生侧退化成只画底色圆）。
+/// [render] 只给测试替换单颗的画法，用来钉住逐颗容错。
 Future<Map<String, Uint8List>> renderFloatingBallIconPngs(
   Map<String, IconData> icons,
-  Color color,
-) async {
+  Color color, {
+  @visibleForTesting FloatingBallIconRenderer? render,
+}) async {
+  final FloatingBallIconRenderer draw =
+      render ??
+      (IconData icon, Color color) => renderFloatingBallIconPng(icon, color);
   final Map<String, Uint8List> out = <String, Uint8List>{};
   for (final MapEntry<String, IconData> e in icons.entries) {
     try {
-      final Uint8List? png = await renderFloatingBallIconPng(e.value, color);
+      final Uint8List? png = await draw(e.value, color);
       if (png != null) out[e.key] = png;
     } catch (error, stack) {
       // 一颗画不出来不拖累其余按钮与起球；记下来，别静默。

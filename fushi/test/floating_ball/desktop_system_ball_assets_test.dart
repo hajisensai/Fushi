@@ -60,6 +60,35 @@ void main() {
     expect(pngs.keys, containsAll(<String>['open_app', 'close', 'lookup']));
   });
 
+  test('一颗图标画不出来：只少这一颗并记日志，其余照常；画出 null 的静默跳过', () async {
+    final int before = ErrorLogService.instance.entries.length;
+    final Uint8List png = Uint8List.fromList(<int>[1, 2, 3]);
+    final List<IconData> drawn = <IconData>[];
+    final Map<String, Uint8List> pngs = await renderFloatingBallIconPngs(
+      <String, IconData>{
+        'lookup': Icons.search,
+        'clipboard': Icons.content_paste_search,
+        'open_app': Icons.open_in_new,
+        'close': Icons.close,
+      },
+      Colors.black,
+      render: (IconData icon, Color color) async {
+        drawn.add(icon);
+        if (icon == Icons.content_paste_search) throw StateError('boom');
+        if (icon == Icons.open_in_new) return null;
+        return png;
+      },
+    );
+    expect(drawn, hasLength(4), reason: '失败的那颗之后的图标照样画');
+    expect(pngs, <String, Uint8List>{'lookup': png, 'close': png});
+    final List<ErrorLogEntry> added = ErrorLogService.instance.entries
+        .skip(before)
+        .toList();
+    expect(added.map((ErrorLogEntry e) => e.source), <String>[
+      'floating_ball.icon_png.clipboard',
+    ]);
+  });
+
   test('球面资源缺失：返回 null 并记日志（原生退化成纯色球）', () async {
     final int before = ErrorLogService.instance.entries.length;
     final Uint8List? bytes = await loadFloatingBallImage(_ThrowingBundle());
