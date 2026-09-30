@@ -126,9 +126,11 @@ Future<Set<String>> enumerateLocalVideoPaths(
     followLinks: false,
   )) {
     if (e is! File) continue;
-    final String ext = p.extension(e.path).toLowerCase();
-    if (!kVideoExtensions.contains(ext) &&
-        !kVideoExtensions.contains(ext.replaceFirst('.', ''))) {
+    // 与服务端视频根扫描收录同一张表（视频 + 纯音频）：少一个格式，该格式的
+    // 在库行就会被当成「磁盘上已不存在」修剪掉。
+    if (!kVideoLibraryMediaExtensions.contains(
+      p.extension(e.path).toLowerCase(),
+    )) {
       continue;
     }
     out.add(normalizeVideoPath(e.path));

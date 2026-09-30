@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
@@ -207,5 +207,36 @@ void main() {
       reason:
           '音频扩展名漂移：更新 kDragAudioExtensions 与 AudiobookStorage.audioExtensions 保持一致',
     );
+  });
+
+  group('audio in the video library (media_extensions.dart)', () {
+    test('kAudioExtensions = AudiobookStorage.audioExtensions minus .mp4', () {
+      // media_extensions.dart 零依赖、不能引用 fushi_audio，只能靠守卫钉同步。
+      // `.mp4` 首先是视频容器，归 kVideoExtensions。
+      expect(
+        kAudioExtensions,
+        equals(AudiobookStorage.audioExtensions.difference(<String>{'.mp4'})),
+      );
+    });
+
+    test('audio and video sets are disjoint; library set is their union', () {
+      expect(kAudioExtensions.intersection(kVideoExtensions), isEmpty);
+      expect(kAudioExtensions.intersection(kPlaylistManifestExtensions),
+          isEmpty);
+      expect(kVideoLibraryMediaExtensions,
+          equals(<String>{...kVideoExtensions, ...kAudioExtensions}));
+    });
+
+    test('isAudioOnlyMediaPath', () {
+      expect(isAudioOnlyMediaPath(r'D:\音乐\K-ON\01 - One more tea？.flac'),
+          isTrue);
+      expect(isAudioOnlyMediaPath('/music/a.MP3'), isTrue);
+      expect(isAudioOnlyMediaPath('https://h/x/a.m4a?sig=1'), isTrue);
+      expect(isAudioOnlyMediaPath('/v/ep01.mp4'), isFalse);
+      expect(isAudioOnlyMediaPath('/v/ep01.mkv'), isFalse);
+      expect(isAudioOnlyMediaPath(r'D:\a.flac\ep01.mkv'), isFalse);
+      expect(isAudioOnlyMediaPath('/v/.flac'), isFalse);
+      expect(isAudioOnlyMediaPath(''), isFalse);
+    });
   });
 }

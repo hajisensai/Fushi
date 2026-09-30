@@ -179,14 +179,42 @@ void main() {
         DropIntent.needCardTarget,
       );
     });
-    test('audio-only on video surface -> unsupportedSurface', () {
+    // 纯音频 = 无画面的视频：视频页上拖专辑曲目即新建视频条目（此前回「不支持」）。
+    test('audio-only on video surface -> importNewVideo (on or off a card)', () {
+      for (final bool cardHit in <bool>[true, false]) {
+        expect(
+          decideDropIntent(
+              surface: DropSurface.video,
+              files: _files(audios: ['/a.flac']),
+              cardHit: cardHit),
+          DropIntent.importNewVideo,
+          reason: 'cardHit=$cardHit',
+        );
+      }
+    });
+    test('audio + subtitle on video surface -> importNewVideo', () {
       expect(
         decideDropIntent(
             surface: DropSurface.video,
-            files: _files(audios: ['/a.mp3']),
+            files: _files(audios: ['/a.mp3'], subtitles: ['/a.srt']),
             cardHit: true),
-        DropIntent.unsupportedSurface,
+        DropIntent.importNewVideo,
       );
+    });
+    test('audio-only on books surface still means audiobook material', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(audios: ['/a.flac']),
+            cardHit: false),
+        DropIntent.needCardTarget,
+      );
+    });
+    test('videoLibraryMedia = videos + non-video audio, mp4 counted once', () {
+      final DroppedFiles files = classifyDroppedFiles(
+          <String>['/x/ep.mp4', '/x/01.flac', '/x/a.srt', '/x/02.MP3']);
+      expect(files.videoLibraryMedia,
+          <String>['/x/ep.mp4', '/x/01.flac', '/x/02.MP3']);
     });
     test('m3u8 playlist -> importNewPlaylist', () {
       expect(

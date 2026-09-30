@@ -195,6 +195,16 @@ class DroppedFiles {
 
   final List<String> unknown;
 
+  /// 视频库能收录的媒体：全部视频 + 不是视频的纯音频（`.mp4` 两类都在，只算一次）。
+  ///
+  /// 纯音频在视频页按「无画面的视频」入库（专辑曲目等）；书架表面仍把音频当有声书
+  /// 素材（挂到书卡），不走这里。
+  List<String> get videoLibraryMedia => <String>[
+    ...videos,
+    for (final String audio in audios)
+      if (!videos.contains(audio)) audio,
+  ];
+
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
       books.isNotEmpty ||

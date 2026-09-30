@@ -56,8 +56,8 @@ enum DropIntent {
 ///   列表/视频文件→**自动切到视频导入**（带上拖入文件，不再只提示让用户手动切，TODO-558）；
 ///   否则有字幕/音频（必非命中卡）→提示需要目标卡；其余忽略。
 /// - video 表面：有 m3u8 播放列表→新建播放列表（比单视频更具体，优先）；否则有视频文件→
-///   新建视频；否则有字幕→命中卡则附加、否则提示；其余忽略（视频卡不接受音频，故 video
-///   表面下只看 subtitles）。
+///   新建视频（纯音频按无画面的视频同样新建）；否则有字幕→命中卡则附加、否则提示；
+///   其余忽略。
 DropIntent decideDropIntent({
   required DropSurface surface,
   required DroppedFiles files,
@@ -120,7 +120,8 @@ DropIntent decideDropIntent({
       if (files.torrents.isNotEmpty) return DropIntent.importTorrent;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
-      if (files.videos.isNotEmpty) return DropIntent.importNewVideo;
+      // 纯音频 = 无画面的视频，同样新建视频条目（[DroppedFiles.videoLibraryMedia]）。
+      if (files.videoLibraryMedia.isNotEmpty) return DropIntent.importNewVideo;
       if (files.subtitles.isNotEmpty) {
         return cardHit
             ? DropIntent.attachToVideoCard
