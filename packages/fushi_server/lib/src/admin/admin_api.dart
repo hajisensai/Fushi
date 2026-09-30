@@ -27,6 +27,7 @@ import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/native_libs.dart';
+import 'package:fushi_server/src/profile_hub.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -172,6 +173,12 @@ class AdminApi {
         return _json(const <String, Object?>{'ok': true});
       case ('POST', '/api/admin/anki/retry'):
         return _json(<String, Object?>{'retried': await _ankiLanding().retryFailed()});
+      case ('GET', '/api/admin/profiles'):
+        return _profiles();
+      case ('POST', _) when path.startsWith('/api/admin/profiles/') && path.endsWith('/share'):
+        return _profileAction(_segment(path, '/api/admin/profiles/', '/share'), ctx.host.profiles.pin);
+      case ('DELETE', _) when path.startsWith('/api/admin/profiles/'):
+        return _profileAction(Uri.decodeComponent(path.substring('/api/admin/profiles/'.length)), ctx.host.profiles.delete);
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
       case ('GET', '/api/admin/upload'):
@@ -501,6 +508,26 @@ class AdminApi {
     return _json(const <String, Object?>{'started': true, 'pulling': true});
   }
 
+  // ── 互联配置文件寄存 ─────────────────────────────────────────────────
+
+  /// 寄存的配置方案 + 开关状态。`reachable` = 对端此刻能不能用这条端点（开关开着
+  /// 且 host 跑在 TLS 上；端点在明文下一律 403）。
+  Future<shelf.Response> _profiles() async => _json(<String, Object?>{
+        'enabled': ctx.config.profileTransfer,
+        'tls': ctx.config.tls,
+        'reachable': ctx.config.profileTransfer && ctx.config.tls,
+        'profiles': <Map<String, Object?>>[
+          for (final ServerProfileSummary s in await ctx.host.profiles.list()) s.toJson(),
+        ],
+      });
+
+  Future<shelf.Response> _profileAction(String rawId, Future<bool> Function(int id) action) async {
+    final int? id = int.tryParse(rawId);
+    if (id == null) throw FormatException('invalid profile id "$rawId"');
+    if (!await action(id)) return _err(404, 'profile $id not found');
+    return _profiles();
+  }
+
   // ── 设置 ─────────────────────────────────────────────────────────────
 
   shelf.Response _settings() => _json(<String, Object?>{
@@ -513,6 +540,7 @@ class AdminApi {
         'metadataLocale': ctx.config.metadataLocale,
         'scanPrune': ctx.config.scanPrune,
         'scanScrape': ctx.config.scanScrape,
+        'profileTransfer': ctx.config.profileTransfer,
         // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
         'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
         'ffmpeg': ctx.config.ffmpegPath,
@@ -555,7 +583,7 @@ class AdminApi {
     final Object? p2pRaw = body['p2p'];
     if (p2pRaw != null && p2pRaw is! bool) throw const FormatException('p2p must be a boolean');
     final bool? p2p = p2pRaw as bool?;
-    for (final String key in const <String>['scanPrune', 'scanScrape']) {
+    for (final String key in const <String>['scanPrune', 'scanScrape', 'profileTransfer']) {
       if (body[key] != null && body[key] is! bool) throw FormatException('$key must be a boolean');
     }
     // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
@@ -589,6 +617,7 @@ class AdminApi {
       p2pRelays: p2pRelays,
       scanPrune: body['scanPrune'] as bool?,
       scanScrape: body['scanScrape'] as bool?,
+      profileTransfer: body['profileTransfer'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty ? null : body['tmdbApiKey'].toString().trim(),
     );

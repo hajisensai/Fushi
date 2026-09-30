@@ -4,6 +4,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
 
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/profile/profile_document.dart'
+    show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
@@ -15,14 +17,14 @@ class ProfileKeys {
   ProfileKeys._();
 
   static const String categoryAnki = 'anki';
-  static const String categoryPref = 'pref';
+  static const String categoryPref = kProfileSettingCategoryPref;
 
   /// v63 已从 live preferences 与 Profile 副本中删除的旧全局超分键。
   ///
   /// 每游戏真值是 `galgames.upscaling_mode`；此键只保留为输入拒绝标识，防止
   /// 旧快照或旧分享 JSON 在升级后把废弃数据重新写回。
   static const String obsoleteGalgameUpscalingModePrefKey =
-      'galgame_magpie_upscaling_mode';
+      kObsoleteGalgameUpscalingModePrefKey;
 
   /// TODO-1077: per-profile snapshot of the `dictionary_metadata` Drift table
   /// (enable list / order / formatKey / type / hidden+collapsed languages /

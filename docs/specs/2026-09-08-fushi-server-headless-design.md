@@ -230,10 +230,11 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 - **代下载只收视频**：`downloads.kinds` 只有 `video`（没有发现导入执行器）。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。
 - CLI 没有 `jobs` / `download` 子命令：由 admin API / WebUI 代替。
+- **互联「配置文件」（Profile）在服务端是寄存中转，不是配置的消费者**（2026-09-30 补）：此前服务端没接 `LocalLibraryHostService` 的三条 Profile 回调，端点恒 403。现在 `PUT` 寄存为 `<support>/interconnect_profiles/<id>.fushiprofile.json`、`GET` 交出 WebUI 指定（缺省最近收到）的那份，开关 `profile_transfer` 默认关、WebUI 可控。**刻意不落 `profiles` 表、不 apply**：服务端无阅读器 / 制卡可用这些设置，且 `profiles` 表非空会让 `resolveActiveProfileId`（统计分区键）从 0 漂到寄存的 Profile、`AggregateSyncService` 的 Profile 名↔id 映射也会变。解析 / 校验 / 准入判据 / 信封格式下沉到引擎 `profile/profile_document.dart`，与 app `ProfileRepository` 同一份。服务端的 Torznab 配置**不能**经这条通道设（出境时按凭据剔除），仍只能改库——README 旧说法已更正。
 
 第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
 
-- **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表，目前没有 WebUI 编辑面。
+- **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表，目前没有 WebUI 编辑面，也不能经互联「配置文件」设（见上条）。
 - **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器还在 app 侧、rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
 - **Linux 桌面版 Fushi 仍未随包内置引擎**：服务端那份静态 `.so` 可直接复用，但 runner CMake copy-if-present 未接（另起 job）。
 - **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。

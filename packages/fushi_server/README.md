@@ -11,6 +11,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库 |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（Nyaa / apibay / Knaben / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
+| 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
 | WebUI / admin API | `http(s)://<host>:38780/` | 状态、配对 PIN、库根管理、上传、任务、下载、模型、设置、日志 |
 
 设计文档：[`docs/specs/2026-09-08-fushi-server-headless-design.md`](../../docs/specs/2026-09-08-fushi-server-headless-design.md)。
@@ -97,6 +98,7 @@ metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海
 scan_scrape: true             # 扫描后自动补刮「从未识别过」的视频作品（见下文「视频刮削」）
 # tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
 scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
+profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
@@ -160,6 +162,7 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 | `GET|POST subscriptions` / `POST subscriptions/check` / `POST subscriptions/<id>/enable|check` / `DELETE subscriptions/<id>` | 内容订阅（WebUI 只按搜索词建；客户端发现页建的带完整作品身份） |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
 | `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
+| `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
 | `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
@@ -203,6 +206,22 @@ NFO sidecar，随后自动补刮一轮（`scan_scrape`，默认开）。补刮�
 目录只剩空壳或读不出来（子挂载点掉线）时这些行保留。拦下的原因在状态页可见。库根列表的「移除并清理」
 是显式操作，越过这些推测性护栏；清理没做成（刮削资料清理在跑等）时返回 409、库根保留。
 
+### 配置文件寄存（`profile_transfer`）
+
+互联「配置文件」端点 `/api/interconnect/profile` 与 app 当 host 时同一条（TLS + 已配对 token +
+host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTransfer` 仍报 true 好让客户端分清
+「关着」与「不支持」）。服务端的语义是**寄存中转**，不是配置的消费者：
+
+- `PUT`：对端推来的配置方案按 app 同一份解析 / 校验 / 准入判据（引擎 `profile/profile_document.dart`）
+  校验后寄存为 `<data>/support/interconnect_profiles/<id>.fushiprofile.json`（可直接在 app「配置管理」
+  导入）；重名加 ` (2)` 后缀；坏载荷 400、零落盘。
+- `GET`：交出 WebUI 指定「分发中」的那一份，没指定就是最近收到的；一份都没有回 409。
+- **不进 `profiles` 表、不应用到服务端**：服务端没有阅读器 / 制卡 / 快捷键可用这些设置；而且
+  `profiles` 表非空会让统计分区键从 0 漂到寄存的 Profile、影响互联统计。
+- 不从服务端自己的偏好生成配置，所以这条通道带不出服务端任何凭据；寄存物的凭据已由发送端剔除。
+- 默认关：没开关的入站写就是隐形写入通道（与 app「允许已配对设备读写本机配置」同一默认）。
+  WebUI「配对」页的「配置文件寄存」卡片可一键开关、指定分发、删除。
+
 ### 上传协议
 
 `PUT /api/admin/upload?library=<id>&path=Season1/ep01.mkv`，body 是一段字节，头
@@ -240,7 +259,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 ## 服务端**不**做什么
 
 - 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
-- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，目前经互联「配置文件」同步或直接改库）。
+- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，目前只能直接改库：Torznab 配置里有 API key，互联「配置文件」出境时按凭据剔除；service-config 是 host→client 单向；而且服务端寄存的配置文件本来就不应用到自己身上）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
 - 不托管本地音频库（查词发音源，属查词域）：能力位 `liveLibrary.audio` 仍报 true、列表恒空，客户端「上传本地音频到 host」会在传完后报错——客户端目前不读这一位，待补门控。
 - 书 / 漫画根不做扫描对账：它们的正文拷进数据目录、行里不记源文件路径，判不出源文件是否被删。
