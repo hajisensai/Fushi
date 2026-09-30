@@ -46,7 +46,7 @@
 | [BUG-2793](bugs/BUG-2793-system-floating-ball.md) | ✅ | ✅ | 应用外悬浮球吸边不正常、点击闪烁、旋转后消失、菜单与应用内不一致 |
 | [BUG-2792](bugs/BUG-2792-video-bottom-bar-overlap.md) | ✅ | ✅ | 开字幕列表后视频底栏按钮叠在一起 |
 | [BUG-2791](bugs/BUG-2791-leaderboard-shelf-500-and-series-finished.md) | ✅ | ✅ | 排行榜书架/分享本月 500；只看第 1 集整季被判读完 |
-| [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
+| [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | ✅ | ✅ | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
 | [BUG-2789](bugs/BUG-2789-screen-ocr-popup-anchor-crash.md) | ✅ | ✅ | 截屏识字点字后只有一层灰、查词卡画不出来 |
 | [BUG-2788](bugs/BUG-2788-gal-touch-card-steals-foreground.md) | ✅ | ✅ | Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台） |
 | [BUG-2787](bugs/BUG-2787-ios-manga-ocr-tap-blank-popup.md) | ✅ | ✅ | iOS 漫画 OCR 后点字只弹出空白框 |
