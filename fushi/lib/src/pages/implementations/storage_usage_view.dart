@@ -19,8 +19,9 @@ import 'package:fushi/utils.dart';
 /// 2. 随包组件——安装目录内随包携带的大件，**只展示**：更新 = 安装器整体重写
 ///    安装目录，删掉的必然回来，做删除按钮是假动作。
 ///
-/// 漫画 OCR 模型的下载/删除**不在这里**：入口在漫画 OCR 设置区
-/// （`manga_ocr_settings_section.dart`），存储页只如实显示它占多少。
+/// 漫画 OCR 模型的逐模型下载/删除**不在本总览里**：入口是「存储 › 模型与组件 ›
+/// 本机 OCR 模型」（`manga_ocr_models_storage_section.dart`，走
+/// `MangaOcrService.deleteModels` 原语），本总览只如实显示它占多少。
 ///
 /// 删除一律复用各域既有路径（见 [StorageUsageService] 头注释），本文件零裸
 /// `Directory.delete`。所有依赖经构造参数注入（服务/取数/删除回调），

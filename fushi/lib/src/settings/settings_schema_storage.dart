@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
+import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
@@ -42,7 +44,7 @@ SettingsDestination buildStorageDestination() {
       SettingsSection(
         id: 'storage.section.models_components',
         title: t.storage_models_components,
-        visible: (_) => isAsrSupported,
+        visible: (_) => isAsrSupported || _isMangaOcrLocalSupported,
         items: <SettingsItem>[
           SettingsNavigationItem(
             // Preserve the existing search anchor while changing its owner.
@@ -50,7 +52,16 @@ SettingsDestination buildStorageDestination() {
             title: t.asr_models_section,
             subtitle: t.asr_models_section_summary,
             icon: Icons.record_voice_over_outlined,
+            visible: (_) => isAsrSupported,
             child: _buildAsrModelsDestination,
+          ),
+          SettingsNavigationItem(
+            id: 'storage.ocr_models',
+            title: t.manga_ocr_local_model,
+            subtitle: t.storage_ocr_models_hint,
+            icon: Icons.document_scanner_outlined,
+            visible: (_) => _isMangaOcrLocalSupported,
+            child: _buildMangaOcrModelsDestination,
           ),
         ],
       ),
@@ -223,6 +234,24 @@ SettingsDestination _buildAsrModelsDestination() {
     sections: const <SettingsSection>[],
     body: (SettingsContext _) => AsrModelsSettingsSection(
       service: createAsrTranscriptionService(),
+    ),
+  );
+}
+
+/// 本机能不能跑本地 ONNX OCR（ORT native 可用性，BUG-1780）。
+bool get _isMangaOcrLocalSupported =>
+    createMangaOcrService().isSupportedPlatform;
+
+/// 每个本机 OCR 模型的下载 / 删除（漫画 OCR 设置里只管「用哪个」）。
+SettingsDestination _buildMangaOcrModelsDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.storage,
+    visible: (_) => _isMangaOcrLocalSupported,
+    title: t.manga_ocr_local_model,
+    icon: Icons.document_scanner_outlined,
+    sections: const <SettingsSection>[],
+    body: (SettingsContext _) => MangaOcrModelsStorageSection(
+      serviceFor: (model) => createMangaOcrService(localModel: model),
     ),
   );
 }
