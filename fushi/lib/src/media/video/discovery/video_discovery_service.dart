@@ -87,7 +87,10 @@ class VideoDiscoveryService {
               ),
         if (discoveryAvailable) AniListVideoDiscoveryProvider(),
       ],
-      metadataProviders: <VideoMetadataProvider>[...catalog.providers, anilist],
+      metadataProviders: <VideoMetadataProvider>[
+        ...catalog.providers,
+        anilist,
+      ],
       // AniList 也是搜索源：它只属于发现域（不进刮削 registry），但单靠 MAL 撑
       // 番剧搜索时，Jikan 一挂（它常年间歇性 504）且 TMDB 没配 key，搜索就一条
       // 都出不来；AniList 的 `SEARCH_MATCH` 还认中文/日文别名，结果带 MAL id，
