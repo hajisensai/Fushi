@@ -402,8 +402,11 @@ export async function launchChromeDriver() {
       expression: 'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))',
       awaitPromise: true,
     });
+    // A Promise result is awaited (cases that must wait for a frame / observer);
+    // a plain value resolves unchanged.
     const res = await sock.send('Runtime.evaluate', {
-      expression: `JSON.stringify((function(){ return (${expr}); })())`,
+      expression: `Promise.resolve((function(){ return (${expr}); })()).then((v) => JSON.stringify(v))`,
+      awaitPromise: true,
       returnByValue: true,
     });
     if (res.exceptionDetails) {

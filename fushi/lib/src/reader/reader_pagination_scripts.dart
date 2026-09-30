@@ -1029,6 +1029,8 @@ window.__fushiInstallShell = function(C) {
   _setReanchorPending: function(value) {
     var settled = this._reanchorPending === true && value !== true;
     this._reanchorPending = value === true;
+    // BUG-2806：重锚落定 = 排版已按新几何落定，有声书补缝阴影按新排版重量。
+    if (settled) this.paintSentenceAudioRubyGaps();
     if (settled && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       try { window.flutter_inappwebview.callHandler('onReanchorSettled'); } catch (e) {}
     }
@@ -1913,24 +1915,27 @@ window.__fushiInstallShell = function(C) {
     this.clearSentenceAudioRubyGaps();
     this.sentenceAudioGapWrappers = wrappers;
     this.paintSentenceAudioRubyGaps();
-    this.observeSentenceAudioRubyGaps(wrappers);
+    this.watchSentenceAudioRubyGapLayout();
   },
-  // 缝的宽度随注音与字号变：暂停时切振假名、改字号、重排都不会有下一个 cue 来重量，
-  // 按旧偏移画的阴影会伸到邻字上叠色。观察当前句的 wrapper 与所在 ruby，尺寸一变就重量。
-  observeSentenceAudioRubyGaps: function(wrappers) {
-    if (typeof ResizeObserver !== 'function') return;
+  // 缝的宽度随注音与字号变：暂停时切振假名模式、改字号 / 字体、字体晚到、改页面尺寸都不会
+  // 有下一个 cue 来重量，按旧偏移画的阴影会伸到邻字上叠色或留缺口。在真正的重排信号上
+  // 重量：正文样式表被换（两条换 CSS 路径都写 #fushi-reader-style）、字体加载完成，以及
+  // 一切重锚序列的落定（_setReanchorPending，改页面尺寸 / chrome 边距 / 界面缩放走这条）。
+  // 不用 ResizeObserver：wrapper 是 span、ruby 是 display: ruby，都是非替换行内元素，
+  // 观察它们只在开始时回调一次，之后排版怎么变都不会再回调。
+  // 只装一次；无当前句时 paint 只是空擦除。
+  watchSentenceAudioRubyGapLayout: function() {
+    if (this.sentenceAudioGapLayoutWatched) return;
+    this.sentenceAudioGapLayoutWatched = true;
     var self = this;
-    if (!this.sentenceAudioGapObserver) {
-      this.sentenceAudioGapObserver = new ResizeObserver(function() {
-        self.paintSentenceAudioRubyGaps();
-      });
+    var repaint = function() { self.paintSentenceAudioRubyGaps(); };
+    if (window.MutationObserver && document.head) {
+      new MutationObserver(repaint).observe(document.head,
+          { childList: true, characterData: true, subtree: true });
     }
-    var observer = this.sentenceAudioGapObserver;
-    wrappers.forEach(function(wrapper) {
-      observer.observe(wrapper);
-      var ruby = self.rubyForNode(wrapper);
-      if (ruby) observer.observe(ruby);
-    });
+    if (document.fonts && document.fonts.addEventListener) {
+      document.fonts.addEventListener('loadingdone', repaint);
+    }
   },
   paintSentenceAudioRubyGaps: function() {
     this.eraseSentenceAudioRubyGaps();
@@ -1974,7 +1979,6 @@ window.__fushiInstallShell = function(C) {
     this.sentenceAudioGapFilled = [];
   },
   clearSentenceAudioRubyGaps: function() {
-    if (this.sentenceAudioGapObserver) this.sentenceAudioGapObserver.disconnect();
     this.sentenceAudioGapWrappers = [];
     this.eraseSentenceAudioRubyGaps();
   },
