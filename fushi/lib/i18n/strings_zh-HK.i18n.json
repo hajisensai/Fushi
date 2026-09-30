@@ -6140,5 +6140,6 @@
   "video_resource_failure_timeout": "timed out",
   "video_resource_failure_network": "network error",
   "video_resource_failure_rate_limited": "rate limited",
-  "video_resource_failure_other": "request failed"
+  "video_resource_failure_other": "request failed",
+  "dictionary_pitch_source_count": "$count 本辭典"
 }

@@ -6140,5 +6140,6 @@
   "video_resource_failure_timeout": "超时",
   "video_resource_failure_network": "网络错误",
   "video_resource_failure_rate_limited": "被限流",
-  "video_resource_failure_other": "请求失败"
+  "video_resource_failure_other": "请求失败",
+  "dictionary_pitch_source_count": "$count 本辞典"
 }

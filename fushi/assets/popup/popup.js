@@ -3049,15 +3049,28 @@ function createPitchGroup(pitchData, reading) {
     const dictionaries = pitchData.dictionaries || [pitchData.dictionary];
     // data-details 仍用**真名**（选择器/样式按真名匹配），只有渲染出来的标签走显示名。
     const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
-    // 合并行只挂**一枚**来源药丸——首个来源（词典排序最靠前的那本）。一本词典一枚时，
-    // 五本音调词典同标 [3] 就是一排五枚药丸把读音挤到下一行，读起来仍像重复。
-    // 其余来源不丢：收进这枚药丸的 title（桌面悬停可见）和上面的 data-details。
-    const label = el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionaries[0]) });
-    if (dictionaries.length > 1) {
-        // title 同样是给人看的文本，走显示名。
-        label.title = dictionaries.map(__fushiDictDisplayName).join(', ');
+    const sourcePills = dictionaries.map((dictionary) => el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
+    if (sourcePills.length > 1) {
+        // 合并行默认只挂**一枚**「N 本辞典」药丸：五本音调词典同标 [3] 时一排五枚来源
+        // 药丸把读音挤到下一行，读起来仍像重复。来源名单不丢——悬停看 title，点击
+        // （触屏没有悬停）就地展开 / 收起各来源药丸。
+        const countPill = el('span', {
+            className: 'pitch-dict-label pitch-dict-count',
+            textContent: (window.i18nPitchSourceCount || '{count} 本辞典')
+                .replace('{count}', String(sourcePills.length)),
+            title: sourcePills.map((pill) => pill.textContent).join(', '),
+        });
+        countPill.setAttribute('role', 'button');
+        countPill.setAttribute('aria-expanded', 'false');
+        sourcePills.forEach((pill) => { pill.style.display = 'none'; });
+        countPill.addEventListener('click', () => {
+            const expand = countPill.getAttribute('aria-expanded') !== 'true';
+            countPill.setAttribute('aria-expanded', expand ? 'true' : 'false');
+            sourcePills.forEach((pill) => { pill.style.display = expand ? '' : 'none'; });
+        });
+        container.appendChild(countPill);
     }
-    container.appendChild(label);
+    sourcePills.forEach((pill) => container.appendChild(pill));
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {
