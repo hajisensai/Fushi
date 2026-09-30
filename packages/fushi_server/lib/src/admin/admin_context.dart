@@ -51,12 +51,14 @@ class AdminContext {
 
   bool get scanning => _scanInFlight != null;
 
-  Future<ScanSummary> scanLibraries() {
+  Future<ScanSummary> scanLibraries({bool? prune}) {
     final Future<ScanSummary>? running = _scanInFlight;
     if (running != null) return running;
     final Future<ScanSummary> f = LibraryScanner(
       db: db,
       subtitleLanguage: config.subtitleLanguage,
+      // 缺省读配置里的 `scan_prune`（默认开）；请求里显式给了就按请求。
+      pruneMissing: prune ?? config.scanPrune,
     ).scanAll(config.libraries).then((ScanSummary s) {
       lastScan = s;
       lastScanAt = DateTime.now();

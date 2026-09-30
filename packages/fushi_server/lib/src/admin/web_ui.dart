@@ -199,7 +199,8 @@ async function loadStatus(){
     ['P2P 隧道', p2pSummary(s.p2p)],
   ];
   $('#status-grid').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
-  $('#scan-state').textContent = s.scanning ? '扫描中…' : (s.lastScan ? `上次 ${fmtTime(s.lastScanAt)}: ${s.lastScan}` : '尚未扫描');
+  const notes = (s.lastScanNotes && s.lastScanNotes.length) ? ' — ' + s.lastScanNotes.join('; ') : '';
+  $('#scan-state').textContent = s.scanning ? '扫描中…' : (s.lastScan ? `上次 ${fmtTime(s.lastScanAt)}: ${s.lastScan}${notes}` : '尚未扫描');
   $('#btn-scan').disabled = !!s.scanning;
 }
 $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast('已开始扫描'); loadStatus(); });
@@ -217,8 +218,9 @@ async function loadPairing(){
 // ── 库 ──
 async function loadLibraries(){
   const r = await api('libraries');
-  $('#libs').innerHTML = r.libraries.map(l=>`<tr><td>${esc(l.id)}</td><td>${esc(l.path)}</td><td>${esc(l.kind)}</td><td>${l.exists?'<span class="tag ok">存在</span>':'<span class="tag err">目录不存在</span>'}${l.enabled?'':' <span class="tag">禁用</span>'}</td><td><button class="b danger" data-rm="${esc(l.id)}">移除</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有扫描根</td></tr>';
+  $('#libs').innerHTML = r.libraries.map(l=>`<tr><td>${esc(l.id)}</td><td>${esc(l.path)}</td><td>${esc(l.kind)}</td><td>${l.exists?'<span class="tag ok">存在</span>':'<span class="tag err">目录不存在</span>'}${l.enabled?'':' <span class="tag">禁用</span>'}</td><td><button class="b danger" data-rm="${esc(l.id)}">移除</button>${l.kind==='video'?` <button class="b danger" data-purge="${esc(l.id)}">移除并清理</button>`:''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有扫描根</td></tr>';
   $('#libs').querySelectorAll('[data-rm]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('从配置移除该库根？（不删文件、不删已入库条目）')) return; await del('libraries/'+encodeURIComponent(b.dataset.rm)); loadLibraries(); }));
+  $('#libs').querySelectorAll('[data-purge]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('移除该库根，并清理「文件已消失」的条目？\n只回收条目与其刮削资料，不删任何文件。')) return; const r=await del('libraries/'+encodeURIComponent(b.dataset.purge)+'?purge=true'); const p=r&&r.purge; toast(p?(p.skipped?('未清理：'+(p.reason||'被护栏拦下')):('已清理 '+p.deleted+' 条')):'已移除'); loadLibraries(); loadStatus(); }));
   $('#up-lib').innerHTML = r.libraries.map(l=>`<option value="${esc(l.id)}">${esc(l.id)} — ${esc(l.path)}</option>`).join('');
 }
 $('#btn-lib-add').onclick = guard(async()=>{ await post('libraries',{path:$('#lib-path').value, kind:$('#lib-kind').value, id:$('#lib-id').value}); $('#lib-path').value=''; $('#lib-id').value=''; toast('已添加'); loadLibraries(); });

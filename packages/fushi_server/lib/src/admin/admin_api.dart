@@ -13,6 +13,8 @@ import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
@@ -90,9 +92,12 @@ class AdminApi {
       case ('POST', '/api/admin/libraries'):
         return _addLibrary(await _body(request));
       case ('DELETE', _) when path.startsWith('/api/admin/libraries/'):
-        return _removeLibrary(Uri.decodeComponent(path.substring('/api/admin/libraries/'.length)));
+        return _removeLibrary(
+          Uri.decodeComponent(path.substring('/api/admin/libraries/'.length)),
+          purge: request.url.queryParameters['purge'] == 'true',
+        );
       case ('POST', '/api/admin/scan'):
-        return _scan();
+        return _scan(await _body(request));
       case ('GET', '/api/admin/jobs'):
         return _jobs();
       case ('DELETE', _) when path.startsWith('/api/admin/jobs/'):
@@ -208,6 +213,7 @@ class AdminApi {
       'libraries': ctx.config.libraries.length,
       'scanning': ctx.scanning,
       'lastScan': ctx.lastScan?.toString(),
+      'lastScanNotes': ctx.lastScan?.pruneNotes ?? const <String>[],
       'lastScanAt': ctx.lastScanAt?.toIso8601String(),
       'downloads': await ctx.host.downloads?.capability(),
       'subscriptions': await ctx.host.subscriptions?.capability(),
@@ -259,7 +265,9 @@ class AdminApi {
 
   // ── 库 ─────────────────────────────────────────────────────────────
 
-  shelf.Response _libraries() => _json(<String, Object?>{
+  shelf.Response _libraries() => _json(_librariesJson());
+
+  Map<String, Object?> _librariesJson() => <String, Object?>{
         'libraries': <Object?>[
           for (final LibraryRootConfig lib in ctx.config.libraries)
             <String, Object?>{
@@ -267,7 +275,7 @@ class AdminApi {
               'exists': Directory(lib.path).existsSync(),
             },
         ],
-      });
+      };
 
   Future<shelf.Response> _addLibrary(Map<String, dynamic> body) async {
     final String path = (body['path'] ?? '').toString().trim();
@@ -288,17 +296,54 @@ class AdminApi {
     return _libraries();
   }
 
-  Future<shelf.Response> _removeLibrary(String id) async {
+  /// 移除一个库根。
+  ///
+  /// [purge] 为真时，**在移除配置前**对该根跑一次扫描对账（`pruneMissingVideoRows`），
+  /// 回收「行还在、文件已消失」的条目及其刮削资料。不删任何文件；护栏与扫描对账
+  /// 同一套（库根不存在 / 失效占比过高则拒绝，如实回报原因）。
+  ///
+  /// 只有 `video` 根支持：书 / 漫画根的行不记源文件路径，判不出失效。
+  Future<shelf.Response> _removeLibrary(String id, {bool purge = false}) async {
+    final LibraryRootConfig? library = ctx.config.libraries
+        .cast<LibraryRootConfig?>()
+        .firstWhere((LibraryRootConfig? l) => l!.id == id, orElse: () => null);
+    if (library == null) return _err(404, 'unknown library $id');
+    Map<String, Object?>? purgeResult;
+    if (purge) {
+      if (library.kind != 'video') {
+        throw FormatException(
+          'library "$id" is kind=${library.kind}; only video roots can be purged',
+        );
+      }
+      final VideoPruneReport report = await pruneMissingVideoRows(
+        repository: VideoBookRepository(ctx.db),
+        root: Directory(library.path),
+      );
+      purgeResult = <String, Object?>{
+        'considered': report.considered,
+        'missing': report.missing,
+        'deleted': report.deleted,
+        'skipped': report.skipped,
+        if (report.skipReason != null) 'reason': report.skipReason,
+      };
+    }
     await ctx.updateConfig(ctx.config.copyWith(
       libraries: ctx.config.libraries.where((LibraryRootConfig l) => l.id != id).toList(),
     ));
-    return _libraries();
+    return _json(<String, Object?>{
+      ..._librariesJson(),
+      if (purgeResult != null) 'purge': purgeResult,
+    });
   }
 
-  shelf.Response _scan() {
+  shelf.Response _scan(Map<String, dynamic> body) {
+    final Object? raw = body['prune'];
+    if (raw != null && raw is! bool) {
+      throw const FormatException('prune must be a boolean');
+    }
     if (ctx.scanning) return _json(const <String, Object?>{'started': false, 'scanning': true});
     // 不 await：扫描可能很久，WebUI 轮询 status 看结果。
-    ctx.scanLibraries().catchError((Object e, StackTrace st) {
+    ctx.scanLibraries(prune: raw as bool?).catchError((Object e, StackTrace st) {
       ctx.log.log('AdminApi.scan', e, st);
       return ScanSummary();
     });
