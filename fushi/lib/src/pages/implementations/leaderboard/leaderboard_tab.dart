@@ -476,7 +476,12 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                   key: const ValueKey<String>('leaderboard-header-share'),
                   onPressed: self == null
                       ? null
-                      : () => unawaited(showLeaderboardShareSheet(context)),
+                      : () => unawaited(
+                          showLeaderboardShareSheet(
+                            context,
+                            initialWindow: _window,
+                          ),
+                        ),
                   icon: const Icon(Icons.ios_share),
                   label: Text(t.leaderboard_header_share),
                 ),

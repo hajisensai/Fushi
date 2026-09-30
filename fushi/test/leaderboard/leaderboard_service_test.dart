@@ -743,12 +743,10 @@ void main() {
         s.client!.rank(),
         throwsA(isA<LeaderboardApiException>()),
       );
-      await s.load();
-      for (int i = 0; i < 20 && s.status == LeaderboardStatus.active; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      // 异常一到手退出就已落定（BUG-2801）：不许靠让出事件循环等异步落盘。
       expect(s.status, LeaderboardStatus.disabled);
       expect(s.accountGoneNotice, isTrue);
+      expect(await store().read(), isNull);
 
       // 重新登录清掉提示。
       server.accountGone = false;
@@ -762,9 +760,7 @@ void main() {
       await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
       server.accountGone = true;
       await expectLater(s.syncNow(), throwsA(isA<LeaderboardApiException>()));
-      for (int i = 0; i < 20 && s.status == LeaderboardStatus.active; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      expect(s.status, LeaderboardStatus.disabled);
       expect(await store().read(), isNull);
     });
 

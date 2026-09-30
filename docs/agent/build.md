@@ -38,7 +38,7 @@ debug 通道发布的是 release-signed debug-channel APK：文件名保留 `-de
 
 **滚动 debug release（TODO-1049）**：debug 通道**不再**每次 push 新建一个 `v<version>-debug.<seq>+<short-sha>` GitHub Release——否则 debug 高频构建会在 Releases 列表无限堆积、淹没正式/beta 条目（用户明确诉求：调试版不该占 Release 位）。改为所有 debug 构建复用**同一个固定滚动 tag `debug-rolling`**（`steps.channel.outputs.publish_tag`），列表里 debug 永远只有 1 条。关键不变式：GitHub Release 的 git tag（`publish_tag=debug-rolling`）与「客户端版本比较用的版本化 tag」（`steps.channel.outputs.tag = v<version>-debug.<seq>+<short-sha>`）**解耦**——manifest `latest-debug.json` 的 `tag` 字段仍写版本化 tag（客户端据 `<seq>` 单调判断「有无更新」，逻辑零改动），而资产下载 URL 走 `releases/download/debug-rolling/<name>`（`publish_update_manifest.sh` 的 `DOWNLOAD_TAG`）。softprops 只 upsert 同名 asset、不删旧 commit 的 asset，故发布前有一步按当前 `versionName` token 清理滚动 release 上非本 seq 的陈旧资产（同 commit 的 Android+desktop 共享 seq、互不误删；新 commit 清旧 commit）。`release.yml` 里另有一步 GC 掉历史遗留的版本化 debug prerelease（tag 形如 `v...-debug.<seq>+`，不含滚动 tag），把列表收敛到单条。beta/formal 不受影响：其 release 就是版本化 tag 本身，`publish_tag == tag`。
 
-Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统一 release 序列（cross-workflow release sequence）：发布 workflow 都用完整历史 checkout 后的 `git rev-list --count HEAD` 生成 `<seq>`，不得用各自独立的 `github.run_number` / `GITHUB_RUN_NUMBER` 生成 tag、安装包版本或 Android `versionCode` 扩展位。Android `versionCode = versionCodeBase(1_000_000_000) + 100 × <seq> + abiOffset`（公式在 `fushi/android/app/build.gradle`，CI 只把 `<seq>` 当 `--build-number` 传入），不再用旧的 `PUBSPEC_BUILD × 1_000_000 + seq` build number——那个数会把 versionCode 顶到约 66 亿，溢出 int32 且超 Android 21 亿上限，beta/release 的 Android 包根本建不出来（TODO-414）。同一 commit / 同一语义版本的自动 debug 默认 tag 必须相同，合并到同一个 GitHub Release（single GitHub Release）。两条 workflow 的 concurrency 组**各自独立**（组名 = `fushi-release-<workflow 名>-<tag|sha>`）：同一条 workflow 同 tag/sha 串行，两条 workflow 之间并行上传同一个 Release——GitHub 的 concurrency 组是仓库级的，2026-09-08 之前两条同名组，正式版 `release: published` 同时点燃两条时桌面/Apple 必须等 Android 整条跑完，且同组第二个 pending 会把第一个 pending 取消（2026-09-03 实测 cancelled + 0 job）。并行安全性依赖三处既有设计：rolling prune 只删本平台资产（TODO-1131）、softprops 建 release 撞车重取、`publish_update_manifest.sh` 的重取合并循环（TODO-781）；守卫 `fushi/test/build/release_workflow_concurrency_guard_test.dart`。客户端自装平台必须先按本平台 asset 过滤 release：Android 只接受匹配通道的 APK，Windows 只接受匹配通道的 `-windows-setup.exe`，macOS 只接受 `-macos.zip`；如果远端只有错平台新版本，Android/Windows/macOS 返回无更新而不是打开 release 页。iOS 发布 no-codesign `.ipa` 只作为 GitHub 下载产物，不做应用内自动安装。Unsupported 平台仍可在没有本平台自装 asset 时打开 release 页。若手动 Android / desktop/Apple workflow 指定 `tag_name`，也应使用同一个 tag 合并到同一个 Release，由各平台客户端选择自己的 asset。
+Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统一 release 序列（cross-workflow release sequence）：发布 workflow 都用完整历史 checkout 后的 `git rev-list --count HEAD` 生成 `<seq>`，不得用各自独立的 `github.run_number` / `GITHUB_RUN_NUMBER` 生成 tag、安装包版本或 Android `versionCode` 扩展位。Android `versionCode = versionCodeBase(1_000_000_000) + 100 × <seq> + abiOffset`（公式在 `fushi/android/app/build.gradle`，CI 只把 `<seq>` 当 `--build-number` 传入），不再用旧的 `PUBSPEC_BUILD × 1_000_000 + seq` build number——那个数会把 versionCode 顶到约 66 亿，溢出 int32 且超 Android 21 亿上限，beta/release 的 Android 包根本建不出来（TODO-414）。同一 commit / 同一语义版本的自动 debug 默认 tag 必须相同，合并到同一个 GitHub Release（single GitHub Release）。两条 workflow 的 concurrency 组**各自独立**（组名 = `fushi-release-<workflow 名>-<tag|sha>`；**push 事件按分支**：`fushi-release-<workflow 名>-<refs/heads/…>`，2026-09-30 起——同分支的 push 发布串行、正在跑的那轮跑完、排队中的旧 pending 被后来者顶掉，仍 `cancel-in-progress: false`，跳过的 commit 无害因为 debug 序号 = commit 数）：同一条 workflow 同 tag/sha 串行，两条 workflow 之间并行上传同一个 Release——GitHub 的 concurrency 组是仓库级的，2026-09-08 之前两条同名组，正式版 `release: published` 同时点燃两条时桌面/Apple 必须等 Android 整条跑完，且同组第二个 pending 会把第一个 pending 取消（2026-09-03 实测 cancelled + 0 job）。并行安全性依赖三处既有设计：rolling prune 只删本平台资产（TODO-1131）、softprops 建 release 撞车重取、`publish_update_manifest.sh` 的重取合并循环（TODO-781）；守卫 `fushi/test/build/release_workflow_concurrency_guard_test.dart`。客户端自装平台必须先按本平台 asset 过滤 release：Android 只接受匹配通道的 APK，Windows 只接受匹配通道的 `-windows-setup.exe`，macOS 只接受 `-macos.zip`；如果远端只有错平台新版本，Android/Windows/macOS 返回无更新而不是打开 release 页。iOS 发布 no-codesign `.ipa` 只作为 GitHub 下载产物，不做应用内自动安装。Unsupported 平台仍可在没有本平台自装 asset 时打开 release 页。若手动 Android / desktop/Apple workflow 指定 `tag_name`，也应使用同一个 tag 合并到同一个 Release，由各平台客户端选择自己的 asset。
 
 > Google Drive 同步的 OAuth 凭据已写死进源码默认值（`lib/src/sync/google_drive_auth.dart`），构建无需再传 `--dart-define`。如需换凭据，改该文件的 `defaultValue` 或自行加 `--dart-define` 覆盖。
 
@@ -194,6 +194,17 @@ gh api "repos/hajisensai/Fushi/actions/caches?per_page=100"   --jq '.actions_cac
 ```
 
 删存量缓存前先确认没有 in-flight 的 run 在用它（`gh run list --status in_progress`）。
+
+**Windows 原生产物不再走 actions/cache，走持久库**（`.github/actions/native-artifact-store`）。
+2026-09-29 实测整个缓存约 1 小时换一轮（10.8 GB / 21 条，最老条目 68 分钟前创建；
+一条 15:27 存下的 vcpkg 二进制缓存 15:52 就已被驱逐），于是 libtorrent（冷编 20~27 min）
+在 37 次桌面发布里 miss 22 次、18 次 PR 门里 miss 15 次，galgame helper / Mihon runtime
+大多也在 miss。现在 libtorrent / fushi_p2p DLL、galgame helper dist、Mihon runtime、
+fushi-anki-sync 五样按「输入哈希 + runner 镜像 + 工具链钉版」命名，存成 workflow
+artifact（不占缓存配额，develop/main 保留 30 天、PR 7 天），下次按名字取；只认本仓
+develop/main 产出的件（PR run 另外认同一 PR head 自己产出的件），并先核 SHA256SUMS。
+取不到就照旧从源码编，所以它不会重演 TODO-416「跨 workflow artifact 过期即静默缺件」。
+vcpkg 的两条 actions/cache 只在 libtorrent 持久库 miss 时才挂。
 
 ## 依赖补丁
 

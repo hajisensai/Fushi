@@ -5987,7 +5987,6 @@
   "leaderboard_account_delete_message": "永久删除你的账户与服务端上的全部数据：资料、头像、书架、好友。",
   "leaderboard_account_delete_confirm": "我明白服务端数据会全部删除且无法恢复",
   "leaderboard_account_deleted": "账户已删除",
-  "leaderboard_share_title": "分享本月",
   "leaderboard_share_card_month": "${month} · Fushi",
   "leaderboard_share_card_finished": "本月读完 ${n} 部",
   "leaderboard_share_card_chars": "阅读 ${n} 字",
@@ -6126,5 +6125,19 @@
   "floating_ball_camera_unavailable": "无法打开相机",
   "reader_focus_mode_label": "专注模式",
   "reader_focus_mode_exit": "退出专注模式",
-  "reader_focus_mode_bars_locked": "专注模式已开启，顶栏和底栏不会显示"
+  "reader_focus_mode_bars_locked": "专注模式已开启，顶栏和底栏不会显示",
+  "leaderboard_share_card_week": "${date} 起一周 · Fushi",
+  "leaderboard_share_card_all": "截至 ${date} · Fushi",
+  "leaderboard_share_card_finished_week": "本周读完 ${n} 部",
+  "leaderboard_share_card_finished_all": "累计读完 ${n} 部",
+  "leaderboard_share_copy_link": "复制链接",
+  "ai_video_acquire_work_alias_resolved": "没直接搜到「$query」，查了资料，按「$titles」再找。",
+  "video_resource_source_result": "${name}：${n} 条（${queries}）",
+  "video_resource_source_failed": "${name}：失败（${reason}）",
+  "video_resource_source_skipped": "${name}：未参与（该来源无法搜索这个查询词）",
+  "video_resource_query_failed": "${query} 失败",
+  "video_resource_failure_timeout": "超时",
+  "video_resource_failure_network": "网络错误",
+  "video_resource_failure_rate_limited": "被限流",
+  "video_resource_failure_other": "请求失败"
 }

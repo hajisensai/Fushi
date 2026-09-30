@@ -253,4 +253,75 @@ void main() {
     expect(pendingExternalLookup.value, isNull);
     expect(FloatingLyricLookupNotifier.instance.consume()?.text, '犬');
   });
+
+  testWidgets('关闭键只收起这一页：弹对话框仍收着，离开再回来自动恢复，不改设置', (WidgetTester tester) async {
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    final Finder close = byKey('floating_ball_action_close');
+    expect(close, findsOneWidget);
+    // 离球最远：比任何勾选的按钮都靠上。
+    expect(
+      tester.getCenter(close).dy,
+      lessThan(tester.getCenter(byKey('scene_play_pause')).dy),
+    );
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+    expect(prefs.floatingBallInApp, isTrue, reason: '「这次不要，之后要」：不动设置');
+
+    // 同一页上弹对话框：人还在这页，球仍收着。
+    final NavigatorState nav = appModel.navigatorKey.currentState!;
+    showDialog<void>(
+      context: nav.context,
+      builder: (BuildContext context) => const AlertDialog(content: Text('d')),
+    );
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+    nav.pop();
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+
+    // 离开这一页（进别的页面）：恢复。
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const Scaffold(body: SizedBox()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(ball(), findsOneWidget);
+
+    // 回到视频页：也照常在（这次关掉的已经过去了）。
+    nav.pop();
+    await tester.pumpAndSettle();
+    expect(ball(), findsOneWidget);
+  });
+
+  test('原生系统球的图标表：每个全局按钮与应用内同一颗，外加打开 / 关闭', () {
+    final Map<String, int> icons = floatingBallNativeIcons();
+    for (final FloatingBallGlobalAction action
+        in FloatingBallGlobalAction.values) {
+      expect(
+        icons[action.storageValue],
+        floatingBallGlobalActionIcon(action).codePoint,
+        reason: '${action.storageValue} 在原生球上要画成应用内同一颗图标',
+      );
+    }
+    expect(icons['open_app'], kFloatingBallOpenAppIcon.codePoint);
+    expect(icons['close'], kFloatingBallCloseIcon.codePoint);
+    expect(floatingBallNativeLabels()['ball'], isNotEmpty);
+  });
+
+  test('原生系统球的配色取当前主题三色', () {
+    const ColorScheme scheme = ColorScheme.light(
+      surface: Color(0xFF101112),
+      onSurface: Color(0xFF202122),
+      primary: Color(0xFF303132),
+    );
+    expect(floatingBallNativeColors(scheme), <String, int>{
+      'surface': 0xFF101112,
+      'onSurface': 0xFF202122,
+      'primary': 0xFF303132,
+    });
+  });
 }

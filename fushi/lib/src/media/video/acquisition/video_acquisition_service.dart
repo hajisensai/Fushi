@@ -42,7 +42,10 @@ class VideoAcquisitionPorts {
     required this.submitDownload,
     required this.submitSubscription,
     required this.loadFranchise,
+    this.resolveAlias = _noAlias,
   });
+
+  static Future<List<String>> _noAlias(String query) async => const <String>[];
 
   /// 发现聚合搜索（`VideoDiscoveryController.load`）。
   final Future<ProviderBatchResult<VideoDiscoveryPage>> Function(
@@ -95,6 +98,10 @@ class VideoAcquisitionPorts {
 
   final Future<void> Function(VideoAcquisitionSubmitSubscriptionEffect effect)
   submitSubscription;
+
+  /// 别名 → 正式名：按用户原话查联网资料，返回资料里写明的正式标题；查不到 /
+  /// 未启用资料站 / 未指派 AI → 空列表。默认恒空（测试与未接线的宿主不联网）。
+  final Future<List<String>> Function(String query) resolveAlias;
 
   /// 「整套下载」：[item] 所在系列的剧集与剧场版；null = 没有可用的系列来源。
   final Future<VideoFranchise?> Function(VideoDiscoveryItem item) loadFranchise;
@@ -248,6 +255,8 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         await _parseIntent(effect.utterance);
       case VideoAcquisitionSearchWorksEffect():
         await _searchWorks(effect);
+      case VideoAcquisitionResolveAliasEffect():
+        await _resolveAlias(effect.query);
       case VideoAcquisitionDecideIdentityEffect():
         await _decideIdentity(effect.query);
       case VideoAcquisitionLoadDetailsEffect():
@@ -504,6 +513,22 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
           ),
         },
     ];
+  }
+
+  /// 查不到 / 失败都回灌空列表：reducer 据此说「没找到」，原因留诊断日志。
+  Future<void> _resolveAlias(String query) async {
+    List<String> titles = const <String>[];
+    try {
+      titles = await _ports.resolveAlias(query);
+    } catch (error, stack) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.resolveAlias',
+        '$query: $error\n$stack',
+      );
+    }
+    _queue.add(
+      VideoAcquisitionAliasResolvedEvent(query: query, titles: titles),
+    );
   }
 
   Future<void> _searchWorks(VideoAcquisitionSearchWorksEffect effect) async {

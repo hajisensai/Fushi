@@ -11,6 +11,57 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 /// 编排器的端到端契约（假端口）：文本 → AI 解析 → 搜作品 → 拉详情 → 搜资源 →
 /// 摘要确认 → 先写每系列字幕语言、再入队。AI 端口失败 / 未指派时流程照样能走完。
 void main() {
+  test('an alias the metadata sites do not know is resolved via web references '
+      'and searched again by its official title', () async {
+    final _Ports ports = _Ports(
+      intent: const VideoAcquisitionIntent(
+        VideoAcquisitionIntentKind.provide,
+        VideoAcquisitionIntentPatch(workQueries: <String>['fx外汇战士']),
+      ),
+      knownTitles: <String>{'FX戦士くるみちゃん'},
+      aliases: const <String>['FX戦士くるみちゃん'],
+    );
+    final VideoAcquisitionService service = VideoAcquisitionService(
+      ports: ports.build(),
+      defaults: _defaults(),
+    );
+    addTearDown(service.dispose);
+
+    await service.submitText('帮我下fx外汇战士');
+
+    expect(ports.searchQueries, <String>['fx外汇战士', 'FX戦士くるみちゃん']);
+    expect(ports.aliasQueries, <String>['fx外汇战士']);
+    expect(service.state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
+    expect(
+      service.state.transcript
+          .whereType<VideoAcquisitionAssistantMessage>()
+          .map((VideoAcquisitionAssistantMessage m) => m.say.kind),
+      isNot(contains(VideoAcquisitionSayKind.workNotFound)),
+    );
+  });
+
+  test('no alias found degrades to workNotFound', () async {
+    final _Ports ports = _Ports(knownTitles: const <String>{});
+    final VideoAcquisitionService service = VideoAcquisitionService(
+      ports: ports.build(),
+      defaults: _defaults(),
+    );
+    addTearDown(service.dispose);
+
+    await service.submitText('下 Show');
+
+    expect(ports.aliasQueries, <String>['Show']);
+    expect(service.state.stage, VideoAcquisitionStage.idle);
+    expect(
+      service.state.transcript
+          .whereType<VideoAcquisitionAssistantMessage>()
+          .last
+          .say
+          .kind,
+      VideoAcquisitionSayKind.workNotFound,
+    );
+  });
+
   test(
     'text to download: series subtitle language is written before enqueue',
     () async {
@@ -200,7 +251,16 @@ class _Ports {
     ),
     this.submitError,
     this.setSeriesError,
+    this.knownTitles,
+    this.aliases = const <String>[],
   });
+
+  /// 非 null 时，作品搜索只认这些查询词，其余返回空（模拟资料站不收别名）。
+  final Set<String>? knownTitles;
+
+  /// 别名端口的返回值。
+  final List<String> aliases;
+  final List<String> aliasQueries = <String>[];
 
   final VideoAcquisitionIntent? intent;
   final Exception? submitError;
@@ -212,10 +272,11 @@ class _Ports {
   VideoAcquisitionPorts build() => VideoAcquisitionPorts(
     searchWorks: (VideoDiscoveryRequest request) async {
       searchQueries.add(request.query ?? '');
+      final bool known = knownTitles?.contains(request.query) ?? true;
       return ProviderBatchResult<VideoDiscoveryPage>.success(
         <VideoDiscoveryPage>[
           VideoDiscoveryPage(
-            items: <VideoDiscoveryItem>[_finishedShow()],
+            items: <VideoDiscoveryItem>[if (known) _finishedShow()],
             page: 1,
             hasMore: false,
           ),
@@ -245,5 +306,9 @@ class _Ports {
       return effect.plan.picks.length;
     },
     submitSubscription: (_) async => calls.add('submitSubscription'),
+    resolveAlias: (String query) async {
+      aliasQueries.add(query);
+      return aliases;
+    },
   );
 }
