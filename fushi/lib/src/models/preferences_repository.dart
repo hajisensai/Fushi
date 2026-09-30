@@ -773,10 +773,12 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
       (getPref('floating_ball.system_y', defaultValue: 0.35) as num).toDouble();
 
   Future<void> setFloatingBallSystemPosition(
-      String dock, double fraction) async {
-    await setPref('floating_ball.system_dock', dock);
-    await setPref('floating_ball.system_y', fraction);
-  }
+      String dock, double fraction) =>
+      // 一个逻辑位置、两个键：同一事务落盘，不会只写进一半。
+      setPrefs(<String, dynamic>{
+        'floating_ball.system_dock': dock,
+        'floating_ball.system_y': fraction,
+      });
 
   /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。
   String get floatingBallDock =>

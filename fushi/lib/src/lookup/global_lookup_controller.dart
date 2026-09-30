@@ -29,6 +29,7 @@ import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart'
     show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
@@ -310,6 +311,36 @@ class GlobalLookupController {
   // window-local for the host shell. 0 = native did not report a work area.
   double _cursorWorkX = 0;
   double _cursorWorkY = 0;
+
+  /// 让覆盖窗跟随查词模块：现在开着就起；会话中途才打开查词模块也沿同一条
+  /// [start] 补起（此前只在启动时判一次，中途打开模块要等下次启动，桌面悬浮球
+  /// 的「应用外查词」等入口在这段时间里点了什么都不发生）。[start] 自带
+  /// `_started` 闩，重复触发不会重复建窗。
+  ///
+  /// 关模块不停：沿用启动链「不切断进行中的任务」的取舍（见 main.dart），钩子
+  /// 要到下次启动才不再装。启动链在首帧后调用一次。
+  Future<void> followLookupModule(AppModel appModel) async {
+    appModel.addListener(() => unawaited(_startFromModuleChange(appModel)));
+    await startIfLookupModuleEnabled(appModel);
+  }
+
+  /// 查词模块开着、平台支持且覆盖窗还没起：起它。
+  Future<void> startIfLookupModuleEnabled(AppModel appModel) async {
+    // 先判闩再调 start：AppModel 通知很频繁，别每次都往 glog 里记一条 start。
+    if (!isSupported || _started) return;
+    if (!appModel.moduleVisibility.isEnabled(ModuleId.lookup)) return;
+    await start(appModel: appModel);
+  }
+
+  /// [followLookupModule] 的监听路径：失败与启动链一样落盘，不静默。
+  Future<void> _startFromModuleChange(AppModel appModel) async {
+    try {
+      await startIfLookupModuleEnabled(appModel);
+    } catch (error, stack) {
+      glog('start (module enabled mid-session) FAILED: $error');
+      ErrorLogService.instance.log('global_lookup.start', error, stack);
+    }
+  }
 
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
