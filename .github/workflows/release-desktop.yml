@@ -185,6 +185,7 @@ jobs:
   windows:
     if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: windows-2022
+    timeout-minutes: 150
     permissions:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
@@ -1266,6 +1267,7 @@ jobs:
   macos:
     if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: macos-latest
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -1918,6 +1920,7 @@ jobs:
   ios:
     if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: macos-latest
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -2492,6 +2495,7 @@ jobs:
   kazumi-adhoc:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
     runs-on: macos-latest
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -2525,6 +2529,7 @@ jobs:
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
     if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
