@@ -1,7 +1,8 @@
 // Pre-push check: the parts of CI a local run can reproduce cheaply, in one
 // command, so that "it passed locally" means "CI will not turn red on it".
 //
-//   dart run tool/pre_push_check.dart [--base=<ref>] [--list] [--skip-analyze]
+//   dart run tool/pre_push_check.dart [--base=<ref>] [--list] [--quick|--wide]
+//                                     [--skip-analyze]
 //                                     [--allow-flutter-mismatch]
 //                                     [--files <paths...> | --files-from=<list>]
 //
@@ -31,11 +32,14 @@ import 'test_flow/pre_push_selection.dart';
 import 'tests_for_changes.dart'
     show
         RepoFs,
+        TestTriggerFace,
         buildReferenceIndex,
+        changeTriggersReference,
+        extractRepoPathReferences,
+        globToRegExp,
         listAppTestFiles,
         locateRepoRoot,
-        normalizeChangedPath,
-        selectTestsForChanges;
+        normalizeChangedPath;
 
 class _Step {
   _Step(this.name, this.ok, this.detail, this.elapsed);
@@ -97,12 +101,44 @@ Future<void> main(List<String> args) async {
     _fail('enumeration guard list in docs/agent/fast-workflow.md parsed to '
         '${guards.length} entries (expected ~50): the table format changed?');
   }
-  final Map<String, Set<String>> byPath = selectTestsForChanges(
-    changedFiles: changed,
-    index: buildReferenceIndex(fs),
-    fs: fs,
-    includeDartTrees: true,
-  );
+  // Budget mode (default) keeps the local run to a few minutes; --wide uses
+  // tests_for_changes' full rule (siblings + any-size directories, all import
+  // hubs), which on real PRs selected 600-1500 test files.
+  final bool wide = args.contains('--wide');
+  // --quick: guards only (batch + exact path + via-helper + changed tests), no
+  // import expansion -- for iterating; run the default mode before pushing.
+  final bool quick = args.contains('--quick');
+  final int maxDirFiles = _intArg(args, '--max-dir-files=', 60);
+  final int hubLimit = _intArg(args, '--hub-limit=', 40);
+  final Map<String, int> dirFiles = <String, int>{};
+  int dirFileCount(String rel) => dirFiles.putIfAbsent(
+      rel,
+      () => Directory('$root/$rel')
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .length);
+  bool triggers(String c, String ref) => wide
+      ? changeTriggersReference(c, ref, fs)
+      : budgetTrigger(c, ref,
+          isDirectory: fs.isDirectory,
+          dirFileCount: dirFileCount,
+          maxDirFiles: maxDirFiles);
+  final Map<String, Set<String>> byPath = <String, Set<String>>{};
+  for (final MapEntry<String, TestTriggerFace> e
+      in buildReferenceIndex(fs).entries) {
+    for (final String c in changed) {
+      for (final String ref in e.value.referencedPaths) {
+        if (triggers(c, ref)) {
+          byPath.putIfAbsent(e.key, () => <String>{}).add(ref);
+        }
+      }
+      for (final String g in e.value.declaredGlobs) {
+        if (globToRegExp(g).hasMatch(c)) {
+          byPath.putIfAbsent(e.key, () => <String>{}).add('glob:$g');
+        }
+      }
+    }
+  }
   final Map<String, String> packageNames = _packageNames(root);
   final Set<String> importKeys = <String>{
     for (final String c in changed)
@@ -114,15 +150,46 @@ Future<void> main(List<String> args) async {
             : null,
       ),
   };
+  final ({Set<String> kept, Set<String> hubs}) keys = quick
+      ? (kept: <String>{}, hubs: <String>{})
+      : wide
+          ? (kept: importKeys, hubs: <String>{})
+          : splitHubImportKeys(importKeys, testSources, hubLimit: hubLimit);
   final Set<String> byImport = directImpactTests(
     changed: changed,
     testSources: testSources,
-    importKeys: importKeys,
+    importKeys: keys.kept,
   );
+  // One hop through shared test helpers: many guards read their target via a
+  // corpus helper (e.g. test/pages/video_fushi_page_source_corpus.dart), so the
+  // path literal lives in the helper, not the test, and tests_for_changes'
+  // per-test index cannot see it (replay of 36 regression PRs missed
+  // video_orientation_fullscreen_guard_test this way).
+  final Set<String> triggeredHelpers = <String>{};
+  for (final FileSystemEntity e in Directory('$root/fushi/test')
+      .listSync(recursive: true, followLinks: false)) {
+    final String path = e.path.replaceAll('\\', '/');
+    if (e is! File || !path.endsWith('.dart') || path.endsWith('_test.dart')) {
+      continue;
+    }
+    final Set<String> refs =
+        extractRepoPathReferences(e.readAsStringSync(), fs);
+    if (changed.any((String c) => refs.any((String r) => triggers(c, r)))) {
+      triggeredHelpers.add(path.split('/').last);
+    }
+  }
+  final Set<String> byHelper = <String>{
+    for (final MapEntry<String, String> t in testSources.entries)
+      if (triggeredHelpers.any(
+          (String h) => t.value.contains("/$h'") || t.value.contains("'$h'")))
+        t.key,
+  };
+
   final bool runBatch = touchesDartTrees(changed);
   final List<String> appTests = <String>{
     if (runBatch) ...guards,
     ...byPath.keys.where(testSources.containsKey),
+    ...byHelper,
     ...byImport,
   }.toList()
     ..sort();
@@ -137,21 +204,32 @@ Future<void> main(List<String> args) async {
   final bool js = touchesJsSuites(changed);
 
   stdout
-    ..writeln('pre-push: ${changed.length} changed file(s)')
+    ..writeln('pre-push: ${changed.length} changed file(s), '
+        '${quick ? 'QUICK (guards only; run without --quick before pushing)' : wide ? 'wide selection' : 'budget selection (--wide for everything)'}')
     ..writeln('  app tests: ${appTests.length} = '
         '${runBatch ? '${guards.length} enumeration guards' : 'no enumeration batch (no Dart tree changed)'}'
-        ' + ${byPath.length} path-literal + ${byImport.length} import-impact '
+        ' + ${byPath.length} path-literal + ${byHelper.length} via-helper'
+        ' + ${byImport.length} import-impact '
         '(deduplicated)')
+    ..writeln(keys.hubs.isEmpty
+        ? '  import hubs skipped: -'
+        : '  import hubs skipped (imported by >$hubLimit tests; the sharded CI '
+            'suite covers their importers): ${keys.hubs.join(', ')}')
     ..writeln(
         '  package tests: ${packages.isEmpty ? '-' : packages.join(', ')}')
     ..writeln('  separate dart analyze: '
         '${analyzePackages.isEmpty ? '-' : analyzePackages.join(', ')}')
-    ..writeln('  JS suites: ${js ? 'yes' : 'no'}');
+    ..writeln('  JS suites: ${js ? 'yes' : 'no'}')
+    // ~3 s per test file measured on a machine shared by several agents
+    // (69 files 218 s, 110 files 334 s); analyze runs alongside.
+    ..writeln('  estimated: ~${(appTests.length * 3 / 60).ceil()} min '
+        '(app tests; analyze runs in parallel)');
   if (listOnly) {
     for (final String t in appTests) {
       final List<String> why = <String>[
         if (runBatch && guards.contains(t)) 'batch',
         if (byPath.containsKey(t)) 'path',
+        if (byHelper.contains(t)) 'helper',
         if (byImport.contains(t)) 'import',
       ];
       stdout.writeln('  $t  [${why.join(',')}]');
@@ -259,6 +337,15 @@ Future<void> main(List<String> args) async {
     ..addAll(lanes[0])
     ..addAll(lanes[1]);
   _report(steps);
+}
+
+int _intArg(List<String> args, String prefix, int fallback) {
+  for (final String a in args) {
+    if (a.startsWith(prefix)) {
+      return int.tryParse(a.substring(prefix.length)) ?? fallback;
+    }
+  }
+  return fallback;
 }
 
 Future<_Step> _timed(

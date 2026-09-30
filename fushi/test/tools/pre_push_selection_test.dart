@@ -134,4 +134,40 @@ intro | `test/not_this_test.dart` |
       expect(b.join(' ').length, lessThanOrEqualTo(1000));
     }
   });
+
+  group('budgetTrigger (default selection)', () {
+    bool isDir(String p) => !p.endsWith('.dart');
+    int files(String p) => p == 'native/small' ? 12 : 900;
+
+    bool hit(String changed, String ref) => budgetTrigger(changed, ref,
+        isDirectory: isDir, dirFileCount: files, maxDirFiles: 60);
+
+    test('exact file reference triggers', () {
+      expect(hit('fushi/lib/src/a.dart', 'fushi/lib/src/a.dart'), isTrue);
+    });
+
+    test('a sibling in the same directory does NOT trigger (wide mode only)',
+        () {
+      expect(hit('fushi/lib/src/b.dart', 'fushi/lib/src/a.dart'), isFalse);
+    });
+
+    test('a small directory reference triggers, a large one does not', () {
+      expect(hit('native/small/x.cpp', 'native/small'), isTrue);
+      expect(hit('fushi/lib/src/pages/p.dart', 'fushi/lib/src'), isFalse);
+      expect(hit('native/smallish/x.cpp', 'native/small'), isFalse);
+    });
+  });
+
+  test('splitHubImportKeys keeps rare imports and drops hubs', () {
+    final Map<String, String> sources = <String, String>{
+      for (int i = 0; i < 50; i++)
+        't$i': "import 'package:fushi/hub.dart';"
+            "${i == 0 ? "import 'package:fushi/rare.dart';" : ''}",
+    };
+    final ({Set<String> kept, Set<String> hubs}) r = splitHubImportKeys(
+        <String>{'package:fushi/hub.dart', 'package:fushi/rare.dart'}, sources,
+        hubLimit: 40);
+    expect(r.kept, <String>{'package:fushi/rare.dart'});
+    expect(r.hubs, <String>{'package:fushi/hub.dart'});
+  });
 }

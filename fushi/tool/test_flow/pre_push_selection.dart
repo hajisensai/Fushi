@@ -38,6 +38,49 @@ bool touchesDartTrees(Iterable<String> changed) => changed.any((String c) =>
     c.startsWith('fushi/integration_test/') ||
     RegExp(r'^packages/[^/]+/(lib|test)/').hasMatch(c));
 
+/// Budget mode (the default) for path-literal matching: [changed] triggers
+/// [ref] only when [ref] IS that file, or a directory with at most
+/// [maxDirFiles] files that contains it. tests_for_changes' wide rule also
+/// fires on same-directory siblings and on directories of any size -- right for
+/// "which guards could care", far too wide to run locally: replaying 36
+/// regression PRs, a typical PR selected 600-1500 test files that way (3 files
+/// changed under pages/implementations selected 782). Large trees are what the
+/// enumeration batch already scans.
+bool budgetTrigger(
+  String changed,
+  String ref, {
+  required bool Function(String) isDirectory,
+  required int Function(String) dirFileCount,
+  int maxDirFiles = 60,
+}) {
+  if (changed == ref) return true;
+  if (!changed.startsWith('$ref/') || !isDirectory(ref)) return false;
+  return dirFileCount(ref) <= maxDirFiles;
+}
+
+/// Splits [keys] into libraries imported by at most [hubLimit] of the tests in
+/// [testSources] and "hubs" imported by more (app_model.dart,
+/// preference_keys.dart, generated i18n ...). A hub change touches most of the
+/// suite; locally it only keeps same-name tests and the guards, the sharded CI
+/// suite covers the rest -- and the tool says so.
+({Set<String> kept, Set<String> hubs}) splitHubImportKeys(
+  Set<String> keys,
+  Map<String, String> testSources, {
+  int hubLimit = 40,
+}) {
+  final Set<String> kept = <String>{};
+  final Set<String> hubs = <String>{};
+  for (final String k in keys) {
+    int importers = 0;
+    for (final String src in testSources.values) {
+      if (src.contains("'$k'") || src.contains('"$k"')) importers++;
+      if (importers > hubLimit) break;
+    }
+    (importers > hubLimit ? hubs : kept).add(k);
+  }
+  return (kept: kept, hubs: hubs);
+}
+
 /// Packages whose tests CI never runs from the package loop (vendored / forks /
 /// stubs, and fushi_torrent which needs a real DLL). Mirrors main.yml's `skip`.
 const Set<String> kCiSkippedPackages = <String>{
