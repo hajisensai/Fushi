@@ -1416,7 +1416,9 @@ void GlobalLookupWindow::Reveal(int width, int height,
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
       fushi::DisarmLowLevelMouseHook(hwnd_);
       mouse_hook_armed_ = false;
-      if (consume_outside_owner != pending_outside_click_owner_) {
+      if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner) ||
+          consume_outside_owner != pending_outside_click_owner_) {
+        if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner)) Hide();
         NativeGlog(
             "gal direct reveal declined: mouse hook install was not "
             "acknowledged");
@@ -1528,8 +1530,27 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   if (width <= 0 || height <= 0) {
     return;
   }
+  bool consume_armed = false;
+  if (pending_outside_click_owner_ != nullptr) {
+    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
+        hwnd_, pending_outside_click_owner_);
+    if (!consume_armed) {
+      fushi::DisarmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = false;
+      if (fushi::LowLevelMouseWheelSourceRequired(pending_outside_click_owner_)) {
+        Hide();
+        NativeGlog("lookup revealStack declined: wheel source not acknowledged");
+        return;
+      }
+      NativeGlog("attached desktop revealStack: consume-owner arm was not acknowledged; falling back to pass-through arm");
+    }
+  }
   if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                     SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+    if (consume_armed) {
+      fushi::DisarmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = false;
+    }
     // A geometry epoch is an acknowledgement of the HWND bounds, not merely of
     // native control flow. Leave the host gate closed so the same epoch can be
     // retried instead of revealing into the preceding window rectangle.
@@ -1606,17 +1627,7 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   //
   // attached 表面打开的桌面 route（pending_outside_click_owner_ 非空）：点卡外
   // 关闭的 down/up 必须成对吞掉、不得推进游戏，改走与 direct galCard 同款的
-  // 同步吞点击 Arm。失败只记日志并退回原异步穿透 Arm（卡片照常显示）。
-  bool consume_armed = false;
-  if (pending_outside_click_owner_ != nullptr) {
-    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
-        hwnd_, pending_outside_click_owner_);
-    if (!consume_armed) {
-      NativeGlog(
-          "attached desktop revealStack: consume-owner arm was not "
-          "acknowledged; falling back to pass-through arm");
-    }
-  }
+  // 同步 Arm 已在上屏前完成；其它桌面 route 沿用异步 Arm。
   if (!consume_armed) {
     fushi::ArmLowLevelMouseHook(hwnd_);
   }

@@ -729,6 +729,7 @@ TVPExecuteExpressionStub_t g_lookup_execute_expression = nullptr;
 TVPAddContinuousEventHookStub_t g_lookup_add_continuous = nullptr;
 TVPRemoveContinuousEventHookStub_t g_lookup_remove_continuous = nullptr;
 ITVPFunctionExporter* g_lookup_exporter = nullptr;
+std::atomic<bool> g_kirikiri_wheel_exporter_ready{false};
 TjsVariantString* g_lookup_bootstrap_script = nullptr;
 volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 3=done
 // HookWorker 只登记"该装了"这个意图；真正碰引擎的安装动作只在引擎主线程上跑 (BUG-1724)。
@@ -5297,6 +5298,9 @@ bool g_lookup_sensor_live = false;
 // v19 准入上报用的只读访问器。传感器状态本身不外露给别的编译单元，registry 只需要
 // 这一个布尔——保持窄接口，别让准入汇总去读一堆 KiriKiri 内部状态。
 bool KirikiriLookupSensorLive() { return g_lookup_sensor_live; }
+bool KirikiriLookupExporterAvailable() {
+  return g_kirikiri_wheel_exporter_ready.load(std::memory_order_acquire);
+}
 // 经典 KAG3 采集面已自证（读到"真捕到字形"后不再求值）。
 bool g_lookup_classic_source_known = false;
 int g_lookup_classic_poll_ticks = 0;
@@ -6745,6 +6749,7 @@ void RunKirikiriLookupInstallOnMainThread() {
 void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
   if (exporter != nullptr) {
     g_lookup_exporter = exporter;
+    g_kirikiri_wheel_exporter_ready.store(true, std::memory_order_release);
     // 拿到 TJS exporter 就等于这局有脚本宿主，卡片走引擎自己的 Layer——它能跟着游戏
     // 渲染树一起做全屏/窗口变换，通用分层窗口做不到。**认领必须在这里、不是等 bootstrap
     // 成功之后**：bootstrap 要等引擎主线程回调才跑，而通用呈现器只看 lookup_enabled，
@@ -7504,5 +7509,6 @@ bool TryHookKirikiriVoiceStream() {
 bool TryHookKirikiriVoiceStream() { return true; }
 void PollKirikiriLookupInstall() {}
 bool KirikiriLookupSensorLive() { return false; }
+bool KirikiriLookupExporterAvailable() { return false; }
 
 #endif  // _M_IX86
