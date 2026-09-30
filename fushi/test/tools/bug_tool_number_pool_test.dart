@@ -1,5 +1,10 @@
 // 守卫 + 行为测试：`tool/bug.dart` 的号池并发防撞（跨分支取号）与 `renumber` 改号。
 //
+// 下面两个路径只是临时 git 仓库里的 fixture，不是本测试守的东西（守的是
+// `tool/bug.dart`）；不声明的话，每个走 BUG 流程的 PR 都会因 reindex 改了真仓库的
+// `docs/BUGS.md` 把本套件（起 git 子进程，单跑数分钟）拉进推送前检查。
+// tests-for-changes-ignore: docs/BUGS.md docs/bugs
+//
 // 背景：一天内连撞两轮、涉及四个 PR（#461/#462 抢 1138，#463 也 1138，#464 与 #462
 // 改号后的 1139 相撞）。根因是取号只看本地工作区，而并发 agent 各自在独立 worktree
 // 的独立分支上开工，彼此不可见。

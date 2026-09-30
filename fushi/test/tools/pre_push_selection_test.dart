@@ -135,6 +135,44 @@ intro | `test/not_this_test.dart` |
     }
   });
 
+  test('chunkByCommandLength maxFiles caps each batch, order kept', () {
+    final List<String> paths = <String>[
+      for (int i = 0; i < 65; i++) 't/f${i}_test.dart'
+    ];
+    final List<List<String>> batches =
+        chunkByCommandLength(paths, maxFiles: 20);
+    expect(batches.map((List<String> b) => b.length), <int>[20, 20, 20, 5]);
+    expect(batches.expand((List<String> b) => b).toList(), paths);
+    // 0 = no file cap (the old behaviour): one batch under the char limit.
+    expect(chunkByCommandLength(paths), hasLength(1));
+  });
+
+  test('countBusyFlutterCommands counts test / analyze / build runs only', () {
+    const String snap =
+        r'"D:\flutter\bin\cache\dart-sdk\bin\dart.exe" --packages="D:\flutter\packages\flutter_tools\.dart_tool\package_config.json" "D:\flutter\bin\cache\flutter_tools.snapshot"';
+    expect(
+      countBusyFlutterCommands(<String>[
+        '$snap test test/floating_ball test/settings --no-pub -r compact',
+        '$snap analyze --no-pub',
+        '$snap --no-version-check build windows --release',
+        // Unquoted form (the dartvm child / POSIX `ps`).
+        '/opt/flutter/bin/cache/flutter_tools.snapshot test --no-pub a_test.dart',
+      ]),
+      4,
+    );
+    expect(
+      countBusyFlutterCommands(<String>[
+        '$snap --version --machine',
+        '$snap pub get',
+        r'"D:\flutter\bin\cache\dart-sdk\bin\dart.exe"  run tool/pre_push_check.dart',
+        // A plain dart process whose arguments merely mention test paths.
+        'dart D:/repo/fushi/test/tools/x_test.dart',
+        '',
+      ]),
+      0,
+    );
+  });
+
   group('budgetTrigger (default selection)', () {
     bool isDir(String p) => !p.endsWith('.dart');
     int files(String p) => p == 'native/small' ? 12 : 900;

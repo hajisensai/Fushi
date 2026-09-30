@@ -323,6 +323,33 @@ List<String> extractDeclaredTriggerGlobs(String source) {
   return globs;
 }
 
+/// 显式声明「这个路径字面量只是 fixture，不是我守的东西」：
+/// `// tests-for-changes-ignore: docs/BUGS.md`。
+///
+/// 与上面的触发声明方向相反。典型是 `bug_tool_*_test.dart`：它们在临时 git
+/// 仓库里写 `docs/BUGS.md` 当 fixture，字面量恰好与真仓库的索引文件同名，于是
+/// 每个走 BUG 流程的 PR（reindex 必改 `docs/BUGS.md`）都会把这两套起 git 子进程、
+/// 单跑近 5 分钟的测试拉进来。它们真正守的是 `tool/bug.dart`，那条引用不受影响。
+///
+/// 忽略只作用于**触发**，不改提取结果（[TestTriggerFace.referencedPaths] 照旧），
+/// 所以 `tests_for_changes_guard_test.dart` 的规模哨兵不受影响；那边另有一条断言：
+/// 每条忽略都必须对得上同一文件里真被提取到的引用，否则就是死声明。
+final RegExp _declaredIgnore = RegExp(
+  r'^\s*//\s*tests-for-changes-ignore:\s*(\S[^\n]*)',
+  multiLine: true,
+);
+
+/// 提取一个测试文件里声明的忽略路径（仓库根相对）。
+Set<RepoPath> extractDeclaredIgnoredPaths(String source) {
+  final Set<RepoPath> paths = <RepoPath>{};
+  for (final RegExpMatch m in _declaredIgnore.allMatches(source)) {
+    for (final String p in m.group(1)!.trim().split(RegExp(r'\s+'))) {
+      if (p.isNotEmpty) paths.add(p);
+    }
+  }
+  return paths;
+}
+
 /// 最小 glob：`**` 跨目录、`*` 单层、`?` 单字符，其余按字面量转义。
 RegExp globToRegExp(String glob) {
   final StringBuffer out = StringBuffer('^');
@@ -350,6 +377,7 @@ class TestTriggerFace {
   const TestTriggerFace({
     required this.referencedPaths,
     required this.declaredGlobs,
+    this.ignoredPaths = const <RepoPath>{},
   });
 
   /// 从源码里静态提取到的仓库路径引用。
@@ -357,6 +385,14 @@ class TestTriggerFace {
 
   /// `// tests-for-changes:` 声明的 glob（扫描面运行时才算得出来的守卫用）。
   final List<String> declaredGlobs;
+
+  /// `// tests-for-changes-ignore:` 声明的 fixture 路径：提取得到，但不参与触发。
+  final Set<RepoPath> ignoredPaths;
+
+  /// 参与触发的引用 = 提取到的引用减去声明忽略的。
+  Set<RepoPath> get triggeringPaths => ignoredPaths.isEmpty
+      ? referencedPaths
+      : referencedPaths.difference(ignoredPaths);
 
   bool get isEmpty => referencedPaths.isEmpty && declaredGlobs.isEmpty;
 }
@@ -389,6 +425,7 @@ Map<RepoPath, TestTriggerFace> buildReferenceIndex(RepoFs fs) {
     index[test] = TestTriggerFace(
       referencedPaths: extractRepoPathReferences(source, fs),
       declaredGlobs: extractDeclaredTriggerGlobs(source),
+      ignoredPaths: extractDeclaredIgnoredPaths(source),
     );
   }
   return index;
@@ -437,7 +474,7 @@ Map<RepoPath, Set<String>> selectTestsForChanges({
   final Map<RepoPath, Set<String>> hits = <RepoPath, Set<String>>{};
   for (final MapEntry<RepoPath, TestTriggerFace> entry in index.entries) {
     for (final RepoPath changed in effective) {
-      for (final RepoPath ref in entry.value.referencedPaths) {
+      for (final RepoPath ref in entry.value.triggeringPaths) {
         if (!changeTriggersReference(changed, ref, fs)) continue;
         hits.putIfAbsent(entry.key, () => <String>{}).add(ref);
       }

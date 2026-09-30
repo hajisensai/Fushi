@@ -2,9 +2,22 @@
 // command, so that "it passed locally" means "CI will not turn red on it".
 //
 //   dart run tool/pre_push_check.dart [--base=<ref>] [--list] [--quick|--wide]
-//                                     [--skip-analyze]
+//                                     [--skip-analyze] [--parallel]
+//                                     [--concurrency=4] [--batch-size=20]
+//                                     [--gate=3] [--gate-timeout-min=30]
 //                                     [--allow-flutter-mismatch]
 //                                     [--files <paths...> | --files-from=<list>]
+//
+// Resource budget (2026-09-30: three agents running this at once took a 32 GB
+// machine down to ~1 GB free; one run was 4-6 GB because `flutter test` ran at
+// the default concurrency -- a dozen flutter_testers on 16 cores -- alongside a
+// full `flutter analyze`, and load-induced 30 s timeouts then failed the verdict):
+//   * tests run with --concurrency=4, in batches of at most --batch-size files;
+//   * analyze runs after the tests, not alongside (--parallel restores the old
+//     overlap for a machine nobody else is using);
+//   * before every `flutter test` batch and every analyze the tool waits while
+//     >= --gate Flutter test/analyze/build runs are already going on this
+//     machine (0 disables), up to --gate-timeout-min, then runs anyway and says so.
 //
 // Why (upstream 2026-09-20..30): agents ran `flutter analyze` + hand-picked tests
 // before pushing, yet CI went red. analyze failed once in 10 days; of the 36 PRs
@@ -14,14 +27,15 @@
 // trees (the enumeration batch in docs/agent/fast-workflow.md, which the rules
 // only ran AFTER merging). This tool runs, in order:
 //   0. toolchain: the local Flutter must be the version CI pins (main.yml);
-//   1. full `flutter analyze` in fushi/ (analyzing only changed files misses
-//      callers broken by an API change), plus `dart analyze` of the pure-Dart
-//      packages CI analyzes separately when they changed;
-//   2. app tests: the enumeration guard batch + path-literal-triggered tests
+//   1. app tests: the enumeration guard batch + path-literal-triggered tests
 //      (tests_for_changes, Dart trees included) + tests importing a changed
-//      library / helper + changed test files;
-//   3. tests of changed packages (as main.yml's package loop / server-gate);
-//   4. the JS suites when JS / assets / the extension changed.
+//      library / helper + changed test files -- first, because the guards are
+//      where the regressions were caught;
+//   2. tests of changed packages (as main.yml's package loop / server-gate);
+//   3. the JS suites when JS / assets / the extension changed;
+//   4. full `flutter analyze` in fushi/ (analyzing only changed files misses
+//      callers broken by an API change), plus `dart analyze` of the pure-Dart
+//      packages CI analyzes separately when they changed.
 // Every Flutter test batch is judged by exit code AND executed count (BUG-1157).
 // The full sharded suite still runs on CI; this is the cheap, high-yield subset.
 import 'dart:convert';
@@ -49,12 +63,85 @@ class _Step {
   final Duration elapsed;
 }
 
+/// The machine-wide gate the local agents share (countBusyFlutterCommands):
+/// before a heavy step, wait while [limit] or more Flutter test / analyze /
+/// build runs are already busy. It only paces the run; it never decides the
+/// verdict, and whatever it did ends up in the summary.
+class _Gate {
+  _Gate({required this.limit, required this.timeout});
+
+  final int limit;
+  final Duration timeout;
+  final List<String> notes = <String>[];
+  bool _unavailable = false;
+
+  Future<void> wait(String what) async {
+    if (limit <= 0 || _unavailable) return;
+    final Stopwatch sw = Stopwatch()..start();
+    int? shown;
+    while (true) {
+      final int? busy = _busyFlutterCommands();
+      if (busy == null) {
+        _unavailable = true;
+        notes.add('could not list processes; ran without the gate');
+        return;
+      }
+      if (busy < limit) {
+        if (sw.elapsed.inSeconds >= 30) {
+          notes.add('$what waited ${sw.elapsed.inMinutes} min for the machine');
+        }
+        return;
+      }
+      if (sw.elapsed > timeout) {
+        notes.add('$what started after ${timeout.inMinutes} min with $busy '
+            'Flutter runs still busy (gate $limit)');
+        stdout.writeln('   gate: still $busy busy after '
+            '${timeout.inMinutes} min; starting anyway');
+        return;
+      }
+      if (busy != shown) {
+        stdout.writeln('   gate: $busy Flutter test/analyze/build runs busy on '
+            'this machine (gate $limit); waiting before $what');
+        shown = busy;
+      }
+      await Future<void>.delayed(const Duration(seconds: 30));
+    }
+  }
+}
+
+/// [countBusyFlutterCommands] over this machine's process list, or null when
+/// the list cannot be read.
+int? _busyFlutterCommands() {
+  try {
+    final ProcessResult r = Platform.isWindows
+        ? Process.runSync('powershell', <String>[
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            r"""Get-CimInstance Win32_Process -Filter "Name='dart.exe'" | ForEach-Object { $_.CommandLine }""",
+          ])
+        : Process.runSync('ps', <String>['-Ao', 'args']);
+    if (r.exitCode != 0) return null;
+    return countBusyFlutterCommands(
+        const LineSplitter().convert(r.stdout as String));
+  } on ProcessException {
+    return null;
+  }
+}
+
 Future<void> main(List<String> args) async {
   final RepoFs fs = RepoFs(locateRepoRoot(Directory.current));
   final String root = fs.root.path;
   final bool listOnly = args.contains('--list');
   final bool skipAnalyze = args.contains('--skip-analyze');
+  final bool parallel = args.contains('--parallel');
   final bool allowMismatch = args.contains('--allow-flutter-mismatch');
+  final int concurrency = _intArg(args, '--concurrency=', 4);
+  final int batchSize = _intArg(args, '--batch-size=', 20);
+  final _Gate gate = _Gate(
+    limit: _intArg(args, '--gate=', 3),
+    timeout: Duration(minutes: _intArg(args, '--gate-timeout-min=', 30)),
+  );
   String? base;
   List<String>? explicitFiles;
   for (int i = 0; i < args.length; i++) {
@@ -127,7 +214,7 @@ Future<void> main(List<String> args) async {
   for (final MapEntry<String, TestTriggerFace> e
       in buildReferenceIndex(fs).entries) {
     for (final String c in changed) {
-      for (final String ref in e.value.referencedPaths) {
+      for (final String ref in e.value.triggeringPaths) {
         if (triggers(c, ref)) {
           byPath.putIfAbsent(e.key, () => <String>{}).add(ref);
         }
@@ -221,9 +308,12 @@ Future<void> main(List<String> args) async {
         '${analyzePackages.isEmpty ? '-' : analyzePackages.join(', ')}')
     ..writeln('  JS suites: ${js ? 'yes' : 'no'}')
     // ~3 s per test file measured on a machine shared by several agents
-    // (69 files 218 s, 110 files 334 s); analyze runs alongside.
-    ..writeln('  estimated: ~${(appTests.length * 3 / 60).ceil()} min '
-        '(app tests; analyze runs in parallel)');
+    // (69 files 218 s, 110 files 334 s); analyze ~2-3 min on an idle machine.
+    ..writeln(
+        '  estimated: ~${(appTests.length * 3 / 60).ceil()} min app tests '
+        '(--concurrency=$concurrency, batches of <=$batchSize)'
+        '${skipAnalyze ? '' : parallel ? ', analyze alongside' : ' + ~3 min analyze after them'}'
+        '${gate.limit > 0 ? '; waits while >=${gate.limit} Flutter test/analyze/build runs are busy' : ''}');
   if (listOnly) {
     for (final String t in appTests) {
       final List<String> why = <String>[
@@ -259,13 +349,14 @@ Future<void> main(List<String> args) async {
   }));
   if (!steps.last.ok) return _report(steps);
 
-  // Analyze and tests are independent: run the two lanes concurrently so the
-  // wall time is the longer lane, not the sum (first measurement, sequential:
-  // analyze 135 s + 69 test files 218 s).
-  final Future<List<_Step>> analyzeLane = () async {
+  // Analyze and tests are independent, but each costs 1.5-4 GB: by default the
+  // analyze lane starts only after the test lane (measured sequentially: analyze
+  // 135 s + 69 test files 218 s). --parallel overlaps them on an idle machine.
+  Future<List<_Step>> analyzeLane() async {
     final List<_Step> out = <_Step>[];
     if (skipAnalyze) return out;
     out.add(await _timed('flutter analyze (fushi/)', () async {
+      await gate.wait('flutter analyze');
       // --no-pub: the worktree is bootstrapped; resolving the whole workspace
       // again on every run only costs time.
       final int code = await _stream(
@@ -280,29 +371,35 @@ Future<void> main(List<String> args) async {
       }));
     }
     return out;
-  }();
+  }
 
-  final Future<List<_Step>> testLane = () async {
+  Future<List<_Step>> testLane() async {
     final List<_Step> out = <_Step>[];
     final List<List<String>> batches = chunkByCommandLength(
       appTests.map((String t) => t.substring('fushi/'.length)).toList(),
+      maxFiles: batchSize,
     );
     for (int i = 0; i < batches.length; i++) {
       out.add(await _timed(
         'app tests ${i + 1}/${batches.length} (${batches[i].length} files)',
-        () => _flutterTests(flutter, '$root/fushi', batches[i],
-            '$root/.codex-test/pre-push/app-$i'),
+        () async {
+          await gate.wait('app test batch ${i + 1}/${batches.length}');
+          return _flutterTests(flutter, '$root/fushi', batches[i],
+              '$root/.codex-test/pre-push/app-$i', concurrency);
+        },
       ));
     }
     for (final String p in packages) {
-      out.add(await _timed(
-          'package tests (packages/$p)',
-          () => _flutterTests(
-                flutter,
-                '$root/packages/$p',
-                const <String>[],
-                '$root/.codex-test/pre-push/pkg-$p',
-              )));
+      out.add(await _timed('package tests (packages/$p)', () async {
+        await gate.wait('packages/$p tests');
+        return _flutterTests(
+          flutter,
+          '$root/packages/$p',
+          const <String>[],
+          '$root/.codex-test/pre-push/pkg-$p',
+          concurrency,
+        );
+      }));
     }
     if (js) {
       out.add(await _timed('JS behavior tests (test/js)', () async {
@@ -329,14 +426,20 @@ Future<void> main(List<String> args) async {
       }));
     }
     return out;
-  }();
+  }
 
-  final List<List<_Step>> lanes =
-      await Future.wait(<Future<List<_Step>>>[analyzeLane, testLane]);
-  steps
-    ..addAll(lanes[0])
-    ..addAll(lanes[1]);
-  _report(steps);
+  if (parallel) {
+    final List<List<_Step>> lanes =
+        await Future.wait(<Future<List<_Step>>>[testLane(), analyzeLane()]);
+    steps
+      ..addAll(lanes[0])
+      ..addAll(lanes[1]);
+  } else {
+    steps
+      ..addAll(await testLane())
+      ..addAll(await analyzeLane());
+  }
+  _report(steps, gateNotes: gate.notes);
 }
 
 int _intArg(List<String> args, String prefix, int fallback) {
@@ -365,6 +468,7 @@ Future<(bool, String)> _flutterTests(
   String cwd,
   List<String> files,
   String logBase,
+  int concurrency,
 ) async {
   Directory(File(logBase).parent.path).createSync(recursive: true);
   final Process p = await Process.start(
@@ -376,6 +480,9 @@ Future<(bool, String)> _flutterTests(
       'json',
       '--exclude-tags',
       'golden',
+      // The default is one flutter_tester per core (a dozen+ on the agents'
+      // 16-core machine, 150-450 MB each); 4 keeps a run near 2 GB.
+      '--concurrency=$concurrency',
       ...files
     ],
     workingDirectory: cwd,
@@ -422,12 +529,15 @@ Future<int> _stream(String exe, List<String> args, String cwd) async {
   return p.exitCode;
 }
 
-void _report(List<_Step> steps) {
+void _report(List<_Step> steps, {List<String> gateNotes = const <String>[]}) {
   final bool ok = steps.every((_Step s) => s.ok);
   stdout.writeln('\n==== pre-push summary');
   for (final _Step s in steps) {
     stdout.writeln('  ${s.ok ? 'OK    ' : 'FAILED'}  ${s.name}  '
         '(${s.elapsed.inSeconds}s)  ${s.ok ? '' : s.detail}');
+  }
+  for (final String n in gateNotes) {
+    stdout.writeln('  gate: $n');
   }
   stdout.writeln(ok
       ? 'PRE-PUSH VERDICT: PASSED'

@@ -367,6 +367,14 @@ dart run tool/flutter_test_failures.dart --no-pub \
 
 规则住在拥有它的那个文件里，改守卫的人一眼看得见；守卫断言每条声明至少匹配到一个真实文件，所以声明烂掉是**响的**不是哑的。
 
+**反方向的例外：只是 fixture 的字面量。** 典型是 `bug_tool_number_pool_test.dart` / `bug_tool_renumber_scope_test.dart`：它们在临时 git 仓库里写 `docs/BUGS.md` 当 fixture，字面量恰好与真仓库的索引同名，于是每个走 BUG 流程的 PR（reindex 必改 `docs/BUGS.md`）都会把这两套起 git 子进程、单跑近 5 分钟、负载一高就 30 秒超时的测试拉进推送前检查。它们真正守的是 `tool/bug.dart`（那条引用照旧触发）。这类测试在**自己文件里**声明：
+
+```dart
+// tests-for-changes-ignore: docs/BUGS.md docs/bugs
+```
+
+忽略只作用于触发、不改提取（上面的规模哨兵不受影响）；守卫断言每条忽略都对得上本文件真被提取到的引用，并钉住「改 `docs/BUGS.md` 仍触发 `bugs_per_file_guard_test`」。只给「守的明显是另一样东西、这个字面量只是临时目录里的 fixture」的测试用——拿不准就别加，偏置仍是过度触发。
+
 ## 共享测试原语：它坏起来是静默的，改它的门也不在上面两批里
 
 守卫的判据窗口很少是「整个文件」，多半是「某个方法体 / 某个类体」。切窗口这件事全仓集中在 `fushi/test/helpers/source_guard.dart` 的三个原语上——`methodBody`、`balancedBlockFrom`、`topLevelFunctionBody`。它们是上百条守卫共用的地基，**而地基塌下去的方式是静默的**：守卫不报错，只是换了一段源码继续「工作」。
