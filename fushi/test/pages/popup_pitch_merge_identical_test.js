@@ -10,11 +10,12 @@
 // case 1 立刻变红。
 //
 // 覆盖：
-//   1. 五本词典同为 [1]（去重关闭）→ 只剩 1 行，5 枚来源药丸，按首次出现顺序。
+//   1. 五本词典同为 [1]（去重关闭）→ 只剩 1 行、1 枚药丸（首个来源），
+//      其余来源按首次出现顺序收进 title / data-details。
 //   2. 音调型不同（[1] vs [0]）→ 不合并，仍是 2 行。
 //   3. 位置部分重叠（[1,0] vs [1]）→ 判据是 payload 全等，故意不合并，仍是 2 行。
-//   4. 去重打开 + 五本同为 [1] → 与改动前一致：1 行 1 枚药丸（默认外观零变化）。
-//   5. 两本纯 IPA 词典给出完全相同的 transcriptions（去重打开）→ 合并成 1 行 2 枚药丸。
+//   4. 去重打开 + 五本同为 [1] → 1 行 1 枚药丸，来源名单仍全在 title 里。
+//   5. 两本纯 IPA 词典给出完全相同的 transcriptions（去重打开）→ 合并成 1 行 1 枚药丸。
 //
 // Run: node fushi/test/pages/popup_pitch_merge_identical_test.js
 // (also driven from popup_pitch_merge_identical_test.dart so it executes inside
@@ -29,6 +30,15 @@ const {
 
 function labelNames(section) {
   return collectByClass(section, 'pitch-dict-label').map(n => n.textContent);
+}
+
+// 合并行只挂一枚药丸（首个来源），其余来源收进药丸 title 与行的 data-details。
+function labelTitles(section) {
+  return collectByClass(section, 'pitch-dict-label').map(n => n.title || '');
+}
+
+function rowDetails(section) {
+  return collectByClass(section, 'pitch-group').map(n => n.attributes['data-details']);
 }
 
 function pitchGroupCount(section) {
@@ -48,9 +58,11 @@ const FIVE_SAME = ['词典14', '词典13', '词典15', '词典16', '词典17'].m
     assert.strictEqual(pitchGroupCount(section), 1,
       'five dictionaries agreeing on [1] must collapse into ONE .pitch-group row; got '
         + pitchGroupCount(section));
-    assert.deepStrictEqual(labelNames(section),
-      ['词典14', '词典13', '词典15', '词典16', '词典17'],
-      'the merged row must carry every source label, in first-appearance order');
+    assert.deepStrictEqual(labelNames(section), ['词典14'],
+      'the merged row must carry ONE source pill — the first source');
+    assert.deepStrictEqual(labelTitles(section), ['词典14, 词典13, 词典15, 词典16, 词典17'],
+      'the other sources must stay reachable through the pill title, in first-appearance order');
+    assert.deepStrictEqual(rowDetails(section), ['词典14, 词典13, 词典15, 词典16, 词典17']);
     const text = collectText(section);
     const occurrences = text.split('[1]').length - 1;
     assert.strictEqual(occurrences, 1,
@@ -69,6 +81,8 @@ const FIVE_SAME = ['词典14', '词典13', '词典15', '词典16', '词典17'].m
     assert.strictEqual(pitchGroupCount(section), 2,
       'dictionaries disagreeing on the accent must stay on separate rows');
     assert.deepStrictEqual(labelNames(section), ['A', 'B']);
+    assert.deepStrictEqual(labelTitles(section), ['', ''],
+      'single-source rows need no title');
   }
 
   // Case 3: 位置部分重叠 —— 判据是 payload 全等，故意不合并（宁可少合）。
@@ -95,9 +109,10 @@ const FIVE_SAME = ['词典14', '词典13', '词典15', '词典16', '词典17'].m
     const section = sb.window.__test.createPitchSection(FIVE_SAME, 'ギター');
     assert.strictEqual(pitchGroupCount(section), 1,
       'dedup ON must still yield exactly one row');
-    assert.deepStrictEqual(labelNames(section),
-      ['词典14', '词典13', '词典15', '词典16', '词典17'],
-      'dedup ON must keep EVERY source label — dropping four of them is the '
+    assert.deepStrictEqual(labelNames(section), ['词典14'],
+      'dedup ON must render one source pill for the merged row');
+    assert.deepStrictEqual(labelTitles(section), ['词典14, 词典13, 词典15, 词典16, 词典17'],
+      'dedup ON must keep EVERY source reachable — dropping four of them is the '
         + '"one setting loses information" half of BUG-2122');
     const text = collectText(section);
     assert.strictEqual(text.split('[1]').length - 1, 1,
@@ -114,7 +129,8 @@ const FIVE_SAME = ['词典14', '词典13', '词典15', '词典16', '词典17'].m
     ], 'ねこ');
     assert.strictEqual(pitchGroupCount(section), 1,
       '[1,0] and [0,1] are the same accent set; key must sort before comparing');
-    assert.deepStrictEqual(labelNames(section), ['A', 'B']);
+    assert.deepStrictEqual(labelNames(section), ['A']);
+    assert.deepStrictEqual(labelTitles(section), ['A, B']);
   }
 
   // Case 5: 两本纯 IPA 词典给出完全相同的 transcriptions → 合并。
@@ -127,7 +143,8 @@ const FIVE_SAME = ['词典14', '词典13', '词典15', '词典16', '词典17'].m
     ], 'ねこ');
     assert.strictEqual(pitchGroupCount(section), 1,
       'two IPA dicts with identical transcriptions must merge into one row');
-    assert.deepStrictEqual(labelNames(section), ['IPA-1', 'IPA-2']);
+    assert.deepStrictEqual(labelNames(section), ['IPA-1']);
+    assert.deepStrictEqual(labelTitles(section), ['IPA-1, IPA-2']);
     const text = collectText(section);
     assert.strictEqual(text.split('[neꜜko]').length - 1, 1,
       'the shared transcription must be printed once; got ' + JSON.stringify(text));

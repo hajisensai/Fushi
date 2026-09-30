@@ -3049,9 +3049,15 @@ function createPitchGroup(pitchData, reading) {
     const dictionaries = pitchData.dictionaries || [pitchData.dictionary];
     // data-details 仍用**真名**（选择器/样式按真名匹配），只有渲染出来的标签走显示名。
     const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
-    dictionaries.forEach((dictionary) => {
-        container.appendChild(el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
-    });
+    // 合并行只挂**一枚**来源药丸——首个来源（词典排序最靠前的那本）。一本词典一枚时，
+    // 五本音调词典同标 [3] 就是一排五枚药丸把读音挤到下一行，读起来仍像重复。
+    // 其余来源不丢：收进这枚药丸的 title（桌面悬停可见）和上面的 data-details。
+    const label = el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionaries[0]) });
+    if (dictionaries.length > 1) {
+        // title 同样是给人看的文本，走显示名。
+        label.title = dictionaries.map(__fushiDictDisplayName).join(', ');
+    }
+    container.appendChild(label);
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {

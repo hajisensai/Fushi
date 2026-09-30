@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 两层守护：
 /// ① 行为级——用 Node 真执行 popup.js 的 `createPitchSection`，断言五本同型词典
-///    塌成 1 行 5 枚药丸、音调型不同的不合并、去重打开时行为与改动前逐字一致。
+///    塌成 1 行 1 枚药丸（其余来源进 title）、音调型不同的不合并、去重打开时行为与改动前逐字一致。
 ///    无 node 时 skip。
 /// ② 源码级——静态扫描**三份镜像副本**（app / 扩展 assets / 扩展 tools），保证合并
 ///    helper、调用点、多药丸渲染和 CSS 换行在位；即便无 node 也能守住回归，且三份
@@ -155,7 +155,9 @@ void main() {
         reason: '不排序会把 [1,0] 与 [0,1] 判成不同型，漏合',
       );
 
-      // createPitchGroup 每本来源渲染一枚药丸。
+      // createPitchGroup 吃来源列表，合并行只渲染**一枚**药丸（首个来源），
+      // 其余来源收进药丸 title——一行五枚药丸读起来仍像重复（用户 2026-09-30 要求
+      // 「只保留一个标签」），但来源名单不能丢（BUG-2122 的另一半）。
       final int group =
           js.indexOf('function createPitchGroup(pitchData, reading)');
       expect(group, greaterThanOrEqualTo(0));
@@ -167,32 +169,28 @@ void main() {
         reason: 'createPitchGroup must accept a dictionary LIST (single-source '
             'groups degrade to a one-element list)',
       );
-      final int labelLoop =
-          js.indexOf('dictionaries.forEach((dictionary) => {', group);
+      final int groupEnd = js.indexOf('\nfunction ', group + 1);
+      final String groupBody = js.substring(group, groupEnd);
       expect(
-        labelLoop,
-        greaterThan(group),
-        reason: 'every merged source must get its own .pitch-dict-label pill',
-      );
-      // 钉不变式而不是写法：标签文本可以过一层显示名投影
-      // （__fushiDictDisplayName，词典改名 v101），但**必须源自循环变量**
-      // dictionary —— 写死成 pitchData.dictionary 就退回「只渲染第一本」。
-      final int pill =
-          js.indexOf("className: 'pitch-dict-label'", labelLoop);
-      expect(pill, greaterThan(labelLoop),
-          reason: 'the pill loop must render a .pitch-dict-label');
-      final int pillEnd = js.indexOf('\n', pill);
-      final String pillLine = js.substring(pill, pillEnd);
-      expect(
-        pillLine,
-        contains('dictionary'),
-        reason: 'the pill label must come from the loop variable',
+        "className: 'pitch-dict-label'".allMatches(groupBody).length,
+        1,
+        reason: 'a pitch row renders exactly one source pill',
       );
       expect(
-        pillLine,
-        isNot(contains('pitchData.')),
-        reason: 'the pill label must NOT read pitchData.dictionary — that is '
-            'the regression where only the first source gets rendered',
+        groupBody,
+        isNot(contains('dictionaries.forEach(')),
+        reason: 'looping one pill per source is the "five identical pills" '
+            'regression',
+      );
+      expect(
+        groupBody,
+        contains('__fushiDictDisplayName(dictionaries[0])'),
+        reason: 'the single pill shows the first source',
+      );
+      expect(
+        groupBody,
+        contains("label.title = dictionaries.map(__fushiDictDisplayName).join(', ');"),
+        reason: 'the remaining sources must stay reachable via the pill title',
       );
     });
   });
