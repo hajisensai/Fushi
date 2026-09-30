@@ -25,8 +25,9 @@ class MangaOcrCudaRecognizer implements BatchOcrRecognizer {
           _receive,
           onError: _fail,
           onDone: () {
-            if (!_closed)
+            if (!_closed) {
               _fail(StateError('manga-ocr worker closed stdout$_details'));
+            }
           },
         );
     _stderr = _process.stderr
@@ -217,8 +218,9 @@ class MangaOcrCudaRecognizer implements BatchOcrRecognizer {
     if (!_ready.isCompleted) _ready.completeError(error, stack);
     final Completer<List<String>>? pending = _pending;
     _pending = null;
-    if (pending != null && !pending.isCompleted)
+    if (pending != null && !pending.isCompleted) {
       pending.completeError(error, stack);
+    }
     // Preserve the original protocol/process failure; close still kills and
     // waits for the process, and a caller may await close() itself as well.
     unawaited(close().catchError((Object _) {}));
