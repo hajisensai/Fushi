@@ -2907,7 +2907,15 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.channel.outputs.publish_tag }}
-          target_commitish: ${{ github.sha }}
+          # Rolling debug: target the DEFAULT branch, not github.sha. GitHub rejects a
+          # GITHUB_TOKEN update of a release whose resolved target commit changes
+          # .github/workflows/ relative to the default branch (REST docs, "Update a release";
+          # the token cannot hold `workflows`). develop diverged from main in workflows from
+          # 2026-09-29 21:13 on and the rolling publish failed intermittently with
+          # "Resource not accessible by integration" (10 of 27 attempts; Android stuck ~3 h).
+          # The rolling tag already exists, so target_commitish never moves it; the develop
+          # sha stays in the release name/body. Beta/formal keep github.sha.
+          target_commitish: ${{ steps.channel.outputs.rolling_debug == 'true' && github.event.repository.default_branch || github.sha }}
           name: ${{ steps.channel.outputs.name }}
           body: ${{ steps.channel.outputs.body }}
           prerelease: ${{ steps.channel.outputs.prerelease }}

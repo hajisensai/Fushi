@@ -13,8 +13,15 @@
 # `DELETE /repos/{owner}/{repo}/actions/caches?key=...&ref=...`。
 name: Cleanup PR caches
 
+# pull_request_target, not pull_request (2026-09-30): 79% of PRs come from a fork
+# (W1ght/hibiki), and a fork PR's `pull_request` token is read-only, so this job
+# was skipped for them -- their CI kept running after merge (measured: 82% of PR
+# CI runner time was spent AFTER the PR merged, ~740 runner-min/day). The
+# target event runs this file from the base branch with the base repo's token.
+# Safe here: nothing checks out or executes PR code; the fork-controlled branch
+# name only arrives via env and is compared as a string in bash.
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
 
 permissions:
@@ -27,9 +34,7 @@ concurrency:
 
 jobs:
   cleanup:
-    # fork PR 的 GITHUB_TOKEN 是只读的，`actions: write` 拿不到，跑了必红。
-    # 本仓的开发模式是同仓分支 PR，fork 直接跳过即可。
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # 不再跳过 fork PR：pull_request_target 给的是基础仓库的 token（见文件头）。
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -46,6 +51,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           SELF_WORKFLOW: ${{ github.workflow }}
         run: |
           set -euo pipefail
@@ -63,8 +69,8 @@ jobs:
             [ -n "${id:-}" ] || continue
             [ "$head_branch" = "$HEAD_BRANCH" ] || continue
             # 分支**名**不唯一：fork 上同名的 develop / feature 分支发起的 PR 也叫这个名。
-            # 只认本仓库分支上的 run（本 job 本来就只为同仓 PR 跑）。
-            [ "$head_repo" = "$REPO" ] || continue
+            # 只认这个 PR 的 head 仓库（本仓分支或 fork）上的 run。
+            [ "$head_repo" = "$HEAD_REPO" ] || continue
             [ "$name" = "$SELF_WORKFLOW" ] && continue
             if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
               echo "Cancelled run $id ($name)"
