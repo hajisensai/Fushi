@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "下載識別提速組件（$size）",
-  "manga_ocr_accelerator_desc": "識別結果與現在完全相同，本機識別速度約為原來的兩倍。"
+  "manga_ocr_accelerator_desc": "識別結果與現在完全相同，本機識別速度約為原來的兩倍。",
+  "manga_ocr_ctc_model": "漫畫 CTC（快速）",
+  "manga_ocr_ctc_desc": "用漫畫微調的 PP-OCRv6 模型逐列識別：下載體積比 manga-ocr 小得多、速度更快；實測準確率不低於 manga-ocr，注音密集的頁面也是。模型：Kellenok/PP-OCRv6_manga（以 Manga109-s 與 AnimeText 訓練）。"
 }

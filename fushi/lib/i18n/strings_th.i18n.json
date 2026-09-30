@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "ดาวน์โหลดชุดเร่งความเร็ว ($size)",
-  "manga_ocr_accelerator_desc": "ผลการจดจำเหมือนเดิม เร็วขึ้นประมาณสองเท่าบนอุปกรณ์นี้"
+  "manga_ocr_accelerator_desc": "ผลการจดจำเหมือนเดิม เร็วขึ้นประมาณสองเท่าบนอุปกรณ์นี้",
+  "manga_ocr_ctc_model": "มังงะ CTC (เร็ว)",
+  "manga_ocr_ctc_desc": "อ่านข้อความทีละคอลัมน์ด้วยโมเดล PP-OCRv6 ที่ปรับแต่งสำหรับมังงะ ขนาดดาวน์โหลดเล็กกว่า manga-ocr มากและเร็วกว่า ในหน้าทดสอบของเราแม่นยำเท่าเดิมหรือดีกว่า รวมถึงหน้าที่มีฟุริงานะมาก โมเดล: Kellenok/PP-OCRv6_manga (ฝึกด้วย Manga109-s และ AnimeText)"
 }

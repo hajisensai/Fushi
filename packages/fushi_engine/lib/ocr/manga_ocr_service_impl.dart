@@ -31,6 +31,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/baberu_ocr_recognizer.dart';
+import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_cuda_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_cuda_runtime.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
@@ -83,6 +84,7 @@ class MangaOcrModelPaths {
     this.baberu,
     this.cuda,
     this.kv,
+    this.ctcRecPath = '',
   });
 
   final String detectorPath;
@@ -94,6 +96,9 @@ class MangaOcrModelPaths {
 
   /// 经典 manga-ocr 的提速组件（KV cache decoder）；null = 走无 cache 的经典 decoder。
   final MangaOcrKvModelPaths? kv;
+
+  /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
+  final String ctcRecPath;
 
   /// 横排行路径：PP-OCRv6 small det / rec / rec 字典（`inference.yml`）。
   final String ppDetPath;
@@ -408,6 +413,9 @@ class _IsolateOcrEngine {
   MangaOcrKvRecognizer? mangaOcrKv;
   PpOcrLineDetector? lineDetector;
   PpOcrLineRecognizer? lineRecognizer;
+
+  /// 逐列 CTC 的列识别 rec（与 [lineRecognizer] 是同一个对象时只关一次）。
+  PpOcrLineRecognizer? columnRecognizer;
   OcrRecognizer? recognizer;
   final List<OcrSession> baberuSessions = <OcrSession>[];
 
@@ -427,6 +435,7 @@ class _IsolateOcrEngine {
     final OcrSession? kvDecoder = this.kvDecoder;
     final PpOcrLineDetector? lineDetector = this.lineDetector;
     final PpOcrLineRecognizer? lineRecognizer = this.lineRecognizer;
+    final PpOcrLineRecognizer? columnRecognizer = this.columnRecognizer;
     this.detector = null;
     this.mangaOcr = null;
     this.mangaOcrKv = null;
@@ -436,6 +445,7 @@ class _IsolateOcrEngine {
     this.kvDecoder = null;
     this.lineDetector = null;
     this.lineRecognizer = null;
+    this.columnRecognizer = null;
     recognizer = null;
     for (final OcrSession session in baberuSessions) {
       try {
@@ -475,6 +485,11 @@ class _IsolateOcrEngine {
     try {
       await lineRecognizer?.close();
     } catch (_) {}
+    if (!identical(columnRecognizer, lineRecognizer)) {
+      try {
+        await columnRecognizer?.close();
+      } catch (_) {}
+    }
   }
 }
 
@@ -564,8 +579,48 @@ Future<void> _openIsolateOcrEngine(
     );
   }
 
+  // PP-OCRv6 det 与字典：横排行路径要用，逐列 CTC 的列检测也用同一个会话，所以
+  // 按需建一次、两处共用。
+  PpOcrLineDetector? sharedLineDetector;
+  Future<PpOcrLineDetector> openLineDetector() async =>
+      sharedLineDetector ??= engine.lineDetector = PpOcrLineDetector(
+        await plan.createSession(
+          factory,
+          modelPaths.ppDetPath,
+          providers: recognitionProviders,
+          onProviderResolved: (OcrProviderResolution resolution) =>
+              record('line detector', resolution),
+        ),
+      );
+  List<String>? sharedVocab;
+  Future<List<String>> ppVocab() async => sharedVocab ??= buildPpOcrCtcVocab(
+    parsePpOcrCharacterDict(
+      await File(modelPaths.ppRecDictPath).readAsString(),
+    ),
+  );
+
   late final OcrRecognizer primary;
-  if (cuda != null) {
+  if (modelPaths.ctcRecPath.isNotEmpty) {
+    // 逐列 CTC：整块交它的块逐列读（漫画微调的 PP-OCRv6 rec），每列的文本与列框
+    // 直接交回，不再按字格估算切分。
+    final PpOcrLineRecognizer columns = engine.columnRecognizer =
+        PpOcrLineRecognizer(
+          await plan.createSession(
+            factory,
+            modelPaths.ctcRecPath,
+            providers: recognitionProviders,
+            onProviderResolved: (OcrProviderResolution resolution) {
+              recognitionEffective = resolution.effective;
+              record('recognition ctc columns', resolution);
+            },
+          ),
+          vocab: await ppVocab(),
+        );
+    primary = CtcColumnOcrRecognizer(
+      lineDetector: await openLineDetector(),
+      lineRecognizer: columns,
+    );
+  } else if (cuda != null) {
     cancelToken.throwIfCancelled();
     primary = await MangaOcrCudaRecognizer.start(
       pythonExecutable: cuda.pythonExecutable,
@@ -690,31 +745,22 @@ Future<void> _openIsolateOcrEngine(
   }
   // 横排行路径：PP-OCRv6 small det/rec 与 manga-ocr 同一组 provider（都是识别侧、
   // 都是纯 CPU 档）；建会话时的降级同样经 record 留痕。
-  final PpOcrLineDetector lineDetector = engine.lineDetector =
-      PpOcrLineDetector(
-        await plan.createSession(
-          factory,
-          modelPaths.ppDetPath,
-          providers: recognitionProviders,
-          onProviderResolved: (OcrProviderResolution resolution) =>
-              record('line detector', resolution),
-        ),
-      );
+  final PpOcrLineDetector lineDetector = await openLineDetector();
+  final PpOcrLineRecognizer? columns = engine.columnRecognizer;
+  // 横排行：逐列 CTC 的漫画 rec 与横排行共用同一个模型文件时直接复用那个会话。
   final PpOcrLineRecognizer lineRecognizer = engine.lineRecognizer =
-      PpOcrLineRecognizer(
-        await plan.createSession(
-          factory,
-          modelPaths.ppRecPath,
-          providers: recognitionProviders,
-          onProviderResolved: (OcrProviderResolution resolution) =>
-              record('line recognizer', resolution),
-        ),
-        vocab: buildPpOcrCtcVocab(
-          parsePpOcrCharacterDict(
-            await File(modelPaths.ppRecDictPath).readAsString(),
+      columns != null && modelPaths.ppRecPath == modelPaths.ctcRecPath
+      ? columns
+      : PpOcrLineRecognizer(
+          await plan.createSession(
+            factory,
+            modelPaths.ppRecPath,
+            providers: recognitionProviders,
+            onProviderResolved: (OcrProviderResolution resolution) =>
+                record('line recognizer', resolution),
           ),
-        ),
-      );
+          vocab: await ppVocab(),
+        );
   engine.recognizer = RoutingOcrRecognizer(
     mangaOcr: primary,
     lineDetector: lineDetector,
@@ -1466,6 +1512,22 @@ class MangaOcrServiceImpl
           modelDirectory: dir.path,
           workerPath: runtime.workerPath,
         ),
+      );
+    }
+    if (localModel == MangaOcrLocalModel.mangaCtc) {
+      final String ctcRecPath = pathOf(
+        MangaOcrModelRole.recognizer,
+        kMangaCtcRecFileName,
+      );
+      return MangaOcrModelPaths(
+        detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
+        ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
+        ppRecPath: ctcRecPath,
+        ppRecDictPath: pathOf(
+          MangaOcrModelRole.recognizer,
+          kPpOcrRecDictFileName,
+        ),
+        ctcRecPath: ctcRecPath,
       );
     }
     if (localModel == MangaOcrLocalModel.baberu) {

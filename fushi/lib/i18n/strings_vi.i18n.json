@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "Tải gói tăng tốc ($size)",
-  "manga_ocr_accelerator_desc": "Kết quả nhận dạng giữ nguyên, nhanh hơn khoảng gấp đôi trên thiết bị này."
+  "manga_ocr_accelerator_desc": "Kết quả nhận dạng giữ nguyên, nhanh hơn khoảng gấp đôi trên thiết bị này.",
+  "manga_ocr_ctc_model": "Manga CTC (nhanh)",
+  "manga_ocr_ctc_desc": "Nhận dạng từng cột chữ riêng bằng mô hình PP-OCRv6 được tinh chỉnh cho manga. Dung lượng tải nhỏ hơn nhiều và nhanh hơn manga-ocr; trên các trang thử nghiệm, độ chính xác tương đương hoặc tốt hơn, kể cả trang nhiều furigana. Mô hình: Kellenok/PP-OCRv6_manga (huấn luyện với Manga109-s và AnimeText)."
 }

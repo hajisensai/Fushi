@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "تنزيل حزمة التسريع ($size)",
-  "manga_ocr_accelerator_desc": "نتائج التعرّف نفسها، وبسرعة تقارب الضعف على هذا الجهاز."
+  "manga_ocr_accelerator_desc": "نتائج التعرّف نفسها، وبسرعة تقارب الضعف على هذا الجهاز.",
+  "manga_ocr_ctc_model": "مانغا CTC (سريع)",
+  "manga_ocr_ctc_desc": "يقرأ كل عمود نص على حدة بنموذج PP-OCRv6 مضبوط على المانغا. حجم التنزيل أصغر بكثير من manga-ocr وهو أسرع؛ وفي صفحات الاختبار كانت دقته مماثلة أو أفضل، بما في ذلك الصفحات الكثيرة الفوريغانا. النموذج: Kellenok/PP-OCRv6_manga (مدرب على Manga109-s وAnimeText)."
 }

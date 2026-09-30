@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "Beschleunigungspaket herunterladen ($size)",
-  "manga_ocr_accelerator_desc": "Gleiche Erkennungsergebnisse, auf diesem Gerät etwa doppelt so schnell."
+  "manga_ocr_accelerator_desc": "Gleiche Erkennungsergebnisse, auf diesem Gerät etwa doppelt so schnell.",
+  "manga_ocr_ctc_model": "Manga-CTC (schnell)",
+  "manga_ocr_ctc_desc": "Liest jede Textspalte einzeln mit einem auf Manga abgestimmten PP-OCRv6-Modell. Viel kleinerer Download und schneller als manga-ocr; auf unseren Testseiten mindestens so genau, auch bei viel Furigana. Modell: Kellenok/PP-OCRv6_manga (trainiert mit Manga109-s und AnimeText)."
 }

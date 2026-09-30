@@ -743,6 +743,73 @@ void main() {
     });
   });
 
+  group('逐列 CTC 模型（manga_ctc）', () {
+    test('漫画 rec 同时读竖列与横行，不要 manga-ocr 的三件套；缓存自成一套', () async {
+      final List<MangaOcrModelFile> tinyCtc = <MangaOcrModelFile>[
+        for (final MangaOcrModelFile model
+            in MangaOcrLocalModel.mangaCtc.manifest)
+          MangaOcrModelFile(
+            fileName: model.fileName,
+            url: 'http://unused.invalid/${model.fileName}',
+            expectedBytes: 1,
+            role: model.role,
+          ),
+      ];
+      for (final MangaOcrModelFile model in tinyCtc) {
+        File(p.join(modelsDir.path, model.fileName)).writeAsBytesSync(<int>[7]);
+      }
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final MangaOcrServiceImpl ctc = MangaOcrServiceImpl(
+        localModel: MangaOcrLocalModel.mangaCtc,
+        modelsDirProvider: () async => modelsDir,
+        manifest: tinyCtc,
+        jobRunner: _FakeRunner(),
+        pageSessionRunner: pages,
+        platformSupport: () => true,
+      );
+      final MangaOcrModelStatus status = await ctc.modelStatus();
+      expect(status.allReady, isTrue);
+      expect(status.acceleratorMissing, isFalse);
+
+      await ctc.openPageSession(imageDirPath: 'D:/vol');
+      final MangaOcrModelPaths paths = pages.sessions.single.request.modelPaths;
+      expect(paths.ctcRecPath, p.join(modelsDir.path, kMangaCtcRecFileName));
+      expect(paths.ppRecPath, paths.ctcRecPath);
+      expect(paths.ppDetPath, p.join(modelsDir.path, kPpOcrDetFileName));
+      expect(
+        paths.ppRecDictPath,
+        p.join(modelsDir.path, kPpOcrRecDictFileName),
+      );
+      expect(paths.encoderPath, isEmpty);
+      expect(paths.decoderPath, isEmpty);
+      expect(paths.kv, isNull);
+      expect(paths.baberu, isNull);
+
+      final String cache = await ctc.resolvePageCacheDirPath(
+        imageDirPath: 'D:/vol',
+      );
+      expect(
+        p.basename(cache),
+        startsWith('${MangaOcrLocalModel.mangaCtc.cacheSignature}-'),
+      );
+      expect(
+        relayoutableMangaOcrEngineSignatures(p.basename(cache)),
+        isEmpty,
+        reason: 'CTC 不能把 manga-ocr 的 v4 旧缓存当成自己的结果补几何',
+      );
+    });
+
+    test('经典模型的路径不带 CTC rec', () async {
+      writeAllModels();
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      await service(
+        _FakeRunner(),
+        pageSessionRunner: pages,
+      ).openPageSession(imageDirPath: 'D:/vol');
+      expect(pages.sessions.single.request.modelPaths.ctcRecPath, isEmpty);
+    });
+  });
+
   group('页级常驻会话', () {
     test('一个会话处理多页只建一次推理会话，close 后请求失败', () async {
       writeAllModels();

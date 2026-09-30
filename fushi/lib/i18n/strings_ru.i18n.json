@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "Загрузить пакет ускорения ($size)",
-  "manga_ocr_accelerator_desc": "Те же результаты распознавания, примерно вдвое быстрее на этом устройстве."
+  "manga_ocr_accelerator_desc": "Те же результаты распознавания, примерно вдвое быстрее на этом устройстве.",
+  "manga_ocr_ctc_model": "Манга CTC (быстрый)",
+  "manga_ocr_ctc_desc": "Распознаёт каждый столбец текста отдельно моделью PP-OCRv6, дообученной на манге. Загрузка намного меньше, работает быстрее manga-ocr; на наших тестовых страницах точность не ниже, в том числе при обилии фуриганы. Модель: Kellenok/PP-OCRv6_manga (обучена на Manga109-s и AnimeText)."
 }

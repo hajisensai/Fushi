@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "高速化パックをダウンロード（$size）",
-  "manga_ocr_accelerator_desc": "認識結果はそのままで、この端末では約 2 倍速くなります。"
+  "manga_ocr_accelerator_desc": "認識結果はそのままで、この端末では約 2 倍速くなります。",
+  "manga_ocr_ctc_model": "漫画 CTC（高速）",
+  "manga_ocr_ctc_desc": "漫画向けに調整した PP-OCRv6 モデルで列ごとに認識します。manga-ocr よりダウンロードがずっと小さく高速で、テストページではルビの多いページを含めて同等以上の精度でした。モデル：Kellenok/PP-OCRv6_manga（Manga109-s と AnimeText で学習）。"
 }

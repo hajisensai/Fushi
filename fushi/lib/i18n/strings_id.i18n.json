@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "Unduh paket percepatan ($size)",
-  "manga_ocr_accelerator_desc": "Hasil pengenalan sama, sekitar dua kali lebih cepat di perangkat ini."
+  "manga_ocr_accelerator_desc": "Hasil pengenalan sama, sekitar dua kali lebih cepat di perangkat ini.",
+  "manga_ocr_ctc_model": "Manga CTC (cepat)",
+  "manga_ocr_ctc_desc": "Membaca setiap kolom teks secara terpisah dengan model PP-OCRv6 yang disetel untuk manga. Unduhan jauh lebih kecil dan lebih cepat daripada manga-ocr; pada halaman uji kami akurasinya setara atau lebih baik, termasuk halaman dengan banyak furigana. Model: Kellenok/PP-OCRv6_manga (dilatih dengan Manga109-s dan AnimeText)."
 }

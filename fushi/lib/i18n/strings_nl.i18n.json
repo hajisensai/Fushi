@@ -6142,5 +6142,7 @@
   "video_resource_failure_rate_limited": "rate limited",
   "video_resource_failure_other": "request failed",
   "manga_ocr_accelerator_download": "Versnellingspakket downloaden ($size)",
-  "manga_ocr_accelerator_desc": "Dezelfde herkenningsresultaten, ongeveer twee keer zo snel op dit apparaat."
+  "manga_ocr_accelerator_desc": "Dezelfde herkenningsresultaten, ongeveer twee keer zo snel op dit apparaat.",
+  "manga_ocr_ctc_model": "Manga-CTC (snel)",
+  "manga_ocr_ctc_desc": "Leest elke tekstkolom afzonderlijk met een op manga afgestemd PP-OCRv6-model. Veel kleinere download en sneller dan manga-ocr; op onze testpagina’s minstens even nauwkeurig, ook bij veel furigana. Model: Kellenok/PP-OCRv6_manga (getraind met Manga109-s en AnimeText)."
 }
