@@ -1093,11 +1093,15 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
         // 越过系统拖动阈值才算拖动；之内都是点击。
         const int dx = std::abs(cursor.x - down_point_.x);
         const int dy = std::abs(cursor.y - down_point_.y);
-        // 阈值按球所在显示器的 DPI 取（SM_CXDRAG 是 96 DPI 下的值，200% 触屏上
-        // 手指一抖就越界）。
+        // 阈值按球所在显示器的 DPI 换成物理像素：SM_CXDRAG 是用户设定的裸像素
+        // （默认 4），GetSystemMetricsForDpi 对它不缩放（实测 96~288 DPI 恒回
+        // 4），200% 屏上鼠标 / 触控笔一抖 2 个逻辑像素就被当成拖动。
         const UINT dpi = GetDpiForWindow(hwnd);
-        if (dx <= GetSystemMetricsForDpi(SM_CXDRAG, dpi) &&
-            dy <= GetSystemMetricsForDpi(SM_CYDRAG, dpi)) {
+        const int drag_x =
+            MulDiv(GetSystemMetrics(SM_CXDRAG), dpi, USER_DEFAULT_SCREEN_DPI);
+        const int drag_y =
+            MulDiv(GetSystemMetrics(SM_CYDRAG), dpi, USER_DEFAULT_SCREEN_DPI);
+        if (dx <= drag_x && dy <= drag_y) {
           return 0;
         }
         BeginDrag();

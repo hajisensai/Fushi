@@ -43,13 +43,26 @@ void main() {
     }
   });
 
-  test('拖动阈值按窗口 DPI 取（200% 触屏上点一下不被判成拖动）', () {
-    expect(window, isNot(contains('GetSystemMetrics(SM_CXDRAG)')));
-    expect(window, isNot(contains('GetSystemMetrics(SM_CYDRAG)')));
+  test('拖动阈值按窗口 DPI 换成物理像素（200% 屏上一抖不被判成拖动）', () {
     final String body = _body(window, 'HandleBallMessage');
     expect(body, contains('GetDpiForWindow(hwnd)'));
-    expect(body, contains('GetSystemMetricsForDpi(SM_CXDRAG, dpi)'));
-    expect(body, contains('GetSystemMetricsForDpi(SM_CYDRAG, dpi)'));
+    // SM_CXDRAG 是裸像素，GetSystemMetricsForDpi 对它不缩放（实测 96~288 DPI
+    // 恒回 4）——用它等于没修，必须自己按 dpi/96 换算。
+    expect(body, isNot(contains('GetSystemMetricsForDpi(SM_CXDRAG')));
+    expect(body, isNot(contains('GetSystemMetricsForDpi(SM_CYDRAG')));
+    expect(
+      body,
+      contains(
+        'MulDiv(GetSystemMetrics(SM_CXDRAG), dpi, USER_DEFAULT_SCREEN_DPI)',
+      ),
+    );
+    expect(
+      body,
+      contains(
+        'MulDiv(GetSystemMetrics(SM_CYDRAG), dpi, USER_DEFAULT_SCREEN_DPI)',
+      ),
+    );
+    expect(body, contains('dx <= drag_x && dy <= drag_y'));
   });
 
   test('startSystemBall 回原生的真实结果（起不来时 Dart 不记签名、下次再试）', () {

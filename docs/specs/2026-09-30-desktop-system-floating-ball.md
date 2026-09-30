@@ -52,7 +52,7 @@
 
 - 展开 280ms、收起 190ms，进度 t 线性；中途反向按剩余路程缩短。球位置 / 不透明度 / 描边随 t 插值。
 - 按钮 i（共 n 颗）：`begin = (n−1−i)·0.35/(n−1)`（n=1 时 0），`end = min(1, begin + 0.65)`，`k = easeOutBack((t − begin)/(end − begin))`，easeOutBack = 三次贝塞尔 (0.175, 0.885, 0.32, 1.275)。按钮从球心飞到落点：`center = ballCenter + offset·k`，缩放 `0.4 + 0.6·min(k, 1.2)`，不透明度 `clamp(k, 0, 1)`。
-- 拖动：越过系统拖动阈值（Windows 按球窗 DPI 取 `GetSystemMetricsForDpi(SM_CXDRAG/SM_CYDRAG)`，macOS 4pt）即拖动——先**立即收起**，球跟手（纵向夹在 `[minTop, maxTop]`），不透明度 1。松手：按球心在视口左右哪一半定停靠边、比例按落点，220ms easeOutCubic (0.215, 0.61, 0.355, 1) 吸附到收起位，并报 `systemBallPositionChanged`。拖到另一块显示器就以那块的工作区为视口。
+- 拖动：越过系统拖动阈值（Windows 取 `SM_CXDRAG/SM_CYDRAG` 按球窗 DPI 以 `MulDiv(…, dpi, 96)` 换成物理像素——`GetSystemMetricsForDpi` 对这两项不缩放（实测恒回 4），macOS 4pt）即拖动——先**立即收起**，球跟手（纵向夹在 `[minTop, maxTop]`），不透明度 1。松手：按球心在视口左右哪一半定停靠边、比例按落点，220ms easeOutCubic (0.215, 0.61, 0.355, 1) 吸附到收起位，并报 `systemBallPositionChanged`。拖到另一块显示器就以那块的工作区为视口。
 - **不闪**（BUG-2793 的教训）：点球展开时不得出现「窗口先变大、下一帧才挪位」的跳动；按钮所在的表面必须在显示前就按最终几何布好，只做动画。
 - 显示器配置 / 工作区 / DPI 变化：收起并按停靠边 + 比例在新视口重摆（位置永远落在屏内）。
 
