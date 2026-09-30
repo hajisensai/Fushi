@@ -1095,10 +1095,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // 退出通道（栏都没了，按钮自己也跟着看不见）：悬浮球里的同一颗键、返回
   // （Esc / 系统返回 / 手柄 B 先退专注模式再退书，见 PopScope），以及点空白时弹出
   // 的提示条上的「退出专注模式」——触屏没有返回键时（iOS）靠的就是这一条。
+  // 所以**每一次没被别的动作消费的正文点击**都必须弹它：点空白（onTapEmpty）、
+  // 关了点词时的点正文（onTap 的 !highlightOnTap 分支）、VN 点击推进的空白点
+  // （决策表 advanceAndOfferFocusModeExit，推进照常、提示附带）。
 
   void _toggleFocusMode() => _setFocusMode(!_focusMode);
 
   void _setFocusMode(bool enabled) {
+    // 提示条挂在根 ScaffoldMessenger 上，本页被拆后它可能还在，
+    // 它的「退出」动作会对着已 dispose 的页面调进来。
+    if (!mounted) return;
     if (_focusMode == enabled) return;
     _rebuild(() {
       _chrome.focusMode = enabled;
@@ -1144,6 +1150,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
         if (identical(_focusModeHint, hint)) _focusModeHint = null;
       }),
     );
+  }
+
+  /// 明确的退书（面板「退出」、源审查横幅「返回」、未载入页的返回键、重导入后
+  /// 必须离开本书）：一次退到底，不被 PopScope 的「返回先退专注模式」截成两下。
+  ///
+  /// 那一级只属于**含糊的返回**（Esc / 系统返回 / 手柄 B）。这里不去翻
+  /// `focusMode`：页面马上离场，翻了就会在退场动画里把挤压栏画回来，而 JS 侧
+  /// inset 还按专注模式下发着；只让 PopScope 在这一次 maybePop 期间放行。
+  /// 提示条挂在根 ScaffoldMessenger 上，必须先关，否则跟到书架页。
+  Future<void> _exitBookPastFocusMode() async {
+    _focusModeHint?.close();
+    _explicitExitInFlight = true;
+    try {
+      await Navigator.of(context).maybePop();
+    } finally {
+      _explicitExitInFlight = false;
+    }
   }
 
   Future<void> _applyChromeInsets() async {
@@ -1301,21 +1324,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
-    // 专注模式：栏唤不出来，空白点就只剩「推进」这一个含义（否则隐藏态的第一下
-    // 会被当成「只唤栏不推进」吞掉，VN 永远推不动）。
-    if (_focusMode) {
-      unawaited(_paginate(ReaderNavigationDirection.forward));
-      return;
-    }
+    // 专注模式由决策表裁决（照常推进 + 附带退出提示），这里不另开分支。
     dispatchReaderVnBlankTapAction(
       readerVnBlankTapAction(
         chromeExpanded: _showChrome,
         bottomBarFloating: _bottomBarFloating,
         transientVisible: _chromeTransientVisible,
+        focusMode: _focusMode,
       ),
       expandChrome: _toggleChrome,
       revealChrome: _revealFloatingChromeForVnAdvance,
       advance: () => unawaited(_paginate(ReaderNavigationDirection.forward)),
+      offerFocusModeExit: _showFocusModeBarsLockedHint,
     );
   }
 
@@ -2248,8 +2268,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 拆出）走的是同一条退出路径。
       onExitReader: () {
         // 面板里的「退出」是明确的退书：跳过 PopScope 的「先退专注模式」那一级。
-        _chrome.focusMode = false;
-        unawaited(Navigator.of(context).maybePop());
+        unawaited(_exitBookPastFocusMode());
       },
       webViewController: _controller!,
       appModel: appModel,
