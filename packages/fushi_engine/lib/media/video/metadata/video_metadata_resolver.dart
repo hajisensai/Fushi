@@ -81,7 +81,14 @@ class VideoMetadataResolution {
     this.providerKind,
     List<VideoMetadataWork> candidates = const <VideoMetadataWork>[],
     this.reason,
+    this.transient = false,
   }) : candidates = List<VideoMetadataWork>.unmodifiable(candidates);
+
+  /// [VideoMetadataResolutionStatus.providerUnavailable] 的两种来源要分开：
+  /// true = 请求发出去了但暂时失败（网络 / 5xx / 限流，见
+  /// `isTransientVideoMetadataFailure`），过会儿原样重试可能成功；false = 没配置
+  /// 等重试也不会变的情况。其它状态恒 false。
+  final bool transient;
 
   final VideoMetadataResolutionStatus status;
   final VideoMetadataResolutionMethod? method;
@@ -225,6 +232,8 @@ class VideoMetadataResolver {
           .map((VideoMetadataResolution result) =>
               '${result.providerKind?.name}: ${result.reason}')
           .join('; '),
+      // 链上任一家是临时故障，它恢复后重试就可能命中。
+      transient: failures.any((VideoMetadataResolution r) => r.transient),
     );
   }
 
@@ -293,6 +302,7 @@ class VideoMetadataResolver {
         lookup: lookup,
         method: method,
         reason: error.toString(),
+        transient: isTransientVideoMetadataFailure(error),
       );
     }
   }

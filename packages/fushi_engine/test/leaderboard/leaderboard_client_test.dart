@@ -781,6 +781,34 @@ void main() {
       expect(seen.first.code, kLeaderboardAccountGoneCode);
     });
 
+    test('回调返回的 Future 完成后才抛给调用方（BUG-2801）', () async {
+      final Completer<void> gate = Completer<void>();
+      bool thrown = false;
+      final LeaderboardClient c = LeaderboardClient(
+        baseUrl: Uri.parse('https://rank.example'),
+        identity: _id,
+        httpClientFactory: () async => MockClient(
+          (http.Request r) async =>
+              _json(<String, dynamic>{'error': 'unknown_account'}, 401),
+        ),
+        onAccountGone: (LeaderboardApiException _) => gate.future,
+      );
+      final Future<void> call = c.rank().then<void>(
+        (_) {},
+        onError: (Object e) {
+          expect(e, isA<LeaderboardApiException>());
+          thrown = true;
+        },
+      );
+      for (int i = 0; i < 50; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(thrown, isFalse);
+      gate.complete();
+      await call;
+      expect(thrown, isTrue);
+    });
+
     test('其它 401、非 401、注册 / 登录（不带 X-Fushi-Account）都不回调', () async {
       final List<LeaderboardApiException> seen = <LeaderboardApiException>[];
       await expectLater(

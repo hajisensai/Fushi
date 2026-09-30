@@ -267,7 +267,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final List<MediaImageRow> imageRows =
         await widget.database.getMediaImagesForCollection(widget.collection.id);
     VideoMetadataWorkRow? canonicalWork = await widget.database
-        .getVideoMetadataWorkByCollection(widget.collection.id);
+        .resolveVideoMetadataWorkForCollection(widget.collection.id);
     if (canonicalWork == null) {
       final Set<int> sourceIds = <int>{
         for (final VideoBookRow member in members)
@@ -281,7 +281,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (source != null) await indexer.index(source);
       }
       canonicalWork = await widget.database
-          .getVideoMetadataWorkByCollection(widget.collection.id);
+          .resolveVideoMetadataWorkForCollection(widget.collection.id);
     }
     final VideoMetadataWorkCredits? workCredits =
         await VideoMetadataCreditRepository(widget.database)
