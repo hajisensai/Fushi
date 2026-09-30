@@ -48,6 +48,13 @@ final class MangaReaderVolumeOcrLensDeclined
   const MangaReaderVolumeOcrLensDeclined();
 }
 
+/// 调用方限定了引擎（[startMangaReaderVolumeOcr] 的 `requiredEngine`），而当前
+/// 偏好解析出的不是它：什么都没排，也不算「没有引擎」。
+final class MangaReaderVolumeOcrNotApplicable
+    extends MangaReaderVolumeOcrOutcome {
+  const MangaReaderVolumeOcrNotApplicable();
+}
+
 /// 这个目录是否已有整卷任务在跑或在排队（按规范化路径比较）。
 bool isMangaVolumeOcrScheduled({
   required MangaOcrJobRegistry registry,
@@ -68,6 +75,10 @@ bool isMangaVolumeOcrScheduled({
 /// [imageDirPath] 与作品页、下载钩子同一约定：本地卷是 `extractDir`，在线章是章
 /// 目录（含 `manga.json` + `images/`）。[startPage] 是当前页：执行器从它开始、
 /// 再绕回开头补齐，读者眼前这页最先出结果。
+///
+/// [requiredEngine] 非 null 时只在偏好解析到它时才排（否则
+/// [MangaReaderVolumeOcrNotApplicable]，不弹任何同意框）——已识别本地卷的行几何
+/// 升级只能交给本地引擎（BUG-2813）。
 Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   required String bookKey,
   required String imageDirPath,
@@ -79,6 +90,7 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   required MangaOcrEnginePreference preference,
   required String lensLanguage,
   required Future<bool> Function() confirmLensUpload,
+  MangaOcrEngineId? requiredEngine,
   MangaOcrEventsBuilder buildEvents = mangaOcrBackgroundEvents,
 }) async {
   bool scheduled() => isMangaVolumeOcrScheduled(
@@ -95,6 +107,9 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
     hasExistingMetadata: false,
     capabilities: availability.capabilities,
   );
+  if (requiredEngine != null && engine != requiredEngine) {
+    return const MangaReaderVolumeOcrNotApplicable();
+  }
   if (engine == null || !availability.isUsable(engine)) {
     return const MangaReaderVolumeOcrNoEngine();
   }

@@ -130,6 +130,15 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
   );
   if (!spec.onlyMissing) {
     await discardMangaOcrPageCache(cacheDir);
+    // 用户要的是整卷重新识别：同模型「只缺行几何」的旧版缓存也作废，否则任务会
+    // 拿它们只补几何、文字一个不重认（BUG-2813）。
+    for (final String legacy in relayoutableMangaOcrEngineSignatures(
+      engineSignature,
+    )) {
+      await discardMangaOcrPageCache(
+        Directory(p.join(p.dirname(cacheDir.path), legacy)),
+      );
+    }
   }
   final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
     cacheDir: cacheDir,
