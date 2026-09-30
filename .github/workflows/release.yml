@@ -68,6 +68,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 新 push 到来时，把同分支上「此刻开始不足 5 分钟 / 还没开始」的旧 push run 取消掉
+  # （2026-09-30 修正：按旧 run 的 job 实际开始时刻、以本 run 创建时刻为基准；
+  # 本 job 自己排队时旧 run 已跑超过 9 分钟则不砍，防砍在上传途中）
+  # （2026-09-30，按实测 develop 20/65 次 push 间隔 < 5 分钟、省约 28% runner）。
+  # 只看 push 事件，正式版 / 手动 dispatch 不受影响；5 分钟内任何 job 都还没到上传
+  # 步骤，不会砍出半发布状态。原理与判据见 tool/cancel_superseded_runs.sh；与本
+  # workflow 的 concurrency 组（按 sha、不取消）互不冲突，那条仍原样保留。
+  # 守卫：fushi/test/build/release_workflow_supersede_guard_test.dart。
+  cancel-superseded:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: tool/cancel_superseded_runs.sh
+        sparse-checkout-cone-mode: false
+    - name: Cancel superseded push runs (< 5 min old at this push, < 9 min now)
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+        SUPERSEDE_WINDOW_MINUTES: '5'
+        SUPERSEDE_MAX_ELAPSED_MINUTES: '9'
+      run: bash tool/cancel_superseded_runs.sh
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -672,7 +701,11 @@ jobs:
             exit 1
           fi
           for abi in $abis; do
-            if ! printf '%s\n' "$listing" | grep -qx "lib/$abi/libfushi_p2p.so"; then
+            # here-string，不用 `printf | grep -q`：清单是整个 APK 的条目（远超 64KB 管道缓冲），
+            # grep -q 一命中就退出，printf 随即 SIGPIPE，在 pipefail 下整条管道判失败，`if !`
+            # 就把「找到了」读成「没有」（BUG-2804，2f08d46 / 248238cf7 两次假红，日志里是
+            # `printf: write error: Broken pipe`）。
+            if ! grep -qx "lib/$abi/libfushi_p2p.so" <<< "$listing"; then
               echo "::error title=fushi_p2p missing from APK::$apk lib/$abi/ has no libfushi_p2p.so"
               exit 1
             fi
@@ -990,7 +1023,15 @@ jobs:
     # 表现与「某条测试挂死」一模一样，但同 run 的 build job（上限 90）14 分钟就绿。
     # 这里跟 build 对齐；真正的出路是给 tool/flutter_test_failures.dart 加
     # --shard-index/--shard-total 再上 matrix 并行（TODO），不是继续抬上限。
-    timeout-minutes: 90
+    # 2026-09-30：已按文件分片（--file-shard，原理见 main.yml 的 unit-tests 注释）。
+    # 矩阵 5 份：4 片主应用单测 + checks（analyze + 包测试），各自独立 runner 并行；
+    # 分片数改 matrix 和 --file-shard 分母两处。
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ['0', '1', '2', '3', checks]
+    name: tests (${{ matrix.part }})
     steps:
     - uses: actions/checkout@v6
 
@@ -1022,14 +1063,17 @@ jobs:
         bash ci/apply-patches.sh
 
     - name: Run dart analyze
+      if: matrix.part == 'checks'
       working-directory: fushi
       run: flutter analyze
 
-    - name: Run unit tests (main app)
+    - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
+      if: matrix.part != 'checks'
       working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --exclude-tags golden
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden
 
     - name: Run package tests
+      if: matrix.part == 'checks'
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
         # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里
