@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
 | [BUG-2806](bugs/BUG-2806-ios-ruby-overhang-audio-wrap.md) | ✅ | ✅ | iOS 翻进新章节后振假名词突然撑开（有声书跟随高亮把 ruby 移进 span，WebKit 取消注音悬挂） |
 | [BUG-2805](bugs/BUG-2805-discover-nyaa-missing-tmdb-no-genre.md) | ✅ | ✅ | 发现页搜索资源有时只剩一个源、没有 Nyaa |
 | [BUG-2804](bugs/BUG-2804-p2p-apk-verify-sigpipe.md) | ✅ | ✅ | 发布校验 fushi_p2p 是否进 APK 时 pipefail + grep -q 触发 SIGPIPE 假红 |
@@ -44,7 +45,6 @@
 | [BUG-2798](bugs/BUG-2798-ci-trim-redundant-runs.md) | ✅ | ✅ | CI 冗余触发与排队：无关改动跑满长构建、develop 连推每次跑满发布 |
 | [BUG-2797](bugs/BUG-2797-credit-bridge-anilist.md) | ✅ | ✅ | 发现详情演职员 MAL 罗马字与 TMDB 汉字认不出同一人（AniList 写法桥） |
 | [BUG-2796](bugs/BUG-2796-ai-download-scrape-missing.md) | ✅ | ✅ | AI下载后作品页尚未刮削 |
-| [BUG-2795](bugs/BUG-2795-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
 | [BUG-2795](bugs/BUG-2795-discovery-detail-merge-language.md) | ✅ | ✅ | 发现详情合并不看资料语言：MAL 英文简介、中日英类型混排、声优重复 |
 | [BUG-2794](bugs/BUG-2794-nyaa-discovery-query.md) | ✅ | ✅ | 发现页搜视频资源 Nyaa 常 0 条：查询词只用显式词且无按源状态 |
 | [BUG-2793](bugs/BUG-2793-system-floating-ball.md) | ✅ | ✅ | 应用外悬浮球吸边不正常、点击闪烁、旋转后消失、菜单与应用内不一致 |
