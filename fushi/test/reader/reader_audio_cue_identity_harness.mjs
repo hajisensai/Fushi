@@ -75,7 +75,7 @@ try {
       document.body.innerHTML = '<p><ruby>次<rt>つぎ</rt></ruby>の文。</p>';
       reader.applySentenceAudioCues([{id:'ruby', text:'次の文。', start:0, length:3}]);
       const ruby = document.querySelector('ruby');
-      // BUG-2800: the base text is wrapped in place inside the ruby (the ruby never moves).
+      // BUG-2806: the base text is wrapped in place inside the ruby (the ruby never moves).
       const rubyWrapper = ruby.querySelector('.fushi-sentence-audio-cue');
       if (ruby.parentNode !== document.querySelector('p') || !rubyWrapper) throw Error('ruby stays in place, base wrapped inside');
       const rubyBase = rubyWrapper.firstChild;

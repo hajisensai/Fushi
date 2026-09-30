@@ -33,12 +33,12 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2806](bugs/BUG-2806-ios-ruby-overhang-audio-wrap.md) | ✅ | ✅ | iOS 翻进新章节后振假名词突然撑开（有声书跟随高亮把 ruby 移进 span，WebKit 取消注音悬挂） |
 | [BUG-2805](bugs/BUG-2805-discover-nyaa-missing-tmdb-no-genre.md) | ✅ | ✅ | 发现页搜索资源有时只剩一个源、没有 Nyaa |
 | [BUG-2804](bugs/BUG-2804-p2p-apk-verify-sigpipe.md) | ✅ | ✅ | 发布校验 fushi_p2p 是否进 APK 时 pipefail + grep -q 触发 SIGPIPE 假红 |
 | [BUG-2803](bugs/BUG-2803-flaky-cdp-devtools-port.md) | ✅ | ✅ | 真 Chrome 守卫在满载 CI 上偶发 DevToolsActivePort 8s 超时 |
 | [BUG-2802](bugs/BUG-2802-flaky-manga-prefetch.md) | ✅ | ✅ | 在线漫画直读预取测试靠 80ms 墙钟等待，CI 高负载下间歇红 |
 | [BUG-2801](bugs/BUG-2801-flaky-leaderboard-401.md) | ✅ | ✅ | 排行榜 401 unknown_account：UI 读榜后本机退出是 fire-and-forget，测试按固定轮数等落盘在 CI 高负载下偶发红 |
-| [BUG-2800](bugs/BUG-2800-ios-ruby-overhang-audio-wrap.md) | ✅ | ✅ | iOS 翻进新章节后振假名词突然撑开（有声书跟随高亮把 ruby 移进 span，WebKit 取消注音悬挂） |
 | [BUG-2800](bugs/BUG-2800-ai-video-acquire-alias.md) | ✅ | ✅ | AI下视频说别名找不到作品 |
 | [BUG-2799](bugs/BUG-2799-webkit-ruby-reserve-overridden.md) | ✅ | ✅ | Mac/iOS 分页段落之间列距/行距比段内窄（振假名页顶预留被书样式压掉一半） |
 | [BUG-2798](bugs/BUG-2798-ci-trim-redundant-runs.md) | ✅ | ✅ | CI 冗余触发与排队：无关改动跑满长构建、develop 连推每次跑满发布 |

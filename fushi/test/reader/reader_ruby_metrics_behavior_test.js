@@ -44,7 +44,7 @@ function run(opts) {
     closest: () => null,
   };
   rt.parentNode = ruby;
-  // BUG-2800: the audiobook follow highlight wraps the base text in a span INSIDE
+  // BUG-2806: the audiobook follow highlight wraps the base text in a span INSIDE
   // the ruby; the probe must still find it.
   if (opts.wrappedBase) {
     const wrapper = { nodeType: 1, tagName: 'SPAN', childNodes: [baseText], parentNode: ruby, closest: () => null };
@@ -122,7 +122,7 @@ assert.strictEqual(run({
   baseRect: { width: 33, height: 22 }, rtRect: { width: 15, height: 22 },
 }), '0.813', 'Klee One vertical: (5.5 + 2.55) / 9.9');
 
-// BUG-2800: base text wrapped by the audiobook follow highlight inside the ruby.
+// BUG-2806: base text wrapped by the audiobook follow highlight inside the ruby.
 assert.strictEqual(run({
   wrappedBase: true, wm: 'vertical-rl', fs: 22, rfs: 9.9, canvas: klee,
   baseRect: { width: 33, height: 22 }, rtRect: { width: 15, height: 22 },

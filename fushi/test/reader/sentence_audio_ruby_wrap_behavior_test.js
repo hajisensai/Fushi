@@ -1,4 +1,4 @@
-// BUG-2780 / BUG-2800 behavior test: the audiobook follow highlight must paint one
+// BUG-2780 / BUG-2806 behavior test: the audiobook follow highlight must paint one
 // continuous block across <ruby> elements WITHOUT changing the layout.
 //
 // BUG-2780: applySentenceAudioCues wrapped every plain-text segment in its own
@@ -8,7 +8,7 @@
 // background (gaps), on iOS 26.5 it overlapped the following span (a darker band).
 // The first fix moved whole rubies into the wrapper span.
 //
-// BUG-2800: a <ruby> inside a span loses WebKit's annotation overhang, so moving it
+// BUG-2806: a <ruby> inside a span loses WebKit's annotation overhang, so moving it
 // re-laid the text out after the chapter was already on screen (「自嘲気味」: 気 jumped
 // 8px away right after turning into the new chapter). Now a ruby never moves: the
 // base text is wrapped IN PLACE inside the ruby, text groups stop at rubies, and the

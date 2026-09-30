@@ -43,7 +43,7 @@ const String kReaderRubyMetricsJs = r'''
     for (var i = 0; i < list.length && i < 50; i++) {
       var ruby = list[i];
       var rt = ruby.querySelector('rt');
-      // 基字文本可能包在 <rb> 或有声书跟随高亮的 wrapper 里（BUG-2800：wrapper 落在 ruby
+      // 基字文本可能包在 <rb> 或有声书跟随高亮的 wrapper 里（BUG-2806：wrapper 落在 ruby
       // 内部），所以按文档序找第一个不在 rt / rp 里的非空文本节点。
       var base = null;
       var walker = document.createTreeWalker(ruby, NodeFilter.SHOW_TEXT);

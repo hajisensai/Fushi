@@ -1822,7 +1822,7 @@ window.__fushiInstallShell = function(C) {
     // （ruby 在书自带的 <a>/<span> 里）各成一组，ruby 仍整颗包进 wrapper；只有片段落在
     // ruby 内部、ruby 却不能整颗移动时（理论上不会发生）才退回 ruby class。
     //
-    // BUG-2800：把整颗 <ruby> 移进 wrapper 会**改排版**。WebKit 只在 ruby 与相邻文字同处
+    // BUG-2806：把整颗 <ruby> 移进 wrapper 会**改排版**。WebKit 只在 ruby 与相邻文字同处
     // 一个父级行内盒边缘之外时才让长注音悬挂到邻字上方；ruby 一进 span，悬挂即被取消，
     // 注音撑出的间距回到行内——iOS 模拟器实测「会釈を」+3.9px、「自嘲気味」注音与「気」
     // 叠的 3px 变成 8px 空隙。包裹在章节加载后异步执行（图片就绪之后），用户看到的就是
@@ -1862,7 +1862,7 @@ window.__fushiInstallShell = function(C) {
     }
     this.buildNodeOffsets();
   },
-  // BUG-2780 / BUG-2800：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：相邻两项
+  // BUG-2780 / BUG-2806：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：相邻两项
   // 父节点相同就并进同一组，组内首尾之间的兄弟节点全部被完整包含（range 两端落在同一父节点
   // 的子节点上），extractContents 不会拆开书的元素。ruby 内的基字片段各自单独成组（wrapper
   // 落在 ruby / rb 里、不跨 rt），ruby 本身永远不被移动（见 applySentenceAudioCues）。
@@ -1890,7 +1890,7 @@ window.__fushiInstallShell = function(C) {
   },
   // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）；
   // 夹着 <ruby>（或含 ruby 的行内元素）也断开——ruby 一进 wrapper，WebKit 就取消注音悬挂、
-  // 改排版（BUG-2800）。
+  // 改排版（BUG-2806）。
   sentenceAudioInlineGap: function(prev, next) {
     var a = prev.node;
     var b = next.node;
@@ -1904,7 +1904,7 @@ window.__fushiInstallShell = function(C) {
     }
     return false;
   },
-  // BUG-2800：ruby 留在原位后，注音比基字长、又不能悬挂到邻字上（邻字是汉字、注音超出
+  // BUG-2806：ruby 留在原位后，注音比基字长、又不能悬挂到邻字上（邻字是汉字、注音超出
   // 悬挂上限）时，基字 wrapper 与相邻 wrapper 之间会露出 ruby 自己撑出的间距（iOS 模拟器：
   // 「大喝采」3.9px、6 假名注音单字 13.8px），整句高亮在那里断开（BUG-2780 的原始症状）。
   // 高亮时量出同一行相邻两个 wrapper 之间的缝，由 ruby 内那个 wrapper 用 box-shadow 伸过去
@@ -2026,7 +2026,7 @@ window.__fushiInstallShell = function(C) {
       if (found) return JSON.stringify({ type: 'frag', id: found });
     }
     if (this.cueWrappers && this.cueWrappers.size) {
-      // BUG-2800：基字 wrapper 在 ruby 内部，不再包住 rt——点在注音上时按「同一颗 ruby」归属。
+      // BUG-2806：基字 wrapper 在 ruby 内部，不再包住 rt——点在注音上时按「同一颗 ruby」归属。
       var self = this;
       var pointRuby = this.rubyForNode(node);
       this.cueWrappers.forEach(function(wrappers, id) {
