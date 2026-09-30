@@ -1,16 +1,30 @@
 name: Build and Test Android / macOS / Linux / Windows
 
-# Verifies the app compiles on the four non-Android shipped platforms:
-#  - iOS/macOS gamepads = GameController; Linux = evdev/GTK
+# Verifies the app compiles on the non-Android shipped platforms:
+#  - iOS/macOS gamepads = GameController
 #  - Windows = the forked flutter_inappwebview_windows C++ EPUB renderer, which
 #    is otherwise only built on the dev host and was never gated by CI.
 # Also runs the shared comprehensive automation contract on Android, Windows,
 # and macOS. That runner requires real test verdict text in logs, not just a
 # zero exit code.
-# Runs on routine main/develop pushes and PRs again: iOS/macOS regressions are
-# user-facing now, and release-desktop.yml can publish Windows/macOS/iOS assets.
+# Linux: only the headless server's native bundle (linux-server job). The Linux
+# *app* is no longer built in CI (owner decision 2026-09-30: no Linux app for a
+# long time).
+# On pull_request every platform job is path-gated by the `changes` job (only
+# PRs that touch that platform's native / packaging inputs build it); push (main)
+# and workflow_dispatch run everything; develop gets a nightly full run through
+# the `nightly-develop` dispatcher. See the comments on those two jobs.
 on:
   workflow_dispatch:
+    inputs:
+      nightly:
+        description: 'Set by the nightly-develop dispatcher; skips the Android appSmoke job (manual-only).'
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    # 每天 UTC 18:41（北京时间 02:41）；只派发，不构建（见 nightly-develop job）。
+    - cron: '41 18 * * *'
   push:
     # develop push 上只保留 release.yml（Build Release APK，本仓唯一带 app 全量单测门的
     # workflow）。此前每次合并会同时点燃三条长 workflow，runner 排队到互相 cancel，
@@ -39,14 +53,12 @@ on:
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
-      # 2026-09-30 精简 CI：以下改动不改变任何一个平台的 app 编译结果。负向模式必须排在
-      # 正向模式之后。
-      # * 无头服务端：app 不依赖它；它的 analyze / 包测试 / `dart build cli` + `--help`
-      #   冒烟由 server-gate.yml 负责（本 workflow linux job 仍在 engine/core 等共享包
-      #   变动时带随包原生库做完整 serve 冒烟）。
+      # 这份清单只是整条 workflow 的粗门；PR 上每个 job 开不开由 changes job 按实际改动
+      # 细分。packages/fushi_server/** 必须留在里面：只改服务端的 PR 要能走到
+      # linux-server（随包原生库的 serve 冒烟只在那里）。
       # * .md：本 workflow 只做编译 + 原生 ABI 测试 + appSmoke，没有读 .md 的守卫
-      #   （那些守卫在 main.yml 的全量测试里，main.yml 不排除 .md）。
-      - '!packages/fushi_server/**'
+      #   （那些守卫在 main.yml 的全量测试里，main.yml 不排除 .md）。负向模式必须排在
+      #   正向模式之后。
       - '!**/*.md'
   pull_request:
     branches: ['main', 'develop']
@@ -59,6 +71,134 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # PR 路径门（2026-09-30 所有者拍板）：pull_request 上按改动路径决定开哪几个平台 job。
+  #
+  # 依据（upstream 09-20..09-30，232 条 PR）：153 条只改 Dart / 文档的 PR 吃掉了平台 job
+  # 约 62% 的分钟数，一次真问题都没抓到；这期间平台 job 仅有的 3 次真拦截（改
+  # fushi/windows/runner 的 MSVC / LNK 错误；新增 native/fushi_p2p 那条 PR 的 macOS + iOS
+  # 链接错误）全在改了原生 / 平台代码的 PR 上。Dart 编译错误由 main.yml 的 flutter
+  # analyze + Android 构建与全量单测兜底，与平台无关。
+  #
+  # 判据 = 各平台 job **实际读到的输入**（下面五组正则），不是「凡 fushi/** 都算」：
+  #   * app_common：三个 app 平台共用——依赖锁 / 根 pubspec 的 overrides、ci/ 补丁与
+  #     appSmoke 脚本、编进每个 app 的原生库（fushidicts / fushi_p2p，verify_abi.sh 还读
+  #     packages/fushi_p2p 的 Dart 绑定）、本文件、三个平台 job 都 uses 的本地 action，以及
+  #     vendored 插件的 pubspec.yaml（原生依赖声明在那里）。
+  #     fushi/pubspec.yaml 故意不在里面：原生插件的增删一定会改 pubspec.lock；单改它的 PR
+  #     实测（09-20 以来 5 条）全是 +build 版本号、资产目录、纯 Dart 依赖。
+  #   * smoke：Windows / macOS 的 appSmoke 契约自己的装置（app_smoke_test 与它 import 的
+  #     helpers、comprehensive_test_runner 与 test_flow/、fixture 生成器）。
+  #   * windows_only / macos_only / ios_only：各自的平台目录、只进该平台包的原生库 / vendored
+  #     插件 / 打包脚本。native/galgame_hook 与 native/fushi_torrent 只进 Windows 包（Apple
+  #     没有内置 torrent 引擎，galgame 只做 Windows），Mihon runtime 只进 Windows / macOS。
+  #   * server：linux-server job 的输入——服务端的 Dart 依赖闭包（fushi_server → fushi_engine
+  #     → core / anki / audio / dictionary / platform / torrent / p2p）、它随包的三块原生库、
+  #     持久库基建、本文件、依赖锁与 ci/ 补丁（fushi-subtitles 的 archive 兼容补丁）。
+  # 守卫 fushi/test/build/multiplatform_pr_gating_guard_test.dart 按样例路径回放这套路由，
+  # 并对账「每个 job 正文里调用到的 native/ packages/ tool/ tools/ ci/ .github/ 路径都被它的
+  # 路由覆盖」——job 新读一个目录却忘了进正则，守卫就红。
+  #
+  # push（main）与手动 workflow_dispatch 行为不变：整轮全开。schedule 只用来在 develop 上
+  # 派发夜间整轮（见 nightly-develop），本 run 自己什么都不编。
+  #
+  # 取改动清单用 PR 的 merge commit 与它的第一个父提交（= 合并时的基线 tip）做 diff：
+  # 与平台 job 实际构建的是同一个提交；只要两层提交 + 树，blob:none + sparse 让它几秒完成。
+  # --no-renames：改名同时列出旧路径和新路径，两边都要算。
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      windows: ${{ steps.classify.outputs.windows }}
+      macos: ${{ steps.classify.outputs.macos }}
+      ios: ${{ steps.classify.outputs.ios }}
+      server: ${{ steps.classify.outputs.server }}
+    steps:
+      - name: Check out the PR merge commit and its base parent
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/workflows
+          persist-credentials: false
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          files="$RUNNER_TEMP/changed.txt"
+          : > "$files"
+          all=false
+          case "$EVENT" in
+            pull_request)
+              git diff --name-only --no-renames HEAD^1 HEAD > "$files"
+              ;;
+            schedule)
+              # 夜间派发 run 本身不构建（nightly-develop job 派发 develop 上的整轮）。
+              ;;
+            *)
+              # push（main）/ workflow_dispatch：整轮，与加路径门之前一致。
+              all=true
+              ;;
+          esac
+          echo "event=$EVENT all=$all changed files: $(wc -l < "$files")"
+          cat "$files"
+
+          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names)/)'
+          smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
+          windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/setup-fushi-anki-sync/)'
+          macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/fushi_anki_sync/|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
+          ios_only='^(fushi/(ios|apple)/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p)/|native/(fushi_torrent|fushi_p2p|fushi_anki_sync)/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
+
+          # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
+          route() {
+            local key="$1" re="" v
+            shift
+            for v in "$@"; do re="${re:+$re|}${!v}"; done
+            local on=false
+            if [ "$all" = true ] || grep -Eq "$re" "$files"; then on=true; fi
+            echo "$key=$on"
+            echo "$key=$on" >> "$GITHUB_OUTPUT"
+          }
+          route windows app_common smoke windows_only
+          route macos app_common smoke macos_only
+          route ios app_common ios_only
+          route server server_only
+
+  # 路径门的兜底：develop 每晚整轮跑一次 build-multiplatform（Windows / macOS / iOS / 服务端 +
+  # appSmoke），把 PR 上被路径门跳过的「只改 Dart 的 PR」在 develop 上补一遍。
+  #
+  # 为什么需要它、为什么是这种形状：
+  #   * release-desktop.yml 在每次 develop push（fushi/** packages/** native/** …）上都会做
+  #     Windows / macOS / iOS 的 release 构建——编译 / 链接这层兜底本来就在，而且是每次合并。
+  #     它**没有**的是 appSmoke（Windows / macOS 真 app 冒烟）、debug 配置构建和 FFI 真调用
+  #     测试；这些只在本 workflow 里。
+  #   * 不恢复 develop push 触发：2026-09-03 正是因为每次合并同时点燃三条长 workflow、runner
+  #     排队到互相取消才摘掉的，而 release-desktop 已在每次 develop push 上占两台 macOS。
+  #   * 不直接 `schedule` 跑本 workflow：定时任务只在**默认分支 main** 上跑、读 main 上的
+  #     文件与代码，main 只在正式发布时同步——那等于每晚测一份旧代码。所以定时 run 只做一件
+  #     事：`gh workflow run … --ref develop`，被派发的 run 用 develop 上的 workflow 文件与
+  #     代码整轮跑（GITHUB_TOKEN 允许触发 workflow_dispatch）。
+  #   * 生效时点：本文件同步到 main 之后（下一次 develop → main）定时才开始触发；在那之前
+  #     只有 release-desktop 的编译兜底，需要时手动 dispatch 本 workflow。
+  nightly-develop:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch a full build-multiplatform run on develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run build-multiplatform.yml --repo "$REPO" --ref develop -f nightly=true
+
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -92,7 +232,8 @@ jobs:
     #   1. 手动 dispatch 连续若干次（>= 10）appSmoke 全绿，证明 KVM 修复真的消掉了
     #      renderer crash 这类红；
     #   2. 决定让它成为硬门（去掉 continue-on-error）——软门放回 PR 上仍是纯开销。
-    if: github.event_name == 'workflow_dispatch'
+    # nightly-develop 派发的夜间整轮带 nightly=true，不跑它：仍然只在人手动 dispatch 时跑。
+    if: github.event_name == 'workflow_dispatch' && !inputs.nightly
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -190,8 +331,31 @@ jobs:
           path: .codex-test/comprehensive/
           if-no-files-found: ignore
 
-  # Linux gates the GTK/evdev desktop build path.
-  linux:
+  # 无头服务端（packages/fushi_server）随包原生库的门。
+  #
+  # 2026-09-30 所有者拍板：很长一段时间内不做 Linux **app**，所以这里不再 `flutter build
+  # linux`（连同 GTK/keybinder/mpv 依赖、Flutter Linux CMake 工具链垫片、app bundle 里的
+  # fushi_p2p 核对一起删掉）。但 Linux 无头服务端照常维护，而它随包原生库的覆盖**只在
+  # 这里**（PR #1798 审查时确认）：server-gate.yml 只做 analyze / 包测试 / 裸 `dart build
+  # cli` + `--help`，不碰任何原生库。本 job 保留且只保留这部分：
+  #   * 静态 torrent bridge（vcpkg）构建 + ABI 符号表 + 「真静态链」核对 + 用这份 .so 跑
+  #     packages/fushi_torrent 的 FFI 测试（FUSHI_TORRENT_LIB）；
+  #   * fushi_p2p .so 构建 + ABI 核对，装进服务端 bundle 后拿 bundle 里那份跑真隧道测试；
+  #   * fushi-anki-sync（debug）装进 bundle/bin + version 冒烟；
+  #   * onnxruntime CPU 版随包；
+  #   * `dart build cli` 出 bundle，真进程起 `serve`，断言内置 torrent 引擎与 ASR plan
+  #     都真的 dlopen 了随包库（server-gate 的 `--help` 冒烟不开 DB、不起服务，在这里被
+  #     `serve` 冒烟完全覆盖，所以本 job 不再重复跑 `--help`）。
+  # fushidicts 的 gcc-14 ctest 不是服务端的东西（服务端不带 fushidicts），它随「Verify
+  # Linux C++23 compiler」一起搬去了 native-fushidicts-gate.yml 的 ctest-gcc job。
+  #
+  # 触发：PR 上由 changes job 的 `server` 输出决定（服务端 Dart 依赖闭包 / 三块原生库源码 /
+  # 持久库基建 / 本文件 / 依赖锁 / ci 补丁）；push / 手动 dispatch 照旧整轮。
+  # job 级 CC/CXX 与 native-cache-warm.yml 的 linux job 逐字一致：它们进了持久库名字的
+  # 哈希，PR 读的三份件（torrent / p2p / anki-sync debug）由那边在 develop 上预存。
+  linux-server:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -213,78 +377,33 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: linux
+      # 只剩服务端原生库要的工具：vcpkg（cmake + ninja + pkg-config）按 job 级 CC/CXX
+      # 用 gcc-14 编静态 torrent bridge。apt 清单与 native-cache-warm.yml linux job 一致。
       - name: Install Linux build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ninja-build clang cmake pkg-config \
-            gcc-14 g++-14 libstdc++-14-dev \
-            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
-      - name: Verify Linux C++23 compiler
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$CC" --version
-          "$CXX" --version
-          cat > /tmp/fushidicts_expected.cpp <<'CPP'
-          #include <expected>
-          #ifndef __cpp_lib_expected
-          #error __cpp_lib_expected missing
-          #endif
-          int main() {
-            std::expected<int, int> ok = 23;
-            std::expected<int, int> fail = std::unexpected(1);
-            return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
-          }
-          CPP
-          "$CXX" -std=c++23 /tmp/fushidicts_expected.cpp -o /tmp/fushidicts_expected
-      # Native engine e2e/guard suite (TODO-578): build the real fushidicts
-      # static lib via the unified CMake/ctest harness and run every native test
-      # (UAF dict-name, kanji round-trip, media import/query, freq+pitch, plus
-      # the pure-memory zip64/word-scan/text-processor guards). Self-contained
-      # in-memory zip fixtures, no emulator/external assets. Runs before the
-      # Flutter build so a native break fails fast and stays independent of Dart.
-      - name: Run fushidicts native tests (ctest)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake -S native/fushidicts/tests -B "$RUNNER_TEMP/fushi-tests" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build "$RUNNER_TEMP/fushi-tests" --config Release
-          # --no-tests=error：ctest 在「一个测试都没注册」时默认返回 0，于是一次
-          # CMake 回归让 tests/CMakeLists.txt 的 add_test 列表变空就会读成通过。
-          # 与 BUG-1157 同族的「零测试执行伪装成绿」。对齐 native-fushidicts-gate.yml。
-          ctest --test-dir "$RUNNER_TEMP/fushi-tests" --output-on-failure -C Release --no-tests=error
+            ninja-build cmake pkg-config \
+            gcc-14 g++-14 libstdc++-14-dev
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
           cache: true
-
-      # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
-      # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
-      # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
-      - name: Provide baked-in secret stubs
-        uses: ./.github/actions/provide-baked-secrets
-        with:
-          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
-          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
-          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
-          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
-          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
-          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+      # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_audio 等尚声明
+      # flutter），与 server-gate.yml 同一个入口解析整个 workspace。
       - name: Flutter pub get
         working-directory: fushi
         run: flutter pub get
+      # fushi_asr_onnx_ffi 的 archive 兼容补丁（见 CLAUDE.md「archive override + ci/patches」），
+      # 缺了服务端编不过。
       - name: Apply pub cache patches
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
-      # 互联 P2P 隧道（iroh）Linux .so：一份产物两处用——Flutter Linux bundle
-      # （fushi/linux/CMakeLists.txt copy-if-present 进 bundle/lib/）与下面的
-      # fushi_server bundle（bin/../lib/）。失败口径同 libtorrent：构建失败即 job 失败。
-      # rust-cache 的 key 按平台分；缓存未命中只会变慢，没有任何步骤的成败挂在 cache-hit 上。
-      # 持久库命中时跳过 Rust 工具链与 cargo；ABI 校验与下面的真隧道 FFI 测试照跑。
+      # 互联 P2P 隧道（iroh）Linux .so：服务端按 bin/../lib/libfushi_p2p.so 定位。
+      # 失败口径同 libtorrent：构建失败即 job 失败。rust-cache 的 key 按平台分；缓存未命中
+      # 只会变慢，没有任何步骤的成败挂在 cache-hit 上。持久库命中时跳过 Rust 工具链与
+      # cargo；ABI 校验与下面的真隧道 FFI 测试照跑。
       - name: Restore fushi_p2p .so from native artifact store
         id: p2p_store
         uses: ./.github/actions/native-artifact-store
@@ -313,90 +432,7 @@ jobs:
             bash native/fushi_p2p/build_linux_so.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
-      - name: Flutter Linux CMake toolchain shim
-        working-directory: fushi
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf build/linux
-          mkdir -p "$RUNNER_TEMP/fushi-linux-toolchain"
-          cat > "$RUNNER_TEMP/fushi-linux-toolchain/clang" <<'SH'
-          #!/usr/bin/env bash
-          exec gcc-14 "$@"
-          SH
-          cat > "$RUNNER_TEMP/fushi-linux-toolchain/clang++" <<'SH'
-          #!/usr/bin/env bash
-          exec g++-14 "$@"
-          SH
-          chmod +x "$RUNNER_TEMP/fushi-linux-toolchain/clang" \
-            "$RUNNER_TEMP/fushi-linux-toolchain/clang++"
-
-          # Flutter 3.44 invokes Linux CMake with CC=clang/CXX=clang++,
-          # ignoring the job-level CC/CXX. Put the wrappers first in PATH so
-          # Flutter's CMake configure and the real build use the same
-          # std::expected-capable GNU 14 toolchain verified above.
-          PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH" \
-            flutter build linux --debug --config-only
-
-          cache="build/linux/x64/debug/CMakeCache.txt"
-          grep -F "CMAKE_CXX_COMPILER:FILEPATH=$RUNNER_TEMP/fushi-linux-toolchain/clang++" "$cache"
-          compiler_file="$(find build/linux/x64/debug/CMakeFiles -name CMakeCXXCompiler.cmake -print -quit)"
-          test -n "$compiler_file"
-          grep -F 'set(CMAKE_CXX_COMPILER_ID "GNU")' "$compiler_file"
-
-          cat > /tmp/fushidicts_flutter_cmake_expected.cpp <<'CPP'
-          #include <expected>
-          #ifndef __cpp_lib_expected
-          #error __cpp_lib_expected missing
-          #endif
-          int main() {
-            std::expected<int, int> ok = 23;
-            std::expected<int, int> fail = std::unexpected(1);
-            return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
-          }
-          CPP
-          "$RUNNER_TEMP/fushi-linux-toolchain/clang++" -std=c++23 \
-            /tmp/fushidicts_flutter_cmake_expected.cpp \
-            -o /tmp/fushidicts_flutter_cmake_expected
-      - name: Build Linux (debug)
-        working-directory: fushi
-        shell: bash
-        run: |
-          set -euo pipefail
-          if PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH" \
-              flutter build linux --debug --verbose; then
-            exit 0
-          fi
-
-          echo "::group::Linux CMake/Ninja diagnostics"
-          cache="build/linux/x64/debug/CMakeCache.txt"
-          if [ -f "$cache" ]; then
-            grep -E 'CMAKE_(C|CXX)_COMPILER|CMAKE_CXX_STANDARD|CMAKE_BUILD_TYPE' "$cache" || true
-          fi
-          compiler_file="$(
-            find build/linux/x64/debug/CMakeFiles \
-              -name CMakeCXXCompiler.cmake -print -quit 2>/dev/null || true
-          )"
-          if [ -n "$compiler_file" ]; then
-            grep -E 'CMAKE_CXX_COMPILER(_ID|_VERSION)?|CMAKE_CXX_STANDARD' \
-              "$compiler_file" || true
-          fi
-          if [ -d build/linux/x64/debug ]; then
-            PATH="$RUNNER_TEMP/fushi-linux-toolchain:$PATH" \
-              ninja -C build/linux/x64/debug -v install || true
-          fi
-          echo "::endgroup::"
-          exit 1
-      - name: Verify fushi_p2p is in the Linux bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          so=fushi/build/linux/x64/debug/bundle/lib/libfushi_p2p.so
-          test -f "$so" || { echo "::error::$so missing — fushi/linux/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/linux-x64"; exit 1; }
-          ls -la "$so"
-      # 无头服务端（packages/fushi_server）：纯 Dart，dart build 出带 native assets
-      # （sqlite3）的 CLI bundle。这是 fushi_engine「闭包里没有 dart:ui」的最终门——
-      # flutter analyze / 守卫测试都只是它的镜像。--help 冒烟不开 DB。
+      # 纯 Dart，dart build 出带 native assets（sqlite3）的 CLI bundle。
       - name: Build headless fushi_server (Linux)
         shell: bash
         run: |
@@ -404,9 +440,8 @@ jobs:
           dart build cli --target packages/fushi_server/bin/fushi_server.dart \
             --output build/fushi_server_linux
           ls -la build/fushi_server_linux/bundle
-          build/fushi_server_linux/bundle/bin/fushi_server --help
       # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）：
-      # 发布包里它随 app / 服务端可执行文件同级（release-desktop.yml / release-server.yml）。
+      # 发布包里它随服务端可执行文件同级（release-server.yml）。
       # PR 门编 debug（不走 LTO，只为抓编译/补丁断裂），装进服务端 bundle/bin，
       # build.sh 顺带生成 SOURCE.txt 并对装好的副本跑 version 冒烟。
       # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过：只跳工具链与
@@ -440,8 +475,8 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_debug }}
           path: native/fushi_anki_sync/target/debug/fushi-anki-sync
-      # 第 4 期：无头服务端的两块随包原生库，都落 bundle/lib/（服务端按
-      # `<exe>/../lib/<裸名>` 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
+      # 无头服务端的两块随包原生库，都落 bundle/lib/（服务端按 `<exe>/../lib/<裸名>`
+      # 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
       #
       # (a) 内置 torrent 引擎 bridge：**vcpkg manifest 静态链**（x64-linux-fpic overlay
       #     triplet，libtorrent 2.0.11 + boost + openssl 全进 .so，libstdc++ 也静态），
@@ -535,8 +570,8 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.torrent }}
           path: native/fushi_torrent/prebuilt/linux-x64
-      # (c) 互联 P2P 隧道 .so（上面 Linux 桌面构建前已编好）。随后拿 **bundle 里那一份**
-      # 跑 packages/fushi_p2p 的真隧道测试（同进程两端点经直连地址互拨，不依赖外网）：
+      # (c) 互联 P2P 隧道 .so（上面已编好）。随后拿 **bundle 里那一份** 跑
+      # packages/fushi_p2p 的真隧道测试（同进程两端点经直连地址互拨，不依赖外网）：
       # 验的是实际发出去的文件能 dlopen、绑定与 C ABI 对得上。main.yml / release.yml 的
       # 包测试没有原生产物，这个包在那里整组 skip，所以这里是 Linux 上唯一的真 ABI 门。
       - name: Bundle fushi_p2p into fushi_server and run its FFI tests (Linux)
@@ -605,11 +640,13 @@ jobs:
           done
           status="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/status)"
           echo "$status"
-          echo "$status" | grep -q '"backend":"embedded"' \
+          # here-string 而不是 `echo "$x" | grep -q`：pipefail 下写端吃 SIGPIPE 会把命中读成
+          # 未命中（BUG-2804）。
+          grep -q '"backend":"embedded"' <<< "$status" \
             || { echo "::error::embedded torrent engine not resolved (bundled .so not loaded)"; cat "$cfg/serve.log"; exit 1; }
           models="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/models)"
-          echo "$models" | grep -q '"asr":\[' || { echo "::error::models endpoint failed"; cat "$cfg/serve.log"; exit 1; }
-          echo "$models" | grep -q '"error"' && { echo "::error::an ASR language failed to plan (onnxruntime not loadable?)"; echo "$models"; cat "$cfg/serve.log"; exit 1; }
+          grep -q '"asr":\[' <<< "$models" || { echo "::error::models endpoint failed"; cat "$cfg/serve.log"; exit 1; }
+          grep -q '"error"' <<< "$models" && { echo "::error::an ASR language failed to plan (onnxruntime not loadable?)"; echo "$models"; cat "$cfg/serve.log"; exit 1; }
           kill $pid; wait $pid || true
           cat "$cfg/serve.log"
       - name: Upload fushi_server (Linux)
@@ -621,6 +658,8 @@ jobs:
 
   # macOS gates the desktop build plus the shared smoke contract.
   macos:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     permissions:
@@ -629,7 +668,7 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v6
-      # 名字的唯一算法见 linux job 同名步骤。p2p universal dylib 与 release-desktop.yml
+      # 名字的唯一算法见 linux-server job 同名步骤。p2p universal dylib 与 release-desktop.yml
       # macos job 同名（同一脚本、同一产物），develop 上的发布构建存的件这里直接复用；
       # anki-sync debug 是 PR 专用变体，由 native-cache-warm.yml 在 develop 上预存。
       - name: Resolve native artifact store names
@@ -843,6 +882,8 @@ jobs:
   # iOS runs on a macOS runner and uses a no-codesign device build so CI links
   # the real iOS plugin slices without requiring an Apple developer account.
   ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
@@ -851,7 +892,7 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v6
-      # 名字的唯一算法见 linux job 同名步骤；与 release-desktop.yml ios job 同名（同一
+      # 名字的唯一算法见 linux-server job 同名步骤；与 release-desktop.yml ios job 同名（同一
       # device staticlib），develop 上的发布构建存的件这里直接复用。
       - name: Resolve native artifact store names
         id: native_store
@@ -966,6 +1007,8 @@ jobs:
           name: ${{ steps.native_store.outputs.p2p }}
           path: native/fushi_p2p/prebuilt/ios
   windows:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-2022
     timeout-minutes: 120
     permissions:
