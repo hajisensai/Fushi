@@ -35,6 +35,7 @@ on:
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/cancel_superseded_runs.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'

@@ -34,6 +34,7 @@ on:
       - '.github/workflows/build-multiplatform.yml'
       - '.github/actions/setup-fushi-anki-sync/**'
       - '.github/actions/provide-baked-secrets/**'
+      - '.github/actions/native-artifact-store/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'

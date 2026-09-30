@@ -41,6 +41,7 @@ on:
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/cancel_superseded_runs.sh'
       - 'tool/mihon/**'
       - 'tool/ffmpeg-min/**'
       - 'tool/sign_windows_release.ps1'
@@ -53,6 +54,7 @@ on:
       - '.github/workflows/release.yml'
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/setup-fushi-anki-sync/**'
+      - '.github/actions/native-artifact-store/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 无头服务端不进桌面/Apple 包（它有自己的 release-server.yml 与 server-gate.yml）。
