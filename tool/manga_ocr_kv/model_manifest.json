@@ -111,5 +111,5 @@
     "cpuMsPerBlockKv": "298-344",
     "machine": "i5-12600KF, onnxruntime 1.22 CPU, 2 intra-op threads, beam 4"
   },
-  "status": "pending-release-upload"
+  "status": "verified-release-asset"
 }
