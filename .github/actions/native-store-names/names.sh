@@ -43,7 +43,7 @@ sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum 
 image="$(sanitize "${ImageVersion:-unknown-image}")"
 image_os="$(sanitize "${ImageOS:-unknown-os}")"
 arch="$(sanitize "$(printf '%s' "${RUNNER_ARCH:-unknown-arch}" | tr 'A-Z' 'a-z')")"
-# Compilers a job pins through env (build-multiplatform linux job: gcc-14). Folded into
+# Compilers a job pins through env (build-multiplatform linux-server job: gcc-14). Folded into
 # the hash, so a producer that forgot to set them can never feed a consumer that did.
 toolchain_env="CC=${CC:-} CXX=${CXX:-}"
 
