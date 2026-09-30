@@ -1166,7 +1166,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       final FushiDatabase db = appModel.database;
       final int? collectionId = widget.playlistCollectionId;
       final VideoMetadataWorkRow? work = collectionId != null
-          ? await db.getVideoMetadataWorkByCollection(collectionId)
+          ? await db.resolveVideoMetadataWorkForCollection(collectionId)
           : await db.getVideoMetadataWorkByBook(widget.bookUid);
       final Map<String, String> externalIds = <String, String>{};
       if (work != null) {

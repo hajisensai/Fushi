@@ -164,7 +164,9 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
             ? kApibayTvCategories
             : kApibayMovieCategories,
       );
-      return ProviderBatchResult<VideoResourceCandidate>(
+      return publicVideoIndexResult(
+        providerId: id,
+        query: query,
         items: deduplicateVideoResources(
           torrents.map(
             (PublicVideoIndexTorrent torrent) => PublicVideoIndexCandidate(
@@ -175,11 +177,12 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
             ),
           ),
         ).take(request.limit).toList(),
-        successfulProviderCount: 1,
       );
     } on Object catch (error) {
-      return ProviderBatchResult<VideoResourceCandidate>.failure(
-        ExternalProviderFailure.fromException(
+      return publicVideoIndexResult(
+        providerId: id,
+        query: query,
+        failure: ExternalProviderFailure.fromException(
           providerId: id,
           operation: 'search',
           error: error,
@@ -248,7 +251,9 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
         ],
         limit: request.limit,
       );
-      return ProviderBatchResult<VideoResourceCandidate>(
+      return publicVideoIndexResult(
+        providerId: id,
+        query: query,
         items: deduplicateVideoResources(
           torrents.map(
             (PublicVideoIndexTorrent torrent) => PublicVideoIndexCandidate(
@@ -259,11 +264,12 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
             ),
           ),
         ).take(request.limit).toList(),
-        successfulProviderCount: 1,
       );
     } on Object catch (error) {
-      return ProviderBatchResult<VideoResourceCandidate>.failure(
-        ExternalProviderFailure.fromException(
+      return publicVideoIndexResult(
+        providerId: id,
+        query: query,
+        failure: ExternalProviderFailure.fromException(
           providerId: id,
           operation: 'search',
           error: error,
@@ -280,6 +286,37 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
   void close() {
     if (_closesClient) _client.close();
   }
+}
+
+/// 两家公共索引器的结果 + 按源回执（实际发出的查询词可能是拉丁别名，不一定是
+/// 请求里的词，所以回执由 provider 自己写，BUG-2794）。
+VideoResourceSearchResult publicVideoIndexResult({
+  required String providerId,
+  required String query,
+  List<VideoResourceCandidate> items = const <VideoResourceCandidate>[],
+  ExternalProviderFailure? failure,
+}) {
+  final bool succeeded = failure == null;
+  return VideoResourceSearchResult(
+    items: items,
+    failures: <ExternalProviderFailure>[if (failure != null) failure],
+    successfulProviderCount: succeeded ? 1 : 0,
+    sources: <VideoResourceSourceReport>[
+      VideoResourceSourceReport(
+        providerId: providerId,
+        queries: <VideoResourceQueryReport>[
+          VideoResourceQueryReport(
+            query: query,
+            itemCount: items.length,
+            failure: failure,
+          ),
+        ],
+        itemCount: items.length,
+        failures: <ExternalProviderFailure>[if (failure != null) failure],
+        succeeded: succeeded,
+      ),
+    ],
+  );
 }
 
 /// 候选 → 磁链 payload。两家 provider 共用：`resolve` 的全部内容就是「这条候选

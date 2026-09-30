@@ -1,18 +1,24 @@
-// BUG-2780 behavior test: the audiobook follow highlight must paint one continuous
-// block across <ruby> elements.
+// BUG-2780 / BUG-2806 behavior test: the audiobook follow highlight must paint one
+// continuous block across <ruby> elements WITHOUT changing the layout.
 //
-// Root cause: applySentenceAudioCues wrapped every plain-text segment in its own
+// BUG-2780: applySentenceAudioCues wrapped every plain-text segment in its own
 // span and highlighted each <ruby> separately via a class background. The spacing
 // a long annotation opens around its base (しゃく is wider than 釈) belongs to
 // whichever box the engine decides: on the user's iPhone it fell outside the ruby
-// background (the highlight broke into 「会|釈|をす」 with gaps), on iOS 26.5 it
-// overlapped the following span by 7.7px (a darker band with translucent colors).
-// Fix: consecutive segments under the same parent — text AND whole rubies — are
-// moved into ONE wrapper span, which paints the background once.
+// background (gaps), on iOS 26.5 it overlapped the following span (a darker band).
+// The first fix moved whole rubies into the wrapper span.
+//
+// BUG-2806: a <ruby> inside a span loses WebKit's annotation overhang, so moving it
+// re-laid the text out after the chapter was already on screen (「自嘲気味」: 気 jumped
+// 8px away right after turning into the new chapter). Now a ruby never moves: the
+// base text is wrapped IN PLACE inside the ruby, text groups stop at rubies, and the
+// gap a non-overhanging annotation leaves is filled at highlight time with a
+// box-shadow (paint only, no layout).
 //
 // This test EXECUTES the real applySentenceAudioCues / sentenceAudioWrapItems /
-// sentenceAudioInlineGap / rubyForNode, extracted verbatim from
-// reader_pagination_scripts.dart, on a minimal fake DOM.
+// sentenceAudioInlineGap / rubyForNode / fillSentenceAudioRubyGaps /
+// clearSentenceAudioRubyGaps, extracted verbatim from reader_pagination_scripts.dart,
+// on a minimal fake DOM.
 //
 // Run: node fushi/test/reader/sentence_audio_ruby_wrap_behavior_test.js
 // (driven from sentence_audio_ruby_wrap_behavior_test.dart inside `flutter test`).
@@ -67,7 +73,8 @@ class Text extends Node {
 
 class Element extends Node {
   constructor(tag, display) {
-    super(); this.nodeType = 1; this.tagName = tag.toUpperCase(); this.className = '';
+    super(); this.nodeType = 1; this.tagName = tag.toUpperCase(); this.className = ''; this.style = {};
+    this.rects = [];
     this.display = display || (tag === 'p' || tag === 'div' ? 'block' : tag === 'ruby' ? 'ruby' : 'inline');
     const self = this;
     this.classList = {
@@ -80,6 +87,16 @@ class Element extends Node {
     for (let n = this; n && n.nodeType === 1; n = n.parentNode) if (n.tagName === sel.toUpperCase()) return n;
     return null;
   }
+  querySelector(sel) {
+    for (const c of this.childNodes) {
+      if (c.nodeType !== 1) continue;
+      if (c.tagName === sel.toUpperCase()) return c;
+      const hit = c.querySelector(sel);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  getClientRects() { return this.rects; }
 }
 
 class Fragment extends Node { constructor() { super(); this.nodeType = 11; } }
@@ -165,13 +182,18 @@ function baseTextNodes(root) {
 function makeReader(cueRoots) {
   const sandbox = {
     document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {} },
-    getComputedStyle: (n) => ({ display: n.display || 'inline', getPropertyValue: () => '' }),
+    getComputedStyle: (n) => ({
+      display: n.display || 'inline', getPropertyValue: () => '',
+      writingMode: 'vertical-rl', fontSize: '22px',
+    }),
+    Map,
     Node: { TEXT_NODE: 3 },
     window: {},
     console: { log() {} },
   };
   vm.createContext(sandbox);
-  const methods = ['applySentenceAudioCues', 'sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode']
+  const methods = ['applySentenceAudioCues', 'sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode',
+    'fillSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps']
     .map(extractMethod).join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
   const R = sandbox.R;
@@ -186,19 +208,35 @@ function makeReader(cueRoots) {
   return R;
 }
 
-// ── 1. text + mono rubies + text under one <p> → ONE wrapper, no ruby class ──
+function wrapperOf(textNode) {
+  const w = textNode.parentNode;
+  return w && w.nodeType === 1 && w.className.split(' ').includes('fushi-sentence-audio-cue') ? w : null;
+}
+function rtOf(r) { return r.childNodes.filter((n) => n.tagName === 'RT'); }
+// Range.extractContents leaves empty text nodes behind (as the real DOM does).
+function kids(n) { return n.childNodes.filter((c) => c.nodeType === 1 || c.nodeValue); }
+
+// ── 1. text + rubies + text under one <p>: rubies never move, base text wrapped in place ──
 {
   const r1 = ruby('会', 'え'); const r2 = ruby('釈', 'しゃく'); const r0 = ruby('平塚', 'ひらつか');
   const p = el('p', [r0, '先生に促されて、俺は', r1, r2, 'をする。']);
   const R = makeReader({ c1: p });
   R.applySentenceAudioCues([{ id: 'c1' }]);
   const ws = R.cueWrappers.get('c1');
-  assert.strictEqual(ws.length, 1, 'whole sentence must be one wrapper, got ' + ws.length);
-  assert.strictEqual(R.cueRubyElements.has('c1'), false, 'rubies inside the wrapper must not also get the ruby class');
-  assert.strictEqual(p.childNodes.length, 1, 'paragraph now holds exactly the wrapper');
-  assert.strictEqual(ws[0].className, 'fushi-sentence-audio-cue');
-  assert.strictEqual(r1.parentNode, ws[0], 'ruby moved (not cloned) into the wrapper');
-  assert.strictEqual(r2.parentNode, ws[0]);
+  assert.strictEqual(ws.length, 5, 'ruby base / text / ruby base / ruby base / text, got ' + ws.length);
+  [r0, r1, r2].forEach((r) => {
+    assert.strictEqual(r.parentNode, p, 'ruby stays a direct child of the paragraph (never moved into a span)');
+    assert.strictEqual(kids(r)[0].nodeType, 1, 'base text is wrapped');
+    assert.strictEqual(kids(r)[0].className, 'fushi-sentence-audio-cue');
+    assert.strictEqual(kids(r)[0].parentNode, r, 'base wrapper lives INSIDE the ruby');
+    assert.strictEqual(rtOf(r).length, 1, 'rt stays a direct child of the ruby');
+    assert.strictEqual(rtOf(r)[0].parentNode, r);
+  });
+  assert.strictEqual(ws[0].parentNode, r0);
+  assert.strictEqual(ws[1].parentNode, p);
+  assert.strictEqual(ws[1].textContent, '先生に促されて、俺は', 'text group stops at the next ruby');
+  assert.strictEqual(ws[4].textContent, 'をする。');
+  assert.strictEqual(R.cueRubyElements.has('c1'), false, 'no ruby class fallback');
   assert.strictEqual(p.textContent, '平塚ひらつか先生に促されて、俺は会え釈しゃくをする。', 'text preserved in order');
 }
 
@@ -219,13 +257,15 @@ function makeReader(cueRoots) {
   }];
   R.applySentenceAudioCues([{ id: 'c2' }]);
   const ws = R.cueWrappers.get('c2');
-  assert.strictEqual(ws.length, 1, 'partial text + ruby + partial text is one wrapper');
-  assert.strictEqual(ws[0].textContent, '学校で会話自体が稀まれなんだから。');
+  assert.strictEqual(ws.length, 3, 'partial text / ruby base / partial text');
+  assert.strictEqual(ws.map((w) => w.textContent).join('|'), '学校で会話自体が|稀|なんだから。');
+  assert.strictEqual(r.parentNode, p, 'ruby not moved');
+  assert.strictEqual(ws[1].parentNode, r);
   assert.strictEqual(p.textContent, '前の文。学校で会話自体が稀まれなんだから。次の文。');
   assert.strictEqual(p.childNodes[0].textContent, '前の文。');
 }
 
-// ── 3. different parents (ruby inside a book <a>) → separate groups, ruby still wrapped ──
+// ── 3. ruby inside a book <a>: nothing is moved out of / into the <a> ──
 {
   const r = ruby('貫禄', 'かんろく');
   const a = el('a', [r]);
@@ -233,9 +273,10 @@ function makeReader(cueRoots) {
   const R = makeReader({ c3: p });
   R.applySentenceAudioCues([{ id: 'c3' }]);
   const ws = R.cueWrappers.get('c3');
-  assert.strictEqual(ws.length, 3, 'text / <a>-nested ruby / text are three groups');
-  assert.strictEqual(r.parentNode, ws[1], 'the nested ruby is wrapped inside its own parent');
-  assert.strictEqual(ws[1].parentNode, a, 'wrapper stays inside the book element (no splitting of <a>)');
+  assert.strictEqual(ws.length, 3, 'text / ruby base / text');
+  assert.strictEqual(r.parentNode, a, 'ruby stays inside the book <a>');
+  assert.strictEqual(a.parentNode, p, '<a> is not swallowed by a text wrapper');
+  assert.strictEqual(ws[1].parentNode, r);
   assert.strictEqual(R.cueRubyElements.has('c3'), false);
 }
 
@@ -258,16 +299,66 @@ function makeReader(cueRoots) {
   ws.forEach((w) => assert.strictEqual(w.textContent.indexOf('本文外'), -1, 'no wrapper swallows the block'));
 }
 
-// ── 5. multi-pair ruby (会<rt>え</rt>釈<rt>しゃく</rt>) counts once ──
+// ── 5. multi-pair ruby (会<rt>え</rt>釈<rt>しゃく</rt>): each base wrapped, rts untouched ──
 {
   const r = el('ruby', ['会', el('rt', ['え']), '釈', el('rt', ['しゃく'])]);
   const p = el('p', ['俺は', r, 'をする。']);
   const R = makeReader({ c5: p });
   R.applySentenceAudioCues([{ id: 'c5' }]);
   const ws = R.cueWrappers.get('c5');
-  assert.strictEqual(ws.length, 1);
-  assert.strictEqual(r.parentNode, ws[0]);
-  assert.strictEqual(ws[0].childNodes.filter((n) => n === r).length, 1, 'ruby appears once');
+  assert.strictEqual(ws.length, 4, 'text / 会 / 釈 / text');
+  assert.strictEqual(r.parentNode, p);
+  assert.deepStrictEqual(kids(r).map((n) => n.tagName + ':' + n.textContent),
+    ['SPAN:会', 'RT:え', 'SPAN:釈', 'RT:しゃく'], 'no wrapper spans across an rt');
+}
+
+// ── 6. same-parent text around an inline element that holds a ruby: group breaks ──
+{
+  const r = ruby('嘲', 'ちょう');
+  const em = el('em', ['自', r]);
+  const p = el('p', ['そう', em, '気味に笑う']);
+  const R = makeReader({ c6: p });
+  R.applySentenceAudioCues([{ id: 'c6' }]);
+  assert.strictEqual(em.parentNode, p, 'the <em> holding a ruby is not pulled into a wrapper');
+  assert.strictEqual(r.parentNode, em);
+  assert.strictEqual(kids(p)[0].textContent, 'そう');
+  assert.ok(wrapperOf(kids(kids(p)[0])[0]), 'leading text is wrapped on its own');
+}
+
+// ── 7. gap fill: box-shadow bridges the gap a long annotation leaves, only while active ──
+{
+  const r = ruby('漢', 'かんじかんじ');
+  const p = el('p', ['ほら', r, '字だ']);
+  const R = makeReader({ c7: p });
+  R.applySentenceAudioCues([{ id: 'c7' }]);
+  const ws = R.cueWrappers.get('c7');
+  assert.strictEqual(ws.length, 3);
+  // vertical-rl: same column (x overlaps), base sits 14px below 「ほら」 and above 「字だ」.
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 58, bottom: 80 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 94, bottom: 138 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.strictEqual(ws[1].style.boxShadow,
+    '0px -14px 0 0 var(--fushi-sentence-audio-background-color), ' +
+    '0px 14px 0 0 var(--fushi-sentence-audio-background-color)',
+    'the in-ruby wrapper bridges both gaps (towards 「ほら」 and 「字だ」)');
+  assert.strictEqual(ws[0].style.boxShadow, undefined, 'plain text wrappers are not touched when the ruby side can bridge');
+  R.clearSentenceAudioRubyGaps();
+  assert.strictEqual(ws[1].style.boxShadow, '', 'cleared when the cue is no longer active');
+}
+
+// ── 8. gap fill never bridges across columns, and contiguous boxes get nothing ──
+{
+  const r = ruby('釈', 'しゃく');
+  const p = el('p', ['会', r, 'をする']);
+  const R = makeReader({ c8: p });
+  R.applySentenceAudioCues([{ id: 'c8' }]);
+  const ws = R.cueWrappers.get('c8');
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 22 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 22, bottom: 44 }];
+  ws[2].rects = [{ left: 60, right: 82, top: 0, bottom: 66 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'no shadow for overhanging / cross-column neighbours'));
 }
 
 console.log('all assertions passed');

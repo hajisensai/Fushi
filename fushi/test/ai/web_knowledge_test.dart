@@ -27,9 +27,17 @@ class _FakeWiki {
     this.failingHosts = const <String>{},
     this.redirects = const <String, String>{},
     this.searchUrls = true,
+    this.fullTextByHost = const <String, List<String>>{},
+    this.fullTextDeniedHosts = const <String>{},
   });
 
   final Map<String, List<String>> titlesByHost;
+
+  /// `list=search` 全文检索命中的条目标题（缺省 = 没有命中）。
+  final Map<String, List<String>> fullTextByHost;
+
+  /// 这些站点对 `list=search` 回 `action-notallowed`（萌娘百科的真实答复）。
+  final Set<String> fullTextDeniedHosts;
 
   /// `host|title` → 正文。
   final Map<String, String> extracts;
@@ -87,6 +95,26 @@ class _FakeWiki {
         },
       });
     }
+    if (q['list'] == 'search') {
+      if (fullTextDeniedHosts.contains(host)) {
+        return _json(<String, Object?>{
+          'error': <String, Object?>{
+            'code': 'action-notallowed',
+            'info': 'Unauthorized API call',
+          },
+        });
+      }
+      final List<String> titles = (fullTextByHost[host] ?? const <String>[])
+          .take(int.parse(q['srlimit']!))
+          .toList();
+      return _json(<String, Object?>{
+        'query': <String, Object?>{
+          'search': <Object?>[
+            for (final String t in titles) <String, Object?>{'title': t},
+          ],
+        },
+      });
+    }
     if (q['action'] == 'parse') {
       final String? htmlText = parsedHtml['$host|${q['page']}'];
       return _json(<String, Object?>{
@@ -136,6 +164,91 @@ void main() {
   setUp(WebKnowledgeClient.resetFailureCooldowns);
 
   group('MediaWiki', () {
+    test('标题前缀匹配不到（俗称）→ 全文检索命中的条目照样抓回', () async {
+      final _FakeWiki wiki = _FakeWiki(
+        fullTextByHost: <String, List<String>>{
+          'zh.wikipedia.org': <String>['FX战士久留美'],
+        },
+        extracts: <String, String>{
+          'zh.wikipedia.org|FX战士久留美': '《FX战士久留美》（日语：FX戦士くるみちゃん）',
+        },
+      );
+      final WebKnowledgeClient client = WebKnowledgeClient(
+        sites: <WebKnowledgeSite>[_zh],
+        client: wiki.client,
+      );
+
+      final List<WebKnowledgePage> pages = await client.search('外汇战士');
+
+      expect(pages.single.title, 'FX战士久留美');
+      expect(pages.single.text, contains('FX戦士くるみちゃん'));
+      final Map<String, String> fullText = wiki.requests[1].queryParameters;
+      expect(fullText['list'], 'search');
+      expect(fullText['srsearch'], '外汇战士');
+      expect(fullText['srlimit'], '1');
+    });
+
+    test('opensearch 没填满名额 → 全文检索补足，同名条目不重复', () async {
+      final _FakeWiki wiki = _FakeWiki(
+        titlesByHost: <String, List<String>>{
+          'ja.wikipedia.org': <String>['A'],
+        },
+        fullTextByHost: <String, List<String>>{
+          'ja.wikipedia.org': <String>['A', 'B'],
+        },
+        extracts: <String, String>{
+          'ja.wikipedia.org|A': 'a',
+          'ja.wikipedia.org|B': 'b',
+        },
+      );
+      final WebKnowledgeClient client = WebKnowledgeClient(
+        sites: <WebKnowledgeSite>[_ja],
+        client: wiki.client,
+      );
+
+      final List<WebKnowledgePage> pages = await client.search(
+        'A',
+        pagesPerSource: 2,
+      );
+
+      expect(pages.map((WebKnowledgePage p) => p.title), <String>['A', 'B']);
+    });
+
+    test('opensearch 已填满名额 → 不发全文检索（精确标题行为不变）', () async {
+      final _FakeWiki wiki = _FakeWiki(
+        titlesByHost: <String, List<String>>{
+          'ja.wikipedia.org': <String>['A'],
+        },
+        extracts: <String, String>{'ja.wikipedia.org|A': 'a'},
+      );
+      final WebKnowledgeClient client = WebKnowledgeClient(
+        sites: <WebKnowledgeSite>[_ja],
+        client: wiki.client,
+      );
+
+      await client.search('A');
+
+      expect(
+        wiki.requests.where((Uri u) => u.queryParameters['list'] == 'search'),
+        isEmpty,
+      );
+    });
+
+    test('站点不开放全文检索（萌娘百科）→ 不算失败、不进冷却', () async {
+      final _FakeWiki wiki = _FakeWiki(
+        fullTextDeniedHosts: <String>{'zh.moegirl.org.cn'},
+      );
+      WebKnowledgeClient make() => WebKnowledgeClient(
+        sites: <WebKnowledgeSite>[_moegirl],
+        client: wiki.client,
+      );
+
+      expect(await make().search('外汇战士'), isEmpty);
+      final int before = wiki.requests.length;
+      await make().search('外汇战士');
+      expect(wiki.requests.length, greaterThan(before), reason: '没被冷却，照常再查');
+    });
+
     test('opensearch → extracts：标题、正文、URL 都来自对应站点', () async {
       final _FakeWiki wiki = _FakeWiki(
         titlesByHost: <String, List<String>>{
@@ -293,10 +406,20 @@ void main() {
         sites: <WebKnowledgeSite>[_en],
         client: wiki.client,
       ).search('  Fate/stay night & UBW 命運  ');
-      final Uri uri = wiki.requests.single;
-      expect(uri.queryParameters['search'], 'Fate/stay night & UBW 命運');
-      expect(uri.query, isNot(contains(' ')));
-      expect(uri.query, contains('%26'));
+      // opensearch 空 → 还有一次全文检索；两个请求的查询串都要正确编码。
+      expect(wiki.requests, hasLength(2));
+      expect(
+        wiki.requests[0].queryParameters['search'],
+        'Fate/stay night & UBW 命運',
+      );
+      expect(
+        wiki.requests[1].queryParameters['srsearch'],
+        'Fate/stay night & UBW 命運',
+      );
+      for (final Uri uri in wiki.requests) {
+        expect(uri.query, isNot(contains(' ')));
+        expect(uri.query, contains('%26'));
+      }
     });
 
     test('正文按 maxCharsPerPage 截断，且不劈开代理对', () async {
@@ -494,10 +617,10 @@ void main() {
         sites: <WebKnowledgeSite>[_en],
         client: wiki.client,
       ).search('Frieren');
-      expect(
-        wiki.headers.single['User-Agent'],
-        startsWith('fushi/web-knowledge'),
-      );
+      expect(wiki.headers, isNotEmpty);
+      for (final Map<String, String> headers in wiki.headers) {
+        expect(headers['User-Agent'], startsWith('fushi/web-knowledge'));
+      }
     });
 
     test('超出体积上限的响应被放弃而不是整块读入', () async {

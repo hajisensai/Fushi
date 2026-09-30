@@ -172,6 +172,8 @@ VideoAcquisitionService createAppVideoAcquisitionService({
       ),
       parseIntent: createPreferencesVideoAcquisitionIntentParser(prefs),
       decideIdentity: createPreferencesVideoAcquisitionIdentityDecider(prefs),
+      // 所有查询词都搜空时：按原话查联网资料 → AI 抄出正式名 → 再搜一轮。
+      resolveAlias: createPreferencesVideoAcquisitionAliasResolver(prefs),
       persistPreference:
           (VideoAcquisitionPreference preference, String value) =>
               switch (preference) {

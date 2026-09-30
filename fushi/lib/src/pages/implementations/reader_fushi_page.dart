@@ -2026,6 +2026,24 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _showChrome => _chrome.showChrome;
   set _showChrome(bool value) => _chrome.showChrome = value;
 
+  /// 专注模式（[ReaderChromeController.focusMode]）：顶栏 / 底栏收起且唤不出来。
+  bool get _focusMode => _chrome.focusMode;
+
+  /// 挤压态顶栏 / 底栏此刻是否展开占位——布局判据（绘制、预留、独立文档留白）
+  /// 一律读它，而不是裸 [_showChrome]：专注模式下栏必须不在，但 [_showChrome]
+  /// 本身还是 JS 点词门控的镜像，不能为了藏栏去翻它（翻了点正文就变成「唤栏」
+  /// 而不是查词）。
+  bool get _chromeBarsExpanded => _showChrome && !_focusMode;
+
+  /// JS 点词门控（`__fushiTapGate.chrome` / setup 的 `showChrome`）与 onTap 的
+  /// 「点正文 = 唤出挤压态 chrome」判据：为真时点正文直接查词。专注模式下栏
+  /// 唤不出来，点正文必须照常查词，哪怕进入前栏是收起的。
+  bool get _tapGateChrome => _showChrome || _focusMode;
+
+  /// 专注模式「栏已锁定」提示条（点空白 / 切栏快捷键时弹出，带退出动作）。
+  /// 在场时不重复弹，免得连点时提示条反复闪。
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _focusModeHint;
+
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
   // 一下立即收起置 false。顶部与底栏共用同一旗与同一计时器（决策#1 时长共用、决策#2
@@ -2203,7 +2221,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 并入 [_readerTopOffset]。
   double get _desktopHeaderReserve => readerDesktopHeaderReserve(
     enabled: _desktopChromeEnabled,
-    barOccupiesLayout: _hasEverLoaded && _showChrome,
+    barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
     headerHeight: kReaderDesktopHeaderHeight,
   );
@@ -2235,7 +2253,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 悬浮态恒 0，挤压且占位时占 [_readerChromeHeight]。占位判据与
   /// [_buildBottomChrome] 的可见条件（_hasEverLoaded && _showChrome）一致。
   double get _bottomChromeReserve => bottomChromeReserve(
-    barOccupiesLayout: _hasEverLoaded && _showChrome,
+    barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
     // 无有声书播放条且底栏槽位没有按钮时底栏不存在 → 0（默认布局如此）。
     chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons
@@ -2307,7 +2325,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// [_chromeTransientVisible] 门控（与顶部共用同一唤出/收起状态）。
   bool get _bottomBarShouldPaint => bottomBarVisible(
     hasEverLoaded: _hasEverLoaded,
-    chromeExpanded: _showChrome,
+    chromeExpanded: _chromeBarsExpanded,
     floating: _bottomBarFloating,
     transientVisible: _chromeTransientVisible,
   );
@@ -3452,6 +3470,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
+                  // 专注模式下「返回」先退专注模式、留在书里（与 Esc 先退全屏同理）：
+                  // 栏都收着，这是键盘 / 手柄 / 系统返回键最直接的出口。
+                  if (_focusMode) {
+                    _setFocusMode(false);
+                    return;
+                  }
                   // BUG-782 加固：窗口期内第二次退出触发（ESC/手柄 B 连按、退出
                   // 按钮后再 ESC）会再跑一条退出——首条 pop 掉阅读器后，第二条的
                   // nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动同步
@@ -3662,7 +3686,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final EdgeInsets independentDocumentPadding = independentDocumentInsets(
       lyricsMode: _lyricsMode,
       // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
-      chromeOccupiesLayout: _hasEverLoaded && _showChrome,
+      chromeOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
       // 顶栏在歌词模式同样在场（[_desktopChromeEnabled]），文档要给它让位，
       // 否则首行歌词被顶栏 / 系统状态栏压住。
       topReserve: _lyricsTopReserve,

@@ -81,6 +81,11 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// 窗口全屏（桌面）。
   fullscreen('fullscreen', recoverySlot: ReaderControlSlot.topRight),
 
+  /// 专注模式开关：开启后顶栏 / 底栏收起且唤不出来，只有关掉专注模式才恢复。
+  /// 栏收起后这颗键跟着看不见，退出走悬浮球里的同一颗键、返回键（Esc / 系统
+  /// 返回先退专注模式再退书），或点空白弹出的提示条。
+  focusMode('focusMode', recoverySlot: ReaderControlSlot.topRight),
+
   /// 外观 / 阅读设置抽屉。必需。
   settings(
     'settings',
@@ -202,7 +207,8 @@ class ReaderControlLayout {
       ReaderControlLayout._(core);
 
   /// 出厂布局 = 2026-09 之前硬编码的顶栏：左「← / 模式 / 目录 / 插图 / 统计」，
-  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；有声书传输键留在托盘。
+  /// 中「书名」，右「有声书 / 全屏 / 专注模式 / 设置」；底栏三槽为空；有声书传输键
+  /// 留在托盘。
   static final ReaderControlLayout defaults = ReaderControlLayout._(
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
@@ -220,6 +226,7 @@ class ReaderControlLayout {
         ReaderControlSlot.topRight: <ReaderControlItem>[
           ReaderControlItem.audiobook,
           ReaderControlItem.fullscreen,
+          ReaderControlItem.focusMode,
           ReaderControlItem.settings,
         ],
       },

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodCall, SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -53,6 +54,9 @@ class _FakeServer {
 
   /// 带 X-Fushi-Account 的请求一律 401 unknown_account（账户已在别处删除）。
   bool accountGone = false;
+
+  /// 为 true 时回自己的用户卡 / 书架（分享卡片取数用）；默认 404。
+  bool selfShareData = false;
 
   http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
     utf8.encode(jsonEncode(body)),
@@ -156,6 +160,43 @@ class _FakeServer {
           'chars': <String, dynamic>{'value': 50000, 'rank': null},
         },
         if (otherRelation != null) 'relation': otherRelation,
+      });
+    }
+    if (selfShareData && path == '/v1/users/$_selfId') {
+      return _json(<String, dynamic>{
+        'account': _account(_selfId, 'Me', 42),
+        'createdAt': 1700000000000,
+        'firstRecordDate': '2026-01-02',
+        'visibility': 'public',
+        'shelfVisible': true,
+        'rankComputedAt': 1790000000000,
+        'stats': <String, dynamic>{
+          'book': <String, dynamic>{'value': 30, 'rank': 3},
+          'manga': <String, dynamic>{'value': 12, 'rank': null},
+          'chars': <String, dynamic>{'value': 888888, 'rank': 5},
+        },
+      });
+    }
+    if (selfShareData && path == '/v1/users/$_selfId/shelf') {
+      return _json(<String, dynamic>{
+        'account': _account(_selfId, 'Me', 42),
+        'status': 'finished',
+        'rows': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'work': <String, dynamic>{
+              'id': 'w1',
+              'kind': 'book',
+              'title': 'w1',
+              'author': '',
+              'nsfw': false,
+            },
+            'finishedAt': 1,
+            'finishedDate': '2026-09-28',
+            'readers': 1,
+            'wall': <Object?>[],
+          },
+        ],
+        'next': null,
       });
     }
     if (path == '/v1/users/$_otherId/shelf') {
@@ -581,9 +622,10 @@ void main() {
     final GlobalKey boundary = GlobalKey();
     const LeaderboardShareCardData data = LeaderboardShareCardData(
       accountTag: 'Me#0042',
-      monthLabel: '2026-09',
+      window: LeaderboardWindow.month,
+      periodLabel: '2026-09',
       finishedCount: 5,
-      monthChars: 123456,
+      chars: 123456,
       covers: <LeaderboardWork>[
         LeaderboardWork(
           id: 'w1',
@@ -622,14 +664,15 @@ void main() {
     expect(png.sublist(0, 4), <int>[0x89, 0x50, 0x4e, 0x47]);
   });
 
-  test('分享卡片取数：只数本月读完、跳过 nsfw 封面、本月字数取 me', () async {
+  /// 分享取数用的假客户端：书架回 [dates]（倒序，`(id, finishedDate, nsfw)`），
+  /// 字数榜回 777，用户卡累计 book 30 + manga 12 + game 4、字数 888888。
+  /// 请求记进 [seen]。
+  LeaderboardClient shareClient(
+    List<(String, String, bool)> dates,
+    List<Uri> seen,
+  ) {
     final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[
-      for (final (String id, String date, bool nsfw)
-          in <(String, String, bool)>[
-            ('w1', '2026-09-20', false),
-            ('w2', '2026-09-03', true),
-            ('w3', '2026-08-30', false),
-          ])
+      for (final (String id, String date, bool nsfw) in dates)
         <String, dynamic>{
           'work': <String, dynamic>{
             'id': id,
@@ -645,39 +688,223 @@ void main() {
           'wall': <Object?>[],
         },
     ];
-    final LeaderboardClient client = LeaderboardClient(
+    return LeaderboardClient(
       baseUrl: Uri.parse('https://rank.example'),
       httpClientFactory: () async => MockClient((http.Request r) async {
-        final Object body = r.url.path.endsWith('/shelf')
-            ? <String, dynamic>{
-                'account': _account(_selfId, 'Me', 42),
-                'status': 'finished',
-                'rows': rows,
-                'next': 'more',
-              }
-            : <String, dynamic>{
-                'metric': 'chars',
-                'window': 'month',
-                'scope': 'global',
-                'from': '2026-09-01',
-                'computedAt': 1,
-                'total': 1,
-                'me': <String, dynamic>{'value': 777, 'rank': 1},
-                'rows': <Object?>[],
-              };
+        seen.add(r.url);
+        final Object body;
+        if (r.url.path.endsWith('/shelf')) {
+          body = <String, dynamic>{
+            'account': _account(_selfId, 'Me', 42),
+            'status': 'finished',
+            'rows': rows,
+            'next': 'more',
+          };
+        } else if (r.url.path == '/v1/users/$_selfId') {
+          body = <String, dynamic>{
+            'account': _account(_selfId, 'Me', 42),
+            'createdAt': 1,
+            'firstRecordDate': null,
+            'visibility': 'public',
+            'shelfVisible': true,
+            'stats': <String, dynamic>{
+              'book': <String, dynamic>{'value': 30, 'rank': 3},
+              'manga': <String, dynamic>{'value': 12, 'rank': null},
+              'video': <String, dynamic>{'value': 0, 'rank': null},
+              'game': <String, dynamic>{'value': 4, 'rank': null},
+              'chars': <String, dynamic>{'value': 888888, 'rank': 5},
+            },
+          };
+        } else {
+          body = <String, dynamic>{
+            'metric': 'chars',
+            'window': r.url.queryParameters['window'],
+            'scope': 'global',
+            'from': '2026-09-01',
+            'computedAt': 1,
+            'total': 1,
+            'me': <String, dynamic>{'value': 777, 'rank': 1},
+            'rows': <Object?>[],
+          };
+        }
         return http.Response.bytes(utf8.encode(jsonEncode(body)), 200);
       }),
     );
+  }
+
+  final LeaderboardAccount shareSelf = LeaderboardAccount.fromJson(
+    _account(_selfId, 'Me', 42),
+  );
+
+  test('分享卡片取数：只数本月读完、跳过 nsfw 封面、本月字数取 me', () async {
+    final List<Uri> seen = <Uri>[];
     final LeaderboardShareCardData data = await loadLeaderboardShareCardData(
-      client,
-      LeaderboardAccount.fromJson(_account(_selfId, 'Me', 42)),
-      now: DateTime(2026, 9, 28),
+      shareClient(<(String, String, bool)>[
+        ('w1', '2026-09-20', false),
+        ('w2', '2026-09-03', true),
+        ('w3', '2026-08-30', false),
+      ], seen),
+      shareSelf,
+      now: DateTime.utc(2026, 9, 28, 12),
     );
+    expect(data.window, LeaderboardWindow.month);
     expect(data.finishedCount, 2);
     expect(data.covers.map((LeaderboardWork w) => w.id), <String>['w1']);
-    expect(data.monthChars, 777);
-    expect(data.monthLabel, '2026-09');
+    expect(data.chars, 777);
+    expect(data.periodLabel, '2026-09');
     expect(data.accountTag, 'Me#0042');
+    expect(
+      seen.where((Uri u) => u.path == '/v1/rank').single.queryParameters,
+      containsPair('window', 'month'),
+    );
+  });
+
+  test('分享周期起点与服务端同口径：UTC 日期，周 = 本周一，月 = 1 日', () {
+    // 2026-09-28 是周一；UTC 周日 23 点仍属上一周（本地时区已是周一也一样）。
+    expect(
+      leaderboardShareWindowStart(
+        LeaderboardWindow.week,
+        DateTime.utc(2026, 9, 30, 8),
+      ),
+      '2026-09-28',
+    );
+    expect(
+      leaderboardShareWindowStart(
+        LeaderboardWindow.week,
+        DateTime.utc(2026, 9, 27, 23),
+      ),
+      '2026-09-21',
+    );
+    expect(
+      leaderboardShareWindowStart(
+        LeaderboardWindow.month,
+        DateTime.utc(2026, 9, 30, 8),
+      ),
+      '2026-09-01',
+    );
+    expect(
+      leaderboardShareWindowStart(
+        LeaderboardWindow.all,
+        DateTime.utc(2026, 9, 30, 8),
+      ),
+      isNull,
+    );
+  });
+
+  test('分享卡片取数（周）：只数本周一以来读完，字数取周榜 me', () async {
+    final List<Uri> seen = <Uri>[];
+    final LeaderboardShareCardData data = await loadLeaderboardShareCardData(
+      shareClient(<(String, String, bool)>[
+        ('w1', '2026-09-29', false),
+        ('w2', '2026-09-28', false),
+        ('w3', '2026-09-27', false),
+      ], seen),
+      shareSelf,
+      window: LeaderboardWindow.week,
+      now: DateTime.utc(2026, 9, 30, 8),
+    );
+    expect(data.window, LeaderboardWindow.week);
+    expect(data.finishedCount, 2);
+    expect(data.covers.map((LeaderboardWork w) => w.id), <String>['w1', 'w2']);
+    expect(data.periodLabel, '2026-09-28');
+    expect(data.chars, 777);
+    expect(
+      seen.where((Uri u) => u.path == '/v1/rank').single.queryParameters,
+      containsPair('window', 'week'),
+    );
+  });
+
+  test('分享卡片取数（总）：读完数与字数取用户卡累计，书架只翻一页取封面', () async {
+    final List<Uri> seen = <Uri>[];
+    final LeaderboardShareCardData data = await loadLeaderboardShareCardData(
+      shareClient(<(String, String, bool)>[
+        ('w1', '2026-09-29', false),
+        ('w2', '2025-01-01', false),
+      ], seen),
+      shareSelf,
+      window: LeaderboardWindow.all,
+      now: DateTime.utc(2026, 9, 30, 8),
+    );
+    expect(data.window, LeaderboardWindow.all);
+    // 累计 = book 30 + manga 12 + video 0 + game 4；字数不算作品。
+    expect(data.finishedCount, 46);
+    expect(data.chars, 888888);
+    expect(data.periodLabel, '2026-09-30');
+    // 不受周期截断：老作品也进封面拼图。
+    expect(data.covers.map((LeaderboardWork w) => w.id), <String>['w1', 'w2']);
+    // 书架回了 next 也不继续翻；不请求字数榜。
+    expect(seen.where((Uri u) => u.path.endsWith('/shelf')), hasLength(1));
+    expect(seen.where((Uri u) => u.path == '/v1/rank'), isEmpty);
+  });
+
+  testWidgets('分享对话框：默认用传入周期，可切到「总」，复制链接写剪贴板', (WidgetTester tester) async {
+    server.selfShareData = true;
+    final LeaderboardService service = await activeService(tester);
+    // 页头的分享按钮只在 self 到手后才可点；这里直接挂对话框，先把 self 拉下来。
+    await tester.runAsync(service.refreshSelf);
+    final List<String> clipboard = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardShareDialog(initialWindow: LeaderboardWindow.week),
+      ),
+    );
+    await settle(tester);
+    expect(
+      find.text(t.leaderboard_share_card_finished_week(n: 1)),
+      findsOneWidget,
+    );
+    expect(
+      server.requests.any(
+        (http.Request r) =>
+            r.url.path == '/v1/rank' &&
+            r.url.queryParameters['window'] == 'week',
+      ),
+      isTrue,
+    );
+
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>(
+          'leaderboard-share-window-${t.leaderboard_window_all}',
+        ),
+      ),
+    );
+    await settle(tester);
+    expect(
+      find.text(t.leaderboard_share_card_finished_all(n: 42)),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.leaderboard_share_card_chars(n: 888888)),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('leaderboard-share-copy-link')),
+    );
+    await settle(tester);
+    expect(clipboard, <String>['https://rank.example/u/$_selfId']);
+    // 等提示 Toast 的计时器走完，免得测试收尾时留有挂起计时器。
+    await tester.pump(const Duration(seconds: 5));
   });
 
   Finder byKey(String k) => find.byKey(ValueKey<String>(k));

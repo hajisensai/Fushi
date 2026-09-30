@@ -7,10 +7,20 @@
 # 一份谁也用不上的副本（同一 key 三条 330 MB）。Windows / Android 没这个问题，
 # 因为 release-desktop.yml / release.yml 在 develop push 上跑，缓存自然落在 develop。
 #
-# 本 workflow 只做一件事：develop 每次 push 先 lookup-only 探一下 key，命中就结束
-# （不下载，~20 s）；未命中（vcpkg manifest 变了，或 runner 换了新镜像）才真编一遍并
-# 存到 develop 桶，此后所有 PR 直接命中。不跑 schedule：默认分支是 main，定时任务
-# 只读 main 上的 workflow 文件，而 main 只在正式发布时同步。
+# 本 workflow 只做一件事：先 lookup-only 探一下 key，命中就结束（不下载，~20 s）；
+# 未命中（vcpkg manifest 变了，或 runner 换了新镜像）才真编一遍并存进缓存，此后所有 PR
+# 直接命中。
+#
+# 触发（2026-09-30 精简 CI）：
+# * develop push 只在 native/fushi_torrent/**（key 里 hashFiles 的 vcpkg 清单 / ports /
+#   triplets 都在这下面）或本文件变动时跑——以前每次 develop push 都起一台 runner 探一下，
+#   绝大多数是空转。
+# * 失效的另一半是 runner 镜像换代（key 带 ImageVersion，约每周一次），它与任何 push 无关，
+#   所以加每日 schedule 兜底（不是每周：镜像换代后最多一天就补回来，而不是最坏拖到下周；
+#   命中时一次只是 ~20 s 的探测）。注意定时任务只读**默认分支 main** 上的 workflow 文件并
+#   在 main 的 ref 上跑，缓存存进 main 桶——PR 同样能读默认分支的缓存，所以效果等价；但
+#   main 只在正式发布时同步，这条 schedule 要等下一次同步到 main 后才生效。在那之前镜像
+#   换代可手动 workflow_dispatch（选 develop）补救。
 #
 # 环境、镜像身份计算、key 必须与 build-multiplatform.yml linux job 逐字一致：编译器
 # 与工具链决定 vcpkg 每个包的 ABI hash，差一点存下来的归档就一个都对不上。
@@ -20,8 +30,14 @@ name: native-cache-warm
 
 on:
   workflow_dispatch:
+  schedule:
+    # 每天 UTC 19:17（北京时间 03:17），避开整点高峰。
+    - cron: '17 19 * * *'
   push:
     branches: ['develop']
+    paths:
+      - 'native/fushi_torrent/**'
+      - '.github/workflows/native-cache-warm.yml'
 
 permissions:
   contents: read
