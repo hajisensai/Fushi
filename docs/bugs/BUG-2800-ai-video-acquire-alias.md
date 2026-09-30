@@ -1,4 +1,4 @@
-## BUG-2793 · AI下视频说别名找不到作品
+## BUG-2800 · AI下视频说别名找不到作品
 - **报告**：2026-09-30（用户：「帮我下fx外汇战士」→「没找到」，改说日文原名「FX戦士くるみちゃん」立即命中）
 - **真实性**：✅ 真 bug。找作品链路是「AI 凭记忆给 `workQueries` → 发现聚合搜索（TMDB / MAL…）」，模型不认识俗称就只回原话；全部查询词搜空时 `fushi/lib/src/media/video/acquisition/video_acquisition_reducer.dart` `_onWorksLoaded` 直接说 `workNotFound`——整条链路没有任何一步真的去查「这个叫法是哪部作品」。联网资料层 `WebKnowledgeClient` 已存在，但只在 ≥2 候选的多义判定里用，0 候选时从不调用。实测 zh.wikipedia `opensearch` 搜「fx外汇战士」直接命中「FX战士久留美」，正文含日文原名。
 - **[x] ① 已修复** — 全部查询词搜空且本轮未查过别名 → 新效果 `VideoAcquisitionResolveAliasEffect`：`requestAiVideoAlias`（`fushi/lib/src/ai/ai_video_acquisition_assistant.dart`）按用户原话搜联网资料，AI 只从资料正文里抄正式名 → `_onAliasResolved` 说一句 `workAliasResolved` 并按正式名再搜一轮；每轮只查一次（`VideoAcquisitionState.aliasResolved`），仍搜空才 `workNotFound`（提示用户原话）。未指派 AI / 未开资料站 / 资料站无结果 → 不发 AI 请求、按原逻辑报没找到。端口 `VideoAcquisitionPorts.resolveAlias` 可选、默认恒空。
