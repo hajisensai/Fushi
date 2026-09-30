@@ -28,6 +28,10 @@
 /// pipeline 落成 `lines` + `lineBoxes`——阅读器覆盖层据此把字落到正确的列上。
 /// 路由时已经检过行的宽块直接复用那次结果，只有竖长块多跑一次 PP det。横排
 /// 路径本来就逐行识别，逐行文本与行框原样交回。
+///
+/// 主识别器本身逐行识别（[LineOcrRecognizer]，如 `ctc_column_ocr_recognizer.dart`
+/// 的逐列 CTC）时，整块交它的块直接采用它逐行读出的文本与行框（路由时检过的行
+/// 作为 `lineHints` 交给它复用），不再按列长估算切分。
 library;
 
 import 'dart:math' as math;
@@ -47,36 +51,6 @@ const int kRoutingLinePadding = 4;
 /// 的展示口径；这里要的是「肯定不是一列竖排」的保守判定，1.0~1.25 之间的近方块
 /// （「は？」「宮城！」这类短句）继续走 manga-ocr。
 bool routesToHorizontalPath(OcrRect box) => box.width >= box.height;
-
-/// 块裁图 + 裁图坐标 → 页面坐标的换算。
-class _BlockCrop {
-  const _BlockCrop(this.image, this.x, this.y);
-
-  final img.Image image;
-  final int x;
-  final int y;
-
-  OcrRect toPage(OcrRect rect) => OcrRect(
-    left: x + rect.left,
-    top: y + rect.top,
-    right: x + rect.right,
-    bottom: y + rect.bottom,
-  );
-}
-
-/// 把 [box] 夹进页面后裁出来；夹完没有面积返回 null。
-_BlockCrop? _cropBlock(img.Image page, OcrRect box) {
-  final OcrRect clamped = box.clamp(
-    page.width.toDouble(),
-    page.height.toDouble(),
-  );
-  final int x = clamped.left.floor();
-  final int y = clamped.top.floor();
-  final int w = math.min(math.max(1, clamped.width.ceil()), page.width - x);
-  final int h = math.min(math.max(1, clamped.height.ceil()), page.height - y);
-  if (w <= 0 || h <= 0) return null;
-  return _BlockCrop(img.copyCrop(page, x: x, y: y, width: w, height: h), x, y);
-}
 
 /// `_routeBlock` 的结论：识别结果（`text` 为空 = 整块交 manga-ocr）+ 路由时已检出
 /// 的原始行框（页面坐标），供整块识别后的排版复用；null = 路由没跑行检测。
@@ -145,10 +119,20 @@ class RoutingOcrRecognizer
   Future<OcrRecognition> _recognizeOne(img.Image page, OcrRect box) async {
     final _RoutedBlock routed = await _routeBlock(page, box);
     if (routed.recognition.text.isNotEmpty) return routed.recognition;
+    final OcrRecognizer primary = _mangaOcr;
+    if (primary is LineOcrRecognizer) {
+      // 逐行识别的主识别器：逐行文本与行框直接采用，不再按列长估算切分。
+      return primary.recognizeWithLines(
+        page,
+        box,
+        vertical: routed.recognition.vertical,
+        lineHints: routed.lineHints,
+      );
+    }
     return _withLineLayout(
       page,
       box,
-      await _mangaOcr.recognize(page, box),
+      await primary.recognize(page, box),
       vertical: routed.recognition.vertical,
       lineHints: routed.lineHints,
     );
@@ -167,15 +151,8 @@ class RoutingOcrRecognizer
     List<OcrRect>? lineHints,
   }) async {
     if (text.isEmpty) return OcrRecognition(text: text, vertical: vertical);
-    List<OcrRect>? rects = lineHints;
-    if (rects == null) {
-      final _BlockCrop? crop = _cropBlock(page, box);
-      if (crop == null) return OcrRecognition(text: text, vertical: vertical);
-      rects = <OcrRect>[
-        for (final PpTextLine line in await _lineDetector.detect(crop.image))
-          crop.toPage(line.rect),
-      ];
-    }
+    final List<OcrRect> rects =
+        lineHints ?? await _lineDetector.detectInBlock(page, box);
     // 方向按检出行长度投票（宽扁的多列竖排常被外形或碎片带偏），没有明确的行时
     // 保持传入的方向；排版与块方向同一个结论。
     final bool layoutVertical = voteOcrLineOrientation(rects) ?? vertical;
@@ -207,7 +184,7 @@ class RoutingOcrRecognizer
         OcrRecognition(text: '', vertical: isVerticalBlock(box)),
       );
     }
-    final _BlockCrop? crop = _cropBlock(page, box);
+    final OcrBlockCrop? crop = cropOcrBlock(page, box);
     if (crop == null) {
       return const _RoutedBlock(OcrRecognition(text: '', vertical: false));
     }
@@ -313,6 +290,19 @@ class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
         if (results[index].text.isEmpty) index,
     ];
     if (mangaIndices.isEmpty) return results;
+    final OcrRecognizer primary = _mangaOcr;
+    if (primary is LineOcrRecognizer) {
+      // 逐行识别的主识别器不走整框批次：逐行文本与行框直接采用（同 _recognizeOne）。
+      for (final int slot in mangaIndices) {
+        results[slot] = await primary.recognizeWithLines(
+          page,
+          boxes[slot],
+          vertical: results[slot].vertical,
+          lineHints: routed[slot].lineHints,
+        );
+      }
+      return results;
+    }
     final List<String> mangaResults = await _batchMangaOcr.recognizeBatch(
       page,
       <OcrRect>[for (final int index in mangaIndices) boxes[index]],
