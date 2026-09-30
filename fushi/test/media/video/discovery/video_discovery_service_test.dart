@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -687,6 +688,63 @@ void main() {
       expect(anilist.discoverCalls, 1);
     });
 
+    test('onProgress reports the fast provider before the slow one returns',
+        () async {
+      ProviderBatchResult<VideoDiscoveryPage> only(String id, String title) =>
+          ProviderBatchResult<VideoDiscoveryPage>.success(
+            <VideoDiscoveryPage>[
+              VideoDiscoveryPage(
+                items: <VideoDiscoveryItem>[
+                  _item(provider: id, id: id, title: title, year: 2026),
+                ],
+                page: 1,
+                hasMore: false,
+              ),
+            ],
+          );
+      final Completer<void> slowGate = Completer<void>();
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: <VideoDiscoveryProvider>[
+          _FakeProvider(
+            id: 'slow',
+            priority: 1,
+            response: only('mal', 'Slow Title'),
+            gate: slowGate.future,
+          ),
+          _FakeProvider(
+            id: 'fast',
+            priority: 2,
+            response: only('tmdb', 'Fast Title'),
+          ),
+        ],
+      );
+      addTearDown(service.close);
+      final List<List<String>> progress = <List<String>>[];
+      final Future<ProviderBatchResult<VideoDiscoveryPage>> done = service.load(
+        const VideoDiscoveryRequest(query: 'x'),
+        onProgress: (ProviderBatchResult<VideoDiscoveryPage> partial) =>
+            progress.add(<String>[
+          for (final VideoDiscoveryPage page in partial.items)
+            for (final VideoDiscoveryItem item in page.items)
+              item.reference.title,
+        ]),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(progress, <List<String>>[
+        <String>['Fast Title'],
+      ]);
+      slowGate.complete();
+      final ProviderBatchResult<VideoDiscoveryPage> result = await done;
+      expect(progress, hasLength(1), reason: '最后一个来源到齐走返回值，不再回调');
+      expect(
+        <String>[
+          for (final VideoDiscoveryItem item in result.items.single.items)
+            item.reference.title,
+        ],
+        unorderedEquals(<String>['Slow Title', 'Fast Title']),
+      );
+    });
+
     test('preserves successful items when another provider fails', () async {
       final _FakeProvider success = _FakeProvider(
         id: 'success',
@@ -864,6 +922,101 @@ void main() {
       expect(result?.provider, VideoMetadataProviderKind.mal);
       expect(result?.title, 'MAL title');
       expect(result?.plot, 'MAL synopsis');
+    });
+
+    test(
+        'BUG-2795 details follow the metadata language: TMDB zh plot, '
+        'single-language genres, no duplicate cast', () async {
+      VideoMetadataCredit voice(
+        VideoMetadataCreditKind kind,
+        String name,
+        String role, {
+        String? originalName,
+      }) =>
+          VideoMetadataCredit(
+            kind: kind,
+            person: VideoMetadataPerson(name: name, originalName: originalName),
+            character: VideoMetadataCharacter(name: role),
+            roleName: role,
+          );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: const <VideoDiscoveryProvider>[],
+        metadataLocale: 'zh-CN',
+        metadataProviders: <VideoMetadataProvider>[
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.mal,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.mal,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'FX Senshi Kurumi-chan',
+              plot: 'Kurumi is a girl... (Source: Crunchyroll)',
+              genres: const <String>['Drama', 'Slice of Life'],
+              credits: <VideoMetadataCredit>[
+                voice(
+                  VideoMetadataCreditKind.voiceActor,
+                  'Suzuki, Aina',
+                  'Fukuga, Kurumi',
+                ),
+                voice(
+                  VideoMetadataCreditKind.voiceActor,
+                  'Tomita, Miyu',
+                  'Someone, Else',
+                ),
+              ],
+            ),
+          ),
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.tmdb,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.tmdb,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'FX战士久留美',
+              plot: '中文简介',
+              genres: const <String>['动画', '喜剧'],
+              credits: <VideoMetadataCredit>[
+                voice(
+                  VideoMetadataCreditKind.actor,
+                  '鈴木愛奈',
+                  '福賀くるみ',
+                  originalName: '鈴木愛奈',
+                ),
+                voice(
+                  VideoMetadataCreditKind.actor,
+                  '富田美憂',
+                  '誰か',
+                  originalName: '富田美憂',
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+      final VideoMetadataWork? result = await service.loadDetails(
+        VideoDiscoveryItem(
+          reference: VideoMediaReference(
+            providerId: 'mal',
+            mediaId: '42',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'FX Senshi Kurumi-chan',
+            tmdbId: 7,
+            externalIds: const <String, String>{'mal': '42'},
+          ),
+        ),
+      );
+
+      expect(result?.provider, VideoMetadataProviderKind.mal);
+      expect(result?.plot, '中文简介');
+      expect(result?.genres, <String>['动画', '喜剧']);
+      expect(
+        result?.credits.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>['Suzuki, Aina', 'Tomita, Miyu'],
+        reason: 'MAL 罗马字与 TMDB 汉字名无法互证，不得把同一批声优追加第二遍',
+      );
+      expect(result?.title, 'FX战士久留美', reason: '标题与简介同一种资料语言');
+      expect(result?.aliases, contains('FX Senshi Kurumi-chan'),
+          reason: '被换下的 MAL 标题仍进别名池，下载搜索不能丢');
     });
 
     test('hydrates AniList details without probing a legacy Bangumi id',
@@ -1332,6 +1485,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
     required this.priority,
     required this.response,
     this.supportsPaging = true,
+    this.gate,
   });
 
   @override
@@ -1345,6 +1499,9 @@ class _FakeProvider implements VideoDiscoveryProvider {
 
   final ProviderBatchResult<VideoDiscoveryPage> response;
   final bool supportsPaging;
+
+  /// 设了就等它完成才返回（模拟慢来源）。
+  final Future<void>? gate;
   int searchCalls = 0;
   int discoverCalls = 0;
 
@@ -1367,6 +1524,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
     VideoDiscoveryRequest request,
   ) async {
     searchCalls++;
+    await gate;
     return response;
   }
 

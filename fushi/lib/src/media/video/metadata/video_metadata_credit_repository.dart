@@ -112,7 +112,7 @@ class VideoMetadataCreditRepository {
 
   Future<VideoMetadataWorkCredits?> forCollection(int collectionId) async {
     final VideoMetadataWorkRow? work =
-        await _database.getVideoMetadataWorkByCollection(collectionId);
+        await _database.resolveVideoMetadataWorkForCollection(collectionId);
     return work == null ? null : _readWork(work.id);
   }
 

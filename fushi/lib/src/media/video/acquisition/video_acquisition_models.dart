@@ -358,6 +358,9 @@ enum VideoAcquisitionSayKind {
   /// 没找到作品，换个名字？（args: query）
   workNotFound,
 
+  /// 按原话没搜到，查资料后按正式名再搜（args: query, titles）
+  workAliasResolved,
+
   /// 已选：X（AI 判定，置信度）（args: title, confidence）
   aiPicked,
 
@@ -762,6 +765,7 @@ class VideoAcquisitionState {
     this.busy = false,
     this.franchiseName,
     this.franchiseEntries = const <VideoAcquisitionFranchiseEntry>[],
+    this.aliasResolved = false,
   });
 
   final VideoAcquisitionStage stage;
@@ -774,6 +778,10 @@ class VideoAcquisitionState {
 
   /// 还没试过的作品查询词（首个非空命中即停）。
   final List<String> pendingQueries;
+
+  /// 本轮作品搜索已经查过一次别名（联网资料 → 正式名）。一轮只查一次：正式名
+  /// 也搜不到就是真没有，不再循环。
+  final bool aliasResolved;
 
   /// 最近一次作品搜索的候选（≥2 时进 awaitingWorkChoice）。
   final List<VideoDiscoveryItem> workCandidates;
@@ -855,6 +863,7 @@ class VideoAcquisitionState {
     bool? busy,
     String? franchiseName,
     List<VideoAcquisitionFranchiseEntry>? franchiseEntries,
+    bool? aliasResolved,
   }) => VideoAcquisitionState(
     stage: stage ?? this.stage,
     slots: slots ?? this.slots,
@@ -881,6 +890,7 @@ class VideoAcquisitionState {
     busy: busy ?? this.busy,
     franchiseName: franchiseName ?? this.franchiseName,
     franchiseEntries: franchiseEntries ?? this.franchiseEntries,
+    aliasResolved: aliasResolved ?? this.aliasResolved,
   );
 
   /// 追加一条对话记录。
@@ -1006,6 +1016,17 @@ class VideoAcquisitionWorksLoadedEvent extends VideoAcquisitionEvent {
   final List<VideoDiscoveryItem> items;
 }
 
+/// 别名解析返回：[titles] 是联网资料里写明的正式名（可能为空）。
+class VideoAcquisitionAliasResolvedEvent extends VideoAcquisitionEvent {
+  const VideoAcquisitionAliasResolvedEvent({
+    required this.query,
+    required this.titles,
+  });
+
+  final String query;
+  final List<String> titles;
+}
+
 /// AI 在候选里做了判定（null = 它也不确定 / 调用失败）。
 class VideoAcquisitionIdentityDecidedEvent extends VideoAcquisitionEvent {
   const VideoAcquisitionIdentityDecidedEvent(this.decision);
@@ -1128,6 +1149,18 @@ class VideoAcquisitionSearchWorksEffect extends VideoAcquisitionEffect {
 
   final String query;
   final VideoDiscoveryCategory? category;
+}
+
+/// 所有查询词都没搜到作品：去联网资料里查 [query] 这个叫法对应的正式名。
+/// [tried] 是已经搜过的词，结果里与它们相同的不再搜。
+class VideoAcquisitionResolveAliasEffect extends VideoAcquisitionEffect {
+  const VideoAcquisitionResolveAliasEffect({
+    required this.query,
+    this.tried = const <String>[],
+  });
+
+  final String query;
+  final List<String> tried;
 }
 
 class VideoAcquisitionDecideIdentityEffect extends VideoAcquisitionEffect {

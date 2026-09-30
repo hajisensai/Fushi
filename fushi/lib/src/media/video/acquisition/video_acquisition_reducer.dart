@@ -90,6 +90,7 @@ VideoAcquisitionReduction reduceVideoAcquisition(
     VideoAcquisitionAiIntentEvent e => _onAiIntent(state, e, defaults),
     VideoAcquisitionAiUnavailableEvent e => _onAiUnavailable(state, e),
     VideoAcquisitionWorksLoadedEvent e => _onWorksLoaded(state, e, defaults),
+    VideoAcquisitionAliasResolvedEvent e => _onAliasResolved(state, e),
     VideoAcquisitionIdentityDecidedEvent e => _onIdentityDecided(
       state,
       e,
@@ -402,10 +403,13 @@ VideoAcquisitionReduction _unclear(VideoAcquisitionState state) => (
 // 作品搜索 / 多义判定 / 选定
 // ---------------------------------------------------------------------------
 
+/// [aliasResolved] 为 true 只用于「别名解析后按正式名再搜」这一轮：用户新说的
+/// 作品名一律从 false 起算，每轮最多查一次别名。
 VideoAcquisitionReduction _startWorkSearch(
   VideoAcquisitionState state,
-  List<String> rawQueries,
-) {
+  List<String> rawQueries, {
+  bool aliasResolved = false,
+}) {
   final Set<String> seen = <String>{};
   final List<String> queries = <String>[
     for (final String raw in rawQueries)
@@ -419,6 +423,7 @@ VideoAcquisitionReduction _startWorkSearch(
     workCandidates: const <VideoDiscoveryItem>[],
     clearQuestion: true,
     busy: true,
+    aliasResolved: aliasResolved,
   );
   return (
     next,
@@ -428,6 +433,61 @@ VideoAcquisitionReduction _startWorkSearch(
         category: next.slots.category,
       ),
     ],
+  );
+}
+
+VideoAcquisitionReduction _workNotFound(
+  VideoAcquisitionState state,
+  String query,
+) => (
+  state
+      .copyWith(stage: VideoAcquisitionStage.idle, busy: false)
+      .say(
+        VideoAcquisitionSay(
+          VideoAcquisitionSayKind.workNotFound,
+          args: <String, Object?>{'query': query},
+        ),
+      ),
+  _noEffects,
+);
+
+/// 别名解析回来：去掉已经搜过的词；剩下的按正式名再搜一轮（用户原话仍排在
+/// [VideoAcquisitionSlots.workQueries] 首位，供 AI 判定与「没找到」提示用）。
+VideoAcquisitionReduction _onAliasResolved(
+  VideoAcquisitionState state,
+  VideoAcquisitionAliasResolvedEvent event,
+) {
+  if (state.stage != VideoAcquisitionStage.resolvingWork) {
+    return (state, _noEffects);
+  }
+  final List<String> tried = state.slots.workQueries;
+  final Set<String> seen = <String>{
+    for (final String query in tried) query.trim().toLowerCase(),
+  };
+  final List<String> titles = <String>[
+    for (final String title in event.titles)
+      if (title.trim().isNotEmpty && seen.add(title.trim().toLowerCase()))
+        title.trim(),
+  ];
+  if (titles.isEmpty) return _workNotFound(state, event.query);
+  final VideoAcquisitionState said = state.say(
+    VideoAcquisitionSay(
+      VideoAcquisitionSayKind.workAliasResolved,
+      args: <String, Object?>{
+        'query': event.query,
+        'titles': titles.take(kVideoAcquisitionMaxWorkQueries).join(' / '),
+      },
+    ),
+  );
+  final (VideoAcquisitionState next, List<VideoAcquisitionEffect> effects) =
+      _startWorkSearch(said, titles, aliasResolved: true);
+  return (
+    next.copyWith(
+      slots: next.slots.copyWith(
+        workQueries: <String>[event.query, ...next.slots.workQueries],
+      ),
+    ),
+    effects,
   );
 }
 
@@ -453,15 +513,18 @@ VideoAcquisitionReduction _onWorksLoaded(
         ],
       );
     }
-    final VideoAcquisitionState notFound = state
-        .copyWith(stage: VideoAcquisitionStage.idle, busy: false)
-        .say(
-          VideoAcquisitionSay(
-            VideoAcquisitionSayKind.workNotFound,
-            args: <String, Object?>{'query': event.query},
-          ),
-        );
-    return (notFound, _noEffects);
+    final List<String> tried = state.slots.workQueries;
+    if (!state.aliasResolved && tried.isNotEmpty) {
+      // 用户说的可能是别名 / 俗称（「fx外汇战士」），资料站只收正式名：先去
+      // 联网资料里查这个叫法是哪部作品，再按正式名搜一轮。
+      return (
+        state.copyWith(aliasResolved: true),
+        <VideoAcquisitionEffect>[
+          VideoAcquisitionResolveAliasEffect(query: tried.first, tried: tried),
+        ],
+      );
+    }
+    return _workNotFound(state, tried.isEmpty ? event.query : tried.first);
   }
   if (items.length == 1) {
     return _chooseWork(

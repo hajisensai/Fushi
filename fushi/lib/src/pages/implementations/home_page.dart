@@ -335,9 +335,10 @@ class _ProductionVideoDiscoveryController implements VideoDiscoveryController {
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> load(
-    VideoDiscoveryRequest request,
-  ) =>
-      service.load(request);
+    VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<VideoDiscoveryPage> partial)? onProgress,
+  }) =>
+      service.load(request, onProgress: onProgress);
 
   @override
   String displayNameFor(String providerId) =>
