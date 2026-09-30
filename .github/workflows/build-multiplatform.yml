@@ -60,6 +60,7 @@ concurrency:
 jobs:
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # Still non-blocking (TODO-624 / BUG-365), but the original rationale here was
     # wrong and has been corrected - see the "Enable KVM group permissions" step
     # below. Measured over 52 completed runs (2026-07-28..2026-08-01, sampled via
@@ -191,6 +192,7 @@ jobs:
   # Linux gates the GTK/evdev desktop build path.
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       CC: gcc-14
       CXX: g++-14
@@ -527,6 +529,7 @@ jobs:
   # macOS gates the desktop build plus the shared smoke contract.
   macos:
     runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
@@ -691,6 +694,7 @@ jobs:
   # the real iOS plugin slices without requiring an Apple developer account.
   ios:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
@@ -783,6 +787,7 @@ jobs:
           bash ../native/fushi_p2p/verify_abi.sh "$bin" nm
   windows:
     runs-on: windows-2022
+    timeout-minutes: 120
     permissions:
       contents: read
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
