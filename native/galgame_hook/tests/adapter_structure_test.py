@@ -2170,6 +2170,15 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("BgiShieldActive(", eligible)
         self.assertIn("GetForegroundWindow()", eligible)
         self.assertIn("BgiOwnerMatchesModel(", eligible)
+        # A swallowed press is published (or its drop logged) before any gate
+        # of the tick can return: the game never saw it.
+        tick = self._function_body(runtime, "void ProcessBgiLookupTick(")
+        self.assertLess(tick.index("ReadLatestBgiSubmit("),
+                        tick.index("TryHookBgiWindow("))
+        self.assertEqual(1, tick.count("ReadLatestBgiSubmit("))
+        publish = self._function_body(runtime, "bool PublishBgiLookupHit(")
+        self.assertIn("published_lines.Find(submit.generation)", publish)
+        self.assertNotIn("rt.model.", publish)
         # The adapter installs the lane only when its structural identity holds.
         install = self._function_body(adapter, "  bool install() override {")
         self.assertIn("if (probe()) text_installed_ = InstallBgiLookup()", install)

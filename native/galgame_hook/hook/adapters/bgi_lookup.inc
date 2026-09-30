@@ -32,7 +32,9 @@ namespace bgi_lookup = fushi_voice_hook::bgi_lookup;
 constexpr uint32_t kBgiEventSlots = 8u;
 constexpr uint32_t kBgiModelSlots = 2u;
 constexpr uint32_t kBgiSubmitSlots = 8u;
-constexpr uint32_t kBgiModelLogBudget = 24u;
+// Per-line diagnostics: a page / model line is logged once per new line, so
+// the budget bounds a long session, not the first minutes of it.
+constexpr uint32_t kBgiModelLogBudget = 4096u;
 constexpr uint32_t kBgiOwnerAbiCache = 4u;
 constexpr uint64_t kBgiWindowRetryMs = 500u;
 constexpr uint64_t kBgiTextDedupeMs = 500u;
@@ -76,9 +78,16 @@ struct BgiModel {
   std::array<BgiModelGlyph, bgi_lookup::kMaxCells> glyphs{};
 };
 
+// A claimed press carries the glyph it was resolved against: the worker may
+// already have rebuilt the model (a re-render, a fade) by the time it reads
+// the press, and a press the game never saw must still become a lookup.
 struct BgiSubmit {
   uint64_t generation = 0u;
   uint32_t glyph = 0u;
+  bgi_lookup::LineGlyph line;
+  bgi_lookup::PixelRect rect;
+  int32_t physical_w = 0;
+  int32_t physical_h = 0;
 };
 
 struct BgiPage {
@@ -123,6 +132,8 @@ struct BgiLookupRuntime {
   BgiModel candidate;
   std::wstring model_line;
   uint64_t model_text_event = 0u;
+  bgi_lookup::PublishedLines published_lines;
+  uint64_t logged_claims = 0u;
   std::array<bgi_lookup::LineGlyph, bgi_lookup::kMaxCells> scratch{};
   std::array<BgiOwnerAbiEntry, kBgiOwnerAbiCache> abis{};
   uint32_t next_abi = 0u;
@@ -414,6 +425,10 @@ bool BgiPressEligible(HWND hwnd, WPARAM wparam, LPARAM lparam,
   }
   submit->generation = model.generation;
   submit->glyph = static_cast<uint32_t>(hit);
+  submit->line = model.glyphs[hit].line;
+  submit->rect = model.glyphs[hit].rect;
+  submit->physical_w = model.physical_w;
+  submit->physical_h = model.physical_h;
   return true;
 }
 
@@ -741,13 +756,21 @@ void ProcessBgiTextEvent(const BgiTextEvent& event) {
     if (rt.logged_pages < kBgiModelLogBudget) {
       ++rt.logged_pages;
       BgiLookupLog(
-          L"bgi-lookup: page unmapped ex=%d markup=%d units=%u cells=%u "
-          L"overflow=%d abi=%d event=%llu",
-          ex ? 1 : 0, parsed.markup ? 1 : 0, parsed.count, event.cell_count,
-          event.cells_overflow ? 1 : 0, abi != nullptr ? 1 : 0,
-          static_cast<unsigned long long>(text_event));
+          L"bgi-lookup: page unmapped ex=%d markup=%d prefix=%u units=%u "
+          L"cells=%u overflow=%d abi=%d event=%llu head=%02x%02x%02x "
+          L"owner=%d,%d",
+          ex ? 1 : 0, parsed.markup ? 1 : 0, parsed.auto_prefix, parsed.count,
+          event.cell_count, event.cells_overflow ? 1 : 0,
+          abi != nullptr ? 1 : 0, static_cast<unsigned long long>(text_event),
+          event.text[0], event.text[1], event.text[2], owner_x, owner_y);
     }
     return;
+  }
+  if (rt.logged_pages < kBgiModelLogBudget) {
+    ++rt.logged_pages;
+    BgiLookupLog(L"bgi-lookup: page prefix=%u units=%u cells=%u event=%llu",
+                 parsed.auto_prefix, parsed.count, event.cell_count,
+                 static_cast<unsigned long long>(text_event));
   }
   page.valid = true;
   page.id = ++rt.next_page;
@@ -1002,36 +1025,46 @@ bool SameBgiModelGeometry(const BgiModel& left, const BgiModel& right) {
   return true;
 }
 
+bool FailBgiHit(const BgiSubmit& submit, const wchar_t* reason) {
+  BgiLookupLog(L"bgi-lookup: hit dropped gen=%llu glyph=%u reason=%s",
+               static_cast<unsigned long long>(submit.generation),
+               submit.glyph, reason);
+  return false;
+}
+
 bool PublishBgiLookupHit(const BgiSubmit& submit) {
   auto& rt = g_bgi_lookup;
-  const BgiModel& model = rt.model;
-  if (g_header == nullptr || submit.generation == 0u ||
-      submit.generation != model.generation || submit.glyph >= model.count ||
-      rt.model_line.empty()) {
-    return false;
+  if (g_header == nullptr || submit.generation == 0u) {
+    return FailBgiHit(submit, L"no-header");
   }
-  const auto& glyph = model.glyphs[submit.glyph];
-  const size_t units = rt.model_line.size();
+  const bgi_lookup::PublishedLine* record =
+      rt.published_lines.Find(submit.generation);
+  if (record == nullptr) {
+    return FailBgiHit(submit, L"model-gone");
+  }
+  const std::wstring& model_line = record->line;
+  const auto& glyph = submit;
+  const size_t units = model_line.size();
   if (glyph.line.source_index == bgi_lookup::kNoSource ||
       glyph.line.source_length == 0u || glyph.line.source_index >= units ||
       glyph.line.source_length > units - glyph.line.source_index ||
       fushi_voice_hook::LookupUtf16SourceLength(
-          rt.model_line.data(), static_cast<uint32_t>(units),
+          model_line.data(), static_cast<uint32_t>(units),
           glyph.line.source_index) != glyph.line.source_length) {
-    return false;
+    return FailBgiHit(submit, L"source-range");
   }
   const int required = WideCharToMultiByte(
-      CP_UTF8, WC_ERR_INVALID_CHARS, rt.model_line.data(),
+      CP_UTF8, WC_ERR_INVALID_CHARS, model_line.data(),
       static_cast<int>(units), nullptr, 0, nullptr, nullptr);
   if (required <= 0 ||
       static_cast<uint32_t>(required) > fushi_voice_hook::kLookupLineBytes) {
-    return false;
+    return FailBgiHit(submit, L"line-bytes");
   }
   char utf8[fushi_voice_hook::kLookupLineBytes] = {};
-  if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, rt.model_line.data(),
+  if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, model_line.data(),
                           static_cast<int>(units), utf8, required, nullptr,
                           nullptr) != required) {
-    return false;
+    return FailBgiHit(submit, L"utf8");
   }
   fushi_voice_hook::LookupGeometryHitPublication publication;
   publication.provider_kind =
@@ -1043,14 +1076,14 @@ bool PublishBgiLookupHit(const BgiSubmit& submit) {
   publication.coordinate_space =
       fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
   publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = rt.model_text_event;
-  publication.geometry_generation = model.generation;
+  publication.text_generation = record->text_event;
+  publication.geometry_generation = submit.generation;
   publication.glyph_x = glyph.rect.x;
   publication.glyph_y = glyph.rect.y;
   publication.glyph_w = glyph.rect.w;
   publication.glyph_h = glyph.rect.h;
-  publication.view_w = model.physical_w;
-  publication.view_h = model.physical_h;
+  publication.view_w = submit.physical_w;
+  publication.view_h = submit.physical_h;
   publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
   publication.line_utf8 = reinterpret_cast<const uint8_t*>(utf8);
   publication.line_bytes = static_cast<uint32_t>(required);
@@ -1060,10 +1093,10 @@ bool PublishBgiLookupHit(const BgiSubmit& submit) {
   BgiLookupLog(
       L"bgi-lookup: hit gen=%llu glyph=%u char=%u+%u rect=%d,%d %dx%d "
       L"design=%d,%d %dx%d view=%dx%d published=%d",
-      static_cast<unsigned long long>(model.generation), submit.glyph,
+      static_cast<unsigned long long>(submit.generation), submit.glyph,
       glyph.line.source_index, glyph.line.source_length, glyph.rect.x,
       glyph.rect.y, glyph.rect.w, glyph.rect.h, glyph.line.x, glyph.line.y,
-      glyph.line.w, glyph.line.h, model.physical_w, model.physical_h,
+      glyph.line.w, glyph.line.h, submit.physical_w, submit.physical_h,
       published ? 1 : 0);
   return published;
 }
@@ -1085,7 +1118,7 @@ bool ReadLatestBgiSubmit(BgiSubmit* out) {
 // silent provider always says which gate it is waiting on.
 void NoteBgiRetire(uint32_t reason) {
   static uint32_t last = UINT32_MAX;
-  static uint32_t budget = 48u;
+  static uint32_t budget = kBgiModelLogBudget;
   const uint32_t key =
       reason == 4u ? 100u + g_bgi_model_failure.step : reason;
   if (key == last || budget == 0u) return;
@@ -1119,6 +1152,16 @@ void ProcessBgiLookupTick() {
   }
   fushi_voice_hook::AtomicOrShared32(
       &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
+  // A press the window procedure already swallowed is published (or its
+  // drop logged) whatever the gates below say now: the game never saw it.
+  const uint64_t claims = rt.claimed_presses.load(std::memory_order_acquire);
+  if (claims != rt.logged_claims) {
+    rt.logged_claims = claims;
+    BgiLookupLog(L"bgi-lookup: press claimed total=%llu",
+                 static_cast<unsigned long long>(claims));
+  }
+  BgiSubmit submit;
+  if (ReadLatestBgiSubmit(&submit)) (void)PublishBgiLookupHit(submit);
   TryHookBgiWindow();
   if (!rt.window_hooked) {
     NoteBgiRetire(6u);
@@ -1154,6 +1197,7 @@ void ProcessBgiLookupTick() {
     rt.model = built;
     rt.model_line = line;
     rt.model_text_event = event;
+    rt.published_lines.Record(rt.model.generation, event, line);
     PublishBgiModel(rt.model);
     if (rt.logged_models < kBgiModelLogBudget) {
       ++rt.logged_models;
@@ -1190,8 +1234,6 @@ void ProcessBgiLookupTick() {
     RetireBgiLookup();
     return;
   }
-  BgiSubmit submit;
-  if (ReadLatestBgiSubmit(&submit)) (void)PublishBgiLookupHit(submit);
 }
 
 void ShutdownBgiLookup() {

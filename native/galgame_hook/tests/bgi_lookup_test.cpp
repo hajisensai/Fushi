@@ -674,6 +674,48 @@ void TestClaim() {
   assert(!d.evaluate && !d.swallow);
 }
 
+void TestLiteralQuoteLine() {
+  // Voiced lines of the measured build carry their quotes literally (no
+  // leading control byte): one displayed unit and one cell per character.
+  const auto line = Cp932(L"「……される」");
+  const auto parsed = core::ParseLine(line.data(), line.size());
+  assert(parsed.auto_prefix == 0u && !parsed.markup && parsed.count == 7u);
+  core::Cell cells[7];
+  uint32_t codepoints[7];
+  uint16_t sources[7];
+  const wchar_t text[] = L"「……される」";
+  for (int i = 0; i < 7; ++i) {
+    cells[i] = {16 + 27 * i, 12, 29, 29};
+    codepoints[i] = text[i];
+    sources[i] = static_cast<uint16_t>(i);
+  }
+  core::LineGlyph glyphs[7];
+  assert(core::BuildPageGlyphs(cells, 7u, codepoints, sources, 7u, 300, 560,
+                               glyphs, 7u) == 7u);
+  assert(core::MapSelectedSuffix(glyphs, 7u, text, 7u) == 0u);
+  size_t hit = 0u;
+  assert(core::HitTestLine(glyphs, 7u, 410, 586, &hit) && hit == 3u);  // さ
+}
+
+void TestPublishedLines() {
+  core::PublishedLines lines;
+  assert(lines.Find(1u) == nullptr);
+  lines.Record(1u, 10u, L"a");
+  lines.Record(2u, 12u, L"b");
+  // A press claimed on generation 1 still resolves after generation 2 was
+  // published.
+  const core::PublishedLine* first = lines.Find(1u);
+  assert(first != nullptr && first->text_event == 10u && first->line == L"a");
+  assert(lines.Find(2u)->line == L"b");
+  assert(lines.Find(0u) == nullptr && lines.Find(3u) == nullptr);
+  for (uint64_t gen = 3u; gen < 3u + core::PublishedLines::kCapacity; ++gen) {
+    lines.Record(gen, gen, L"x");
+  }
+  assert(lines.Find(1u) == nullptr && lines.Find(2u) == nullptr);  // aged out
+  lines.Record(9u, 9u, L"");
+  assert(lines.Find(9u) == nullptr);  // an empty line never resolves a hit
+}
+
 void TestLaneIdentity() {
   const uint64_t box = core::LaneIdentity(0x9ef90u, 300, 560);
   assert(box == core::LaneIdentity(0x9ef90u, 300, 560));
@@ -693,6 +735,8 @@ int main() {
   TestParsesLines();
   TestPageGlyphs();
   TestClaim();
+  TestLiteralQuoteLine();
+  TestPublishedLines();
   TestLaneIdentity();
   std::puts("fushi_bgi_lookup_test: all passed");
   return 0;

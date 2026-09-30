@@ -47,6 +47,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "exact_lookup_signature.h"
@@ -1156,6 +1157,42 @@ inline ClaimDecision DecideMessage(uint32_t message, bool eligible,
   }
   return decision;
 }
+
+// ── published models ───────────────────────────────────────────────────────
+
+// The selected line each recently published model was matched against.  A
+// claimed press is resolved against the model it was claimed on, not the
+// newest one: the worker may rebuild the model (the message window fades out
+// and back in around a speaker change, a new line arrives) between the press
+// and the tick that reads it, and the game never saw that press.
+struct PublishedLine {
+  uint64_t generation = 0u;
+  uint64_t text_event = 0u;
+  std::wstring line;
+};
+
+class PublishedLines {
+ public:
+  static constexpr size_t kCapacity = 4u;
+  void Record(uint64_t generation, uint64_t text_event,
+              const std::wstring& line) {
+    PublishedLine& slot = slots_[next_++ % kCapacity];
+    slot.generation = generation;
+    slot.text_event = text_event;
+    slot.line = line;
+  }
+  const PublishedLine* Find(uint64_t generation) const {
+    if (generation == 0u) return nullptr;
+    for (const PublishedLine& slot : slots_) {
+      if (slot.generation == generation && !slot.line.empty()) return &slot;
+    }
+    return nullptr;
+  }
+
+ private:
+  std::array<PublishedLine, kCapacity> slots_{};
+  size_t next_ = 0u;
+};
 
 // Stable text-lane identity of a message owner: the owner class and its base
 // position (the dialogue box and a name plate are different owners at
