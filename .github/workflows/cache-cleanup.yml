@@ -67,10 +67,28 @@ jobs:
             if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
               echo "Cancelled run $id ($name)"
               cancelled=$((cancelled + 1))
+              requested="${requested:-} $id"
             else
               echo "Run $id ($name) could not be cancelled (probably already finished)"
             fi
           done <<< "$ids"
+          # 普通 cancel 停不下 `if: always()` 的 job / step（2026-09-30 实测三条 run
+          # cancel 后一直 in_progress，只能 force-cancel）。统一等一轮，还在跑的强制取消。
+          deadline=$(( $(date +%s) + 90 ))
+          pending="${requested:-}"
+          while [ -n "$pending" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep 10
+            still=""
+            for id in $pending; do
+              [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" = "completed" ] || still="$still $id"
+            done
+            pending="$still"
+          done
+          for id in $pending; do
+            gh api -X POST "repos/$REPO/actions/runs/$id/force-cancel" >/dev/null 2>&1 \
+              && echo "Force-cancelled run $id (ignored the plain cancel for 90s)" \
+              || echo "::warning title=Force-cancel failed::run $id"
+          done
           echo "Cancelled $cancelled leftover CI run(s) for closed PR branch $HEAD_BRANCH." \
             >> "$GITHUB_STEP_SUMMARY"
 

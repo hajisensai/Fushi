@@ -20,6 +20,7 @@
 # Env: GH_TOKEN (needs actions: write), REPO (owner/name), RUN_ID (this run),
 #      SUPERSEDE_WINDOW_MINUTES (default 5), SUPERSEDE_MAX_ELAPSED_MINUTES
 #      (default 9), SUPERSEDE_DRY_RUN=1 to only list,
+#      SUPERSEDE_FORCE_AFTER_SECONDS (default 90) before force-cancel,
 #      SUPERSEDE_STATUSES / SUPERSEDE_NOW to override the scanned statuses and
 #      the current time (replaying a past decision in a dry run).
 set -euo pipefail
@@ -86,6 +87,7 @@ if [ -z "$candidates" ]; then
   exit 0
 fi
 
+requested=""
 for id in $candidates; do
   if [ "${SUPERSEDE_DRY_RUN:-}" = "1" ]; then
     echo "[dry run] would cancel run $id"
@@ -94,7 +96,33 @@ for id in $candidates; do
   # A run can finish between the listing and the cancel (409); that is fine.
   if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null; then
     echo "::notice title=Superseded run cancelled::run $id (newer push run $RUN_ID arrived within ${window} min of its start)"
+    requested="$requested $id"
   else
     echo "::warning title=Cancel skipped::run $id could not be cancelled (probably already finished)"
+  fi
+done
+[ -n "$requested" ] || exit 0
+
+# A plain cancel does NOT stop jobs / steps guarded by `if: always()`: the
+# desktop `publish` job (needs all legs, `if: always() && ...`) and the macOS
+# signing steps keep running -- on 2026-09-30 three superseded desktop runs sat
+# "in_progress" after cancel until force-cancelled. Wait once for all requested
+# runs together, then force-cancel whatever is still running.
+force_after="${SUPERSEDE_FORCE_AFTER_SECONDS:-90}"
+deadline=$(( $(date +%s) + force_after ))
+pending="$requested"
+while [ -n "$pending" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+  sleep 10
+  still=""
+  for id in $pending; do
+    [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" = "completed" ] || still="$still $id"
+  done
+  pending="$still"
+done
+for id in $pending; do
+  if gh api -X POST "repos/$REPO/actions/runs/$id/force-cancel" >/dev/null; then
+    echo "::notice title=Superseded run force-cancelled::run $id ignored the plain cancel for ${force_after}s (always() jobs)"
+  else
+    echo "::warning title=Force-cancel failed::run $id"
   fi
 done
