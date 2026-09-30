@@ -561,14 +561,16 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   /// 客户端收到 401 `unknown_account`：只有发请求的仍是**当前**客户端才退出本机账户
-  /// （导入恢复码时的临时客户端、已被换掉的旧客户端都不牵连当前账户）。
-  void _onAccountGone(LeaderboardClient client) {
+  /// （导入恢复码时的临时客户端、已被换掉的旧客户端都不牵连当前账户）。返回的 Future
+  /// 由客户端等完再把异常抛给调用方：任何路径（同步 / UI 读榜 / 好友）一接到异常，本机
+  /// 退出已经落定（BUG-2801：曾是 fire-and-forget，读榜调用方看到的状态取决于落盘快慢）。
+  Future<void> _onAccountGone(LeaderboardClient client) async {
     if (_disposed || !identical(client, _client)) return;
-    unawaited(
-      _clearLocal(accountGone: true).catchError((Object e, StackTrace st) {
-        ErrorLogService.instance.log('LeaderboardService.accountGone', e, st);
-      }),
-    );
+    try {
+      await _clearLocal(accountGone: true);
+    } catch (e, st) {
+      ErrorLogService.instance.log('LeaderboardService.accountGone', e, st);
+    }
   }
 
   // ---- 内部 ----

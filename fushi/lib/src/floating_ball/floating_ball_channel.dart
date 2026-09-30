@@ -39,15 +39,21 @@ class FloatingBallChannel {
       _invoke<void>('requestOverlayPermission');
 
   /// 启动系统悬浮球；没有悬浮窗权限时返回 false。[labels] 是按钮文案（原生侧
-  /// 不维护多语言），键为动作 id 加 `open_app` / `close` / `notification`。
+  /// 不维护多语言），键为动作 id 加 `open_app` / `close` / `notification` / `ball`。
+  /// [icons] 是按钮 id → Material Icons 码位、[colors] 是 `surface` / `onSurface` /
+  /// `primary` 的 ARGB：原生球据此画得和应用内球一样（BUG-2793）。
   static Future<bool> startSystemBall({
     required List<String> actions,
     required Map<String, String> labels,
+    required Map<String, int> icons,
+    required Map<String, int> colors,
     required String ocrLanguage,
   }) async =>
       await _invoke<bool>('startSystemBall', <String, Object?>{
         'actions': actions,
         'labels': labels,
+        'icons': icons,
+        'colors': colors,
         'ocrLanguage': ocrLanguage,
       }) ??
       false;

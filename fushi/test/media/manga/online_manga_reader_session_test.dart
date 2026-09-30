@@ -38,10 +38,6 @@ class _FakeFetcher {
   }
 }
 
-Future<void> _settle() => Future<void>.delayed(
-      const Duration(milliseconds: 80),
-    );
-
 void main() {
   late Directory cacheRoot;
 
@@ -117,7 +113,7 @@ void main() {
     addTearDown(session.close);
 
     await session.page(5);
-    await _settle();
+    await session.debugWaitForIdle();
     expect(fetcher.calls.first, 5, reason: '前台页先取');
     expect(fetcher.calls.toSet(), <int>{3, 4, 5, 6, 7});
     expect(fetcher.maxInFlight, lessThanOrEqualTo(2));
@@ -126,7 +122,7 @@ void main() {
 
     // 已预取的页再要：不重取。
     await session.page(6);
-    await _settle();
+    await session.debugWaitForIdle();
     expect(fetcher.calls.where((int i) => i == 6), hasLength(1));
     // 6 的预取半径带出 8。
     expect(fetcher.calls, contains(8));
@@ -151,7 +147,7 @@ void main() {
     final _FakeFetcher fetcher = _FakeFetcher();
     final OnlineMangaReaderSession session = await open(fetcher);
     await session.page(0);
-    await _settle();
+    await session.debugWaitForIdle();
     expect(await session.directory.exists(), isTrue);
 
     await session.close();

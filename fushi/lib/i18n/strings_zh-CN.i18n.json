@@ -6127,5 +6127,14 @@
   "leaderboard_share_card_all": "截至 ${date} · Fushi",
   "leaderboard_share_card_finished_week": "本周读完 ${n} 部",
   "leaderboard_share_card_finished_all": "累计读完 ${n} 部",
-  "leaderboard_share_copy_link": "复制链接"
+  "leaderboard_share_copy_link": "复制链接",
+  "ai_video_acquire_work_alias_resolved": "没直接搜到「$query」，查了资料，按「$titles」再找。",
+  "video_resource_source_result": "${name}：${n} 条（${queries}）",
+  "video_resource_source_failed": "${name}：失败（${reason}）",
+  "video_resource_source_skipped": "${name}：未参与（该来源无法搜索这个查询词）",
+  "video_resource_query_failed": "${query} 失败",
+  "video_resource_failure_timeout": "超时",
+  "video_resource_failure_network": "网络错误",
+  "video_resource_failure_rate_limited": "被限流",
+  "video_resource_failure_other": "请求失败"
 }

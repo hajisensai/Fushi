@@ -494,12 +494,11 @@ class TmdbVideoDiscoveryProvider
       work: work,
       // 内容类型与 TMDB 的 movie/tv 身份是两个维度。动画电影/剧集都要进入
       // 动画资源源；不能因为来自 /tv 就把 Nyaa 排除，也不能改掉 TMDB ID 命名空间。
-      discoveryCategory:
-          metadataList(item['genre_ids']).map<int?>(metadataInt).contains(16)
-              ? VideoDiscoveryCategory.anime
-              : kind == VideoMetadataMediaKind.movie
-                  ? VideoDiscoveryCategory.movie
-                  : VideoDiscoveryCategory.tv,
+      discoveryCategory: tmdbDiscoveryCategory(
+        kind: kind,
+        genreIds: metadataList(item['genre_ids']).map<int?>(metadataInt),
+        originalLanguage: work.originalLanguage,
+      ),
       externalId: id,
     );
   }
@@ -1126,6 +1125,31 @@ ExternalProviderFailure _providerFailure({
       operation: operation,
       error: error,
     );
+
+/// TMDB 条目的发现域。这个域直接决定资源搜索打哪些索引器（Nyaa 只进 anime
+/// 域），判错的代价是资源页静默少掉一整个源（BUG-2805）。
+///
+/// - 带 Animation（16）→ anime。
+/// - **genre 整个为空** + 原语言日语 → 也按 anime：TMDB 新建的动画条目（新季、
+///   新剧场版）常常还没人补 genre，「没有 genre」只是资料缺失，不是「不是动画」；
+///   日语作品在 Nyaa 以外几乎没有资源，当作真人剧排除 Nyaa 等于整页没结果。
+/// - genre 非空却没有 Animation → 维持 movie / tv：那是 TMDB 明确给出的真人
+///   作品（日剧、真人电影版），不因为语言是日语就改判。
+VideoDiscoveryCategory tmdbDiscoveryCategory({
+  required VideoMetadataMediaKind kind,
+  required Iterable<int?> genreIds,
+  String? originalLanguage,
+}) {
+  final List<int?> genres = genreIds.toList(growable: false);
+  final bool untaggedJapanese =
+      genres.isEmpty && originalLanguage?.trim().toLowerCase() == 'ja';
+  if (genres.contains(16) || untaggedJapanese) {
+    return VideoDiscoveryCategory.anime;
+  }
+  return kind == VideoMetadataMediaKind.movie
+      ? VideoDiscoveryCategory.movie
+      : VideoDiscoveryCategory.tv;
+}
 
 const Map<int, String> _tmdbGenreNames = <int, String>{
   12: 'Adventure',

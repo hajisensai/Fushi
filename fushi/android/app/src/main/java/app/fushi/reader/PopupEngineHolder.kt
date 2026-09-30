@@ -118,7 +118,19 @@ object PopupEngineHolder {
         val cache = FlutterEngineCache.getInstance()
         if (cache.get(ENGINE_ID) != null) return false
 
-        val engine = FlutterEngine(context.applicationContext, null, false)
+        // BUG-2790：:popup 引擎单独关 Impeller（临时兼容层）。热槽 WebView 是老式 Hybrid
+        // Composition，一出现 raster 线程就并进 platform 线程；关窗 detach 时
+        // Rasterizer::Teardown 先 reset surface，而 ~GPUSurfaceGLImpeller 不像 Skia 那样
+        // ClearCurrent，GL 上下文就一直挂在 platform 线程上——下一个 Activity 挂回热引擎后
+        // 每帧 EGL_BAD_ACCESS，Flutter 一帧不出，屏上只剩冻住的旧 WebView（释义滑不动）。
+        // 引擎缺陷（flutter#174495），Skia 的析构路径不漏。只影响 :popup 进程（进程里就这
+        // 一个引擎，这是它的首次初始化，参数一定生效），主进程照旧 Impeller。
+        // 清理条件：上游修好 Teardown 顺序，或 Skia 被移除前改走「弹窗 WebView 用 TLHC」。
+        val engine = FlutterEngine(
+            context.applicationContext,
+            arrayOf("--enable-impeller=false"),
+            false,
+        )
         // BUG-865：传 applicationContext 让 registrant 也注册 anki channel，使 popupMain
         // 副 engine 上的 app 外查词面制卡不再抛 MissingPluginException。
         FloatingDictPluginRegistrant.registerWith(engine, context.applicationContext)

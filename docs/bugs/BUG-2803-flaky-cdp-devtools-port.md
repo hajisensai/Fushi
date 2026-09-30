@@ -1,0 +1,17 @@
+## BUG-2803 · 真 Chrome 守卫在满载 CI 上偶发 DevToolsActivePort 8s 超时
+- **报告**：2026-09-30（上游 CI：Build Android APK run 36566164124 / 36565969530，ubuntu-latest 4 核单机串全量 ~30k 测试 + `--coverage`，约 2h50m；`reader_audio_cue_identity_test.dart`「lookup retains rendered cue identity in real Chrome DOM」`Expected <0> Actual <1>`，node 抛 `DevToolsActivePort not written within 8000ms` @ `tool/reader_pitch_headless/cdp_client.mjs:260`）
+- **真实性**：✅ 真 bug（测试基建，非产品代码）。本机 16 核加 32 个 busy 线程、旧/新实现同负载并发各起 3 个 Chrome（A/B 4 轮）：旧实现 3/12 成功，失败为 6× 逐字同一报错 `DevToolsActivePort not written within 8000ms` + 3× `CDP command timed out: Page.enable`；新实现 9/12 成功（成功样本冷启动 35–52s），3 个失败同在一轮、为 Chrome 60s 内仍未宣告监听（stderr 为空，纯饥饿）。空载两者启动耗时相同（0.8–2.1s）。根因是**冷启动就绪判定用了比外层预算紧得多的固定截止，并且把 Chrome 的一切诊断丢掉**：
+  - `tool/reader_pitch_headless/cdp_client.mjs:245-261`（旧）`readDevToolsPort` 以 100ms 轮询 `<userDir>/DevToolsActivePort`、**固定 8s 截止**。Chrome 写这个文件（与打印 `DevTools listening on ws://…` 同在 `DevToolsHttpHandler` 的 ServerStarted 回调）之前要起 browser/zygote/GPU/network service 多个进程并建 profile，CPU 饥饿时这段本身就能超过 8s——而整个 harness 的外层预算是 Dart 侧 `Timeout(Duration(seconds: 90))`。Chrome 只是慢，就被判失败。
+  - 同文件 `:249`（旧）只看 `proc.exitCode`：Linux 上 Chrome 被信号杀（SIGTRAP/SIGSEGV/SIGABRT）时 `exitCode` 恒 `null`、`signalCode` 才有值，**崩溃会被伪装成「等满 8s 没写文件」**；`:285`（旧）`stdio: 'ignore'` 又把 Chrome stderr 全丢，CI 日志无法区分「慢」与「崩」。
+  - 修掉第一道截止后，同一负载下失败**顺移到下一道拍脑袋截止**：`:198`（旧）`send(…, timeoutMs = 10000)` 让冷启动里的 `Page.enable` / 首个 `Page.navigate`（要起第一个 renderer 进程）实测 21s 才返回也被判超时（加长超时的插桩实测：8/8 在 ~21s 后正常返回，是慢不是丢帧）。
+  - 共享同一风险的消费者：`fushi/test/reader/vn_lookup_audio_coordinates_harness.mjs`（直接 import，硬失败）；`fushi/test/reader/reader_horizontal_pitch_harness.mjs`（AUTO-COMBINED 内联副本，启动失败走 exit 2 软跳过——同一缺陷在那里表现为静默跳过而非红）；`tool/reader_pitch_headless/*_probe.mjs` 等本机探针。
+- **[x] ① 已修复** — 分支 `fix/flaky-cue-identity-chrome`。`cdp_client.mjs` 与内联副本同步改：
+  - 就绪信号改为 Chrome 自己的 stderr 行 `DevTools listening on ws://host:PORT/…`（puppeteer 同一做法），stderr 改 `pipe` 并全程排空、保留 16KB 尾部；删除 `readDevToolsPort` 文件轮询。
+  - `spawn` 失败（`error`）或进程提前退出（`exit`，**含信号**）立刻 reject，报 `code/signal/耗时` + Chrome stderr 尾部。
+  - 截止只作挂死护栏、按外层 90s 预算定尺：冷启动整段（端口→page target→WS→`Page.enable`/`Runtime.enable`）共用一个 `CHROME_ATTACH_HANG_GUARD_MS = 60000`；单条 CDP 命令 `CDP_COMMAND_HANG_GUARD_MS = 30000`。正常情况下不多等一毫秒，只改变「活着但慢」何时被判死。
+  - 启动失败路径补关 WS / 杀进程 / 销毁 stderr / 删临时 user-data-dir（旧实现会泄漏 `rph-chrome-*` 目录）。
+  - 三个真 Chrome 测试打 `@Tags(['chrome'])`，`fushi/dart_test.yaml` 声明该标签，CI 可按标签单独调度（本次不改 workflow）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_audio_cue_identity_test.dart`「browser launch failure reports the process exit and stderr (BUG-2803)」：以 `CHROME_PATH=<node>` 充当立即退出的「浏览器」，断言 harness 报 `chrome exited before DevTools was ready` 并带 stderr 尾部（行为测试，走真实 spawn 路径）；`fushi/test/reader/reader_horizontal_pitch_invariant_test.dart`「BUG-2803 Chrome 冷启动等真实就绪信号…」源码守卫两份副本（stderr 信号、pipe、exit 监听、禁回退文件轮询、护栏常量）。
+- **备注**：
+  - 诚实边界：真 Chrome 的就绪本质上受 CPU 约束，没有比 Chrome 自己的信号更早的信号可等；本修复消除的是「比外层预算更紧的拍脑袋截止」与「崩溃伪装成超时」。极端超卖（本机 3 倍线程超卖 + 多个 Chrome 并发）下单个 harness 仍可能逼近 Dart 90s 总预算——那属调度问题，应由 CI 按 `chrome` 标签控制并发/单独跑，而不是继续加长截止。
+  - `reader_horizontal_pitch_harness.mjs` 自带 22s 墙钟看门狗 + exit 2/4 软跳过（TODO-1042），会在 60s 冷启动护栏之前触发；那套「启动失败即软跳过」本身会掩盖真实失败，本次未动，留作后续。
