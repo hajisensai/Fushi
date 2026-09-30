@@ -118,6 +118,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/utils/misc/coalesced_async_runner.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
+import 'package:fushi/src/utils/misc/owned_snack_bar.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/serial_task_queue.dart';
@@ -2042,7 +2043,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 专注模式「栏已锁定」提示条（点空白 / 切栏快捷键时弹出，带退出动作）。
   /// 在场时不重复弹，免得连点时提示条反复闪。
-  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _focusModeHint;
+  OwnedSnackBar? _focusModeHint;
 
   /// 一次**明确的退书**（[_exitBookPastFocusMode]）正在经 maybePop 走 PopScope：
   /// 此时跳过「返回先退专注模式」那一级。只在那次 maybePop 期间为真。
@@ -3097,8 +3098,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
-    // 专注模式提示条挂在根 ScaffoldMessenger 上，不关会跟到下一页去。
-    _focusModeHint?.close();
+    // 专注模式提示条挂在根 ScaffoldMessenger 上，不关会跟到下一页去。dispose 在锁树
+    // 阶段，读屏开着时直接 close 会对 messenger setState 而抛错，推到帧后再关。
+    _focusModeHint?.closeAfterOwnerDisposed();
     _chrome.removeListener(_onChromeControllerChanged);
     _chrome.dispose();
     _clearGamepadAHold();

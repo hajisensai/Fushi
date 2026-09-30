@@ -44,7 +44,7 @@ void main() {
           0,
           reason: '${result.stdout}\n${result.stderr}',
         );
-        expect(result.stdout, contains('PASS 24 browser cases'));
+        expect(result.stdout, contains('PASS 28 browser cases'));
       } finally {
         temp.deleteSync(recursive: true);
       }

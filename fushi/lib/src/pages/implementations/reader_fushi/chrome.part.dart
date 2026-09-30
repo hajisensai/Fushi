@@ -1130,8 +1130,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!mounted || _focusModeHint != null) return;
     final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-    final ScaffoldFeatureController<SnackBar, SnackBarClosedReason> hint =
-        messenger.showSnackBar(
+    final OwnedSnackBar hint = OwnedSnackBar.show(
+      messenger,
       SnackBar(
         key: const ValueKey<String>('fushi_reader_focus_mode_hint'),
         content: Text(t.reader_focus_mode_bars_locked),
