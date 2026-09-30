@@ -1,5 +1,10 @@
 // 行为测试：`tool/bug.dart renumber` 在**撞号态**下的作用域框定。
 //
+// 下面两个路径只是临时 git 仓库里的 fixture，不是本测试守的东西（守的是
+// `tool/bug.dart`）；不声明的话，每个走 BUG 流程的 PR 都会因 reindex 改了真仓库的
+// `docs/BUGS.md` 把本套件（起 git 子进程，单跑数分钟）拉进推送前检查。
+// tests-for-changes-ignore: docs/BUGS.md docs/bugs
+//
 // 背景（PR#607 那次改了 66 处手工改号）：撞号是每个 PR 合并前的必经步骤，而 renumber
 // 恰恰在撞号态下不可用。两个实测缺陷：
 //   ① `locateBugFile` 在 old 号同时存在于 PR 侧与 base 侧时直接抛错退出——而撞号
