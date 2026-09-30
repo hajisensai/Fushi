@@ -65,11 +65,9 @@ List<String> relayoutableMangaOcrEngineSignatures(String engineSignature) {
   ];
 }
 
-/// manga.json 的 OCR 元数据是否是「只缺行几何、同模型可原地升级」的本地结果。
-///
-/// 阅读器据此对已识别的本地卷自动排一次整卷任务：任务里逐页只补几何
-/// （[relayoutableMangaOcrEngineSignatures]），文字不重认（BUG-2813）。
-bool isMangaOcrRelayoutPending(MangaOcrMetadata? ocr) {
+/// manga.json 的 OCR 元数据是否是「只缺行几何」的本地旧版结果——只看元数据，
+/// 所以只是**候选**；能不能由当前本地模型原地升级见 [isMangaOcrRelayoutPending]。
+bool isMangaOcrRelayoutCandidate(MangaOcrMetadata? ocr) {
   if (ocr == null || ocr.engine != 'local_onnx') return false;
   final String signature = ocr.engineSignature;
   for (final String revision in kMangaOcrRelayoutRevisions) {
@@ -77,6 +75,24 @@ bool isMangaOcrRelayoutPending(MangaOcrMetadata? ocr) {
     if (signature == prefix || signature.startsWith('$prefix-')) return true;
   }
   return false;
+}
+
+/// [ocr] 能否由当前本地整卷任务（缓存签名 [localEngineSignature]）原地只补行几何。
+///
+/// 阅读器据此对已识别的本地卷自动排一次整卷任务：任务里逐页只补几何
+/// （[relayoutableMangaOcrEngineSignatures]），文字不重认（BUG-2813）。只看元数据
+/// 会误判：用户选的是另一个本地模型，或模型文件换过（指纹后缀不同）时，当前签名推
+/// 不出这份旧缓存，排下去的任务找不到可复用的逐页缓存，就成了一次静默的整卷重认。
+bool isMangaOcrRelayoutPending(
+  MangaOcrMetadata? ocr, {
+  required String? localEngineSignature,
+}) {
+  if (!isMangaOcrRelayoutCandidate(ocr) || localEngineSignature == null) {
+    return false;
+  }
+  return relayoutableMangaOcrEngineSignatures(
+    localEngineSignature,
+  ).contains(ocr!.engineSignature);
 }
 
 /// 产物文件名（`manga_ocr_out/manga.json`）。

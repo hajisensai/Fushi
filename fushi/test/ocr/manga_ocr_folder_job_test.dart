@@ -550,32 +550,73 @@ void main() {
       );
     });
 
-    test('isMangaOcrRelayoutPending：只认本地引擎的 v4 结果', () {
-      MangaOcrMetadata meta(String engine, String signature) =>
-          MangaOcrMetadata(
-            engine: engine,
-            engineSignature: signature,
-            schemaVersion: 1,
-          );
+    MangaOcrMetadata meta(String engine, String signature) => MangaOcrMetadata(
+          engine: engine,
+          engineSignature: signature,
+          schemaVersion: 1,
+        );
+
+    test('isMangaOcrRelayoutCandidate：只认本地引擎的 v4 结果', () {
       expect(
-        isMangaOcrRelayoutPending(
+        isMangaOcrRelayoutCandidate(
           meta('local_onnx', 'local-onnx-v4-antialias-text-dedup-36f475259340'),
         ),
         isTrue,
       );
       expect(
-        isMangaOcrRelayoutPending(
+        isMangaOcrRelayoutCandidate(
           meta('local_onnx', '$kLocalMangaOcrEngineSignature-36f475259340'),
         ),
         isFalse,
       );
       expect(
-        isMangaOcrRelayoutPending(
+        isMangaOcrRelayoutCandidate(
           meta('google_lens', 'local-onnx-v4-antialias-text-dedup'),
         ),
         isFalse,
       );
-      expect(isMangaOcrRelayoutPending(null), isFalse);
+      expect(isMangaOcrRelayoutCandidate(null), isFalse);
+    });
+
+    test('isMangaOcrRelayoutPending：当前本地模型推得出本卷旧签名才算', () {
+      final MangaOcrMetadata v4 = meta(
+        'local_onnx',
+        'local-onnx-v4-antialias-text-dedup-36f475259340',
+      );
+      expect(
+        isMangaOcrRelayoutPending(
+          v4,
+          localEngineSignature: '$kLocalMangaOcrEngineSignature-36f475259340',
+        ),
+        isTrue,
+      );
+      // 模型文件换过（指纹不同）：旧缓存不是当前模型的结果，排下去是整卷重认。
+      expect(
+        isMangaOcrRelayoutPending(
+          v4,
+          localEngineSignature: '$kLocalMangaOcrEngineSignature-0123456789ab',
+        ),
+        isFalse,
+      );
+      // 选的是另一个本地模型（签名体系不同）：同理不能当成升级。
+      expect(
+        isMangaOcrRelayoutPending(
+          v4,
+          localEngineSignature:
+              'local-onnx-baberu-v1-bicubic-$kMangaOcrPipelineRevision-36f475259340',
+        ),
+        isFalse,
+      );
+      expect(
+          isMangaOcrRelayoutPending(v4, localEngineSignature: null), isFalse);
+      expect(
+        isMangaOcrRelayoutPending(
+          meta(
+              'google_lens', 'local-onnx-v4-antialias-text-dedup-36f475259340'),
+          localEngineSignature: '$kLocalMangaOcrEngineSignature-36f475259340',
+        ),
+        isFalse,
+      );
     });
 
     test('行框写成 mokuro lines_coords，解析回来一一对应', () {
