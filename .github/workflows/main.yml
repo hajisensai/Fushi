@@ -218,8 +218,36 @@ jobs:
     # below stays the sole R8/proguard/native gate for PRs (HBK-AUDIT-026). It is
     # also arm64-only now (matches the shipped debug-channel slice; no need to
     # raster the unshipped armv7/x86_64 slices just to exercise R8 keep-rules).
+    # R8 / proguard / the Android native build only see Java/Kotlin (app +
+    # plugins), Gradle config, native sources and the plugin set pinned by
+    # pubspec. A Dart-only PR cannot change what they do: upstream 09-20..30
+    # ran this verify 48 times with 0 failures while it cost ~14 min per PR run
+    # (build job ~20 -> ~6 min without it). develop pushes still build the
+    # release-signed APK through R8 in release.yml, so nothing ships unverified.
+    # If the diff cannot be computed, the verify runs (fail safe).
+    - name: Decide whether the Android release verify build is needed
+      id: r8
+      if: github.event_name == 'pull_request'
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        if ! changed="$(git diff --name-only "$BASE_SHA"...HEAD)"; then
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          echo "::warning title=R8 verify gate::could not diff against $BASE_SHA; running the verify build"
+          exit 0
+        fi
+        pattern='^(fushi/android/|native/|third_party/|ci/|packages/[^/]+/android/|packages/[^/]+/pubspec\.yaml$|fushi/pubspec\.yaml$|pubspec\.yaml$|pubspec\.lock$|\.github/workflows/main\.yml$|\.github/actions/)'
+        if grep -qE "$pattern" <<< "$changed"; then
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "needed=false" >> "$GITHUB_OUTPUT"
+          echo "::notice title=R8 verify skipped::no Android / native / plugin / pubspec change in this PR"
+        fi
+
     - name: Generate throwaway keystore (no signing secret present)
-      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
+      if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true' && env.HAS_KEYSTORE != 'true'
       working-directory: fushi/android
       run: |
         keytool -genkeypair -v -keystore fushi-release.jks \
@@ -236,7 +264,7 @@ jobs:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Verify release build (minify/R8/proguard/native)
-      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE != 'true'
+      if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true' && env.HAS_KEYSTORE != 'true'
       working-directory: fushi
       run: >-
         flutter build apk --release --target-platform android-arm64
@@ -245,14 +273,14 @@ jobs:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Decode keystore
-      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
+      if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true' && env.HAS_KEYSTORE == 'true'
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > fushi/android/fushi-release.jks
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Create key.properties
-      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
+      if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true' && env.HAS_KEYSTORE == 'true'
       working-directory: fushi/android
       run: |
         cat > key.properties <<EOF
@@ -268,7 +296,7 @@ jobs:
     # is the keystore-present twin of "Verify release build"; on push it would
     # otherwise duplicate release.yml's published arm64 APK.
     - name: Verify release build (signed, minify/R8/proguard/native)
-      if: github.event_name == 'pull_request' && env.HAS_KEYSTORE == 'true'
+      if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true' && env.HAS_KEYSTORE == 'true'
       working-directory: fushi
       run: >-
         flutter build apk --release --target-platform android-arm64
