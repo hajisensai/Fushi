@@ -238,7 +238,8 @@ extension _VideoLayout on _VideoFushiPageState {
         final Widget placeholder = Icon(
           Icons.music_note_rounded,
           size: 96,
-          color: Colors.white.withValues(alpha: 0.24),
+          // 压在固定深色底上，前景走 chrome 固定亮色体系（不随主题）。
+          color: videoChromeNeutralForeground.withValues(alpha: 0.24),
         );
         return IgnorePointer(
           child: ColoredBox(
