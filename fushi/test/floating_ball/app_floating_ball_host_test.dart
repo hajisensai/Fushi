@@ -337,11 +337,17 @@ void main() {
     late List<MethodCall> calls;
     late _RecordingActionTarget target;
 
-    /// 原生侧的桩：记下每次调用；[takeClosed] 给 `takeSystemBallClosedByUser`
-    /// 一个可控的回话（竞态用例靠它把起球闭包卡在第一个 await 上）。
+    /// 原生侧的桩：记下每次调用；[takeClosed] / [startReply] 给
+    /// `takeSystemBallClosedByUser` / `startSystemBall` 一个可控的回话（竞态用例
+    /// 靠它把起球闭包卡在对应的 await 上）。
+    ///
+    /// 可控回话的 Completer 必须在 `tester.runAsync` 里建：fake zone 里建的
+    /// Completer 完成时把回调排进 fake zone 的微任务队列，要等 runAsync 结束后
+    /// 的下一次 pump 才冲刷——闭包在观察窗内根本醒不过来，断言就成了空壳。
     void mockNative(
       WidgetTester tester, {
       Future<bool> Function()? takeClosed,
+      Future<bool> Function()? startReply,
       bool started = true,
     }) {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -349,7 +355,8 @@ void main() {
         (MethodCall call) async {
           calls.add(call);
           return switch (call.method) {
-            'startSystemBall' => started,
+            'startSystemBall' =>
+              startReply == null ? started : await startReply(),
             'takeSystemBallClosedByUser' =>
               takeClosed == null ? false : await takeClosed(),
             _ => null,
@@ -360,6 +367,7 @@ void main() {
 
     setUp(() {
       calls = <MethodCall>[];
+      debugLatestSystemBallSync = null;
       target = _RecordingActionTarget();
       debugDesktopSystemBallPlatformOverride = true;
       desktopSystemBallActionTarget = target;
@@ -496,8 +504,11 @@ void main() {
       ]);
     });
 
+    bool tookClosedFlag() =>
+        calls.any((MethodCall c) => c.method == 'takeSystemBallClosedByUser');
+
     testWidgets('起球途中关掉开关：发 stop，醒来的起球闭包不再把球拉起来', (WidgetTester tester) async {
-      final Completer<bool> take = Completer<bool>();
+      late Completer<bool> take;
       mockNative(tester, takeClosed: () => take.future);
       addTearDown(
         () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -507,17 +518,16 @@ void main() {
       );
       await pumpHost(tester);
       await tester.runAsync(() async {
+        take = Completer<bool>();
         await prefs.setFloatingBallSystem(true);
-        await waitFor(
-          () => calls.any(
-            (MethodCall c) => c.method == 'takeSystemBallClosedByUser',
-          ),
-        );
+        final Future<void> sync = debugLatestSystemBallSync!;
+        await waitFor(tookClosedFlag);
         // 起球闭包卡在第一个 await 上时，用户关了开关。
         await prefs.setFloatingBallSystem(false);
         take.complete(false);
-        // 给闭包足够的真实时间走完（若没被作废，它会去画图标、调 start）。
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        // 闭包醒来会画图标、读球面（桌面分支），再走到 start 前的门：等它真的
+        // 跑完再断言。
+        await sync;
       });
       await tester.pump();
       expect(
@@ -526,6 +536,83 @@ void main() {
         reason: '签名还没落时关开关也要停',
       );
       expect(starts(), isEmpty, reason: '过期的起球闭包不得再调 start');
+    });
+
+    testWidgets('start 回话前关掉开关：过期代不记签名，再打开同样配置照常起球', (
+      WidgetTester tester,
+    ) async {
+      late Completer<bool> firstStart;
+      mockNative(
+        tester,
+        startReply: () =>
+            starts().length == 1 ? firstStart.future : Future<bool>.value(true),
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        firstStart = Completer<bool>();
+        await prefs.setFloatingBallSystem(true);
+        final Future<void> first = debugLatestSystemBallSync!;
+        await waitFor(() => starts().isNotEmpty);
+        // 原生还在建窗，用户关了开关；随后原生回报「起来了」。
+        await prefs.setFloatingBallSystem(false);
+        firstStart.complete(true);
+        await first;
+        // 再打开：配置与上一代一模一样。
+        await prefs.setFloatingBallSystem(true);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(
+        starts(),
+        hasLength(2),
+        reason: '过期代若记下签名，这次同样配置的起球会被当成已下发跳过——开关开着却没有球',
+      );
+    });
+
+    testWidgets('一次性「用户关过系统球」标记落在已过期的那一代：照样关掉开关，不再起球', (
+      WidgetTester tester,
+    ) async {
+      final List<Completer<bool>> takes = <Completer<bool>>[];
+      mockNative(
+        tester,
+        takeClosed: () {
+          final Completer<bool> c = Completer<bool>();
+          takes.add(c);
+          return c.future;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        final Future<void> gen1 = debugLatestSystemBallSync!;
+        await waitFor(() => takes.isNotEmpty);
+        // 第一代还在等标记的回话，配置变了：第二代起球，也去取标记。
+        await prefs.setFloatingBallButtons(FloatingBallScope.system, <String>[
+          'clipboard',
+        ]);
+        final Future<void> gen2 = debugLatestSystemBallSync!;
+        await waitFor(() => takes.length >= 2);
+        // Android 读即清：原生先回第一代 true（标记已清），第二代只剩 false。
+        takes[0].complete(true);
+        await gen1;
+        takes[1].complete(false);
+        await gen2;
+      });
+      await tester.pump();
+      expect(prefs.floatingBallSystem, isFalse, reason: '用户在系统球上点过关闭');
+      expect(starts(), isEmpty, reason: '不得违背用户刚做的「关闭」把球拉起来');
     });
 
     testWidgets('连续两次同步、先发的闭包后醒：以最新配置为准，旧闭包作废', (WidgetTester tester) async {
@@ -547,17 +634,19 @@ void main() {
       await pumpHost(tester);
       await tester.runAsync(() async {
         await prefs.setFloatingBallSystem(true);
+        final Future<void> gen1 = debugLatestSystemBallSync!;
         await waitFor(() => takes.isNotEmpty);
         // 第一代还卡着，用户改了按钮：第二代起球。
         await prefs.setFloatingBallButtons(FloatingBallScope.system, <String>[
           'clipboard',
         ]);
+        final Future<void> gen2 = debugLatestSystemBallSync!;
         await waitFor(() => takes.length >= 2);
         // 第二代先醒、先起完；第一代后醒。
         takes[1].complete(false);
-        await waitFor(() => starts().isNotEmpty);
+        await gen2;
         takes[0].complete(false);
-        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await gen1;
       });
       await tester.pump();
       expect(starts(), hasLength(1), reason: '旧代不得再起一次盖掉新配置');

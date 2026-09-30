@@ -177,6 +177,11 @@ class DesktopSystemBallActionTarget {
       DesktopLookupService.instance.bringMainWindowToFront();
 }
 
+/// 最近一次起球闭包（[_AppFloatingBallHostState._syncSystemBall]）的 Future。
+/// 测试 await 它来确认闭包真的跑完了再断言，而不是等一段时间碰运气。
+@visibleForTesting
+Future<void>? debugLatestSystemBallSync;
+
 /// 桌面系统球动作的执行面（测试替换）。
 @visibleForTesting
 DesktopSystemBallActionTarget desktopSystemBallActionTarget =
@@ -320,18 +325,21 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (!force && signature == _systemSignature) return;
     final int generation = ++_systemGeneration;
     _systemRequested = true;
-    // 每次 await 回来：还是最新一代、开关还开着，才继续。
+    // 起球要 await 原生回话与桌面资源；回来时还是最新一代、开关还开着，才继续。
     bool stale() =>
         generation != _systemGeneration || !prefs.floatingBallSystem;
-    unawaited(() async {
+    final Future<void> run = () async {
       // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：这时按开关把球
       // 拉起来就违背了用户刚做的事，改为把开关关掉。
+      //
+      // 这个标记是一次性的（Android 读即清，见 FloatingBallService
+      // .takeClosedByUser）：拿到它的那一代就必须处理，不论自己是否已被新一代
+      // 取代——过期代丢掉 true，下一代读到的只剩 false，会把球重新拉起来。
       final bool closedByUser =
           await FloatingBallChannel.takeSystemBallClosedByUser();
-      if (stale()) return;
       if (closedByUser) {
         _systemSignature = null;
-        await prefs.setFloatingBallSystem(false);
+        if (prefs.floatingBallSystem) await prefs.setFloatingBallSystem(false);
         return;
       }
       // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
@@ -343,10 +351,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
               Color(colors['onSurface'] ?? 0xFF1D1B20),
             )
           : null;
-      if (stale()) return;
       final Uint8List? ballImage = desktop
           ? await loadFloatingBallImage()
           : null;
+      // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
+      // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
       if (stale()) return;
       final bool started = await FloatingBallChannel.startSystemBall(
         actions: actions,
@@ -360,14 +369,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
       );
       // 起的过程中被更新的决定取代：结果归新一代处理（关了开关的那一代已经发过
-      // stop，消息按序到原生，这颗球不会留下）。
+      // stop，消息按序到原生，这颗球不会留下）。签名更不能记：记了之后同样配置
+      // 的下一次起球会被当成「已下发」跳过，开关开着却没有球。
       if (stale()) return;
       // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
       _systemSignature = started ? signature : null;
       if (started) {
         await FloatingBallChannel.setAppForeground(_foreground);
       }
-    }());
+    }();
+    debugLatestSystemBallSync = run;
+    unawaited(run);
   }
 
   /// 停原生系统球，并让还在路上的起球闭包作废。
