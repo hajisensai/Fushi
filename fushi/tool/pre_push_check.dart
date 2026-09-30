@@ -5,6 +5,7 @@
 //                                     [--skip-analyze] [--parallel]
 //                                     [--concurrency=4] [--batch-size=20]
 //                                     [--gate=3] [--gate-timeout-min=30]
+//                                     [--max-minutes=90]
 //                                     [--allow-flutter-mismatch]
 //                                     [--files <paths...> | --files-from=<list>]
 //
@@ -17,7 +18,13 @@
 //     overlap for a machine nobody else is using);
 //   * before every `flutter test` batch and every analyze the tool waits while
 //     >= --gate Flutter test/analyze/build runs are already going on this
-//     machine (0 disables), up to --gate-timeout-min, then runs anyway and says so.
+//     machine (0 disables), up to --gate-timeout-min, then runs anyway and says so;
+//     runs older than 3 hours are not counted (a hung one would shut every gate
+//     on the machine for good -- three did for seven hours);
+//   * --max-minutes (0 disables) caps the time the tool's own subprocesses run
+//     (gate waits excluded): past it the running subprocess trees are killed and
+//     the verdict is FAILED. A session that dies mid-run leaves this tool behind;
+//     without the cap it kept starting new batches for hours.
 //
 // Why (upstream 2026-09-20..30): agents ran `flutter analyze` + hand-picked tests
 // before pushing, yet CI went red. analyze failed once in 10 days; of the 36 PRs
@@ -38,6 +45,7 @@
 //      packages CI analyzes separately when they changed.
 // Every Flutter test batch is judged by exit code AND executed count (BUG-1157).
 // The full sharded suite still runs on CI; this is the cheap, high-yield subset.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -109,8 +117,8 @@ class _Gate {
   }
 }
 
-/// [countBusyFlutterCommands] over this machine's process list, or null when
-/// the list cannot be read.
+/// [countBusyFlutterRuns] over this machine's process list (runs older than
+/// 3 hours not counted), or null when the list cannot be read.
 int? _busyFlutterCommands() {
   try {
     final ProcessResult r = Platform.isWindows
@@ -118,16 +126,105 @@ int? _busyFlutterCommands() {
             '-NoProfile',
             '-NonInteractive',
             '-Command',
-            r"""Get-CimInstance Win32_Process -Filter "Name='dart.exe'" | ForEach-Object { $_.CommandLine }""",
+            r"""Get-CimInstance Win32_Process -Filter "Name='dart.exe'" | ForEach-Object { "$([int]((Get-Date) - $_.CreationDate).TotalSeconds)`t$($_.CommandLine)" }""",
           ])
-        : Process.runSync('ps', <String>['-Ao', 'args']);
+        : Process.runSync('ps', <String>['-Ao', 'etime=,args=']);
     if (r.exitCode != 0) return null;
-    return countBusyFlutterCommands(
-        const LineSplitter().convert(r.stdout as String));
+    return countBusyFlutterRuns(<({int ageSeconds, String commandLine})>[
+      for (final String line
+          in const LineSplitter().convert(r.stdout as String))
+        if (parseAgedProcessLine(line, windows: Platform.isWindows)
+            case final ({int ageSeconds, String commandLine}) p)
+          p,
+    ]);
   } on ProcessException {
     return null;
   }
 }
+
+/// `(pid, parent pid)` of every process on this machine; empty when unreadable.
+List<(int, int)> _processTable() {
+  try {
+    final ProcessResult r = Platform.isWindows
+        ? Process.runSync('powershell', <String>[
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            r'''Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }''',
+          ])
+        : Process.runSync('ps', <String>['-Ao', 'pid=,ppid=']);
+    if (r.exitCode != 0) return const <(int, int)>[];
+    return <(int, int)>[
+      for (final String line
+          in const LineSplitter().convert(r.stdout as String))
+        if (RegExp(r'^\s*(\d+)\s+(\d+)\s*$').firstMatch(line)
+            case final RegExpMatch m)
+          (int.parse(m.group(1)!), int.parse(m.group(2)!)),
+    ];
+  } on ProcessException {
+    return const <(int, int)>[];
+  }
+}
+
+/// Kills [root] and every descendant (flutter_tester, frontend_server, ...);
+/// returns how many processes that was.
+int _killTree(int root) {
+  final List<int> descendants = descendantPids(root, _processTable());
+  if (Platform.isWindows) {
+    // /T takes the whole tree; the pids above are only counted (taskkill's own
+    // output is localized).
+    Process.runSync('taskkill', <String>['/PID', '$root', '/T', '/F']);
+  } else {
+    for (final int pid in <int>[...descendants, root]) {
+      Process.killPid(pid, ProcessSignal.sigkill);
+    }
+  }
+  return descendants.length + 1;
+}
+
+/// --max-minutes: the time the tool's own subprocesses run, gate waits
+/// excluded. Past the limit the running subprocess trees are killed and no
+/// further step starts.
+class _Budget {
+  _Budget(this.limit);
+
+  final Duration limit;
+  final Stopwatch _active = Stopwatch();
+  final Set<Process> _running = <Process>{};
+  Timer? _timer;
+  bool exceeded = false;
+  int killed = 0;
+
+  /// Registers a started subprocess and waits for its exit code.
+  Future<int> run(Process p) async {
+    _running.add(p);
+    if (_running.length == 1) _active.start();
+    if (limit > Duration.zero) {
+      _timer ??= Timer.periodic(const Duration(seconds: 15), (_) => _check());
+    }
+    try {
+      return await p.exitCode;
+    } finally {
+      _running.remove(p);
+      if (_running.isEmpty) _active.stop();
+    }
+  }
+
+  void _check() {
+    if (exceeded || _active.elapsed <= limit) return;
+    exceeded = true;
+    stdout.writeln('   budget: subprocesses have run '
+        '${_active.elapsed.inMinutes} min > ${limit.inMinutes}; killing them');
+    for (final Process p in _running.toList()) {
+      killed += _killTree(p.pid);
+    }
+  }
+
+  void dispose() => _timer?.cancel();
+}
+
+/// The run's budget; main replaces it with the --max-minutes one.
+_Budget _budget = _Budget(Duration.zero);
 
 Future<void> main(List<String> args) async {
   final RepoFs fs = RepoFs(locateRepoRoot(Directory.current));
@@ -142,6 +239,8 @@ Future<void> main(List<String> args) async {
     limit: _intArg(args, '--gate=', 3),
     timeout: Duration(minutes: _intArg(args, '--gate-timeout-min=', 30)),
   );
+  // A typical run is 3-15 minutes of subprocess time.
+  _budget = _Budget(Duration(minutes: _intArg(args, '--max-minutes=', 90)));
   String? base;
   List<String>? explicitFiles;
   for (int i = 0; i < args.length; i++) {
@@ -454,6 +553,10 @@ int _intArg(List<String> args, String prefix, int fallback) {
 Future<_Step> _timed(
     String name, Future<(bool, String)> Function() body) async {
   stdout.writeln('\n== $name');
+  if (_budget.exceeded) {
+    stdout.writeln('   -> FAILED: not run (--max-minutes budget exceeded)');
+    return _Step(name, false, 'not run: budget exceeded', Duration.zero);
+  }
   final Stopwatch sw = Stopwatch()..start();
   final (bool ok, String detail) = await body();
   sw.stop();
@@ -503,11 +606,19 @@ Future<(bool, String)> _flutterTests(
     err.write(c);
     stderr.write(c);
   });
-  final int code = await p.exitCode;
+  final int code = await _budget.run(p);
   await Future.wait(<Future<void>>[out, errDone]);
   await log.close();
   await err.close();
   final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(lines);
+  if (_budget.exceeded) {
+    // Not a compile failure or a red test: this batch was cut off.
+    return (
+      false,
+      'killed by the --max-minutes budget after '
+          '${summary.testsCompleted} test(s)',
+    );
+  }
   final String? failure =
       resolveFlutterTestVerdictFailure(flutterExitCode: code, summary: summary);
   if (failure != null) {
@@ -526,11 +637,12 @@ Future<int> _stream(String exe, List<String> args, String cwd) async {
       workingDirectory: cwd,
       runInShell: Platform.isWindows,
       mode: ProcessStartMode.inheritStdio);
-  return p.exitCode;
+  return _budget.run(p);
 }
 
 void _report(List<_Step> steps, {List<String> gateNotes = const <String>[]}) {
-  final bool ok = steps.every((_Step s) => s.ok);
+  _budget.dispose();
+  final bool ok = !_budget.exceeded && steps.every((_Step s) => s.ok);
   stdout.writeln('\n==== pre-push summary');
   for (final _Step s in steps) {
     stdout.writeln('  ${s.ok ? 'OK    ' : 'FAILED'}  ${s.name}  '
@@ -538,6 +650,11 @@ void _report(List<_Step> steps, {List<String> gateNotes = const <String>[]}) {
   }
   for (final String n in gateNotes) {
     stdout.writeln('  gate: $n');
+  }
+  if (_budget.exceeded) {
+    stdout.writeln('  budget: subprocess time exceeded '
+        '${_budget.limit.inMinutes} min (--max-minutes); killed '
+        '${_budget.killed} process(es)');
   }
   stdout.writeln(ok
       ? 'PRE-PUSH VERDICT: PASSED'

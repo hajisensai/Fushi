@@ -241,3 +241,64 @@ int countBusyFlutterCommands(Iterable<String> commandLines) {
       RegExp(r'flutter_tools\.snapshot"?\s+(?:-\S+\s+)*(test|analyze|build)\b');
   return commandLines.where(heavy.hasMatch).length;
 }
+
+/// Seconds in a POSIX `ps -o etime` value, `[[dd-]hh:]mm:ss` (the same format on
+/// macOS and Linux; macOS `ps` has no `etimes`). Null when it does not parse.
+int? parsePsElapsedSeconds(String etime) {
+  final RegExpMatch? m =
+      RegExp(r'^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$').firstMatch(etime.trim());
+  if (m == null) return null;
+  int part(int i) => int.parse(m.group(i) ?? '0');
+  return ((part(1) * 24 + part(2)) * 60 + part(3)) * 60 + part(4);
+}
+
+/// One process-listing line as `(age, command line)`: on Windows the gate's
+/// PowerShell query prints `<seconds>\t<command line>`, on POSIX
+/// `ps -Ao etime=,args=` prints `<etime> <args>`. Null for anything else.
+({int ageSeconds, String commandLine})? parseAgedProcessLine(String line,
+    {required bool windows}) {
+  final String l = windows ? line : line.trimLeft();
+  final int cut = windows ? l.indexOf('\t') : l.indexOf(RegExp(r'\s'));
+  if (cut <= 0) return null;
+  final String age = l.substring(0, cut);
+  final int? seconds = windows ? int.tryParse(age) : parsePsElapsedSeconds(age);
+  if (seconds == null) return null;
+  return (ageSeconds: seconds, commandLine: l.substring(cut + 1));
+}
+
+/// [countBusyFlutterCommands] over processes younger than [maxAge]. No real
+/// test / analyze / build run lasts hours, while one that hung (its session
+/// gone; 2026-09-30 three stuck `flutter test`s held the reading at >= 3 for
+/// seven hours) would otherwise keep every gate on the machine shut for good.
+int countBusyFlutterRuns(
+  Iterable<({int ageSeconds, String commandLine})> processes, {
+  Duration maxAge = const Duration(hours: 3),
+}) =>
+    countBusyFlutterCommands(<String>[
+      for (final ({int ageSeconds, String commandLine}) p in processes)
+        if (p.ageSeconds <= maxAge.inSeconds) p.commandLine,
+    ]);
+
+/// Every descendant of [root] in a `(pid, parent pid)` table, deepest first,
+/// [root] itself excluded: what has to go when a run is cut off, so that no
+/// flutter_tester / frontend_server outlives the tool as an orphan.
+List<int> descendantPids(int root, Iterable<(int, int)> table) {
+  final Map<int, List<int>> children = <int, List<int>>{};
+  for (final (int pid, int parent) in table) {
+    if (pid == parent) continue;
+    children.putIfAbsent(parent, () => <int>[]).add(pid);
+  }
+  final List<int> out = <int>[];
+  // Reused pids can make the table cyclic: mark before descending.
+  final Set<int> seen = <int>{root};
+  void walk(int pid) {
+    for (final int child in children[pid] ?? const <int>[]) {
+      if (!seen.add(child)) continue;
+      walk(child);
+      out.add(child);
+    }
+  }
+
+  walk(root);
+  return out;
+}
