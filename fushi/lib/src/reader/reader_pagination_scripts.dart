@@ -1818,9 +1818,8 @@ window.__fushiInstallShell = function(C) {
     // 拼出整句，长注音（しゃく 比 釈 宽）撑出的间距归谁由引擎决定：iOS 真机上它落在 ruby
     // 背景盒外（高亮在「会|釈|をす」间断开留缝），iOS 26.5 WebKit 又让 ruby 背景盒与后文
     // span 叠 7.7px（半透明色叠深一条）。间距总在父级行内盒里，包进同一个 wrapper 后缝与
-    // 叠色都没有了；注音仍在 wrapper 内容区外（BUG-716 的形态不变）。父节点不同的片段
-    // （ruby 在书自带的 <a>/<span> 里）各成一组，ruby 仍整颗包进 wrapper；只有片段落在
-    // ruby 内部、ruby 却不能整颗移动时（理论上不会发生）才退回 ruby class。
+    // 叠色都没有了；注音仍在 wrapper 内容区外（BUG-716 的形态不变）。其中「ruby 整颗
+    // 包进 wrapper」这一半已被下面的 BUG-2806 取代：ruby 不再移动。
     //
     // BUG-2806：把整颗 <ruby> 移进 wrapper 会**改排版**。WebKit 只在 ruby 与相邻文字同处
     // 一个父级行内盒边缘之外时才让长注音悬挂到邻字上方；ruby 一进 span，悬挂即被取消，
@@ -1911,6 +1910,31 @@ window.__fushiInstallShell = function(C) {
   // 补色：外阴影只画在元素边框盒外、不参与排版，量多少补多少，不会与邻 wrapper 叠色。
   // 只处理当前高亮句，取消高亮时 clearSentenceAudioRubyGaps 撤掉。
   fillSentenceAudioRubyGaps: function(wrappers) {
+    this.clearSentenceAudioRubyGaps();
+    this.sentenceAudioGapWrappers = wrappers;
+    this.paintSentenceAudioRubyGaps();
+    this.observeSentenceAudioRubyGaps(wrappers);
+  },
+  // 缝的宽度随注音与字号变：暂停时切振假名、改字号、重排都不会有下一个 cue 来重量，
+  // 按旧偏移画的阴影会伸到邻字上叠色。观察当前句的 wrapper 与所在 ruby，尺寸一变就重量。
+  observeSentenceAudioRubyGaps: function(wrappers) {
+    if (typeof ResizeObserver !== 'function') return;
+    var self = this;
+    if (!this.sentenceAudioGapObserver) {
+      this.sentenceAudioGapObserver = new ResizeObserver(function() {
+        self.paintSentenceAudioRubyGaps();
+      });
+    }
+    var observer = this.sentenceAudioGapObserver;
+    wrappers.forEach(function(wrapper) {
+      observer.observe(wrapper);
+      var ruby = self.rubyForNode(wrapper);
+      if (ruby) observer.observe(ruby);
+    });
+  },
+  paintSentenceAudioRubyGaps: function() {
+    this.eraseSentenceAudioRubyGaps();
+    var wrappers = this.sentenceAudioGapWrappers || [];
     var fills = [];
     for (var i = 1; i < wrappers.length; i++) {
       var prev = wrappers[i - 1];
@@ -1944,10 +1968,15 @@ window.__fushiInstallShell = function(C) {
     });
     this.sentenceAudioGapFilled = filled;
   },
-  clearSentenceAudioRubyGaps: function() {
+  eraseSentenceAudioRubyGaps: function() {
     var filled = this.sentenceAudioGapFilled || [];
     filled.forEach(function(el) { el.style.boxShadow = ''; });
     this.sentenceAudioGapFilled = [];
+  },
+  clearSentenceAudioRubyGaps: function() {
+    if (this.sentenceAudioGapObserver) this.sentenceAudioGapObserver.disconnect();
+    this.sentenceAudioGapWrappers = [];
+    this.eraseSentenceAudioRubyGaps();
   },
   rubyForNode: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
