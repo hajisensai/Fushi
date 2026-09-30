@@ -90,6 +90,20 @@ String? leaderboardShareWindowStart(LeaderboardWindow window, DateTime now) {
   };
 }
 
+/// 卡片上的周期标签：周 = 本周一 `YYYY-MM-DD`，月 = `YYYY-MM`（两者按 UTC，与服务端
+/// 周期锚点同口径，见 [leaderboardShareWindowStart]）；总 = 截至 [now] 的**本地**日期
+/// `YYYY-MM-DD`——「总」没有服务端周期锚点，「截至哪天」是给用户看的日期，按 UTC 算
+/// 会让东八区早上 8 点前分享的卡片写成前一天。
+String leaderboardSharePeriodLabel(LeaderboardWindow window, DateTime now) =>
+    switch (window) {
+      LeaderboardWindow.week => leaderboardShareWindowStart(window, now)!,
+      LeaderboardWindow.month => leaderboardShareWindowStart(
+        window,
+        now,
+      )!.substring(0, 7),
+      LeaderboardWindow.all => _shareDateKey(now.toLocal()),
+    };
+
 /// 从服务端取 [window] 周期内的读完数与字数，组装卡片数据。
 ///
 /// 周 / 月：数书架里读完日期落在周期内的作品，字数取同周期字数榜的 `me`。
@@ -152,11 +166,7 @@ Future<LeaderboardShareCardData> loadLeaderboardShareCardData(
   return LeaderboardShareCardData(
     accountTag: self.tag,
     window: window,
-    periodLabel: switch (window) {
-      LeaderboardWindow.week => start!,
-      LeaderboardWindow.month => start!.substring(0, 7),
-      LeaderboardWindow.all => _shareDateKey(at.toUtc()),
-    },
+    periodLabel: leaderboardSharePeriodLabel(window, at),
     finishedCount: finished,
     chars: chars,
     covers: List<LeaderboardWork>.unmodifiable(covers),
@@ -311,45 +321,77 @@ class _LeaderboardShareDialogState
   final GlobalKey _boundary = GlobalKey();
   late LeaderboardWindow _window = widget.initialWindow;
 
-  /// 已取到的各周期卡片数据：来回切换不重复请求。
+  /// 各周期的取数状态，全部按周期分开存：一个周期的结果 / 失败永远不会被当成另一个
+  /// 周期的。显示只看当前周期 [_window] 这一格。
+  ///
+  /// 已取到的数据：来回切换不重复请求。
   final Map<LeaderboardWindow, LeaderboardShareCardData> _cache =
       <LeaderboardWindow, LeaderboardShareCardData>{};
-  Object? _error;
+
+  /// 最近一次取数失败（重试或取到数据时清掉）。
+  final Map<LeaderboardWindow, Object> _errors = <LeaderboardWindow, Object>{};
+
+  /// 进行中的请求：同一周期同时只有一个，切走再切回来复用它而不是再发一次。
+  final Map<LeaderboardWindow, Future<void>> _inflight =
+      <LeaderboardWindow, Future<void>>{};
   bool _sharing = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_load(_window));
+    _load(_window);
   }
 
-  Future<void> _load(LeaderboardWindow window) async {
+  /// [window] 没有数据、也没有进行中的请求时发一次请求。
+  void _load(LeaderboardWindow window) {
+    if (_cache.containsKey(window) || _inflight.containsKey(window)) return;
     final LeaderboardService service = ref.read(leaderboardServiceProvider);
     final LeaderboardClient? client = service.client;
     final LeaderboardSelf? self = service.self;
     if (client == null || self == null) return;
+    _inflight[window] = _fetch(
+      window,
+      client,
+      self.account,
+      DateTime.fromMillisecondsSinceEpoch(service.nowMs()),
+    );
+  }
+
+  Future<void> _fetch(
+    LeaderboardWindow window,
+    LeaderboardClient client,
+    LeaderboardAccount account,
+    DateTime now,
+  ) async {
     try {
       final LeaderboardShareCardData data = await loadLeaderboardShareCardData(
         client,
-        self.account,
+        account,
         window: window,
-        now: DateTime.fromMillisecondsSinceEpoch(service.nowMs()),
+        now: now,
       );
-      if (mounted) setState(() => _cache[window] = data);
+      if (!mounted) return;
+      setState(() {
+        _cache[window] = data;
+        _errors.remove(window);
+      });
     } catch (e, st) {
       ErrorLogService.instance.log('Leaderboard.shareCard', e, st);
-      // 用户已切到别的周期时，旧周期的失败不盖掉当前预览。
-      if (mounted && window == _window) setState(() => _error = e);
+      if (mounted) setState(() => _errors[window] = e);
+    } finally {
+      // 取数必然跨过至少一次 await，这里总在 [_load] 登记之后执行。
+      _inflight.remove(window);
     }
   }
 
-  void _selectWindow(LeaderboardWindow window) {
-    if (window == _window) return;
+  /// 切到 [window]（重试 = 切到当前周期）：上次失败的这一格清掉重取，已有数据或
+  /// 请求在途的直接显示 / 等它。
+  void _show(LeaderboardWindow window) {
     setState(() {
       _window = window;
-      _error = null;
+      _errors.remove(window);
     });
-    if (!_cache.containsKey(window)) unawaited(_load(window));
+    _load(window);
   }
 
   /// 可分享的主页链接（服务端只读网页 `/u/<id>`）；未开启时 null。
@@ -360,15 +402,7 @@ class _LeaderboardShareDialogState
     return LeaderboardClient.shareUserUrl(base, self.account.id);
   }
 
-  Future<void> _copyLink() async {
-    final Uri? url = _shareUrl();
-    if (url == null) return;
-    await leaderboardCopy(url.toString());
-  }
-
-  Future<void> _share() async {
-    final Uri? url = _shareUrl();
-    if (url == null) return;
+  Future<void> _share(Uri url) async {
     setState(() => _sharing = true);
     try {
       final Uint8List png = await captureLeaderboardShareCardPng(_boundary);
@@ -391,28 +425,29 @@ class _LeaderboardShareDialogState
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    ref.watch(leaderboardServiceProvider);
+    final Uri? url = _shareUrl();
     final LeaderboardShareCardData? data = _cache[_window];
+    final Object? error = _errors[_window];
+    // 当前周期有数据 ⇔ 卡片（即 [_boundary]）在树上：分享按钮只认这一条。
     final Widget content;
-    if (_error != null) {
-      content = LeaderboardErrorView(
-        error: _error!,
-        onRetry: () {
-          setState(() => _error = null);
-          unawaited(_load(_window));
-        },
-      );
-    } else if (data == null) {
-      content = Padding(
-        padding: EdgeInsets.all(tokens.spacing.section),
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    } else {
+    if (data != null) {
       content = FittedBox(
         fit: BoxFit.scaleDown,
         child: RepaintBoundary(
           key: _boundary,
           child: LeaderboardShareCard(data: data),
         ),
+      );
+    } else if (error != null) {
+      content = LeaderboardErrorView(
+        error: error,
+        onRetry: () => _show(_window),
+      );
+    } else {
+      content = Padding(
+        padding: EdgeInsets.all(tokens.spacing.section),
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
     return FushiDialogFrame(
@@ -434,7 +469,7 @@ class _LeaderboardShareDialogState
               values: LeaderboardWindow.values,
               selected: _window,
               labelOf: leaderboardWindowLabel,
-              onSelected: _selectWindow,
+              onSelected: _show,
             ),
             SizedBox(height: tokens.spacing.gap),
             content,
@@ -454,7 +489,9 @@ class _LeaderboardShareDialogState
               key: const ValueKey<String>('leaderboard-share-copy-link'),
               child: adaptiveDialogAction(
                 context: context,
-                onPressed: () => unawaited(_copyLink()),
+                onPressed: url == null
+                    ? null
+                    : () => unawaited(leaderboardCopy(url.toString())),
                 child: Text(t.leaderboard_share_copy_link),
               ),
             ),
@@ -463,9 +500,9 @@ class _LeaderboardShareDialogState
               child: adaptiveDialogAction(
                 context: context,
                 isDefaultAction: true,
-                onPressed: data == null || _sharing
+                onPressed: data == null || url == null || _sharing
                     ? null
-                    : () => unawaited(_share()),
+                    : () => unawaited(_share(url)),
                 child: Text(t.leaderboard_share),
               ),
             ),
