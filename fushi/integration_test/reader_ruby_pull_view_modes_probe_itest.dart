@@ -21,7 +21,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-2810 真书探针：WebKit 注音拉力（`--fushi-ruby-pull`）在翻页 / 滚动 / VN
+/// BUG-2810 / BUG-2811 真书探针：WebKit 注音拉力（`--fushi-ruby-pull`）在翻页 / 滚动 / VN
 /// 三种 view mode 下是否量对、注音是否贴在基字外侧。
 ///
 /// 用户报「iOS 分页一打开，振假名压进基字」。根因是注音度量脚本量到了分页页顶
@@ -37,9 +37,10 @@ import 'test_helpers.dart';
 ///     把正文翻到该段、量全部注音（跨栏几颗、注音盒中心离基字中心几个 em），
 ///     并截 WebView 图（给了 `FUSHI_PROBE_OUT` 就复制到那里）。
 ///
-/// 判据（全部量完、打印 SUMMARY 后才断言）：每一轮拉力都没被夹到 1.5，且每颗
-/// 完整排版的注音，其盒中心都落在基字 em 盒之外（离基字中心 > 0.5em）——压进
-/// 基字的注音量出来只有 ≈0.33em。偏好在 `finally` 还原。
+/// 判据（全部量完、打印 SUMMARY 后才断言）：有排出来的注音时拉力必须已写入、且
+/// 没被夹到 1.5；每颗完整排版的注音，其盒中心离基字中心在 (0.5, 0.8) em 之间——
+/// 压进基字的注音（BUG-2810）量出来 ≈0.35em，没量成功、落回缺省拉力的注音
+/// （BUG-2811，VN）≈0.98em，贴好的 ≈0.68em。偏好在 `finally` 还原。
 ///
 /// Run on the iOS simulator（Mac，fushi/ 下）：
 ///   flutter test integration_test/reader_ruby_pull_view_modes_probe_itest.dart \
@@ -181,7 +182,7 @@ const String _measureJs = r'''
     snap: getComputedStyle(root).getPropertyValue('--fushi-ruby-snap').trim(),
     writingMode: bcs.writingMode, fontFamily: bcs.fontFamily, fontSize: bcs.fontSize,
     columns: bcs.columnWidth, inner: innerWidth + 'x' + innerHeight,
-    rubies: 0, laidOut: 0, split: 0, inside: 0, offs: []
+    rubies: 0, laidOut: 0, split: 0, inside: 0, far: 0, offs: []
   };
   var list = body.getElementsByTagName('ruby');
   out.rubies = list.length;
@@ -213,6 +214,7 @@ const String _measureJs = r'''
       : ((br.top + br.bottom) / 2 - (tr.top + tr.bottom) / 2) / fs;
     out.offs.push(Math.round(off * 1000) / 1000);
     if (off <= 0.5) out.inside++;
+    if (off >= 0.8) out.far++;
   }
   var s = out.offs.slice().sort(function (a, b) { return a - b; });
   out.offMin = s.length ? s[0] : null;
@@ -277,6 +279,14 @@ void main() {
             if ((r['inside'] as num) > 0) {
               failures.add('$label ${r['inside']} annotations inside the base');
             }
+            if ((r['far'] as num) > 0) {
+              failures.add('$label ${r['far']} annotations far from the base');
+            }
+            if (r['snap'] == '1' &&
+                (r['laidOut'] as num) > 0 &&
+                '${r['pull']}'.isEmpty) {
+              failures.add('$label pull never measured');
+            }
           }
 
           try {
@@ -337,7 +347,7 @@ void main() {
               final Map<String, dynamic> r = await _eval(_measureJs);
               final String line = '[ruby-pull] sweep section=$section '
                   'pull=${r['pull']} laidOut=${r['laidOut']} '
-                  'split=${r['split']} inside=${r['inside']} '
+                  'split=${r['split']} inside=${r['inside']} far=${r['far']} '
                   'off=${r['offMin']}/${r['offMed']}/${r['offMax']}';
               debugPrint(line);
               summary.add(line);
@@ -363,7 +373,7 @@ void main() {
                 final String line = '[ruby-pull] mode=$mode goto=$go '
                     'pull=${r['pull']} snap=${r['snap']} '
                     'laidOut=${r['laidOut']} split=${r['split']} '
-                    'inside=${r['inside']} '
+                    'inside=${r['inside']} far=${r['far']} '
                     'off=${r['offMin']}/${r['offMed']}/${r['offMax']} '
                     'font=${r['fontFamily']} ${r['fontSize']} '
                     'wm=${r['writingMode']} inner=${r['inner']} '
