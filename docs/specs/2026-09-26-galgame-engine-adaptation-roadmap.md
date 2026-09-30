@@ -54,7 +54,7 @@ P0 进展（2026-09-26 晚）：
 | 1 | **KiriKiri2 / KiriKiri Z**（柚子社、Palette、FSN RN 等） | partial；千恋＊万花光盘版原版四条通过（PR #1673） | 其它变体未逐一过四条 | 按变体各取样本：经典 KAG3（K2/BCB）、KAGEX（2016 柚子社）、msgwin 插件型（2023 柚子社）、Palette（9-nine）；汉化加壳 exe、Steam 版各一 |
 | 2 | **SiglusEngine / RealLive**（Key / VisualArt's） | Siglus verified 1 款；RealLive 未验证 | RealLive ①–④；Siglus 多作品的 ③④ | Siglus 再补 Rewrite、Summer Pockets 一类；RealLive 取老版本 Key 作品 |
 | 3 | **Unity**（IL2CPP / Mono，新作与 Steam 作品） | IL2CPP verified；Mono 未验证 | Mono 全部；两者的 ③④ 只有手动校准 | 先 Mono 的 ①②，再做 TextMeshPro 运行时布局取几何 |
-| 4 | **BGI / Ethornell** | 未验证 | ①–④ | 取两款不同年代作品建台账；几何从引擎渲染边界取 |
+| 4 | **BGI / Ethornell** | 宿主 accept4 `verdict=full`（1.519.6 体験版，2026-09-30） | ①–④ | 1.6 代（2016 ARC20）真机未跑；manifest 几何门未跑 |
 | 5 | **CatSystem2** | partial | ③④ | 从 CS2 的文本绘制边界取几何 |
 | 6 | **Artemis** | partial | ③④ | 同上；覆盖 PC 与移植构建 |
 
@@ -76,6 +76,7 @@ P1 进展（2026-09-27，分支 `claude/galgame-p1`；样本一律经 Fushi 发�
 | SiglusEngine · CLANNAD Steam（SiglusEngine_Steam 1.1.134，x86，日语社区补丁） | 2026-09-25 已验（原生消息 hook） | 2026-09-25 已验（OVK 逐句，与 `koe/z0414.ovk` 条目 SHA-256 一致） | 2026-09-25 已验（Shift/单击查词命中） | 2026-09-25 已验（单击字形不推进） | 宿主 accept4 + 真卡未跑成：2026-09-28 本机 D3D9 present 卡在 `d3d9→dwmapi`（**不注入的裸启动同样卡**，白屏），属环境问题；环境恢复后补跑 |
 | SiglusEngine · Harmonia 2017（真红小站包） | — | — | — | — | 原版 `SiglusEngine.exe` 弹 AlphaROM `[1200]` 认证框无法启动；包内另有汉化 exe + `SiglusUniversalPatch.dll`（改动过的引擎 + 中文脚本），不作样本。Siglus 维持 CLANNAD Steam 的既有验证。已删 |
 | BGI · あざスミ 2019（SMEE，真红小站 files 包） | — | — | — | — | 目录名含 〜（U+301C）无法经 CP932 往返，`CreateFileA` 读自身 exe 得 err=123 后退出（改 ASCII 目录可过）；原 exe 被销售平台 DRM（`Paltiosoft\Wrapping`）包裹，包内是第三方破解（`Mai@KF.dll` + `.exe.org`），不作样本、已删 |
+| BGI · 穢翼のユースティア 官方 Web 体験版（2011，オーガスト，Ethornell 1.519.6，x86，PackFile 归档；官方 Setup 安装后从开始菜单路径启动，日文转区；本机 200% 缩放下该 exe 设 HIGHDPIAWARE 兼容层） | ✅ `BGI exact` 道（898ebe3e862：hook SetTextImpl，整句 CP932 正文，两代调用约定按结构解析） | ✅ d2d905c32ab：按归档内容判语音包（全成员单声道 `bw`），宿主 `matched/game_resource`（`data04099.arc_aiy710000010.ogg`） | ✅ 引擎精确字形 provider（kind 2 id 21，消息页格子链表 + owner 图层位移） | ✅ 窗口过程吞 WM_LBUTTONDOWN/UP | aed7662a204 后宿主 accept4 `verdict=full` + 真卡（noteId 1790765888185，「放せよっ！」）；2016《千の刃濤》ARC20 体験版只做了静态解析（未安装跑不起）；manifest 几何门未跑，仍 `implemented_unverified` |
 | CatSystem2 · グリザイアの有閑（2015，cs2 2.6.1.x，x86，D3D9） | ✅ 选 `EmbedCS2` 正文道（二次发出已修 280ccf95226；渲染道也干净但比语音晚 0.3–1.7 s，长句超出配对窗口） | ✅ bf525615e69：在引擎自己的 `Archive::ReadEntry` 原地解密后截取整段 Ogg（加密 KIF，未实现任何解密），宿主 `matched/game_resource`（`pcm_e.int_SAC_griani_003_002.ogg`） | ✅ 引擎精确字形 provider（kind 2 id 19） | ✅ | 宿主 accept4 `verdict=full` + 真卡（noteId 1790534808080）；manifest 几何门未跑，仍 `implemented_unverified`；单样本 |
 
 取样注意：本机网络为 Clash TUN（fake-ip），UDP tracker 与 DHT 全部超时，Fushi 内置 torrent 引擎拿不到元数据（Sukebei 四个种子均停在 metadata 0%）；日文原版改走真红小站 HTTP 源（有「[日期][品牌] 原名.rar」原版包）。
