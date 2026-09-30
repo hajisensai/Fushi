@@ -45,28 +45,42 @@ void main() {
     });
 
     test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板，没有截屏与拍照', () {
-      Set<FloatingBallGlobalAction> onDesktop(FloatingBallScope scope) =>
-          <FloatingBallGlobalAction>{
-            for (final FloatingBallGlobalAction a
-                in FloatingBallGlobalAction.values)
-              if (a.availableIn(
-                scope,
-                isAndroid: false,
-                isIOS: false,
-                isDesktop: true,
-              ))
-                a,
-          };
+      Set<FloatingBallGlobalAction> onDesktop(
+        FloatingBallScope scope, {
+        bool lookupModuleEnabled = true,
+      }) => <FloatingBallGlobalAction>{
+        for (final FloatingBallGlobalAction a
+            in FloatingBallGlobalAction.values)
+          if (a.availableIn(
+            scope,
+            isAndroid: false,
+            isIOS: false,
+            isDesktop: true,
+            lookupModuleEnabled: lookupModuleEnabled,
+          ))
+            a,
+      };
       expect(onDesktop(FloatingBallScope.system), <FloatingBallGlobalAction>{
         FloatingBallGlobalAction.lookup,
         FloatingBallGlobalAction.popupLookup,
         FloatingBallGlobalAction.clipboard,
       });
-      // 应用内的球仍按平台能力（桌面没有独立查词窗）。
-      expect(onDesktop(FloatingBallScope.general), <FloatingBallGlobalAction>{
-        FloatingBallGlobalAction.lookup,
-        FloatingBallGlobalAction.clipboard,
-      });
+      // 查词模块关着：打开查词页与全局查词都没有入口，只剩剪贴板（它在覆盖窗
+      // 不可用时退回主窗查词弹窗）。
+      expect(
+        onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
+        <FloatingBallGlobalAction>{FloatingBallGlobalAction.clipboard},
+      );
+      // 应用内的球仍按平台能力（桌面没有独立查词窗），与查词模块无关。
+      for (final bool enabled in <bool>[true, false]) {
+        expect(
+          onDesktop(FloatingBallScope.general, lookupModuleEnabled: enabled),
+          <FloatingBallGlobalAction>{
+            FloatingBallGlobalAction.lookup,
+            FloatingBallGlobalAction.clipboard,
+          },
+        );
+      }
       // Android 的应用外球不受影响。
       expect(
         FloatingBallGlobalAction.screenOcr.availableIn(
@@ -74,6 +88,7 @@ void main() {
           isAndroid: true,
           isIOS: false,
           isDesktop: false,
+          lookupModuleEnabled: false,
         ),
         isTrue,
       );

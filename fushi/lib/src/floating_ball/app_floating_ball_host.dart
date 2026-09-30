@@ -31,6 +31,7 @@ import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
@@ -128,9 +129,6 @@ Map<String, int> floatingBallNativeColors(ColorScheme colors) => <String, int>{
 bool floatingBallGlobalActionAvailable(FloatingBallGlobalAction action) =>
     action.availableOn(isAndroid: Platform.isAndroid, isIOS: Platform.isIOS);
 
-/// Windows / macOS：应用外悬浮球是 runner 自绘的置顶窗口（与应用内球同时在）。
-bool get isDesktopSystemBallPlatform => Platform.isWindows || Platform.isMacOS;
-
 /// 本平台有没有应用外悬浮球。
 bool get floatingBallSystemBallSupported =>
     FloatingBallScope.systemBallSupported(
@@ -138,15 +136,51 @@ bool get floatingBallSystemBallSupported =>
       isDesktop: isDesktopSystemBallPlatform,
     );
 
-/// 应用外球上有没有这颗全局按钮（桌面另有一套，见
+/// 应用外球上有没有这颗全局按钮（桌面另有一套、并受查词模块开关约束，见
 /// [FloatingBallGlobalAction.availableIn]）。
-bool floatingBallSystemActionAvailable(FloatingBallGlobalAction action) =>
-    action.availableIn(
-      FloatingBallScope.system,
-      isAndroid: Platform.isAndroid,
-      isIOS: Platform.isIOS,
-      isDesktop: isDesktopSystemBallPlatform,
-    );
+bool floatingBallSystemActionAvailable(
+  FloatingBallGlobalAction action, {
+  required bool lookupModuleEnabled,
+}) => action.availableIn(
+  FloatingBallScope.system,
+  isAndroid: Platform.isAndroid,
+  isIOS: Platform.isIOS,
+  isDesktop: isDesktopSystemBallPlatform,
+  lookupModuleEnabled: lookupModuleEnabled,
+);
+
+/// 桌面系统球动作落到的执行面：全局查词覆盖窗与主窗。宿主只决定「哪颗按钮走
+/// 哪条路、参数按什么单位交出去」，测试替换本类来钉住这层分发。
+class DesktopSystemBallActionTarget {
+  const DesktopSystemBallActionTarget();
+
+  /// 全局查词覆盖窗此刻能不能接查词（查词模块开着且启动过）。
+  bool get overlayLookupAvailable =>
+      GlobalLookupController.instance.isAvailable;
+
+  /// 查前台程序当前选中的文字（与全局查词热键同一条路径）。
+  Future<void> lookupSelection() => GlobalLookupController.instance
+      .triggerSelectionLookup(source: 'floatingBall');
+
+  /// 在覆盖窗里查 [text]；参数与 [GlobalLookupController.lookupText] 同义。
+  Future<bool> lookupText(
+    String text, {
+    Rect? anchorScreenRect,
+    GlobalLookupPhysicalPlacement? physicalPlacement,
+  }) => GlobalLookupController.instance.lookupText(
+    text,
+    anchorScreenRect: anchorScreenRect,
+    physicalPlacement: physicalPlacement,
+  );
+
+  Future<void> bringMainWindowToFront() =>
+      DesktopLookupService.instance.bringMainWindowToFront();
+}
+
+/// 桌面系统球动作的执行面（测试替换）。
+@visibleForTesting
+DesktopSystemBallActionTarget desktopSystemBallActionTarget =
+    const DesktopSystemBallActionTarget();
 
 class AppFloatingBallHost extends ConsumerStatefulWidget {
   const AppFloatingBallHost({super.key});
@@ -165,6 +199,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 上一次下发给原生系统球的配置（模式 + 按钮 + 语言）；相同就不重复下发。
   String? _systemSignature;
+
+  /// 起停决策的代数：每次决定起球 / 停球都 +1。起球闭包每次 await 回来先核对
+  /// 自己仍是最新一代，否则放弃——用户在它等图标渲染时关了开关、或主题 / 语言
+  /// 连着变两次，旧闭包都不能再把球拉起来 / 用旧配置盖掉新配置。
+  int _systemGeneration = 0;
+
+  /// 自上次停球以来是否已经要求过起球（含还在路上的起球闭包）。停球要看它而
+  /// 不是看 [_systemSignature]：签名要等原生回话才落，在那之前关开关也得停。
+  bool _systemRequested = false;
 
   /// 截屏期间把球藏起来，别把自己拍进去。
   bool _capturing = false;
@@ -210,6 +253,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
     _prefs?.removeListener(_onPrefsChanged);
+    // 还在路上的起球闭包作废。
+    _systemGeneration++;
     super.dispose();
   }
 
@@ -245,12 +290,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final PreferencesRepository? prefs = _prefs;
     if (prefs == null || !floatingBallSystemBallSupported) return;
     if (!prefs.floatingBallSystem) {
-      if (_systemSignature != null) {
-        _systemSignature = null;
-        unawaited(FloatingBallChannel.stopSystemBall());
-      }
+      _stopSystemBall();
       return;
     }
+    final bool lookupModuleEnabled = ref
+        .read(appProvider)
+        .moduleVisibility
+        .isEnabled(ModuleId.lookup);
     // 应用外只有全局按钮（原生侧拿不到任何页面的场景按钮）。
     final List<String> actions = <String>[
       for (final String id in prefs.floatingBallButtons(
@@ -258,7 +304,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       ))
         if (FloatingBallGlobalAction.fromStorage(id)
             case final FloatingBallGlobalAction action
-            when floatingBallSystemActionAvailable(action))
+            when floatingBallSystemActionAvailable(
+              action,
+              lookupModuleEnabled: lookupModuleEnabled,
+            ))
           action.storageValue,
     ];
     final Map<String, String> labels = floatingBallNativeLabels();
@@ -269,10 +318,18 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         '${actions.join(',')}|${labels.values.join('|')}|'
         '${colors.values.join(',')}';
     if (!force && signature == _systemSignature) return;
+    final int generation = ++_systemGeneration;
+    _systemRequested = true;
+    // 每次 await 回来：还是最新一代、开关还开着，才继续。
+    bool stale() =>
+        generation != _systemGeneration || !prefs.floatingBallSystem;
     unawaited(() async {
       // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：这时按开关把球
       // 拉起来就违背了用户刚做的事，改为把开关关掉。
-      if (await FloatingBallChannel.takeSystemBallClosedByUser()) {
+      final bool closedByUser =
+          await FloatingBallChannel.takeSystemBallClosedByUser();
+      if (stale()) return;
+      if (closedByUser) {
         _systemSignature = null;
         await prefs.setFloatingBallSystem(false);
         return;
@@ -286,9 +343,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
               Color(colors['onSurface'] ?? 0xFF1D1B20),
             )
           : null;
+      if (stale()) return;
       final Uint8List? ballImage = desktop
           ? await loadFloatingBallImage()
           : null;
+      if (stale()) return;
       final bool started = await FloatingBallChannel.startSystemBall(
         actions: actions,
         labels: labels,
@@ -300,12 +359,24 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         dock: desktop ? prefs.floatingBallSystemDock : null,
         fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
       );
-      // 没权限起不来：不记签名，回到前台时再试。
+      // 起的过程中被更新的决定取代：结果归新一代处理（关了开关的那一代已经发过
+      // stop，消息按序到原生，这颗球不会留下）。
+      if (stale()) return;
+      // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
       _systemSignature = started ? signature : null;
       if (started) {
         await FloatingBallChannel.setAppForeground(_foreground);
       }
     }());
+  }
+
+  /// 停原生系统球，并让还在路上的起球闭包作废。
+  void _stopSystemBall() {
+    if (!_systemRequested) return;
+    _systemGeneration++;
+    _systemRequested = false;
+    _systemSignature = null;
+    unawaited(FloatingBallChannel.stopSystemBall());
   }
 
   /// 主题变了（明暗 / 自定义主题）：原生系统球跟着换色。
@@ -338,36 +409,53 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 桌面系统球上点了某个动作（原生只画与报事件，动作都在这里执行）。[anchor] 是
   /// 球在屏幕上的矩形（物理像素、左上原点），查词卡锚在球旁边。
   void _onDesktopSystemBallAction(String id, Rect? anchor) {
-    unawaited(() async {
-      final GlobalLookupController lookup = GlobalLookupController.instance;
-      switch (id) {
-        case 'lookup':
-          // 同「唤起主窗并打开查词页」热键；不依赖全局查词已 start（查词模块关掉
-          // 时也能用）。
-          await DesktopLookupService.instance.bringMainWindowToFront();
-          ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
-        case 'popup_lookup':
-          // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。
-          if (lookup.isAvailable) {
-            await lookup.triggerSelectionLookup(source: 'floatingBall');
-          }
-        case 'clipboard':
-          final ClipboardData? data = await Clipboard.getData(
-            Clipboard.kTextPlain,
+    unawaited(_runDesktopSystemBallAction(id, anchor));
+  }
+
+  Future<void> _runDesktopSystemBallAction(String id, Rect? anchor) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    switch (id) {
+      case 'lookup':
+        // 同「唤起主窗并打开查词页」热键。按钮只在查词模块开着时下发（模块关着
+        // 查词页没有入口，见 [FloatingBallGlobalAction.availableIn]）。
+        await target.bringMainWindowToFront();
+        ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
+      case 'popup_lookup':
+        // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。按钮只在
+        // 查词模块开着时下发；模块是本次运行中途才打开的（全局查词要下次启动才
+        // 装钩子）就记一笔，而不是静默。
+        if (target.overlayLookupAvailable) {
+          await target.lookupSelection();
+        } else {
+          ErrorLogService.instance.log(
+            'floating_ball.popup_lookup',
+            StateError('global lookup overlay is not started'),
+            StackTrace.current,
           );
-          final String text = data?.text?.trim() ?? '';
-          if (text.isEmpty) return;
-          if (lookup.isAvailable) {
-            await lookup.lookupText(text, anchorScreenRect: anchor);
-          } else {
-            // 全局查词没开：退回主窗里的查词弹窗。
-            await DesktopLookupService.instance.bringMainWindowToFront();
-            FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
-          }
-        case 'open_app':
-          await DesktopLookupService.instance.bringMainWindowToFront();
-      }
-    }());
+        }
+      case 'clipboard':
+        final ClipboardData? data = await Clipboard.getData(
+          Clipboard.kTextPlain,
+        );
+        final String text = data?.text?.trim() ?? '';
+        if (text.isEmpty) return;
+        if (target.overlayLookupAvailable) {
+          // 原生报来的球矩形是屏幕物理像素：走物理像素通道，不能当逻辑像素再乘
+          // 主窗 DPR（spec 2026-09-30「原生 → Dart」）。
+          await target.lookupText(
+            text,
+            physicalPlacement: anchor == null
+                ? null
+                : GlobalLookupPhysicalPlacement(anchorScreenRect: anchor),
+          );
+        } else {
+          // 全局查词没开：退回主窗里的查词弹窗。
+          await target.bringMainWindowToFront();
+          FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+        }
+      case 'open_app':
+        await target.bringMainWindowToFront();
+    }
   }
 
   /// 桌面系统球拖动吸附后：落库（位置由 Dart 持久化，下次起球带回去）。

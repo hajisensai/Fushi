@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <limits>
 
+#include "window_activation_policy.h"
+
 // TOOLTIPS_CLASS / InitCommonControlsEx / TTM_* —— 按钮悬停提示（labels）。
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "windowscodecs.lib")
@@ -1068,9 +1070,12 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
                                               WPARAM wparam,
                                               LPARAM lparam) noexcept {
   switch (message) {
+    // 点球不抢前台：否则「应用外查词」取不到别的程序的选区。WS_EX_NOACTIVATE 只挡
+    // 鼠标点击；触摸 / 触控笔按下还会发 WM_POINTERACTIVATE（DefWindowProc 回
+    // PA_ACTIVATE），与查词覆盖窗同一条策略（BUG-2788）一起回「不激活」。
+    case WM_POINTERACTIVATE:
     case WM_MOUSEACTIVATE:
-      // 点球不抢前台：否则「应用外查词」取不到别的程序的选区。
-      return MA_NOACTIVATE;
+      return OverlayNoActivateReply(message);
     case WM_LBUTTONDOWN: {
       pressing_ball_ = true;
       dragging_ = false;
@@ -1088,8 +1093,11 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
         // 越过系统拖动阈值才算拖动；之内都是点击。
         const int dx = std::abs(cursor.x - down_point_.x);
         const int dy = std::abs(cursor.y - down_point_.y);
-        if (dx <= GetSystemMetrics(SM_CXDRAG) &&
-            dy <= GetSystemMetrics(SM_CYDRAG)) {
+        // 阈值按球所在显示器的 DPI 取（SM_CXDRAG 是 96 DPI 下的值，200% 触屏上
+        // 手指一抖就越界）。
+        const UINT dpi = GetDpiForWindow(hwnd);
+        if (dx <= GetSystemMetricsForDpi(SM_CXDRAG, dpi) &&
+            dy <= GetSystemMetricsForDpi(SM_CYDRAG, dpi)) {
           return 0;
         }
         BeginDrag();
@@ -1170,8 +1178,10 @@ LRESULT FloatingBallWindow::HandleMenuMessage(HWND hwnd, UINT message,
                                               WPARAM wparam,
                                               LPARAM lparam) noexcept {
   switch (message) {
+    // 同球窗：鼠标与触摸 / 触控笔按下都不激活。
+    case WM_POINTERACTIVATE:
     case WM_MOUSEACTIVATE:
-      return MA_NOACTIVATE;
+      return OverlayNoActivateReply(message);
     case WM_MOUSEMOVE: {
       if (!tracking_leave_) {
         TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, hwnd, 0};

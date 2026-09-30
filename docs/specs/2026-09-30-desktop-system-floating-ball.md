@@ -13,7 +13,7 @@
 
 | 方法 | 参数 | 返回 | 说明 |
 |---|---|---|---|
-| `startSystemBall` | 见下 | `bool`（恒 true） | 未运行则创建；已运行则**原地**更新按钮 / 配色 / 图片（不挪位置、收起菜单） |
+| `startSystemBall` | 见下 | `bool`：球窗 / 面板是否起来了（建窗或 D2D 失败回 false，Dart 不记签名、下次同步再试） | 未运行则创建；已运行则**原地**更新按钮 / 配色 / 图片（不挪位置、收起菜单） |
 | `stopSystemBall` | — | — | 销毁全部窗口 |
 | `isSystemBallRunning` | — | `bool` | |
 | `setAppForeground` | `{foreground: bool}` | — | 桌面**忽略**（应用内外共存） |
@@ -32,7 +32,7 @@
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
-| `systemBallAction` | `{id: String, anchor: [left, top, right, bottom]}` | 用户点了 `lookup` / `popup_lookup` / `clipboard` / `open_app`。`anchor` = 球在屏幕上的矩形，**物理像素、左上原点**（与 `global_lookup` 通道同一约定），供查词卡锚在球旁边。原生先收起菜单再报。 |
+| `systemBallAction` | `{id: String, anchor: [left, top, right, bottom]}` | 用户点了 `lookup` / `popup_lookup` / `clipboard` / `open_app`。`anchor` = 球在屏幕上的矩形，**物理像素、左上原点**（与 `global_lookup` 通道同一约定），供查词卡锚在球旁边；Dart 经 `GlobalLookupPhysicalPlacement`（物理像素通道）交给覆盖窗，**不能**当逻辑像素的 `anchorScreenRect` 再乘主窗 DPR。原生先收起菜单再报。 |
 | `systemBallClosedByUser` | — | 用户点了 `close`：原生已自行销毁窗口，Dart 把「应用外显示」开关关掉。 |
 | `systemBallPositionChanged` | `{dock: 'left'|'right', fraction: double}` | 拖动松手吸附后报一次，Dart 落库。 |
 
@@ -52,19 +52,19 @@
 
 - 展开 280ms、收起 190ms，进度 t 线性；中途反向按剩余路程缩短。球位置 / 不透明度 / 描边随 t 插值。
 - 按钮 i（共 n 颗）：`begin = (n−1−i)·0.35/(n−1)`（n=1 时 0），`end = min(1, begin + 0.65)`，`k = easeOutBack((t − begin)/(end − begin))`，easeOutBack = 三次贝塞尔 (0.175, 0.885, 0.32, 1.275)。按钮从球心飞到落点：`center = ballCenter + offset·k`，缩放 `0.4 + 0.6·min(k, 1.2)`，不透明度 `clamp(k, 0, 1)`。
-- 拖动：越过系统拖动阈值（Windows `SM_CXDRAG/SM_CYDRAG`，macOS 4pt）即拖动——先**立即收起**，球跟手（纵向夹在 `[minTop, maxTop]`），不透明度 1。松手：按球心在视口左右哪一半定停靠边、比例按落点，220ms easeOutCubic (0.215, 0.61, 0.355, 1) 吸附到收起位，并报 `systemBallPositionChanged`。拖到另一块显示器就以那块的工作区为视口。
+- 拖动：越过系统拖动阈值（Windows 按球窗 DPI 取 `GetSystemMetricsForDpi(SM_CXDRAG/SM_CYDRAG)`，macOS 4pt）即拖动——先**立即收起**，球跟手（纵向夹在 `[minTop, maxTop]`），不透明度 1。松手：按球心在视口左右哪一半定停靠边、比例按落点，220ms easeOutCubic (0.215, 0.61, 0.355, 1) 吸附到收起位，并报 `systemBallPositionChanged`。拖到另一块显示器就以那块的工作区为视口。
 - **不闪**（BUG-2793 的教训）：点球展开时不得出现「窗口先变大、下一帧才挪位」的跳动；按钮所在的表面必须在显示前就按最终几何布好，只做动画。
 - 显示器配置 / 工作区 / DPI 变化：收起并按停靠边 + 比例在新视口重摆（位置永远落在屏内）。
 
 ## 窗口形态
 
-- **Windows**：`WS_POPUP` + `WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，owner = nullptr（主窗最小化时球不能跟着隐藏），`UpdateLayeredWindow` 逐像素 alpha（全透明像素点击穿透），D2D / WIC 自绘（范式同 `floating_lyric_window.cpp`）；`WM_MOUSEACTIVATE → MA_NOACTIVATE`，点球不抢前台（否则「应用外查词」取不到别的程序的选区）。窗口类名 `FushiFloatingBallWindow`，**标题不能是 "Fushi"**（`main.cpp` 按标题 FindWindow 找主窗）。PerMonitorV2：处理 `WM_DPICHANGED`、`WM_DISPLAYCHANGE`、`WM_SETTINGCHANGE(SPI_SETWORKAREA)`。纯几何放头文件并按 `windows/runner/CMakeLists.txt` 现有范式加 `_test` + `_gate`。
+- **Windows**：`WS_POPUP` + `WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，owner = nullptr（主窗最小化时球不能跟着隐藏），`UpdateLayeredWindow` 逐像素 alpha（全透明像素点击穿透），D2D / WIC 自绘（范式同 `floating_lyric_window.cpp`）；`WM_MOUSEACTIVATE` 与 `WM_POINTERACTIVATE` 都交给 `window_activation_policy.h` 的 `OverlayNoActivateReply()`（`MA_NOACTIVATE` / `PA_NOACTIVATE`；`WS_EX_NOACTIVATE` 只挡鼠标，触摸 / 触控笔按下另走 `WM_POINTERACTIVATE`，同 BUG-2788），点球不抢前台（否则「应用外查词」取不到别的程序的选区）。窗口类名 `FushiFloatingBallWindow`，**标题不能是 "Fushi"**（`main.cpp` 按标题 FindWindow 找主窗）。PerMonitorV2：处理 `WM_DPICHANGED`、`WM_DISPLAYCHANGE`、`WM_SETTINGCHANGE(SPI_SETWORKAREA)`。纯几何放头文件并按 `windows/runner/CMakeLists.txt` 现有范式加 `_test` + `_gate`。
 - **macOS**：`NSPanel`，styleMask `[.borderless, .nonactivatingPanel]`，`level = .statusBar`，collectionBehavior `[.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]`，`hidesOnDeactivate = false`，`becomesKeyOnlyIfNeeded`，自绘 `NSView`（`acceptsFirstMouse = true`，不激活 app）；监听 `NSApplication.didChangeScreenParametersNotification` 重摆。坐标：AppKit 左下原点 ↔ 通道里的物理像素左上原点按 `backingScaleFactor` 换算（同 `GlobalLookupOverlay.swift` 约定）。
 
 ## 设置
 
 - 「应用外显示」开关在 Android / Windows / macOS 可见（iOS 不提供）；桌面文案不提「显示在其他应用上层」权限。
-- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）。截屏识字 / 拍照查词桌面不提供。
+- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）。截屏识字 / 拍照查词桌面不提供。`lookup` 与 `popup_lookup` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口、全局查词不启动）；模块开关一变，宿主重新同步球的按钮。
 - 位置偏好：`floating_ball.system_dock` / `floating_ball.system_y`（与应用内球的 `floating_ball.dock` / `floating_ball.y` 分开——两颗球可以同时在）。
 
 ## 验证记录（2026-09-30）
