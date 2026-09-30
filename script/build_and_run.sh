@@ -4,7 +4,9 @@ set -euo pipefail
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_directory/.." && pwd)"
 flutter_project="$repository_root/fushi"
-flutter_sdk="${FUSHI_FLUTTER_SDK:-${HOME}/fvm/versions/3.41.6}"
+# The pinned version lives in fushi/.fvmrc (same pin as CI, guarded); do not copy it here.
+pinned_flutter="$(sed -n 's/.*"flutter"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$flutter_project/.fvmrc")"
+flutter_sdk="${FUSHI_FLUTTER_SDK:-${HOME}/fvm/versions/${pinned_flutter}}"
 flutter="$flutter_sdk/bin/flutter"
 configuration="debug"
 show_logs=false
@@ -37,7 +39,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if [[ ! -x "$flutter" ]]; then
-  echo "Flutter 3.41.6 was not found at $flutter_sdk" >&2
+  echo "Flutter ${pinned_flutter} (fushi/.fvmrc) was not found at $flutter_sdk" >&2
   echo "Set FUSHI_FLUTTER_SDK to an installed Flutter SDK." >&2
   exit 1
 fi
