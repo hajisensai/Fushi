@@ -225,7 +225,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 
 ### 与原设计的偏差（明说；第 6 批之后仍成立的）
 
-- **本地音频库不托管**：`liveLibrary.audio` 仍报 true（客户端不读这一位），列表恒空、推送在传完后报 `UnsupportedError`。本地音频是查词发音源（查词域，服务端不做），要么客户端按能力位门控上传，要么服务端做成与词典包一样的存储中转——两条都未做。
+- ~~本地音频库不托管~~（BUG-2815 已补）：服务端对本地音频库做与词典包一样的存储中转——引擎 `LocalAudioLibraryStore`（库副本 `<support>/local_audio_<n>.db` + `local_audio_dbs` 偏好，与 app `LocalAudioManager` 同目录同键）接上 host 服务的清单 / 导入 / 删除三件，`liveLibrary.audio` 报 true 与实际一致。服务端仍不做查词发音。顺带：host 服务的本地音频清单改为现读（`localAudioEntriesProvider`），此前 app 传的是互联启动时的快照，之后增删的库对端看不见。
 - **书 / 漫画根不对账**：行里不记源文件路径，判不出源文件是否被删。
 - **代下载只收视频**：`downloads.kinds` 只有 `video`（没有发现导入执行器）。
 - **远程查词（第 4 期）不做**：README「服务端不做什么」已明说，本节以此为准。

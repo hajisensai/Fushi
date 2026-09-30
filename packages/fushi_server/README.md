@@ -240,9 +240,9 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 ## 服务端**不**做什么
 
 - 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
+- 不做查词发音：本地音频库（`/api/library/localaudio`）同词典包一样只做存储中转——客户端推上来的库落 `<data_dir>/support/local_audio_<n>.db`、登记进 `preferences` 表的 `local_audio_dbs`（与 app 同键同形），其它客户端可列出 / 拉取 / 删除；服务端自己不播发音。
 - 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，目前经互联「配置文件」同步或直接改库）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
-- 不托管本地音频库（查词发音源，属查词域）：能力位 `liveLibrary.audio` 仍报 true、列表恒空，客户端「上传本地音频到 host」会在传完后报错——客户端目前不读这一位，待补门控。
 - 书 / 漫画根不做扫描对账：它们的正文拷进数据目录、行里不记源文件路径，判不出源文件是否被删。
 
 ## 开发

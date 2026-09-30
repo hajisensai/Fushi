@@ -25,6 +25,7 @@ import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
+import 'package:fushi_engine/sync/local_audio_library_store.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
@@ -205,7 +206,7 @@ class HeadlessHost {
       port: config.port,
       token: identity.hostToken,
       allowLan: !_loopbackOnly,
-      libraryService: _buildLibraryService(),
+      libraryService: buildLibraryService(),
       mangaOcrJobs: ocrJobs,
       hostJobs: jobs,
       downloads: downloads,
@@ -482,7 +483,16 @@ class HeadlessHost {
 
   // ── 库服务 ────────────────────────────────────────────────────────────
 
-  LocalLibraryHostService _buildLibraryService() => LocalLibraryHostService(
+  /// 本地音频库的存储中转登记（BUG-2815）：库副本落 `<support>/local_audio_<n>.db`、
+  /// 登记落 `local_audio_dbs` 偏好——与 app 的 `LocalAudioManager` 同目录同键，
+  /// 服务端不做查词发音，只存、列、导出、删。
+  late final LocalAudioLibraryStore localAudio = LocalAudioLibraryStore(
+    prefs: prefs,
+    databaseDirectory: paths.support,
+  );
+
+  /// 组装互联库服务（[start] 用；公开给测试直接驱动 host 服务而不起 HTTP）。
+  LocalLibraryHostService buildLibraryService() => LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: paths.dictionaryResources,
         packages: SyncAssetPackageService(db: db),
@@ -504,6 +514,10 @@ class HeadlessHost {
           );
         },
         localAudioStagingDir: paths.temp,
+        // 以前三件都没接：清单恒空、推送传完才抛 UnsupportedError（BUG-2815）。
+        localAudioEntriesProvider: () => localAudio.entries,
+        onLocalAudioImported: localAudio.importPackage,
+        removeLocalAudioEntry: localAudio.remove,
         audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
         videoSubtitleLangCode: config.subtitleLanguage,
         // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
