@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show blurayDiscRootForFile;
 import 'package:path/path.dart' as p;
 
 /// 书籍扩展名（不带点，小写）。= epub + pdf + TextToEpub.supportedExtensions。
@@ -156,6 +158,7 @@ class DroppedFiles {
     this.unsupportedMangas = const <String>[],
     this.directories = const <String>[],
     this.torrents = const <String>[],
+    this.blurayDiscs = const <String>[],
   });
 
   final List<String> books;
@@ -195,6 +198,33 @@ class DroppedFiles {
 
   final List<String> unknown;
 
+  /// 拖入物所属蓝光盘的**盘根**（含 `BDMV` 的那层目录），去重、按出现顺序。
+  ///
+  /// 盘根不是拖进来的那个东西本身，而是从它反推出来的：盘根目录、`BDMV` 目录、
+  /// `index.bdmv` / `MovieObject.bdmv`、`PLAYLIST/*.mpls`、`STREAM/*.m2ts`、
+  /// `CLIPINF/*.clpi` 都指向同一张盘。一张盘只有整张扫才有意义——单拿一段 m2ts
+  /// 入库是一条叫 `00001` 的碎片，拿 `index.bdmv` 更是什么也导不了（此前它落
+  /// [unknown]，视频页拖进去毫无反应）。与其余分类交叠：盘里的 m2ts 仍记进
+  /// [videos]，要不要按盘处理由 [decideDropIntent] 按落点表面决定。
+  final List<String> blurayDiscs;
+
+  /// 视频页要登记成来源库的目录：先是各张盘的盘根，再是其余拖入的普通目录。
+  ///
+  /// 拖进来的若是盘根本身或它的 `BDMV` 目录，已由对应盘根代表，不再重复登记——
+  /// 尤其不能把 `BDMV` 目录本身登记成来源：盘根在来源之外，库对账与扫描边界都会错位。
+  List<String> get videoSourceFolders => <String>[
+    ...blurayDiscs,
+    for (final String dir in directories)
+      if (!_representedByDisc(dir)) dir,
+  ];
+
+  bool _representedByDisc(String directory) {
+    final String normalized = p.normalize(directory);
+    if (blurayDiscs.contains(normalized)) return true;
+    return p.basename(normalized) == 'BDMV' &&
+        blurayDiscs.contains(p.dirname(normalized));
+  }
+
   /// 视频库能收录的媒体：全部视频 + 不是视频的纯音频（`.mp4` 两类都在，只算一次）。
   ///
   /// 纯音频在视频页按「无画面的视频」入库（专辑曲目等）；书架表面仍把音频当有声书
@@ -216,7 +246,8 @@ class DroppedFiles {
       urls.isNotEmpty ||
       mangas.isNotEmpty ||
       unsupportedMangas.isNotEmpty ||
-      torrents.isNotEmpty;
+      torrents.isNotEmpty ||
+      blurayDiscs.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -246,10 +277,14 @@ bool isImportableDropUrl(String candidate) {
 /// 纯扩展名分类无法与「无扩展名的文件」区分，而本函数不碰文件系统。调用方
 /// （widget 层）传 `(pth) => Directory(pth).existsSync()`，测试注入假谓词。
 /// 不传（默认 null）时行为与历史逐字节一致——目录会落进 [DroppedFiles.unknown]。
+///
+/// [blurayDiscRootForDirectory] 同理由 widget 层注入（`bluray_disc.dart` 的同名函数，
+/// 要看目录下有没有 `BDMV/PLAYLIST`）；盘内**文件**只看路径形状，本函数自己认。
 DroppedFiles classifyDroppedFiles(
   List<String> paths, {
   bool Function(String path)? isDirectory,
   bool Function(String path)? isImageArchive,
+  String? Function(String directory)? blurayDiscRootForDirectory,
 }) {
   final List<String> books = <String>[];
   final List<String> videos = <String>[];
@@ -263,6 +298,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> directories = <String>[];
   final List<String> torrents = <String>[];
   final List<String> unknown = <String>[];
+  final Set<String> blurayDiscs = <String>{};
 
   for (final String path in paths) {
     // URL（浏览器地址栏/链接拖入）不是文件路径，先按 scheme 甄别，命中即归 urls 并
@@ -276,10 +312,14 @@ DroppedFiles classifyDroppedFiles(
     if (isDirectory != null && isDirectory(path)) {
       directories.add(path);
       mangas.add(path);
+      final String? discRoot = blurayDiscRootForDirectory?.call(path);
+      if (discRoot != null) blurayDiscs.add(discRoot);
       continue;
     }
     final String ext = _ext(path);
-    bool matched = false;
+    final String? discRoot = blurayDiscRootForFile(path);
+    if (discRoot != null) blurayDiscs.add(discRoot);
+    bool matched = discRoot != null;
     // 图片包（`.zip`）：光看扩展名与词典包同形，必须真读包——同 isDirectory，判据
     // 由 widget 层注入。命中即**只**归 mangas（不再落 dictionaries），否则图片型
     // zip 会走到 books 分支的 `files.hasAny` 兜底、回「本页面不支持」，而导入对话框
@@ -342,6 +382,7 @@ DroppedFiles classifyDroppedFiles(
     directories: directories,
     torrents: torrents,
     unknown: unknown,
+    blurayDiscs: blurayDiscs.toList(),
   );
 }
 

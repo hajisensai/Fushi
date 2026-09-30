@@ -57,6 +57,8 @@ import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
+import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
+    show BlurayEncryptedStreamException;
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
@@ -9351,6 +9353,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // AACS 加密的蓝光码流：原因确定，libmpv 那边只会给黑屏不给错误。
+    if (error is BlurayEncryptedStreamException) {
+      return t.video_bluray_stream_encrypted;
+    }
     // `.strm` 流指针读不出可播地址：原因明确，不走下面的子串阶梯。
     if (error is StrmResolveException) {
       return switch (error.failure) {

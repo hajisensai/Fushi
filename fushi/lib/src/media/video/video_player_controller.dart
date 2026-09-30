@@ -23,6 +23,7 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
+import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -2160,6 +2161,18 @@ class VideoPlayerController extends ChangeNotifier
         videoFile != null && isBlurayPlaylistPath(videoFile.path)
         ? await resolveBluraySource(videoFile.path)
         : null;
+    // AACS 加密的原盘（或逐字节拷出来的盘目录）：MPLS 是明文、上面照样解析得出，
+    // 码流却是密文，交给 libmpv 只有黑屏 / 花屏、没有一条可读的错误。Fushi 不解密，
+    // 在这里认出来并抛带类型的异常，由页面说清原因（只读两个 6 KB 单元）。
+    final String? bdavStreamPath =
+        bluray?.primaryStreamPath ??
+        (videoFile != null && isBdavStreamPath(videoFile.path)
+            ? videoFile.path
+            : null);
+    if (bdavStreamPath != null &&
+        await isAacsEncryptedStreamFile(bdavStreamPath)) {
+      throw BlurayEncryptedStreamException(bdavStreamPath);
+    }
     // 下游吃 `_videoPath` 的是内嵌字幕抽取、制卡裁剪、字幕自动对轴这些 ffmpeg 链路，
     // 它们要的是一段真实码流，不是播放列表——但**只有形态 1（单段整段用满）**时第一
     // 段 m2ts 的时间轴才等于播放时间轴。`edl://` 拼接形态下播放位置在拼接后的虚拟轴

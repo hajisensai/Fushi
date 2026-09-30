@@ -115,8 +115,12 @@ DropIntent decideDropIntent({
       );
     case DropSurface.video:
       // 文件夹优先于其中的单个文件：用户拖一整个剧集目录进来，要的是「把这个目录
-      // 加成来源」，不是「导入我恰好也选中的那一个 mp4」。
-      if (files.directories.isNotEmpty) return DropIntent.addFolderAsSource;
+      // 加成来源」，不是「导入我恰好也选中的那一个 mp4」。蓝光盘同理且更强：拖进来
+      // 的无论是盘根、`BDMV` 目录还是盘里的 `index.bdmv` / `.mpls` / `.m2ts`，要的
+      // 都是「这张盘」，一律把盘根登记成来源，由扫描按播放列表认出标题。
+      if (files.videoSourceFolders.isNotEmpty) {
+        return DropIntent.addFolderAsSource;
+      }
       if (files.torrents.isNotEmpty) return DropIntent.importTorrent;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;

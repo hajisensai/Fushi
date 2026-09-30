@@ -216,6 +216,58 @@ void main() {
       expect(files.videoLibraryMedia,
           <String>['/x/ep.mp4', '/x/01.flac', '/x/02.MP3']);
     });
+    test('Blu-ray disc fragment (index.bdmv) -> addFolderAsSource', () {
+      // 回归：拖 `.bdmv` 进视频页此前落 unknown → 静默无反应。
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>[],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video, files: files, cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    test('disc m2ts wins over importing it as a lone video', () {
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>['/disc/BDMV/STREAM/00001.m2ts'],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video, files: files, cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    test('disc on the books surface is not silently eaten', () {
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>[],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books, files: files, cardHit: false),
+        DropIntent.unsupportedSurface,
+      );
+    });
     test('m3u8 playlist -> importNewPlaylist', () {
       expect(
         decideDropIntent(

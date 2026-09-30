@@ -36,6 +36,8 @@ import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -1920,11 +1922,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final DroppedFiles files = classifyDroppedFiles(
       paths,
       isDirectory: (String path) => Directory(path).existsSync(),
+      blurayDiscRootForDirectory: blurayDiscRootForDirectory,
     );
     debugPrint(
       '[fushi-drop] [home-video] classified '
       'videos=${files.videos.length} audios=${files.audios.length} '
       'playlists=${files.playlists.length} '
+      'blurayDiscs=${files.blurayDiscs.length} '
       'subtitles=${files.subtitles.length} books=${files.books.length} '
       'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
       'global=$globalPosition',
@@ -1946,7 +1950,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           _openVideoImportQueue(files.videoLibraryMedia, files.subtitles),
         );
       case DropIntent.addFolderAsSource:
-        unawaited(_addDroppedFoldersAsSources(files.directories));
+        unawaited(_addDroppedFoldersAsSources(files.videoSourceFolders));
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.importVideoUrl:
