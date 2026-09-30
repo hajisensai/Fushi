@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/font_preview/system_font_catalog.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('parseSystemFontChannelResult', () {
@@ -63,7 +64,8 @@ void main() {
   test('按文件名推族名只作兜底：去样式后缀', () {
     expect(guessFontFamilyFromFileName('/f/KleeOne-Regular.ttf'), 'KleeOne');
     expect(
-      guessFontFamilyFromFileName(r'C:\Windows\Fonts\Noto_Serif_JP-Bold.otf'),
+      // 用平台路径拼：Windows 路径字面量在 POSIX 上不是分隔符（Mac/Linux CI 会红）。
+      guessFontFamilyFromFileName(p.join('Fonts', 'Noto_Serif_JP-Bold.otf')),
       'Noto Serif JP',
     );
   });
