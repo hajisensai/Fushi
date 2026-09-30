@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Tampilkan bilah atas dan bawah",
   "reader_toolbars_hide_subtitle": "Bola mengambang mengambil alih: kembali, pengaturan, dan tombol untuk memunculkan bilah tetap ada di sana",
   "reader_toolbars_hide_ball_off": "Bola mengambang dalam aplikasi nonaktif, jadi bilah tetap tampil",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Manga CTC (cepat)",
+  "manga_ocr_ctc_desc": "Membaca setiap kolom teks secara terpisah dengan model PP-OCRv6 yang disetel untuk manga. Unduhan jauh lebih kecil dan lebih cepat daripada manga-ocr; pada halaman uji kami akurasinya setara atau lebih baik, termasuk halaman dengan banyak furigana. Model: Kellenok/PP-OCRv6_manga (dilatih dengan Manga109-s dan AnimeText)."
 }

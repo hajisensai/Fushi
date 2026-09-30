@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Üst ve alt çubukları göster",
   "reader_toolbars_hide_subtitle": "Yüzen top devralır: geri, ayarlar ve çubukları geri getiren düğme üzerinde kalır",
   "reader_toolbars_hide_ball_off": "Uygulama içi yüzen top kapalı, bu yüzden çubuklar görünür kalır",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Manga CTC (hızlı)",
+  "manga_ocr_ctc_desc": "Her metin sütununu mangaya göre ayarlanmış bir PP-OCRv6 modeliyle ayrı ayrı okur. İndirmesi manga-ocr’dan çok daha küçük ve daha hızlıdır; test sayfalarımızda, bol furigana içerenler dahil, en az onun kadar doğruydu. Model: Kellenok/PP-OCRv6_manga (Manga109-s ve AnimeText ile eğitildi)."
 }

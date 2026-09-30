@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Mostrar barras superior e inferior",
   "reader_toolbars_hide_subtitle": "La bola flotante toma el control: atrás, ajustes y un botón para recuperar las barras permanecen en ella",
   "reader_toolbars_hide_ball_off": "La bola flotante de la app está desactivada, así que las barras siguen visibles",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Manga CTC (rápido)",
+  "manga_ocr_ctc_desc": "Lee cada columna de texto por separado con un modelo PP-OCRv6 ajustado para manga. Descarga mucho más pequeña y más rápido que manga-ocr; en nuestras páginas de prueba fue igual o más preciso, también con mucho furigana. Modelo: Kellenok/PP-OCRv6_manga (entrenado con Manga109-s y AnimeText)."
 }

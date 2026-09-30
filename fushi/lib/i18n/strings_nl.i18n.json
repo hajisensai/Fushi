@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Boven- en onderbalk tonen",
   "reader_toolbars_hide_subtitle": "De zwevende bal neemt het over: terug, instellingen en een knop om de balken terug te halen blijven erop",
   "reader_toolbars_hide_ball_off": "De zwevende bal in de app staat uit, dus de balken blijven zichtbaar",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Manga-CTC (snel)",
+  "manga_ocr_ctc_desc": "Leest elke tekstkolom afzonderlijk met een op manga afgestemd PP-OCRv6-model. Veel kleinere download en sneller dan manga-ocr; op onze testpagina’s minstens even nauwkeurig, ook bij veel furigana. Model: Kellenok/PP-OCRv6_manga (getraind met Manga109-s en AnimeText)."
 }

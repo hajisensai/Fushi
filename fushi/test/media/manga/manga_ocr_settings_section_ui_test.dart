@@ -336,6 +336,35 @@ void main() {
     expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
   });
 
+  testWidgets('per-column CTC is offered on every platform and persists',
+      (WidgetTester tester) async {
+    String stored = 'manga_ocr';
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      localModelGetter: () => stored,
+      localModelSetter: (String value) async => stored = value,
+    )));
+    await tester.pumpAndSettle();
+    final Finder field =
+        find.byKey(const ValueKey<String>('manga_ocr_local_model'));
+    expect(field, findsOneWidget);
+    await tester.ensureVisible(field);
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    // CUDA / Baberu 只在 Windows 列出；CTC 与经典 manga-ocr 五端都有。
+    expect(find.text(t.manga_ocr_baberu_model),
+        Platform.isWindows ? findsWidgets : findsNothing);
+    expect(find.text(t.manga_ocr_cuda_model),
+        Platform.isWindows ? findsWidgets : findsNothing);
+    await tester.tap(find.text(t.manga_ocr_ctc_model).last);
+    await tester.pumpAndSettle();
+    expect(stored, 'manga_ctc');
+    expect(find.text(t.manga_ocr_ctc_desc), findsOneWidget);
+  });
+
   testWidgets('Baberu local model choice persists across reopening on Windows',
       (WidgetTester tester) async {
     String stored = 'manga_ocr';

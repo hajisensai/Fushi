@@ -630,7 +630,9 @@ class _MangaOcrSettingsSectionState
         // 桌面里等于让移动端用户无法持久地退回离线引擎。外部 mokuro 是桌面工具，
         // 由下拉项自身 disable，不再靠整块 gating。
         _inset(_buildEnginePreference(theme)),
-        if (Platform.isWindows && widget.localModelGetter != null) ...<Widget>[
+        // 本地模型下拉全平台显示：逐列 CTC 与经典 manga-ocr 五端都能跑，CUDA / Baberu
+        // 只在 Windows 列出（[MangaOcrLocalModel.availableOnAllPlatforms]）。
+        if (widget.localModelGetter != null) ...<Widget>[
           const SizedBox(height: 12),
           _inset(_buildLocalModel()),
         ],
@@ -762,24 +764,24 @@ class _MangaOcrSettingsSectionState
           MangaOcrLocalModel.baberu => t.manga_ocr_baberu_desc,
           MangaOcrLocalModel.mangaOcrCuda => t.manga_ocr_cuda_desc,
           MangaOcrLocalModel.mangaOcr => t.manga_ocr_manga_model_desc,
+          MangaOcrLocalModel.mangaCtc => t.manga_ocr_ctc_desc,
         },
         helperMaxLines: 4,
         isDense: true,
         border: const OutlineInputBorder(),
       ),
       items: <DropdownMenuItem<MangaOcrLocalModel>>[
-        DropdownMenuItem<MangaOcrLocalModel>(
-          value: MangaOcrLocalModel.mangaOcr,
-          child: Text(t.manga_ocr_manga_model),
-        ),
-        DropdownMenuItem<MangaOcrLocalModel>(
-          value: MangaOcrLocalModel.mangaOcrCuda,
-          child: Text(t.manga_ocr_cuda_model),
-        ),
-        DropdownMenuItem<MangaOcrLocalModel>(
-          value: MangaOcrLocalModel.baberu,
-          child: Text(t.manga_ocr_baberu_model),
-        ),
+        for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+          if (Platform.isWindows || model.availableOnAllPlatforms)
+            DropdownMenuItem<MangaOcrLocalModel>(
+              value: model,
+              child: Text(switch (model) {
+                MangaOcrLocalModel.mangaOcr => t.manga_ocr_manga_model,
+                MangaOcrLocalModel.mangaOcrCuda => t.manga_ocr_cuda_model,
+                MangaOcrLocalModel.baberu => t.manga_ocr_baberu_model,
+                MangaOcrLocalModel.mangaCtc => t.manga_ocr_ctc_model,
+              }),
+            ),
       ],
       onChanged:
           widget.localModelSetter == null ||

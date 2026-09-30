@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Показать верхнюю и нижнюю панели",
   "reader_toolbars_hide_subtitle": "Плавающий шар берёт управление на себя: «Назад», настройки и кнопка возврата панелей закреплены на нём",
   "reader_toolbars_hide_ball_off": "Плавающий шар в приложении выключен, поэтому панели остаются видимыми",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Манга CTC (быстрый)",
+  "manga_ocr_ctc_desc": "Распознаёт каждый столбец текста отдельно моделью PP-OCRv6, дообученной на манге. Загрузка намного меньше, работает быстрее manga-ocr; на наших тестовых страницах точность не ниже, в том числе при обилии фуриганы. Модель: Kellenok/PP-OCRv6_manga (обучена на Manga109-s и AnimeText)."
 }

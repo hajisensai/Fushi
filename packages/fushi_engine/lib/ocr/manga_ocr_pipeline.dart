@@ -77,6 +77,25 @@ abstract interface class LineLayoutOcrRecognizer implements OcrRecognizer {
   });
 }
 
+/// 逐行（竖排逐列）识别整块、直接交回每行文本与行框的识别器。
+///
+/// 与 [LineLayoutOcrRecognizer] 的区别：那边是整块识别完再按检出的列长估算切分；
+/// 这边每行本来就是单独识别的，行文本与行框天然一一对应，不用估算——整块交它的
+/// 块，路由识别器直接采用它的结果。
+///
+/// [vertical] 是调用方对块方向的判断，实现可按检出的行改判，结果里的 `vertical`
+/// 是最终方向。[lineHints] 是调用方已检出的原始行框（页面坐标、未滤振假名），
+/// 给了就不再检测。有行几何时结果的 `lines` / `lineBoxes` 是阅读序、页面坐标，
+/// `lines.join() == text`；一行都没检到时只给整块文本（不带行几何）。
+abstract interface class LineOcrRecognizer implements OcrRecognizer {
+  Future<OcrRecognition> recognizeWithLines(
+    img.Image page,
+    OcrRect box, {
+    required bool vertical,
+    List<OcrRect>? lineHints,
+  });
+}
+
 /// 竖排判定的长宽比阈值：高 > 宽 * 阈值 视为竖排。
 ///
 /// 检测器返回的是轴对齐框，倾斜竖排会被横向外接矩形拉宽；1.5 会把真实封面上

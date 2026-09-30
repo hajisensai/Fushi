@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "上部バーと下部バーを表示",
   "reader_toolbars_hide_subtitle": "フローティングボールが代わりを担います：戻る・設定・バーを戻すボタンがボール上に固定されます",
   "reader_toolbars_hide_ball_off": "アプリ内フローティングボールがオフのため、バーは表示されたままです",
-  "dictionary_pitch_source_count": "$count 冊の辞書"
+  "dictionary_pitch_source_count": "$count 冊の辞書",
+  "manga_ocr_ctc_model": "漫画 CTC（高速）",
+  "manga_ocr_ctc_desc": "漫画向けに調整した PP-OCRv6 モデルで列ごとに認識します。manga-ocr よりダウンロードがずっと小さく高速で、テストページではルビの多いページを含めて同等以上の精度でした。モデル：Kellenok/PP-OCRv6_manga（Manga109-s と AnimeText で学習）。"
 }

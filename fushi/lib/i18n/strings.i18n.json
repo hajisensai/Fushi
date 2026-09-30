@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Show top and bottom bars",
   "reader_toolbars_hide_subtitle": "The floating ball takes over: back, settings and a button to bring the bars back stay on it",
   "reader_toolbars_hide_ball_off": "The in-app floating ball is off, so the bars stay visible",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Manga CTC (fast)",
+  "manga_ocr_ctc_desc": "Reads each text column on its own with a manga-tuned PP-OCRv6 model. Much smaller download and faster than manga-ocr; on our test pages it was at least as accurate, also on furigana-heavy pages. Model: Kellenok/PP-OCRv6_manga (trained with Manga109-s and AnimeText)."
 }

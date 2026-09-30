@@ -44,6 +44,86 @@ void main() {
     },
   );
 
+  group('per-column CTC (manga_ctc)', () {
+    test('selectable on every platform, own directory and signature', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-ctc'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      for (final String os in <String>[
+        'windows',
+        'android',
+        'ios',
+        'macos',
+        'linux',
+      ]) {
+        expect(
+          MangaOcrLocalModel.forPlatform('manga_ctc', operatingSystem: os),
+          MangaOcrLocalModel.mangaCtc,
+          reason: os,
+        );
+      }
+      const MangaOcrLocalModel ctc = MangaOcrLocalModel.mangaCtc;
+      expect(ctc.availableOnAllPlatforms, isTrue);
+      expect(MangaOcrLocalModel.baberu.availableOnAllPlatforms, isFalse);
+      expect(MangaOcrLocalModel.mangaOcrCuda.availableOnAllPlatforms, isFalse);
+      expect(ctc.accelerator, isEmpty);
+      expect(
+        (await ctc.modelsDirectory()).path,
+        p.join(root.path, 'ocr_models', 'manga-ctc'),
+      );
+    });
+
+    test(
+      'manifest: detector + PP det + dictionary + manga rec, no manga-ocr',
+      () {
+        final List<String> files = <String>[
+          for (final MangaOcrModelFile file
+              in MangaOcrLocalModel.mangaCtc.manifest)
+            file.fileName,
+        ];
+        expect(files, <String>[
+          'detector-v4-s_int8.onnx',
+          kPpOcrDetFileName,
+          kPpOcrRecDictFileName,
+          kMangaCtcRecFileName,
+        ]);
+        final MangaOcrModelFile rec = MangaOcrLocalModel.mangaCtc.manifest.last;
+        expect(rec.url, contains('/resolve/$kMangaCtcRecRevision/'));
+        expect(rec.expectedBytes, 21167540);
+        final int total = MangaOcrLocalModel.mangaCtc.manifest.fold<int>(
+          0,
+          (int sum, MangaOcrModelFile file) => sum + file.expectedBytes,
+        );
+        expect(total, lessThan(50 * 1024 * 1024));
+      },
+    );
+
+    test('README credits the manga rec and its training data', () {
+      // Manga109-s 的条款要求明确标注用到了它；AnimeText 是 CC BY-NC-SA 4.0，
+      // 许可风险要让读者看得见（模型从作者的 HF 仓库直接下载，本仓不转发）。
+      final String readme = File('../README.md').readAsStringSync();
+      expect(readme, contains('Kellenok/PP-OCRv6_manga'));
+      expect(readme, contains('AnimeText'));
+      expect(readme, contains('CC BY-NC-SA 4.0'));
+      expect(readme, contains('Manga109-s'));
+    });
+
+    test('cache signature can never adopt manga-ocr v4 caches as its own', () {
+      final String signature =
+          '${MangaOcrLocalModel.mangaCtc.cacheSignature}-36f475259340';
+      expect(signature, isNot(startsWith(kLocalMangaOcrEngineSignature)));
+      expect(relayoutableMangaOcrEngineSignatures(signature), isEmpty);
+    });
+  });
+
   for (final String os in <String>['android', 'ios', 'macos', 'linux']) {
     test(
       '$os restored Baberu preference imports into the classic model',

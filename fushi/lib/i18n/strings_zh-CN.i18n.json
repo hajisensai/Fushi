@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "显示顶栏和底栏",
   "reader_toolbars_hide_subtitle": "由悬浮球接管：返回、设置和「显示顶栏和底栏」固定在球上",
   "reader_toolbars_hide_ball_off": "应用内悬浮球已关闭，顶栏和底栏照常显示",
-  "dictionary_pitch_source_count": "$count 本辞典"
+  "dictionary_pitch_source_count": "$count 本辞典",
+  "manga_ocr_ctc_model": "漫画 CTC（快速）",
+  "manga_ocr_ctc_desc": "用漫画微调的 PP-OCRv6 模型逐列识别：下载体积比 manga-ocr 小得多、速度更快；实测准确率不低于 manga-ocr，注音密集的页面也是。模型：Kellenok/PP-OCRv6_manga（以 Manga109-s 与 AnimeText 训练）。"
 }

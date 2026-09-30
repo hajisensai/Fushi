@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "إظهار الشريطين العلوي والسفلي",
   "reader_toolbars_hide_subtitle": "تتولى الكرة العائمة المهمة: الرجوع والإعدادات وزر إعادة الشريطين تبقى عليها",
   "reader_toolbars_hide_ball_off": "الكرة العائمة داخل التطبيق متوقفة، لذا يبقى الشريطان ظاهرين",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "مانغا CTC (سريع)",
+  "manga_ocr_ctc_desc": "يقرأ كل عمود نص على حدة بنموذج PP-OCRv6 مضبوط على المانغا. حجم التنزيل أصغر بكثير من manga-ocr وهو أسرع؛ وفي صفحات الاختبار كانت دقته مماثلة أو أفضل، بما في ذلك الصفحات الكثيرة الفوريغانا. النموذج: Kellenok/PP-OCRv6_manga (مدرب على Manga109-s وAnimeText)."
 }

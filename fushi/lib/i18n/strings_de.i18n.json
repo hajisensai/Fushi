@@ -6164,5 +6164,7 @@
   "reader_toolbars_show": "Obere und untere Leiste einblenden",
   "reader_toolbars_hide_subtitle": "Der schwebende Ball übernimmt: Zurück, Einstellungen und eine Taste zum Wiedereinblenden bleiben darauf",
   "reader_toolbars_hide_ball_off": "Der schwebende Ball in der App ist aus, daher bleiben die Leisten sichtbar",
-  "dictionary_pitch_source_count": "$count dictionaries"
+  "dictionary_pitch_source_count": "$count dictionaries",
+  "manga_ocr_ctc_model": "Manga-CTC (schnell)",
+  "manga_ocr_ctc_desc": "Liest jede Textspalte einzeln mit einem auf Manga abgestimmten PP-OCRv6-Modell. Viel kleinerer Download und schneller als manga-ocr; auf unseren Testseiten mindestens so genau, auch bei viel Furigana. Modell: Kellenok/PP-OCRv6_manga (trainiert mit Manga109-s und AnimeText)."
 }
