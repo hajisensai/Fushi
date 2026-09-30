@@ -206,13 +206,16 @@ bool touchesJsSuites(Iterable<String> changed) => changed.any((String c) =>
 /// Splits test paths into batches whose joined length stays under [maxChars]:
 /// `flutter.bat` goes through cmd.exe on Windows (8191-char command line; the
 /// rest of the flutter test invocation fits in the remaining ~690 chars).
+/// [maxFiles] > 0 also caps each batch's file count, so a long selection is run
+/// as several `flutter test` calls with the machine gate re-checked in between.
 List<List<String>> chunkByCommandLength(List<String> paths,
-    {int maxChars = 7500}) {
+    {int maxChars = 7500, int maxFiles = 0}) {
   final List<List<String>> batches = <List<String>>[];
   List<String> cur = <String>[];
   int len = 0;
   for (final String p in paths) {
-    if (cur.isNotEmpty && len + p.length + 1 > maxChars) {
+    final bool full = maxFiles > 0 && cur.length >= maxFiles;
+    if (cur.isNotEmpty && (full || len + p.length + 1 > maxChars)) {
       batches.add(cur);
       cur = <String>[];
       len = 0;
@@ -222,4 +225,19 @@ List<List<String>> chunkByCommandLength(List<String> paths,
   }
   if (cur.isNotEmpty) batches.add(cur);
   return batches;
+}
+
+/// How many machine-loading Flutter tool runs a process listing shows: a
+/// `flutter_tools.snapshot` invocation whose subcommand is `test`, `analyze` or
+/// `build` (each drags in a 1-2 GB frontend_server or analyzer, and `test`
+/// also its flutter_tester pool). This is the shared "global gate" reading the
+/// local agents wait on (>= 3 means wait): counting frontend_server processes
+/// instead would miss `flutter analyze`, which starts none.
+///
+/// [commandLines] are full process command lines. On Windows pass only
+/// `dart.exe`'s: its `dartvm.exe` child repeats the same arguments.
+int countBusyFlutterCommands(Iterable<String> commandLines) {
+  final RegExp heavy =
+      RegExp(r'flutter_tools\.snapshot"?\s+(?:-\S+\s+)*(test|analyze|build)\b');
+  return commandLines.where(heavy.hasMatch).length;
 }
