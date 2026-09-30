@@ -362,6 +362,9 @@ List<SourceFileEntry> excludeSourceIncomingEntries(
 /// - EPUB (ext in [kScanBookExtensions]) -> [ScanPlan.epubPaths].
 /// - Video (ext in [kVideoExtensions]) -> [ScanPlan.videos], associating the
 ///   same-stem subtitle found by [selectSidecarNames] within the same directory.
+/// - Audio (ext in [kAudioExtensions]) -> [ScanPlan.videos] too, but only when
+///   [includeAudioAsVideo] (video sources): an album track is a video without a
+///   picture. Book sources keep audio as EPUB sidecars only.
 /// - Subtitles are not inserted on their own; they only attach to a video.
 ///
 /// Sidecar association is scoped to the same directory: [files] are bucketed by
@@ -371,6 +374,7 @@ ScanPlan planScanFromFileList(
   List<SourceFileEntry> files, {
   String? mangaRootPath,
   bool detectBlurayDiscs = false,
+  bool includeAudioAsVideo = false,
 }) {
   // 蓝光盘先认：认出来之后，盘的 `BDMV` 树整个从散装视频里摘掉。不摘的话用户会同时
   // 拿到「正片」和一屏叫 `00001`~`00042` 的 m2ts 碎片（正片常被切成好几段，另有菜
@@ -452,7 +456,11 @@ ScanPlan planScanFromFileList(
     // `.strm` 流指针按普通视频入库（videoPath = `.strm` 自身）：标题取文件名、
     // 照常参与分组 / 刮削 / 同名字幕关联；指向的流地址在起播时现读
     // （stream_video_launch.dart 的 resolveStrmStreamTarget）。
-    if (kVideoExtensions.contains('.$ext') || ext == kStrmExtension) {
+    // 纯音频（专辑曲目等）只在视频来源里按「无画面的视频」收录；书籍来源里同目录
+    // 音频是 EPUB 的有声书 sidecar（上面的 book 分支），绝不能再单独入库。
+    if (kVideoExtensions.contains('.$ext') ||
+        ext == kStrmExtension ||
+        (includeAudioAsVideo && kAudioExtensions.contains('.$ext'))) {
       final String dir = p.dirname(e.path);
       final List<String> siblings = namesByDir[dir] ?? const <String>[];
       final ({String? subtitle, List<String> audio}) sel = selectSidecarNames(
@@ -656,6 +664,7 @@ class SourceLibraryScanner {
             ? source.rootPath
             : null,
         detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
+        includeAudioAsVideo: kind == SourceLibraryKind.video,
       );
       discoveredPaths = <String>[
         for (final ScanBookItem item in plan.books) item.bookPath,

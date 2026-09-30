@@ -910,6 +910,8 @@ void main() {
       );
       await addVideo('movie', 'D:/series/Liz (2018).mkv', series);
       await addVideo('ncop', 'D:/series/Liz NCOP.mkv', series);
+      // 原声专辑曲目：拿曲名去动画资料源搜只会失败或误绑，不进刮削计划。
+      await addVideo('ost', 'D:/series/OST/01 - One more tea.flac', series);
       await addVideo('in-folder', 'D:/folder/Movie.mkv', folder);
       await addVideo('remote', 'remote://lib/Movie.mkv', remote);
       await db.upsertVideoBook(const VideoBooksCompanion(
@@ -921,6 +923,7 @@ void main() {
       final Map<String, bool> expected = <String, bool>{
         'movie': true,
         'ncop': false,
+        'ost': false,
         'in-folder': false,
         'remote': false,
         'manual': false,

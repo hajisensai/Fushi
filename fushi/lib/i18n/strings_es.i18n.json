@@ -6167,5 +6167,6 @@
   "dictionary_pitch_source_count": "$count dictionaries",
   "manga_ocr_ctc_model": "Manga CTC (rápido)",
   "manga_ocr_ctc_desc": "Lee cada columna de texto por separado con un modelo PP-OCRv6 ajustado para manga. Descarga mucho más pequeña y más rápido que manga-ocr; en nuestras páginas de prueba fue igual o más preciso, también con mucho furigana. Modelo: Kellenok/PP-OCRv6_manga (entrenado con Manga109-s y AnimeText).",
-  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead."
+  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead.",
+  "video_bluray_stream_encrypted": "This Blu-ray stream is still AACS-encrypted. Fushi does not decrypt protected discs, so it can only play unencrypted BDMV folders or video files."
 }

@@ -21,6 +21,9 @@ import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
+import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -1167,14 +1170,32 @@ class VideoPlayerController extends ChangeNotifier
   /// 但还在加载」（TODO-1297）。故首开就绪必须叠加 [isBuffering] 取反：让 Hibiki 页级
   /// 上下文加载层（[VideoLoadingOverlay]，带返回按钮、绝不困死用户）覆盖整个
   /// 解码 + 缓冲窗口，直到有稳定帧且缓冲结束再让位给 media_kit，杜绝冗余第二个圈。
-  bool get isReadyForFirstPaint =>
-      readyForFirstPaint(videoWidth, videoHeight, isBuffering);
+  ///
+  /// 纯音频没有首帧可等：媒体一打开（[mediaOpened]）就算有「画面」（页面垫封面），
+  /// 否则每首曲目都要白等 2.5 秒兜底定时器才起播。
+  bool get isReadyForFirstPaint => readyForFirstPaint(
+        videoWidth,
+        videoHeight,
+        isBuffering,
+        audioOnlyOpened: isAudioOnly && _mediaOpened,
+      );
 
-  /// 纯函数：首帧已出画且未在缓冲即视为首开可挂载。抽出便于守卫测试
-  /// （media_kit 视频无法离屏跑，只能测这层判据逻辑）。
+  /// 本次 [load] 的本地媒体是否是纯音频文件（按扩展名，见 [isAudioOnlyMediaPath]）。
+  bool get isAudioOnly {
+    final String? path = _videoPath;
+    return path != null && isAudioOnlyMediaPath(path);
+  }
+
+  /// 纯函数：首帧已出画（或纯音频已打开）且未在缓冲即视为首开可挂载。抽出便于
+  /// 守卫测试（media_kit 视频无法离屏跑，只能测这层判据逻辑）。
   @visibleForTesting
-  static bool readyForFirstPaint(int? width, int? height, bool buffering) =>
-      framePresent(width, height) && !buffering;
+  static bool readyForFirstPaint(
+    int? width,
+    int? height,
+    bool buffering, {
+    bool audioOnlyOpened = false,
+  }) =>
+      (framePresent(width, height) || audioOnlyOpened) && !buffering;
 
   /// 当前音画延迟（毫秒）；设置面板显示用。
   int get delayMs => _delayMs;
@@ -2140,6 +2161,18 @@ class VideoPlayerController extends ChangeNotifier
         videoFile != null && isBlurayPlaylistPath(videoFile.path)
         ? await resolveBluraySource(videoFile.path)
         : null;
+    // AACS 加密的原盘（或逐字节拷出来的盘目录）：MPLS 是明文、上面照样解析得出，
+    // 码流却是密文，交给 libmpv 只有黑屏 / 花屏、没有一条可读的错误。Fushi 不解密，
+    // 在这里认出来并抛带类型的异常，由页面说清原因（只读两个 6 KB 单元）。
+    final String? bdavStreamPath =
+        bluray?.primaryStreamPath ??
+        (videoFile != null && isBdavStreamPath(videoFile.path)
+            ? videoFile.path
+            : null);
+    if (bdavStreamPath != null &&
+        await isAacsEncryptedStreamFile(bdavStreamPath)) {
+      throw BlurayEncryptedStreamException(bdavStreamPath);
+    }
     // 下游吃 `_videoPath` 的是内嵌字幕抽取、制卡裁剪、字幕自动对轴这些 ffmpeg 链路，
     // 它们要的是一段真实码流，不是播放列表——但**只有形态 1（单段整段用满）**时第一
     // 段 m2ts 的时间轴才等于播放时间轴。`edl://` 拼接形态下播放位置在拼接后的虚拟轴

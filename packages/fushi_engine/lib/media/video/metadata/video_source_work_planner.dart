@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
@@ -55,8 +57,10 @@ bool videoSourcePlansScrapeWorks(SourceLibraryRow source) =>
     source.mediaKind == 'video' && source.videoGroupingMode != 'folder';
 
 /// [VideoSourceWorkPlanner.plan] 会不会把 [book] 放进某个作品单元：NCOP/NCED/
-/// 预告/花絮仍是 VideoBook，但不是可独立识别的作品。
+/// 预告/花絮仍是 VideoBook，但不是可独立识别的作品；纯音频（原声专辑曲目等）
+/// 同理——拿曲名去动画资料源搜只会失败或误绑，封面走同目录专辑封面。
 bool videoBookJoinsScrapePlan(VideoBookRow book) =>
+    !isAudioOnlyMediaPath(book.videoPath) &&
     classifyLocalVideoExtra(book.videoPath) == null;
 
 /// 从已入库的 `sourceId` 与合集成员关系生成按作品去重的刮削计划。

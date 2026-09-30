@@ -28,7 +28,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
-    show kPlaylistManifestExtensions;
+    show isAudioOnlyMediaPath, kPlaylistManifestExtensions;
+import 'package:fushi_engine/media/video/scraper/sidecar_scanner.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
@@ -400,6 +401,15 @@ Future<String?> _extractVideoCoverUnlocked({
     diagnosticOnly: diagnosticOnly,
   );
   if (embedded != null) return embedded;
+  // 纯音频没有画面可抽：抽帧必败，改用同目录的专辑封面（`cover.jpg` /
+  // `folder.jpg` / `poster.jpg`，与视频 sidecar 海报同一套命名）。
+  if (isAudioOnlyMediaPath(videoPath)) {
+    if (isRemoteInput) return null;
+    return copyFolderCoverForAudio(
+      audioPath: videoPath,
+      outputPath: outputPath,
+    );
+  }
   // ② 无自带封面：退回抽帧。
   return extractVideoFrameViaFfmpeg(
     inputPath: videoPath,
@@ -408,6 +418,31 @@ Future<String?> _extractVideoCoverUnlocked({
     tlsPinSha256: tlsPinSha256,
     diagnosticOnly: diagnosticOnly,
   );
+}
+
+/// 纯音频（专辑曲目）的封面兜底：把 [audioPath] 同目录的 sidecar 海报
+/// （[SidecarScanner] 的 `poster` > `folder` > `cover` 命名）拷成 [outputPath]。
+///
+/// 返回 [outputPath]；目录里没有海报、或海报不是完整可解码的图片时返回 null
+/// （导入照常成功，书架显示占位）。从不抛。
+@visibleForTesting
+Future<String?> copyFolderCoverForAudio({
+  required String audioPath,
+  required String outputPath,
+}) async {
+  final File? poster = (await SidecarScanner.scan(audioPath)).posterFile;
+  if (poster == null) return null;
+  try {
+    await File(outputPath).parent.create(recursive: true);
+    await copyCoverFileAtomically(source: poster, destPath: outputPath);
+    return outputPath;
+  } on Object catch (e) {
+    engineLog.logDiagnostic(
+      'VideoCover',
+      'folder cover ${poster.path} unusable for $audioPath: $e',
+    );
+    return null;
+  }
 }
 
 /// 视频封面抽取器签名（[extractVideoCover] 的形状）。仅供 [extractPlaylistCover]

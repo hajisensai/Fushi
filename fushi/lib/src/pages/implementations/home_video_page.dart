@@ -36,6 +36,8 @@ import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -1920,10 +1922,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final DroppedFiles files = classifyDroppedFiles(
       paths,
       isDirectory: (String path) => Directory(path).existsSync(),
+      blurayDiscRootForDirectory: blurayDiscRootForDirectory,
     );
     debugPrint(
       '[fushi-drop] [home-video] classified '
-      'videos=${files.videos.length} playlists=${files.playlists.length} '
+      'videos=${files.videos.length} audios=${files.audios.length} '
+      'playlists=${files.playlists.length} '
+      'blurayDiscs=${files.blurayDiscs.length} '
       'subtitles=${files.subtitles.length} books=${files.books.length} '
       'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
       'global=$globalPosition',
@@ -1940,9 +1945,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 其余文件被静默丢弃（用户报「手动拖多个影片进去只会导入第一个」）。
         // VideoImportDialog 结构上是单条目的（每条视频各有标题/字幕/元数据要确认），
         // 所以这里排成队列逐个预填，而不是硬塞一个批量模式进对话框。
-        unawaited(_openVideoImportQueue(files.videos, files.subtitles));
+        // 纯音频按无画面的视频一并排队（[DroppedFiles.videoLibraryMedia]）。
+        unawaited(
+          _openVideoImportQueue(files.videoLibraryMedia, files.subtitles),
+        );
       case DropIntent.addFolderAsSource:
-        unawaited(_addDroppedFoldersAsSources(files.directories));
+        unawaited(_addDroppedFoldersAsSources(files.videoSourceFolders));
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.importVideoUrl:
