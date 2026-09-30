@@ -16,9 +16,12 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart';
+import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:path/path.dart' as p;
@@ -30,12 +33,30 @@ class ScanSummary {
   int booksSkipped = 0;
   int mangaAdded = 0;
   int mangaSkipped = 0;
+
+  /// 扫描对账回收的失效视频条目数（行还在、文件已消失）。
+  int videosPruned = 0;
+
+  /// 被护栏（库根不存在 / 失效占比过高）或刮削租约拦下的库根数。
+  int pruneSkipped = 0;
+
+  /// 对账相关的说明（护栏拦下原因等），与 [errors] 分开：这些不是失败。
+  final List<String> pruneNotes = <String>[];
   final List<String> errors = <String>[];
 
   @override
-  String toString() => 'videos +$videosAdded (skipped $videosSkipped), '
+  String toString() => 'videos +$videosAdded (skipped $videosSkipped, pruned $videosPruned), '
       'books +$booksAdded (skipped $booksSkipped), '
-      'manga +$mangaAdded (skipped $mangaSkipped), errors ${errors.length}';
+      'manga +$mangaAdded (skipped $mangaSkipped), errors ${errors.length}'
+      '${pruneSkipped > 0 ? ', prune-skipped $pruneSkipped' : ''}';
+}
+
+/// 一个视频根的扫描产物：磁盘上现存的归一路径 + 导入前已在库的行 uid（对账基线）。
+class _VideoScan {
+  _VideoScan({required this.found, required this.baselineBookUids});
+
+  final Set<String> found;
+  final Set<String> baselineBookUids;
 }
 
 class LibraryScanner {
@@ -43,11 +64,23 @@ class LibraryScanner {
     required this.db,
     required this.subtitleLanguage,
     this.extractCovers = true,
+    this.pruneMissing = true,
+    this.pruneThreshold = const VideoPruneThreshold(),
+    this.pruneForce = false,
   }) : _videos = VideoBookRepository(db);
 
   final FushiDatabase db;
   final String subtitleLanguage;
   final bool extractCovers;
+
+  /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
+  ///
+  /// 关掉只是不做清理，导入行为一个字不变；但库里会继续留着失效条目。
+  final bool pruneMissing;
+  final VideoPruneThreshold pruneThreshold;
+
+  /// 越过护栏阈值也照删（危险：库根整体不可达时会批量误删）。
+  final bool pruneForce;
   final VideoBookRepository _videos;
 
   Future<ScanSummary> scanAll(List<LibraryRootConfig> roots) async {
@@ -61,11 +94,14 @@ class LibraryScanner {
       }
       switch (root.kind) {
         case 'video':
-          await _scanVideos(dir, summary);
+          final _VideoScan scan = await _scanVideos(dir, summary);
+          if (pruneMissing) await _pruneVideoRoot(dir, root.id, scan, summary);
         case 'book':
           await _scanBooks(dir, summary);
+          _noteUnreconciled(root.id, 'book');
         case 'manga':
           await _scanManga(dir, summary);
+          _noteUnreconciled(root.id, 'manga');
         default:
           summary.errors.add('${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）');
       }
@@ -74,7 +110,9 @@ class LibraryScanner {
     return summary;
   }
 
-  Future<void> _scanVideos(Directory dir, ScanSummary summary) async {
+  /// 扫描一个视频根，返回**磁盘上现存**的视频文件路径集合（归一）与导入前已在库
+  /// 的行 uid（对账的基线），供对账复用。
+  Future<_VideoScan> _scanVideos(Directory dir, ScanSummary summary) async {
     final List<File> files = <File>[];
     await for (final FileSystemEntity e in dir.list(recursive: true, followLinks: false)) {
       if (e is! File) continue;
@@ -82,12 +120,24 @@ class LibraryScanner {
       files.add(e);
     }
     files.sort((File a, File b) => a.path.compareTo(b.path));
-    final Set<String> existingKeys = (await _videos.listAll())
-        .map((VideoBookRow r) => r.bookUid)
-        .toSet();
+    final List<VideoBookRow> existingRows = await _videos.listAll();
+    final Set<String> existingKeys =
+        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    // 下面的循环会往 existingKeys 里追加本轮新行，基线要在这之前单独留一份。
+    final Set<String> baselineKeys = Set<String>.of(existingKeys);
+    // 物理路径集合一次算好、循环内查集合。此前逐文件调 `isDuplicateVideoPath`
+    // （它内部每次都 `listAll()` 全表读），整个扫描是 O(n²)。比对语义与
+    // `VideoBookRepository.isDuplicateVideoPath` 一致：两侧都 [normalizeVideoPath]。
+    final Set<String> existingPaths = <String>{
+      for (final VideoBookRow r in existingRows)
+        if (r.videoPath.isNotEmpty) normalizeVideoPath(r.videoPath),
+    };
+    final Set<String> found = <String>{};
     for (final File file in files) {
+      final String normalized = normalizeVideoPath(file.path);
+      found.add(normalized);
       try {
-        if (await _videos.isDuplicateVideoPath(file.path)) {
+        if (!existingPaths.add(normalized)) {
           summary.videosSkipped++;
           continue;
         }
@@ -122,6 +172,64 @@ class LibraryScanner {
         engineLog.log('LibraryScanner.video', e, stack);
       }
     }
+    return _VideoScan(found: found, baselineBookUids: baselineKeys);
+  }
+
+  /// 对一个视频根做一次对账（见 [pruneMissingVideoRows]）。
+  ///
+  /// 护栏 / 刮削租约拦下只记 note，不算错误：扫描因环境暂时无法安全清理，不是失败。
+  /// 只在**本轮导入前**就在库里的行上判失效：本轮新导入的行文件必然在，把它们算进
+  /// 分母会让整库改名 / 搬家（旧行全失效、新行等量入库）刚好卡在比例阈值上放行。
+  Future<void> _pruneVideoRoot(
+    Directory dir,
+    String rootId,
+    _VideoScan scan,
+    ScanSummary summary,
+  ) async {
+    final VideoPruneReport report = await pruneMissingVideoRows(
+      repository: _videos,
+      root: dir,
+      foundPaths: scan.found,
+      baselineBookUids: scan.baselineBookUids,
+      threshold: pruneThreshold,
+      force: pruneForce,
+    );
+    if (report.skipped) {
+      summary.pruneSkipped++;
+      summary.pruneNotes.add('$rootId: ${report.skipReason}');
+      engineLog.logDiagnostic(
+        'LibraryScanner.prune',
+        '$rootId: skipped (${report.skipReason})',
+      );
+      return;
+    }
+    summary.videosPruned += report.deleted;
+    if (report.unreachable > 0) {
+      summary.pruneNotes.add(
+        '$rootId: kept ${report.unreachable} missing video row(s) under an '
+        'empty or unreadable folder (unmounted disk?)',
+      );
+    }
+    if (report.missing > 0) {
+      engineLog.logDiagnostic(
+        'LibraryScanner.prune',
+        '$rootId: removed ${report.deleted} of ${report.missing} stale video row(s)',
+      );
+    }
+    for (final String e in report.errors) {
+      summary.errors.add('$rootId: prune: $e');
+      engineLog.logDiagnostic('LibraryScanner.prune', '$rootId: $e');
+    }
+  }
+
+  /// 书 / 漫画根的导入会把正文拷进 `<documents>/fushi_books/<bookKey>/`，行里
+  /// **没有记录源文件路径**，因此判不出源文件是否已被删掉——本轮不对账。这里如实
+  /// 留痕，而不是让它看起来「已经管了」。
+  static void _noteUnreconciled(String rootId, String kind) {
+    engineLog.logDiagnostic(
+      'LibraryScanner.prune',
+      '$rootId: $kind root is not reconciled (source path not recorded)',
+    );
   }
 
   Future<void> _scanBooks(Directory dir, ScanSummary summary) async {
