@@ -108,8 +108,10 @@ jobs:
             echo "windows=$windows"
           } >> "$GITHUB_OUTPUT"
 
-  # build-multiplatform.yml linux job 的三份 PR 专用件。环境（runner、CC/CXX、apt 依赖）与
-  # 那个 job 逐字一致：CC/CXX 进了名字的哈希，vcpkg 的 ABI hash 也吃编译器。
+  # build-multiplatform.yml linux-server job（无头服务端随包原生库）的三份 PR 专用件。环境
+  # （runner、CC/CXX、apt 依赖）与那个 job 逐字一致：CC/CXX 进了名字的哈希，vcpkg 的 ABI
+  # hash 也吃编译器。2026-09-30 起那边不再构建 Linux app，GTK / keybinder / mpv / lzma /
+  # clang 这些只给 `flutter build linux` 用的包两边一起删了。
   linux:
     needs: changes
     if: needs.changes.outputs.linux == 'true'
@@ -151,9 +153,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ninja-build clang cmake pkg-config \
-            gcc-14 g++-14 libstdc++-14-dev \
-            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
+            ninja-build cmake pkg-config \
+            gcc-14 g++-14 libstdc++-14-dev
       # FFI 真调用测试（与 PR 门同一套）要 Dart；只在真要构建 torrent / p2p 时装。
       - uses: subosito/flutter-action@v2
         if: steps.torrent_store.outputs.hit != 'true' || steps.p2p_store.outputs.hit != 'true'
@@ -162,7 +163,7 @@ jobs:
           cache: true
 
       # ---- 静态 torrent bridge（vcpkg）。两层 vcpkg 缓存的 key 与 build-multiplatform.yml
-      # linux job 逐字一致（那边持久库 miss 时——即 PR 改了 native/fushi_torrent——还靠它们）。
+      # linux-server job 逐字一致（那边持久库 miss 时——即 PR 改了 native/fushi_torrent——还靠它们）。
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         if: steps.torrent_store.outputs.hit != 'true'

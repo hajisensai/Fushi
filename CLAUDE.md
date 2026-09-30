@@ -170,7 +170,7 @@
 | `packages/fushi_p2p/` | Dart | 互联 P2P 隧道（iroh，dumbpipe 形态）纯 Dart FFI；引擎侧运行时 `fushi_engine/lib/sync/interconnect_p2p.dart`，原生库缺失时能力判不可用 | 设计 `docs/specs/2026-09-28-interconnect-remote-reach.md` |
 | `native/fushi_p2p/` | Rust | iroh 1.x TCP-over-P2P 转发 C ABI；`build_windows_dll.ps1` / `build_android_so.*` / `build_linux_so.sh` 产出到 `prebuilt/`（不入库），Windows CMake / Android jniLibs 有则随包 | [README.md](native/fushi_p2p/README.md) |
 | `packages/fushi_engine/` | Dart | 无 Flutter 的共享引擎：互联 host / 库服务 / OCR / ASR 任务 / 下载管线 / EPUB 导入 / 视频元数据（app 与服务端共用；纯度守卫在 fushi/test/build） | 设计 `docs/specs/2026-09-08-fushi-server-headless-design.md` |
-| `packages/fushi_server/` | Dart | 无头服务端 CLI + WebUI（Linux/Windows/macOS）；`dart build cli` 出 bundle，CI linux job 随包 torrent bridge `.so` + onnxruntime | [README.md](packages/fushi_server/README.md) |
+| `packages/fushi_server/` | Dart | 无头服务端 CLI + WebUI（Linux/Windows/macOS）；`dart build cli` 出 bundle，CI `build-multiplatform.yml` 的 `linux-server` job 随包 torrent bridge `.so` + onnxruntime（Linux app 已不在 CI 构建） | [README.md](packages/fushi_server/README.md) |
 | `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |
 | `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
 | `native/fushidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`fushidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](native/fushidicts/UPSTREAM.md) |

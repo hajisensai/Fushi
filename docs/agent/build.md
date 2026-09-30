@@ -45,7 +45,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 ## 无头服务端 fushi_server（Linux CLI + WebUI）
 
 - 源码 `packages/fushi_server/`（纯 Dart，依赖 `packages/fushi_engine`）；本机构建 `cd packages/fushi_server && dart build cli`，产物 `build/cli/<os>_<arch>/bundle/`（`bin/` 可执行 + `lib/` native asset）。**不要 `dart compile exe`**：sqlite3 是 native asset，单文件 exe 运行时打不开 DB。
-- CI：`build-multiplatform.yml` 的 linux job 在 Flutter Linux 构建后加跑 `dart build cli`，再把两块随包原生库放进 `bundle/lib/`：① `libfushi_torrent_ffi.so`（`native/fushi_torrent/build_linux_so.sh`：vcpkg manifest **静态链** libtorrent 2.0.11 + boost + openssl，overlay triplet `x64-linux-fpic`，ABI 校验同 `native-torrent-gate.yml`；目标机零运行库依赖）② `libonnxruntime.so` 1.22.0 CPU 版（与 `third_party/flutter_onnxruntime/linux` 同版本；CUDA 用户自换 GPU 包并配 `onnxruntime_library`）。随后用这份 `.so` 跑 `packages/fushi_torrent` 的 FFI 测试，再真进程冒烟：起 `serve`，断言 admin API 报 `backend=embedded` 且 17 语 ASR plan 无 error（= 两块库都真被 dlopen 了）。工件名 `fushi_server-linux-x64`。
+- CI：`build-multiplatform.yml` 的 `linux-server` job（2026-09-30 起只剩服务端覆盖：所有者拍板很长时间内不做 Linux app，`flutter build linux` 已从 CI 删除；PR 上按下文「PR 平台 job 的路径门」在服务端的 Dart 依赖闭包或它随包的原生库变动时才开）跑 `dart build cli`，再把两块随包原生库放进 `bundle/lib/`（fushi_p2p 与 fushi-anki-sync 同理随包，见下两节）：① `libfushi_torrent_ffi.so`（`native/fushi_torrent/build_linux_so.sh`：vcpkg manifest **静态链** libtorrent 2.0.11 + boost + openssl，overlay triplet `x64-linux-fpic`，ABI 校验同 `native-torrent-gate.yml`；目标机零运行库依赖）② `libonnxruntime.so` 1.22.0 CPU 版（与 `third_party/flutter_onnxruntime/linux` 同版本；CUDA 用户自换 GPU 包并配 `onnxruntime_library`）。随后用这份 `.so` 跑 `packages/fushi_torrent` 的 FFI 测试，再真进程冒烟：起 `serve`，断言 admin API 报 `backend=embedded` 且 17 语 ASR plan 无 error（= 两块库都真被 dlopen 了）。工件名 `fushi_server-linux-x64`。
 - 服务端找随包库的规则在 `packages/fushi_server/lib/src/native_libs.dart`：`<exe 同级>` → `<exe>/../lib/` → cwd；都没有就交给引擎按裸名走系统搜索路径。
 - 发布：Release **落在独立仓 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server)，不落本仓**（2026-09-14 起）。那边只有 README / LICENSE / 一条薄 workflow `release.yml`（`workflow_dispatch`，输入 channel = beta / formal、source_ref = 本仓 ref 默认 `develop`），它 `uses: hajisensai/Fushi/.github/workflows/release-server.yml@develop` 调本仓的**可复用 workflow**（`workflow_call`）：Linux（`ubuntu-22.04`，静态 `.so`）+ Windows（vcpkg DLL）两个包，各自真进程冒烟后由 publish job 用调用方的 `GITHUB_TOKEN` 发到 fushi-server 的 GitHub Release，tag `v<version>-beta.<seq>` / `v<version>`；源码 checkout 显式钉 `repository: hajisensai/Fushi`（公开仓，**零 PAT / 零 secret**）。版本取 `packages/fushi_server/pubspec.yaml` 的 `version:`（与 app 独立），序号仍是 `tool/release_sequence.sh`（在 hibiki checkout 上算）。**本仓自己不能发服务端包**：channel job 断言 `github.repository != hajisensai/Fushi` 直接红——app 稳定通道更新检查走本仓 `releases/latest`，服务端包在本仓成为 Latest 会把五端 app 的更新判成「远端不比本机新」而停更；搬到独立仓后 formal 就是正常的 Latest。`tool/check_release_policy.ps1` 锁三件事：只有 `workflow_call`、有这条断言、每个 checkout 都钉源仓。发包操作：`gh workflow run release.yml -R hajisensai/fushi-server -f channel=beta -f source_ref=develop`。没有安装包与自更新。安装、systemd、配置、admin API、上传协议见 [packages/fushi_server/README.md](../../packages/fushi_server/README.md)。
 
@@ -53,14 +53,14 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 - 源码 `native/fushi_p2p/`（Rust crate，C ABI）+ 纯 Dart FFI 包 `packages/fushi_p2p/`。每端一个构建脚本，产物落 `native/fushi_p2p/prebuilt/<平台>/`（不入库）：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（universal）/ `build_ios_staticlib.sh`（staticlib + xcconfig 片段）。
 - **五端都是「prebuilt 有则随包」**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_p2p.sh`、iOS 经 `fushi/ios/Flutter/*.xcconfig` 可选 `#include?` 生成的 xcconfig 给 `OTHER_LDFLAGS` 加 `$(FUSHI_P2P_LDFLAGS)`（`-force_load` 静态库，Dart 侧 `DynamicLibrary.process()`）。没装 Rust 的机器照常出包，P2P 能力判不可用——与内置 libtorrent 不同，Windows CMake **故意不在 Release 强制**，因为缺库只隐藏能力、不会「宣称有后端却打不开」。
-- **发布包的保证在 CI**：`release.yml`（Android arm64-v8a / armeabi-v7a / x86_64）、`release-desktop.yml`（Windows / macOS universal / iOS device）、`release-server.yml`（Linux / Windows）都在出包前跑 Rust 构建，**失败即 job 失败**（与 libtorrent 同口径），出包后再核对库真的进了包（APK 每个带 `libflutter.so` 的 ABI、Windows bundle、macOS Frameworks 双架构、iOS Runner 导出 `fp2p_*`、服务端拿 bundle 里那份跑真隧道测试）。PR 上 `build-multiplatform.yml` 覆盖四个桌面/iOS 端（Linux、Windows 还跑 `packages/fushi_p2p` 真隧道测试），`native-p2p-gate.yml` 补 Android 三 ABI 交叉编译。Rust 钉 1.95.0，cargo-ndk 钉 4.1.2。
+- **发布包的保证在 CI**：`release.yml`（Android arm64-v8a / armeabi-v7a / x86_64）、`release-desktop.yml`（Windows / macOS universal / iOS device）、`release-server.yml`（Linux / Windows）都在出包前跑 Rust 构建，**失败即 job 失败**（与 libtorrent 同口径），出包后再核对库真的进了包（APK 每个带 `libflutter.so` 的 ABI、Windows bundle、macOS Frameworks 双架构、iOS Runner 导出 `fp2p_*`、服务端拿 bundle 里那份跑真隧道测试）。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS 三个 app 端与 Linux 服务端 bundle（`linux-server`；Linux、Windows 还跑 `packages/fushi_p2p` 真隧道测试；改到 `native/fushi_p2p/**` 或 `packages/fushi_p2p/**` 时路径门四个 job 全开），`native-p2p-gate.yml` 补 Android 三 ABI 交叉编译。Rust 钉 1.95.0，cargo-ndk 钉 4.1.2。
 - 真隧道测试在库加载失败时**整组 skip 且退出码 0**，CI 因此额外断言日志里没有 skip 原因；`native/fushi_p2p/verify_abi.sh` 按 Dart 绑定 lookup 的 `fp2p_*` 名核对导出表。细节见 [native/fushi_p2p/README.md](../../native/fushi_p2p/README.md)。
 
 ## 发布通道
 
 默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。
 
-- debug（push 自动）：**`main` push** 走 `.github/workflows/release.yml` 发布 Android debug GitHub prerelease，并走 `.github/workflows/release-desktop.yml` 发布 Windows debug installer、macOS app zip、iOS no-codesign IPA。**`develop` push 从 2026-09-03 起只跑 `release.yml`**（它是本仓唯一带 app 全量单测门的 workflow）——此前每次合并同时点燃三条长 workflow，runner 排队到互相 cancel，「Build and Test」实测常年被后续 push 的 concurrency 取消、等于没跑；`release-desktop.yml` 与 `build-multiplatform.yml` 的 push 触发已收到只剩 `main`，两者的 `pull_request` / `workflow_dispatch` / `release` 触发**不受影响**（develop 的每条 PR 仍跑四平台编译门，桌面/Apple 产物随时可手动发）。（顺带订正一处长期陈旧的描述：`main.yml` **没有 push 触发器**，只有 `pull_request` 与 `workflow_dispatch`——「push 会走 main.yml 上传 Actions artifact」这句在本次改动之前就已不成立。）Artifact 名称为 `fushi-debug-apk-${{ github.sha }}`，Actions artifact APK 文件名为 `fushi-<version>-<short-sha>-debug.apk`，保留 14 天；Android debug GitHub Release 使用 release-signed debug-channel APK，文件名为 `fushi-<version>-debug.<seq>-<short-sha>-debug.apk`；Windows debug GitHub Release 使用 Inno Setup installer，文件名为 `fushi-<version>-debug.<seq>-windows-setup.exe`；macOS 为 `fushi-<version>-debug.<seq>-macos.zip`；iOS 为 `fushi-<version>-debug.<seq>-ios.ipa`。Windows/macOS/iOS 都用同一个 `0.x.y-debug.<seq>` 作为 Flutter `--build-name`，保证安装后的 `PackageInfo.version` 能停止同一 debug release 的重复提示/自动安装。GitHub Release 的 git tag 固定为滚动的 `debug-rolling`（TODO-1049，见上「滚动 debug release」）；客户端版本比较用的版本化 tag 仍为 `v<version>-debug.<seq>+<short-sha>`（写进 manifest `tag` 字段）。同一 commit 的 Android/Windows/macOS/iOS 自动 debug 必须落到同一个 GitHub Release（即同一个 `debug-rolling` 滚动 release），且必须是 prerelease / non-Latest；各客户端必须按本平台资产后缀过滤，不能互相吃错平台资产，也不能等 beta/test 或 formal installer。
+- debug（push 自动）：**`main` push** 走 `.github/workflows/release.yml` 发布 Android debug GitHub prerelease，并走 `.github/workflows/release-desktop.yml` 发布 Windows debug installer、macOS app zip、iOS no-codesign IPA。**`develop` push 从 2026-09-03 起只跑 `release.yml`**（它是本仓唯一带 app 全量单测门的 workflow）——此前每次合并同时点燃三条长 workflow，runner 排队到互相 cancel，「Build and Test」实测常年被后续 push 的 concurrency 取消、等于没跑；`release-desktop.yml` 与 `build-multiplatform.yml` 的 push 触发已收到只剩 `main`，两者的 `pull_request` / `workflow_dispatch` / `release` 触发**不受影响**（桌面/Apple 产物随时可手动发；PR 上的平台编译门 2026-09-30 起按路径开，见下文「PR 平台 job 的路径门」）。**订正（2026-09-05 起）**：`release-desktop.yml` 的 push 已改回 `['main', 'develop']`（摘掉 develop 等于停发桌面/Apple debug 包，理由见该文件 `push:` 上的注释），所以每次 develop push 都有 Windows / macOS / iOS 的 release 构建；只剩 `build-multiplatform.yml` 的 push 是 `main`。（顺带订正一处长期陈旧的描述：`main.yml` **没有 push 触发器**，只有 `pull_request` 与 `workflow_dispatch`——「push 会走 main.yml 上传 Actions artifact」这句在本次改动之前就已不成立。）Artifact 名称为 `fushi-debug-apk-${{ github.sha }}`，Actions artifact APK 文件名为 `fushi-<version>-<short-sha>-debug.apk`，保留 14 天；Android debug GitHub Release 使用 release-signed debug-channel APK，文件名为 `fushi-<version>-debug.<seq>-<short-sha>-debug.apk`；Windows debug GitHub Release 使用 Inno Setup installer，文件名为 `fushi-<version>-debug.<seq>-windows-setup.exe`；macOS 为 `fushi-<version>-debug.<seq>-macos.zip`；iOS 为 `fushi-<version>-debug.<seq>-ios.ipa`。Windows/macOS/iOS 都用同一个 `0.x.y-debug.<seq>` 作为 Flutter `--build-name`，保证安装后的 `PackageInfo.version` 能停止同一 debug release 的重复提示/自动安装。GitHub Release 的 git tag 固定为滚动的 `debug-rolling`（TODO-1049，见上「滚动 debug release」）；客户端版本比较用的版本化 tag 仍为 `v<version>-debug.<seq>+<short-sha>`（写进 manifest `tag` 字段）。同一 commit 的 Android/Windows/macOS/iOS 自动 debug 必须落到同一个 GitHub Release（即同一个 `debug-rolling` 滚动 release），且必须是 prerelease / non-Latest；各客户端必须按本平台资产后缀过滤，不能互相吃错平台资产，也不能等 beta/test 或 formal installer。
 - beta/test（手动）：通过 `.github/workflows/release.yml` 或 `.github/workflows/release-desktop.yml` 的 `workflow_dispatch` 选择 `beta`，或手动发布一个勾选 prerelease 且非 Latest 的 GitHub Release。Android 默认 tag 为 `v<version>-beta.<seq>`，产物包含 `fushi-<version>-beta.<seq>-<short-sha>-debug.apk` 与 split ABI release APK `fushi-<version>-beta.<seq>-<abi>.apk`；Windows 产物为 `fushi-<version>-beta.<seq>-windows-setup.exe`；macOS 产物为 `fushi-<version>-beta.<seq>-macos.zip`；iOS 产物为 `fushi-<version>-beta.<seq>-ios.ipa`。**版本名对所有版本 tag 从 tag 派生**（BUG-1836）：beta 包此前用 pubspec 的裸 `<version>`，导致「运行中代码版本」这条更新落地判据在 beta 通道退化成常量。唯一例外是 iOS 的 `--build-name`——Apple 只接受至多三段非负整数的 `CFBundleShortVersionString`，故传剥掉预发布段的 `apple_build_version_name`；`--dart-define=FUSHI_BUILD_VERSION` 仍注入完整版本名。如需 Android、Windows、macOS、iOS 合并到同一 beta/test Release，两个手动 workflow 使用同一个 `tag_name`；未指定时，同一 commit 上两条 workflow 的默认 `<seq>` 相同，也会合并到同一 Release。
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
@@ -225,12 +225,42 @@ Linux 静态 torrent bridge。规则：
   iOS p2p）由 `release-desktop.yml` 在 develop push 上存；PR 专用变体（三平台 anki-sync
   debug、Linux p2p / 静态 torrent bridge）由 `native-cache-warm.yml` 在 develop push（改到
   输入时，按平台只起需要的 runner）与每日 schedule（补 runner 镜像换代）上 restore → 未命中才
-  编 → 跑与 PR 门同一套校验 → 存。build-multiplatform 自己不在 develop 上跑，没有这条的话每条
-  新 PR 首跑都冷编。
+  编 → 跑与 PR 门同一套校验 → 存。build-multiplatform 在 develop 上只有夜间派发的整轮（见下节），
+  不能指望它；没有这条的话每条新 PR 首跑都冷编。Linux 的三份件（p2p / 静态 torrent bridge /
+  anki-sync debug）的消费方是 `linux-server` job（无头服务端 bundle），不是 Linux app。
 - 命中时只跳工具链与编译，ABI 符号表 / FFI 真调用测试 / version 冒烟 / 签名核对照跑在还原出来的
   件上；save 只排在这些校验之后。
 - 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
   「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
+
+## PR 平台 job 的路径门（2026-09-30）
+
+`build-multiplatform.yml` 在 `pull_request` 上先跑一个几秒的 `changes` job：拿 PR merge commit
+与它的第一个父提交做 `git diff --name-only --no-renames`，按六组正则（`app_common` / `smoke` /
+`windows_only` / `macos_only` / `ios_only` / `server_only`，定义与注释都在该 job 里）决定
+`windows` / `macos` / `ios` / `linux-server` 开不开。依据是 upstream 09-20..09-30 的 232 条 PR：
+只改 Dart / 文档的 153 条吃掉了平台 job 约 62% 的分钟数、零真拦截；仅有的 3 次真拦截（改
+`fushi/windows/runner` 的 MSVC / LNK 错误、新增 `native/fushi_p2p` 那条 PR 的 macOS + iOS 链接错误）
+全在改原生 / 平台代码的 PR 上。按 09-20 以来 241 条已合并 PR 回放这套路由：Windows 43 次、
+macOS 32 次、iOS 25 次、linux-server 95 次（此前每个 job 都是 237 次）。
+
+- **push（main）与手动 `workflow_dispatch` 行为不变**：整轮全开。Android appSmoke 仍只在人手动
+  dispatch 时跑。
+- **兜底**：① 编译 / 链接——`release-desktop.yml` 在每次 develop push 上就做 Windows / macOS / iOS
+  的 release 构建，被路径门跳过的「只改 Dart 的 PR」合进 develop 后照样被编一遍；② appSmoke、
+  debug 配置构建与 FFI 真调用测试只在 build-multiplatform 里——`nightly-develop` job 每晚
+  （UTC 18:41）用 `gh workflow run build-multiplatform.yml --ref develop -f nightly=true` 在
+  develop 上派发一次整轮。不直接 `schedule` 跑：定时任务只在默认分支 main 上、读 main 的代码。
+  **这条要等本文件同步到 main 之后才开始触发**；在那之前需要时手动 dispatch。
+- 改某个平台 job 让它多读一个目录 / 脚本时，同步把它加进对应正则。守卫
+  `fushi/test/build/multiplatform_pr_gating_guard_test.dart` 对账「job 正文里调用到的
+  `native/` `packages/` `tool/` `tools/` `ci/` `third_party/` `.github/` 路径都被该 job 的路由覆盖」，
+  并按样例路径回放路由；它也钉死 Linux app 构建不回来、服务端随包冒烟留在 `linux-server`。
+- `fushi/pubspec.yaml` 故意不在路由里：原生插件的增删一定改 `pubspec.lock`；09-20 以来单改它的
+  5 条 PR 全是 `+build`、资产目录与纯 Dart 依赖。
+- fushidicts 的 gcc-14 ctest 原挂在 Linux app job 上，已搬到 `native-fushidicts-gate.yml` 的
+  `ctest-gcc`（与 `ctest-msvc` 并列），只在 `native/fushidicts/**` 或它读的
+  `fushi/assets/transforms/**` 变化时跑。
 
 ## 依赖补丁
 
