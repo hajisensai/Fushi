@@ -185,11 +185,11 @@ Fushi builds on the following projects and ecosystem:
 | [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japanese speech recognition model |
 | [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Multilingual CTC speech recognition model |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | Voice activity detection model |
-| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga OCR model |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga OCR model, trained with [Manga109-s](http://www.manga109.org/en/download_s.html); the KV-cache decoder of the OCR speed-up pack is re-exported from the same weights (`tool/manga_ocr_kv/`) |
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Manga text and speech bubble detection model |
 | [manga-panel-detector-yolo26n](https://huggingface.co/leoxs22/manga-panel-detector-yolo26n) | Manga panel detection model, trained on [Manga109-s](http://www.manga109.org/en/download_s.html) |
 
-> The manga panel detection model is trained on the Manga109-s dataset (Matsui et al. 2017; Aizawa et al. 2020), whose terms require this use of the dataset to be clearly indicated.
+> The manga panel detection model and manga-ocr are trained with the Manga109-s dataset (Matsui et al. 2017; Aizawa et al. 2020), whose terms require this use of the dataset to be clearly indicated.
 
 ### Content sources and integrations
 

@@ -6140,5 +6140,7 @@
   "video_resource_failure_timeout": "timed out",
   "video_resource_failure_network": "network error",
   "video_resource_failure_rate_limited": "rate limited",
-  "video_resource_failure_other": "request failed"
+  "video_resource_failure_other": "request failed",
+  "manga_ocr_accelerator_download": "下載識別提速組件（$size）",
+  "manga_ocr_accelerator_desc": "識別結果與現在完全相同，本機識別速度約為原來的兩倍。"
 }
