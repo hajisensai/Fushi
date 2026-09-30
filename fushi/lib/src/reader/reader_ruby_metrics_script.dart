@@ -18,6 +18,14 @@
 /// 只在 Apple 注音规则打出的 `--fushi-ruby-snap: 1` 标记存在时工作（Blink 注音本就贴
 /// 基字）。触发：安装时、字体就绪、`document.fonts` 每次加载完成、`#fushi-reader-style`
 /// 内容被实时换掉（改字体 / 字号走这条）。
+///
+/// BUG-2810：量的必须是**排成一整段**的注音盒。分页多列里落在页顶那一行的注音会伸出
+/// 本栏顶、被切进上一栏（BUG-2761 的几何；页顶预留按行高算，度量写入前的缺省拉力下
+/// Klee One 这类字体照样伸出去），这时 `<rt>` 有两个 client rect，
+/// `getBoundingClientRect` 是两栏的并集——竖排宽 ≈ 整页。拿它当注音盒，拉力直接顶到
+/// 上限 1.5，整章注音压进基字（iOS 模拟器 Safari、俺ガイル真章节 + 生产 CSS：首颗注音
+/// 「由」在第 3 页首列，`<rt>` 2 段、并集 385.9 × 818px，写出 1.500）。所以跨栏的注音
+/// 跳过、换下一颗量；基字只量第一个非空白字符的单字 Range，同样只认一段。
 const String kReaderRubyMetricsJs = r'''
 (function() {
   if (window.__fushiRubyMetrics) return;
@@ -38,6 +46,12 @@ const String kReaderRubyMetricsJs = r'''
   function canvasFont(cs) {
     return cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
   }
+  // 只认排成一整段的盒：分页页顶被切进上一栏的注音有两个 client rect（BUG-2810）。
+  function singleRect(rects) {
+    if (!rects || rects.length !== 1) return null;
+    var r = rects[0];
+    return r.width > 0 && r.height > 0 ? r : null;
+  }
   function probeRuby() {
     var list = document.body ? document.body.getElementsByTagName('ruby') : [];
     for (var i = 0; i < list.length && i < 50; i++) {
@@ -53,9 +67,19 @@ const String kReaderRubyMetricsJs = r'''
         if (t.nodeValue.trim()) { base = t; break; }
       }
       if (!rt || !base) continue;
-      var tr = rt.getBoundingClientRect();
-      if (!(tr.width > 0 && tr.height > 0)) continue;
-      return { ruby: ruby, rt: rt, base: base, rtRect: tr };
+      var tr = singleRect(rt.getClientRects());
+      if (!tr) continue;
+      // 内容区高度逐字相同，量第一个非空白字符（代理对取两个码元）就够，也不会跨行。
+      var text = base.nodeValue;
+      var at = text.search(/\S/);
+      var code = text.charCodeAt(at);
+      var end = at + (code >= 0xD800 && code <= 0xDBFF && at + 1 < text.length ? 2 : 1);
+      var range = document.createRange();
+      range.setStart(base, at);
+      range.setEnd(base, end);
+      var br = singleRect(range.getClientRects());
+      if (!br) continue;
+      return { ruby: ruby, rt: rt, rtRect: tr, baseRect: br };
     }
     return null;
   }
@@ -66,9 +90,7 @@ const String kReaderRubyMetricsJs = r'''
     if (getComputedStyle(root).getPropertyValue('--fushi-ruby-snap').trim() !== '1') return;
     var p = probeRuby();
     if (!p) return;
-    var range = document.createRange();
-    range.selectNodeContents(p.base);
-    var br = range.getBoundingClientRect();
+    var br = p.baseRect;
     var rcs = getComputedStyle(p.ruby);
     var tcs = getComputedStyle(p.rt);
     var fs = parseFloat(rcs.fontSize);

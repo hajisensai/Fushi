@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2587 条。点号进各自文件。
+> 共 2588 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2810](bugs/BUG-2810-webkit-ruby-pull-fragmented-rt.md) | ✅ | ✅ | iOS 分页打开书振假名压进基字（度量脚本量到跨栏被切开的注音盒，拉力顶到 1.5） |
 | [BUG-2808](bugs/BUG-2808-reader-focus-mode-exit.md) | ✅ | ✅ | 专注模式下触屏拿不到退出通道 |
 | [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
 | [BUG-2806](bugs/BUG-2806-ios-ruby-overhang-audio-wrap.md) | ✅ | ✅ | iOS 翻进新章节后振假名词突然撑开（有声书跟随高亮把 ruby 移进 span，WebKit 取消注音悬挂） |
