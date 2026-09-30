@@ -390,11 +390,9 @@ class _VerticalText extends StatelessWidget {
         );
         final List<(String, String?)> cells = <(String, String?)>[
           for (final (String base, String? rt) in segments)
-            for (int i = 0; i < base.characters.length; i++)
-              (
-                base.characters.elementAt(i),
-                i == 0 ? rt : (rt == null ? null : ''),
-              ),
+            // 逐字素切格；注音挂在该段第一格，其余格留空位对齐。
+            for (final (int i, String char) in base.characters.indexed)
+              (char, i == 0 ? rt : (rt == null ? null : '')),
         ];
         final List<List<(String, String?)>> columns = <List<(String, String?)>>[
           for (int i = 0; i < cells.length; i += perColumn)
