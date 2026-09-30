@@ -335,8 +335,12 @@ MokuroPayload buildMangaPayloadFromResults(
         ),
         // Re-evaluate cached local blocks so pages produced by the older,
         // overly strict 1.5 ratio threshold gain queryable vertical regions
-        // without rerunning OCR.
-        isVertical: block.vertical || isVerticalBlock(block.box),
+        // without rerunning OCR. Blocks with line geometry already carry the
+        // orientation their lines were laid out in (BUG-2813): overriding it
+        // would spread each row's characters down the row.
+        isVertical: block.lineBoxes != null
+            ? block.vertical
+            : block.vertical || isVerticalBlock(block.box),
         fontSize: estimateMangaFontSize(block),
         zIndex: b,
         lines: block.lines,

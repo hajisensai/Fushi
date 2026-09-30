@@ -115,4 +115,83 @@ void main() {
       expect(layout.boxes.single.top, 5);
     });
   });
+
+  group('字格权重', () {
+    test('「!?」两个一组占一格：不会把下一列首字挤进上一列（用户真实页 p10）', () {
+      final OcrLineLayout layout = layoutOcrTextOnLines('鳴った!なんで!?', <OcrRect>[
+        _r(40, 0, 70, 120),
+        _r(0, 0, 30, 120),
+      ], vertical: true)!;
+      expect(layout.lines, <String>['鳴った!', 'なんで!?']);
+    });
+
+    test('点号串合占一格：省略号不把后面整列推后（用户真实页 p6）', () {
+      final OcrLineLayout layout = layoutOcrTextOnLines(
+        'それはあの子も一緒だったみたいで...',
+        <OcrRect>[_r(80, 0, 110, 210), _r(40, 0, 70, 150), _r(0, 0, 30, 150)],
+        vertical: true,
+      )!;
+      expect(layout.lines, <String>['それはあの子も', '一緒だった', 'みたいで...']);
+    });
+  });
+
+  group('voteOcrLineOrientation', () {
+    test('三条竖列 + 四个近横的小碎片：按长度投票仍是竖排', () {
+      expect(
+        voteOcrLineOrientation(<OcrRect>[
+          _r(100, 0, 130, 200),
+          _r(60, 0, 90, 180),
+          _r(20, 0, 50, 160),
+          _r(0, 210, 40, 230),
+          _r(50, 210, 90, 230),
+          _r(100, 210, 140, 230),
+          _r(0, 240, 40, 260),
+        ]),
+        isTrue,
+      );
+    });
+
+    test('横排段落投横排；只有近方形的行（合并成一团的几列）不表态', () {
+      expect(
+        voteOcrLineOrientation(<OcrRect>[
+          _r(0, 0, 300, 30),
+          _r(0, 40, 280, 70),
+        ]),
+        isFalse,
+      );
+      expect(voteOcrLineOrientation(<OcrRect>[_r(0, 0, 210, 235)]), isNull);
+      expect(voteOcrLineOrientation(const <OcrRect>[]), isNull);
+    });
+  });
+
+  group('dropOcrRubyLines', () {
+    test('贴在正文列右侧、厚 0.65 倍的注音列被去掉（0.6 阈值会漏掉它）', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(98, 14, 134, 111), // 正文列（厚 36）
+        _r(82, 73, 104, 201), // 注音：厚 22，贴着左边那列的右侧
+        _r(54, 14, 88, 230), // 正文列（厚 34）
+        _r(17, 20, 50, 326), // 正文列（厚 33）
+      ], vertical: true);
+      expect(kept.map((OcrRect r) => r.left), <double>[98, 54, 17]);
+    });
+
+    test('不贴着更粗的行的窄列保留（单独一列「!!」之类）；远低于 0.6 的一律去掉', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(100, 0, 134, 200),
+        _r(60, 0, 94, 200),
+        _r(0, 0, 24, 40), // 厚 24（0.7 倍）但不在任何正文列注音侧
+        _r(140, 0, 150, 30), // 厚 10：细线
+      ], vertical: true);
+      expect(kept.map((OcrRect r) => r.left), <double>[100, 60, 0]);
+    });
+
+    test('横排：注音在正文行上方', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(0, 20, 300, 56), // 正文行（厚 36）
+        _r(40, 0, 120, 22), // 注音：厚 22，在正文上方
+        _r(0, 70, 300, 106), // 正文行
+      ], vertical: false);
+      expect(kept.map((OcrRect r) => r.top), <double>[20, 70]);
+    });
+  });
 }

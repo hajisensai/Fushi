@@ -226,7 +226,8 @@ class MangaOcrPipeline {
         blocks.add(
           OcrBlock(
             box: block.box,
-            vertical: block.vertical,
+            // 排版按检出行重新定了方向时以它为准（与新识别的块同口径）。
+            vertical: hasLayout ? laidOut.vertical : block.vertical,
             lines: hasLayout ? lines : block.lines,
             lineBoxes: hasLayout ? laidOut.lineBoxes : null,
             score: block.score,

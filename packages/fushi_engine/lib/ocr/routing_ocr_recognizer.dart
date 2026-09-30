@@ -79,7 +79,7 @@ _BlockCrop? _cropBlock(img.Image page, OcrRect box) {
 }
 
 /// `_routeBlock` 的结论：识别结果（`text` 为空 = 整块交 manga-ocr）+ 路由时已检出
-/// 的行框（已滤振假名、页面坐标），供整块识别后的排版复用；null = 路由没跑行检测。
+/// 的原始行框（页面坐标），供整块识别后的排版复用；null = 路由没跑行检测。
 class _RoutedBlock {
   const _RoutedBlock(this.recognition, {this.lineHints});
 
@@ -156,8 +156,9 @@ class RoutingOcrRecognizer
 
   /// 整块识别出的 [text] 按块内的列/行切开，带上行几何。
   ///
-  /// [lineHints] 是路由时已检出的行框（页面坐标）；null 时在这里跑一次行检测。
-  /// 没检到行 / 没有可见字时原样返回单串（pipeline 落成整块单行）。
+  /// [lineHints] 是路由时已检出的原始行框（页面坐标，未滤振假名）；null 时在这里
+  /// 跑一次行检测。没检到行 / 没有可见字时原样返回单串与原方向（pipeline 落成
+  /// 整块单行）。
   Future<OcrRecognition> _withLineLayout(
     img.Image page,
     OcrRect box,
@@ -171,25 +172,30 @@ class RoutingOcrRecognizer
       final _BlockCrop? crop = _cropBlock(page, box);
       if (crop == null) return OcrRecognition(text: text, vertical: vertical);
       rects = <OcrRect>[
-        for (final PpTextLine line in filterThinLines(
-          await _lineDetector.detect(crop.image),
-        ))
+        for (final PpTextLine line in await _lineDetector.detect(crop.image))
           crop.toPage(line.rect),
       ];
     }
+    // 方向按检出行长度投票（宽扁的多列竖排常被外形或碎片带偏），没有明确的行时
+    // 保持传入的方向；排版与块方向同一个结论。
+    final bool layoutVertical = voteOcrLineOrientation(rects) ?? vertical;
     final OcrLineLayout? layout = layoutOcrTextOnLines(
       text,
       orderOcrLinesForReading(
-        mergeOcrLineFragments(rects, vertical: vertical),
-        vertical: vertical,
+        mergeOcrLineFragments(
+          dropOcrRubyLines(rects, vertical: layoutVertical),
+          vertical: layoutVertical,
+        ),
+        vertical: layoutVertical,
       ),
-      vertical: vertical,
+      vertical: layoutVertical,
     );
+    if (layout == null) return OcrRecognition(text: text, vertical: vertical);
     return OcrRecognition(
       text: text,
-      vertical: vertical,
-      lines: layout?.lines,
-      lineBoxes: layout?.boxes,
+      vertical: layoutVertical,
+      lines: layout.lines,
+      lineBoxes: layout.boxes,
     );
   }
 
@@ -209,11 +215,11 @@ class RoutingOcrRecognizer
     final int y = crop.y;
     final int w = crop.image.width;
     final int h = crop.image.height;
-    final List<PpTextLine> detected = filterThinLines(
-      await _lineDetector.detect(crop.image),
-    );
+    final List<PpTextLine> raw = await _lineDetector.detect(crop.image);
+    final List<PpTextLine> detected = filterThinLines(raw);
+    // 排版要看到全部检出行（方向投票、注音判定），交回未过滤的原始结果。
     final List<OcrRect> lineHints = <OcrRect>[
-      for (final PpTextLine line in detected) crop.toPage(line.rect),
+      for (final PpTextLine line in raw) crop.toPage(line.rect),
     ];
     if (linesAreVerticalMajority(detected)) {
       return _RoutedBlock(
