@@ -50,7 +50,7 @@ import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
-import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart'

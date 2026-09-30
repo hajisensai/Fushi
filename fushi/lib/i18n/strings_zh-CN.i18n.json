@@ -6140,5 +6140,6 @@
   "video_resource_failure_timeout": "超时",
   "video_resource_failure_network": "网络错误",
   "video_resource_failure_rate_limited": "被限流",
-  "video_resource_failure_other": "请求失败"
+  "video_resource_failure_other": "请求失败",
+  "download_task_import_blocked_host_unsupported": "执行下载的设备不支持导入这种文件（例如无头服务端不能导入 PDF 和游戏）。请改由运行 Fushi 应用的设备下载。"
 }

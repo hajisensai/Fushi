@@ -6140,5 +6140,6 @@
   "video_resource_failure_timeout": "timed out",
   "video_resource_failure_network": "network error",
   "video_resource_failure_rate_limited": "rate limited",
-  "video_resource_failure_other": "request failed"
+  "video_resource_failure_other": "request failed",
+  "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead."
 }

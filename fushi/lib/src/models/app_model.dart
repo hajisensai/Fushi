@@ -120,7 +120,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';

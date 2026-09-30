@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
-import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
