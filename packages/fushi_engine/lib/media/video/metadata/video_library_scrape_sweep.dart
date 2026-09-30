@@ -23,6 +23,8 @@
 library;
 
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -359,8 +361,17 @@ class VideoLibraryScrapeSweep {
             .add(entry.work);
       }
 
+      // 下载任务确认过身份的作品不看标题能不能认：协调器会照那份身份直取
+      // （见 `downloadConfirmedLookupsForWorks`）。
+      final Set<String> downloadConfirmed = (await _downloadConfirmedKeys(
+        pending,
+      ));
       for (final VideoPendingScrapeWork entry in pending) {
-        if (!entry.work.hasIdentifiableTitle && !hashReady) continue;
+        if (!entry.work.hasIdentifiableTitle &&
+            !hashReady &&
+            !downloadConfirmed.contains(entry.work.stableKey)) {
+          continue;
+        }
         claim(entry);
       }
       if (hashReady) {
@@ -392,7 +403,19 @@ class VideoLibraryScrapeSweep {
       _ledger.markRefreshed(refreshing, submittedAt);
       await _saveLedger();
       try {
-        await _controller.scrapeWorkSubsets(subsets);
+        final SourceScrapeReport report =
+            await _controller.scrapeWorkSubsets(subsets);
+        // 只因资料源临时不可用（504 / 超时 / 限流）而失败的作品不是「查无」：
+        // 撤掉记账，下次触发（进视频页 / 库里有新条目）就再试，而不是等 7 天。
+        final List<String> transient = <String>[
+          for (final SourceScrapeIssue issue in report.errors)
+            if (issue.providerUnavailable && issue.workKey != null)
+              issue.workKey!,
+        ];
+        if (transient.isNotEmpty) {
+          _ledger.forgetAttempts(transient);
+          await _saveLedger();
+        }
       } catch (_) {
         // 后台静默批次：单轮失败不打扰页面。失败的作品已记账，不反复重试。
       }
@@ -423,29 +446,62 @@ class VideoLibraryScrapeSweep {
           .where((SourceLibraryRow source) => source.transport == 'local')
           .toList(growable: false);
 
-  Future<VideoMetadataWorkRow?> _canonicalWork(VideoSourceScrapeWork work) =>
-      work.collection == null
-          ? _database.getVideoMetadataWorkByBook(work.members.single.bookUid)
-          : _database.getVideoMetadataWorkByCollection(work.collection!.id);
-
-  /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。合集单元
-  /// 没有合集级作品行时，成员**各自**拥有带身份的作品行也算（按 AniDB 作品拆成
-  /// 多部电影的目录——它不是待确认，也不该反复进自动补刮）。
-  Future<bool> _hasCanonicalIdentity(VideoSourceScrapeWork work) async {
-    final VideoMetadataWorkRow? row = await _canonicalWork(work);
-    if (row != null) return _hasIdentity(row);
-    if (work.collection == null) return false;
-    for (final VideoBookRow member in work.members) {
-      final VideoMetadataWorkRow? owned =
-          await _database.getVideoMetadataWorkByBook(member.bookUid);
-      if (owned == null || !await _hasIdentity(owned)) return false;
+  Future<Set<String>> _downloadConfirmedKeys(
+    List<VideoPendingScrapeWork> pending,
+  ) async {
+    try {
+      return (await downloadConfirmedLookupsForWorks(_database, <VideoSourceScrapeWork>[
+        for (final VideoPendingScrapeWork entry in pending) entry.work,
+      ]))
+          .keys
+          .toSet();
+    } catch (error, stack) {
+      // 查不到下载记录只是少一条「绕过标题判据」的通道，照常按标题补刮；原因
+      // 必须留痕。
+      engineLog.log('VideoLibraryScrapeSweep.downloadConfirmed', error, stack);
+      return const <String>{};
     }
-    return work.members.isNotEmpty;
   }
 
-  Future<bool> _hasIdentity(VideoMetadataWorkRow row) async =>
-      (await _database.getVideoMetadataProviderIdentities(workId: row.id))
+  Future<VideoMetadataWorkRow?> _canonicalWork(VideoSourceScrapeWork work) =>
+      canonicalVideoMetadataWork(_database, work);
+
+  Future<bool> _hasCanonicalIdentity(VideoSourceScrapeWork work) =>
+      hasCanonicalVideoMetadataIdentity(_database, work);
+}
+
+/// 计划器作品对应的规范作品行（按合集 id / bookUid 锚定）。
+Future<VideoMetadataWorkRow?> canonicalVideoMetadataWork(
+  FushiDatabase database,
+  VideoSourceScrapeWork work,
+) =>
+    work.collection == null
+        ? database.getVideoMetadataWorkByBook(work.members.single.bookUid)
+        : database.getVideoMetadataWorkByCollection(work.collection!.id);
+
+/// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。合集单元
+/// 没有合集级作品行时，成员**各自**拥有带身份的作品行也算（按 AniDB 作品拆成
+/// 多部电影的目录——它不是待确认，也不该反复进自动补刮）。
+///
+/// 补刮（选谁进批次）与协调器（下载确认身份只给还没有规范身份的作品，不覆盖
+/// 用户后来手动改过的绑定）共用这一个判据。
+Future<bool> hasCanonicalVideoMetadataIdentity(
+  FushiDatabase database,
+  VideoSourceScrapeWork work,
+) async {
+  Future<bool> hasIdentity(VideoMetadataWorkRow row) async =>
+      (await database.getVideoMetadataProviderIdentities(workId: row.id))
           .isNotEmpty;
+  final VideoMetadataWorkRow? row =
+      await canonicalVideoMetadataWork(database, work);
+  if (row != null) return hasIdentity(row);
+  if (work.collection == null) return false;
+  for (final VideoBookRow member in work.members) {
+    final VideoMetadataWorkRow? owned =
+        await database.getVideoMetadataWorkByBook(member.bookUid);
+    if (owned == null || !await hasIdentity(owned)) return false;
+  }
+  return work.members.isNotEmpty;
 }
 
 class _PlannedWorks {

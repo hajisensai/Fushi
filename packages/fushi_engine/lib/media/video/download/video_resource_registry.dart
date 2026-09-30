@@ -38,7 +38,10 @@ class VideoResourceRegistry {
   /// ——后者会让停用的源照样打出网络请求，失败照样进 failures 吓用户。
   final Set<String> disabledProviderIds;
 
-  Future<ProviderBatchResult<VideoResourceCandidate>> search(
+  /// 返回值带按源回执（[VideoResourceSearchResult.sources]，按 provider 优先级
+  /// 排序、每个参与的 provider 一份）：资源页据此逐源显示「N 条（查询词）/ 失败
+  /// 原因」，成功但 0 条也看得见（BUG-2794）。
+  Future<VideoResourceSearchResult> search(
     VideoResourceSearchRequest request,
   ) async {
     final VideoDiscoveryCategory? category = request.media?.discoveryCategory;
@@ -73,7 +76,15 @@ class VideoResourceRegistry {
     );
     final ProviderBatchResult<VideoResourceCandidate> merged =
         ProviderBatchResult.merge(results);
-    return ProviderBatchResult<VideoResourceCandidate>(
+    return VideoResourceSearchResult(
+      sources: <VideoResourceSourceReport>[
+        for (int index = 0; index < applicable.length; index++)
+          videoResourceSourceReportOf(
+            providerId: applicable[index].id,
+            result: results[index],
+            fallbackQuery: request.effectiveQuery,
+          ),
+      ],
       // 先去重（identityKey + providerPriority），再按季号/标题贴合度重排。
       // Nyaa 只做模糊词匹配，不重排的话搜 "xxx 2" 会被做种更多的 S1/S3 压在前面。
       items: rankVideoResourcesByRelevance(

@@ -32,6 +32,9 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
  *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
+ *   <li>{@code startSystemBall.icons}：按钮 id → Material Icons 码位（与应用内球同一颗
+ *       IconData），{@code startSystemBall.colors}：{@code surface / onSurface / primary}
+ *       的 ARGB。都用来把系统球画得和应用内球一样（BUG-2793），缺省回退首字 / 默认配色。</li>
  * </ul>
  */
 final class FloatingBallChannel {
@@ -193,6 +196,8 @@ final class FloatingBallChannel {
                         app,
                         stringList(call.argument("actions")),
                         stringMap(call.argument("labels")),
+                        intMap(call.argument("icons")),
+                        intMap(call.argument("colors")),
                         call.argument("ocrLanguage"));
                 if (FloatingBallService.getInstance() == null) {
                     Intent svc = new Intent(app, FloatingBallService.class);
@@ -258,6 +263,22 @@ final class FloatingBallChannel {
         List<String> out = new ArrayList<>();
         for (Object o : (List<?>) raw) {
             if (o != null) out.add(o.toString());
+        }
+        return out;
+    }
+
+    /**
+     * 数值表（图标码位 / ARGB 颜色）。Dart int 按大小落成 Integer 或 Long（ARGB 高位为 1
+     * 时是 Long），统一按 {@link Number#intValue} 截成 32 位——ARGB 正好是 32 位。
+     */
+    private static Map<String, Integer> intMap(@Nullable Object raw) {
+        Map<String, Integer> out = new HashMap<>();
+        if (raw instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) raw).entrySet()) {
+                if (e.getKey() != null && e.getValue() instanceof Number) {
+                    out.put(e.getKey().toString(), ((Number) e.getValue()).intValue());
+                }
+            }
         }
         return out;
     }

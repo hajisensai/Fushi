@@ -26,7 +26,7 @@ void main() {
     const String sig = 'protected void setupDragListener()';
     final int at = src.indexOf(sig);
     expect(at, greaterThanOrEqualTo(0), reason: 'setupDragListener 必须存在');
-    final int end = src.indexOf('private int dragSlopPx()', at);
+    final int end = src.indexOf(' int dragSlopPx()', at);
     expect(end, greaterThan(at),
         reason: 'TODO-1268：拖动阈值必须解析自集中的 dragSlopPx helper');
     return src.substring(at, end);

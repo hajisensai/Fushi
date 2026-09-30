@@ -1,0 +1,16 @@
+## BUG-2793 · 应用外悬浮球吸边不正常、点击闪烁、旋转后消失、菜单与应用内不一致
+- **报告**：2026-09-29（用户：应用外的悬浮球没正常吸附，点悬浮球会闪；手机旋转后就不见了；菜单有点丑，要做得和应用内一样）。2026-09-30 追加：加载视频时应用内悬浮球从屏幕中间动画回原位；应用内球要有关闭键（只收起这一次页面，离开自动恢复）。
+- **真实性**：✅ 真 bug。真机 SM-X716B（Android，2560×1600）上用户装的 2.8.0-debug.16248 复现：
+  - **旋转消失**：横屏时球窗 `x=2328`，锁竖屏（宽 1600）后 `dumpsys window` 仍是 `(2328,585)`，球整个在屏外。根因：位置存 px（`FloatingBallService.savePosition` → `PreferenceKeys.POS_X/POS_Y`），没有任何配置变化 / 显示变化时的重摆。
+  - **吸边不准**：窗口是 `TYPE_APPLICATION_OVERLAY` 默认 `fitInsetsTypes = systemBars()`，x/y 原点在系统栏以内；`snapToEdge()` 却按 `WindowMetrics.getBounds()` 整屏算——两套坐标对不上（横屏导航栏在侧时尤其偏）。且吸附是瞬移，不像应用内那样外缩、动画。
+  - **点击闪**：球与面板在同一个 `WRAP_CONTENT` 窗口里，展开时窗口先按旧 x 变宽，`rootView.post(this::snapToEdge)` 下一帧才挪回屏内（实测展开后窗口 x 2440→2328）；透明度也是一帧从 0.5 硬切到 1。录屏帧序列见验证记录。
+  - **菜单不一致**：原生面板是黑底文字列表挂在球下方，应用内是球上方竖排的圆形图标按钮。
+  - **加载视频球从中间飞回**：`lib/src/reader/reader_floating_ball.dart` 的 `AnimatedPositioned` 对**任何**位置变化都补间 220ms，进视频页沉浸式隐藏系统栏 / 横竖屏切换让视口一变，球就被动画拖一路。
+- **[x] ① 已修复** —（PR 分支 `pr/system-floating-ball-fix`）
+  - 几何抽成 `FloatingBallGeometry.java`，与 Dart `ReaderFloatingBallLayout` 同一套公式与常量；位置改存「停靠边 + 纵向比例」，`onConfigurationChanged` + `DisplayListener`（只在视口真的变了时）按新视口重摆。
+  - 窗口统一用整块显示区坐标（`setFitInsetsTypes(0)` + `FLAG_LAYOUT_IN_SCREEN` + 刘海模式），视口 = 显示区扣系统栏与刘海（= 应用内 viewPadding）。
+  - 球窗固定尺寸永不改大小；按钮在独立的按钮窗里按最终几何一次建好，展开 / 收起 / 吸附都做动画（280 / 190 / 220ms，错峰飞出，曲线同应用内）。
+  - 按钮圆形图标：图标码位与主题色由 Dart 下发（与应用内同一颗 IconData、同一套 ColorScheme），字形取 app 自带的 Material Icons 字体，球面取同一张 `assets/meta/icon.png`。
+  - 应用内球：位置补间只在拖动松手吸附时开；新增常驻「关闭悬浮球」键（最上），只收起当前这一页，离开该页自动恢复，不改设置。
+- **[x] ② 已加自动化测试** — `fushi/test/floating_ball/system_floating_ball_native_guard_test.dart`（原生几何常量 = Dart 常量、坐标系、固定尺寸球窗、停靠边 + 比例持久化与显示变化重摆）；`fushi/test/floating_ball/app_floating_ball_host_test.dart`（关闭键只收起这一页、对话框不算离开、原生图标 / 配色表）；`fushi/test/reader/reader_floating_ball_test.dart`（视口变化一帧落位、松手吸附仍有动画）。
+- **备注**：真机验证用 `applicationIdSuffix ".balltest"` 并行安装（用户装机是 CI 签名，本机 debug key 不同，覆盖安装会要求卸载清数据——不做）。桌面端（Windows / macOS）应用外悬浮球另起分支实现。

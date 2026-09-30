@@ -2,6 +2,8 @@
 library;
 
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart'
+    show isLatinScriptTitle;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 
@@ -57,6 +59,19 @@ class VideoMediaReference {
   final int? anilistId;
   final int? bangumiId;
   final Map<String, String> externalIds;
+
+  /// 身份里有没有拉丁字母写成的标题（罗马字 / 英文）。Nyaa 发布名绝大多数用
+  /// 这类拼写；只带原名的条目（TMDB 列表项、MAL/AniList 偶发失败后只剩 TMDB 身份
+  /// 的合并卡片）在搜资源前要先从详情补齐（BUG-2794）。
+  bool get hasLatinTitle => <String?>[title, originalTitle, ...aliases].any(
+        (String? value) => value != null && isLatinScriptTitle(value.trim()),
+      );
+
+  /// 用作品详情里的罗马字 / 英文名补齐别名（前置，供资源搜索优先使用）。
+  VideoMediaReference withWorkLatinTitles(VideoMetadataWork? work) =>
+      work == null
+          ? this
+          : withLeadingAliases(<String?>[work.romajiTitle, work.englishTitle]);
 
   /// 把 [leading] 排到别名最前（去重、跳过空值与展示标题），其余字段不变。
   ///
@@ -244,6 +259,20 @@ class VideoDiscoveryItem {
   /// episode groups, or other provider fields.
   final VideoMetadataWork? metadataWork;
   final VideoMetadataLookup? confirmedLookup;
+
+  /// 只换身份引用（如补齐别名后），其余展示字段不变。
+  VideoDiscoveryItem withReference(VideoMediaReference value) =>
+      VideoDiscoveryItem(
+        reference: value,
+        overview: overview,
+        posterUrl: posterUrl,
+        backdropUrl: backdropUrl,
+        score: score,
+        releaseDate: releaseDate,
+        genres: genres,
+        metadataWork: metadataWork,
+        confirmedLookup: confirmedLookup,
+      );
 }
 
 class VideoDiscoveryPage {
