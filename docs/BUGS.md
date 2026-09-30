@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2580 条。点号进各自文件。
+> 共 2581 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,6 +41,7 @@
 | [BUG-2797](bugs/BUG-2797-credit-bridge-anilist.md) | ✅ | ✅ | 发现详情演职员 MAL 罗马字与 TMDB 汉字认不出同一人（AniList 写法桥） |
 | [BUG-2796](bugs/BUG-2796-ai-download-scrape-missing.md) | ✅ | ✅ | AI下载后作品页尚未刮削 |
 | [BUG-2795](bugs/BUG-2795-discovery-detail-merge-language.md) | ✅ | ✅ | 发现详情合并不看资料语言：MAL 英文简介、中日英类型混排、声优重复 |
+| [BUG-2794](bugs/BUG-2794-nyaa-discovery-query.md) | ✅ | ✅ | 发现页搜视频资源 Nyaa 常 0 条：查询词只用显式词且无按源状态 |
 | [BUG-2793](bugs/BUG-2793-system-floating-ball.md) | ✅ | ✅ | 应用外悬浮球吸边不正常、点击闪烁、旋转后消失、菜单与应用内不一致 |
 | [BUG-2792](bugs/BUG-2792-video-bottom-bar-overlap.md) | ✅ | ✅ | 开字幕列表后视频底栏按钮叠在一起 |
 | [BUG-2791](bugs/BUG-2791-leaderboard-shelf-500-and-series-finished.md) | ✅ | ✅ | 排行榜书架/分享本月 500；只看第 1 集整季被判读完 |
