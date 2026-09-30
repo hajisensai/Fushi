@@ -57,6 +57,9 @@ HEADS = 12
 HEAD_DIM = 64
 HIDDEN = 768
 ENCODER_TOKENS = 197
+CROSS_KV_FILE = 'cross_kv.onnx'
+DECODER_KV_FILE = 'decoder_kv.onnx'
+REPORT_FILE = 'export_report.json'
 
 
 def split_heads(x: torch.Tensor) -> torch.Tensor:
@@ -135,6 +138,22 @@ def load_model(revision: str) -> nn.Module:
     return model
 
 
+def resolve_out_dir(raw: str) -> str:
+    """Canonical --out directory, confined to the working directory.
+
+    The script overwrites fixed file names in this directory, so a value that
+    resolves anywhere else (``..``, an absolute path, a symlink) is refused
+    before anything is read or written.
+    """
+    base = os.path.realpath(os.getcwd())
+    out_dir = os.path.realpath(os.path.join(base, raw))
+    # Prefix test on canonical paths (commonpath raises across Windows drives);
+    # joining '' appends exactly one separator, so /work does not admit /workshop.
+    if out_dir != base and not out_dir.startswith(os.path.join(base, '')):
+        raise SystemExit(f'--out must resolve inside the working directory {base}: {out_dir}')
+    return out_dir
+
+
 def sha256_of(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, 'rb') as handle:
@@ -150,7 +169,7 @@ def export(model: nn.Module, out_dir: str) -> None:
     encoder_states = torch.randn(1, ENCODER_TOKENS, HIDDEN)
     with torch.no_grad():
         torch.onnx.export(
-            cross, (encoder_states,), os.path.join(out_dir, 'cross_kv.onnx'),
+            cross, (encoder_states,), os.path.join(out_dir, CROSS_KV_FILE),
             input_names=['encoder_hidden_states'], output_names=['cross_key_values'],
             dynamic_axes={
                 'encoder_hidden_states': {0: 'cross_batch', 1: 'encoder_sequence_length'},
@@ -163,7 +182,7 @@ def export(model: nn.Module, out_dir: str) -> None:
         past = torch.randn(4, beams, HEADS, past_length, HEAD_DIM)
         cross_kv = torch.randn(4, 1, HEADS, ENCODER_TOKENS, HEAD_DIM)
         torch.onnx.export(
-            step, (ids, beam_idx, past, cross_kv), os.path.join(out_dir, 'decoder_kv.onnx'),
+            step, (ids, beam_idx, past, cross_kv), os.path.join(out_dir, DECODER_KV_FILE),
             input_names=['input_ids', 'beam_idx', 'past_key_values', 'cross_key_values'],
             output_names=['logits', 'present_key_values'],
             dynamic_axes={
@@ -239,9 +258,9 @@ def verify(model: nn.Module, out_dir: str) -> dict:
     options = ort.SessionOptions()
     options.intra_op_num_threads = 4
     cross_session = ort.InferenceSession(
-        os.path.join(out_dir, 'cross_kv.onnx'), options, providers=['CPUExecutionProvider'])
+        os.path.join(out_dir, CROSS_KV_FILE), options, providers=['CPUExecutionProvider'])
     step_session = ort.InferenceSession(
-        os.path.join(out_dir, 'decoder_kv.onnx'), options, providers=['CPUExecutionProvider'])
+        os.path.join(out_dir, DECODER_KV_FILE), options, providers=['CPUExecutionProvider'])
     cross_onnx = cross_session.run(None, {'encoder_hidden_states': encoder_states.numpy()})[0]
     cross_torch = cross_kv.numpy()
     report['crossKvOnnxVsTorchMaxAbs'] = float(np.abs(cross_onnx - cross_torch).max())
@@ -279,10 +298,11 @@ def main() -> None:
     parser.add_argument('--revision', default=SOURCE_REVISION)
     parser.add_argument('--verify-only', action='store_true')
     args = parser.parse_args()
+    out_dir = resolve_out_dir(args.out)
     torch.set_num_threads(4)
     model = load_model(args.revision)
     if not args.verify_only:
-        export(model, args.out)
+        export(model, out_dir)
     import transformers
 
     report = {
@@ -290,11 +310,11 @@ def main() -> None:
             'repo': SOURCE_REPO, 'revision': args.revision, 'torch': torch.__version__,
             'transformers': transformers.__version__, 'onnxOpset': OPSET,
         },
-        'graphs': [describe(os.path.join(args.out, name))
-                   for name in ('cross_kv.onnx', 'decoder_kv.onnx')],
-        'verify': verify(model, args.out),
+        'graphs': [describe(os.path.join(out_dir, name))
+                   for name in (CROSS_KV_FILE, DECODER_KV_FILE)],
+        'verify': verify(model, out_dir),
     }
-    with open(os.path.join(args.out, 'export_report.json'), 'w', encoding='utf-8') as handle:
+    with open(os.path.join(out_dir, REPORT_FILE), 'w', encoding='utf-8') as handle:
         json.dump(report, handle, indent=1, ensure_ascii=False)
     json.dump(report, sys.stdout, indent=1, ensure_ascii=False)
     print()

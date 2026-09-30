@@ -48,6 +48,9 @@ python verify_onnx_contract.py --dir out/ --manifest model_manifest.json \
     --classic-encoder encoder_model.onnx --classic-decoder decoder_model.onnx
 ```
 
+`--out` is resolved against the working directory and must stay inside it:
+the exporter overwrites fixed file names there and refuses any other target.
+
 The exporter checks its wrapper modules against the HF decoder and the ONNX
 graphs against the wrapper modules (maximum absolute logit difference must
 stay below 1e-3; the release export measured 2.1e-5). `verify_onnx_contract.py`
