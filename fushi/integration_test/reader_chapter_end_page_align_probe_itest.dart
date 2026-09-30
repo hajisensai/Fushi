@@ -130,8 +130,10 @@ String _measureJs({required bool paged}) => '(function (paged) {'
   var cs = getComputedStyle(box);
   var vertical = getComputedStyle(b).writingMode.indexOf('vertical') === 0;
   var rect = box.getBoundingClientRect();
-  var start = vertical ? Math.max(rect.top, 0) + parseFloat(cs.paddingTop)
-                       : Math.max(rect.left, 0) + parseFloat(cs.paddingLeft);
+  // 内容框按盒子的真实位置算，不夹到视口：竖排连续模式下文档在竖直方向会偏几 px
+  // （body rect.top 为负），夹到 0 会把内容框起点算错、把整列误判成被切。
+  var start = vertical ? rect.top + parseFloat(cs.paddingTop)
+                       : rect.left + parseFloat(cs.paddingLeft);
   var extent = vertical ? Math.min(rect.bottom, innerHeight) : Math.min(rect.right, innerWidth);
   var end = extent - (vertical ? parseFloat(cs.paddingBottom) : parseFloat(cs.paddingRight));
   var out = { vertical: vertical, start: Math.round(start), end: Math.round(end), inView: 0, clipped: 0, samples: [] };
