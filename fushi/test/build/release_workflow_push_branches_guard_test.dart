@@ -83,9 +83,6 @@ void main() {
         .map((String l) => l.trim().replaceAll(':', ''))
         .where((String n) =>
             n != 'push' && n != 'release' && n != 'workflow_dispatch')
-        // 基础设施 job，不产出任何平台产物；两条 workflow 各带一份同名的
-        // （见 release_workflow_supersede_guard_test.dart）。
-        .where((String n) => n != 'cancel-superseded')
         .toList();
 
     final List<String> androidJobs = jobNames(android);
