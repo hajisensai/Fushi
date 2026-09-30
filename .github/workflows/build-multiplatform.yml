@@ -389,8 +389,8 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
-      # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_audio 等尚声明
-      # flutter），与 server-gate.yml 同一个入口解析整个 workspace。
+      # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_anki / fushi_dictionary /
+      # fushi_platform 尚声明 flutter），与 server-gate.yml 同一个入口解析整个 workspace。
       - name: Flutter pub get
         working-directory: fushi
         run: flutter pub get

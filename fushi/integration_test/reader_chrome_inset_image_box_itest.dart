@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
@@ -10,7 +11,6 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
-import 'package:fushi_audio/fushi_audio.dart' show AudiobookPlayerController;
 
 import 'helpers/library_fixture.dart'
     show

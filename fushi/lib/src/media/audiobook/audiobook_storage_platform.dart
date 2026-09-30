@@ -1,11 +1,10 @@
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'audiobook_storage.dart';
-
-/// [AudiobookStorage] 的 Flutter 平台实现。**重文件**：只由全 barrel
-/// `fushi_audio.dart` 导出，不进 `fushi_audio_core.dart`——path_provider /
-/// just_audio 都是 method-channel 插件，无头服务端不能拖进来。
+/// [AudiobookStorage] 的 Flutter 平台实现。住在 app 而不是 `fushi_audio`：
+/// path_provider / just_audio 都是 method-channel 插件，`fushi_audio` 已不依赖
+/// Flutter SDK（无头服务端直接消费它）。
 ///
 /// 每个文件用一次性 [AudioPlayer]，探完即释放；探测失败（损坏 / 解码不支持 /
 /// 插件在本平台不可用）返回 0，与拆分前逐字节一致。

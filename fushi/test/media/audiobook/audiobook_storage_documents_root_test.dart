@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
-import 'package:fushi_audio/src/audiobook/audiobook_storage.dart';
-import 'package:fushi_audio/src/audiobook/audiobook_storage_platform.dart';
+import 'package:fushi/src/media/audiobook/audiobook_storage_platform.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
 /// TODO-1236: `AudiobookStorage` 的 documents 根解析必须可被 app 层注入，使有声书

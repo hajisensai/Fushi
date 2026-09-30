@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
+import 'package:fushi/src/media/audiobook/audiobook_storage_platform.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;

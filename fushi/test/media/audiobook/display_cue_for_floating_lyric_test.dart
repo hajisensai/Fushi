@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 // TODO-1065 / BUG-509：悬浮字幕首句空窗 / 每句要等上一句播完才出现。

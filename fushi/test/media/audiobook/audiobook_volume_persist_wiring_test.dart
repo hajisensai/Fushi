@@ -8,8 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 这三件，配合 reader 侧接线守卫 + repo 往复测试形成完整防回归。
 void main() {
   test('AudiobookPlayerController has volume persistence primitives', () {
-    final String src =
-        File('lib/src/audiobook/audiobook_controller.dart').readAsStringSync();
+    final String src = File('lib/src/media/audiobook/audiobook_controller.dart')
+        .readAsStringSync();
 
     // 回调声明存在。
     expect(src, contains('onVolumePersist'));

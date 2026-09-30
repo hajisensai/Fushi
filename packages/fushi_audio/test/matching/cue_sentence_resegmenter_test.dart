@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 造一条带逐 token 时间的 ASR cue：字符级 token（每个字一个 token），

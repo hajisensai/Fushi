@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_session.dart';

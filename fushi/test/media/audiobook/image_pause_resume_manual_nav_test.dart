@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 
 /// BUG-890：开着「跟随音频」+「图片等待」阅读有声书，朗读跨过插图时图片等待自动
 /// 暂停几秒。用户在这几秒窗口内手动向前翻页（想预读/跨过 あとがき 的插图章），
@@ -37,9 +37,9 @@ void main() {
   });
 
   group('BUG-890 源码守卫：接线不能被回退', () {
-    final String source = File(
-            '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart')
-        .readAsStringSync();
+    final String source =
+        File('lib/src/media/audiobook/audiobook_controller.dart')
+            .readAsStringSync();
 
     test('图片等待窗口内手动翻页会置标志', () {
       expect(

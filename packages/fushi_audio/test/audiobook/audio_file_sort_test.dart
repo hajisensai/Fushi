@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/src/audiobook/audio_file_sort.dart';
 
 void main() {
