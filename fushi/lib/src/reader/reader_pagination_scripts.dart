@@ -400,7 +400,7 @@ class ReaderPaginationScripts {
   ///
   /// - 首 / 末内容边换算页号前都先减相位 [contentStart]（turn 轴起始 padding：列 j 的
   ///   内容从 contentStart + j*pageStep 开始，与 JS `alignContentStartToPage` 同源）。
-  ///   BUG-2818：末页不减相位时，末行接近满行会让 `lastContentScroll` 多算一页；旧几何下
+  ///   BUG-2819：末页不减相位时，末行接近满行会让 `lastContentScroll` 多算一页；旧几何下
   ///   被 `maxAligned` 盖住，WebKit 分页末尾补一栏后就把末页推到补出来的空白栏上。
   ///
   /// 与 JS 同算法（headless WebView 不可用）。所有量都在滚动轴向、CSS px，pageStep 为
@@ -2868,7 +2868,7 @@ $_sharedJs
       lastContentEdge = Math.max(lastContentEdge, mediaEnd);
     }
     var startAlignedScroll = firstContentEdge === null ? 0 : this.alignContentStartToPage(context, firstContentEdge);
-    // BUG-2818：末页 = 最后内容边所在的那一列，列号同样要先减相位 contentStart（与
+    // BUG-2819：末页 = 最后内容边所在的那一列，列号同样要先减相位 contentStart（与
     // alignToPage / alignContentStartToPage 同源：列 j 的内容从 contentStart + j*pageSize
     // 开始）。裸 floor 把每列末尾 (contentStart − gap) 那段判进下一格——末行接近满行时
     // lastContentScroll 多算一页。旧几何下它被 maxAligned 盖住；WebKit 分页末尾补一栏后
@@ -2877,7 +2877,7 @@ $_sharedJs
     var lastContentScroll = lastContentEdge <= 0 ? 0 : Math.floor(Math.max(0, lastContentEdge - 1 - lastContentPhase) / context.pageSize) * context.pageSize;
     var maxScroll = Math.min(maxAlignedScroll, lastContentScroll);
     // The real browser scroll endpoint can fall between two absolute
-    // page-grid lines. BUG-2818: WebKit's scroll extent omits the multicol
+    // page-grid lines. BUG-2819: WebKit's scroll extent omits the multicol
     // body's inline-end padding (right margin / bottom margin + chrome inset),
     // so the last aligned page was out of reach and every chapter's last page
     // rendered shifted by that margin; the Apple paginated CSS now pads the

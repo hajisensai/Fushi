@@ -295,7 +295,7 @@ p::after {
 ''';
   }
 
-  /// BUG-2818：Mac / iOS 分页每章**最后一页**整体错开一个页边距、满行末字被切掉。
+  /// BUG-2819：Mac / iOS 分页每章**最后一页**整体错开一个页边距、满行末字被切掉。
   ///
   /// 分页把整章排成一根多列 body、按页步长（列宽 + 列间距）滚动，第 k 页落在
   /// `k × 页步长`。能滚到哪儿由 `scrollWidth − clientWidth`（竖排 `scrollHeight −
@@ -319,7 +319,7 @@ p::after {
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
         return '''
-/* BUG-2818: WebKit paginated only — see _webKitPaginatedScrollEndCss. */
+/* BUG-2819: WebKit paginated only — see _webKitPaginatedScrollEndCss. */
 body::after {
   content: "" !important;
   display: block !important;
@@ -641,7 +641,7 @@ svg.block-img.blurred {
         settings.isVnMode || settings.isContinuousMode
             ? ''
             : _webKitPaginatedRubyReserveCss(settings.lineHeight);
-    // BUG-2818：末页够不着也只发生在多列分页。
+    // BUG-2819：末页够不着也只发生在多列分页。
     final String paginatedScrollEndCss =
         settings.isVnMode || settings.isContinuousMode
             ? ''

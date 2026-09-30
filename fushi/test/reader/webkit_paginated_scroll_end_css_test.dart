@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 
 import '../helpers/source_guard.dart';
 
-// BUG-2818：Mac / iOS 分页每章最后一页整体错开一个页边距、满行末字被切掉。
+// BUG-2819：Mac / iOS 分页每章最后一页整体错开一个页边距、满行末字被切掉。
 //
 // WebKit 算多列 body 的滚动范围时不含行内方向末端的 padding（横排右边距、竖排下边距
 // + 底部 chrome inset），物理终点比末页对齐位置少这一截，末页只能停在错位的物理
@@ -51,7 +51,7 @@ String? _columnBreakBodyAfter(String css) {
 }
 
 void main() {
-  group('BUG-2818 WebKit 分页末页够得着（末尾补一栏）', () {
+  group('BUG-2819 WebKit 分页末页够得着（末尾补一栏）', () {
     for (final TargetPlatform platform in <TargetPlatform>[
       TargetPlatform.iOS,
       TargetPlatform.macOS,

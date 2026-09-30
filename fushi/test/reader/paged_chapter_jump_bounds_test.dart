@@ -196,10 +196,10 @@ void main() {
       expect(info.currentPage, 4);
     });
   });
-  // BUG-2818：Mac / iOS 分页每章最后一页整体错开一个边距。几何取自 macOS 27 WKWebView
+  // BUG-2819：Mac / iOS 分页每章最后一页整体错开一个边距。几何取自 macOS 27 WKWebView
   // 实测（生产横排分页 CSS、真书章节、1145 宽、左右边距 55px）：页步长 1057，相位
   // contentStart = 左 padding 55，末列从 55 + 28*1057 = 29651 起、末行右缘 30659。
-  group('BUG-2818 章末落页：相位 + WebKit 末尾补栏', () {
+  group('BUG-2819 章末落页：相位 + WebKit 末尾补栏', () {
     const double ps = 1057;
     const double phase = 55;
     const double last = 30659;

@@ -33,8 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2819](bugs/BUG-2819-webkit-paginated-last-page-shift.md) | ✅ | ✅ | Mac/iOS 翻页每章最后一页整体错开一个边距、行尾被切（WebKit 滚动范围不含分栏容器末端 padding） |
 | [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |
-| [BUG-2818](bugs/BUG-2818-webkit-paginated-last-page-shift.md) | ✅ | ✅ | Mac/iOS 翻页每章最后一页整体错开一个边距、行尾被切（WebKit 滚动范围不含分栏容器末端 padding） |
 | [BUG-2817](bugs/BUG-2817-release-asset-tag-app-build.md) | ✅ | ✅ | 发布模型资产 release 触发整套应用构建并把安装包挂到该 release |
 | [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
 | [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |

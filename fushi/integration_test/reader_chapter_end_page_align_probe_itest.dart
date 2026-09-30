@@ -21,7 +21,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-2818 真书探针：Mac / iOS 分页每章最后一页（翻回上一章落到的那一页）整体错开
+/// BUG-2819 真书探针：Mac / iOS 分页每章最后一页（翻回上一章落到的那一页）整体错开
 /// 一个页边距、满行末字被切掉。
 ///
 /// WebKit 的滚动范围不含多列 body 行内方向末端的 padding，末页对齐位置够不着，只能
@@ -190,7 +190,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'BUG-2818 real-book probe: the last page of a chapter lands on the page '
+    'BUG-2819 real-book probe: the last page of a chapter lands on the page '
     'grid and no text is clipped, across paginated / continuous / VN',
     timeout: const Timeout(Duration(minutes: 30)),
     (WidgetTester tester) async {
