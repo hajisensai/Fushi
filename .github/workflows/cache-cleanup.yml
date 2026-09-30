@@ -9,19 +9,20 @@
 # PR 合并/关闭后那些桶永远不会再被读到，但 GitHub 只在「7 天无访问」后才回收。
 # 这一步把它们立刻删掉，把配额还给 develop。
 #
-# 本 workflow **不发布任何东西**：无 checkout、无构建、无 release，只调
-# `DELETE /repos/{owner}/{repo}/actions/caches?key=...&ref=...`。
+# 本 workflow **不发布任何东西**：只稀疏检出 base 分支上的 tool/cleanup_pr_ci.sh，
+# 无构建、无 release，只调 Actions API 取消 run 与删缓存。
 name: Cleanup PR caches
 
-# pull_request_target, not pull_request (2026-09-30): 79% of PRs come from a fork
-# (W1ght/hibiki), and a fork PR's `pull_request` token is read-only, so this job
-# was skipped for them -- their CI kept running after merge (measured: 82% of PR
-# CI runner time was spent AFTER the PR merged, ~740 runner-min/day). The
-# target event runs this file from the base branch with the base repo's token.
-# Safe here: nothing checks out or executes PR code; the fork-controlled branch
-# name only arrives via env and is compared as a string in bash.
+# pull_request, same-repo PRs only (2026-09-30). #1829 moved this to
+# pull_request_target so fork PRs (79%; their pull_request token is read-only) get
+# the base repo's token -- but pull_request_target takes the workflow definition
+# from the DEFAULT branch, main, which lags develop and is not synced by agents, and
+# main's copy only knew `pull_request`: from then on the job never ran for anyone.
+# Merged PRs of any origin are now cleaned on the develop push instead
+# (merged-pr-cleanup.yml; merging IS a push, which runs develop's own file with a
+# writable token). This workflow keeps same-repo PRs closed without merging.
 on:
-  pull_request_target:
+  pull_request:
     types: [closed]
 
 permissions:
@@ -34,114 +35,25 @@ concurrency:
 
 jobs:
   cleanup:
-    # 不再跳过 fork PR：pull_request_target 给的是基础仓库的 token（见文件头）。
+    # A fork PR's token here is read-only: every cancel / delete would 403.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # 2026-09-30：PR 的 concurrency 只在同一个 PR 再推提交时才 cancel-in-progress，
-      # 合并/关闭**不会**取消它还在排队或在跑的 CI。本仓 PR 大多开了很快就合，于是
-      # 已合并 PR 的整套 CI（Android 5 个 job + 多平台 5 个 + 合并门）照样一条条跑完：
-      # 实测同一时刻排队/在跑的 PR run 里 15 个分支只有 1 个 PR 还开着，另外 14 个
-      # 已合并 PR 占着约 39 条 run，还有一个卡死的 appSmoke 占了一个槽位 250 分钟。
-      # 这些结果永远没人看。PR 一关就把它们取消，槽位还给开着的 PR 和 develop。
-      # 只动本 PR 分支上 pull_request / pull_request_target 触发的 run；push（develop
-      # 发布）与本 workflow 自己（Cleanup PR caches）一律不碰。
-      - name: Cancel this PR's still-queued / running CI
+      # The script from the base branch, not the closed PR's merge ref (which may
+      # be gone once the PR is closed).
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          sparse-checkout: tool/cleanup_pr_ci.sh
+          sparse-checkout-cone-mode: false
+      # Cancels first, then deletes the PR ref's caches (tool/cleanup_pr_ci.sh).
+      - name: Cancel this PR's leftover CI and delete its caches
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          SELF_WORKFLOW: ${{ github.workflow }}
-        run: |
-          set -euo pipefail
-          # 只按 status 查，分支 / 仓库 / 事件都在 bash 里比：带 branch= 时 runs API
-          # 回过过期结果集（2026-09-30 实测拿到 09-07 的数据，见 cancel_superseded_runs.sh）；
-          # 分支名也因此不进 URL / jq。
-          ids="$(
-            for status in requested pending waiting queued in_progress; do
-              gh api -X GET "repos/$REPO/actions/runs" -f status="$status" -f per_page=100 --paginate \
-                --jq '.workflow_runs[] | select(.event == "pull_request" or .event == "pull_request_target") | "\(.id)\t\(.head_repository.full_name)\t\(.head_branch)\t\(.name)"'
-            done | sort -u
-          )"
-          cancelled=0
-          while IFS=$'\t' read -r id head_repo head_branch name; do
-            [ -n "${id:-}" ] || continue
-            [ "$head_branch" = "$HEAD_BRANCH" ] || continue
-            # 分支**名**不唯一：fork 上同名的 develop / feature 分支发起的 PR 也叫这个名。
-            # 只认这个 PR 的 head 仓库（本仓分支或 fork）上的 run。
-            [ "$head_repo" = "$HEAD_REPO" ] || continue
-            [ "$name" = "$SELF_WORKFLOW" ] && continue
-            if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
-              echo "Cancelled run $id ($name)"
-              cancelled=$((cancelled + 1))
-              requested="${requested:-} $id"
-            else
-              echo "Run $id ($name) could not be cancelled (probably already finished)"
-            fi
-          done <<< "$ids"
-          # 普通 cancel 停不下 `if: always()` 的 job / step（2026-09-30 实测三条 run
-          # cancel 后一直 in_progress，只能 force-cancel）。统一等一轮，还在跑的强制取消。
-          deadline=$(( $(date +%s) + 90 ))
-          pending="${requested:-}"
-          while [ -n "$pending" ] && [ "$(date +%s)" -lt "$deadline" ]; do
-            sleep 10
-            still=""
-            for id in $pending; do
-              [ "$(gh api "repos/$REPO/actions/runs/$id" --jq .status)" = "completed" ] || still="$still $id"
-            done
-            pending="$still"
-          done
-          for id in $pending; do
-            gh api -X POST "repos/$REPO/actions/runs/$id/force-cancel" >/dev/null 2>&1 \
-              && echo "Force-cancelled run $id (ignored the plain cancel for 90s)" \
-              || echo "::warning title=Force-cancel failed::run $id"
-          done
-          echo "Cancelled $cancelled leftover CI run(s) for closed PR branch $HEAD_BRANCH." \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Delete caches scoped to this PR ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
-        run: |
-          set -euo pipefail
-          freed=0
-          count=0
-          # 分页取完这个 ref 下的全部缓存再删（边列边删会跳页）。
-          keys="$(gh api --paginate \
-            "repos/$REPO/actions/caches?per_page=100&ref=$PR_REF" \
-            --jq '.actions_caches[] | "\(.id)\t\(.size_in_bytes)\t\(.key)"')"
-          if [ -z "$keys" ]; then
-            echo "No caches scoped to $PR_REF."
-            exit 0
-          fi
-          while IFS=$'\t' read -r id size key; do
-            [ -n "${id:-}" ] || continue
-            echo "Deleting $key ($((size / 1024 / 1024)) MB, id=$id)"
-            # 按 id 删是精确的；失败不让整条 workflow 红（缓存可能刚被 LRU 驱逐）。
-            gh api -X DELETE "repos/$REPO/actions/caches/$id" || \
-              echo "::warning title=Cache delete failed::$key"
-            freed=$((freed + size))
-            count=$((count + 1))
-          done <<< "$keys"
-          echo "Deleted $count cache(s), freed $((freed / 1024 / 1024)) MB from $PR_REF." \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Report repository cache usage
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          usage="$(gh api "repos/$REPO/actions/cache/usage")"
-          bytes="$(echo "$usage" | jq -r '.active_caches_size_in_bytes')"
-          entries="$(echo "$usage" | jq -r '.active_caches_count')"
-          mb=$((bytes / 1024 / 1024))
-          echo "Repository cache usage: ${mb} MB in ${entries} entries (limit 10240 MB)." \
-            >> "$GITHUB_STEP_SUMMARY"
-          # 超配额只警告不失败：这条 workflow 的职责是回收，不是守门。
-          if [ "$mb" -gt 10240 ]; then
-            echo "::warning title=Actions cache over quota::${mb} MB > 10240 MB; GitHub is LRU-evicting."
-          fi
+          SKIP_WORKFLOW_PATHS: .github/workflows/cache-cleanup.yml
+        run: bash tool/cleanup_pr_ci.sh

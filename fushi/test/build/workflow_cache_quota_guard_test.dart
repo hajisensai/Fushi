@@ -287,21 +287,37 @@ void main() {
   });
 
   test('PR 关闭后回收 PR 作用域缓存的 workflow 还在，且不碰发布', () {
-    final File cleanup = File('../.github/workflows/cache-cleanup.yml');
-    expect(cleanup.existsSync(), isTrue,
-        reason: 'cache-cleanup.yml 是把 refs/pull/<N>/merge 桶还给配额的唯一入口；'
-            'GitHub 自己要等 7 天无访问才回收。');
-    final String masked = maskHashComments(cleanup.readAsStringSync());
-    expect(masked, contains('actions/caches'),
-        reason: '清理步骤必须真的调 DELETE /actions/caches');
-    // 这条 workflow 只做回收，绝不能长出发布动作（CLAUDE.md 发布通道硬规则）。
-    for (final String forbidden in <String>[
-      'softprops/action-gh-release',
-      'gh release create',
-      'make_latest',
+    // refs/pull/<N>/merge 桶还给配额的入口：合并的 PR 在 push 到 develop 时由
+    // merged-pr-cleanup.yml 清（fork PR 也覆盖），同仓 PR 未合并就关由
+    // cache-cleanup.yml 清；两者共用 tool/cleanup_pr_ci.sh。GitHub 自己要等
+    // 7 天无访问才回收。
+    final File script = File('../tool/cleanup_pr_ci.sh');
+    expect(script.existsSync(), isTrue);
+    final String sh = script.readAsStringSync();
+    expect(sh, contains(r'gh api -X DELETE "repos/$REPO/actions/caches/$id"'),
+        reason: '清理必须真的调 DELETE /actions/caches');
+    final List<String> texts = <String>[sh];
+    for (final String name in <String>[
+      'cache-cleanup.yml',
+      'merged-pr-cleanup.yml',
     ]) {
-      expect(masked.contains(forbidden), isFalse,
-          reason: 'cache-cleanup.yml 不得触碰发布链路，发现：$forbidden');
+      final File wf = File('../.github/workflows/$name');
+      expect(wf.existsSync(), isTrue, reason: '$name 不见了');
+      final String masked = maskHashComments(wf.readAsStringSync());
+      expect(masked, contains('bash tool/cleanup_pr_ci.sh'),
+          reason: '$name 必须真的跑清理脚本');
+      texts.add(masked);
+    }
+    // 回收链路绝不能长出发布动作（CLAUDE.md 发布通道硬规则）。
+    for (final String text in texts) {
+      for (final String forbidden in <String>[
+        'softprops/action-gh-release',
+        'gh release create',
+        'make_latest',
+      ]) {
+        expect(text.contains(forbidden), isFalse,
+            reason: 'PR 缓存回收链路不得触碰发布链路，发现：$forbidden');
+      }
     }
   });
 }
