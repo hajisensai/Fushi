@@ -35,6 +35,12 @@ enum MangaOcrLocalModel {
       ? fromKey(key)
       : mangaOcr;
 
+  /// 可选提速组件：只有经典 manga-ocr 有（KV cache decoder，结果逐 token 相同）。
+  List<MangaOcrModelFile> get accelerator => switch (this) {
+    mangaOcr => kMangaOcrKvAcceleratorManifest,
+    mangaOcrCuda || baberu => const <MangaOcrModelFile>[],
+  };
+
   List<MangaOcrModelFile> get manifest => switch (this) {
     baberu => kBaberuOcrModelManifest,
     mangaOcrCuda => kMangaOcrCudaModelManifest,

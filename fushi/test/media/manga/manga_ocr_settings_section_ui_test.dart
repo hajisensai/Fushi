@@ -21,10 +21,15 @@ class _FakeOcrService implements MangaOcrService {
     this.diskBytesOverride,
     this.obtainedBytesOverride,
     this.downloadEvents,
+    this.acceleratorMissingBytes = 0,
   });
 
   final bool supported;
   bool ready;
+
+  /// 提速组件还差的字节数；下载流跑完即清零（与真实服务「一次下齐」同形）。
+  int acceleratorMissingBytes;
+  int downloadCalls = 0;
 
   /// 磁盘占用与「清单是否齐全」解耦：残留 `.part`/遗留档就是「不 ready 但占着
   /// 磁盘」，这正是引擎用不到时仍须可删的那一档。
@@ -52,10 +57,13 @@ class _FakeOcrService implements MangaOcrService {
         totalBytes: 40 * 1024 * 1024,
         obtainedBytes:
             obtainedBytesOverride ?? (ready ? 40 * 1024 * 1024 : 0),
+        acceleratorMissingBytes: acceleratorMissingBytes,
       );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() async* {
+    downloadCalls++;
+    acceleratorMissingBytes = 0;
     final StreamController<MangaOcrDownloadEvent>? scripted = downloadEvents;
     if (scripted != null) {
       yield* scripted.stream;
@@ -198,6 +206,54 @@ void main() {
     expect(find.text(t.manga_ocr_model_status_missing), findsOneWidget);
     expect(find.widgetWithText(FilledButton, t.manga_ocr_download),
         findsOneWidget);
+  });
+
+  testWidgets('ready model without the speed-up pack offers to download it',
+      (WidgetTester tester) async {
+    final _FakeOcrService service = _FakeOcrService(
+      ready: true,
+      acceleratorMissingBytes: 94 * 1024 * 1024,
+    );
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: service,
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder button =
+        find.byKey(const ValueKey<String>('manga_ocr_accelerator_download'));
+    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
+    expect(button, findsOneWidget);
+    expect(find.text(t.manga_ocr_accelerator_desc), findsOneWidget);
+
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(service.downloadCalls, 1);
+    expect(button, findsNothing, reason: '下齐之后不再提示');
+    expect(find.text(t.manga_ocr_accelerator_desc), findsNothing);
+  });
+
+  testWidgets('speed-up pack prompt is absent when nothing is missing',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('manga_ocr_accelerator_download')),
+        findsNothing);
+    expect(find.text(t.manga_ocr_accelerator_desc), findsNothing);
   });
 
   testWidgets('lens language dropdown persists the chosen language',
