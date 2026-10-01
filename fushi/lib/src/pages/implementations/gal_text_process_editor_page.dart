@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_text_process_assistant.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/utils.dart';
@@ -263,35 +264,13 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       if (!mounted) return;
       setState(
         () => _aiMessage = t.game_text_process_ai_failed(
-          reason: _aiErrorText(failure.message),
+          reason: aiFailureText(failure.message),
         ),
       );
     } finally {
       client.close();
       if (mounted) setState(() => _aiBusy = false);
     }
-  }
-
-  /// 把 [AiChatFailure.message] 的脱敏短码翻成本地化文案。
-  String _aiErrorText(String code) {
-    switch (code) {
-      case 'unauthorized':
-        return t.ai_error_unauthorized;
-      case 'rate_limited':
-        return t.ai_error_rate_limited;
-      case 'network_error':
-        return t.ai_error_network;
-      case 'bad_response':
-        return t.ai_error_bad_response;
-      case 'empty_response':
-        return t.ai_error_empty_response;
-      case 'provider_not_configured':
-        return t.ai_error_not_configured;
-    }
-    if (code.startsWith('http_')) {
-      return t.ai_error_http(code: code.substring(5));
-    }
-    return code;
   }
 
   // ── build ────────────────────────────────────────────────────────────────

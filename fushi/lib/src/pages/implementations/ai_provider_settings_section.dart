@@ -1,8 +1,9 @@
 /// 「AI」设置区：用户自配的大模型提供商增删改 + 每个功能用哪家的映射。
 ///
 /// 形态与 `opds_server_settings_section.dart` 同构（本仓「用户自配服务器列表」的
-/// 标准件）：草稿态 + 600ms 防抖落盘 + dispose 冲刷 pending + 只落「校验得过」的
-/// 草稿。校验判据**一律委托给 [AiProviderConfig] 的构造器**——在 UI 里再抄一份
+/// 标准件）：草稿态 + 600ms 防抖落盘 + dispose 冲刷 pending + 校验不过的草稿在
+/// 磁盘上保留上一次的有效版本（见 [_AiProviderSettingsSectionState._saveValidDrafts]）。
+/// 校验判据**一律委托给 [AiProviderConfig] 的构造器**——在 UI 里再抄一份
 /// URL/HTTP 放行判据必然与它漂移，而漂移的结果是「界面说没问题、保存后条目却
 /// 消失了」。
 ///
@@ -22,10 +23,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
+
+// 历史上 aiFailureText 住在这里，五处调用方按 `show aiFailureText` 从本文件引；
+// 搬到 lib/src/ai/ 后保留这条再导出，不逐个改调用方。
+export 'package:fushi/src/ai/ai_failure_text.dart' show aiFailureText;
 
 /// 输入停止多久后落盘（与 OPDS / Torznab 段同值）。
 const Duration _kSaveDebounce = Duration(milliseconds: 600);
@@ -320,8 +326,8 @@ class _AiProviderSettingsSectionState
               ),
               OutlinedButton.icon(
                 key: ValueKey<String>('ai-provider-$index-test'),
-                // 「测试连接」跑的是 listModels 而不是一次真问答：便宜、不花 token，
-                // 而鉴权/网络/端点这三类真正会配错的东西它一条不漏地覆盖。
+                // 「测试连接」对所配模型发一次最小问答（见 [_testConnection]）：
+                // listModels 验不出模型名拼错 / 未开通 / 端点不支持 chat。
                 onPressed: config == null || probe?.running == true
                     ? null
                     : () => unawaited(_testConnection(draft)),
@@ -478,20 +484,17 @@ class _AiProviderSettingsSectionState
   Widget _featureRow(AiFeature feature) {
     final List<AiProviderConfig> usable = _usableProviders();
     final String? assigned = _assignments.providerIdFor(feature);
-    // 显式指派的那家没配全 / 已停用：运行时 resolve 不会退回默认，所以这里也不能
-    // 把它显示成「跟随默认」——那等于告诉用户能用，实际点下去提示没配 AI。
-    // 删掉的那家已由 withoutProvider 清掉映射，走不到这里。
+    // 显式指派的那家没配全 / 已停用 / 根本不在清单里：运行时 resolve 一律回 null、
+    // 不退回默认，所以这里也不能把它显示成「跟随默认」——那等于告诉用户能用，实际
+    // 点下去提示没配 AI。「不在清单里」不止删除一条来路（删除时 withoutProvider
+    // 已清映射）：备份恢复、旧版本写入、提供商条目解码失败被逐条丢弃都会留下它。
     final bool assignedUnavailable =
         assigned != null &&
         assigned != kAiFeatureDisabled &&
-        !usable.any((AiProviderConfig c) => c.id == assigned) &&
-        _drafts.any((_AiProviderDraft d) => d.id == assigned);
-    final String? current =
-        assigned == kAiFeatureDisabled ||
-            assignedUnavailable ||
-            usable.any((AiProviderConfig c) => c.id == assigned)
-        ? assigned
-        : null;
+        !usable.any((AiProviderConfig c) => c.id == assigned);
+    // 显式指派的每一种取值（可用的那家 / 关掉 / 不可用）在 items 里都有对应项，
+    // 所以下拉当前值就是指派本身；只有「没显式指派」才落到「跟随默认」那一项。
+    final String? current = assigned;
     final String? defaultName = usable
         .where((AiProviderConfig c) => c.id == _assignments.defaultProviderId)
         .map((AiProviderConfig c) => c.displayName)
@@ -626,17 +629,29 @@ class _AiProviderSettingsSectionState
     await appModel.prefsRepo.setAiFeatureAssignments(_assignments);
   }
 
-  /// 落盘**当前有效**的草稿。
+  /// 按草稿列表落盘；**只有显式删除（[_delete]）能让一家提供商从磁盘消失**。
   ///
-  /// 无效草稿（地址还没填完、空记录）跳过而不是报错：用户正在打字，这是中间态。
-  /// 它们仍留在 UI 里，等填完下一次防抖就会被保存。
+  /// 无效草稿（地址改到一半、关掉明文 HTTP 放行）是用户正在编辑的中间态：它留在
+  /// UI 里，磁盘上则保留这一 id **上一次落盘的有效版本**。此前直接跳过它——整份
+  /// 覆盖的写法于是把这家从磁盘删掉，指向它的功能映射当场悬空，用户此时离开页面
+  /// 就永久丢了这家的 key 与模型。从没有效过的新草稿磁盘上本来就没有，照旧不写。
+  ///
+  /// 保留的旧版本一律**停用**落盘：用户正在改它，旧配置不该在后台继续被调用——
+  /// 尤其草稿是在收紧（关掉明文 HTTP、停用这家）时，照原样保留旧版等于把用户
+  /// 刚撤回的放行悄悄留着。草稿重新有效时按草稿自己的启用状态写回。
   Future<void> _saveValidDrafts() async {
     // 用 build 期抓住的引用，不用 ref——本方法也从 dispose 里调（见 [_appModel]）。
     final AppModel? appModel = _appModel;
     if (appModel == null) return;
+    final Map<String, AiProviderConfig> persisted = <String, AiProviderConfig>{
+      for (final AiProviderConfig config in appModel.prefsRepo.aiProviders)
+        config.id: config,
+    };
     final List<AiProviderConfig> configs = <AiProviderConfig>[
       for (final _AiProviderDraft draft in _drafts)
-        if (draft.toConfig() case final AiProviderConfig config) config,
+        if ((draft.toConfig() ?? persisted[draft.id]?.copyWith(enabled: false))
+            case final AiProviderConfig config)
+          config,
     ];
     await appModel.prefsRepo.setAiProviders(configs);
   }
@@ -675,11 +690,9 @@ class _AiProviderSettingsSectionState
     if (preset == null || !mounted) return;
     setState(() {
       _drafts.add(
-        _AiProviderDraft.fromConfig(
-          AiProviderConfig.fromPreset(
-            preset,
-            id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
-          ),
+        _AiProviderDraft.fromPreset(
+          preset,
+          id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
         ),
       );
     });
@@ -697,7 +710,12 @@ class _AiProviderSettingsSectionState
   Future<void> _fetchModels(_AiProviderDraft draft) =>
       _probe(draft, collectModels: true);
 
-  /// 测试连接：同样跑一次 listModels（见按钮处注释）。
+  /// 测试连接：对所配模型发一次最小 chat 请求（[AiChatClient.ping]），验证的是
+  /// 功能真正要走的 chat 端点 + 鉴权 + 模型名。
+  ///
+  /// 还没填模型时无从 chat，退回 listModels——它至少能验地址与鉴权，而「模型」
+  /// 字段的提示本来就是「可留空，再拉取列表」；此时卡片状态标仍是「未配置完整」，
+  /// 不会让人误以为这家已经能用。
   Future<void> _testConnection(_AiProviderDraft draft) =>
       _probe(draft, collectModels: false);
 
@@ -716,14 +734,21 @@ class _AiProviderSettingsSectionState
     _ProbeState result;
     List<String>? models;
     try {
-      final List<String> fetched = await client.listModels(config);
-      models = collectModels ? fetched : null;
-      result = _ProbeState.done(
-        ok: true,
-        message: collectModels
-            ? t.ai_provider_models_fetched(count: fetched.length)
-            : t.ai_provider_test_ok,
-      );
+      if (collectModels) {
+        final List<String> fetched = await client.listModels(config);
+        models = fetched;
+        result = _ProbeState.done(
+          ok: true,
+          message: t.ai_provider_models_fetched(count: fetched.length),
+        );
+      } else {
+        if (config.model.trim().isEmpty) {
+          await client.listModels(config);
+        } else {
+          await client.ping(config);
+        }
+        result = _ProbeState.done(ok: true, message: t.ai_provider_test_ok);
+      }
     } on AiChatFailure catch (failure) {
       // failure.message 已经是脱敏短码（绝不含 key / 完整 URL / 响应体原文）。
       result = _ProbeState.done(
@@ -760,8 +785,8 @@ class _AiProviderSettingsSectionState
     AiFeature.galgameTextProcess => t.ai_feature_galgame_text_process_summary,
     AiFeature.dictStyle => t.ai_feature_dict_style_summary,
     AiFeature.lapisStyle => t.ai_feature_lapis_style_summary,
-    AiFeature.videoIdentify => t.ai_feature_video_identify_summary,
-    AiFeature.videoSearch => t.ai_feature_video_search_summary,
+    AiFeature.videoIdentify => t.ai_feature_video_identify_assist_summary,
+    AiFeature.videoSearch => t.ai_feature_video_search_subtitle_summary,
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
     AiFeature.acquire => t.ai_feature_acquire_summary,
   };
@@ -779,25 +804,6 @@ class _AiProviderSettingsSectionState
       effort == AiReasoningEffort.none
       ? t.ai_provider_reasoning_none
       : effort.storageKey;
-}
-
-/// 把 [AiChatFailure.message] 的脱敏短码映射成界面文案。
-///
-/// 短码是调用层与 UI 之间的唯一契约（见 `ai_chat_client.dart`），别在别处再各自
-/// 解释一遍。
-String aiFailureText(String code) {
-  if (code.startsWith('http_')) {
-    return t.ai_error_http(code: code.substring(5));
-  }
-  return switch (code) {
-    'unauthorized' => t.ai_error_unauthorized,
-    'rate_limited' => t.ai_error_rate_limited,
-    'network_error' => t.ai_error_network,
-    'bad_response' => t.ai_error_bad_response,
-    'empty_response' => t.ai_error_empty_response,
-    'provider_not_configured' => t.ai_error_not_configured,
-    _ => code,
-  };
 }
 
 /// 一条提供商的编辑中状态。
@@ -831,6 +837,29 @@ class _AiProviderDraft {
         enabled: config.enabled,
         allowInsecureHttp: config.allowInsecureHttp,
       );
+
+  /// 选了一家预设后的新草稿。
+  ///
+  /// 不经 [AiProviderConfig.fromPreset]：那是**已校验**的配置构造，「自定义」预设
+  /// 地址为空，构造器当场抛 ArgumentError——以前这一项点了什么都不会发生（异常从
+  /// setState 里冒出去，草稿没加上）。草稿本来就允许是无效中间态，填好地址后
+  /// 由 [toConfig] 校验落盘。字段默认值与 [AiProviderConfig.fromPreset] 一致。
+  factory _AiProviderDraft.fromPreset(
+    AiProviderPreset preset, {
+    required String id,
+  }) => _AiProviderDraft(
+    id: id,
+    presetId: preset.id,
+    name: preset.displayName,
+    apiKey: '',
+    baseUrl: preset.baseUrl,
+    model: preset.suggestedModel,
+    protocol: preset.protocol,
+    reasoningEffort: AiReasoningEffort.none,
+    enabled: true,
+    // 本地服务默认地址是 loopback HTTP，不勾这个开关就连构造都过不去。
+    allowInsecureHttp: preset.isLocal,
+  );
 
   final String id;
   final String presetId;
