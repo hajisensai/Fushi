@@ -6168,5 +6168,8 @@
   "manga_ocr_ctc_model": "Manga-CTC (schnell)",
   "manga_ocr_ctc_desc": "Liest jede Textspalte einzeln mit einem auf Manga abgestimmten PP-OCRv6-Modell. Viel kleinerer Download und schneller als manga-ocr; auf unseren Testseiten mindestens so genau, auch bei viel Furigana. Modell: Kellenok/PP-OCRv6_manga (trainiert mit Manga109-s und AnimeText).",
   "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead.",
-  "video_bluray_stream_encrypted": "This Blu-ray stream is still AACS-encrypted. Fushi does not decrypt protected discs, so it can only play unencrypted BDMV folders or video files."
+  "video_bluray_stream_encrypted": "This Blu-ray stream is still AACS-encrypted. Fushi does not decrypt protected discs, so it can only play unencrypted BDMV folders or video files.",
+  "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
+  "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
+  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition."
 }

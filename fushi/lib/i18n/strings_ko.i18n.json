@@ -6168,5 +6168,8 @@
   "manga_ocr_ctc_model": "만화 CTC(빠름)",
   "manga_ocr_ctc_desc": "만화에 맞게 조정한 PP-OCRv6 모델로 텍스트 열을 하나씩 인식합니다. manga-ocr보다 다운로드가 훨씬 작고 빠르며, 테스트 페이지에서는 후리가나가 많은 페이지를 포함해 정확도가 같거나 더 좋았습니다. 모델: Kellenok/PP-OCRv6_manga(Manga109-s와 AnimeText로 학습).",
   "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead.",
-  "video_bluray_stream_encrypted": "This Blu-ray stream is still AACS-encrypted. Fushi does not decrypt protected discs, so it can only play unencrypted BDMV folders or video files."
+  "video_bluray_stream_encrypted": "This Blu-ray stream is still AACS-encrypted. Fushi does not decrypt protected discs, so it can only play unencrypted BDMV folders or video files.",
+  "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
+  "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
+  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition."
 }

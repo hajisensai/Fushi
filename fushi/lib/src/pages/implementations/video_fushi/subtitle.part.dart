@@ -225,6 +225,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
       if (_canResolveSubtitleTimingAudio && isAsrSupported)
         ListTile(
+          leading: const Icon(Icons.transcribe_outlined),
+          title: Text(t.video_subtitle_asr_generate),
+          subtitle: Text(t.video_subtitle_asr_generate_hint),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_generateSubtitleWithSpeechModel(controller)),
+        ),
+      if (_canResolveSubtitleTimingAudio && isAsrSupported)
+        ListTile(
           leading: const Icon(Icons.model_training_outlined),
           title: Text(t.video_subtitle_retime_action),
           enabled: !_subtitleLoadingShown,
@@ -365,7 +375,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ),
               title: Text(source.label),
               subtitle: source.isGraphicEmbedded
-                  ? Text(t.video_subtitle_graphic_hint)
+                  ? Text(t.video_subtitle_graphic_learning_hint)
                   : null,
               selected: subtitleSourceMatchesPersistedForMenu(
                 source,
@@ -1426,6 +1436,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String? selectedSource,
     String? label,
   }) async {
+    final int loadSeq = _episodeLoadSeq;
     final String displayLabel = label ?? p.basename(path);
     _showSubtitleLoadingOverlay();
     final List<AudioCue> cues;
@@ -1434,7 +1445,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } finally {
       _hideSubtitleLoadingOverlay();
     }
-    if (!mounted) return false;
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _episodeLoadSeq != loadSeq) {
+      return false;
+    }
     if (cues.isEmpty) {
       _showOsd(
         t.video_subtitle_load_failed(label: displayLabel),
@@ -1444,7 +1459,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     controller.setCues(cues);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
-    if (!mounted) return false;
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _episodeLoadSeq != loadSeq) {
+      return false;
+    }
     final String source = selectedSource ?? path;
     _rebuild(() => _currentSubtitleSource = source);
     // 持久化用户为该远端集的字幕选择（根因修复：远端字幕原本只进内存、退出即丢）。
@@ -1590,9 +1609,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _currentEpisode,
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
-    _showOsd(
-      t.video_subtitle_remote_player_decoded(label: label),
-    );
+    _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }
 
@@ -1747,9 +1764,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) async {
     if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
     final int seq = _episodeLoadSeq;
-    final bool shown = await controller.selectEmbeddedSecondaryTextTrackViaPlayer(
-      track.containerTrackOrdinal ?? track.streamIndex,
-    );
+    final bool shown = await controller
+        .selectEmbeddedSecondaryTextTrackViaPlayer(
+          track.containerTrackOrdinal ?? track.streamIndex,
+        );
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     final String source = _remoteEmbeddedSubtitleSource(track);
     _rebuild(() => _currentSecondarySubtitleSource = source);
@@ -1969,6 +1987,120 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
+  /// 从视频音轨生成文字字幕，允许无字幕或仅有 PGS 的视频直接进入查词和制卡链路。
+  Future<void> _generateSubtitleWithSpeechModel(
+    VideoPlayerController controller,
+  ) async {
+    final int loadSeq = _episodeLoadSeq;
+    final String? videoPath = _currentVideoPath;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _currentVideoPath == videoPath;
+
+    try {
+      final String? transcriptSrt = await _transcribeVideoSpeech(controller);
+      // 转录可能持续数分钟；取消、换集或重建播放器后保留产物，但不串到新视频。
+      if (transcriptSrt == null || !isCurrent()) return;
+      final Directory directory = await AppPaths.videoSubtitlesDirectory();
+      final String videoKey = sha256
+          .convert(utf8.encode('${widget.bookUid}|$videoPath|$_currentEpisode'))
+          .toString()
+          .substring(0, 12);
+      final String target = p.join(
+        directory.path,
+        'speech-$videoKey-${DateTime.now().microsecondsSinceEpoch}.srt',
+      );
+      await directory.create(recursive: true);
+      await File(transcriptSrt).copy(target);
+      if (!isCurrent()) return;
+      if (_isRemote) {
+        _registerImportedSubtitleSource(target);
+        if (await _applyRemoteSubtitle(controller, target)) {
+          if (!isCurrent()) return;
+          await _setDelayMs(0);
+          if (!isCurrent()) return;
+          unawaited(_uploadRemoteSubtitleToHost(target));
+        }
+      } else {
+        await _importExternalSubtitle(controller, target);
+        if (!isCurrent()) return;
+        if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
+          await _setDelayMs(0);
+        }
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'video.subtitleSpeechGeneration',
+        error,
+        stack,
+      );
+      if (isCurrent()) {
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
+      }
+    }
+  }
+
+  /// ASR 只接单音轨文件；先抽当前所选音轨，避免双语盘识别到默认配音。
+  Future<String?> _transcribeVideoSpeech(
+    VideoPlayerController controller,
+  ) async {
+    final int loadSeq = _episodeLoadSeq;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq;
+    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+    if (audio == null || !isCurrent()) return null;
+    String audioPath = audio.path;
+    if (audio.audioStreamCount != null) {
+      final int durationMs = controller.durationMs ?? 0;
+      if (durationMs <= 0) return null;
+      _showSubtitleLoadingOverlay();
+      try {
+        final String key = 'asr|${audio.path}|${audio.audioStreamIndex}';
+        final Future<String?> fetch = _remoteTimingAudioFetches.putIfAbsent(
+          key,
+          () async {
+            final Directory dir = await getTemporaryDirectory();
+            return extractAudioSegmentViaFfmpeg(
+              inputPath: audio.path,
+              startMs: 0,
+              endMs: durationMs,
+              outputPath: p.join(
+                dir.path,
+                'fushi_timing_audio',
+                'speech_${DateTime.now().microsecondsSinceEpoch}.aac',
+              ),
+              audioStreamIndex: audio.audioStreamIndex,
+              audioStreamCount: audio.audioStreamCount,
+              timeout: Duration(milliseconds: durationMs + 120000),
+            );
+          },
+        );
+        final String? extracted = await fetch;
+        if (!isCurrent()) return null;
+        if (extracted == null) {
+          _remoteTimingAudioFetches.remove(key);
+          _showOsd(
+            t.video_subtitle_import_failed,
+            severity: ToastSeverity.error,
+          );
+          return null;
+        }
+        audioPath = extracted;
+      } finally {
+        _hideSubtitleLoadingOverlay();
+      }
+    }
+    if (!isCurrent() || !context.mounted) return null;
+    return showAsrTranscribeSheet(
+      context: context,
+      audioPaths: <String>[audioPath],
+    );
+  }
+
   /// 用设备端语音模型**重定时**当前字幕轨：跑一遍 ASR 转录当参照，逐句修正时间，
   /// 结果写成一份新的外挂字幕档并当场切过去。
   ///
@@ -1994,17 +2126,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
-    if (audio == null || !context.mounted) return;
+    final int loadSeq = _episodeLoadSeq;
     // 远端视频的音轨是 host 裁好的临时文件，名字没有意义；新档按片名命名。
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq;
     final String baseName = _isRemote
         ? (_title ?? _effectiveRemoteInfo?.title ?? 'subtitle')
-        : p.basename(audio.path);
-    final String? transcriptSrt = await showAsrTranscribeSheet(
-      context: context,
-      audioPaths: <String>[audio.path],
-    );
-    if (transcriptSrt == null || !mounted) return;
+        : p.basename(_currentVideoPath ?? 'subtitle');
+    final String? transcriptSrt = await _transcribeVideoSpeech(controller);
+    if (transcriptSrt == null || !isCurrent()) return;
     _showOsd(
       t.video_subtitle_retime_running,
       icon: Icons.model_training_outlined,
@@ -2022,7 +2154,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       debugPrint('[fushi-video] subtitle retiming failed: $error');
       retimed = null;
     }
-    if (!mounted) return;
+    if (!isCurrent()) return;
     if (retimed == null) {
       _showOsd(t.video_subtitle_retime_failed, severity: ToastSeverity.error);
       return;
@@ -2033,12 +2165,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (_isRemote) {
       _registerImportedSubtitleSource(retimed.path);
       if (await _applyRemoteSubtitle(controller, retimed.path)) {
+        if (!isCurrent()) return;
         unawaited(_uploadRemoteSubtitleToHost(retimed.path));
       }
     } else {
       await _importExternalSubtitle(controller, retimed.path);
     }
-    if (!mounted) return;
+    if (!isCurrent()) return;
     final ({int matched, int total, int percent, int medianShiftMs}) summary =
         retimedSubtitleSummary(retimed);
     if (retimed.droppedInputCues > 0) {
@@ -2329,6 +2462,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
     String srcPath,
   ) async {
+    final String? videoPath = _currentVideoPath;
+    final int loadSeq = _episodeLoadSeq;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _currentVideoPath == videoPath &&
+        _episodeLoadSeq == loadSeq;
     if (subtitleFormatForPath(srcPath) == null) {
       _showOsd(
         t.video_subtitle_import_unsupported,
@@ -2350,12 +2490,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
         return;
       }
     }
-    if (!mounted) return;
+    if (!isCurrent()) return;
     final SubtitleSource source = SubtitleSource.external(
       externalPath: dest,
       label: p.basename(dest),
     );
     await _selectSubtitleSource(controller, source);
+    if (!isCurrent()) return;
     // BUG-1329：导入的新外挂字幕档当场并入字幕轨列表（不再等「下次进入字幕分类」重枚举）。
     _registerImportedSubtitleSource(dest);
     debugPrint(
@@ -2393,6 +2534,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ) async {
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
+    final int loadSeq = _episodeLoadSeq;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _currentVideoPath == videoPath &&
+        _episodeLoadSeq == loadSeq;
 
     // BUG-122: 图形内封轨（PGS/DVD 等位图）无法转文本 cue（ffmpeg 抽 srt 直接报
     // bitmap→bitmap 拒绝），交给 libmpv 当画面字幕渲染：看得到、不可逐字查词。瞬时
@@ -2441,7 +2588,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } finally {
       _hideSubtitleLoadingOverlay();
     }
-    if (!mounted) return false;
+    if (!isCurrent()) return false;
     // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
     // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
     // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
@@ -2458,6 +2605,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
     await controller.selectSubtitleTrack(SubtitleTrack.no());
 
+    if (!isCurrent()) return false;
     final String persisted = source.toPersistedValue();
     // BUG-081: 单视频把解析出的 cue 落库，重进时 `_loadSingle` 的 `loadCues`
     // 直接命中，无需用户再手动加载。cue 与字幕源指针**原子**写入（事务），避免
