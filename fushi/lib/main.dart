@@ -41,6 +41,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
@@ -2284,7 +2285,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // 都不生效，杜绝「Dart 请求焦点 → 引擎 SetFocus(FlutterView) → Win32
             // 连带激活主窗」把主界面抢到用户的游戏 / 浏览器前面。见
             // [MainWindowFocusGate] 的完整推导。
-            return MainWindowFocusGate(
+            final Widget gated = MainWindowFocusGate(
               child: AnnotatedRegion<SystemUiOverlayStyle>(
                 value: fushiSystemOverlayStyle(cs.brightness),
                 child: CupertinoTheme(
@@ -2428,6 +2429,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 ),
               ),
             );
+            // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
+            return SmoothWheelScrollScope(child: gated);
           },
         ),
       ),
