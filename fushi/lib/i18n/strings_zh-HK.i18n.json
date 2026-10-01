@@ -6172,5 +6172,9 @@
   "manga_ocr_engine_local_model": "本機 · $model",
   "manga_ocr_download_background_hint": "可以離開此頁，下載會在背景繼續。",
   "storage_ocr_models_hint": "在這裡下載或刪除各個本機 OCR 模型；使用哪一個在「漫畫 › 漫畫 OCR」裡選。",
-  "manga_ocr_wizard_title_book": "辨識本卷文字"
+  "manga_ocr_wizard_title_book": "辨識本卷文字",
+  "shelf_filter_read_status": "閱讀狀態",
+  "shelf_filter_read_status_unread": "未讀",
+  "shelf_filter_read_status_reading": "在讀",
+  "shelf_filter_read_status_finished": "讀完"
 }

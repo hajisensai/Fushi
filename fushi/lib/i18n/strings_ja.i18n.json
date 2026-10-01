@@ -6172,5 +6172,9 @@
   "manga_ocr_engine_local_model": "ローカル · $model",
   "manga_ocr_download_background_hint": "このページを離れても、ダウンロードはバックグラウンドで続きます。",
   "storage_ocr_models_hint": "ローカル OCR モデルをここで個別にダウンロード・削除できます。どれを使うかは「マンガ › マンガ OCR」で選びます。",
-  "manga_ocr_wizard_title_book": "この巻の文字を認識"
+  "manga_ocr_wizard_title_book": "この巻の文字を認識",
+  "shelf_filter_read_status": "読書状態",
+  "shelf_filter_read_status_unread": "未読",
+  "shelf_filter_read_status_reading": "読書中",
+  "shelf_filter_read_status_finished": "読了"
 }

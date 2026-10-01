@@ -49,6 +49,7 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
@@ -305,6 +306,34 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 渲染，用户实报「书架搜索不生效」。
   bool _matchesShelfSearch(Iterable<String> titles) =>
       matchesMediaSearch(query: _searchQuery, titles: titles);
+
+  /// 搜索栏「阅读状态」下拉（null = 全部）。与搜索词同理不持久化。
+  ShelfReadStatus? _readStatusFilter;
+
+  /// 阅读状态筛选命中判据，本地 EPUB / 漫画卡与 SRT 有声书卡共用：读完看
+  /// [_completedBookKeys]，在读 / 未读看进度（无进度 = 未读），口径即
+  /// [classifyShelfReadStatus]（与书架概览统计同一判据）。
+  bool _matchesReadStatusFilter({
+    required String? bookKey,
+    required ({int position, int duration})? progress,
+  }) {
+    final ShelfReadStatus? filter = _readStatusFilter;
+    if (filter == null) return true;
+    return classifyShelfReadStatus(
+          completed: bookKey != null &&
+              bookKey.isNotEmpty &&
+              _completedBookKeys.contains(bookKey),
+          position: progress?.position ?? 0,
+          duration: progress?.duration ?? 0,
+        ) ==
+        filter;
+  }
+
+  String _readStatusLabel(ShelfReadStatus status) => switch (status) {
+        ShelfReadStatus.unread => t.shelf_filter_read_status_unread,
+        ShelfReadStatus.reading => t.shelf_filter_read_status_reading,
+        ShelfReadStatus.finished => t.shelf_filter_read_status_finished,
+      };
 
   /// 层次 C：`'mediaType|entryKey' → 该条目在其主折叠合集里的 sortIndex`（组内序
   /// 真相源，与详情页 `getCollectionItems` 同源）。
@@ -965,24 +994,35 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: _compactLibraryToolbar
-          ? Row(
-              children: <Widget>[
-                Expanded(child: search),
-                const SizedBox(width: 8),
-                IconButton(
-                  key: const ValueKey<String>('library_tag_settings'),
-                  tooltip: t.tag_manage,
-                  constraints: const BoxConstraints(
-                    minWidth: 44,
-                    minHeight: 44,
-                  ),
-                  icon: const Icon(Icons.settings_outlined, size: 22),
-                  onPressed: _openTagManagement,
-                ),
-              ],
-            )
-          : search,
+      child: Row(
+        children: <Widget>[
+          Expanded(child: search),
+          const SizedBox(width: 8),
+          LibraryFilterDropdown<ShelfReadStatus>(
+            key: const ValueKey<String>('shelf_filter_read_status'),
+            value: _readStatusFilter,
+            options: ShelfReadStatus.values,
+            labelOf: _readStatusLabel,
+            title: t.shelf_filter_read_status,
+            allLabel: t.home_filter_all,
+            onSelected: (ShelfReadStatus? value) =>
+                setState(() => _readStatusFilter = value),
+          ),
+          if (_compactLibraryToolbar) ...<Widget>[
+            const SizedBox(width: 8),
+            IconButton(
+              key: const ValueKey<String>('library_tag_settings'),
+              tooltip: t.tag_manage,
+              constraints: const BoxConstraints(
+                minWidth: 44,
+                minHeight: 44,
+              ),
+              icon: const Icon(Icons.settings_outlined, size: 22),
+              onPressed: _openTagManagement,
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1384,9 +1424,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       for (final b in allSrtBooks)
         if (b.bookKey.isNotEmpty) b.bookKey,
     };
+    // 阅读状态筛选在这里而不在搜索那一层：读完判据 [_completedBookKeys] 由
+    // [_loadShelfMaps] 异步预取，只有本函数（_shelfMapsFuture 完成后）读得到真值。
+    // 继续阅读 hero 也吃这份列表——筛「未读」时不该再顶着一本在读的书。
+    final List<MediaItem> shelfBooks = <MediaItem>[
+      for (final MediaItem item in books)
+        if (_matchesReadStatusFilter(
+          bookKey: _parseBookKey(item.mediaIdentifier),
+          progress: (position: item.position, duration: item.duration),
+        ))
+          item,
+    ];
     final List<MediaItem> epubBooks = srtBookKeys.isEmpty
-        ? books
-        : books.where((item) {
+        ? shelfBooks
+        : shelfBooks.where((item) {
             final String? key = _parseBookKey(item.mediaIdentifier);
             return key == null || !srtBookKeys.contains(key);
           }).toList();
@@ -1415,9 +1466,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       tagFilteredSrtBooks = allSrtBooks;
     }
     // BUG-2327：SRT 卡与 EPUB 卡同口径过搜索（显示名 + DB 原名双匹配）。
+    // 阅读状态按配对 bookKey 借 EPUB 的读完标记与进度（与卡片进度条同源）。
     final List<SrtBook> srtBooks = <SrtBook>[
       for (final SrtBook b in tagFilteredSrtBooks)
-        if (_matchesShelfSearch(<String>[_srtDisplayTitle(b), b.title])) b,
+        if (_matchesShelfSearch(<String>[_srtDisplayTitle(b), b.title]) &&
+            _matchesReadStatusFilter(
+              bookKey: b.bookKey,
+              progress: epubProgressByBookKey[b.bookKey],
+            ))
+          b,
     ];
     // 视频归「视频」tab（HomeVideoPage）独占，书架不再显示视频分区（用户反馈：
     // 书架是书的地方）。已导入视频只在视频 tab 呈现；书架拖入视频仍可导入（经
@@ -1440,9 +1497,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // _mangaOnly 分架过滤：漫画架只来 format='manga'+hasMangaContent 的条目）。
     // 「同步与备份 + 互联」模块关掉 → 远端占位卡（含其下载按钮与长按面板）整块不
     // 渲染。取数侧由 [_shouldLoadRemoteBooks] 同门挡住，两处合起来做到零网络请求。
+    // 阅读状态筛选激活时同样不混排：远端占位卡在本机没有阅读进度与读完标记，
+    // 归进任何一档都是猜。
     final bool showRemote = remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&
+        _readStatusFilter == null &&
         appModel.prefsRepo.showRemoteEntries &&
         _moduleVisibility.isEnabled(ModuleId.sync);
     // BUG-2327：远端占位卡同样过搜索——它们与本地卡混排在同一网格里，搜索时
@@ -1600,7 +1660,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 特殊分支消灭。
     // BUG-2327：搜索零命中与标签筛选零命中同一空态（「没有符合筛选的书」），
     // 不能落到「书架为空」占位——那会把用户引去导入。
-    final bool searching = _searchQuery.trim().isNotEmpty;
+    final bool searching =
+        _searchQuery.trim().isNotEmpty || _readStatusFilter != null;
     if (epubBooks.isEmpty &&
         srtBooks.isEmpty &&
         remoteBooks.isEmpty &&
@@ -1636,7 +1697,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
               if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
                 SliverToBoxAdapter(
-                  child: _buildShelfOverviewSection(books),
+                  child: _buildShelfOverviewSection(shelfBooks),
                 ),
               // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
               // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB

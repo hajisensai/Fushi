@@ -6172,5 +6172,9 @@
   "manga_ocr_engine_local_model": "Local · $model",
   "manga_ocr_download_background_hint": "You can leave this page — the download continues in the background.",
   "storage_ocr_models_hint": "Download or delete each local OCR model here. Which one is used is chosen in Manga › Manga OCR.",
-  "manga_ocr_wizard_title_book": "Recognize volume text"
+  "manga_ocr_wizard_title_book": "Recognize volume text",
+  "shelf_filter_read_status": "Okuma durumu",
+  "shelf_filter_read_status_unread": "Okunmamış",
+  "shelf_filter_read_status_reading": "Okunuyor",
+  "shelf_filter_read_status_finished": "Bitti"
 }
