@@ -1,0 +1,18 @@
+## BUG-2826 · 桌面 Mihon 扩展取页报 w1 cannot be cast to y1
+- **报告**：2026-10-01（用户，Discord：装 mokuro.moe 的 Mihon 扩展后下载「[浦沢直樹] 20世紀少年 01」失败，`OnlineMangaUnavailable(runtimeFailure): MihonRuntimeException(BRIDGE_HTTP_500): class w1 cannot be cast to class y1 (... loader java.net.URLClassLoader ...)`；版本 2.7.0 (14872)，debug 版同样失败；内置 mokuro 目录正常）
+- **真实性**：✅ 真 bug，只影响桌面 sidecar（Android 不经 dex2jar）。用 keiyoushi 仓库的 mokuro **1.6.6** 在本机 sidecar 上复现（1.6.5 不复现）：`getPageList` 每章都抛同一个 ClassCastException。
+  - 根因链：R8 把 suspend 函数续体类（`w1`/`x1`/`y1`，继承 `ContinuationImpl`，无 `<init>`）的构造器内联掉，dex 里是 `new-instance y1; invoke-direct ContinuationImpl.<init>`。dex2jar 从 `<init>` 的 owner 取 NEW 的类型，于是产出 `NEW ContinuationImpl`（泛化成抽象父类）。
+  - 上游 `BytecodeEditor.repairAllocation`（`third_party/m_extension_server/upstream_src/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt:802-803`）在多个无构造器候选里取「第一个还没被认领的」，结果取决于方法遍历顺序：`a.a` 拿到 `y1`、`a.f` 拿到 `w1`，两处对调。续体的 `invokeSuspend` 一 checkcast 就炸。
+  - 我们自己的 `DexAllocationRepair` 是按数量对账的，只修泛化类型。被上游猜成另一个具体类型后，它就认不出来了。
+- **[x] ① 已修复** —
+  - 修在 dex2jar 之前，不再修猜测之后的结果。`overlay/.../DexAllocationRepair.kt:108` 新增 `exactAllocationReader`，`server-build.gradle.patch` 把它接进 `PackageTools.dex2jar`。
+  - `restoreConstructorOwners`（`:123`）复用既有的接收者证明（寄存器不被覆盖、不被别名、区间外不跳入），对 `invoke-direct Super.<init>` 改 owner 为 X 并补转发构造器。条件有三条：Super 是 X 的直接父类；X 没有同签名构造器（避免把已内联的初始化跑两遍）；Super 的构造器可访问。这样 dex2jar 直接产出逐点精确的 `NEW X`，上游的猜测路径就碰不到这些分配点。
+  - 上游的猜测分支**保留不动**：实测把它直接删掉，会让约 20 个扩展里 21 个方法退化成 `NEW Object` / 抽象 Filter。
+  - 验证结果：
+    - 128 个扩展 APK 逐方法对比 jar 与 dex 的 new-instance 多重集：不一致从基线 60 处降到 58 处，剩下的全是预期的 SimpleDateFormat 宿主替换，没有新增退化；mokuro 1.6.6 为 0。
+    - 真实链路上，mokuro 1.6.6 搜「20世紀少年」，用户那本「[浦沢直樹] 20世紀少年 01」`getPageList` 返回 283 页，图片取回 HTTP 200。第 22 卷和非 Upscaled 版本同样正常。
+- **[x] ② 已加自动化测试** — `third_party/m_extension_server/overlay/server/src/test/kotlin/mextensionserver/util/DexContinuationAllocationTest.kt`
+  - 用 DexFileWriter 造三个无构造器续体类，方法顺序与类顺序故意错开，走完整的 `PackageTools.dex2jar` 后加载 jar，断言每个方法实例化的是自己的类。
+  - 变异实测：去掉 `exactAllocationReader` 接线后这条测试变红。
+  - sidecar 全量 86 个测试全绿（从 upstream_src + patch + overlay 重建的树上跑）。
+- **备注**：用户侧的临时绕过办法：用内置 mokuro 目录，或改装扩展 1.6.5。修复随下一次桌面 sidecar 重新构建生效。
