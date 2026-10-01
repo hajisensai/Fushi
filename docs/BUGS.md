@@ -36,7 +36,7 @@
 | [BUG-2852](bugs/BUG-2852-popup-visible-viewport-helper-overwritten.md) | ✅ | ✅ | 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function |
 | [BUG-2851](bugs/BUG-2851-leaderboard-401-test-fixed-rounds.md) | ✅ | ✅ | 排行榜「账户已在别处删除」用例按固定轮数等真 IO，CI 忙时偶发红 |
 | [BUG-2850](bugs/BUG-2850-ci-pdfium-hook-download.md) | ✅ | ✅ | CI 构建期实时从 GitHub 下载 PDFium（pdfium_dart 构建钩子），下载一抖 develop 的 Windows / macOS / Android 发布同时红 |
-| [BUG-2848](bugs/BUG-2848-aacs-playback-input.md) | ✅ | ✅ | AACS 蓝光原盘缺少解密读取链路 |
+| [BUG-2849](bugs/BUG-2849-aacs-playback-input.md) | ✅ | ✅ | AACS 蓝光原盘缺少解密读取链路 |
 | [BUG-2847](bugs/BUG-2847-floating-ball-english-word.md) | ✅ | ✅ | 悬浮球查词取词未适配英语 |
 | [BUG-2846](bugs/BUG-2846-floating-ball-video-fullscreen.md) | ✅ | ✅ | 视频全屏时悬浮球退回其它页面按钮 |
 | [BUG-2845](bugs/BUG-2845-manga-polluted-default-zoom.md) | ✅ | ✅ | 漫画默认缩放存量坏值与改缩放方式不重置会话缩放 |
