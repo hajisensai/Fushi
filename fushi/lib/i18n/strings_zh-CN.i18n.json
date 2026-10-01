@@ -6200,5 +6200,10 @@
   "shelf_filter_read_status": "阅读状态",
   "shelf_filter_read_status_unread": "未读",
   "shelf_filter_read_status_reading": "在读",
-  "shelf_filter_read_status_finished": "读完"
+  "shelf_filter_read_status_finished": "读完",
+  "video_bluray_config_network": "无法下载蓝光播放配置，请检查网络后重试。",
+  "video_bluray_protection_unsupported": "这张盘使用的保护格式尚不支持。目前支持具有匹配播放配置的 AACS 1 蓝光盘。",
+  "video_bluray_config_no_match": "未找到这张盘的匹配播放配置，请提供更新的 KEYDB.cfg 后重试。",
+  "video_bluray_config_invalid": "蓝光播放配置无效，请更换有效的 KEYDB.cfg 后重试。",
+  "video_bluray_config_missing": "播放这张蓝光盘需要匹配的 KEYDB.cfg 配置。"
 }
