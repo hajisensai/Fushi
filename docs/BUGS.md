@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2832](bugs/BUG-2832-video-bar-overflow.md) | ✅ | ✅ | 视频控制条空间不够时按钮被等比缩小或裁成半个图标 |
 | [BUG-2829](bugs/BUG-2829-ai-scrape-not-acting.md) | ✅ | ✅ | 配了 AI 也不代劳视频身份识别，AI 设置多处失效 |
 | [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
 | [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |

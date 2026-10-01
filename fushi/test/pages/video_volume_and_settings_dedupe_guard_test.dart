@@ -116,7 +116,9 @@ void main() {
     });
 
     test('音量完整按钮只从底栏左右槽渲染一次，不进入 top bar / side rail', () {
-      final String bottom = methodBody('List<Widget> _bottomSlotButtons(');
+      final String bottom = methodBody(
+        'List<VideoBarEntry> _bottomSlotButtons(',
+      );
       // 旧断言钉的是「先画完 chip、再把 volume 追加到槽尾」那行代码本身——那正是
       // 「音量在槽内怎么拖都不动」的成因，等于把 bug 锁进了守卫。改为钉住真正要
       // 保的东西：底栏按**布局真相源的顺序**出控件，音量在循环体内按位分派。
