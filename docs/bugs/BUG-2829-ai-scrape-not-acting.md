@@ -1,0 +1,19 @@
+## BUG-2829 · 配了 AI 也不代劳视频身份识别，AI 设置多处失效
+- **报告**：2026-10-01（用户：视频页横幅「1 部作品还没确认身份」，已在设置里给「视频作品识别」指派了 AI，问为什么 AI 不自己帮忙）
+- **真实性**：✅ 真 bug（多处根因，计划见 `docs/specs/2026-10-01-ai-features-wiring-fix.md`）
+  - V1 补刮账本指纹不含 AI：`packages/fushi_engine/lib/media/video/metadata/video_library_scrape_sweep.dart:348` 只用刮削配置指纹，配好 AI 后「试过没中」的作品仍要等 7 天退避才重刮。
+  - V2 判定缓存不分提供商：`video_source_scrape_coordinator.dart:222` `_aiIdentityCache` 只按查询键缓存，换提供商 / 模型后沿用旧结论。
+  - V3 AI 失败静默且吃掉 7 天退避：decider 抛错被当成「没结论」，不留记录、不撤记账。
+  - V4 待确认页没有 AI 入口，只能手动搜。
+  - V5 资料源查无（零候选）永远走不到 AI；且「主源查无 + 兜底源未配置」被 resolver 合并成 `providerUnavailable`（`video_metadata_resolver.dart:224`），连查无判据都没命中。
+  - V6 AI 置信度不够时它的倾向不展示给用户。
+  - S1 自动保存把正在编辑（暂时无效）的提供商从磁盘删掉：`ai_provider_settings_section.dart:639`。
+  - S2 指派指向不存在的提供商时显示成「跟随默认」：`ai_provider_settings_section.dart:451` 附近判据。
+  - S3 OpenAI 协议空正文当成功：`packages/fushi_engine/lib/ai/ai_chat_client.dart:172`。
+  - S4 「测试连接」只跑 listModels，验不出模型名错误：`ai_provider_settings_section.dart:719`。
+  - S5 OpenAI 官方推理模型拒收 `max_tokens`：`ai_chat_client.dart:148`。
+  - S6 「自定义（OpenAI 兼容）」预设根本加不进来：`ai_provider_settings_section.dart:679` 用已校验构造器建草稿，空地址当场抛 ArgumentError。
+  - F1 「视频搜索辅助」描述与实际行为不符、补字幕重排失败无日志；F2 文本处理解析遇非字符串抛 TypeError。
+- **[x] ① 已修复** — `d945ea5e06`（V1–V6、S1–S5、F1–F2）、`f5e81bf7a3`（S6）
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_source_scrape_coordinator_test.dart`（AI 歧义消解组：换提供商重问 / 未配不问 / AI 识别强制重问 / 查无按 AI 标题重搜 / 失败记 ai:failed）、`fushi/test/settings/ai_provider_settings_test.dart`（草稿保留 / 悬空指派 / ping / 自定义预设）、`fushi/test/ai/*`、`fushi/test/mining/galgame_text_process_test.dart`
+- **备注**：AI 只在已取回的候选里选、或产出搜索词；AI 给的词重搜到的结果一律仍过 AI 判定门槛，不会因「恰好精确命中」绕过。
