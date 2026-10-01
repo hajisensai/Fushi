@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2835](bugs/BUG-2835-bd-pack-audio-floods-all-videos.md) | 🚧 | 🚧 | BD 整包 CDs 曲目在全部视频里逐条铺满 |
+| [BUG-2835](bugs/BUG-2835-bd-pack-audio-floods-all-videos.md) | ✅ | ✅ | BD 整包 CDs 曲目在全部视频里逐条铺满 |
 | [BUG-2832](bugs/BUG-2832-video-bar-overflow.md) | ✅ | ✅ | 视频控制条空间不够时按钮被等比缩小或裁成半个图标 |
 | [BUG-2829](bugs/BUG-2829-ai-scrape-not-acting.md) | ✅ | ✅ | 配了 AI 也不代劳视频身份识别，AI 设置多处失效 |
 | [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
