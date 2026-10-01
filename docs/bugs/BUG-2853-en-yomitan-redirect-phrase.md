@@ -1,0 +1,12 @@
+## BUG-2853 · 英语短语（instead of / in fact / brush off）命中词典重定向记录后不跟随，弹窗只剩单词
+- **报告**：2026-10-01（用户：「brush off、instead of、in fact 这种 hoshi 都是可以识别的，英语这块，修复了提交 PR 到上游」；两张截图：正文高亮已经覆盖 `instead of` / `in fact`，弹窗却只出 LDOCE5++ 的 `instead` / `in`）
+- **真实性**：✅ 真 bug。用本机同一部 LDOCE5++（Yomitan 版，`LDOCE5++ En-Cn V2.15`）+ 真引擎 DLL 复现。
+  - 这部词典把短语写成两条记录：`instead of` 的 glossary 是 `[["instead of somebody/something", ["Redirected from instead of"]]]`，真正的释义挂在 `instead of somebody/something` 上；`in fact` → `in (actual) fact`、`brush off` → `brush somebody/something ↔ off` 同形，整本 21.8 万条，全部是纯重定向（没有一条与释义混排）。
+  - 这是 Yomitan term bank schema 的 deinflection 形态 `[formOf, [rule...]]`：Yomitan 的 translator（`_getDictionaryDeinflections`）把它当成一次额外的还原，去查 `formOf`，命中词条以原查询串的匹配长度入结果，rule 文本接在变形链后。
+  - Fushi 的引擎 `native/fushidicts/fushidicts_src/lookup.cpp` `Lookup::lookup` 的 `merge_query` 把这种记录当普通词条返回：匹配长度 = `instead of`，所以 `bestLength` 让正文高亮到了 `instead of`；而弹窗 `fushi/assets/popup/popup.js` 的 `isRedirectGlossary` 把这条 glossary 当重定向滤掉，卡片为空不渲染，用户只看到排在后面的 `instead`。修复前探针输出：`matched="instead of" expr="instead of" gl=[[["instead of somebody/something",["Redirected from instead ...]]]`。
+  - 扫描链本身没问题（BUG-1773 已让查询串跨空格，`scan_candidates` 生成 `instead of` 候选），OALDPE10 这类把短语直接写成词头的词典一直查得到。
+- **[x] ① 已修复** — `lookup.cpp`：新增 `may_be_redirect_glossary`（只读 zstd 帧头，原始大小 ≤ 1 KiB 才解压）+ `parse_redirect_glossary`（以 `[[` 开头且整条都是 `[string, [string...]]` 才算），`merge_terms` 摘掉纯重定向 glossary 并记下目标，本轮还原结束后对目标 `query_raw`（不经词性过滤、只跟一层，与 Yomitan 一致），以原 `search_str` 为匹配长度入结果，trace = 原变形链 + 词典 rule；摘空的记录不入结果（悬空重定向不出空卡）。与释义混排的自指标签（OALDPE10，BUG-2566）不动。真词典复测：`instead of people` → `instead of somebody/something`（matched `instead of`）、`in fact, magic` → `in (actual) fact`、`brush off` → `brush somebody/something ↔ off`、`brushed him off` → 同上（trace `interposed object, past, Redirected from brush off`）。日语三词典（Jitendex / JMnedict / 斎藤和英）查词耗时修复前后无差别（0.66 vs 0.66–0.69 ms/次）。
+- **[x] ② 已加自动化测试** — `native/fushidicts/tests/yomitan_redirect_lookup_test.cpp`（ctest 注册，真 importer 导入的 Yomitan zip + 真 en.json）：R1 `instead of` 跟随且原记录不出现、单词仍在；R2 被标点截住的 `in fact`；R3 `brush off`；R4 `brushed off`（BUG-2549 动词头还原后再跟随，trace 两段都在）；R5 句首大写；R6 悬空重定向不出空卡；R7 释义 + 自指标签混排的记录原样保留。变异实测：关掉 `merge_terms` 的重定向摘取，R1–R6 共 7 条断言转红，R7 仍绿。
+- **备注**：
+  - 用户手机上的那份显示名是 `LDOCE5++ (LM5pp)`，本机验证用的是 `D:\smb\yomitan\English\LDOCE5.zip`（同一作者同一转换器，释义结构与截图一致）；未在用户手机上复测。
+  - 重定向 rule 文本（如 `Redirected from instead of`）会作为变形标签显示在卡片上，与 Yomitan 显示词典变形链一致。

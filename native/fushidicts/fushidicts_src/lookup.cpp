@@ -1,13 +1,16 @@
 #include "fushidicts/lookup.hpp"
 
 #include <utf8.h>
+#include <zstd.h>
 
 #include <algorithm>
 #include <climits>
+#include <glaze/glaze.hpp>
 #include <map>
 #include <optional>
 #include <ranges>
 #include <sstream>
+#include <tuple>
 
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
@@ -46,6 +49,54 @@ std::optional<int> get_freq_value_for_dict(const TermResult& term, std::string_v
   return frequency;
 }
 
+// Yomitan「词典自带变形」（dictionary deinflection）：term bank 里 glossary 项
+// 除了文本 / structured-content，还可以是 `[formOf, [rule, ...]]`——「本词条是
+// formOf 的一种形态，查它」。英语词典大量用它做短语重定向：LDOCE5++ 的
+// `instead of` → `instead of somebody/something`、`brush off` →
+// `brush somebody/something ↔ off`、`in fact` → `in (actual) fact`，一本 21.8 万条。
+// Yomitan 的 translator（`_getDictionaryDeinflections`）把它当成一次额外的还原：
+// 去查 formOf，命中的词条以原查询串的匹配长度入结果，rule 文本接在变形链后面。
+//
+// 只认**整条 glossary 都由这种项组成**的记录：它们没有任何可显示的释义，原样留着
+// 只会在弹窗里变成被 isRedirectGlossary 滤空的卡片——这正是 BUG-2853 的症状（高亮
+// 到了 `instead of`，卡片却只剩 `instead`）。与正文混排的自指标签（OALDPE10 的
+// `["give up", ["Redirected from give up"]]` + 释义，BUG-2566）不动。
+struct DictionaryRedirect {
+  std::string form_of;
+  std::vector<std::string> rules;
+};
+
+// 纯重定向记录的 glossary 很短（目标词头 + 一两条 rule 文本），先读 zstd 帧头里
+// 的原始大小做门槛：正常释义一条都不解压，只有小记录才解压 + 解析。
+constexpr unsigned long long kMaxRedirectGlossaryBytes = 1024;
+
+// 帧头里的原始大小过了门槛才值得解压（不解压，只读 zstd 帧头）。
+bool may_be_redirect_glossary(const GlossaryEntry& g) {
+  if (g.compressed_data == nullptr || g.compressed_size == 0) return false;
+  const unsigned long long raw_size = ZSTD_getFrameContentSize(g.compressed_data, g.compressed_size);
+  return raw_size != ZSTD_CONTENTSIZE_ERROR && raw_size != ZSTD_CONTENTSIZE_UNKNOWN &&
+         raw_size <= kMaxRedirectGlossaryBytes;
+}
+
+// 整条 glossary 都是 `[formOf, [rule, ...]]` 项时返回这些项，否则 nullopt。
+std::optional<std::vector<DictionaryRedirect>> parse_redirect_glossary(const std::string& json) {
+  // 廉价前置判据：必须以 `[[` 开头（容许空白），文本 / structured-content 都在这里出局。
+  std::size_t i = json.find_first_not_of(" \t\r\n");
+  if (i == std::string::npos || json[i] != '[') return std::nullopt;
+  i = json.find_first_not_of(" \t\r\n", i + 1);
+  if (i == std::string::npos || json[i] != '[') return std::nullopt;
+
+  std::vector<std::tuple<std::string, std::vector<std::string>>> items;
+  if (glz::read_json(items, json) || items.empty()) return std::nullopt;
+  std::vector<DictionaryRedirect> redirects;
+  redirects.reserve(items.size());
+  for (auto& [form_of, rules] : items) {
+    if (form_of.empty()) return std::nullopt;
+    redirects.push_back({.form_of = std::move(form_of), .rules = std::move(rules)});
+  }
+  return redirects;
+}
+
 bool matches_primary_reading(const TermResult& term, std::string_view primary_reading) {
   return term.reading == primary_reading;
 }
@@ -62,13 +113,33 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
 
-      // 用一个还原形去查库并并入结果。`query_text` 未必等于 `deinflection.text`
-      // ——见下面的谚文重组。
-      auto merge_query = [&](const std::string& query_text, const DeinflectionResult& deinflection) {
-        auto terms = query_.query_raw(query_text);
-        filter_by_pos(terms, deinflection);
+      // 跟随重定向时要查的目标：(formOf, 变形链 + 词典 rule)。见 DictionaryRedirect。
+      std::vector<std::pair<std::string, std::vector<TransformGroup>>> redirect_targets;
 
+      // 把查库命中并入 result_map：纯重定向 glossary 摘掉（记下目标，跟随时 [follow]
+      // 为真才记——Yomitan 只跟一层），摘空的词条不入结果。
+      auto merge_terms = [&](std::vector<TermResult>& terms, const std::string& query_text,
+                             const std::vector<TransformGroup>& trace, bool follow) {
         for (auto& term : terms) {
+          std::erase_if(term.glossaries, [&](const GlossaryEntry& g) {
+            if (!may_be_redirect_glossary(g)) return false;
+            auto redirects = parse_redirect_glossary(
+                DictionaryQuery::decompress_glossary(g.compressed_data, g.compressed_size, g.zstd_dict));
+            if (!redirects) return false;
+            if (follow) {
+              for (auto& redirect : *redirects) {
+                if (redirect.form_of == term.expression) continue;
+                std::vector<TransformGroup> chained = trace;
+                for (auto& rule : redirect.rules) {
+                  chained.push_back(TransformGroup{.name = std::move(rule), .description = {}});
+                }
+                redirect_targets.emplace_back(std::move(redirect.form_of), std::move(chained));
+              }
+            }
+            return true;
+          });
+          if (term.glossaries.empty()) continue;
+
           // deduplicate glossaries
           auto key = std::make_pair(term.expression, term.reading);
           auto it = result_map.find(key);
@@ -87,18 +158,26 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                 (incoming == held && variant.steps < it->second.preprocessor_steps)) {
               it->second = LookupResult{.matched = search_str,
                                         .deinflected = query_text,
-                                        .trace = deinflection.trace,
+                                        .trace = trace,
                                         .term = std::move(term),
                                         .preprocessor_steps = variant.steps};
             }
           } else {
             result_map.emplace(key, LookupResult{.matched = search_str,
                                                  .deinflected = query_text,
-                                                 .trace = deinflection.trace,
+                                                 .trace = trace,
                                                  .term = std::move(term),
                                                  .preprocessor_steps = variant.steps});
           }
         }
+      };
+
+      // 用一个还原形去查库并并入结果。`query_text` 未必等于 `deinflection.text`
+      // ——见下面的谚文重组。
+      auto merge_query = [&](const std::string& query_text, const DeinflectionResult& deinflection) {
+        auto terms = query_.query_raw(query_text);
+        filter_by_pos(terms, deinflection);
+        merge_terms(terms, query_text, deinflection.trace, /*follow=*/true);
       };
 
       for (auto& deinflection : deinflection_results) {
@@ -115,6 +194,13 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
         const std::string reassembled = text_processor::reassemble_hangul_utf8(deinflection.text);
         merge_query(deinflection.text, deinflection);
         if (reassembled != deinflection.text) merge_query(reassembled, deinflection);
+      }
+
+      // 词典重定向的目标不经词性过滤（Yomitan 给它的 deinflection 不带条件），
+      // 也不再跟随第二层。匹配长度仍是本轮 search_str。
+      for (auto& [form_of, trace] : redirect_targets) {
+        auto terms = query_.query_raw(form_of);
+        merge_terms(terms, form_of, trace, /*follow=*/false);
       }
     }
   }
