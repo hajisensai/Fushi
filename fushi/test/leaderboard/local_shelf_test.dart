@@ -778,7 +778,7 @@ void main() {
       }
     }
 
-    test('多个 Profile：别的 Profile 的作品不上报，谁都没记录的照常上报（BUG-2852）', () async {
+    test('多个 Profile：别的 Profile 的作品不上报，谁都没记录的照常上报（BUG-2855）', () async {
       await profiles(2);
       await book('Mine', completedAt: DateTime(2026, 9, 1, 12));
       await book('Theirs', completedAt: DateTime(2026, 9, 1, 12));
