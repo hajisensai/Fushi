@@ -1507,6 +1507,49 @@ String ankiInlineMediaReference(String addMediaResult) {
   return addMediaResult;
 }
 
+/// 旧格式释义 HTML 的外字中和兜底（BUG-2825 起只剩兼容职责）。
+///
+/// 现行 popup.js 导出已按 Yomitan 形态内联 structured-content 样式并剥掉
+/// `structured-content` / `gloss-*` class，新导出不含 `gloss-image`，门控不会命中，
+/// 字段原样返回。保留它只为旧版对端（互联制卡里尚未升级的 popup.js）发来的
+/// 仍带 `gloss-*` class 的 HTML：那种 HTML 会让词典自带 CSS 在卡片上生效，
+/// 需要这层中和样式压住外字框。旧版对端全部升级后可删。
+String normalizeAnkiDictionaryHtml(String value) {
+  if (!value.contains('data-sc-img') || !value.contains('gloss-image')) {
+    return value;
+  }
+  return value + _ankiGaijiImageStyle;
+}
+
+// 外字（gaiji）中和样式：把内联外字框（义项序号 ❶❷、［参照］［参考］等）强制收回
+// 到 ~1em 内联尺寸，否则会被正文压重叠。
+//
+// **特异性铁律**：词典自带 CSS 常用更具体的选择器把同一个 `.gloss-image-container`
+// 撑大——明鏡国語辞典 第三版就有一条
+// `.yomitan-glossary [data-dictionary="…"] span[data-sc-img][data-sc-class="gaiji"]
+//  .gloss-image-container{width:15em!important}`（特异性 0,5,1）。本中和样式虽追加在
+// 末尾，但只有当选择器特异性 **不低于** 词典规则时，等特异性才靠靠后的源码顺序取胜；
+// 旧版前缀只有 `.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] …`（0,4,0）反被
+// 词典压住→外字框 15em 撑爆重叠正文。故现在每条规则做到 (0,6,1)（前缀
+// `.yomitan-glossary [data-dictionary]` + 完整 `span[data-sc-img][data-sc-class="gaiji"]
+//  .gloss-image-link` 后代链），稳压词典 (0,5,1)。守卫见
+// test/anki/anki_gaiji_style_test.dart。
+const _ankiGaijiSel =
+    '.yomitan-glossary [data-dictionary] span[data-sc-img][data-sc-class="gaiji"]';
+const _ankiGaijiImageStyle =
+    '<style>'
+    '$_ankiGaijiSel'
+    '{display:inline!important;white-space:nowrap!important;vertical-align:baseline!important}'
+    '$_ankiGaijiSel .gloss-image-link'
+    '{display:inline-block!important;vertical-align:text-bottom!important;max-width:1.2em!important}'
+    '$_ankiGaijiSel .gloss-image-link .gloss-image-container'
+    '{display:inline-block!important;width:1em!important;height:1em!important;max-width:1em!important;max-height:1em!important;vertical-align:text-bottom!important;font-size:1em!important}'
+    '$_ankiGaijiSel .gloss-image-link .gloss-image-sizer'
+    '{display:none!important}'
+    '$_ankiGaijiSel .gloss-image-link .gloss-image'
+    '{position:static!important;width:1em!important;height:1em!important;vertical-align:text-bottom!important}'
+    '</style>';
+
 /// TODO-292: stable error codes carried back from the AnkiDroid platform
 /// channel so the UI layer can map a known failure to a localized, actionable
 /// hint instead of surfacing AnkiDroid's raw (English) exception text.

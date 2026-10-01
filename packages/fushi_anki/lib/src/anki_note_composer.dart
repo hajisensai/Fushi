@@ -481,6 +481,8 @@ mixin AnkiNoteComposer {
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
+      // 旧格式（仍带 gloss-* class）释义的外字中和兜底；新导出不命中门控，原样通过。
+      value = normalizeAnkiDictionaryHtml(value);
       // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
       // 拼多个占位符时（出厂默认 MiscInfo = `{document-title} {clip-timestamp}`），
       // 某个占位符渲染成空串就会把模板里的字面分隔符留成首尾空白写进 Anki 字段。
