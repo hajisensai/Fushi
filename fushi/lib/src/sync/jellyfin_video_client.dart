@@ -610,13 +610,61 @@ class JellyfinPlaybackSession {
 
 /// Jellyfin HTTP 异常：状态码 + 端点，供 UI 按连接失败呈现。
 class JellyfinApiException implements Exception {
-  const JellyfinApiException(this.statusCode, this.endpoint);
+  const JellyfinApiException(this.statusCode, this.endpoint,
+      {this.serverMessage});
 
   final int statusCode;
   final String endpoint;
 
+  /// 服务器在错误响应体里给的纯文本说明（已截断、脱敏；HTML / 空体为 null）。
+  ///
+  /// Emby 及其前置网关拒绝请求时常把原因写在响应体里——例如按认证头 `Client`
+  /// 字段做白名单的公益服回 403「请使用群公告中允许的客户端进行访问」（BUG-2848）。
+  /// 只报状态码时用户看到的是「无法连接服务器」，与真实原因（服务器策略拒绝本
+  /// 客户端）南辕北辙。
+  final String? serverMessage;
+
+  /// 401 / 403：服务器明确拒绝（策略 / 凭据），不是连不上。
+  bool get isAccessDenied => statusCode == 401 || statusCode == 403;
+
+  /// 从错误响应体提取可展示的说明：只收短纯文本 / JSON 里的 message 字段，
+  /// HTML（反代 / CDN 错误页）一律不要，截断到 [kMaxServerMessageLength]。
+  static String? serverMessageFromBody(List<int> bodyBytes) {
+    if (bodyBytes.isEmpty) return null;
+    String text = utf8.decode(bodyBytes, allowMalformed: true).trim();
+    if (text.isEmpty || text.startsWith('<')) return null;
+    if (text.startsWith('{')) {
+      try {
+        final Object? decoded = jsonDecode(text);
+        if (decoded is! Map) return null;
+        final Object? message = decoded['message'] ??
+            decoded['Message'] ??
+            decoded['title'] ??
+            decoded['error'];
+        if (message is! String || message.trim().isEmpty) return null;
+        text = message.trim();
+      } on FormatException {
+        return null;
+      }
+    }
+    text = redactCredentialsInText(text.replaceAll(RegExp(r'\s+'), ' '));
+    return text.length <= kMaxServerMessageLength
+        ? text
+        : '${text.substring(0, kMaxServerMessageLength)}…';
+  }
+
+  static const int kMaxServerMessageLength = 200;
+
+  /// 带响应体说明构造（[res] 为非 2xx 响应）。
+  factory JellyfinApiException.fromResponse(
+          http.Response res, String endpoint) =>
+      JellyfinApiException(res.statusCode, endpoint,
+          serverMessage: serverMessageFromBody(res.bodyBytes));
+
   @override
-  String toString() => 'JellyfinApiException($statusCode, $endpoint)';
+  String toString() => serverMessage == null
+      ? 'JellyfinApiException($statusCode, $endpoint)'
+      : 'JellyfinApiException($statusCode, $endpoint): $serverMessage';
 }
 
 /// 薄 HTTP 封装。所有 JSON 解析走纯静态方法（离线可测）。
@@ -773,7 +821,7 @@ class JellyfinApi {
           .get(_uri(path, query), headers: _headers)
           .timeout(kRequestTimeout);
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw JellyfinApiException(res.statusCode, path);
+        throw JellyfinApiException.fromResponse(res, path);
       }
       return jsonDecode(utf8.decode(res.bodyBytes));
     } on http.ClientException catch (e) {
@@ -808,7 +856,7 @@ class JellyfinApi {
         )
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, '/Users/AuthenticateByName');
+      throw JellyfinApiException.fromResponse(res, '/Users/AuthenticateByName');
     }
     final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
     final JellyfinAuthResult result = parseAuthResult(
@@ -1284,7 +1332,8 @@ class JellyfinApi {
         )
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, '/Items/$itemId/PlaybackInfo');
+      throw JellyfinApiException.fromResponse(
+          res, '/Items/$itemId/PlaybackInfo');
     }
     final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
     return parsePlaybackInfo(decoded is Map<String, dynamic>
@@ -1469,7 +1518,7 @@ class JellyfinApi {
         )
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, '/Videos/ActiveEncodings');
+      throw JellyfinApiException.fromResponse(res, '/Videos/ActiveEncodings');
     }
   }
 
@@ -1491,7 +1540,7 @@ class JellyfinApi {
         .post(_uri(path), headers: _headers, body: jsonEncode(body))
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, path);
+      throw JellyfinApiException.fromResponse(res, path);
     }
   }
 
