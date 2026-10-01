@@ -105,8 +105,8 @@ class FushiDesktopTitleBar extends StatefulWidget {
   ///
   /// 与全屏同一套 owner 语义：多个 owner 同时在场时取最近一次**首次**上报的
   /// 那个（插入序最后一个，同一 owner 改色不改位次）；全部撤回即回落到根主题。
-  /// 页面一般不直接调，
-  /// 而是用 [FushiTitleBarColorScope]（它负责「被别的整页盖住时撤回」与 dispose）。
+  /// 页面一般不直接调，而是用 [FushiTitleBarColorScope]（它负责「被别的整页
+  /// 盖住时撤回」与 dispose）。
   static final Map<Object, FushiTitleBarColors> _pageColorOwners =
       <Object, FushiTitleBarColors>{};
   static final ValueNotifier<FushiTitleBarColors?> _pageColors =
