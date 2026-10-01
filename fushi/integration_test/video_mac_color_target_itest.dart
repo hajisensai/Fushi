@@ -1,4 +1,4 @@
-// macOS 视频「发灰」的真机像素探针（BUG-2854）。
+// Apple 视频「发灰」的像素探针（BUG-2854；macOS 真机 / iOS 模拟器）。
 //
 // 背景：Flutter macOS 把外部 BGRA 纹理按原值合成进固定标记为 sRGB 的 IOSurface，而
 // libmpv 在 `target-trc=auto` 下对 SDR 片源不换 gamma、吐 BT.1886（γ2.4）编码值——
@@ -11,7 +11,9 @@
 //   A = 当前生产配置（修复后应为 sRGB 目标）→ 每块应等于 srgb_encode(((Y-16)/219)^2.4)
 //   B = 手动改回 `target-trc=auto`（修复前的行为）→ 每块应等于 (Y-16)/219 原值
 //
-// Mac：.\tool\run_mac_itest.ps1 integration_test/video_mac_color_target_itest.dart
+// Mac：flutter test -d macos integration_test/video_mac_color_target_itest.dart
+// iOS 模拟器：flutter test -d <sim-udid> 同一文件（模拟器上 media_kit 走 TextureSW）。
+// HDR：加 --dart-define=FUSHI_COLOR_PROBE=hdr（同一段灰阶按 BT.2020 + PQ 解释）。
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -67,9 +69,20 @@ Uint8List _buildGrayRampY4m() {
   return out.takeBytes();
 }
 
+/// `sdr`（默认）或 `hdr`：hdr 用 mpv `vf=format` 把同一段灰阶标成 BT.2020 + PQ，
+/// 走真实色调映射链路。
+const String _kProbeMode = String.fromEnvironment(
+  'FUSHI_COLOR_PROBE',
+  defaultValue: 'sdr',
+);
+
 double _srgbEncode(double linear) => linear <= 0.0031308
     ? 12.92 * linear
     : 1.055 * math.pow(linear, 1 / 2.4) - 0.055;
+
+double _srgbDecode(double encoded) => encoded <= 0.04045
+    ? encoded / 12.92
+    : math.pow((encoded + 0.055) / 1.055, 2.4).toDouble();
 
 /// 有限范围码值 → 8-bit 期望输出：[srgbTarget] 为修复后，否则为原值直通。
 double _expected(int level, {required bool srgbTarget}) {
@@ -139,6 +152,18 @@ void main() {
 
       final Video video = tester.widget<Video>(find.byType(Video).first);
       final NativePlayer mpv = video.controller.player.platform as NativePlayer;
+      const bool hdr = _kProbeMode == 'hdr';
+      debugPrint('[color-itest] platform=${Platform.operatingSystem} '
+          'mode=$_kProbeMode');
+      if (hdr) {
+        // 同一段灰阶按 PQ 信号解释；关掉动态峰值检测，让 A/B 两次色调映射可比。
+        await mpv.setProperty('hdr-compute-peak', 'no');
+        await mpv.setProperty(
+          'vf',
+          'format=primaries=bt.2020:gamma=pq:colormatrix=bt.2020-ncl',
+        );
+        await tester.pump(const Duration(seconds: 1));
+      }
 
       Future<void> dumpParams(String tag) async {
         final List<String> keys = <String>[
@@ -222,14 +247,53 @@ void main() {
         return worst;
       }
 
-      final double errProd = maxErr(prod, srgbTarget: true);
-      final double errAuto = maxErr(auto, srgbTarget: false);
-      debugPrint('[color-itest] RESULT maxErr prod(srgb)=$errProd '
-          'auto(raw)=$errAuto');
-      expect(errAuto, lessThan(4),
-          reason: 'B 组应是 BT.1886 原值直通（修复前行为），否则探针本身不可信');
-      expect(errProd, lessThan(4),
-          reason: '生产配置下 mpv 应把 BT.1886 换算成 sRGB 编码');
+      if (hdr) {
+        // 色调映射本身不该因输出编码而变：把 A（sRGB 编码）与 B（mpv 对 HDR 片源
+        // 在 target-trc=auto 下选 gamma2.2）各自解回线性光，应当一致；A 还应单调、
+        // 不被压成一片（暗部可辨、高光不过曝）。
+        // B 的输出 TRC 取决于 mpv 对 HDR 片源 auto 的选择（gamma2.2 或 bt.1886），
+        // 两种都算，取吻合的那个并打印出来。
+        final Map<String, double> worstBy = <String, double>{};
+        for (final MapEntry<String, double> trc in <String, double>{
+          'gamma2.2': 2.2,
+          'bt.1886': 2.4,
+        }.entries) {
+          double w = 0;
+          for (int i = 0; i < _kLevels.length; i++) {
+            final double linB = math.pow(auto[i] / 255, trc.value).toDouble();
+            final double reenc = 255 * _srgbEncode(linB);
+            debugPrint('[color-itest] hdr ${trc.key} Y=${_kLevels[i]} '
+                'A=${prod[i]} B=${auto[i]} '
+                'linA=${_srgbDecode(prod[i] / 255).toStringAsFixed(4)} '
+                'linB=${linB.toStringAsFixed(4)} '
+                'B->srgb=${reenc.toStringAsFixed(1)}');
+            w = math.max(w, (reenc - prod[i]).abs());
+          }
+          worstBy[trc.key] = w;
+        }
+        debugPrint('[color-itest] hdr worstBy=$worstBy');
+        final double worst = worstBy.values.reduce(math.min);
+        bool monotonic = true;
+        for (int i = 1; i < prod.length; i++) {
+          if (prod[i] < prod[i - 1]) monotonic = false;
+        }
+        debugPrint('[color-itest] RESULT hdr maxErr(B->srgb vs A)=$worst '
+            'monotonic=$monotonic span=${prod.first}..${prod.last}');
+        expect(worst, lessThan(4),
+            reason: '色调映射后的线性光应与输出编码无关，只差 sRGB 编码');
+        expect(monotonic, isTrue, reason: 'HDR 灰阶色调映射后应保持单调');
+        expect(prod.last - prod.first, greaterThan(150),
+            reason: 'HDR 灰阶不应被压成一片');
+      } else {
+        final double errProd = maxErr(prod, srgbTarget: true);
+        final double errAuto = maxErr(auto, srgbTarget: false);
+        debugPrint('[color-itest] RESULT maxErr prod(srgb)=$errProd '
+            'auto(raw)=$errAuto');
+        expect(errAuto, lessThan(4),
+            reason: 'B 组应是 BT.1886 原值直通（修复前行为），否则探针本身不可信');
+        expect(errProd, lessThan(4),
+            reason: '生产配置下 mpv 应把 BT.1886 换算成 sRGB 编码');
+      }
 
       await navigator.maybePop();
       for (int i = 0; i < 20; i++) {

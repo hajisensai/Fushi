@@ -568,9 +568,9 @@ Map<String, String> resolveAndroidPixelFormatProperties({bool? isAndroid}) {
   return const <String, String>{'vf': 'format=yuv420p'};
 }
 
-/// macOS 纹理路径的输出色彩目标（`target-prim` / `target-trc`）。纯函数。
+/// Apple（macOS / iOS）纹理路径的输出色彩目标（`target-prim` / `target-trc`）。纯函数。
 ///
-/// **根治「mac 看视频发灰」（BUG-2854）。** macOS 上 media_kit 让 libmpv 把帧画进一张
+/// **根治「mac 看视频发灰」（BUG-2854）。** Apple 上 media_kit 让 libmpv 把帧画进一张
 /// BGRA `CVPixelBuffer`（`TextureHW` / `TextureSW`），Flutter 按原值采样
 /// （`FlutterExternalTexture` 用 `MTLPixelFormatBGRA8Unorm`，不做色彩转换），再合成进
 /// 自己那张**固定标记为 sRGB** 的 IOSurface（`FlutterSurface` 的 `kIOSurfaceColorSpace`），
@@ -584,16 +584,17 @@ Map<String, String> resolveAndroidPixelFormatProperties({bool? isAndroid}) {
 /// 管理（`VideoView.setICCProfile`）。我们的图层由 Flutter 持有、固定是 sRGB，改不了，
 /// 所以对应做法是把 mpv 的输出目标直接钉成 sRGB：BT.709 原色 + sRGB 传递函数，由 mpv
 /// 把 BT.1886 正确换算到 sRGB，合成器那一步才是对的。HDR 片源照旧走 `tone-mapping`，
-/// 只是映射目标从「片源 gamma」变成 sRGB。
+/// 只是映射后的编码从 mpv 默认的 gamma2.2 换成 sRGB（线性光不变，真机实测）。
 ///
-/// **仅 macOS**：Windows 桌面不做色彩管理（Flutter 交换链的值原样上屏，HDR 直通另走
-/// 宿主窗），Android 纹理链路同理；iOS 也是 sRGB 合成面，但未经真机验证，不在本次范围。
+/// **仅 Apple**：iOS 的 Flutter 合成面同样是 sRGB 系、外部纹理同样原值采样（模拟器实测
+/// 复现同一现象）。Windows 桌面不做色彩管理（Flutter 交换链的值原样上屏，HDR 直通另走
+/// 宿主窗），Android 纹理链路同理，均不下发。
 /// 放在 [VideoMpvConfig.rawConf] 之前合并，高级用户仍可在 mpv.conf 里覆盖。
 ///
-/// [isMacOS] 默认取 `Platform.isMacOS`，注入仅为单测。
-Map<String, String> resolveTextureColorTargetProperties({bool? isMacOS}) {
-  final bool macOS = isMacOS ?? Platform.isMacOS;
-  if (!macOS) return const <String, String>{};
+/// [isApple] 默认取 `Platform.isMacOS || Platform.isIOS`，注入仅为单测。
+Map<String, String> resolveTextureColorTargetProperties({bool? isApple}) {
+  final bool apple = isApple ?? (Platform.isMacOS || Platform.isIOS);
+  if (!apple) return const <String, String>{};
   return const <String, String>{
     'target-prim': 'bt.709',
     'target-trc': 'srgb',
@@ -601,7 +602,7 @@ Map<String, String> resolveTextureColorTargetProperties({bool? isMacOS}) {
 }
 
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
-    {bool? isAndroid, bool? isMobile, bool? isWindows, bool? isMacOS}) {
+    {bool? isAndroid, bool? isMobile, bool? isWindows, bool? isApple}) {
   final Map<String, String> out = <String, String>{};
   // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）；
   // Windows GL 纹理渲染下把 auto* 改写成不含 CUDA 的 d3d11va 列表（BUG-1639）。
@@ -650,9 +651,9 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // 「为什么是映射质量而不是 HDR 直通」的说明。
   out['tone-mapping'] = config.hdrToneMapping;
   out['hdr-compute-peak'] = config.hdrComputePeak;
-  // macOS：输出目标钉成 Flutter 合成面的 sRGB，否则 BT.1886 被按 sRGB 解释、画面发灰
+  // Apple：输出目标钉成 Flutter 合成面的 sRGB，否则 BT.1886 被按 sRGB 解释、画面发灰
   // （BUG-2854）。见 [resolveTextureColorTargetProperties]。
-  out.addAll(resolveTextureColorTargetProperties(isMacOS: isMacOS));
+  out.addAll(resolveTextureColorTargetProperties(isApple: isApple));
   // 播放
   out['loop-file'] = config.loopFile ? 'inf' : 'no';
   // 原始 mpv.conf：最后合并，同 key 覆盖结构化项
