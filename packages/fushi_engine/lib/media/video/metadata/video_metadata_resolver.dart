@@ -82,7 +82,13 @@ class VideoMetadataResolution {
     List<VideoMetadataWork> candidates = const <VideoMetadataWork>[],
     this.reason,
     this.transient = false,
+    this.searchedWithoutResult = false,
   }) : candidates = List<VideoMetadataWork>.unmodifiable(candidates);
+
+  /// 标题搜索链跑完、一条结果都没有，而且没有任何一家失败：真正搜过的源
+  /// 全部查无，其余源只是没配置（没发请求）。鉴权失败 / 坏响应 / 临时故障都让
+  /// 它为 false——那些是「没搜成」，不是「搜了没有」。
+  final bool searchedWithoutResult;
 
   /// [VideoMetadataResolutionStatus.providerUnavailable] 的两种来源要分开：
   /// true = 请求发出去了但暂时失败（网络 / 5xx / 限流，见
@@ -197,31 +203,47 @@ class VideoMetadataResolver {
     // 不被询问，后台任务于是把整条记成待确认）。
     final List<VideoMetadataResolution> ambiguous = <VideoMetadataResolution>[];
     final List<VideoMetadataResolution> failures = <VideoMetadataResolution>[];
+    bool searchedEmpty = false;
+    bool searchFailed = false;
     for (final VideoMetadataProviderKind kind in request.providerChain) {
-      final VideoMetadataResolution resolved = await _attempt(kind, () async {
-        final VideoMetadataProvider? provider = registry.provider(kind);
-        if (provider == null || !provider.isAvailable) {
-          return VideoMetadataResolution(
-            status: VideoMetadataResolutionStatus.providerUnavailable,
-            providerKind: kind,
-            reason: '${kind.name} is not configured',
-          );
-        }
-        return _searchWithProvider(provider, request);
-      });
+      final VideoMetadataProvider? provider = registry.provider(kind);
+      if (provider == null || !provider.isAvailable) {
+        failures.add(VideoMetadataResolution(
+          status: VideoMetadataResolutionStatus.providerUnavailable,
+          providerKind: kind,
+          reason: '${kind.name} is not configured',
+        ));
+        continue;
+      }
+      final VideoMetadataResolution resolved =
+          await _attempt(kind, () => _searchWithProvider(provider, request));
       switch (resolved.status) {
         case VideoMetadataResolutionStatus.matched:
           return resolved;
         case VideoMetadataResolutionStatus.ambiguous:
           ambiguous.add(resolved);
         case VideoMetadataResolutionStatus.notFound:
+          searchedEmpty = true;
+          failures.add(resolved);
         case VideoMetadataResolutionStatus.providerUnavailable:
+          searchFailed = true;
           failures.add(resolved);
       }
     }
     if (ambiguous.isNotEmpty) return _mergeAmbiguous(ambiguous);
-    if (failures.length == 1) return failures.single;
+    final bool exhausted = searchedEmpty && !searchFailed;
+    if (failures.length == 1) {
+      final VideoMetadataResolution single = failures.single;
+      return VideoMetadataResolution(
+        status: single.status,
+        providerKind: single.providerKind,
+        reason: single.reason,
+        transient: single.transient,
+        searchedWithoutResult: exhausted,
+      );
+    }
     return VideoMetadataResolution(
+      searchedWithoutResult: exhausted,
       status: failures.any((VideoMetadataResolution result) =>
               result.status ==
               VideoMetadataResolutionStatus.providerUnavailable)

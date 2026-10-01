@@ -205,9 +205,12 @@ class VideoLibraryScrapeSweep {
   /// 还要再等最多 7 天才会重刮、才会问到 AI（2026-10-01）。
   final String? Function()? _aiCapabilityKey;
 
-  /// 账本实际使用的指纹：刮削配置 + AI 能力。
-  String get _ledgerFingerprint =>
-      '$_configFingerprint|ai=${_aiCapabilityKey?.call() ?? ''}';
+  /// 账本实际使用的指纹：刮削配置 + AI 能力。没配 AI 时与旧指纹逐字相同——
+  /// 不配 AI 的用户（含无头服务端）升级后不该平白清一次账本。
+  String get _ledgerFingerprint {
+    final String? ai = _aiCapabilityKey?.call();
+    return ai == null ? _configFingerprint : '$_configFingerprint|ai=$ai';
+  }
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;

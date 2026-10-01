@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
@@ -1473,18 +1474,16 @@ void main() {
       );
     });
 
-    test('decider 抛异常：仍弹人工确认，刮削不失败', () async {
+    Future<SourceScrapeIssue> aiFailureFor(Object error) async {
       final SourceLibraryRow source = await _createMovieSource(
         db,
         root,
         provider: VideoMetadataProviderKind.anidb,
       );
-      final _CatalogConfirmationAniDbProvider provider =
-          _CatalogConfirmationAniDbProvider();
       final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
-        provider,
-        decider: (AiVideoIdentityQuery query) async =>
-            throw StateError('ai down'),
+        _CatalogConfirmationAniDbProvider(),
+        decider: (AiVideoIdentityQuery query) =>
+            Future<AiVideoIdentityDecision?>.error(error),
       );
       bool confirmationAsked = false;
 
@@ -1498,6 +1497,7 @@ void main() {
         },
       );
 
+      // AI 失败不连累刮削：照常弹人工确认、照常完成。
       expect(confirmationAsked, isTrue);
       expect(report.succeededWorks, 1, reason: '${report.errors}');
       expect(report.failedWorks, 0);
@@ -1505,16 +1505,45 @@ void main() {
       final List<VideoSourceScrapeRunRow> runs =
           await db.getVideoSourceScrapeRuns(sourceId: source.id);
       expect(runs.single.status, 'completed');
-      // 失败不再无痕：运行记录有 ai:failed，且作品被标成临时失败（补刮撤账再试）。
-      final SourceScrapeIssue failure = report.warnings.singleWhere(
+      // 失败不再无痕：运行记录有 ai:failed。
+      return report.warnings.singleWhere(
         (SourceScrapeIssue issue) =>
             parseVideoScrapeAiIdentityNote(issue.message)?.kind ==
             VideoScrapeAiNoteKind.failed,
       );
+    }
+
+    test('AI 临时失败（断网 / 超时）：标成临时失败，补刮撤账下轮再试', () async {
+      final SourceScrapeIssue failure =
+          await aiFailureFor(const AiChatFailure('network_error'));
       expect(failure.providerUnavailable, isTrue);
       expect(failure.workKey, isNotNull);
-      expect(parseVideoScrapeAiIdentityNote(failure.message)!.reason,
-          contains('ai down'));
+      expect(
+        parseVideoScrapeAiIdentityNote(failure.message)!.reason,
+        'network_error',
+      );
+    });
+
+    test('AI 鉴权失败：照常记账——重试也一样，不能每轮补刮对整库重问', () async {
+      final SourceScrapeIssue failure =
+          await aiFailureFor(const AiChatFailure('unauthorized'));
+      expect(failure.providerUnavailable, isFalse);
+      expect(
+        parseVideoScrapeAiIdentityNote(failure.message)!.reason,
+        'unauthorized',
+      );
+    });
+
+    test('非 AiChatFailure 异常：不算临时，理由只留类型名不透出原文', () async {
+      final SourceScrapeIssue failure = await aiFailureFor(
+        StateError('https://example.test/v1?key=sk-secret'),
+      );
+      expect(failure.providerUnavailable, isFalse);
+      expect(
+        parseVideoScrapeAiIdentityNote(failure.message)!.reason,
+        'StateError',
+      );
+      expect(failure.message, isNot(contains('sk-secret')));
     });
 
     test('后台批次（无确认回调）：高置信判定直接收敛，不再落待确认', () async {
@@ -1788,6 +1817,124 @@ void main() {
       expect(report.pendingConfirmations, 0);
       expect(report.failedWorks, 1);
     });
+
+    test('AI 给的「标题」是站点 URL / 显式 id：丢掉，不当身份直取', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider(answersTitle: (String _) => false);
+      int decideCalls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        advisor: _FakeAiAdvisor(
+          decide: (AiVideoIdentityQuery query) async {
+            decideCalls++;
+            return const AiVideoIdentityDecision(
+                key: 'anidb:12', confidence: 1);
+          },
+          suggest: (AiVideoIdentityQuery query) async =>
+              <String>['https://anidb.net/anime/12'],
+        ),
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(provider.fetchedIds, isEmpty, reason: 'AI 只出搜索词，不能指定身份');
+      expect(decideCalls, 0);
+      expect(report.succeededWorks, 0);
+    });
+
+    test('资料源搜索失败（鉴权 401）：没搜成，不找 AI 要搜索词', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      int suggestCalls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        _CatalogConfirmationAniDbProvider(
+          searchError: const VideoMetadataProviderUnavailable(
+            VideoMetadataProviderKind.anidb,
+            'HTTP 401',
+          ),
+        ),
+        advisor: _FakeAiAdvisor(
+          decide: (AiVideoIdentityQuery query) async => null,
+          suggest: (AiVideoIdentityQuery query) async {
+            suggestCalls++;
+            return <String>['Official Title'];
+          },
+        ),
+      );
+
+      await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(suggestCalls, 0, reason: '换标题重搜只会撞同一个故障');
+    });
+
+    test('AI 标题重搜到唯一精确命中：仍要过 AI 判定，低置信落待确认', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider(
+        answersTitle: (String _) => false,
+        uniqueExactTitle: 'Official Title',
+      );
+      // 前提：同一请求直接交给 resolver 会被判为唯一精确命中。
+      final VideoMetadataResolution direct = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.anidb,
+          mediaKind: VideoMetadataMediaKind.movie,
+          titleCandidates: const <String>['Official Title'],
+          year: 2024,
+        ),
+      );
+      expect(direct.status, VideoMetadataResolutionStatus.matched);
+
+      final List<AiVideoIdentityQuery> decided = <AiVideoIdentityQuery>[];
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        advisor: _FakeAiAdvisor(
+          decide: (AiVideoIdentityQuery query) async {
+            decided.add(query);
+            return const AiVideoIdentityDecision(
+              key: 'anidb:42',
+              confidence: 0.5,
+            );
+          },
+          suggest: (AiVideoIdentityQuery query) async =>
+              <String>['Official Title'],
+        ),
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(decided.single.candidateKeys, <String>['anidb:42']);
+      expect(report.succeededWorks, 0, reason: 'AI 给的词恰好精确命中也不绕过门槛');
+      expect(report.pendingConfirmations, 1);
+    });
   });
 }
 
@@ -1986,10 +2133,20 @@ class _FakeAniDbProvider implements VideoMetadataProvider {
 }
 
 class _CatalogConfirmationAniDbProvider implements VideoMetadataProvider {
-  _CatalogConfirmationAniDbProvider({this.answersTitle});
+  _CatalogConfirmationAniDbProvider({
+    this.answersTitle,
+    this.searchError,
+    this.uniqueExactTitle,
+  });
 
   /// null = 任何标题都给 15 条模糊候选；否则只有它放行的标题才有结果。
   final bool Function(String title)? answersTitle;
+
+  /// 非 null 时每次搜索都抛它（模拟资料源鉴权失败等）。
+  final Exception? searchError;
+
+  /// 搜这个标题时只回一条标题、类型、年份都精确的作品（anidb:42）。
+  final String? uniqueExactTitle;
   int fetchCount = 0;
   final List<String> fetchedIds = <String>[];
   final List<String> searchedTitles = <String>[];
@@ -2003,7 +2160,27 @@ class _CatalogConfirmationAniDbProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataWork>> search(
     VideoMetadataSearchRequest request,
-  ) async =>
+  ) async {
+    final Exception? error = searchError;
+    if (error != null) throw error;
+    if (request.title == uniqueExactTitle) {
+      searchedTitles.add(request.title);
+      return <VideoMetadataWork>[
+        VideoMetadataWork(
+          provider: providerKind,
+          kind: VideoMetadataMediaKind.movie,
+          title: request.title,
+          year: 2024,
+          ids: <VideoMetadataId>[
+            VideoMetadataId(type: 'anidb', value: '42', isDefault: true),
+          ],
+        ),
+      ];
+    }
+    return _catalog(request);
+  }
+
+  List<VideoMetadataWork> _catalog(VideoMetadataSearchRequest request) =>
       <VideoMetadataWork>[
         if (_record(request.title))
           for (int id = 1; id <= 15; id++)

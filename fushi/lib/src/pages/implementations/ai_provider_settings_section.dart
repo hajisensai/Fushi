@@ -630,6 +630,10 @@ class _AiProviderSettingsSectionState
   /// UI 里，磁盘上则保留这一 id **上一次落盘的有效版本**。此前直接跳过它——整份
   /// 覆盖的写法于是把这家从磁盘删掉，指向它的功能映射当场悬空，用户此时离开页面
   /// 就永久丢了这家的 key 与模型。从没有效过的新草稿磁盘上本来就没有，照旧不写。
+  ///
+  /// 保留的旧版本一律**停用**落盘：用户正在改它，旧配置不该在后台继续被调用——
+  /// 尤其草稿是在收紧（关掉明文 HTTP、停用这家）时，照原样保留旧版等于把用户
+  /// 刚撤回的放行悄悄留着。草稿重新有效时按草稿自己的启用状态写回。
   Future<void> _saveValidDrafts() async {
     // 用 build 期抓住的引用，不用 ref——本方法也从 dispose 里调（见 [_appModel]）。
     final AppModel? appModel = _appModel;
@@ -640,7 +644,7 @@ class _AiProviderSettingsSectionState
     };
     final List<AiProviderConfig> configs = <AiProviderConfig>[
       for (final _AiProviderDraft draft in _drafts)
-        if ((draft.toConfig() ?? persisted[draft.id])
+        if ((draft.toConfig() ?? persisted[draft.id]?.copyWith(enabled: false))
             case final AiProviderConfig config)
           config,
     ];

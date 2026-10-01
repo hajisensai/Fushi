@@ -36,6 +36,13 @@ class AiChatFailure implements Exception {
 
   final String message;
 
+  /// 原样重试可能成功的失败：网络 / 超时（都报 `network_error`）、限流、5xx。
+  /// 鉴权失败、4xx、坏回复、空回复、未配置都是配置或模型的问题，重试也一样。
+  bool get isTransient =>
+      message == 'network_error' ||
+      message == 'rate_limited' ||
+      message.startsWith('http_5');
+
   @override
   String toString() => 'AiChatFailure: $message';
 }

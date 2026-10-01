@@ -416,11 +416,14 @@ void main() {
         reason: '磁盘上是这家上一次的有效版本',
       );
       expect(
-        prefs.aiFeatureAssignments
-            .resolve(AiFeature.galgameTextProcess, prefs.aiProviders)
-            ?.id,
+        prefs.aiProviders.first.enabled,
+        isFalse,
+        reason: '保留的旧版本停用落盘：正在改的配置不在后台继续被调用',
+      );
+      expect(
+        prefs.aiFeatureAssignments.providerIdFor(AiFeature.galgameTextProcess),
         'p1',
-        reason: '编辑中途运行时照常用上一次的有效配置',
+        reason: '映射不悬空',
       );
       expect(
         find.byKey(const ValueKey<String>('ai-provider-0-base-url')),
@@ -443,6 +446,13 @@ void main() {
       expect(
         prefs.aiProviders.first.baseUrl.toString(),
         'https://api.moonshot.cn/v1',
+      );
+      expect(
+        prefs.aiFeatureAssignments
+            .resolve(AiFeature.galgameTextProcess, prefs.aiProviders)
+            ?.id,
+        'p1',
+        reason: '草稿重新有效即按草稿自己的启用状态写回，指派照常生效',
       );
     });
 
@@ -601,8 +611,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(prefs.aiProviders, hasLength(1), reason: '只有显式删除能移除一家');
-      expect(prefs.aiProviders.single.allowInsecureHttp, isTrue);
       expect(prefs.aiFeatureAssignments.defaultProviderId, 'p1');
+      // 用户撤回了明文 HTTP 放行：旧版本（仍放行明文）不能照原样留着继续被调用。
+      expect(prefs.aiProviders.single.enabled, isFalse);
+      expect(
+        prefs.aiFeatureAssignments.resolve(
+          AiFeature.galgameTextProcess,
+          prefs.aiProviders,
+        ),
+        isNull,
+        reason: '撤回放行后不再经明文 HTTP 发任何 AI 请求',
+      );
     });
 
     testWidgets('从没有效过的新草稿不落盘，删除照样移除持久化的那家', (WidgetTester tester) async {

@@ -40,6 +40,7 @@ import 'package:fushi_engine/media/video/strm_file.dart'
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show isPlaylistManifestPath;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -228,6 +229,10 @@ class VideoSourceScrapeCoordinator
   /// 本趟 run 里 AI 已经失败过（网络 / 鉴权 / 超时）时记下 run id：同一趟余下的
   /// 作品跳过 AI，免得每条都等满一次请求超时；下一趟 run 照常再试。
   int? _aiIdentityFailedRunId;
+
+  /// 本趟首次 AI 失败是否临时（见 [AiChatFailure.isTransient]）；同趟跳过 AI 的
+  /// 余下作品沿用它决定是否撤掉补刮记账。
+  bool _aiIdentityFailureTransient = false;
 
   /// 本趟是「AI 识别」单作品请求：绕过判定缓存强制重问（见 [identifyWorkWithAi]）。
   /// 与 [_activeRunId] 同一个 run 作用域。
@@ -1438,13 +1443,13 @@ class VideoSourceScrapeCoordinator
         episodeCount: localWork.isEpisodic ? localWork.members.length : null,
       ));
     }
-    // 「搜过但查无」不只是 notFound：主源查无 + 兜底源没配置时 resolver 合并成
-    // 非临时的 providerUnavailable（只要链上有一家没配就这样），结论同样是
-    // 「能问的都问过了、一条结果都没有」。临时故障（504 / 限流）不算——换标题
-    // 重搜也只会撞同一个故障；链上一家可用的都没有时也没有可重搜的对象。
+    // 「搜过但查无」由 resolver 判（见 [VideoMetadataResolution.searchedWithoutResult]）：
+    // 不只看 status——主源查无 + 兜底源没配置时状态是 providerUnavailable，结论
+    // 同样是「能问的都问过了」；反过来鉴权失败 / 临时故障也是 providerUnavailable，
+    // 那是没搜成，换标题重搜只会撞同一个故障。
     if (canonicalLookup == null &&
         hashLookup == null &&
-        _searchedWithoutResult(resolution, chain)) {
+        resolution.searchedWithoutResult) {
       resolution = await _resolveWithAiSearchTitles(
             resolver: resolver,
             notFound: resolution,
@@ -4356,52 +4361,38 @@ class VideoSourceScrapeCoordinator
     return runId != null && _aiIdentityFailedRunId == runId;
   }
 
-  /// AI 请求失败：记一条 `ai:failed` 运行警告，并把作品标成临时失败
-  /// （[SourceScrapeIssue.providerUnavailable]）——补刮据此撤掉「已尝试」记账，
-  /// 下轮再试，而不是让一次断网吃满 7 天冷却。同一趟余下的作品跳过 AI，同样记。
+  /// AI 请求失败：记一条 `ai:failed` 运行警告。只有临时失败（断网 / 超时 / 限流 /
+  /// 5xx）才把作品标成 [SourceScrapeIssue.providerUnavailable]——补刮据此撤掉
+  /// 「已尝试」记账、下轮再试；鉴权失败、模型名错、坏回复这类重试也一样的失败
+  /// 照常记账，否则每轮补刮都会对整库重问一遍。同一趟余下的作品跳过 AI，
+  /// 沿用首次失败的分类。
   void _recordAiFailure(
     VideoSourceScrapeWork localWork,
     List<SourceScrapeIssue> warnings, {
     Object? error,
   }) {
     final int? runId = _activeRunId;
-    if (error != null && runId != null) _aiIdentityFailedRunId = runId;
+    if (error != null) {
+      _aiIdentityFailureTransient = error is AiChatFailure && error.isTransient;
+      if (runId != null) _aiIdentityFailedRunId = runId;
+    }
+    final bool transient = _aiIdentityFailureTransient;
     warnings.add(
       SourceScrapeIssue(
         workTitle: localWork.title,
         message: encodeVideoScrapeAiFailedNote(
           error == null ? 'skipped_after_failure' : _aiFailureText(error),
         ),
-        providerUnavailable: true,
+        providerUnavailable: transient,
         workKey: localWork.stableKey,
       ),
     );
   }
 
-  /// 失败描述：`AiChatFailure` 等的 toString 已脱敏（只有短码），其它异常只留类型名。
-  static String _aiFailureText(Object error) {
-    final String text = error.toString().trim();
-    return text.isEmpty ? error.runtimeType.toString() : text;
-  }
-
-  /// 链上可用的资料源都搜过、一条结果都没有，且不是临时故障。
-  bool _searchedWithoutResult(
-    VideoMetadataResolution resolution,
-    List<VideoMetadataProviderKind> chain,
-  ) {
-    if (resolution.work != null || resolution.candidates.isNotEmpty) {
-      return false;
-    }
-    if (resolution.transient) return false;
-    final bool searched = chain.any(
-      (VideoMetadataProviderKind kind) =>
-          _registry.provider(kind)?.isAvailable ?? false,
-    );
-    return searched &&
-        (resolution.status == VideoMetadataResolutionStatus.notFound ||
-            resolution.status ==
-                VideoMetadataResolutionStatus.providerUnavailable);
-  }
+  /// 失败描述：`AiChatFailure` 只给已脱敏的短码；其它异常只留类型名——它们的
+  /// 文案可能带 URL（Gemini 的 key 在 query 里）或响应体，不进运行记录。
+  static String _aiFailureText(Object error) =>
+      error is AiChatFailure ? error.message : error.runtimeType.toString();
 
   /// 资料源查无时，让 AI 给出可能的正式标题，按这些标题再搜一轮。
   ///
@@ -4445,9 +4436,16 @@ class VideoSourceScrapeCoordinator
     final Set<String> known = <String>{
       for (final String title in localTitles) title.trim().toLowerCase(),
     };
+    // AI 只出搜索词：能被读成显式 id（`anidb-123`、站点 URL）的一律丢掉，
+    // 否则 resolver 会把它当作权威身份直取，越过「AI 只在候选里选」的边界。
     final List<String> fresh = <String>[
       for (final String title in titles)
-        if (!known.contains(title.trim().toLowerCase())) title,
+        if (!known.contains(title.trim().toLowerCase()) &&
+            parseExplicitVideoMetadataIds(
+              <String>[title],
+              fallbackMediaKind: kind,
+            ).isEmpty)
+          title,
     ];
     if (fresh.isEmpty) return null;
     warnings.add(
