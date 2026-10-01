@@ -6196,5 +6196,9 @@
   "video_scrape_pending_cause_error": "Scrape error",
   "video_anidb_http_api": "AniDB HTTP metadata API",
   "video_anidb_http_api_unregistered": "Not registered (only UDP hash identification and offline titles are available)",
-  "video_anidb_http_api_available": "Available (client ${client} v${version})"
+  "video_anidb_http_api_available": "Available (client ${client} v${version})",
+  "shelf_filter_read_status": "Stato di lettura",
+  "shelf_filter_read_status_unread": "Non letto",
+  "shelf_filter_read_status_reading": "In lettura",
+  "shelf_filter_read_status_finished": "Finito"
 }
