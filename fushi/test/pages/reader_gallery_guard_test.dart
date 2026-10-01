@@ -150,10 +150,13 @@ void main() {
         gallery.contains('SliverGridDelegateWithFixedCrossAxisCount'), isFalse);
     expect(
         gallery.contains('compute(') &&
-            gallery.contains('probeIllustrationAspectRatios'),
+            gallery.contains('probeIllustrationSizes'),
         isTrue,
-        reason: '宽高比在 isolate 里批量读文件头，不在 UI 线程解码');
-    expect(gallery.contains('(_aspects[ref.src] ?? 0) > 1 ? 2 : 1'), isTrue,
+        reason: '尺寸在 isolate 里批量读文件头，不在 UI 线程解码');
+    expect(
+        gallery.contains(
+            'return size != null && size.width > size.height ? 2 : 1;'),
+        isTrue,
         reason: '横版（宽 > 高）占两列，没探到的按竖版');
     final String probe = File('lib/src/reader/illustration_aspect_probe.dart')
         .readAsStringSync();
