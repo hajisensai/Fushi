@@ -6171,6 +6171,7 @@
   "manga_ocr_download_background_hint": "可以离开此页，下载会在后台继续。",
   "storage_ocr_models_hint": "在这里下载或删除各个本机 OCR 模型；使用哪一个在「漫画 › 漫画 OCR」里选。",
   "manga_ocr_wizard_title_book": "识别本卷文字",
+  "anki_dedup_progress_indexing": "正在读取笔记、查找媒体引用…（$done / $total）",
   "ai_feature_video_identify_assist_summary": "刮削出现多个候选或查无结果时，让 AI 选出对应作品或给出可搜的正式标题",
   "ai_feature_video_search_subtitle_summary": "后台自动补字幕时，让 AI 对字幕搜索结果做语义重排",
   "video_scrape_ai_declined": "AI 未采用",

@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2606 条。点号进各自文件。
+> 共 2607 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2829](bugs/BUG-2829-ai-scrape-not-acting.md) | ✅ | ✅ | 配了 AI 也不代劳视频身份识别，AI 设置多处失效 |
+| [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |
 | [BUG-2823](bugs/BUG-2823-update-relaunch-startup-stall.md) | ✅ | ✅ | 自动更新后新版本启动卡顿一两秒 |
 | [BUG-2822](bugs/BUG-2822-manga-stream-chapter-ocr.md) | ✅ | ✅ | 在线直读章完全不做 OCR，手机上只能下载后等整章识别完 |
 | [BUG-2821](bugs/BUG-2821-manga-ocr-follow-reader.md) | ✅ | ✅ | 移动端整卷 OCR 不跟读者翻页，翻到的页要等整卷识别完 |
