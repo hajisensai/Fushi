@@ -33,6 +33,14 @@ class AnkiConnectService {
   /// busy collection or a mid-sync Anki without hanging a mine indefinitely.
   final Duration _timeout;
 
+  /// Per-request budget for collection-scale maintenance (media dedup): bulk
+  /// `notesInfo` over the whole collection, batched field rewrites and media
+  /// deletes. Such requests legitimately run for seconds to minutes on a big
+  /// collection, so the interactive 10s default would kill them mid-flight
+  /// while Anki keeps executing them in the background (BUG-2824). Interactive
+  /// paths (mining, duplicate checks) keep the short default.
+  static const Duration kLongTaskTimeout = Duration(minutes: 5);
+
   /// Connection-establishment budget for the lazily-built default client
   /// (BUG-665). A live AnkiConnect (localhost/LAN) connects near-instantly, so
   /// 5s is generous while still failing an unreachable host fast.
