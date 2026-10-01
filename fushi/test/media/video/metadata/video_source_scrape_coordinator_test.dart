@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloade
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -1531,6 +1532,95 @@ void main() {
       expect(report.pendingConfirmations, 1);
       expect(report.succeededWorks, 0);
       expect(provider.fetchCount, 0);
+    });
+
+    // BUG-2828：挂起原因结构化落库，事后能分出是哪条分支、AI 问没问、问了什么。
+    Future<VideoScrapePendingNote> pendingNoteAfter(
+      AiVideoIdentityDecider? decider, {
+      VideoSourceScrapeConfirmationCallback? onConfirmation,
+    }) async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        _CatalogConfirmationAniDbProvider(),
+        decider: decider,
+      );
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: onConfirmation,
+      );
+      expect(report.pendingConfirmations, 1);
+      final VideoScrapePendingNote note = report.warnings
+          .map((SourceScrapeIssue issue) =>
+              parseVideoScrapePendingNote(issue.message))
+          .whereType<VideoScrapePendingNote>()
+          .single;
+      // 作品键与计划器同源，待确认清单靠它对号；落库后解出来的是同一条。
+      expect(
+        note.workKey,
+        (await VideoSourceWorkPlanner(db).plan(source)).single.stableKey,
+      );
+      final List<VideoSourceScrapeRunRow> runs =
+          await db.getVideoSourceScrapeRuns(sourceId: source.id);
+      final SourceScrapeReport stored =
+          decodeSourceScrapeReport(runs.single.summaryJson)!;
+      expect(
+        stored.warnings
+            .map((SourceScrapeIssue issue) =>
+                parseVideoScrapePendingNote(issue.message)?.cause)
+            .whereType<VideoScrapePendingCause>(),
+        <VideoScrapePendingCause>[note.cause],
+      );
+      // 原有的人类可读文案整段保留。
+      expect(note.reason, contains('需要人工确认'));
+      return note;
+    }
+
+    test('挂起原因：后台批次 AI 低置信 → 等确认 · AI 不够确定', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:7', confidence: 0.6),
+      );
+      expect(note.cause, VideoScrapePendingCause.awaitingConfirmation);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.declined);
+      expect(note.candidateCount, 15);
+    });
+
+    test('挂起原因：未指派 AI 提供商 → unassigned', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async => null,
+      );
+      expect(note.cause, VideoScrapePendingCause.awaitingConfirmation);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.unassigned);
+    });
+
+    test('挂起原因：没装配 AI → unavailable', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(null);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.unavailable);
+    });
+
+    test('挂起原因：AI 调用失败 → failed', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async => throw StateError('ai down'),
+      );
+      expect(note.aiOutcome, VideoScrapeAiOutcome.failed);
+    });
+
+    test('挂起原因：用户取消确认 → dismissed', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:7', confidence: 0.6),
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async =>
+            null,
+      );
+      expect(note.cause, VideoScrapePendingCause.dismissed);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.declined);
+      expect(note.candidateCount, 15);
     });
 
     test('同一目录同一批候选只问一次 AI（用户取消后重扫不重问）', () async {

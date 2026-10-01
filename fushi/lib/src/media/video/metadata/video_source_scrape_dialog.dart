@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
@@ -340,6 +341,11 @@ class _VideoSourceScrapeTaskPanelState
           workTitle: entry.work.title,
           workStableKey: entry.work.stableKey,
         );
+        // 为什么还没认出来：最近一次刮削留下的原因 + AI 结果；没刮过就如实说。
+        final VideoScrapePendingNote? note = entry.pendingNote;
+        final String reason = note == null
+            ? t.video_scrape_pending_record_missing
+            : describeVideoScrapePendingNote(note);
         return FushiListItem(
           key: ValueKey<String>(
             'video-source-pending-work-${entry.work.stableKey}',
@@ -348,7 +354,12 @@ class _VideoSourceScrapeTaskPanelState
           padding: EdgeInsets.zero,
           leading: const Icon(Icons.rule_folder_outlined),
           title: Text(entry.work.title),
-          subtitle: Text(entry.source.label),
+          subtitle: Text(
+            '${entry.source.label}\n$reason',
+            key: ValueKey<String>(
+              'video-source-pending-reason-${entry.work.stableKey}',
+            ),
+          ),
           trailing: pending || _bindingStableKeys.contains(entry.work.stableKey)
               ? Text(t.video_source_scrape_queue_submitted)
               : IconButton(

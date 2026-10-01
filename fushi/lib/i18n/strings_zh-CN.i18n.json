@@ -6121,5 +6121,16 @@
   "sync_p2p_path_relay": "P2P 经中继 · $rtt 毫秒",
   "sync_p2p_relay_only_hint": "一直在走中继（较慢）。任一端开着 Clash TUN、全局 VPN 等会改写 UDP 端口的工具时打洞通常会失败——把 Fushi 或 UDP 流量加进它的直连规则。",
   "floating_ball_action_popup_lookup": "应用外查词",
-  "leaderboard_board_me_pending": "我的数据：${value} · 榜单 ${time} 刷新后排名"
+  "leaderboard_board_me_pending": "我的数据：${value} · 榜单 ${time} 刷新后排名",
+  "video_scrape_pending_cause_hash_conflict": "文件哈希指向不同作品",
+  "video_scrape_pending_cause_no_usable_candidate": "找到的候选都无法使用",
+  "video_scrape_pending_cause_awaiting_confirmation": "有 ${count} 个候选，等你确认",
+  "video_scrape_pending_cause_dismissed": "确认时被取消",
+  "video_scrape_pending_cause_not_found": "没有找到匹配",
+  "video_scrape_pending_cause_provider_unavailable": "资料源不可用",
+  "video_scrape_pending_ai_unavailable": "AI 不可用",
+  "video_scrape_pending_ai_unassigned": "没有给视频作品识别指派 AI 提供商",
+  "video_scrape_pending_ai_failed": "AI 调用失败",
+  "video_scrape_pending_ai_declined": "AI 判断不够确定",
+  "video_scrape_pending_record_missing": "尚无刮削记录"
 }

@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -161,6 +162,70 @@ void main() {
     expect(runner.sourceIds, <int>[sourceId]);
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
     expect(runner.runScopes.single, 'sweep');
+  });
+
+  // BUG-2828：待确认清单要能说出「为什么还没认出来」——取最近一次运行记录里
+  // 这部作品的挂起原因；没刮过的作品不编造原因。
+  test('待确认作品带上最近一次运行记录里的挂起原因', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    await addVideo('movie-b', 'D:/A/Other Movie (2021).mkv', sourceId,
+        title: 'Other Movie');
+    final VideoLibraryScrapeSweep service = sweep();
+    final List<VideoPendingScrapeWork> planned = await service.pendingWorks();
+    final String keyA = planned
+        .singleWhere(
+            (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')
+        .work
+        .stableKey;
+    String note(VideoScrapePendingCause cause, VideoScrapeAiOutcome ai) =>
+        encodeVideoScrapePendingNote(VideoScrapePendingNote(
+          cause: cause,
+          aiOutcome: ai,
+          candidateCount: 3,
+          workKey: keyA,
+          reason: 'r',
+        ));
+    Future<void> addRun(int startedAt, String message) =>
+        db.into(db.videoSourceScrapeRuns).insert(
+              VideoSourceScrapeRunsCompanion.insert(
+                sourceId: Value<int?>(sourceId),
+                scope: 'sweep',
+                status: 'completed',
+                startedAt: startedAt,
+                updatedAt: startedAt,
+                summaryJson: Value<String?>(encodeSourceScrapeReport(
+                  SourceScrapeReport(
+                    sourceIds: <int>[sourceId],
+                    warnings: <SourceScrapeIssue>[
+                      SourceScrapeIssue(
+                          workTitle: 'Unscraped Movie', message: message),
+                    ],
+                  ),
+                )),
+              ),
+            );
+    await addRun(1, note(VideoScrapePendingCause.notFound,
+        VideoScrapeAiOutcome.notAsked));
+    await addRun(2, note(VideoScrapePendingCause.awaitingConfirmation,
+        VideoScrapeAiOutcome.unassigned));
+
+    final List<VideoPendingScrapeWork> pending = await service.pendingWorks();
+    final VideoScrapePendingNote? a = pending
+        .singleWhere(
+            (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')
+        .pendingNote;
+    expect(a?.cause, VideoScrapePendingCause.awaitingConfirmation,
+        reason: '取最近一次运行的原因');
+    expect(a?.aiOutcome, VideoScrapeAiOutcome.unassigned);
+    expect(
+      pending
+          .singleWhere(
+              (VideoPendingScrapeWork e) => e.work.title == 'Other Movie')
+          .pendingNote,
+      isNull,
+    );
   });
 
   test('集号标签型标题进待确认队列但不自动补刮', () async {

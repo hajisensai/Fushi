@@ -6121,5 +6121,16 @@
   "sync_p2p_path_relay": "P2P via relay · $rtt ms",
   "sync_p2p_relay_only_hint": "Stuck on the relay (slower). Hole punching usually fails when Clash TUN, a global VPN or a similar tool rewrites UDP ports on either device — add Fushi or UDP traffic to its direct rules.",
   "floating_ball_action_popup_lookup": "アプリ外で辞書検索",
-  "leaderboard_board_me_pending": "You: ${value} · ranked after the next board refresh (${time})"
+  "leaderboard_board_me_pending": "You: ${value} · ranked after the next board refresh (${time})",
+  "video_scrape_pending_cause_hash_conflict": "File hashes point to different works",
+  "video_scrape_pending_cause_no_usable_candidate": "No usable candidate",
+  "video_scrape_pending_cause_awaiting_confirmation": "${count} candidates, waiting for your pick",
+  "video_scrape_pending_cause_dismissed": "Confirmation was dismissed",
+  "video_scrape_pending_cause_not_found": "No match found",
+  "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
+  "video_scrape_pending_ai_unavailable": "AI not available",
+  "video_scrape_pending_ai_unassigned": "No AI provider assigned to video identification",
+  "video_scrape_pending_ai_failed": "AI request failed",
+  "video_scrape_pending_ai_declined": "AI was not confident enough",
+  "video_scrape_pending_record_missing": "Not scraped yet"
 }

@@ -24,6 +24,7 @@ library;
 
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -40,10 +41,19 @@ typedef TmdbChangedTvIdsProbe = Future<Set<int>> Function(
 /// 的「手动指定」永远指向真实存在的作品——不可能再撞
 /// `VideoSourceScrapeWorkNotFound`（BUG-1998 的结构性根治）。
 class VideoPendingScrapeWork {
-  const VideoPendingScrapeWork({required this.source, required this.work});
+  const VideoPendingScrapeWork({
+    required this.source,
+    required this.work,
+    this.pendingNote,
+  });
 
   final SourceLibraryRow source;
   final VideoSourceScrapeWork work;
+
+  /// 最近一次刮削留下的「为什么没认出来」；从没被刮过 / 只有旧格式记录时为 null。
+  /// 只有 [VideoLibraryScrapeSweep.pendingWorks] 填它（待确认清单要显示），
+  /// 补刮路径只用计数，不为它多查运行记录。
+  final VideoScrapePendingNote? pendingNote;
 }
 
 /// 在所有本地视频来源的刮削计划里定位某个合集对应的作品单元。
@@ -223,8 +233,45 @@ class VideoLibraryScrapeSweep {
   List<VideoPendingScrapeWork> _lastPending = const <VideoPendingScrapeWork>[];
 
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
+  /// 每部作品带上最近一次刮削留下的挂起原因（见 `video_scrape_pending_note.dart`）。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
-      _lastPending = (await _plannedWorks()).pending;
+      _lastPending = await _withPendingNotes((await _plannedWorks()).pending);
+
+  /// 每个来源最多回看这么多次运行：挂起原因只要最近的，更早的已被后来的覆盖。
+  static const int _pendingNoteRunLookback = 10;
+
+  Future<List<VideoPendingScrapeWork>> _withPendingNotes(
+      List<VideoPendingScrapeWork> pending) async {
+    final Map<int, Map<String, VideoScrapePendingNote>> bySource =
+        <int, Map<String, VideoScrapePendingNote>>{};
+    for (final VideoPendingScrapeWork entry in pending) {
+      bySource[entry.source.id] ??= await _pendingNotesOf(entry.source.id);
+    }
+    return <VideoPendingScrapeWork>[
+      for (final VideoPendingScrapeWork entry in pending)
+        VideoPendingScrapeWork(
+          source: entry.source,
+          work: entry.work,
+          pendingNote: bySource[entry.source.id]![entry.work.stableKey],
+        ),
+    ];
+  }
+
+  Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
+      int sourceId) async {
+    final List<VideoSourceScrapeRunRow> runs = await _database
+        .getVideoSourceScrapeRuns(
+            sourceId: sourceId, limit: _pendingNoteRunLookback);
+    return latestVideoScrapePendingNotes(<Iterable<String>>[
+      for (final VideoSourceScrapeRunRow run in runs)
+        if (decodeSourceScrapeReport(run.summaryJson)
+            case final SourceScrapeReport report)
+          <String>[
+            for (final SourceScrapeIssue issue in report.warnings) issue.message,
+            for (final SourceScrapeIssue issue in report.errors) issue.message,
+          ],
+    ]);
+  }
 
   /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。
   Future<_PlannedWorks> _plannedWorks() async {
