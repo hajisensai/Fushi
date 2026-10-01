@@ -33,6 +33,7 @@ void main() {
     String type = 'TV',
     int? tmdbSeason,
     int? tmdbEpisodeOffset,
+    bool tmdbIsMovieNamespace = false,
   }) =>
       AnimeIdentityEntry(
         anidbId: anidbId,
@@ -41,6 +42,7 @@ void main() {
         type: type,
         tmdbSeason: tmdbSeason,
         tmdbEpisodeOffset: tmdbEpisodeOffset,
+        tmdbIsMovieNamespace: tmdbIsMovieNamespace,
       );
 
   AnimeOfflineIdentityResolver resolver({
@@ -163,8 +165,11 @@ void main() {
         ],
       },
       entries: <int, AnimeIdentityEntry>{
-        11829:
-            entry(11829, malIds: <int>{32281}, tmdbId: 372058, type: 'MOVIE'),
+        11829: entry(11829,
+            malIds: <int>{32281},
+            tmdbId: 372058,
+            type: 'MOVIE',
+            tmdbIsMovieNamespace: true),
         99: entry(99, malIds: <int>{9}, tmdbId: 1, type: 'TV'),
       },
     ).resolve(
@@ -176,10 +181,51 @@ void main() {
     expect(result.identity?.isMovie, isTrue);
     expect(
       result.identity
-          ?.lookupFor(VideoMetadataProviderKind.tmdb, VideoMetadataMediaKind.tv)
-          ?.mediaKind,
-      VideoMetadataMediaKind.movie,
-      reason: 'TMDB 命名空间按 Fribb type 而不是本地猜测',
+          ?.lookupFor(
+              VideoMetadataProviderKind.tmdb, VideoMetadataMediaKind.movie)
+          ?.externalId,
+      '372058',
+    );
+    expect(
+      result.identity?.lookupFor(
+          VideoMetadataProviderKind.tmdb, VideoMetadataMediaKind.tv),
+      isNull,
+      reason: 'movie 空间的 TMDB id 不能被请求成 /tv',
+    );
+  });
+
+  test('movie filed under a TMDB show yields no movie lookup (BUG-2828)',
+      () async {
+    final AnimeOfflineIdentityResolution result = await resolver(
+      index: <String, List<AniDbTitleSearchResult>>{
+        'リズと青い鳥': <AniDbTitleSearchResult>[
+          hit(13491, 'リズと青い鳥', language: 'ja'),
+        ],
+      },
+      entries: <int, AnimeIdentityEntry>{
+        // 真数据形状：type MOVIE + themoviedb_id {tv: 62564}（剧的特典季）。
+        13491: entry(13491,
+            malIds: <int>{35677}, tmdbId: 62564, type: 'MOVIE', tmdbSeason: 0),
+      },
+    ).resolve(
+      titleCandidates: <String>['リズと青い鳥'],
+      mediaKind: VideoMetadataMediaKind.movie,
+    );
+    expect(result.status, AnimeOfflineIdentityStatus.matched);
+    expect(result.identity?.isMovie, isTrue, reason: '形态闸门照旧按电影放行');
+    expect(result.identity?.tmdbMediaKind, VideoMetadataMediaKind.tv);
+    expect(
+      result.identity?.lookupFor(
+          VideoMetadataProviderKind.tmdb, VideoMetadataMediaKind.movie),
+      isNull,
+      reason: 'tv 62564 当 /movie/62564 拉会命中挪威片 Turn Me On, Dammit!',
+    );
+    expect(
+      result.identity
+          ?.lookupFor(VideoMetadataProviderKind.mal,
+              VideoMetadataMediaKind.movie)
+          ?.externalId,
+      '35677',
     );
   });
 

@@ -322,7 +322,7 @@ void main() {
 
     final String activateLegacy = body(
       'void _activateVideoControlButton(',
-      'bool _hasRoomyVideoBottomBar',
+      'double _videoBottomSystemInset(',
     );
     expect(activateLegacy, contains('VideoControlSlot? sourceSlot'));
     expect(activateLegacy,

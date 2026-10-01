@@ -312,20 +312,27 @@ void main() {
       expect(groupEnd, greaterThan(groupStart));
       final String groupHelper = page.substring(groupStart, groupEnd);
 
+      // BUG-2832：组按实际显示的内容宽收缩（fill: false），右对齐交给 VideoTopBarSlots
+      // 把右段贴右边缘；放不下时收进「⋯」，不再横滚裁切（旧 ListView(reverse) 把右组
+      // 从左边裁掉，只剩半个「剧集列表」图标）。
       expect(
         groupHelper,
-        contains('alignment: slot == VideoControlSlot.topRight'),
-        reason: '同一个 slot group 内部应按 topRight 选择右对齐',
+        contains('return VideoControlBar('),
+        reason: '顶栏按钮组应交 VideoControlBar 排布（放不下收进「⋯」）',
       );
       expect(
         groupHelper,
-        contains('MainAxisAlignment.end'),
-        reason: 'topRight 组内按钮应靠右聚拢',
+        contains('fill: false'),
+        reason: '按钮组要收缩到内容宽，标题才拿得到剩余宽',
       );
+      expect(groupHelper, isNot(contains('ListView(')), reason: '按钮组不得再横滚裁切');
       expect(
         groupHelper,
-        isNot(contains(
-            'for (final VideoControlItem item in _slotChipItems(slot))\n        Flexible(')),
+        isNot(
+          contains(
+            'for (final VideoControlItem item in _slotChipItems(slot))\n        Flexible(',
+          ),
+        ),
         reason: '按钮不能逐个 Flexible，否则会被整条 Row 分散到中间',
       );
     });
