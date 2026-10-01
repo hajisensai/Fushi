@@ -8,6 +8,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -17,10 +18,8 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 String _extractWord(AppModel appModel, String text, int charIndex) {
   if (charIndex < 0 || !appModel.isInitialised) return text;
-  final String word = JapaneseLanguage.instance.wordFromIndex(
-    text: text,
-    index: charIndex,
-  );
+  // 英文等拉丁文要从词首起查，不能从被点字母起（见 [lookupWordAtIndex]）。
+  final String word = lookupWordAtIndex(text, charIndex);
   return word.isNotEmpty ? word : text;
 }
 
