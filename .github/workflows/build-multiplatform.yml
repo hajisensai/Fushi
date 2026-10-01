@@ -50,6 +50,7 @@ on:
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
+      - '.github/actions/pdfium-hook-cache/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -148,7 +149,7 @@ jobs:
           echo "event=$EVENT all=$all changed files: $(wc -l < "$files")"
           cat "$files"
 
-          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names)/)'
+          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/setup-fushi-anki-sync/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/fushi_anki_sync/|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
@@ -245,6 +246,11 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: android
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
@@ -680,6 +686,11 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: macos
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
@@ -1026,6 +1037,11 @@ jobs:
           flutter-version: '3.44.0'
           cache: false
           pub-cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: windows
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去

@@ -13,8 +13,8 @@
 
 import 'dart:ui' show Rect;
 
-import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/models/app_model.dart';
 
 /// 桌面悬浮字幕条点词时，从整句文本与点击字符索引解析出真正要查的词
@@ -52,7 +52,7 @@ Future<bool> tryFloatingLyricGlobalLookup({
   final String searchTerm = floatingLyricSearchTerm(
     text: text,
     index: index,
-    word: JapaneseLanguage.instance.wordFromIndex(text: text, index: index),
+    word: lookupWordAtIndex(text, index),
   );
   if (searchTerm.isEmpty) {
     return false;

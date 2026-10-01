@@ -8749,20 +8749,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 键是 [kVideoFloatingBallButtons] 里的 id；显示哪几颗由 设置 → 悬浮球 → 视频
   /// 决定。应用内悬浮球关闭时宿主不渲染，这里无条件挂载也无副作用。
-  Widget _buildVideoFloatingBallScene(VideoPlayerController? controller) {
+  ///
+  /// 全屏是推到根导航器上的独立路由（[_pushNeutralizedVideoFullscreen]），窗口侧
+  /// 这份登记随之不再是「当前路由」，宿主会退回「其它页面」那组按钮——所以全屏
+  /// 路由里要再挂一份（[child] 包住全屏内容），两份登记同源同按钮。
+  Widget _buildVideoFloatingBallScene(
+    VideoPlayerController? controller, {
+    Widget child = const SizedBox.shrink(),
+  }) {
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable?>[
         controller,
         _miniSurface,
         _immersiveLocked,
       ]),
-      builder: (BuildContext _, Widget? __) {
+      child: child,
+      builder: (BuildContext _, Widget? child) {
         final bool hideBall = _inMiniWindow || _immersiveLocked.value;
         if (controller == null) {
           return FloatingBallScene(
             scope: FloatingBallScope.video,
             actions: const <String, ReaderHeaderAction>{},
             hideBall: hideBall,
+            child: child!,
           );
         }
         final bool playing = controller.isPlaying;
@@ -8809,6 +8818,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               onPressed: () => unawaited(_saveScreenshot()),
             ),
           },
+          child: child!,
         );
       },
     );
