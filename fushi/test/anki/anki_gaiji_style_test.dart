@@ -1,90 +1,82 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-/// A-overlap 守卫：制卡 meaning 里外字（gaiji）框被词典自带 CSS
-/// `span[data-sc-img][data-sc-class="gaiji"] .gloss-image-container{width:15em!important}`
-/// 撑成 15em → 压重叠正文（明鏡国語辞典 第三版，BUG「3分の2」截图）。
+/// BUG-2825 守卫：制卡字段渲染不再往释义里追加 Fushi 自造的外字（gaiji）中和 `<style>`。
 ///
-/// `normalizeAnkiDictionaryHtml` 会把 gaiji 中和样式 **追加在末尾**。要真正赢过词典
-/// 那条 `!important` 规则，中和器选择器的 CSS 特异性必须 **不低于** 词典规则
-/// （等特异性时靠后者居上的源码顺序取胜）。本测试用最小特异性计算器对比两者。
+/// 那份样式（`_ankiGaijiImageStyle`）用 `!important` 把外字框压成 1em、`text-bottom`
+/// 对齐，原本是为了对抗词典自带 CSS 里写给弹窗的 `.gloss-image-container{width:15em!important}`。
+/// 根因在导出结构：popup.js 导出时保留了 `gloss-*` class，词典 CSS 才在卡片上生效。
+/// 现在导出按 Yomitan（structured-content-style.json 内联 + 剥 class）规范化，词典里
+/// 那类选择器在卡片上命中不到，中和样式没有对手，只剩它自己把外字压扁下沉——用户在
+/// 明鏡真卡上对照 Yomitan 卡确认过。上游 Yomitan 没有这一层。
+///
+/// 同时锁定：图片外层 `<a href>` 里的媒体占位符与 `<img src>` 一起被换成真实文件名
+/// （`replaceAll`），点开的是同一个媒体文件。
+class _TestRepo extends BaseAnkiRepository {
+  @override
+  Future<AnkiFetchResult> fetchConfiguration() => throw UnimplementedError();
+
+  @override
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<bool> isDuplicate(String expression, String reading) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> createDeck(String name) => throw UnimplementedError();
+
+  Map<String, String> fieldsFor(String glossary, Map<String, String> tags) =>
+      buildMinedFields(
+        fieldMappings: const <String, String>{'Back': '{glossary}'},
+        payload: AnkiMiningPayload(expression: '一', glossary: glossary),
+        context: const AnkiMiningContext(sentence: ''),
+        dictionaryMediaTags: tags,
+      );
+}
+
+/// popup.js 修复后导出的外字形状（Yomitan 同形：`<a target rel href>`，无 class）。
+const String _exportedGaiji =
+    '<div class="yomitan-glossary"><ol><li data-dictionary="明鏡国語辞典 第三版">'
+    '<span><span data-sc-img="" data-sc-class="gaiji">'
+    '<a target="_blank" rel="noreferrer noopener" href="fushi_dict_0.svg" '
+    'style="display:inline-block;">'
+    '<span style="display:inline-block;font-size:1em;">'
+    '<img alt="3分の2" src="fushi_dict_0.svg" style="display:inline-block;">'
+    '</span></a></span></span></li></ol></div>';
+
 void main() {
-  group('Anki gaiji image style (A-overlap)', () {
-    test('neutralizer container rule beats dict 15em width by specificity', () {
-      // 明鏡词典自带的「撑爆」规则（用户卡片 HTML 实测）。
-      const dictGaijiContainerSelector =
-          '.yomitan-glossary [data-dictionary="明鏡国語辞典 第三版"] '
-          'span[data-sc-img][data-sc-class="gaiji"] .gloss-image-container';
+  test(
+    'gaiji glossary is written as exported: no appended neutralizer style',
+    () {
+      final String back = _TestRepo().fieldsFor(
+        _exportedGaiji,
+        const <String, String>{'fushi_dict_0.svg': 'real_stored.svg'},
+      )['Back']!;
 
-      // 触发追加（含 data-sc-img + gloss-image），并把词典规则放进输入模拟真实卡片。
-      const input = '<div class="yomitan-glossary">'
-          '<span data-sc-img data-sc-class="gaiji">'
-          '<span class="gloss-image-link"><span class="gloss-image-container">'
-          '<span class="gloss-image">3分の2</span></span></span></span>'
-          '<style>$dictGaijiContainerSelector{width:15em!important}</style>'
-          '</div>';
-
-      final out = normalizeAnkiDictionaryHtml(input);
-
-      // 取「追加在末尾」的中和器 <style> 的 .gloss-image-container 规则选择器。
-      final neutralizerSelector =
-          _selectorForRuleEndingWith(out, '.gloss-image-container');
-      expect(neutralizerSelector, isNotNull,
-          reason: '中和器必须包含一条 .gloss-image-container 规则');
-
-      final dictSpec = _specificity(dictGaijiContainerSelector);
-      final neutSpec = _specificity(neutralizerSelector!);
-
-      // 中和器追加在末尾，等特异性即可取胜；故要求 >= 词典规则。
-      expect(_compareSpecificity(neutSpec, dictSpec) >= 0, isTrue,
-          reason: '中和器 .gloss-image-container 特异性 $neutSpec 必须 >= 词典 $dictSpec，'
-              '否则 width:15em!important 仍生效→外字框撑爆重叠');
-
-      // 中和器必须把宽度收回到 1em 量级且 !important。
-      expect(out, contains('width:1em!important'));
-    });
-
-    test('non-gaiji html is returned unchanged', () {
-      const plain = '<div class="yomitan-glossary"><span>定义</span></div>';
-      expect(normalizeAnkiDictionaryHtml(plain), plain);
-    });
-  });
-}
-
-/// 返回末尾（最后一个）以 [suffix] 收尾的选择器对应的规则选择器整串；无则 null。
-/// 简易解析：扫描所有 `selector{...}` 段，挑选择器以 suffix 结尾的最后一条。
-String? _selectorForRuleEndingWith(String css, String suffix) {
-  final reg = RegExp(r'([^{}]+)\{[^{}]*\}');
-  String? found;
-  for (final m in reg.allMatches(css)) {
-    final sel = m.group(1)!.trim();
-    if (sel.endsWith(suffix)) found = sel;
-  }
-  return found;
-}
-
-/// CSS 特异性 (a,b,c)：a=#id，b=.class/[attr]/:pseudo-class，c=元素/::pseudo-element。
-List<int> _specificity(String selector) {
-  int a = 0, b = 0, c = 0;
-  // 去掉属性值里可能混入的 token 干扰：先抠出 [..] 计数再移除。
-  final attrs = RegExp(r'\[[^\]]*\]').allMatches(selector).length;
-  b += attrs;
-  final stripped = selector.replaceAll(RegExp(r'\[[^\]]*\]'), ' ');
-  a += RegExp(r'#[\w-]+').allMatches(stripped).length;
-  b += RegExp(r'\.[\w-]+').allMatches(stripped).length;
-  b += RegExp(r'(?<!:):[\w-]+').allMatches(stripped).length; // :pseudo-class
-  // 元素名：被空格/>/+/~ 分隔、不以 . # : [ 开头的裸 token。
-  for (final tok in stripped.split(RegExp(r'[\s>+~]+'))) {
-    final t = tok.trim();
-    if (t.isEmpty) continue;
-    if (RegExp(r'^[a-zA-Z][\w-]*$').hasMatch(t)) c += 1;
-  }
-  return <int>[a, b, c];
-}
-
-int _compareSpecificity(List<int> x, List<int> y) {
-  for (var i = 0; i < 3; i++) {
-    if (x[i] != y[i]) return x[i] - y[i];
-  }
-  return 0;
+      expect(
+        back,
+        isNot(contains('<style>')),
+        reason: 'Fushi 自造的 gaiji 中和样式会把外字压成 1em 并下沉，上游没有这一层',
+      );
+      expect(back, isNot(contains('!important')));
+      expect(
+        back,
+        _exportedGaiji.replaceAll('fushi_dict_0.svg', 'real_stored.svg'),
+        reason: '字段内容就是 popup.js 导出的释义，只做媒体占位符替换',
+      );
+      expect(
+        back,
+        contains('href="real_stored.svg"'),
+        reason: '图片外层 <a> 的 href 必须与 <img src> 指向同一个已存入 Anki 的媒体',
+      );
+    },
+  );
 }
