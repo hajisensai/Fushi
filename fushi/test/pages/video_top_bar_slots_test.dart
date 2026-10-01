@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 
 /// 视频内顶栏布局（[VideoTopBarSlots]）的行为守卫。
@@ -133,7 +134,7 @@ void main() {
 
       expect(tester.getSize(find.byKey(leftLeadKey)).width, 60);
       expect(tester.getSize(find.byKey(rightLeadKey)).width, 240,
-          reason: '右段被钳到剩余的 240（段内自带横滚兜底可达性）');
+          reason: '定宽占位没有可收起项（保底 = 原样宽），保底放不下时按优先级截断到剩余的 240');
       expect(tester.getSize(find.byKey(titleKey)).width, 0);
       expect(tester.takeException(), isNull);
     });
@@ -227,6 +228,138 @@ void main() {
       expect(tester.getTopLeft(find.byKey(leftTailKey)).dx, 400,
           reason: 'tail 段紧跟标题');
       expect(tester.getTopRight(find.byKey(rightLeadKey)).dx, 600);
+    });
+  });
+
+  group('分宽：先保底、再按优先级补足（BUG-2832 审查）', () {
+    test('宽度够：各段都拿到原样宽', () {
+      expect(
+        allocateVideoTopBarButtonWidths(
+          floors: <double>[48, 0, 48, 0],
+          wants: <double>[200, 0, 150, 0],
+          width: 600,
+        ),
+        <double>[200, 0, 150, 0],
+      );
+    });
+
+    test('左组想要的很多：右组仍保住自己的保底（「⋯」），左组只吃剩下的', () {
+      // 旧的纯优先级分配会让左组拿走 400 里的全部、右组只剩 0。
+      expect(
+        allocateVideoTopBarButtonWidths(
+          floors: <double>[96, 0, 48, 0],
+          wants: <double>[800, 0, 300, 0],
+          width: 400,
+        ),
+        <double>[352, 0, 48, 0],
+      );
+    });
+
+    test('保底之后的余量按优先级补：先补左组', () {
+      expect(
+        allocateVideoTopBarButtonWidths(
+          floors: <double>[48, 0, 48, 0],
+          wants: <double>[150, 0, 150, 0],
+          width: 250,
+        ),
+        <double>[150, 0, 100, 0],
+      );
+    });
+
+    test('保底加起来都放不下：按优先级截断，不出负数', () {
+      expect(
+        allocateVideoTopBarButtonWidths(
+          floors: <double>[60, 0, 400, 0],
+          wants: <double>[60, 0, 400, 0],
+          width: 300,
+        ),
+        <double>[60, 0, 240, 0],
+      );
+      expect(
+        allocateVideoTopBarButtonWidths(
+          floors: <double>[60, 0, 48, 0],
+          wants: <double>[60, 0, 48, 0],
+          width: -5,
+        ),
+        <double>[0, 0, 0, 0],
+      );
+    });
+
+    testWidgets('真布局：左组按钮很多、栏很窄，右组的「⋯」仍完整可点', (WidgetTester tester) async {
+      const Key leftMoreKey = Key('left-more');
+      const Key rightMoreKey = Key('right-more');
+      final List<String> opened = <String>[];
+
+      Widget button(String id) => ColoredBox(
+            key: Key(id),
+            color: const Color(0xFF000000),
+            child: const SizedBox(width: 48, height: 40),
+          );
+
+      Widget group(String side, int count, Key moreKey) => VideoControlBar(
+            fill: false,
+            moreButtonBuilder: (VoidCallback open) => GestureDetector(
+              onTap: () {
+                opened.add(side);
+                open();
+              },
+              child: ColoredBox(
+                key: moreKey,
+                color: const Color(0xFF000000),
+                child: const SizedBox(width: 48, height: 40),
+              ),
+            ),
+            entries: <VideoBarEntry>[
+              for (int i = 0; i < count; i++)
+                VideoBarEntry(
+                  priority: 50,
+                  menuAction: VideoBarMenuAction(
+                    icon: Icons.circle,
+                    label: '$side-$i',
+                    onSelected: () {},
+                  ),
+                  child: button('$side-$i'),
+                ),
+            ],
+          );
+
+      tester.view.physicalSize = const Size(1200, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 300,
+                height: 48,
+                child: VideoTopBarSlots(
+                  // 左组 10 个按钮（480 宽）远超整条 300 宽的顶栏。
+                  leftLead: group('left', 10, leftMoreKey),
+                  leftTail: const SizedBox.shrink(),
+                  title: const SizedBox.shrink(),
+                  rightLead: group('right', 3, rightMoreKey),
+                  rightTail: const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final Rect rightMore = tester.getRect(find.byKey(rightMoreKey));
+      expect(rightMore.width, 48, reason: '右组的「⋯」必须完整，不能被裁成半个');
+      expect(rightMore.right, moreOrLessEquals(300));
+      final Rect leftMore = tester.getRect(find.byKey(leftMoreKey));
+      expect(leftMore.width, 48);
+      expect(leftMore.right, lessThanOrEqualTo(rightMore.left + 0.01),
+          reason: '两组不重叠');
+      await tester.tap(find.byKey(rightMoreKey));
+      await tester.pumpAndSettle();
+      expect(opened, <String>['right']);
+      expect(find.text('right-0'), findsOneWidget);
     });
   });
 }

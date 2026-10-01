@@ -61,13 +61,25 @@ void main() {
 
     // TODO-128:底栏进度/总时长文字（media_kit PositionIndicator）默认硬编码 fontSize
     // 12.0、不传 style 时永不随 appUiScale 缩放（067 漏）。桌面 + 移动两处都必须显式
-    // 传 style 把字号乘 _videoUiScale。撤掉任一 * _videoUiScale 即转红。
+    // 传 style 把字号乘 _videoUiScale。撤掉 * _videoUiScale 即转红。
+    // BUG-2832：桌面 / 移动两个指示器收进同一个 `_bottomPositionIndicator`，共用一份
+    // style，所以字号表达式只出现一次，且两种指示器都必须吃这份 style。
     expect(
       'fontSize: 12.0 * _videoUiScale'.allMatches(source).length,
-      2,
+      1,
       reason:
           'desktop+mobile position indicators must scale time text by appUiScale (TODO-128)',
     );
+    final int indicatorStart =
+        source.indexOf('Widget _bottomPositionIndicator(');
+    expect(indicatorStart, greaterThanOrEqualTo(0));
+    final String indicator = source.substring(
+      indicatorStart,
+      source.indexOf('\n  }\n', indicatorStart),
+    );
+    expect(indicator, contains('fontSize: 12.0 * _videoUiScale'));
+    expect(indicator, contains('MaterialDesktopPositionIndicator(style: style)'));
+    expect(indicator, contains('MaterialPositionIndicator(style: style)'));
     expect(
       source,
       isNot(contains('const MaterialDesktopPositionIndicator()')),

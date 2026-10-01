@@ -385,22 +385,45 @@ void main() {
       expect(saved.isUsable, isTrue);
     });
 
-    testWidgets('一条草稿打字到中间态：跳过它，不连累同列表的其它提供商', (WidgetTester tester) async {
+    testWidgets('一条草稿打字到中间态：磁盘保留它上一次的有效版本，不连累其它提供商', (
+      WidgetTester tester,
+    ) async {
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
         _config(id: 'p2', name: 'Beta', baseUrl: 'https://api.deepseek.com/v1'),
       ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments().withAssignment(
+          AiFeature.galgameTextProcess,
+          'p1',
+        ),
+      );
       await pumpSection(tester);
 
-      // `htt` 不是合法地址：这条草稿本轮无效，落盘时被跳过（它仍留在界面上，
-      // 不报错也不弹窗——用户只是还没打完）。
+      // `htt` 不是合法地址：这条草稿本轮无效（它仍留在界面上，不报错也不弹窗——
+      // 用户只是还没打完）。回归点（S1）：此前无效草稿直接被跳过、整份覆盖落盘，
+      // 于是 p1 从磁盘消失、指向它的功能映射悬空，此刻离开页面就永久丢了这家。
       await enter(tester, 'ai-provider-0-base-url', 'htt');
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
+      expect(prefs.aiProviders.map((AiProviderConfig c) => c.id), <String>[
+        'p1',
+        'p2',
+      ], reason: '一条草稿编辑到一半不是删除');
       expect(
-        prefs.aiProviders.map((AiProviderConfig c) => c.id),
-        <String>['p2'],
-        reason: '一条草稿无效不该把整份清单一起写没',
+        prefs.aiProviders.first.baseUrl.toString(),
+        'https://api.openai.com/v1',
+        reason: '磁盘上是这家上一次的有效版本',
+      );
+      expect(
+        prefs.aiProviders.first.enabled,
+        isFalse,
+        reason: '保留的旧版本停用落盘：正在改的配置不在后台继续被调用',
+      );
+      expect(
+        prefs.aiFeatureAssignments.providerIdFor(AiFeature.galgameTextProcess),
+        'p1',
+        reason: '映射不悬空',
       );
       expect(
         find.byKey(const ValueKey<String>('ai-provider-0-base-url')),
@@ -423,6 +446,13 @@ void main() {
       expect(
         prefs.aiProviders.first.baseUrl.toString(),
         'https://api.moonshot.cn/v1',
+      );
+      expect(
+        prefs.aiFeatureAssignments
+            .resolve(AiFeature.galgameTextProcess, prefs.aiProviders)
+            ?.id,
+        'p1',
+        reason: '草稿重新有效即按草稿自己的启用状态写回，指派照常生效',
       );
     });
 
@@ -558,6 +588,217 @@ void main() {
         isNull,
         reason: '映射悬空的表现是设置里选着一家已经不存在的 AI',
       );
+    });
+
+    testWidgets('关掉明文 HTTP 放行使校验失败：这家不从磁盘消失，指派不悬空', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(
+          id: 'p1',
+          name: 'LAN',
+          baseUrl: 'http://192.168.1.20:8000/v1',
+          allowInsecureHttp: true,
+        ),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      await pumpSection(tester);
+
+      await tapKey(tester, 'ai-provider-0-allow-http');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      expect(prefs.aiProviders, hasLength(1), reason: '只有显式删除能移除一家');
+      expect(prefs.aiFeatureAssignments.defaultProviderId, 'p1');
+      // 用户撤回了明文 HTTP 放行：旧版本（仍放行明文）不能照原样留着继续被调用。
+      expect(prefs.aiProviders.single.enabled, isFalse);
+      expect(
+        prefs.aiFeatureAssignments.resolve(
+          AiFeature.galgameTextProcess,
+          prefs.aiProviders,
+        ),
+        isNull,
+        reason: '撤回放行后不再经明文 HTTP 发任何 AI 请求',
+      );
+    });
+
+    testWidgets('从没有效过的新草稿不落盘，删除照样移除持久化的那家', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[_config(id: 'p1')]);
+      await pumpSection(tester);
+
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-$kAiCustomPresetId');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      // 「自定义」预设没有地址：草稿无效，磁盘上本来就没有它，不能凭空写一条。
+      expect(prefs.aiProviders.map((AiProviderConfig c) => c.id), <String>[
+        'p1',
+      ]);
+
+      // 上一次有效版本的回落只覆盖「还在草稿列表里」的 id：删掉就是删掉。
+      await enter(tester, 'ai-provider-0-base-url', 'htt');
+      await tapKey(tester, 'ai-provider-0-delete');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders, isEmpty);
+    });
+
+    testWidgets('显式指派指向清单里不存在的 id：显示「不可用」，与运行时 resolve 同口径', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      // 备份恢复 / 旧版本写入 / 条目解码失败都会留下这种映射（删除时已清的除外）。
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(
+          defaultProviderId: 'p1',
+        ).withAssignment(AiFeature.galgameTextProcess, 'gone'),
+      );
+      await pumpSection(tester);
+
+      final Finder row = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}',
+        ),
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.ai_feature_assigned_unavailable),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.ai_feature_follow_default(name: 'Alpha')),
+        ),
+        findsNothing,
+        reason: '运行时显式指派找不到时不回退默认，界面不能说「跟随默认」',
+      );
+      expect(
+        prefs.aiFeatureAssignments.resolve(
+          AiFeature.galgameTextProcess,
+          prefs.aiProviders,
+        ),
+        isNull,
+      );
+    });
+
+    Future<void> pumpWithClient(
+      WidgetTester tester,
+      Future<http.Response> Function(http.Request request) handler,
+    ) async {
+      tester.view.physicalSize = const Size(900, 4000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: SizedBox(
+                width: 640,
+                child: SingleChildScrollView(
+                  child: AiProviderSettingsSection(
+                    clientFactory: () =>
+                        AiChatClient(client: MockClient(handler)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    http.Response jsonResponse(Object? body, {int status = 200}) =>
+        http.Response(
+          jsonEncode(body),
+          status,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+
+    testWidgets('测试连接对所配模型发 chat：模型列表能拉但 chat 404 → 判失败', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', model: 'gpt-typo'),
+      ]);
+      final List<http.Request> seen = <http.Request>[];
+      await pumpWithClient(tester, (http.Request request) async {
+        seen.add(request);
+        if (request.url.path.endsWith('/models')) {
+          return jsonResponse(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{'id': 'gpt-4o-mini'},
+            ],
+          });
+        }
+        return jsonResponse(<String, Object?>{
+          'error': 'model not found',
+        }, status: 404);
+      });
+
+      await tapKey(tester, 'ai-provider-0-test');
+
+      // 回归点（S4）：此前只跑 listModels，模型名拼错照样「连接正常」。
+      expect(seen, hasLength(1));
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/v1/chat/completions');
+      final Map<String, Object?> payload =
+          jsonDecode(seen.single.body) as Map<String, Object?>;
+      expect(payload['model'], 'gpt-typo');
+      expect(
+        find.text(t.ai_provider_test_failed(reason: aiFailureText('http_404'))),
+        findsOneWidget,
+      );
+      expect(find.text(t.ai_provider_test_ok), findsNothing);
+    });
+
+    testWidgets('测试连接：chat 应答形状正确即通过（推理模型正文为空也算通）', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', model: 'o4-mini'),
+      ]);
+      await pumpWithClient(
+        tester,
+        (http.Request request) async => jsonResponse(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{'content': ''},
+              'finish_reason': 'length',
+            },
+          ],
+        }),
+      );
+
+      await tapKey(tester, 'ai-provider-0-test');
+      expect(find.text(t.ai_provider_test_ok), findsOneWidget);
+    });
+
+    testWidgets('测试连接：还没填模型时退回列模型（验地址与鉴权）', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', model: ''),
+      ]);
+      final List<http.Request> seen = <http.Request>[];
+      await pumpWithClient(tester, (http.Request request) async {
+        seen.add(request);
+        return jsonResponse(<String, Object?>{'data': <Object?>[]});
+      });
+
+      await tapKey(tester, 'ai-provider-0-test');
+      expect(seen.single.method, 'GET');
+      expect(seen.single.url.path, '/v1/models');
+      expect(find.text(t.ai_provider_test_ok), findsOneWidget);
     });
 
     testWidgets('候选选择器：没拉过先拉，选中即同时改字段显示与落盘', (WidgetTester tester) async {
@@ -865,6 +1106,149 @@ void main() {
             'provider_not_configured',
           ),
         ),
+      );
+    });
+
+    Matcher failsWith(String code) => throwsA(
+      isA<AiChatFailure>().having(
+        (AiChatFailure f) => f.message,
+        'message',
+        code,
+      ),
+    );
+
+    test('三种协议同口径：正文为空 / 只有空白 → empty_response', () async {
+      final List<(AiProviderConfig, Object?)> cases =
+          <(AiProviderConfig, Object?)>[
+            for (final String blank in <String>['', '  \n '])
+              (
+                _config(),
+                <String, Object?>{
+                  'choices': <Object?>[
+                    <String, Object?>{
+                      'message': <String, Object?>{'content': blank},
+                    },
+                  ],
+                },
+              ),
+            (
+              _config(
+                presetId: 'anthropic',
+                baseUrl: 'https://api.anthropic.com',
+                model: 'claude-sonnet-5',
+                protocol: AiWireProtocol.anthropicMessages,
+              ),
+              <String, Object?>{
+                'content': <Object?>[
+                  <String, Object?>{'type': 'text', 'text': ' \n'},
+                ],
+              },
+            ),
+            (
+              _config(
+                presetId: 'gemini',
+                baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+                model: 'gemini-2.5-flash',
+                protocol: AiWireProtocol.geminiGenerateContent,
+              ),
+              <String, Object?>{
+                'candidates': <Object?>[
+                  <String, Object?>{
+                    'content': <String, Object?>{
+                      'parts': <Object?>[
+                        <String, Object?>{'text': '   '},
+                      ],
+                    },
+                  },
+                ],
+              },
+            ),
+          ];
+      for (final (AiProviderConfig provider, Object? body) in cases) {
+        final AiChatClient client = clientReturning(body);
+        addTearDown(client.close);
+        // 回归点（S3）：OpenAI 兼容协议此前把空 content 当成功原样返回。
+        await expectLater(
+          client.complete(
+            provider: provider,
+            messages: <AiChatMessage>[const AiChatMessage.user('hi')],
+          ),
+          failsWith('empty_response'),
+          reason: provider.protocol.name,
+        );
+      }
+    });
+
+    test('OpenAI 官方端点发 max_completion_tokens，其余兼容端点仍发 max_tokens', () async {
+      Future<Map<String, Object?>> payloadFor(String baseUrl) async {
+        final AiChatClient client = clientReturning(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{'content': 'ok'},
+            },
+          ],
+        });
+        addTearDown(client.close);
+        await client.complete(
+          provider: _config(baseUrl: baseUrl, model: 'o4-mini'),
+          messages: <AiChatMessage>[const AiChatMessage.user('hi')],
+          maxTokens: 300,
+        );
+        return jsonDecode(capturedBody) as Map<String, Object?>;
+      }
+
+      // 回归点（S5）：官方推理模型（o 系列 / gpt-5）拒收 max_tokens。
+      final Map<String, Object?> official = await payloadFor(
+        'https://api.openai.com/v1',
+      );
+      expect(official['max_completion_tokens'], 300);
+      expect(official.containsKey('max_tokens'), isFalse);
+
+      final Map<String, Object?> compatible = await payloadFor(
+        'https://api.deepseek.com/v1',
+      );
+      expect(compatible['max_tokens'], 300);
+      expect(compatible.containsKey('max_completion_tokens'), isFalse);
+    });
+
+    test('ping：对所配模型发最小 chat，形状正确即通过、不要求正文', () async {
+      final AiChatClient client = clientReturning(<String, Object?>{
+        'choices': <Object?>[
+          <String, Object?>{
+            'message': <String, Object?>{'content': ''},
+            'finish_reason': 'length',
+          },
+        ],
+      });
+      addTearDown(client.close);
+      await client.ping(_config(baseUrl: 'https://api.deepseek.com/v1'));
+      expect(captured.method, 'POST');
+      expect(captured.url.path, '/v1/chat/completions');
+      final Map<String, Object?> payload =
+          jsonDecode(capturedBody) as Map<String, Object?>;
+      expect(payload['model'], 'gpt-4o-mini');
+      final int cap = payload['max_tokens']! as int;
+      expect(cap, inInclusiveRange(16, 64), reason: '小但给推理模型留余量');
+    });
+
+    test('ping：应答不是该协议的形状 → bad_response；HTTP 错误照常映射', () async {
+      final AiChatClient wrongShape = clientReturning(<String, Object?>{
+        'error': 'gateway says hi',
+      });
+      addTearDown(wrongShape.close);
+      await expectLater(wrongShape.ping(_config()), failsWith('bad_response'));
+
+      final AiChatClient notFound = clientReturning(<String, Object?>{
+        'error': 'no such model',
+      }, status: 404);
+      addTearDown(notFound.close);
+      await expectLater(notFound.ping(_config()), failsWith('http_404'));
+
+      final AiChatClient unused = clientReturning(<String, Object?>{});
+      addTearDown(unused.close);
+      await expectLater(
+        unused.ping(_config(model: ' ')),
+        failsWith('provider_not_configured'),
       );
     });
 

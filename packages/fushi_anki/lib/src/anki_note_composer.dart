@@ -24,10 +24,10 @@ import 'lapis_preset.dart';
 @immutable
 class AudioFetchOutcome {
   const AudioFetchOutcome._({this.ref, this.failureReason})
-      : assert(
-          ref == null || failureReason == null,
-          'A successful audio fetch (ref) cannot also carry a failure reason.',
-        );
+    : assert(
+        ref == null || failureReason == null,
+        'A successful audio fetch (ref) cannot also carry a failure reason.',
+      );
 
   /// 成功：拿到裸媒体引用 [ref]。
   const AudioFetchOutcome.stored(String ref) : this._(ref: ref);
@@ -119,21 +119,27 @@ const String _inlineVideoPlayVisibleJs =
     'if(v){v.currentTime=0;var p=v.play();if(p&&p.catch){p.catch(function(){});}}';
 
 /// 内嵌片段的卡片 HTML：`<video>`（无 `autoplay` 属性，理由见
-/// [_inlineVideoPlayVisibleJs]）+ 翻面时只播可见那一个的脚本。
+/// [_inlineVideoPlayVisibleJs]），翻面时由它自己的 `oncanplay` 只播可见那一个。
 ///
-/// 脚本随字段渲染几次就执行几次，靠 `data-fushi-started` 只让第一次生效；`setTimeout 0`
-/// 等整张卡插入 DOM、CSS 生效后再判可见性。`play()` 被拒（卡组关了自动播放 → Anki 恢复
+/// BUG-2837：必须是内联事件属性，不能是 `<script>`——Anki 编辑器回写字段时用
+/// DOMParser 删掉所有 `script` / `link` 标签（25.9 `editor.js`），卡片在编辑器里被
+/// 改过一次，翻面自动播放就永久消失。事件属性原样保留（同卡句子音频字段的
+/// `onclick` / `oncanplay` 实测完好）。
+///
+/// 每份副本都会触发 `canplay`，重播 seek 回 0 也会再触发；第一次触发把所有副本标上
+/// `data-fushi-started`，其余一律直接返回。`canplay` 在媒体载入后才来，此时整张卡
+/// 已插入 DOM、CSS 已生效，可见性判得准。`play()` 被拒（卡组关了自动播放 → Anki 恢复
 /// 「播放需要用户手势」）时静默吞掉，留播放条给用户手动点。
 String inlineVideoCoverHtml(String mediaName) =>
     '<video class="fushi-inline-video" '
     'src="${const HtmlEscape().convert(mediaName)}" '
-    'preload="auto" playsinline controls style="max-width:100%"></video>'
-    '<script>(function(){setTimeout(function(){'
-    "var vs=document.querySelectorAll('video.fushi-inline-video');"
-    "if(!vs.length||vs[0].getAttribute('data-fushi-started'))return;"
-    "for(var i=0;i<vs.length;i++){vs[i].setAttribute('data-fushi-started','1');}"
+    'preload="auto" playsinline controls style="max-width:100%" '
+    'oncanplay="'
+    "if(this.getAttribute('data-fushi-started'))return;"
+    "Array.prototype.forEach.call(document.querySelectorAll('video.fushi-inline-video'),"
+    "function(e){e.setAttribute('data-fushi-started','1');});"
     '$_inlineVideoPlayVisibleJs'
-    '},0);})();</script>';
+    '"></video>';
 
 /// 页面上**没有**内嵌片段时，改用句子音频字段里的隐藏 `<audio>` 播放同一个片段文件的
 /// 声音（单行、无反斜杠 / 反引号 / `${`）。
@@ -378,8 +384,10 @@ mixin AnkiNoteComposer {
     // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
     // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。
     final String noTags = value.replaceAll(RegExp(r'<[^>]*>'), ' ');
-    final String collapsed =
-        noTags.replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final String collapsed = noTags
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     if (collapsed.length <= maxLen) return collapsed;
     return '${collapsed.substring(0, maxLen)}…';
   }
@@ -632,9 +640,10 @@ mixin AnkiNoteComposer {
     if (context.synchronizedVideo &&
         inlineVideoName != null &&
         isAnkiInlineVideoCover(context.coverPath)) {
-      sentenceAudioRef = AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
-        settings.fieldMappings,
-      )
+      sentenceAudioRef =
+          AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+            settings.fieldMappings,
+          )
           ? inlineVideoSentenceAudioHtml(inlineVideoName)
           : null;
     } else if (context.synchronizedVideo && coverRef != null) {

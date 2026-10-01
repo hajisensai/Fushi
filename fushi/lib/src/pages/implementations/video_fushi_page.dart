@@ -70,7 +70,7 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
-import 'package:fushi/src/media/video/video_bottom_bar_slots.dart';
+import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -7028,11 +7028,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
   }
 
-  List<Widget> _bottomSlotButtons(
+  List<VideoBarEntry> _bottomSlotButtons(
     VideoControlSlot slot,
     VideoPlayerController controller, {
     required bool desktop,
-    required bool roomyBottomBar,
+    required VideoBarCluster cluster,
   }) {
     // **一次遍历**，按用户在槽内摆的真实顺序出控件。
     //
@@ -7047,19 +7047,124 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     //
     // volume 不经 [_shouldRenderControlItem]：与旧行为一致（旧写法问的是未经过滤
     // 的原始槽列表「在不在」），本次只改顺序、不改「画不画」。
-    return <Widget>[
+    //
+    // 时间指示器同理按它在 bottomLeft 里的真实下标出（旧写法恒插在左簇最前）；它是
+    // 钉死项，永不收进「⋯」（BUG-2832）。
+    return <VideoBarEntry>[
       for (final VideoControlItem item in _controlLayout.itemsIn(slot))
-        if (item == VideoControlItem.volume)
-          _buildVolumeButton(controller, desktop: desktop, slot: slot)
-        else if (item.isChipRenderable && _shouldRenderControlItem(item))
-          _buildBottomSlotButton(
+        // 时间指示器只在 bottomLeft 渲染（与旧行为一致）；别的槽里它既不是 chip 也不是
+        // 音量，落到最后一个分支被 isChipRenderable 滤掉。
+        if (item == VideoControlItem.positionIndicator &&
+            slot == VideoControlSlot.bottomLeft)
+          VideoBarEntry(
+            cluster: cluster,
+            child: _bottomPositionIndicator(desktop: desktop),
+          )
+        else if (item == VideoControlItem.volume)
+          _videoBarEntry(
             item,
             controller,
-            desktop: desktop,
             slot: slot,
-            roomyBottomBar: roomyBottomBar,
+            cluster: cluster,
+            child: _buildVolumeButton(controller, desktop: desktop, slot: slot),
+          )
+        else if (item.isChipRenderable && _shouldRenderControlItem(item))
+          _videoBarEntry(
+            item,
+            controller,
+            slot: slot,
+            cluster: cluster,
+            child: _buildBottomSlotButton(
+              item,
+              controller,
+              desktop: desktop,
+              slot: slot,
+            ),
+            // ±10s 放不下文字时先退成纯图标，再考虑收进「⋯」（BUG-2832：判据是
+            // 这条栏**实际放不放得下**，不再是「底栏宽 >= 600」）。
+            compactChild:
+                item == VideoControlItem.seekBackward ||
+                    item == VideoControlItem.seekForward
+                ? _plainSlotButton(
+                    item,
+                    controller,
+                    desktop: desktop,
+                    slot: slot,
+                  )
+                : null,
           ),
     ];
+  }
+
+  /// 一个控件在 [VideoControlBar] 里的条目：收起优先级 / 成对组来自
+  /// [videoControlItemBarPriority] / [videoControlItemBarHideGroup]，收进「⋯」后
+  /// 菜单那一行与按钮本身走同一个执行体。
+  VideoBarEntry _videoBarEntry(
+    VideoControlItem item,
+    VideoPlayerController controller, {
+    required VideoControlSlot slot,
+    required VideoBarCluster cluster,
+    required Widget child,
+    Widget? compactChild,
+  }) {
+    return VideoBarEntry(
+      cluster: cluster,
+      priority: videoControlItemBarPriority(item),
+      group: videoControlItemBarHideGroup(item),
+      menuAction: _videoBarMenuAction(item, controller, slot: slot),
+      // 音量 / 倍速浮层锚在按钮的 CompositedTransformTarget 上；按钮一被收起就不再
+      // 绘制，浮层（showWhenUnlinked: false）随之隐身，遮罩却还在吞下一次点击。
+      // 锚点被收起时就把浮层关掉。
+      onFolded: () {
+        if (_activeControlPopoverSourceSlot == slot &&
+            _activeControlPopoverSourceItem == item) {
+          _hideControlPopover();
+        }
+      },
+      compactChild: compactChild,
+      child: child,
+    );
+  }
+
+  /// 被收进「⋯」的控件在菜单里的那一行。音量的按钮是浮层锚点，菜单里没有可锚定的
+  /// 按钮，所以菜单项就是「静音 / 取消静音」（与它的 tooltip 一致）；倍速传 null 锚点，
+  /// [_showSpeedMenu] 会退回侧栏面板。其余一律交 [_activateVideoControlItem]。
+  VideoBarMenuAction _videoBarMenuAction(
+    VideoControlItem item,
+    VideoPlayerController controller, {
+    required VideoControlSlot slot,
+  }) {
+    if (item == VideoControlItem.volume) {
+      return VideoBarMenuAction(
+        icon: _volumeIconFor(_volumeDisplay.value),
+        label: t.shortcut_action_video_toggle_mute,
+        onSelected: () => unawaited(_toggleMute()),
+      );
+    }
+    return VideoBarMenuAction(
+      icon: _videoControlItemIcon(item),
+      label: _videoControlItemTooltip(item),
+      onSelected: () =>
+          _activateVideoControlItem(item, controller, sourceSlot: slot),
+    );
+  }
+
+  /// 「⋯」按钮：与同条栏其它按钮同款（media_kit 按钮、同图标尺寸），只在有控件被收起时
+  /// 出现（[VideoControlBar] 决定）。
+  Widget _videoBarMoreButton(VoidCallback open, {required bool desktop}) {
+    void onPressed() {
+      // 与其它控制条按钮一致：按一下续命控制条，菜单弹出期间它不该在背后自己消失。
+      _pokeControlsVisible();
+      open();
+    }
+
+    final Widget icon = Icon(Icons.more_horiz, size: _videoControlIconSize);
+    return Tooltip(
+      message: MaterialLocalizations.of(context).showMenuTooltip,
+      child: desktop
+          ? MaterialDesktopCustomButton(icon: icon, onPressed: onPressed)
+          : MaterialCustomButton(icon: icon, onPressed: onPressed),
+    );
   }
 
   /// 标题项落在顶部哪个槽（用户可把它拖到 topLeft / topCenter / topRight）；没放置
@@ -7140,7 +7245,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     VideoPlayerController controller, {
     required bool desktop,
     required VideoControlSlot slot,
-    required bool roomyBottomBar,
   }) {
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) {
@@ -7196,27 +7300,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
         );
       case VideoControlItem.seekBackward:
-        if (roomyBottomBar) {
-          return _seekLabelButton(
-            icon: Icons.fast_rewind_rounded,
-            label: t.video_bottom_seek_back_label,
-            tooltip: t.video_bottom_seek_back,
-            color: _videoChromeAccent(Theme.of(context).colorScheme),
-            onPressed: () => _seekRelative(-10000),
-          );
-        }
-        return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
+        // 原样形态带 ±10s 文字；放不下时的纯图标形态由 [_bottomSlotButtons] 作为
+        // compactChild 另给，取哪个由 [VideoControlBar] 按实际宽度定（BUG-2832）。
+        return _seekLabelButton(
+          icon: Icons.fast_rewind_rounded,
+          label: t.video_bottom_seek_back_label,
+          tooltip: t.video_bottom_seek_back,
+          color: _videoChromeAccent(Theme.of(context).colorScheme),
+          onPressed: () => _seekRelative(-10000),
+        );
       case VideoControlItem.seekForward:
-        if (roomyBottomBar) {
-          return _seekLabelButton(
-            icon: Icons.fast_forward_rounded,
-            label: t.video_bottom_seek_forward_label,
-            tooltip: t.video_bottom_seek_forward,
-            color: _videoChromeAccent(Theme.of(context).colorScheme),
-            onPressed: () => _seekRelative(10000),
-          );
-        }
-        return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
+        // 原样形态带 ±10s 文字；放不下时的纯图标形态由 [_bottomSlotButtons] 作为
+        // compactChild 另给，取哪个由 [VideoControlBar] 按实际宽度定（BUG-2832）。
+        return _seekLabelButton(
+          icon: Icons.fast_forward_rounded,
+          label: t.video_bottom_seek_forward_label,
+          tooltip: t.video_bottom_seek_forward,
+          color: _videoChromeAccent(Theme.of(context).colorScheme),
+          onPressed: () => _seekRelative(10000),
+        );
       case VideoControlItem.frameBackward:
         return _frameStepButton(controller, forward: false);
       case VideoControlItem.frameForward:
@@ -7322,6 +7424,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.frameBackward:
       case VideoControlItem.frameForward:
         return _isDesktopVideoControls;
+      // BUG-221：移动端不提供全屏（[_buildFullscreenButton] 同一判据）。在这道门上
+      // 就排除，而不是画成零宽占位——零宽条目照样会被 [VideoControlBar] 当作可收起项
+      // 收进「⋯」，菜单里冒出一行点了无效的「全屏」（BUG-2832 审查）。
+      case VideoControlItem.fullscreen:
+        return !isMobilePlatform;
       case VideoControlItem.back:
       case VideoControlItem.immersiveLock:
       case VideoControlItem.speed:
@@ -7333,7 +7440,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.seekForward:
       case VideoControlItem.previousCue:
       case VideoControlItem.nextCue:
-      case VideoControlItem.fullscreen:
       case VideoControlItem.screenshot:
       case VideoControlItem.clipExport:
       case VideoControlItem.subtitleTrack:
@@ -7369,8 +7475,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [VideoControlSlot.topRight] must stay a single right-aligned button group:
   /// if every button is injected as its own [Flexible] child of the outer row,
   /// Flutter spreads the right-side buttons toward the title/middle on narrow
-  /// windows. The group scrolls horizontally when squeezed, so buttons remain
-  /// reachable without painting past the edge.
+  /// windows. When squeezed, the group collapses its lowest-priority buttons into
+  /// a trailing "⋯" menu ([VideoControlBar], BUG-2832) instead of scrolling /
+  /// clipping them, so every visible button stays whole and full size.
   Widget _topBarSlotGroup(
     VideoControlSlot slot,
     VideoPlayerController controller, {
@@ -7443,34 +7550,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
 
-    // 按钮组按**内容固有宽**收缩（`widthFactor: 1` + `shrinkWrap: true`），不再撑满
-    // 分到的那份宽：这样 [_TopBarSlots] 才能先把两侧按钮要的宽度足额给出去、把真正
-    // 剩下的宽度交给标题。用 ListView 而不是 SingleChildScrollView，正是因为后者的
-    // viewport 在主轴上恒撑满约束（拿不到内容宽），窄窗仍靠横滚兜底按钮可达性。
-    return Align(
-      alignment: slot == VideoControlSlot.topRight
-          ? Alignment.centerRight
-          : Alignment.centerLeft,
-      widthFactor: 1,
-      child: HorizontalDragScrollable(
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          reverse: slot == VideoControlSlot.topRight,
-          children: <Widget>[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: slot == VideoControlSlot.topRight
-                  ? MainAxisAlignment.end
-                  : MainAxisAlignment.start,
-              children: <Widget>[
-                for (final VideoControlItem item in items) buttonFor(item),
-              ],
-            ),
-          ],
-        ),
-      ),
+    // 按钮组按**实际显示的内容宽**收缩（fill: false），[VideoTopBarSlots] 才能先把两侧
+    // 按钮要的宽度足额给出去、把真正剩下的宽度交给标题。放不下时不再横滚裁切（旧
+    // reverse 横向列表把右组从左边裁掉，「剧集列表」只露出半个图标——截图里返回键
+    // 后面那个小「▸」，BUG-2832），而是按优先级收进组尾的「⋯」，按钮永远完整。
+    return VideoControlBar(
+      fill: false,
+      moreButtonBuilder: (VoidCallback open) =>
+          _videoBarMoreButton(open, desktop: desktop),
+      entries: <VideoBarEntry>[
+        for (final VideoControlItem item in items)
+          _videoBarEntry(
+            item,
+            controller,
+            slot: slot,
+            cluster: VideoBarCluster.start,
+            child: buttonFor(item),
+          ),
+      ],
     );
   }
 
@@ -7786,91 +7883,56 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 三区布局：左区时间、右区尾部按钮、居中 seek 簇，play 恒处几何中心、两侧
   /// seek 对称，与尾部按钮数量无关。桌面/移动共用本布局（仅控件类型与播放暂停按钮不同）。
   ///
-  /// BUG-2792：三区改交 [VideoBottomBarSlots] 排布，不再 `Stack` 叠放。播放区被右侧
-  /// 字幕列表挤窄时，`Stack` 里的居中簇与右簇互不知道对方多宽、直接叠画（「+10s」压在
-  /// 音量图标上）。[VideoBottomBarSlots] 宽度够时照旧钉正中，不够时中簇在左右两簇之间
-  /// 平移、再不够就等比缩小，永不重叠。±10s 带不带文字标注也改按**底栏自身宽度**判。
+  /// BUG-2792：三区不再 `Stack` 叠放（居中簇与右簇互不知道对方多宽、直接叠画）。
+  ///
+  /// BUG-2832：三区合成**一条** [VideoControlBar]——左簇 start、传输簇 center、右簇 end，
+  /// 是同一个收起域。放得下时 play 照旧钉正中；放不下时先把 ±10s 退成纯图标，再按
+  /// [videoControlItemBarPriority] 把最不要紧的收进右端「⋯」。旧实现给三区各套
+  /// `FittedBox(scaleDown)`，窄窗时整排传输键缩成米粒大，点击区远小于 48dp。
   Widget _centeredBottomControlBar(
     VideoPlayerController controller, {
     required bool desktop,
   }) {
-    return LayoutBuilder(
-      builder: (BuildContext _, BoxConstraints constraints) =>
-          _centeredBottomControlBarForWidth(
-            controller,
-            desktop: desktop,
-            barWidth: constraints.maxWidth,
-          ),
-    );
-  }
-
-  Widget _centeredBottomControlBarForWidth(
-    VideoPlayerController controller, {
-    required bool desktop,
-    required double barWidth,
-  }) {
-    // 底栏时间前景走 chrome 固定亮色强调色（压固定深色 scrim，不随 colorScheme）。
-    final Color chromeAccent = _videoChromeAccent(
-      Theme.of(context).colorScheme,
-    );
-    final bool roomyBottomBar = _hasRoomyVideoBottomBar(barWidth);
-    final Widget positionIndicator = desktop
-        ? MaterialDesktopPositionIndicator(
-            style: TextStyle(
-              height: 1.0,
-              fontSize: 12.0 * _videoUiScale,
-              color: chromeAccent,
-            ),
-          )
-        : MaterialPositionIndicator(
-            style: TextStyle(
-              height: 1.0,
-              fontSize: 12.0 * _videoUiScale,
-              color: chromeAccent,
-            ),
-          );
-    final List<Widget> rightCluster = <Widget>[
-      ..._bottomSlotButtons(
-        VideoControlSlot.bottomRight,
-        controller,
-        desktop: desktop,
-        roomyBottomBar: roomyBottomBar,
-      ),
-    ];
-    // seek 传输簇（居中绝对定位）：从 bottomCenter slot 取真实顺序。默认仍是
-    // `[−10s][上一句][play][下一句][+10s]`，移动后不再硬编码重复。
-    final Widget transport = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
+    return VideoControlBar(
+      moreButtonBuilder: (VoidCallback open) =>
+          _videoBarMoreButton(open, desktop: desktop),
+      entries: <VideoBarEntry>[
+        // 左区：时间指示器 + bottomLeft 自定义按钮。
+        ..._bottomSlotButtons(
+          VideoControlSlot.bottomLeft,
+          controller,
+          desktop: desktop,
+          cluster: VideoBarCluster.start,
+        ),
+        // 居中传输簇：从 bottomCenter slot 取真实顺序，默认
+        // `[−10s][上一句][play][下一句][+10s]`。
         ..._bottomSlotButtons(
           VideoControlSlot.bottomCenter,
           controller,
           desktop: desktop,
-          roomyBottomBar: roomyBottomBar,
+          cluster: VideoBarCluster.center,
+        ),
+        // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
+        ..._bottomSlotButtons(
+          VideoControlSlot.bottomRight,
+          controller,
+          desktop: desktop,
+          cluster: VideoBarCluster.end,
         ),
       ],
     );
-    // 左区：时间指示器 + bottomLeft slot 按钮。与中心簇绝对独立，宽度变化不挤偏 play。
-    final List<Widget> leftCluster = <Widget>[
-      if (_controlLayout
-          .itemsIn(VideoControlSlot.bottomLeft)
-          .contains(VideoControlItem.positionIndicator))
-        positionIndicator,
-      ..._bottomSlotButtons(
-        VideoControlSlot.bottomLeft,
-        controller,
-        desktop: desktop,
-        roomyBottomBar: roomyBottomBar,
-      ),
-    ];
-    return VideoBottomBarSlots(
-      // 左区：时间指示器 + bottomLeft 自定义按钮。
-      left: Row(mainAxisSize: MainAxisSize.min, children: leftCluster),
-      // 居中传输簇：放得下时 play 恒处整条底栏几何中心。
-      center: transport,
-      // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
-      right: Row(mainAxisSize: MainAxisSize.min, children: rightCluster),
+  }
+
+  /// 底栏时间指示器，前景走 chrome 固定亮色强调色（压固定深色 scrim，不随 colorScheme）。
+  Widget _bottomPositionIndicator({required bool desktop}) {
+    final TextStyle style = TextStyle(
+      height: 1.0,
+      fontSize: 12.0 * _videoUiScale,
+      color: _videoChromeAccent(Theme.of(context).colorScheme),
     );
+    return desktop
+        ? MaterialDesktopPositionIndicator(style: style)
+        : MaterialPositionIndicator(style: style);
   }
 
   /// 带可见标注的 seek 按钮（图标 + `−10s`/`+10s`）。media_kit 的 `MaterialCustomButton`
@@ -8063,11 +8125,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
     }
   }
-
-  /// ±10s 是否带文字标注：按**底栏自身宽度**判（BUG-2792）。旧判据读整屏宽
-  /// （`MediaQuery.size.width`），右侧字幕列表打开后屏幕仍宽、底栏却只剩一部分，
-  /// 带标注的 ±10s 照样摆出来，把传输簇撑宽到压进右簇。
-  bool _hasRoomyVideoBottomBar(double barWidth) => barWidth >= 600;
 
   /// 系统底部安全区 inset（BUG-184 / TODO-658·BUG-383）：导航栏 / 手势条**真正可见时**
   /// 的物理高度，用来把进度条与底部按钮条抬离系统栏。视频打开后走 immersiveSticky 隐藏

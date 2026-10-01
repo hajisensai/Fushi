@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -27,11 +29,15 @@ void main() {
         VideoMetadataProviderKind.tmdb,
       ],
     );
-    // 随包 client `fushiplayer` 已登记，AniDB HTTP 链默认可用（不冒用 Shoko 标识）。
-    expect(
-      registry.provider(VideoMetadataProviderKind.anidb)!.isAvailable,
-      isTrue,
-    );
+    // AniDB provider 恒可用（离线标题目录兜底搜索），但 HTTP anime XML 链**默认
+    // 不可用**：此前这里断言「随包 `fushiplayer` 已登记、HTTP 链默认可用」，那条
+    // 前提就是 BUG-2623——fushiplayer 只登记了 UDP，拿去请求 httpapi 恒回 302。
+    // 随包 HTTP 身份为空，provider 发请求前就判不可用。
+    final AniDbVideoMetadataProvider anidb =
+        registry.provider(VideoMetadataProviderKind.anidb)!
+            as AniDbVideoMetadataProvider;
+    expect(anidb.isAvailable, isTrue);
+    expect(anidb.isHttpApiAvailable, isFalse);
     expect(
       registry.provider(VideoMetadataProviderKind.mal)!.isAvailable,
       isTrue,
@@ -39,6 +45,41 @@ void main() {
     expect(
       registry.provider(VideoMetadataProviderKind.tmdb)!.isAvailable,
       isFalse,
+    );
+  });
+
+  test('production AniDB HTTP chain uses the HTTP identity, not the UDP one', () {
+    // UDP 身份齐全（随包 fushiplayer/1）而 HTTP 身份为空：HTTP 链必须不可用。
+    final VideoMetadataProviderRegistry bundled =
+        VideoMetadataProviderRegistry.production(
+          VideoSourceScrapeGlobalConfig(
+            anidbClientName: kBundledAniDbClient.name,
+            anidbClientVersion: kBundledAniDbClient.version,
+          ),
+        );
+    addTearDown(bundled.close);
+    expect(
+      (bundled.provider(VideoMetadataProviderKind.anidb)!
+              as AniDbVideoMetadataProvider)
+          .isHttpApiAvailable,
+      isFalse,
+    );
+    // 配了 HTTP 身份（用户自定义客户端）才可用。
+    final VideoMetadataProviderRegistry custom =
+        VideoMetadataProviderRegistry.production(
+          const VideoSourceScrapeGlobalConfig(
+            anidbClientName: 'customapp',
+            anidbClientVersion: 2,
+            anidbHttpClientName: 'customapp',
+            anidbHttpClientVersion: 2,
+          ),
+        );
+    addTearDown(custom.close);
+    expect(
+      (custom.provider(VideoMetadataProviderKind.anidb)!
+              as AniDbVideoMetadataProvider)
+          .isHttpApiAvailable,
+      isTrue,
     );
   });
 

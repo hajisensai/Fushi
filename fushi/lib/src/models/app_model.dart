@@ -3015,11 +3015,8 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
-      // 音画同步片段成为封面模式默认（PR #1717）只给全新安装：升级上来、从没显式
-      // 选过的存量用户在这里落一次显式 GIF（原行为）。必须赶在首页首帧改写
-      // first_time_setup 之前——它是「全新安装」的唯一判据。
-      await prefsRepo.settleMiningImageModeInstallDefault(
-          freshInstall: prefsRepo.isFirstTimeSetup);
+      // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
+      await prefsRepo.settleMiningImageModeInstallDefault();
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
@@ -5307,8 +5304,9 @@ class AppModel with ChangeNotifier {
       ),
       // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
       enableOfflineTitleIndex: true,
-      // 歧义候选交 AI 消解；未指派提供商时 decider 每次回 null，行为与无 AI 一致。
-      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(prefsRepo),
+      // 歧义 / 查无交 AI 协助；顾问每次现取指派，未指派时完全不问 AI。判定缓存
+      // 按能力键分，这个协调器终身持有也不会沿用换提供商之前的结论。
+      aiIdentityAdvisor: PreferencesAiVideoIdentityAdvisor(prefsRepo),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
       // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。

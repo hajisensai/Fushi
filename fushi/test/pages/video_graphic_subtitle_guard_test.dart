@@ -27,7 +27,9 @@ void main() {
   }
 
   test('字幕标签术语用「内封」而非「内嵌」（BUG-122）', () {
-    final String src = read('../packages/fushi_engine/lib/media/video/video_subtitle_source.dart');
+    final String src = read(
+      '../packages/fushi_engine/lib/media/video/video_subtitle_source.dart',
+    );
     // embeddedSubtitleTrackLabel 生成的菜单标签前缀必须是「内封 N: 」（TODO-844
     // 后改用 parts.join，但前缀文案不变）。
     expect(
@@ -69,14 +71,20 @@ void main() {
     final String src = readVideoFushiSource();
     // 菜单对图形轨标注。
     expect(src.contains('source.isGraphicEmbedded'), isTrue);
-    expect(src.contains('t.video_subtitle_graphic_hint'), isTrue,
-        reason: '菜单应对图形轨显示「画面显示·不可查词」副标题');
+    expect(
+      src.contains('t.video_subtitle_graphic_learning_hint'),
+      isTrue,
+      reason: '菜单应说明图形轨不可查词，并引导外挂文字字幕或 ASR',
+    );
     // 选中图形轨走画面渲染 + 专用提示。
     expect(src.contains('controller.selectEmbeddedGraphicTrack('), isTrue);
     expect(src.contains('t.video_subtitle_graphic_shown'), isTrue);
     // 恢复路径透传 streamIndex。
-    expect(src.contains('renderGraphicStreamIndex'), isTrue,
-        reason: '恢复路径应把图形 streamIndex 透传给 _applyLoad/load');
+    expect(
+      src.contains('renderGraphicStreamIndex'),
+      isTrue,
+      reason: '恢复路径应把图形 streamIndex 透传给 _applyLoad/load',
+    );
     expect(src.contains('graphicStreamIndex'), isTrue);
   });
 
@@ -87,7 +95,10 @@ void main() {
     final int graphicAt = src.indexOf('if (source.isGraphicEmbedded)', start);
     final int showAt = src.indexOf('_showSubtitleLoadingOverlay();', start);
     expect(graphicAt, greaterThan(start));
-    expect(showAt, greaterThan(graphicAt),
-        reason: '图形分支应在加载遮罩之前处理并 return，避免给瞬时切轨弹遮罩');
+    expect(
+      showAt,
+      greaterThan(graphicAt),
+      reason: '图形分支应在加载遮罩之前处理并 return，避免给瞬时切轨弹遮罩',
+    );
   });
 }

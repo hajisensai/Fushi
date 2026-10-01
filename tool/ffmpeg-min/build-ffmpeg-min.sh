@@ -354,7 +354,8 @@ MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
 #   倍速播放时，句子音频按同一倍率 `-af atempo=R` 变速不变调裁出，卡片听感与阅读
 #   时一致。移动端自编 ffmpeg-kit（完整内建滤镜集）本就带；桌面精简构建漏掉它会让
 #   倍速制卡整条 ffmpeg 失败（"No such filter: 'atempo'"）→ 卡片没句子音频。
-FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata,overlay,atempo"
+# Blu-ray MPLS concat input must discard packets decoded outside each IN/OUT.
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,select,aselect,trim,atrim,pad,asetnsamples,astats,ametadata,overlay,atempo"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 # http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo
