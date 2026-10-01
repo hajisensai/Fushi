@@ -209,6 +209,7 @@ void main() {
     const Key moreKey = Key('more');
 
     late List<String> selected;
+    late List<String> folded;
     late FocusNode plusFocus;
 
     Widget box(Key key, double width, {FocusNode? focusNode}) => Focus(
@@ -250,12 +251,14 @@ void main() {
         cluster: VideoBarCluster.end,
         priority: 70,
         menuAction: action('volume'),
+        onFolded: () => folded.add('volume'),
         child: box(volumeKey, 48),
       ),
       VideoBarEntry(
         cluster: VideoBarCluster.end,
         priority: 20,
         menuAction: action('plus'),
+        onFolded: () => folded.add('plus'),
         child: box(plusKey, 48, focusNode: plusFocus),
       ),
     ];
@@ -267,6 +270,7 @@ void main() {
       bool fill = true,
     }) async {
       selected = <String>[];
+      folded = <String>[];
       plusFocus = FocusNode(debugLabel: 'plus');
       addTearDown(plusFocus.dispose);
       tester.view.physicalSize = const Size(1200, 400);
@@ -397,6 +401,28 @@ void main() {
         tester.getSize(find.byType(VideoControlBar)).width,
         moreOrLessEquals(414),
       );
+    });
+
+    testWidgets('最小固有宽 = 钉死项 + 「⋯」（全部收起后的样子），最大 = 原样', (
+      WidgetTester tester,
+    ) async {
+      // 外层顶栏按最小固有宽给每组保底；漏算「⋯」就会把别的组挤成半个「⋯」。
+      await pumpBar(tester, 1000, fill: false);
+      final RenderBox bar = tester.renderObject(find.byType(VideoControlBar));
+      // 时间 110 + 播放 48 + ⋯ 48。
+      expect(bar.getMinIntrinsicWidth(48), moreOrLessEquals(206));
+      expect(bar.getMaxIntrinsicWidth(48), moreOrLessEquals(414));
+    });
+
+    testWidgets('onFolded 只对刚被收起的条目调一次', (WidgetTester tester) async {
+      await pumpBar(tester, 1000);
+      expect(folded, isEmpty);
+      await pumpBar(tester, 340);
+      expect(folded.toSet(), <String>{'volume', 'plus'});
+      expect(folded, hasLength(2));
+      // 结论不变时不重复通知。
+      await tester.pump();
+      expect(folded, hasLength(2));
     });
   });
 }

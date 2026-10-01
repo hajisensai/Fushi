@@ -87,6 +87,22 @@ void main() {
             'speed remains reachable from settings without crowding top bar');
   });
 
+  test('mobile fullscreen is excluded at the render gate, not drawn zero-width',
+      () {
+    // BUG-221：移动端不提供全屏。BUG-2832 审查：只在按钮里画成 SizedBox.shrink 不够——
+    // 零宽条目照样进 VideoControlBar、被收进「⋯」，菜单里冒出一行点了无效的「全屏」。
+    final String gate = region(
+      'bool _shouldRenderControlItem(',
+      'Widget _topBarSlotGroup(',
+    );
+    expect(
+      RegExp(r'case VideoControlItem\.fullscreen:\s*return !isMobilePlatform;')
+          .hasMatch(gate),
+      isTrue,
+      reason: 'fullscreen must be filtered out on mobile before it becomes a bar entry',
+    );
+  });
+
   test('video bottom bar is one shared width-gated helper (BUG-257)', () {
     // BUG-257：桌面 + 移动底栏合并为单一 [_centeredBottomControlBar]（按 desktop: 参数
     // 择 Material*/MaterialDesktop* 组件），故各按钮只出现一次，不再 per-theme 重复。

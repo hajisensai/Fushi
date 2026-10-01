@@ -10,4 +10,7 @@
   - 底栏三簇（左 / 中 / 右）与顶栏左右按钮组都换成 `VideoControlBar`，删掉 `VideoBottomBarSlots` 与 `_hasRoomyVideoBottomBar`。
 - **[x] ① 已修复** — `676812cbd5`：fork 两处 `updateShouldNotify` 改正（记入 `third_party/media_kit_video/PATCHES.md`），mini 档不再与完整顶/底栏并存；新增 `VideoControlBar` + `planVideoControlBar`，底栏三簇与顶栏左右组统一走它（原样 → ±10s 换纯图标 → 按优先级收进「⋯」），删除 `VideoBottomBarSlots`、`_hasRoomyVideoBottomBar` 与死字段 `VideoControlsDensitySpec.showSeekLabels`。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/video_control_bar_test.dart`（planner 三档 / 成对收起 / 钉死项 / 同优先级先收靠后的 + 真布局：居中、紧凑、收进「⋯」后不绘制不命中且退出焦点、菜单顺序与执行、`fill: false` 收缩）；`fushi/test/pages/video_controls_theme_notify_guard_test.dart`（真实 fork 部件的 `updateShouldNotify`）；源码守卫 `video_topbar_guards_test` / `video_mobile_controls_guard_test` / `video_play_center_seek_labels_guard_test` 改钉 `VideoControlBar`，禁止回退到 `FittedBox` / 横滚 `ListView`。
-- **备注**：
+- **备注**：代码审查追加三处修复（同一轮）：
+  1. 顶栏 `VideoTopBarSlots` 原按「左组先拿完剩余宽」分宽，左组按钮多时右组只剩不到一个「⋯」宽，仍会被裁成半个甚至整组消失。改为 `allocateVideoTopBarButtonWidths`：先按各组最小固有宽（钉死项 + 「⋯」）保底，再按优先级补足；`VideoControlBar.computeMinIntrinsicWidth` 补算「⋯」。测试 `fushi/test/pages/video_top_bar_slots_test.dart`。
+  2. 移动端全屏按钮原是画成零宽的条目，会被收进「⋯」，菜单里多出一行无效的「全屏」。改在 `_shouldRenderControlItem` 门上按 `isMobilePlatform` 排除。守卫 `video_mobile_controls_guard_test.dart`。
+  3. 音量 / 倍速浮层开着时锚点按钮被收起，浮层（`showWhenUnlinked: false`）隐身但遮罩仍吞点击。新增 `VideoBarEntry.onFolded`，页面在锚点被收起时 `_hideControlPopover()`。测试 `video_control_bar_test.dart`「onFolded 只对刚被收起的条目调一次」。

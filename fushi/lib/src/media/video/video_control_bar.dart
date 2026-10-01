@@ -276,6 +276,7 @@ class VideoBarEntry {
     this.priority,
     this.group,
     this.menuAction,
+    this.onFolded,
   }) : assert(
          priority == null || menuAction != null,
          'a collapsible entry must say what its overflow-menu row does',
@@ -297,6 +298,10 @@ class VideoBarEntry {
 
   /// 收起后在「⋯」菜单里的那一行；钉死项可不给。
   final VideoBarMenuAction? menuAction;
+
+  /// 这一项刚从栏上收进「⋯」时（帧尾）调用。被收起的按钮不再绘制，挂在它身上的
+  /// 东西（如以它为锚点的浮层）要在这里收场，否则会锚在一个看不见的按钮上。
+  final VoidCallback? onFolded;
 }
 
 /// 按钮永远原尺寸、放不下就收进「⋯」的控制条（BUG-2832）。
@@ -353,7 +358,13 @@ class _VideoControlBarState extends State<VideoControlBar> {
     _focusSyncScheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _focusSyncScheduled = false;
-      if (mounted) _focusPlan.value = _laidOutPlan;
+      if (!mounted) return;
+      final VideoBarPlan previous = _focusPlan.value;
+      final VideoBarPlan next = _laidOutPlan;
+      _focusPlan.value = next;
+      for (final int i in next.hidden.difference(previous.hidden)) {
+        if (i < widget.entries.length) widget.entries[i].onFolded?.call();
+      }
     });
   }
 
@@ -748,16 +759,22 @@ class _RenderVideoControlBar extends RenderBox
     onPlan(arrangement.plan);
   }
 
+  /// 不裁切的最窄宽度：钉死项 + 「⋯」（有可收起项时）——即全部收起后的样子。
+  /// 外层（`VideoTopBarSlots`）按它给每组保底，组与组之间才不会把对方挤成半个图标。
   @override
   double computeMinIntrinsicWidth(double height) {
     double width = 0;
     for (final RenderBox child in _children) {
       final _VideoBarParentData data = _data(child);
-      final bool pinned =
-          data.role == _VideoBarChildRole.full &&
-          data.entry < _specs.length &&
-          _specs[data.entry].priority == null;
-      if (pinned) width += child.getMaxIntrinsicWidth(height);
+      final bool counts = switch (data.role) {
+        _VideoBarChildRole.more => _specs.any(
+          (_VideoBarSpec s) => s.priority != null,
+        ),
+        _VideoBarChildRole.full =>
+          data.entry < _specs.length && _specs[data.entry].priority == null,
+        _VideoBarChildRole.compact => false,
+      };
+      if (counts) width += child.getMaxIntrinsicWidth(height);
     }
     return width;
   }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 /// 视频内顶栏的槽标识，见 [VideoTopBarSlots]。
@@ -33,6 +34,38 @@ enum VideoTopBarSegment {
   tail,
 }
 
+/// 四段按钮的分宽：**先保底、再按优先级补足**。
+///
+/// [floors] 是各段不裁切的最窄宽（`VideoControlBar` 全部收进「⋯」后的宽，见其
+/// `computeMinIntrinsicWidth`），[wants] 是各段原样摆下所需的宽；顺序即优先级
+/// （leftLead → leftTail → rightLead → rightTail）。
+///
+/// ① 按优先级逐段先给保底；② 剩下的再按优先级逐段补到 `want`。于是左组按钮再多，
+/// 也只能在右组保住「⋯」之后才去吃剩余宽——右组不会再被挤成半个「⋯」或整组消失
+/// （BUG-2832 审查）。所有保底加起来都放不下时（真·极窄），第①步按优先级截断，
+/// 退化为纯优先级分配，与旧行为一致。
+List<double> allocateVideoTopBarButtonWidths({
+  required List<double> floors,
+  required List<double> wants,
+  required double width,
+}) {
+  assert(floors.length == wants.length);
+  final List<double> allocated = List<double>.filled(wants.length, 0);
+  double remaining = math.max(0.0, width);
+  for (int i = 0; i < wants.length; i++) {
+    final double floor = math.min(floors[i], wants[i]);
+    allocated[i] = math.min(floor, remaining);
+    remaining -= allocated[i];
+  }
+  for (int i = 0; i < wants.length; i++) {
+    final double extra = math.min(wants[i] - allocated[i], remaining);
+    if (extra <= 0) continue;
+    allocated[i] += extra;
+    remaining -= extra;
+  }
+  return allocated;
+}
+
 /// 视频内顶栏布局：**按钮按需拿宽、标题吃剩余**。
 ///
 /// 根因（2026-08 修复）：顶栏原来直接是 media_kit fork 的一条 `Row`，左按钮组 / 标题 /
@@ -42,10 +75,10 @@ enum VideoTopBarSegment {
 /// 按钮挡住、要横滑才点得到」）。标题项被关掉时旧代码还返回 `Spacer()`（= `FlexFit.tight`），
 /// 空白中段照样霸占那 1/3，所以「把名称删掉、中间明明是空的」也救不回按钮。
 ///
-/// 这里换成显式优先级：**四段按钮先按各自内容固有宽足额拿走**，标题最后拿真正剩下的
-/// 那点宽度。按钮永远完整可见；标题窄了靠 `maxLines: 1` + ellipsis 优雅截断——即
-/// 「按钮比名称重要」。按钮段自身仍是可横滚的（页面侧用 `shrinkWrap` ListView 包裹），
-/// 极窄窗按钮总宽超过整条顶栏时依旧可达、不会被裁没。
+/// 这里换成显式优先级：**四段按钮先拿**（[allocateVideoTopBarButtonWidths]：先给每段
+/// 保底、再按优先级补足），标题最后拿真正剩下的那点宽度。按钮段是 `VideoControlBar`，
+/// 拿到的宽不够原样摆下时按优先级把按钮收进段尾「⋯」——按钮永远完整（BUG-2832）；
+/// 标题窄了靠 `maxLines: 1` + ellipsis 优雅截断——即「按钮比名称重要」。
 ///
 /// 五个槽都必须传：不显示的槽传零尺寸占位（如 `SizedBox.shrink()`），它就不占宽。
 class VideoTopBarSlots extends StatelessWidget {
@@ -79,97 +112,203 @@ class VideoTopBarSlots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomMultiChildLayout(
-      delegate: VideoTopBarSlotsDelegate(titlePlacement: titlePlacement),
-      children: <Widget>[
-        LayoutId(id: VideoTopBarSlotId.leftLead, child: leftLead),
-        LayoutId(id: VideoTopBarSlotId.leftTail, child: leftTail),
-        LayoutId(id: VideoTopBarSlotId.rightLead, child: rightLead),
-        LayoutId(id: VideoTopBarSlotId.rightTail, child: rightTail),
-        LayoutId(id: VideoTopBarSlotId.title, child: title),
-      ],
+    // 子节点顺序固定：四段按钮（即分宽优先级）→ 标题。
+    return _VideoTopBarSlotsLayout(
+      titlePlacement: titlePlacement,
+      children: <Widget>[leftLead, leftTail, rightLead, rightTail, title],
     );
   }
 }
 
-/// [VideoTopBarSlots] 的排布委托：**布局顺序即优先级**（四段按钮 → 标题吃剩余）。
-class VideoTopBarSlotsDelegate extends MultiChildLayoutDelegate {
-  VideoTopBarSlotsDelegate({
-    this.titlePlacement = VideoTopBarTitlePlacement.center,
+class _VideoTopBarSlotsLayout extends MultiChildRenderObjectWidget {
+  const _VideoTopBarSlotsLayout({
+    required this.titlePlacement,
+    required super.children,
   });
 
   final VideoTopBarTitlePlacement titlePlacement;
 
-  /// [positionChild] 要用子尺寸做垂直居中，而 [layoutChild] 每个槽只能调一次，故记账。
-  final Map<VideoTopBarSlotId, Size> _sizes = <VideoTopBarSlotId, Size>{};
+  @override
+  _RenderVideoTopBarSlots createRenderObject(BuildContext context) =>
+      _RenderVideoTopBarSlots(titlePlacement: titlePlacement);
 
   @override
-  void performLayout(Size size) {
-    final double height = size.height;
-    _sizes.clear();
-    double consumed = 0;
+  void updateRenderObject(
+    BuildContext context,
+    _RenderVideoTopBarSlots renderObject,
+  ) {
+    renderObject.titlePlacement = titlePlacement;
+  }
+}
 
-    /// 按剩余宽布局一个槽；槽自身 shrink-wrap，用多少算多少。
-    double take(VideoTopBarSlotId id) {
-      if (!hasChild(id)) return 0;
+class _VideoTopBarSlotsParentData extends ContainerBoxParentData<RenderBox> {}
+
+/// 需要读子节点的固有宽来保底，`MultiChildLayoutDelegate` 拿不到，所以是 RenderBox。
+class _RenderVideoTopBarSlots extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _VideoTopBarSlotsParentData>,
+        RenderBoxContainerDefaultsMixin<
+          RenderBox,
+          _VideoTopBarSlotsParentData
+        > {
+  _RenderVideoTopBarSlots({required VideoTopBarTitlePlacement titlePlacement})
+    : _titlePlacement = titlePlacement;
+
+  VideoTopBarTitlePlacement _titlePlacement;
+  set titlePlacement(VideoTopBarTitlePlacement value) {
+    if (value == _titlePlacement) return;
+    _titlePlacement = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _VideoTopBarSlotsParentData) {
+      child.parentData = _VideoTopBarSlotsParentData();
+    }
+  }
+
+  List<RenderBox> get _children {
+    final List<RenderBox> children = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      children.add(child);
+      child = childAfter(child);
+    }
+    return children;
+  }
+
+  /// 四段按钮（按优先级）与标题；子节点数不对时（不应发生）返回 null。
+  ({List<RenderBox> buttons, RenderBox title})? get _slots {
+    final List<RenderBox> children = _children;
+    if (children.length != 5) return null;
+    return (buttons: children.sublist(0, 4), title: children[4]);
+  }
+
+  /// 量出每段该分多少宽，再按 [layoutChild] 布局；返回各段实际尺寸
+  /// （leftLead, leftTail, rightLead, rightTail, title）。
+  List<Size> _layoutSlots(Size size, ChildLayouter layoutChild) {
+    final ({List<RenderBox> buttons, RenderBox title})? slots = _slots;
+    if (slots == null) return const <Size>[];
+    final double height = size.height;
+    final List<double> allocated = allocateVideoTopBarButtonWidths(
+      floors: <double>[
+        for (final RenderBox b in slots.buttons) b.getMinIntrinsicWidth(height),
+      ],
+      wants: <double>[
+        for (final RenderBox b in slots.buttons) b.getMaxIntrinsicWidth(height),
+      ],
+      width: size.width,
+    );
+    final List<Size> sizes = <Size>[];
+    double consumed = 0;
+    for (int i = 0; i < slots.buttons.length; i++) {
       final Size s = layoutChild(
-        id,
+        slots.buttons[i],
+        BoxConstraints.loose(Size(allocated[i], height)),
+      );
+      sizes.add(s);
+      consumed += s.width;
+    }
+    sizes.add(
+      layoutChild(
+        slots.title,
         BoxConstraints.loose(
           Size(math.max(0.0, size.width - consumed), height),
         ),
-      );
-      _sizes[id] = s;
-      consumed += s.width;
-      return s.width;
-    }
+      ),
+    );
+    return sizes;
+  }
 
-    // ① 四段按钮先分：它们要多少给多少（上限只有「整条顶栏还剩多少」）。
-    final double leftLead = take(VideoTopBarSlotId.leftLead);
-    final double leftTail = take(VideoTopBarSlotId.leftTail);
-    final double rightLead = take(VideoTopBarSlotId.rightLead);
-    final double rightTail = take(VideoTopBarSlotId.rightTail);
-    // ② 标题最后分，只拿真正剩下的。
-    final double title = take(VideoTopBarSlotId.title);
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) =>
+      constraints.biggest;
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
+    final ({List<RenderBox> buttons, RenderBox title})? slots = _slots;
+    if (slots == null) return;
+    final List<Size> sizes = _layoutSlots(size, ChildLayoutHelper.layoutChild);
+    final double leftLead = sizes[0].width;
+    final double leftTail = sizes[1].width;
+    final double rightLead = sizes[2].width;
+    final double rightTail = sizes[3].width;
+    final double title = sizes[4].width;
 
     /// 槽在顶栏内垂直居中。
-    void place(VideoTopBarSlotId id, double x) {
-      if (!hasChild(id)) return;
-      positionChild(id, Offset(x, (height - _sizeOf(id, height).height) / 2));
+    void place(RenderBox child, Size childSize, double x) {
+      (child.parentData! as _VideoTopBarSlotsParentData).offset = Offset(
+        x,
+        (size.height - childSize.height) / 2,
+      );
     }
 
     // 左段从左边缘起排；标题若属于左组，就夹在 lead / tail 之间。
     double x = 0;
-    place(VideoTopBarSlotId.leftLead, x);
+    place(slots.buttons[0], sizes[0], x);
     x += leftLead;
-    if (titlePlacement == VideoTopBarTitlePlacement.left) {
-      place(VideoTopBarSlotId.title, x);
+    if (_titlePlacement == VideoTopBarTitlePlacement.left) {
+      place(slots.title, sizes[4], x);
       x += title;
     }
-    place(VideoTopBarSlotId.leftTail, x);
+    place(slots.buttons[1], sizes[1], x);
     x += leftTail;
     // 中段标题紧接左段（文本自身靠左对齐），一直伸到右段左缘。
-    if (titlePlacement == VideoTopBarTitlePlacement.center) {
-      place(VideoTopBarSlotId.title, x);
+    if (_titlePlacement == VideoTopBarTitlePlacement.center) {
+      place(slots.title, sizes[4], x);
     }
 
     // 右段整体右对齐贴右边缘；标题若属于右组，同样夹在 lead / tail 之间。
-    final double rightTotal = rightLead +
-        rightTail +
-        (titlePlacement == VideoTopBarTitlePlacement.right ? title : 0);
-    double rx = size.width - rightTotal;
-    place(VideoTopBarSlotId.rightLead, rx);
+    final bool titleRight = _titlePlacement == VideoTopBarTitlePlacement.right;
+    double rx = size.width - (rightLead + rightTail + (titleRight ? title : 0));
+    place(slots.buttons[2], sizes[2], rx);
     rx += rightLead;
-    if (titlePlacement == VideoTopBarTitlePlacement.right) {
-      place(VideoTopBarSlotId.title, rx);
+    if (titleRight) {
+      place(slots.title, sizes[4], rx);
       rx += title;
     }
-    place(VideoTopBarSlotId.rightTail, rx);
+    place(slots.buttons[3], sizes[3], rx);
   }
 
-  Size _sizeOf(VideoTopBarSlotId id, double fallbackHeight) =>
-      _sizes[id] ?? Size(0, fallbackHeight);
+  @override
+  double computeMinIntrinsicWidth(double height) {
+    double width = 0;
+    for (final RenderBox child in _children) {
+      width += child.getMinIntrinsicWidth(height);
+    }
+    return width;
+  }
 
   @override
-  bool shouldRelayout(VideoTopBarSlotsDelegate oldDelegate) =>
-      oldDelegate.titlePlacement != titlePlacement;
+  double computeMaxIntrinsicWidth(double height) {
+    double width = 0;
+    for (final RenderBox child in _children) {
+      width += child.getMaxIntrinsicWidth(height);
+    }
+    return width;
+  }
+
+  double _tallestIntrinsic(double width) {
+    double height = 0;
+    for (final RenderBox child in _children) {
+      height = math.max(height, child.getMaxIntrinsicHeight(width));
+    }
+    return height;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _tallestIntrinsic(width);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _tallestIntrinsic(width);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
 }

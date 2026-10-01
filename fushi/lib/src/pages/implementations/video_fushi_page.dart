@@ -7112,6 +7112,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       priority: videoControlItemBarPriority(item),
       group: videoControlItemBarHideGroup(item),
       menuAction: _videoBarMenuAction(item, controller, slot: slot),
+      // 音量 / 倍速浮层锚在按钮的 CompositedTransformTarget 上；按钮一被收起就不再
+      // 绘制，浮层（showWhenUnlinked: false）随之隐身，遮罩却还在吞下一次点击。
+      // 锚点被收起时就把浮层关掉。
+      onFolded: () {
+        if (_activeControlPopoverSourceSlot == slot &&
+            _activeControlPopoverSourceItem == item) {
+          _hideControlPopover();
+        }
+      },
       compactChild: compactChild,
       child: child,
     );
@@ -7415,6 +7424,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.frameBackward:
       case VideoControlItem.frameForward:
         return _isDesktopVideoControls;
+      // BUG-221：移动端不提供全屏（[_buildFullscreenButton] 同一判据）。在这道门上
+      // 就排除，而不是画成零宽占位——零宽条目照样会被 [VideoControlBar] 当作可收起项
+      // 收进「⋯」，菜单里冒出一行点了无效的「全屏」（BUG-2832 审查）。
+      case VideoControlItem.fullscreen:
+        return !isMobilePlatform;
       case VideoControlItem.back:
       case VideoControlItem.immersiveLock:
       case VideoControlItem.speed:
@@ -7426,7 +7440,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.seekForward:
       case VideoControlItem.previousCue:
       case VideoControlItem.nextCue:
-      case VideoControlItem.fullscreen:
       case VideoControlItem.screenshot:
       case VideoControlItem.clipExport:
       case VideoControlItem.subtitleTrack:
