@@ -471,6 +471,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「全部视频」系列归属筛选 `.name`（all / inSeries / standalone）。默认
+  /// standalone：合集里的视频在系列页折成卡片，平铺视图默认只看散片（BUG-2835）。
+  String get videoAllSeriesFilterName =>
+      getPref('video_all_series_filter', defaultValue: 'standalone') as String;
+
+  Future<void> setVideoAllSeriesFilterName(String name) async {
+    await setPref('video_all_series_filter', name);
+    notifyListeners();
+  }
+
   /// 已折叠的合集横排行 collectionId 集（书架/视频页共用；折叠 = 行只剩行头）。
   /// 逗号串存储；解析对空串/脏值宽容（tryParse 过滤）。
   Set<int> get collapsedCollectionIds {

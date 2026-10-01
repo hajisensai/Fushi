@@ -6200,5 +6200,13 @@
   "shelf_filter_read_status": "阅读状态",
   "shelf_filter_read_status_unread": "未读",
   "shelf_filter_read_status_reading": "在读",
-  "shelf_filter_read_status_finished": "读完"
+  "shelf_filter_read_status_finished": "读完",
+  "video_filter_media_type": "类型",
+  "video_filter_media_type_video": "视频",
+  "video_filter_media_type_audio": "音频",
+  "video_filter_extras": "正片/特典",
+  "video_filter_extras_main": "仅正片",
+  "video_filter_extras_only": "仅特典",
+  "video_filter_source": "来源",
+  "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。"
 }

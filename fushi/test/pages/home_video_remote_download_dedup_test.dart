@@ -119,6 +119,11 @@ void main() {
 
     // 点下载（UI 巡检 PR-4：封面内嵌下载按钮已撤，入口 = 长按卡片弹面板 →
     // 「下载」）：进入下载中态，badge 出现（用户看到进行中反馈）。
+    // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+    );
+    await tester.pumpAndSettle();
     await tester.longPress(find.byKey(
       const ValueKey<String>('remote_video_card_remote_video-1'),
     ));
