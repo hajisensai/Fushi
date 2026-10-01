@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart'
     show AnidbEpisodeInfo;
@@ -82,10 +83,6 @@ class AniDbVideoMetadataProvider
             ? _minimumRequestInterval
             : apiRequestInterval;
 
-  static const Set<String> _reservedShokoClientNames = <String>{
-    'animeplugin',
-    'ommserver',
-  };
   static const int _maxAnimeXmlLength = 24 * 1024 * 1024;
   static const Duration _minimumRequestInterval = Duration(seconds: 2);
 
@@ -128,15 +125,11 @@ class AniDbVideoMetadataProvider
 
   /// 本地配置层面是否有一对可用的 HTTP 客户端身份（名 + 正版本号、非 Shoko 保留名、
   /// 且没被 AniDB 明确拒绝过）。不看封禁——封禁是另一种「暂时不可用」。
-  bool get _hasHttpClientIdentity {
-    final int? version = _clientVersion;
-    return !_closed &&
-        _clientName.isNotEmpty &&
-        version != null &&
-        version > 0 &&
-        !_reservedShokoClientNames.contains(_clientName.toLowerCase()) &&
-        httpIdentityRejection == null;
-  }
+  bool get _hasHttpClientIdentity =>
+      !_closed &&
+      AniDbAppClientIdentity(name: _clientName, version: _clientVersion)
+          .isUsable &&
+      httpIdentityRejection == null;
 
   String get _httpIdentityKey => '$_clientName/${_clientVersion ?? ''}';
 

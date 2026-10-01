@@ -10,7 +10,19 @@ class AniDbAppClientIdentity {
 
   /// 名 + 正版本号齐全才是一对能发请求的身份。
   bool get isComplete => name.trim().isNotEmpty && (version ?? 0) > 0;
+
+  /// 本仓可以拿它请求 AniDB：齐全，且不是 Shoko 的登记名（不得冒用）。provider
+  /// 发请求前的闸与设置页的状态行都问这一处，两边不会各说各话。
+  bool get isUsable =>
+      isComplete &&
+      !kReservedShokoAniDbClientNames.contains(name.trim().toLowerCase());
 }
+
+/// Shoko 在 AniDB 登记的客户端名，Fushi 不得冒用。
+const Set<String> kReservedShokoAniDbClientNames = <String>{
+  'animeplugin',
+  'ommserver',
+};
 
 /// Registered 2026-09-07: https://anidb.net/software/20715
 /// UDP client 29913, active official version 1 (version record 27688).

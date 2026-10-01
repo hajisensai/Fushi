@@ -150,7 +150,7 @@ class VideoSourceScrapeGlobalConfig {
   bool get anidbHttpClientConfigured => AniDbAppClientIdentity(
         name: anidbHttpClientName,
         version: anidbHttpClientVersion,
-      ).isComplete;
+      ).isUsable;
   final bool hashEnabled;
   final String anidbUsername;
   final String anidbPassword;
