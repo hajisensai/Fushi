@@ -3510,8 +3510,8 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  int get mangaZoomPercent =>
-      getPref('manga_zoom_percent', defaultValue: 100) as int;
+  int get mangaZoomPercent => normalizeStoredMangaZoomPercent(
+      getPref('manga_zoom_percent', defaultValue: 100) as int);
 
   Future<void> setMangaZoomPercent(int value) async {
     await setPref(

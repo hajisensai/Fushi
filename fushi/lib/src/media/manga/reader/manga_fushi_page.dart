@@ -4934,8 +4934,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (modeChanged) _readLedger.rebaseOnNextArrive();
     // 会话缩放（捏合 / 滚轮）与默认缩放是两份状态（BUG-2782）：只有默认缩放
     // 本身被改了才跟过去，改背景、点击区这类无关项不能把缩放跳回默认值。
-    final bool zoomStartChanged =
-        prefs.zoomStart != _readerPreferences.zoomStart;
+    // 缩放方式也算相关项（BUG-2833）：选「适应屏幕」就是要整页重新适配，
+    // 会话里捏出来的放大不能留着把页面继续裁掉。
+    final bool resetSessionZoom =
+        prefs.zoomStart != _readerPreferences.zoomStart ||
+        prefs.scaleType != _readerPreferences.scaleType;
     setState(() {
       _readerPreferences = prefs;
       _showOcrBoxes = prefs.showOcrBoxes;
@@ -4944,7 +4947,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : MangaPageAnimation.none;
       _spreadDirection = prefs.direction == 'ltr' ? 'ltr' : 'rtl';
       _background = MangaBackgroundKey.fromKey(prefs.background);
-      if (zoomStartChanged) {
+      if (resetSessionZoom) {
         _zoomPercent = prefs.zoomStart.clamp(
           kMangaZoomMinPercent,
           kMangaZoomMaxPercent,
