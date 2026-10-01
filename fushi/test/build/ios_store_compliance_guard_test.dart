@@ -747,6 +747,43 @@ void main() {
       );
     });
   });
+
+  group('蓝光 AACS 解密由 aacsDecryption 门控', () {
+    test('app 用合规判据给引擎装配点赋值，引擎默认值按同一判据 fail-closed', () {
+      expect(
+        compactCode(read('lib/src/engine_bindings.dart')),
+        contains(
+          'aacsDecryptionAvailable='
+          'StoreRestrictedCapability.aacsDecryption.isAvailable;',
+        ),
+      );
+      final String session = compactCode(
+        read(
+          '../packages/fushi_engine/lib/media/video/bluray/'
+          'aacs_media_session.dart',
+        ),
+      );
+      expect(
+        session,
+        contains('boolaacsDecryptionAvailable=!Platform.isIOS;'),
+        reason:
+            '全局变量带不过 isolate 边界：后台 isolate 里没人赋值时，'
+            'iOS 也必须默认不解密、不下载 KEYDB。',
+      );
+      expect(
+        session,
+        contains(
+          'if(!aacsDecryptionAvailable)'
+          'throwBlurayEncryptedStreamException(path);',
+        ),
+        reason: '门要挡在读取 / 下载播放配置之前。',
+      );
+      final int gate = session.indexOf('if(!aacsDecryptionAvailable)');
+      final int load = session.indexOf('loadAacsConfiguration(');
+      expect(gate, greaterThanOrEqualTo(0));
+      expect(load, greaterThan(gate));
+    });
+  });
 }
 
 /// 把 GitHub Actions workflow 按顶层 job 切开（job 名 → 该 job 的全文）。只认

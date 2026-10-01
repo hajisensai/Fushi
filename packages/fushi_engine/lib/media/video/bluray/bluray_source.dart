@@ -42,6 +42,7 @@ class BluraySource {
     required this.primaryStreamPath,
     required this.duration,
     required this.chapters,
+    this.streamPaths = const <String>[],
   });
 
   /// 交给播放内核的东西：`isPlainFile` 时是本地文件绝对路径，否则是 `edl://…`。
@@ -61,6 +62,9 @@ class BluraySource {
 
   /// 章节起点，相对播放列表时间轴。
   final List<Duration> chapters;
+
+  /// Physical clips used by this title, for command-scoped input resolution.
+  final List<String> streamPaths;
 }
 
 /// [path] 是不是一条蓝光播放列表。
@@ -157,6 +161,7 @@ BluraySource? buildBluraySource(
         primaryStreamPath: primary,
         duration: playlist.duration,
         chapters: chapters,
+        streamPaths: <String>[primary],
       );
     }
   }
@@ -184,6 +189,10 @@ BluraySource? buildBluraySource(
     primaryStreamPath: primary,
     duration: playlist.duration,
     chapters: chapters,
+    streamPaths: playlist.clips
+        .map((BlurayClipRef clip) => streamPath(clip.clipId))
+        .toSet()
+        .toList(growable: false),
   );
 }
 

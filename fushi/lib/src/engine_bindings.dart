@@ -19,6 +19,7 @@ import 'package:fushi/src/media/audiobook/audiobook_storage_platform.dart';
 import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/media/video/ffmpeg_kit_backend.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ocr/gal_lookup_calibration_ocr.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -29,6 +30,8 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart'
+    show aacsDecryptionAvailable;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider_display_name.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
@@ -93,6 +96,9 @@ void installEngineHostBindings() {
   // 制卡 ffmpeg 的远端输入经本机中继（在线视频源伪装分片，BUG-2642 残留）：
   // 视频页登记，引擎按输入地址来查。
   ffmpegRemoteInputRouteResolver = ffmpegRelayRouteFor;
+  // 蓝光 AACS 解密的商店合规门：判据只在 StoreRestrictedCapability 写一次。
+  aacsDecryptionAvailable =
+      StoreRestrictedCapability.aacsDecryption.isAvailable;
   // fushi_audio 的两个插件级装配点（charset 探测 method channel、just_audio 时长探测 +
   // path_provider 文档根）：纯 Dart 一半住 fushi_audio_core，插件实现由这里写入。
   installPlatformCharsetDetector();

@@ -26,9 +26,81 @@ void main() {
       // 「跟 mpv 一样」的落地点：产出的是 libmpv 自己写的日志，不是仿格式的自研
       // 日志。少了这一条，hwdec 协商 / VO 交换链 / 解码器选择全部不可见。
       expect(src, contains('VideoDiagLog.instance.mpvLogFilePath'));
-      expect(src, contains("'log-file': mpvLogFile"));
-      expect(src, contains("'msg-level': 'all=v'"));
+      expect(src, contains("setProperty('log-file', _nativeMpvLogFile!)"));
+      expect(src, contains("setProperty('msg-level', 'all=v')"));
     });
+
+    test(
+      'protected inputs disable native file logs before open and scrub Dart logs',
+      () {
+        final int disable = src.indexOf("setProperty('log-file', '')");
+        final int open = src.indexOf('await player.open(');
+        expect(disable, greaterThan(0));
+        expect(disable, lessThan(open));
+        expect(
+          src.substring(disable - 80, disable),
+          contains('aacsSession.hasProtectedStreams'),
+        );
+        final String afterOpen = src.substring(open);
+        expect(afterOpen, contains('hadProtectedAacsSession &&'));
+        expect(
+          afterOpen,
+          contains("setProperty('log-file', _nativeMpvLogFile!)"),
+        );
+        expect(
+          src,
+          contains(
+            RegExp(r'redactAacsRelayUrls\s*\(\s*redactAppNativeProxySecrets'),
+          ),
+        );
+      },
+    );
+
+    test(
+      'media-handle release cancels pending loads and awaits the AACS worker',
+      () {
+        final int index = src.indexOf('Future<void> _releaseMediaHandles()');
+        final String body = src.substring(index, src.indexOf('\n  }', index));
+        expect(body, contains('_loadToken++;'));
+        expect(body, contains('_closeAacsSessionsExcept(null)'));
+        expect(body, contains('await closingAacs;'));
+      },
+    );
+
+    test(
+      'successor preparation retains relays until current native open completes',
+      () {
+        final int adoption = src.indexOf('_aacsSessions.add(aacsSession)');
+        final int open = src.indexOf('await player.open(');
+        final int retirement = src.indexOf(
+          '_closeAacsSessionsExcept(aacsSession)',
+        );
+        expect(adoption, greaterThan(0));
+        expect(adoption, lessThan(open));
+        expect(retirement, greaterThan(open));
+        expect(
+          src.substring(open, retirement),
+          contains('if (!_isCurrentLoad(player, loadToken)) return;'),
+        );
+        expect(src.substring(adoption, open), isNot(contains('.close()')));
+        final int cleanup = src.indexOf(
+          'Future<void> _closeAacsSessionsExcept(',
+        );
+        final String body = src.substring(
+          cleanup,
+          src.indexOf('\n  }', cleanup),
+        );
+        expect(
+          body.indexOf('await session.close();'),
+          lessThan(body.indexOf('_aacsSessions.remove(session);')),
+        );
+        final int dispose = src.indexOf('void dispose()');
+        expect(
+          src.substring(dispose, src.indexOf('\n  }', dispose)),
+          contains('_closeAacsSessionsExcept(null)'),
+        );
+      },
+    );
 
     test('mpv 日志流有独立于 Lua 归因的诊断订阅', () {
       expect(
