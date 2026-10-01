@@ -2177,8 +2177,8 @@ class VideoPlayerController extends ChangeNotifier
     // 它们要的是一段真实码流，不是播放列表——但**只有形态 1（单段整段用满）**时第一
     // 段 m2ts 的时间轴才等于播放时间轴。`edl://` 拼接形态下播放位置在拼接后的虚拟轴
     // 上，拿它去第一段码流上按同一毫秒裁，制出来的卡音频是别的句子、截图是别的画面，
-    // 而且是静默错。那时把 `.mpls` 原样交出去：ffmpeg 开不了它，制卡 / 对轴会以看得
-    // 见的失败收场，而不是给出错的结果（PR #1604 审查；按段映射回片段内偏移留作跟进）。
+    // 而且是静默错。那时保留 `.mpls` 身份，由共享 ffmpeg 后端按同一播放列表的
+    // IN/OUT 构造完整时间轴，制卡、ASR 与字幕对轴都不得借用第一段的文件时间轴。
     _videoPath = bluray != null && bluray.isPlainFile
         ? bluray.primaryStreamPath
         : videoFile?.path;

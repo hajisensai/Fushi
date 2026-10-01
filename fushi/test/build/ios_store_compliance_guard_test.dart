@@ -142,40 +142,150 @@ void main() {
   });
 
   group('发现入口全部过同一道门', () {
-    test('发现视图只住在「浏览」模块：库页不再声明发现视图，浏览整模块过 downloads 门', () {
-      // 2026-09-27 起在线发现从书 / 漫画 / 视频 / 游戏四个库页搬进顶层「浏览」
-      // 模块（browse_page.dart 的「发现」页签）。合规边界随之上移：库页里不得
-      // 再长出发现视图（否则它不在任何门后），浏览模块整个在 iOS 上缺席。
-      expect(
-        compactCode(
-          read('lib/src/pages/implementations/home_reader_page.dart'),
-        ),
-        allOf(
-          isNot(contains('MediaLibraryViewKind.browse')),
-          isNot(contains('MediaLibraryViewKind.discover')),
-        ),
-        reason: '书 tab 的统一发现页已搬进「浏览」，书架页不得再挂发现视图。',
+    test('库页的发现 / 来源 / 扩展子标签都挂在合规门后，浏览整模块过 downloads 门', () {
+      // 2026-09-27 在线发现与来源 / 扩展搬进顶层「浏览」模块；2026-10-01 用户拍板
+      // 浏览保留、同时把它们加回四个库页的子标签。库页里的每一个在线入口都必须
+      // 自己过门——库模块本身在 iOS 上是开着的，漏门就是上架被拒。
+      final String reader = compactCode(
+        read('lib/src/pages/implementations/home_reader_page.dart'),
       );
       expect(
-        compactCode(read('lib/src/media/manga/manga_library_page.dart')),
-        allOf(
-          isNot(contains('MediaLibraryViewKind.discover')),
-          isNot(contains('MediaLibraryViewKind.browse')),
+        reader,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '漫画发现（AniList 榜单 / 来源热门 / mokuro.moe）已搬进「浏览」。',
+        reason: '书架「发现」视图必须挂在外部发现合规门后。',
       );
       expect(
-        compactCode(
-          read('lib/src/pages/implementations/video_library_shell.dart'),
+        reader,
+        contains(
+          'finalboolonline=isOnlineSourcesDomainAvailable('
+          'OnlineSourcesDomain.novel,);',
         ),
-        isNot(contains('VideoLibrarySection.discover')),
-        reason: '视频发现（番剧发现 → 资源索引器 → 种子获取）已搬进「浏览」。',
+        reason: '书架来源 / 扩展必须问小说在线源的合规 + 平台门。',
+      );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expect(
+          reader,
+          contains(
+            'if(online)MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          ),
+          reason: '书架「$kind」视图必须挂在在线源门后。',
+        );
+      }
+
+      final String manga = compactCode(
+        read('lib/src/media/manga/manga_library_page.dart'),
       );
       expect(
-        compactCode(read('lib/src/pages/implementations/game_shared.dart')),
-        isNot(contains('GameSection.discover')),
-        reason: '游戏资源发现已搬进「浏览」。',
+        manga,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+        ),
+        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）必须挂在合规门后。',
       );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expect(
+          manga,
+          contains(
+            'if(isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))'
+            'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          ),
+          reason: '漫画「$kind」视图必须挂在在线漫画源合规门后。',
+        );
+      }
+
+      final String video = compactCode(
+        read('lib/src/pages/implementations/video_library_shell.dart'),
+      );
+      expect(
+        video,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'LibrarySectionTab<VideoLibrarySection>('
+          'value:VideoLibrarySection.discover,',
+        ),
+        reason: '视频「发现」（番剧发现 → 资源索引器 → 种子获取）必须挂在合规门后。',
+      );
+      expect(
+        video,
+        contains(
+          'finalboolonline=isOnlineSourcesDomainAvailable('
+          'OnlineSourcesDomain.video,);',
+        ),
+      );
+      for (final String section in <String>['onlineSources', 'extensions']) {
+        expect(
+          video,
+          contains(
+            'if(online)LibrarySectionTab<VideoLibrarySection>('
+            'value:VideoLibrarySection.$section,',
+          ),
+          reason: '视频「$section」分区必须挂在视频源合规门后。',
+        );
+      }
+
+      // 游戏「发现」与其它库页同样自己过门，不靠「iOS 没有游戏模块」这条会变的前提。
+      final String game = compactCode(
+        read('lib/src/pages/implementations/game_shared.dart'),
+      );
+      expect(
+        game,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'GameSection.discover,',
+        ),
+        reason: '游戏「发现」子区必须挂在外部发现合规门后。',
+      );
+
+      // 上面只证明「有一处带门的写法」；再钉死同一文件里没有第二处不带门的入口：
+      // 每类入口的全部出现次数必须等于带门的出现次数。
+      void expectAllGated(String source, String entry, String gate) {
+        final int total = entry.allMatches(source).length;
+        expect(total, greaterThan(0), reason: '找不到入口 $entry');
+        expect(
+          '$gate$entry'.allMatches(source).length,
+          total,
+          reason: '$entry 有不带合规门的出现',
+        );
+      }
+
+      const String discoverGate =
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
+      expectAllGated(game, 'GameSection.discover,', discoverGate);
+      for (final String source in <String>[reader, manga]) {
+        expectAllGated(
+          source,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+          discoverGate,
+        );
+      }
+      expectAllGated(
+        video,
+        'LibrarySectionTab<VideoLibrarySection>('
+            'value:VideoLibrarySection.discover,',
+        discoverGate,
+      );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expectAllGated(
+          reader,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          'if(online)',
+        );
+        expectAllGated(
+          manga,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          'if(isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))',
+        );
+        expectAllGated(
+          video,
+          'LibrarySectionTab<VideoLibrarySection>('
+              'value:VideoLibrarySection.$kind,',
+          'if(online)',
+        );
+      }
 
       // 浏览模块的可用性委托给合规边界的唯一真相源，不自己写平台判断。
       expect(

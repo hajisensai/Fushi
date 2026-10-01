@@ -91,6 +91,9 @@ debug_screenshot.png
 # Codex test artifacts (fixtures, screenshots, evidence)
 .codex-test/
 
+# Codex remote-session attachments (user screenshots; never commit)
+.codex-remote-attachments/
+
 # Codex test outputs (flutter run logs, temp files)
 flutter_run_*.txt
 *_tmp_before.txt
