@@ -227,13 +227,65 @@ void main() {
         );
       }
 
-      // 游戏「发现」不另过门：它只在本机游戏库形态（Windows）里存在，iOS 根本
-      // 没有游戏模块形态。这条前提一旦变了（iOS 长出游戏库），这里先红。
-      expect(
-        GamesModuleForm.on(isWindows: false, isAndroid: false),
-        isNull,
-        reason: 'iOS 没有游戏模块；游戏「发现」子区依赖这一点免过外部发现门。',
+      // 游戏「发现」与其它库页同样自己过门，不靠「iOS 没有游戏模块」这条会变的前提。
+      final String game = compactCode(
+        read('lib/src/pages/implementations/game_shared.dart'),
       );
+      expect(
+        game,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'GameSection.discover,',
+        ),
+        reason: '游戏「发现」子区必须挂在外部发现合规门后。',
+      );
+
+      // 上面只证明「有一处带门的写法」；再钉死同一文件里没有第二处不带门的入口：
+      // 每类入口的全部出现次数必须等于带门的出现次数。
+      void expectAllGated(String source, String entry, String gate) {
+        final int total = entry.allMatches(source).length;
+        expect(total, greaterThan(0), reason: '找不到入口 $entry');
+        expect(
+          '$gate$entry'.allMatches(source).length,
+          total,
+          reason: '$entry 有不带合规门的出现',
+        );
+      }
+
+      const String discoverGate =
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
+      expectAllGated(game, 'GameSection.discover,', discoverGate);
+      for (final String source in <String>[reader, manga]) {
+        expectAllGated(
+          source,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+          discoverGate,
+        );
+      }
+      expectAllGated(
+        video,
+        'LibrarySectionTab<VideoLibrarySection>('
+            'value:VideoLibrarySection.discover,',
+        discoverGate,
+      );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expectAllGated(
+          reader,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          'if(online)',
+        );
+        expectAllGated(
+          manga,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          'if(isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))',
+        );
+        expectAllGated(
+          video,
+          'LibrarySectionTab<VideoLibrarySection>('
+              'value:VideoLibrarySection.$kind,',
+          'if(online)',
+        );
+      }
 
       // 浏览模块的可用性委托给合规边界的唯一真相源，不自己写平台判断。
       expect(

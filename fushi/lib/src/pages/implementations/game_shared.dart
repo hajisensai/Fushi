@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/utils.dart';
@@ -134,14 +135,15 @@ String formatGameClockTime(DateTime value) {
 /// * 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
 ///   （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构；
 /// * 「发现」紧挨「导入」之前，与其它库页「发现 / 来源 / 扩展 → 导入」同序。
-///   游戏只有本机库形态（Windows）才挂这一页，iOS 不存在游戏模块，不需另过
-///   外部发现的合规门；游戏没有扩展系统，不设来源 / 扩展；
+///   与其它库页一样自己过外部发现的合规门，不靠「iOS 当前没有游戏模块」这条
+///   会变的前提；游戏没有扩展系统，不设来源 / 扩展；
 /// * 诊断不设页签（从「设置」进入），所以不在此序里。
-const List<GameSection> kGameSectionTabOrder = <GameSection>[
+final List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.dashboard,
   GameSection.library,
   GameSection.monitor,
-  GameSection.discover,
+  if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+    GameSection.discover,
   GameSection.importGames,
   GameSection.settings,
 ];
