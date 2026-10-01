@@ -6200,5 +6200,13 @@
   "shelf_filter_read_status": "Trạng thái đọc",
   "shelf_filter_read_status_unread": "Chưa đọc",
   "shelf_filter_read_status_reading": "Đang đọc",
-  "shelf_filter_read_status_finished": "Đã đọc xong"
+  "shelf_filter_read_status_finished": "Đã đọc xong",
+  "video_filter_media_type": "Type",
+  "video_filter_media_type_video": "Video",
+  "video_filter_media_type_audio": "Audio",
+  "video_filter_extras": "Main/Extras",
+  "video_filter_extras_main": "Main only",
+  "video_filter_extras_only": "Extras only",
+  "video_filter_source": "Source",
+  "video_filter_series_standalone_empty_hint": "No standalone videos. Videos in collections are on the Series tab, or set the Series filter to All."
 }

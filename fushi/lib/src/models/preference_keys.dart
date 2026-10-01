@@ -333,6 +333,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'updates_notify_manga_extension',
   'updates_notify_video_episode',
   'updates_system_notifications',
+  // String（`VideoSeriesFilter.name`，默认 `standalone`）：「全部视频」系列归属
+  // 筛选的上次选择（BUG-2835，用户拍板默认只看散片、并记住选择）。
+  'video_all_series_filter',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
   'video_auto_play_next',

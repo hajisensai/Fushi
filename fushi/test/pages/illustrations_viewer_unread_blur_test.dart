@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:fushi_audio/fushi_audio.dart' show ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
+import 'package:image/image.dart' as img;
 
 /// 书架端「查看插图」= 阅读器内的同一份插图册（BUG-2589）。这里验的是书架端
 /// 特有的装载与接线：真实解压目录 + 真实 Drift 库，「还没读到的插图先遮罩」
@@ -17,18 +18,10 @@ import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 /// 判据与全局「图片模糊（防剧透）」开关无关：这里全程不设该开关（`readerSettings`
 /// 为 null ⇒ 关），仍要求未读到的图被遮住。
 void main() {
-  // 1x1 透明 PNG（`Image.file` 能解码）。
-  final Uint8List onePxPng = Uint8List.fromList(<int>[
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
-    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, //
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, //
-    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, //
-    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, //
-    0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, //
-    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, //
-    0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, //
-    0x42, 0x60, 0x82,
-  ]);
+  // 插图尺寸的真 PNG（`Image.file` 能解码）。不能用 1x1：插图册会把宽高都
+  // ≤ 256 的行内小图（外字）剔掉，见 `isInlineSizedImage`。
+  final Uint8List illustrationPng =
+      img.encodePng(img.Image(width: 300, height: 400));
 
   const String bookUid = 'test-book';
 
@@ -95,7 +88,7 @@ void main() {
     ]) {
       final File file = File('${extractDir.path}/OEBPS/images/$name');
       file.parent.createSync(recursive: true);
-      file.writeAsBytesSync(onePxPng);
+      file.writeAsBytesSync(illustrationPng);
     }
   });
 

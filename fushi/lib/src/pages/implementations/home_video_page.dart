@@ -14,6 +14,10 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
+import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart'
+    show classifyLocalVideoExtra;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -476,10 +480,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   VideoYearFilter _yearFilter = const VideoYearFilter.all();
   VideoWatchStatusFilter _watchStatusFilter = VideoWatchStatusFilter.all;
 
-  /// 系列归属筛选（只在「全部视频」露出，同样不持久化）。「全部视频」把整库逐条
-  /// 平铺，系列的每一集都混在里面；这个档位让用户把已归进系列的集数收掉、只看
-  /// 还没成系列的散片（反过来也能只看系列内的集）。
-  VideoSeriesFilter _seriesFilter = VideoSeriesFilter.all;
+  /// 系列归属筛选（只在「全部视频」露出）。「全部视频」把整库逐条平铺，系列的
+  /// 每一集都混在里面；这个档位让用户把已归进系列的集数收掉、只看还没成系列的
+  /// 散片（反过来也能只看系列内的集）。
+  ///
+  /// BUG-2835（用户拍板）：默认「非系列」并持久化上次选择（偏好
+  /// `video_all_series_filter`）——合集成员已在系列页折成卡，平铺视图默认再铺一遍
+  /// 只会把散片淹掉。与年份 / 看完状态「不持久化」的理由不冲突：那两个的默认是
+  /// 「全部」，挂着上次的值会让人以为库空了；这一档本身就是常驻默认。
+  VideoSeriesFilter _seriesFilter = VideoSeriesFilter.standalone;
+
+  /// BUG-2835：「全部视频」的媒体类型 / 正片特典 / 来源筛选（本地即筛，与年份 /
+  /// 看完状态同样不持久化）。来源 null = 不限。
+  VideoMediaTypeFilter _mediaTypeFilter = VideoMediaTypeFilter.all;
+  VideoExtrasFilter _extrasFilter = VideoExtrasFilter.all;
+  int? _sourceFilter;
 
   /// 系列归属判据依赖的两份映射（[_primaryCollectionByEntry] / [_collectionsById]）
   /// 是否已由 [_loadLibraryMaps] 落位。
@@ -494,12 +509,45 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 按「全部」过滤——否则同一个 State 被 tab 复用时，上个分区留下的档位会在没有
   /// 任何控件可复位的页面上隐形吃掉条目。
   ///
-  /// 映射未就位时同样退回「全部」（宁可先按不过滤渲染，也不拿「还不知道」当
-  /// 判据把条目筛掉）。
+  /// 有搜索词时不套这一档（用户拍板）：搜「悲愴」要能搜到合集里的曲目，默认的
+  /// 「非系列」不该让搜索静默落空。
+  ///
+  /// 映射未就位时**不**退回「全部」：默认档位是「非系列」后，退回「全部」等于
+  /// 每次进页都先铺满整库再缩回散片。未就位期间由 [_seriesFilterPending] 让
+  /// 「全部视频」显示加载态，既不拿「还不知道」当判据筛，也不闪。
   VideoSeriesFilter get _effectiveSeriesFilter =>
-      widget.section == VideoLibrarySection.allVideos && _libraryMapsReady
+      widget.section == VideoLibrarySection.allVideos &&
+              _searchQuery.trim().isEmpty
           ? _seriesFilter
           : VideoSeriesFilter.all;
+
+  /// 系列归属判据所需的映射还没到、而当前档位又要用它（BUG-2835）。
+  bool get _seriesFilterPending =>
+      !_libraryMapsReady && _effectiveSeriesFilter != VideoSeriesFilter.all;
+
+  /// 媒体类型 / 正片特典 / 来源三档同样只在「全部视频」露出，别的分区恒按「全部」。
+  bool get _isAllVideosSection =>
+      widget.section == VideoLibrarySection.allVideos;
+
+  VideoMediaTypeFilter get _effectiveMediaTypeFilter =>
+      _isAllVideosSection ? _mediaTypeFilter : VideoMediaTypeFilter.all;
+
+  VideoExtrasFilter get _effectiveExtrasFilter =>
+      _isAllVideosSection ? _extrasFilter : VideoExtrasFilter.all;
+
+  /// 来源档只在下拉露出（≥2 个来源）且选中的来源还在时生效：来源被删或只剩一个
+  /// 时下拉隐藏，残留的选择不能在没有控件可复位的情况下隐形吃掉条目。
+  int? get _effectiveSourceFilter => _isAllVideosSection &&
+          _videoSourcesById.length >= 2 &&
+          _videoSourcesById.containsKey(_sourceFilter)
+      ? _sourceFilter
+      : null;
+
+  /// 本地条目是不是特典：刮削挂上的本地附件，或路径按 Kodi 目录 / NCOP 等规则
+  /// 判成附件（与来源扫描排除特典同一个 [classifyLocalVideoExtra]）。
+  bool _isLocalExtra(VideoBookRow book) =>
+      _localExtraBookUids.contains(book.bookUid) ||
+      classifyLocalVideoExtra(book.videoPath) != null;
 
   /// TODO-2486：hero 轮播控制器 + 当前页。手动切换（滑动/指示条），**无自动
   /// 轮播**（尊重 prefers-reduced-motion 精神）。
@@ -519,6 +567,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   @override
   void initState() {
     super.initState();
+    _seriesFilter = videoSeriesFilterFromName(
+      appModelNoUpdate.prefsRepo.videoAllSeriesFilterName,
+    );
     // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
     _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
@@ -1587,6 +1638,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 判据与 [_groupVideos] 的折叠判据同源（`collection_grouping.collectionIdOf`）：
   /// 主合集归属存在 **且那个合集本身还在**。归属指向已删合集的孤儿条目在墙上本来
   /// 就是散卡，不能算系列成员。「全部视频」的系列归属筛选按这份判据分档。
+  /// 本地条目过全部下拉筛选（搜索在调用方先做）。
+  ///
+  /// BUG-1839：系列页**不按刮削身份门控**。用户拍板「没刮削也应该进，合集就
+  /// 应该在系列里面」——AniDB primary 身份对没注册 client 的用户结构上永远写不
+  /// 出来（isHttpApiAvailable 恒 false），拿它当准入门等于把整页清空。系列与
+  /// 「全部视频」的区别是**折叠方式**（合集折成一张卡 vs 逐条平铺），不是刮削
+  /// 资格。只保留花絮/短篇排除。
+  bool _passesLocalFilters(VideoBookRow b) =>
+      !(widget.section == VideoLibrarySection.series &&
+          _localExtraBookUids.contains(b.bookUid)) &&
+      _yearFilter.matches(_airYearByUid[b.bookUid]) &&
+      matchesVideoSeriesFilter(
+        filter: _effectiveSeriesFilter,
+        inSeries: _isCollectionMember(b.bookUid),
+      ) &&
+      matchesVideoWatchStatus(
+        filter: _watchStatusFilter,
+        completed: b.completedAt != null,
+        lastPositionMs: b.lastPositionMs,
+      ) &&
+      matchesVideoMediaType(
+        filter: _effectiveMediaTypeFilter,
+        isAudio: isAudioOnlyMediaPath(b.videoPath),
+      ) &&
+      // 特典判据要跑路径正则，「全部」档位不求值（每次 build 对全库求值）。
+      (_effectiveExtrasFilter == VideoExtrasFilter.all ||
+          matchesVideoExtras(
+            filter: _effectiveExtrasFilter,
+            isExtra: _isLocalExtra(b),
+          )) &&
+      matchesVideoSource(
+        sourceFilter: _effectiveSourceFilter,
+        sourceId: b.sourceId,
+      );
+
   bool _isCollectionMember(String bookUid) {
     final int? collectionId =
         _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
@@ -3551,6 +3637,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
                 if (widget.section != VideoLibrarySection.home)
                   _buildVideoSearchBar(),
+                if (_isAllVideosSection) _buildAllVideosFilterRow(),
                 if (widget.section != VideoLibrarySection.home)
                   _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
@@ -3659,24 +3746,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // lastPositionMs 三档判。
         final List<VideoBookRow> ordered = <VideoBookRow>[
           for (final VideoBookRow b in searched)
-            // BUG-1839：系列页**不按刮削身份门控**。用户拍板「没刮削也应该进，
-            // 合集就应该在系列里面」——AniDB primary 身份对没注册 client 的用户
-            // 结构上永远写不出来（isHttpApiAvailable 恒 false），拿它当准入门等于
-            // 把整页清空。系列与「全部视频」的区别是**折叠方式**（合集折成一张卡
-            // vs 逐条平铺），不是刮削资格。只保留花絮/短篇排除。
-            if (!(widget.section == VideoLibrarySection.series &&
-                    _localExtraBookUids.contains(b.bookUid)) &&
-                _yearFilter.matches(_airYearByUid[b.bookUid]) &&
-                matchesVideoSeriesFilter(
-                  filter: _effectiveSeriesFilter,
-                  inSeries: _isCollectionMember(b.bookUid),
-                ) &&
-                matchesVideoWatchStatus(
-                  filter: _watchStatusFilter,
-                  completed: b.completedAt != null,
-                  lastPositionMs: b.lastPositionMs,
-                ))
-              b,
+            if (_passesLocalFilters(b)) b,
         ];
         // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。
         _visibleVideos = ordered;
@@ -3722,7 +3792,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       filter: _watchStatusFilter,
                       completed: false,
                       lastPositionMs: v.positionMs,
-                    ))
+                    ) &&
+                    // BUG-2835：占位 DTO 没有文件路径、不属于本机任何来源——判
+                    // 不出是不是音频 / 特典，就只在这三档都「全部」时出现，不猜。
+                    _effectiveMediaTypeFilter == VideoMediaTypeFilter.all &&
+                    _effectiveExtrasFilter == VideoExtrasFilter.all &&
+                    _effectiveSourceFilter == null)
                   v,
             ];
             // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
@@ -5291,8 +5366,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (all.isEmpty && remoteVideos.isEmpty) {
       return _emptyStateSlivers(_buildEmpty());
     }
+    // BUG-2835：系列归属判据要的映射还没到——此刻的 [books] 是拿空映射筛的（全员
+    // 判成「非系列」），渲染出来就是先铺满整库再缩回散片。等映射，不闪。
+    if (_seriesFilterPending) {
+      return _emptyStateSlivers(
+        const Center(
+          key: ValueKey<String>('home_video_all_videos_maps_pending'),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
     if (books.isEmpty && remoteVideos.isEmpty) {
-      return _emptyStateSlivers(_buildFilteredEmpty());
+      return _emptyStateSlivers(
+        _buildFilteredEmpty(
+          hint: _effectiveSeriesFilter == VideoSeriesFilter.standalone
+              ? t.video_filter_series_standalone_empty_hint
+              : null,
+        ),
+      );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<VideoBookRow> ordered = books.toList()
@@ -6602,11 +6693,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           _buildYearFilterButton(),
           const SizedBox(width: 8),
           _buildWatchStatusFilterButton(),
-          // 系列归属档位只在「全部视频」露出：那里整库逐条平铺，是唯一会被系列
-          // 集数淹没的视图。系列页本身按合集折叠，再给它这个档位没有意义。
-          if (widget.section == VideoLibrarySection.allVideos) ...<Widget>[
+        ],
+      ),
+    );
+  }
+
+  /// 「全部视频」专属筛选行：系列归属 / 媒体类型 / 正片特典 / 来源。
+  ///
+  /// 系列归属档位只在「全部视频」露出：那里整库逐条平铺，是唯一会被系列集数淹没
+  /// 的视图；系列页本身按合集折叠，再给它这个档位没有意义。BUG-2835 起另加三档，
+  /// 搜索栏那一行在手机宽度上放不下，单列一行并可横向滚动（来源只有一个时不出
+  /// 来源档——只有一个选项的筛选没有意义）。
+  Widget _buildAllVideosFilterRow() {
+    return SingleChildScrollView(
+      key: const ValueKey<String>('home_video_all_videos_filter_row'),
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Row(
+        children: <Widget>[
+          _buildSeriesFilterButton(),
+          const SizedBox(width: 8),
+          _buildMediaTypeFilterButton(),
+          const SizedBox(width: 8),
+          _buildExtrasFilterButton(),
+          if (_videoSourcesById.length >= 2) ...<Widget>[
             const SizedBox(width: 8),
-            _buildSeriesFilterButton(),
+            _buildSourceFilterButton(),
           ],
         ],
       ),
@@ -6680,27 +6792,104 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 系列归属下拉筛选（全部 / 系列内 / 非系列）。「全部视频」逐条平铺整库，一部
   /// 番的几十集会把散片淹掉；这个档位让用户把已归进系列的集数收起来，只看还没
   /// 成系列的片子（反向档位同理，用来核对某些集是不是漏归系列了）。
-  Widget _buildSeriesFilterButton() {
-    final String label = _seriesFilterLabel(_seriesFilter);
-    return PopupMenuButton<VideoSeriesFilter>(
-      key: const ValueKey<String>('home_video_filter_series'),
-      tooltip: t.video_filter_series,
-      initialValue: _seriesFilter,
-      onSelected: (VideoSeriesFilter value) =>
-          setState(() => _seriesFilter = value),
-      itemBuilder: (BuildContext context) =>
-          <PopupMenuEntry<VideoSeriesFilter>>[
-        for (final VideoSeriesFilter filter in VideoSeriesFilter.values)
-          PopupMenuItem<VideoSeriesFilter>(
-            value: filter,
-            child: Text(filter == VideoSeriesFilter.all
-                ? t.home_filter_all
-                : _seriesFilterLabel(filter)),
+  Widget _buildSeriesFilterButton() =>
+      _buildEnumFilterButton<VideoSeriesFilter>(
+        key: 'home_video_filter_series',
+        tooltip: t.video_filter_series,
+        value: _seriesFilter,
+        values: VideoSeriesFilter.values,
+        allValue: VideoSeriesFilter.all,
+        labelOf: _seriesFilterLabel,
+        onSelected: (VideoSeriesFilter value) {
+          setState(() => _seriesFilter = value);
+          // BUG-2835：记住上次选择（用户拍板）。
+          unawaited(ref
+              .read(appProvider)
+              .prefsRepo
+              .setVideoAllSeriesFilterName(value.name));
+        },
+      );
+
+  /// BUG-2835：媒体类型下拉（全部 / 视频 / 音频）。
+  Widget _buildMediaTypeFilterButton() =>
+      _buildEnumFilterButton<VideoMediaTypeFilter>(
+        key: 'home_video_filter_media_type',
+        tooltip: t.video_filter_media_type,
+        value: _mediaTypeFilter,
+        values: VideoMediaTypeFilter.values,
+        allValue: VideoMediaTypeFilter.all,
+        labelOf: (VideoMediaTypeFilter filter) => switch (filter) {
+          VideoMediaTypeFilter.all => t.video_filter_media_type,
+          VideoMediaTypeFilter.video => t.video_filter_media_type_video,
+          VideoMediaTypeFilter.audio => t.video_filter_media_type_audio,
+        },
+        onSelected: (VideoMediaTypeFilter value) =>
+            setState(() => _mediaTypeFilter = value),
+      );
+
+  /// BUG-2835：正片 / 特典下拉（全部 / 正片 / 特典）。
+  Widget _buildExtrasFilterButton() =>
+      _buildEnumFilterButton<VideoExtrasFilter>(
+        key: 'home_video_filter_extras',
+        tooltip: t.video_filter_extras,
+        value: _extrasFilter,
+        values: VideoExtrasFilter.values,
+        allValue: VideoExtrasFilter.all,
+        labelOf: (VideoExtrasFilter filter) => switch (filter) {
+          VideoExtrasFilter.all => t.video_filter_extras,
+          VideoExtrasFilter.main => t.video_filter_extras_main,
+          VideoExtrasFilter.extras => t.video_filter_extras_only,
+        },
+        onSelected: (VideoExtrasFilter value) =>
+            setState(() => _extrasFilter = value),
+      );
+
+  /// BUG-2835：来源下拉（全部 + 每个视频来源库）。值用来源 id；`-1` 是「全部」
+  /// 在菜单里的占位（PopupMenuButton 选中 null 值不触发 onSelected）。
+  Widget _buildSourceFilterButton() {
+    final List<MediaSourceRow> sources = _videoSourcesById.values.toList()
+      ..sort((MediaSourceRow a, MediaSourceRow b) => a.id.compareTo(b.id));
+    String labelOf(int id) =>
+        id < 0 ? t.video_filter_source : (_videoSourcesById[id]?.label ?? '');
+    return _buildEnumFilterButton<int>(
+      key: 'home_video_filter_source',
+      tooltip: t.video_filter_source,
+      value: _effectiveSourceFilter ?? -1,
+      values: <int>[-1, for (final MediaSourceRow s in sources) s.id],
+      allValue: -1,
+      labelOf: labelOf,
+      onSelected: (int value) =>
+          setState(() => _sourceFilter = value < 0 ? null : value),
+    );
+  }
+
+  /// 「全部视频」下拉筛选共用形态：chip 在「全部」态显示维度名、菜单里同一档位
+  /// 显示「全部」（两处语义不同，见 [_seriesFilterLabel]）。
+  Widget _buildEnumFilterButton<T>({
+    required String key,
+    required String tooltip,
+    required T value,
+    required List<T> values,
+    required T allValue,
+    required String Function(T value) labelOf,
+    required ValueChanged<T> onSelected,
+  }) {
+    return PopupMenuButton<T>(
+      key: ValueKey<String>(key),
+      tooltip: tooltip,
+      initialValue: value,
+      onSelected: onSelected,
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<T>>[
+        for (final T option in values)
+          PopupMenuItem<T>(
+            value: option,
+            child:
+                Text(option == allValue ? t.home_filter_all : labelOf(option)),
           ),
       ],
       child: LibraryFilterChip(
-        label: label,
-        active: _seriesFilter != VideoSeriesFilter.all,
+        label: labelOf(value),
+        active: value != allValue,
       ),
     );
   }
@@ -6786,7 +6975,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  Widget _buildFilteredEmpty() {
+  /// 筛选空态。[hint] 非空时替换通用句——「全部视频」默认「非系列」档位筛空时
+  /// 要告诉用户东西在系列页，而不是让人以为库空了（BUG-2835）。
+  Widget _buildFilteredEmpty({String? hint}) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Center(
       child: Column(
@@ -6795,7 +6986,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           Icon(Icons.filter_list_off, size: 56, color: colors.onSurfaceVariant),
           const SizedBox(height: 12),
           Text(
-            t.tag_no_books_for_filter,
+            hint ?? t.tag_no_books_for_filter,
+            textAlign: TextAlign.center,
             style: Theme.of(context)
                 .textTheme
                 .bodyMedium
@@ -6820,7 +7012,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   static double _videoCardTextBlock(BuildContext context) {
     final double titleLine = textLineHeight(
       context,
-      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+      Theme.of(context).textTheme.bodyMedium!,
     );
     final double metaLine =
         textLineHeight(context, FushiDesignTokens.of(context).type.metadata);
@@ -6832,7 +7024,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   static double _videoRowCardTextBlock(BuildContext context) {
     final double titleLine = textLineHeight(
       context,
-      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+      Theme.of(context).textTheme.bodyMedium!,
     );
     final double metaLine =
         textLineHeight(context, FushiDesignTokens.of(context).type.metadata);
