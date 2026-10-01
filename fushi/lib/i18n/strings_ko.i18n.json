@@ -6185,5 +6185,8 @@
   "video_scrape_pending_ai_failed": "AI request failed",
   "video_scrape_pending_ai_declined": "AI was not confident enough",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
-  "video_scrape_pending_cause_error": "Scrape error"
+  "video_scrape_pending_cause_error": "Scrape error",
+  "video_anidb_http_api": "AniDB HTTP metadata API",
+  "video_anidb_http_api_unregistered": "Not registered (only UDP hash identification and offline titles are available)",
+  "video_anidb_http_api_available": "Available (client ${client} v${version})"
 }

@@ -6185,5 +6185,8 @@
   "video_scrape_pending_ai_failed": "AI 调用失败",
   "video_scrape_pending_ai_declined": "AI 判断不够确定",
   "video_scrape_pending_record_missing": "近期刮削记录里没有原因",
-  "video_scrape_pending_cause_error": "刮削出错"
+  "video_scrape_pending_cause_error": "刮削出错",
+  "video_anidb_http_api": "AniDB HTTP 资料接口",
+  "video_anidb_http_api_unregistered": "未登记（仅 UDP 哈希识别与离线标题可用）",
+  "video_anidb_http_api_available": "可用（客户端 ${client} v${version}）"
 }

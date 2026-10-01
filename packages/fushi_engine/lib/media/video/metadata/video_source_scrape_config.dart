@@ -101,6 +101,8 @@ class VideoSourceScrapeGlobalConfig {
     this.tmdbApiKey = '',
     this.anidbClientName = '',
     this.anidbClientVersion,
+    this.anidbHttpClientName = '',
+    this.anidbHttpClientVersion,
     this.hashEnabled = false,
     this.anidbUsername = '',
     this.anidbPassword = '',
@@ -131,8 +133,24 @@ class VideoSourceScrapeGlobalConfig {
   final VideoMetadataProviderKind primaryProvider;
 
   final String tmdbApiKey;
+  /// AniDB **UDP** 应用身份（哈希识别 / 登录）。客户端名留空时是随包的
+  /// `fushiplayer`（只登记了 UDP）。
   final String anidbClientName;
   final int? anidbClientVersion;
+
+  /// AniDB **HTTP API** 应用身份（anime XML 资料链），与 UDP 是 AniDB 上两条
+  /// 独立登记（BUG-2623）。客户端名留空时取随包的 [kBundledAniDbHttpClient]——
+  /// 目前未登记，即空身份，provider 在发请求前就判不可用；用户填了自定义客户端
+  /// 时与 UDP 用同一对。默认空 = 不可用，与「没配身份」的旧默认一致。
+  final String anidbHttpClientName;
+  final int? anidbHttpClientVersion;
+
+  /// 本快照有没有一对可以拿去请求 AniDB HTTP API 的身份（设置页状态用）。
+  /// 只看配置；AniDB 运行期拒绝（302 闩）/ 封禁由 provider 自己判。
+  bool get anidbHttpClientConfigured => AniDbAppClientIdentity(
+        name: anidbHttpClientName,
+        version: anidbHttpClientVersion,
+      ).isComplete;
   final bool hashEnabled;
   final String anidbUsername;
   final String anidbPassword;
@@ -161,6 +179,8 @@ class VideoSourceScrapeGlobalConfig {
         tmdbApiKey,
         anidbClientName,
         anidbClientVersion ?? 0,
+        anidbHttpClientName,
+        anidbHttpClientVersion ?? 0,
         hashEnabled,
         anidbUsername,
         anidbPassword,
@@ -202,6 +222,7 @@ class VideoSourceScrapeGlobalConfig {
     required String resolvedTmdbApiKey,
     required String uiLocaleTag,
     AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
+    AniDbAppClientIdentity bundledAniDbHttpClient = kBundledAniDbHttpClient,
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
@@ -217,17 +238,20 @@ class VideoSourceScrapeGlobalConfig {
         ? kFallbackVideoMetadataLocale
         : uiLocaleTag.trim();
     final String locale = read(kVideoMetadataLocalePref, uiLocale);
-    final AniDbAppClientIdentity client = resolveAniDbAppClient(
+    final AniDbAppClients clients = resolveAniDbAppClients(
       customName: read(kVideoMetadataAniDbClientNamePref),
       customVersion: parseAniDbClientVersion(
         read(kVideoMetadataAniDbClientVersionPref),
       ),
-      bundled: bundledAniDbClient,
+      bundledUdp: bundledAniDbClient,
+      bundledHttp: bundledAniDbHttpClient,
     );
     return VideoSourceScrapeGlobalConfig(
       tmdbApiKey: resolvedTmdbApiKey.trim(),
-      anidbClientName: client.name,
-      anidbClientVersion: client.version,
+      anidbClientName: clients.udp.name,
+      anidbClientVersion: clients.udp.version,
+      anidbHttpClientName: clients.http.name,
+      anidbHttpClientVersion: clients.http.version,
       hashEnabled: preferences.getPref(kVideoAniDbHashEnabledPref,
           defaultValue: false) as bool,
       anidbUsername: read(kVideoAniDbUsernamePref),

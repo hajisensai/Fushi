@@ -111,12 +111,14 @@ class VideoMetadataProviderRegistry {
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[
         // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
         // 任一处漏传就是「刮削不同语言」。
-        // AniDB HTTP 资料链（Shoko 的主源）：身份是已注册的 `fushiplayer` / 用户
-        // 自定义 client（禁 Shoko 的 animeplugin/ommserver），进程级 2s+ 限流闸按
-        // endpoint 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
+        // AniDB HTTP 资料链（Shoko 的主源）：吃 **HTTP** 身份，不是 UDP 身份——
+        // 随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空（BUG-2623），此时
+        // provider 发请求前就判不可用、只剩标题目录；用户自定义 client 时两边同一
+        // 对（禁 Shoko 的 animeplugin/ommserver）。进程级 2s+ 限流闸按 endpoint
+        // 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
         AniDbVideoMetadataProvider(
-          clientName: config.anidbClientName,
-          clientVersion: config.anidbClientVersion,
+          clientName: config.anidbHttpClientName,
+          clientVersion: config.anidbHttpClientVersion,
           language: locale ?? config.locale,
           xmlCacheDirectory: () async => Directory(p.join(
               (await enginePaths.supportRootDirectory()).path, 'anidb_anime')),
