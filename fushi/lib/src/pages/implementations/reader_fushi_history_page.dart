@@ -1427,14 +1427,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 阅读状态筛选在这里而不在搜索那一层：读完判据 [_completedBookKeys] 由
     // [_loadShelfMaps] 异步预取，只有本函数（_shelfMapsFuture 完成后）读得到真值。
     // 继续阅读 hero 也吃这份列表——筛「未读」时不该再顶着一本在读的书。
-    final List<MediaItem> shelfBooks = <MediaItem>[
-      for (final MediaItem item in books)
-        if (_matchesReadStatusFilter(
-          bookKey: _parseBookKey(item.mediaIdentifier),
-          progress: (position: item.position, duration: item.duration),
-        ))
-          item,
-    ];
+    // （展示列表过滤走 books.where；借用映射仍只遍历上面的全量列表，BUG-963。）
+    final List<MediaItem> shelfBooks = books
+        .where((MediaItem item) => _matchesReadStatusFilter(
+              bookKey: _parseBookKey(item.mediaIdentifier),
+              progress: (position: item.position, duration: item.duration),
+            ))
+        .toList();
     final List<MediaItem> epubBooks = srtBookKeys.isEmpty
         ? shelfBooks
         : shelfBooks.where((item) {
