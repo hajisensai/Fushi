@@ -1497,14 +1497,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // _mangaOnly 分架过滤：漫画架只来 format='manga'+hasMangaContent 的条目）。
     // 「同步与备份 + 互联」模块关掉 → 远端占位卡（含其下载按钮与长按面板）整块不
     // 渲染。取数侧由 [_shouldLoadRemoteBooks] 同门挡住，两处合起来做到零网络请求。
-    // 阅读状态筛选激活时同样不混排：远端占位卡在本机没有阅读进度与读完标记，
-    // 归进任何一档都是猜。
     final bool showRemote = remoteState != null &&
         !remoteState.failed &&
-        !hasActiveFilter &&
-        _readStatusFilter == null &&
-        appModel.prefsRepo.showRemoteEntries &&
-        _moduleVisibility.isEnabled(ModuleId.sync);
+        _remotePlaceholdersAllowed;
     // BUG-2327：远端占位卡同样过搜索——它们与本地卡混排在同一网格里，搜索时
     // 本地卡被裁、远端卡还满屏，用户看到的就是「搜索不生效」。
     final List<RemoteBookInfo> remoteBooks = <RemoteBookInfo>[
@@ -2068,17 +2063,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  /// 远端占位卡在**合集详情页**的可见门控：与书架主网格（[buildBody] 的
-  /// `showRemote`）逐条同源——目录拉取成功 + 「显示远端条目」开关开 + 同步模块启用
-  /// + 无标签筛选。详情页的本地成员卡同样取自被筛选过的 [_visibleEpubBooks] /
-  /// [_visibleSrtBooks]，两侧同门才不会出现「合集行头数字与详情页对不上」。
+  /// 远端占位卡能否混排的**唯一**门控（书架主网格 `showRemote` 与合集详情页
+  /// [_detailRemoteState] 共用）：「显示远端条目」开关开 + 同步模块启用 + 无标签
+  /// 筛选 + 无阅读状态筛选。远端书没有本地标签，也没有本机的阅读进度与读完标记，
+  /// 归进任何一档筛选都是猜。两处以前各抄一份，新加条件时漏掉一处就会出现「合集
+  /// 行头数字与详情页对不上」。
+  bool get _remotePlaceholdersAllowed =>
+      ref.read(selectedTagIdsProvider).isEmpty &&
+      _readStatusFilter == null &&
+      appModel.prefsRepo.showRemoteEntries &&
+      _moduleVisibility.isEnabled(ModuleId.sync);
+
+  /// 远端占位卡在**合集详情页**的可见门控：目录拉取成功 + [_remotePlaceholdersAllowed]。
+  /// 详情页的本地成员卡同样取自被筛选过的 [_visibleEpubBooks] / [_visibleSrtBooks]，
+  /// 与主网格同门。
   _RemoteBookState? get _detailRemoteState {
     final _RemoteBookState? state = _lastRemoteState;
     if (state == null || state.failed) return null;
-    if (ref.read(selectedTagIdsProvider).isNotEmpty) return null;
-    if (!appModel.prefsRepo.showRemoteEntries) return null;
-    if (!_moduleVisibility.isEnabled(ModuleId.sync)) return null;
-    return state;
+    return _remotePlaceholdersAllowed ? state : null;
   }
 
   /// 合集成员行 entryKey → 远端 EPUB 占位。成员行有两种键形态：透传行照抄对端

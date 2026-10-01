@@ -96,16 +96,23 @@ class LibraryFilterChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: active && eink ? colors.onSurface : null,
         border: Border.all(color: active ? colors.primary : colors.outline),
-        borderRadius: BorderRadius.circular(4),
+        // 与并排的搜索框（`const OutlineInputBorder()`）同一个圆角来源。
+        borderRadius: const OutlineInputBorder().borderRadius,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: foreground),
+          // 长档位名（德语等）在窄窗口里不能把整条工具栏撑溢出。
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: foreground),
+            ),
           ),
           Icon(Icons.arrow_drop_down, size: 18, color: foreground),
         ],
