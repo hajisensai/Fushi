@@ -412,10 +412,9 @@ class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
   static const int _kActivityPageSize = 24;
 
-  /// 首页主纵向滚动区自己的控制器。走 [FushiScrollController]（全仓唯一那套桌面
-  /// 滚轮细化实现），**不再另起一个平行控制器**——两套都拦 pointerScroll，同时在
-  /// 场就是两层折扣，而且「粗滚轮阈值 / 倍率 / 要不要动画」会在两处各写一遍。
-  final ScrollController _dashboardScrollController = FushiScrollController();
+  /// 首页主纵向滚动区自己的控制器。滚轮平滑由根部 `SmoothWheelScrollScope`
+  /// 统一处理（BUG-2834），这里不再需要特制控制器。
+  final ScrollController _dashboardScrollController = ScrollController();
 
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
