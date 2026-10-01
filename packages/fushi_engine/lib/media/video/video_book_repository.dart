@@ -28,6 +28,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 
 /// [VideoBookRepository.importSplitPlaylist] 的落库结果。
 ///
@@ -982,7 +983,16 @@ class VideoBookRepository {
       if (deleted.isNotEmpty) {
         await _reclaimDeletedVideoBooksAssetsUnlocked(deleted, survivors);
       }
-      if (deleteLocalFiles && deleted.isNotEmpty) {
+      // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2856）是 app
+      // 自有资产：没勾「同时删除本地文件」也要回收，只是候选限定在副本目录之内，
+      // 用户自己的原件仍然只听勾选框的。
+      final List<String> importCopyDirs = deleteLocalFiles || deleted.isEmpty
+          ? const <String>[]
+          : await _pickerImportCopyDirsBestEffort();
+      if (deleted.isNotEmpty &&
+          (deleteLocalFiles || importCopyDirs.isNotEmpty)) {
+        bool selected(String path) =>
+            deleteLocalFiles || isPickerImportCopyPath(path, importCopyDirs);
         // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
         // 单文件失败逐条回传（[LocalFileDeleteReport]），不翻转删除结果。
         final Set<String> stillReferenced = <String>{
@@ -997,7 +1007,9 @@ class VideoBookRepository {
               videoPath: snapshot.videoPath,
               playlistJson: snapshot.playlistJson,
             ))
-              if (!stillReferenced.contains(platformPathKey(path))) path,
+              if (selected(path) &&
+                  !stillReferenced.contains(platformPathKey(path)))
+                path,
         ];
         // 视频旁的外挂字幕跟着视频走（BUG-2565）：勾了「同时删除本地文件」却把
         // `<同名>.ja.srt` 留在用户目录里，下次扫描/导入同一目录还会被当成孤儿
@@ -1008,7 +1020,9 @@ class VideoBookRepository {
           for (final String path in await localVideoSidecarSubtitleCandidates(
             videoCandidates,
           ))
-            if (!stillReferenced.contains(platformPathKey(path))) path,
+            if (selected(path) &&
+                !stillReferenced.contains(platformPathKey(path)))
+              path,
         ];
         if (candidates.isNotEmpty) {
           // 先让引用方放手，再销毁实体：还在做种的文件必须先在下载后端标 skip，
@@ -1042,6 +1056,34 @@ class VideoBookRepository {
       );
     }
     return deleted.length;
+  }
+
+  /// 选择器导入副本目录（[EnginePaths.pickerImportCopyDirectories]）的路径表，连同
+  /// 解析符号链接后的真实路径一起给出——iOS 的 `/var` 是 `/private/var` 的链接，
+  /// 库里存的路径与 `TMPDIR` 哪一边带 `/private` 不由我们决定。取不到只少回收，
+  /// 不翻转「行已删」。
+  Future<List<String>> _pickerImportCopyDirsBestEffort() async {
+    try {
+      final List<String> out = <String>[];
+      for (final Directory dir
+          in await enginePaths.pickerImportCopyDirectories()) {
+        out.add(dir.path);
+        try {
+          final String resolved = await dir.resolveSymbolicLinks();
+          if (resolved != dir.path) out.add(resolved);
+        } on FileSystemException {
+          // 目录不存在：原路径照样参与比对，里面也不会有文件可删。
+        }
+      }
+      return out;
+    } catch (e, stack) {
+      engineLog.log(
+        'VideoBookRepository.pickerImportCopyDirectories',
+        e,
+        stack,
+      );
+      return const <String>[];
+    }
   }
 
   /// 跑一个 [LocalVideoFileDeleteHooks] 挂钩：挂钩失败只记日志，绝不翻转「行已删、
