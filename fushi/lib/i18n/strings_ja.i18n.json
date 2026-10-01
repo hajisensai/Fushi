@@ -4967,9 +4967,7 @@
   "ai_feature_lapis_style": "Lapis card style",
   "ai_feature_lapis_style_summary": "Let AI generate Lapis card style rules and CSS from a description",
   "ai_feature_video_identify": "Video identification",
-  "ai_feature_video_identify_summary": "Let AI pick the matching work when scraping finds several candidates",
   "ai_feature_video_search": "Video search assist",
-  "ai_feature_video_search_summary": "Let AI suggest extra search terms and rank subtitle and torrent results",
   "ai_assist_section": "Ask AI",
   "ai_assist_generate": "Generate",
   "ai_assist_working": "Asking AI…",
@@ -6172,5 +6170,12 @@
   "manga_ocr_engine_local_model": "ローカル · $model",
   "manga_ocr_download_background_hint": "このページを離れても、ダウンロードはバックグラウンドで続きます。",
   "storage_ocr_models_hint": "ローカル OCR モデルをここで個別にダウンロード・削除できます。どれを使うかは「マンガ › マンガ OCR」で選びます。",
-  "manga_ocr_wizard_title_book": "この巻の文字を認識"
+  "manga_ocr_wizard_title_book": "この巻の文字を認識",
+  "ai_feature_video_identify_assist_summary": "When scraping finds several candidates or nothing at all, let AI pick the matching work or suggest titles to search",
+  "ai_feature_video_search_subtitle_summary": "Let AI re-rank subtitle results when subtitles are filled in automatically in the background",
+  "video_scrape_ai_declined": "AI not adopted",
+  "video_scrape_ai_failed": "AI request failed",
+  "video_scrape_ai_searched": "Searched again with titles suggested by AI",
+  "video_source_scrape_ai_identify": "Identify with AI",
+  "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%"
 }

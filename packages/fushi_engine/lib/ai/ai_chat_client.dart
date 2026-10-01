@@ -21,6 +21,14 @@ import 'package:http/http.dart' as http;
 /// 思考但迟迟不吐字」。推理型模型确实会慢，所以给得比普通 API 往返宽。
 const Duration kAiChatRequestTimeout = Duration(seconds: 90);
 
+/// OpenAI 官方 API 的 host：只有它要求 `max_completion_tokens`（见
+/// [AiChatClient] 的 OpenAI 载荷构造）。
+const String kOpenAiOfficialHost = 'api.openai.com';
+
+/// [AiChatClient.ping] 的输出上限：够任何模型吐出第一个 token，也给推理模型的
+/// 思考留了余量；正文被截断无所谓——测的是通路，不是回答。
+const int _kPingMaxTokens = 32;
+
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
 class AiChatFailure implements Exception {
@@ -62,6 +70,9 @@ class AiChatClient {
   }
 
   /// 发一次问答，拿回模型的纯文本回复。
+  ///
+  /// 三种协议同一口径：回复为空或只有空白一律抛 `empty_response`——空串对每个
+  /// 调用方都是「AI 什么也没给」，当成功返回只会把失败推迟成下游的解析错误。
   Future<String> complete({
     required AiProviderConfig provider,
     required List<AiChatMessage> messages,
@@ -70,23 +81,51 @@ class AiChatClient {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
     }
-    return switch (provider.protocol) {
-      AiWireProtocol.openAiCompatible => _completeOpenAi(
-        provider,
-        messages,
-        maxTokens,
-      ),
-      AiWireProtocol.anthropicMessages => _completeAnthropic(
-        provider,
-        messages,
-        maxTokens,
-      ),
-      AiWireProtocol.geminiGenerateContent => _completeGemini(
-        provider,
-        messages,
-        maxTokens,
-      ),
+    final Map<Object?, Object?> body = await _postChat(
+      provider,
+      messages,
+      maxTokens,
+    );
+    final String? text = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => _openAiText(body),
+      AiWireProtocol.anthropicMessages => _anthropicText(body),
+      AiWireProtocol.geminiGenerateContent => _geminiText(body),
     };
+    if (text == null || text.trim().isEmpty) {
+      throw const AiChatFailure('empty_response');
+    }
+    return text;
+  }
+
+  /// 「测试连接」：对**所配模型**发一次最小 chat 请求。
+  ///
+  /// 验证的是功能真正要走的那条路（chat 端点 + 鉴权 + 模型名）——listModels 只能
+  /// 证明 key 和地址对，模型名拼错、账号没开通该模型、端点不支持 chat 都照样
+  /// 「连接正常」，然后在功能里第一次真用时才失败。
+  ///
+  /// 成功判据是「这家按协议回了一份形状正确的应答」，**不要求有正文**：上限只给
+  /// [_kPingMaxTokens]，推理模型（o 系列 / Gemini thinking）可能把额度全花在思考
+  /// 上、正文为空并以长度截断收尾——那恰恰说明端点、鉴权、模型都是通的。
+  ///
+  /// 与 [complete] 不同，这里不问 [AiProviderConfig.isUsable]：停用的提供商也允许
+  /// 先测再启用，缺 key 由服务端回 401 给出更具体的结论；没填模型则无从测起。
+  Future<void> ping(AiProviderConfig provider) async {
+    if (provider.model.trim().isEmpty) {
+      throw const AiChatFailure('provider_not_configured');
+    }
+    final Map<Object?, Object?> body = await _postChat(
+      provider,
+      const <AiChatMessage>[AiChatMessage.user('ping')],
+      _kPingMaxTokens,
+    );
+    final String topKey = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => 'choices',
+      AiWireProtocol.anthropicMessages => 'content',
+      AiWireProtocol.geminiGenerateContent => 'candidates',
+    };
+    if (body[topKey] is! List) {
+      throw const AiChatFailure('bad_response');
+    }
   }
 
   /// 拉这家提供商可用的模型名。
@@ -134,26 +173,32 @@ class AiChatClient {
   // 各协议实现
   // -------------------------------------------------------------------------
 
-  Future<String> _completeOpenAi(
+  /// 按协议发一次 chat 请求，返回解码后的应答对象（不解释正文）。
+  Future<Map<Object?, Object?>> _postChat(
     AiProviderConfig provider,
     List<AiChatMessage> messages,
     int maxTokens,
   ) async {
-    final Map<String, Object?> payload = <String, Object?>{
-      'model': provider.model,
-      'messages': <Map<String, Object?>>[
-        for (final AiChatMessage m in messages)
-          <String, Object?>{'role': m.role, 'content': m.content},
-      ],
-      'max_tokens': maxTokens,
-      // 只有用户显式选了推理档位才发这个字段：大量兼容端点不认识它，
-      // 无条件发会让本来能用的服务直接 400。
-      if (provider.reasoningEffort != AiReasoningEffort.none)
-        'reasoning_effort': provider.reasoningEffort.storageKey,
+    final (Uri uri, Map<String, Object?> payload) = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => (
+        _resolve(provider.baseUrl, 'chat/completions'),
+        _openAiPayload(provider, messages, maxTokens),
+      ),
+      AiWireProtocol.anthropicMessages => (
+        _resolve(provider.baseUrl, 'v1/messages'),
+        _anthropicPayload(provider, messages, maxTokens),
+      ),
+      AiWireProtocol.geminiGenerateContent => (
+        _resolve(
+          provider.baseUrl,
+          'models/${provider.model}:generateContent',
+        ).replace(queryParameters: <String, String>{'key': provider.apiKey}),
+        _geminiPayload(messages, maxTokens),
+      ),
     };
     final http.Response response = await _send(
       () => _client.post(
-        _resolve(provider.baseUrl, 'chat/completions'),
+        uri,
         headers: _headers(provider),
         body: jsonEncode(payload),
       ),
@@ -162,33 +207,45 @@ class AiChatClient {
     if (body is! Map) {
       throw const AiChatFailure('bad_response');
     }
-    final Object? choices = body['choices'];
-    if (choices is List && choices.isNotEmpty) {
-      final Object? first = choices.first;
-      if (first is Map) {
-        final Object? message = first['message'];
-        if (message is Map) {
-          final Object? content = message['content'];
-          if (content is String) {
-            return content;
-          }
-        }
-      }
-    }
-    throw const AiChatFailure('empty_response');
+    return body;
   }
 
-  Future<String> _completeAnthropic(
+  Map<String, Object?> _openAiPayload(
     AiProviderConfig provider,
     List<AiChatMessage> messages,
     int maxTokens,
-  ) async {
+  ) => <String, Object?>{
+    'model': provider.model,
+    'messages': <Map<String, Object?>>[
+      for (final AiChatMessage m in messages)
+        <String, Object?>{'role': m.role, 'content': m.content},
+    ],
+    // OpenAI 官方的推理模型（o 系列 / gpt-5 系列）拒收 `max_tokens`、只认
+    // `max_completion_tokens`（官方其余模型两者都认）；大量兼容端点却只认前者。
+    _usesMaxCompletionTokens(provider.baseUrl)
+            ? 'max_completion_tokens'
+            : 'max_tokens':
+        maxTokens,
+    // 只有用户显式选了推理档位才发这个字段：大量兼容端点不认识它，
+    // 无条件发会让本来能用的服务直接 400。
+    if (provider.reasoningEffort != AiReasoningEffort.none)
+      'reasoning_effort': provider.reasoningEffort.storageKey,
+  };
+
+  /// 判据是端点 host 而不是 presetId：presetId 只管 UI 显示（见
+  /// [AiProviderConfig.presetId]），「自定义」里填官方地址照样要按官方规矩发，
+  /// 「OpenAI」预设改指第三方中转则要按中转的规矩发。
+  static bool _usesMaxCompletionTokens(Uri baseUrl) =>
+      baseUrl.host.toLowerCase() == kOpenAiOfficialHost;
+
+  Map<String, Object?> _anthropicPayload(
+    AiProviderConfig provider,
+    List<AiChatMessage> messages,
+    int maxTokens,
+  ) {
     // Anthropic 把 system 提到顶层，不放进 messages 数组。
-    final String system = messages
-        .where((AiChatMessage m) => m.isSystem)
-        .map((AiChatMessage m) => m.content)
-        .join('\n\n');
-    final Map<String, Object?> payload = <String, Object?>{
+    final String system = _systemText(messages);
+    return <String, Object?>{
       'model': provider.model,
       'max_tokens': maxTokens,
       if (system.isNotEmpty) 'system': system,
@@ -198,44 +255,14 @@ class AiChatClient {
             <String, Object?>{'role': m.role, 'content': m.content},
       ],
     };
-    final http.Response response = await _send(
-      () => _client.post(
-        _resolve(provider.baseUrl, 'v1/messages'),
-        headers: _headers(provider),
-        body: jsonEncode(payload),
-      ),
-    );
-    final Object? body = _decodeBody(response);
-    if (body is! Map) {
-      throw const AiChatFailure('bad_response');
-    }
-    final Object? content = body['content'];
-    if (content is List) {
-      final StringBuffer text = StringBuffer();
-      for (final Object? block in content) {
-        if (block is Map &&
-            block['type'] == 'text' &&
-            block['text'] is String) {
-          text.write(block['text'] as String);
-        }
-      }
-      if (text.isNotEmpty) {
-        return text.toString();
-      }
-    }
-    throw const AiChatFailure('empty_response');
   }
 
-  Future<String> _completeGemini(
-    AiProviderConfig provider,
+  Map<String, Object?> _geminiPayload(
     List<AiChatMessage> messages,
     int maxTokens,
-  ) async {
-    final String system = messages
-        .where((AiChatMessage m) => m.isSystem)
-        .map((AiChatMessage m) => m.content)
-        .join('\n\n');
-    final Map<String, Object?> payload = <String, Object?>{
+  ) {
+    final String system = _systemText(messages);
+    return <String, Object?>{
       if (system.isNotEmpty)
         'systemInstruction': <String, Object?>{
           'parts': <Map<String, String>>[
@@ -255,43 +282,53 @@ class AiChatClient {
       ],
       'generationConfig': <String, Object?>{'maxOutputTokens': maxTokens},
     };
-    final Uri uri = _resolve(
-      provider.baseUrl,
-      'models/${provider.model}:generateContent',
-    ).replace(queryParameters: <String, String>{'key': provider.apiKey});
-    final http.Response response = await _send(
-      () => _client.post(
-        uri,
-        headers: _headers(provider),
-        body: jsonEncode(payload),
-      ),
-    );
-    final Object? body = _decodeBody(response);
-    if (body is! Map) {
-      throw const AiChatFailure('bad_response');
-    }
-    final Object? candidates = body['candidates'];
-    if (candidates is List && candidates.isNotEmpty) {
-      final Object? first = candidates.first;
-      if (first is Map) {
-        final Object? content = first['content'];
-        if (content is Map) {
-          final Object? parts = content['parts'];
-          if (parts is List) {
-            final StringBuffer text = StringBuffer();
-            for (final Object? part in parts) {
-              if (part is Map && part['text'] is String) {
-                text.write(part['text'] as String);
-              }
-            }
-            if (text.isNotEmpty) {
-              return text.toString();
-            }
-          }
-        }
+  }
+
+  static String _systemText(List<AiChatMessage> messages) => messages
+      .where((AiChatMessage m) => m.isSystem)
+      .map((AiChatMessage m) => m.content)
+      .join('\n\n');
+
+  /// 各协议的正文抽取：形状不对返回 null，空与否由 [complete] 统一判。
+  static String? _openAiText(Map<Object?, Object?> body) {
+    final Object? choices = body['choices'];
+    if (choices is! List || choices.isEmpty) return null;
+    final Object? first = choices.first;
+    if (first is! Map) return null;
+    final Object? message = first['message'];
+    if (message is! Map) return null;
+    final Object? content = message['content'];
+    return content is String ? content : null;
+  }
+
+  static String? _anthropicText(Map<Object?, Object?> body) {
+    final Object? content = body['content'];
+    if (content is! List) return null;
+    final StringBuffer text = StringBuffer();
+    for (final Object? block in content) {
+      if (block is Map && block['type'] == 'text' && block['text'] is String) {
+        text.write(block['text'] as String);
       }
     }
-    throw const AiChatFailure('empty_response');
+    return text.toString();
+  }
+
+  static String? _geminiText(Map<Object?, Object?> body) {
+    final Object? candidates = body['candidates'];
+    if (candidates is! List || candidates.isEmpty) return null;
+    final Object? first = candidates.first;
+    if (first is! Map) return null;
+    final Object? content = first['content'];
+    if (content is! Map) return null;
+    final Object? parts = content['parts'];
+    if (parts is! List) return null;
+    final StringBuffer text = StringBuffer();
+    for (final Object? part in parts) {
+      if (part is Map && part['text'] is String) {
+        text.write(part['text'] as String);
+      }
+    }
+    return text.toString();
   }
 
   // -------------------------------------------------------------------------

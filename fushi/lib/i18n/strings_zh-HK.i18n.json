@@ -4967,9 +4967,7 @@
   "ai_feature_lapis_style": "Lapis card style",
   "ai_feature_lapis_style_summary": "Let AI generate Lapis card style rules and CSS from a description",
   "ai_feature_video_identify": "Video identification",
-  "ai_feature_video_identify_summary": "Let AI pick the matching work when scraping finds several candidates",
   "ai_feature_video_search": "Video search assist",
-  "ai_feature_video_search_summary": "Let AI suggest extra search terms and rank subtitle and torrent results",
   "ai_assist_section": "Ask AI",
   "ai_assist_generate": "Generate",
   "ai_assist_working": "Asking AI…",
@@ -6172,5 +6170,12 @@
   "manga_ocr_engine_local_model": "本機 · $model",
   "manga_ocr_download_background_hint": "可以離開此頁，下載會在背景繼續。",
   "storage_ocr_models_hint": "在這裡下載或刪除各個本機 OCR 模型；使用哪一個在「漫畫 › 漫畫 OCR」裡選。",
-  "manga_ocr_wizard_title_book": "辨識本卷文字"
+  "manga_ocr_wizard_title_book": "辨識本卷文字",
+  "ai_feature_video_identify_assist_summary": "When scraping finds several candidates or nothing at all, let AI pick the matching work or suggest titles to search",
+  "ai_feature_video_search_subtitle_summary": "Let AI re-rank subtitle results when subtitles are filled in automatically in the background",
+  "video_scrape_ai_declined": "AI not adopted",
+  "video_scrape_ai_failed": "AI request failed",
+  "video_scrape_ai_searched": "Searched again with titles suggested by AI",
+  "video_source_scrape_ai_identify": "Identify with AI",
+  "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%"
 }
