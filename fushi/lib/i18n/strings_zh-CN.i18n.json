@@ -6208,5 +6208,6 @@
   "video_filter_extras_main": "仅正片",
   "video_filter_extras_only": "仅特典",
   "video_filter_source": "来源",
-  "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。"
+  "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。",
+  "jellyfin_server_rejected_client": "服务器 $url 拒绝了本应用的访问（HTTP $code）。该服务器可能只允许特定客户端，请联系服务器管理员。服务器说明：$reason"
 }
