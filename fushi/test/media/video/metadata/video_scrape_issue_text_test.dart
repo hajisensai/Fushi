@@ -39,12 +39,27 @@ void main() {
 
   test('ai:failed 只给失败标题（无置信度）+ 脱敏原因', () {
     final String described = describeVideoScrapeIssueMessage(
-      encodeVideoScrapeAiFailedNote('timeout'),
+      encodeVideoScrapeAiFailedNote('StateError'),
     );
-    expect(described, '${t.video_scrape_ai_failed}\ntimeout');
+    expect(described, '${t.video_scrape_ai_failed}\nStateError');
     expect(
       described,
       isNot(contains(t.video_scrape_ai_confidence(percent: 0))),
+    );
+  });
+
+  test('ai:failed 的失败短码译成与设置页同一套 AI 错误文案', () {
+    expect(
+      describeVideoScrapeIssueMessage(
+        encodeVideoScrapeAiFailedNote('unauthorized'),
+      ),
+      '${t.video_scrape_ai_failed}\n${t.ai_error_unauthorized}',
+    );
+    expect(
+      describeVideoScrapeIssueMessage(
+        encodeVideoScrapeAiFailedNote('http_404'),
+      ),
+      '${t.video_scrape_ai_failed}\n${t.ai_error_http(code: '404')}',
     );
   });
 

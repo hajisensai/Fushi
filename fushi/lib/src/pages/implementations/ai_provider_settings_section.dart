@@ -23,10 +23,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
+
+// 历史上 aiFailureText 住在这里，五处调用方按 `show aiFailureText` 从本文件引；
+// 搬到 lib/src/ai/ 后保留这条再导出，不逐个改调用方。
+export 'package:fushi/src/ai/ai_failure_text.dart' show aiFailureText;
 
 /// 输入停止多久后落盘（与 OPDS / Torznab 段同值）。
 const Duration _kSaveDebounce = Duration(milliseconds: 600);
@@ -799,25 +804,6 @@ class _AiProviderSettingsSectionState
       effort == AiReasoningEffort.none
       ? t.ai_provider_reasoning_none
       : effort.storageKey;
-}
-
-/// 把 [AiChatFailure.message] 的脱敏短码映射成界面文案。
-///
-/// 短码是调用层与 UI 之间的唯一契约（见 `ai_chat_client.dart`），别在别处再各自
-/// 解释一遍。
-String aiFailureText(String code) {
-  if (code.startsWith('http_')) {
-    return t.ai_error_http(code: code.substring(5));
-  }
-  return switch (code) {
-    'unauthorized' => t.ai_error_unauthorized,
-    'rate_limited' => t.ai_error_rate_limited,
-    'network_error' => t.ai_error_network,
-    'bad_response' => t.ai_error_bad_response,
-    'empty_response' => t.ai_error_empty_response,
-    'provider_not_configured' => t.ai_error_not_configured,
-    _ => code,
-  };
 }
 
 /// 一条提供商的编辑中状态。
