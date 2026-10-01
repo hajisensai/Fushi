@@ -47,6 +47,7 @@ String _causeText(VideoScrapePendingNote note) => switch (note.cause) {
   VideoScrapePendingCause.notFound => t.video_scrape_pending_cause_not_found,
   VideoScrapePendingCause.providerUnavailable =>
     t.video_scrape_pending_cause_provider_unavailable,
+  VideoScrapePendingCause.error => t.video_scrape_pending_cause_error,
 };
 
 String? _aiOutcomeText(VideoScrapeAiOutcome outcome) => switch (outcome) {

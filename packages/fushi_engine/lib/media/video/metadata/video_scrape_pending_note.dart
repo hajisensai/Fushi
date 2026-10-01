@@ -12,7 +12,9 @@
 library;
 
 /// 标记前缀。整条 message 形如
-/// `pending:awaiting_confirmation ai=declined candidates=2 key=book%3A1 reason=…`。
+/// `pending:awaiting_confirmation ai=declined candidates=2 key=book%3A1 reason=…`；
+/// 来源级结账（整批没有可用资料源 / AniDB 封禁后跳过）一条标记带多个作品键，
+/// `key=a,b,c`。
 const String kVideoScrapePendingNotePrefix = 'pending:';
 
 /// 作品停在「没有身份」的原因。[wire] 是落库值，改枚举名不能改它。
@@ -32,8 +34,11 @@ enum VideoScrapePendingCause {
   /// 标题、类型、年份或季号都没通过严格校验。
   notFound('not_found'),
 
-  /// 资料源不可用（网络 / 凭据 / 限流）。
-  providerUnavailable('provider_unavailable');
+  /// 资料源不可用（网络 / 凭据 / 限流 / 封禁）。
+  providerUnavailable('provider_unavailable'),
+
+  /// 刮这部作品时出错（异常 / 没有结论的失败），原文在 `reason=`。
+  error('error');
 
   const VideoScrapePendingCause(this.wire);
 
@@ -85,7 +90,7 @@ class VideoScrapePendingNote {
     required this.cause,
     required this.aiOutcome,
     required this.candidateCount,
-    required this.workKey,
+    required this.workKeys,
     required this.reason,
   });
 
@@ -93,8 +98,9 @@ class VideoScrapePendingNote {
   final VideoScrapeAiOutcome aiOutcome;
   final int candidateCount;
 
-  /// 作品的 `VideoSourceScrapeWork.stableKey`，待确认清单按它对号。
-  final String workKey;
+  /// 涉及作品的 `VideoSourceScrapeWork.stableKey`，待确认清单按它对号。单作品
+  /// 结账只有一个；来源级结账是本轮没处理到的全部作品。
+  final List<String> workKeys;
 
   /// 原有的人类可读文案（含 resolver 的原始 reason）。
   final String reason;
@@ -106,18 +112,19 @@ final RegExp _pendingPattern = RegExp(
   dotAll: true,
 );
 
-/// 把挂起原因编码成运行记录里的一条 message。作品键可能带空格（book uid 是
-/// 路径形），所以 URI 编码。
+/// 把挂起原因编码成运行记录里的一条 message。作品键可能带空格 / 逗号（book uid
+/// 是路径形），所以逐个 URI 编码后再用逗号连。
 String encodeVideoScrapePendingNote(VideoScrapePendingNote note) {
   final String head = '$kVideoScrapePendingNotePrefix${note.cause.wire} '
       'ai=${note.aiOutcome.wire} '
       'candidates=${note.candidateCount} '
-      'key=${Uri.encodeComponent(note.workKey)}';
+      'key=${note.workKeys.map(Uri.encodeComponent).join(',')}';
   final String reason = note.reason.trim();
   return reason.isEmpty ? head : '$head reason=$reason';
 }
 
-/// 从运行记录 message 还原挂起原因；不是这种标记（旧记录 / 其它 issue）回 null。
+/// 从运行记录 message 还原挂起原因；不是这种标记（旧记录 / 其它 issue / 损坏）
+/// 回 null，调用方原样显示 message。
 VideoScrapePendingNote? parseVideoScrapePendingNote(String message) {
   final RegExpMatch? match = _pendingPattern.firstMatch(message.trim());
   if (match == null) return null;
@@ -128,25 +135,33 @@ VideoScrapePendingNote? parseVideoScrapePendingNote(String message) {
   );
   final int? count = int.tryParse(match.group(3)!);
   if (cause == null || ai == null || count == null) return null;
-  final String key;
+  final String rawKeys = match.group(4)!;
+  final List<String> keys;
   try {
-    key = Uri.decodeComponent(match.group(4)!);
+    keys = <String>[
+      if (rawKeys.isNotEmpty)
+        for (final String key in rawKeys.split(',')) Uri.decodeComponent(key),
+    ];
   } on ArgumentError {
+    return null;
+  } on FormatException {
+    // 非法 UTF-8 转义（`%FF`）：记录损坏，退回原文显示。
     return null;
   }
   return VideoScrapePendingNote(
     cause: cause,
     aiOutcome: ai,
     candidateCount: count,
-    workKey: key,
+    workKeys: keys,
     reason: (match.group(5) ?? '').trim(),
   );
 }
 
 /// 最近的运行记录（新 → 旧）里，每个作品键第一次出现的挂起原因。
 ///
-/// 待确认清单用它给每部作品配上「为什么还没认出来」；没有标记的作品（旧记录、
-/// 从没被刮过）不在结果里，由 UI 显示「尚无刮削记录」。
+/// 待确认清单用它给每部作品配上「为什么还没认出来」；近期记录里没有标记的作品
+/// 不在结果里，由 UI 如实说「近期刮削记录里没有原因」。同一次运行里后写的覆盖
+/// 先写的。
 Map<String, VideoScrapePendingNote> latestVideoScrapePendingNotes(
   Iterable<Iterable<String>> messagesNewestFirst,
 ) {
@@ -157,7 +172,10 @@ Map<String, VideoScrapePendingNote> latestVideoScrapePendingNotes(
         <String, VideoScrapePendingNote>{};
     for (final String message in run) {
       final VideoScrapePendingNote? note = parseVideoScrapePendingNote(message);
-      if (note != null) inRun[note.workKey] = note;
+      if (note == null) continue;
+      for (final String key in note.workKeys) {
+        inRun[key] = note;
+      }
     }
     for (final MapEntry<String, VideoScrapePendingNote> entry
         in inRun.entries) {

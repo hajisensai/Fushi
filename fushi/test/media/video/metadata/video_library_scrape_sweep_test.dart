@@ -205,7 +205,7 @@ void main() {
           cause: cause,
           aiOutcome: ai,
           candidateCount: 3,
-          workKey: keyA,
+          workKeys: <String>[keyA],
           reason: 'r',
         ));
     Future<void> addRun(int startedAt, String message) =>
@@ -216,6 +216,7 @@ void main() {
                 status: 'completed',
                 startedAt: startedAt,
                 updatedAt: startedAt,
+                pendingConfirmations: const Value<int>(1),
                 summaryJson: Value<String?>(encodeSourceScrapeReport(
                   SourceScrapeReport(
                     sourceIds: <int>[sourceId],
@@ -232,7 +233,8 @@ void main() {
     await addRun(2, note(VideoScrapePendingCause.awaitingConfirmation,
         VideoScrapeAiOutcome.unassigned));
 
-    final List<VideoPendingScrapeWork> pending = await service.pendingWorks();
+    final List<VideoPendingScrapeWork> pending =
+        await service.pendingWorksWithReasons();
     final VideoScrapePendingNote? a = pending
         .singleWhere(
             (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')

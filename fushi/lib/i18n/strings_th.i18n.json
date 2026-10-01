@@ -6184,5 +6184,6 @@
   "video_scrape_pending_ai_unassigned": "No AI provider assigned to video identification",
   "video_scrape_pending_ai_failed": "AI request failed",
   "video_scrape_pending_ai_declined": "AI was not confident enough",
-  "video_scrape_pending_record_missing": "Not scraped yet"
+  "video_scrape_pending_record_missing": "No reason in recent scrape runs",
+  "video_scrape_pending_cause_error": "Scrape error"
 }

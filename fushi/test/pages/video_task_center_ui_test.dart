@@ -162,7 +162,7 @@ void main() {
             cause: VideoScrapePendingCause.awaitingConfirmation,
             aiOutcome: VideoScrapeAiOutcome.unassigned,
             candidateCount: 3,
-            workKey: 'k',
+            workKeys: <String>['k'],
             reason: 'r',
           ),
         ),
@@ -174,7 +174,7 @@ void main() {
           'No AI provider assigned to video identification'),
       findsOneWidget,
     );
-    expect(find.text('Anime\nNot scraped yet'), findsOneWidget);
+    expect(find.text('Anime\nNo reason in recent scrape runs'), findsOneWidget);
   });
 
   testWidgets('a pending-list failure offers an actual reload',

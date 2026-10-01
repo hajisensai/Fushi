@@ -2741,7 +2741,8 @@ class _HomePageState extends BasePageState<HomePage>
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
         loadSource: (int sourceId) =>
             appModel.database.getMediaSourceById(sourceId),
-        loadPendingWorks: () => _videoLibraryScrapeSweep.pendingWorks(),
+        loadPendingWorks: () =>
+            _videoLibraryScrapeSweep.pendingWorksWithReasons(),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;

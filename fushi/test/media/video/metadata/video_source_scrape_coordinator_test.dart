@@ -1561,10 +1561,9 @@ void main() {
           .whereType<VideoScrapePendingNote>()
           .single;
       // 作品键与计划器同源，待确认清单靠它对号；落库后解出来的是同一条。
-      expect(
-        note.workKey,
+      expect(note.workKeys, <String>[
         (await VideoSourceWorkPlanner(db).plan(source)).single.stableKey,
-      );
+      ]);
       final List<VideoSourceScrapeRunRow> runs =
           await db.getVideoSourceScrapeRuns(sourceId: source.id);
       final SourceScrapeReport stored =
@@ -1621,6 +1620,62 @@ void main() {
       expect(note.cause, VideoScrapePendingCause.dismissed);
       expect(note.aiOutcome, VideoScrapeAiOutcome.declined);
       expect(note.candidateCount, 15);
+    });
+
+    // 刮过却没留标记的路径会让待确认清单对用户说「没有记录」，所以异常与来源级
+    // 结账也必须带作品键。
+    test('挂起原因：单作品异常记成 error 并带作品键', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final VideoSourceScrapeCoordinator coordinator =
+          await buildCoordinator(_CatalogConfirmationAniDbProvider(),
+              decider: null);
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async =>
+            throw StateError('boom'),
+      );
+      expect(report.failedWorks, 1);
+      final VideoScrapePendingNote note =
+          parseVideoScrapePendingNote(report.errors.single.message)!;
+      expect(note.cause, VideoScrapePendingCause.error);
+      expect(note.reason, contains('boom'));
+      expect(note.workKeys, <String>[
+        (await VideoSourceWorkPlanner(db).plan(source)).single.stableKey,
+      ]);
+    });
+
+    test('挂起原因：整批没有可用资料源时来源级结账带全部作品键', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final VideoSourceScrapeCoordinator coordinator =
+          VideoSourceScrapeCoordinator(
+        primaryProvider: VideoMetadataProviderKind.anidb,
+        database: db,
+        config: const VideoSourceScrapeGlobalConfig(),
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[]),
+      );
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+      final VideoScrapePendingNote note =
+          parseVideoScrapePendingNote(report.errors.single.message)!;
+      expect(note.cause, VideoScrapePendingCause.providerUnavailable);
+      expect(note.workKeys, <String>[
+        for (final VideoSourceScrapeWork work
+            in await VideoSourceWorkPlanner(db).plan(source))
+          work.stableKey,
+      ]);
     });
 
     test('同一目录同一批候选只问一次 AI（用户取消后重扫不重问）', () async {

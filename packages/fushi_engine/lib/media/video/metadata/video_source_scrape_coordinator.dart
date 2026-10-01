@@ -662,9 +662,13 @@ class VideoSourceScrapeCoordinator
         failed = works.length;
         errors.add(SourceScrapeIssue(
           workTitle: source.label,
-          message: describeVideoScrapeFailure(
-            VideoMetadataResolutionStatus.providerUnavailable,
-            null,
+          message: _issueNote(
+            works,
+            VideoScrapePendingCause.providerUnavailable,
+            describeVideoScrapeFailure(
+              VideoMetadataResolutionStatus.providerUnavailable,
+              null,
+            ),
           ),
         ));
       }
@@ -924,10 +928,17 @@ class VideoSourceScrapeCoordinator
           rethrow;
         } catch (error) {
           failed++;
+          final bool transient = isTransientVideoMetadataFailure(error);
           errors.add(SourceScrapeIssue(
             workTitle: localWork.title,
-            message: error.toString(),
-            providerUnavailable: isTransientVideoMetadataFailure(error),
+            message: _issueNote(
+              <VideoSourceScrapeWork>[localWork],
+              transient
+                  ? VideoScrapePendingCause.providerUnavailable
+                  : VideoScrapePendingCause.error,
+              error.toString(),
+            ),
+            providerUnavailable: transient,
             workKey: localWork.stableKey,
           ));
         } finally {
@@ -947,9 +958,13 @@ class VideoSourceScrapeCoordinator
         failed += skippedByBan;
         errors.add(SourceScrapeIssue(
           workTitle: source.label,
-          message: 'AniDB 已封禁本客户端，本轮剩余 $skippedByBan 个作品全部跳过'
-              '（约 ${banRemaining.inHours + 1} 小时后自动恢复）。'
-              '封禁期间继续请求只会延长封禁。',
+          message: _issueNote(
+            works.skip(startedWorks),
+            VideoScrapePendingCause.providerUnavailable,
+            'AniDB 已封禁本客户端，本轮剩余 $skippedByBan 个作品全部跳过'
+            '（约 ${banRemaining.inHours + 1} 小时后自动恢复）。'
+            '封禁期间继续请求只会延长封禁。',
+          ),
         ));
       }
 
@@ -3697,7 +3712,14 @@ class VideoSourceScrapeCoordinator
           titleCandidates: candidates,
           // 主源没给年份（AniDB HTTP 详情不可用时只有目录摘要）就用本地目录 /
           // NFO 的年份顶上：否则年份门整个放行，同名异片只凭标题就成了精确命中。
-          year: rootTitles.isEmpty ? primary.year ?? localYear : null,
+          // 本地年份是「这一季」的，TMDB 剧的年份是第一季首播：续作季不拿它当门。
+          year: rootTitles.isEmpty
+              ? primary.year ??
+                  (primary.kind == VideoMetadataMediaKind.movie ||
+                          (seasonNumber ?? 1) <= 1
+                      ? localYear
+                      : null)
+              : null,
           seasonNumber: seasonNumber,
           // Shoko `includeRestricted: anime.IsRestricted`：主源已知成人向才
           // 让 TMDB 搜索放开 include_adult，其它作品维持 TMDB 默认过滤。
@@ -4393,15 +4415,46 @@ class VideoSourceScrapeCoordinator
     _ResolvedWork resolved,
     String message,
   ) =>
-      encodeVideoScrapePendingNote(VideoScrapePendingNote(
-        cause: resolved.pendingCause ??
-            (resolved.status ==
-                    VideoMetadataResolutionStatus.providerUnavailable
-                ? VideoScrapePendingCause.providerUnavailable
-                : VideoScrapePendingCause.notFound),
+      _issueNote(
+        <VideoSourceScrapeWork>[localWork],
+        resolved.pendingCause ?? _causeOfStatus(resolved),
+        message,
         aiOutcome: resolved.aiOutcome,
         candidateCount: resolved.candidateCount,
-        workKey: localWork.stableKey,
+      );
+
+  /// 分支没显式给原因时按 resolver 状态推；推不出（状态缺失 / matched 却没
+  /// 资料）就是出错，不冒充「查无」。
+  static VideoScrapePendingCause _causeOfStatus(_ResolvedWork resolved) {
+    if (resolved.transient) return VideoScrapePendingCause.providerUnavailable;
+    return switch (resolved.status) {
+      VideoMetadataResolutionStatus.providerUnavailable =>
+        VideoScrapePendingCause.providerUnavailable,
+      VideoMetadataResolutionStatus.notFound =>
+        VideoScrapePendingCause.notFound,
+      VideoMetadataResolutionStatus.ambiguous =>
+        VideoScrapePendingCause.awaitingConfirmation,
+      VideoMetadataResolutionStatus.matched || null =>
+        VideoScrapePendingCause.error,
+    };
+  }
+
+  /// 每条让作品停在「没有身份」的运行记录都走这里，待确认清单才不会对刮过的
+  /// 作品说「没有记录」。来源级结账（整批没有资料源 / 封禁后跳过）一条带多个键。
+  static String _issueNote(
+    Iterable<VideoSourceScrapeWork> works,
+    VideoScrapePendingCause cause,
+    String message, {
+    VideoScrapeAiOutcome aiOutcome = VideoScrapeAiOutcome.notAsked,
+    int candidateCount = 0,
+  }) =>
+      encodeVideoScrapePendingNote(VideoScrapePendingNote(
+        cause: cause,
+        aiOutcome: aiOutcome,
+        candidateCount: candidateCount,
+        workKeys: <String>[
+          for (final VideoSourceScrapeWork work in works) work.stableKey,
+        ],
         reason: message,
       ));
 

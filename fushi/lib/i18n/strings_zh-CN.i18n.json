@@ -6184,5 +6184,6 @@
   "video_scrape_pending_ai_unassigned": "没有给视频作品识别指派 AI 提供商",
   "video_scrape_pending_ai_failed": "AI 调用失败",
   "video_scrape_pending_ai_declined": "AI 判断不够确定",
-  "video_scrape_pending_record_missing": "尚无刮削记录"
+  "video_scrape_pending_record_missing": "近期刮削记录里没有原因",
+  "video_scrape_pending_cause_error": "刮削出错"
 }

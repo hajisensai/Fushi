@@ -214,6 +214,29 @@ void main() {
         reason: '主源没给年份时用本地目录年份做年份门，不能只凭标题判精确命中');
   });
 
+  // 本地年份是「这一季」的，TMDB 剧的年份是第一季首播：续作季拿本地年份当门
+  // 会把正确的剧挡在 ±1 年外（审查发现，与 Shoko 的无年份查询变体同理）。
+  test('sequel season does not gate the TMDB show search on its local year',
+      () async {
+    final SourceLibraryRow source =
+        await _source(db, directory, fileName: 'Show S02E01 (2019).mkv');
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    await scrape(
+      VideoSourceScrapeCoordinator(
+        primaryProvider: VideoMetadataProviderKind.mal,
+        database: db,
+        config: const VideoSourceScrapeGlobalConfig(),
+        registry:
+            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
+        identityMapping: _mapping('[]'),
+      ),
+      source,
+    );
+    expect(tmdb.searchCalls, greaterThan(0), reason: '没有映射，标题补充');
+    expect(tmdb.searchYears, everyElement(isNull));
+  });
+
   test('offline identity of a movie filed under a TMDB show skips the tv id',
       () async {
     final SourceLibraryRow source = await _source(db, directory,

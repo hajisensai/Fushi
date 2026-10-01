@@ -19,7 +19,7 @@ void main() {
     cause: cause,
     aiOutcome: ai,
     candidateCount: 2,
-    workKey: key,
+    workKeys: <String>[key],
     reason: reason,
   );
 
@@ -30,7 +30,7 @@ void main() {
     expect(parsed.cause, VideoScrapePendingCause.awaitingConfirmation);
     expect(parsed.aiOutcome, VideoScrapeAiOutcome.declined);
     expect(parsed.candidateCount, 2);
-    expect(parsed.workKey, 'book:D:/视频/リズと青い鳥 (2018)');
+    expect(parsed.workKeys, <String>['book:D:/视频/リズと青い鳥 (2018)']);
     expect(parsed.reason, '匹配结果存在歧义，需要人工确认：2 candidates\n第二行');
   });
 
@@ -48,7 +48,33 @@ void main() {
     }
   });
 
-  test('旧格式 / 其它 issue 不是挂起标记', () {
+  test('来源级结账一条标记带多个作品键（键里的逗号也能还原）', () {
+    final VideoScrapePendingNote parsed = parseVideoScrapePendingNote(
+      encodeVideoScrapePendingNote(
+        const VideoScrapePendingNote(
+          cause: VideoScrapePendingCause.providerUnavailable,
+          aiOutcome: VideoScrapeAiOutcome.notAsked,
+          candidateCount: 0,
+          workKeys: <String>['book:a,b', 'collection:7'],
+          reason: 'AniDB 已封禁本客户端',
+        ),
+      ),
+    )!;
+    expect(parsed.workKeys, <String>['book:a,b', 'collection:7']);
+    final Map<String, VideoScrapePendingNote> latest =
+        latestVideoScrapePendingNotes(<Iterable<String>>[
+          <String>[encodeVideoScrapePendingNote(parsed)],
+        ]);
+    expect(latest.keys, <String>['book:a,b', 'collection:7']);
+  });
+
+  test('旧格式 / 其它 issue / 损坏的转义不是挂起标记', () {
+    expect(
+      parseVideoScrapePendingNote(
+        'pending:error ai=not_asked candidates=0 key=%FF',
+      ),
+      isNull,
+    );
     expect(parseVideoScrapePendingNote('匹配结果存在歧义，需要人工确认'), isNull);
     expect(parseVideoScrapePendingNote('ai:matched confidence=0.9'), isNull);
     expect(

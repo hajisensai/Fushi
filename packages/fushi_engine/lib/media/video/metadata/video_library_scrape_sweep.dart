@@ -52,9 +52,9 @@ class VideoPendingScrapeWork {
   final SourceLibraryRow source;
   final VideoSourceScrapeWork work;
 
-  /// 最近一次刮削留下的「为什么没认出来」；从没被刮过 / 只有旧格式记录时为 null。
-  /// 只有 [VideoLibraryScrapeSweep.pendingWorks] 填它（待确认清单要显示），
-  /// 补刮路径只用计数，不为它多查运行记录。
+  /// 最近一次刮削留下的「为什么没认出来」；近期运行记录里没有它的标记时为 null。
+  /// 只有 [VideoLibraryScrapeSweep.pendingWorksWithReasons] 填它（待确认清单要
+  /// 显示），计数 / 补刮路径不为它多查运行记录。
   final VideoScrapePendingNote? pendingNote;
 }
 
@@ -235,12 +235,17 @@ class VideoLibraryScrapeSweep {
   List<VideoPendingScrapeWork> _lastPending = const <VideoPendingScrapeWork>[];
 
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
-  /// 每部作品带上最近一次刮削留下的挂起原因（见 `video_scrape_pending_note.dart`）。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
-      _lastPending = await _withPendingNotes((await _plannedWorks()).pending);
+      _lastPending = (await _plannedWorks()).pending;
 
-  /// 每个来源最多回看这么多次运行：挂起原因只要最近的，更早的已被后来的覆盖。
-  static const int _pendingNoteRunLookback = 10;
+  /// 同 [pendingWorks]，每部作品再带上最近一次刮削留下的挂起原因（见
+  /// `video_scrape_pending_note.dart`）。待确认清单用；只要计数的地方别用它。
+  Future<List<VideoPendingScrapeWork>> pendingWorksWithReasons() async =>
+      _withPendingNotes(await pendingWorks());
+
+  /// 每个来源回看多少次「留下了待确认 / 失败作品」的运行：挂起原因只要最近的，
+  /// 全部成功的运行不占窗口（见 `getUnresolvedVideoSourceScrapeRuns`）。
+  static const int _pendingNoteRunLookback = 20;
 
   Future<List<VideoPendingScrapeWork>> _withPendingNotes(
       List<VideoPendingScrapeWork> pending) async {
@@ -261,8 +266,8 @@ class VideoLibraryScrapeSweep {
 
   Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
       int sourceId) async {
-    final List<VideoSourceScrapeRunRow> runs = await _database
-        .getVideoSourceScrapeRuns(
+    final List<VideoSourceScrapeRunRow> runs =
+        await _database.getUnresolvedVideoSourceScrapeRuns(
             sourceId: sourceId, limit: _pendingNoteRunLookback);
     return latestVideoScrapePendingNotes(<Iterable<String>>[
       for (final VideoSourceScrapeRunRow run in runs)
