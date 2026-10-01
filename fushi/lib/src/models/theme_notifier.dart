@@ -1401,10 +1401,8 @@ class ThemeNotifier extends ChangeNotifier {
   ThemeData _buildThemeData(Brightness brightness) =>
       buildThemeDataFor(buildColorScheme(brightness));
 
-  /// 用当前主题的字体 / 墨水屏 / 设计系统，把任意 [scheme] 装成完整 ThemeData。
-  ///
-  /// 书内查词弹窗的纸色 scheme 也经这里成型，组件主题（Card / Chip / Dialog /
-  /// 按钮…）与主 app 同源，不再各自拼一份只有 colorScheme 的裸 ThemeData。
+  /// 用当前主题的字体 / 墨水屏 / 设计系统，把任意 [scheme] 装成完整 ThemeData
+  /// （[theme] / [darkTheme] 的唯一实现；工厂本体是 [buildFushiThemeData]）。
   ThemeData buildThemeDataFor(ColorScheme scheme) => buildFushiThemeData(
         scheme: scheme,
         textTheme: _textThemeBuilder(),
@@ -2016,8 +2014,8 @@ ThemeData buildFushiThemeData({
 }
 
 /// 数据库就绪前（启动加载 / 初始化报错 / 降级拦截 / 数据目录迁移）与弹窗冷启动
-/// 占位用的主题：读不到用户偏好，取默认种子色，但组件主题与字号阶梯与主 app
-/// 同源，切到真主题时只换色、不跳形。
+/// 占位用的主题：读不到用户偏好，取默认种子色与系统默认字体，但组件主题与字号
+/// 阶梯与主 app 同源（字号 / 圆角 / 组件形状一致；用户字体要等偏好加载后才有）。
 ThemeData buildFushiFallbackTheme(Brightness brightness) => buildFushiThemeData(
       scheme: buildFushiColorScheme(
         seedColor: kFushiDefaultSeed,

@@ -613,17 +613,19 @@ class _BatchTagIntentRow extends StatelessWidget {
         maxLines: 1,
         softWrap: false,
         overflow: TextOverflow.visible,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: selected == intent ? color : null,
-        ),
+        style: TextStyle(color: selected == intent ? color : null),
       );
     }
 
     // 收紧每段横向内边距（默认 ~12dp/侧太宽，在窄弹窗里把 icon+双字挤到换行）。
-    // 只在本弹窗局部覆盖，不动全局 kSettingsSegmentedStyle。
+    // 只在本弹窗局部覆盖，不动全局 kSettingsSegmentedStyle。字号走按钮自己的
+    // textStyle（labelMedium），段内 Text 只给选中色、未选中继续继承按钮前景色。
     final ButtonStyle segmentedStyle = kSettingsSegmentedStyle.copyWith(
       padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
         EdgeInsets.symmetric(horizontal: 6),
+      ),
+      textStyle: WidgetStatePropertyAll<TextStyle?>(
+        theme.textTheme.labelMedium,
       ),
     );
 

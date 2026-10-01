@@ -1821,7 +1821,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 16),
                     Text(
                       t.db_downgrade_title,
-                      style: fallbackTheme.textTheme.titleLarge?.copyWith(color: cs.onSurface),
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
+                        color: cs.onSurface,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
@@ -1830,7 +1832,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         dbVersion: downgrade.dbVersion,
                         appVersion: downgrade.appSchemaVersion,
                       ),
-                      style: fallbackTheme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -1881,7 +1885,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       cannotOpen
                           ? t.db_cannot_open_title
                           : t.db_unrecoverable_title,
-                      style: fallbackTheme.textTheme.titleLarge?.copyWith(color: cs.onSurface),
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
+                        color: cs.onSurface,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
@@ -1889,13 +1895,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       cannotOpen
                           ? t.db_cannot_open_message
                           : t.db_unrecoverable_message,
-                      style: fallbackTheme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
                     SelectableText(
                       appModel.initError!,
-                      style: fallbackTheme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -1939,7 +1949,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 16),
                     Text(
                       t.data_root_unavailable_title,
-                      style: fallbackTheme.textTheme.titleLarge?.copyWith(color: cs.onSurface),
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
+                        color: cs.onSurface,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
@@ -1947,7 +1959,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       t.data_root_unavailable_message(
                         path: dataRootUnavailable.configuredPath,
                       ),
-                      style: fallbackTheme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),
@@ -1998,12 +2012,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 16),
                     Text(
                       t.initialization_failed,
-                      style: fallbackTheme.textTheme.titleLarge?.copyWith(color: cs.onSurface),
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
+                        color: cs.onSurface,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     SelectableText(
                       appModel.initError!,
-                      style: fallbackTheme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                       selectionControls: FushiTextSelectionControls(
                         shareAction: (text) => FushiShare.shareText(text),
