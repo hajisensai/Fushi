@@ -235,6 +235,56 @@ void main() {
   });
 
   group('管线', () {
+    test('存档里某一步字段类型坏了只丢那一步，合法步骤原样读回', () {
+      final GalTextProcessPipeline pipeline = GalTextProcessPipeline.fromJson(
+        <Object?>[
+          <String, Object?>{'id': 'filterDigits', 'kind': 'filterDigits'},
+          <String, Object?>{'id': 'r', 'kind': 'replace', 'isRegex': 'true'},
+          <String, Object?>{'id': 7, 'kind': 'filterLatinLetters'},
+          <String, Object?>{
+            'id': 'takeLines',
+            'kind': 'takeLines',
+            'lineCount': 2,
+            'fromEnd': true,
+            'enabled': false,
+          },
+        ],
+      );
+      expect(pipeline.steps.map((GalTextProcessStep s) => s.id), <String>[
+        'filterDigits',
+        'takeLines',
+      ]);
+      final GalTextProcessStep take = pipeline.steps.last;
+      expect(take.lineCount, 2);
+      expect(take.fromEnd, isTrue);
+      expect(take.enabled, isFalse);
+    });
+
+    test('合法存档经 toJson/fromJson 往返不变', () {
+      final GalTextProcessPipeline original = GalTextProcessPipeline(
+        steps: <GalTextProcessStep>[
+          const GalTextProcessStep(
+            id: 'replace',
+            kind: GalTextProcessKind.replace,
+            pattern: 'a+',
+            replacement: 'b',
+            isRegex: false,
+          ),
+          const GalTextProcessStep(
+            id: 'takeLines',
+            kind: GalTextProcessKind.takeLines,
+            lineCount: 3,
+            fromEnd: true,
+            enabled: false,
+          ),
+        ],
+      );
+      expect(
+        GalTextProcessPipeline.fromJson(original.toJson()).steps,
+        original.steps,
+      );
+    });
+
     test('空管线是恒等变换', () {
       const GalTextProcessPipeline empty = GalTextProcessPipeline();
       expect(empty.isEmpty, isTrue);

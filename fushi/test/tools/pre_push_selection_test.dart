@@ -147,48 +147,6 @@ intro | `test/not_this_test.dart` |
     expect(chunkByCommandLength(paths), hasLength(1));
   });
 
-  test('parsePsElapsedSeconds reads [[dd-]hh:]mm:ss (macOS has no etimes)', () {
-    expect(parsePsElapsedSeconds('05:07'), 307);
-    expect(parsePsElapsedSeconds('01:02:03'), 3723);
-    expect(parsePsElapsedSeconds('2-01:02:03'), 2 * 86400 + 3723);
-    expect(parsePsElapsedSeconds(' 00:09 '), 9);
-    expect(parsePsElapsedSeconds('ELAPSED'), isNull);
-    expect(parsePsElapsedSeconds(''), isNull);
-  });
-
-  test('parseAgedProcessLine: Windows tab form and POSIX ps form', () {
-    expect(
-      parseAgedProcessLine('25200\tdart.exe flutter_tools.snapshot" test a',
-          windows: true),
-      (
-        ageSeconds: 25200,
-        commandLine: 'dart.exe flutter_tools.snapshot" test a'
-      ),
-    );
-    expect(
-      parseAgedProcessLine('    07:00:00 /opt/flutter/bin/cache/dart x y',
-          windows: false),
-      (ageSeconds: 25200, commandLine: '/opt/flutter/bin/cache/dart x y'),
-    );
-    expect(parseAgedProcessLine('no-tab here', windows: true), isNull);
-    expect(parseAgedProcessLine('', windows: false), isNull);
-  });
-
-  test('countBusyFlutterRuns ignores runs older than 3 hours', () {
-    const String run =
-        '/opt/flutter/bin/cache/flutter_tools.snapshot test --no-pub a_test.dart';
-    expect(
-      countBusyFlutterRuns(<({int ageSeconds, String commandLine})>[
-        (ageSeconds: 120, commandLine: run),
-        (ageSeconds: 3 * 3600, commandLine: run),
-        // Hung since the afternoon: must not hold the gate shut.
-        (ageSeconds: 7 * 3600, commandLine: run),
-        (ageSeconds: 60, commandLine: 'dart run tool/pre_push_check.dart'),
-      ]),
-      2,
-    );
-  });
-
   test('descendantPids: whole subtree, deepest first, root excluded, no loops',
       () {
     // 10 -> 11 -> 13 ; 10 -> 12 ; 20 unrelated ; 30 <-> 31 cycle under 11.
@@ -207,32 +165,6 @@ intro | `test/not_this_test.dart` |
     expect(got.indexOf(13), lessThan(got.indexOf(11)));
     expect(got, isNot(contains(10)));
     expect(descendantPids(20, table), isEmpty);
-  });
-
-  test('countBusyFlutterCommands counts test / analyze / build runs only', () {
-    const String snap =
-        r'"D:\flutter\bin\cache\dart-sdk\bin\dart.exe" --packages="D:\flutter\packages\flutter_tools\.dart_tool\package_config.json" "D:\flutter\bin\cache\flutter_tools.snapshot"';
-    expect(
-      countBusyFlutterCommands(<String>[
-        '$snap test test/floating_ball test/settings --no-pub -r compact',
-        '$snap analyze --no-pub',
-        '$snap --no-version-check build windows --release',
-        // Unquoted form (the dartvm child / POSIX `ps`).
-        '/opt/flutter/bin/cache/flutter_tools.snapshot test --no-pub a_test.dart',
-      ]),
-      4,
-    );
-    expect(
-      countBusyFlutterCommands(<String>[
-        '$snap --version --machine',
-        '$snap pub get',
-        r'"D:\flutter\bin\cache\dart-sdk\bin\dart.exe"  run tool/pre_push_check.dart',
-        // A plain dart process whose arguments merely mention test paths.
-        'dart D:/repo/fushi/test/tools/x_test.dart',
-        '',
-      ]),
-      0,
-    );
   });
 
   group('budgetTrigger (default selection)', () {

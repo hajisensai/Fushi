@@ -347,6 +347,21 @@ SettingsDestination buildServicesDestination() {
                       icon: Icons.login_outlined,
                       onTap: testAniDbLogin,
                     ),
+                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
+                    // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
+                    SettingsStatusItem(
+                      id: 'services.metadata.anidb_http_api',
+                      title: t.video_anidb_http_api,
+                      icon: Icons.cloud_outlined,
+                      subtitleBuilder: (SettingsContext c) =>
+                          anidbHttpApiStatusLabel(
+                            VideoSourceScrapeGlobalConfig.fromPreferences(
+                              c.appModel.prefsRepo,
+                              resolvedTmdbApiKey: '',
+                              uiLocaleTag: kFallbackVideoMetadataLocale,
+                            ),
+                          ),
+                    ),
                   ],
                 ),
               ],
@@ -656,3 +671,13 @@ class _PlexSettingsLinkState extends State<_PlexSettingsLink> {
         ),
   );
 }
+
+/// AniDB HTTP 资料接口的静态状态：只看配置快照里的 **HTTP** 身份（与 UDP 分开，
+/// BUG-2623）。运行期被 AniDB 拒绝（302 闩）/ 封禁不在这里体现。
+String anidbHttpApiStatusLabel(VideoSourceScrapeGlobalConfig config) =>
+    config.anidbHttpClientConfigured
+    ? t.video_anidb_http_api_available(
+        client: config.anidbHttpClientName,
+        version: '${config.anidbHttpClientVersion}',
+      )
+    : t.video_anidb_http_api_unregistered;

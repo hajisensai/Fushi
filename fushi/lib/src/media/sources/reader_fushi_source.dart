@@ -635,11 +635,19 @@ class ReaderFushiSource extends ReaderMediaSource {
             // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
             // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
             // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
+            // 1-based 只对**有阅读记录**的书成立：没有记录（pos==null）= 一页没
+            // 翻过，position 0 = 未读。旧写法 `(pos?.sectionIndex ?? 0) + 1` 把没开
+            // 过的卷也算成停在第 1 页——书架「未读」筛选永远筛不出本地漫画 / PDF，
+            // 只有 1 页的卷还直接算「读完」。
             ? (
                 // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
                 // position 溢出 duration（>100%）。
-                position: ((pos?.sectionIndex ?? 0) + 1)
-                    .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
+                position: pos == null
+                    ? 0
+                    : (pos.sectionIndex + 1).clamp(
+                        1,
+                        book.chapterCount > 0 ? book.chapterCount : 1,
+                      ),
                 duration: book.chapterCount > 0 ? book.chapterCount : 1,
               )
             : computeBookProgress(
