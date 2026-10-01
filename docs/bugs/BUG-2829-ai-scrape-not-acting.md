@@ -15,5 +15,5 @@
   - S6 「自定义（OpenAI 兼容）」预设根本加不进来：`ai_provider_settings_section.dart:679` 用已校验构造器建草稿，空地址当场抛 ArgumentError。
   - F1 「视频搜索辅助」描述与实际行为不符、补字幕重排失败无日志；F2 文本处理解析遇非字符串抛 TypeError。
 - **[x] ① 已修复** — `d945ea5e06`（V1–V6、S1–S5、F1–F2）、`f5e81bf7a3`（S6）
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_source_scrape_coordinator_test.dart`（AI 歧义消解组：换提供商重问 / 未配不问 / AI 识别强制重问 / 查无按 AI 标题重搜 / 失败记 ai:failed）、`fushi/test/settings/ai_provider_settings_test.dart`（草稿保留 / 悬空指派 / ping / 自定义预设）、`fushi/test/ai/*`、`fushi/test/mining/galgame_text_process_test.dart`
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_source_scrape_coordinator_test.dart`（AI 歧义消解组：换提供商重问 / 未配不问 / AI 识别强制重问 / 查无按 AI 标题重搜 / 失败记 ai:failed）、`fushi/test/settings/ai_provider_settings_test.dart`（草稿保留 / 悬空指派 / ping / 自定义预设）、`fushi/test/ai/*`、`fushi/test/mining/galgame_text_process_test.dart`；`a66c46ad94`：`fushi/test/media/video/metadata/video_library_scrape_sweep_test.dart`（AI 能力进账本指纹，变异实测：指纹去掉 AI 即红）、`fushi/test/pages/video_source_scrape_ui_test.dart`（待确认页 AI 识别 / 未配引导 / 确认框 AI 建议标注）、`fushi/test/media/video/metadata/video_scrape_issue_text_test.dart`
 - **备注**：AI 只在已取回的候选里选、或产出搜索词；AI 给的词重搜到的结果一律仍过 AI 判定门槛，不会因「恰好精确命中」绕过。
