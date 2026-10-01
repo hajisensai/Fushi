@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Windows HDR 直通宿主窗（`docs/plans/2026-08-30-video-hdr-passthrough.md` §4.1）
 /// 的源码守卫。Phase 0 实测（`.codex-test/hdr-passthrough/RESULTS.md`）证明只有
 /// 「独立顶层窗口钉在主窗正后方 + 主窗 blur-behind 空区域」这一条路能让 Flutter
@@ -89,10 +91,8 @@ void main() {
       rowStart,
     );
     expect(caption, greaterThan(rowStart));
-    // 剥掉行注释：注释里写「不听 hdrHostActiveGlobal」不能被当成依赖它。
-    final String rowHead = bar
-        .substring(rowStart, caption + 120)
-        .replaceAll(RegExp(r'//[^\n]*'), '');
+    // 掩掉注释：注释里写「不听 hdrHostActiveGlobal」不能被当成依赖它。
+    final String rowHead = maskComments(bar).substring(rowStart, caption + 120);
     expect(
       rowHead,
       isNot(contains('hdrHost')),
