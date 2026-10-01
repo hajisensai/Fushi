@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show hdrHostActiveGlobal;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 
 /// 桌面自绘顶栏挂在 Navigator 外，`Theme.of` 只读得到根主题；阅读器的纸色是
@@ -123,6 +125,31 @@ void main() {
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(captionColor(tester), paper);
+  });
+
+  testWidgets('HDR 直通时内容区透明，标题行仍是不透明的页面色；半透明上报也叠成不透明', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(() => hdrHostActiveGlobal.value = false);
+    final ColorScheme scheme = await pumpShell(
+      tester,
+      const FushiTitleBarColorScope(
+        colors: (background: Color(0x80000000), foreground: ink),
+        child: SizedBox.expand(),
+      ),
+    );
+    hdrHostActiveGlobal.value = true;
+    await tester.pumpAndSettle();
+
+    final Color caption = captionColor(tester)!;
+    expect(caption.a, 1.0, reason: '标题行透明 = HDR 时能看见后面的窗口');
+    expect(caption, Color.alphaBlend(const Color(0x80000000), scheme.surface));
+    final ColoredBox frame = tester.widget<ColoredBox>(
+      find
+          .ancestor(of: find.byType(Column), matching: find.byType(ColoredBox))
+          .first,
+    );
+    expect(frame.color, Colors.transparent, reason: '内容区底色仍听 HDR 让开');
   });
 
   testWidgets('阅读器在 build 中改色（切换阅读主题）顶栏跟着重画', (WidgetTester tester) async {

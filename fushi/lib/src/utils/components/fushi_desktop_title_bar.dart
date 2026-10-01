@@ -354,9 +354,15 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     Widget? _,
   ) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // 标题行自带不透明底色、不听 hdrHostActiveGlobal：HDR 直通时下方页面区整层
+    // 透明，标题行若跟着透就能看见后面的窗口。页面上报色可能带透明度，先叠到
+    // surface 上再用——结果恒不透明，不靠上报方自觉。
+    final Color captionFill = page == null
+        ? colors.surface
+        : Color.alphaBlend(page.background, colors.surface);
     return Container(
       height: FushiDesktopTitleBar.height,
-      color: page?.background ?? colors.surface,
+      color: captionFill,
       child: Row(
         children: <Widget>[
           Expanded(

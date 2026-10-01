@@ -79,10 +79,31 @@ void main() {
     );
     expect(bar, contains('valueListenable: hdrHostActiveGlobal'));
     expect(bar, contains('hdrHost ? Colors.transparent : colors.surface'));
-    final int caption = bar.indexOf('height: FushiDesktopTitleBar.height,');
-    expect(caption, greaterThan(0));
-    final String captionBlock = bar.substring(caption, caption + 400);
-    expect(captionBlock, contains('color: colors.surface,'));
+    // 标题行底色可以跟页面上报色（BUG-2833 阅读器纸色），但必须①与 HDR 无关、
+    // ②恒不透明（叠到 surface 上）。行为侧见
+    // test/desktop/fushi_title_bar_page_colors_test.dart 的 HDR 用例。
+    final int rowStart = bar.indexOf('Widget _buildCaptionRow(');
+    expect(rowStart, greaterThan(0), reason: '标题行必须是独立的 _buildCaptionRow');
+    final int caption = bar.indexOf(
+      'height: FushiDesktopTitleBar.height,',
+      rowStart,
+    );
+    expect(caption, greaterThan(rowStart));
+    // 剥掉行注释：注释里写「不听 hdrHostActiveGlobal」不能被当成依赖它。
+    final String rowHead = bar
+        .substring(rowStart, caption + 120)
+        .replaceAll(RegExp(r'//[^\n]*'), '');
+    expect(
+      rowHead,
+      isNot(contains('hdrHost')),
+      reason: '标题行底色不得听 hdrHostActiveGlobal（透明会露出后面的窗口）',
+    );
+    expect(
+      rowHead,
+      contains('Color.alphaBlend(page.background, colors.surface)'),
+      reason: '页面上报色必须先叠到 surface 上，标题行恒不透明',
+    );
+    expect(rowHead, contains('color: captionFill,'));
   });
 
   test('通道名与 Dart 侧一致', () {
