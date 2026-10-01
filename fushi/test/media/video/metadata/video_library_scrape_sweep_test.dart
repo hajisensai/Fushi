@@ -232,6 +232,19 @@ void main() {
         VideoScrapeAiOutcome.notAsked));
     await addRun(2, note(VideoScrapePendingCause.awaitingConfirmation,
         VideoScrapeAiOutcome.unassigned));
+    // 之后逐个导入的单作品刮削都成功了：它们不带挂起标记，也不能把上面那条
+    // 原因挤出回看窗口。
+    for (int i = 0; i < 25; i++) {
+      await db.into(db.videoSourceScrapeRuns).insert(
+            VideoSourceScrapeRunsCompanion.insert(
+              sourceId: Value<int?>(sourceId),
+              scope: 'single',
+              status: 'completed',
+              startedAt: 100 + i,
+              updatedAt: 100 + i,
+            ),
+          );
+    }
 
     final List<VideoPendingScrapeWork> pending =
         await service.pendingWorksWithReasons();
