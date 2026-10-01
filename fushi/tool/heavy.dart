@@ -61,13 +61,20 @@ Future<void> main(List<String> args) async {
   }
 
   final Stopwatch ran = Stopwatch()..start();
-  final Process p = await Process.start(
-    command.first,
-    command.skip(1).toList(),
-    runInShell: Platform.isWindows,
-    mode: ProcessStartMode.inheritStdio,
-    environment: lease.childEnvironment,
-  );
+  final Process p;
+  try {
+    p = await Process.start(
+      command.first,
+      command.skip(1).toList(),
+      runInShell: Platform.isWindows,
+      mode: ProcessStartMode.inheritStdio,
+      environment: lease.childEnvironment,
+    );
+  } on ProcessException catch (e) {
+    lease.release();
+    stderr.writeln('heavy: cannot start ${command.first}: ${e.message}');
+    exit(127);
+  }
   bool cut = false;
   final Timer? limit = maxMinutes <= 0
       ? null

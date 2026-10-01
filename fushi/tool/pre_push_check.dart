@@ -90,9 +90,19 @@ class _Leases {
   final String root;
   final List<String> notes = <String>[];
 
+  /// The tool's Job Object (null where unsupported), for the cap report.
+  HeavyJob? job;
+
+  /// Set when a step was not admitted: the machine is busy, so the remaining
+  /// steps are not queued for another --gate-timeout-min each (that is hours).
+  bool _refused = false;
+
   Future<(bool, String)> run(HeavyKind kind, String what,
       Future<(bool, String)> Function() body) async {
     if (!enabled) return body();
+    if (_refused) {
+      return (false, 'not run: an earlier step was not admitted');
+    }
     final HeavyLease lease;
     try {
       lease = await acquireHeavyLease(
@@ -103,6 +113,7 @@ class _Leases {
         log: (String l) => stdout.writeln('   $l'),
       );
     } on HeavyLeaseTimeout catch (e) {
+      _refused = true;
       notes.add('$what not admitted: ${e.message}');
       return (
         false,
@@ -120,6 +131,12 @@ class _Leases {
       return await body();
     } finally {
       lease.release();
+      final int? peak = job?.peakMb();
+      final int? cap = job?.capMb;
+      if (peak != null && cap != null && heavyCapHit(peak, cap)) {
+        notes.add('MEMORY CAP HIT during $what ($peak of $cap MB): its '
+            'failures can come from the ceiling, not from the code');
+      }
     }
   }
 }
@@ -412,10 +429,12 @@ Future<void> main(List<String> args) async {
   // ---- run ----------------------------------------------------------------
   // Below-normal priority, a memory ceiling, and no flutter_tester outliving
   // this tool (one held build/native_assets/windows/sqlite3.dll for the next run).
-  joinHeavyJob(
-      heavyNeedFor(HeavyKind.test).capMb +
-          (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
-      log: stdout.writeln);
+  if (gate.enabled) {
+    gate.job = joinHeavyJob(
+        heavyNeedFor(HeavyKind.test).capMb +
+            (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
+        log: stdout.writeln);
+  }
   final String flutter = _flutterExecutable();
   final String dart = Platform.resolvedExecutable;
   final List<_Step> steps = <_Step>[];

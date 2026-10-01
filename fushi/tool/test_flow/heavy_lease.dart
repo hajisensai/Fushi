@@ -375,18 +375,25 @@ Future<HeavyLease> _waitSlot(
           if (lock == null) continue;
           _heldInProcess.add(i);
           final File info = File('${dir.path}/slot-$i.json');
-          info.writeAsStringSync(
-            jsonEncode(
-              HeavyHolder(
-                slot: i,
-                pid: pid,
-                needMb: need.needMb,
-                startedAtMs: DateTime.now().millisecondsSinceEpoch,
-                label: label,
-                cwd: Directory.current.path,
-              ).toJson(),
-            ),
-          );
+          try {
+            info.writeAsStringSync(
+              jsonEncode(
+                HeavyHolder(
+                  slot: i,
+                  pid: pid,
+                  needMb: need.needMb,
+                  startedAtMs: DateTime.now().millisecondsSinceEpoch,
+                  label: label,
+                  cwd: Directory.current.path,
+                ).toJson(),
+              ),
+            );
+          } on FileSystemException {
+            // Diagnostics only, but do not keep a slot nobody will release.
+            _heldInProcess.remove(i);
+            lock.closeSync();
+            rethrow;
+          }
           if (sw.elapsed.inSeconds >= 5) {
             say(
               'heavy: $label admitted to slot $i after '
@@ -533,7 +540,10 @@ final int Function() _currentProcess = _kernel32
 /// OS refused); the run then proceeds unthrottled and [log] says so.
 HeavyJob? joinHeavyJob(int capMb, {void Function(String line)? log}) {
   if (!Platform.isWindows || sizeOf<IntPtr>() != 8) return null;
-  if (heavyLeaseSkipReason(Platform.environment) == 'CI') return null;
+  // CI and FUSHI_HEAVY=off mean "no throttling at all". (Nested holders do
+  // join: their own job sits inside the parent's.)
+  final String? skip = heavyLeaseSkipReason(Platform.environment);
+  if (skip == 'CI' || skip == 'FUSHI_HEAVY=off') return null;
   final int job = _createJob(nullptr, nullptr);
   if (job == 0) {
     log?.call('heavy: CreateJobObject failed; running unthrottled');
