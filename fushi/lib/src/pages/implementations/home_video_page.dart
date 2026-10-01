@@ -6820,7 +6820,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   static double _videoCardTextBlock(BuildContext context) {
     final double titleLine = textLineHeight(
       context,
-      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+      Theme.of(context).textTheme.bodyMedium!,
     );
     final double metaLine =
         textLineHeight(context, FushiDesignTokens.of(context).type.metadata);
@@ -6832,7 +6832,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   static double _videoRowCardTextBlock(BuildContext context) {
     final double titleLine = textLineHeight(
       context,
-      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+      Theme.of(context).textTheme.bodyMedium!,
     );
     final double metaLine =
         textLineHeight(context, FushiDesignTokens.of(context).type.metadata);

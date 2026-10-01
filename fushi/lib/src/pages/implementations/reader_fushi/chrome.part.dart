@@ -3199,6 +3199,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       readerForeground: _themeTextColor(),
       readerDark: _isReaderThemeDark,
       buildColorScheme: appModel.buildColorScheme,
+      textTheme: appModel.textTheme,
+      designSystem: appModel.themeNotifier.designSystemTheme,
     );
     appModel.setOverrideDictionaryColor(resolved.fillColor);
     appModel.setOverrideDictionaryTheme(resolved.theme);

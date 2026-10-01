@@ -398,8 +398,7 @@ class CollectionHeroBadgeChips extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               child: Text(
                 part,
-                style: TextStyle(
-                  fontSize: 12.5,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   height: 1.2,
                   color: Colors.white.withValues(alpha: 0.92),
                   fontWeight: FontWeight.w600,
@@ -435,11 +434,9 @@ class CollectionHeroTagChips extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               child: Text(
                 name,
-                style: TextStyle(
-                  fontSize: 12,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   height: 1.2,
                   color: Colors.white.withValues(alpha: 0.88),
-                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
@@ -504,12 +501,11 @@ class CollectionHeroCreditChips extends StatelessWidget {
                             credits[index].name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.2,
-                              color: Colors.white.withValues(alpha: 0.9),
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  height: 1.2,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
                           ),
                         ),
                       ],
@@ -844,11 +840,11 @@ class CollectionEpisodeCard extends StatelessWidget {
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              height: 1.3,
-                              color: cs.onSurfaceVariant,
-                            ),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  height: 1.3,
+                                  color: cs.onSurfaceVariant,
+                                ),
                           ),
                         if (summary != null && summary.isNotEmpty) ...<Widget>[
                           SizedBox(height: tokens.spacing.gap / 2),
@@ -856,11 +852,7 @@ class CollectionEpisodeCard extends StatelessWidget {
                             summary,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.3,
-                              color: cs.onSurfaceVariant,
-                            ),
+                            style: tokens.type.metadata.copyWith(height: 1.3),
                           ),
                         ],
                         const Spacer(),
@@ -883,10 +875,7 @@ class CollectionEpisodeCard extends StatelessWidget {
                                 t.collection_episode_watched_at(
                                   position: formatVideoPosition(positionMs),
                                 ),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: cs.onSurfaceVariant,
-                                ),
+                                style: tokens.type.metadata,
                               ),
                             ],
                             if (trailingStatus != null)
