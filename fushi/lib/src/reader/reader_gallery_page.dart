@@ -450,9 +450,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   _GalleryLayout? _layout;
 
-  /// 当前查看那一卷里每张图的宽高比（按 `src` 记），开页 / 切卷后在 isolate 里
-  /// 读文件头填上（[_probeAspects]）。没探到的按竖版处理。
-  Map<String, double> _aspects = const <String, double>{};
+  /// 当前查看那一卷里每张图的像素尺寸（按 `src` 记），开页 / 切卷后在 isolate 里
+  /// 读文件头填上（[_probeAspects]）。没探到的按竖版、非行内小图处理。
+  Map<String, ImagePixelSize> _sizes = const <String, ImagePixelSize>{};
   int _aspectProbeSeq = 0;
 
   /// 打开时自动定位落在的滚动偏移。宽高比探测完成会改行数，若用户此前没动过
@@ -471,10 +471,25 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       widget.volumeSwitch != null &&
       _viewedVolume != widget.volumeSwitch!.currentIndex;
 
-  /// 网格 / 查看器当前展示的插图表：当前卷走 widget，兄弟卷走已装载的表。
-  List<EpubImageRef> get _images => _peekingSibling
+  /// 当前查看那一卷书里引用到的全部图（未过滤）：当前卷走 widget，兄弟卷走已
+  /// 装载的表。只给尺寸探测用。
+  List<EpubImageRef> get _allImages => _peekingSibling
       ? (_sibling?.images ?? const <EpubImageRef>[])
       : widget.images;
+
+  /// 网格 / 查看器 / 计数展示的插图表：[_allImages] 去掉行内小图。
+  List<EpubImageRef> get _images => _allImages
+      .where((EpubImageRef r) => !_isInlineGlyph(r))
+      .toList(growable: false);
+
+  /// 外字、章节号小图之类排进文字流的小图（[isInlineSizedImage]，与阅读器正文
+  /// 同一判据）不是插图。OPF 封面豁免：它再小也是这本书的封面。尺寸没探到的
+  /// （探测未完成、SVG 等认不出的格式）照常展示，宁可多放不误删。
+  bool _isInlineGlyph(EpubImageRef ref) {
+    if (ref.chapterIndex == kEpubCoverChapterIndex) return false;
+    final ImagePixelSize? size = _sizes[ref.src];
+    return size != null && isInlineSizedImage(size);
+  }
 
   File? _fileFor(EpubImageRef ref) =>
       _peekingSibling ? _sibling?.fileForRef(ref) : widget.fileForRef(ref);
@@ -606,26 +621,29 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   // ── 宽高比探测（BUG-2589） ──────────────────────────────────────────
 
   /// 横版 = 宽 > 高，占两列；没探到 / 竖版占一列。
-  int _spanOf(EpubImageRef ref) => (_aspects[ref.src] ?? 0) > 1 ? 2 : 1;
+  int _spanOf(EpubImageRef ref) {
+    final ImagePixelSize? size = _sizes[ref.src];
+    return size != null && size.width > size.height ? 2 : 1;
+  }
 
-  /// 在 isolate 里读当前查看那一卷全部插图的文件头，拿到宽高比后重排网格。
-  /// 按 seq 丢弃切卷后才回来的旧结果。
+  /// 在 isolate 里读当前查看那一卷全部图的文件头，拿到尺寸后重排网格（横版占
+  /// 两列、行内小图剔除）。按 seq 丢弃切卷后才回来的旧结果。
   void _probeAspects() {
     final int seq = ++_aspectProbeSeq;
     final Map<String, String> pathBySrc = <String, String>{};
-    for (final EpubImageRef ref in _images) {
+    for (final EpubImageRef ref in _allImages) {
       final File? file = _fileFor(ref);
       if (file != null) pathBySrc[ref.src] = file.path;
     }
     if (pathBySrc.isEmpty) return;
     unawaited(
       compute(
-        probeIllustrationAspectRatios,
+        probeIllustrationSizes,
         pathBySrc.values.toList(growable: false),
       ).then<void>(
-        (Map<String, double> byPath) {
+        (Map<String, ImagePixelSize> byPath) {
           if (!mounted || seq != _aspectProbeSeq) return;
-          final Map<String, double> bySrc = <String, double>{
+          final Map<String, ImagePixelSize> bySrc = <String, ImagePixelSize>{
             for (final MapEntry<String, String> e in pathBySrc.entries)
               if (byPath[e.value] != null) e.key: byPath[e.value]!,
           };
@@ -634,7 +652,16 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               _autoScrolledTo != null &&
               _scrollController.hasClients &&
               (_scrollController.offset - _autoScrolledTo!).abs() < 0.5;
-          setState(() => _aspects = bySrc);
+          // 剔除小图会改变 _unlocked 的下标：查看器按图本身重新定位，正在看的
+          // 恰好是被剔除的小图就关掉。
+          final EpubImageRef? viewing = _viewerRef();
+          setState(() {
+            _sizes = bySrc;
+            if (viewing != null) {
+              final int index = _unlocked.indexOf(viewing);
+              _viewerIndex = index < 0 ? null : index;
+            }
+          });
           if (!reanchor) return;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -746,7 +773,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       _siblingError = null;
       _focusedSrc = null;
       _viewerIndex = null;
-      _aspects = const <String, double>{};
+      _sizes = const <String, ImagePixelSize>{};
     });
     if (volume == volumes.currentIndex) {
       _probeAspects();
