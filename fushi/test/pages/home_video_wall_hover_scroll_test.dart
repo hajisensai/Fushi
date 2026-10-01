@@ -18,6 +18,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -101,6 +102,9 @@ void main() {
       ],
       child: TranslationProvider(
         child: MaterialApp(
+          // 与生产同形：滚轮补间由根部 SmoothWheelScrollScope 给（BUG-2834）。
+          builder: (BuildContext context, Widget? child) =>
+              SmoothWheelScrollScope(child: child!),
           home: uiScale == 1.0
               ? page
               : FushiAppUiScale(scale: uiScale, child: page),

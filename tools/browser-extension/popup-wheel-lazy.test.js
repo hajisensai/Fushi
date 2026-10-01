@@ -46,6 +46,7 @@ function fakeEl(tag) {
     classList: { add() {}, remove() {}, contains() { return false; } },
     listeners,
     scrollByCalls: [],
+    scrollTop: 0,
     addEventListener(type, fn, options) {
       (listeners[type] = listeners[type] || []).push({ fn, options });
     },
@@ -62,7 +63,10 @@ function fakeEl(tag) {
     querySelectorAll() { return []; },
     remove() { el.parentNode = null; },
     getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 100 }; },
-    scrollBy(arg) { el.scrollByCalls.push(arg); },
+    scrollBy(arg) {
+      el.scrollByCalls.push(arg);
+      el.scrollTop += (arg && typeof arg.top === 'number') ? arg.top : 0;
+    },
     attachShadow() {
       const shadow = fakeEl('#shadow-root');
       shadow.host = el;
@@ -94,6 +98,13 @@ function loadWorld() {
     querySelectorAll() { return []; },
   };
   const windowScrollBy = [];
+  const frames = [];
+  const flushFrames = () => {
+    for (let guard = 0; frames.length; guard++) {
+      if (guard > 1000) throw new Error('rAF never settles');
+      frames.splice(0, frames.length).forEach((cb) => cb());
+    }
+  };
   const windowObj = {
     innerWidth: 1200,
     innerHeight: 800,
@@ -116,7 +127,9 @@ function loadWorld() {
     performance: { now() { return 1000; } },
     setTimeout() { return 0; },
     clearTimeout() {},
-    requestAnimationFrame() { return 0; },
+    // BUG-2834: 粗滚轮一格走 rAF 缓动——帧回调排队，flushFrames() 跑到空。
+    requestAnimationFrame(cb) { frames.push(cb); return frames.length; },
+    cancelAnimationFrame() {},
     DOMParser: class {
       parseFromString() { return { body: {}, querySelectorAll() { return []; } }; }
     },
@@ -153,7 +166,7 @@ function loadWorld() {
   vm.runInContext(fs.readFileSync(ADAPTERS, 'utf8'), sandbox, { filename: 'subtitle-adapters.js' });
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), sandbox,
       { filename: 'content.js' });
-  return { sandbox, documentObj, windowObj, docWheelRegs, windowScrollBy };
+  return { sandbox, documentObj, windowObj, docWheelRegs, windowScrollBy, flushFrames };
 }
 
 function wheelListenersOf(el) {
@@ -186,7 +199,7 @@ test('fushiEnsureContainer 把非 passive wheel 监听挂到 shadow host，且�
 });
 
 test('弹窗内滚轮行为不变：preventDefault + 滚 shadow host，不碰 window', () => {
-  const { sandbox, windowObj, windowScrollBy } = loadWorld();
+  const { sandbox, windowObj, windowScrollBy, flushFrames } = loadWorld();
   sandbox.fushiEnsureContainer();
   const host = windowObj.__fushiRoot.host;
   const inner = { nodeType: 1, parentElement: null };
@@ -202,8 +215,9 @@ test('弹窗内滚轮行为不变：preventDefault + 滚 shadow host，不碰 wi
   };
   for (const r of wheelListenersOf(host)) r.fn(evt);
   assert.strictEqual(prevented, true, '弹窗内滚轮必须 preventDefault（接管滚动）');
-  assert.strictEqual(host.scrollByCalls.length, 1, '弹窗内滚轮必须滚 shadow host');
-  const step = host.scrollByCalls[0].top;
+  flushFrames(); // 粗滚轮一格分帧缓动到位（BUG-2834）
+  assert.ok(host.scrollByCalls.length >= 1, '弹窗内滚轮必须滚 shadow host');
+  const step = host.scrollTop;
   assert.ok(step > 0 && step <= 120,
       '滚动步长必须是缩放/钳制后的值，got ' + step);
   assert.strictEqual(windowScrollBy.length, 0, '弹窗内滚轮不得滚宿主页 window');
