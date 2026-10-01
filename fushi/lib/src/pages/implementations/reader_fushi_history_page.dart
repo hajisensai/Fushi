@@ -1284,6 +1284,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       progressBooks,
       (MediaItem item) => item.position,
       (MediaItem item) => item.duration,
+      // 与阅读状态筛选同一判据：标了读完的书不再当「在读」顶进继续阅读。
+      isCompleted: (MediaItem item) =>
+          _completedBookKeys.contains(_parseBookKey(item.mediaIdentifier)),
     );
     final MediaItem? hero = mostRecentlyReadCandidate(
       tally.inProgress,

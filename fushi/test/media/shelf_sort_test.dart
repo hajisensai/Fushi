@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 
@@ -299,6 +301,17 @@ void main() {
       expect(tally.finished, countOf(ShelfReadStatus.finished));
       expect(tally.reading, 1);
       expect(tally.finished, 2);
+    });
+
+    test('书架「继续阅读」hero 的统计传了读完判据（已读完筛选下不再顶出读完的书）', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      ).readAsStringSync();
+      final int call = source.indexOf('tallyShelfProgress<MediaItem>(');
+      expect(call, isNonNegative);
+      final String args = source.substring(call, source.indexOf(');', call));
+      expect(args, contains('isCompleted:'));
+      expect(args, contains('_completedBookKeys.contains('));
     });
   });
 }
