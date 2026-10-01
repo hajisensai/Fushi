@@ -22,10 +22,13 @@ function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
    外壳只做裁剪（内容增减不再改原生表面尺寸，免得 Windows 上旧帧被拉伸），于是
    window.innerHeight 大于用户实际看得见的高度。宿主经 __fushiSetVisibleViewportHeight
    注入可见高度（视觉 px，与 innerHeight 同单位）；所有「下方放不放得下」的浮层定位都走
-   本函数，否则会落进被裁掉、也滚不到的区域。未注入（浏览器扩展 / 其它宿主）= innerHeight。 */
+   本函数，否则会落进被裁掉、也滚不到的区域。未注入（浏览器扩展 / 其它宿主）= innerHeight。
+   注入值存在 window.__fushiVisibleViewportHeightPx，**绝不能与本函数同名**：顶层函数声明
+   本身就是 window 的属性，同名赋值会把函数覆盖成数字 / null，之后按钮提示、灯箱、grammar
+   tooltip 一调用就抛 "is not a function"。 */
 function __fushiVisibleViewportHeight(){
     var h = window.innerHeight || document.documentElement.clientHeight || 0;
-    var v = Number(window.__fushiVisibleViewportHeight);
+    var v = Number(window.__fushiVisibleViewportHeightPx);
     return (isFinite(v) && v > 0 && (h <= 0 || v < h)) ? v : h;
 }
 /* 词典改名（v95）：把**真名**翻成用户起的显示名，只用于渲染给人看的文本。
@@ -5412,8 +5415,8 @@ var __fushiContentResizeRaf = 0;
 var __fushiLastContentResizeReport = -1;
 window.__fushiSetVisibleViewportHeight = function(height){
     var v = Number(height);
-    window.__fushiVisibleViewportHeight = (height != null && isFinite(v) && v > 0) ? v : null;
-    if (window.__fushiVisibleViewportHeight != null) __fushiObserveContentResize();
+    window.__fushiVisibleViewportHeightPx = (height != null && isFinite(v) && v > 0) ? v : null;
+    if (window.__fushiVisibleViewportHeightPx != null) __fushiObserveContentResize();
 };
 function __fushiObserveContentResize(){
     if (__fushiContentResizeObserver || typeof ResizeObserver !== 'function') return;
