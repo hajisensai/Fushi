@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -38,8 +39,10 @@ class _IdleRunner implements VideoSourceScrapeRunner {
       SourceScrapeReport(sourceIds: <int>[source.id]);
 }
 
-VideoPendingScrapeWork _pending(int index) => VideoPendingScrapeWork(
+VideoPendingScrapeWork _pending(int index, {VideoScrapePendingNote? note}) =>
+    VideoPendingScrapeWork(
       source: _source,
+      pendingNote: note,
       work: VideoSourceScrapeWork(
         source: _source,
         title: 'Unmatched video $index',
@@ -140,6 +143,38 @@ void main() {
       await expectLater(find.byType(AlertDialog),
           matchesGoldenFile('../../.codex-test/video-task-center-wide.png'));
     }
+  });
+
+  // BUG-2828：每部待确认作品说明为什么还没认出来（原因 · AI 结果），没刮过的
+  // 如实说「尚无刮削记录」，而不是只有一个来源名。
+  testWidgets('pending rows explain why the work is still unmatched',
+      (WidgetTester tester) async {
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(_IdleRunner());
+    addTearDown(controller.dispose);
+    await _open(
+      tester,
+      controller,
+      () async => <VideoPendingScrapeWork>[
+        _pending(
+          1,
+          note: const VideoScrapePendingNote(
+            cause: VideoScrapePendingCause.awaitingConfirmation,
+            aiOutcome: VideoScrapeAiOutcome.unassigned,
+            candidateCount: 3,
+            workKeys: <String>['k'],
+            reason: 'r',
+          ),
+        ),
+        _pending(2),
+      ],
+    );
+    expect(
+      find.text('Anime\n3 candidates, waiting for your pick · '
+          'No AI provider assigned to video identification'),
+      findsOneWidget,
+    );
+    expect(find.text('Anime\nNo reason in recent scrape runs'), findsOneWidget);
   });
 
   testWidgets('a pending-list failure offers an actual reload',

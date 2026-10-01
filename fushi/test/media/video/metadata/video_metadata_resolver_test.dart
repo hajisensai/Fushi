@@ -776,6 +776,68 @@ void main() {
       });
     });
 
+    // 「搜过但查无」是资料源查无后让 AI 出搜索词的唯一判据（BUG-2829）：
+    // 状态本身分不出「搜了没有」与「没搜成」，两者都可能是 providerUnavailable。
+    group('searchedWithoutResult 只认「搜了没有」', () {
+      Future<VideoMetadataResolution> resolveChain(
+        List<VideoMetadataProvider> providers,
+      ) =>
+          VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(providers),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              fallbackProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Show'],
+            ),
+          );
+
+      test('主源查无 + 兜底源没配置：状态是 providerUnavailable，但算搜了没有', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(<VideoMetadataProvider>[
+          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.searchedWithoutResult, isTrue);
+      });
+
+      test('两家都查无', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(<VideoMetadataProvider>[
+          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+          _FakeProvider(kind: VideoMetadataProviderKind.tmdb),
+        ]);
+        expect(result.status, VideoMetadataResolutionStatus.notFound);
+        expect(result.searchedWithoutResult, isTrue);
+      });
+
+      test('任一家鉴权失败（非临时）：没搜成，不算查无', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(<VideoMetadataProvider>[
+          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.tmdb,
+            searchError: const VideoMetadataNetworkException(
+              'TMDB search HTTP 401',
+              statusCode: 401,
+            ),
+          ),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isFalse);
+        expect(result.searchedWithoutResult, isFalse);
+      });
+
+      test('一家都没配置：没有可搜的源', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(const <VideoMetadataProvider>[]);
+        expect(result.searchedWithoutResult, isFalse);
+      });
+    });
+
     test('unconfigured selected provider fails before network', () async {
       final VideoMetadataResolution result = await VideoMetadataResolver(
         registry: VideoMetadataProviderRegistry(
@@ -987,6 +1049,7 @@ class _FakeProvider implements VideoMetadataProvider {
     this.works = const <String, VideoMetadataWork>{},
     this.available = true,
     this.fetchError,
+    this.searchError,
   });
 
   final VideoMetadataProviderKind kind;
@@ -996,6 +1059,9 @@ class _FakeProvider implements VideoMetadataProvider {
 
   /// 非 null 时 [fetchWork] 抛它（模拟资料源网络故障）。
   final Exception? fetchError;
+
+  /// 非 null 时 [search] 抛它。
+  final Exception? searchError;
   int searchCalls = 0;
   int fetchCalls = 0;
 
@@ -1010,6 +1076,8 @@ class _FakeProvider implements VideoMetadataProvider {
     VideoMetadataSearchRequest request,
   ) async {
     searchCalls++;
+    final Exception? error = searchError;
+    if (error != null) throw error;
     return searchResults;
   }
 

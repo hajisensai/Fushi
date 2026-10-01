@@ -46,7 +46,6 @@ class VideoControlsDensitySpec {
     required this.density,
     required this.scale,
     required this.showSeekBar,
-    required this.showSeekLabels,
     required this.showTopBar,
     required this.showBottomButtonBar,
     required this.showCenterTransport,
@@ -64,10 +63,6 @@ class VideoControlsDensitySpec {
   /// 是否渲染 media_kit 自带的完整进度条。[VideoControlsDensity.mini] 下关掉，
   /// 进度指示改由视频最下方那条细线承担（见 videoSlimProgressBarVisible）。
   final bool showSeekBar;
-
-  /// ±10 秒按钮是否带文字标注。窄屏退化成纯图标是既有行为（`_hasRoomyVideoBottomBar`
-  /// 的 600 阈值），本字段只额外保证 mini 档一定不带标注。
-  final bool showSeekLabels;
 
   /// 是否渲染顶栏（标题 + 右上角菜单）。
   final bool showTopBar;
@@ -87,7 +82,6 @@ const VideoControlsDensitySpec _fullSpec = VideoControlsDensitySpec(
   density: VideoControlsDensity.full,
   scale: 1,
   showSeekBar: true,
-  showSeekLabels: true,
   showTopBar: true,
   showBottomButtonBar: true,
   showCenterTransport: false,
@@ -97,7 +91,6 @@ const VideoControlsDensitySpec _compactSpec = VideoControlsDensitySpec(
   density: VideoControlsDensity.compact,
   scale: 0.88,
   showSeekBar: true,
-  showSeekLabels: true,
   showTopBar: true,
   showBottomButtonBar: true,
   showCenterTransport: false,
@@ -107,7 +100,6 @@ const VideoControlsDensitySpec _miniSpec = VideoControlsDensitySpec(
   density: VideoControlsDensity.mini,
   scale: 0.72,
   showSeekBar: false,
-  showSeekLabels: false,
   showTopBar: false,
   showBottomButtonBar: false,
   showCenterTransport: true,
@@ -118,7 +110,6 @@ const VideoControlsDensitySpec _pictureInPictureSpec = VideoControlsDensitySpec(
   density: VideoControlsDensity.mini,
   scale: 0.72,
   showSeekBar: false,
-  showSeekLabels: false,
   showTopBar: false,
   showBottomButtonBar: false,
   showCenterTransport: false,
