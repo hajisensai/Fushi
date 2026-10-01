@@ -1,7 +1,7 @@
-import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -164,9 +164,7 @@ class _FloatingLyricLookupHostState
     final String trimmed = req.text.trim();
     if (trimmed.isEmpty) return;
     _ensureWarmPopup();
-    final String word = JapaneseLanguage.instance
-        .wordFromIndex(text: req.text, index: req.index)
-        .trim();
+    final String word = lookupWordAtIndex(req.text, req.index).trim();
     final String searchTerm = word.isNotEmpty ? word : trimmed;
     // 无 WebView 选区可定位，用屏幕中心 1×1 选区兜底（与 reader 的
     // _lookupFromFloatingLyric / 歌词模式同款）；底部固定模式时 mixin 自走 dock。

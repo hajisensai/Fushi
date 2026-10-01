@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 
@@ -323,12 +324,22 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     final String trimmed = widget.text.trim();
     // BUG-442：与 build 同一上限——查词后缀从截断后的字符序列取，避免对超长串
     // 重新展开整个 characters（也与渲染出来的可点字符一一对应）。
-    final Iterable<String> capped =
-        trimmed.characters.take(kMaxLookupInputChars);
+    final List<String> capped =
+        trimmed.characters.take(kMaxLookupInputChars).toList();
+    // 英文等拉丁文：点单词里任一字母都从词首起查（与视频字幕点词同口径），否则从
+    // 词中间起查只会命中单个字母。高亮锚点随之落在词首。
+    int start = index;
+    if (start >= 0 &&
+        start < capped.length &&
+        isLatinWordGrapheme(capped[start])) {
+      while (start > 0 && isLatinWordGrapheme(capped[start - 1])) {
+        start--;
+      }
+    }
     widget.onLookup(
-      capped.skip(index).join(),
+      capped.skip(start).join(),
       _localRectOf(panelContext, charContext),
-      index,
+      start,
     );
   }
 
