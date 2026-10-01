@@ -67,12 +67,12 @@ fi
 # rebuilding the engine. Unlike pub-cache patches, a version mismatch is a hard
 # failure: silently dropping a framework fix would resurrect the crash it fixes
 # (BUG-2839: orphan semantics nodes desync the Windows AX bridge).
-if [ -d "$PATCHES_DIR/flutter-sdk" ]; then
-  if [ -n "${FLUTTER_ROOT:-}" ]; then
+if [[ -d "$PATCHES_DIR/flutter-sdk" ]]; then
+  if [[ -n "${FLUTTER_ROOT:-}" ]]; then
     sdk_root="$FLUTTER_ROOT"
   else
     flutter_bin="$(command -v flutter || true)"
-    if [ -z "$flutter_bin" ]; then
+    if [[ -z "$flutter_bin" ]]; then
       echo "ERROR: flutter-sdk patches present but flutter is not on PATH (set FLUTTER_ROOT)." >&2
       exit 1
     fi
@@ -83,21 +83,21 @@ if [ -d "$PATCHES_DIR/flutter-sdk" ]; then
   fi
   sdk_version=""
   version_json="$sdk_root/bin/cache/flutter.version.json"
-  if [ -f "$version_json" ]; then
+  if [[ -f "$version_json" ]]; then
     sdk_version="$(sed -n 's/.*"frameworkVersion": *"\([^"]*\)".*/\1/p' "$version_json" | head -n 1)"
   fi
-  if [ -z "$sdk_version" ] && [ -f "$sdk_root/version" ]; then
+  if [[ -z "$sdk_version" ]] && [[ -f "$sdk_root/version" ]]; then
     sdk_version="$(tr -d '[:space:]' < "$sdk_root/version")"
   fi
   echo "Flutter SDK: $sdk_root ($sdk_version)"
   for ver_dir in "$PATCHES_DIR/flutter-sdk"/*/; do
     ver="$(basename "$ver_dir")"
-    if [ "$ver" != "$sdk_version" ]; then
+    if [[ "$ver" != "$sdk_version" ]]; then
       echo "ERROR: flutter-sdk/$ver patches do not match SDK $sdk_version; port or drop them when bumping Flutter." >&2
       exit 1
     fi
     for patch_file in "$ver_dir"*.patch; do
-      [ -f "$patch_file" ] || continue
+      [[ -f "$patch_file" ]] || continue
       name="flutter-sdk/$ver/$(basename "$patch_file")"
       # SDK checkouts may be CRLF on Windows; patches are LF. Normalize only the
       # files this patch touches (Dart does not care about line endings).
@@ -105,7 +105,7 @@ if [ -d "$PATCHES_DIR/flutter-sdk" ]; then
       # no GNU-only patch flags. -F 0 demands an exact context match, so GNU
       # patch never writes *.orig mismatch backups into the SDK.
       sed -n 's|^+++ b/\([^[:space:]]*\).*|\1|p' "$patch_file" | while read -r rel; do
-        if [ -f "$sdk_root/$rel" ]; then
+        if [[ -f "$sdk_root/$rel" ]]; then
           tr -d '\r' < "$sdk_root/$rel" > "$sdk_root/$rel.lf"
           mv "$sdk_root/$rel.lf" "$sdk_root/$rel"
         fi

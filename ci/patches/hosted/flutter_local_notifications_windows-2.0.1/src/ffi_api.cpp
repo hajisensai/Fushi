@@ -96,6 +96,8 @@ void disposePlugin(NativePlugin* plugin) {
   try {
     delete plugin;
   } catch (...) {
+    // void export: a C ABI has no channel back to Dart, and letting the
+    // exception escape terminates the process. Dropping it is the contract.
   }
 }
 
@@ -185,6 +187,8 @@ void cancelAll(NativePlugin* plugin) {
       notifier.RemoveFromSchedule(notification);
     }
   } catch (...) {
+    // void export: a C ABI has no channel back to Dart, and letting the
+    // exception escape terminates the process. Dropping it is the contract.
   }
 }
 
@@ -201,6 +205,8 @@ void cancelNotification(NativePlugin* plugin, int id) {
       }
     }
   } catch (...) {
+    // void export: a C ABI has no channel back to Dart, and letting the
+    // exception escape terminates the process. Dropping it is the contract.
   }
 }
 
@@ -232,6 +238,8 @@ void freeDetailsArray(NativeNotificationDetails* ptr) {
   try {
     delete[] ptr;
   } catch (...) {
+    // void export: a C ABI has no channel back to Dart, and letting the
+    // exception escape terminates the process. Dropping it is the contract.
   }
 }
 
@@ -245,5 +253,7 @@ void freeLaunchDetails(NativeLaunchDetails details) {
     }
     if (details.data.entries != nullptr) delete[] details.data.entries;
   } catch (...) {
+    // void export: a C ABI has no channel back to Dart, and letting the
+    // exception escape terminates the process. Dropping it is the contract.
   }
 }
