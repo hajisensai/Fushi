@@ -239,7 +239,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
   'mining_audio_tail_pad_ms',
-  // 封面模式没显式设过时的本安装默认（全新安装 video_clip，存量升级 gif），见
+  // 封面模式迁到片段默认的一次性标记（历史键名），见
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
   'mining_image_quality',

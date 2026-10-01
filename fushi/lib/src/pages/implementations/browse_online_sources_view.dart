@@ -14,6 +14,7 @@ import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
@@ -50,6 +51,83 @@ bool isOnlineSourcesDomainAvailable(OnlineSourcesDomain domain) =>
         StoreRestrictedCapability.onlineMangaSource.isAvailable,
       OnlineSourcesDomain.video => isVideoOnlineSourcesAvailable,
     };
+
+/// 在线域 → 所属功能模块（穷尽 switch）：关掉某个库模块，它的在线来源一并不出。
+ModuleId moduleOfOnlineSourcesDomain(OnlineSourcesDomain domain) =>
+    switch (domain) {
+      OnlineSourcesDomain.novel => ModuleId.books,
+      OnlineSourcesDomain.manga => ModuleId.manga,
+      OnlineSourcesDomain.video => ModuleId.video,
+    };
+
+/// 此刻可见的在线域：模块开着、且本平台有该域的在线来源宿主。
+///
+/// 「浏览」页签与各库页的来源 / 扩展子标签共用这一个判据。
+List<OnlineSourcesDomain> visibleOnlineSourcesDomains(
+  ModuleVisibility visibility,
+) => <OnlineSourcesDomain>[
+  for (final OnlineSourcesDomain domain in OnlineSourcesDomain.values)
+    if (visibility.isEnabled(moduleOfOnlineSourcesDomain(domain)) &&
+        isOnlineSourcesDomainAvailable(domain))
+      domain,
+];
+
+/// 内容域的显示名（浏览页的域选择条、扩展仓库子页的标题）。
+String onlineSourcesDomainLabel(OnlineSourcesDomain domain) => switch (domain) {
+  OnlineSourcesDomain.novel => t.discovery_kind_novel,
+  OnlineSourcesDomain.manga => t.manga_library,
+  OnlineSourcesDomain.video => t.nav_video,
+};
+
+/// push [domain] 的扩展仓库管理（与扩展目录同一组组件的仓库形态）。
+///
+/// 「浏览 › 扩展」与各库页「扩展」子标签的「仓库」动作共用这一处。
+void openOnlineSourceStores(BuildContext context, OnlineSourcesDomain domain) {
+  Navigator.of(context).push(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (BuildContext context) => BrowseSubPage(
+        title:
+            '${t.media_import_segment_stores} · '
+            '${onlineSourcesDomainLabel(domain)}',
+        child: BrowseOnlineSourcesView(
+          domain: domain,
+          section: OnlineSourcesSection.stores,
+        ),
+      ),
+    ),
+  );
+}
+
+/// 浏览页 / 库页 push 出来的二级页外壳：带返回键的统一门头 + 正文。
+class BrowseSubPage extends StatelessWidget {
+  const BrowseSubPage({required this.title, required this.child, super.key});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: <Widget>[
+            FushiPageHeader(
+              title: title,
+              leading: FushiIconButton(
+                icon: Icons.arrow_back,
+                tooltip: t.back,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+            Expanded(child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 一个内容域的一节在线来源面。
 ///

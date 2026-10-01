@@ -2360,9 +2360,9 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。没显式
-  // 设过时取**本安装的默认**（[miningImageModeInstallDefault]：全新安装 videoClip，
-  // 升级上来的存量用户 gif）。存稳定字符串键（[VideoMiningImageMode.wireName]），
-  // 解析未知值回退 videoClip（[VideoMiningImageMode.fromWireName]）。
+  // 设过时取 videoClip（存量安装由 [settleMiningImageModeInstallDefault] 迁过来）。
+  // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析 null / 未知值回退 videoClip
+  // （[VideoMiningImageMode.fromWireName]）。
   VideoMiningImageMode get videoMiningImageMode =>
       _miningImageMode('video_mining_image_mode');
 
@@ -2384,63 +2384,56 @@ class PreferencesRepository extends ChangeNotifier
 
   // galgame 场景卡封面模式，与视频**分开存**：视频的动图能拍出口型和动作，galgame
   // 画面在一句台词内基本静止，动图多半只是把同一帧存二十遍。两者的取舍不同，共用一
-  // 个开关会逼用户为一边将就另一边。默认同视频项（本安装默认）；galgame 没有「字幕
+  // 个开关会逼用户为一边将就另一边。默认同视频项（videoClip）；galgame 没有「字幕
   // 区间」，故只在 gif / currentFrame / videoClip 三档间取值，其余值按
   // [VideoMiningImageMode.isStill] 归入静态截图。
   VideoMiningImageMode get galMiningImageMode =>
       _miningImageMode('gal_mining_image_mode');
 
-  /// 记录「封面模式没显式设过时取什么」的本安装默认值（wireName）。
+  /// 封面模式迁移标记（wireName）。键名是历史名（冻结），现在只当「迁到片段默认」的
+  /// 一次性标记用。
   ///
-  /// 音画同步片段成为默认（PR #1717）只给**全新安装**；升级上来、从没显式选过封面模式
-  /// 的存量用户保持原行为 GIF + 独立句子音频（所有者 2026-09-28 拍板）。这个键描述本
-  /// 安装自身，同 `first_time_setup` 不随 Profile 走（`ProfileKeys` 排除）：封面模式键
-  /// 本身会进 Profile 快照，切到一个在迁移前建的老快照会把显式写下的 gif 删掉，那时回落
-  /// 的仍是这里记下的本安装默认，而不是全局 videoClip。
+  /// 历史：PR #1717 让片段成为默认时只给全新安装，2026-09-28 的迁移给升级用户记 `gif`
+  /// 并把没设过的视频 / gal 封面模式键**显式写成 gif**。所有者 2026-10-01 改口：老用户
+  /// 也用片段。那次写进去的 gif 和用户自己选的 gif 在数据里分不开，按所有者决定一并迁走。
+  /// 本键不随 Profile 走（`ProfileKeys` 排除），描述的是本安装是否已迁过。
   static const String miningImageModeInstallDefaultKey =
       'mining_image_mode_install_default';
 
-  /// 本安装的封面模式默认值。键还没落（[settleMiningImageModeInstallDefault] 没跑过：
-  /// 弹窗词典等不经 `AppModel.initialise()` 的入口、或迁移前的读）一律按存量用户处理
-  /// 取 gif——宁可让新用户晚一步吃到新默认，也不能把老用户翻成片段。
-  VideoMiningImageMode get miningImageModeInstallDefault =>
-      getPref(miningImageModeInstallDefaultKey, defaultValue: null) ==
-              VideoMiningImageMode.videoClip.wireName
-          ? VideoMiningImageMode.videoClip
-          : VideoMiningImageMode.gif;
+  /// 封面模式键（视频 / gal）与各自片段格式键的配对，迁移时一起处理。
+  static const List<(String, String)> _miningImageModeKeys = <(String, String)>[
+    ('video_mining_image_mode', 'video_mining_clip_format'),
+    ('gal_mining_image_mode', 'gal_mining_clip_format'),
+  ];
 
-  VideoMiningImageMode _miningImageMode(String key) {
-    final String? stored = getPref(key, defaultValue: null) as String?;
-    return stored == null
-        ? miningImageModeInstallDefault
-        : VideoMiningImageMode.fromWireName(stored);
-  }
+  VideoMiningImageMode _miningImageMode(String key) =>
+      VideoMiningImageMode.fromWireName(
+          getPref(key, defaultValue: null) as String?);
 
-  /// 启动时（`AppModel.initialise()`，首页首帧改写 `first_time_setup` 之前）落一次本安装
-  /// 的封面模式默认值；已落过直接返回（幂等）。
+  /// 启动时（`AppModel.initialise()`）跑一次封面模式迁移；标记已是 videoClip 直接返回。
   ///
-  /// [freshInstall] 取自 `first_time_setup`（与「下载 → 浏览」搬迁提示同一判据，见
-  /// `browse_moved_notice.dart`）：全新安装记 videoClip；存量用户记 gif，并把视频 / gal
-  /// 两个**没显式设过**的封面模式键显式写成 gif（原行为落成显式值，此后与默认值怎么变
-  /// 都无关）。显式设过的值一律不碰。与标记同一次 [setPrefs] 落盘。
-  Future<void> settleMiningImageModeInstallDefault({
-    required bool freshInstall,
-  }) {
-    if (getPref(miningImageModeInstallDefaultKey, defaultValue: null) != null) {
+  /// 标记为 gif（被 2026-09-28 迁移钉过）的安装：仍是 gif 的封面模式改成 videoClip，
+  /// 格式从没设过就把**改模式前**推导出的平台默认一起钉死——否则显式 video_clip 会被
+  /// [_miningClipFormat] 当成 MP4 时代的老用户推成 MP4。其它显式值（当前帧 / 字幕开头帧 /
+  /// 片段）一律不碰。标记缺失（全新安装，或从 09-28 之前的版本直接升上来）只写标记：没设过
+  /// 的模式键本就按 videoClip 取。与标记同一次 [setPrefs] 落盘，此后用户再选 gif 不会被改回。
+  Future<void> settleMiningImageModeInstallDefault() {
+    final Object? marker =
+        getPref(miningImageModeInstallDefaultKey, defaultValue: null);
+    if (marker == VideoMiningImageMode.videoClip.wireName) {
       return Future<void>.value();
     }
-    final VideoMiningImageMode installDefault = freshInstall
-        ? VideoMiningImageMode.videoClip
-        : VideoMiningImageMode.gif;
+    final bool pinnedToGif = marker == VideoMiningImageMode.gif.wireName;
     final Map<String, dynamic> values = <String, dynamic>{
-      miningImageModeInstallDefaultKey: installDefault.wireName,
-      if (!freshInstall)
-        for (final String modeKey in const <String>[
-          'video_mining_image_mode',
-          'gal_mining_image_mode',
-        ])
-          if (getPref(modeKey, defaultValue: null) == null)
-            modeKey: VideoMiningImageMode.gif.wireName,
+      miningImageModeInstallDefaultKey: VideoMiningImageMode.videoClip.wireName,
+      if (pinnedToGif)
+        for (final (String modeKey, String formatKey) in _miningImageModeKeys)
+          if (getPref(modeKey, defaultValue: null) ==
+              VideoMiningImageMode.gif.wireName) ...<String, dynamic>{
+            if (getPref(formatKey, defaultValue: null) == null)
+              formatKey: _miningClipFormat(formatKey, modeKey).wireName,
+            modeKey: VideoMiningImageMode.videoClip.wireName,
+          },
     };
     return setPrefs(values);
   }

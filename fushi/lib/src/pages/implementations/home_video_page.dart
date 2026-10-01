@@ -96,6 +96,7 @@ import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
@@ -6755,7 +6756,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           child: Text(t.video_filter_year_unknown),
         ),
       ],
-      child: _filterDropdownChip(label: label, active: !_yearFilter.isAll),
+      child: LibraryFilterChip(label: label, active: !_yearFilter.isAll),
     );
   }
 
@@ -6781,7 +6782,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 : _watchStatusFilterLabel(filter)),
           ),
       ],
-      child: _filterDropdownChip(
+      child: LibraryFilterChip(
         label: label,
         active: _watchStatusFilter != VideoWatchStatusFilter.all,
       ),
@@ -6886,7 +6887,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 Text(option == allValue ? t.home_filter_all : labelOf(option)),
           ),
       ],
-      child: _filterDropdownChip(
+      child: LibraryFilterChip(
         label: labelOf(value),
         active: value != allValue,
       ),
@@ -6911,40 +6912,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         VideoWatchStatusFilter.completed =>
           t.video_filter_watch_status_completed,
       };
-
-  /// 下拉筛选 chip 视觉（激活态描主色），与搜索框同高。
-  ///
-  /// eink：primary / outline / onSurfaceVariant 全塌成前景色，激活与未激活逐像素
-  /// 相同；改反色填充表达激活（chipTheme / segmentedButtonTheme 同一套处理）。
-  Widget _filterDropdownChip({required String label, required bool active}) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    final Color foreground = active
-        ? (eink ? colors.surface : colors.primary)
-        : colors.onSurfaceVariant;
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: active && eink ? colors.onSurface : null,
-        border: Border.all(color: active ? colors.primary : colors.outline),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            label,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: foreground),
-          ),
-          Icon(Icons.arrow_drop_down, size: 18, color: foreground),
-        ],
-      ),
-    );
-  }
 
   Widget _buildTagFilterBar(List<BookTagRow> tags) {
     return FushiTagFilterBar(
