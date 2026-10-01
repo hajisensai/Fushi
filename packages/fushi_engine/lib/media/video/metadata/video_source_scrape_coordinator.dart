@@ -1544,6 +1544,7 @@ class VideoSourceScrapeCoordinator
                   warnings,
                   localWork.title,
                   lookupHint: tmdbLookupHint,
+                  localYear: searchYear,
                 );
       tmdbShow = tmdb.metadata;
       // 有序合并：主源标量独占、补充只填空、集合并集；简介按刮削语言感知
@@ -2068,12 +2069,12 @@ class VideoSourceScrapeCoordinator
           provider: VideoMetadataProviderKind.mal,
           externalId: '${entry.malIds.single}',
           mediaKind: kind);
-    } else if (entry != null &&
-        entry.tmdbId != null &&
-        entry.isMovie == (kind == VideoMetadataMediaKind.movie)) {
+    } else if (entry?.tmdbIdFor(kind) case final int tmdbId) {
+      // 只认 `themoviedb_id` 自己的命名空间：剧场版挂在剧特典季下的 tv id
+      // 不能当 /movie 拉（BUG-2828）。
       lookup = VideoMetadataLookup(
           provider: VideoMetadataProviderKind.tmdb,
-          externalId: '${entry.tmdbId}',
+          externalId: '$tmdbId',
           mediaKind: kind);
     }
     final String title = <String>[
@@ -2721,10 +2722,11 @@ class VideoSourceScrapeCoordinator
                     entry,
                 ]
               : await mapping.entriesForMal(primaryId);
+      // 按 TMDB 命名空间取 id，不按作品形态：剧场版的 Fribb 行常是
+      // `{tv: N}`（剧的特典季），按形态取会把 tv id 当 /movie 拉（BUG-2828）。
       final Set<int> tmdbIds = <int>{
         for (final AnimeIdentityEntry entry in entries)
-          if (entry.tmdbId case final int id)
-            if (entry.isMovie == (kind == VideoMetadataMediaKind.movie)) id,
+          if (entry.tmdbIdFor(kind) case final int id) id,
       };
       if (tmdbIds.length != 1) return null;
       return VideoMetadataLookup(
@@ -2749,7 +2751,11 @@ class VideoSourceScrapeCoordinator
     final String? anidbId =
         _lookupForCandidate(work, VideoMetadataProviderKind.anidb)?.externalId;
     return (offline.malId != null && malId == '${offline.malId}') ||
-        (offline.tmdbId != null && tmdbId == '${offline.tmdbId}') ||
+        (tmdbId != null &&
+            tmdbId ==
+                offline
+                    .lookupFor(VideoMetadataProviderKind.tmdb, work.kind)
+                    ?.externalId) ||
         anidbId == '${offline.anidbId}';
   }
 
@@ -3595,6 +3601,7 @@ class VideoSourceScrapeCoordinator
     List<SourceScrapeIssue> warnings,
     String localTitle, {
     VideoMetadataLookup? lookupHint,
+    int? localYear,
   }) async {
     final VideoMetadataProvider? tmdb =
         _registry.provider(VideoMetadataProviderKind.tmdb);
@@ -3643,7 +3650,9 @@ class VideoSourceScrapeCoordinator
           selectedProvider: VideoMetadataProviderKind.tmdb,
           mediaKind: primary.kind,
           titleCandidates: candidates,
-          year: rootTitles.isEmpty ? primary.year : null,
+          // 主源没给年份（AniDB HTTP 详情不可用时只有目录摘要）就用本地目录 /
+          // NFO 的年份顶上：否则年份门整个放行，同名异片只凭标题就成了精确命中。
+          year: rootTitles.isEmpty ? primary.year ?? localYear : null,
           seasonNumber: seasonNumber,
           // Shoko `includeRestricted: anime.IsRestricted`：主源已知成人向才
           // 让 TMDB 搜索放开 include_adult，其它作品维持 TMDB 默认过滤。
