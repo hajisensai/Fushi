@@ -6196,5 +6196,13 @@
   "video_scrape_pending_cause_error": "刮削出错",
   "video_anidb_http_api": "AniDB HTTP 资料接口",
   "video_anidb_http_api_unregistered": "未登记（仅 UDP 哈希识别与离线标题可用）",
-  "video_anidb_http_api_available": "可用（客户端 ${client} v${version}）"
+  "video_anidb_http_api_available": "可用（客户端 ${client} v${version}）",
+  "video_filter_media_type": "类型",
+  "video_filter_media_type_video": "视频",
+  "video_filter_media_type_audio": "音频",
+  "video_filter_extras": "正片/特典",
+  "video_filter_extras_main": "仅正片",
+  "video_filter_extras_only": "仅特典",
+  "video_filter_source": "来源",
+  "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。"
 }
