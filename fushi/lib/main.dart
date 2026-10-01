@@ -357,8 +357,17 @@ void main([List<String> args = const <String>[]]) {
               // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
               // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
               // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
-              final Uint8List iconBytes = await File(iconPath).readAsBytes();
-              await syncWindowsShortcutIcons(iconBytes);
+              // 不 await：这里还在 runApp 之前，.lnk 自愈是尽力而为、与首帧无关，
+              // 没有理由让每次启动都等它（编码 + 原生改写 + shell 通知）。
+              unawaited(() async {
+                try {
+                  final Uint8List iconBytes =
+                      await File(iconPath).readAsBytes();
+                  await syncWindowsShortcutIcons(iconBytes);
+                } catch (e) {
+                  debugPrint('[Fushi] shortcut icon sync failed: $e');
+                }
+              }());
             }
           }
         } catch (e) {

@@ -148,11 +148,25 @@ Map<int, WindowsProcessEntry> windowsProcessesByIds(Iterable<int> pids) {
 /// 等安装器判占用时用的 API，属于安装场景里最正常不过的调用。
 ///
 /// 文件不存在 / 无人占用 / 会话建不起来 → 空列表（与「没有占用者」同义）。
-List<WindowsProcessEntry> windowsProcessesHoldingFile(String filePath) {
-  if (!Platform.isWindows || filePath.isEmpty) {
+List<WindowsProcessEntry> windowsProcessesHoldingFile(String filePath) =>
+    windowsProcessesHoldingFiles(<String>[filePath]);
+
+/// 谁正占用着 [filePaths] 里**任意一个**文件（同一个 Restart Manager 会话）。
+///
+/// 一次 `RmRegisterResources` 登记全部文件、一次 `RmGetList` 拿到并集，结果按 pid
+/// 去重。逐文件开会话的代价是线性的：安装前查 `voice_hook/` 下 28 个 helper 二进制
+/// 实测 ~1 s 同步 FFI（每个会话 15–150 ms），而调用方要的本来就是「占用者集合」，
+/// 不需要知道每个文件各被谁占。空路径被忽略；全空 → 空列表。
+List<WindowsProcessEntry> windowsProcessesHoldingFiles(
+  Iterable<String> filePaths,
+) {
+  final List<String> paths = filePaths
+      .where((String p) => p.isNotEmpty)
+      .toList(growable: false);
+  if (!Platform.isWindows || paths.isEmpty) {
     return const <WindowsProcessEntry>[];
   }
-  return _Win32.instance?.processesHoldingFile(filePath) ??
+  return _Win32.instance?.processesHoldingFiles(paths) ??
       const <WindowsProcessEntry>[];
 }
 
@@ -270,7 +284,7 @@ class _Win32 {
 
   static const int _errorMoreData = 234;
 
-  List<WindowsProcessEntry> processesHoldingFile(String filePath) {
+  List<WindowsProcessEntry> processesHoldingFiles(List<String> filePaths) {
     final Pointer<Uint32> session = calloc<Uint32>();
     // RmStartSession 要求调用方提供已清零的 CCH_RM_SESSION_KEY+1 缓冲区。
     final Pointer<Uint16> sessionKey = calloc<Uint16>(_rmSessionKeyLength);
@@ -282,13 +296,19 @@ class _Win32 {
       }
       started = true;
 
-      final Pointer<Utf16> path = filePath.toNativeUtf16();
-      final Pointer<Pointer<Utf16>> files = calloc<Pointer<Utf16>>();
+      final List<Pointer<Utf16>> paths = <Pointer<Utf16>>[
+        for (final String filePath in filePaths) filePath.toNativeUtf16(),
+      ];
+      final Pointer<Pointer<Utf16>> files = calloc<Pointer<Utf16>>(
+        paths.length,
+      );
       try {
-        files[0] = path;
+        for (int i = 0; i < paths.length; i++) {
+          files[i] = paths[i];
+        }
         if (_rmRegisterResources(
               session.value,
-              1,
+              paths.length,
               files,
               0,
               nullptr,
@@ -300,7 +320,7 @@ class _Win32 {
         }
       } finally {
         calloc.free(files);
-        calloc.free(path);
+        paths.forEach(calloc.free);
       }
 
       final Pointer<Uint32> needed = calloc<Uint32>();
@@ -317,9 +337,11 @@ class _Win32 {
         final int filled =
             count.value > _rmMaxProcessInfo ? _rmMaxProcessInfo : count.value;
         final List<WindowsProcessEntry> result = <WindowsProcessEntry>[];
+        final Set<int> seen = <int>{};
         for (int i = 0; i < filled; i++) {
           final int holderPid = infos[i].Process.dwProcessId;
-          if (holderPid <= 0) continue;
+          // 一个进程同时持有多个登记文件时 RM 会逐条列出，同一 pid 只报一次。
+          if (holderPid <= 0 || !seen.add(holderPid)) continue;
           // strAppName 是 RM 给的显示名，未必等于 image 名；image 名/路径统一
           // 用我们自己的 Win32 查询补齐，保证与其它入口同源同格式。
           final String? imagePath = processImagePath(holderPid);

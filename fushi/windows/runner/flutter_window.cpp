@@ -303,19 +303,28 @@ std::wstring FinalPathForComparison(const std::wstring& path) {
   return resolved;
 }
 
-// Rewrites the IconLocation of a single existing .lnk to |icon_path| (index 0),
-// preserving its target/args/workdir, then notifies the shell to re-read it.
-// Returns true on success. A missing .lnk (user deleted it, or a portable
-// unzip install with no shortcuts) is a soft no-op and returns false without
-// being an error.
-bool SetShortcutIconLocation(const std::wstring& lnk_path,
-                             const std::wstring& icon_path,
-                             bool require_current_executable = false) {
+// Outcome of pointing one .lnk at an icon.
+enum class ShortcutIconResult {
+  kSkipped,    // No such .lnk, target mismatch, or a COM step failed.
+  kUnchanged,  // IconLocation already is |icon_path|,0: nothing written.
+  kRewritten,  // IconLocation rewritten and saved.
+};
+
+// Points a single existing .lnk at |icon_path| (index 0), preserving its
+// target/args/workdir, then notifies the shell to re-read it. A missing .lnk
+// (user deleted it, or a portable unzip install with no shortcuts) is a soft
+// skip, not an error. When the .lnk already carries exactly this icon nothing
+// is saved or notified: cold start replays this sync on every launch, and an
+// unconditional Save + shell notify made Explorer re-read icons each time.
+ShortcutIconResult SetShortcutIconLocation(
+    const std::wstring& lnk_path,
+    const std::wstring& icon_path,
+    bool require_current_executable = false) {
   if (lnk_path.empty() || icon_path.empty()) {
-    return false;
+    return ShortcutIconResult::kSkipped;
   }
   if (GetFileAttributesW(lnk_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    return false;  // No such .lnk: soft skip.
+    return ShortcutIconResult::kSkipped;  // No such .lnk: soft skip.
   }
   using Microsoft::WRL::ComPtr;
   ComPtr<IShellLinkW> shell_link;
@@ -323,17 +332,17 @@ bool SetShortcutIconLocation(const std::wstring& lnk_path,
       CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
                        IID_PPV_ARGS(&shell_link));
   if (FAILED(hr)) {
-    return false;
+    return ShortcutIconResult::kSkipped;
   }
   ComPtr<IPersistFile> persist_file;
   hr = shell_link.As(&persist_file);
   if (FAILED(hr)) {
-    return false;
+    return ShortcutIconResult::kSkipped;
   }
   // Load the existing .lnk so target/args/workdir survive; we only touch icon.
   hr = persist_file->Load(lnk_path.c_str(), STGM_READWRITE);
   if (FAILED(hr)) {
-    return false;
+    return ShortcutIconResult::kSkipped;
   }
   if (require_current_executable) {
     std::vector<wchar_t> target(32768, L'\0');
@@ -341,14 +350,14 @@ bool SetShortcutIconLocation(const std::wstring& lnk_path,
     hr = shell_link->GetPath(target.data(), static_cast<int>(target.size()),
                              &target_data, SLGP_UNCPRIORITY);
     if (FAILED(hr) || target.front() == L'\0') {
-      return false;
+      return ShortcutIconResult::kSkipped;
     }
     std::vector<wchar_t> executable(32768, L'\0');
     const DWORD executable_size = GetModuleFileNameW(
         nullptr, executable.data(), static_cast<DWORD>(executable.size()));
     if (executable_size == 0 ||
         executable_size >= static_cast<DWORD>(executable.size())) {
-      return false;
+      return ShortcutIconResult::kSkipped;
     }
     const std::wstring target_final = FinalPathForComparison(target.data());
     const std::wstring executable_final =
@@ -357,20 +366,30 @@ bool SetShortcutIconLocation(const std::wstring& lnk_path,
         CompareStringOrdinal(target_final.c_str(), -1,
                              executable_final.c_str(), -1, TRUE) !=
             CSTR_EQUAL) {
-      return false;
+      return ShortcutIconResult::kSkipped;
     }
+  }
+  std::vector<wchar_t> current_icon(32768, L'\0');
+  int current_index = 0;
+  hr = shell_link->GetIconLocation(current_icon.data(),
+                                   static_cast<int>(current_icon.size()),
+                                   &current_index);
+  if (SUCCEEDED(hr) && current_index == 0 &&
+      CompareStringOrdinal(current_icon.data(), -1, icon_path.c_str(), -1,
+                           TRUE) == CSTR_EQUAL) {
+    return ShortcutIconResult::kUnchanged;
   }
   hr = shell_link->SetIconLocation(icon_path.c_str(), 0);
   if (FAILED(hr)) {
-    return false;
+    return ShortcutIconResult::kSkipped;
   }
   hr = persist_file->Save(lnk_path.c_str(), TRUE);
   if (FAILED(hr)) {
-    return false;
+    return ShortcutIconResult::kSkipped;
   }
   // Ask the shell to re-read this .lnk's icon.
   SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, lnk_path.c_str(), nullptr);
-  return true;
+  return ShortcutIconResult::kRewritten;
 }
 
 // Joins a known-folder path with |relative| (a path tail relative to the
@@ -402,32 +421,42 @@ std::wstring FushiShortcutInFolder(REFKNOWNFOLDERID folder_id,
 // (DisableProgramGroupPage only hides the wizard page; the Fushi subfolder
 // still exists). The user's pinned taskbar shortcut is also updated, but only
 // when its target is this running executable so a stale/unrelated Fushi.lnk is
-// never rewritten. Returns true if at least one shortcut was updated.
+// never rewritten. Returns true if at least one shortcut now carries the icon
+// (rewritten, or already pointing at it).
 bool ApplyShortcutIcon(const std::wstring& icon_path) {
   if (icon_path.empty()) {
     return false;
   }
   bool any = false;
+  bool rewritten = false;
+  const auto record = [&any, &rewritten](ShortcutIconResult result) {
+    any |= result != ShortcutIconResult::kSkipped;
+    rewritten |= result == ShortcutIconResult::kRewritten;
+  };
   const std::wstring desktop_lnk =
       FushiShortcutInFolder(FOLDERID_Desktop, L"Fushi.lnk");
   if (!desktop_lnk.empty()) {
-    any |= SetShortcutIconLocation(desktop_lnk, icon_path);
+    record(SetShortcutIconLocation(desktop_lnk, icon_path));
   }
   // Start menu lives under the Fushi program group subfolder, not Programs root.
   const std::wstring programs_lnk =
       FushiShortcutInFolder(FOLDERID_Programs, L"Fushi\\Fushi.lnk");
   if (!programs_lnk.empty()) {
-    any |= SetShortcutIconLocation(programs_lnk, icon_path);
+    record(SetShortcutIconLocation(programs_lnk, icon_path));
   }
   const std::wstring taskbar_lnk = FushiShortcutInFolder(
       FOLDERID_UserPinned, L"TaskBar\\Fushi.lnk");
   if (!taskbar_lnk.empty()) {
-    any |= SetShortcutIconLocation(taskbar_lnk, icon_path, true);
+    record(SetShortcutIconLocation(taskbar_lnk, icon_path, true));
   }
   // One global associations-changed notify so already-open Explorer views pick
   // the new icon up sooner (best-effort; shell icon cache is not guaranteed to
-  // refresh instantly).
-  SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+  // refresh instantly). Only when something was actually rewritten: it is a
+  // system-wide broadcast that makes Explorer rebuild icons, and the cold-start
+  // replay almost always finds every .lnk already current.
+  if (rewritten) {
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+  }
   return any;
 }
 
