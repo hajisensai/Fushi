@@ -681,11 +681,9 @@ class _AiProviderSettingsSectionState
     if (preset == null || !mounted) return;
     setState(() {
       _drafts.add(
-        _AiProviderDraft.fromConfig(
-          AiProviderConfig.fromPreset(
-            preset,
-            id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
-          ),
+        _AiProviderDraft.fromPreset(
+          preset,
+          id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
         ),
       );
     });
@@ -849,6 +847,29 @@ class _AiProviderDraft {
         enabled: config.enabled,
         allowInsecureHttp: config.allowInsecureHttp,
       );
+
+  /// 选了一家预设后的新草稿。
+  ///
+  /// 不经 [AiProviderConfig.fromPreset]：那是**已校验**的配置构造，「自定义」预设
+  /// 地址为空，构造器当场抛 ArgumentError——以前这一项点了什么都不会发生（异常从
+  /// setState 里冒出去，草稿没加上）。草稿本来就允许是无效中间态，填好地址后
+  /// 由 [toConfig] 校验落盘。字段默认值与 [AiProviderConfig.fromPreset] 一致。
+  factory _AiProviderDraft.fromPreset(
+    AiProviderPreset preset, {
+    required String id,
+  }) => _AiProviderDraft(
+    id: id,
+    presetId: preset.id,
+    name: preset.displayName,
+    apiKey: '',
+    baseUrl: preset.baseUrl,
+    model: preset.suggestedModel,
+    protocol: preset.protocol,
+    reasoningEffort: AiReasoningEffort.none,
+    enabled: true,
+    // 本地服务默认地址是 loopback HTTP，不勾这个开关就连构造都过不去。
+    allowInsecureHttp: preset.isLocal,
+  );
 
   final String id;
   final String presetId;
