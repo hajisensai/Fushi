@@ -22,10 +22,13 @@ function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
    外壳只做裁剪（内容增减不再改原生表面尺寸，免得 Windows 上旧帧被拉伸），于是
    window.innerHeight 大于用户实际看得见的高度。宿主经 __fushiSetVisibleViewportHeight
    注入可见高度（视觉 px，与 innerHeight 同单位）；所有「下方放不放得下」的浮层定位都走
-   本函数，否则会落进被裁掉、也滚不到的区域。未注入（浏览器扩展 / 其它宿主）= innerHeight。 */
+   本函数，否则会落进被裁掉、也滚不到的区域。未注入（浏览器扩展 / 其它宿主）= innerHeight。
+   注入值存在 window.__fushiVisibleViewportHeightPx，**绝不能与本函数同名**：顶层函数声明
+   本身就是 window 的属性，同名赋值会把函数覆盖成数字 / null，之后按钮提示、灯箱、grammar
+   tooltip 一调用就抛 "is not a function"。 */
 function __fushiVisibleViewportHeight(){
     var h = window.innerHeight || document.documentElement.clientHeight || 0;
-    var v = Number(window.__fushiVisibleViewportHeight);
+    var v = Number(window.__fushiVisibleViewportHeightPx);
     return (isFinite(v) && v > 0 && (h <= 0 || v < h)) ? v : h;
 }
 /* 词典改名（v95）：把**真名**翻成用户起的显示名，只用于渲染给人看的文本。
@@ -1021,6 +1024,130 @@ function applyTableStyles(html) {
     .replace(/<td(?=[>\s])/g, `<td style="${cellStyle}"`);
 }
 
+// BUG-2825：Yomitan 导出到 Anki 时（anki-template-renderer.js `_getStructuredContentHtml`
+// → `_normalizeHtml`）把 structured-content 生成器的 class 按 ext/data/structured-content-style.json
+// 换成内联样式再去掉 class（css-style-applier.js `applyClassStyles`），并删掉除 `data-sc*` 以外的
+// 全部 data-* 属性。卡片上于是只剩内联样式：
+//   * 词典自带 CSS（随卡以 <style> 下发，作用域 `.yomitan-glossary [data-dictionary=…]`）里写给
+//     弹窗的 `.gloss-sc-span` / `.gloss-image-container` 之类选择器在卡片上**命中不到**——
+//     旺文社把「類語」表头改成绝对定位竖排、明鏡把外字压成 1em 的规则都只在弹窗里生效；
+//   * 属性驱动的样式（`[data-vertical-align=middle]` 等）在导出时就落成 `vertical-align:middle`。
+// 下表逐条照抄上游该 JSON（yomidevs/yomitan@67db60ddc2，ext/data/structured-content-style.json），
+// 不增不删：带伪元素 / `:root[…]` / `:hover` 的条目在导出树上本就命中不到（上游同样靠 try/catch
+// 跳过），保留它们是为了让这份表与上游逐字可比对。
+const STRUCTURED_CONTENT_EXPORT_STYLE = [
+    [['.gloss-image-container'], [['display', 'inline-block'], ['white-space', 'nowrap'], ['max-width', '100%'], ['max-height', '100vh'], ['position', 'relative'], ['vertical-align', 'top'], ['line-height', '0'], ['overflow', 'hidden'], ['font-size', '1px']]],
+    [['.gloss-image-link'], [['cursor', 'inherit'], ['display', 'inline-block'], ['position', 'relative'], ['line-height', '1'], ['max-width', '100%'], ['color', 'inherit']]],
+    [['.gloss-image-container-overlay'], [['position', 'absolute'], ['left', '0'], ['top', '0'], ['width', '100%'], ['height', '100%'], ['font-size', 'calc(1em * var(--font-size-no-units))'], ['line-height', 'var(--line-height)'], ['display', 'table'], ['table-layout', 'fixed'], ['white-space', 'normal'], ['color', 'var(--text-color-light3)']]],
+    [['.gloss-image-link[data-has-image=true][data-image-load-state=load-error] .gloss-image-container-overlay::after'], [['content', "'Image failed to load'"], ['display', 'table-cell'], ['width', '100%'], ['height', '100%'], ['vertical-align', 'middle'], ['text-align', 'center'], ['padding', '0.25em']]],
+    [['.gloss-image-background'], [['--image', 'none'], ['position', 'absolute'], ['left', '0'], ['top', '0'], ['width', '100%'], ['height', '100%'], ['-webkit-mask-repeat', 'no-repeat'], ['-webkit-mask-position', 'center center'], ['-webkit-mask-mode', 'alpha'], ['-webkit-mask-size', 'contain'], ['-webkit-mask-image', 'var(--image)'], ['mask-repeat', 'no-repeat'], ['mask-position', 'center center'], ['mask-mode', 'alpha'], ['mask-size', 'contain'], ['mask-image', 'var(--image)'], ['background-color', 'currentColor']]],
+    [['.gloss-image'], [['display', 'inline-block'], ['vertical-align', 'top'], ['object-fit', 'contain'], ['border', 'none'], ['outline', 'none']]],
+    [['.gloss-image-link[data-has-aspect-ratio=true] .gloss-image'], [['position', 'absolute'], ['left', '0'], ['top', '0'], ['width', '100%'], ['height', '100%']]],
+    [['.gloss-image-link[data-image-rendering=pixelated] .gloss-image', '.gloss-image-link[data-image-rendering=pixelated] .gloss-image-background'], [['image-rendering', 'auto'], ['image-rendering', '-moz-crisp-edges'], ['image-rendering', '-webkit-optimize-contrast'], ['image-rendering', 'pixelated'], ['image-rendering', 'crisp-edges']]],
+    [['.gloss-image-link[data-image-rendering=crisp-edges] .gloss-image', '.gloss-image-link[data-image-rendering=crisp-edges] .gloss-image-background'], [['image-rendering', 'auto'], ['image-rendering', '-moz-crisp-edges'], ['image-rendering', '-webkit-optimize-contrast'], ['image-rendering', 'crisp-edges']]],
+    [[':root[data-browser=firefox] .gloss-image-link[data-image-rendering=crisp-edges] .gloss-image', ':root[data-browser=firefox] .gloss-image-link[data-image-rendering=crisp-edges] .gloss-image-background', ':root[data-browser=firefox-mobile] .gloss-image-link[data-image-rendering=crisp-edges] .gloss-image', ':root[data-browser=firefox-mobile] .gloss-image-link[data-image-rendering=crisp-edges] .gloss-image-background'], [['image-rendering', 'auto']]],
+    [['.gloss-image-link[data-has-aspect-ratio=true] .gloss-image-sizer'], [['display', 'inline-block'], ['width', '0'], ['vertical-align', 'top'], ['font-size', '0']]],
+    [['.gloss-image-link-text'], [['display', 'none'], ['line-height', 'var(--line-height)']]],
+    [['.gloss-image-link-text::before'], [['content', "'['"]]],
+    [['.gloss-image-link-text::after'], [['content', "']'"]]],
+    [['.gloss-image-description'], [['display', 'block'], ['white-space', 'pre-line']]],
+    [['.gloss-image-link[data-appearance=monochrome] .gloss-image'], [['--shadow-settings', '0 0 0.01px var(--text-color)'], ['filter', 'grayscale(1) opacity(0.5) drop-shadow(var(--shadow-settings)) drop-shadow(var(--shadow-settings)) saturate(1000%) brightness(1000%)'], ['opacity', '0']]],
+    [['.gloss-image-link[data-size-units=em] .gloss-image-container'], [['font-size', '1em']]],
+    [['.gloss-image-link[data-vertical-align=baseline]'], [['vertical-align', 'baseline']]],
+    [['.gloss-image-link[data-vertical-align=sub]'], [['vertical-align', 'sub']]],
+    [['.gloss-image-link[data-vertical-align=super]'], [['vertical-align', 'super']]],
+    [['.gloss-image-link[data-vertical-align=text-top]'], [['vertical-align', 'top']]],
+    [['.gloss-image-link[data-vertical-align=text-bottom]'], [['vertical-align', 'bottom']]],
+    [['.gloss-image-link[data-vertical-align=middle]'], [['vertical-align', 'middle']]],
+    [['.gloss-image-link[data-vertical-align=top]'], [['vertical-align', 'top']]],
+    [['.gloss-image-link[data-vertical-align=bottom]'], [['vertical-align', 'bottom']]],
+    [['.gloss-image-link[data-collapsed=true]', ':root[data-glossary-layout-mode^=compact] .gloss-image-link[data-collapsible=true]'], [['vertical-align', 'baseline']]],
+    [['.gloss-image-link[data-collapsed=true] .gloss-image-container', ':root[data-glossary-layout-mode^=compact] .gloss-image-link[data-collapsible=true] .gloss-image-container'], [['display', 'none'], ['position', 'absolute'], ['left', '0'], ['top', '100%'], ['z-index', '1']]],
+    [['.entry:nth-last-of-type(1):not(:nth-of-type(1)) .gloss-image-link[data-collapsed=true] .gloss-image-container', ':root[data-glossary-layout-mode^=compact] .entry:nth-last-of-type(1):not(:nth-of-type(1)) .gloss-image-link[data-collapsible=true] .gloss-image-container', ':root[data-glossary-layout-mode^=compact] .definition-item:nth-last-of-type(1) .gloss-image-link[data-collapsible=true] .gloss-image-container'], [['bottom', '100%'], ['top', 'auto']]],
+    [['.gloss-image-link[data-collapsed=true]:hover .gloss-image-container', '.gloss-image-link[data-collapsed=true]:focus .gloss-image-container', ':root[data-glossary-layout-mode^=compact] .gloss-image-link[data-collapsible=true]:hover .gloss-image-container', ':root[data-glossary-layout-mode^=compact] .gloss-image-link[data-collapsible=true]:focus .gloss-image-container'], [['display', 'block']]],
+    [['.gloss-image-link[data-collapsed=true] .gloss-image-link-text', ':root[data-glossary-layout-mode^=compact] .gloss-image-link[data-collapsible=true] .gloss-image-link-text'], [['display', 'inline']]],
+    [['.gloss-image-link[data-collapsed=true]~.gloss-image-description', ':root[data-glossary-layout-mode^=compact] .gloss-image-description'], [['display', 'inline']]],
+    [['.gloss-link-external-icon'], [['display', 'none']]],
+    [['.gloss-sc-table-container'], [['display', 'block']]],
+    [['.gloss-sc-table'], [['table-layout', 'auto'], ['border-collapse', 'collapse']]],
+    [['.gloss-sc-thead', '.gloss-sc-tfoot', '.gloss-sc-th'], [['font-weight', 'bold']]],
+    [['.gloss-sc-th', '.gloss-sc-td'], [['border-style', 'solid'], ['padding', '0.25em'], ['vertical-align', 'top'], ['border-width', '1px'], ['border-color', 'currentColor']]],
+    [['.gloss-image-link:not([data-appearance=monochrome]) .gloss-image-background'], [['display', 'none']]],
+].map(([selectors, styles]) => ({
+    selectors: selectors.join(','),
+    cssText: styles.map(([property, value]) => `${property}:${value};`).join(''),
+}));
+
+// 生成器自己的 class：`structured-content` 与 `gloss-*`。只有它们是上游会内联后剥掉的那一类；
+// 本仓自加的 class（`fushi-selection` 高亮、`glossary-list` 等）不属于 structured-content-style.json，
+// 原样保留。
+function isStructuredContentGeneratorClass(token) {
+    return token === 'structured-content' || token.startsWith('gloss-');
+}
+
+// 上游 `_structuredContentDatasetKeyIgnorePattern = /^sc([^a-z]|$)/` 的属性名形式：
+// dataset 键 `scFoo` / `sc縦中横` 对应属性 `data-sc-foo` / `data-sc縦中横`，留下；其余 data-* 删掉。
+const STRUCTURED_CONTENT_KEPT_DATA_ATTRIBUTE = /^data-sc(?:[^a-z]|$)/;
+
+// 按 Yomitan `applyClassStyles` + `_normalizeHtml` 的语义规范化一棵导出的 structured-content 树。
+// 两趟：先在 class 还在时算出每个元素命中的规则（`.gloss-image-link[…] .gloss-image` 这类后代
+// 选择器要靠祖先的 class 命中），再统一写回内联样式、剥 class、删 data-*。规则样式写在元素已有
+// 内联样式**之前**（同上游），所以生成器显式写的内联值照样生效。
+function inlineStructuredContentExportStyles(root) {
+    const elements = Array.from(root.querySelectorAll('*'));
+    const styled = elements.map((element) => {
+        const tokens = Array.from(element.classList || []);
+        if (!tokens.some(isStructuredContentGeneratorClass)) {
+            return null;
+        }
+        let cssText = '';
+        for (const rule of STRUCTURED_CONTENT_EXPORT_STYLE) {
+            try {
+                if (element.matches(rule.selectors)) {
+                    cssText += rule.cssText;
+                }
+            } catch {
+                // 伪元素等选择器在 matches() 上抛 SyntaxError；上游同样跳过。
+            }
+        }
+        return { element, tokens, cssText: cssText + (element.style?.cssText || '') };
+    });
+    for (const entry of styled) {
+        if (!entry) continue;
+        const { element, tokens, cssText } = entry;
+        const kept = tokens.filter((token) => !isStructuredContentGeneratorClass(token));
+        if (kept.length > 0) {
+            element.setAttribute('class', kept.join(' '));
+        } else {
+            element.removeAttribute('class');
+        }
+        if (cssText.length > 0) {
+            element.setAttribute('style', cssText);
+        } else {
+            element.removeAttribute('style');
+        }
+    }
+    for (const element of elements) {
+        for (const attribute of Array.from(element.attributes || [])) {
+            if (attribute.name.startsWith('data-') && !STRUCTURED_CONTENT_KEPT_DATA_ATTRIBUTE.test(attribute.name)) {
+                element.removeAttribute(attribute.name);
+            }
+        }
+    }
+}
+
+// 一条义项导出树的最终序列化。structured-content 走 Yomitan 的规范化（表格样式也在那张表里，
+// 再跑 applyTableStyles 会给已带 style 的 <td> 塞第二个 style 属性，浏览器只认第一个，
+// 词典自己的单元格样式就丢了）；HTML 型词典（sanitizeHtml 那条路）不是 structured-content，
+// 它的 class 是词典 CSS 的命中目标，保持原样。
+function serializeExportedGlossary(root, structured) {
+    if (!structured) {
+        return applyTableStyles(root.innerHTML);
+    }
+    inlineStructuredContentExportStyles(root);
+    return root.innerHTML;
+}
+
 // containerFontSize 决定容器 `${usedWidth}em` 的 1em 有多大。Yomitan 导出到 Anki 时把
 // ext/data/structured-content-style.json 内联进卡片：`.gloss-image-container{font-size:1px}`，
 // 只有 `.gloss-image-link[data-size-units=em] .gloss-image-container` 再覆盖成 `1em`——
@@ -1197,6 +1324,11 @@ function enableDefinitionImagePreview(node, imageUrl, alt) {
 // their href instead of pointing nowhere.
 function rewriteExportedGlossaryAnchors(root) {
     root.querySelectorAll('a[href]').forEach((anchor) => {
+        // BUG-2825：词典图片的外层 <a> 的 href 是随卡导出的媒体文件名（Yomitan 同形），
+        // 不是词条交叉引用，不能改写成 fushi://lookup，更不能因「没有可见文本」被删掉。
+        if (anchor.classList?.contains('gloss-image-link')) {
+            return;
+        }
         const href = (anchor.getAttribute('href') || '').trim();
         if (/^https?:\/\//i.test(href) || href.startsWith('#')) {
             return;
@@ -1496,12 +1628,14 @@ function constructSingleGlossaryHtml(entryIndex) {
         }
 
         const tempDiv = document.createElement('div');
+        let structured = true;
         if (typeof g.content === 'string') {
             try {
                 renderStructuredContent(tempDiv, JSON.parse(g.content), dictionaryLanguageOf(dictName), dictName, true);
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(g.content)) {
                     tempDiv.innerHTML = sanitizeHtml(g.content);
+                    structured = false;
                 } else {
                     renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(dictName), dictName, true);
                 }
@@ -1517,7 +1651,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         const tags = filteredTags.length > 0 ? filteredTags.join(', ') : '';
         rewriteExportedGlossaryAnchors(tempDiv);
         highlightExportedGlossary(tempDiv, entryIndex, glossaryIndex);
-        const content = applyTableStyles(tempDiv.innerHTML);
+        const content = serializeExportedGlossary(tempDiv, structured);
         let listIdentifier = '';
         /* 词典改名（v95）刻意**不**翻这里：本行进的是导出到 Anki 的卡片正文。
            卡片是历史存档，改名不回溯——翻了之后同一个牌组里旧卡显示真名、新卡
@@ -1557,12 +1691,14 @@ function constructGlossaryHtml(entryIndex) {
         const dictName = g.dictionary;
 
         const tempDiv = document.createElement('div');
+        let structured = true;
         if (typeof g.content === 'string') {
             try {
                 renderStructuredContent(tempDiv, JSON.parse(g.content), dictionaryLanguageOf(dictName), dictName, true);
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(g.content)) {
                     tempDiv.innerHTML = sanitizeHtml(g.content);
+                    structured = false;
                 } else {
                     renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(dictName), dictName, true);
                 }
@@ -1590,7 +1726,7 @@ function constructGlossaryHtml(entryIndex) {
         
         rewriteExportedGlossaryAnchors(tempDiv);
         highlightExportedGlossary(tempDiv, entryIndex, glossaryIndex);
-        glossaryItems += `<li data-dictionary="${dictName}"><i>${label}</i> <span>${applyTableStyles(tempDiv.innerHTML)}</span></li>`;
+        glossaryItems += `<li data-dictionary="${dictName}"><i>${label}</i> <span>${serializeExportedGlossary(tempDiv, structured)}</span></li>`;
         prevTags = currentTags;
         
         const css = window.dictionaryStyles?.[dictName];
@@ -1893,13 +2029,15 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     // 只能把布局交给 <img> 自己 —— 这两条路径拿到的信息量不同，分流是本质不是特例。
     const naturalSizedExport = exporting && !exportGeometry && !svgWithoutDimensions;
 
-    const node = document.createElement(exporting ? 'span' : 'a');
+    // BUG-2825：弹窗与导出都是 `<a target="_blank" rel="noreferrer noopener">`，与上游
+    // structured-content-generator.js 同形；导出时 href 是媒体文件名（见下面的导出分支）。
+    // 以前导出写成 <span>，Lapis 这类按 Yomitan 卡写的模板里 `.definition a span`（插图宽度
+    // 上限）与 `.definition a:has(img)`（点击放大）全部落空。
+    const node = document.createElement('a');
     node.classList.add('gloss-image-link');
-    if (!exporting) {
-        node.target = '_blank';
-        node.rel = 'noreferrer noopener';
-    }
-    
+    node.target = '_blank';
+    node.rel = 'noreferrer noopener';
+
     const imageContainer = document.createElement('span');
     imageContainer.classList.add('gloss-image-container');
     node.appendChild(imageContainer);
@@ -2038,6 +2176,9 @@ function createDefinitionImage(data, dictionary, exporting = false) {
             altNode.textContent = alt;
             return altNode;
         }
+        // 上游 `_setImageData`：`node.href = url`（url 即媒体文件名）。占位符 fushi_dict_N.ext
+        // 由 buildMinedFields 的 replaceAll 连同 <img src> 一起换成真实文件名。
+        node.setAttribute('href', filename);
         const image = document.createElement('img');
         image.classList.add('gloss-image');
         {
@@ -5274,8 +5415,8 @@ var __fushiContentResizeRaf = 0;
 var __fushiLastContentResizeReport = -1;
 window.__fushiSetVisibleViewportHeight = function(height){
     var v = Number(height);
-    window.__fushiVisibleViewportHeight = (height != null && isFinite(v) && v > 0) ? v : null;
-    if (window.__fushiVisibleViewportHeight != null) __fushiObserveContentResize();
+    window.__fushiVisibleViewportHeightPx = (height != null && isFinite(v) && v > 0) ? v : null;
+    if (window.__fushiVisibleViewportHeightPx != null) __fushiObserveContentResize();
 };
 function __fushiObserveContentResize(){
     if (__fushiContentResizeObserver || typeof ResizeObserver !== 'function') return;
@@ -6124,6 +6265,61 @@ let _popupWheelResidualAt = 0;
 // until the idle/surface reset so one occasional large mid-fling frame is not
 // mis-classified as a coarse mouse notch and momentarily over-tamed.
 let _popupWheelFineDevice = false;
+// BUG-2834: 粗滚轮一格不再 behavior:auto 瞬跳——以 rAF 指数缓动走到目标，连拨从
+// 尚未到达的目标继续累加（与正文阅读器 kContinuousWheelScrollJs、Flutter 侧
+// SmoothWheelScrollScope 同一手感）。距离不变（仍是 48px 视觉步长 / zoom），只补
+// 插值。触控板 / 高精度滚轮本身连续上报，仍 1:1 同步；墨水屏瞬时模式不缓动。缓动
+// 途中表面被别处滚动（键盘、跳词条、scrollIntoView）就让位；贴边就停。
+const POPUP_WHEEL_EASE_FACTOR = 0.18;
+const POPUP_WHEEL_EASE_SNAP_PX = 0.5;
+let _popupWheelEase = null; // { surface, target, pos, raf }
+function popupWheelEaseRead(surface) {
+    return surface ? surface.scrollTop : window.scrollY;
+}
+function popupWheelMove(surface, delta) {
+    if (surface) { surface.scrollBy({ top: delta, behavior: 'auto' }); }
+    else { window.scrollBy({ top: delta, behavior: 'auto' }); }
+}
+function popupWheelEaseStop() {
+    const ease = _popupWheelEase;
+    _popupWheelEase = null;
+    if (ease && ease.raf && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(ease.raf);
+    }
+}
+function popupWheelEaseFrame() {
+    const ease = _popupWheelEase;
+    if (!ease) return;
+    ease.raf = 0;
+    const shown = popupWheelEaseRead(ease.surface);
+    if (Math.abs(shown - ease.pos) > 2) { _popupWheelEase = null; return; }
+    const remaining = ease.target - ease.pos;
+    const next = Math.abs(remaining) <= POPUP_WHEEL_EASE_SNAP_PX
+        ? ease.target
+        : ease.pos + remaining * POPUP_WHEEL_EASE_FACTOR;
+    popupWheelMove(ease.surface, next - shown);
+    const stuck = Math.abs(next - shown) >= 1 &&
+        Math.abs(popupWheelEaseRead(ease.surface) - shown) < 0.5;
+    if (stuck || next === ease.target) { _popupWheelEase = null; return; }
+    ease.pos = next;
+    ease.raf = requestAnimationFrame(popupWheelEaseFrame);
+}
+function popupWheelEaseBy(surface, step) {
+    if (typeof requestAnimationFrame !== 'function') {
+        popupWheelMove(surface, step);
+        return;
+    }
+    let ease = _popupWheelEase;
+    const forward = step > 0;
+    if (!ease || ease.surface !== surface || (ease.target > ease.pos) !== forward) {
+        popupWheelEaseStop();
+        const shown = popupWheelEaseRead(surface);
+        ease = { surface, target: shown, pos: shown, raf: 0 };
+        _popupWheelEase = ease;
+    }
+    ease.target += step;
+    if (!ease.raf) ease.raf = requestAnimationFrame(popupWheelEaseFrame);
+}
 // BUG-2284: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
 // popup_settings_injection / 扩展 theme 下发 window.__fushiPopupInstantScroll）。
 // 墨水屏刷一次全屏才划算，按 delta 比例的连续滚动会一路刷出残影；开启后滚轮改成
@@ -6338,6 +6534,7 @@ const __fushiPopupWheelListener = (e) => {
         if ((nowMs - _popupEinkWheelAt) < POPUP_EINK_WHEEL_COOLDOWN_MS) return;
         _popupEinkWheelAt = nowMs;
         _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
+        popupWheelEaseStop();
         const extent = popupEinkWheelExtent(scroller);
         const wheelFraction = popupEinkStepFraction(
             window.__fushiPopupInstantScrollWheelStep, POPUP_EINK_WHEEL_VIEWPORT_FRACTION);
@@ -6361,6 +6558,13 @@ const __fushiPopupWheelListener = (e) => {
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
     const layoutStep = visualStep / popupCurrentZoom(scroller);
+    // BUG-2834: 粗滚轮一格缓动到位（同距离、只补插值）；其余设备逐帧 1:1，并让掉
+    // 还在飞的缓动，免得两条路径同时推同一个表面。
+    if (coarseMouseNotch) {
+        popupWheelEaseBy(scroller, layoutStep);
+        return;
+    }
+    popupWheelEaseStop();
     _popupWheelResidual += layoutStep;
     const step = Math.trunc(_popupWheelResidual);
     _popupWheelResidual -= step;

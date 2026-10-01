@@ -4,20 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiFallbackTheme;
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 String _extractWord(AppModel appModel, String text, int charIndex) {
   if (charIndex < 0 || !appModel.isInitialised) return text;
-  final String word = JapaneseLanguage.instance.wordFromIndex(
-    text: text,
-    index: charIndex,
-  );
+  // 英文等拉丁文要从词首起查，不能从被点字母起（见 [lookupWordAtIndex]）。
+  final String word = lookupWordAtIndex(text, charIndex);
   return word.isNotEmpty ? word : text;
 }
 
@@ -165,14 +167,12 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           builder: _buildWithSpacing,
           home: Scaffold(
             backgroundColor: Colors.transparent,
@@ -244,7 +244,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       scale: appModel.isInitialised
           ? appModel.appUiScale
           : FushiAppUiScale.defaultScale,
-      child: child ?? const SizedBox.shrink(),
+      child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
     );
   }
 }

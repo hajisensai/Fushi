@@ -1910,6 +1910,42 @@ String _mangaGestureJs({
     var _wheelLock = false;
     var _wheelAccum = 0;
     var _wheelDir = 0;
+    // BUG-2834：放大平移的滚轮缓动。每帧都经 _panBy 推进（不另写 PAN 增量），
+    // 拖动 / 方向键 / 缩放 / 贴边翻页改了 PAN 就让位；推不动（视口变了）就停。
+    var _wheelPan = null; // {tx, ty, x, y, dir, raf}
+    function _wheelPanLive(dir){
+      var w = _wheelPan;
+      return !!w && w.dir === dir && PAN_X === w.x && PAN_Y === w.y;
+    }
+    function _wheelPanFrame(){
+      var w = _wheelPan;
+      if (!w) return;
+      w.raf = 0;
+      if (ZOOM <= 1 || PAN_X !== w.x || PAN_Y !== w.y) { _wheelPan = null; return; }
+      var rx = w.tx - PAN_X, ry = w.ty - PAN_Y;
+      var last = Math.abs(rx) <= 0.5 && Math.abs(ry) <= 0.5;
+      _panBy(last ? rx : rx * 0.18, last ? ry : ry * 0.18);
+      var stuck = PAN_X === w.x && PAN_Y === w.y;
+      w.x = PAN_X; w.y = PAN_Y;
+      if (last || stuck) { _wheelPan = null; return; }
+      w.raf = requestAnimationFrame(_wheelPanFrame);
+    }
+    // 调用时 PAN 已是 _panBy 钳好的落点；(vx, vy) 是视觉位置。
+    function _wheelPanEase(vx, vy, dir){
+      if (typeof requestAnimationFrame !== 'function') return;
+      var tx = PAN_X, ty = PAN_Y;
+      PAN_X = vx; PAN_Y = vy;
+      _applyCanvas();
+      var w = _wheelPan;
+      if (!_wheelPanLive(dir)) {
+        if (w && w.raf && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(w.raf);
+        }
+        w = _wheelPan = {x: vx, y: vy, dir: dir, raf: 0};
+      }
+      w.tx = tx; w.ty = ty;
+      if (!w.raf) w.raf = requestAnimationFrame(_wheelPanFrame);
+    }
     document.addEventListener('wheel', function(e){
       if (e.ctrlKey || e.metaKey) return;
       e.preventDefault();
@@ -1924,13 +1960,25 @@ String _mangaGestureJs({
       if (d === 0) return;
       if (ZOOM > 1) {
         // 平移优先：动得了就消费掉本事件；动不了（已贴边/该轴无余量）落入翻页累计。
+        // BUG-2834：落点照旧由 _panBy 一步算出（钳制只住在它里面），随即在同一任务
+        // 内撤回、交给 _wheelPanEase 逐帧推过去——一格不再瞬跳。连拨同向从尚未到达
+        // 的落点起算，不吃距离。
+        var wdir = d > 0 ? 1 : -1;
+        var live = _wheelPanLive(wdir);
+        var vx = PAN_X, vy = PAN_Y;
+        if (live) { PAN_X = _wheelPan.tx; PAN_Y = _wheelPan.ty; }
         var px = PAN_X, py = PAN_Y;
         _panBy(-wdx, -wdy);
         if (PAN_X !== px || PAN_Y !== py) {
+          _wheelPanEase(vx, vy, wdir);
           _wheelAccum = 0;
           _wheelDir = 0;
           return;
         }
+        PAN_X = vx; PAN_Y = vy;
+        _applyCanvas();
+        // 还在飞向边缘：等它落定，下一格才进翻页累计。
+        if (live) return;
       }
       var dir = d > 0 ? 1 : -1;
       // 反向立刻清账：来回滚不该被上一方向的余量吃掉。

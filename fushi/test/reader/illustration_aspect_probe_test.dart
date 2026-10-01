@@ -149,29 +149,50 @@ void main() {
     });
   });
 
-  group('probeIllustrationAspectRatios', () {
+  group('isInlineSizedImage（与阅读器正文 block-img 同一判据）', () {
+    test('宽高都 ≤ 256 是行内小图；任一边 > 256 是插图', () {
+      expect(isInlineSizedImage((width: 64, height: 64)), isTrue);
+      expect(isInlineSizedImage((width: 256, height: 256)), isTrue);
+      expect(isInlineSizedImage((width: 257, height: 40)), isFalse);
+      expect(isInlineSizedImage((width: 40, height: 257)), isFalse);
+      expect(isInlineSizedImage((width: 1200, height: 1700)), isFalse);
+    });
+
+    test('阈值与阅读器分页脚本的 block-img 判据同一个数', () {
+      final String js = File('lib/src/reader/reader_pagination_scripts.dart')
+          .readAsStringSync();
+      expect(
+        js.contains('img.naturalWidth > $kInlineImageMaxSide || '
+            'img.naturalHeight > $kInlineImageMaxSide'),
+        isTrue,
+        reason: '插图册剔除的小图必须正是正文里排进文字流的那些',
+      );
+    });
+  });
+
+  group('probeIllustrationSizes', () {
     late Directory dir;
     setUp(() {
       dir = Directory.systemTemp.createTempSync('fushi_aspect_probe_');
     });
     tearDown(() => dir.deleteSync(recursive: true));
 
-    test('真 PNG / JPEG 文件按路径给出宽/高；坏文件与不存在的路径不进结果', () {
+    test('真 PNG / JPEG 文件按路径给出像素尺寸；坏文件与不存在的路径不进结果', () {
       final File wide = File('${dir.path}/wide.png')
         ..writeAsBytesSync(img.encodePng(img.Image(width: 4, height: 2)));
       final File tall = File('${dir.path}/tall.jpg')
         ..writeAsBytesSync(img.encodeJpg(img.Image(width: 2, height: 4)));
       final File bad = File('${dir.path}/bad.png')..writeAsStringSync('nope');
 
-      final Map<String, double> result = probeIllustrationAspectRatios(<String>[
+      final Map<String, ImagePixelSize> result = probeIllustrationSizes(<String>[
         wide.path,
         tall.path,
         bad.path,
         '${dir.path}/missing.png',
       ]);
       expect(result.keys, unorderedEquals(<String>[wide.path, tall.path]));
-      expect(result[wide.path], closeTo(2, 1e-9));
-      expect(result[tall.path], closeTo(0.5, 1e-9));
+      expect(result[wide.path], (width: 4, height: 2));
+      expect(result[tall.path], (width: 2, height: 4));
     });
 
     test('JPEG 的 SOF 在 64 KiB 之后：头部读不到就整文件回读', () {
@@ -192,10 +213,10 @@ void main() {
         ..writeAsBytesSync(bytes);
       expect(file.lengthSync(), greaterThan(kIllustrationProbeHeadBytes));
 
-      final Map<String, double> result = probeIllustrationAspectRatios(<String>[
+      final Map<String, ImagePixelSize> result = probeIllustrationSizes(<String>[
         file.path,
       ]);
-      expect(result[file.path], closeTo(512 / 256, 1e-9));
+      expect(result[file.path], (width: 512, height: 256));
     });
   });
 }

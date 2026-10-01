@@ -348,7 +348,7 @@ void main() {
       buildTestApp(
         appModel: appModel,
         home: PopupDictionaryPage(
-          searchTerm: 'abcdef',
+          searchTerm: 'あいうえおか',
           closeInApp: () {},
           autoSearchOnOpen: false,
         ),
@@ -359,21 +359,21 @@ void main() {
     expect(find.textContaining('Clipboard'), findsNothing);
     expect(find.textContaining('剪贴板'), findsNothing);
 
-    await tester.tap(find.text('c'));
+    await tester.tap(find.text('う'));
     await tester.pump();
 
-    // Yomitan 式扫描：点第 3 个字查的是后缀 'cdef'，但条上的整句与搜索框里的整句都
-    // 留着不动，只有高亮跨度挪到被点的那个字上。此前这里两处都会被换成 'cdef'——
-    // 被点字左边的 'ab' 就此从条上消失，用户再想点回去已经没得点。
+    // Yomitan 式扫描：点第 3 个字查的是后缀 'うえおか'，但条上的整句与搜索框里的整句都
+    // 留着不动，只有高亮跨度挪到被点的那个字上。此前这里两处都会被换成 'うえおか'——
+    // 被点字左边的 'あい' 就此从条上消失，用户再想点回去已经没得点。
     final PopupDictionarySearchBar searchBar = tester.widget(
       find.byType(PopupDictionarySearchBar),
     );
-    expect(searchBar.controller.text, 'abcdef');
+    expect(searchBar.controller.text, 'あいうえおか');
 
     final SourceLookupTextPanel panel = tester.widget(
       find.byType(SourceLookupTextPanel),
     );
-    expect(panel.text, 'abcdef');
+    expect(panel.text, 'あいうえおか');
     expect(panel.highlight?.start, 2,
         reason: '高亮锚在被点的那个字素簇上，不再恒归零。');
   });

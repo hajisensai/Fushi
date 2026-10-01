@@ -181,6 +181,45 @@ enum VideoWatchStatusFilter { all, unwatched, watching, completed }
 /// 资格无关（BUG-1839：系列与全部视频的区别只是折叠方式）。
 enum VideoSeriesFilter { all, inSeries, standalone }
 
+/// 偏好值 → 系列归属档位；空值 / 脏值退回默认的 [VideoSeriesFilter.standalone]
+/// （BUG-2835：合集成员在系列页折成卡，「全部视频」默认只看散片）。
+VideoSeriesFilter videoSeriesFilterFromName(String name) =>
+    VideoSeriesFilter.values.asNameMap()[name] ?? VideoSeriesFilter.standalone;
+
+/// 「全部视频」媒体类型筛选档位（BUG-2835）：纯音频（专辑曲目等）与视频分开看。
+enum VideoMediaTypeFilter { all, video, audio }
+
+/// 「全部视频」正片 / 特典筛选档位（BUG-2835）：特典 = NCOP/NCED/PV/花絮等本地
+/// 附件，判据与系列页排除特典同源。
+enum VideoExtrasFilter { all, main, extras }
+
+/// 条目级媒体类型判定（本地即筛）。
+bool matchesVideoMediaType({
+  required VideoMediaTypeFilter filter,
+  required bool isAudio,
+}) =>
+    switch (filter) {
+      VideoMediaTypeFilter.all => true,
+      VideoMediaTypeFilter.video => !isAudio,
+      VideoMediaTypeFilter.audio => isAudio,
+    };
+
+/// 条目级正片 / 特典判定（本地即筛）。
+bool matchesVideoExtras({
+  required VideoExtrasFilter filter,
+  required bool isExtra,
+}) =>
+    switch (filter) {
+      VideoExtrasFilter.all => true,
+      VideoExtrasFilter.main => !isExtra,
+      VideoExtrasFilter.extras => isExtra,
+    };
+
+/// 条目级来源判定：[sourceFilter] 为 null = 不限；否则只留该来源的条目
+/// （无来源的手动导入条目、远端占位都不属于任何来源）。
+bool matchesVideoSource({required int? sourceFilter, required int? sourceId}) =>
+    sourceFilter == null || sourceFilter == sourceId;
+
 /// A series member's playback facts in the collection's stable episode order.
 class VideoSeriesPlaybackState {
   const VideoSeriesPlaybackState({

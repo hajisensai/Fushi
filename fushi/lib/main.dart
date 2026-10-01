@@ -22,6 +22,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
@@ -41,6 +43,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
@@ -1801,14 +1804,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (downgrade != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -1821,9 +1822,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 16),
                     Text(
                       t.db_downgrade_title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
                       textAlign: TextAlign.center,
@@ -1834,8 +1833,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         dbVersion: downgrade.dbVersion,
                         appVersion: downgrade.appSchemaVersion,
                       ),
-                      style: TextStyle(
-                        fontSize: 13,
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -1863,14 +1861,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           unrecoverable.kind == FushiDatabaseFailureKind.cannotOpen;
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -1890,9 +1886,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       cannotOpen
                           ? t.db_cannot_open_title
                           : t.db_unrecoverable_title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
                       textAlign: TextAlign.center,
@@ -1902,8 +1896,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       cannotOpen
                           ? t.db_cannot_open_message
                           : t.db_unrecoverable_message,
-                      style: TextStyle(
-                        fontSize: 13,
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -1911,8 +1904,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 12),
                     SelectableText(
                       appModel.initError!,
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -1939,14 +1931,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (dataRootUnavailable != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -1960,9 +1950,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 16),
                     Text(
                       t.data_root_unavailable_title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
                       textAlign: TextAlign.center,
@@ -1972,8 +1960,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       t.data_root_unavailable_message(
                         path: dataRootUnavailable.configuredPath,
                       ),
-                      style: TextStyle(
-                        fontSize: 13,
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -2008,14 +1995,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (appModel.initError != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -2028,17 +2013,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     const SizedBox(height: 16),
                     Text(
                       t.initialization_failed,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                      style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
                     ),
                     const SizedBox(height: 12),
                     SelectableText(
                       appModel.initError!,
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -2093,14 +2075,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (appModel.dataRootMigrationActive) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: DataRootMigrationView(
             progress: appModel.dataRootMigrationProgress,
             background: _savedSplashColor,
@@ -2122,14 +2101,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (appModel.backupImportOwnsAppRoot) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: BackupImportOverlayView(
             phase: appModel.backupImportPhase!,
             message: appModel.backupImportMessage,
@@ -2150,14 +2126,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _startLoadingWatchdogIfNeeded();
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: LoadingWatchdogView(
@@ -2284,7 +2258,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // 都不生效，杜绝「Dart 请求焦点 → 引擎 SetFocus(FlutterView) → Win32
             // 连带激活主窗」把主界面抢到用户的游戏 / 浏览器前面。见
             // [MainWindowFocusGate] 的完整推导。
-            return MainWindowFocusGate(
+            final Widget gated = MainWindowFocusGate(
               child: AnnotatedRegion<SystemUiOverlayStyle>(
                 value: fushiSystemOverlayStyle(cs.brightness),
                 child: CupertinoTheme(
@@ -2428,6 +2402,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 ),
               ),
             );
+            // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
+            return SmoothWheelScrollScope(child: gated);
           },
         ),
       ),

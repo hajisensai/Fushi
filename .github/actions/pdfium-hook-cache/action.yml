@@ -1,0 +1,47 @@
+# Cache the PDFium library that pdfium_dart's native-assets build hook downloads.
+#
+# Why (2026-10-01): pdfrx -> pdfrx_engine -> pdfium_dart has a `hook/build.dart`
+# that, on every `flutter test` / `flutter build` for Android, Windows, macOS
+# and Linux (not iOS), downloads
+#   https://github.com/bblanchon/pdfium-binaries/releases/download/<release>/
+#     pdfium-<platform>-<arch>.tgz
+# straight from GitHub release assets into
+#   .dart_tool/hooks_runner/shared/pdfium_dart/build/<release>/<platform>-<arch>/
+# and throws "Failed to download PDFium" on any non-200. Every fresh runner did
+# that download, so a GitHub release-asset hiccup failed whole jobs: develop
+# desktop release run 36865627262 lost its Windows AND macOS builds in the same
+# two minutes (`Building native assets failed`). The hook skips the download
+# when the file already exists (`if (await output.exists()) return;`), so
+# restoring that directory takes the network out of the build.
+#
+# `purpose` keeps jobs on the same runner OS apart: a Linux test job downloads
+# linux-x64, a Linux APK job android-arm64 -- under one shared key whichever job
+# saved first would leave the other downloading forever.
+# Guard: fushi/test/build/pdfium_hook_cache_guard_test.dart.
+name: PDFium hook cache
+description: Restore / save the PDFium binaries pdfium_dart's build hook downloads.
+inputs:
+  purpose:
+    description: test | android | windows | macos
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        # The release tag the hook downloads is pinned per pdfium_dart version.
+        v=""
+        if [ -f pubspec.lock ]; then
+          v="$(awk '/^  pdfium_dart:$/{f=1;next} f&&/^    version:/{gsub(/"/,"",$2);print $2;exit} f&&/^  [^ ]/{exit}' pubspec.lock)"
+        fi
+        if [ -z "$v" ]; then
+          echo "::warning title=PDFium hook cache::pdfium_dart not found in pubspec.lock; keying on the lock file"
+          v="lock-${{ hashFiles('pubspec.lock') }}"
+        fi
+        echo "pdfium_dart=$v" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: .dart_tool/hooks_runner/shared/pdfium_dart/build/chromium_*
+        key: pdfium-hook-${{ inputs.purpose }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.pdfium_dart }}
