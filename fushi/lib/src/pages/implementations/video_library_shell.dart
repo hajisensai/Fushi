@@ -8,17 +8,26 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
-/// 视频专用六分区壳。
+/// 视频专用分区壳。
 ///
-/// 首页、系列和全部视频共用一个 [HomeVideoPage] State；发现、来源和设置各自
-/// 惰性构建并保活，避免视频页挂载时就触发在线请求，也保证切换分区后搜索词和滚动位置不丢失。
+/// 首页、系列和全部视频共用一个 [HomeVideoPage] State；媒体服务器、发现、在线来源、
+/// 扩展、导入和设置各自惰性构建并保活，避免视频页挂载时就触发在线请求，也保证切换
+/// 分区后搜索词和滚动位置不丢失。
+///
+/// 发现 / 来源 / 扩展与顶层「浏览」模块是同一组组件（2026-10-01 用户拍板加回库页
+/// 子标签），各自过 iOS 合规门 / 视频源宿主门。
 class VideoLibraryShell extends StatefulWidget {
   const VideoLibraryShell({
     required this.repository,
@@ -34,6 +43,8 @@ class VideoLibraryShell extends StatefulWidget {
     this.localLibraryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
+    this.discoveryController,
+    this.discoveryActions = const VideoDiscoveryActions(),
     this.systemBackActive = true,
     super.key,
   });
@@ -70,6 +81,13 @@ class VideoLibraryShell extends StatefulWidget {
   final Widget Function(BuildContext context, Widget navigation)?
       mediaServerPageBuilder;
 
+  /// 「发现」分区的搜索端口；与浏览页签共用 HomePage 的同一个生产实例。
+  /// null = 未接线（宿主测试），发现页回落到空控制器。
+  final VideoDiscoveryController? discoveryController;
+
+  /// 「发现」分区的详情 / 下载 / 订阅回调；与浏览页签共用同一份。
+  final VideoDiscoveryActions discoveryActions;
+
   /// 视频 tab 此刻是否是 HomePage 看得见的那个 tab。媒体服务器分区的嵌套栈靠
   /// [NavigatorPopHandler] 接系统返回，而它登记在 HomePage 根路由上、不随
   /// IndexedStack/Offstage 失效；宿主必须把可见性传进来，否则用户切去词典/设置 tab
@@ -86,6 +104,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
   bool _settingsVisited = false;
+
+  /// 发现 / 在线来源 / 扩展三个分区的已访问集合（惰性构建 + 保活）。
+  final Set<VideoLibrarySection> _onlineVisited = <VideoLibrarySection>{};
 
   /// 分区页签的唯一身份。页签同一时刻只交给看得见的那个分区（[_navigationFor]），
   /// 切分区时它从旧分区的页头挪到新分区的页头；给它一个壳持有的 [GlobalKey]，
@@ -110,6 +131,11 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       }
       if (value == VideoLibrarySection.sources) _sourcesVisited = true;
       if (value == VideoLibrarySection.settings) _settingsVisited = true;
+      if (value == VideoLibrarySection.discover ||
+          value == VideoLibrarySection.onlineSources ||
+          value == VideoLibrarySection.extensions) {
+        _onlineVisited.add(value);
+      }
     });
   }
 
@@ -119,6 +145,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         VideoLibrarySection.allVideos =>
           true,
         VideoLibrarySection.mediaServers ||
+        VideoLibrarySection.discover ||
+        VideoLibrarySection.onlineSources ||
+        VideoLibrarySection.extensions ||
         VideoLibrarySection.sources ||
         VideoLibrarySection.settings =>
           false,
@@ -145,6 +174,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   @override
   Widget build(BuildContext context) {
     // 页签与横滑切区（[SectionSwipeNavigator]）共用同一份序：加减分区只改这里。
+    final bool online = isOnlineSourcesDomainAvailable(
+      OnlineSourcesDomain.video,
+    );
     final List<LibrarySectionTab<VideoLibrarySection>> tabs =
         <LibrarySectionTab<VideoLibrarySection>>[
         LibrarySectionTab<VideoLibrarySection>(
@@ -159,12 +191,27 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value: VideoLibrarySection.allVideos,
           label: t.video_library_all_videos,
         ),
-        // 媒体服务器是用户自己的库（只是远端的），排在本地库视图之后、管理类分区之前。
-        // 在线发现 2026-09-27 起只住在顶层「浏览」模块（`browse_page.dart`）。
+        // 媒体服务器是用户自己的库（只是远端的），排在本地库视图之后；随后是
+        // 「往库里加东西」的发现 / 来源 / 扩展，最后是管理类分区。
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.mediaServers,
           label: t.video_library_media_servers,
         ),
+        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.discover,
+            label: t.library_view_discover,
+          ),
+        if (online)
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.onlineSources,
+            label: t.library_view_sources,
+          ),
+        if (online)
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.extensions,
+            label: t.media_import_segment_extensions,
+          ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
           label: t.library_view_import,
@@ -254,6 +301,13 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               ),
             ),
           ),
+        for (final VideoLibrarySection section in <VideoLibrarySection>[
+          VideoLibrarySection.discover,
+          VideoLibrarySection.onlineSources,
+          VideoLibrarySection.extensions,
+        ])
+          if (_onlineVisited.contains(section))
+            _keepAlive(section, navigation, _buildOnlineSection),
         if (_sourcesVisited)
           Offstage(
             offstage: _section != VideoLibrarySection.sources,
@@ -305,4 +359,49 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       ],
     );
   }
+  /// 一个惰性保活分区：与上面各分区同一套 Offstage / ExcludeFocus / TickerMode /
+  /// 拖放作用域，判据都是「[section] 是当前分区」。
+  Widget _keepAlive(
+    VideoLibrarySection section,
+    Widget navigation,
+    Widget Function(VideoLibrarySection section, Widget navigation) build,
+  ) {
+    final bool active = _section == section;
+    return Offstage(
+      offstage: !active,
+      child: ExcludeFocus(
+        excluding: !active,
+        child: TickerMode(
+          enabled: active,
+          child: _dropScoped(
+            () => _section == section,
+            build(section, _navigationFor(active, navigation)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOnlineSection(
+    VideoLibrarySection section,
+    Widget navigation,
+  ) =>
+      switch (section) {
+        VideoLibrarySection.discover => VideoDiscoveryPage(
+            key: const ValueKey<String>('video-library-discovery'),
+            navigation: navigation,
+            controller: widget.discoveryController,
+            actions: widget.discoveryActions,
+          ),
+        VideoLibrarySection.extensions => LibraryOnlineSourcesView(
+            domain: OnlineSourcesDomain.video,
+            section: OnlineSourcesSection.extensions,
+            navigation: navigation,
+          ),
+        _ => LibraryOnlineSourcesView(
+            domain: OnlineSourcesDomain.video,
+            section: OnlineSourcesSection.sources,
+            navigation: navigation,
+          ),
+      };
 }

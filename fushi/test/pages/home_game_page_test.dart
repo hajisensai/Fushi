@@ -29,6 +29,13 @@ Widget _stubSettings(BuildContext _, Widget navigation) => Column(
       ],
     );
 
+Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
+      children: <Widget>[
+        navigation,
+        const Text('game-discover'),
+      ],
+    );
+
 Widget _testMonitorWithSections(
   BuildContext _,
   VoidCallback onShowLibrary,
@@ -73,6 +80,7 @@ void main() {
           libraryBuilder: _testLibrary,
           dashboardBuilder: _stubDashboard,
           settingsBuilder: _stubSettings,
+          discoverBuilder: _stubDiscover,
         ),
       ),
     );
@@ -93,6 +101,7 @@ void main() {
           libraryBuilder: _testLibrary,
           dashboardBuilder: _stubDashboard,
           settingsBuilder: _stubSettings,
+          discoverBuilder: _stubDiscover,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
             onShowLibrary: onShowLibrary,
             onInit: () => initCount++,
@@ -132,6 +141,7 @@ void main() {
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
             settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
           ),
         ),
       ),
@@ -163,7 +173,7 @@ void main() {
     );
 
     final FocusDriver driver = FocusDriver(tester);
-    // 库后一位是「捕获」（在线发现 2026-09-27 起只住在顶层「浏览」模块）。
+    // 库后一位是「捕获」。
     await driver.adjust(steps: 1);
     expect(find.byKey(HomeGamePage.monitorKey), findsOneWidget);
 
@@ -176,6 +186,19 @@ void main() {
     );
     await tester.pump();
     expect(controller.primaryFocusIsManagedTarget, isTrue);
+    await driver.adjust(steps: 1);
+
+    // 捕获之后是「发现」（2026-10-01 加回库页子标签，排在「导入」之前，与书 /
+    // 漫画 / 视频库页「发现 → 导入」同序）。
+    expect(find.text('game-discover'), findsOneWidget);
+    expect(
+      controller.requestById(
+        const FushiFocusId('game-discover-tab-sections'),
+      ),
+      isTrue,
+      reason: '切到发现页后，新的稳定分段 ID 必须可聚焦',
+    );
+    await tester.pump();
     await driver.adjust(steps: 1);
 
     // 2026-08-13 入库入口统一：捕获工作台与设置之间插入「导入」分段（与书 /
@@ -213,6 +236,7 @@ void main() {
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
             settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
           ),
         ),
@@ -230,7 +254,7 @@ void main() {
       isTrue,
     );
     await tester.pump();
-    // 库 → 捕获（在线发现已移到顶层「浏览」模块）。
+    // 库 → 捕获。
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
@@ -249,6 +273,7 @@ void main() {
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
             settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
           ),
         ),
       );
