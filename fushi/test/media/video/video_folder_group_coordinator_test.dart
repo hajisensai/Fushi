@@ -529,7 +529,45 @@ void main() {
           reason: '正片照旧进根目录合集');
     });
 
-    test('专辑名清洗：只剥首尾修饰，剥空退回原名', () {
+    test('存量库：曲目早已在一级目录大合集里，主归属仍是专辑合集', () async {
+      final int sourceId = await seed();
+      await (db.update(db.mediaSources)
+            ..where((tbl) => tbl.id.equals(sourceId)))
+          .write(const MediaSourcesCompanion(videoGroupingMode: Value('folder')));
+      // 修复前的目录模式产物：整个 `CDs` 一个合集（id 更小、先被遍历到）。
+      final int legacy =
+          await db.createMediaCollection('CDs', collectionType: 'collection');
+      await (db.update(db.mediaCollections)
+            ..where((tbl) => tbl.id.equals(legacy)))
+          .write(const MediaCollectionsCompanion(
+              sourceFolderPath: Value<String?>('$root/CDs')));
+      for (final String uid in <String>['v0', 'v1', 'v2', 'v3']) {
+        await db.addToCollection(legacy, MediaKind.video, uid);
+      }
+
+      await coordinator.groupPaths(
+        videoPaths: <String>[...tracks, ...episodes],
+        sourceId: sourceId,
+        groupingMode: 'folder',
+        sourceRoot: root,
+      );
+      final Map<String, int> primary = applyVideoFolderCollectionPolicy(
+        primary: await db.getPrimaryCollectionIdByEntry(),
+        collections: await db.getAllMediaCollections(),
+        items: await db.getAllCollectionItems(),
+        books: await db.allVideoBooks(),
+        sources: await db.getMediaSourcesByKind('video'),
+      );
+      final MediaCollectionRow album = (await db.getAllMediaCollections())
+          .singleWhere((MediaCollectionRow c) => c.name == '聖域');
+      expect(primary['video|v2'], album.id,
+          reason: '重扫只补不删，旧大合集仍含曲目——主归属不能取决于遍历先后');
+      expect(primary['video|v3'], album.id);
+      expect(await db.getCollectionItems(legacy), hasLength(4),
+          reason: '不动用户既有合集的成员');
+    });
+
+    test('专辑名清洗：只剥首尾修饰，剥空退回原名', () async {
       expect(audioAlbumDisplayName('[230712] 聖域 (flac+webp)'), '聖域');
       expect(
         audioAlbumDisplayName('(20231025) Album [24bit_96kHz] [FLAC]'),
@@ -538,6 +576,10 @@ void main() {
       expect(audioAlbumDisplayName('Disc (Bonus) Mix'), 'Disc (Bonus) Mix',
           reason: '中间的括号是名字的一部分');
       expect(audioAlbumDisplayName('[FLAC]'), '[FLAC]');
+      expect(audioAlbumDisplayName('Album (Disc 1) [FLAC]'), 'Album (Disc 1)',
+          reason: '分碟信息是名字的一部分，剥掉会让两张碟撞名');
+      expect(audioAlbumDisplayName('Symphony (Live) (24bit_96kHz)'),
+          'Symphony (Live)');
       expect(
         videoAudioAlbumFolderPath(r'D:\Anime\CDs\Album\01.flac'),
         'd:/anime/cds/album',

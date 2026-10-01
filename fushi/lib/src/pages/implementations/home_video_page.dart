@@ -1661,10 +1661,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         filter: _effectiveMediaTypeFilter,
         isAudio: isAudioOnlyMediaPath(b.videoPath),
       ) &&
-      matchesVideoExtras(
-        filter: _effectiveExtrasFilter,
-        isExtra: _isLocalExtra(b),
-      ) &&
+      // 特典判据要跑路径正则，「全部」档位不求值（每次 build 对全库求值）。
+      (_effectiveExtrasFilter == VideoExtrasFilter.all ||
+          matchesVideoExtras(
+            filter: _effectiveExtrasFilter,
+            isExtra: _isLocalExtra(b),
+          )) &&
       matchesVideoSource(
         sourceFilter: _effectiveSourceFilter,
         sourceId: b.sourceId,

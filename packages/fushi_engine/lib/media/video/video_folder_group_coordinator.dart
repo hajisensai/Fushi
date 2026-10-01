@@ -544,7 +544,12 @@ String _audioAlbumDisplayPath(String audioPath) {
 }
 
 final RegExp _albumReleaseDatePrefix = RegExp(r'^[\[(]\d{6,8}[\])]\s*');
-final RegExp _albumTrailingTag = RegExp(r'\s*[\[(][^\[\]()]*[\])]\s*$');
+// 结尾方括号块一律是发布组 / 规格标签；圆括号只在内容是格式 / 规格词时才剥
+// ——`(Disc 1)`、`(Live)` 是专辑名的一部分，剥掉会让分碟撞名。
+final RegExp _albumTrailingTag = RegExp(
+  r'\s*(\[[^\[\]]*\]|\((?=[^()]*(?<![a-z])(?:flac|mp3|aac|alac|wav|ape|dsd|dsf|ogg|opus|m4a|webp|jpe?g|png|tiff?|bmp|cue|log|bk|scans?|hi-?res|\d+\s*bit|\d+(?:\.\d+)?\s*k?hz)(?![a-z]))[^()]*\))\s*$',
+  caseSensitive: false,
+);
 
 /// 专辑目录名 → 合集显示名：剥掉开头的发售日块（`[230925]`）与结尾的规格
 /// 标签（`[24bit_48kHz]`、`(flac+webp)`），剥空了就退回原目录名。
