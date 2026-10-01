@@ -1,12 +1,14 @@
 /// 刮削运行记录里的一条 issue message → 用户可见文案。
 ///
-/// 记录本身是自由文本，但 AI 判定与挂起原因用固定前缀标记（见
-/// `video_scrape_ai_identity.dart` / `video_scrape_pending_note.dart`），这里把
-/// 它们翻成本地化文案；其它 message 原样返回。
+/// 记录本身是自由文本，但 AI 的参与情况（`ai:matched` / `ai:declined` /
+/// `ai:failed` / `ai:searched`，见 `video_scrape_ai_identity.dart`）与挂起原因
+/// （`pending:`，见 `video_scrape_pending_note.dart`）用固定前缀标记，这里把它们
+/// 翻成本地化文案；其它 message 原样返回。
 library;
 
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/utils.dart';
 
 String describeVideoScrapeIssueMessage(String message) {
@@ -21,10 +23,22 @@ String describeVideoScrapeIssueMessage(String message) {
   if (note == null) {
     return message;
   }
-  final String headline =
-      '${t.video_scrape_ai_matched} · '
-      '${t.video_scrape_ai_confidence(percent: note.confidencePercent)}';
-  return note.reason.isEmpty ? headline : '$headline\n${note.reason}';
+  final String confidence = t.video_scrape_ai_confidence(
+    percent: note.confidencePercent,
+  );
+  final String headline = switch (note.kind) {
+    VideoScrapeAiNoteKind.matched =>
+      '${t.video_scrape_ai_matched} · $confidence',
+    VideoScrapeAiNoteKind.declined =>
+      '${t.video_scrape_ai_declined} · $confidence',
+    VideoScrapeAiNoteKind.failed => t.video_scrape_ai_failed,
+    VideoScrapeAiNoteKind.searched => t.video_scrape_ai_searched,
+  };
+  // 失败理由是 AiChatFailure 的脱敏短码（或异常类型名），翻成与设置页同一套文案。
+  final String reason = note.kind == VideoScrapeAiNoteKind.failed
+      ? aiFailureText(note.reason)
+      : note.reason;
+  return reason.isEmpty ? headline : '$headline\n$reason';
 }
 
 /// 挂起原因的一行摘要：「原因 · AI 结果」，AI 没被问到时只有原因。

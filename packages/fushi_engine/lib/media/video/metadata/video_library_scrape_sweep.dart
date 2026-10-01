@@ -168,6 +168,7 @@ class VideoLibraryScrapeSweep {
     DateTime Function()? now,
     VideoScrapeSweepLedger? ledger,
     String configFingerprint = '',
+    String? Function()? aiCapabilityKey,
     this.refreshProbeInterval = const Duration(hours: 12),
     this.staleAfter = const Duration(days: 14),
     this.maxRefreshPerSweep = 20,
@@ -178,6 +179,7 @@ class VideoLibraryScrapeSweep {
         _tmdbChangedTvIds = tmdbChangedTvIds,
         _ledger = ledger ?? VideoScrapeSweepLedger(),
         _configFingerprint = configFingerprint,
+        _aiCapabilityKey = aiCapabilityKey,
         _now = now ?? DateTime.now;
 
   final FushiDatabase _database;
@@ -205,6 +207,20 @@ class VideoLibraryScrapeSweep {
 
   /// 刮削配置指纹：配置变了，旧配置下「试过没中」的记账作废。
   final String _configFingerprint;
+
+  /// 视频作品识别当前的 AI 能力键（null = 没配 AI），**每轮现取**。
+  ///
+  /// 「试过没中」是某套刮削配置 + 某套 AI 配置下的结论：没配 AI 时歧义 / 查无的
+  /// 作品，配上 AI 后就可能认得出。以前账本指纹只看刮削配置，配好 AI 后旧作品
+  /// 还要再等最多 7 天才会重刮、才会问到 AI（2026-10-01）。
+  final String? Function()? _aiCapabilityKey;
+
+  /// 账本实际使用的指纹：刮削配置 + AI 能力。没配 AI 时与旧指纹逐字相同——
+  /// 不配 AI 的用户（含无头服务端）升级后不该平白清一次账本。
+  String get _ledgerFingerprint {
+    final String? ai = _aiCapabilityKey?.call();
+    return ai == null ? _configFingerprint : '$_configFingerprint|ai=$ai';
+  }
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
@@ -397,7 +413,7 @@ class VideoLibraryScrapeSweep {
       if (_isEnabled != null && !_isEnabled()) return pending;
       // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
       if (_controller.isBusy) return pending;
-      await _ledger.ensureLoaded(fingerprint: _configFingerprint);
+      await _ledger.ensureLoaded(fingerprint: _ledgerFingerprint);
       final DateTime startedAt = _now();
       final bool hashReady = _isHashReady?.call() ?? false;
       final Map<SourceLibraryRow, List<VideoSourceScrapeWork>> subsets =
@@ -457,10 +473,14 @@ class VideoLibraryScrapeSweep {
       try {
         final SourceScrapeReport report =
             await _controller.scrapeWorkSubsets(subsets);
-        // 只因资料源临时不可用（504 / 超时 / 限流）而失败的作品不是「查无」：
-        // 撤掉记账，下次触发（进视频页 / 库里有新条目）就再试，而不是等 7 天。
+        // 只因资料源 / AI 临时不可用（504 / 超时 / 限流 / AI 请求失败）而没认出
+        // 的作品不是「查无」：撤掉记账，下次触发（进视频页 / 库里有新条目）就
+        // 再试，而不是等 7 天。AI 失败记在 warnings（作品本身是待确认，不算错）。
         final List<String> transient = <String>[
-          for (final SourceScrapeIssue issue in report.errors)
+          for (final SourceScrapeIssue issue in <SourceScrapeIssue>[
+            ...report.errors,
+            ...report.warnings,
+          ])
             if (issue.providerUnavailable && issue.workKey != null)
               issue.workKey!,
         ];

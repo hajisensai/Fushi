@@ -2666,6 +2666,10 @@ class _HomePageState extends BasePageState<HomePage>
     existing?.removeListener(_onVideoSourceScrapeTaskChanged);
     existing?.dispose();
     _videoSourceScrapeCoordinator?.close();
+    // 顾问每次现取偏好里的指派，所以 AI 指派不进上面的配置指纹：用户改了指派
+    // 立即生效，不需要重建协调器；判定缓存与补刮账本按它现算的能力键作废。
+    final PreferencesAiVideoIdentityAdvisor aiIdentityAdvisor =
+        PreferencesAiVideoIdentityAdvisor(appModelNoUpdate.prefsRepo);
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
       database: appModel.database,
@@ -2673,11 +2677,7 @@ class _HomePageState extends BasePageState<HomePage>
       // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
       // 为了单测不联网。
       enableOfflineTitleIndex: true,
-      // 歧义候选交 AI 消解。decider 每次调用现取偏好里的指派，所以 AI 指派不进
-      // 上面的配置指纹：用户改了指派立即生效，不需要重建协调器。
-      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(
-        appModelNoUpdate.prefsRepo,
-      ),
+      aiIdentityAdvisor: aiIdentityAdvisor,
     );
     _videoSourceScrapeCoordinator = coordinator;
     _videoSourceScrapeConfigFingerprint = fingerprint;
@@ -2696,6 +2696,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 把哈希查询失败的文件整份重读（用户感知为「每次打开都在重新加载资料」）。
       ledger: VideoScrapeSweepLedger.inSupportDirectory(),
       configFingerprint: fingerprint,
+      // 配上 / 换掉 AI 后，之前「试过没认出」的作品立即重新进补刮。
+      aiCapabilityKey: () => aiIdentityAdvisor.capabilityKey,
       // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
       tmdbChangedTvIds: ({required DateTime since}) {
         final VideoMetadataProvider? tmdb =
