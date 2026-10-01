@@ -1,4 +1,5 @@
-/// 插图宽高比探针：只读文件头部拿像素宽高，供插图册决定横版图占几列。
+/// 插图尺寸探针：只读文件头部拿像素宽高，供插图册决定横版图占几列、以及剔除
+/// 行内小图（[isInlineSizedImage]）。
 ///
 /// 网格卡片是竖版比例（`_kCardAspectRatio`），横版双页图塞进去只能裁掉两侧
 /// （BUG-2589）。要让它横跨两列，布局前就得知道每张图是横是竖——而布局是解析式
@@ -6,7 +7,7 @@
 /// 定位到当前章的偏移会在图片陆续解码时漂走。所以开页时用 [compute] 在 isolate
 /// 里批量读头部：PNG / GIF / BMP / WebP 的尺寸都在前几十字节，JPEG 要走到 SOFn
 /// 段（EXIF / ICC 大的文件会靠后），先读 [kIllustrationProbeHeadBytes]，走不到
-/// 再整文件读一次。不认识的格式（SVG 等）返回 null，按竖版处理。
+/// 再整文件读一次。不认识的格式（SVG 等）不进结果，按竖版、非小图处理。
 library;
 
 import 'dart:io';
@@ -16,18 +17,33 @@ import 'dart:typed_data';
 /// 的批量探测停留在毫秒级。
 const int kIllustrationProbeHeadBytes = 64 * 1024;
 
-/// `compute()` 入口：逐个文件读头部解析宽高，返回「路径 → 宽/高」。解析不出 /
-/// 读不到的文件不进结果。
-Map<String, double> probeIllustrationAspectRatios(List<String> paths) {
-  final Map<String, double> result = <String, double>{};
+/// 一张图的像素尺寸。
+typedef ImagePixelSize = ({int width, int height});
+
+/// 宽、高都不超过这个像素数的图是「行内小图」：质量差的 EPUB 拿图片顶替的
+/// 汉字（外字）、章节号小图、装饰符号之类。与阅读器正文同一把尺——分页脚本只把
+/// 宽或高 > 256 的图当块级插图（`reader_pagination_scripts.dart` 的 `block-img`
+/// 判据），其余排进文字流当字用。插图册据此不把它们当插图展示。
+const int kInlineImageMaxSide = 256;
+
+/// [size] 是否是行内小图（见 [kInlineImageMaxSide]）。
+bool isInlineSizedImage(ImagePixelSize size) =>
+    size.width <= kInlineImageMaxSide && size.height <= kInlineImageMaxSide;
+
+/// `compute()` 入口：逐个文件读头部解析像素尺寸，返回「路径 → 尺寸」。解析不出
+/// / 读不到 / 尺寸非法的文件不进结果。
+Map<String, ImagePixelSize> probeIllustrationSizes(List<String> paths) {
+  final Map<String, ImagePixelSize> result = <String, ImagePixelSize>{};
   for (final String path in paths) {
-    final double? ratio = _probeFile(path);
-    if (ratio != null) result[path] = ratio;
+    final ImagePixelSize? size = _probeFile(path);
+    if (size != null && size.width > 0 && size.height > 0) {
+      result[path] = size;
+    }
   }
   return result;
 }
 
-double? _probeFile(String path) {
+ImagePixelSize? _probeFile(String path) {
   final File file = File(path);
   final int length;
   try {
@@ -47,11 +63,11 @@ double? _probeFile(String path) {
   } on FileSystemException {
     return null;
   }
-  final double? fromHead = imageAspectRatioFromHeader(head);
+  final ImagePixelSize? fromHead = imageSizeFromHeader(head);
   if (fromHead != null || length <= head.length) return fromHead;
   // 头部里没走到尺寸信息（大 EXIF / ICC 的 JPEG）：整文件再来一次。
   try {
-    return imageAspectRatioFromHeader(file.readAsBytesSync());
+    return imageSizeFromHeader(file.readAsBytesSync());
   } on FileSystemException {
     return null;
   }
