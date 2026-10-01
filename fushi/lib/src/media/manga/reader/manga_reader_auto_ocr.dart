@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart'
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
@@ -118,6 +119,9 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   }
   // 探测 / 同意框期间别处（作品页、下载钩子、另一个阅读器实例）可能已排上。
   if (scheduled()) return const MangaReaderVolumeOcrAlreadyScheduled();
+  // 起点只定一次不够：手机上一页识别几十秒，读者翻得比它快。阅读器每翻一页
+  // 经 MangaOcrRunningJob.focusPage 改道，翻到的页下一个就识别。
+  final MangaOcrPageFocus focus = MangaOcrPageFocus();
   final MangaOcrJobSpec spec = MangaOcrJobSpec(
     engine: engine,
     engines: engines,
@@ -126,6 +130,7 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
     startPage: startPage,
     volumeTitle: volumeTitle,
     remoteTarget: availability.remoteTarget,
+    focus: focus,
   );
   return MangaReaderVolumeOcrQueued(
     registry.enqueue(
@@ -134,6 +139,7 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
         managedDirectory: imageDirPath,
         engine: engine,
         events: buildEvents(spec),
+        focus: focus,
       ),
       mangaJsonPath: mangaJsonPath,
     ),

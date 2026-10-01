@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -130,10 +131,19 @@ class _FakeVolumeRunner
     int startPage = 0,
     bool onlyMissing = true,
     required String language,
+    MangaOcrPageFocus? focus,
   }) {
     requests.add((imageDirPath, startPage));
     return events.stream;
   }
+
+  @override
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
+    required String language,
+  }) =>
+      throw UnimplementedError();
 
   @override
   Future<bool> isAvailable() async => true;
@@ -952,12 +962,14 @@ void main() {
       onCancel: () => sourceCancelled = true,
     );
     final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+    final MangaOcrPageFocus focus = MangaOcrPageFocus();
     registry.start(
       job: MangaOcrBackgroundJob(
         bookKey: bookKey,
         managedDirectory: bookDir.path,
         engine: MangaOcrEngineId.localOnnx,
         events: source.stream,
+        focus: focus,
       ),
       mangaJsonPath: p.join(bookDir.path, 'manga.json'),
     );
@@ -1002,6 +1014,8 @@ void main() {
     // 重进接回：书装好后 HUD 直接从注册表的快照显示进度。
     expect(find.text('OCR 1/2'), findsOneWidget,
         reason: '重进正在跑 OCR 的书，HUD 必须接回进度');
+    // 接回的任务可能是别处从第一页排的：阅读器要把它改道到读者眼前这页。
+    expect(focus.take(), 0, reason: '接回任务时要把读者当前页送给任务（边看边识别）');
 
     // 退出阅读页：只是不再观察，底层任务不得被取消。
     await tester.pumpWidget(const SizedBox.shrink());

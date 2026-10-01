@@ -6169,6 +6169,10 @@
   "manga_ocr_ctc_desc": "漫画向けに調整した PP-OCRv6 モデルで列ごとに認識します。manga-ocr よりダウンロードがずっと小さく高速で、テストページではルビの多いページを含めて同等以上の精度でした。モデル：Kellenok/PP-OCRv6_manga（Manga109-s と AnimeText で学習）。",
   "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead.",
   "video_bluray_stream_encrypted": "This Blu-ray stream is still AACS-encrypted. Fushi does not decrypt protected discs, so it can only play unencrypted BDMV folders or video files.",
+  "manga_ocr_engine_local_model": "ローカル · $model",
+  "manga_ocr_download_background_hint": "このページを離れても、ダウンロードはバックグラウンドで続きます。",
+  "storage_ocr_models_hint": "ローカル OCR モデルをここで個別にダウンロード・削除できます。どれを使うかは「マンガ › マンガ OCR」で選びます。",
+  "manga_ocr_wizard_title_book": "この巻の文字を認識",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
   "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition."

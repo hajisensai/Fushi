@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 
 /// 可观察取消的底层事件流：`cancelled` 为 true 才代表执行器真的收到了中止。
 class _FakeSource {
@@ -22,13 +23,17 @@ class _FakeSource {
   late final StreamController<MangaOcrBackgroundEvent> controller;
   bool cancelled = false;
 
-  MangaOcrBackgroundJob job(String bookKey, String dir) =>
-      MangaOcrBackgroundJob(
-        bookKey: bookKey,
-        managedDirectory: dir,
-        engine: MangaOcrEngineId.localOnnx,
-        events: controller.stream,
-      );
+  MangaOcrBackgroundJob job(
+    String bookKey,
+    String dir, {
+    MangaOcrPageFocus? focus,
+  }) => MangaOcrBackgroundJob(
+    bookKey: bookKey,
+    managedDirectory: dir,
+    engine: MangaOcrEngineId.localOnnx,
+    events: controller.stream,
+    focus: focus,
+  );
 }
 
 class _FakeSession implements MangaReaderSession {
@@ -493,6 +498,35 @@ void main() {
         ),
         isNotNull,
       );
+      await registry.cancelAll();
+    });
+  });
+
+  group('focusPage（读者翻页让任务改道）', () {
+    test('转给任务的改道通道；任务结束后不再转发', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource source = _FakeSource();
+      final MangaOcrPageFocus focus = MangaOcrPageFocus();
+      final MangaOcrRunningJob running = registry.start(
+        job: source.job('book', tmp.path, focus: focus),
+        mangaJsonPath: mangaJsonPath,
+      );
+      running.focusPage(4);
+      expect(focus.take(), 4);
+
+      await registry.cancel('book');
+      running.focusPage(6);
+      expect(focus.take(), isNull);
+    });
+
+    test('不支持改道的任务（无通道）：focusPage 什么都不做', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource source = _FakeSource();
+      final MangaOcrRunningJob running = registry.start(
+        job: source.job('book', tmp.path),
+        mangaJsonPath: mangaJsonPath,
+      );
+      running.focusPage(2);
       await registry.cancelAll();
     });
   });

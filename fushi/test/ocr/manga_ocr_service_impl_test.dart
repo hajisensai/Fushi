@@ -67,9 +67,13 @@ const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
 class _FakeJob implements MangaOcrVolumeJob {
   final Completer<String> completer = Completer<String>();
   bool cancelled = false;
+  final List<int> focused = <int>[];
 
   @override
   Future<String> get result => completer.future;
+
+  @override
+  void focus(int pageIndex) => focused.add(pageIndex);
 
   @override
   void cancel() {
@@ -1152,6 +1156,28 @@ void main() {
       expect(events[2].finished, isTrue);
       expect(events[2].pagesDone, 2);
       expect(events[2].mangaJsonPath, 'D:/vol1/manga_ocr_out/manga.json');
+    });
+
+    test('读者翻页：焦点页实时转给在跑的任务，开跑前翻过的页先补一次', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+      // 模型检查 / 起 isolate 期间读者已经翻到第 3 页。
+      final MangaOcrPageFocus focus = MangaOcrPageFocus()..request(3);
+      final Future<void> done = impl
+          .ocrFolder(imageDirPath: 'D:/vol1', focus: focus)
+          .drain<void>();
+      await runner.started.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.lastJob!.focused, <int>[3]);
+
+      focus.request(7);
+      expect(runner.lastJob!.focused, <int>[3, 7]);
+
+      runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
+      await done;
+      focus.request(9);
+      expect(runner.lastJob!.focused, <int>[3, 7], reason: '任务结束后不再转发');
     });
 
     test('取消订阅：job.cancel 被调、流静默收尾（无 error）', () async {
