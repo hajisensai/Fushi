@@ -6124,6 +6124,61 @@ let _popupWheelResidualAt = 0;
 // until the idle/surface reset so one occasional large mid-fling frame is not
 // mis-classified as a coarse mouse notch and momentarily over-tamed.
 let _popupWheelFineDevice = false;
+// BUG-2834: 粗滚轮一格不再 behavior:auto 瞬跳——以 rAF 指数缓动走到目标，连拨从
+// 尚未到达的目标继续累加（与正文阅读器 kContinuousWheelScrollJs、Flutter 侧
+// SmoothWheelScrollScope 同一手感）。距离不变（仍是 48px 视觉步长 / zoom），只补
+// 插值。触控板 / 高精度滚轮本身连续上报，仍 1:1 同步；墨水屏瞬时模式不缓动。缓动
+// 途中表面被别处滚动（键盘、跳词条、scrollIntoView）就让位；贴边就停。
+const POPUP_WHEEL_EASE_FACTOR = 0.18;
+const POPUP_WHEEL_EASE_SNAP_PX = 0.5;
+let _popupWheelEase = null; // { surface, target, pos, raf }
+function popupWheelEaseRead(surface) {
+    return surface ? surface.scrollTop : window.scrollY;
+}
+function popupWheelMove(surface, delta) {
+    if (surface) { surface.scrollBy({ top: delta, behavior: 'auto' }); }
+    else { window.scrollBy({ top: delta, behavior: 'auto' }); }
+}
+function popupWheelEaseStop() {
+    const ease = _popupWheelEase;
+    _popupWheelEase = null;
+    if (ease && ease.raf && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(ease.raf);
+    }
+}
+function popupWheelEaseFrame() {
+    const ease = _popupWheelEase;
+    if (!ease) return;
+    ease.raf = 0;
+    const shown = popupWheelEaseRead(ease.surface);
+    if (Math.abs(shown - ease.pos) > 2) { _popupWheelEase = null; return; }
+    const remaining = ease.target - ease.pos;
+    const next = Math.abs(remaining) <= POPUP_WHEEL_EASE_SNAP_PX
+        ? ease.target
+        : ease.pos + remaining * POPUP_WHEEL_EASE_FACTOR;
+    popupWheelMove(ease.surface, next - shown);
+    const stuck = Math.abs(next - shown) >= 1 &&
+        Math.abs(popupWheelEaseRead(ease.surface) - shown) < 0.5;
+    if (stuck || next === ease.target) { _popupWheelEase = null; return; }
+    ease.pos = next;
+    ease.raf = requestAnimationFrame(popupWheelEaseFrame);
+}
+function popupWheelEaseBy(surface, step) {
+    if (typeof requestAnimationFrame !== 'function') {
+        popupWheelMove(surface, step);
+        return;
+    }
+    let ease = _popupWheelEase;
+    const forward = step > 0;
+    if (!ease || ease.surface !== surface || (ease.target > ease.pos) !== forward) {
+        popupWheelEaseStop();
+        const shown = popupWheelEaseRead(surface);
+        ease = { surface, target: shown, pos: shown, raf: 0 };
+        _popupWheelEase = ease;
+    }
+    ease.target += step;
+    if (!ease.raf) ease.raf = requestAnimationFrame(popupWheelEaseFrame);
+}
 // BUG-2284: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
 // popup_settings_injection / 扩展 theme 下发 window.__fushiPopupInstantScroll）。
 // 墨水屏刷一次全屏才划算，按 delta 比例的连续滚动会一路刷出残影；开启后滚轮改成
@@ -6338,6 +6393,7 @@ const __fushiPopupWheelListener = (e) => {
         if ((nowMs - _popupEinkWheelAt) < POPUP_EINK_WHEEL_COOLDOWN_MS) return;
         _popupEinkWheelAt = nowMs;
         _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
+        popupWheelEaseStop();
         const extent = popupEinkWheelExtent(scroller);
         const wheelFraction = popupEinkStepFraction(
             window.__fushiPopupInstantScrollWheelStep, POPUP_EINK_WHEEL_VIEWPORT_FRACTION);
@@ -6361,6 +6417,13 @@ const __fushiPopupWheelListener = (e) => {
     // cross the shadow boundary, so it never absorbs there). In-app popup and
     // wheels over the host page: the window, exactly as before the shadow move.
     const layoutStep = visualStep / popupCurrentZoom(scroller);
+    // BUG-2834: 粗滚轮一格缓动到位（同距离、只补插值）；其余设备逐帧 1:1，并让掉
+    // 还在飞的缓动，免得两条路径同时推同一个表面。
+    if (coarseMouseNotch) {
+        popupWheelEaseBy(scroller, layoutStep);
+        return;
+    }
+    popupWheelEaseStop();
     _popupWheelResidual += layoutStep;
     const step = Math.trunc(_popupWheelResidual);
     _popupWheelResidual -= step;

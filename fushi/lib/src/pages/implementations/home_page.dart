@@ -3068,7 +3068,7 @@ class _HomePageState extends BasePageState<HomePage>
     return PrimaryScrollController(
       controller: _tabScrollControllers.putIfAbsent(
         tab,
-        FushiScrollController.new,
+        ScrollController.new,
       ),
       automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
       child: content,
