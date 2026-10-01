@@ -1507,6 +1507,13 @@ String ankiInlineMediaReference(String addMediaResult) {
   return addMediaResult;
 }
 
+/// 旧格式释义 HTML 的外字中和兜底（BUG-2825 起只剩兼容职责）。
+///
+/// 现行 popup.js 导出已按 Yomitan 形态内联 structured-content 样式并剥掉
+/// `structured-content` / `gloss-*` class，新导出不含 `gloss-image`，门控不会命中，
+/// 字段原样返回。保留它只为旧版对端（互联制卡里尚未升级的 popup.js）发来的
+/// 仍带 `gloss-*` class 的 HTML：那种 HTML 会让词典自带 CSS 在卡片上生效，
+/// 需要这层中和样式压住外字框。旧版对端全部升级后可删。
 String normalizeAnkiDictionaryHtml(String value) {
   if (!value.contains('data-sc-img') || !value.contains('gloss-image')) {
     return value;

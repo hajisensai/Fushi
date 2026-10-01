@@ -31,7 +31,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 ///   指针没动的话滚动停止后不会补一个 `onEnter`，清了就再也涨不回来，直到用户挪
 ///   一下鼠标。所以 hover 与 scrolling 是两个正交的位。
 /// - 压制要同时认「`ScrollStart..ScrollEnd` 之间」和「本帧发生过位移」两个位：
-///   桌面粗滚轮经 `FushiScrollController` 的补间动画跨十几帧，靠前者；而 Flutter
+///   桌面粗滚轮经 根部 `SmoothWheelScrollScope` 的补间动画跨十几帧，靠前者；而 Flutter
 ///   默认的滚轮路径在同一次事件处理里就把 start/update/end 全发完，只能靠后者。
 class FushiHoverLift extends StatefulWidget {
   const FushiHoverLift({
@@ -68,7 +68,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
 
   /// 本帧发生过滚动位移。**这是唯一的压制位**——覆盖三条路径：Flutter 默认滚轮
   /// （同一次事件处理里把 Start/Update/End 全发完）、拖拽滚动、以及
-  /// `FushiScrollController` 的 140ms 补间（走 `DrivenScrollActivity`，每帧一条
+  /// `SmoothWheelScrollScope` 的 140ms 补间（走 `DrivenScrollActivity`，每帧一条
   /// ScrollUpdate）。
   ///
   /// 置位与落位写在同一处（[_onScrollNotification]）：落位若挂在 build 里，
@@ -110,7 +110,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   /// Scaffold 的 observer 下、被 `TickerMode` 冻住的惯性滚动永远发不出 ScrollEnd。
   /// 拿一个「开始了就置 true、只靠 End 落下」的位当判据，命中即整片卡的悬停放大**永久**
   /// 失效。而按帧位判本来就更准：ScrollStart 那一刻还没有任何位移，第一条 ScrollUpdate
-  /// 才是真的滚起来了；`FushiScrollController` 的 140ms 补间走 `DrivenScrollActivity`，
+  /// 才是真的滚起来了；`SmoothWheelScrollScope` 的 140ms 补间走 `DrivenScrollActivity`，
   /// 每帧都发 ScrollUpdate，同样被这一位盖住。
   bool get _lifted => widget.enabled && _hovering && !_moved;
 

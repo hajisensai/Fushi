@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 String _extractWord(AppModel appModel, String text, int charIndex) {
   if (charIndex < 0 || !appModel.isInitialised) return text;
@@ -244,7 +245,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       scale: appModel.isInitialised
           ? appModel.appUiScale
           : FushiAppUiScale.defaultScale,
-      child: child ?? const SizedBox.shrink(),
+      child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
     );
   }
 }
