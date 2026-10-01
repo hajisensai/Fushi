@@ -36,6 +36,7 @@
 | [BUG-2837](bugs/BUG-2837-inline-video-autoplay-stripped-by-anki-editor.md) | ✅ | ✅ | 制卡视频（WebM 内嵌片段）翻面不自动播放，须手动点击 |
 | [BUG-2836](bugs/BUG-2836-ocr-model-download-stall.md) | ✅ | ✅ | 模型下载在劣化或卡死的连接上龟速或停住 |
 | [BUG-2834](bugs/BUG-2834-global-smooth-wheel.md) | ✅ | ✅ | 全 app 鼠标滚轮一格一跳：除正文阅读器外的列表 / 查词弹窗都不是无极滚动 |
+| [BUG-2833](bugs/BUG-2833-desktop-title-bar-reader-paper-color.md) | ✅ | ✅ | 桌面自绘顶栏不跟阅读器纸色，正文顶上一条白带 |
 | [BUG-2832](bugs/BUG-2832-video-bar-overflow.md) | ✅ | ✅ | 视频控制条空间不够时按钮被等比缩小或裁成半个图标 |
 | [BUG-2831](bugs/BUG-2831-mac-trackpad-fling-skips-chapters.md) | ✅ | ✅ | Mac触控板滚动模式乱跳章节 |
 | [BUG-2830](bugs/BUG-2830-continuous-wheel-stepless.md) | ✅ | ✅ | 滚动模式滚轮一格一格硬跳且触控板方向与手机不一致 |
