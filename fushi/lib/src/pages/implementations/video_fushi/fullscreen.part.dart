@@ -191,10 +191,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 悬浮球场景也要在全屏路由里重新登记：窗口侧那份所在的本页路由此刻被压在
         // 下面、不是当前路由，宿主只认当前路由上的场景，不重挂就退回「其它页面」
         // 的按钮。
-        pageBuilder: (_, __, ___) => _buildVideoFloatingBallScene(
+        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(
+          _buildVideoFloatingBallScene(
           playerController,
-          child: _wrapVideoGamepadControls(
-          ValueListenableBuilder<bool>(
+          child: ValueListenableBuilder<bool>(
             valueListenable:
                 playerController?.hdrHostActive ?? _kHdrHostInactive,
             builder: (BuildContext _, bool hdrHost, Widget? child) =>

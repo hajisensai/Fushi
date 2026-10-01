@@ -66,7 +66,7 @@ void main() {
     expect(route, isNonNegative);
     final int builder = src.indexOf('pageBuilder:', route);
     expect(
-      src.substring(builder, builder + 120),
+      src.substring(builder, builder + 160),
       contains('_buildVideoFloatingBallScene('),
       reason: '全屏路由不登记视频场景，悬浮球在全屏下只剩「其它页面」按钮',
     );
