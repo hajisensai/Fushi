@@ -613,8 +613,7 @@ class _BatchTagIntentRow extends StatelessWidget {
         maxLines: 1,
         softWrap: false,
         overflow: TextOverflow.visible,
-        style: TextStyle(
-          fontSize: 12,
+        style: theme.textTheme.labelMedium?.copyWith(
           color: selected == intent ? color : null,
         ),
       );
