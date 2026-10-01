@@ -122,6 +122,34 @@ void main() {
       expect(_parse('').steps, isEmpty);
     });
 
+    test('字段类型不对的条目整条丢弃，不抛 TypeError；其余条目照常保留', () {
+      final AiTextProcessSuggestion suggestion = _parse('''
+{"explanation": "混了几条坏的", "steps": [
+  {"kind": 3},
+  {"kind": "replace", "pattern": "a", "replacement": "", "isRegex": "true"},
+  {"kind": "takeLines", "lineCount": 2, "fromEnd": "yes"},
+  {"kind": "filterDigits", "enabled": "false"},
+  {"kind": "replace", "pattern": 42, "replacement": ""},
+  {"kind": "replace", "pattern": "b", "replacement": 0},
+  {"kind": "filterLatinLetters"}
+]}
+''');
+      expect(suggestion.steps.map((GalTextProcessStep s) => s.kind), <Object>[
+        GalTextProcessKind.filterLatinLetters,
+      ]);
+      expect(suggestion.explanation, '混了几条坏的');
+    });
+
+    test('全部条目类型都不对时返回空建议（UI 据此显示「没有给出可用的规则」）', () {
+      final AiTextProcessSuggestion suggestion = _parse('''
+{"steps": [
+  {"kind": "replace", "pattern": "x", "isRegex": "true"},
+  {"kind": ["dedupeChars"]}
+]}
+''');
+      expect(suggestion.isEmpty, isTrue);
+    });
+
     test('建议出来的步骤真的能跑', () {
       final AiTextProcessSuggestion suggestion = _parse('''
 {"steps": [{"kind": "dedupeAscending"}, {"kind": "filterDigits"}]}

@@ -22,6 +22,11 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
   /// true = 每部作品都因资料源临时不可用（504）而失败。
   bool transientFailure = false;
 
+  /// 非 null = 每部作品都留在待确认，并在 warnings 里带一条 [aiWarning]
+  /// 消息（`ai:failed …`）；[aiWarningTransient] 决定它是否标成临时不可用。
+  String? aiWarning;
+  bool aiWarningTransient = true;
+
   @override
   Future<SourceScrapeReport> scrapeSource(
     SourceLibraryRow source, {
@@ -52,6 +57,25 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
               workTitle: work.title,
               message: 'MAL anime/1/full HTTP 504',
               providerUnavailable: true,
+              workKey: work.stableKey,
+            ),
+        ],
+      );
+    }
+    final String? warning = aiWarning;
+    if (warning != null) {
+      final List<VideoSourceScrapeWork> works =
+          plannedWorks ?? const <VideoSourceScrapeWork>[];
+      return SourceScrapeReport(
+        sourceIds: <int>[source.id],
+        totalWorks: works.length,
+        pendingConfirmations: works.length,
+        warnings: <SourceScrapeIssue>[
+          for (final VideoSourceScrapeWork work in works)
+            SourceScrapeIssue(
+              workTitle: work.title,
+              message: warning,
+              providerUnavailable: aiWarningTransient,
               workKey: work.stableKey,
             ),
         ],
@@ -160,13 +184,17 @@ void main() {
     }
   }
 
-  VideoLibraryScrapeSweep sweep(
-          {bool Function()? isEnabled, bool Function()? isHashReady}) =>
+  VideoLibraryScrapeSweep sweep({
+    bool Function()? isEnabled,
+    bool Function()? isHashReady,
+    String? Function()? aiCapabilityKey,
+  }) =>
       VideoLibraryScrapeSweep(
         database: db,
         controller: controller,
         isEnabled: isEnabled,
         isHashReady: isHashReady,
+        aiCapabilityKey: aiCapabilityKey,
       );
 
   test('只补刮无规范身份的作品，批次 scope 记 sweep', () async {
@@ -391,6 +419,70 @@ void main() {
 
     expect(runner.sourceIds, hasLength(2),
         reason: '临时故障不是「查无」，不能被记账挡 7 天');
+  });
+
+  group('AI 能力进账本指纹（2026-10-01）', () {
+    test('配上 / 换掉 AI 后「试过没中」的作品下一轮立刻重试；能力键不变不重试',
+        () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      String? aiKey;
+      // 同一个实例：能力键必须每轮现取，而不是构造时快照。
+      final VideoLibraryScrapeSweep service =
+          sweep(aiCapabilityKey: () => aiKey);
+
+      await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1), reason: '没配 AI：试过没中进 7 天退避');
+
+      aiKey = 'p1|openai|https://api.example|gpt-x';
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(2),
+          reason: '配上 AI 后旧的「没中」不作数，不能再等 7 天');
+      expect(runner.plannedTitles.last, <String>['Unscraped Movie']);
+
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(2), reason: '能力键不变：照常退避');
+
+      aiKey = 'p2|anthropic|https://api.example|claude-x';
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(3), reason: '换了提供商 / 模型同样作废');
+
+      aiKey = null;
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(4), reason: '撤掉 AI 也是换了一套配置');
+    });
+
+    test('warnings 里标了临时不可用的 AI 失败不进退避，下一轮再试', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      runner.aiWarning = 'ai:failed reason=timeout';
+
+      final VideoLibraryScrapeSweep service =
+          sweep(aiCapabilityKey: () => 'p1|m');
+      await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(2),
+          reason: 'AI 请求失败记在 warnings（作品是待确认），仍是临时失败');
+    });
+
+    test('warnings 里没标临时不可用的作品照常进退避（对照组）', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      runner
+        ..aiWarning = 'ai:declined confidence=0.40 reason=two seasons'
+        ..aiWarningTransient = false;
+
+      final VideoLibraryScrapeSweep service =
+          sweep(aiCapabilityKey: () => 'p1|m');
+      await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1),
+          reason: 'AI 给了结论但不采用 = 真「没中」，不能每轮重问');
+    });
   });
 
   test('下载任务确认过身份的作品即使标题只是集号标签也自动补刮（BUG-2796）', () async {

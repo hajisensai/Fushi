@@ -171,48 +171,169 @@ Future<AiVideoIdentityDecision> requestAiVideoIdentity({
   return parseAiVideoIdentityDecision(reply, allowedKeys: query.candidateKeys);
 }
 
-/// 生产装配：每次被问时**现取**偏好里的指派，未指派 / 不可用直接回 null（不发请求）。
+/// 「资料源查无时给搜索词」的系统提示：只产出标题，不判定身份。
+String buildAiVideoSearchTitlesSystemPrompt() =>
+    '''
+A metadata provider found no work for a local video folder. Suggest the official
+titles under which this work is most likely listed on anime / TV / movie
+databases (AniDB, MyAnimeList, TMDB), so the app can search again.
+
+Answer with a single JSON object and nothing else:
+{"titles": ["...", "..."]}
+
+Rules:
+- At most $kAiVideoIdentitySearchTitleLimit titles, most likely first.
+- Prefer the original title (e.g. Japanese), then romaji, then the English
+  title. Strip release-group tags, resolution, codec and episode labels.
+- Only suggest titles you are confident refer to the work in the folder; return
+  an empty list when the local clues do not identify a work.
+$kAiIdentityReferenceRule''';
+
+/// 解析搜索词回复：去空去重、截到 [kAiVideoIdentitySearchTitleLimit] 条；抠不出
+/// JSON 或字段类型不对一律当空表。
+List<String> parseAiVideoSearchTitles(String reply) {
+  final Object? raw = decodeAiJsonObject(reply)?['titles'];
+  if (raw is! List<Object?>) return const <String>[];
+  final Set<String> seen = <String>{};
+  return List<String>.unmodifiable(
+    <String>[
+      for (final Object? title in raw)
+        if (title is String &&
+            title.trim().isNotEmpty &&
+            seen.add(title.trim()))
+          title.trim(),
+    ].take(kAiVideoIdentitySearchTitleLimit),
+  );
+}
+
+/// 跑一次「查无 → 给搜索词」。失败原样抛 [AiChatFailure]。
+Future<List<String>> requestAiVideoSearchTitles({
+  required AiChatClient client,
+  required AiProviderConfig provider,
+  required AiVideoIdentityQuery query,
+  List<WebKnowledgePage> references = const <WebKnowledgePage>[],
+}) async {
+  final String reply = await client.complete(
+    provider: provider,
+    messages: <AiChatMessage>[
+      AiChatMessage.system(buildAiVideoSearchTitlesSystemPrompt()),
+      AiChatMessage.user(
+        buildAiVideoIdentityUserPrompt(query, references: references),
+      ),
+    ],
+    maxTokens: 512,
+  );
+  return parseAiVideoSearchTitles(reply);
+}
+
+/// [provider] 的能力键：判定 / 搜索词结论只在同一套提供商、协议、地址、模型、
+/// 推理档位下可复用。不含 API key——鉴权失败不缓存，改 key 后自然会重问。
+String aiVideoIdentityCapabilityKey(AiProviderConfig provider) => <String>[
+  provider.id,
+  provider.protocol.storageKey,
+  provider.baseUrl.toString(),
+  provider.model.trim(),
+  provider.reasoningEffort.storageKey,
+].join('|');
+
+/// 生产装配：每次被问时**现取**偏好里的指派，未指派 / 不可用时
+/// [capabilityKey] 为 null，协调器据此完全不问 AI（不发请求）。
 ///
-/// 现取而不是构造期解析，是因为协调器实例在 home_page 里按配置指纹缓存、
-/// 生命周期很长；用户在设置页改了指派要立即生效，不能等协调器重建。
-/// [clientFactory] 只给测试注入假客户端；生产每次新建、用完即关，不留连接。
+/// 现取而不是构造期解析，是因为协调器与补刮器在 home_page / 下载管线里生命周期
+/// 很长；用户在设置页改了指派要立即生效，不能等它们重建。[clientFactory] /
+/// [webFactory] 只给测试注入；生产每次新建、用完即关，不留连接。
 ///
-/// 失败先记诊断日志再原样抛出：协调器（引擎包，无日志服务）据此把本趟 run 余下
-/// 的歧义作品跳过 AI，本条照旧进人工确认 / 待确认。
+/// 失败先记诊断日志再原样抛出：协调器（引擎包，无日志服务）据此记一条
+/// `ai:failed` 运行警告，并把这部作品当作临时失败（补刮下轮再试）。
 ///
 /// 联网资料（设置 › AI › 联网资料）开着时先抓一小段背景一起给模型；抓失败不影响
-/// 识别本身。[webFactory] 同样只给测试注入。
-AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
-  AiSettingsSource prefsRepo, {
-  AiChatClient Function()? clientFactory,
-  WebKnowledgeClient Function()? webFactory,
-}) => (AiVideoIdentityQuery query) async {
-  final AiProviderConfig? provider = prefsRepo.aiFeatureAssignments.resolve(
+/// 识别本身。
+class PreferencesAiVideoIdentityAdvisor implements AiVideoIdentityAdvisor {
+  PreferencesAiVideoIdentityAdvisor(
+    this._prefs, {
+    AiChatClient Function()? clientFactory,
+    WebKnowledgeClient Function()? webFactory,
+  }) : _clientFactory = clientFactory,
+       _webFactory = webFactory;
+
+  final AiSettingsSource _prefs;
+  final AiChatClient Function()? _clientFactory;
+  final WebKnowledgeClient Function()? _webFactory;
+
+  AiProviderConfig? _provider() => _prefs.aiFeatureAssignments.resolve(
     AiFeature.videoIdentify,
-    prefsRepo.aiProviders,
+    _prefs.aiProviders,
   );
-  if (provider == null) {
-    return null;
+
+  @override
+  String? get capabilityKey {
+    final AiProviderConfig? provider = _provider();
+    return provider == null ? null : aiVideoIdentityCapabilityKey(provider);
   }
-  final AiChatClient client = clientFactory?.call() ?? AiChatClient();
-  final WebKnowledgeClient web =
-      webFactory?.call() ??
-      WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites);
-  try {
-    return await requestAiVideoIdentity(
+
+  @override
+  Future<AiVideoIdentityDecision> decide(AiVideoIdentityQuery query) => _ask(
+    query,
+    (
+      AiChatClient client,
+      AiProviderConfig provider,
+      List<WebKnowledgePage> references,
+    ) => requestAiVideoIdentity(
       client: client,
       provider: provider,
       query: query,
-      references: await fetchAiIdentityReferences(web, query),
-    );
-  } catch (error, stack) {
-    engineLog.logDiagnostic(
-      'VideoSourceScrapeCoordinator.aiIdentity',
-      '${query.localTitles.join(' / ')}: $error\n$stack',
-    );
-    rethrow;
-  } finally {
-    client.close();
-    web.close();
+      references: references,
+    ),
+  );
+
+  @override
+  Future<List<String>> suggestSearchTitles(AiVideoIdentityQuery query) => _ask(
+    query,
+    (
+      AiChatClient client,
+      AiProviderConfig provider,
+      List<WebKnowledgePage> references,
+    ) => requestAiVideoSearchTitles(
+      client: client,
+      provider: provider,
+      query: query,
+      references: references,
+    ),
+  );
+
+  Future<T> _ask<T>(
+    AiVideoIdentityQuery query,
+    Future<T> Function(
+      AiChatClient client,
+      AiProviderConfig provider,
+      List<WebKnowledgePage> references,
+    )
+    request,
+  ) async {
+    final AiProviderConfig? provider = _provider();
+    if (provider == null) {
+      // 协调器先看 capabilityKey 才会来问；走到这里是两次读之间用户刚撤了指派。
+      throw StateError('视频作品识别未指派可用的 AI 提供商');
+    }
+    final AiChatClient client = _clientFactory?.call() ?? AiChatClient();
+    final WebKnowledgeClient web =
+        _webFactory?.call() ??
+        WebKnowledgeClient(sites: _prefs.aiWebKnowledgeSites);
+    try {
+      return await request(
+        client,
+        provider,
+        await fetchAiIdentityReferences(web, query),
+      );
+    } catch (error, stack) {
+      engineLog.logDiagnostic(
+        'VideoSourceScrapeCoordinator.aiIdentity',
+        '${query.localTitles.join(' / ')}: $error\n$stack',
+      );
+      rethrow;
+    } finally {
+      client.close();
+      web.close();
+    }
   }
-};
+}

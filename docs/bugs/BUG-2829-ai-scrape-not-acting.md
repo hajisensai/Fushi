@@ -1,0 +1,20 @@
+## BUG-2829 · 配了 AI 也不代劳视频身份识别，AI 设置多处失效
+- **报告**：2026-10-01（用户：视频页横幅「1 部作品还没确认身份」，已在设置里给「视频作品识别」指派了 AI，问为什么 AI 不自己帮忙）
+- **真实性**：✅ 真 bug（多处根因，计划见 `docs/specs/2026-10-01-ai-features-wiring-fix.md`）
+  - V1 补刮账本指纹不含 AI：`packages/fushi_engine/lib/media/video/metadata/video_library_scrape_sweep.dart:348` 只用刮削配置指纹，配好 AI 后「试过没中」的作品仍要等 7 天退避才重刮。
+  - V2 判定缓存不分提供商：`video_source_scrape_coordinator.dart:222` `_aiIdentityCache` 只按查询键缓存，换提供商 / 模型后沿用旧结论。
+  - V3 AI 失败静默且吃掉 7 天退避：decider 抛错被当成「没结论」，不留记录、不撤记账。
+  - V4 待确认页没有 AI 入口，只能手动搜。
+  - V5 资料源查无（零候选）永远走不到 AI；且「主源查无 + 兜底源未配置」被 resolver 合并成 `providerUnavailable`（`video_metadata_resolver.dart:224`），连查无判据都没命中。
+  - V6 AI 置信度不够时它的倾向不展示给用户。
+  - S1 自动保存把正在编辑（暂时无效）的提供商从磁盘删掉：`ai_provider_settings_section.dart:639`。
+  - S2 指派指向不存在的提供商时显示成「跟随默认」：`ai_provider_settings_section.dart:451` 附近判据。
+  - S3 OpenAI 协议空正文当成功：`packages/fushi_engine/lib/ai/ai_chat_client.dart:172`。
+  - S4 「测试连接」只跑 listModels，验不出模型名错误：`ai_provider_settings_section.dart:719`。
+  - S5 OpenAI 官方推理模型拒收 `max_tokens`：`ai_chat_client.dart:148`。
+  - S6 「自定义（OpenAI 兼容）」预设根本加不进来：`ai_provider_settings_section.dart:679` 用已校验构造器建草稿，空地址当场抛 ArgumentError。
+  - F1 「视频搜索辅助」描述与实际行为不符、补字幕重排失败无日志；F2 文本处理解析遇非字符串抛 TypeError。
+  - 审查返工（同日）：① AI 失败一律标临时 → 鉴权失败 / 模型名错时每轮补刮对整库重问，改为按 `AiChatFailure.isTransient` 分类（`ai_chat_client.dart`）；② 「搜过但查无」改由 resolver 判（`VideoMetadataResolution.searchedWithoutResult`），资料源 401 不再被当成查无去问 AI；③ AI 给的词能被读成显式 id 的丢掉；④ 没配 AI 时账本指纹与旧值逐字相同；⑤ 无效草稿回落旧版本时停用落盘，撤回明文 HTTP 放行不会被悄悄保留；⑥ 失败理由只留短码 / 类型名，并与设置页同一套文案（`fushi/lib/src/ai/ai_failure_text.dart`）。
+- **[x] ① 已修复** — `d945ea5e06`（V1–V6、S1–S5、F1–F2）、`f5e81bf7a3`（S6）、`cab1b9b1bc` + `c30f89ff2e`（审查返工）
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_source_scrape_coordinator_test.dart`（AI 歧义消解组：换提供商重问 / 未配不问 / AI 识别强制重问 / 查无按 AI 标题重搜 / 失败记 ai:failed）、`fushi/test/settings/ai_provider_settings_test.dart`（草稿保留 / 悬空指派 / ping / 自定义预设）、`fushi/test/ai/*`、`fushi/test/mining/galgame_text_process_test.dart`；`a66c46ad94`：`fushi/test/media/video/metadata/video_library_scrape_sweep_test.dart`（AI 能力进账本指纹，变异实测：指纹去掉 AI 即红）、`fushi/test/pages/video_source_scrape_ui_test.dart`（待确认页 AI 识别 / 未配引导 / 确认框 AI 建议标注）、`fushi/test/media/video/metadata/video_scrape_issue_text_test.dart`；审查返工：`video_metadata_resolver_test.dart`（searchedWithoutResult 四态）、coordinator 测试（临时 / 鉴权 / 非 AiChatFailure 三种失败分类、显式 id 搜索词被丢、资料源 401 不问 AI、AI 词唯一精确命中仍过门槛）、设置测试（回落版本停用）。变异实测：四处修复各自回退，对应测试均红。
+- **备注**：AI 只在已取回的候选里选、或产出搜索词；AI 给的词重搜到的结果一律仍过 AI 判定门槛，不会因「恰好精确命中」绕过。
