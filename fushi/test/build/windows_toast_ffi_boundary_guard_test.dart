@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2838：Windows 版长时间运行（3.5~7 小时）后被
 /// `flutter_local_notifications_windows.dll` 里未捕获的 C++ 异常整进程打死
 /// （HRESULT 0x800401FD CO_E_OBJNOTCONNECTED，minidump 证实）。
@@ -26,11 +28,6 @@ void main() {
       'ci/patches/hosted/flutter_local_notifications_windows-2.0.1/src';
 
   File repoFile(String relative) => File('${repoRoot.path}/$relative');
-
-  /// 去掉 `//` 行注释与 `/* */` 块注释（本文件不含带 `//` 的字符串字面量）。
-  String stripComments(String source) => source
-      .replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '')
-      .replaceAll(RegExp(r'//[^\n]*'), '');
 
   /// 从 [open]（必须指向 `{`）开始做括号配对，返回配对的 `}` 下标。
   int matchBrace(String source, int open) {
@@ -65,7 +62,8 @@ void main() {
   /// 顶层（列 0 起头、不在匿名 namespace 里）的函数定义：名字 → 函数体
   /// （含首尾花括号）。
   Map<String, String> topLevelDefinitions(String source) {
-    String code = stripComments(source);
+    // 结构扫描：串里的花括号不参与配对。
+    String code = maskCommentsAndStrings(source);
     // 匿名 namespace 里是内部 helper，不是导出面：整块剔除。
     for (
       int at = code.indexOf(RegExp(r'^namespace\s*\{', multiLine: true));
@@ -135,8 +133,8 @@ void main() {
   });
 
   test('不再缓存 ToastNotifier / History（断开的 COM 代理就是崩溃源）', () {
-    final String hpp = stripComments(pluginHpp.readAsStringSync());
-    final String cpp = stripComments(ffiApi.readAsStringSync());
+    final String hpp = maskComments(pluginHpp.readAsStringSync());
+    final String cpp = maskComments(ffiApi.readAsStringSync());
     expect(
       hpp,
       isNot(contains('ToastNotifier>')),
