@@ -22,6 +22,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
@@ -1801,14 +1803,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (downgrade != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -1863,14 +1863,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           unrecoverable.kind == FushiDatabaseFailureKind.cannotOpen;
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -1939,14 +1937,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (dataRootUnavailable != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -2008,14 +2004,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (appModel.initError != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: Center(
@@ -2093,14 +2087,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (appModel.dataRootMigrationActive) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: DataRootMigrationView(
             progress: appModel.dataRootMigrationProgress,
             background: _savedSplashColor,
@@ -2122,14 +2113,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (appModel.backupImportOwnsAppRoot) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: BackupImportOverlayView(
             phase: appModel.backupImportPhase!,
             message: appModel.backupImportMessage,
@@ -2150,14 +2138,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _startLoadingWatchdogIfNeeded();
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final cs = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: brightness,
-      );
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          theme: fallbackTheme,
           home: Scaffold(
             backgroundColor: _savedSplashColor ?? cs.surface,
             body: LoadingWatchdogView(

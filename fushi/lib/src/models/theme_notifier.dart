@@ -503,6 +503,9 @@ typedef ThemePreset = ({
 /// decide whether a legacy custom theme was ever actually configured.
 const int kCustomThemeDefaultSeed = 0xFF1F4959;
 
+/// 品牌默认种子色（默认预设 / 自定义主题默认值 / 兜底主题共用）。
+const Color kFushiDefaultSeed = Color(kCustomThemeDefaultSeed);
+
 /// One self-contained custom theme. Replaces the old flat single-set
 /// `custom_theme_*` prefs with a value type so the notifier can hold a list of
 /// them (TODO-930). `null` on a role color means "not enabled" (the old flat
@@ -1267,7 +1270,7 @@ class ThemeNotifier extends ChangeNotifier {
       // pref so behavior is identical to before TODO-930.
       return customThemeSeed;
     }
-    return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
+    return themePresets[appThemeKey]?.seed ?? kFushiDefaultSeed;
   }
 
   // The M3 scheme variant for the active preset. Presets differ here so the
@@ -1395,263 +1398,25 @@ class ThemeNotifier extends ChangeNotifier {
         () => customThemeLinkColor,
       );
 
-  ThemeData _buildThemeData(Brightness brightness) {
-    final cs = buildColorScheme(brightness);
-    final TextTheme tt = _textThemeBuilder();
-    final bool eink = einkMode;
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      textTheme: tt,
-      // E-ink: swap pages in one frame (single panel refresh, no smearing) and
-      // drop ink ripples — a spreading translucent overlay is exactly the kind
-      // of repeated partial refresh slow panels render worst.
-      pageTransitionsTheme: eink
-          ? const PageTransitionsTheme(
-              builders: <TargetPlatform, PageTransitionsBuilder>{
-                TargetPlatform.android: EinkNoPageTransitionsBuilder(),
-                // iOS/macOS 不能用零转场：它们的返回手势由这份 builder 装载，
-                // 直接 `return child` 等于把侧滑返回从整个 app 拆掉（iOS 又没有
-                // 系统返回键），隐藏顶栏的页面就此退不出去。
-                TargetPlatform.iOS: EinkCupertinoPageTransitionsBuilder(),
-                TargetPlatform.macOS: EinkCupertinoPageTransitionsBuilder(),
-                TargetPlatform.windows: EinkNoPageTransitionsBuilder(),
-                TargetPlatform.linux: EinkNoPageTransitionsBuilder(),
-                TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
-              },
-            )
-          // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
-          // 转成 navigator 的手势计数增减，平台重发起始事件 / 手势中途路由被 pop 都
-          // 会让计数失配，而计数一旦卡住，每层路由都被 IgnorePointer——画面正常但整个
-          // app 点不动（见 FushiPredictiveBackPageTransitionsBuilder 类注释）。
-          // 其余平台必须逐个列出：PageTransitionsTheme 的 builders 是全量替换，漏一个
-          // 平台它就回落到 ZoomPageTransitionsBuilder（iOS/macOS 会因此丢掉 Cupertino
-          // 的边缘滑动返回）。
-          : const PageTransitionsTheme(
-              builders: <TargetPlatform, PageTransitionsBuilder>{
-                TargetPlatform.android:
-                    FushiPredictiveBackPageTransitionsBuilder(),
-                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.windows: ZoomPageTransitionsBuilder(),
-                TargetPlatform.linux: ZoomPageTransitionsBuilder(),
-                TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(),
-              },
-            ),
-      splashFactory: eink ? NoSplash.splashFactory : null,
-      // E-ink：NoSplash 只去掉扩散水波，InkWell 的 hover（4% alpha）/ 按下
-      // highlight（12% alpha）叠层照画——都是墨水屏上的抖动灰，且每次 hover
-      // 进出都是一次局部刷新。按下反馈交给各组件自己的反色/描边，这里归零。
-      // focusColor 不动：焦点环由 FushiFocusTarget 自绘。
-      hoverColor: eink ? Colors.transparent : null,
-      highlightColor: eink ? Colors.transparent : null,
-      extensions: <ThemeExtension<dynamic>>[
-        FushiDesignSystemTheme(designSystemTheme),
-        FushiEinkTheme(eink),
-      ],
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: false,
-      ),
-      // 滑块 / 轨道配色交回 M3 默认（选中：轨道 primary、滑块 onPrimary、勾
-      // onPrimaryContainer；未选中：轨道 surfaceContainerHighest、滑块 outline）。
-      // 以前覆写成「轨道 primaryContainer + 滑块 primary」是 M2 的配法，而 M3 的
-      // 勾图标仍按 onPrimaryContainer 着色——亮色下深色勾压在 primary 滑块上几乎
-      // 看不见。墨水屏下 primary=前景、onPrimary=底色，默认配色同样黑白分明。
-      // 勾显式着 primary：M3 默认的 onPrimaryContainer 只在原生色阶里与 onPrimary
-      // 明暗相反；自定义主题钉了主色时 onPrimary 与 onPrimaryContainer 是各自另算
-      // 的可读色，可能同黑同白（深色模式钉深主色 / 亮色模式钉亮主色），勾就与
-      // 滑块撞色消失。primary 与 onPrimary 的对比度由构造保证。
-      switchTheme: SwitchThemeData(
-        thumbIcon: WidgetStateProperty.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? Icon(Icons.check, size: 14, color: cs.primary)
-              : null;
-        }),
-        trackOutlineColor: WidgetStateColor.resolveWith((states) {
-          // E-ink: keep a solid outline on both states so the switch body
-          // never depends on a fill the panel may dither.
-          if (eink) return cs.outline;
-          return states.contains(WidgetState.selected)
-              ? Colors.transparent
-              : cs.outline;
-        }),
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        elevation: 0,
-        indicatorShape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.control,
-        ),
-        labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
-      ),
-      popupMenuTheme: PopupMenuThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.menu,
-        ),
-      ),
-      dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.dialog,
-        ),
-      ),
-      listTileTheme: const ListTileThemeData(),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(
-          borderRadius: FushiBorderRadius.control,
-          borderSide: BorderSide(color: cs.outline),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: FushiBorderRadius.control,
-          borderSide: BorderSide(color: cs.outline),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: FushiBorderRadius.control,
-          borderSide: BorderSide(color: cs.primary, width: 2),
-        ),
-      ),
-      // BUG-1997：两个亮度用同一个粗细。原来深色是 `null`（退回 Material 默认 8），
-      // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
-      // **常驻**覆盖在每个列表右侧的，压住并吞掉最右一列的操作按钮。仓库里 9 处
-      // RawScrollbar 都硬写 3，说明 3 才是设计意图，深色只是漏钉。
-      scrollbarTheme: ScrollbarThemeData(
-        thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
-        thumbVisibility: WidgetStateProperty.all(true),
-      ),
-      sliderTheme: SliderThemeData(
-        thumbColor: cs.primary,
-        activeTrackColor: cs.primary,
-        inactiveTrackColor: cs.outlineVariant,
-      ),
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.card,
-        ),
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        color: cs.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.card,
-          // E-ink: surfaceContainerLow == the page background, so cards need a
-          // solid outline to keep their boundary readable in pure black/white.
-          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-        ),
-      ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        showDragHandle: true,
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.sheet,
-        ),
-        surfaceTintColor: Colors.transparent,
-      ),
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        elevation: 0,
-        highlightElevation: 0,
-        backgroundColor: cs.primaryContainer,
-        foregroundColor: cs.onPrimaryContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.control,
-          // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
-          // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
-          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-        ),
-      ),
-      // E-ink：M3 只用 `secondaryContainer` 填充表达选中段，而墨水屏方案把它
-      // 塌缩成了页面底色——选中段与相邻段逐像素相同，全仓调用点又一律
-      // `showSelectedIcon: false`，连勾选形状这条兜底都没有。`side` 由整条按钮
-      // 的 states 解析（Flutter 的 `segmentStyleFor` 不把 side 下发到分段），
-      // 做不出按段差异；反色填充是剩下唯一的通道，也是上游 HSA 的做法——它的
-      // eink scheme 直接把 `secondaryContainer` 定义成前景色。失效态返回 null
-      // 交回 M3 默认，不动既有的失效观感。填充/前景都不改几何，不影响分段条
-      // 的宽度估算与 overflow 守卫。
-      segmentedButtonTheme: eink
-          ? SegmentedButtonThemeData(
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.resolveWith<Color?>((
-                  Set<WidgetState> states,
-                ) {
-                  if (states.contains(WidgetState.disabled)) return null;
-                  return states.contains(WidgetState.selected)
-                      ? cs.onSurface
-                      : cs.surface;
-                }),
-                foregroundColor: WidgetStateProperty.resolveWith<Color?>((
-                  Set<WidgetState> states,
-                ) {
-                  if (states.contains(WidgetState.disabled)) return null;
-                  return states.contains(WidgetState.selected)
-                      ? cs.surface
-                      : cs.onSurface;
-                }),
-                iconColor: WidgetStateProperty.resolveWith<Color?>((
-                  Set<WidgetState> states,
-                ) {
-                  if (states.contains(WidgetState.disabled)) return null;
-                  return states.contains(WidgetState.selected)
-                      ? cs.surface
-                      : cs.onSurface;
-                }),
-              ),
-            )
-          : const SegmentedButtonThemeData(),
-      chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.chip,
-        ),
-        side: BorderSide(color: cs.outlineVariant),
-        // E-ink：同一个塌缩——`secondaryContainer` 等于页面底色，`showCheckmark`
-        // 又关掉了 M3 唯一的形状信号，选中与未选中的 chip 逐像素相同（字体库那
-        // 排「用途」FilterChip 就栽在这）。反色填充 + 配对 label 色补回信号；
-        // labelStyle 必须从 `labelLarge` 派生，直接给裸 TextStyle 会把 chip 的
-        // 字号字族一起替换掉。
-        selectedColor: eink ? cs.onSurface : cs.secondaryContainer,
-        labelStyle: eink
-            ? (tt.labelLarge ?? const TextStyle()).copyWith(
-                color: WidgetStateColor.resolveWith(
-                  (Set<WidgetState> states) =>
-                      states.contains(WidgetState.selected)
-                          ? cs.surface
-                          : cs.onSurface,
-                ),
-              )
-            : null,
-        showCheckmark: false,
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          shape: const StadiumBorder(),
-          // E-ink：`FilledButton.tonal*` 的填充是 secondaryContainer == 页面底色，
-          // 没有边就退化成一行裸文字、与旁边的 TextButton 无法区分；描边补回
-          // 按钮体。实心 FilledButton 的填充本就是前景色，多一圈同色边无害。
-          side: eink ? BorderSide(color: cs.outline) : null,
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          shape: const StadiumBorder(),
-          side: BorderSide(color: cs.outline),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          shape: const StadiumBorder(),
-        ),
-      ),
-      dividerTheme: DividerThemeData(
-        color: cs.outlineVariant,
-        // E-ink panels can't render a crisp half-pixel hairline; use a full
-        // pixel so dividers stay solid black/white lines.
-        thickness: eink ? 1 : 0.5,
-      ),
-    );
-  }
+  ThemeData _buildThemeData(Brightness brightness) =>
+      buildThemeDataFor(buildColorScheme(brightness));
+
+  /// 用当前主题的字体 / 墨水屏 / 设计系统，把任意 [scheme] 装成完整 ThemeData。
+  ///
+  /// 书内查词弹窗的纸色 scheme 也经这里成型，组件主题（Card / Chip / Dialog /
+  /// 按钮…）与主 app 同源，不再各自拼一份只有 colorScheme 的裸 ThemeData。
+  ThemeData buildThemeDataFor(ColorScheme scheme) => buildFushiThemeData(
+        scheme: scheme,
+        textTheme: _textThemeBuilder(),
+        eink: einkMode,
+        designSystem: designSystemTheme,
+      );
 
   // ── Custom theme prefs ─────────────────────────────────────────────
 
   Color get customThemeSeed {
-    final int v = _get('custom_theme_seed', defaultValue: 0xFF1F4959);
+    final int v =
+        _get('custom_theme_seed', defaultValue: kCustomThemeDefaultSeed);
     return Color(v);
   }
 
@@ -1986,3 +1751,277 @@ final themeProvider = ChangeNotifierProvider<ThemeNotifier>((ref) {
   final appModel = ref.watch(appProvider);
   return appModel.themeNotifier;
 });
+
+/// 全应用唯一的「ColorScheme → ThemeData」工厂。
+///
+/// 主 app（[ThemeNotifier.theme] / [ThemeNotifier.darkTheme]）、书内查词弹窗
+/// （`resolveDictionaryPopupTheme`）与数据库就绪前的兜底界面
+/// （[buildFushiFallbackTheme]）都从这里取组件主题；新代码不得再手写
+/// `ThemeData(`（守卫 `test/models/theme_single_factory_guard_test.dart`）。
+ThemeData buildFushiThemeData({
+  required ColorScheme scheme,
+  required TextTheme textTheme,
+  bool eink = false,
+  FushiDesignSystem designSystem = FushiDesignSystem.auto,
+}) {
+  final ColorScheme cs = scheme;
+  final TextTheme tt = textTheme;
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: cs,
+    textTheme: tt,
+    // E-ink: swap pages in one frame (single panel refresh, no smearing) and
+    // drop ink ripples — a spreading translucent overlay is exactly the kind
+    // of repeated partial refresh slow panels render worst.
+    pageTransitionsTheme: eink
+        ? const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.android: EinkNoPageTransitionsBuilder(),
+              // iOS/macOS 不能用零转场：它们的返回手势由这份 builder 装载，
+              // 直接 `return child` 等于把侧滑返回从整个 app 拆掉（iOS 又没有
+              // 系统返回键），隐藏顶栏的页面就此退不出去。
+              TargetPlatform.iOS: EinkCupertinoPageTransitionsBuilder(),
+              TargetPlatform.macOS: EinkCupertinoPageTransitionsBuilder(),
+              TargetPlatform.windows: EinkNoPageTransitionsBuilder(),
+              TargetPlatform.linux: EinkNoPageTransitionsBuilder(),
+              TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
+            },
+          )
+        // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
+        // 转成 navigator 的手势计数增减，平台重发起始事件 / 手势中途路由被 pop 都
+        // 会让计数失配，而计数一旦卡住，每层路由都被 IgnorePointer——画面正常但整个
+        // app 点不动（见 FushiPredictiveBackPageTransitionsBuilder 类注释）。
+        // 其余平台必须逐个列出：PageTransitionsTheme 的 builders 是全量替换，漏一个
+        // 平台它就回落到 ZoomPageTransitionsBuilder（iOS/macOS 会因此丢掉 Cupertino
+        // 的边缘滑动返回）。
+        : const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.android:
+                  FushiPredictiveBackPageTransitionsBuilder(),
+              TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+              TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+              TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(),
+            },
+          ),
+    splashFactory: eink ? NoSplash.splashFactory : null,
+    // E-ink：NoSplash 只去掉扩散水波，InkWell 的 hover（4% alpha）/ 按下
+    // highlight（12% alpha）叠层照画——都是墨水屏上的抖动灰，且每次 hover
+    // 进出都是一次局部刷新。按下反馈交给各组件自己的反色/描边，这里归零。
+    // focusColor 不动：焦点环由 FushiFocusTarget 自绘。
+    hoverColor: eink ? Colors.transparent : null,
+    highlightColor: eink ? Colors.transparent : null,
+    extensions: <ThemeExtension<dynamic>>[
+      FushiDesignSystemTheme(designSystem),
+      FushiEinkTheme(eink),
+    ],
+    appBarTheme: const AppBarTheme(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+    ),
+    // 滑块 / 轨道配色交回 M3 默认（选中：轨道 primary、滑块 onPrimary、勾
+    // onPrimaryContainer；未选中：轨道 surfaceContainerHighest、滑块 outline）。
+    // 以前覆写成「轨道 primaryContainer + 滑块 primary」是 M2 的配法，而 M3 的
+    // 勾图标仍按 onPrimaryContainer 着色——亮色下深色勾压在 primary 滑块上几乎
+    // 看不见。墨水屏下 primary=前景、onPrimary=底色，默认配色同样黑白分明。
+    // 勾显式着 primary：M3 默认的 onPrimaryContainer 只在原生色阶里与 onPrimary
+    // 明暗相反；自定义主题钉了主色时 onPrimary 与 onPrimaryContainer 是各自另算
+    // 的可读色，可能同黑同白（深色模式钉深主色 / 亮色模式钉亮主色），勾就与
+    // 滑块撞色消失。primary 与 onPrimary 的对比度由构造保证。
+    switchTheme: SwitchThemeData(
+      thumbIcon: WidgetStateProperty.resolveWith((states) {
+        return states.contains(WidgetState.selected)
+            ? Icon(Icons.check, size: 14, color: cs.primary)
+            : null;
+      }),
+      trackOutlineColor: WidgetStateColor.resolveWith((states) {
+        // E-ink: keep a solid outline on both states so the switch body
+        // never depends on a fill the panel may dither.
+        if (eink) return cs.outline;
+        return states.contains(WidgetState.selected)
+            ? Colors.transparent
+            : cs.outline;
+      }),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      elevation: 0,
+      indicatorShape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.control,
+      ),
+      labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.menu,
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.dialog,
+      ),
+    ),
+    listTileTheme: const ListTileThemeData(),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(
+        borderRadius: FushiBorderRadius.control,
+        borderSide: BorderSide(color: cs.outline),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: FushiBorderRadius.control,
+        borderSide: BorderSide(color: cs.outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: FushiBorderRadius.control,
+        borderSide: BorderSide(color: cs.primary, width: 2),
+      ),
+    ),
+    // BUG-1997：两个亮度用同一个粗细。原来深色是 `null`（退回 Material 默认 8），
+    // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
+    // **常驻**覆盖在每个列表右侧的，压住并吞掉最右一列的操作按钮。仓库里 9 处
+    // RawScrollbar 都硬写 3，说明 3 才是设计意图，深色只是漏钉。
+    scrollbarTheme: ScrollbarThemeData(
+      thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
+      thumbVisibility: WidgetStateProperty.all(true),
+    ),
+    sliderTheme: SliderThemeData(
+      thumbColor: cs.primary,
+      activeTrackColor: cs.primary,
+      inactiveTrackColor: cs.outlineVariant,
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.card,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      color: cs.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.card,
+        // E-ink: surfaceContainerLow == the page background, so cards need a
+        // solid outline to keep their boundary readable in pure black/white.
+        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+      ),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      showDragHandle: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.sheet,
+      ),
+      surfaceTintColor: Colors.transparent,
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      elevation: 0,
+      highlightElevation: 0,
+      backgroundColor: cs.primaryContainer,
+      foregroundColor: cs.onPrimaryContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.control,
+        // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
+        // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
+        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+      ),
+    ),
+    // E-ink：M3 只用 `secondaryContainer` 填充表达选中段，而墨水屏方案把它
+    // 塌缩成了页面底色——选中段与相邻段逐像素相同，全仓调用点又一律
+    // `showSelectedIcon: false`，连勾选形状这条兜底都没有。`side` 由整条按钮
+    // 的 states 解析（Flutter 的 `segmentStyleFor` 不把 side 下发到分段），
+    // 做不出按段差异；反色填充是剩下唯一的通道，也是上游 HSA 的做法——它的
+    // eink scheme 直接把 `secondaryContainer` 定义成前景色。失效态返回 null
+    // 交回 M3 默认，不动既有的失效观感。填充/前景都不改几何，不影响分段条
+    // 的宽度估算与 overflow 守卫。
+    segmentedButtonTheme: eink
+        ? SegmentedButtonThemeData(
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith<Color?>((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.disabled)) return null;
+                return states.contains(WidgetState.selected)
+                    ? cs.onSurface
+                    : cs.surface;
+              }),
+              foregroundColor: WidgetStateProperty.resolveWith<Color?>((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.disabled)) return null;
+                return states.contains(WidgetState.selected)
+                    ? cs.surface
+                    : cs.onSurface;
+              }),
+              iconColor: WidgetStateProperty.resolveWith<Color?>((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.disabled)) return null;
+                return states.contains(WidgetState.selected)
+                    ? cs.surface
+                    : cs.onSurface;
+              }),
+            ),
+          )
+        : const SegmentedButtonThemeData(),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.chip,
+      ),
+      side: BorderSide(color: cs.outlineVariant),
+      // E-ink：同一个塌缩——`secondaryContainer` 等于页面底色，`showCheckmark`
+      // 又关掉了 M3 唯一的形状信号，选中与未选中的 chip 逐像素相同（字体库那
+      // 排「用途」FilterChip 就栽在这）。反色填充 + 配对 label 色补回信号；
+      // labelStyle 必须从 `labelLarge` 派生，直接给裸 TextStyle 会把 chip 的
+      // 字号字族一起替换掉。
+      selectedColor: eink ? cs.onSurface : cs.secondaryContainer,
+      labelStyle: eink
+          ? (tt.labelLarge ?? const TextStyle()).copyWith(
+              color: WidgetStateColor.resolveWith(
+                (Set<WidgetState> states) =>
+                    states.contains(WidgetState.selected)
+                        ? cs.surface
+                        : cs.onSurface,
+              ),
+            )
+          : null,
+      showCheckmark: false,
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        shape: const StadiumBorder(),
+        // E-ink：`FilledButton.tonal*` 的填充是 secondaryContainer == 页面底色，
+        // 没有边就退化成一行裸文字、与旁边的 TextButton 无法区分；描边补回
+        // 按钮体。实心 FilledButton 的填充本就是前景色，多一圈同色边无害。
+        side: eink ? BorderSide(color: cs.outline) : null,
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        shape: const StadiumBorder(),
+        side: BorderSide(color: cs.outline),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        shape: const StadiumBorder(),
+      ),
+    ),
+    dividerTheme: DividerThemeData(
+      color: cs.outlineVariant,
+      // E-ink panels can't render a crisp half-pixel hairline; use a full
+      // pixel so dividers stay solid black/white lines.
+      thickness: eink ? 1 : 0.5,
+    ),
+  );
+}
+
+/// 数据库就绪前（启动加载 / 初始化报错 / 降级拦截 / 数据目录迁移）与弹窗冷启动
+/// 占位用的主题：读不到用户偏好，取默认种子色，但组件主题与字号阶梯与主 app
+/// 同源，切到真主题时只换色、不跳形。
+ThemeData buildFushiFallbackTheme(Brightness brightness) => buildFushiThemeData(
+      scheme: buildFushiColorScheme(
+        seedColor: kFushiDefaultSeed,
+        brightness: brightness,
+      ),
+      textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
+    );
