@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 16712,
-  "notes": "Automated release-signed debug-channel build from develop @ a89fc7e. Push releases are always prerelease and never Latest.",
+  "notes": "Automated desktop debug-channel build from develop @ a89fc7e. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.9.0-debug.16706-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "06b4e6fe5cb5ae7dbadad1b43c90a3e5898c15ad4cdc25fc746a5fee1cfce8a9"
     },
     {
-      "name": "fushi-2.9.0-debug.16706-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.0-debug.16706-windows-setup.exe",
-      "releaseSequence": 16706,
-      "tag": "v2.9.0-debug.16706+8133fda",
-      "version": "2.9.0-debug.16706",
-      "size": 284574992,
-      "sha256": "0de15bee452ea2d1a1adf310db1c73f273989b905c9c9e494723292cc7520a1c"
-    },
-    {
       "name": "fushi-2.9.0-debug.16712-a89fc7e-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.0-debug.16712-a89fc7e-debug.apk",
       "releaseSequence": 16712,
@@ -42,6 +33,15 @@
       "version": "2.9.0-debug.16712",
       "size": 358587444,
       "sha256": "dd98535d6ef5cb01e7a654b87941a1cdf6451923ae0a554d16ad962d352c006a"
+    },
+    {
+      "name": "fushi-2.9.0-debug.16712-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.0-debug.16712-windows-setup.exe",
+      "releaseSequence": 16712,
+      "tag": "v2.9.0-debug.16712+a89fc7e",
+      "version": "2.9.0-debug.16712",
+      "size": 284550840,
+      "sha256": "f58d684ae2b7d79c53cf0548b1dc321a2b2ecbfe1c4c339c3ce16cec7bb4074e"
     }
   ]
 }
