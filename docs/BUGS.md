@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2622 条。点号进各自文件。
+> 共 2623 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2848](bugs/BUG-2848-emby-client-whitelist-403.md) | ✅ | ✅ | Emby 公益服按 Client 白名单回 403 被报成连不上 |
 | [BUG-2845](bugs/BUG-2845-manga-polluted-default-zoom.md) | ✅ | ✅ | 漫画默认缩放存量坏值与改缩放方式不重置会话缩放 |
 | [BUG-2839](bugs/BUG-2839-windows-a11y-orphan-semantics-crash.md) | ✅ | ✅ | Windows 外部 UIA 查询打到 AX 树失效节点崩溃（孤儿语义节点致桥失步） |
 | [BUG-2838](bugs/BUG-2838-windows-toast-ffi-exception-crash.md) | ✅ | ✅ | Windows 更新通知 WinRT 代理过期抛 C++ 异常穿 FFI 崩溃 |

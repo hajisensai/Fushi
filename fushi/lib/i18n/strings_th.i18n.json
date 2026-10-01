@@ -6208,5 +6208,6 @@
   "video_filter_extras_main": "Main only",
   "video_filter_extras_only": "Extras only",
   "video_filter_source": "Source",
-  "video_filter_series_standalone_empty_hint": "No standalone videos. Videos in collections are on the Series tab, or set the Series filter to All."
+  "video_filter_series_standalone_empty_hint": "No standalone videos. Videos in collections are on the Series tab, or set the Series filter to All.",
+  "jellyfin_server_rejected_client": "The server at $url refused this app (HTTP $code). It may only allow specific clients; ask the server administrator. Server message: $reason"
 }

@@ -1,0 +1,6 @@
+## BUG-2848 · Emby 公益服按 Client 白名单回 403 被报成连不上
+- **报告**：2026-10-01（用户：登录 `https://shsiis.cloudfisher.cc:443` 弹「无法连接服务器 …：JellyfinApiException(403, /System/Info/Public)」）
+- **真实性**：✅ 真 bug（误报，不是网络问题）。实测该服（「渔云Emby」，Emby 4.9.5，Cloudflare 前置）：不带认证头 GET `/System/Info/Public` → 200；带 `X-Emby-Authorization: MediaBrowser Client="Hibiki", …` → 403，响应体纯文本「请使用群公告中允许的客户端进行访问」；换 `Client="Emby Theater"` → 200。即服务器按认证头 `Client` 字段做客户端白名单——这是服务器运营方的访问策略。根因在我方呈现：`fushi/lib/src/sync/jellyfin_video_client.dart` `JellyfinApiException` 只带状态码、丢掉响应体；`fushi/lib/src/sync/jellyfin_settings_widget.dart` `_describeConnectFailure` 把任何探测失败都报成 `jellyfin_server_unreachable`「无法连接服务器」，用户只会去查网络 / 代理。
+- **[x] ① 已修复** — `JellyfinApiException` 新增 `serverMessage`（从非 2xx 响应体取短纯文本 / JSON message，HTML 错误页不取，脱敏 + 截断 200 字）与 `isAccessDenied`，JSON / 登录 / PlaybackInfo / 会话上报各失败点经 `JellyfinApiException.fromResponse` 构造；`_describeConnectFailure` 对 401/403 改报新文案 `jellyfin_server_rejected_client`（「服务器拒绝了本应用的访问（HTTP 403）……请联系服务器管理员。服务器说明：<原话>」）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/jellyfin_video_client_test.dart`「非 2xx 带出服务器纯文本说明；HTML 错误页不带（BUG-2848）」；`fushi/test/sync/jellyfin_settings_widget_test.dart` [4]（403 白名单 → 对话框显示拒绝文案 + 服务器原话，不报连不上、不发登录 POST、不落库）。
+- **备注**：**刻意不做**冒充其他客户端名（如 `Emby Theater`）来绕过白名单——那是规避服务器运营方的访问控制。用户要用该服，需服务器管理员把本应用（认证头 `Client="Hibiki"`）加入允许列表。

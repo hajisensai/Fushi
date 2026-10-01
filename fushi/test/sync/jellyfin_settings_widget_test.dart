@@ -418,4 +418,68 @@ void main() {
     ], reason: 'BUG-1891 的库点名不能因为重登被清回「全部」');
     expect(find.byType(FushiListItem), findsNWidgets(2), reason: 'UI 仍两行');
   });
+
+  testWidgets('[4] 服务器按 Client 白名单回 403：报「服务器拒绝」并带服务器原话，不报连不上（BUG-2848）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _appModel(db);
+    final List<http.Request> seen = <http.Request>[];
+    // 实测「渔云Emby」：带 Client="Hibiki" 认证头的 /System/Info/Public 回 403 +
+    // 纯文本说明，不带认证头则 200。
+    MockClient whitelistServer() => MockClient((http.Request req) async {
+      seen.add(req);
+      return http.Response.bytes(
+        utf8.encode('请使用群公告中允许的客户端进行访问'),
+        403,
+        headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
+      );
+    });
+
+    await tester.pumpWidget(
+      _harness(
+        db: db,
+        appModel: appModel,
+        cache: RemoteLibraryCache(),
+        clientFactory: whitelistServer,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await _enterInto(tester, 0, 'https://emby.example.com:443');
+    await _enterInto(tester, 1, 'bob');
+    await _enterInto(tester, 2, 'pw');
+    await tester.tap(find.widgetWithText(FilledButton, t.jellyfin_sign_in));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      seen.map((http.Request r) => r.url.path).toList(),
+      <String>['/System/Info/Public'],
+      reason: '探测被拒就不再发登录 POST',
+    );
+    expect(
+      find.text(
+        t.jellyfin_server_rejected_client(
+          url: 'https://emby.example.com:443',
+          code: 403,
+          reason: '请使用群公告中允许的客户端进行访问',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        t.jellyfin_server_unreachable(url: 'https://emby.example.com:443', reason: ''),
+      ),
+      findsNothing,
+    );
+    expect(await SyncRepository(db).getJellyfinServers(), isEmpty);
+  });
 }
