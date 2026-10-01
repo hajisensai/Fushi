@@ -75,10 +75,9 @@ class VideoMiningHistorySnapshot {
 ///
 /// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]。
 ///
-/// ⚠️ [fromWireName] 对 null / 未知返回 [videoClip]，但偏好层**不直接**拿它当默认：
-/// 所有者 2026-09-28 拍板「存量用户不翻、新装才用片段」——没显式设过封面模式时，全新
-/// 安装取 [videoClip]，升级上来的存量用户取改动前的 [gif]（见 app 侧
-/// `PreferencesRepository.settleMiningImageModeInstallDefault`）。用户显式选过的值原样保留。
+/// [fromWireName] 对 null / 未知返回 [videoClip]，偏好层直接拿它当默认。2026-09-28 曾让
+/// 存量安装保持 [gif]（显式写进偏好），所有者 2026-10-01 改口老用户也用片段，那批 gif 由
+/// app 侧 `PreferencesRepository.settleMiningImageModeInstallDefault` 迁回 [videoClip]。
 /// [ImmersionMiningRequest.imageMode] 的值对象默认仍是 [gif]——不读偏好的调用方
 /// （内置网页视频页等）行为不变。
 enum VideoMiningImageMode {

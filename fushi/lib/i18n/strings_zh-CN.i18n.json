@@ -6196,5 +6196,9 @@
   "video_scrape_pending_cause_error": "刮削出错",
   "video_anidb_http_api": "AniDB HTTP 资料接口",
   "video_anidb_http_api_unregistered": "未登记（仅 UDP 哈希识别与离线标题可用）",
-  "video_anidb_http_api_available": "可用（客户端 ${client} v${version}）"
+  "video_anidb_http_api_available": "可用（客户端 ${client} v${version}）",
+  "shelf_filter_read_status": "阅读状态",
+  "shelf_filter_read_status_unread": "未读",
+  "shelf_filter_read_status_reading": "在读",
+  "shelf_filter_read_status_finished": "读完"
 }
