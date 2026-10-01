@@ -3015,11 +3015,8 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
-      // 音画同步片段成为封面模式默认（PR #1717）只给全新安装：升级上来、从没显式
-      // 选过的存量用户在这里落一次显式 GIF（原行为）。必须赶在首页首帧改写
-      // first_time_setup 之前——它是「全新安装」的唯一判据。
-      await prefsRepo.settleMiningImageModeInstallDefault(
-          freshInstall: prefsRepo.isFirstTimeSetup);
+      // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
+      await prefsRepo.settleMiningImageModeInstallDefault();
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
