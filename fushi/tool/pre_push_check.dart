@@ -4,7 +4,7 @@
 //   dart run tool/pre_push_check.dart [--base=<ref>] [--list] [--quick|--wide]
 //                                     [--skip-analyze] [--parallel]
 //                                     [--concurrency=4] [--batch-size=20]
-//                                     [--gate=3] [--gate-timeout-min=30]
+//                                     [--gate=1] [--gate-timeout-min=60]
 //                                     [--max-minutes=90]
 //                                     [--allow-flutter-mismatch]
 //                                     [--files <paths...> | --files-from=<list>]
@@ -16,11 +16,15 @@
 //   * tests run with --concurrency=4, in batches of at most --batch-size files;
 //   * analyze runs after the tests, not alongside (--parallel restores the old
 //     overlap for a machine nobody else is using);
-//   * before every `flutter test` batch and every analyze the tool waits while
-//     >= --gate Flutter test/analyze/build runs are already going on this
-//     machine (0 disables), up to --gate-timeout-min, then runs anyway and says so;
-//     runs older than 3 hours are not counted (a hung one would shut every gate
-//     on the machine for good -- three did for seven hours);
+//   * every `flutter test` batch and every analyze holds the machine-wide
+//     heavy-run lease (test_flow/heavy_lease.dart, shared with tool/heavy.dart
+//     and flutter_test_failures.dart): an OS-locked slot, memory to spare on
+//     top of the user's reserve, and the worktree's build/ to itself. A step
+//     not admitted within --gate-timeout-min (default 60) FAILS -- the old
+//     process-counting gate ran "anyway" and raced, which is how the machine
+//     ran out of memory. --gate=0 turns the lease off;
+//   * the tool runs in a Windows Job Object: below-normal priority, a memory
+//     ceiling, and its whole process tree dies with it;
 //   * --max-minutes (0 disables) caps the time the tool's own subprocesses run
 //     (gate waits excluded): past it the running subprocess trees are killed and
 //     the verdict is FAILED. A session that dies mid-run leaves this tool behind;
@@ -50,6 +54,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'test_flow/flutter_test_failure_filter.dart';
+import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_lease.dart';
 import 'test_flow/pre_push_selection.dart';
 import 'tests_for_changes.dart'
     show
@@ -71,74 +77,50 @@ class _Step {
   final Duration elapsed;
 }
 
-/// The machine-wide gate the local agents share (countBusyFlutterCommands):
-/// before a heavy step, wait while [limit] or more Flutter test / analyze /
-/// build runs are already busy. It only paces the run; it never decides the
-/// verdict, and whatever it did ends up in the summary.
-class _Gate {
-  _Gate({required this.limit, required this.timeout});
+/// The machine-wide heavy-run lease (test_flow/heavy_lease.dart) around every
+/// Flutter test batch and analyze: a free slot, memory to spare and, for test
+/// batches, this worktree's build/ to itself. A step that is never admitted
+/// within --gate-timeout-min fails (it is not run "anyway": that is what took
+/// the machine down); --gate=0 turns the lease off.
+class _Leases {
+  _Leases({required this.enabled, required this.waitMax, required this.root});
 
-  final int limit;
-  final Duration timeout;
+  final bool enabled;
+  final Duration waitMax;
+  final String root;
   final List<String> notes = <String>[];
-  bool _unavailable = false;
 
-  Future<void> wait(String what) async {
-    if (limit <= 0 || _unavailable) return;
-    final Stopwatch sw = Stopwatch()..start();
-    int? shown;
-    while (true) {
-      final int? busy = _busyFlutterCommands();
-      if (busy == null) {
-        _unavailable = true;
-        notes.add('could not list processes; ran without the gate');
-        return;
-      }
-      if (busy < limit) {
-        if (sw.elapsed.inSeconds >= 30) {
-          notes.add('$what waited ${sw.elapsed.inMinutes} min for the machine');
-        }
-        return;
-      }
-      if (sw.elapsed > timeout) {
-        notes.add('$what started after ${timeout.inMinutes} min with $busy '
-            'Flutter runs still busy (gate $limit)');
-        stdout.writeln('   gate: still $busy busy after '
-            '${timeout.inMinutes} min; starting anyway');
-        return;
-      }
-      if (busy != shown) {
-        stdout.writeln('   gate: $busy Flutter test/analyze/build runs busy on '
-            'this machine (gate $limit); waiting before $what');
-        shown = busy;
-      }
-      await Future<void>.delayed(const Duration(seconds: 30));
+  Future<(bool, String)> run(HeavyKind kind, String what,
+      Future<(bool, String)> Function() body) async {
+    if (!enabled) return body();
+    final HeavyLease lease;
+    try {
+      lease = await acquireHeavyLease(
+        need: heavyNeedFor(kind),
+        label: 'pre-push $what',
+        worktreeRoot: root,
+        waitMax: waitMax,
+        log: (String l) => stdout.writeln('   $l'),
+      );
+    } on HeavyLeaseTimeout catch (e) {
+      notes.add('$what not admitted: ${e.message}');
+      return (
+        false,
+        'not run: the machine had no room within ${waitMax.inMinutes} min '
+            '(see gate notes)'
+      );
     }
-  }
-}
-
-/// [countBusyFlutterRuns] over this machine's process list (runs older than
-/// 3 hours not counted), or null when the list cannot be read.
-int? _busyFlutterCommands() {
-  try {
-    final ProcessResult r = Platform.isWindows
-        ? Process.runSync('powershell', <String>[
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            r"""Get-CimInstance Win32_Process -Filter "Name='dart.exe'" | ForEach-Object { "$([int]((Get-Date) - $_.CreationDate).TotalSeconds)`t$($_.CommandLine)" }""",
-          ])
-        : Process.runSync('ps', <String>['-Ao', 'etime=,args=']);
-    if (r.exitCode != 0) return null;
-    return countBusyFlutterRuns(<({int ageSeconds, String commandLine})>[
-      for (final String line
-          in const LineSplitter().convert(r.stdout as String))
-        if (parseAgedProcessLine(line, windows: Platform.isWindows)
-            case final ({int ageSeconds, String commandLine}) p)
-          p,
-    ]);
-  } on ProcessException {
-    return null;
+    if (lease.skipReason != null && notes.isEmpty) {
+      notes.add('no lease taken (${lease.skipReason})');
+    }
+    if (lease.waited.inSeconds >= 30) {
+      notes.add('$what waited ${lease.waited.inMinutes} min for the machine');
+    }
+    try {
+      return await body();
+    } finally {
+      lease.release();
+    }
   }
 }
 
@@ -235,9 +217,10 @@ Future<void> main(List<String> args) async {
   final bool allowMismatch = args.contains('--allow-flutter-mismatch');
   final int concurrency = _intArg(args, '--concurrency=', 4);
   final int batchSize = _intArg(args, '--batch-size=', 20);
-  final _Gate gate = _Gate(
-    limit: _intArg(args, '--gate=', 3),
-    timeout: Duration(minutes: _intArg(args, '--gate-timeout-min=', 30)),
+  final _Leases gate = _Leases(
+    enabled: _intArg(args, '--gate=', 1) > 0,
+    waitMax: Duration(minutes: _intArg(args, '--gate-timeout-min=', 60)),
+    root: root,
   );
   // A typical run is 3-15 minutes of subprocess time.
   _budget = _Budget(Duration(minutes: _intArg(args, '--max-minutes=', 90)));
@@ -412,7 +395,7 @@ Future<void> main(List<String> args) async {
         '  estimated: ~${(appTests.length * 3 / 60).ceil()} min app tests '
         '(--concurrency=$concurrency, batches of <=$batchSize)'
         '${skipAnalyze ? '' : parallel ? ', analyze alongside' : ' + ~3 min analyze after them'}'
-        '${gate.limit > 0 ? '; waits while >=${gate.limit} Flutter test/analyze/build runs are busy' : ''}');
+        '${gate.enabled ? '; each step waits for a machine-wide heavy-run slot (dart tool/heavy.dart --status)' : ''}');
   if (listOnly) {
     for (final String t in appTests) {
       final List<String> why = <String>[
@@ -427,6 +410,12 @@ Future<void> main(List<String> args) async {
   }
 
   // ---- run ----------------------------------------------------------------
+  // Below-normal priority, a memory ceiling, and no flutter_tester outliving
+  // this tool (one held build/native_assets/windows/sqlite3.dll for the next run).
+  joinHeavyJob(
+      heavyNeedFor(HeavyKind.test).capMb +
+          (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
+      log: stdout.writeln);
   final String flutter = _flutterExecutable();
   final String dart = Platform.resolvedExecutable;
   final List<_Step> steps = <_Step>[];
@@ -454,20 +443,23 @@ Future<void> main(List<String> args) async {
   Future<List<_Step>> analyzeLane() async {
     final List<_Step> out = <_Step>[];
     if (skipAnalyze) return out;
-    out.add(await _timed('flutter analyze (fushi/)', () async {
-      await gate.wait('flutter analyze');
-      // --no-pub: the worktree is bootstrapped; resolving the whole workspace
-      // again on every run only costs time.
-      final int code = await _stream(
-          flutter, <String>['analyze', '--no-pub'], '$root/fushi');
-      return (code == 0, 'exit $code');
-    }));
+    out.add(await _timed(
+        'flutter analyze (fushi/)',
+        () => gate.run(HeavyKind.analyze, 'flutter analyze', () async {
+              // --no-pub: the worktree is bootstrapped; resolving the whole
+              // workspace again on every run only costs time.
+              final int code = await _stream(
+                  flutter, <String>['analyze', '--no-pub'], '$root/fushi');
+              return (code == 0, 'exit $code');
+            })));
     for (final String p in analyzePackages) {
-      out.add(await _timed('dart analyze (packages/$p)', () async {
-        final int code =
-            await _stream(dart, <String>['analyze'], '$root/packages/$p');
-        return (code == 0, 'exit $code');
-      }));
+      out.add(await _timed(
+          'dart analyze (packages/$p)',
+          () => gate.run(HeavyKind.analyze, 'packages/$p analyze', () async {
+                final int code = await _stream(
+                    dart, <String>['analyze'], '$root/packages/$p');
+                return (code == 0, 'exit $code');
+              })));
     }
     return out;
   }
@@ -481,24 +473,25 @@ Future<void> main(List<String> args) async {
     for (int i = 0; i < batches.length; i++) {
       out.add(await _timed(
         'app tests ${i + 1}/${batches.length} (${batches[i].length} files)',
-        () async {
-          await gate.wait('app test batch ${i + 1}/${batches.length}');
-          return _flutterTests(flutter, '$root/fushi', batches[i],
-              '$root/.codex-test/pre-push/app-$i', concurrency);
-        },
+        () => gate.run(
+            HeavyKind.test,
+            'app test batch ${i + 1}/${batches.length}',
+            () => _flutterTests(flutter, '$root/fushi', batches[i],
+                '$root/.codex-test/pre-push/app-$i', concurrency)),
       ));
     }
     for (final String p in packages) {
-      out.add(await _timed('package tests (packages/$p)', () async {
-        await gate.wait('packages/$p tests');
-        return _flutterTests(
-          flutter,
-          '$root/packages/$p',
-          const <String>[],
-          '$root/.codex-test/pre-push/pkg-$p',
-          concurrency,
-        );
-      }));
+      out.add(await _timed(
+          'package tests (packages/$p)',
+          () => gate.run(
+              HeavyKind.test,
+              'packages/$p tests',
+              () => _flutterTests(
+                  flutter,
+                  '$root/packages/$p',
+                  const <String>[],
+                  '$root/.codex-test/pre-push/pkg-$p',
+                  concurrency))));
     }
     if (js) {
       out.add(await _timed('JS behavior tests (test/js)', () async {
