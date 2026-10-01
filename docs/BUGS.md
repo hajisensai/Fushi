@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2610 条。点号进各自文件。
+> 共 2612 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2837](bugs/BUG-2837-inline-video-autoplay-stripped-by-anki-editor.md) | ✅ | ✅ | 制卡视频（WebM 内嵌片段）翻面不自动播放，须手动点击 |
+| [BUG-2836](bugs/BUG-2836-ocr-model-download-stall.md) | ✅ | ✅ | 模型下载在劣化或卡死的连接上龟速或停住 |
 | [BUG-2832](bugs/BUG-2832-video-bar-overflow.md) | ✅ | ✅ | 视频控制条空间不够时按钮被等比缩小或裁成半个图标 |
 | [BUG-2829](bugs/BUG-2829-ai-scrape-not-acting.md) | ✅ | ✅ | 配了 AI 也不代劳视频身份识别，AI 设置多处失效 |
 | [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
