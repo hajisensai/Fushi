@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 
@@ -12,9 +13,15 @@ class BlurayFfmpegInput {
   final List<String> args;
   final Directory? _directory;
 
+  /// Cleanup never changes the command outcome: a manifest dir that is briefly
+  /// locked (AV scanner, a Kit session still winding down) is only logged.
   Future<void> dispose() async {
-    if (_directory != null && await _directory.exists()) {
-      await _directory.delete(recursive: true);
+    final Directory? directory = _directory;
+    if (directory == null) return;
+    try {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    } on FileSystemException catch (e) {
+      engineLog.logDiagnostic('BlurayFfmpegInput.dispose', e);
     }
   }
 }
