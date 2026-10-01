@@ -3,11 +3,33 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'test_flow/flutter_test_failure_filter.dart';
+import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_lease.dart';
 import 'test_flow/test_file_shards.dart';
 
 Future<void> main(List<String> args) async {
   final _FlutterTestFailureOptions options =
       _FlutterTestFailureOptions.parse(args);
+  // The machine-wide heavy-run lease (test_flow/heavy_lease.dart; nothing on
+  // CI): a slot, memory to spare, and this worktree's build/ and default
+  // output directory to itself -- two runs in one checkout used to fight over
+  // sqlite3.dll and flutter_test.jsonl.
+  final HeavyNeed need = heavyNeedFor(HeavyKind.test);
+  final HeavyJob? job = joinHeavyJob(need.capMb, log: stderr.writeln);
+  final HeavyLease lease;
+  try {
+    lease = await acquireHeavyLease(
+      need: need,
+      label: 'flutter_test_failures -> ${options.outputDir}',
+      worktreeRoot: locateCheckoutRoot(),
+      waitMax: Duration(minutes: options.waitMaxMinutes),
+    );
+  } on HeavyLeaseTimeout catch (e) {
+    stderr.writeln(e.message);
+    stdout.writeln('$kFlutterTestVerdictPrefix FAILED - not admitted: the '
+        'machine had no room (tests completed: 0)');
+    exit(75);
+  }
   final Directory outputDir = Directory(options.outputDir)
     ..createSync(recursive: true);
   final File jsonLog = File('${outputDir.path}/flutter_test.jsonl');
@@ -54,6 +76,13 @@ Future<void> main(List<String> args) async {
   await Future.wait(<Future<void>>[stdoutDone.future, stderrDone.future]);
   await logSink.close();
   await stderrSink.close();
+  lease.release();
+  final int? peak = job?.peakMb();
+  if (peak != null && heavyCapHit(peak, need.capMb)) {
+    stderr.writeln('heavy: MEMORY CAP HIT ($peak MB of ${need.capMb} MB) -- '
+        'failures in this run can come from the ceiling, not from the code; '
+        'narrow the run or lower --concurrency.');
+  }
 
   final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(jsonLines);
   final String? verdictFailure = resolveFlutterTestVerdictFailure(
@@ -92,6 +121,7 @@ class _FlutterTestFailureOptions {
     required this.minimumTests,
     required this.flutterTestArgs,
     required this.fileShard,
+    required this.waitMaxMinutes,
   });
 
   final String outputDir;
@@ -100,15 +130,27 @@ class _FlutterTestFailureOptions {
   final List<String> flutterTestArgs;
   final TestFileShard? fileShard;
 
+  /// How long to queue for the heavy-run lease before failing.
+  final int waitMaxMinutes;
+
   static _FlutterTestFailureOptions parse(List<String> args) {
     String outputDir = '../.codex-test/flutter-test';
     bool verboseOutput = false;
     int minimumTests = 1;
     final List<String> flutterTestArgs = <String>[];
     TestFileShard? fileShard;
+    int waitMaxMinutes = 120;
 
     for (final String arg in args) {
-      if (arg.startsWith('--output-dir=')) {
+      if (arg.startsWith('--wait-max-min=')) {
+        final String raw = arg.substring('--wait-max-min='.length);
+        final int? parsed = int.tryParse(raw);
+        if (parsed == null || parsed <= 0) {
+          stderr.writeln('Invalid --wait-max-min value: $raw');
+          exit(64);
+        }
+        waitMaxMinutes = parsed;
+      } else if (arg.startsWith('--output-dir=')) {
         outputDir = arg.substring('--output-dir='.length);
       } else if (arg.startsWith('--min-tests=')) {
         final String raw = arg.substring('--min-tests='.length);
@@ -139,6 +181,7 @@ class _FlutterTestFailureOptions {
       minimumTests: minimumTests,
       flutterTestArgs: flutterTestArgs,
       fileShard: fileShard,
+      waitMaxMinutes: waitMaxMinutes,
     );
   }
 }

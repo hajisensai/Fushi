@@ -29,15 +29,28 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2611 条。点号进各自文件。
+> 共 2624 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2845](bugs/BUG-2845-manga-polluted-default-zoom.md) | ✅ | ✅ | 漫画默认缩放存量坏值与改缩放方式不重置会话缩放 |
+| [BUG-2839](bugs/BUG-2839-windows-a11y-orphan-semantics-crash.md) | ✅ | ✅ | Windows 外部 UIA 查询打到 AX 树失效节点崩溃（孤儿语义节点致桥失步） |
+| [BUG-2838](bugs/BUG-2838-windows-toast-ffi-exception-crash.md) | ✅ | ✅ | Windows 更新通知 WinRT 代理过期抛 C++ 异常穿 FFI 崩溃 |
+| [BUG-2837](bugs/BUG-2837-inline-video-autoplay-stripped-by-anki-editor.md) | ✅ | ✅ | 制卡视频（WebM 内嵌片段）翻面不自动播放，须手动点击 |
+| [BUG-2836](bugs/BUG-2836-ocr-model-download-stall.md) | ✅ | ✅ | 模型下载在劣化或卡死的连接上龟速或停住 |
 | [BUG-2835](bugs/BUG-2835-floating-ball-english-word.md) | ✅ | ✅ | 悬浮球查词取词未适配英语 |
+| [BUG-2835](bugs/BUG-2835-bd-pack-audio-floods-all-videos.md) | ✅ | ✅ | BD 整包 CDs 曲目在全部视频里逐条铺满 |
+| [BUG-2834](bugs/BUG-2834-global-smooth-wheel.md) | ✅ | ✅ | 全 app 鼠标滚轮一格一跳：除正文阅读器外的列表 / 查词弹窗都不是无极滚动 |
 | [BUG-2834](bugs/BUG-2834-floating-ball-video-fullscreen.md) | ✅ | ✅ | 视频全屏时悬浮球退回其它页面按钮 |
+| [BUG-2833](bugs/BUG-2833-desktop-title-bar-reader-paper-color.md) | ✅ | ✅ | 桌面自绘顶栏不跟阅读器纸色，正文顶上一条白带 |
 | [BUG-2832](bugs/BUG-2832-video-bar-overflow.md) | ✅ | ✅ | 视频控制条空间不够时按钮被等比缩小或裁成半个图标 |
+| [BUG-2831](bugs/BUG-2831-mac-trackpad-fling-skips-chapters.md) | ✅ | ✅ | Mac触控板滚动模式乱跳章节 |
+| [BUG-2830](bugs/BUG-2830-continuous-wheel-stepless.md) | ✅ | ✅ | 滚动模式滚轮一格一格硬跳且触控板方向与手机不一致 |
 | [BUG-2829](bugs/BUG-2829-ai-scrape-not-acting.md) | ✅ | ✅ | 配了 AI 也不代劳视频身份识别，AI 设置多处失效 |
 | [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
+| [BUG-2827](bugs/BUG-2827-gallery-inline-glyphs.md) | ✅ | ✅ | 插图册把外字与章节号小图当插图展示 |
+| [BUG-2826](bugs/BUG-2826-mihon-continuation-allocation-swap.md) | ✅ | ✅ | 桌面 Mihon 扩展取页报 w1 cannot be cast to y1 |
+| [BUG-2825](bugs/BUG-2825-anki-glossary-export-yomitan-structure.md) | ✅ | ✅ | 制卡导出释义 HTML 与 Yomitan 结构不一致（图片外层非 a、class 未转内联样式） |
 | [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |
 | [BUG-2823](bugs/BUG-2823-update-relaunch-startup-stall.md) | ✅ | ✅ | 自动更新后新版本启动卡顿一两秒 |
 | [BUG-2822](bugs/BUG-2822-manga-stream-chapter-ocr.md) | ✅ | ✅ | 在线直读章完全不做 OCR，手机上只能下载后等整章识别完 |

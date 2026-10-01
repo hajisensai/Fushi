@@ -63,20 +63,19 @@ class LoadingWatchdogView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               t.loading_slow_title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onSurface,
-              ),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(color: colorScheme.onSurface),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
             Text(
               mobile ? t.loading_slow_message_mobile : t.loading_slow_message,
-              style: TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),

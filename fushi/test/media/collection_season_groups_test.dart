@@ -35,6 +35,24 @@ void main() {
         kCollectionExtrasGroupKey,
       );
     });
+    test('BUG-2835：纯音频（专辑曲目）恒进 extras，哪怕文件名长得像分集', () {
+      for (final String name in <String>[
+        'Show S01E03.flac',
+        'Show - 05.mp3',
+        r'D:\anime\CDs\Album\01. Theme.m4a',
+      ]) {
+        expect(
+          collectionGroupKeyForFilename(name),
+          kCollectionExtrasGroupKey,
+          reason: name,
+        );
+      }
+      expect(
+        collectionGroupKeyForFilename('Show S01E03.mkv'),
+        's1',
+        reason: '同名视频照常分季——判据是扩展名，不是文件名形态',
+      );
+    });
     test('带路径也只按文件名解析', () {
       expect(
         collectionGroupKeyForFilename(r'D:\anime\show\Show S03E04.mkv'),

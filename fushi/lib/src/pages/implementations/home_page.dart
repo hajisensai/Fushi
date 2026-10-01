@@ -3044,6 +3044,9 @@ class _HomePageState extends BasePageState<HomePage>
           loadPendingScrapeWorks: () =>
               _videoLibraryScrapeSweep.sweepAndListPending(),
           mediaServerServersLoader: _loadMediaServerEntries,
+          // 视频库「发现」分区与浏览页签共用同一个生产端口（同一实例）。
+          discoveryController: _productionVideoDiscoveryController,
+          discoveryActions: _productionVideoDiscoveryActions,
           systemBackActive: _visibleTab == HomeTab.video,
         ),
       HomeTab.browse => BrowsePage(
@@ -3071,7 +3074,7 @@ class _HomePageState extends BasePageState<HomePage>
     return PrimaryScrollController(
       controller: _tabScrollControllers.putIfAbsent(
         tab,
-        FushiScrollController.new,
+        ScrollController.new,
       ),
       automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
       child: content,

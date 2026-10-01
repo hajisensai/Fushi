@@ -6196,5 +6196,17 @@
   "video_scrape_pending_cause_error": "Scrape error",
   "video_anidb_http_api": "AniDB HTTP metadata API",
   "video_anidb_http_api_unregistered": "Not registered (only UDP hash identification and offline titles are available)",
-  "video_anidb_http_api_available": "Available (client ${client} v${version})"
+  "video_anidb_http_api_available": "Available (client ${client} v${version})",
+  "shelf_filter_read_status": "Reading status",
+  "shelf_filter_read_status_unread": "Unread",
+  "shelf_filter_read_status_reading": "Reading",
+  "shelf_filter_read_status_finished": "Finished",
+  "video_filter_media_type": "Type",
+  "video_filter_media_type_video": "Video",
+  "video_filter_media_type_audio": "Audio",
+  "video_filter_extras": "Main/Extras",
+  "video_filter_extras_main": "Main only",
+  "video_filter_extras_only": "Extras only",
+  "video_filter_source": "Source",
+  "video_filter_series_standalone_empty_hint": "No standalone videos. Videos in collections are on the Series tab, or set the Series filter to All."
 }

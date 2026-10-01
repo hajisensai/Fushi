@@ -50,6 +50,7 @@ import 'package:fushi/src/pages/implementations/media_collection_grid_detail_pag
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
@@ -750,6 +751,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             ),
           ),
           const SizedBox(width: 8),
+          // 游玩状态与筛选面板里的「游玩状态」是同一个 [GalgameLibraryView.status]，
+          // 两处入口改的是同一份持久化视图，不会互相打架。
+          LibraryFilterDropdown<GalgamePlayStatus>(
+            key: const ValueKey<String>('games_filter_play_status'),
+            value: _view.status,
+            options: const <GalgamePlayStatus>[
+              ...kGalgamePlayStatusMenuOrder,
+              GalgamePlayStatus.unset,
+            ],
+            labelOf: galgamePlayStatusLabel,
+            title: t.game_filter_status,
+            allLabel: t.game_filter_all,
+            onSelected: (GalgamePlayStatus? status) => _setView(
+              status == null
+                  ? _view.copyWith(clearStatus: true)
+                  : _view.copyWith(status: status),
+            ),
+          ),
+          const SizedBox(width: 4),
           FushiIconButton(
             tooltip: t.scrape_all,
             label: t.scrape_all,
