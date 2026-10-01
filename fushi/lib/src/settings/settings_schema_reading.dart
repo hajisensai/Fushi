@@ -20,6 +20,8 @@ SettingsDestination buildReadingDestination() {
   // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
       c.readerSource.readerViewMode == 'paginated';
+  bool isContinuous(SettingsContext c) =>
+      c.readerSource.readerViewMode == 'continuous';
   bool isVisualNovel(SettingsContext c) =>
       c.readerSource.readerViewMode == 'vn';
   bool isVisualNovelSentenceMode(SettingsContext c) =>
@@ -580,6 +582,9 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.wheel_page_turn_interval',
             titleReadout: true,
             title: t.wheel_page_turn_interval,
+            // 滚动模式的滚轮是无极滚动、不翻页（kContinuousWheelSmoothScrollJs），
+            // 「翻页间隔」在那里无从谈起；分页与 VN 仍按它限速。
+            visible: (SettingsContext c) => !isContinuous(c),
             icon: Icons.mouse_outlined,
             min: 150,
             max: 1000,

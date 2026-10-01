@@ -1,0 +1,6 @@
+## BUG-2830 · 滚动模式滚轮一格一格硬跳且触控板方向与手机不一致
+- **报告**：2026-10-01（用户：「滚轮翻页间隔这个选项应该删掉，改的是滚动模式的滚动，改成无极滚动」「滚动模式下 mac 的触控板和手机滑动一样操作」）
+- **真实性**：✅ 真 bug。滚动（连续）模式的 wheel 监听必须 `preventDefault` 自己滚（竖排投影 + 同步真试滚判边界，TODO-656），但它把每格滚轮直接 `window.scrollBy(behavior:'auto')` 落地——瞬时离散跳，丢了浏览器原生平滑（`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart` wheel 监听连续分支的试滚段）。TODO-629 ② 当年写的 rAF 缓动 `_vScrollEaseStep` 在 TODO-656 改真试滚后再无调用方，成了死代码。同一段里触控板与鼠标共用「绝对值更大的轴」：竖排 vertical-rl 的横向双指滑 `deltaX` 被乘上 `sign=-1`，内容反着手指走；横排的横向双指滑被当成纵向滚动——都与手机手指滑动不一致。「滚轮翻页间隔」滑条在滚动模式下仍显示，而那里滚轮并不翻页。
+- **[x] ① 已修复** — 新增唯一真值 `kContinuousWheelSmoothScrollJs`（prepare → 同步真试滚 → commit：试滚从缓动终点起算、量完同任务内还原，再以 after 为终点 rAF 指数缓动；缓动未到边界的 tick 不交给跨章；外部改位置即让位），替换死代码；触控板只沿内容轴按原生方向跟手（横排只认 deltaY，竖排横划 `deltaX * sign`）；`reading_controls.wheel_page_turn_interval` 在滚动模式隐藏（分页 / VN 仍显示）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/continuous_wheel_smooth_scroll_test.dart`（真 Chrome 执行生产 helper 8 个浏览器用例：不瞬跳 / 逐帧逼近 / 连拨累加 / 边界 / 缓动途中不判边界 / 外部滚动让位 / 触控板直落 / 竖排负 scrollX；另含监听接线顺序与触控板轴向守卫；两次变异实测均转红）+ `fushi/test/settings/wheel_page_turn_interval_paged_only_test.dart`（可见性）。
+- **备注**：滚动模式的跨章节流仍读存量 `wheel_page_turn_interval` 值（设置隐藏后保持用户原值，不改行为）。书本自带 `scroll-behavior: smooth` CSS 会同时影响原有试滚判定与本缓动，属既有风险，未在本次处理。未在 Mac 真机上手测触控板手感。
