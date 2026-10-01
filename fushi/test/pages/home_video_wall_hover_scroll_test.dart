@@ -148,7 +148,7 @@ void main() {
     expect(anyLift, findsWidgets, reason: '墙格必须有悬停壳');
     for (int i = 0; i < anyLift.evaluate().length; i++) {
       final Rect r = tester.getRect(anyLift.at(i));
-      if (r.center.dy > 350 && r.center.dy < 650) return r.center;
+      if (r.center.dy > 350 && r.center.dy < 750) return r.center;
     }
     fail('需要一张视口下半部的卡');
   }
@@ -159,7 +159,8 @@ void main() {
     double uiScale = 1.0,
   }) async {
     await seedMany(40);
-    tester.view.physicalSize = const Size(900, 700);
+    // BUG-2835：「全部视频」多一行筛选，1.3 缩放下第二排卡中心会被挤到 650 以下。
+    tester.view.physicalSize = const Size(900, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -229,7 +230,8 @@ void main() {
     WidgetTester tester,
   ) async {
     await seedMany(40);
-    tester.view.physicalSize = const Size(900, 700);
+    // BUG-2835：「全部视频」多一行筛选，1.3 缩放下第二排卡中心会被挤到 650 以下。
+    tester.view.physicalSize = const Size(900, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
