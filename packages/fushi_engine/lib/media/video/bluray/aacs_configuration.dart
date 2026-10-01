@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 /// Uses the shared app/headless proxy policy; tests may override or disable it.
@@ -16,6 +17,11 @@ Future<http.Client> Function()? aacsHttpClientFactory = () async =>
 
 /// Explicit local configuration is authoritative, including a missing match.
 String? aacsKeyDbPathOverride;
+
+/// 测试用：替换平台标准 KEYDB 位置（真实位置在用户目录下，测试既不能写也
+/// 不该读到开发机上的真实文件）。
+@visibleForTesting
+List<String>? aacsStandardConfigurationsForTesting;
 
 /// The database provider documented by LibreELEC's Blu-ray playback guide.
 /// Its fv_download.php?reduced endpoint redirects to this same-host archive.
@@ -38,6 +44,8 @@ class AacsConfigurationException implements Exception {
   String toString() => 'AacsConfigurationException(${code.name})';
 }
 
+/// 只约束**下载来**的压缩包解出的大小（不可信网络输入防解压炸弹）；
+/// 本地 KEYDB 走流式扫描，不设大小上限。
 const int _maxConfigurationBytes = 64 * 1024 * 1024;
 const int _maxDownloadBytes = 24 * 1024 * 1024;
 final Map<String, Future<Uint8List>> _downloads = {};
@@ -71,12 +79,24 @@ loadAacsConfiguration(String discRoot) async {
   final String discId = sha1.convert(unitBytes).toString();
   final String? override = aacsKeyDbPathOverride;
   if (override != null) {
-    final Uint8List? key = await _readMatch(io.File(override), discId);
+    final io.File file = io.File(override);
+    if (!await file.exists()) {
+      throw const AacsConfigurationException(
+        AacsConfigurationError.missingConfiguration,
+      );
+    }
+    final Uint8List? key;
+    try {
+      key = await _scanKeyDb(file, discId);
+    } on io.FileSystemException {
+      // 显式指定的文件是唯一权威来源：读不了就是配置本身坏了。
+      throw const AacsConfigurationException(
+        AacsConfigurationError.invalidConfiguration,
+      );
+    }
     if (key == null) {
-      throw AacsConfigurationException(
-        await io.File(override).exists()
-            ? AacsConfigurationError.discNotMatched
-            : AacsConfigurationError.missingConfiguration,
+      throw const AacsConfigurationException(
+        AacsConfigurationError.discNotMatched,
       );
     }
     return (unitKeyFile: unitBytes, volumeUniqueKey: key);
@@ -84,13 +104,24 @@ loadAacsConfiguration(String discRoot) async {
 
   final io.Directory support = await enginePaths.supportRootDirectory();
   final io.File cache = io.File(p.join(support.path, 'aacs', 'keydb.cfg'));
+  bool sawUnreadable = false;
   for (final String candidate in [..._standardConfigurations(), cache.path]) {
-    final Uint8List? key = await _readMatch(io.File(candidate), discId);
-    if (key != null) return (unitKeyFile: unitBytes, volumeUniqueKey: key);
+    final io.File file = io.File(candidate);
+    try {
+      if (!await file.exists()) continue;
+      final Uint8List? key = await _scanKeyDb(file, discId);
+      if (key != null) return (unitKeyFile: unitBytes, volumeUniqueKey: key);
+    } on io.FileSystemException {
+      // 回退链上的一个候选读不了（ACL 拒读、IO 错误）只说明这一处不可用，
+      // 不代表配置无效：继续问下一个候选、应用缓存，最后才下载。
+      sawUnreadable = true;
+    }
   }
   if (aacsHttpClientFactory == null) {
-    throw const AacsConfigurationException(
-      AacsConfigurationError.missingConfiguration,
+    throw AacsConfigurationException(
+      sawUnreadable
+          ? AacsConfigurationError.invalidConfiguration
+          : AacsConfigurationError.missingConfiguration,
     );
   }
   // Avoid repeatedly downloading for discs absent from a freshly fetched DB.
@@ -123,6 +154,8 @@ loadAacsConfiguration(String discRoot) async {
 }
 
 List<String> _standardConfigurations() {
+  final List<String>? forTesting = aacsStandardConfigurationsForTesting;
+  if (forTesting != null) return forTesting;
   final Map<String, String> env = io.Platform.environment;
   final List<String> roots = [];
   if (io.Platform.isWindows) {
@@ -147,38 +180,69 @@ List<String> _standardConfigurations() {
   ];
 }
 
-Future<Uint8List?> _readMatch(io.File file, String discId) async {
+/// 一行 KEYDB 条目：`<discId> = <title> | … | V | <VUK> …`。KEYDB 的条目从不跨行，
+/// 所以逐行匹配与整文件多行匹配等价。
+final RegExp _keyDbEntry = RegExp(
+  r'^\s*(?:0x)?([0-9a-f]{40})\s*=.*?\|\s*V\s*\|\s*(?:0x)?([0-9a-f]{32})(?=\s|\||$)',
+  caseSensitive: false,
+);
+
+/// 在本地 KEYDB 里逐行流式找本盘的 VUK。
+///
+/// 完整版 KEYDB 可达上百 MB：整读进内存再正则，既让内存随文件大小涨，又逼出
+/// 「超过上限就判配置无效」这条人为边界——它会把合法的完整库当坏文件，并截断
+/// 后面的缓存 / 下载回退。流式扫描的内存与文件大小无关，命中即停。
+/// 读不了（权限 / IO 错误）照实抛 [io.FileSystemException]，由调用方按来源定性。
+///
+/// 用 [io.RandomAccessFile] 分块读而不是 `openRead()`：实测 Windows 上被别的句柄
+/// 字节锁住的文件（errno 33），`openRead()` 的流既不报错也不结束、句柄一直占着，
+/// 播放就挂死在这里；`read()` 则如实抛 [io.FileSystemException]。
+Future<Uint8List?> _scanKeyDb(io.File file, String discId) async {
+  final io.RandomAccessFile handle = await file.open();
   try {
-    if (!await file.exists()) return null;
-    if (await file.length() > _maxConfigurationBytes) {
-      throw const AacsConfigurationException(
-        AacsConfigurationError.invalidConfiguration,
-      );
+    // Latin-1 一字节一字符：块边界切不坏字符，只需把末尾半行留到下一块。
+    String carry = '';
+    while (true) {
+      final Uint8List chunk = await handle.read(_keyDbScanChunkBytes);
+      if (chunk.isEmpty) return _findKeyInText(carry, discId);
+      final String text = carry + latin1.decode(chunk);
+      final int lastBreak = text.lastIndexOf('\n');
+      final Uint8List? key = lastBreak < 0
+          ? null
+          : _findKeyInText(text.substring(0, lastBreak), discId);
+      if (key != null) return key;
+      carry = text.substring(lastBreak + 1);
+      // 没有换行的超长残段不可能是一条 KEYDB 条目（例如误放的二进制文件），
+      // 丢掉它，内存才真的与文件大小无关。
+      if (carry.length > _keyDbScanChunkBytes) carry = '';
     }
-    return _findKey(await file.readAsBytes(), discId);
-  } on io.FileSystemException {
-    throw const AacsConfigurationException(
-      AacsConfigurationError.invalidConfiguration,
-    );
+  } finally {
+    await handle.close();
   }
 }
 
-Uint8List? _findKey(Uint8List bytes, String discId) {
-  // Latin-1 preserves ASCII syntax even when provider titles use legacy bytes.
-  final RegExp entry = RegExp(
-    r'^\s*(?:0x)?([0-9a-f]{40})\s*=.*?\|\s*V\s*\|\s*(?:0x)?([0-9a-f]{32})(?=\s|\||$)',
-    caseSensitive: false,
-    multiLine: true,
-  );
-  for (final RegExpMatch match in entry.allMatches(latin1.decode(bytes))) {
-    if (match.group(1)!.toLowerCase() != discId) continue;
-    final String hex = match.group(2)!;
-    return Uint8List.fromList([
-      for (int index = 0; index < 32; index += 2)
-        int.parse(hex.substring(index, index + 2), radix: 16),
-    ]);
+const int _keyDbScanChunkBytes = 1024 * 1024;
+
+Uint8List? _findKey(Uint8List bytes, String discId) =>
+    _findKeyInText(latin1.decode(bytes), discId);
+
+// Latin-1 preserves ASCII syntax even when provider titles use legacy bytes.
+Uint8List? _findKeyInText(String text, String discId) {
+  for (final String line in const LineSplitter().convert(text)) {
+    final Uint8List? key = _matchKeyDbLine(line, discId);
+    if (key != null) return key;
   }
   return null;
+}
+
+Uint8List? _matchKeyDbLine(String line, String discId) {
+  final RegExpMatch? match = _keyDbEntry.firstMatch(line);
+  if (match == null || match.group(1)!.toLowerCase() != discId) return null;
+  final String hex = match.group(2)!;
+  return Uint8List.fromList([
+    for (int index = 0; index < 32; index += 2)
+      int.parse(hex.substring(index, index + 2), radix: 16),
+  ]);
 }
 
 Future<Uint8List> _downloadConfiguration(io.File cache) async {

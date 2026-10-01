@@ -35,10 +35,13 @@ void main() {
     await File(p.join(root.path, 'AACS', 'Unit_Key_RO.inf')).writeAsBytes(unit);
     aacsKeyDbPathOverride = null;
     aacsHttpClientFactory = null;
+    // 不读开发机上真实的 %APPDATA%/aacs、~/.config/aacs。
+    aacsStandardConfigurationsForTesting = <String>[];
   });
   tearDown(() async {
     aacsKeyDbPathOverride = null;
     aacsHttpClientFactory = null;
+    aacsStandardConfigurationsForTesting = null;
     enginePaths = previousPaths;
     await root.delete(recursive: true);
   });
@@ -242,5 +245,149 @@ void main() {
       expect(error.code, AacsConfigurationError.invalidConfiguration);
       expect(error.toString(), isNot(contains('private')));
     }
+  });
+
+  group('local fallback chain (a candidate that cannot be used is skipped)', () {
+    const List<int> expectedVuk = <int>[
+      0,
+      17,
+      34,
+      51,
+      68,
+      85,
+      102,
+      119,
+      136,
+      153,
+      170,
+      187,
+      204,
+      221,
+      238,
+      255,
+    ];
+
+    /// 让 [file] 存在但读不了：Windows 用强制字节锁（他人句柄读即
+    /// ERROR_LOCK_VIOLATION，也是「KEYDB 被别的程序占着」的真实形态——
+    /// `openRead()` 在这种文件上会永远挂起，见 `_scanKeyDb`），其余平台 chmod 000。以 root 跑时 chmod 拦不住，
+    /// 返回 null 由调用方跳过。返回值是还原函数。
+    Future<Future<void> Function()?> makeUnreadable(File file) async {
+      if (Platform.isWindows) {
+        final RandomAccessFile handle = await file.open(mode: FileMode.append);
+        await handle.lock(FileLock.exclusive);
+        return () async {
+          await handle.unlock();
+          await handle.close();
+        };
+      }
+      await Process.run('chmod', <String>['000', file.path]);
+      Future<void> restore() async {
+        await Process.run('chmod', <String>['644', file.path]);
+      }
+
+      try {
+        await file.readAsBytes();
+      } on FileSystemException {
+        return restore;
+      }
+      await restore();
+      return null;
+    }
+
+    test('unreadable standard KEYDB falls through to the app cache instead of '
+        'reporting invalid configuration', () async {
+      final File denied = File(p.join(root.path, 'denied', 'KEYDB.cfg'));
+      await denied.parent.create();
+      await denied.writeAsString(database(id: 'f' * 40));
+      final File cache = File(p.join(root.path, 'aacs', 'keydb.cfg'));
+      await cache.parent.create();
+      await cache.writeAsString(database());
+      aacsStandardConfigurationsForTesting = <String>[denied.path];
+      final Future<void> Function()? restore = await makeUnreadable(denied);
+      if (restore == null) {
+        markTestSkipped('running as root: chmod cannot deny reads');
+        return;
+      }
+      try {
+        final result = await loadAacsConfiguration(root.path);
+        expect(result.volumeUniqueKey, expectedVuk);
+      } finally {
+        await restore();
+      }
+    });
+
+    test(
+      'unreadable standard KEYDB does not stop the download fallback',
+      () async {
+        final File denied = File(p.join(root.path, 'denied', 'KEYDB.cfg'));
+        await denied.parent.create();
+        await denied.writeAsString(database());
+        aacsStandardConfigurationsForTesting = <String>[denied.path];
+        int fetches = 0;
+        aacsHttpClientFactory = () async => MockClient((request) async {
+          fetches++;
+          return http.Response.bytes(zip(database()), 200);
+        });
+        final Future<void> Function()? restore = await makeUnreadable(denied);
+        if (restore == null) {
+          markTestSkipped('running as root: chmod cannot deny reads');
+          return;
+        }
+        try {
+          final result = await loadAacsConfiguration(root.path);
+          expect(result.volumeUniqueKey, expectedVuk);
+          expect(fetches, 1);
+        } finally {
+          await restore();
+        }
+      },
+    );
+
+    test(
+      'only unreadable candidates and no download reports invalid configuration',
+      () async {
+        final File denied = File(p.join(root.path, 'denied', 'KEYDB.cfg'));
+        await denied.parent.create();
+        await denied.writeAsString(database());
+        aacsStandardConfigurationsForTesting = <String>[denied.path];
+        final Future<void> Function()? restore = await makeUnreadable(denied);
+        if (restore == null) {
+          markTestSkipped('running as root: chmod cannot deny reads');
+          return;
+        }
+        try {
+          await expectLater(
+            loadAacsConfiguration(root.path),
+            failure(AacsConfigurationError.invalidConfiguration),
+          );
+        } finally {
+          await restore();
+        }
+      },
+    );
+
+    test(
+      'local KEYDB larger than 64 MiB is scanned, not rejected',
+      () async {
+        // 完整版 KEYDB 可达上百 MB；旧实现整读 + 64 MiB 上限会把它判成配置无效。
+        final File big = File(p.join(root.path, 'big', 'KEYDB.cfg'));
+        await big.parent.create();
+        final IOSink sink = big.openWrite();
+        final String filler = database(id: '0' * 40);
+        final int lines = (65 * 1024 * 1024) ~/ filler.length + 1;
+        for (int i = 0; i < lines; i++) {
+          sink.write(filler);
+        }
+        // 末条不带换行：走「文件尾残行」分支；填充行长度不整除 1 MiB 分块，
+        // 大量条目跨块边界。
+        sink.write(database().trimRight());
+        await sink.close();
+        expect(await big.length(), greaterThan(64 * 1024 * 1024));
+        aacsStandardConfigurationsForTesting = <String>[big.path];
+        final result = await loadAacsConfiguration(root.path);
+        expect(result.volumeUniqueKey, expectedVuk);
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
   });
 }

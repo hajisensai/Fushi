@@ -15,6 +15,15 @@ String redactAacsRelayUrls(String value) => value.replaceAll(
   '[decrypted Blu-ray]',
 );
 
+/// 本进程是否装配 AACS 解密（商店合规门）。
+///
+/// 唯一判据在 app 的 `StoreRestrictedCapability.aacsDecryption`（iOS 不装配），
+/// `installEngineHostBindings()` 用它赋值；引擎不能 import app，所以这里只是装配点。
+/// 默认值按同一判据 **fail-closed**：Dart 全局变量带不过 isolate 边界，后台 isolate
+/// 里同样会经 `resolveFfmpegBackend()` 建会话，没人赋值时 iOS 也绝不读取 / 下载
+/// 播放配置。关闭时加密码流报 [BlurayEncryptedStreamException]（接入解密前的行为）。
+bool aacsDecryptionAvailable = !Platform.isIOS;
+
 /// Owns decrypted inputs for one playback or FFmpeg command. Persistent media
 /// identities stay on disk; loopback capabilities are never written to the DB.
 class AacsMediaSession {
@@ -52,6 +61,7 @@ class AacsMediaSession {
 
   Future<AacsStreamRelay?> _open(String path) async {
     if (!await isAacsEncryptedStreamFile(path)) return null;
+    if (!aacsDecryptionAvailable) throw BlurayEncryptedStreamException(path);
     final String? root = blurayDiscRootForFile(path);
     if (root == null || await Directory(p.join(root, 'BDSVM')).exists()) {
       throw const AacsConfigurationException(

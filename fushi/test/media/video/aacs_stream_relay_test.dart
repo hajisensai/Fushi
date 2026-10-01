@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_stream_relay.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
 import 'package:pointycastle/export.dart';
 
 void main() {
@@ -133,6 +134,58 @@ void main() {
       );
       await first.delete();
       await second.delete();
+    },
+  );
+
+  test(
+    'store gate off: encrypted stream reports encrypted, never reads or fetches configuration',
+    () async {
+      // iOS 商店合规门（StoreRestrictedCapability.aacsDecryption）：关掉时行为与
+      // 接入解密前一致——加密码流报 BlurayEncryptedStreamException，不读本地
+      // KEYDB、不下载；未加密码流照常原样返回。
+      final streams = await Directory(
+        '${directory.path}/BDMV/STREAM',
+      ).create(recursive: true);
+      final aacs = await Directory('${directory.path}/AACS').create();
+      final keyBytes = _keyFile(key, vuk);
+      await File('${aacs.path}/Unit_Key_RO.inf').writeAsBytes(keyBytes);
+      final encrypted = await file.copy('${streams.path}/00001.m2ts');
+      final plain = File('${streams.path}/00002.m2ts');
+      await plain.writeAsBytes(expected);
+      final config = File('${directory.path}/keys.cfg');
+      final hexKey = vuk
+          .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+          .join();
+      await config.writeAsString(
+        '${sha1.convert(keyBytes)} = Test | V | $hexKey',
+      );
+      final oldOverride = aacsKeyDbPathOverride;
+      final oldFactory = aacsHttpClientFactory;
+      final oldAvailable = aacsDecryptionAvailable;
+      // 配置文件是可用的：门要是漏了，下面就会解出 loopback URL 而不是抛异常。
+      aacsKeyDbPathOverride = config.path;
+      aacsHttpClientFactory = () async => throw StateError('must not fetch');
+      aacsDecryptionAvailable = false;
+      final session = AacsMediaSession();
+      addTearDown(() async {
+        aacsKeyDbPathOverride = oldOverride;
+        aacsHttpClientFactory = oldFactory;
+        aacsDecryptionAvailable = oldAvailable;
+        await session.close();
+      });
+
+      await expectLater(
+        session.resolve(encrypted.path),
+        throwsA(
+          isA<BlurayEncryptedStreamException>().having(
+            (e) => e.streamPath,
+            'streamPath',
+            encrypted.path,
+          ),
+        ),
+      );
+      expect(session.hasProtectedStreams, isFalse);
+      expect(await session.resolve(plain.path), plain.path);
     },
   );
 
