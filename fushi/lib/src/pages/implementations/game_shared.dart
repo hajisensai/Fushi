@@ -20,9 +20,11 @@ enum GameSection {
   diagnostics,
   settings,
   importGames,
-  // 曾经尾部还有「发现」（在线源浏览 / 下载）；2026-09-27 起它只住在顶层「浏览」
-  // 模块（`browse_page.dart`），枚举值随之删除。它在最尾，删掉不移动其它子区的
-  // IndexedStack 索引。
+
+  /// 游戏资源发现（与「浏览 › 发现 › 游戏」同一个生产发现页）。2026-09-27 曾随
+  /// 「浏览」模块整体搬走，2026-10-01 用户拍板加回库页子标签；追加在尾部，不移动
+  /// 其它子区的 IndexedStack 索引。
+  discover,
 }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
@@ -131,11 +133,15 @@ String formatGameClockTime(DateTime value) {
 /// 一份真相；枚举序只管 IndexedStack 索引，显示顺序在这里）：
 /// * 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
 ///   （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构；
+/// * 「发现」紧挨「导入」之前，与其它库页「发现 / 来源 / 扩展 → 导入」同序。
+///   游戏只有本机库形态（Windows）才挂这一页，iOS 不存在游戏模块，不需另过
+///   外部发现的合规门；游戏没有扩展系统，不设来源 / 扩展；
 /// * 诊断不设页签（从「设置」进入），所以不在此序里。
 const List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.dashboard,
   GameSection.library,
   GameSection.monitor,
+  GameSection.discover,
   GameSection.importGames,
   GameSection.settings,
 ];
@@ -183,6 +189,7 @@ class GameSectionTabs extends StatelessWidget {
         // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
         // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
         GameSection.importGames => t.library_view_import,
+        GameSection.discover => t.library_view_discover,
         GameSection.settings => t.settings,
         // 不设页签（从「设置」进入）；防御性给全称，正常不会上屏。
         GameSection.diagnostics => t.settings,
@@ -201,6 +208,9 @@ class GameSectionTabs extends StatelessWidget {
           return;
         case GameSection.importGames:
           gameSectionNotifier.value = GameSection.importGames;
+          return;
+        case GameSection.discover:
+          gameSectionNotifier.value = GameSection.discover;
           return;
         case GameSection.monitor:
           onSelectMonitor();
