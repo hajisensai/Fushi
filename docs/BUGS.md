@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2602 条。点号进各自文件。
+> 共 2604 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2822](bugs/BUG-2822-manga-stream-chapter-ocr.md) | ✅ | ✅ | 在线直读章完全不做 OCR，手机上只能下载后等整章识别完 |
+| [BUG-2821](bugs/BUG-2821-manga-ocr-follow-reader.md) | ✅ | ✅ | 移动端整卷 OCR 不跟读者翻页，翻到的页要等整卷识别完 |
 | [BUG-2820](bugs/BUG-2820-bdmv-drop-ignored.md) | ✅ | ✅ | 视频页拖入 .bdmv / BDMV 目录无反应 |
 | [BUG-2819](bugs/BUG-2819-webkit-paginated-last-page-shift.md) | ✅ | ✅ | Mac/iOS 翻页每章最后一页整体错开一个边距、行尾被切（WebKit 滚动范围不含分栏容器末端 padding） |
 | [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |

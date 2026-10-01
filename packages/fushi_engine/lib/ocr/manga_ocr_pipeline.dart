@@ -61,6 +61,39 @@ List<int> mangaOcrPageOrder(int pageCount, int startPage) {
   ];
 }
 
+/// 运行中可改道的整卷处理顺序：没有改道时给出的序列与 [mangaOcrPageOrder]
+/// 完全相同；[focus] 把游标挪到读者当前页，之后从那页起向后取尚未给出的页，
+/// 到末页再绕回。每页恰好给出一次。
+///
+/// 读者往前翻回去时也是「先那页、再往后接着跑」，已经处理过的页直接跳过。
+class MangaOcrPageScheduler {
+  MangaOcrPageScheduler(this.pageCount, int startPage)
+      : _taken = List<bool>.filled(pageCount < 0 ? 0 : pageCount, false),
+        _cursor = pageCount <= 0 ? 0 : startPage.clamp(0, pageCount - 1);
+
+  final int pageCount;
+  final List<bool> _taken;
+  int _cursor;
+
+  /// 读者翻到了 [pageIndex]：下一次 [next] 从它开始找。越界请求忽略。
+  void focus(int pageIndex) {
+    if (pageIndex < 0 || pageIndex >= pageCount) return;
+    _cursor = pageIndex;
+  }
+
+  /// 下一页页号；全部给出过之后为 null。
+  int? next() {
+    for (int step = 0; step < pageCount; step++) {
+      final int page = (_cursor + step) % pageCount;
+      if (_taken[page]) continue;
+      _taken[page] = true;
+      _cursor = (page + 1) % pageCount;
+      return page;
+    }
+    return null;
+  }
+}
+
 /// 按页索引懒加载解码好的页面图像（由调用方实现，通常从压缩包/目录读）。
 typedef OcrPageLoader = Future<img.Image> Function(int pageIndex);
 
@@ -153,13 +186,17 @@ class MangaOcrPipeline {
 
   /// 处理整卷。返回**按页序**排列的结果（含缓存命中页），与 [startPage] 无关。
   ///
-  /// 处理顺序见 [mangaOcrPageOrder]：从 [startPage] 起、绕回开头补齐。
+  /// 处理顺序见 [mangaOcrPageOrder]：从 [startPage] 起、绕回开头补齐（有
+  /// [takeFocus] 改道时以 [MangaOcrPageScheduler] 为准）。
   /// 中断（[cancelToken] 置位）抛 [OcrCancelledException]；已完成页已落
   /// 缓存，重跑时只补缺页。
   ///
   /// [legacyCaches]：识别文本与当前版本相同、只缺行几何的旧版逐页缓存。当前缓存
   /// 缺页而旧缓存有这一页、且识别器能补排版（[LineLayoutOcrRecognizer]）时，
   /// 只补算行几何写成当前版本，不重新识别（BUG-2813）。
+  ///
+  /// [takeFocus]：每页开始前取一次读者当前页（没有新请求返回 null），有就把
+  /// 处理游标挪过去（[MangaOcrPageScheduler]）——读者翻到哪页，下一页就先跑哪页。
   Future<List<OcrPageResult>> processBook({
     required String bookId,
     required int pageCount,
@@ -168,13 +205,20 @@ class MangaOcrPipeline {
     OcrCancelToken? cancelToken,
     OcrProgressCallback? onProgress,
     List<OcrPageCache> legacyCaches = const <OcrPageCache>[],
+    int? Function()? takeFocus,
   }) async {
     final List<OcrPageResult?> results = List<OcrPageResult?>.filled(
       pageCount,
       null,
     );
+    final MangaOcrPageScheduler scheduler =
+        MangaOcrPageScheduler(pageCount, startPage);
     int completed = 0;
-    for (final int page in mangaOcrPageOrder(pageCount, startPage)) {
+    while (true) {
+      final int? focused = takeFocus?.call();
+      if (focused != null) scheduler.focus(focused);
+      final int? page = scheduler.next();
+      if (page == null) break;
       cancelToken?.throwIfCancelled();
       final OcrPageResult? cached = await cache?.read(bookId, page);
       if (cached != null) {

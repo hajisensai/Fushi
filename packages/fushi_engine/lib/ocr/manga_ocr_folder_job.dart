@@ -397,6 +397,7 @@ Future<img.Image> decodeMangaPageFile(File file) async {
 /// - [startPage] 处理起点（页号，按 [enumerateMangaPages] 的自然序）：从它起向后、
 ///   再绕回开头（[mangaOcrPageOrder]）。产物 manga.json 内容与页序与起点无关。
 /// - [decodePage] 可注入（测试免真图解码）。
+/// - [takeFocus] 运行中改道（读者翻页，语义见 `MangaOcrPipeline.processBook`）。
 /// - [engineSignature] 逐页缓存子目录名 + 产物元数据里的引擎签名。**必须**由调用
 ///   方按已安装模型解析（见 `manga_ocr_model_fingerprint.dart`）：这里不给默认值，
 ///   免得新调用方漏传一个手维护常量又把不同模型的结果混进同一卷（BUG-1173）。
@@ -410,6 +411,7 @@ Future<String> runMangaOcrFolderJob({
   OcrCancelToken? cancelToken,
   OcrProgressCallback? onProgress,
   Future<img.Image> Function(File file)? decodePage,
+  int? Function()? takeFocus,
 }) async {
   final Directory root = Directory(imageDirPath);
   if (!root.existsSync()) {
@@ -483,6 +485,7 @@ Future<String> runMangaOcrFolderJob({
     cancelToken: cancelToken,
     onProgress: onProgress,
     legacyCaches: legacyCaches,
+    takeFocus: takeFocus,
   );
 
   // Reader requests own page caches, never the complete volume output.

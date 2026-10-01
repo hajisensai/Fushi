@@ -296,7 +296,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   /// 构造本次任务的输入。编排本身在 `manga_ocr_job_stream.dart`——对话框只负责
   /// 「选参数」，跑任务的能力不该被绑在一个 widget 的 State 上。
-  MangaOcrJobSpec _jobSpec(String dir) => MangaOcrJobSpec(
+  MangaOcrJobSpec _jobSpec(String dir, {MangaOcrPageFocus? focus}) =>
+      MangaOcrJobSpec(
         engine: _engine,
         engines: _engines,
         imageDirPath: dir,
@@ -305,10 +306,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         onlyMissing: widget.onlyMissing,
         volumeTitle: _title,
         remoteTarget: _remoteTarget,
+        focus: focus,
       );
-
-  Stream<MangaOcrBackgroundEvent> _backgroundEvents(String dir) =>
-      mangaOcrBackgroundEvents(_jobSpec(dir));
 
 
   bool get _selectedEngineAvailable {
@@ -365,13 +364,16 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         setState(() => _error = t.manga_ocr_wizard_failed);
         return;
       }
+      // 后台任务可能被阅读器接回：给它一条改道通道，读者翻页时跟着读者走。
+      final MangaOcrPageFocus focus = MangaOcrPageFocus();
       Navigator.pop(
         context,
         MangaOcrBackgroundJob(
           bookKey: bookKey,
           managedDirectory: dir,
           engine: _engine,
-          events: _backgroundEvents(dir),
+          events: mangaOcrBackgroundEvents(_jobSpec(dir, focus: focus)),
+          focus: focus,
         ),
       );
       return;
