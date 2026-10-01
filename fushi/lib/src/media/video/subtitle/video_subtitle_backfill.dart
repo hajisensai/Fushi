@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -152,9 +153,7 @@ class VideoSubtitleBackfillService {
   /// 真下载前的可选重排（AI）。null = 按语言偏好排完就取前 [maxCandidates] 条。
   final SubtitleBackfillReorder? aiReorder;
 
-  Future<SubtitleBackfillResult> backfill(
-    SubtitleBackfillTarget target,
-  ) async {
+  Future<SubtitleBackfillResult> backfill(SubtitleBackfillTarget target) async {
     if (target.hasExistingSubtitle) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.alreadyHasSubtitle,
@@ -188,8 +187,9 @@ class VideoSubtitleBackfillService {
           fingerprint: LocalVideoFingerprint(
             fileSize: await video.length(),
             fileName: p.basename(video.path),
-            openSubtitlesMovieHash:
-                await computeOpenSubtitlesMovieHash(video.path),
+            openSubtitlesMovieHash: await computeOpenSubtitlesMovieHash(
+              video.path,
+            ),
           ),
         ),
       );
@@ -229,15 +229,19 @@ class VideoSubtitleBackfillService {
     final SubtitleBackfillReorder? reorder = aiReorder;
     if (reorder != null && ordered.length > 1) {
       try {
-        final List<VideoSubtitleCandidate> reordered =
-            await reorder(ordered, target);
+        final List<VideoSubtitleCandidate> reordered = await reorder(
+          ordered,
+          target,
+        );
         if (reordered.length == ordered.length &&
             reordered.toSet().containsAll(ordered)) {
           ordered = reordered;
         }
       } on Object catch (error) {
-        debugPrint('[subtitle-backfill] ai reorder failed for '
-            '${target.bookUid}: $error');
+        debugPrint(
+          '[subtitle-backfill] ai reorder failed for '
+          '${target.bookUid}: $error',
+        );
       }
     }
     String? lastRejection;
@@ -258,8 +262,10 @@ class VideoSubtitleBackfillService {
       );
       if (check.rejected) {
         lastRejection = check.detail;
-        debugPrint('[subtitle-backfill] rejected "${candidate.fileName}" for '
-            '${target.bookUid}: ${check.detail}');
+        debugPrint(
+          '[subtitle-backfill] rejected "${candidate.fileName}" for '
+          '${target.bookUid}: ${check.detail}',
+        );
         continue;
       }
       try {
@@ -387,6 +393,10 @@ String sidecarSubtitleExtension(String fileName) {
 // 自动补字幕的接线
 // ---------------------------------------------------------------------------
 
+/// [aiSubtitleBackfillReorder] 失败回退时诊断日志的 source tag。
+const String kAiSubtitleBackfillReorderLogSource =
+    'VideoSubtitleBackfill.aiReorder';
+
 /// 给 [VideoSubtitleBackfillService.aiReorder] 用的重排闭包。
 ///
 /// 提供商在**每次调用时**解析（用户改设置不用重建服务）；未指派或 AI 失败都回退
@@ -418,7 +428,16 @@ SubtitleBackfillReorder aiSubtitleBackfillReorder({
         ),
       );
       return rank.reorder(candidates);
-    } on AiChatFailure {
+    } on AiChatFailure catch (failure) {
+      // 回退原序是有意的（重排只是可选优化），但不能无痕：key 填错、额度用完时
+      // 这里是唯一能让用户/开发者发现「AI 重排其实一直没生效」的地方。
+      // failure.message 是已脱敏短码，可以直接进日志。
+      engineLog.logDiagnostic(
+        kAiSubtitleBackfillReorderLogSource,
+        'AI reorder failed (${failure.message}); '
+        'keeping original order of ${candidates.length} candidates '
+        'for ${target.videoPath.split(RegExp(r'[/\\]')).last}',
+      );
       return candidates;
     } finally {
       client.close();

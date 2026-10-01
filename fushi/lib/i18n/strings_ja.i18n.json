@@ -4967,9 +4967,7 @@
   "ai_feature_lapis_style": "Lapis card style",
   "ai_feature_lapis_style_summary": "Let AI generate Lapis card style rules and CSS from a description",
   "ai_feature_video_identify": "Video identification",
-  "ai_feature_video_identify_summary": "Let AI pick the matching work when scraping finds several candidates",
   "ai_feature_video_search": "Video search assist",
-  "ai_feature_video_search_summary": "Let AI suggest extra search terms and rank subtitle and torrent results",
   "ai_assist_section": "Ask AI",
   "ai_assist_generate": "Generate",
   "ai_assist_working": "Asking AI…",
@@ -6176,5 +6174,12 @@
   "anki_dedup_progress_indexing": "ノートを読み込んでメディアの参照を確認中…（$done / $total）",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition."
+  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "ai_feature_video_identify_assist_summary": "When scraping finds several candidates or nothing at all, let AI pick the matching work or suggest titles to search",
+  "ai_feature_video_search_subtitle_summary": "Let AI re-rank subtitle results when subtitles are filled in automatically in the background",
+  "video_scrape_ai_declined": "AI not adopted",
+  "video_scrape_ai_failed": "AI request failed",
+  "video_scrape_ai_searched": "Searched again with titles suggested by AI",
+  "video_source_scrape_ai_identify": "Identify with AI",
+  "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%"
 }

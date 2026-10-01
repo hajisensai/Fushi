@@ -5,11 +5,15 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/models.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
+    show VideoPendingScrapeWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
@@ -245,6 +249,157 @@ Future<int> _seedUnresolvedRun(FushiDatabase db, int sourceId) =>
         finishedAt: const Value<int?>(2),
       ),
     );
+
+/// 支持「AI 识别」的 runner：[available] 模拟「设置 › AI」有没有指派提供商。
+class _AiIdentifyRunner
+    implements VideoSourceScrapeRunner, VideoSourceScrapeAiIdentify {
+  _AiIdentifyRunner({required this.available});
+
+  bool available;
+  final List<String> identifiedKeys = <String>[];
+
+  @override
+  bool get aiIdentityAvailable => available;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async =>
+      SourceScrapeReport(sourceIds: <int>[source.id]);
+
+  @override
+  Future<SourceScrapeReport> identifyWorkWithAi({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) async {
+    identifiedKeys.add(workStableKey ?? workTitle);
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: 1,
+      succeededWorks: 1,
+      warnings: <SourceScrapeIssue>[
+        SourceScrapeIssue(
+          workTitle: workTitle,
+          message: encodeVideoScrapeAiIdentityNote(
+            const AiVideoIdentityDecision(
+              key: 'anidb:65733',
+              confidence: 0.93,
+              reason: 'same year and studio',
+            ),
+          ),
+          workKey: workStableKey,
+        ),
+      ],
+    );
+  }
+}
+
+/// 交互式批次里把一个带 AI 建议的确认请求交给面板，等用户选。
+class _AiSuggestionConfirmationRunner implements VideoSourceScrapeRunner {
+  _AiSuggestionConfirmationRunner(this.candidates);
+
+  final List<VideoSourceScrapeConfirmationCandidate> candidates;
+  VideoSourceScrapeConfirmationCandidate? chosen;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    chosen = await onConfirmation!(
+      VideoSourceScrapeConfirmation(
+        sourceId: source.id,
+        sourceLabel: source.label,
+        localWorkTitle: 'Doraemon Movies',
+        candidates: candidates,
+        aiSuggestion: const VideoSourceScrapeAiSuggestion(
+          candidateIndex: 1,
+          confidencePercent: 72,
+          reason: 'theatrical release matches the folder',
+        ),
+      ),
+    );
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: 1,
+      succeededWorks: chosen == null ? 0 : 1,
+    );
+  }
+}
+
+/// 一条待确认作品：真实来源行 + 真实视频行组成的 book 单元。
+Future<VideoPendingScrapeWork> _seedPendingWork(FushiDatabase db) async {
+  final int sourceId = await _seedSource(db, mediaKind: 'video');
+  final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+  await db.upsertVideoBook(VideoBooksCompanion(
+    bookUid: const Value<String>('movie-a'),
+    title: const Value<String>('Unscraped Movie'),
+    videoPath: const Value<String>('/nonexistent/video/Unscraped Movie.mkv'),
+    sourceId: Value<int?>(sourceId),
+  ));
+  final VideoBookRow book = (await db.getVideoBookByBookUid('movie-a'))!;
+  return VideoPendingScrapeWork(
+    source: source,
+    work: VideoSourceScrapeWork(
+      source: source,
+      title: 'Unscraped Movie',
+      members: <VideoBookRow>[book],
+    ),
+  );
+}
+
+/// 打开任务面板并切到「待确认」tab。
+Future<void> _openPendingTab(
+  WidgetTester tester,
+  FushiDatabase db,
+  VideoSourceScrapeTaskController controller,
+  VideoPendingScrapeWork entry,
+) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Builder(
+        builder: (BuildContext context) => Scaffold(
+          body: TextButton(
+            onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
+              context: context,
+              controller: controller,
+              loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+              loadPendingWorks: () async => <VideoPendingScrapeWork>[entry],
+            )),
+            child: const Text('Open tasks'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Open tasks'));
+  await tester.pumpAndSettle();
+  await tester
+      .tap(find.byKey(const ValueKey<String>('video-source-tab-pending')));
+  await tester.pumpAndSettle();
+  expect(
+    find.byKey(
+        const ValueKey<String>('video-source-pending-work-book:movie-a')),
+    findsOneWidget,
+  );
+}
+
+const ValueKey<String> _aiButtonKey =
+    ValueKey<String>('video-source-pending-ai-book:movie-a');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -783,5 +938,130 @@ void main() {
     expect(find.text('Scrape result'), findsOneWidget);
     expect(find.text('No match found'), findsOneWidget);
     expect(source.id, sourceId);
+  });
+
+  group('AI identify in the pending tab', () {
+    testWidgets('available AI: the button runs identifyWorkWithAi once',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final _AiIdentifyRunner runner = _AiIdentifyRunner(available: true);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(tester, db, controller, entry);
+      expect(find.byKey(_aiButtonKey), findsOneWidget);
+      await tester.tap(find.byKey(_aiButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(runner.identifiedKeys, <String>['book:movie-a']);
+      // 结论逐条译成文案：汇总 + ai:matched 标记的本地化标题与理由。
+      expect(find.textContaining(t.video_scrape_ai_matched), findsOneWidget);
+      expect(find.textContaining('same year and studio'), findsOneWidget);
+      expect(find.text(t.ai_assist_no_provider), findsNothing);
+    });
+
+    testWidgets(
+        'unavailable AI: the button only points to settings and sends nothing',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final _AiIdentifyRunner runner = _AiIdentifyRunner(available: false);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(tester, db, controller, entry);
+      // 入口对没指派 AI 的用户也可见（BUG-2694 的约定）。
+      expect(find.byKey(_aiButtonKey), findsOneWidget);
+      await tester.tap(find.byKey(_aiButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.ai_assist_no_provider), findsOneWidget);
+      expect(runner.identifiedKeys, isEmpty);
+      expect(controller.isRunning, isFalse);
+      expect(controller.queuedManualRequestCount, 0);
+    });
+
+    testWidgets('runner without AI support: no AI button at all',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_ManualBindingRunner());
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(tester, db, controller, entry);
+      expect(find.byKey(_aiButtonKey), findsNothing);
+      expect(find.byTooltip(t.video_source_scrape_ai_identify), findsNothing);
+      // 手动指定入口照旧在。
+      expect(find.byTooltip(t.video_source_scrape_manual_search_title),
+          findsOneWidget);
+    });
+  });
+
+  testWidgets('confirmation marks only the AI-suggested candidate',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final _AiSuggestionConfirmationRunner runner =
+        _AiSuggestionConfirmationRunner(
+            <VideoSourceScrapeConfirmationCandidate>[
+      _candidate(id: '1001', title: 'Doraemon (TV)', year: 2005),
+      _candidate(id: '1002', title: 'Doraemon Movie', year: 2006),
+      _candidate(id: '1003', title: 'Doraemon Special', year: 2007),
+    ]);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () {
+                unawaited(controller.scrapeSource(source, interactive: true));
+                unawaited(showVideoSourceScrapeTaskPanel(
+                  context: context,
+                  controller: controller,
+                  loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                ));
+              },
+              child: const Text('Start'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    expect(controller.pendingConfirmation, isNotNull);
+
+    final String label = t.video_source_scrape_ai_suggested(percent: 72);
+    Finder labelIn(String id) => find.descendant(
+          of: find
+              .byKey(ValueKey<String>('video-source-candidate-anidb-tv-$id')),
+          matching: find.textContaining(label),
+        );
+    expect(find.textContaining(label), findsOneWidget);
+    expect(labelIn('1002'), findsOneWidget);
+    expect(labelIn('1001'), findsNothing);
+    expect(labelIn('1003'), findsNothing);
+    expect(find.textContaining('theatrical release matches the folder'),
+        findsOneWidget);
+
+    // 只作标注：选哪条仍由用户决定，选了非 AI 建议的那条也照常交回。
+    await tester.tap(find.byKey(
+        const ValueKey<String>('video-source-candidate-anidb-tv-1001')));
+    await tester.pumpAndSettle();
+    expect(runner.chosen?.lookup.externalId, '1001');
+    expect(controller.isRunning, isFalse);
   });
 }

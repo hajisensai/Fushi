@@ -5307,8 +5307,9 @@ class AppModel with ChangeNotifier {
       ),
       // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
       enableOfflineTitleIndex: true,
-      // 歧义候选交 AI 消解；未指派提供商时 decider 每次回 null，行为与无 AI 一致。
-      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(prefsRepo),
+      // 歧义 / 查无交 AI 协助；顾问每次现取指派，未指派时完全不问 AI。判定缓存
+      // 按能力键分，这个协调器终身持有也不会沿用换提供商之前的结论。
+      aiIdentityAdvisor: PreferencesAiVideoIdentityAdvisor(prefsRepo),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
       // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
