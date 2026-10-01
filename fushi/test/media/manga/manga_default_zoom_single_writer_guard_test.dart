@@ -53,7 +53,7 @@ void main() {
     final int at = page.indexOf(reset);
     final String guard = page.substring(at - 60, at);
     expect(guard, contains('if (resetSessionZoom) {'));
-    // BUG-2833：改缩放方式（选「适应屏幕」）也要把会话缩放回到默认值。
+    // BUG-2845：改缩放方式（选「适应屏幕」）也要把会话缩放回到默认值。
     final int decl = page.indexOf('final bool resetSessionZoom =');
     expect(decl, greaterThan(0));
     final String condition = page.substring(decl, page.indexOf(';', decl));

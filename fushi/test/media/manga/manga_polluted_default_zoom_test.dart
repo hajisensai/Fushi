@@ -5,7 +5,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-2833：BUG-2782 之前页内捏合把 108%、113% 这种会话缩放回写成「默认缩放」，
+/// BUG-2845：BUG-2782 之前页内捏合把 108%、113% 这种会话缩放回写成「默认缩放」，
 /// 修了写入方之后存量坏值仍让 16:10 笔记本上「适应屏幕」装不下整页。设置滑块只写
 /// 10 的倍数，读取端把非 10 倍数的存量值当作未设置。
 void main() {
