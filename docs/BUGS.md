@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2606 条。点号进各自文件。
+> 共 2607 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2833](bugs/BUG-2833-desktop-title-bar-reader-paper-color.md) | ✅ | ✅ | 桌面自绘顶栏不跟阅读器纸色，正文顶上一条白带 |
 | [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |
 | [BUG-2823](bugs/BUG-2823-update-relaunch-startup-stall.md) | ✅ | ✅ | 自动更新后新版本启动卡顿一两秒 |
 | [BUG-2822](bugs/BUG-2822-manga-stream-chapter-ocr.md) | ✅ | ✅ | 在线直读章完全不做 OCR，手机上只能下载后等整章识别完 |
