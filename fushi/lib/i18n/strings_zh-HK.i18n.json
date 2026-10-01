@@ -6173,5 +6173,8 @@
   "manga_ocr_download_background_hint": "可以離開此頁，下載會在背景繼續。",
   "storage_ocr_models_hint": "在這裡下載或刪除各個本機 OCR 模型；使用哪一個在「漫畫 › 漫畫 OCR」裡選。",
   "manga_ocr_wizard_title_book": "辨識本卷文字",
-  "anki_dedup_progress_indexing": "正在讀取筆記、查找媒體引用…（$done / $total）"
+  "anki_dedup_progress_indexing": "正在讀取筆記、查找媒體引用…（$done / $total）",
+  "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
+  "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
+  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition."
 }
