@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | 🚧 | 🚧 | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
+| [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
 | [BUG-2791](bugs/BUG-2791-leaderboard-shelf-500-and-series-finished.md) | ✅ | ✅ | 排行榜书架/分享本月 500；只看第 1 集整季被判读完 |
 | [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
 | [BUG-2789](bugs/BUG-2789-screen-ocr-popup-anchor-crash.md) | ✅ | ✅ | 截屏识字点字后只有一层灰、查词卡画不出来 |
