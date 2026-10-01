@@ -133,6 +133,11 @@ jobs:
       with:
         flutter-version: '3.44.0'
         cache: true
+    # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+    # runner; restore it so a release-asset hiccup cannot fail the build.
+    - uses: ./.github/actions/pdfium-hook-cache
+      with:
+        purpose: android
 
     # 与 release-desktop.yml 的同名 step 一样在仓库根运行：BUG-1586 的
     # `bash tool/release_sequence.sh` 是根相对路径，working-directory: fushi
@@ -1147,6 +1152,11 @@ jobs:
       with:
         flutter-version: '3.44.0'
         cache: true
+    # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+    # runner; restore it so a release-asset hiccup cannot fail the build.
+    - uses: ./.github/actions/pdfium-hook-cache
+      with:
+        purpose: test
 
     # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
     # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去

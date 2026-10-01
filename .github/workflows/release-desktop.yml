@@ -178,6 +178,11 @@ jobs:
           flutter-version: '3.44.0'
           cache: false
           pub-cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: windows
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -1250,6 +1255,11 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: macos
       - name: Resolve desktop release channel
         id: channel
         shell: bash
