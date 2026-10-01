@@ -655,3 +655,29 @@ Hibiki injects the same `_RestartHideTimerSignal` into the desktop theme
 dispatches any pointer event on either platform.
 
 Source-guard test: `fushi/test/pages/video_controls_wake_signal_guard_test.dart`.
+
+## BUG-2832: controls theme `updateShouldNotify` was inverted
+
+Files: `lib/media_kit_video_controls/src/controls/material.dart`
+(`MaterialVideoControlsTheme`) and `material_desktop.dart`
+(`MaterialDesktopVideoControlsTheme`).
+
+Upstream returned `identical(normal, old.normal) && identical(fullscreen,
+old.fullscreen)` — i.e. it notified dependents only when *nothing* changed and
+stayed silent when the host handed in a new theme. The controls body is a
+`const _Material(Desktop)VideoControls()`, so the parent rebuild is
+short-circuited and the inherited notification is the only path by which a new
+theme reaches it. Result: when the host switched themes (Hibiki swaps button
+bars / visibility by control density when the player area is resized, e.g.
+opening the subtitle side panel drops it into the `mini` tier), the controls
+kept drawing the stale theme until some unrelated internal `setState` — the full
+top / bottom bars coexisted with the host's mini-window centre buttons.
+
+The patch inverts it to "notify iff either instance changed". Both States'
+`didChangeDependencies` are idempotent (subscriptions guarded by
+`subscriptions.isEmpty`, listenables re-bound only on identity change), so the
+extra calls are safe. `VideoStateInheritedWidget` / `FullscreenInheritedWidget`
+carry the same upstream pattern but their payloads are stable for the lifetime
+of a controls subtree, so they are left untouched.
+
+Source-guard test: `fushi/test/pages/video_controls_theme_notify_guard_test.dart`.
