@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -179,6 +181,130 @@ void main() {
       expect(legacy.lastMediaDedupAtMs, 7);
       expect(legacy.mediaDedupAutoEnabled, isFalse);
       expect(legacy.mediaDedupAutoDelete, isFalse);
+    });
+  });
+
+  // BUG-2824：本地对照表的匹配必须与 Anki `findNotes "<文件名>"` 同口径——
+  // 少匹配一处就会把仍被引用的副本删掉。
+  group('MediaNameMatcher', () {
+    test('朴素子串、大小写不敏感（与 Anki 文本检索一致），报原大小写', () {
+      final MediaNameMatcher m = MediaNameMatcher(<String>['a.mp3', 'Pic.PNG']);
+      expect(m.namesIn('[sound:A.MP3] <img src="pic.png">'), <String>{
+        'a.mp3',
+        'Pic.PNG',
+      });
+      // 子串即命中（不判边界）：交给改写阶段判断「改不动就不删」。
+      expect(m.namesIn('[sound:ba.mp3x]'), <String>{'a.mp3'});
+      expect(m.namesIn('a.mp4 pic.pn'), isEmpty);
+    });
+
+    test('同扩展名、不同长度的名字在同一处都能被认出', () {
+      final MediaNameMatcher m = MediaNameMatcher(<String>[
+        'b.mp3',
+        'ab.mp3',
+        'xab.mp3',
+        'q.mp3',
+      ]);
+      expect(m.namesIn('<x>xab.mp3</x>'), <String>{
+        'b.mp3',
+        'ab.mp3',
+        'xab.mp3',
+      });
+    });
+
+    test('多个点、无扩展名、仅大小写不同的名字', () {
+      final MediaNameMatcher m = MediaNameMatcher(<String>[
+        'a.b.mp3',
+        'noext',
+        'Dup.jpg',
+        'dup.jpg',
+        '',
+      ]);
+      expect(m.namesIn('a.b.mp3'), <String>{'a.b.mp3'});
+      expect(m.namesIn('xx NOEXT yy'), <String>{'noext'});
+      expect(m.namesIn('DUP.JPG'), <String>{'Dup.jpg', 'dup.jpg'});
+      expect(m.namesIn(''), isEmpty);
+    });
+
+    test('namesInAll 合并一条笔记的全部字段', () {
+      final MediaNameMatcher m = MediaNameMatcher(<String>['a.mp3', 'b.jpg']);
+      expect(
+        m.namesInAll(<String>['[sound:a.mp3]', '<img src="b.jpg">']),
+        <String>{'a.mp3', 'b.jpg'},
+      );
+    });
+
+    test('与逐个 contains 的朴素实现结果一致（随机语料对拍）', () {
+      final List<String> names = <String>[
+        for (int i = 0; i < 300; i++)
+          'f${i * 7}_${i % 13}.${<String>['mp3', 'jpg', 'png', 'ogg'][i % 4]}',
+      ];
+      final MediaNameMatcher m = MediaNameMatcher(names);
+      // 固定种子：抽一部分真名（随机改大小写、前后粘上文件名字符）与诱饵
+      // （换扩展名 / 截掉一位）混进 HTML 片段。
+      final Random rng = Random(2824);
+      for (int round = 0; round < 20; round++) {
+        final StringBuffer text = StringBuffer();
+        for (int k = 0; k < 60; k++) {
+          String n = names[rng.nextInt(names.length)];
+          switch (rng.nextInt(5)) {
+            case 0:
+              n = n.toUpperCase();
+            case 1:
+              n = 'x$n.bak';
+            case 2:
+              n = n.replaceFirst(RegExp(r'\.\w+$'), '.webm');
+            case 3:
+              n = n.substring(1);
+          }
+          text.write(rng.nextBool() ? '<img src="$n">' : '[sound:$n] 釈義');
+        }
+        final String body = text.toString();
+        final Set<String> naive = <String>{
+          for (final String n in names)
+            if (body.toLowerCase().contains(n.toLowerCase())) n,
+        };
+        expect(naive, isNotEmpty);
+        expect(m.namesIn(body), naive, reason: body);
+      }
+    });
+
+    test('上万个文件名 × 大字段仍是线性代价（不按名字个数放大）', () {
+      final List<String> names = <String>[
+        for (int i = 0; i < 20000; i++) 'yomitan_dictionary_media_$i.mp3',
+      ];
+      final MediaNameMatcher m = MediaNameMatcher(names);
+      final String field =
+          '${'釈義テキスト' * 20000}[sound:yomitan_dictionary_media_123.mp3]';
+      final Stopwatch sw = Stopwatch()..start();
+      for (int i = 0; i < 50; i++) {
+        expect(m.namesIn(field), <String>{'yomitan_dictionary_media_123.mp3'});
+      }
+      // 朴素实现是 2 万 × 12 万字符 × 50 次；这里应远低于一秒级。
+      expect(sw.elapsed, lessThan(const Duration(seconds: 5)));
+    });
+  });
+
+  group('复核检索式', () {
+    test('有改写笔记时限定在 edited 或这些 nid 上，文件名逐个加引号 OR', () {
+      expect(
+        mediaDedupRecheckQuery(
+          <String>['a.mp3', 'b c.jpg'],
+          editedDays: 2,
+          noteIds: <int>[30, 10],
+        ),
+        '(edited:2 OR nid:10,30) ("a.mp3" OR "b c.jpg")',
+      );
+      expect(
+        mediaDedupRecheckQuery(<String>['a.mp3'], editedDays: 3),
+        'edited:3 ("a.mp3")',
+      );
+    });
+
+    test('edited 天数覆盖到建表时刻，跨日界线多看一天', () {
+      expect(mediaDedupRecheckEditedDays(Duration.zero), 2);
+      expect(mediaDedupRecheckEditedDays(const Duration(hours: 23)), 2);
+      expect(mediaDedupRecheckEditedDays(const Duration(hours: 25)), 3);
     });
   });
 }
