@@ -131,6 +131,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiTitleBarColorScope;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -3675,7 +3677,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         );
       },
     );
-    return WindowFullscreenHost(child: page);
+    // 桌面自绘顶栏挂在 Navigator 外，只读得到根主题的 surface；阅读器纸色是预设
+    // 色（如 ecru `#F7F6EB`），与种子色生成的 surface 不同源，不上报就在正文顶上
+    // 切出一条异色带。
+    return FushiTitleBarColorScope(
+      colors: (background: bgColor, foreground: _themeTextColor()),
+      child: WindowFullscreenHost(child: page),
+    );
   }
 
   Widget _buildBody() {
