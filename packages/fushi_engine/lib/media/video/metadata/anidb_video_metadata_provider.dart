@@ -162,7 +162,10 @@ class AniDbVideoMetadataProvider
       return 'AniDB 已封禁本客户端，约 ${ban.inMinutes} 分钟后解除';
     }
     if (!_hasHttpClientIdentity) {
-      return '未配置已登记的 AniDB HTTP 客户端身份';
+      // 随包配置就落在这里：内置 `fushiplayer` 只登记了 UDP，HTTP 身份为空，
+      // 请求根本没发（BUG-2623 根治），不是被 AniDB 拒绝。
+      return '未配置已登记的 AniDB HTTP 客户端身份'
+          '（内置客户端只登记了 UDP，仅 UDP 哈希识别与离线标题目录可用）';
     }
     final String? lastError = _lastAnimeXmlError;
     return lastError == null ? 'anime XML 未取到' : 'anime XML 请求失败：$lastError';

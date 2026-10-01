@@ -6173,5 +6173,8 @@
   "manga_ocr_download_background_hint": "このページを離れても、ダウンロードはバックグラウンドで続きます。",
   "storage_ocr_models_hint": "ローカル OCR モデルをここで個別にダウンロード・削除できます。どれを使うかは「マンガ › マンガ OCR」で選びます。",
   "manga_ocr_wizard_title_book": "この巻の文字を認識",
-  "anki_dedup_progress_indexing": "ノートを読み込んでメディアの参照を確認中…（$done / $total）"
+  "anki_dedup_progress_indexing": "ノートを読み込んでメディアの参照を確認中…（$done / $total）",
+  "video_anidb_http_api": "AniDB HTTP metadata API",
+  "video_anidb_http_api_unregistered": "Not registered (only UDP hash identification and offline titles are available)",
+  "video_anidb_http_api_available": "Available (client ${client} v${version})"
 }

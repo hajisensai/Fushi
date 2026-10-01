@@ -16,6 +16,10 @@ void main() {
             resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
     expect(config.anidbClientName, 'fushiplayer');
     expect(config.anidbClientVersion, 1);
+    // BUG-2623：fushiplayer 只是 UDP 登记，HTTP 身份随包为空。
+    expect(config.anidbHttpClientName, isEmpty);
+    expect(config.anidbHttpClientVersion, isNull);
+    expect(config.anidbHttpClientConfigured, isFalse);
     expect(config.anidbUsername, isEmpty);
     expect(config.anidbPassword, isEmpty);
     expect(config.hashEnabled, isFalse);
@@ -44,6 +48,31 @@ void main() {
         resolveAniDbAppClient(customName: '', customVersion: 999);
     expect(reset.name, kBundledAniDbClient.name);
     expect(reset.version, kBundledAniDbClient.version);
+  });
+
+  test('bundled UDP identity is never borrowed for the HTTP API', () {
+    final AniDbAppClients bundled =
+        resolveAniDbAppClients(customName: '  ', customVersion: 5);
+    expect(bundled.udp.name, kBundledAniDbClient.name);
+    expect(bundled.udp.version, kBundledAniDbClient.version);
+    expect(bundled.http.name, isEmpty);
+    expect(bundled.http.isComplete, isFalse);
+
+    final AniDbAppClients custom =
+        resolveAniDbAppClients(customName: 'customapp', customVersion: 4);
+    expect(custom.udp.name, 'customapp');
+    expect(custom.http.name, 'customapp');
+    expect(custom.http.version, 4);
+    expect(custom.http.isComplete, isTrue);
+
+    // 将来登记了 HTTP 客户端：只改 kBundledAniDbHttpClient 常量即可。
+    final AniDbAppClients registered = resolveAniDbAppClients(
+        customName: '',
+        customVersion: null,
+        bundledHttp:
+            const AniDbAppClientIdentity(name: 'fushihttp', version: 1));
+    expect(registered.http.name, 'fushihttp');
+    expect(registered.udp.name, kBundledAniDbClient.name);
   });
 
   test('an unregistered build cannot invent a client identity', () {
