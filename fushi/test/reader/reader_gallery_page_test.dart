@@ -932,11 +932,12 @@ void main() {
     final Directory dir =
         Directory.systemTemp.createTempSync('fushi_gallery_wide_');
     addTearDown(() => dir.deleteSync(recursive: true));
-    // img0 横版（2:1），其余竖版（1:2）；全在第 1 章。
+    // img0 横版（2:1），其余竖版（1:2）；全在第 1 章。尺寸要过行内小图门槛
+    // （宽或高 > 256），否则会被当外字剔掉。
     final Map<String, File> files = <String, File>{
-      'img0.png': writePng(dir, 'img0.png', 2, 1),
+      'img0.png': writePng(dir, 'img0.png', 600, 300),
       for (int i = 1; i < 7; i++)
-        'img$i.png': writePng(dir, 'img$i.png', 1, 2),
+        'img$i.png': writePng(dir, 'img$i.png', 300, 600),
     };
     final List<EpubImageRef> images = <EpubImageRef>[
       for (int i = 0; i < 7; i++)
@@ -993,6 +994,56 @@ void main() {
     await tester.pump();
     expect(_cardBorderWidth(tester, 'img4.png'), 2);
     expect(_cardBorderWidth(tester, 'img0.png'), 1);
+  });
+
+  // 质量差的 EPUB 用图片顶替汉字（外字）、章节号用小图拼：它们在正文里排进文字
+  // 流（分页脚本只把宽或高 > 256 的图当块级插图），插图册不能把它们当插图摆满。
+  testWidgets('外字 / 章节号小图（宽高都 ≤ 256）不进插图册，封面再小也保留', (tester) async {
+    _useTallWindow(tester);
+    final Directory dir =
+        Directory.systemTemp.createTempSync('fushi_gallery_glyph_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final Map<String, File> files = <String, File>{
+      'cover.png': writePng(dir, 'cover.png', 180, 256),
+      'glyph.png': writePng(dir, 'glyph.png', 48, 48),
+      'chapterNo.png': writePng(dir, 'chapterNo.png', 256, 120),
+      'wide.png': writePng(dir, 'wide.png', 800, 400),
+      'plate.png': writePng(dir, 'plate.png', 300, 600),
+    };
+    EpubImageRef ref(int chapter, int order, String src) => EpubImageRef(
+          chapterIndex: chapter,
+          orderInBook: order,
+          src: src,
+          revealKey: src,
+        );
+    await pumpUntilProbed(
+      tester,
+      ReaderGalleryPage(
+        images: <EpubImageRef>[
+          ref(kEpubCoverChapterIndex, 0, 'cover.png'),
+          ref(0, 1, 'chapterNo.png'),
+          ref(0, 2, 'glyph.png'),
+          ref(0, 3, 'wide.png'),
+          ref(1, 4, 'plate.png'),
+        ],
+        currentChapter: 1,
+        fileForRef: (EpubImageRef r) => files[r.src],
+        onOpenImage: (_) {},
+        onJumpTo: (_) {},
+      ),
+      wideSrc: 'wide.png',
+    );
+    await _pumpAtTop(tester);
+
+    expect(_card('glyph.png'), findsNothing);
+    expect(_card('chapterNo.png'), findsNothing);
+    expect(_card('cover.png'), findsOneWidget, reason: 'OPF 封面豁免');
+    expect(_card('wide.png'), findsOneWidget);
+    expect(_card('plate.png'), findsOneWidget);
+    final Text count = tester.widget<Text>(
+        find.byKey(const ValueKey<String>('fushi_gallery_count')));
+    expect(count.data, endsWith('/ 3'),
+        reason: '总数只算真插图（5 张引用里剔掉 2 张小图）');
   });
 
   testWidgets('currentChapter 为 null（书架端没读过的书）：不按进度遮、无标记与定位键', (tester) async {

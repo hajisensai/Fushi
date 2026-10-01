@@ -14,6 +14,22 @@ library;
 const int kMangaZoomMinPercent = 50;
 const int kMangaZoomMaxPercent = 400;
 
+/// 「默认缩放」的唯一合法步长：设置滑块从建立起就是 50–400、步长 10。
+const int kMangaDefaultZoomStepPercent = 10;
+
+/// 读取落盘的「默认缩放」（`manga_zoom_percent`）时的修复与钳制。
+///
+/// BUG-2782 修好之前，页内捏合 / Ctrl+滚轮会把会话缩放回写成这个键，于是笔记本
+/// 触控板随手一捏就把 108%、113% 这种值钉成默认值，「适应屏幕」从此装不下整页
+/// （BUG-2845）。设置滑块只会写 10 的倍数，所以**不是 10 的倍数的存量值只可能来自
+/// 那条回写**，按未设置处理回到 100%。在读取端修而不是一次性迁移：备份恢复、
+/// Profile 快照、旧设备同步都可能把坏值重新带回来。10 的倍数（例如右键 + 按出来的
+/// 110%）与用户在设置里有意选的值无法区分，保留不动。
+int normalizeStoredMangaZoomPercent(int stored) {
+  if (stored % kMangaDefaultZoomStepPercent != 0) return 100;
+  return stored.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+}
+
 /// 缩放灵敏度倍率（百分比）。100 = 基准手感，越大滚轮/捏合每一步缩放越多。
 const int kMangaZoomSensitivityMin = 25;
 const int kMangaZoomSensitivityMax = 400;

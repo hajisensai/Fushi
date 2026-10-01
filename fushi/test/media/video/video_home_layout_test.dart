@@ -265,6 +265,66 @@ void main() {
     });
   });
 
+  group('BUG-2835 「全部视频」筛选判据', () {
+    test('系列档位偏好：脏值 / 空值退回默认「非系列」', () {
+      expect(videoSeriesFilterFromName('inSeries'), VideoSeriesFilter.inSeries);
+      expect(videoSeriesFilterFromName('all'), VideoSeriesFilter.all);
+      expect(videoSeriesFilterFromName(''), VideoSeriesFilter.standalone);
+      expect(videoSeriesFilterFromName('bogus'), VideoSeriesFilter.standalone);
+    });
+
+    test('媒体类型 / 正片特典 / 来源三档在「全部」态不筛任何条目', () {
+      for (final bool flag in <bool>[true, false]) {
+        expect(
+          matchesVideoMediaType(
+            filter: VideoMediaTypeFilter.all,
+            isAudio: flag,
+          ),
+          isTrue,
+        );
+        expect(
+          matchesVideoExtras(filter: VideoExtrasFilter.all, isExtra: flag),
+          isTrue,
+        );
+      }
+      expect(matchesVideoSource(sourceFilter: null, sourceId: null), isTrue);
+      expect(matchesVideoSource(sourceFilter: null, sourceId: 3), isTrue);
+    });
+
+    test('非「全部」档位是同一判据的正反两面', () {
+      expect(
+        matchesVideoMediaType(filter: VideoMediaTypeFilter.audio, isAudio: true),
+        isTrue,
+      );
+      expect(
+        matchesVideoMediaType(
+          filter: VideoMediaTypeFilter.audio,
+          isAudio: false,
+        ),
+        isFalse,
+      );
+      expect(
+        matchesVideoMediaType(filter: VideoMediaTypeFilter.video, isAudio: true),
+        isFalse,
+      );
+      expect(
+        matchesVideoExtras(filter: VideoExtrasFilter.extras, isExtra: true),
+        isTrue,
+      );
+      expect(
+        matchesVideoExtras(filter: VideoExtrasFilter.main, isExtra: true),
+        isFalse,
+      );
+      expect(matchesVideoSource(sourceFilter: 3, sourceId: 3), isTrue);
+      expect(matchesVideoSource(sourceFilter: 3, sourceId: 4), isFalse);
+      expect(
+        matchesVideoSource(sourceFilter: 3, sourceId: null),
+        isFalse,
+        reason: '没有来源的手动导入条目不属于任何来源',
+      );
+    });
+  });
+
   group('isVideoRecentlyAdded', () {
     final DateTime now = DateTime(2026, 8, 1, 12);
 
