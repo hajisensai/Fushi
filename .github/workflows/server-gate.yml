@@ -32,12 +32,14 @@ on:
       - 'packages/fushi_server/**'
       - 'packages/fushi_engine/**'
       - '.github/workflows/server-gate.yml'
+      - '.github/actions/pdfium-hook-cache/**'
   push:
     branches: ['develop']
     paths:
       - 'packages/fushi_server/**'
       - 'packages/fushi_engine/**'
       - '.github/workflows/server-gate.yml'
+      - '.github/actions/pdfium-hook-cache/**'
 
 permissions:
   contents: read
@@ -56,6 +58,11 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: test
       # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_anki / fushi_dictionary /
       # fushi_platform 尚声明 flutter），与 build-multiplatform.yml linux-server job 同一个入口解析整个 workspace。
       - name: Flutter pub get (workspace)
