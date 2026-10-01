@@ -5736,7 +5736,7 @@
   "video_iptv_imported": "${count} Sender importiert",
   "video_stream_protocol_unsupported_apple": "Dieses Stream-Protokoll (rtsps / rtmps / rtmpe) wird unter iOS und macOS noch nicht unterstützt.",
   "hoshi_import_entry": "Import von Drittanbietern",
-  "hoshi_import_entry_subtitle": "Bücher, Leseposition und Statistiken aus dem Bibliotheks-Backup eines anderen Lesers importieren, z. B. einer Hoshi-Reader-.hoshi-Datei",
+  "hoshi_import_entry_subtitle": "Bücher, Leseposition und Statistiken aus dem Bibliotheks-Backup eines anderen Lesers importieren, z. B. einer Datei aus Hoshi Reader (.hoshi)",
   "hoshi_import_how_to": "Öffne in Hoshi Reader Einstellungen › Backup und sichere deine Bücher, wähle dann hier die erzeugte Datei Books_….hoshi. Bücher, die bereits in deiner Bibliothek sind, werden nicht doppelt importiert; derselbe Backup-Import ändert nichts.",
   "hoshi_import_file_pick": "Backup-Datei wählen",
   "hoshi_import_scan_running": "Backup wird gelesen…",
