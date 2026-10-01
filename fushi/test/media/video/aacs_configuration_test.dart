@@ -374,9 +374,9 @@ void main() {
         await big.parent.create();
         final IOSink sink = big.openWrite();
         final String filler = database(id: '0' * 40);
-        final int lines = (65 * 1024 * 1024) ~/ filler.length + 1;
-        for (int i = 0; i < lines; i++) {
-          sink.write(filler);
+        final String block = filler * ((1024 * 1024) ~/ filler.length + 1);
+        for (int i = 0; i < 65; i++) {
+          sink.write(block);
         }
         // 末条不带换行：走「文件尾残行」分支；填充行长度不整除 1 MiB 分块，
         // 大量条目跨块边界。

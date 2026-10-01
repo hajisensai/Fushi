@@ -227,12 +227,23 @@ Uint8List? _findKey(Uint8List bytes, String discId) =>
     _findKeyInText(latin1.decode(bytes), discId);
 
 // Latin-1 preserves ASCII syntax even when provider titles use legacy bytes.
+//
+// 先在小写副本里做原生子串搜索找盘 ID，只对命中的那一行跑正则：逐行正则在上百
+// MB 的完整库上要跑几十秒到几分钟（CI 上 65 MiB 实测超过 2 分钟），而本函数在制卡
+// 时跑在 UI isolate 上。Latin-1 字符的小写映射不改长度，副本下标可直接用于原文。
 Uint8List? _findKeyInText(String text, String discId) {
-  for (final String line in const LineSplitter().convert(text)) {
-    final Uint8List? key = _matchKeyDbLine(line, discId);
+  final String lower = text.toLowerCase();
+  int from = 0;
+  while (true) {
+    final int hit = lower.indexOf(discId, from);
+    if (hit < 0) return null;
+    final int start = lower.lastIndexOf('\n', hit) + 1;
+    int end = lower.indexOf('\n', hit);
+    if (end < 0) end = lower.length;
+    final Uint8List? key = _matchKeyDbLine(text.substring(start, end), discId);
     if (key != null) return key;
+    from = end;
   }
-  return null;
 }
 
 Uint8List? _matchKeyDbLine(String line, String discId) {
