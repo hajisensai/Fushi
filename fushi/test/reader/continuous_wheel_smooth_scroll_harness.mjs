@@ -1,5 +1,5 @@
 // Runs the production continuous-mode smooth wheel helper
-// (kContinuousWheelSmoothScrollJs) in real headless Chrome and drives it in the
+// (kContinuousWheelScrollJs) in real headless Chrome and drives it in the
 // same prepare -> try-scroll -> commit order the reader wheel listener uses.
 import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
@@ -103,6 +103,22 @@ const CASES = [
     check(t.visible === mid + 10, 'trackpad moved 1:1 (' + t.visible + ' vs ' + (mid + 10) + ')');
     await __frames(40);
     check(__pos(false) === mid + 10, 'old ease no longer runs (' + __pos(false) + ')');
+  `],
+  ['inherited trackpad fling is swallowed until a quiet gap (BUG-2831)', 'horizontal', `
+    // The document was just installed: a 1.5s momentum stream of 16ms ticks that
+    // started in the previous chapter must be eaten whole, however long it runs.
+    const t0 = Date.now();
+    let swallowed = 0;
+    for (let t = t0; t < t0 + 1500; t += 16) {
+      if (_swallowInheritedTrackpadFling(t, 450)) swallowed++;
+    }
+    check(swallowed === Math.ceil(1500 / 16), 'whole fling swallowed (' + swallowed + ')');
+    const gestureAt = t0 + 1500 + 500;
+    check(!_swallowInheritedTrackpadFling(gestureAt, 450), 'new gesture after quiet passes');
+    check(!_swallowInheritedTrackpadFling(gestureAt + 16, 450), 'and keeps passing');
+  `],
+  ['first trackpad gesture after a settled load is not swallowed', 'horizontal', `
+    check(!_swallowInheritedTrackpadFling(Date.now() + 451, 450), 'quiet since install = new gesture');
   `],
   ['vertical-rl: eases along negative scrollX', 'verticalRl', `
     const t = __tick(true, -100, true);

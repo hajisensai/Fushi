@@ -1456,7 +1456,7 @@ $kPagedWheelGestureHelperJs
   window.__fushiArmWheelGesture = function() {
     _continuousWheelLastTickAt = Date.now();
   };
-$kContinuousWheelSmoothScrollJs
+$kContinuousWheelScrollJs
   document.addEventListener('wheel', function(e) {
     // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
     // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
@@ -1494,6 +1494,10 @@ $kContinuousWheelSmoothScrollJs
       if (pointerKind === 'trackpad') {
         if (!vertical) wheelDelta = e.deltaY;
         else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) wheelDelta = e.deltaX * sign;
+        if (_swallowInheritedTrackpadFling(wheelTickAt, wheelQuietMs)) {
+          e.preventDefault();
+          return;
+        }
       }
       // TODO-656 真试滚：不再推算「到没到边界」，而是真的朝书写轴 scrollBy 一步、读实际
       // 位移——滚动了就是没到边界（不跨章），真的滚不动了才跨章。横排 scrollBy 纵向
@@ -1503,7 +1507,7 @@ $kContinuousWheelSmoothScrollJs
       if (wheelDelta === 0) return;
       e.preventDefault();
       var wheelDir = wheelDelta > 0 ? 'forward' : 'backward';
-      // 无极滚动：鼠标滚轮这一步交给 rAF 缓动（CONTINUOUS_WHEEL_SMOOTH_SCROLL）。试滚
+      // 无极滚动：鼠标滚轮这一步交给 rAF 缓动（CONTINUOUS_WHEEL_SCROLL）。试滚
       // 仍是下面同步的真 scrollBy，只是从缓动终点起算（连拨累加），量完立刻还原到可见
       // 位置——同一任务内不绘制，看不到这一跳。触控板本身是连续输入，照旧直接落地。
       var shownPos = _smoothWheelPrepare(vertical, pointerKind === 'wheel');
@@ -3222,8 +3226,11 @@ const String kPagedWheelGestureHelperJs = r'''
 /// 恢复定位、拖滚动条）动过位置，缓动立刻让位，不抢回去。
 ///
 /// 只服务鼠标滚轮；触控板（`prepare(…, false)`）本身就是连续输入，按原样跟手。
-const String kContinuousWheelSmoothScrollJs = r'''
-  // BEGIN CONTINUOUS_WHEEL_SMOOTH_SCROLL
+///
+/// 同一份常量还管触控板的跨章惯性（`_swallowInheritedTrackpadFling`，BUG-2831）：
+/// 每个章节文档装载后，先吞掉上一章滑动带过来的惯性，直到出现新手势。
+const String kContinuousWheelScrollJs = r'''
+  // BEGIN CONTINUOUS_WHEEL_SCROLL
   var _smoothWheelTarget = null;  // 缓动终点（沿书写轴的 window 滚动坐标）；null = 空闲
   var _smoothWheelPos = 0;        // 上一帧写入的浮点位置
   var _smoothWheelVertical = false;
@@ -3283,4 +3290,18 @@ const String kContinuousWheelSmoothScrollJs = r'''
     if (!_smoothWheelRaf) _smoothWheelRaf = requestAnimationFrame(_smoothWheelFrame);
     return true;
   }
-  // END CONTINUOUS_WHEEL_SMOOTH_SCROLL''';
+  // BUG-2831：跨章 = 换 document，上一章那次触控板滑动的系统惯性却还在继续喷 tick，
+  // 新章一装好就被它接着往下推（Mac 实测：落到第三章开头又被推下去一屏多，再滑一下
+  // 就又跨章，表现为乱跳章节）。手机跨章后新页面没有惯性，要重新划。所以本文档装载起
+  // 触控板 tick 一律吞掉（不滚、不判边界），直到出现一次静默间隔 = 新手势。
+  var _trackpadInheritedFlingAt = Date.now();  // 非 0 = 仍在吞
+  function _swallowInheritedTrackpadFling(tickAt, quietMs) {
+    if (!_trackpadInheritedFlingAt) return false;
+    if (tickAt - _trackpadInheritedFlingAt < quietMs) {
+      _trackpadInheritedFlingAt = tickAt;
+      return true;
+    }
+    _trackpadInheritedFlingAt = 0;
+    return false;
+  }
+  // END CONTINUOUS_WHEEL_SCROLL''';

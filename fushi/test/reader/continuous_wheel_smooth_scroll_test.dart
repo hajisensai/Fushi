@@ -6,7 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
-    show kContinuousWheelSmoothScrollJs, readerFushiEngineSourceUncompacted;
+    show kContinuousWheelScrollJs, readerFushiEngineSourceUncompacted;
 
 import '../helpers/source_guard.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
@@ -29,7 +29,7 @@ void main() {
       final File payload = File('${temp.path}/helper.json')
         ..writeAsStringSync(
           jsonEncode(<String, String>{
-            'helper': kContinuousWheelSmoothScrollJs,
+            'helper': kContinuousWheelScrollJs,
           }),
         );
       final ProcessResult result = await Process.run(nodeExe, <String>[
@@ -41,7 +41,7 @@ void main() {
         return;
       }
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains('PASS 8 browser cases'));
+      expect(result.stdout, contains('PASS 10 browser cases'));
     } finally {
       temp.deleteSync(recursive: true);
     }
@@ -65,7 +65,7 @@ void main() {
     test('continuous engine injects the helper verbatim', () {
       expect(
         readerFushiEngineSourceUncompacted(continuousMode: true),
-        contains(kContinuousWheelSmoothScrollJs),
+        contains(kContinuousWheelScrollJs),
       );
     });
 
@@ -115,6 +115,19 @@ void main() {
         isTrue,
         reason: '竖排横划乘回 sign，wheelDelta * sign 才是原生 deltaX',
       );
+    });
+
+    // BUG-2831：Mac 上一次触控板滑动跨章后，残余惯性在新章接着滚，再滑就连跳章节。
+    test('trackpad swallows the fling inherited from the previous chapter', () {
+      final int gate = wheel.indexOf("if (pointerKind === 'trackpad') {");
+      final int swallow = wheel.indexOf(
+        'if (_swallowInheritedTrackpadFling(wheelTickAt, wheelQuietMs)) {',
+      );
+      final int tryScroll = wheel.indexOf('window.scrollBy(');
+      final int boundary = wheel.indexOf("'onBoundarySwipe'");
+      expect(swallow, greaterThan(gate), reason: '只吞触控板，鼠标滚轮照常');
+      expect(swallow, lessThan(tryScroll), reason: '吞掉的 tick 不得滚动');
+      expect(swallow, lessThan(boundary), reason: '吞掉的 tick 不得判边界跨章');
     });
   });
 }

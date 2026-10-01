@@ -12,7 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// 滚动（连续）模式的鼠标滚轮是无极滚动（`kContinuousWheelSmoothScrollJs`），不翻页，
+/// 滚动（连续）模式的鼠标滚轮是无极滚动（`kContinuousWheelScrollJs`），不翻页，
 /// 「滚轮翻页间隔」在那里没有可调的东西 → 隐藏；分页与 VN 的滚轮仍按它限速 → 显示。
 void main() {
   late FushiDatabase db;

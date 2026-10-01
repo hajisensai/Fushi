@@ -582,7 +582,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.wheel_page_turn_interval',
             titleReadout: true,
             title: t.wheel_page_turn_interval,
-            // 滚动模式的滚轮是无极滚动、不翻页（kContinuousWheelSmoothScrollJs），
+            // 滚动模式的滚轮是无极滚动、不翻页（kContinuousWheelScrollJs），
             // 「翻页间隔」在那里无从谈起；分页与 VN 仍按它限速。
             visible: (SettingsContext c) => !isContinuous(c),
             icon: Icons.mouse_outlined,

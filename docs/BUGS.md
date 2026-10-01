@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2607 条。点号进各自文件。
+> 共 2608 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2831](bugs/BUG-2831-mac-trackpad-fling-skips-chapters.md) | ✅ | ✅ | Mac触控板滚动模式乱跳章节 |
 | [BUG-2830](bugs/BUG-2830-continuous-wheel-stepless.md) | ✅ | ✅ | 滚动模式滚轮一格一格硬跳且触控板方向与手机不一致 |
 | [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |
 | [BUG-2823](bugs/BUG-2823-update-relaunch-startup-stall.md) | ✅ | ✅ | 自动更新后新版本启动卡顿一两秒 |
