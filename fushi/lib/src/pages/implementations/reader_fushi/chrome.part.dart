@@ -1040,6 +1040,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 底栏仍是挤压模式时（悬浮开关关闭）没有临时可见态，保留 [_toggleChrome] 旧
   /// 语义；只开顶部进度悬浮、底栏挤压的混合形态同样走挤压分支，与指针路径一致。
   void _toggleChromeFromShortcut() {
+    // 顶栏和底栏被关掉：它们不存在，快捷键也唤不出来（开回来走悬浮球或设置）。
+    if (_toolbarsHidden) return;
     if (_bottomBarFloating) {
       // _bottomBarFloating ⇒ _anyChromeFloating，所以这里恒被消费；断言锁住这个
       // 蕴含关系，防止将来有人把 _anyChromeFloating 的定义改窄后此路静默变 no-op。
@@ -1052,6 +1054,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   void _toggleChrome() {
+    // 顶栏和底栏被关掉：栏唤不出来也收不起来（本就不在）。
+    if (_toolbarsHidden) return;
     _rebuild(() {
       _showChrome = !_showChrome;
     });
@@ -1074,6 +1078,51 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // carries — this reclaim is a re-assertion (a no-op when the content already
     // holds focus), and gating it would silently drop the keyboard in lyrics mode
     // or before content is ready.
+    _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
+  }
+
+  // ── 关掉顶栏和底栏（悬浮球接管）────────────────────────────────────
+  // 偏好 `hide_toolbars`（设置 → 阅读界面，或顶栏 / 底栏 / 悬浮球上的同一颗键）
+  // 在应用内悬浮球开着时生效（[readerToolbarsHidden]）：顶栏 / 底栏（含悬浮态临时
+  // 唤出）一律不画，任何唤出 / 切换入口（点空白、点顶部进度、M / 手柄 Y、VN 空白
+  // 点、歌词 / 双页空白点）都打不开它们。状态镜像在
+  // [ReaderChromeController.toolbarsHidden]，布局判据经 [_chromeBarsExpanded]，
+  // 点词门控经 [_tapGateChrome]。
+  //
+  // 出口全在悬浮球上：阅读器场景把返回 / 设置 / 开回栏固定在球上
+  // （[kReaderToolbarsTakeoverItems]），球不给「关闭」键
+  // （[_buildReaderFloatingBallScene]）；返回键（Esc / 系统返回 / 手柄 B）照常退书。
+
+  /// 按偏好与应用内悬浮球开关同步 [_toolbarsHidden]；没变就什么都不做（偏好仓库
+  /// 任一键变化都会调进来）。变了就重下 chrome 预留并重锚（挤压态的栏占位随之
+  /// 变化；悬浮态预留恒 0，这里是 no-op），并同步点词门控。[reanchor] 为 false
+  /// 时由调用方自己重下预留（设置页的重锚通道）。
+  void _syncToolbarsHidden({bool reanchor = true}) {
+    if (!mounted) return;
+    final bool hidden = readerToolbarsHidden(
+      hideToolbarsPreference: ReaderFushiSource.instance.hideToolbars,
+      inAppFloatingBallEnabled: appModelNoUpdate.prefsRepo.floatingBallInApp,
+    );
+    if (_toolbarsHidden == hidden) return;
+    _rebuild(() {
+      _chrome.toolbarsHidden = hidden;
+    });
+    if (reanchor) {
+      unawaited(
+        _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('ReaderFushi.syncToolbarsHidden', e, s);
+        }),
+      );
+    }
+    // 点词门控镜像读 [_tapGateChrome]（含栏关掉位），翻转即同步。
+    _syncTapGateJs();
+  }
+
+  /// 顶栏 / 底栏 / 悬浮球上那颗开关键的执行体。
+  Future<void> _setHideToolbars(bool hide) async {
+    await setHideReaderToolbars(appModelNoUpdate, hide);
+    if (!mounted) return;
+    _syncToolbarsHidden();
     _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
   }
 
@@ -1191,6 +1240,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 它一起停掉，否则计时到点会对着已收起的栏再通知一次。
   bool _handleFloatingChromeReveal() {
     if (!_anyChromeFloating) return false;
+    // 栏被关掉：本次点击照样算被消费（不落到别的分支），但栏不出来。
+    if (_toolbarsHidden) return true;
     _cancelChromeAutoHide();
     _rebuild(() {
       _chromeTransientVisible = !_chromeTransientVisible;
@@ -1227,11 +1278,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
+    // 栏被关掉由决策表裁决（只推进），这里不另开分支。
     dispatchReaderVnBlankTapAction(
       readerVnBlankTapAction(
         chromeExpanded: _showChrome,
         bottomBarFloating: _bottomBarFloating,
         transientVisible: _chromeTransientVisible,
+        toolbarsHidden: _toolbarsHidden,
       ),
       expandChrome: _toggleChrome,
       revealChrome: _revealFloatingChromeForVnAdvance,
@@ -1548,6 +1601,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
       case ReaderControlItem.fullscreen:
         return desktopWindowFullscreenSupported;
+      case ReaderControlItem.toolbars:
+        return true;
       // 有声书传输键：没挂控制器就没有可控的音频，整颗不出现（不论拖在哪个槽）。
       case ReaderControlItem.audiobookPrev:
       case ReaderControlItem.audiobookPlayPause:
@@ -1672,6 +1727,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
           label: t.shortcut_action_global_toggle_fullscreen,
           semanticsId: 'hibiki.reader.bottom.fullscreen',
           onPressed: () => unawaited(_changeReaderWindowFullscreen()),
+        );
+      case ReaderControlItem.toolbars:
+        // 栏里的这颗只会在「栏还在」时被看见；栏关掉后它被固定在悬浮球上
+        // （[kReaderToolbarsTakeoverItems]），那时就是开回栏的入口。图标 / 文案按
+        // 运行态给出「按下去会怎样」。
+        final bool hidden = _toolbarsHidden;
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_toolbars_button'),
+          icon: hidden
+              ? Icons.web_asset_outlined
+              : Icons.web_asset_off_outlined,
+          label: hidden ? t.reader_toolbars_show : t.reader_toolbars_hide,
+          semanticsId: 'hibiki.reader.control.toolbars',
+          onPressed: () => unawaited(_setHideToolbars(!hidden)),
         );
       case ReaderControlItem.settings:
         return ReaderHeaderAction(
@@ -1871,9 +1940,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// （出厂是有声书的上一句 / 播放暂停 / 下一句），执行体与顶栏 / 底栏同一个
   /// [_readerControlAction]。首章加载前不给按钮；此刻渲染不了的按钮（例如书没挂
   /// 有声书时的传输键）不登记，宿主就跳过它。球本身画在根上的应用内悬浮球宿主里。
+  ///
+  /// 顶栏和底栏被关掉时球接管它们：[kReaderToolbarsTakeoverItems]（返回 / 设置 /
+  /// 开回栏）不看勾选固定在球上，歌词模式再加模式切换键（顶栏在歌词模式也强制
+  /// 保留它：那是回正文最直接的入口）；宿主据此不给「关闭悬浮球」。
   Widget _buildReaderFloatingBallScene() {
     return FloatingBallScene(
       scope: FloatingBallScope.reader,
+      pinnedIds: <String>[
+        if (_hasEverLoaded && _toolbarsHidden) ...<String>[
+          for (final ReaderControlItem item in kReaderToolbarsTakeoverItems)
+            item.storageValue,
+          if (_lyricsMode) ReaderControlItem.modeToggle.storageValue,
+        ],
+      ],
       actions: <String, ReaderHeaderAction>{
         if (_hasEverLoaded)
           for (final ReaderControlItem item in ReaderControlItem.values)

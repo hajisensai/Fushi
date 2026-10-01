@@ -93,15 +93,38 @@ class EmbeddedTorrentEngine {
     return const <String>[];
   }
 
+  /// 平台默认加载候选（按顺序尝试）。
+  ///
+  /// Linux 桌面包先试 `<exe 同级>/lib/<名>`：runner CMake 把
+  /// `prebuilt/linux-x64/libfushi_torrent_ffi.so` copy-if-present 进 `bundle/lib/`
+  /// （`fushi/linux/CMakeLists.txt`）。裸名 dlopen 能否命中取决于**发起调用的那个
+  /// 共享对象**的 RUNPATH（glibc 语义；可执行文件的 `$ORIGIN/lib` 管不到 Flutter 引擎
+  /// 里发起的 dlopen），所以显式给出绝对路径，不押在链接器 dtag 上；裸名留作兜底
+  /// （系统路径 / `LD_LIBRARY_PATH`）。其余平台只有裸名：Windows 走 exe 同目录、
+  /// Android 走 APK native lib 目录、macOS 走 Frameworks rpath。
+  /// [executablePath] 仅供测试覆盖。
+  static List<String> defaultLibraryCandidates({String? executablePath}) {
+    final List<String> names = defaultLibraryNames();
+    if (!Platform.isLinux) return names;
+    final String exe = executablePath ?? Platform.resolvedExecutable;
+    final String libDir = '${File(exe).parent.path}/lib';
+    return <String>[
+      for (final String name in names) '$libDir/$name',
+      ...names,
+    ];
+  }
+
   static DynamicLibrary _openByPlatformDefault() {
     if (Platform.isIOS) return DynamicLibrary.process();
-    final List<String> names = defaultLibraryNames();
+    final List<String> names = defaultLibraryCandidates();
     if (names.isEmpty) {
       throw UnsupportedError(
           'fushi_torrent: unsupported platform ${Platform.operatingSystem}');
     }
     ArgumentError? lastError;
     for (final String name in names) {
+      // 绝对路径候选不存在就跳过（不让「文件不在」盖掉裸名那次的真实错误）。
+      if (name.contains('/') && !File(name).existsSync()) continue;
       try {
         return DynamicLibrary.open(name);
       } on ArgumentError catch (e) {

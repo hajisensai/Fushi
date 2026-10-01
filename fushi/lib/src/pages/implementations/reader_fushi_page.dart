@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_session.dart';
@@ -118,6 +119,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/utils/misc/coalesced_async_runner.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
+import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/serial_task_queue.dart';
@@ -1530,6 +1532,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   void _onChromeControllerChanged() => _rebuild(() {});
 
+  /// 偏好仓库任一键变了：只关心应用内悬浮球开关（见 [_syncToolbarsHidden]，
+  /// 状态没变时它立即返回）。放在 State 本体而不是 part 的 extension 里：
+  /// extension 方法每次取址都是新闭包，removeListener 对不上号。
+  void _onPrefsRepoChanged() => _syncToolbarsHidden();
+
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
   /// 由本 State 子类持有的下面三个转发器统一承接（仅转发，零行为变化），供 caret
@@ -2026,6 +2033,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _showChrome => _chrome.showChrome;
   set _showChrome(bool value) => _chrome.showChrome = value;
 
+  /// 顶栏和底栏被关掉（[ReaderChromeController.toolbarsHidden]，由
+  /// [_syncToolbarsHidden] 按偏好与应用内悬浮球开关同步）：栏不画、唤不出来，
+  /// 入口由悬浮球接管。
+  bool get _toolbarsHidden => _chrome.toolbarsHidden;
+
+  /// 挤压态顶栏 / 底栏此刻是否展开占位——布局判据（绘制、预留、独立文档留白）
+  /// 一律读它，而不是裸 [_showChrome]：栏被关掉时必须不在，但 [_showChrome]
+  /// 本身还是 JS 点词门控的镜像，不能为了藏栏去翻它（翻了点正文就变成「唤栏」
+  /// 而不是查词）。
+  bool get _chromeBarsExpanded => _showChrome && !_toolbarsHidden;
+
+  /// JS 点词门控（`__fushiTapGate.chrome` / setup 的 `showChrome`）与 onTap 的
+  /// 「点正文 = 唤出挤压态 chrome」判据：为真时点正文直接查词。栏被关掉时唤不
+  /// 出来，点正文必须照常查词，哪怕关掉前栏是收起的。
+  bool get _tapGateChrome => _showChrome || _toolbarsHidden;
+
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
   // 一下立即收起置 false。顶部与底栏共用同一旗与同一计时器（决策#1 时长共用、决策#2
@@ -2203,7 +2226,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 并入 [_readerTopOffset]。
   double get _desktopHeaderReserve => readerDesktopHeaderReserve(
     enabled: _desktopChromeEnabled,
-    barOccupiesLayout: _hasEverLoaded && _showChrome,
+    barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
     headerHeight: kReaderDesktopHeaderHeight,
   );
@@ -2235,7 +2258,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 悬浮态恒 0，挤压且占位时占 [_readerChromeHeight]。占位判据与
   /// [_buildBottomChrome] 的可见条件（_hasEverLoaded && _showChrome）一致。
   double get _bottomChromeReserve => bottomChromeReserve(
-    barOccupiesLayout: _hasEverLoaded && _showChrome,
+    barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
     // 无有声书播放条且底栏槽位没有按钮时底栏不存在 → 0（默认布局如此）。
     chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons
@@ -2307,7 +2330,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// [_chromeTransientVisible] 门控（与顶部共用同一唤出/收起状态）。
   bool get _bottomBarShouldPaint => bottomBarVisible(
     hasEverLoaded: _hasEverLoaded,
-    chromeExpanded: _showChrome,
+    chromeExpanded: _chromeBarsExpanded,
     floating: _bottomBarFloating,
     transientVisible: _chromeTransientVisible,
   );
@@ -2362,6 +2385,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewSession?.addListener(_onSourceReviewChanged);
     // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
     _chrome.addListener(_onChromeControllerChanged);
+    // 应用内悬浮球开关变了（设置 → 悬浮球、备份恢复、同步）：栏关掉只在球开着时
+    // 生效，球一关栏就要回来。
+    appModelNoUpdate.prefsRepo.addListener(_onPrefsRepoChanged);
     assert(() {
       ReaderFushiPage.debugOpenQuickSettings = () async {
         unawaited(_showAppearanceSheet());
@@ -2420,6 +2446,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       setState(() {
         _chromeTransientVisible = false;
       });
+      // 「关掉顶栏和底栏」也走这条通道：下面的重下 inset + 重锚一并覆盖它改变的
+      // 预留高，这里只同步状态与点词门控。
+      _syncToolbarsHidden(reanchor: false);
       unawaited(
         _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
           ErrorLogService.instance.log(
@@ -2503,6 +2532,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     await profileSettingsFuture;
     if (!mounted) return;
     _settings = ReaderFushiSource.readerSettings;
+    // 设置已就绪、WebView 还没建：先把「顶栏和底栏关掉」同步进 chrome 状态机，
+    // 首屏 HTML 的 chrome 预留与点词门控直接按它求值。
+    _syncToolbarsHidden();
     _openTrace.mark('settings');
 
     final _BookLocateResult located = await bookLocateFuture;
@@ -3076,6 +3108,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
     _chrome.removeListener(_onChromeControllerChanged);
+    appModelNoUpdate.prefsRepo.removeListener(_onPrefsRepoChanged);
     _chrome.dispose();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
@@ -3662,7 +3695,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final EdgeInsets independentDocumentPadding = independentDocumentInsets(
       lyricsMode: _lyricsMode,
       // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
-      chromeOccupiesLayout: _hasEverLoaded && _showChrome,
+      chromeOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
       // 顶栏在歌词模式同样在场（[_desktopChromeEnabled]），文档要给它让位，
       // 否则首行歌词被顶栏 / 系统状态栏压住。
       topReserve: _lyricsTopReserve,

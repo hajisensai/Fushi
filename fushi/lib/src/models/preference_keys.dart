@@ -124,6 +124,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.in_app',
   'floating_ball.mode',
   'floating_ball.system',
+  // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
+  // `.dock` / `.y` 分开存：两颗球可以同时在。
+  'floating_ball.system_dock',
+  'floating_ball.system_y',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   'floating_lyric_button_bg_opacity',
@@ -443,6 +447,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'gal_capture_memory::',
   'gal_lookup_surface_v1::',
   'media_source_secret_',
+  // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid）。
+  // 目前只有无头服务端扫描写它（引擎 book_library_prune.dart，BUG-2816）。
+  'media_source_scan_index_',
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。

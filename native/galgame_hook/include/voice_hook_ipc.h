@@ -353,6 +353,8 @@ constexpr uint32_t kTextSourceSgre = 5;
 // smash/fzmedia (TYPE-MOON "smash" framework: Fate/stay night REMASTERED family)
 // exact text published by the native KAG text-layer layout hook.
 constexpr uint32_t kTextSourceSmashFzmedia = 6;
+// BGI/Ethornell exact text published by the native message SetTextImpl hook.
+constexpr uint32_t kTextSourceBgi = 7;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -385,6 +387,7 @@ constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
 constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
 constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
+// VisualArts 语音归档（Siglus OVK / RealLive NWK）在身份认定后真被打开：宿主据此切 gameResource。
 constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;
 constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
 constexpr uint32_t kDiagKirikiriVorbisOpenHookReady = 0x00100000u;
@@ -609,10 +612,16 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics,
                                                 uint32_t reserved_hook_diagnostics = 0,
                                                 uint32_t xaudio_diagnostics = 0) {
-  const uint32_t unity_required = kDiagUnityIl2CppHooksReady |
-                                  kDiagUnityResourceExtractorReady;
+  // Unity 资源语音链：injector 侧抽取器就绪，且游戏内一侧的 AudioClip 播放入口已挂——
+  // IL2CPP 置 kDiagUnityIl2CppHooksReady；Mono（MonoBleedingEdge / 5.x mono.dll）
+  // 没有 IL2CPP 那组位，只在有语音资源证据（本会话打开过 *voice*.bundle 或框架的
+  // voiceover 入口）时于次诊断字置 kDiagUnityAudioPlaybackHookReady（IL2CPP 同样会置）。
+  const bool unity_hooks_ready =
+      (hook_diagnostics & kDiagUnityIl2CppHooksReady) != 0 ||
+      (reserved_hook_diagnostics & kDiagUnityAudioPlaybackHookReady) != 0;
   const bool unity_ready =
-      (hook_diagnostics & unity_required) == unity_required;
+      unity_hooks_ready &&
+      (hook_diagnostics & kDiagUnityResourceExtractorReady) != 0;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
          (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
          (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||
@@ -876,6 +885,17 @@ constexpr uint32_t kLookupGeometryProviderIdHunexGge = 14u;
 // smash/fzmedia KAG text-layer exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdSmashFzmedia = 15u;
 constexpr uint32_t kLookupGeometryProviderIdCmvs = 16u;
+// Artemis Engine glyph-node exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdArtemis = 17u;
+// RealLive text-surface exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdReallive = 18u;
+// CatSystem2 message-page exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdCatSystem2 = 19u;
+// Unity (Mono) per-glyph TextMesh message framework exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
+// BGI/Ethornell message-page exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

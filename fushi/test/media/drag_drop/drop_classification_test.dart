@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('classifyDroppedFiles', () {
@@ -207,5 +208,108 @@ void main() {
       reason:
           '音频扩展名漂移：更新 kDragAudioExtensions 与 AudiobookStorage.audioExtensions 保持一致',
     );
+  });
+
+  group('Blu-ray discs (drag a disc in, not a fragment)', () {
+    // 按宿主平台拼路径：盘根判据走 package:path，Linux CI 与 Windows 本机都要成立。
+    final String root = p.join('video', 'Kaguya');
+    final String bdmv = p.join(root, 'BDMV');
+    final String season = p.join('video', 'Season 1');
+
+    // 真实盘目录不在测试机上；目录判据由 widget 层注入，这里注入等价的假判据。
+    String? fakeDiscRoot(String dir) => dir == root || dir == bdmv ? root : null;
+
+    DroppedFiles classify(List<String> paths) => classifyDroppedFiles(
+          paths,
+          isDirectory: (String path) => p.extension(path).isEmpty,
+          blurayDiscRootForDirectory: fakeDiscRoot,
+        );
+
+    test('index.bdmv / MovieObject.bdmv resolve to the disc (was unknown)', () {
+      final DroppedFiles r = classify(<String>[
+        p.join(bdmv, 'index.bdmv'),
+        p.join(bdmv, 'MovieObject.bdmv'),
+      ]);
+      expect(r.blurayDiscs, <String>[root]);
+      expect(r.unknown, isEmpty);
+      expect(r.hasAny, isTrue);
+      expect(r.videoSourceFolders, <String>[root]);
+    });
+
+    test('mpls / m2ts / clpi inside the disc resolve to the disc', () {
+      final String m2ts = p.join(bdmv, 'STREAM', '00001.m2ts');
+      final DroppedFiles r = classify(<String>[
+        p.join(bdmv, 'PLAYLIST', '00001.mpls'),
+        m2ts,
+        p.join(bdmv, 'CLIPINF', '00001.clpi'),
+      ]);
+      expect(r.blurayDiscs, <String>[root]);
+      // 交叠而非互斥：m2ts 仍记在 videos 里，按盘处理是落点表面的决定。
+      expect(r.videos, <String>[m2ts]);
+      expect(r.unknown, isEmpty);
+    });
+
+    test('the BDMV folder maps to its disc root (never registered itself)', () {
+      final DroppedFiles r = classify(<String>[bdmv]);
+      expect(r.blurayDiscs, <String>[root]);
+      expect(r.directories, <String>[bdmv]);
+      expect(r.videoSourceFolders, <String>[root]);
+    });
+
+    test('disc root + ordinary folder: each registered once', () {
+      final DroppedFiles r = classify(<String>[
+        root,
+        p.join(bdmv, 'index.bdmv'),
+        season,
+      ]);
+      expect(r.videoSourceFolders, <String>[root, season]);
+    });
+
+    test('a loose m2ts outside any BDMV tree stays a plain video', () {
+      final String loose = p.join('rec', '00001.m2ts');
+      final DroppedFiles r = classify(<String>[loose]);
+      expect(r.blurayDiscs, isEmpty);
+      expect(r.videos, <String>[loose]);
+    });
+
+    test('without the directory predicate folders are not probed', () {
+      final DroppedFiles r = classifyDroppedFiles(
+        <String>[root],
+        isDirectory: (String path) => true,
+      );
+      expect(r.blurayDiscs, isEmpty);
+      expect(r.videoSourceFolders, <String>[root]);
+    });
+  });
+
+  group('audio in the video library (media_extensions.dart)', () {
+    test('kAudioExtensions = AudiobookStorage.audioExtensions minus .mp4', () {
+      // media_extensions.dart 零依赖、不能引用 fushi_audio，只能靠守卫钉同步。
+      // `.mp4` 首先是视频容器，归 kVideoExtensions。
+      expect(
+        kAudioExtensions,
+        equals(AudiobookStorage.audioExtensions.difference(<String>{'.mp4'})),
+      );
+    });
+
+    test('audio and video sets are disjoint; library set is their union', () {
+      expect(kAudioExtensions.intersection(kVideoExtensions), isEmpty);
+      expect(kAudioExtensions.intersection(kPlaylistManifestExtensions),
+          isEmpty);
+      expect(kVideoLibraryMediaExtensions,
+          equals(<String>{...kVideoExtensions, ...kAudioExtensions}));
+    });
+
+    test('isAudioOnlyMediaPath', () {
+      expect(isAudioOnlyMediaPath(r'D:\音乐\K-ON\01 - One more tea？.flac'),
+          isTrue);
+      expect(isAudioOnlyMediaPath('/music/a.MP3'), isTrue);
+      expect(isAudioOnlyMediaPath('https://h/x/a.m4a?sig=1'), isTrue);
+      expect(isAudioOnlyMediaPath('/v/ep01.mp4'), isFalse);
+      expect(isAudioOnlyMediaPath('/v/ep01.mkv'), isFalse);
+      expect(isAudioOnlyMediaPath(r'D:\a.flac\ep01.mkv'), isFalse);
+      expect(isAudioOnlyMediaPath('/v/.flac'), isFalse);
+      expect(isAudioOnlyMediaPath(''), isFalse);
+    });
   });
 }

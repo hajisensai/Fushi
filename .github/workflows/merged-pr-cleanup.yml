@@ -1,0 +1,49 @@
+# 合并进 develop 的 PR：取消它还在排队 / 在跑的 CI，删掉它 PR ref 下的缓存。
+#
+# 为什么挂在 push 上而不是 PR 事件上（2026-09-30）：
+# * 79% 的 PR 来自 fork（W1ght/hibiki），fork PR 的 `pull_request` token 只读，
+#   取消 / 删缓存全是 403；而 PR CI 82% 的 runner 时间花在 PR 合并**之后**。
+# * `pull_request_target` 能给 fork PR 基础仓库的 token，但它的 workflow 定义取自
+#   **默认分支 main**——main 落后 develop 一百多个提交、agent 不碰它；#1829 把
+#   cache-cleanup 改成 pull_request_target 后它一次都没跑过。
+# * 合并**就是**一次 push 到 develop：push 事件跑的是 develop 自己的这份 workflow，
+#   token 可写。所以在这里按「这次 push 合并了哪些 PR」清理，fork 与同仓一视同仁。
+#   只有「fork PR 未合并就关掉」不在覆盖面里（同仓的那种由 cache-cleanup.yml 管）。
+#
+# 本 workflow 不发布任何东西，不检出 / 执行 PR 代码：只稀疏检出 develop 上的
+# tool/cleanup_pr_ci.sh，调 Actions API。fork 可控的分支名只经 env 进 bash 做字符串比较。
+name: Cleanup merged PR CI
+
+on:
+  push:
+    branches: ['develop']
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: tool/cleanup_pr_ci.sh
+          sparse-checkout-cone-mode: false
+      # 「与提交关联的 PR」对 merge / squash / rebase 三种合并都认；push 的最后一个
+      # 提交（after）之外再看最近 30 个提交，覆盖一次 push 里合了多个 PR 的情况。
+      - name: Cancel CI and delete caches of the PRs this push merged
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.ref_name }}
+          AFTER: ${{ github.event.after }}
+          COMMITS: ${{ join(github.event.commits.*.id, ' ') }}
+          SKIP_WORKFLOW_PATHS: .github/workflows/cache-cleanup.yml
+        run: |
+          set -euo pipefail
+          MERGED_BY_SHAS="$AFTER $(printf '%s\n' $COMMITS | tail -n 30 | tr '\n' ' ')"
+          export MERGED_BY_SHAS
+          bash tool/cleanup_pr_ci.sh

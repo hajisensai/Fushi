@@ -20,6 +20,9 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -378,4 +381,47 @@ String sidecarSubtitleExtension(String fileName) {
   return const <String>{'.srt', '.ass', '.ssa', '.vtt'}.contains(ext)
       ? ext
       : '.srt';
+}
+
+// ---------------------------------------------------------------------------
+// 自动补字幕的接线
+// ---------------------------------------------------------------------------
+
+/// 给 [VideoSubtitleBackfillService.aiReorder] 用的重排闭包。
+///
+/// 提供商在**每次调用时**解析（用户改设置不用重建服务）；未指派或 AI 失败都回退
+/// 原序——补字幕是后台任务，AI 只能锦上添花，绝不能把它变成新的失败点。
+SubtitleBackfillReorder aiSubtitleBackfillReorder({
+  required AiProviderResolver resolveProvider,
+  AiClientFactory? clientFactory,
+}) {
+  return (
+    List<VideoSubtitleCandidate> candidates,
+    SubtitleBackfillTarget target,
+  ) async {
+    final AiProviderConfig? provider = resolveProvider();
+    if (provider == null || candidates.length < 2) return candidates;
+    final AiChatClient client = clientFactory?.call() ?? AiChatClient();
+    try {
+      final AiRankResult rank = await requestAiSubtitleRank(
+        client: client,
+        provider: provider,
+        candidates: candidates,
+        context: AiSubtitleRankContext(
+          media: target.media,
+          localFileName: target.videoPath.split(RegExp(r'[/\\]')).last,
+          episode: target.media.episode,
+          preferredLanguages: <String>[
+            if (target.contentLanguage?.trim().isNotEmpty == true)
+              target.contentLanguage!,
+          ],
+        ),
+      );
+      return rank.reorder(candidates);
+    } on AiChatFailure {
+      return candidates;
+    } finally {
+      client.close();
+    }
+  };
 }

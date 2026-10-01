@@ -10,6 +10,7 @@
 #include <string>
 
 #include "attached_text_surface_window.h"
+#include "floating_ball_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
 #include "game_stream_input.h"
@@ -98,6 +99,14 @@ class FlutterWindow : public Win32Window {
 
   // Wires the floating_lyric MethodChannel to floating_lyric_window_.
   void RegisterFloatingLyricChannel();
+
+  // 桌面应用外悬浮球（app.fushi.reader/floating_ball，与 Android / iOS 同名通道）。
+  // 原生只画球、拖动、吸附、展开动画，并把点了哪颗 / 球在哪报回 Dart；动作全在
+  // Dart 执行。契约见 docs/specs/2026-09-30-desktop-system-floating-ball.md。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      floating_ball_channel_;
+  std::unique_ptr<FloatingBallWindow> floating_ball_window_;
+  void RegisterFloatingBallChannel();
 
   // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
   // rich text-only mode, independent of the audiobook lyric strip.

@@ -287,14 +287,17 @@ Android 同一决策——**vcpkg manifest 静态链**：
 2. **随包**：CI（`build-multiplatform.yml` linux job、`release-server.yml`）把它放进
    服务端 bundle 的 `lib/`，服务端按 `<exe>/../lib/libfushi_torrent_ffi.so` 定位
    （`packages/fushi_server/lib/src/native_libs.dart`），`torrent.engine: auto` 即
-   内置。Linux **桌面版 Fushi** 仍未随包（另起 job；服务端那份产物可直接复用）。
+   内置。Linux **桌面版 Fushi**：`fushi/linux/CMakeLists.txt` copy-if-present 同一份
+   `.so` 进 `bundle/lib/`，`EmbeddedTorrentEngine` 在 Linux 先按 `<exe>/lib/` 绝对路径
+   加载；缺了回退外接 qBittorrent。只覆盖本机构建——CI / 发布不构建 Linux app
+   （所有者 2026-09-30 拍板）。
 3. **缓存**：与 Android job 同款双层 vcpkg 缓存，key 带 runner ImageVersion。
 
 ## 尚未做（多平台 + 真机）
 
-- **macOS / Linux 桌面版**：同样走 vendored 预编译 + runner CMake 的
-  copy-if-present；Linux 可直接拿阶段6 的 `.so`，macOS 需 Xcode 工具链编
-  libtorrent，未在本机验证，另起 job。
+- **macOS 桌面版**：同样走 vendored 预编译 + runner CMake 的
+  copy-if-present，需 Xcode 工具链编 libtorrent，未在本机验证，另起 job。
+  （Linux 桌面版的 copy-if-present 已接，见上文阶段6「随包」。）
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
 - 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
   做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，

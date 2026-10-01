@@ -30,6 +30,7 @@ import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
 const String kDefaultConfigFileName = 'fushi_server.yaml';
@@ -59,6 +60,10 @@ class _Runtime {
   }
 }
 
+/// 显式给出的三态布尔 flag：没给返回 null（由配置决定，不把 CLI 默认值当成用户意图）。
+bool? _explicitFlag(ArgResults results, String name) =>
+    results.wasParsed(name) ? results[name] as bool : null;
+
 ArgParser _buildParser() {
   final ArgParser parser = ArgParser()
     ..addOption('config', abbr: 'c', help: '配置文件路径', defaultsTo: kDefaultConfigFileName)
@@ -68,10 +73,24 @@ ArgParser _buildParser() {
     ..addOption('data-dir', help: '数据目录（默认配置文件旁的 data/）')
     ..addOption('port', help: '监听端口', defaultsTo: '${ServerConfig.defaultPort}')
     ..addOption('device-name', help: '广播给对端的设备名');
-  parser
-      .addCommand('serve')
-      .addFlag('scan', help: '启动后扫描一次库', defaultsTo: true);
-  parser.addCommand('scan');
+  parser.addCommand('serve')
+    ..addFlag('scan', help: '启动后扫描一次库', defaultsTo: true)
+    ..addFlag(
+      'prune',
+      help: '扫描后回收「文件已消失」的条目（--no-prune 关闭，对本进程所有扫描生效；缺省读配置 scan_prune）',
+      negatable: true,
+    );
+  parser.addCommand('scan')
+    ..addFlag(
+      'prune',
+      help: '回收「文件已消失」的条目（--no-prune 关闭；缺省读配置 scan_prune）',
+      negatable: true,
+    )
+    ..addFlag(
+      'scrape',
+      help: '扫描后补刮从未识别过的视频作品（--no-scrape 关闭；缺省读配置 scan_scrape）',
+      negatable: true,
+    );
   parser.addCommand('status');
   parser.addCommand('pair');
   parser.addCommand('admin');
@@ -118,9 +137,17 @@ Future<int> runFushiServerCli(List<String> args) async {
     case 'init':
       return _init(configFile, command);
     case 'serve':
-      return _withRuntime(configFile, verbose, (_Runtime rt) => _serve(rt, scan: command['scan'] as bool));
+      return _withRuntime(
+          configFile,
+          verbose,
+          (_Runtime rt) => _serve(rt,
+              scan: command['scan'] as bool,
+              prune: _explicitFlag(command, 'prune')));
     case 'scan':
-      return _withRuntime(configFile, verbose, _scan);
+      return _withRuntime(configFile, verbose,
+          (_Runtime rt) => _scan(rt,
+              prune: _explicitFlag(command, 'prune'),
+              scrape: _explicitFlag(command, 'scrape')));
     case 'status':
       return _withRuntime(configFile, verbose, _status);
     case 'pair':
@@ -213,7 +240,7 @@ Future<int> _withRuntime(
   }
 }
 
-Future<int> _serve(_Runtime rt, {required bool scan}) async {
+Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
   final HeadlessHost host = HeadlessHost(
     config: rt.config,
     paths: rt.paths,
@@ -240,6 +267,7 @@ Future<int> _serve(_Runtime rt, {required bool scan}) async {
     identity: rt.identity,
     host: host,
     startedAt: DateTime.now(),
+    pruneOverride: prune,
   );
   AdminServer? admin;
   if (rt.config.adminPort > 0) {
@@ -290,7 +318,7 @@ Future<void> _scanInBackground(AdminContext ctx) async {
   }
 }
 
-Future<int> _scan(_Runtime rt) async {
+Future<int> _scan(_Runtime rt, {bool? prune, bool? scrape}) async {
   if (rt.config.libraries.isEmpty) {
     stderr.writeln('配置里没有 libraries[]，无事可扫。');
     return 0;
@@ -298,10 +326,31 @@ Future<int> _scan(_Runtime rt) async {
   final ScanSummary summary = await LibraryScanner(
     db: rt.db,
     subtitleLanguage: rt.config.subtitleLanguage,
+    pruneMissing: prune ?? rt.config.scanPrune,
   ).scanAll(rt.config.libraries);
   stdout.writeln('库扫描完成: $summary');
   for (final String err in summary.errors) {
     stdout.writeln('  ! $err');
+  }
+  final bool hasVideoRoot = rt.config.libraries.any((LibraryRootConfig l) => l.kind == 'video');
+  if (hasVideoRoot && (scrape ?? rt.config.scanScrape)) {
+    // 一次性命令：同步等补刮跑完再退出（只刮从未识别过的作品，见 video_scrape_host.dart）。
+    final ServerVideoScrape videoScrape = ServerVideoScrape(
+      db: rt.db,
+      prefs: rt.prefs,
+      config: () => rt.config.copyWith(scanScrape: true),
+    );
+    try {
+      stdout.writeln('刮削中（只补刮从未识别过的作品）…');
+      await videoScrape.sweep();
+      final Map<String, Object?> st = videoScrape.status();
+      stdout.writeln('刮削完成: ${st['lastReport'] ?? '没有需要刮削的作品'}'
+          '${st['tmdbAvailable'] == true ? '' : '（未配置 tmdb_api_key，TMDB 不可用）'}');
+      final int pending = await videoScrape.pendingCount();
+      if (pending > 0) stdout.writeln('  待人工指定身份: $pending 部（可在客户端经互联手动指定）');
+    } finally {
+      videoScrape.close();
+    }
   }
   return summary.errors.isEmpty ? 0 : 1;
 }

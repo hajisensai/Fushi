@@ -29,13 +29,46 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2571 条。点号进各自文件。
+> 共 2607 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
+| [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |
+| [BUG-2823](bugs/BUG-2823-update-relaunch-startup-stall.md) | ✅ | ✅ | 自动更新后新版本启动卡顿一两秒 |
+| [BUG-2822](bugs/BUG-2822-manga-stream-chapter-ocr.md) | ✅ | ✅ | 在线直读章完全不做 OCR，手机上只能下载后等整章识别完 |
+| [BUG-2821](bugs/BUG-2821-manga-ocr-follow-reader.md) | ✅ | ✅ | 移动端整卷 OCR 不跟读者翻页，翻到的页要等整卷识别完 |
+| [BUG-2820](bugs/BUG-2820-bdmv-drop-ignored.md) | ✅ | ✅ | 视频页拖入 .bdmv / BDMV 目录无反应 |
+| [BUG-2819](bugs/BUG-2819-webkit-paginated-last-page-shift.md) | ✅ | ✅ | Mac/iOS 翻页每章最后一页整体错开一个边距、行尾被切（WebKit 滚动范围不含分栏容器末端 padding） |
+| [BUG-2818](bugs/BUG-2818-nyaa-romanized-spelling-and-torznab-skipped.md) | ✅ | ✅ | 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词 |
+| [BUG-2817](bugs/BUG-2817-release-asset-tag-app-build.md) | ✅ | ✅ | 发布模型资产 release 触发整套应用构建并把安装包挂到该 release |
+| [BUG-2816](bugs/BUG-2816-server-book-manga-prune.md) | ✅ | ✅ | 无头服务端书/漫画根不对账：删掉源 EPUB/漫画卷后条目永远残留 |
+| [BUG-2815](bugs/BUG-2815-server-local-audio-host.md) | ✅ | ✅ | 无头服务端不托管本地音频库：列表恒空、上传传完才报 UnsupportedError |
+| [BUG-2814](bugs/BUG-2814-libtorrent-mse-mask-padding.md) | ✅ | ✅ | libtorrent 2.0.11 MSE 握手掩码未补齐，约 1/256 次加密连接被对端以 invalid info-hash 拒绝 |
+| [BUG-2813](bugs/BUG-2813-manga-local-ocr-tap-column.md) | ✅ | ✅ | 漫画本地 OCR 点字命中错列：整块文本沿整块均铺 |
+| [BUG-2812](bugs/BUG-2812-headless-scan-never-scraped.md) | ✅ | ✅ | 无头服务端扫描入库的视频从不刮削 |
+| [BUG-2811](bugs/BUG-2811-vn-ruby-pull-never-measured.md) | ✅ | ✅ | VN 模式注音拉力从未量成功（首屏无注音、换屏不重量），Klee One 注音离基字远 |
+| [BUG-2810](bugs/BUG-2810-webkit-ruby-pull-fragmented-rt.md) | ✅ | ✅ | iOS 分页打开书振假名压进基字（度量脚本量到跨栏被切开的注音盒，拉力顶到 1.5） |
+| [BUG-2809](bugs/BUG-2809-headless-scan-stale-rows.md) | ✅ | ✅ | 无头服务端删掉视频文件后条目与刮削资料残留 |
+| [BUG-2808](bugs/BUG-2808-reader-focus-mode-exit.md) | ✅ | ✅ | 专注模式下触屏拿不到退出通道 |
+| [BUG-2807](bugs/BUG-2807-leaderboard-share-period.md) | ✅ | ✅ | 排行榜分享只能分享本月且无法只分享链接 |
+| [BUG-2806](bugs/BUG-2806-ios-ruby-overhang-audio-wrap.md) | ✅ | ✅ | iOS 翻进新章节后振假名词突然撑开（有声书跟随高亮把 ruby 移进 span，WebKit 取消注音悬挂） |
+| [BUG-2805](bugs/BUG-2805-discover-nyaa-missing-tmdb-no-genre.md) | ✅ | ✅ | 发现页搜索资源有时只剩一个源、没有 Nyaa |
+| [BUG-2804](bugs/BUG-2804-p2p-apk-verify-sigpipe.md) | ✅ | ✅ | 发布校验 fushi_p2p 是否进 APK 时 pipefail + grep -q 触发 SIGPIPE 假红 |
+| [BUG-2803](bugs/BUG-2803-flaky-cdp-devtools-port.md) | ✅ | ✅ | 真 Chrome 守卫在满载 CI 上偶发 DevToolsActivePort 8s 超时 |
+| [BUG-2802](bugs/BUG-2802-flaky-manga-prefetch.md) | ✅ | ✅ | 在线漫画直读预取测试靠 80ms 墙钟等待，CI 高负载下间歇红 |
+| [BUG-2801](bugs/BUG-2801-flaky-leaderboard-401.md) | ✅ | ✅ | 排行榜 401 unknown_account：UI 读榜后本机退出是 fire-and-forget，测试按固定轮数等落盘在 CI 高负载下偶发红 |
+| [BUG-2800](bugs/BUG-2800-ai-video-acquire-alias.md) | ✅ | ✅ | AI下视频说别名找不到作品 |
+| [BUG-2799](bugs/BUG-2799-webkit-ruby-reserve-overridden.md) | ✅ | ✅ | Mac/iOS 分页段落之间列距/行距比段内窄（振假名页顶预留被书样式压掉一半） |
+| [BUG-2798](bugs/BUG-2798-ci-trim-redundant-runs.md) | ✅ | ✅ | CI 冗余触发与排队：无关改动跑满长构建、develop 连推每次跑满发布 |
+| [BUG-2797](bugs/BUG-2797-credit-bridge-anilist.md) | ✅ | ✅ | 发现详情演职员 MAL 罗马字与 TMDB 汉字认不出同一人（AniList 写法桥） |
+| [BUG-2796](bugs/BUG-2796-ai-download-scrape-missing.md) | ✅ | ✅ | AI下载后作品页尚未刮削 |
+| [BUG-2795](bugs/BUG-2795-discovery-detail-merge-language.md) | ✅ | ✅ | 发现详情合并不看资料语言：MAL 英文简介、中日英类型混排、声优重复 |
+| [BUG-2794](bugs/BUG-2794-nyaa-discovery-query.md) | ✅ | ✅ | 发现页搜视频资源 Nyaa 常 0 条：查询词只用显式词且无按源状态 |
+| [BUG-2793](bugs/BUG-2793-system-floating-ball.md) | ✅ | ✅ | 应用外悬浮球吸边不正常、点击闪烁、旋转后消失、菜单与应用内不一致 |
+| [BUG-2792](bugs/BUG-2792-video-bottom-bar-overlap.md) | ✅ | ✅ | 开字幕列表后视频底栏按钮叠在一起 |
 | [BUG-2791](bugs/BUG-2791-leaderboard-shelf-500-and-series-finished.md) | ✅ | ✅ | 排行榜书架/分享本月 500；只看第 1 集整季被判读完 |
-| [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
+| [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | ✅ | ✅ | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
 | [BUG-2789](bugs/BUG-2789-screen-ocr-popup-anchor-crash.md) | ✅ | ✅ | 截屏识字点字后只有一层灰、查词卡画不出来 |
 | [BUG-2788](bugs/BUG-2788-gal-touch-card-steals-foreground.md) | ✅ | ✅ | Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台） |
 | [BUG-2787](bugs/BUG-2787-ios-manga-ocr-tap-blank-popup.md) | ✅ | ✅ | iOS 漫画 OCR 后点字只弹出空白框 |
@@ -79,7 +112,7 @@
 | [BUG-2749](bugs/BUG-2749-gamepad-focus-native-controls.md) | ✅ | ✅ | 手柄方向导航看不见原生控件、对话框里焦点被拽走 |
 | [BUG-2748](bugs/BUG-2748-reader-continuous-user-scroll-late-image-yank.md) | ✅ | ✅ | 连续模式用户滚走后懒图加载把视口拽回 |
 | [BUG-2747](bugs/BUG-2747-gal-popup-click-dismissed-by-shield.md) | ✅ | ✅ | 点击游戏内查词弹窗的按钮会关闭弹窗且随后数秒无法查词 |
-| [BUG-2746](bugs/BUG-2746-kirikiri-dinput-wheel-over-host-popup.md) | 🚧 | 🚧 | KiriKiri 查词弹窗上滚动滚轮会让游戏翻到下一句 |
+| [BUG-2746](bugs/BUG-2746-kirikiri-dinput-wheel-over-host-popup.md) | ✅ | ✅ | KiriKiri 查词弹窗上滚动滚轮会让游戏翻到下一句 |
 | [BUG-2745](bugs/BUG-2745-kirikiri-early-sensor-script-exception.md) | ✅ | ✅ | KiriKiri 启动并捕获时游戏弹出未处理脚本异常 CS_Timer |
 | [BUG-2744](bugs/BUG-2744-reader-late-image-anchor-yank.md) | ✅ | ✅ | 横排听书跨插图时视口被拽回开章落点（插图闪动被跳过） |
 | [BUG-2743](bugs/BUG-2743-ext-hover-resume-stuck-paused.md) | ✅ | ✅ | 扩展悬停查词离开后仍暂停、暂停续播反应不灵敏 |
@@ -91,6 +124,7 @@
 | [BUG-2735](bugs/BUG-2735-galgame-remove-cascades-sessions.md) | ✅ | ✅ | 从库移除游戏经 FK cascade 删光所有 Profile 的游玩会话 |
 | [BUG-2734](bugs/BUG-2734-video-lookup-popup-entrance-wheel.md) | ✅ | ✅ | 视频查词框弹出动画跳变、滚轮手感与 galgame 查词框不一致 |
 | [BUG-2733](bugs/BUG-2733-gal-wgc-yellow-border.md) | ✅ | ✅ | galgame 全屏时游戏窗口四周常驻一圈黄线（WGC 捕获框） |
+| [BUG-2732](bugs/BUG-2732-reallive-nwk-voice-ready.md) | ✅ | ✅ | RealLive NWK 语音已导出却被 DirectSound 流（BGM）冒领配对 |
 | [BUG-2731](bugs/BUG-2731-video-swipe-seek-undone.md) | ✅ | ✅ | 移动端横滑跳转后被自适应画质重开流抹回原位 |
 | [BUG-2730](bugs/BUG-2730-bilibili-pcdn-referer.md) | ✅ | ✅ | B 站网页制卡 PCDN 节点 403：按 host 推 Referer 追不上域名轮换 |
 | [BUG-2729](bugs/BUG-2729-game-stream-weak-network.md) | ✅ | ✅ | 串流弱网：码率下限卡死拥塞控制、默认值被固化 |
@@ -101,8 +135,10 @@
 | [BUG-2724](bugs/BUG-2724-ios-furigana-gap.md) | ✅ | ✅ | iOS 振假名离本行远、贴近上一行/上一列 |
 | [BUG-2723](bugs/BUG-2723-gallery-header-overflow.md) | ✅ | ✅ | 插图册顶栏在手机竖屏挤爆：计数被压成 0 宽、英文等长文案整行溢出 |
 | [BUG-2722](bugs/BUG-2722-gallery-toc-sections.md) | ✅ | ✅ | 插图册按 spine 章分节：同文件多话的插图归错话、连续插图页拆成多个同名节 |
+| [BUG-2721](bugs/BUG-2721-krkr-inert-msgwin-plugin.md) | ✅ | ✅ | KiriKiri：登记了却不画正文的 msgwin 插件让查词采集永远落空 |
 | [BUG-2720](bugs/BUG-2720-emby-secondary-subtitle.md) | ✅ | ✅ | Emby 兼容层上副字幕选内嵌轨必失败 |
 | [BUG-2719](bugs/BUG-2719-home-body-layout-switch-remount.md) | ✅ | ✅ | 关掉视频后视频库回到「首页」分区而不是上次的分区 |
+| [BUG-2718](bugs/BUG-2718-cmvs-runner-provider-allowlist.md) | ✅ | ✅ | CMVS 精确布局的查词命中被 runner 白名单丢弃 |
 | [BUG-2717](bugs/BUG-2717-interconnect-host-sync-lock.md) | ✅ | ✅ | 互联 host 的对端聚合/合集写排在本机整轮同步后面，手机每轮 15s 超时 |
 | [BUG-2716](bugs/BUG-2716-kirikiri-sticky-tail-after-midloop-attach.md) | ✅ | ✅ | KiriKiri 循环音效中途附着时 P P T 粘尾不剥，整段游戏内查词被拒 |
 | [BUG-2715](bugs/BUG-2715-selection-longpress-null-crash.md) | ✅ | ✅ | 日志面板内容变化或视口变高后长按空白处选区端点空断言崩溃 |
@@ -706,7 +742,7 @@
 | [BUG-2026](bugs/BUG-2026-hunex-capture-bridge-test-dead-and-racy.md) | ✅ | ✅ | hunex_gge_capture_bridge_test 的 79 条 assert 在 Release 下空跑，唤醒后 TestWorkerNeverReadsATornSnapshot 50% 概率红 |
 | [BUG-2025](bugs/BUG-2025-galgame-assert-liveness-guard-unregistered.md) | ✅ | ✅ | generic_input_shield_test.cpp 的 47 条 assert 在 Release 下整批空跑（守卫写了但没接进 run_guards.ps1） |
 | [BUG-2024](bugs/BUG-2024-hunex-single-click-lookup-passthrough.md) | 🚧 | ✅ | WoH/HUNEX 单击文字无法查词且点击穿透到游戏 |
-| [BUG-2023](bugs/BUG-2023-torrent-ffi-listen-port-zero-ci-flake.md) | 🚧 | 🚧 | PR#1129 windows job FFI 测试 13 条红：全部 listen_port=0（未复现） |
+| [BUG-2023](bugs/BUG-2023-torrent-ffi-listen-port-zero-ci-flake.md) | ✅ | ✅ | Windows 上 torrent session 偶发 listen_port=0 且连不出去：libtorrent 在 UDP bind 回 WSAEACCES 时丢掉整条 listen socket |
 | [BUG-2022](bugs/BUG-2022-schema-v94-test-assertions-stale.md) | ✅ | ✅ | 刮削 P1 升 schema 到 94 但漏改 43 处测试断言，堆叠 PR 拿不到真单测门导致一路合进 develop |
 | [BUG-2021](bugs/BUG-2021-libtorrent-ci-compile-gate.md) | ✅ | ✅ | libtorrent native 构建在 PR 阶段无编译门（Android 侧从未在 CI 编译过） |
 | [BUG-2020](bugs/BUG-2020-identity-json-path-rebase-unregistered.md) | ✅ | ✅ | 刮削 P1 新增的 identityJson 两列漏登记 kPathRebaseColumns，合入即把 develop 打红 |

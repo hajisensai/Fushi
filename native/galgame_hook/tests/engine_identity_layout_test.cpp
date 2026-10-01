@@ -133,24 +133,56 @@ int main() {
     assert(std::memcmp(plain, roundtrip, sizeof(plain)) == 0);
   }
 
-  // ── 1. BGI / Ethornell：`*.arc` 的 BURIKO ARC20 魔数 ─────────────────────────
-  {
-    const std::wstring root = MakeTempRoot(L"bgi_ok");
-    // 目录里刻意**没有** BGI.exe，exe 名不是必要条件。
-    char archive[64] = {0};
-    std::memcpy(archive, ::fushi_voice_hook::bgi::kArc20Signature,
-                ::fushi_voice_hook::bgi::kArc20SignatureBytes);
-    WriteBytes(root + L"\\data03100.arc", archive, sizeof(archive));
+  // ── 1. BGI / Ethornell：`*.arc` 是自洽的 BURIKO ARC20 或 PackFile 索引 ───────
+  // 两代格式各一份：1 条目、成员 8 字节、首条目 offset 0。
+  const auto bgi_archive = [](bool arc20) {
+    namespace bgi = ::fushi_voice_hook::bgi;
+    const size_t entry = arc20 ? bgi::kArc20EntryBytes : bgi::kPackFileEntryBytes;
+    const size_t name = arc20 ? bgi::kArc20NameBytes : bgi::kPackFileNameBytes;
+    std::vector<uint8_t> a(bgi::kArcHeaderBytes + entry + 8, 0);
+    std::memcpy(a.data(), arc20 ? bgi::kArc20Signature : bgi::kPackFileSignature,
+                bgi::kArcSignatureBytes);
+    WriteLe32(a.data() + 12, 1);
+    std::memcpy(a.data() + bgi::kArcHeaderBytes, "00010", 5);
+    WriteLe32(a.data() + bgi::kArcHeaderBytes + name + 4, 8);
+    return a;
+  };
+  for (const bool arc20 : {true, false}) {
+    const std::wstring root = MakeTempRoot(arc20 ? L"bgi_arc20" : L"bgi_packfile");
+    // 目录里刻意**没有** BGI.exe，exe 名不是必要条件；同目录另放一个非 BGI 的 .arc
+    // （旧版样本里就有 MPEG-PS 视频包），不影响认领。
+    const uint8_t mpeg[16] = {0, 0, 1, 0xBA, 0x21, 0, 1, 0, 1, 0x80, 0xA2, 0x61};
+    WriteBytes(root + L"\\data06010.arc", mpeg, sizeof(mpeg));
+    const std::vector<uint8_t> archive = bgi_archive(arc20);
+    WriteBytes(root + L"\\data04001.arc", archive.data(), archive.size());
     assert(fushi_voice_hook::MatchesBgiEthornellLayout(root));
     RemoveTree(root);
   }
   {
     const std::wstring root = MakeTempRoot(L"bgi_name_only");
-    // 只有一个叫 BGI.exe 的空文件、没有 ARC20 归档 → 名字不是充分条件。
+    // 只有一个叫 BGI.exe 的空文件、归档只有魔数没有自洽索引 → 名字与魔数都不是充分条件。
     const char stub[8] = {'M', 'Z', 0, 0, 0, 0, 0, 0};
     WriteBytes(root + L"\\BGI.exe", stub, sizeof(stub));
-    const char not_arc20[16] = "PackFile    \0\0\0";
-    WriteBytes(root + L"\\data03100.arc", not_arc20, sizeof(not_arc20));
+    const char magic_only[16] = "PackFile    \0\0\0";
+    WriteBytes(root + L"\\data03100.arc", magic_only, sizeof(magic_only));
+    char arc20_magic_only[16] = {0};
+    std::memcpy(arc20_magic_only, ::fushi_voice_hook::bgi::kArc20Signature,
+                ::fushi_voice_hook::bgi::kArc20SignatureBytes);
+    arc20_magic_only[12] = 1;
+    WriteBytes(root + L"\\data03110.arc", arc20_magic_only,
+               sizeof(arc20_magic_only));
+    assert(!fushi_voice_hook::MatchesBgiEthornellLayout(root));
+    RemoveTree(root);
+  }
+  {
+    const std::wstring root = MakeTempRoot(L"bgi_foreign_arc");
+    // 别家引擎的 .arc：相近词根（QLiE 的 FilePackVer / PackFileVer）与 elf AI6 的
+    // 「首 u32 = 条目数」形状，都不能被 BGI 认领。
+    const char qlie_like[32] = "PackFileVer3.1";
+    WriteBytes(root + L"\\data.arc", qlie_like, sizeof(qlie_like));
+    std::vector<uint8_t> ai6(256, 0);
+    WriteLe32(ai6.data(), 1);
+    WriteBytes(root + L"\\voice.arc", ai6.data(), ai6.size());
     assert(!fushi_voice_hook::MatchesBgiEthornellLayout(root));
     RemoveTree(root);
   }

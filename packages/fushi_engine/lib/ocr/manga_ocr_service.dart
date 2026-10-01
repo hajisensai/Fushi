@@ -48,6 +48,55 @@ abstract interface class MangaOcrModelPreparationService {
   Stream<MangaOcrDownloadEvent> prepareModels();
 }
 
+/// 读者当前页的「改道请求」：整卷任务运行中跟着读者走。
+///
+/// 起点页只在开跑那一刻定一次；手机上本地模型一页几十秒，读者翻得比识别快，
+/// 翻到的页永远还没轮到，体感就是「要等整卷识别完」。阅读器每翻一页 [request]
+/// 一次，执行器每处理一页前 [take] 一次，把处理游标挪到读者当前页
+/// （[MangaOcrPageScheduler.focus]）。
+class MangaOcrPageFocus {
+  int? _pending;
+  final List<void Function(int pageIndex)> _listeners =
+      <void Function(int pageIndex)>[];
+
+  /// 读者翻到了 [pageIndex]（按 `enumerateMangaPages` 自然序的页号）。
+  void request(int pageIndex) {
+    if (pageIndex < 0) return;
+    _pending = pageIndex;
+    for (final void Function(int pageIndex) listener
+        in List<void Function(int pageIndex)>.of(_listeners)) {
+      listener(pageIndex);
+    }
+  }
+
+  /// 取走最近一次还没被消费的请求；没有新请求时为 null。
+  int? take() {
+    final int? pending = _pending;
+    _pending = null;
+    return pending;
+  }
+
+  /// 执行器不在本 isolate 时（本地 ONNX 的整卷 isolate）用监听把请求转发过去。
+  void addListener(void Function(int pageIndex) listener) =>
+      _listeners.add(listener);
+
+  void removeListener(void Function(int pageIndex) listener) =>
+      _listeners.remove(listener);
+}
+
+/// 运行中能跟随 [MangaOcrPageFocus] 改道的整卷服务（本地 ONNX）。
+///
+/// 刻意做成可选能力而不是给 [MangaOcrService.ocrFolder] 加参数：远端 / 外部 CLI
+/// 与各测试替身没有「按页序处理」这回事，不该被迫接一个无意义的参数。
+abstract interface class MangaOcrFocusableService {
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+    MangaOcrPageFocus? focus,
+  });
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///
@@ -92,6 +141,7 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
+    this.acceleratorMissingBytes = 0,
   });
 
   final bool detectorReady;
@@ -119,7 +169,14 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
+  /// 可选提速组件（经典 manga-ocr 的 KV cache decoder）还差多少字节没下；0 = 已装
+  /// 或本模型没有提速组件。不影响 [allReady]：缺了照样能识别，只是慢。
+  final int acceleratorMissingBytes;
+
   bool get allReady => detectorReady && recognizerReady;
+
+  /// 模型可用、但提速组件没装（设置页据此给「下载识别提速组件」）。
+  bool get acceleratorMissing => allReady && acceleratorMissingBytes > 0;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;

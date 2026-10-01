@@ -128,6 +128,23 @@ if(EXISTS "${FUSHI_P2P_SO}")
     COMPONENT Runtime)
 endif()
 
+# 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +
+# -static-libstdc++，只剩 glibc 动态），与无头服务端随包的是同一份。存在则随包进
+# bundle/lib/（Dart 侧 EmbeddedTorrentEngine 按 <exe>/lib/ 定位），缺失时下载后端回退
+# 外接 qBittorrent，构建照常——Linux 没有 Windows 那道 Release 强制门：没有 CI / 发布
+# 流水线构建 Linux app（所有者 2026-09-30 拍板），本机构建不该因缺 vcpkg 而失败。
+set(FUSHI_TORRENT_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so")
+if(EXISTS "${FUSHI_TORRENT_SO}")
+  install(FILES "${FUSHI_TORRENT_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+else()
+  message(STATUS
+    "fushi_torrent: ${FUSHI_TORRENT_SO} not found; the bundle will not ship the "
+    "embedded torrent engine (run native/fushi_torrent/build_linux_so.sh first).")
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -21,11 +24,12 @@ const List<String> _globals = <String>[
   'popup_lookup',
   'clipboard',
   'screen_ocr',
+  'camera_ocr',
 ];
 
 void main() {
   group('FloatingBallScope', () {
-    test('应用外只在 Android 可配', () {
+    test('应用外只在 Android 与桌面（Windows / macOS）可配', () {
       expect(
         FloatingBallScope.availableOn(isAndroid: false),
         isNot(contains(FloatingBallScope.system)),
@@ -33,6 +37,60 @@ void main() {
       expect(
         FloatingBallScope.availableOn(isAndroid: true),
         FloatingBallScope.values,
+      );
+      expect(
+        FloatingBallScope.availableOn(isAndroid: false, isDesktop: true),
+        FloatingBallScope.values,
+      );
+    });
+
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板，没有截屏与拍照', () {
+      Set<FloatingBallGlobalAction> onDesktop(
+        FloatingBallScope scope, {
+        bool lookupModuleEnabled = true,
+      }) => <FloatingBallGlobalAction>{
+        for (final FloatingBallGlobalAction a
+            in FloatingBallGlobalAction.values)
+          if (a.availableIn(
+            scope,
+            isAndroid: false,
+            isIOS: false,
+            isDesktop: true,
+            lookupModuleEnabled: lookupModuleEnabled,
+          ))
+            a,
+      };
+      expect(onDesktop(FloatingBallScope.system), <FloatingBallGlobalAction>{
+        FloatingBallGlobalAction.lookup,
+        FloatingBallGlobalAction.popupLookup,
+        FloatingBallGlobalAction.clipboard,
+      });
+      // 查词模块关着：打开查词页与全局查词都没有入口，只剩剪贴板（它在覆盖窗
+      // 不可用时退回主窗查词弹窗）。
+      expect(
+        onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
+        <FloatingBallGlobalAction>{FloatingBallGlobalAction.clipboard},
+      );
+      // 应用内的球仍按平台能力（桌面没有独立查词窗），与查词模块无关。
+      for (final bool enabled in <bool>[true, false]) {
+        expect(
+          onDesktop(FloatingBallScope.general, lookupModuleEnabled: enabled),
+          <FloatingBallGlobalAction>{
+            FloatingBallGlobalAction.lookup,
+            FloatingBallGlobalAction.clipboard,
+          },
+        );
+      }
+      // Android 的应用外球不受影响。
+      expect(
+        FloatingBallGlobalAction.screenOcr.availableIn(
+          FloatingBallScope.system,
+          isAndroid: true,
+          isIOS: false,
+          isDesktop: false,
+          lookupModuleEnabled: false,
+        ),
+        isTrue,
       );
     });
 
@@ -123,6 +181,43 @@ void main() {
         ),
         isTrue,
       );
+    });
+
+    test('拍照查词只在 Android / iOS 提供（桌面没有相机入口）', () {
+      const FloatingBallGlobalAction camera =
+          FloatingBallGlobalAction.cameraOcr;
+      expect(FloatingBallGlobalAction.fromStorage('camera_ocr'), camera);
+      expect(camera.availableOn(isAndroid: true, isIOS: false), isTrue);
+      expect(camera.availableOn(isAndroid: false, isIOS: true), isTrue);
+      expect(camera.availableOn(isAndroid: false, isIOS: false), isFalse);
+    });
+
+    test('应用外场景可勾的全局按钮，原生系统球都认（id 两侧同名）', () {
+      // 系统球的目录 = 全部全局按钮；原生 CONFIGURABLE_ACTIONS 漏了某个 id，
+      // 设置里勾上它系统球却静默不出这颗按钮。
+      final String service = File(
+        'android/app/src/main/java/app/fushi/reader/FloatingBallService.java',
+      ).readAsStringSync();
+      final String configurable = RegExp(
+        r'CONFIGURABLE_ACTIONS\s*=\s*Arrays\.asList\(([^;]*)\);',
+      ).firstMatch(service)!.group(1)!;
+      final Map<String, String> constants = <String, String>{
+        for (final RegExpMatch m in RegExp(
+          r'static final String (ACTION_\w+) = "([a-z_]+)";',
+        ).allMatches(service))
+          m.group(1)!: m.group(2)!,
+      };
+      final Set<String> nativeIds = <String>{
+        for (final RegExpMatch m in RegExp(
+          r'ACTION_\w+',
+        ).allMatches(configurable))
+          constants[m.group(0)!]!,
+      };
+      expect(nativeIds, <String>{
+        for (final FloatingBallGlobalAction action
+            in FloatingBallGlobalAction.values)
+          action.storageValue,
+      });
     });
 
     test('应用外查词（独立查词窗）只在 Android 提供', () {
@@ -267,6 +362,156 @@ void main() {
     });
   });
 
+  group('ScreenOcrImageLayout', () {
+    test('截屏：与窗口同形，贴宽顶对齐', () {
+      final ScreenOcrImageLayout layout = ScreenOcrImageLayout.of(
+        box: const Size(400, 800),
+        imageWidth: 800,
+        imageHeight: 1600,
+        fit: ScreenOcrImageFit.window,
+      );
+      expect(layout.origin, Offset.zero);
+      expect(layout.scale, 0.5);
+    });
+
+    test('照片：等比放进页面并居中，行框随之平移', () {
+      // 横拍 4:3 照片放进竖屏 400x800：按宽缩到 400x300，上下各留 250。
+      final ScreenOcrImageLayout layout = ScreenOcrImageLayout.of(
+        box: const Size(400, 800),
+        imageWidth: 2000,
+        imageHeight: 1500,
+        fit: ScreenOcrImageFit.contain,
+      );
+      expect(layout.scale, 0.2);
+      expect(layout.origin, const Offset(0, 250));
+      expect(
+        layout.imageRect(2000, 1500),
+        const Rect.fromLTWH(0, 250, 400, 300),
+      );
+      expect(
+        layout.toPage(const Rect.fromLTWH(500, 500, 1000, 100)),
+        const Rect.fromLTWH(100, 350, 200, 20),
+      );
+
+      // 竖拍照片放进横屏：按高缩，左右留边。
+      final ScreenOcrImageLayout tall = ScreenOcrImageLayout.of(
+        box: const Size(1000, 600),
+        imageWidth: 1500,
+        imageHeight: 2000,
+        fit: ScreenOcrImageFit.contain,
+      );
+      expect(tall.scale, 0.3);
+      expect(tall.origin, const Offset(275, 0));
+    });
+
+    testWidgets('照片选取页：点在留边后的行上查到对应的字，选区换算到页面坐标', (WidgetTester tester) async {
+      FloatingLyricLookupNotifier.instance.debugReset();
+      addTearDown(FloatingLyricLookupNotifier.instance.debugReset);
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      // 1x1 透明 PNG：选取页只拿它当底图，几何全看识别结果的图尺寸。
+      final Uint8List png = Uint8List.fromList(<int>[
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1F,
+        0x15,
+        0xC4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x78,
+        0x9C,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0D,
+        0x0A,
+        0x2D,
+        0xB4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE,
+        0x42,
+        0x60,
+        0x82,
+      ]);
+      const SystemOcrPageResult result = SystemOcrPageResult(
+        // 照片坐标 (500,500)-(1500,600)，5 字；页面上是 (100,350)-(300,370)，每字 40。
+        lines: <SystemOcrTextLine>[
+          SystemOcrTextLine(
+            text: '今日は晴れ',
+            rect: Rect.fromLTWH(500, 500, 1000, 100),
+            isVertical: false,
+          ),
+        ],
+        imageWidth: 2000,
+        imageHeight: 1500,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ScreenOcrPickerPage(
+            imageBytes: png,
+            result: result,
+            fit: ScreenOcrImageFit.contain,
+          ),
+        ),
+      );
+      await tester.tapAt(const Offset(190, 360));
+      await tester.pump();
+      final FloatingLyricLookupRequest? request =
+          FloatingLyricLookupNotifier.instance.pending;
+      expect(request, isNotNull);
+      expect(request!.text, '今日は晴れ');
+      expect(request.index, 2); // は
+      expect(request.selectionRect, const Rect.fromLTWH(180, 350, 40, 20));
+    });
+  });
+
   group('FloatingBallSceneRegistry', () {
     setUp(FloatingBallSceneRegistry.instance.debugReset);
 
@@ -360,9 +605,9 @@ void main() {
 
     tearDown(FloatingBallChannel.debugResetHandler);
 
-    Future<void> push(String method) async {
+    Future<void> push(String method, [Object? arguments]) async {
       final ByteData message = const StandardMethodCodec().encodeMethodCall(
-        MethodCall(method),
+        MethodCall(method, arguments),
       );
       await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .handlePlatformMessage(
@@ -385,6 +630,57 @@ void main() {
       await push('systemBallClosedByUser');
       expect(openLookupPage, 1);
       expect(closedByUser, 1);
+    });
+
+    test('桌面系统球：动作带锚点矩形、吸附后报位置', () async {
+      final List<String> actions = <String>[];
+      Rect? anchor;
+      String? dock;
+      double? fraction;
+      await FloatingBallChannel.installHandler(
+        onLookup: (_) {},
+        onScreenOcrFinished: () {},
+        onSystemBallAction: (String id, Rect? a) {
+          actions.add(id);
+          anchor = a;
+        },
+        onSystemBallPositionChanged: (String d, double f) {
+          dock = d;
+          fraction = f;
+        },
+      );
+      await push('systemBallAction', <String, Object?>{
+        'id': 'clipboard',
+        'anchor': <num>[10, 20, 106, 116],
+      });
+      await push('systemBallAction', <String, Object?>{'id': 'open_app'});
+      await push('systemBallPositionChanged', <String, Object?>{
+        'dock': 'left',
+        'fraction': 0.25,
+      });
+      expect(actions, <String>['clipboard', 'open_app']);
+      // 第二次没带锚点：null，不沿用上一次。
+      expect(anchor, isNull);
+      expect(dock, 'left');
+      expect(fraction, 0.25);
+    });
+
+    test('桌面系统球：锚点形状不对就当没有', () async {
+      final List<Rect?> anchors = <Rect?>[];
+      await FloatingBallChannel.installHandler(
+        onLookup: (_) {},
+        onScreenOcrFinished: () {},
+        onSystemBallAction: (String id, Rect? a) => anchors.add(a),
+      );
+      await push('systemBallAction', <String, Object?>{
+        'id': 'lookup',
+        'anchor': <num>[1, 2, 3, 4],
+      });
+      await push('systemBallAction', <String, Object?>{
+        'id': 'lookup',
+        'anchor': <Object>[1, 'x', 3, 4],
+      });
+      expect(anchors, <Rect?>[const Rect.fromLTRB(1, 2, 3, 4), null]);
     });
   });
 }

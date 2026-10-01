@@ -7,6 +7,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -14,8 +15,8 @@ import 'package:fushi_engine/media/video/download/subscription_release_scope.dar
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/download/video_discovery_selection.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -32,10 +33,10 @@ import 'package:fushi/src/pages/implementations/video_resource_version_group_lis
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 
-export 'package:fushi/src/media/video/download/video_discovery_selection.dart';
+export 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
 
 // 集数解析下沉后的源兼容出口（订阅聚合与既有测试从本文件 import 它）。
-export 'package:fushi/src/media/video/download/video_resource_version_groups.dart'
+export 'package:fushi_engine/media/video/download/video_resource_version_groups.dart'
     show episodeNumberFromReleaseTitle;
 
 typedef VideoDiscoveryDownloadSubmit = Future<void> Function(
@@ -55,6 +56,12 @@ typedef VideoDiscoverySubscriptionSubmit = Future<void> Function(
 ///
 /// 允许为 null：宿主没接线时 SnackBar 只报事实、**不给一个按下去什么都不发生的按钮**
 /// （与 `settings_schema_lookup.dart` 里「平台不支持就给 null」同一姿态）。
+/// 资源搜索前补齐作品别名（BUG-2794）：发现卡片只带原名时，从详情拿罗马字 /
+/// 英文名。宿主注入（页面自己拿不到发现服务）；失败应返回原条目、不抛。
+typedef VideoDiscoveryItemAliasResolver = Future<VideoDiscoveryItem> Function(
+  VideoDiscoveryItem item,
+);
+
 typedef VideoDownloadBackendSetupPrompt = Future<bool> Function(
   BuildContext context,
 );
@@ -290,6 +297,7 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
     required this.onSubmit,
     this.defaultSourceId,
     this.onConfigureBackend,
+    this.resolveAliases,
     super.key,
   });
 
@@ -299,6 +307,7 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit onSubmit;
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+  final VideoDiscoveryItemAliasResolver? resolveAliases;
 
   @override
   Widget build(BuildContext context) => FushiDialogFrame(
@@ -313,6 +322,7 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
           defaultSourceId: defaultSourceId,
           onSubmit: onSubmit,
           onConfigureBackend: onConfigureBackend,
+          resolveAliases: resolveAliases,
           onClose: () => Navigator.pop(context),
         ),
       );
@@ -330,8 +340,12 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
     this.remoteTargets = const <HostDownloadTarget>[],
     this.defaultRemoteTargetUrl,
     this.onRemoteSubmit,
+    this.resolveAliases,
     super.key,
   });
+
+  /// 见 [VideoDiscoveryItemAliasResolver]。
+  final VideoDiscoveryItemAliasResolver? resolveAliases;
 
   final VideoDiscoveryItem item;
   final VideoResourceRegistry registry;
@@ -361,6 +375,7 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
             defaultRemoteDownloadUrl: defaultRemoteTargetUrl,
             onRemoteDownloadSubmit: onRemoteSubmit,
             onConfigureBackend: onConfigureBackend,
+            resolveAliases: resolveAliases,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
           ),
@@ -379,8 +394,12 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
     this.onConfigureBackend,
     this.remoteTargets = const <HostSubscriptionTarget>[],
     this.onRemoteSubmit,
+    this.resolveAliases,
     super.key,
   });
+
+  /// 见 [VideoDiscoveryItemAliasResolver]。
+  final VideoDiscoveryItemAliasResolver? resolveAliases;
 
   final VideoDiscoveryItem item;
   final VideoResourceRegistry registry;
@@ -404,6 +423,7 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
             remoteTargets: remoteTargets,
             onRemoteSubscriptionSubmit: onRemoteSubmit,
             onConfigureBackend: onConfigureBackend,
+            resolveAliases: resolveAliases,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
           ),
@@ -426,10 +446,15 @@ class VideoResourceSearchSurface extends StatefulWidget {
     this.defaultRemoteDownloadUrl,
     this.onRemoteDownloadSubmit,
     this.onConfigureBackend,
+    this.resolveAliases,
     this.onClose,
     this.pageMode = false,
     super.key,
   }) : assert((onSubmit == null) != (onSubscriptionSubmit == null));
+
+  /// 见 [VideoDiscoveryItemAliasResolver]：[initialItem] 没有拉丁标题时，首次
+  /// 搜索前先补齐别名，而不是赌那一次发现搜索里 MAL / AniList 碰巧成功。
+  final VideoDiscoveryItemAliasResolver? resolveAliases;
 
   final VideoDiscoveryItem? initialItem;
   final VideoResourceRegistry registry;
@@ -480,7 +505,7 @@ class _VideoResourceSearchSurfaceState
   VideoDiscoveryCategory _manualCategory = VideoDiscoveryCategory.anime;
   VideoMetadataMediaKind _manualMediaKind = VideoMetadataMediaKind.tv;
   String _manualProvider = 'anidb';
-  ProviderBatchResult<VideoResourceCandidate>? _result;
+  VideoResourceSearchResult? _result;
   /// 已选中的候选，按点选顺序（入队顺序就按这个走，与用户看到的顺序一致）。
   ///
   /// 只有**下载模式**才可能多于一条：订阅是「一条规则跟一个 release 模板」，
@@ -520,19 +545,27 @@ class _VideoResourceSearchSurfaceState
   HostDownloadTarget? _remoteDownloadTarget;
   bool get _remote => _remoteTarget != null || _remoteDownloadTarget != null;
 
+  /// 当前作品条目：起初是 [VideoResourceSearchSurface.initialItem]，补齐别名后
+  /// 换成补齐版（提交时的身份快照也随之带上别名）。
+  VideoDiscoveryItem? _item;
+
+  /// 搜索框的默认词（首选检索词）。用户没改过搜索框时，补齐别名后跟着换。
+  static String _defaultQueryFor(VideoDiscoveryItem? item) {
+    final VideoMediaReference? reference = item?.reference;
+    if (reference == null) return '';
+    return preferredNyaaSearchQueries(
+          VideoResourceSearchRequest(media: reference),
+        ).firstOrNull ??
+        reference.title;
+  }
+
   @override
   void initState() {
     super.initState();
-    final VideoMediaReference? reference = widget.initialItem?.reference;
+    _item = widget.initialItem;
+    final VideoMediaReference? reference = _item?.reference;
     if (reference != null) _manualCategory = reference.discoveryCategory;
-    final List<String> preferredQueries = reference == null
-        ? const <String>[]
-        : preferredNyaaSearchQueries(
-            VideoResourceSearchRequest(media: reference),
-          );
-    _queryController.text = preferredQueries.firstOrNull ??
-        widget.initialItem?.reference.title ??
-        '';
+    _queryController.text = _defaultQueryFor(_item);
     _sourceId = widget.sources.any(
       (MediaSourceRow source) => source.id == widget.defaultSourceId,
     )
@@ -550,7 +583,36 @@ class _VideoResourceSearchSurfaceState
           ) ??
           (widget.sources.isEmpty ? widget.remoteDownloadTargets.first : null);
     }
-    if (widget.initialItem != null) unawaited(_search());
+    if (_item != null) unawaited(_resolveAliasesThenSearch());
+  }
+
+  /// 首次搜索：条目缺拉丁标题且宿主给了补齐端口时先补齐，再搜。
+  Future<void> _resolveAliasesThenSearch() async {
+    final VideoDiscoveryItem? item = _item;
+    final VideoDiscoveryItemAliasResolver? resolve = widget.resolveAliases;
+    if (item != null && resolve != null && !item.reference.hasLatinTitle) {
+      final int generation = ++_generation;
+      setState(() => _loading = true);
+      final String before = _queryController.text;
+      VideoDiscoveryItem resolved = item;
+      try {
+        resolved = await resolve(item);
+      } on Object catch (error, stack) {
+        // 补齐是加法：失败就按原条目搜，不能挡住搜索本身。
+        ErrorLogService.instance
+            .log('VideoResourceSearchSurface.resolveAliases', error, stack);
+      }
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _item = resolved;
+        _loading = false;
+        if (_queryController.text == before &&
+            before == _defaultQueryFor(item)) {
+          _queryController.text = _defaultQueryFor(resolved);
+        }
+      });
+    }
+    await _search();
   }
 
   @override
@@ -563,7 +625,7 @@ class _VideoResourceSearchSurfaceState
   }
 
   VideoMediaReference? get _media {
-    final VideoDiscoveryItem? item = widget.initialItem;
+    final VideoDiscoveryItem? item = _item;
     if (item != null) {
       return item.reference.withDiscoveryCategory(_manualCategory);
     }
@@ -598,7 +660,7 @@ class _VideoResourceSearchSurfaceState
     if (value == null || value == _manualCategory || _submitting) return;
     setState(() {
       _manualCategory = value;
-      if (widget.initialItem == null) {
+      if (_item == null) {
         if (value == VideoDiscoveryCategory.movie) {
           _manualMediaKind = VideoMetadataMediaKind.movie;
         } else if (value == VideoDiscoveryCategory.tv) {
@@ -609,7 +671,7 @@ class _VideoResourceSearchSurfaceState
       }
     });
     _invalidateManualSearch();
-    if (widget.initialItem != null) unawaited(_search());
+    if (_item != null) unawaited(_search());
   }
 
   Widget _buildCategorySelector() =>
@@ -642,8 +704,7 @@ class _VideoResourceSearchSurfaceState
       _loading = true;
       _selectedCandidates.clear();
     });
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await widget.registry.search(
+    final VideoResourceSearchResult result = await widget.registry.search(
       VideoResourceSearchRequest(media: media, query: _queryController.text),
     );
     if (!mounted || generation != _generation) return;
@@ -950,7 +1011,7 @@ class _VideoResourceSearchSurfaceState
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool manual = widget.initialItem == null;
+    final bool manual = _item == null;
     final VideoResourceCandidate? selected = _selected;
     final StrictVideoSubscriptionFilter? filter =
         selected == null ? null : deriveStrictVideoSubscriptionFilter(selected);
@@ -1002,7 +1063,9 @@ class _VideoResourceSearchSurfaceState
               Wrap(
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
-                children: preferredNyaaSearchQueries(
+                // 与 Nyaa 实际补查的作品拼写同一份（BUG-2818）：元数据排第一的
+                // 罗马字不一定是发布组的写法，其余拼写也得点得到。
+                children: nyaaSearchQueries(
                   VideoResourceSearchRequest(media: _media),
                 )
                     .map(
@@ -1187,8 +1250,10 @@ class _VideoResourceSearchSurfaceState
             ],
             SizedBox(height: tokens.spacing.gap),
           ],
-          if (_result?.isPartial == true)
-            _ProviderWarning(message: t.video_discovery_provider_warning),
+          // 逐源回执（BUG-2794）：旧的「部分来源暂不可用」横幅不说是哪家，
+          // 成功但 0 条的源更是完全隐形。
+          if (!_loading && (_result?.sources.isNotEmpty ?? false))
+            VideoResourceSourceStatusList(reports: _result!.sources),
           Expanded(child: _buildResults()),
           SizedBox(height: tokens.spacing.gap),
           _buildOptions(filter),
@@ -1939,6 +2004,102 @@ class _VideoDiscoverySubtitleSearchDialogState
           onTap: () => setState(() => _selected = candidate),
         );
       },
+    );
+  }
+}
+
+/// 资源源的用户可见名：内置源取引擎表里的品牌名，其余（Torznab / 未知）按 id。
+String videoResourceSourceDisplayName(String providerId) {
+  for (final BuiltinVideoResourceProviderSpec spec
+      in kBuiltinVideoResourceProviderSpecs) {
+    if (spec.id == providerId) return spec.displayName;
+  }
+  return providerId == 'torznab' ? 'Torznab' : providerId;
+}
+
+/// 失败性质的短说明（不带 URL / 响应体，[ExternalProviderFailure] 本身已脱敏）。
+String videoResourceFailureReason(ExternalProviderFailure failure) {
+  final String reason = switch (failure.kind) {
+    ExternalProviderFailureKind.timeout => t.video_resource_failure_timeout,
+    ExternalProviderFailureKind.network => t.video_resource_failure_network,
+    ExternalProviderFailureKind.rateLimited ||
+    ExternalProviderFailureKind.quotaExceeded =>
+      t.video_resource_failure_rate_limited,
+    _ => t.video_resource_failure_other,
+  };
+  final int? status = failure.statusCode;
+  return status == null ? reason : '$reason · HTTP $status';
+}
+
+/// 一个资源源这次搜索的一行状态：「Nyaa：75 条（Frieren 75 · 葬送のフリーレン 0）」
+/// / 「Nyaa：失败（超时）」/「apibay：未参与」。成功但 0 条同样成行（BUG-2794）。
+String videoResourceSourceStatusText(VideoResourceSourceReport report) {
+  final String name = videoResourceSourceDisplayName(report.providerId);
+  if (report.failed) {
+    return t.video_resource_source_failed(
+      name: name,
+      reason: videoResourceFailureReason(report.failures.first),
+    );
+  }
+  if (report.skipped) return t.video_resource_source_skipped(name: name);
+  final String queries = report.queries
+      .map(
+        (VideoResourceQueryReport query) => query.failure == null
+            ? '${query.query} ${query.itemCount}'
+            : t.video_resource_query_failed(query: query.query),
+      )
+      .join(' · ');
+  return t.video_resource_source_result(
+    name: name,
+    n: report.itemCount,
+    queries: queries,
+  );
+}
+
+/// 资源搜索结果上方的逐源状态列表。
+class VideoResourceSourceStatusList extends StatelessWidget {
+  const VideoResourceSourceStatusList({required this.reports, super.key});
+
+  final List<VideoResourceSourceReport> reports;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Padding(
+      key: const ValueKey<String>('video-resource-source-status'),
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (final VideoResourceSourceReport report in reports)
+            Row(
+              key: ValueKey<String>(
+                'video-resource-source-status-${report.providerId}',
+              ),
+              children: <Widget>[
+                Icon(
+                  report.failed
+                      ? Icons.error_outline_rounded
+                      : report.skipped
+                          ? Icons.remove_circle_outline_rounded
+                          : Icons.check_circle_outline_rounded,
+                  size: 16,
+                  color: report.failed ? colors.error : colors.onSurfaceVariant,
+                ),
+                SizedBox(width: tokens.spacing.gap / 2),
+                Expanded(
+                  child: Text(
+                    videoResourceSourceStatusText(report),
+                    style: tokens.type.metadata,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// TODO-297 守卫：阅读器有声书播放条的播放/暂停键必须是 MD3 圆框

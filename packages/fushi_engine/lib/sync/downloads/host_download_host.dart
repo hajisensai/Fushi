@@ -2,9 +2,10 @@
 ///
 /// 客户端交一条磁链，host 用自己的下载管线（qBittorrent / 内置引擎）下到自己的
 /// 库里；完成后经既有 `/api/library/videos` + `/stream` 消费。这里只定义接口与
-/// wire 形状；实现有两份：无头服务端 `ServerDownloadHost`（只收视频）与 app 当
-/// host 的 `AppDownloadHost`（视频 + 发现页四个非视频域，完成后走 app 自己的
-/// 发现导入执行器按域入库）。
+/// wire 形状；实现有两份：无头服务端 `ServerDownloadHost`（视频 + 小说 / 漫画 /
+/// 有声书；没有游戏库，也接不了 PDF）与 app 当 host 的 `AppDownloadHost`（视频 +
+/// 发现页四个非视频域）。两边完成后都走引擎的 `DiscoveryImportExecutor` 按域入库，
+/// 差别只在各自装配了哪些域原语。
 library;
 
 import 'package:fushi_core/fushi_core.dart';

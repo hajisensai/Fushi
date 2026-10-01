@@ -9,7 +9,8 @@ description: >-
 version: 0.1.0
 publish_to: none
 
-# 不依赖 flutter sdk。解析依赖仍需 Flutter SDK（fushi_audio 等尚声明 flutter），
+# 不依赖 flutter sdk。解析依赖仍需 Flutter SDK（fushi_anki / fushi_dictionary /
+# fushi_platform 尚声明 flutter；fushi_core / fushi_audio 已零 Flutter），
 # 运行时二进制不含 Flutter；守卫 fushi/test/build/fushi_engine_purity_guard_test.dart。
 environment:
   sdk: ">=3.8.0 <4.0.0"
@@ -54,5 +55,7 @@ dependencies:
   yaml: ^3.1.0
 
 dev_dependencies:
+  # 测试里现造最小 EPUB（书根扫描对账）；版本与 fushi_engine 同钉。
+  archive: ^3.6.1
   lints: ^2.0.0
   test: ^1.24.0

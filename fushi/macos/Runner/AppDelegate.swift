@@ -1,5 +1,6 @@
 import ApplicationServices
 import Cocoa
+import CoreText
 import FlutterMacOS
 import macos_window_utils
 
@@ -10,6 +11,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var pendingSourceUrls: [String] = []
   private var sourceUrlEventSink: FlutterEventSink?
   private var globalLookupOverlay: GlobalLookupOverlayController?
+  private var desktopFloatingBall: DesktopFloatingBallController?
   /// Dart 最后一次表达的查词输入法语言。app 重新回到前台时按它再切回去——否则
   /// 用户 Cmd-Tab 出去一趟回来，查词页面还开着但输入法已经不是他选的那个了。
   private var desiredLookupImeTag: String?
@@ -92,6 +94,12 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         binaryMessenger: controller.engine.binaryMessenger
       ) { [weak self] in self?.mainFlutterWindow }
 
+      // 应用外悬浮球（与 Android / iOS 同名通道 app.fushi.reader/floating_ball）：
+      // 原生只画球与按钮列、报点击与位置，动作全在 Dart 执行。见
+      // FushiDesktopFloatingBall.swift 与 docs/specs/2026-09-30-desktop-system-floating-ball.md。
+      desktopFloatingBall = DesktopFloatingBallController(
+        binaryMessenger: controller.engine.binaryMessenger)
+
       // 查词输入框的输入法语言。macOS 的输入源是系统全局状态，所以除了「切过去」
       // 还必须「切回来」——页面走掉时 Dart 发 null，app 失去前台时我们自己还原
       // （见 applicationDidResignActive）。
@@ -106,6 +114,22 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
           result(LookupImeLanguage.setLanguage(tag))
         case "probe":
           result(LookupImeLanguage.probeInfo())
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+
+      // 字体库「浏览系统字体」（四端同一契约，见 Windows system_font_list.cpp /
+      // Android MainActivity / iOS AppDelegate）：返回 [{family, supportsJapanese?}]。
+      let fontsChannel = FlutterMethodChannel(
+        name: "app.fushi.reader/fonts",
+        binaryMessenger: controller.engine.binaryMessenger)
+      fontsChannel.setMethodCallHandler { call, result in
+        switch call.method {
+        case "listSystemFonts":
+          // NSFontManager 是 AppKit，族名列表在主线程取；逐族 CoreText 探测放后台。
+          AppDelegate.listSystemFonts(
+            families: NSFontManager.shared.availableFontFamilies, result: result)
         default:
           result(FlutterMethodNotImplemented)
         }
@@ -308,6 +332,9 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       url.stopAccessingSecurityScopedResource()
     }
     activeSecurityScopedURLs.removeAll()
+    // 应用外悬浮球的面板随进程收掉。
+    desktopFloatingBall?.destroy()
+    desktopFloatingBall = nil
     super.applicationWillTerminate(notification)
   }
 
@@ -382,6 +409,46 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  /// `listSystemFonts`：过滤 `.` 开头的私有族，按族名大小写不敏感去重、排序，
+  /// 后台逐族判日文覆盖，回主线程交结果。判不出覆盖的族省略 `supportsJapanese`。
+  private static func listSystemFonts(
+    families: [String], result: @escaping FlutterResult
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      let sorted = families
+        .filter { !$0.isEmpty && !$0.hasPrefix(".") }
+        .sorted { $0.caseInsensitiveCompare($1) == .orderedAscending }
+      var seen = Set<String>()
+      var entries: [[String: Any]] = []
+      for family in sorted {
+        guard seen.insert(family.lowercased()).inserted else { continue }
+        var entry: [String: Any] = ["family": family]
+        if let japanese = AppDelegate.fontFamilySupportsJapanese(family) {
+          entry["supportsJapanese"] = japanese
+        }
+        entries.append(entry)
+      }
+      DispatchQueue.main.async { result(entries) }
+    }
+  }
+
+  /// 该族的常规字形自身（不含系统回退）是否同时覆盖 U+3042「あ」与 U+6F22「漢」。
+  /// 按族名描述符解析；若 CoreText 解析到的不是这个族（回退到了默认字体），返回 nil
+  /// 表示「判不出」，而不是把回退字体的覆盖冒充成它的。
+  private static func fontFamilySupportsJapanese(_ family: String) -> Bool? {
+    let descriptor = CTFontDescriptorCreateWithAttributes(
+      [kCTFontFamilyNameAttribute as String: family] as CFDictionary)
+    let font = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+    let resolvedFamily = CTFontCopyFamilyName(font) as String
+    guard resolvedFamily.caseInsensitiveCompare(family) == .orderedSame else {
+      return nil
+    }
+    let charset = CTFontCopyCharacterSet(font) as CharacterSet
+    let kana: Unicode.Scalar = "\u{3042}"
+    let kanji: Unicode.Scalar = "\u{6F22}"
+    return charset.contains(kana) && charset.contains(kanji)
   }
 
   // TODO-1030 M1 -- macOS AX foreground-selection context capture handler.

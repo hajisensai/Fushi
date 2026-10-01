@@ -29,6 +29,8 @@ import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
+    show isMangaOcrRelayoutCandidate, isMangaOcrRelayoutPending;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -53,6 +55,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
@@ -1090,12 +1093,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 已缓存的页直接命中。
   bool _volumeOcrSettled = false;
 
+  /// 本卷已由本地引擎识别过，但结果是只缺行几何的旧版（BUG-2813：多列气泡里点字
+  /// 会命中别的列）。开书时自动排一次本地整卷任务，逐页只补几何、文字不重认；
+  /// 只交给本地引擎，偏好解析到别的引擎就不动它（不会因此上传 Lens）。只凭元数据
+  /// 判定，是**候选**：排之前还要确认当前本地模型真能原地升级
+  /// （[_localEngineCanRelayout]）。
+  bool _volumeOcrRelayoutCandidate = false;
+
   /// 裁白边读像素失败已记过日志（见 `onMangaImageTransformUnavailable`）。
   bool _imageTransformFailureLogged = false;
 
   bool _wholeVolumeOcrRunning = false;
   int _wholeVolumeOcrDone = 0;
   int _wholeVolumeOcrTotal = 0;
+
+  /// 在线直读章的边看边识别（[MangaStreamPageOcr]）；只在直读章、自动触发时有。
+  MangaStreamPageOcr? _streamOcr;
+  bool _streamOcrStarting = false;
+  bool _streamOcrBusy = false;
+
+  /// 直读识别失败只提示一次（离线 / 源坏了时逐页失败会刷屏）。
+  bool _streamOcrFailureNotified = false;
 
   /// 本次整卷 OCR 实际生效的推理加速状态（BUG-1163：降级必须看得见）。
   MangaOcrAcceleration? _wholeVolumeOcrAcceleration;
@@ -1216,6 +1234,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _ocrRegistryChanges = _ocrRegistry.changes.listen(
       (_) => _syncVolumeOcrJob(),
     );
+    _pageNotifier.addListener(_onReaderPageChanged);
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
         MangaReaderInputAction.previous,
@@ -1360,6 +1379,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _observedOcrJob = null;
     unawaited(_ocrRegistryChanges?.cancel());
     _ocrRegistryChanges = null;
+    _closeStreamOcr();
     final MangaReaderSession? pageSession = _pageSession;
     _pageSession = null;
     // 在线 OCR 靠这个会话取页图：任务还在跑就由注册表在任务结束时关。
@@ -1858,6 +1878,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       restoredPage,
     );
     final MangaReaderSession? previousLocalPageSession = _pageSession;
+    // 换章：上一章直读识别的页图目录随会话一起关，识别器先停。
+    _closeStreamOcr();
     _viewportOcrPages = null;
     _volumeOcrQueued = false;
     _volumeOcrNoEngine = false;
@@ -1879,6 +1901,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _volumeOcrSettled =
           payload.ocr != null ||
           payload.images.any((MokuroImage image) => image.blocks.isNotEmpty);
+      _volumeOcrRelayoutCandidate = isMangaOcrRelayoutCandidate(payload.ocr);
       _mode = mode;
       _spreads = spreads;
       _currentSpread = restoredSpread;
@@ -1895,8 +1918,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
-    // 在线直读章没有章目录可供 OCR 读写：缓存恢复、任务接回、进入即识别全部跳过。
-    if (streaming) return;
+    // 在线直读章没有章目录可供整卷 OCR 读写：缓存恢复、任务接回、整卷识别全部
+    // 跳过，改由页级识别从读者当前页起边看边识别。
+    if (streaming) {
+      unawaited(_maybeStartStreamingOcr());
+      return;
+    }
     // A cancelled/background task intentionally does not replace manga.json,
     // but every atomic page cache is already safe to use. Restore those pages
     // after the first paint so opening a large book stays fast and both local
@@ -2232,6 +2259,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       entry: entry,
       chapterIndex: _shelfChapterIndex,
     );
+  }
+
+  /// 当前本地模型能否从本卷记录的旧版逐页缓存原地只补行几何（BUG-2813）：整卷
+  /// 任务的缓存签名（与 [_recoverIncrementalOcrCache] 同一个解析入口）必须推得出
+  /// 本卷 manga.json 记录的旧签名。解析失败按「不能」处理——宁可不自动升级，也不
+  /// 能排出一次用户没要求的整卷重认。
+  Future<bool> _localEngineCanRelayout(String directory) async {
+    try {
+      final MangaOcrService local = ref.read(mangaOcrServiceProvider);
+      if (local is! MangaOcrPageService) return false;
+      final String cacheDir = await (local as MangaOcrPageService)
+          .resolvePageCacheDirPath(imageDirPath: directory);
+      return isMangaOcrRelayoutPending(
+        _payload?.ocr,
+        localEngineSignature: p.basename(cacheDir),
+      );
+    } catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.relayoutCheck', error, stack);
+      return false;
+    }
   }
 
   Future<void> _recoverIncrementalOcrCache(
@@ -3656,6 +3703,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 下顶栏的「识别本卷」。自动路径在本页实例里对同一目录只排一次（用户取消 / 任务
   /// 失败后不会被下一次设置变更悄悄排回去）；没有可用引擎不记账，下完模型再调就会排。
   Future<void> _maybeStartVolumeOcr({bool userInitiated = false}) async {
+    // 直读章没有整卷任务可排，走页级的边看边识别（设置面板改了触发方式 / 引擎
+    // 时也经这里进来）。
+    if (_streamingChapter && !userInitiated) {
+      unawaited(_maybeStartStreamingOcr());
+      return;
+    }
     final EpubBookRow? row = _bookRow;
     if (!mounted ||
         row == null ||
@@ -3663,18 +3716,31 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _loadFailed ||
         _noChapterOcr ||
         _sourceReviewActive ||
-        _volumeOcrSettled ||
+        (_volumeOcrSettled && !_volumeOcrRelayoutCandidate) ||
         _volumeOcrStarting) {
       return;
     }
+    // 已识别、只缺行几何的本地卷：只补几何，不是新的一次识别——不看触发方式，
+    // 也不接受除本地引擎之外的任何引擎（BUG-2813）。
+    final bool relayout = _volumeOcrSettled && _volumeOcrRelayoutCandidate;
     final String directory = row.extractDir;
+    if (relayout) {
+      final bool canRelayout = await _localEngineCanRelayout(directory);
+      if (!mounted) return;
+      if (!canRelayout) {
+        // 当前本地模型推不出这份旧缓存（换了本地模型或模型文件）：排下去就是一次
+        // 整卷重新识别而不是升级，自动路径什么都不做，本页也不再为它排。
+        setState(() => _volumeOcrRelayoutCandidate = false);
+        return;
+      }
+    }
     final String enginePreference = appModel.mangaOcrEnginePreference;
     if (_lensAutoOcrDeclinedFor != null &&
         _lensAutoOcrDeclinedFor != enginePreference) {
       _lensAutoOcrDeclinedFor = null;
     }
     if (!userInitiated &&
-        (_readerPreferences.ocrTrigger == 'manual' ||
+        ((!relayout && _readerPreferences.ocrTrigger == 'manual') ||
             _volumeOcrScheduledDirs.contains(directory))) {
       return;
     }
@@ -3696,6 +3762,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             registry: _ocrRegistry,
             preference: MangaOcrEnginePreferenceKey.fromKey(enginePreference),
             lensLanguage: appModel.mangaOcrLensLanguage,
+            requiredEngine: relayout ? MangaOcrEngineId.localOnnx : null,
             confirmLensUpload: () async {
               if (!userInitiated && _lensAutoOcrDeclined) return false;
               if (!mounted) return false;
@@ -3720,6 +3787,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           _volumeOcrScheduledDirs.add(directory);
           if (_volumeOcrNoEngine) setState(() => _volumeOcrNoEngine = false);
           _syncVolumeOcrJob();
+        case MangaReaderVolumeOcrNotApplicable():
+          // 行几何升级只交给本地引擎；偏好已换成别的引擎就保持原样。
+          _volumeOcrScheduledDirs.add(directory);
+        case MangaReaderVolumeOcrNoEngine() when relayout:
+          // 本地模型被删了：旧结果照常可用，不挂「没有引擎」胶囊。
+          _volumeOcrScheduledDirs.add(directory);
         case MangaReaderVolumeOcrNoEngine():
           if (userInitiated) {
             FushiToast.show(
@@ -3770,11 +3843,146 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  /// 读者翻页：在跑的整卷任务改道到这页。起点只在开跑时定一次，而手机上本地
+  /// 模型一页几十秒、读者翻得比识别快，不改道的话翻到的页永远还没轮到，体感就是
+  /// 「要等整卷识别完才能查词」。
+  void _onReaderPageChanged() {
+    _observedOcrJob?.focusPage(_pageNotifier.value);
+    _streamOcr?.focus(_pageNotifier.value);
+  }
+
+  /// 在线直读章的边看边识别：从读者当前页起识别眼前这页与后面几页，识别完一页
+  /// 热替换一页（[MangaStreamPageOcr]）。手动触发模式下不自动识别。
+  Future<void> _maybeStartStreamingOcr() async {
+    final MangaReaderSession? session = _pageSession;
+    if (!mounted ||
+        !_streamingChapter ||
+        session is! OnlineMangaReaderSession ||
+        _streamOcr != null ||
+        _streamOcrStarting ||
+        _sourceReviewActive ||
+        _readerPreferences.ocrTrigger == 'manual') {
+      return;
+    }
+    final String enginePreference = appModel.mangaOcrEnginePreference;
+    if (_lensAutoOcrDeclinedFor != null &&
+        _lensAutoOcrDeclinedFor != enginePreference) {
+      _lensAutoOcrDeclinedFor = null;
+    }
+    _streamOcrStarting = true;
+    MangaStreamOcrSetup? setup;
+    try {
+      setup = await prepareMangaStreamOcr(
+        imageDirPath: session.directory.path,
+        engines:
+            widget.ocrEnginesOverride ??
+            MangaOcrWizardEngines.resolve(
+              context: context,
+              db: appModel.database,
+            ),
+        preference: MangaOcrEnginePreferenceKey.fromKey(enginePreference),
+        lensLanguage: appModel.mangaOcrLensLanguage,
+        confirmLensUpload: () async {
+          if (_lensAutoOcrDeclined || !mounted) return false;
+          final bool accepted =
+              await (widget.lensDisclosureOverride ??
+                  ensureGoogleLensDisclosure)(context);
+          if (!accepted) _lensAutoOcrDeclinedFor = enginePreference;
+          return accepted;
+        },
+      );
+      // 引擎探测 / 等授权期间换了章或退出了：这个会话已经不是当前的。
+      if (!mounted || !identical(_pageSession, session) || session.isClosed) {
+        if (setup is MangaStreamOcrReady) {
+          unawaited(setup.recognizer.close());
+        }
+        return;
+      }
+      switch (setup) {
+        case MangaStreamOcrReady(:final MangaStreamPageRecognizer recognizer):
+          if (_volumeOcrNoEngine) setState(() => _volumeOcrNoEngine = false);
+          final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+            pageCount: session.pageCount,
+            pageFile: session.localFile,
+            recognizer: recognizer,
+            onPage: _applyStreamOcrPage,
+            onBusyChanged: (bool busy) {
+              if (mounted && _streamOcrBusy != busy) {
+                setState(() => _streamOcrBusy = busy);
+              }
+            },
+            onError: _onStreamOcrError,
+          );
+          _streamOcr = ocr;
+          ocr.focus(_currentPage);
+        case MangaStreamOcrNoEngine():
+          setState(() => _volumeOcrNoEngine = true);
+        case MangaStreamOcrLensDeclined():
+        case MangaStreamOcrUnsupported():
+          break;
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.streamOcr', error, stack);
+    } finally {
+      _streamOcrStarting = false;
+      // 探测引擎 / 等授权期间换了章：新章那次调用被 _streamOcrStarting 挡掉了，
+      // 这里替它补一次（新章不是直读章时直接返回）。
+      if (mounted && !identical(_pageSession, session)) {
+        unawaited(_maybeStartStreamingOcr());
+      }
+    }
+  }
+
+  /// 直读页识别完：只换这一页的文字层，不重建 WebView 文档、不打断阅读。
+  void _applyStreamOcrPage(int pageIndex, MokuroImage page) {
+    final MokuroPayload? current = _payload;
+    if (!mounted ||
+        !_streamingChapter ||
+        current == null ||
+        pageIndex < 0 ||
+        pageIndex >= current.images.length) {
+      return;
+    }
+    final MokuroImage existing = current.images[pageIndex];
+    // url 保留直读占位那份（WebView 按它取图）；尺寸取识别时的真实像素，框坐标
+    // 就在这个坐标系里。
+    final MokuroImage merged = MokuroImage(
+      url: existing.url,
+      size: page.size,
+      blocks: page.blocks,
+    );
+    final List<MokuroImage> images = List<MokuroImage>.of(current.images);
+    images[pageIndex] = merged;
+    setState(() {
+      _payload = MokuroPayload(images: images, ocr: current.ocr);
+    });
+    unawaited(_replacePageOcrOverlay(pageIndex, merged));
+  }
+
+  void _onStreamOcrError(Object error, StackTrace stack) {
+    ErrorLogService.instance.log('MangaFushiPage.streamOcrPage', error, stack);
+    if (!mounted || _streamOcrFailureNotified) return;
+    _streamOcrFailureNotified = true;
+    FushiToast.show(
+      msg: '${t.manga_ocr_wizard_failed}: $error',
+      severity: ToastSeverity.error,
+    );
+  }
+
+  void _closeStreamOcr() {
+    final MangaStreamPageOcr? ocr = _streamOcr;
+    _streamOcr = null;
+    _streamOcrBusy = false;
+    if (ocr != null) unawaited(ocr.close());
+  }
+
   /// 观察注册表里的任务：进度态、逐页热替换、完成刷新都从这里来。
   void _observeWholeVolumeOcrJob(MangaOcrRunningJob running) {
     if (identical(_observedOcrJob, running)) return;
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _observedOcrJob = running;
+    // 接回的可能是下载钩子 / 作品页从第一页排的任务：先让它从读者眼前这页跑。
+    running.focusPage(_currentPage);
     final MangaOcrBackgroundEvent? snapshot = running.lastEvent;
     setState(() {
       _wholeVolumeOcrRunning = true;
@@ -3881,6 +4089,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     setState(() {
       _payload = payload;
       _volumeOcrSettled = true;
+      _volumeOcrRelayoutCandidate = isMangaOcrRelayoutCandidate(payload.ocr);
       _wholeVolumeOcrDone = event.pagesTotal;
       _wholeVolumeOcrTotal = event.pagesTotal;
       _wholeVolumeOcrRunning = false;
@@ -4561,6 +4770,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       await _switchToChapter(target);
     }
   }
+
+  /// 集成测试探针：在正文 WebView 里跑一段脚本（BUG-2813 点字命中取证）。
+  @visibleForTesting
+  Future<Object?> debugEvaluateJavascript(String source) async =>
+      _controller?.evaluateJavascript(source: source);
 
   @visibleForTesting
   Future<Object?> debugReaderDomSnapshot() async =>
@@ -5354,6 +5568,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         key: const ValueKey<String>('manga_ocr_acceleration_label'),
         text: accel == null ? progress : '$progress · ${accel.label}',
         warning: accel?.degraded ?? false,
+      );
+    }
+    if (_streamOcrBusy) {
+      return MangaOcrProgressBadge(
+        key: const ValueKey<String>('manga_stream_ocr_badge'),
+        text: 'OCR · ${t.manga_ocr_wizard_running}',
       );
     }
     if (_volumeOcrQueued) {

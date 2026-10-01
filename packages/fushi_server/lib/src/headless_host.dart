@@ -25,6 +25,7 @@ import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
+import 'package:fushi_engine/sync/local_audio_library_store.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
@@ -34,12 +35,15 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
 /// 当前待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。
@@ -102,7 +106,16 @@ class HeadlessHost {
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
   ServerAnkiLanding? _anki;
+  ServerVideoScrape? _videoScrape;
   final _AsyncMutex _mutex = _AsyncMutex();
+
+  /// 互联「配置文件」寄存处（对端推来 / 拉走的配置方案；WebUI 列表与指定也走它）。
+  late final ServerProfileHub profiles = ServerProfileHub(
+    directory: paths.interconnectProfiles,
+    readPinnedId: () => prefs.getRaw(ServerProfileHub.pinnedPrefKey),
+    writePinnedId: (String? id) =>
+        prefs.setRaw(ServerProfileHub.pinnedPrefKey, id ?? ''),
+  );
 
   /// [start] 时的绑定地址是否只监听本机（重启前改了 `bind` 也按实际监听判）。
   bool _loopbackOnly = false;
@@ -127,6 +140,9 @@ class HeadlessHost {
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
   HostSubscriptionHost? get subscriptions => _downloads?.subscriptions;
+
+  /// 进程共享的视频刮削（扫描补刮 / 下载导入 / 客户端远程重刮共用）。[start] 之后非空。
+  ServerVideoScrape? get videoScrape => _videoScrape;
 
   /// Anki 落地（手机的待发卡经互联同步进来，这里写进 Anki 并同步）。
   ServerAnkiLanding? get anki => _anki;
@@ -174,6 +190,14 @@ class HeadlessHost {
     await jobs.load();
     _jobs = jobs;
 
+    // 视频刮削：一个进程一套，与 app 的 HomePage 同一装配形状（见 video_scrape_host.dart）。
+    final ServerVideoScrape videoScrape = ServerVideoScrape(
+      db: db,
+      prefs: prefs,
+      config: () => config,
+    );
+    _videoScrape = videoScrape;
+
     // 代下载（第 2 期）：qBittorrent 配了才起管线；没配也挂接口，能力位如实报 supported=false。
     final ServerDownloadHost downloads = ServerDownloadHost(
       config: config,
@@ -181,6 +205,7 @@ class HeadlessHost {
       db: db,
       prefs: prefs,
       identity: identity,
+      scrape: videoScrape,
     );
     await downloads.start();
     _downloads = downloads;
@@ -191,7 +216,7 @@ class HeadlessHost {
       port: config.port,
       token: identity.hostToken,
       allowLan: !_loopbackOnly,
-      libraryService: _buildLibraryService(),
+      libraryService: buildLibraryService(),
       mangaOcrJobs: ocrJobs,
       hostJobs: jobs,
       downloads: downloads,
@@ -202,6 +227,9 @@ class HeadlessHost {
       // 无头服务端的 host 偏好读侧（「允许为对端转码视频」等），与 app 侧同一张
       // `preferences` 表、同一份默认值。
       prefs: prefs,
+      // 「AI 下视频」助手会话：手机把下载执行设备设成服务端时整场在这里跑。没配
+      // `ai:` 段时能力位如实报 no_provider（路由照挂，客户端好区分「不懂」与「没配」）。
+      assistant: createServerAssistantHost(config: () => config, prefs: prefs, db: db, downloads: downloads),
     )
       ..onPairRequest = _approvePairing
       ..onPairPinGenerated = _generatePin
@@ -397,6 +425,9 @@ class HeadlessHost {
     final ServerDownloadHost? downloads = _downloads;
     _downloads = null;
     await downloads?.stop();
+    // 下载管线借用它，管线停了再关。
+    _videoScrape?.close();
+    _videoScrape = null;
     await pairingEvents.close();
   }
 
@@ -465,7 +496,17 @@ class HeadlessHost {
 
   // ── 库服务 ────────────────────────────────────────────────────────────
 
-  LocalLibraryHostService _buildLibraryService() => LocalLibraryHostService(
+  /// 本地音频库的存储中转登记（BUG-2815）：库副本落 `<support>/local_audio_<n>.db`、
+  /// 登记落 `local_audio_dbs` 偏好——与 app 的 `LocalAudioManager` 同目录同键，
+  /// 服务端不做查词发音，只存、列、导出、删。
+  late final LocalAudioLibraryStore localAudio = LocalAudioLibraryStore(
+    prefs: prefs,
+    databaseDirectory: paths.support,
+  );
+
+  /// 互联 host 的库服务装配（[start] 用；测试也直接拿它挂到自建的 TLS
+  /// [FushiSyncServer] 上驱动端点，免得起整套下载 / ASR / 局域网广播）。
+  LocalLibraryHostService buildLibraryService() => LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: paths.dictionaryResources,
         packages: SyncAssetPackageService(db: db),
@@ -487,12 +528,24 @@ class HeadlessHost {
           );
         },
         localAudioStagingDir: paths.temp,
+        // 以前三件都没接：清单恒空、推送传完才抛 UnsupportedError（BUG-2815）。
+        localAudioEntriesProvider: () => localAudio.entries,
+        onLocalAudioImported: localAudio.importPackage,
+        removeLocalAudioEntry: localAudio.remove,
         audioDatabaseRoot: Directory(p.join(paths.documents.path, 'audiobooks')),
         videoSubtitleLangCode: config.subtitleLanguage,
+        // 客户端经互联发起的重刮 / 手动指定身份 / 分集排序：以前这里没接，
+        // 这些请求在服务端恒返回空结果或 notPlanned。
+        scrapeController: () async => _videoScrape?.controller,
         uploadedVideoRoot: Directory(p.join(paths.documents.path, 'remote_videos')),
         extractVideoCover: (
                 {required String videoPath, required String bookUid}) =>
             extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+        // 互联「配置文件」搬运：服务端只寄存、不 apply（见 ServerProfileHub）。开关每次
+        // 现读配置（`profile_transfer`，默认关），WebUI 改完即生效；关着时端点回 403。
+        isProfileTransferEnabled: () async => config.profileTransfer,
+        exportActiveProfileJson: profiles.exportShared,
+        importProfileJson: profiles.importJson,
         // 书名覆盖：服务端没有 MediaSource 内存缓存，只写 DB（LWW 判据同 app）。
         adoptOverrideTitle: ({
           required String bookKey,

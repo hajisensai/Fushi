@@ -6,8 +6,8 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
 
 class _FakeResource extends VideoResourceCandidate {
   _FakeResource({
@@ -591,7 +591,8 @@ void main() {
       expect(s.state.transcript.single, isA<VideoAcquisitionUserMessage>());
     });
 
-    test('0 命中（两个词都空）→ workNotFound 回到等文本', () {
+    /// 两个词都搜空，返回别名解析效果（此时还没说「没找到」）。
+    _Session searchUntilEmpty() {
       final _Session s = _Session(_oneSource);
       s.feed(const VideoAcquisitionUserTextEvent('Show'));
       final List<VideoAcquisitionEffect> first = s.feed(
@@ -613,11 +614,97 @@ void main() {
           items: <VideoDiscoveryItem>[],
         ),
       );
-      expect(third, isEmpty);
+      final VideoAcquisitionResolveAliasEffect alias =
+          third.single as VideoAcquisitionResolveAliasEffect;
+      expect(alias.query, 'A');
+      expect(alias.tried, <String>['A', 'B']);
+      expect(s.said, isNot(contains(VideoAcquisitionSayKind.workNotFound)));
+      expect(s.state.busy, isTrue);
+      return s;
+    }
+
+    test('0 命中且别名也查不到 → workNotFound（报用户原话）回到等文本', () {
+      final _Session s = searchUntilEmpty();
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        const VideoAcquisitionAliasResolvedEvent(
+          query: 'A',
+          titles: <String>['a', 'B'], // 与已搜过的词相同（忽略大小写）= 没有新词
+        ),
+      );
+      expect(effects, isEmpty);
       expect(s.said.last, VideoAcquisitionSayKind.workNotFound);
+      expect(s.lastAssistant.say.args['query'], 'A');
       expect(s.state.stage, VideoAcquisitionStage.idle);
       expect(s.state.busy, isFalse);
-      expect(s.state.transcript, isNotEmpty);
+    });
+
+    test('别名解析出正式名 → 说明一句并按正式名再搜，命中即选定', () {
+      final _Session s = searchUntilEmpty();
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        const VideoAcquisitionAliasResolvedEvent(
+          query: 'A',
+          titles: <String>['FX戦士くるみちゃん', 'FX Fighter Kurumi-chan'],
+        ),
+      );
+      expect(s.said.last, VideoAcquisitionSayKind.workAliasResolved);
+      expect(
+        s.lastAssistant.say.args['titles'],
+        'FX戦士くるみちゃん / FX Fighter Kurumi-chan',
+      );
+      expect(
+        (effects.single as VideoAcquisitionSearchWorksEffect).query,
+        'FX戦士くるみちゃん',
+      );
+      // 用户原话保持在首位：AI 多义判定与「没找到」提示都用它。
+      expect(s.state.slots.workQueries.first, 'A');
+      final List<VideoAcquisitionEffect> loaded = s.feed(
+        VideoAcquisitionWorksLoadedEvent(
+          query: 'FX戦士くるみちゃん',
+          items: <VideoDiscoveryItem>[_item(title: 'FX戦士くるみちゃん')],
+        ),
+      );
+      expect(loaded.single, isA<VideoAcquisitionLoadDetailsEffect>());
+    });
+
+    test('正式名也搜空 → 不再二次查别名，直接 workNotFound', () {
+      final _Session s = searchUntilEmpty();
+      s.feed(
+        const VideoAcquisitionAliasResolvedEvent(
+          query: 'A',
+          titles: <String>['C'],
+        ),
+      );
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        const VideoAcquisitionWorksLoadedEvent(
+          query: 'C',
+          items: <VideoDiscoveryItem>[],
+        ),
+      );
+      expect(effects, isEmpty);
+      expect(s.said.last, VideoAcquisitionSayKind.workNotFound);
+      expect(s.lastAssistant.say.args['query'], 'A');
+      expect(s.state.busy, isFalse);
+    });
+
+    test('没找到之后再说一个新名字 → 新一轮照样可以查别名', () {
+      final _Session s = searchUntilEmpty();
+      s.feed(
+        const VideoAcquisitionAliasResolvedEvent(
+          query: 'A',
+          titles: <String>[],
+        ),
+      );
+      s.feed(const VideoAcquisitionUserTextEvent('D'));
+      s.feed(
+        _provide(const VideoAcquisitionIntentPatch(workQueries: <String>['D'])),
+      );
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        const VideoAcquisitionWorksLoadedEvent(
+          query: 'D',
+          items: <VideoDiscoveryItem>[],
+        ),
+      );
+      expect(effects.single, isA<VideoAcquisitionResolveAliasEffect>());
     });
 
     test('1 命中 → 直接 LoadDetailsEffect', () {

@@ -4,6 +4,8 @@
 // test/reader/reader_script_compactor_test.dart 的「setup 装配完整性」一组集中守——
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
@@ -192,6 +194,70 @@ void main() {
       expect(info.totalPages, 4,
           reason: 'round(span/pageStep) 会漏掉不足半页但真实可读的 terminal 页');
       expect(info.currentPage, 4);
+    });
+  });
+  // BUG-2819：Mac / iOS 分页每章最后一页整体错开一个边距。几何取自 macOS 27 WKWebView
+  // 实测（生产横排分页 CSS、真书章节、1145 宽、左右边距 55px）：页步长 1057，相位
+  // contentStart = 左 padding 55，末列从 55 + 28*1057 = 29651 起、末行右缘 30659。
+  group('BUG-2819 章末落页：相位 + WebKit 末尾补栏', () {
+    const double ps = 1057;
+    const double phase = 55;
+    const double last = 30659;
+    const double lastPage = 28 * ps;
+
+    test('WebKit 补栏后：末页落回页网格（末行所在的第 28 页），不落进补出的空白栏', () {
+      // 补一栏后 scrollWidth 31743：ctxMax = 31743 - 1057，物理终点 31743 - 1145。
+      final r = ReaderPaginationScripts.resolveContentBoundsForTesting(
+        firstContentEdge: phase,
+        lastContentEdge: last,
+        contextMaxScroll: 31743 - ps,
+        physicalMaxScroll: 31743 - 1145,
+        pageStep: ps,
+        contentStart: phase,
+      );
+      expect(r.maxScroll, lastPage,
+          reason: '末页必须是末行所在那一列；不减相位会多算一页、落到补出栏的物理终点');
+      expect(r.minScroll, 0);
+    });
+
+    test('Blink（滚动范围含右 padding）：末页同样在网格上，与补栏无关', () {
+      final r = ReaderPaginationScripts.resolveContentBoundsForTesting(
+        firstContentEdge: phase,
+        lastContentEdge: last,
+        contextMaxScroll: 30741 - ps,
+        physicalMaxScroll: 30741 - 1145,
+        pageStep: ps,
+        contentStart: phase,
+      );
+      expect(r.maxScroll, lastPage);
+    });
+
+    test('WebKit 不补栏：物理终点比末页少一个右边距，只能落在错位的物理终点（CSS 补栏的理由）', () {
+      final r = ReaderPaginationScripts.resolveContentBoundsForTesting(
+        firstContentEdge: phase,
+        lastContentEdge: last,
+        contextMaxScroll: 30686 - ps,
+        physicalMaxScroll: 30686 - 1145,
+        pageStep: ps,
+        contentStart: phase,
+      );
+      expect(r.maxScroll, 30686 - 1145);
+      expect(lastPage - r.maxScroll, 55, reason: '差值 = 右边距');
+    });
+
+    test('JS buildPaginationMetrics 的 lastContentScroll 同样减相位（与影子同算法）', () {
+      final String source =
+          File('lib/src/reader/reader_pagination_scripts.dart')
+              .readAsStringSync();
+      final int start =
+          source.indexOf('  buildPaginationMetrics: function() {');
+      final int end = source.indexOf('\n  calculateProgress:', start);
+      expect(start, greaterThanOrEqualTo(0));
+      final String metrics = source.substring(start, end);
+      expect(metrics,
+          contains('var lastContentPhase = context.contentStart || 0;'));
+      expect(metrics, contains('lastContentEdge - 1 - lastContentPhase'),
+          reason: '末页列号要先减相位，否则末行接近满行时多算一页');
     });
   });
 }

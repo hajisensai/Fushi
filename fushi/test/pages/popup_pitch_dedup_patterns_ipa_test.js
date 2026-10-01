@@ -115,7 +115,7 @@ function ipaTags(section) {
       'an IPA-only dictionary must still render under dedup (TODO-688)');
   }
 
-  // Case 5: BUG-2122 不回归——五本同标 [1] 塌成一行、五枚来源药丸。
+  // Case 5: BUG-2122 不回归——五本同标 [1] 塌成一行、一枚「5 本辞典」药丸 + 五枚来源药丸（默认收起）。
   {
     const five = ['d1', 'd2', 'd3', 'd4', 'd5'].map(n => dict(n, [1]));
     const section = render(five, true);
@@ -123,6 +123,9 @@ function ipaTags(section) {
       'five dictionaries agreeing on [1] must stay collapsed into one row');
     assert.strictEqual(collectByClass(section, 'pitch-dict-label').length, 5,
       'all five source labels must survive (BUG-2122)');
+    const counts = collectByClass(section, 'pitch-dict-label pitch-dict-count');
+    assert.strictEqual(counts.length, 1, 'a merged row carries a single count pill');
+    assert.strictEqual(counts[0].title, 'd1, d2, d3, d4, d5');
   }
 
   console.log('all assertions passed');

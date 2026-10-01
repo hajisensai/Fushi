@@ -3049,9 +3049,28 @@ function createPitchGroup(pitchData, reading) {
     const dictionaries = pitchData.dictionaries || [pitchData.dictionary];
     // data-details 仍用**真名**（选择器/样式按真名匹配），只有渲染出来的标签走显示名。
     const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
-    dictionaries.forEach((dictionary) => {
-        container.appendChild(el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
-    });
+    const sourcePills = dictionaries.map((dictionary) => el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
+    if (sourcePills.length > 1) {
+        // 合并行默认只挂**一枚**「N 本辞典」药丸：五本音调词典同标 [3] 时一排五枚来源
+        // 药丸把读音挤到下一行，读起来仍像重复。来源名单不丢——悬停看 title，点击
+        // （触屏没有悬停）就地展开 / 收起各来源药丸。
+        const countPill = el('span', {
+            className: 'pitch-dict-label pitch-dict-count',
+            textContent: (window.i18nPitchSourceCount || '{count} 本辞典')
+                .replace('{count}', String(sourcePills.length)),
+            title: sourcePills.map((pill) => pill.textContent).join(', '),
+        });
+        countPill.setAttribute('role', 'button');
+        countPill.setAttribute('aria-expanded', 'false');
+        sourcePills.forEach((pill) => { pill.style.display = 'none'; });
+        countPill.addEventListener('click', () => {
+            const expand = countPill.getAttribute('aria-expanded') !== 'true';
+            countPill.setAttribute('aria-expanded', expand ? 'true' : 'false');
+            sourcePills.forEach((pill) => { pill.style.display = expand ? '' : 'none'; });
+        });
+        container.appendChild(countPill);
+    }
+    sourcePills.forEach((pill) => container.appendChild(pill));
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {

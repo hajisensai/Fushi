@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/fake_anki_search.dart';
+
 /// 媒体去重的**批量化不变量**。
 ///
 /// 用户报告：「真就一个一个删，感觉要删很久啊」。根因不是磁盘也不是哈希，是
@@ -35,7 +37,6 @@ class _BatchCountingService extends AnkiConnectService {
   /// 批内单条失败注入。
   final Set<String> failDeletesFor = <String>{};
   final Set<int> failNoteUpdatesFor = <int>{};
-  final Set<String> failFindNotesFor = <String>{};
 
   int roundTripsFor(String action) =>
       roundTrips.where((String a) => a == action).length;
@@ -56,35 +57,49 @@ class _BatchCountingService extends AnkiConnectService {
     return const <String>[];
   }
 
+  /// 每条 findNotes 的检索式原文（钉「不再按文件名逐个全库检索」）。
+  final List<String> queries = <String>[];
+
+  /// `edited:N` 视为「最近改过」的笔记。
+  final Set<int> edited = <int>{};
+
+  /// 复核检索（带 `edited:` 的那条）发出前插一脚。
+  void Function()? beforeRecheck;
+
+  /// 让复核检索被 Anki 拒绝（例如检索语法错误）。
+  bool rejectRecheck = false;
+
+  /// notesInfo 对这些笔记不给字段（模拟读不出来的笔记）。
+  final Set<int> unreadableNotes = <int>{};
+
+  /// notesInfo 读到这些笔记的那一刻它们被删掉（检索后、读取前被删）。
+  final Set<int> vanishOnRead = <int>{};
+
   @override
   Future<List<int>> findNotesByQuery(String query) async {
     _tick('findNotes');
-    return _findNotes(query);
-  }
-
-  List<int> _findNotes(String query) {
-    // 与真 Anki 一样是朴素子串检索，不做文件名边界判断。
-    final String needle = query.replaceAll('"', '');
-    return notes.entries
-        .where((MapEntry<int, Map<String, String>> e) =>
-            e.value.values.any((String v) => v.contains(needle)))
-        .map((MapEntry<int, Map<String, String>> e) => e.key)
-        .toList()
-      ..sort();
+    queries.add(query);
+    if (query.contains('edited:')) {
+      beforeRecheck?.call();
+      if (rejectRecheck) throw AnkiConnectException('invalid search');
+    }
+    return fakeAnkiFindNotes(query, notes, edited: edited);
   }
 
   @override
   Future<Map<int, Map<String, String>>> notesInfoMany(List<int> noteIds) async {
     _tick('notesInfo');
+    noteIds.where(vanishOnRead.contains).forEach(notes.remove);
     return <int, Map<String, String>>{
       for (final int id in noteIds)
-        if (notes[id] != null) id: notes[id]!,
+        if (notes[id] != null && !unreadableNotes.contains(id)) id: notes[id]!,
     };
   }
 
   @override
   Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
     notes[noteId]!.addAll(fields);
+    edited.add(noteId);
   }
 
   @override
@@ -109,12 +124,6 @@ class _BatchCountingService extends AnkiConnectService {
   Future<AnkiConnectBatchResult> _dispatch(AnkiConnectAction a) async {
     final Map<String, dynamic> params = a.params ?? const <String, dynamic>{};
     switch (a.action) {
-      case 'findNotes':
-        final String query = params['query'] as String;
-        if (failFindNotesFor.contains(query)) {
-          return const AnkiConnectBatchResult(error: 'search failed');
-        }
-        return AnkiConnectBatchResult(result: _findNotes(query));
       case 'updateNoteFields':
         final Map<String, dynamic> note =
             params['note'] as Map<String, dynamic>;
@@ -193,9 +202,13 @@ void main() {
         reason: '$n 个副本的删除必须收敛成 $expectedBatches 次往返（一批一次）');
     expect(service.roundTripsFor('updateNoteFields'), expectedBatches,
         reason: '笔记改写同样按批合并，不是一条笔记一次往返');
-    // 判定 findNotes + 复核 findNotes，各一批一次。
-    expect(service.roundTripsFor('findNotes'), expectedBatches * 2);
-    expect(service.roundTripsFor('notesInfo'), expectedBatches);
+    // BUG-2824：建对照表 1 次 findNotes（deck:*）+ 每批 1 条复核检索；
+    // notesInfo = 对照表分批 + 每批拉一次命中笔记。复核零命中时不再拉字段。
+    expect(service.roundTripsFor('findNotes'), 1 + expectedBatches);
+    expect(
+      service.roundTripsFor('notesInfo'),
+      ceilDiv(n, kAnkiMediaDedupIndexBatchSize) + expectedBatches,
+    );
 
     // 总往返数必须远小于副本数——旧实现是 5N + 常数（120 副本实测 606 次）。
     expect(service.roundTrips.length, lessThan(n),
@@ -211,9 +224,13 @@ void main() {
     final AnkiMediaDedupReport? report = await repo.runMediaDedup(dryRun: true);
 
     expect(report!.deletions, hasLength(n));
-    // 干跑只需要「查引用 + 拉字段」，一个字节都不写。
-    expect(service.roundTripsFor('findNotes'), expectedBatches);
-    expect(service.roundTripsFor('notesInfo'), expectedBatches);
+    // 干跑只需要「建对照表 + 拉字段」，一个字节都不写，也没有复核检索。
+    expect(service.roundTripsFor('findNotes'), 1);
+    expect(service.queries, <String>['deck:*']);
+    expect(
+      service.roundTripsFor('notesInfo'),
+      ceilDiv(n, kAnkiMediaDedupIndexBatchSize) + expectedBatches,
+    );
     expect(service.roundTripsFor('updateNoteFields'), 0);
     expect(service.roundTripsFor('deleteMediaFile'), 0);
     expect(service.deleted, isEmpty);
@@ -257,10 +274,48 @@ void main() {
     expect(service.deleted, isNot(contains('g1bbbb.mp3')));
   });
 
-  test('批内单条检索失败：不知道有没有人引用 → 保守跳过，绝不删', () async {
+  test('BUG-2824：没有任何按文件名的全库检索——引用来自本地对照表', () async {
+    // 用户大库实测：单次 findNotes "<文件名>" 约 4.4 秒，一批 100 次必撞 10 秒
+    // 超时，1.8 万个副本要 3.6 万次全库扫描。全库范围的检索只许有一条 deck:*；
+    // 带文件名的检索必须被 edited:/nid: 限定在本轮改过的笔记上。
+    final int n = kAnkiMediaDedupBatchSize * 2 + 3;
+    final _BatchCountingService service = buildCollection(n);
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup();
+
+    expect(report!.duplicatesRemoved, n);
+    expect(service.queries.where((String q) => q == 'deck:*'), hasLength(1));
+    for (final String q in service.queries) {
+      if (q == 'deck:*') continue;
+      expect(q, startsWith('(edited:'), reason: '带文件名的检索必须限定范围，不能扫全库：$q');
+    }
+  });
+
+  test('BUG-2824：大小写与 Anki 检索同口径——大写引用也算引用，改不动就不删', () async {
+    // Anki 的文本检索大小写不敏感；对照表若大小写敏感，就会把一个仍被
+    // 「G0BBBB.MP3」引用着的副本判成没人用（大小写不敏感的文件系统上就是它）。
+    final _BatchCountingService service = buildCollection(1);
+    service.notes[1000] = <String, String>{'Front': '[sound:G0BBBB.MP3]'};
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup();
+
+    expect(report!.duplicatesRemoved, 0);
+    expect(report.skipped, 1);
+    expect(mediaExists('g0bbbb.mp3'), isTrue);
+    expect(service.notes[1000]!['Front'], '[sound:G0BBBB.MP3]');
+  });
+
+  test('BUG-2824：建表之后别处新改出的引用由复核挡下，绝不删', () async {
+    // 对照表是本轮开头的快照。用户在去重期间新制了一张卡、恰好引用了某个
+    // 副本——复核检索（edited: 范围）必须看见它。
     const int n = 3;
     final _BatchCountingService service = buildCollection(n);
-    service.failFindNotesFor.add('"g1bbbb.mp3"');
+    service.beforeRecheck = () {
+      service.notes[9999] = <String, String>{'Back': '<img src="g1bbbb.mp3">'};
+      service.edited.add(9999);
+    };
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
 
     final AnkiMediaDedupReport? report = await repo.runMediaDedup();
@@ -268,8 +323,78 @@ void main() {
     expect(report!.skipped, 1);
     expect(report.duplicatesRemoved, n - 1);
     expect(mediaExists('g1bbbb.mp3'), isTrue);
-    // 检索失败被当成空列表的话这里会是 0 次跳过、文件被删掉。
     expect(service.deleted, isNot(contains('g1bbbb.mp3')));
+  });
+
+  test('BUG-2824：复核检索被 Anki 拒绝 → 整批都不删', () async {
+    const int n = 3;
+    final _BatchCountingService service = buildCollection(n);
+    service.rejectRecheck = true;
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup();
+
+    expect(report!.skipped, n);
+    expect(report.duplicatesRemoved, 0);
+    expect(service.deleted, isEmpty);
+    // 引用已改指保留份、副本都还在：不会有悬空引用。
+    for (int i = 0; i < n; i++) {
+      expect(mediaExists('g${i}bbbb.mp3'), isTrue);
+      expect(mediaExists('g${i}a.mp3'), isTrue);
+    }
+  });
+
+  test('BUG-2824：仍存在却读不出字段的笔记 → 整轮中止，一个字节都不写', () async {
+    // 不知道它引用了什么，就不能断言任何副本「没人引用」。
+    const int n = 3;
+    final _BatchCountingService service = buildCollection(n);
+    service.unreadableNotes.add(1001);
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    await expectLater(
+      repo.runMediaDedup(),
+      throwsA(isA<AnkiConnectException>()),
+    );
+
+    expect(service.deleted, isEmpty);
+    expect(service.roundTripsFor('updateNoteFields'), 0);
+    for (int i = 0; i < n; i++) {
+      expect(service.notes[1000 + i]!['Front'], '[sound:g${i}bbbb.mp3]');
+    }
+  });
+
+  test('BUG-2824：读不到字段的笔记若已被删（检索后、读取前）→ 照常进行', () async {
+    const int n = 3;
+    final _BatchCountingService service = buildCollection(n);
+    // 一条与副本无关的笔记：deck:* 列出了它，读字段前它被删了。
+    service.notes[5000] = <String, String>{'Front': 'plain'};
+    service.vanishOnRead.add(5000);
+    final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
+
+    final AnkiMediaDedupReport? report = await repo.runMediaDedup();
+
+    expect(report!.duplicatesRemoved, n);
+    expect(service.notes.containsKey(5000), isFalse);
+    // 确实走了「确认它已不存在」这一步，而不是把缺字段静默当成没引用。
+    expect(service.queries, contains('nid:5000'));
+  });
+
+  test('BUG-2824：去重走长任务超时，不沿用交互请求的 10 秒', () {
+    // 守卫：runMediaDedup 必须拿 _getLongTaskService()，单请求预算是
+    // kLongTaskTimeout；交互路径（制卡/查重）仍走 _getService() 的 10 秒。
+    final String src = File(
+      'lib/src/ankiconnect/ankiconnect_repository.dart',
+    ).readAsStringSync();
+    final int at = src.indexOf('Future<AnkiMediaDedupReport?> runMediaDedup(');
+    expect(at, greaterThan(0));
+    final String body = src.substring(at, src.indexOf('\n  }\n', at));
+    expect(body, contains('await _getLongTaskService()'));
+    expect(body, isNot(contains('await _getService()')));
+    expect(src, contains('timeout: AnkiConnectService.kLongTaskTimeout'));
+    expect(
+      AnkiConnectService.kLongTaskTimeout,
+      greaterThan(const Duration(seconds: 10)),
+    );
   });
 
   test('同一条笔记引用同批多个副本：改写合并，后写不抹掉先写', () async {

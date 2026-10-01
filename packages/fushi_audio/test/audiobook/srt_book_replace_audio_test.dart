@@ -1,10 +1,8 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_storage.dart';
-import 'package:fushi_audio/src/audiobook/audiobook_storage_platform.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_model.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -15,8 +13,6 @@ import 'package:path/path.dart' as p;
 /// audioPaths + 清空 audioRoot」语义与阅读器内 _openSrtBookAudioPicker 等价：
 /// 选定文件被复制进 uid 派生的持久目录、audioPaths 指向复制后的路径、audioRoot 清空。
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
   late Directory docsDir;
   late FushiDatabase db;
 
@@ -24,29 +20,15 @@ void main() {
     docsDir = await Directory.systemTemp.createTemp('hibiki_replace_audio_');
     // ensurePersistDir/deletePersistDir 经 getApplicationDocumentsDirectory()
     // 解析持久根，测试把它指向临时目录。
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return docsDir.path;
-        }
-        return null;
-      },
-    );
-    // 平台兜底（getApplicationDocumentsDirectory → 上面的 mock）现在由重文件装配。
-    installAudiobookStoragePlatform();
+    // 持久根直接经 fushi_audio 的装配点指向临时目录（本包纯 Dart，不再经
+    // path_provider method channel）。
+    AudiobookStorage.documentsRootResolver = () async => docsDir;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {
     await db.close();
     AudiobookStorage.documentsRootResolver = null;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
     if (docsDir.existsSync()) docsDir.deleteSync(recursive: true);
   });
 

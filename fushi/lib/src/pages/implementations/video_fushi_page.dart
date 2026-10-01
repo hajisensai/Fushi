@@ -57,6 +57,10 @@ import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
+import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
+    show BlurayEncryptedStreamException;
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
@@ -66,6 +70,7 @@ import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_bottom_bar_slots.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -5360,9 +5365,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _disposeThumbnailPreview();
 
     // 远端流（http/s）或无本地路径 → 不建取帧器（调度器仍建，走 timestampOnly）。
+    // 纯音频没有画面：每次 hover 起一个 ffmpeg 取帧注定失败，同样只显时间戳。
     final bool isLocalFile =
         videoPath != null &&
         !_isRemote &&
+        !isAudioOnlyMediaPath(videoPath) &&
         Uri.tryParse(videoPath)?.scheme != 'http' &&
         Uri.tryParse(videoPath)?.scheme != 'https';
     final OffscreenVideoFrameGrabber? grabber = isLocalFile
@@ -7775,18 +7782,38 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 底栏传输组：`[−10s][上一句][play][下一句][+10s]`，[play] 钉在几何正中（BUG-257）。
   ///
   /// 根因：旧底栏 `[时间] Spacer [seek 簇] Spacer [尾部按钮…]` 用两个 [Spacer] 在「时间」
-  /// 与「尾部按钮」间均分，尾部按钮越多 seek 簇离整条几何中心越远 → play 偏左。改用 [Stack]
-  /// 三区绝对定位：左区时间、右区尾部按钮、[Center] 居中 seek 簇，play 恒处几何中心、两侧
+  /// 与「尾部按钮」间均分，尾部按钮越多 seek 簇离整条几何中心越远 → play 偏左。改用
+  /// 三区布局：左区时间、右区尾部按钮、居中 seek 簇，play 恒处几何中心、两侧
   /// seek 对称，与尾部按钮数量无关。桌面/移动共用本布局（仅控件类型与播放暂停按钮不同）。
+  ///
+  /// BUG-2792：三区改交 [VideoBottomBarSlots] 排布，不再 `Stack` 叠放。播放区被右侧
+  /// 字幕列表挤窄时，`Stack` 里的居中簇与右簇互不知道对方多宽、直接叠画（「+10s」压在
+  /// 音量图标上）。[VideoBottomBarSlots] 宽度够时照旧钉正中，不够时中簇在左右两簇之间
+  /// 平移、再不够就等比缩小，永不重叠。±10s 带不带文字标注也改按**底栏自身宽度**判。
   Widget _centeredBottomControlBar(
     VideoPlayerController controller, {
     required bool desktop,
+  }) {
+    return LayoutBuilder(
+      builder: (BuildContext _, BoxConstraints constraints) =>
+          _centeredBottomControlBarForWidth(
+            controller,
+            desktop: desktop,
+            barWidth: constraints.maxWidth,
+          ),
+    );
+  }
+
+  Widget _centeredBottomControlBarForWidth(
+    VideoPlayerController controller, {
+    required bool desktop,
+    required double barWidth,
   }) {
     // 底栏时间前景走 chrome 固定亮色强调色（压固定深色 scrim，不随 colorScheme）。
     final Color chromeAccent = _videoChromeAccent(
       Theme.of(context).colorScheme,
     );
-    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar(barWidth);
     final Widget positionIndicator = desktop
         ? MaterialDesktopPositionIndicator(
             style: TextStyle(
@@ -7836,22 +7863,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         roomyBottomBar: roomyBottomBar,
       ),
     ];
-    return Stack(
-      alignment: Alignment.center,
-      children: <Widget>[
-        // 居中传输簇：play 恒处整条底栏几何中心。
-        Center(child: transport),
-        // 左区：时间指示器 + bottomLeft 自定义按钮。
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Row(mainAxisSize: MainAxisSize.min, children: leftCluster),
-        ),
-        // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
-        Align(
-          alignment: Alignment.centerRight,
-          child: Row(mainAxisSize: MainAxisSize.min, children: rightCluster),
-        ),
-      ],
+    return VideoBottomBarSlots(
+      // 左区：时间指示器 + bottomLeft 自定义按钮。
+      left: Row(mainAxisSize: MainAxisSize.min, children: leftCluster),
+      // 居中传输簇：放得下时 play 恒处整条底栏几何中心。
+      center: transport,
+      // 右区：自定义按钮 + 音量 + 全屏（宽度变化不挤偏 play）。
+      right: Row(mainAxisSize: MainAxisSize.min, children: rightCluster),
     );
   }
 
@@ -8046,7 +8064,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  bool _hasRoomyVideoBottomBar() => MediaQuery.of(context).size.width >= 600;
+  /// ±10s 是否带文字标注：按**底栏自身宽度**判（BUG-2792）。旧判据读整屏宽
+  /// （`MediaQuery.size.width`），右侧字幕列表打开后屏幕仍宽、底栏却只剩一部分，
+  /// 带标注的 ±10s 照样摆出来，把传输簇撑宽到压进右簇。
+  bool _hasRoomyVideoBottomBar(double barWidth) => barWidth >= 600;
 
   /// 系统底部安全区 inset（BUG-184 / TODO-658·BUG-383）：导航栏 / 手势条**真正可见时**
   /// 的物理高度，用来把进度条与底部按钮条抬离系统栏。视频打开后走 immersiveSticky 隐藏
@@ -9332,6 +9353,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // AACS 加密的蓝光码流：原因确定，libmpv 那边只会给黑屏不给错误。
+    if (error is BlurayEncryptedStreamException) {
+      return t.video_bluray_stream_encrypted;
+    }
     // `.strm` 流指针读不出可播地址：原因明确，不走下面的子串阶梯。
     if (error is StrmResolveException) {
       return switch (error.failure) {

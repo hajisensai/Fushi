@@ -43,3 +43,27 @@ Set<String> readVideoResourceDisabledSourceIds(PrefStore prefs) {
       if (id.trim().isNotEmpty) id.trim(),
   };
 }
+
+/// 写 Torznab indexer 清单：与 app `PreferencesRepository.setVideoResourceTorznabConfigs`
+/// 同一编码（`encodeTorznabIndexerConfigs` 的 JSON 数组，API key 单独一栏）。
+Future<void> writeTorznabIndexerConfigs(
+  PrefStore prefs,
+  Iterable<TorznabIndexerConfig> configs,
+) =>
+    prefs.setPref(
+      kVideoResourceTorznabConfigPref,
+      jsonEncode(encodeTorznabIndexerConfigs(configs)),
+    );
+
+/// 写停用清单：与 app `AppModel.setVideoResourceSourceEnabled` 同形（排序后逗号拼接）。
+Future<void> writeVideoResourceDisabledSourceIds(
+  PrefStore prefs,
+  Iterable<String> ids,
+) {
+  final List<String> sorted = <String>{
+    for (final String id in ids)
+      if (id.trim().isNotEmpty) id.trim(),
+  }.toList()
+    ..sort();
+  return prefs.setPref(kVideoResourceDisabledSourcesPref, sorted.join(','));
+}

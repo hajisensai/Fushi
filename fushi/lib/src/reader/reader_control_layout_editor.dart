@@ -32,6 +32,8 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return Icons.headphones_outlined;
     case ReaderControlItem.fullscreen:
       return Icons.fullscreen_rounded;
+    case ReaderControlItem.toolbars:
+      return Icons.web_asset_off_outlined;
     case ReaderControlItem.settings:
       return Icons.tune_outlined;
     case ReaderControlItem.audiobookPrev:
@@ -69,6 +71,8 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.section_audiobook;
     case ReaderControlItem.fullscreen:
       return t.shortcut_action_global_toggle_fullscreen;
+    case ReaderControlItem.toolbars:
+      return t.reader_toolbars_hide;
     case ReaderControlItem.settings:
       return t.reader_settings_section;
     case ReaderControlItem.audiobookPrev:

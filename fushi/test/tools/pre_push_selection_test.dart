@@ -1,0 +1,273 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import '../../tool/test_flow/pre_push_selection.dart';
+
+void main() {
+  group('parseEnumerationGuards', () {
+    test('reads only the "### 清单" table, up to the next heading', () {
+      const String md = '''
+intro | `test/not_this_test.dart` |
+### 清单（51 条）
+
+| 测试 | 扫描根 | 守什么 |
+|---|---|---|
+| `test/a/one_test.dart` | lib | x |
+| `test/b/two_test.dart` | test | y |
+| `test/a/one_test.dart` | dup | z |
+
+## 另一半
+| `test/c/later_test.dart` | nope |
+''';
+      expect(parseEnumerationGuards(md),
+          <String>['test/a/one_test.dart', 'test/b/two_test.dart']);
+    });
+
+    test('the real fast-workflow.md still parses to the ~50-entry batch', () {
+      final String md =
+          File('../docs/agent/fast-workflow.md').readAsStringSync();
+      final List<String> guards = parseEnumerationGuards(md);
+      expect(guards.length, greaterThanOrEqualTo(40));
+      for (final String g in guards) {
+        expect(File(g).existsSync(), isTrue, reason: '$g listed but missing');
+      }
+    });
+  });
+
+  group('importKeysForChange', () {
+    const Map<String, String> names = <String, String>{
+      'fushi_core': 'fushi_core'
+    };
+
+    test('app and package libraries map to their package: URI', () {
+      expect(importKeysForChange('fushi/lib/src/a/b.dart', packageNames: names),
+          <String>{'package:fushi/src/a/b.dart'});
+      expect(
+          importKeysForChange('packages/fushi_core/lib/src/db.dart',
+              packageNames: names),
+          <String>{'package:fushi_core/src/db.dart'});
+      expect(importKeysForChange('native/x.cpp', packageNames: names), isEmpty);
+    });
+
+    test('a part maps to the library that owns it', () {
+      expect(
+          importKeysForChange(
+              'fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+              packageNames: names,
+              partOwner: '../reader_fushi_page.dart'),
+          <String>{
+            'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+          });
+    });
+
+    test('partOfTarget reads the part-of URI', () {
+      expect(partOfTarget("// x\npart of '../owner.dart';\n"), '../owner.dart');
+      expect(partOfTarget("library x;\nimport 'a.dart';\n"), isNull);
+    });
+  });
+
+  group('directImpactTests', () {
+    final Map<String, String> sources = <String, String>{
+      'fushi/test/a/imports_b_test.dart': "import 'package:fushi/src/b.dart';",
+      'fushi/test/a/unrelated_test.dart': "import 'package:fushi/src/z.dart';",
+      'fushi/test/a/uses_helper_test.dart': "import '../helpers/fake_x.dart';",
+      'fushi/test/c/widget_test.dart': '',
+      'fushi/test/d/b_test.dart': '',
+    };
+
+    test('importers, changed tests, helper users and same-name tests', () {
+      final Set<String> out = directImpactTests(
+        changed: <String>[
+          'fushi/lib/src/b.dart',
+          'fushi/test/c/widget_test.dart',
+          'fushi/test/helpers/fake_x.dart',
+        ],
+        testSources: sources,
+        importKeys: <String>{'package:fushi/src/b.dart'},
+      );
+      expect(out, <String>{
+        'fushi/test/a/imports_b_test.dart',
+        'fushi/test/c/widget_test.dart',
+        'fushi/test/a/uses_helper_test.dart',
+        'fushi/test/d/b_test.dart',
+      });
+    });
+
+    test('a deleted test file is not selected', () {
+      expect(
+          directImpactTests(
+            changed: <String>['fushi/test/gone_test.dart'],
+            testSources: sources,
+            importKeys: <String>{},
+          ),
+          isEmpty);
+    });
+  });
+
+  test('changedTestablePackages mirrors the CI package-loop skip list', () {
+    expect(
+        changedTestablePackages(<String>[
+          'packages/fushi_core/lib/a.dart',
+          'packages/fushi_torrent/lib/b.dart',
+          'packages/gamepads_windows/c.cc',
+          'fushi/lib/x.dart',
+        ]),
+        <String>{'fushi_core'});
+  });
+
+  test('touchesJsSuites', () {
+    expect(touchesJsSuites(<String>['fushi/lib/a.dart']), isFalse);
+    expect(touchesJsSuites(<String>['fushi/assets/popup/popup.js']), isTrue);
+    expect(touchesJsSuites(<String>['tools/browser-extension/content.js']),
+        isTrue);
+  });
+
+  test('chunkByCommandLength keeps every path, each batch under the limit', () {
+    final List<String> paths = <String>[
+      for (int i = 0; i < 300; i++) 'test/some/dir/file_number_${i}_test.dart'
+    ];
+    final List<List<String>> batches =
+        chunkByCommandLength(paths, maxChars: 1000);
+    expect(batches.expand((List<String> b) => b).toList(), paths);
+    for (final List<String> b in batches) {
+      expect(b.join(' ').length, lessThanOrEqualTo(1000));
+    }
+  });
+
+  test('chunkByCommandLength maxFiles caps each batch, order kept', () {
+    final List<String> paths = <String>[
+      for (int i = 0; i < 65; i++) 't/f${i}_test.dart'
+    ];
+    final List<List<String>> batches =
+        chunkByCommandLength(paths, maxFiles: 20);
+    expect(batches.map((List<String> b) => b.length), <int>[20, 20, 20, 5]);
+    expect(batches.expand((List<String> b) => b).toList(), paths);
+    // 0 = no file cap (the old behaviour): one batch under the char limit.
+    expect(chunkByCommandLength(paths), hasLength(1));
+  });
+
+  test('parsePsElapsedSeconds reads [[dd-]hh:]mm:ss (macOS has no etimes)', () {
+    expect(parsePsElapsedSeconds('05:07'), 307);
+    expect(parsePsElapsedSeconds('01:02:03'), 3723);
+    expect(parsePsElapsedSeconds('2-01:02:03'), 2 * 86400 + 3723);
+    expect(parsePsElapsedSeconds(' 00:09 '), 9);
+    expect(parsePsElapsedSeconds('ELAPSED'), isNull);
+    expect(parsePsElapsedSeconds(''), isNull);
+  });
+
+  test('parseAgedProcessLine: Windows tab form and POSIX ps form', () {
+    expect(
+      parseAgedProcessLine('25200\tdart.exe flutter_tools.snapshot" test a',
+          windows: true),
+      (
+        ageSeconds: 25200,
+        commandLine: 'dart.exe flutter_tools.snapshot" test a'
+      ),
+    );
+    expect(
+      parseAgedProcessLine('    07:00:00 /opt/flutter/bin/cache/dart x y',
+          windows: false),
+      (ageSeconds: 25200, commandLine: '/opt/flutter/bin/cache/dart x y'),
+    );
+    expect(parseAgedProcessLine('no-tab here', windows: true), isNull);
+    expect(parseAgedProcessLine('', windows: false), isNull);
+  });
+
+  test('countBusyFlutterRuns ignores runs older than 3 hours', () {
+    const String run =
+        '/opt/flutter/bin/cache/flutter_tools.snapshot test --no-pub a_test.dart';
+    expect(
+      countBusyFlutterRuns(<({int ageSeconds, String commandLine})>[
+        (ageSeconds: 120, commandLine: run),
+        (ageSeconds: 3 * 3600, commandLine: run),
+        // Hung since the afternoon: must not hold the gate shut.
+        (ageSeconds: 7 * 3600, commandLine: run),
+        (ageSeconds: 60, commandLine: 'dart run tool/pre_push_check.dart'),
+      ]),
+      2,
+    );
+  });
+
+  test('descendantPids: whole subtree, deepest first, root excluded, no loops',
+      () {
+    // 10 -> 11 -> 13 ; 10 -> 12 ; 20 unrelated ; 30 <-> 31 cycle under 11.
+    final List<(int, int)> table = <(int, int)>[
+      (10, 1),
+      (11, 10),
+      (12, 10),
+      (13, 11),
+      (20, 1),
+      (30, 11),
+      (31, 30),
+      (30, 31),
+    ];
+    final List<int> got = descendantPids(10, table);
+    expect(got.toSet(), <int>{11, 12, 13, 30, 31});
+    expect(got.indexOf(13), lessThan(got.indexOf(11)));
+    expect(got, isNot(contains(10)));
+    expect(descendantPids(20, table), isEmpty);
+  });
+
+  test('countBusyFlutterCommands counts test / analyze / build runs only', () {
+    const String snap =
+        r'"D:\flutter\bin\cache\dart-sdk\bin\dart.exe" --packages="D:\flutter\packages\flutter_tools\.dart_tool\package_config.json" "D:\flutter\bin\cache\flutter_tools.snapshot"';
+    expect(
+      countBusyFlutterCommands(<String>[
+        '$snap test test/floating_ball test/settings --no-pub -r compact',
+        '$snap analyze --no-pub',
+        '$snap --no-version-check build windows --release',
+        // Unquoted form (the dartvm child / POSIX `ps`).
+        '/opt/flutter/bin/cache/flutter_tools.snapshot test --no-pub a_test.dart',
+      ]),
+      4,
+    );
+    expect(
+      countBusyFlutterCommands(<String>[
+        '$snap --version --machine',
+        '$snap pub get',
+        r'"D:\flutter\bin\cache\dart-sdk\bin\dart.exe"  run tool/pre_push_check.dart',
+        // A plain dart process whose arguments merely mention test paths.
+        'dart D:/repo/fushi/test/tools/x_test.dart',
+        '',
+      ]),
+      0,
+    );
+  });
+
+  group('budgetTrigger (default selection)', () {
+    bool isDir(String p) => !p.endsWith('.dart');
+    int files(String p) => p == 'native/small' ? 12 : 900;
+
+    bool hit(String changed, String ref) => budgetTrigger(changed, ref,
+        isDirectory: isDir, dirFileCount: files, maxDirFiles: 60);
+
+    test('exact file reference triggers', () {
+      expect(hit('fushi/lib/src/a.dart', 'fushi/lib/src/a.dart'), isTrue);
+    });
+
+    test('a sibling in the same directory does NOT trigger (wide mode only)',
+        () {
+      expect(hit('fushi/lib/src/b.dart', 'fushi/lib/src/a.dart'), isFalse);
+    });
+
+    test('a small directory reference triggers, a large one does not', () {
+      expect(hit('native/small/x.cpp', 'native/small'), isTrue);
+      expect(hit('fushi/lib/src/pages/p.dart', 'fushi/lib/src'), isFalse);
+      expect(hit('native/smallish/x.cpp', 'native/small'), isFalse);
+    });
+  });
+
+  test('splitHubImportKeys keeps rare imports and drops hubs', () {
+    final Map<String, String> sources = <String, String>{
+      for (int i = 0; i < 50; i++)
+        't$i': "import 'package:fushi/hub.dart';"
+            "${i == 0 ? "import 'package:fushi/rare.dart';" : ''}",
+    };
+    final ({Set<String> kept, Set<String> hubs}) r = splitHubImportKeys(
+        <String>{'package:fushi/hub.dart', 'package:fushi/rare.dart'}, sources,
+        hubLimit: 40);
+    expect(r.kept, <String>{'package:fushi/rare.dart'});
+    expect(r.hubs, <String>{'package:fushi/hub.dart'});
+  });
+}

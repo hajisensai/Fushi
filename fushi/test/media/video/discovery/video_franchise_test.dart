@@ -5,7 +5,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show MalRelatedWorks, MalRelation;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 
 VideoDiscoveryItem _item(
   String id,

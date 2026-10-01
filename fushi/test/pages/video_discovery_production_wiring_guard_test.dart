@@ -84,7 +84,7 @@ void main() {
     expect(source, contains('enqueueLocalVideoDownload('));
     expect(source, contains('createLocalVideoDownloadSubscription('));
     final String submitSource = File(
-      'lib/src/media/video/download/video_discovery_submit.dart',
+      '../packages/fushi_engine/lib/media/video/download/video_discovery_submit.dart',
     ).readAsStringSync();
     expect(
       submitSource,

@@ -22,6 +22,7 @@ class AdminContext {
     required this.identity,
     required this.host,
     required this.startedAt,
+    this.pruneOverride,
   }) : _config = config;
 
   ServerConfig _config;
@@ -32,6 +33,10 @@ class AdminContext {
   final ServerIdentity identity;
   final HeadlessHost host;
   final DateTime startedAt;
+
+  /// 启动参数 `serve --prune` / `--no-prune`（没给为 null）：本进程内**所有**扫描
+  /// （启动扫描与 WebUI 触发的）都按它，优先于配置里的 `scan_prune`。
+  final bool? pruneOverride;
 
   ServerConfig get config => _config;
 
@@ -51,18 +56,30 @@ class AdminContext {
 
   bool get scanning => _scanInFlight != null;
 
-  Future<ScanSummary> scanLibraries() {
+  Future<ScanSummary> scanLibraries({bool? prune}) {
     final Future<ScanSummary>? running = _scanInFlight;
     if (running != null) return running;
     final Future<ScanSummary> f = LibraryScanner(
       db: db,
       subtitleLanguage: config.subtitleLanguage,
+      // 优先级：请求里显式给的 > 启动参数 > 配置里的 `scan_prune`（默认开）。
+      pruneMissing: prune ?? pruneOverride ?? config.scanPrune,
     ).scanAll(config.libraries).then((ScanSummary s) {
       lastScan = s;
       lastScanAt = DateTime.now();
+      _scrapeAfterScan();
       return s;
     }).whenComplete(() => _scanInFlight = null);
     _scanInFlight = f;
     return f;
+  }
+
+  /// 扫描完补刮一轮（后台，不占 [scanning]；进度看 status 的 `scrape`）。只刮从未
+  /// 识别过的作品，`scan_scrape: false` 时补刮器自己短路；已有批次在跑就放弃本轮。
+  void _scrapeAfterScan() {
+    if (!config.libraries.any((LibraryRootConfig l) => l.kind == 'video')) return;
+    final Future<void>? sweep = host.videoScrape?.sweep();
+    if (sweep == null) return;
+    unawaited(sweep.catchError((Object e, StackTrace st) => log.log('AdminContext.scrape', e, st)));
   }
 }

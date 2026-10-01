@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/anilist_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -637,6 +637,7 @@ void main() {
         final Map<String, Object?> body =
             (jsonDecode(request.body) as Map).cast<String, Object?>();
         expect(body['query'], contains('voiceActors'));
+        expect(body['query'], contains('name { full native }'));
         return _json(<String, Object?>{
           'data': <String, Object?>{
             'Media': <String, Object?>{
@@ -656,20 +657,37 @@ void main() {
                   <String, Object?>{
                     'node': <String, Object?>{
                       'id': 2,
-                      'name': <String, Object?>{'native': '角色'},
+                      'name': <String, Object?>{
+                        'full': 'Kurumi Fukuga',
+                        'native': '福賀くるみ',
+                      },
                       'image': <String, Object?>{},
                     },
                     'voiceActors': <Object?>[
                       <String, Object?>{
                         'id': 3,
-                        'name': <String, Object?>{'native': '声优'},
+                        'name': <String, Object?>{
+                          'full': 'Aina Suzuki',
+                          'native': '鈴木愛奈',
+                        },
                         'image': <String, Object?>{},
                       },
                     ],
                   },
                 ],
               },
-              'staff': <String, Object?>{'edges': <Object?>[]},
+              'staff': <String, Object?>{
+                'edges': <Object?>[
+                  <String, Object?>{
+                    'role': 'Director',
+                    'node': <String, Object?>{
+                      'id': 4,
+                      'name': <String, Object?>{'native': '監督太郎'},
+                      'image': <String, Object?>{},
+                    },
+                  },
+                ],
+              },
             },
           },
         });
@@ -685,8 +703,19 @@ void main() {
       ))!;
 
       expect(work.rating, 8.5);
-      expect(work.credits.single.kind, VideoMetadataCreditKind.voiceActor);
-      expect(work.credits.single.language, 'ja');
+      final VideoMetadataCredit voice = work.credits.first;
+      expect(voice.kind, VideoMetadataCreditKind.voiceActor);
+      expect(voice.language, 'ja');
+      // BUG-2797：罗马字与原文两个写法都要留住，发现详情合并才能拿它当
+      // 「MAL 罗马字 = TMDB 汉字」的写法桥。
+      expect(voice.person.name, 'Aina Suzuki');
+      expect(voice.person.originalName, '鈴木愛奈');
+      expect(voice.character?.name, 'Kurumi Fukuga');
+      expect(voice.character?.originalName, '福賀くるみ');
+      final VideoMetadataCredit director = work.credits.last;
+      expect(director.kind, VideoMetadataCreditKind.director);
+      expect(director.person.name, '監督太郎', reason: '没有 full 时退回 native');
+      expect(director.person.originalName, '監督太郎');
       expect(
         await provider.fetchEpisodes(
           const VideoMetadataLookup(

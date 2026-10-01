@@ -137,6 +137,18 @@ void notifyReaderChromeReanchored(SettingsContext settingsContext) {
   settingsContext.refresh();
 }
 
+/// 关掉 / 开回阅读器的顶栏和底栏（设置开关、顶栏 / 底栏 / 悬浮球上的同一颗键
+/// 共用这一个写入口）。栏关掉后由应用内悬浮球接管，偏好只在球开着时生效
+/// （`readerToolbarsHidden`），所以关栏时球若关着就一并打开——否则开关拨过去
+/// 什么都不会发生。开回栏不动球。调用方随后要让阅读器重下 chrome 预留
+/// （设置页经 [notifyReaderChromeReanchored]，阅读器内直接同步）。
+Future<void> setHideReaderToolbars(AppModel appModel, bool hide) async {
+  if (hide && !appModel.prefsRepo.floatingBallInApp) {
+    await appModel.prefsRepo.setFloatingBallInApp(true);
+  }
+  await ReaderFushiSource.instance.setHideToolbars(hide);
+}
+
 Future<void> setKeepScreenAwake(
   SettingsContext settingsContext,
   bool value,

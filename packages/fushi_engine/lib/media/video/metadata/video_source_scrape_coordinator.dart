@@ -31,6 +31,9 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.da
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
+    show hasCanonicalVideoMetadataIdentity;
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
@@ -614,6 +617,23 @@ class VideoSourceScrapeCoordinator
       cancellationToken.throwIfCancelled();
       works =
           plannedWorks ?? await VideoSourceWorkPlanner(database).plan(source);
+      // 下载任务确认过的身份是持久的：作品还没有规范身份时照它刮，不退回按
+      // 标题搜（资料源临时故障让下载那一轮没刮成时，补刮 / 整源刮削靠它补上）。
+      // 调用方显式给的身份优先；已有规范身份的作品不动（可能是用户后来手动改
+      // 过的绑定）。
+      for (final MapEntry<String, VideoMetadataLookup> entry
+          in (await downloadConfirmedLookupsForWorks(database, works))
+              .entries) {
+        if (lookups.containsKey(entry.key)) continue;
+        final VideoSourceScrapeWork? work = works
+            .where((VideoSourceScrapeWork w) => w.stableKey == entry.key)
+            .firstOrNull;
+        if (work == null ||
+            await hasCanonicalVideoMetadataIdentity(database, work)) {
+          continue;
+        }
+        lookups[entry.key] = entry.value;
+      }
       final List<String> knownSourcePaths = (await database.allVideoBooks())
           .where((VideoBookRow row) => row.sourceId == source.id)
           .map((VideoBookRow row) => row.videoPath)
@@ -815,6 +835,8 @@ class VideoSourceScrapeCoordinator
                   resolved.reason,
                 ),
               ),
+              providerUnavailable: resolved.transient,
+              workKey: localWork.stableKey,
             ));
             continue;
           }
@@ -905,6 +927,8 @@ class VideoSourceScrapeCoordinator
           errors.add(SourceScrapeIssue(
             workTitle: localWork.title,
             message: error.toString(),
+            providerUnavailable: isTransientVideoMetadataFailure(error),
+            workKey: localWork.stableKey,
           ));
         } finally {
           await _updateRunCounts(
@@ -1470,6 +1494,7 @@ class VideoSourceScrapeCoordinator
       return _ResolvedWork(
         reason: resolution.reason,
         status: resolution.status,
+        transient: resolution.transient,
       );
     }
 
@@ -4874,6 +4899,7 @@ class _ResolvedWork {
         const <String, Map<(int, int), AnidbEpisodeXref>>{},
     this.splitInto = const <_SplitWork>[],
     this.userVerifiedBooks = const <String>{},
+    this.transient = false,
   });
 
   final VideoMetadataWork? metadata;
@@ -4886,6 +4912,9 @@ class _ResolvedWork {
 
   /// 挂起时手里的候选数。
   final int candidateCount;
+
+  /// 见 `VideoMetadataResolution.transient`：失败只因资料源暂时不可用。
+  final bool transient;
 
   /// 用户手动钉死季集（UserVerified）的成员 `bookUid`：落库时先占位，同键的
   /// 自动链接 / 文件名解析成员让位。

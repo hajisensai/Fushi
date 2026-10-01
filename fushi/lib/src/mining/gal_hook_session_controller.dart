@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -170,6 +171,7 @@ class GalCaptureMemory {
     this.excludedTrackFingerprints = const <String>[],
     this.voiceTrackFingerprint,
     this.textThreadFingerprint,
+    this.textThreadTypicalLength,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
     this.textProcess = const GalTextProcessPipeline(),
   });
@@ -182,6 +184,9 @@ class GalCaptureMemory {
           : const <String>[],
       voiceTrackFingerprint: json['voiceTrack'] as String?,
       textThreadFingerprint: json['textThread'] as String?,
+      textThreadTypicalLength: json['textThreadLen'] is int
+          ? json['textThreadLen'] as int
+          : null,
       audioFallbackPolicy: GalAudioFallbackPolicy.fromStorageKey(
         json['audioFallback'] as String?,
       ),
@@ -197,6 +202,12 @@ class GalCaptureMemory {
 
   /// 用户选定的文本线程指纹；null = 自动选线程。
   final String? textThreadFingerprint;
+
+  /// 用户选定线程的典型行长（最近几行预览的中位字数）。指纹只锚到 hook code，同一
+  /// hook 常有正文 / 名字牌等多条 context 线程（RealLive `0x415b00` 实测），它们指纹
+  /// 相同、出行数也相近；行长是跨启动稳定、又能把「整句」与「名字」分开的唯一可用量。
+  /// null = 旧记忆或无预览，恢复退回只按出行数消歧。
+  final int? textThreadTypicalLength;
 
   /// 用户为这个游戏选定的降级策略。与「标记 BGM」同规格按游戏记住——两者都是
   /// 「这个游戏的音频该怎么抓」的判断，只记一半会让用户每次开游戏重设一遍。
@@ -220,6 +231,7 @@ class GalCaptureMemory {
     List<String>? excludedTrackFingerprints,
     String? voiceTrackFingerprint,
     String? textThreadFingerprint,
+    int? textThreadTypicalLength,
     GalAudioFallbackPolicy? audioFallbackPolicy,
     GalTextProcessPipeline? textProcess,
     bool clearVoiceTrack = false,
@@ -233,6 +245,9 @@ class GalCaptureMemory {
     textThreadFingerprint: clearTextThread
         ? null
         : textThreadFingerprint ?? this.textThreadFingerprint,
+    textThreadTypicalLength: clearTextThread
+        ? null
+        : textThreadTypicalLength ?? this.textThreadTypicalLength,
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
     textProcess: textProcess ?? this.textProcess,
   );
@@ -241,6 +256,8 @@ class GalCaptureMemory {
     'excludedTracks': excludedTrackFingerprints,
     if (voiceTrackFingerprint != null) 'voiceTrack': voiceTrackFingerprint,
     if (textThreadFingerprint != null) 'textThread': textThreadFingerprint,
+    if (textThreadFingerprint != null && textThreadTypicalLength != null)
+      'textThreadLen': textThreadTypicalLength,
     if (audioFallbackPolicy != GalAudioFallbackPolicy.full)
       'audioFallback': audioFallbackPolicy.storageKey,
     if (textProcess.steps.isNotEmpty) 'textProcess': textProcess.toJson(),
@@ -2912,6 +2929,63 @@ class GalHookSessionController extends ChangeNotifier {
     return label.isEmpty ? null : 'label:$label';
   }
 
+  /// 线程的典型行长：最近预览行（含当前预览）的非空行字数中位数；没有预览为 null。
+  @visibleForTesting
+  static int? textThreadTypicalLength(TexthookerTextThread thread) {
+    final List<int> lengths = <int>[
+      for (final String text in <String>[
+        ...thread.recentPreviewTexts,
+        if (thread.previewText != null &&
+            !thread.recentPreviewTexts.contains(thread.previewText))
+          thread.previewText!,
+      ])
+        if (text.trim().isNotEmpty) text.trim().runes.length,
+    ]..sort();
+    if (lengths.isEmpty) return null;
+    return lengths[lengths.length ~/ 2];
+  }
+
+  /// 从本会话线程目录里挑出与记忆对应的线程（纯函数，可单测）。
+  ///
+  /// 指纹只锚到 hook code，同一 hook 的并行 context（逐字重绘兄弟、正文 / 名字牌）
+  /// 指纹相同，所以：
+  /// - 必须真出过 [minObservedLines] 行（`observedLineCount`，见 v12 注释）；
+  /// - 伪影主导的线程不参与（BUG-2112）；
+  /// - 记忆里有典型行长时，按行长比值最接近者优先，出行数只作平手判据；最接近者
+  ///   仍相差两倍以上时**宁可暂不恢复**——此时往往只有名字牌线程先够了行数，
+  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程。
+  @visibleForTesting
+  static TexthookerTextThread? pickRememberedTextThread(
+    Iterable<TexthookerTextThread> threads, {
+    required String fingerprint,
+    required int? typicalLength,
+    required int minObservedLines,
+  }) {
+    final List<TexthookerTextThread> candidates = <TexthookerTextThread>[
+      for (final TexthookerTextThread thread in threads)
+        if (textThreadFingerprint(thread) == fingerprint &&
+            thread.observedLineCount >= minObservedLines &&
+            !thread.isArtifactDominated)
+          thread,
+    ];
+    if (candidates.isEmpty) return null;
+    double distance(TexthookerTextThread thread) {
+      final int? length = textThreadTypicalLength(thread);
+      if (typicalLength == null || typicalLength <= 0) return 0;
+      if (length == null || length <= 0) return double.infinity;
+      return (math.log(length / typicalLength)).abs();
+    }
+
+    candidates.sort((TexthookerTextThread a, TexthookerTextThread b) {
+      final int byLength = distance(a).compareTo(distance(b));
+      if (byLength != 0) return byLength;
+      return b.observedLineCount.compareTo(a.observedLineCount);
+    });
+    final TexthookerTextThread best = candidates.first;
+    if (distance(best) > math.ln2) return null;
+    return best;
+  }
+
   String? _captureMemoryKeyForGame() {
     final String? exe = _state.launchExe;
     if (exe == null || exe.isEmpty) return null;
@@ -3055,25 +3129,13 @@ class GalHookSessionController extends ChangeNotifier {
       _maybeAutoSelectEngineExactThread();
       return;
     }
-    TexthookerTextThread? best;
-    // BUG-2706：必须是**本会话**的线程目录。全量目录里还留着同一 Fushi 进程上一次启动
-    // 这款游戏时的线程（thread id 含进程身份，已是死线程），它累计的行数更多，会赢下
-    // 恢复——选中后本会话一行台词都来不了。
-    for (final TexthookerTextThread thread in textThreads) {
-      if (textThreadFingerprint(thread) != wanted) continue;
-      // 🔴 判据必须用 observedLineCount（native 观测总行数），**不能**用 lineCount
-      // （已发布行数）。v12 取消自动选线程后，用户选定之前文本环恒空、lineCount 对所有
-      // 线程都是 0，用它做判据会让这里永远选不出候选 → 记忆永远恢复不了 → 每次开游戏
-      // 都要重新手选。这正是「第一次由用户选」与「之后自动恢复」能同时成立的关键。
-      if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
-      // BUG-2112：指纹只锚到 hook 面，同一 hook 的逐字重绘兄弟线程指纹相同且
-      // 行数往往更多（每字一行）。它们的行全被 native 伪影门丢掉，恢复到它等于
-      // 恢复到一条永远 0 行的线程。
-      if (thread.isArtifactDominated) continue;
-      if (best == null || thread.observedLineCount > best.observedLineCount) {
-        best = thread;
-      }
-    }
+    // BUG-2706：必须是**本会话**的线程目录（全量目录里还留着上一次启动的死线程）。
+    final TexthookerTextThread? best = pickRememberedTextThread(
+      textThreads,
+      fingerprint: wanted,
+      typicalLength: _captureMemory.textThreadTypicalLength,
+      minObservedLines: _textThreadRestoreMinLines,
+    );
     if (best == null) return;
     _textThreadMemoryApplied = true;
     unawaited(
@@ -3086,7 +3148,7 @@ class GalHookSessionController extends ChangeNotifier {
           'text',
           'text.thread_memory_restored',
           'Restored the text thread remembered for this game',
-          details: <String, Object?>{'threadKey': best!.key},
+          details: <String, Object?>{'threadKey': best.key},
         );
       }),
     );
@@ -3142,9 +3204,20 @@ class GalHookSessionController extends ChangeNotifier {
       _saveCaptureMemory(_captureMemory.copyWith(clearTextThread: true));
       return;
     }
-    if (_captureMemory.textThreadFingerprint == fingerprint) return;
+    final int? typicalLength = textThreadTypicalLength(thread!);
+    if (_captureMemory.textThreadFingerprint == fingerprint &&
+        _captureMemory.textThreadTypicalLength == typicalLength) {
+      return;
+    }
     _saveCaptureMemory(
-      _captureMemory.copyWith(textThreadFingerprint: fingerprint),
+      GalCaptureMemory(
+        excludedTrackFingerprints: _captureMemory.excludedTrackFingerprints,
+        voiceTrackFingerprint: _captureMemory.voiceTrackFingerprint,
+        textThreadFingerprint: fingerprint,
+        textThreadTypicalLength: typicalLength,
+        audioFallbackPolicy: _captureMemory.audioFallbackPolicy,
+        textProcess: _captureMemory.textProcess,
+      ),
     );
   }
 

@@ -343,6 +343,8 @@ dart run tool/flutter_test_failures.dart --no-pub \
   $(dart run tool/tests_for_changes.dart --base=origin/develop)
 ```
 
+> **推送前不必手串这两条**：`dart run tool/pre_push_check.dart`（CLAUDE.md「验证」首条）已经把它们、本节的目录枚举守卫整批、直接 import 受影响的测试、全量 analyze 与改动包测试合成一条命令，改动为空时直接退出、不会退化成跑全量。这里的手工串法留给只想看某棵树触发面的场合。
+
 ⚠️ 最后那条里 `$( )` **展开为空时不是空跑**：`flutter_test_failures.dart` 不带目标就跑全量。`--base` 选错（比如指到自己这条分支的 tip、diff 为空）会白等十几分钟，而输出看起来完全正常。跑之前先单独执行一遍上面第一条，确认它真的吐出了路径。
 
 判据一句话：
@@ -364,6 +366,14 @@ dart run tool/flutter_test_failures.dart --no-pub \
 ```
 
 规则住在拥有它的那个文件里，改守卫的人一眼看得见；守卫断言每条声明至少匹配到一个真实文件，所以声明烂掉是**响的**不是哑的。
+
+**反方向的例外：只是 fixture 的字面量。** 典型是 `bug_tool_number_pool_test.dart` / `bug_tool_renumber_scope_test.dart`：它们在临时 git 仓库里写 `docs/BUGS.md` 当 fixture，字面量恰好与真仓库的索引同名，于是每个走 BUG 流程的 PR（reindex 必改 `docs/BUGS.md`）都会把这两套起 git 子进程、单跑近 5 分钟、负载一高就 30 秒超时的测试拉进推送前检查。它们真正守的是 `tool/bug.dart`（那条引用照旧触发）。这类测试在**自己文件里**声明：
+
+```dart
+// tests-for-changes-ignore: docs/BUGS.md docs/bugs
+```
+
+忽略只作用于触发、不改提取（上面的规模哨兵不受影响）；守卫断言每条忽略都对得上本文件真被提取到的引用，并钉住「改 `docs/BUGS.md` 仍触发 `bugs_per_file_guard_test`」。只给「守的明显是另一样东西、这个字面量只是临时目录里的 fixture」的测试用——拿不准就别加，偏置仍是过度触发。
 
 ## 共享测试原语：它坏起来是静默的，改它的门也不在上面两批里
 

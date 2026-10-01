@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import '../../../helpers/source_guard.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -21,6 +21,7 @@ void main() {
   test('production discovery service aggregates MAL search + AniList + TMDB', () {
     final VideoDiscoveryService service = VideoDiscoveryService.production(
       const VideoSourceScrapeGlobalConfig(tmdbApiKey: 'test-key'),
+      discoveryAvailable: true,
     );
     addTearDown(service.close);
     final Set<String> providerIds = service.providerIdsForTesting.toSet();
@@ -64,12 +65,20 @@ void main() {
 
   test('discovery source selection has no dependency on proxy configuration',
       () {
-    final Directory discoveryDir = Directory('lib/src/media/video/discovery');
-    expect(discoveryDir.existsSync(), isTrue,
-        reason: '守卫必须从 fushi/ 目录运行且 discovery 目录存在');
+    // 发现服务与适配器 2026-09-30 起下沉到引擎（无头服务端的「AI 下视频」共用），
+    // 两个目录都要扫。
+    final List<Directory> discoveryDirs = <Directory>[
+      Directory('lib/src/media/video/discovery'),
+      Directory('../packages/fushi_engine/lib/media/video/discovery'),
+    ];
+    for (final Directory dir in discoveryDirs) {
+      expect(dir.existsSync(), isTrue,
+          reason: '守卫必须从 fushi/ 目录运行且 ${dir.path} 存在');
+    }
     final List<String> offenders = <String>[];
-    for (final FileSystemEntity entity
-        in discoveryDir.listSync(recursive: true)) {
+    for (final FileSystemEntity entity in <FileSystemEntity>[
+      for (final Directory dir in discoveryDirs) ...dir.listSync(recursive: true),
+    ]) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String source = maskComments(entity.readAsStringSync());
       const List<String> forbidden = <String>[

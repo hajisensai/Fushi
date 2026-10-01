@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/utils.dart';

@@ -49,4 +49,56 @@ void main() {
     expect(notified, 2);
     c.dispose();
   });
+
+  group('顶栏和底栏被关掉', () {
+    test('关掉即收起已唤出的悬浮栏并停掉收起计时', () {
+      fakeAsync((FakeAsync async) {
+        final ReaderChromeController c = ReaderChromeController();
+        c.reveal(const Duration(seconds: 3));
+        expect(c.transientVisible, isTrue);
+        c.toolbarsHidden = true;
+        expect(c.transientVisible, isFalse);
+        expect(c.autoHideArmed, isFalse);
+        c.dispose();
+      });
+    });
+
+    test('开着时任何唤出都无效：setter / showTransient / reveal', () {
+      fakeAsync((FakeAsync async) {
+        final ReaderChromeController c = ReaderChromeController();
+        c.toolbarsHidden = true;
+        c.transientVisible = true;
+        expect(c.transientVisible, isFalse);
+        c.showTransient();
+        expect(c.transientVisible, isFalse);
+        c.reveal(const Duration(seconds: 3));
+        expect(c.transientVisible, isFalse);
+        expect(c.autoHideArmed, isFalse);
+        c.dispose();
+      });
+    });
+
+    test('不改 showChrome（点词门控镜像）；开回来后唤出恢复', () {
+      final ReaderChromeController c = ReaderChromeController();
+      c.showChrome = false;
+      c.toolbarsHidden = true;
+      expect(c.showChrome, isFalse, reason: '关栏不得翻用户的挤压态意图');
+      c.toolbarsHidden = false;
+      expect(c.showChrome, isFalse, reason: '开回来后回到关掉前的状态');
+      c.showTransient();
+      expect(c.transientVisible, isTrue);
+      c.dispose();
+    });
+
+    test('翻转通知监听者，重复置同值不通知', () {
+      final ReaderChromeController c = ReaderChromeController();
+      int notified = 0;
+      c.addListener(() => notified++);
+      c.toolbarsHidden = true;
+      c.toolbarsHidden = true;
+      c.toolbarsHidden = false;
+      expect(notified, 2);
+      c.dispose();
+    });
+  });
 }

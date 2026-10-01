@@ -61,8 +61,73 @@ List<int> mangaOcrPageOrder(int pageCount, int startPage) {
   ];
 }
 
+/// 运行中可改道的整卷处理顺序：没有改道时给出的序列与 [mangaOcrPageOrder]
+/// 完全相同；[focus] 把游标挪到读者当前页，之后从那页起向后取尚未给出的页，
+/// 到末页再绕回。每页恰好给出一次。
+///
+/// 读者往前翻回去时也是「先那页、再往后接着跑」，已经处理过的页直接跳过。
+class MangaOcrPageScheduler {
+  MangaOcrPageScheduler(this.pageCount, int startPage)
+      : _taken = List<bool>.filled(pageCount < 0 ? 0 : pageCount, false),
+        _cursor = pageCount <= 0 ? 0 : startPage.clamp(0, pageCount - 1);
+
+  final int pageCount;
+  final List<bool> _taken;
+  int _cursor;
+
+  /// 读者翻到了 [pageIndex]：下一次 [next] 从它开始找。越界请求忽略。
+  void focus(int pageIndex) {
+    if (pageIndex < 0 || pageIndex >= pageCount) return;
+    _cursor = pageIndex;
+  }
+
+  /// 下一页页号；全部给出过之后为 null。
+  int? next() {
+    for (int step = 0; step < pageCount; step++) {
+      final int page = (_cursor + step) % pageCount;
+      if (_taken[page]) continue;
+      _taken[page] = true;
+      _cursor = (page + 1) % pageCount;
+      return page;
+    }
+    return null;
+  }
+}
+
 /// 按页索引懒加载解码好的页面图像（由调用方实现，通常从压缩包/目录读）。
 typedef OcrPageLoader = Future<img.Image> Function(int pageIndex);
+
+/// 能给「已经识别好的文本」补行几何的识别器（旧版缓存升级用，BUG-2813）。
+///
+/// 识别文本原样保留，只按块内检出的列/行把它切开并带回行框；做不到（没检到行）
+/// 时返回不带行几何的结果。
+abstract interface class LineLayoutOcrRecognizer implements OcrRecognizer {
+  Future<OcrRecognition> layoutRecognized(
+    img.Image page,
+    OcrRect box,
+    String text, {
+    required bool vertical,
+  });
+}
+
+/// 逐行（竖排逐列）识别整块、直接交回每行文本与行框的识别器。
+///
+/// 与 [LineLayoutOcrRecognizer] 的区别：那边是整块识别完再按检出的列长估算切分；
+/// 这边每行本来就是单独识别的，行文本与行框天然一一对应，不用估算——整块交它的
+/// 块，路由识别器直接采用它的结果。
+///
+/// [vertical] 是调用方对块方向的判断，实现可按检出的行改判，结果里的 `vertical`
+/// 是最终方向。[lineHints] 是调用方已检出的原始行框（页面坐标、未滤振假名），
+/// 给了就不再检测。有行几何时结果的 `lines` / `lineBoxes` 是阅读序、页面坐标，
+/// `lines.join() == text`；一行都没检到时只给整块文本（不带行几何）。
+abstract interface class LineOcrRecognizer implements OcrRecognizer {
+  Future<OcrRecognition> recognizeWithLines(
+    img.Image page,
+    OcrRect box, {
+    required bool vertical,
+    List<OcrRect>? lineHints,
+  });
+}
 
 /// 竖排判定的长宽比阈值：高 > 宽 * 阈值 视为竖排。
 ///
@@ -85,7 +150,7 @@ bool isVerticalBlock(OcrRect box) =>
 List<OcrBlock> _suppressRecognizedContainedBlocks(List<OcrBlock> blocks) {
   return blocks.where((OcrBlock child) {
     final OcrRect inner = child.box;
-    final String text = child.lines.single;
+    final String text = child.text;
     if (text.isEmpty || inner.area <= 0 || inner.width < inner.height) {
       return true;
     }
@@ -97,7 +162,7 @@ List<OcrBlock> _suppressRecognizedContainedBlocks(List<OcrBlock> blocks) {
           outer.top <= inner.top &&
           outer.right >= inner.right &&
           outer.bottom >= inner.bottom &&
-          parent.lines.single.contains(text);
+          parent.text.contains(text);
     });
   }).toList();
 }
@@ -121,9 +186,17 @@ class MangaOcrPipeline {
 
   /// 处理整卷。返回**按页序**排列的结果（含缓存命中页），与 [startPage] 无关。
   ///
-  /// 处理顺序见 [mangaOcrPageOrder]：从 [startPage] 起、绕回开头补齐。
+  /// 处理顺序见 [mangaOcrPageOrder]：从 [startPage] 起、绕回开头补齐（有
+  /// [takeFocus] 改道时以 [MangaOcrPageScheduler] 为准）。
   /// 中断（[cancelToken] 置位）抛 [OcrCancelledException]；已完成页已落
   /// 缓存，重跑时只补缺页。
+  ///
+  /// [legacyCaches]：识别文本与当前版本相同、只缺行几何的旧版逐页缓存。当前缓存
+  /// 缺页而旧缓存有这一页、且识别器能补排版（[LineLayoutOcrRecognizer]）时，
+  /// 只补算行几何写成当前版本，不重新识别（BUG-2813）。
+  ///
+  /// [takeFocus]：每页开始前取一次读者当前页（没有新请求返回 null），有就把
+  /// 处理游标挪过去（[MangaOcrPageScheduler]）——读者翻到哪页，下一页就先跑哪页。
   Future<List<OcrPageResult>> processBook({
     required String bookId,
     required int pageCount,
@@ -131,13 +204,21 @@ class MangaOcrPipeline {
     int startPage = 0,
     OcrCancelToken? cancelToken,
     OcrProgressCallback? onProgress,
+    List<OcrPageCache> legacyCaches = const <OcrPageCache>[],
+    int? Function()? takeFocus,
   }) async {
     final List<OcrPageResult?> results = List<OcrPageResult?>.filled(
       pageCount,
       null,
     );
+    final MangaOcrPageScheduler scheduler =
+        MangaOcrPageScheduler(pageCount, startPage);
     int completed = 0;
-    for (final int page in mangaOcrPageOrder(pageCount, startPage)) {
+    while (true) {
+      final int? focused = takeFocus?.call();
+      if (focused != null) scheduler.focus(focused);
+      final int? page = scheduler.next();
+      if (page == null) break;
       cancelToken?.throwIfCancelled();
       final OcrPageResult? cached = await cache?.read(bookId, page);
       if (cached != null) {
@@ -147,11 +228,18 @@ class MangaOcrPipeline {
         continue;
       }
       final img.Image image = await loadPage(page);
-      final OcrPageResult result = await processPage(
-        pageIndex: page,
-        image: image,
-        cancelToken: cancelToken,
-      );
+      final OcrPageResult result = await _relayoutLegacyPage(
+            bookId: bookId,
+            pageIndex: page,
+            image: image,
+            legacyCaches: legacyCaches,
+            cancelToken: cancelToken,
+          ) ??
+          await processPage(
+            pageIndex: page,
+            image: image,
+            cancelToken: cancelToken,
+          );
       await cache?.write(bookId, result);
       results[page] = result;
       completed++;
@@ -160,6 +248,64 @@ class MangaOcrPipeline {
     return <OcrPageResult>[
       for (final OcrPageResult? result in results) result!,
     ];
+  }
+
+  /// 旧版缓存有这一页就只补行几何返回；没有 / 识别器不会补 / 页尺寸对不上时
+  /// 返回 null，由调用方完整识别。
+  Future<OcrPageResult?> _relayoutLegacyPage({
+    required String bookId,
+    required int pageIndex,
+    required img.Image image,
+    required List<OcrPageCache> legacyCaches,
+    OcrCancelToken? cancelToken,
+  }) async {
+    final OcrRecognizer recognizer = _recognizer;
+    if (recognizer is! LineLayoutOcrRecognizer) return null;
+    for (final OcrPageCache legacyCache in legacyCaches) {
+      final OcrPageResult? legacy = await legacyCache.read(bookId, pageIndex);
+      if (legacy == null) continue;
+      // 旧结果的坐标系必须就是这张图（v2 起统一按 EXIF 摆正后的像素）。
+      if (legacy.imageWidth != image.width ||
+          legacy.imageHeight != image.height) {
+        return null;
+      }
+      final List<OcrBlock> blocks = <OcrBlock>[];
+      for (final OcrBlock block in legacy.blocks) {
+        cancelToken?.throwIfCancelled();
+        final String text = block.text;
+        if (block.lineBoxes != null || text.isEmpty) {
+          blocks.add(block);
+          continue;
+        }
+        final OcrRecognition laidOut = await recognizer.layoutRecognized(
+          image,
+          block.box,
+          text,
+          vertical: block.vertical,
+        );
+        final List<String>? lines = laidOut.lines;
+        final bool hasLayout =
+            lines != null && lines.isNotEmpty && lines.join() == text;
+        blocks.add(
+          OcrBlock(
+            box: block.box,
+            // 排版按检出行重新定了方向时以它为准（与新识别的块同口径）。
+            vertical: hasLayout ? laidOut.vertical : block.vertical,
+            lines: hasLayout ? lines : block.lines,
+            lineBoxes: hasLayout ? laidOut.lineBoxes : null,
+            score: block.score,
+            insideBubble: block.insideBubble,
+          ),
+        );
+      }
+      return OcrPageResult(
+        pageIndex: pageIndex,
+        imageWidth: legacy.imageWidth,
+        imageHeight: legacy.imageHeight,
+        blocks: blocks,
+      );
+    }
+    return null;
   }
 
   /// 处理单页：检测 → 阅读顺序 → 按识别器能力单框或有界批识别。
@@ -204,16 +350,23 @@ class MangaOcrPipeline {
         );
       }
       for (int i = 0; i < regions.length; i++) {
-        final String text = recognized[i].text;
+        final OcrRecognition recognition = recognized[i];
+        final String text = recognition.text;
         if (text.isEmpty) {
           continue;
         }
         final DetectedTextRegion region = regions[i];
+        // 行几何只在「拼回去就是原文」时采用：识别器给错了宁可退回整块单行，
+        // 也不让覆盖层的字与句子文本错位。
+        final List<String>? lines = recognition.lines;
+        final bool hasLayout =
+            lines != null && lines.isNotEmpty && lines.join() == text;
         blocks.add(
           OcrBlock(
             box: region.rect,
-            vertical: recognized[i].vertical,
-            lines: <String>[text],
+            vertical: recognition.vertical,
+            lines: hasLayout ? lines : <String>[text],
+            lineBoxes: hasLayout ? recognition.lineBoxes : null,
             score: region.score,
             insideBubble: region.insideBubble,
           ),

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
 
@@ -752,6 +752,74 @@ CREATE TABLE video_books (
       final List<VideoBookRow> deleted = await db.deleteVideoBooks(uids);
       expect(deleted, hasLength(1100));
       expect(await db.allVideoBooks(), isEmpty);
+    });
+  });
+
+  group('resolveVideoMetadataWorkForCollection', () {
+    late FushiDatabase db;
+    setUp(() => db = _freshDatabase());
+    tearDown(() => db.close());
+
+    Future<int> bookWork(String bookUid) => db.upsertVideoMetadataWork(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: Value<String?>(bookUid),
+            mediaType: 'tv',
+            title: bookUid,
+            updatedAt: 1,
+          ),
+        );
+
+    test('合集自己的作品行优先', () async {
+      final int collectionId = await db.createMediaCollection('Series');
+      await _insertVideo(db, 'ep1');
+      await db.addToCollectionRaw(collectionId, 'video', 'ep1');
+      await bookWork('ep1');
+      final int own = await db.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          collectionId: Value<int?>(collectionId),
+          mediaType: 'tv',
+          title: 'Series',
+          updatedAt: 1,
+        ),
+      );
+      expect(
+        (await db.resolveVideoMetadataWorkForCollection(collectionId))!.id,
+        own,
+      );
+    });
+
+    test('只下了第一集（资料挂在单集上）→ 合集页照样拿到这部作品', () async {
+      final int collectionId = await db.createMediaCollection('Kurumi');
+      await _insertVideo(db, 'ep1');
+      await db.addToCollectionRaw(collectionId, 'video', 'ep1');
+      final int work = await bookWork('ep1');
+      expect(await db.getVideoMetadataWorkByCollection(collectionId), isNull);
+      expect(
+        (await db.resolveVideoMetadataWorkForCollection(collectionId))!.id,
+        work,
+      );
+    });
+
+    test('多个成员各自一部作品（播放列表）→ 不猜', () async {
+      final int collectionId = await db.createMediaCollection('Mixed');
+      for (final String uid in <String>['a', 'b']) {
+        await _insertVideo(db, uid);
+        await db.addToCollectionRaw(collectionId, 'video', uid);
+        await bookWork(uid);
+      }
+      expect(
+        await db.resolveVideoMetadataWorkForCollection(collectionId),
+        isNull,
+      );
+    });
+
+    test('别的合集的成员不算', () async {
+      final int mine = await db.createMediaCollection('Mine');
+      final int other = await db.createMediaCollection('Other');
+      await _insertVideo(db, 'x');
+      await db.addToCollectionRaw(other, 'video', 'x');
+      await bookWork('x');
+      expect(await db.resolveVideoMetadataWorkForCollection(mine), isNull);
     });
   });
 }

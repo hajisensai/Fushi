@@ -1,3 +1,6 @@
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,7 +44,46 @@ void main() {
           0,
           reason: '${result.stdout}\n${result.stderr}',
         );
-        expect(result.stdout, contains('PASS 24 browser cases'));
+        expect(result.stdout, contains('PASS 28 browser cases'));
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+
+  test(
+    'browser launch failure reports the process exit and stderr (BUG-2803)',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped('node not found on PATH; skipping JS execution');
+        return;
+      }
+      // Stand-in "browser" that dies at once: node rejects Chrome's flags on
+      // stderr and exits non-zero. The driver must surface that immediately
+      // instead of waiting out a startup deadline.
+      final String nodePath =
+          (Process.runSync(nodeExe, <String>['-p', 'process.execPath']).stdout
+                  as String)
+              .trim();
+      final Directory temp = Directory.systemTemp.createTempSync('reader-cue-');
+      try {
+        final File payload = File('${temp.path}/scripts.json')
+          ..writeAsStringSync('{}');
+        final ProcessResult result = await Process.run(
+          nodeExe,
+          <String>[
+            'test/reader/reader_audio_cue_identity_harness.mjs',
+            payload.path,
+          ],
+          environment: <String, String>{'CHROME_PATH': nodePath},
+        );
+        expect(result.exitCode, isNot(anyOf(0, 77)));
+        final String stderr = result.stderr as String;
+        expect(stderr, contains('chrome exited before DevTools was ready'));
+        expect(stderr, contains('--- chrome stderr (tail) ---'));
+        expect(stderr, contains('--remote-debugging-port=0'));
       } finally {
         temp.deleteSync(recursive: true);
       }

@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/ai/ai_feature.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/web_knowledge.dart'
+import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart'
     show
         WebKnowledgeSite,
         encodeWebKnowledgeCustomSites,
@@ -130,7 +132,8 @@ const String kGameStreamRemoteLaunchPrefKey = 'game_stream_remote_launch';
 /// 存的是整张表（连隐式默认一起固化），已弃用不读。
 const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 
-class PreferencesRepository extends ChangeNotifier implements PrefStore {
+class PreferencesRepository extends ChangeNotifier
+    implements PrefStore, AiSettingsSource {
   PreferencesRepository(this._db);
 
   static const String videoOnlineServicesSetupDismissedKey =
@@ -712,8 +715,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// 应用外悬浮球（Android 系统球）。默认关。旧版选过 `system` 的用户保持开。
-  /// 只在 Android 生效；别的平台读到 true（例如备份从 Android 恢复）也不起球。
+  /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
+  /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {
     final Object? value = getPref('floating_ball.system', defaultValue: null);
     if (value is bool) return value;
@@ -763,6 +766,22 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
         FloatingBallScope.general => 'floating_ball.buttons.general',
         FloatingBallScope.system => 'floating_ball.buttons.system',
       };
+
+  /// 桌面应用外悬浮球的停靠边与纵向比例（与应用内球分开存：两颗球可以同时在）。
+  /// Android 原生球的位置存在原生偏好里，不走这里。
+  String get floatingBallSystemDock =>
+      getPref('floating_ball.system_dock', defaultValue: 'right') as String;
+
+  double get floatingBallSystemVerticalFraction =>
+      (getPref('floating_ball.system_y', defaultValue: 0.35) as num).toDouble();
+
+  Future<void> setFloatingBallSystemPosition(
+      String dock, double fraction) =>
+      // 一个逻辑位置、两个键：同一事务落盘，不会只写进一半。
+      setPrefs(<String, dynamic>{
+        'floating_ball.system_dock': dock,
+        'floating_ball.system_y': fraction,
+      });
 
   /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。
   String get floatingBallDock =>
@@ -1554,6 +1573,7 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   ///
   /// 与 [discoveryOpdsServers] 同范式：逐条容错在 [decodeAiProviderConfigs] 里，
   /// 一条记录坏掉只丢那一条，不让整份清单消失。
+  @override
   List<AiProviderConfig> get aiProviders {
     final String raw = getPref('ai_providers', defaultValue: '') as String;
     if (raw.trim().isEmpty) return const <AiProviderConfig>[];
@@ -1575,6 +1595,7 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 「哪个功能用哪家 AI」的映射（设备本地）。
+  @override
   AiFeatureAssignments get aiFeatureAssignments {
     final String raw = getPref(
       'ai_feature_providers',
@@ -2002,30 +2023,30 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// `480p` `any`）。
   /// 类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadQuality =>
-      getPref('ai_video_download_quality', defaultValue: '') as String;
+      getPref(kAiVideoDownloadQualityPref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadQuality(String value) async {
-    await setPref('ai_video_download_quality', value);
+    await setPref(kAiVideoDownloadQualityPref, value);
     notifyListeners();
   }
 
   /// 「AI 下视频」的片源偏好（只排序不过滤）：`''` 不限 / `best` / `bluray` / `web`。
   /// 类型化读法 `VideoAcquisitionSourcePref.parse`。
   String get aiVideoDownloadSource =>
-      getPref('ai_video_download_source', defaultValue: '') as String;
+      getPref(kAiVideoDownloadSourcePref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadSource(String value) async {
-    await setPref('ai_video_download_source', value);
+    await setPref(kAiVideoDownloadSourcePref, value);
     notifyListeners();
   }
 
   /// 「AI 下视频」的码率偏好（只排序不过滤）：`''` 不限 / `high` / `low`。
   /// 类型化读法 `VideoAcquisitionBitratePref.parse`。
   String get aiVideoDownloadBitrate =>
-      getPref('ai_video_download_bitrate', defaultValue: '') as String;
+      getPref(kAiVideoDownloadBitratePref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadBitrate(String value) async {
-    await setPref('ai_video_download_bitrate', value);
+    await setPref(kAiVideoDownloadBitratePref, value);
     notifyListeners();
   }
 
@@ -2035,11 +2056,11 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// `none` 不配字幕。与 [jimakuDefaultLanguage] 分开：那是字幕面板的全局默认，
   /// 这是 AI 对话流程自己的默认。类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadSubtitleLanguage =>
-      getPref('ai_video_download_subtitle_language', defaultValue: '')
+      getPref(kAiVideoDownloadSubtitleLanguagePref, defaultValue: '')
           as String;
 
   Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
-    await setPref('ai_video_download_subtitle_language', value);
+    await setPref(kAiVideoDownloadSubtitleLanguagePref, value);
     notifyListeners();
   }
 
@@ -2102,6 +2123,7 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 实际要查的站点：启用的内置站（内置顺序）+ 启用的自定义站（添加顺序）。
+  @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites {
     final Set<String> enabled = aiWebKnowledgeEnabledSiteIds;
     return <WebKnowledgeSite>[
@@ -2134,10 +2156,10 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// 下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）。默认关：
   /// 整颗种子全下（旧行为）。下载管线每轮现读，改了对还没拿到文件表的任务生效。
   bool get videoDownloadSkipExtras =>
-      getPref('video_download_skip_extras', defaultValue: false) as bool;
+      getPref(kVideoDownloadSkipExtrasPref, defaultValue: false) as bool;
 
   Future<void> setVideoDownloadSkipExtras(bool enabled) async {
-    await setPref('video_download_skip_extras', enabled);
+    await setPref(kVideoDownloadSkipExtrasPref, enabled);
     notifyListeners();
   }
 

@@ -15,11 +15,11 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart'
     show formatDiscoveryBytes;
-import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
@@ -183,6 +183,11 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       VideoAcquisitionSayKind.workNotFound => t.ai_video_acquire_work_not_found(
         query: arg('query'),
       ),
+      VideoAcquisitionSayKind.workAliasResolved =>
+        t.ai_video_acquire_work_alias_resolved(
+          query: arg('query'),
+          titles: arg('titles'),
+        ),
       VideoAcquisitionSayKind.aiPicked => t.ai_video_acquire_ai_picked(
         title: arg('title'),
         confidence: _percent(a['confidence']),

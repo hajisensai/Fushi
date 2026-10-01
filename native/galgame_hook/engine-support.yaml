@@ -106,8 +106,8 @@
         "engine_id": "reallive",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact glyph provider (kLookupGeometryProviderIdReallive). Sites resolve only from structure: the TextRender body (glyph-cache lookup, cache-hit jump, GetGlyphOutlineA rasteriser) and the join both paths reach, where the font-size global and the pen (x, y) become the bitmap origin; the per-pass GetKeyboardState key-table join and its focused-window global; the compositor's call into the generic blitter. LunaHook's RealLive entry patch is never touched. A glyph is visible iff the last blit into the presented 800x600 screen buffer that covered its cell came from its own text surface; at press time its opaque surface pixels must also appear in the presented buffer. The selected LunaHook line must equal the render-order suffix of the visible glyphs. The screen buffer is presented 1:1 at the client origin in windowed and exclusive-fullscreen modes. A claimed press masks VK_LBUTTON in the engine's key table from press to release. Offline: x86/x64 build and fushi_reallive_lookup_test. 2026-09-27 Fushi host on the original launch path, 智代アフター 2005 disc build (RealLive.exe SHA-256 0075C027…364F9A, x86, exclusive fullscreen 800x600, hook DLL SHA-256 5C6FAB28…5DFBA2): sites resolved in 8 ms; model 20 glyphs from 64,484; accept4 on 「いいじゃないか。記念となる日を増やしていこう」 at 285,497 recorded text=PASS, audio=PASS (matched game_resource Z0629.nwk_19.wav), lookup card, no advance on lookup, dismiss and re-lookup, and a real card through the in-game route (noteId 1790508127612 with sentence, audio and image): verdict=full. Runtime corrections found on this build: the Focused() proof calls GetFocus (the engine imports no GetForegroundWindow), and neighbour glyph cells overlap by a few pixels (tighter pen advance than the font size), so only a majority-area overlap starts a new page. The geometry acceptance gate (200 positive probes, 100 stale-generation cases, 3 same-session cards per build) has not run; single RealLive build."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -122,8 +122,8 @@
         "engine_id": "bgi_ethornell",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact message-page provider (kLookupGeometryProviderIdBgi). Sites resolve only from structure (both generations, see text.bgi_message_set_text_hook): SetTextImpl, the Ex vtable, the owner field (+0x20) and the cell-list sentinel (+0x7c) come from the Impl's own instructions; the screen mode index and width/height tables from the `mov eax,[reg*4+W]` / `[W+0x20]` / `mov eax,[W-4]` triple. At SetTextImpl return the detour copies the laid-out cells (0x48-byte records linked at +0x44 from sentinel+0x44; owner-local pen +0x10/+0x14, glyph surface +0x28/+0x2c) because the message object is destroyed after the reveal while the text stays on the owner's layer until the next line. The owner's class is admitted only when its vtable slot 2 decodes as one of the two known drawable predicates (1.5: visible flags +4/+8 and transparency +0x98 < 256; 1.6: +0x20/+0x10 set, +0x18 clear, +0xc4 < 256, +0xc8 > 0) and exactly one vtable function decodes as the display-position composer (sum of pair getters; 1.6's camera term refused while its flag is set). A glyph is offered only when its line has no inline markup, the cell count equals the displayed unit count (an engine-inserted leading quote is a displayed unit outside the published text), the owner is still that class, drawn by the engine's predicate and at the model's display position, and the selected line equals the render-order suffix of the page; only a client with the design aspect is admitted and design pixels are projected to physical client pixels. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed in the main window procedure (found at runtime as the only visible ANSI top-level window of the process whose procedure lies in the game image) together with its WM_LBUTTONUP; the press is refused when a newer line was captured, the owner changed, the host's native-input admission is missing or a card shields the game. 2026-09-30 Frida probes on the 2011 Ethornell 1.519.6 trial (1280x720 design, windowed): cells {16+27i, 12, 29x29} on the owner at 300,560 matched the screenshot glyphs at 316,572; right-click hide and the backlog faded the owner's transparency to 256; a WM_LBUTTONDOWN/UP pair swallowed at the window procedure did not advance while unswallowed clicks did (the per-frame GetAsyncKeyState poll only releases the latch; masking it alone did not stop the advance). The resolver and the owner-ABI decoder were also run offline on a 2016 Ethornell 1.626 trial (not installed, never run). Offline: x86/x64 build and fushi_bgi_lookup_test. 2026-09-30 injector-side on the original trial exe (SHA-256 EEDC03B1...381047538, x86, windowed 1280x720 client, launched by fushi_voice_injector --japanese-locale with hook DLL SHA-256 E673177F...D4C4183): sites resolved in 5.3 ms, window procedure +0x6c2f0 hooked, owner class decoded (3 drawable terms, display slot 11, 3 position terms); a mini host (lookup enabled, NativeOnly admission, BGI exact lane selected) received models of 16/33/36 glyphs (first glyph design 316,572 27x29, second row y 610) and kind 2 id 21 hits (char 4 of a 33-unit line at 424,572; char 32 of a 36-unit line on the second row at 424,610) and the page did not advance; a click off the glyphs advanced; right-click hide and the backlog retired the model (drawable false) and closing them re-offered it. That run drove the window with SendInput clicks from a helper script. 2026-09-30 Fushi host (gal_realgame_driver_itest, rebuilt with the id 21 runner/Dart allowlists) on the original launch path, same exe: the first host run on voiced lines got no_advance=PASS but lookup=FAIL, because the worker resolved a claimed press against the newest model and silently dropped it when the model had been rebuilt in between (the message window fades out and back in around speaker lines), and its diagnostics had exhausted a fixed log budget. Presses now carry their glyph and resolve against the model they were claimed on, are published before any gate of the tick, and every drop is logged. Re-run with hook DLL SHA-256 E12D272D...CC3ABDBF: accept4 on 「放せよっ！」 (char 1 at physical 343,572 27x29, voiced) recorded text=PASS (BGI exact thread), audio=PASS (matched game_resource data04099.arc_aiy710000010.ogg), lookup=PASS, no_advance=PASS, dismiss and re-lookup PASS, and a real card through the in-game route (fake AnkiConnect noteId 1790765888185 with sentence, audio and image): verdict=full. The intermediate build 51322FBD... (same fix, before the published-line history moved into the tested core) recorded verdict=full on 「……される」 (noteId 1790765888183) as well. Release evidence ledger not yet written."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -138,8 +138,8 @@
         "engine_id": "catsystem2",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact message-page provider (kLookupGeometryProviderIdCatSystem2). Sites resolve only from structure: the back-to-back ClearPage/RenderChar pair (record code +4, pen +0x10/+0x14, advance +0x18, font size +0x1c) whose GetCharImage call reaches one rasteriser calling GetGlyphOutlineA (LunaHook's CatSystem2 hook patches that rasteriser entry; it is never touched); the message-window Update whose reveal loop renders through RenderChar and whose SyncLayer hands the page to the screen object at +0x68; the part layer query (layer id +4, screen +0x68; every copy must call the same Screen::QueryLayer) and the scene list layout proven by Screen::QueryLayer, Scene::Visible (list, head +0x14, visible +0xc) and Scene::Find (id +8); and the input handler that owns SetCapture/ReleaseCapture/WindowFromPoint. A glyph is on screen iff RenderChar revealed it on the current page (ClearPage forgets it), its layer node is visible, the unscaled sprite sits at integral design pixels with the page size and box {x-1,y-1,x+w,y+h}, and no later-drawn visible layer box covers its cell (hiding the window or opening the system menu retires the model). The selected LunaHook line must equal the render-order suffix of the visible glyphs of exactly one page. The design back buffer (screen +0x18/+0x1c, mirrored) is stretched over the whole client; only a client with the design aspect is admitted. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed in the engine's own input handler together with its WM_LBUTTONUP (message thread; lparam client pixels mapped to design pixels); the press is refused when anything on screen changed since the model was built. Offline: x86/x64 build and fushi_catsystem2_lookup_test. 2026-09-27 injector-side on the original launch path, the Grisaia no Yuukan build (GrisaiaAno1.exe SHA-256 DB0CD534...39C45A, x86, windowed, 1280x720 design on a 2560x1440 physical client): sites resolved in 16 ms; models of 42/20/69 glyphs, first glyph design 293,591 -> physical 586,1182 52x52; a mini host (lookup enabled, NativeOnly admission, CatSystem2 rasteriser lane selected) received kind 2 id 19 hits (char 2 of a 69-unit line, char 3 of a 40-unit line) and the page did not advance; a click off the glyphs advanced; the system menu retired the model and closing it re-offered. That run drove the covered window with posted mouse messages and a Frida-faked cursor/foreground, so the real-foreground press and the Fushi host accept4 route are not verified yet. 2026-09-28 Fushi host (gal_realgame_driver_itest) on the original launch path, same GrisaiaAno1.exe, windowed 2560x1440 physical client, real foreground SendInput click: with the CatSystem2 rasteriser lane (0x56ab00) selected, accept4 on 「はい、おはよー」 at physical 1304,1590 recorded text=PASS, lookup card, no advance on lookup, dismiss and re-lookup, and a real card through the in-game route (noteId 1790528375095): geometry/claim verified on this build. The same run reported audio=PASS via engine_pcm, which is a false positive: every clip came from one DirectSound buffer in 500 ms streaming slices, and the per-line voice path is off because this build's pcm_*.int archives are encrypted KIF (the adapter rejected encrypted archives). 2026-09-28: the engine-decrypted voice lane (catsystem2_engine_decrypted_voice_resource) now publishes one verified Ogg per voiced page on this build injector-side. 2026-09-28 Fushi host re-run with that lane (hook DLL SHA-256 296194B8…, EmbedCS2 dialogue lane selected: its line precedes the voice by 32-63 ms, while the rasteriser lane can trail it by up to 1.7 s, past the 1.5 s binding window): the session opened in gameResource mode, voiced lines paired as matched/game_resource, and accept4 on 「すみません、唐突に失礼が過ぎましたね。おはようございますみちる様」 at physical 1304,1590 recorded text=PASS, audio=PASS (pcm_e.int_SAC_griani_003_002.ogg), lookup card, no advance on lookup, dismiss and re-lookup, and a real card through the in-game route (noteId 1790534808080 with sentence, audio and image): verdict=full."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -186,16 +186,16 @@
         "engine_id": "artemis_pfs",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; no uniquely traced hybrid positioned-text provider is admitted."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact glyph-node provider (kLookupGeometryProviderIdArtemis). Sites resolve only from structure: a unique Layer::CreateGlyph factory signature whose constructor must carry the glyph vtable, cell-size and multibyte-width proofs; vtable slot 4 must be the per-frame draw forwarder (slot 3 its sibling); a unique Input::Update prologue pins the key-state array and a unique cursor-mapping block pins the HWND and letterbox scale. Any missing/ambiguous proof installs nothing. Visible glyphs are the ones drawn in the last frame; the selected LunaHook line must equal the creation-ordered suffix of those glyphs, and each glyph's world scale must equal the engine root scale 1/k (world units are engine client pixels). 2026-09-27 runtime on アマナツ ～Perfect Edition～ Ver2.0.0 x64 (exe SHA-256 C0C14E52…F37A92E2, same bytes as the trial row) via fushi_voice_injector --launch --hold plus a scratch host emulator (not the Fushi host): sites resolved in 12.5 ms, OfferReady published name+dialogue models (e.g. 14 glyphs, 遥 at 330,490 39x56, dialogue cells 27x41 from 340,552 on a 1280x720 client), a bare left click on 海 published hit kind=2 id=17 char=6 rect=448,552 27x41 and the line did not advance, while a click off the text advanced it. 2026-09-27 Fushi host (gal_realgame_driver_itest, Debug runner with the kind 2 id 17 allowlist, hook DLL SHA-256 799AAC58…2FE8C1) on the original launch path: accept4 at physical (1768,1314) on こがね「よ、よそ者……！」 recorded text=PASS, audio=PASS (matched game_resource 222273750_fem_kog_00019.ogg), lookup card shown, no advance on lookup, dismiss and re-lookup, and a real card through the in-game route (noteId 1790491970749 with sentence, audio and image): verdict=full. A second accept4 on an unvoiced narration line passed lookup and no-advance. The geometry acceptance gate (200 positive probes, 100 stale-generation cases, 3 same-session cards per build) has not run."
         },
         "verified_shield": {
           "status": "implemented_unverified",
-          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+          "evidence": "A claimed glyph press is masked in the engine's own per-frame key-state array (Input::Update, left button) from press through release, so neither edge reaches the script; a masked click was measured not to advance. Dismiss clicks while a card is shown rely on the generic GetAsyncKeyState shield (the engine polls all 256 keys through GetAsyncKeyState; its per-key message queue stayed empty for mouse clicks). No real-build transaction corpus has run."
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract. The exact provider consumes a press only under NativeInputAllowed, with no card/shield active, the game in the foreground and the cursor on exactly one mapped glyph; no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -294,6 +294,24 @@
         "risky_left_click": {
         "status": "unavailable",
           "evidence": "This CMVS sensor implements Shift lookup only; it does not intercept bare left clicks."
+        }
+      },
+      {
+        "engine_id": "unity_mono",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "Engine-exact per-glyph message provider (kLookupGeometryProviderIdUnityMono) for the Unity Mono per-glyph TextMesh message framework the Mono text path already admits structurally (instance `string Message.Mes(string,bool)` + static 8-parameter `Game.NewText(..., string @3, ...)` in Assembly-CSharp). Sites resolve only through the Mono embedding API: Message.FixedUpdate (instance, void, no parameters), Message.messageSprite proven to be List<List<UnityEngine.GameObject>> (both List`1 levels share one `_items`/`_size` layout; the inner element class is the engine's GameObject), Message.LastMes (string), UnityEngine.Object.m_CachedPtr (native peer), and 14 engine bindings matched by name + instance/static + return + parameter types + by-ref-ness + the internal-call flag and taken from mono_lookup_internal_call (Camera.main / WorldToScreenPoint_Injected / cullingMask / targetTexture / orthographic, Screen.width/height, GameObject.activeInHierarchy / GetComponent(Type) / layer / get_scene_Injected, SceneManager.GetActiveScene_Injected, Renderer.get_bounds_Injected / enabled); a missing or duplicated piece installs nothing (pre-2018 players without `_Injected` bindings are rejected). After the framework's FixedUpdate the main thread samples every glyph object (alive native peer, active in hierarchy, renderer enabled, layer inside Camera.main's culling mask, scene == active scene so an additive overlay scene retires it, camera renders to the screen) and projects the renderer's world AABB with Camera.main.WorldToScreenPoint (orthographic cameras may use a negative near plane, so depth is only required for perspective cameras). The selected line must equal Message.LastMes of exactly one fresh instance and every '\\n'-terminated line of it must have exactly as many glyph objects as UTF-16 units. Unity's screen grid must equal the client in the window's own DPI context; cells are scaled to physical client pixels. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in a GWLP_WNDPROC subclass of the UnityWndClass window (Unity's legacy input takes mouse buttons from the window procedure: a swallowed pair keeps Input.GetMouseButtonDown(0) false), only with the host's NativeInputAllowed admission, no card/shield, the game in the foreground, no modifier, and nothing re-sampled since the model. The Mes text lane now carries a role key (hash of the object's scene name via Object.GetName) so the body and the speaker name plate, two objects of the same class written body-then-name for every spoken line, no longer share one lane whose latest line was always the speaker name. Offline: x86/x64 build and fushi_unity_mono_lookup_test. 2026-09-27 injector-side on the original launch path, the デスマッチラブコメ！ Steam build (DMLC.exe SHA-256 35416BAD...8B5B2D, x86, Unity 2019.2.15, MonoBleedingEdge, per-monitor DPI aware, 1280x720 client at 192 dpi): sites resolved (sprite +12, LastMes +28, List `_items` +8 / `_size` +12, m_CachedPtr +8); models followed the typing reveal (60 of 65 units, first glyph 266,56 36x51); a mini host (lookup enabled, NativeOnly admission, the body Message.Mes lane selected) received kind 2 id 20 hits from real foreground SendInput clicks (char 19 of a 65-unit narration page, char 8 of a 33-unit spoken line with a separate name-plate lane) and the page did not advance; a click off the glyphs advanced; the backlog overlay retired the model and closing it re-offered; the body and name-plate lanes kept their thread ids across a return to title + reload (new Message objects) and across a process restart. Visual occlusion by same-scene sprites (e.g. a modal confirm dialog dimming the message box) is not modelled; only an overlay scene or a hidden message object retires the model. 2026-09-28 Fushi host on the original launch path (DMLC.exe, windowed 1280x720, real foreground SendInput click, Message.Mes body lane selected): accept4 on the two-line narration 「我跟同班同学的身体，…四分五裂——」 at physical 1599,1253 recorded text=PASS, lookup card, no advance on lookup, dismiss and re-lookup, and a real card through the in-game route (noteId 1790528375097). Audio is not measurable on this sample (no voice). A first attempt failed only because the game was not the foreground window when the click landed (host status targetBackground, nativeInputAllowed=false), which is the intended gate. 2026-09-28 framework 2 on the same provider id: Fungus (public Unity VN framework, namespace `Fungus`) SayDialog on a UGUI Text. Admitted only when the text path resolved `IEnumerator Fungus.SayDialog.DoSay(string, bool x5, AudioClip, Action)` exactly and uniquely across images; sites: SayDialog.LateUpdate (instance, void, no parameters), SayDialog.storyText typed UnityEngine.UI.Text, Text.m_Text / m_TextCache (TextGenerator) / m_FontData.m_Font, Graphic.m_Canvas / m_CanvasRenderer / m_Color.a, TextGenerator.m_LastString / m_Characters (List<UICharInfo>) / m_Lines (List<UILineInfo>) with value strides from mono_class_value_size, UnityEngine.Object.m_CachedPtr, and 17 internal calls (Component.gameObject/transform, Behaviour.isActiveAndEnabled, Transform.get_localToWorldMatrix_Injected, Canvas.rootCanvas/renderMode/scaleFactor/worldCamera, CanvasRenderer.GetInheritedAlpha/cull, Font.dynamic, TextGenerator.GetCharactersInternal/GetLinesInternal, Camera.WorldToScreenPoint_Injected/targetTexture, Screen.width/height). After SayDialog.LateUpdate the main thread samples the story Text only when the generator laid out exactly the string it shows (m_LastString == m_Text), fills the generator's own character/line lists, requires one UICharInfo per raw UTF-16 unit + terminator, strips `<...>` like the text lane and hides glyphs inside an alpha-0 <color> span (the Writer's read-ahead), projects [cursor.x, +charWidth] x [lineTop-height, lineTop] / pixelsPerUnit through localToWorld and the root canvas (identity for Screen Space-Overlay, worldCamera.WorldToScreenPoint for Screen Space-Camera; World Space refused; dynamic fonts only) and requires the text active+enabled, not culled, inherited CanvasGroup alpha and colour alpha >= 0.5. The selected line (the DoSay lane: Fungus `{...}` tags stripped) must equal the stripped rendered text; each glyph carries its text index. The window-procedure claim is shared with framework 1 (Unity's Input System package also takes mouse buttons from the window procedure: with WM_LBUTTONDOWN/UP swallowed a real SendInput click did not advance a Fungus line, without it the same click did). Offline: x86/x64 build, fushi_unity_mono_lookup_test (Fungus site resolution with every fail-closed branch, rich text, geometry). 2026-09-28 injector-side on the original launch path of センチメンタルデスループ Steam (Sentimental Death Loop.exe SHA-256 34D59C4A...219629, x64, Unity 2021.3.10f1 MonoBleedingEdge, Fungus.dll, own windowed 1280x720 client at 192 dpi): sites resolved (story +64, m_Text +200, m_TextCache +208, m_Canvas +48, m_CanvasRenderer +40, color.a +116, UICharInfo stride 12, UILineInfo stride 16); models followed the reveal (18 -> 28 of 30 units, first glyph 330,579 24x35); a mini host (lookup enabled, NativeOnly admission, DoSay lane selected) received a kind 2 id 20 hit from a real foreground SendInput click on the second glyph (char 1 of 30, rect 354,579 25x35) and the line did not advance; a click off the glyphs advanced to the next line. Measured before the change with Frida: glyph cells from this projection overlay the rendered glyphs to the pixel. Not modelled: a game's own overlay in the same scene over the dialog (this title's Back Log dims but does not hide the dialog; its glyph positions stay claimable while it is open). 2026-09-28 Fushi host on the original launch path with the 67b8fd3dc51 build (x64 hook DLL SHA-256 9046DBE0…, unity_audio_runtime present): Sentimental Death Loop (Unity 2021.3 x64 Mono, Fungus, windowed 1280x720), Unity Mono Fungus Say lane selected, session in gameResource mode, accept4 on 「さっきから何回目の休憩だと思ってるの。⏎まったく。そんなことじゃ私はもう手伝うのやめる。」 at physical 1646,1338 recorded text=PASS, audio=PASS (matched game_resource sce_0006.wav), lookup card, no advance on lookup, dismiss and re-lookup, and a real card through the in-game route (noteId 1790549375831): verdict=full. Regression on the DMLC framework (x86) with the same build: text, lookup, no advance, dismiss/re-lookup and a real card PASS (noteId 1790549375833); audio not measurable (no voice on that sample)."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "The left-click claim is gated on the host's NativeInputAllowed admission; no measured real-build click-leak rate is recorded."
         }
       }
     ]
@@ -585,8 +603,13 @@
           "evidence": null
         },
         "pe_architectures": {
-          "values": [],
-          "evidence": null
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Key planetarian Kinetic Novel (2004) ships its RealLive build renamed as Kinetic.exe, PE32 machine 0x014c; static probe 2026-09-27"
+          }
         },
         "directory_files_all": {
           "values": [],
@@ -602,11 +625,12 @@
         },
         "resource_extensions": {
           "values": [
-            ".ovk"
+            ".ovk",
+            ".nwk"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence"
+            "reference": "anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence. Key planetarian Kinetic Novel (RealLive, x86) Kineticdata/KOE/z0001.nwk (754 members) and z0002.nwk (102 members): every member parsed and decoded offline to 16-bit WAV on 2026-09-27; offline format evidence only, no runtime read observed"
           }
         },
         "hashes": {
@@ -637,6 +661,12 @@
       "audio": {
         "priority": [
           {
+            "kind": "reallive_nwk_nwa_resource",
+            "format": "u32 count + 12-byte {byte_len, offset, voice_id} entries; NWA complevel -1..5 (16-bit, mono/stereo) decoded on the worker to PCM WAV",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
             "kind": "visual_arts_ovk_resource",
             "format": "strict u32 count + 16-byte entries + complete Ogg/EOS",
             "status": "implemented_unverified",
@@ -661,14 +691,18 @@
       "known_limitations": [
         "Format sharing with verified Siglus OVK is not evidence that a RealLive title is compatible.",
         "NWK/KOE/NWA remain unevaluated because no real old VisualArt's sample is available; no parser or support claim is added for them.",
-        "A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion."
+        "A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion.",
+        "Supersedes the NWK/NWA line above: a bounded NWK index parser and NWA decoder (complevel -1..5, 16-bit) now decode all 856 members of a real planetarian Kinetic Novel sample offline; no runtime KOE read, text pairing or card has been recorded, so the path stays implemented_unverified.",
+        "Identity is structural: ASCII Gameexe.ini plus a Seen script name in the executable file, or Gameexe.ini plus Seen.txt beside it, with any SiglusEngine marker or Siglus directory signature as a veto. Older AVG32 builds share that naming and are not distinguished.",
+        "NWK capture only observes a synchronous ReadFile that starts exactly at an indexed member; pending overlapped reads, memory-mapped KOE access and 8-bit NWA are not captured. Standard RealLive KOE/*.ovk titles still rely on the shared OVK path."
       ],
       "adapter_path": "hook/adapters/reallive_adapter.inc",
       "fixture_paths": [
         "tests/fixtures/reallive_replay.json"
       ],
       "test_paths": [
-        "tests/reallive_adapter_test.cpp"
+        "tests/reallive_adapter_test.cpp",
+        "tests/reallive_nwk_test.cpp"
       ]
     },
     {
@@ -1444,9 +1478,19 @@
       "text": {
         "capabilities": [
           {
+            "kind": "bgi_message_set_text_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 7, hook 'BGI exact', ENGINE:BGI:message_set_text): the message object's SetTextImpl is resolved structurally for both calling-convention generations (1.5x __thiscall ret 0x10 / 1.6x __stdcall ret 0x14) from its unique vcall shape through the Ex vtable layout slot, cross-proved against the vtable a constructor installs whose layout wrapper calls the function owning the leading-control-byte switch; the detour copies the CP932 line (bounded) and the worker strips control bytes / inline tags, converts to UTF-16 and publishes one lane per message owner (owner class + base position). 2026-09-30 Frida probes on the 2011 Ethornell 1.519.6 trial (original Fushi-host launch, LocaleEmulator) showed one clean whole line per SetTextImpl (render=1) plus an empty clear on a sibling object, and that LunaHook's EmbedBGI on the layout function emitted nothing on that path. Resolver run offline on that exe and on a 2016 Ethornell 1.626 trial resolved both generations. 2026-09-30 injector-side on that trial (same run as lookup_acceptance.geometry): the BGI exact lane published each dialogue line whole (e.g. 「ここ数日、街に雨は降っていない。」, then two two-row lines) 70-200 ms before the EmbedBGI lane carried the same text. No Fushi-host text_ready run with this DLL is recorded yet."
+          },
+          {
             "kind": "luna_auto_or_pc_hooks",
             "status": "implemented_unverified",
             "verification": "Generic Luna plumbing is present; no stable BGI dialogue thread has been selected on the official sample yet."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact message-page provider kLookupGeometryProviderIdBgi (21), see lookup_acceptance.geometry. Offline: x86/x64 build and fushi_bgi_lookup_test; no Fushi-host accept4 run is recorded."
           }
         ],
         "codepage": "CP932 / game-specific",
@@ -1479,7 +1523,9 @@
       "known_limitations": [
         "The official trial archive and BGI wrapper were measured directly, but the adapter has not yet crossed a voiced line in the installed game, so clean voice is not claimed.",
         "The initial profile intentionally tracks data031*.arc only; BGI titles that use another archive number require measured evidence before widening the classifier.",
-        "The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker."
+        "The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker.",
+        "Per-line voice archives are recognised by content convention (every member a mono bw wrapper), measured on two AUGUST trials: the 2011 PackFile-generation Eustia Web trial (17 voice archives, 3529 members) and the 2016 ARC20 senmomo trial (19 voice archives, 4371 members); BGM, SE, ambience and mixed archives in both were rejected. A BGI title with an all-mono SE archive or stereo voice would be misclassified.",
+        "The former data031*.arc name rule pointed at the senmomo trial SE archive (data03110.arc, 143 of 146 members stereo); its voice lives in data04xxx.arc. The adapter no longer uses that name rule (every *.arc handle is tracked and classified on the worker); the process-strategy note and audio format that still mention data031*.arc are evidence-gated claim fields and stay unchanged until a runtime ledger backs the new contract."
       ],
       "adapter_path": "hook/adapters/bgi_ethornell_adapter.inc",
       "fixture_paths": [],
@@ -1742,6 +1788,12 @@
             "format": "host PCM fallback",
             "status": "verified",
             "clean_voice": false
+          },
+          {
+            "kind": "catsystem2_engine_decrypted_voice_resource",
+            "format": "whole Ogg Vorbis member of any pcm_*.int the index lane does not own (encrypted KIF included), copied from the plaintext the engine's own Archive::ReadEntry hands its decoder and page-CRC-verified on the worker: <archive>_<member>.ogg, or <archive>_<member>.partial.ogg for the verified page prefix of a voice the next line stopped",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
           }
         ]
       },
@@ -1759,11 +1811,16 @@
       "known_limitations": [
         "Encrypted commercial KIF archives containing __key__.dat use title-specific Blowfish material and are deliberately rejected; no commercial-title resource-audio claim is made.",
         "Only Ogg members in pcm_*.int are classified as voice; loose developer-mode files and non-Ogg voice formats fall back to source PCM or loopback.",
-        "Audio is verified for the official starter-kit replay, but stable automatic CatSystem2 text-thread selection remains unverified."
+        "Audio is verified for the official starter-kit replay, but stable automatic CatSystem2 text-thread selection remains unverified.",
+        "Encrypted pcm_*.int are rejected only by the index lane. The engine-decrypted lane (catsystem2_engine_decrypted_voice_resource) copies the plaintext the engine itself decrypts for its Ogg decoder, through Archive::ReadEntry resolved from structure alone (the kcBigFile::Read forwarder and its (entry, buf, len) order, the ReadEntry prologue, the plain-path block with the entry fields and the SetFilePointer/ReadFile import slots); no cipher, key or encrypted KIF index is implemented. Archive handles are classified from the engine's own reads (worker-side file-name query), so the lane also covers archives opened before it armed. It stays implemented_unverified until a Fushi host accept4 pairs one of its files with the displayed line and writes a real card.",
+        "The engine lane publishes a voice once every page CRC verifies. A voice the next line stops before its tail was read (long lines clicked through) is published as its verified page prefix (<member>.partial.ogg: the heard part plus the decode-ahead); a playback whose Vorbis headers or first audio page were never read (skip) publishes nothing. Voice-to-line binding keys on Luna's hook identity: EmbedCS2 script lines precede the voice (measured 32-80 ms), render-time lanes such as the CatSystem2 rasteriser follow it (measured 0.3-1.7 s). Only lines within the host's 1.5 s resource window bind, so a render-lane line typed for longer (measured +1.7 s on a long line) stays unbound and cannot pair under the current host window.",
+        "2026-09-28 injector-side measurement (fushi_voice_injector --launch --hold with a hook DLL built from this tree; not a Fushi host run): グリザイアの有閑 GrisaiaAno1.exe (SHA-256 DB0CD534E0DF4C90ACE8296D1F2AC5D59D2EA4697C5303275109D4AFC539C45A, cs2 2.6.1, x86, all seven pcm_*.int encrypted). ReadEntry resolved at +0x136700; the adapter installed about 6 s after injection, after the engine had opened its archives, and the lane classified them from ReadEntry. 30 pages: 25 voiced pages gave 25 files, one per kcWLOgg pcm open with the file tick equal to the open tick; the 5 narration pages and the se.int/bgm.int Ogg opens gave none. 21 complete members (0.86-8.62 s, EOS, every page CRC valid, ffprobe durations equal) and 4 partial prefixes (4.7-9.1 s). Every binding still in the text ring matched the displayed page: 7/7 with the rasteriser lane selected (+312 to +1187 ms) and 8/8 with the EmbedCS2 dialogue lane (-32 to -63 ms); one rasteriser line at +1735 ms stayed unbound."
       ],
       "adapter_path": "hook/adapters/catsystem2_adapter.inc",
       "fixture_paths": [],
-      "test_paths": []
+      "test_paths": [
+        "tests/catsystem2_voice_test.cpp"
+      ]
     },
     {
       "id": "malie_libp",
@@ -2997,17 +3054,17 @@
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "カスタムメイド3D2 CHU-B LIP ships CM3D2OHx86.exe (machine 0x14c) and CM3D2OHx64.exe (machine 0x8664) side by side; static probe 2026-09-05"
+            "reference": "カスタムメイド3D2 CHU-B LIP ships CM3D2OHx86.exe (machine 0x14c) and CM3D2OHx64.exe (machine 0x8664) side by side; static probe 2026-09-05. デスマッチラブコメ！ (KEMCO, Steam, Unity 2019.2.15f1 per <stem>_Data/app.info) ships DMLC.exe, UnityPlayer.dll and mono-2.0-bdwgc.dll all machine 0x14c; static probe 2026-09-27. センチメンタルデスループ (qureate, Steam, Unity 2021.3.10f1, Fungus) ships Sentimental Death Loop.exe, UnityPlayer.dll and MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll all machine 0x8664; the x64 Mono managed hooks ran on it 2026-09-28"
           }
         },
         "directory_files_all": {
           "values": [
             "<stem>_Data/Managed/Assembly-CSharp.dll",
-            "<stem>_Data/Mono/mono.dll"
+            "one of: <stem>_Data/Mono/mono.dll | MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll | MonoBleedingEdge/EmbedRuntime/mono-2.0-sgen.dll"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "Both present in CM3D2OHx64_Data. The adapter additionally requires that GameAssembly.dll is ABSENT next to the executable -- that negative gate is what keeps unity_mono and unity_il2cpp mutually exclusive. Measured 2026-09-05"
+            "reference": "Two runtime generations. Unity 5.x: <stem>_Data/Mono/mono.dll, present in CM3D2OHx64_Data (measured 2026-09-05). Unity 2017+ (.NET 4.x MonoBleedingEdge): the runtime sits beside the executable, not under <stem>_Data -- DMLC!/MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll with DMLC_Data/Managed/Assembly-CSharp.dll and no DMLC_Data/Mono (measured 2026-09-27; before the criterion accepted this generation neither Unity adapter claimed the sample). mono-2.0-sgen.dll is the SGen-GC build of the same runtime and is accepted by construction, not by a measured sample. The adapter additionally requires that GameAssembly.dll is ABSENT next to the executable -- that negative gate is what keeps unity_mono and unity_il2cpp mutually exclusive"
           }
         },
         "pe_imports": {
@@ -3016,31 +3073,36 @@
         },
         "runtime_modules": {
           "values": [
-            "mono.dll"
+            "mono.dll",
+            "mono-2.0-bdwgc.dll",
+            "mono-2.0-sgen.dll"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "<stem>_Data/Mono/mono.dll is the Mono runtime. Note there is NO UnityPlayer.dll: this Unity 5.x generation links the engine statically into the executable, which is exactly why UnityIl2CppAdapter::probe() and the injector's LooksLikeUnityRuntime() -- both of which require UnityPlayer.dll -- leave this family unclaimed"
+            "reference": "<stem>_Data/Mono/mono.dll is the Unity 5.x Mono runtime. Note there is NO UnityPlayer.dll in that generation: it links the engine statically into the executable, which is exactly why UnityIl2CppAdapter::probe() and the injector's LooksLikeUnityRuntime() -- both of which require UnityPlayer.dll -- leave it unclaimed. The 2017+ generation loads MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll (sgen variant by construction) and does ship UnityPlayer.dll; the probe is structural on disk and does not wait for either module to load"
           }
         },
         "resource_extensions": {
           "values": [
             ".assets",
-            ".resS"
+            ".resS",
+            ".bundle"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "Standard Unity data layout under <stem>_Data; no per-line voice extraction is implemented for it"
+            "reference": "Standard Unity data layout under <stem>_Data (the 2019.2 sample additionally has resources.resource, the streamed AudioClip payload). The 2021.3 Fungus sample keeps its audio in Addressables bundles under <stem>_Data/StreamingAssets/aa/StandaloneWindows64: voice(scenario) / voice(action) / voice(gimmick) _assets_all_*.bundle (Vorbis, Compressed In Memory, mono 48 kHz) next to bgm (Streaming) / se / jingle bundles; the per-line voice layer extracts from the *voice*.bundle files the player opened"
           }
         },
         "hashes": {
           "values": [
             "5bb03fe8a924720f8da4df7a714565a8fcede94d2ef7b6f4b3b4e044f80d3eaa",
-            "7d79c2369e1a38107ccaaa9a089503506e05890edfda32d6eef25433612905c1"
+            "7d79c2369e1a38107ccaaa9a089503506e05890edfda32d6eef25433612905c1",
+            "35416bad1a1d3132a187e45eadd197c490fccf6a674632fec7ac0816f28b5b2d",
+            "34d59c4a09cf08ca43488ffdfb601cc35a9bf3310a2b0b39b74bf64ee9219629"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "CM3D2OHx64.exe / CM3D2OHx86.exe, catalogue only; the adapter does not hash-pin because the structural Managed+Mono check is the identity"
+            "reference": "CM3D2OHx64.exe / CM3D2OHx86.exe / DMLC.exe / Sentimental Death Loop.exe (Steam), catalogue only; the adapter does not hash-pin because the structural Managed+Mono check is the identity"
           }
         }
       },
@@ -3059,13 +3121,29 @@
             "kind": "luna_hook",
             "status": "implemented_unverified",
             "verification": "LunaHook connected and produced output on the real sample (luna_active 1, LunaOutputObserved, text_events 7) but only title-screen strings were seen; no dialogue line was traversed and no thread was selected."
+          },
+          {
+            "kind": "unity_mono_managed_text_events",
+            "status": "implemented_unverified",
+            "verification": "Offline only (2026-09-27). UnityMonoAdapter resolves managed text setters through the Mono embedding API exported by mono.dll / mono-2.0-{bdwgc,sgen}.dll (mono_assembly_foreach, mono_class_from_name, exact-signature method match, mono_compile_method on a temporarily attached HookWorker thread after Assembly-CSharp is loaded and a top-level window exists) and MinHook-detours the JIT entries of TMPro.TMP_Text.set_text + SetText(string,bool), UnityEngine.UI.Text.set_text and UnityEngine.TextMesh.set_text -- the same setters the IL2CPP path hooks -- publishing through the shared RecordUnityTextChars (same rich-text stripping, artifact gate and thread identity as IL2CPP). Detours use the Mono managed ABI (x86 cdecl with this first, x64 Win64; no trailing MethodInfo*) and read MonoString only via mono_string_length/mono_string_chars. For per-glyph TextMesh message frameworks, identified structurally in Assembly-CSharp by an instance `string Message.Mes(string, bool)` plus a static 8-parameter `Game.NewText(..., string str @3, ...)` glyph factory, the whole plain message is taken from Mes's return value and TextMesh.set_text is not hooked. Static metadata of デスマッチラブコメ！ (Unity 2019.2.15f1 x86) shows exactly that shape: no TMP or UI.Text references, TextMesh.set_text called only from Game.NewText/NewText_Center, and Message.Mes building LastMes. Covered by tests/unity_mono_text_test.cpp and adapter_structure_test; no runtime session has exercised any Mono detour."
+          },
+          {
+            "kind": "unity_mono_fungus_say_events",
+            "status": "implemented_unverified",
+            "verification": "2026-09-28. Fungus (public Unity VN framework): the whole-line entry `IEnumerator Fungus.SayDialog.DoSay(string, bool x5, AudioClip, Action)` resolved by namespace + class + full 8-parameter signature and required unique across images (Fungus.dll as its own assembly or compiled into Assembly-CSharp); both the Say command (Say -> StartCoroutine(DoSay)) and Fungus Lua `say()` (DoSay directly) pass through it. Its text argument is the line in the display language (localisation is resolved above it); Fungus `{...}` control tags are stripped with the TextTagParser rule (`\\{.*?\\}`, not across a line break; literal `\\n` becomes a newline) and `<...>` by the shared RecordUnityTextChars, published on one scene-stable lane `Mono:Fungus.SayDialog.DoSay`. Speaker name plates stay on their own UI.Text / TMP component lanes; the SayDialog's story Text lane yields to the DoSay lane (it would repeat the whole line once per revealed glyph). Covered by tests/unity_mono_text_test.cpp. Injector-side on センチメンタルデスループ Steam x64 (Unity 2021.3.10f1, Fungus via Lua `say()`, Japanese selected in the game's own options): the DoSay lane carried the dialogue lines tag-free in Japanese (e.g. a two-line spoken line of 30 units with its trailing line break), the speaker name 「朝陽 乃愛」 arrived on the NameText component lane, and no UI.Text event of the story Text reached any lane. First runtime of the Mono managed detours on x64."
           }
         ],
         "codepage": "932",
-        "thread_selection_hint": "Unmeasured. Only title-screen strings have been observed."
+        "thread_selection_hint": "Fungus titles: select the `Unity Mono Fungus Say` lane (hook code Mono:Fungus.SayDialog.DoSay). Per-glyph message framework: the Message.Mes body lane. Other Mono titles unmeasured."
       },
       "audio": {
         "priority": [
+          {
+            "kind": "unity_audioclip_resource",
+            "format": "AudioSource playback internal calls (PlayOneShotHelper / PlayHelper / Play(double); PlayOneShot / Play(ulong) on older players) -> clip name via Object.GetName -> Unity resource event with the *voice*.bundle the player opened; the injector extracts from that bundle or a sibling *voice*.bundle and caches clips found in none (BGM / SE / typing sounds); Fungus WriterAudio typing callbacks excluded, OnVoiceover always a candidate",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
           {
             "kind": "xaudio2_or_directsound_pcm",
             "format": "source PCM via the generic Windows audio adapter",
@@ -3085,9 +3163,11 @@
       "known_limitations": [
         "This entry exists because the IL2CPP adapter and the injector's Unity heuristic both require UnityPlayer.dll, which the Unity 5.x generation does not ship. The v23 adapter readout confirmed on a live process that unity_il2cpp does not claim this family.",
         "Identity is structural (Managed assembly + Mono runtime, and GameAssembly.dll absent). Executable hashes are catalogued but not pinned.",
-        "Per-line voice resources are Unity AudioClip assets; unity_events stayed 0 on the sample, so the existing Unity resource extractor produces nothing here. No resource layer is implemented and none is claimed.",
+        "The 2017+ MonoBleedingEdge generation (デスマッチラブコメ！ x86, 2026-09-27) was unclaimed before the criterion accepted MonoBleedingEdge/EmbedRuntime/mono-2.0-{bdwgc,sgen}.dll; that session showed text only on generic MultiByteToWideChar LunaHook threads and audio fell back to process loopback (engine_pcm_unavailable). The widened identity is implemented_unverified: it has not been re-run on the sample. Unlike the 5.x generation, this generation ships UnityPlayer.dll, so the injector's LooksLikeUnityRuntime() already matches it (UnityPlayer.dll + <stem>_Data/Managed) and auto-enables LunaHook PC hooks; the identity change does not alter that.",
+        "Per-line voice (2026-09-28, implemented_unverified): which clip is voice is proven by membership in a *voice*.bundle the player opened (the Unity-wide naming the IL2CPP path already relies on), checked out of process by the extractor; with no voice bundle seen nothing is published except a Fungus OnVoiceover clip (then the loose-asset fallback). AudioClip.GetData returned false on the sample's Compressed-In-Memory Vorbis clips, so there is no in-process PCM. Injector-side on the Fungus sample: the line's voice PlayOneShot fired in the same GetTickCount64 tick as its DoSay text event and the injector wrote <ts>_sce_0001.wav (5909 ms, mono 48 kHz, 283637 frames = the clip's sample count) and <ts>_sce_0002.wav (2662 ms) for two consecutive spoken lines (text-to-voice distance 0 ms); BGM001 / BGM006 / se_003 were extracted from no voice bundle and cached as non-voice; Fungus typing beeps produced no event. Games whose voice is not in a *voice*.bundle (loose assets, custom archives, StreamingAssets files) get no voice from this layer. The ready bit (reserved kDiagUnityAudioPlaybackHookReady) needs a Fushi runner built with the updated HasReadyGameResourceAudio.",
         "Only title-screen strings were observed. text_thread_selected, paired and card_e2e are all not_run.",
-        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+        "The Mono managed text hooks (unity_mono_managed_text_events) are offline-only: runtime gates (unity_mono adapter flags ScriptAssemblyReady / HookInstalled / DetourFired, and a text event whose hook code starts with `Mono:`) have not been observed on any game. The detours are native frames called directly from JIT code; a managed exception thrown by the original setter and caught above the detour is not unwound through them, which has not been exercised. The Message.Mes framework shape is backed by one title's static metadata only.",
+        "In-game lookup (provider id 20) covers two structurally admitted frameworks only: the per-glyph TextMesh message framework and Fungus SayDialog on a UGUI Text; TextMeshPro story texts, World Space canvases and non-dynamic fonts are refused (lookupAdmission EngineUnsupported / sites rejected). A game's own overlay in the same scene (e.g. a Back Log panel dimming the dialog) is not modelled."
       ],
       "adapter_path": "hook/adapters/unity_mono_adapter.inc",
       "fixture_paths": [
@@ -3095,6 +3175,8 @@
       ],
       "test_paths": [
         "tests/unity_mono_adapter_test.cpp",
+        "tests/unity_mono_text_test.cpp",
+        "tests/unity_mono_lookup_test.cpp",
         "../../fushi/test/mining/unity_mono_pairing_test.dart"
       ]
     }

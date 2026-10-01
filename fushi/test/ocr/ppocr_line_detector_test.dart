@@ -225,4 +225,49 @@ void main() {
       );
     });
   });
+
+  group('PpOcrLineDetector.detectInBlock', () {
+    test('块夹进页面后按整像素裁图检测，行框换回页面坐标；整块在页外时不检测', () async {
+      final _RecordingDetector det = _RecordingDetector(<PpTextLine>[
+        _line(2, 3, 8, 40),
+      ]);
+      final img.Image page = img.Image(width: 100, height: 80);
+
+      final List<OcrRect> rects = await det.detectInBlock(
+        page,
+        const OcrRect(left: 90.5, top: 30.2, right: 130, bottom: 95),
+      );
+      // 夹到 (90.5,30.2)-(100,80)：左上取 floor、宽高取 ceil，不超出页面。
+      expect(det.crops.single.width, 10);
+      expect(det.crops.single.height, 50);
+      final OcrRect r = rects.single;
+      expect(
+        <double>[r.left, r.top, r.right, r.bottom],
+        <double>[92, 33, 98, 70],
+      );
+
+      expect(
+        await det.detectInBlock(
+          page,
+          const OcrRect(left: 120, top: 0, right: 160, bottom: 40),
+        ),
+        isEmpty,
+      );
+      expect(det.crops, hasLength(1));
+    });
+  });
+}
+
+/// 固定吐出 [lines]（裁图坐标）的检测器，记下收到的裁图。
+class _RecordingDetector extends PpOcrLineDetector {
+  _RecordingDetector(this.lines) : super(_FakeSession(<String, OcrTensor>{}));
+
+  final List<PpTextLine> lines;
+  final List<img.Image> crops = <img.Image>[];
+
+  @override
+  Future<List<PpTextLine>> detect(img.Image crop) async {
+    crops.add(crop);
+    return lines;
+  }
 }

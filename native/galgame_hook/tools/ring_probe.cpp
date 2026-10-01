@@ -2585,8 +2585,11 @@ int main(int argc, char** argv) {
           if (!reports[i].applicable && !reports[i].installed) continue;
           any = true;
           if (!reports[i].applicable && reports[i].installed) shared_only = true;
-          printf(" %s=probe:%u/installed:%u", reports[i].id,
-                 reports[i].applicable, reports[i].installed);
+          // flags 是各 adapter 自定义的诊断字（AdapterDiagnostics::flags），位义见各
+          // adapter 源码（如 unity_mono_adapter.inc 的 kUnityMonoFlag*）。
+          printf(" %s=probe:%u/installed:%u/flags:0x%08x", reports[i].id,
+                 reports[i].applicable, reports[i].installed,
+                 reports[i].flags);
         }
         if (!any) printf(" 无 adapter 认领（已上报 %u 个，全部 probe=0）", n);
         // probe:0/installed:1 **不是**矛盾，但不解释就一定会被读成矛盾：

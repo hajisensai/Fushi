@@ -35,7 +35,7 @@ import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
-import 'package:fushi/src/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -120,7 +120,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
@@ -150,7 +150,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -646,7 +646,7 @@ class AppModel with ChangeNotifier {
     subscriptionsFactory: () => appDownloadHost.subscriptions,
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
-    assistantFactory: () => createAppAssistantHost(this),
+    assistantFactory: () => createVideoAcquisitionAssistantHost(this),
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
@@ -694,7 +694,9 @@ class AppModel with ChangeNotifier {
           fileName: path.basename(bookFile.path),
         );
       },
-      localAudioEntries: localAudioDbs,
+      // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
+      // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
+      localAudioEntriesProvider: () => localAudioDbs,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
@@ -5244,19 +5246,23 @@ class AppModel with ChangeNotifier {
 
   Future<void> _startVideoDownloadPipeline() async {
     if (_videoDownloadPipelineService != null) return;
-    final http.Client torznabHttpClient = await createDownloadHttpClient();
+    final List<TorznabIndexerConfig> torznabIndexers =
+        prefsRepo.videoResourceTorznabConfigs;
     // 内置索引器一律按 kBuiltinVideoResourceSources 全表注册；「用不用」由 registry
     // 的停用清单决定，而不是靠这里少建一个对象——否则设置页开关就得重启 app 才生效。
+    // Torznab 不同：没有启用的索引器它就不是一个源（保存索引器配置会重建整条
+    // 运行时），判据见 [torznabHasEnabledIndexer]（BUG-2818）。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
       for (final BuiltinVideoResourceSource source
           in kBuiltinVideoResourceSources)
         source.create(await createDownloadHttpClient()),
-      TorznabClient(
-        indexers: prefsRepo.videoResourceTorznabConfigs,
-        client: torznabHttpClient,
-        closesClient: true,
-      ),
+      if (torznabHasEnabledIndexer(torznabIndexers))
+        TorznabClient(
+          indexers: torznabIndexers,
+          client: await createDownloadHttpClient(),
+          closesClient: true,
+        ),
     ];
     // 字幕来源的装配判据在 [createConfiguredVideoSubtitleProviders] 一处（浏览器
     // 扩展的查字幕桥用的是同一份工厂，不再自己判「哪家算配好了」）。

@@ -312,7 +312,7 @@ void main() {
 
     /// 「拖有声书进度条 → 立刻关书」的字数结算时序（沿真实代码路径核对，2026-09-06）。
     ///
-    /// 生产调用链（`packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart`
+    /// 生产调用链（`fushi/lib/src/media/audiobook/audiobook_controller.dart`
     /// + `fushi/lib/src/pages/implementations/reader_fushi/*.part.dart`）：
     ///
     ///  1. 拖进度条 → `AudiobookPlayerController.seekMs`（audiobook_controller.dart:1060）

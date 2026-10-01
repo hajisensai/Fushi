@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-459: Bookmark 被复用为「跳回原文」的内存传输。真实书签的 normCharOffset 是

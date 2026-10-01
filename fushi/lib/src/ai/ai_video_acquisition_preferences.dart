@@ -10,7 +10,7 @@
 /// [AiDownloadSubtitleLanguagePref.unset]：等价于「从没设置过」，下一次对话会重新问。
 library;
 
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 
 /// 默认画质偏好。

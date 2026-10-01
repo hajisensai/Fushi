@@ -25,12 +25,10 @@ Future<Map<String, dynamic>> _json(Response response) async =>
     jsonDecode(await response.readAsString()) as Map<String, dynamic>;
 
 class _Library implements GameStreamLibraryHost {
-  _Library({this.enabled = true});
-
-  bool enabled;
+  bool enabled = true;
   final List<String> launched = <String>[];
   Completer<void>? gate;
-  Object? failWith;
+  Exception? failWith;
 
   @override
   bool get launchEnabled => enabled;

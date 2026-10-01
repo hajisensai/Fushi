@@ -688,7 +688,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // [hostOwnsWebViewHoverLookup]，只有 macOS；其余平台 JS 腿不动）。
       hostHoverLookup: hostOwnsWebViewHoverLookup,
       highlightOnTap: ReaderFushiSource.instance.highlightOnTap,
-      showChrome: _showChrome,
+      showChrome: _tapGateChrome,
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
@@ -2149,7 +2149,7 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
-            if (!_showChrome && !shiftKey) {
+            if (!_tapGateChrome && !shiftKey) {
               _toggleChrome();
               // Tap handed OS focus to the WebView; reclaim it so ESC still
               // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
@@ -2208,6 +2208,7 @@ updateLive: function(patch) {
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
+            // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
             if (_anyChromeFloating) {
               _handleFloatingChromeReveal();
             } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {

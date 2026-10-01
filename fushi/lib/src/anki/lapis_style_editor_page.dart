@@ -5,9 +5,9 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_lapis_style_assistant.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/src/webview/webview_death_guard.dart';

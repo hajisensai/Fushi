@@ -18,17 +18,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_charset_detector_platform_interface/decoding_result.dart';
 import 'package:flutter_charset_detector_platform_interface/flutter_charset_detector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
-import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi_audio/fushi_audio.dart'
-    show installPlatformCharsetDetector, platformCharsetDecoder;
+import 'package:fushi_audio/fushi_audio.dart' show platformCharsetDecoder;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -176,6 +176,42 @@ void main() {
       // up from the entries, not rebuilt via p.join, so remote forward-slash
       // paths survive on a Windows host).
       expect(plan.videos.single.subtitlePath, '/lib/movie.srt');
+    });
+
+    test('video source: audio tracks plan as videos (no picture, no subtitle)',
+        () {
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[
+          _file('/music/album/01 - One more tea.flac'),
+          _file('/music/album/02 - Tostada.MP3'),
+          _file('/music/album/02 - Tostada.lrc'),
+          _file('/music/album/cover.jpg'),
+          _file('/music/album/export-report.txt'),
+        ],
+        includeAudioAsVideo: true,
+      );
+
+      expect(plan.videos.map((ScanVideoItem v) => v.videoPath), <String>[
+        '/music/album/01 - One more tea.flac',
+        '/music/album/02 - Tostada.MP3',
+      ]);
+      // 视频字幕白名单不含 lrc：lrc 不挂到音频条目上（与视频一致）。
+      expect(plan.videos.every((ScanVideoItem v) => v.subtitlePath == null),
+          isTrue);
+      expect(plan.books, isEmpty);
+    });
+
+    test('book source keeps audio as EPUB sidecar only, never as videos', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/book.epub'),
+        _file('/lib/book.srt'),
+        _file('/lib/book.mp3'),
+        _file('/lib/ost.flac'),
+      ]);
+
+      expect(plan.videos, isEmpty,
+          reason: 'includeAudioAsVideo defaults off: book sources unchanged');
+      expect(plan.books.single.audioPaths, <String>['/lib/book.mp3']);
     });
 
     test('video without a same-name subtitle has null subtitlePath', () {
@@ -470,6 +506,44 @@ void main() {
       expect(summary.createdVideoUids, <String>[videos.single.bookUid]);
       expect(summary.reusedVideoUids, isEmpty);
       expect(summary.createdCollectionIds, isEmpty);
+    });
+
+    test('video source: an album folder of audio tracks imports as videos',
+        () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+
+      final Directory album = Directory(p.join(tmp.path, 'OST Vol.1 (2010)'))
+        ..createSync();
+      File(p.join(album.path, '01 - One more tea.flac'))
+          .writeAsStringSync('fake-flac');
+      File(p.join(album.path, '02 - Tostada.flac'))
+          .writeAsStringSync('fake-flac');
+      File(p.join(album.path, 'cover.jpg')).writeAsStringSync('not-a-video');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Music',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      final List<VideoBookRow> videos = await repo.listAll();
+      expect(
+        videos.map((VideoBookRow v) => p.basename(v.videoPath)).toSet(),
+        <String>{'01 - One more tea.flac', '02 - Tostada.flac'},
+      );
+      expect(videos.every((VideoBookRow v) => v.sourceId == sid), isTrue);
+      expect(summary.succeeded, isTrue);
+      expect(summary.discoveredPaths,
+          contains(p.join(album.path, '01 - One more tea.flac')));
+      expect(summary.discoveredPaths,
+          isNot(contains(p.join(album.path, 'cover.jpg'))));
     });
 
     test('maintenance lease blocks the real video scanner before any IO',

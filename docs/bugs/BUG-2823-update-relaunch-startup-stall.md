@@ -1,0 +1,15 @@
+## BUG-2823 · 自动更新后新版本启动卡顿一两秒
+- **报告**：2026-10-01（用户：自动更新时，安装器拉起的新版本启动后「卡住一两秒」）
+- **真实性**：✅ 部分确认。确切那一两秒没能在本机复现出单一元凶（杀软扫新 DLL 40–120 ms、`.lnk` 改写 7–33 ms、Inno 日志解析与扩展重解压均在毫秒到 0.1 s 量级，galgame staging / mihon 那次启动没跑），但沿更新链路查实两处**每次都付**的同步浪费：
+  - 启动期：`fushi/lib/main.dart:361`（修前）在 `runApp` 之前 `await syncWindowsShortcutIcons(...)`；它在 UI isolate 上同步解码源图 + 4 次缩放 + 4 次 PNG 编码（~0.2 s）只为算出 .ico 文件名，随后原生侧无条件 `IPersistFile::Save` 三个 `.lnk` 并发全局 `SHCNE_ASSOCCHANGED`（让 Explorer 重建全部图标）——即使图标根本没变。更新后重启恰好是「.lnk 图标被安装器重置」的场景，这一轮必然全量执行。
+  - 更新退出前：`fushi/lib/src/utils/misc/platform_updater.dart:1402`（修前）对 `voice_hook/` 下每个 helper 二进制各开一个 Restart Manager 会话查占用者，本机 29 个文件实测 **1901 ms** 同步 FFI，正卡在「下载完成 → 退出交给安装器」之间。
+- **[x] ① 已修复** —
+  - `shortcut_icon_sync.dart:115` `ensureShortcutIcoFile`：.ico 按**源图**哈希命名（尺寸表折进盐），文件已在直接复用；编码走 `Isolate.run`，不再占 UI isolate。
+  - `main.dart:362`：冷启动的 `.lnk` 自愈改 `unawaited` 后台执行，不再挡 `runApp`。
+  - `flutter_window.cpp:380/457`：`SetShortcutIconLocation` 先 `GetIconLocation`，已是目标值返回 `kUnchanged`（不 Save、不发 `SHCNE_UPDATEITEM`）；全局 `SHCNE_ASSOCCHANGED` 只在确有 `.lnk` 被改写时发。
+  - `windows_process_query.dart:160` 新增 `windowsProcessesHoldingFiles`：所有文件登记进**同一个** RM 会话、按 pid 去重；`queryWindowsGalHookModuleHolders` 改用它。同 29 个文件实测 **137–151 ms**（3 轮），占用者结果一致。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/native/windows_shortcut_icon_guard_static_test.dart`：冷启动同步必须 `unawaited`；改写前必须先 `GetIconLocation` + `kUnchanged` 分支；`SHCNE_ASSOCCHANGED` 必须在 `if (rewritten)` 内。两条变异（改回 `await` / 去掉 `if (rewritten)`）实测均红。
+  - `fushi/test/platform/windows_process_query_test.dart`：批量查询真实系统断言（自己 exe 重复登记只报一次、空路径过滤、空列表返回空）+ 非 Windows 契约。
+  - `fushi/test/utils/shortcut_ico_encoder_test.dart`：按源图哈希的文件名确定性 / 区分度 / 格式。
+- **备注**：未能证明用户那一两秒已被**完全**消除——上面两处是可确认的确定性浪费，若更新后仍有可感卡顿，下一步应在更新后首启抓一次带时间戳的启动日志定位剩余阶段。

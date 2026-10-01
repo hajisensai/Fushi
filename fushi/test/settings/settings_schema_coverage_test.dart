@@ -436,6 +436,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 只显示为当前场景勾选的按钮 / 各场景的勾选互不影响',
   'floatingBall/Look up clipboard':
       'test/floating_ball/app_floating_ball_host_test.dart: 剪贴板查词把剪贴板文字交给应用内查词弹窗 + 场景勾选',
+  // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
+  'floatingBall/Show over other apps':
+      'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案
@@ -803,6 +806,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // + TODO-975 决策#3 底栏切悬浮模式（reader_chrome_floating_test 覆盖）。
   'reading/Floating control bar':
       'DEVICE: WebView onTapEmpty chrome + test/reader/reader_chrome_floating_test.dart',
+  // 关掉顶栏和底栏（悬浮球接管）：生效点在阅读器页的 chrome 状态机与悬浮球宿主，
+  // 由生效判据真值表 + 页面源码守卫 + 宿主接管 widget 测试覆盖。
+  'reading/Hide top and bottom bars':
+      'test/reader/reader_hide_toolbars_guard_test.dart + '
+      'test/floating_ball/app_floating_ball_host_test.dart',
   // TODO-727: 顶部「阅读进度」百分比指示的显隐开关。生效点在 reader 页 _showTopProgress
   // getter 末尾的 && ReaderFushiSource.showTopProgressBar 与门（WebView 阅读器顶栏 Text
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。

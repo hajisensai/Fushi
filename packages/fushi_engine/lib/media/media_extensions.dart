@@ -46,6 +46,54 @@ const Set<String> kVideoExtensions = <String>{
   '.vob',
 };
 
+/// 纯音频文件扩展名（专辑曲目 / 广播剧 / 有声内容等**无画面**媒体）。
+///
+/// 与 [kVideoExtensions] 两两不相交：`.mp4` 虽然也可能只装音轨，但它首先是视频
+/// 容器，归视频。= `AudiobookStorage.audioExtensions` 去掉 `.mp4`（守卫测试钉死
+/// 同步；本文件零依赖，不能直接引用那张表）。
+const Set<String> kAudioExtensions = <String>{
+  '.mp3',
+  '.m4a',
+  '.m4b',
+  '.aac',
+  '.ogg',
+  '.opus',
+  '.flac',
+  '.wav',
+  '.wma',
+  '.ac3',
+  '.eac3',
+};
+
+/// 视频库能收录的本地媒体文件扩展名 = [kVideoExtensions] ∪ [kAudioExtensions]。
+///
+/// 纯音频按「没有画面、没有字幕的视频」进视频库：同一个播放器（libmpv）、同一套
+/// 进度 / 合集 / 字幕挂载 / ASR 转录。只用于**入库与库对账**（来源扫描、拖放、
+/// 服务端扫描 / 修剪）；torrent 选片、刮削剥扩展名等「这是一集视频」的判据仍用
+/// [kVideoExtensions]，不因此把 OST 曲目当成剧集。
+const Set<String> kVideoLibraryMediaExtensions = <String>{
+  ...kVideoExtensions,
+  ...kAudioExtensions,
+};
+
+/// 纯函数：[path] 是否是纯音频文件（按扩展名，大小写不敏感，不碰文件系统）。
+///
+/// 远端 URL 带查询串时取路径段的扩展名。
+bool isAudioOnlyMediaPath(String path) {
+  final String trimmed = path.trim();
+  if (trimmed.isEmpty) return false;
+  final Uri? uri = Uri.tryParse(trimmed);
+  final String candidate =
+      uri != null && (uri.scheme == 'http' || uri.scheme == 'https')
+      ? uri.path
+      : trimmed;
+  final int slash = candidate.lastIndexOf(RegExp(r'[\\/]'));
+  final String name = candidate.substring(slash + 1);
+  final int dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return kAudioExtensions.contains(name.substring(dot).toLowerCase());
+}
+
 /// 播放列表清单扩展名（扩展 M3U）：**文本清单，不是媒体流本体**。app 侧对它的
 /// 唯一正确动作是 `parseM3u8` 拆成各集；直接把本地清单文件喂 ffmpeg 抽帧必然
 /// `Invalid data found when processing input`（BUG-1564：封面回填曾如此反复

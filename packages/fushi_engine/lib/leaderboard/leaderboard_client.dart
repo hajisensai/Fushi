@@ -115,7 +115,7 @@ class LeaderboardClient {
     LeaderboardServerClock? serverClock,
     Duration requestTimeout = kLeaderboardRequestTimeout,
     Duration uploadTimeout = kLeaderboardUploadTimeout,
-    void Function(LeaderboardApiException error)? onAccountGone,
+    FutureOr<void> Function(LeaderboardApiException error)? onAccountGone,
   }) : _baseUrl = baseUrl,
        _httpClientFactory = httpClientFactory,
        _identity = identity,
@@ -126,9 +126,11 @@ class LeaderboardClient {
        _onAccountGone = onAccountGone;
 
   /// 带 X-Fushi-Account 的签名请求收到 401 [kLeaderboardAccountGoneCode]（设备钥匙在服务端
-  /// 已不存在：账户在别的设备删了，或本设备被解绑）时，在异常抛给调用方**之前**同步调用。
-  /// 不论请求是从哪条路径发出的（同步 / 读榜 / 好友），持有者都在这一处得知本机账户已失效。
-  final void Function(LeaderboardApiException error)? _onAccountGone;
+  /// 已不存在：账户在别的设备删了，或本设备被解绑）时，在异常抛给调用方**之前**调用，并
+  /// **等它返回的 Future 完成**再抛。不论请求是从哪条路径发出的（同步 / 读榜 / 好友），持有
+  /// 者都在这一处得知本机账户已失效；调用方一接到异常，持有者的退出已经落定（不能是
+  /// fire-and-forget：否则调用方看到的状态取决于异步落盘赶没赶上，BUG-2801）。
+  final FutureOr<void> Function(LeaderboardApiException error)? _onAccountGone;
 
   final Uri _baseUrl;
   final Future<http.Client> Function() _httpClientFactory;
@@ -629,7 +631,7 @@ class LeaderboardClient {
             withAccount &&
             e.status == 401 &&
             e.code == kLeaderboardAccountGoneCode) {
-          _onAccountGone?.call(e);
+          await _onAccountGone?.call(e);
           rethrow;
         }
         if (!signs ||

@@ -2,7 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 
 class _FakeResource extends VideoResourceCandidate {
   _FakeResource({
