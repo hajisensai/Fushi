@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2853](bugs/BUG-2853-en-yomitan-redirect-phrase.md) | ✅ | ✅ | 英语短语（instead of / in fact / brush off）命中词典重定向记录后不跟随，弹窗只剩单词 |
 | [BUG-2852](bugs/BUG-2852-popup-visible-viewport-helper-overwritten.md) | ✅ | ✅ | 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function |
 | [BUG-2851](bugs/BUG-2851-leaderboard-401-test-fixed-rounds.md) | ✅ | ✅ | 排行榜「账户已在别处删除」用例按固定轮数等真 IO，CI 忙时偶发红 |
 | [BUG-2850](bugs/BUG-2850-ci-pdfium-hook-download.md) | ✅ | ✅ | CI 构建期实时从 GitHub 下载 PDFium（pdfium_dart 构建钩子），下载一抖 develop 的 Windows / macOS / Android 发布同时红 |
