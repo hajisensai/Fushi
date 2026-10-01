@@ -77,6 +77,13 @@ class MangaOcrRunningJob {
   /// 广播给观察者的事件流：与底层流同序，finished 事件在落盘**之后**才转发。
   Stream<MangaOcrBackgroundEvent> get events => _observers.stream;
 
+  /// 读者翻到了 [pageIndex]：任务下一页先跑它，再从它往后接着跑。任务不支持
+  /// 改道（[MangaOcrBackgroundJob.focus] 为 null）或已结束时什么都不做。
+  void focusPage(int pageIndex) {
+    if (_ended) return;
+    job.focus?.request(pageIndex);
+  }
+
   bool ownsSession(MangaReaderSession session) =>
       _sessions.any((MangaReaderSession s) => identical(s, session));
 

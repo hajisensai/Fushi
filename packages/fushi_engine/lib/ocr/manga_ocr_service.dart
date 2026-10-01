@@ -48,6 +48,55 @@ abstract interface class MangaOcrModelPreparationService {
   Stream<MangaOcrDownloadEvent> prepareModels();
 }
 
+/// 读者当前页的「改道请求」：整卷任务运行中跟着读者走。
+///
+/// 起点页只在开跑那一刻定一次；手机上本地模型一页几十秒，读者翻得比识别快，
+/// 翻到的页永远还没轮到，体感就是「要等整卷识别完」。阅读器每翻一页 [request]
+/// 一次，执行器每处理一页前 [take] 一次，把处理游标挪到读者当前页
+/// （[MangaOcrPageScheduler.focus]）。
+class MangaOcrPageFocus {
+  int? _pending;
+  final List<void Function(int pageIndex)> _listeners =
+      <void Function(int pageIndex)>[];
+
+  /// 读者翻到了 [pageIndex]（按 `enumerateMangaPages` 自然序的页号）。
+  void request(int pageIndex) {
+    if (pageIndex < 0) return;
+    _pending = pageIndex;
+    for (final void Function(int pageIndex) listener
+        in List<void Function(int pageIndex)>.of(_listeners)) {
+      listener(pageIndex);
+    }
+  }
+
+  /// 取走最近一次还没被消费的请求；没有新请求时为 null。
+  int? take() {
+    final int? pending = _pending;
+    _pending = null;
+    return pending;
+  }
+
+  /// 执行器不在本 isolate 时（本地 ONNX 的整卷 isolate）用监听把请求转发过去。
+  void addListener(void Function(int pageIndex) listener) =>
+      _listeners.add(listener);
+
+  void removeListener(void Function(int pageIndex) listener) =>
+      _listeners.remove(listener);
+}
+
+/// 运行中能跟随 [MangaOcrPageFocus] 改道的整卷服务（本地 ONNX）。
+///
+/// 刻意做成可选能力而不是给 [MangaOcrService.ocrFolder] 加参数：远端 / 外部 CLI
+/// 与各测试替身没有「按页序处理」这回事，不该被迫接一个无意义的参数。
+abstract interface class MangaOcrFocusableService {
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+    MangaOcrPageFocus? focus,
+  });
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///

@@ -10,12 +10,17 @@ class MangaOcrBackgroundJob {
     required this.managedDirectory,
     required this.engine,
     required this.events,
+    this.focus,
   });
 
   final String bookKey;
   final String managedDirectory;
   final MangaOcrEngineId engine;
   final Stream<MangaOcrBackgroundEvent> events;
+
+  /// 读者当前页的改道通道（与构造 [events] 的 `MangaOcrJobSpec.focus` 是同一个
+  /// 实例）；null = 这个任务不跟读者走（远端 / 外部 CLI / 旧入口）。
+  final MangaOcrPageFocus? focus;
 }
 
 /// 后台 OCR 的统一事件。支持增量引擎时 [pageIndex]/[page] 随进度事件返回，
