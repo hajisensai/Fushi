@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.9.0-debug.16662",
-  "tag": "v2.9.0-debug.16662+cd09337",
+  "version": "2.9.0-debug.16688",
+  "tag": "v2.9.0-debug.16688+6f834fe",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 16662,
-  "notes": "Automated release-signed debug-channel build from develop @ cd09337. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 16688,
+  "notes": "Automated desktop debug-channel build from develop @ 6f834fe. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.9.0-debug.16636-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "4ed2302aa03a89aaca6e2c55c6a441bf3b503348e81f443c0f2fc69482c077b6"
     },
     {
-      "name": "fushi-2.9.0-debug.16636-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.0-debug.16636-windows-setup.exe",
-      "releaseSequence": 16636,
-      "tag": "v2.9.0-debug.16636+f9e4ba1",
-      "version": "2.9.0-debug.16636",
-      "size": 283655752,
-      "sha256": "06d2d12b85f4922a46c6cee09b69cb4c5d75280fa82e3d5b40bd939d13cbdde7"
-    },
-    {
       "name": "fushi-2.9.0-debug.16662-cd09337-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.0-debug.16662-cd09337-debug.apk",
       "releaseSequence": 16662,
@@ -42,6 +33,15 @@
       "version": "2.9.0-debug.16662",
       "size": 358439708,
       "sha256": "f2867918cd7055bf9da57436473f79a0576e096305e2bd0aafec09bc0305d518"
+    },
+    {
+      "name": "fushi-2.9.0-debug.16688-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.0-debug.16688-windows-setup.exe",
+      "releaseSequence": 16688,
+      "tag": "v2.9.0-debug.16688+6f834fe",
+      "version": "2.9.0-debug.16688",
+      "size": 284572848,
+      "sha256": "72f655529a6c494b0fab272f34087b0dd0a46ec748217e0f1b437db0ba97f17d"
     }
   ]
 }
