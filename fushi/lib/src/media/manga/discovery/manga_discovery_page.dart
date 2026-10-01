@@ -240,12 +240,14 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 优先（浏览页不是库页壳，壳作用域在那里不存在）；否则问库页壳。都没有时为
   /// null，空态只给文案不给按钮。
   ///
-  /// 壳的判据是「壳**有** sources 视图」而不是「壳在」：[MediaLibraryShellScope.select]
+  /// 壳的判据是「壳**有**在线来源视图」而不是「壳在」：[MediaLibraryShellScope.select]
   /// 对不存在的视图静默忽略，拿后者当判据就会渲染一个点了什么都不发生的按钮。
+  /// 去处是漫画库的「来源」（[MediaLibraryViewKind.onlineSources]，Mihon 源 +
+  /// mokuro.moe），不是「导入」——导入页只有本地来源，装不了在线源。
   VoidCallback? _openSourcesAction() =>
       widget.onOpenSources ??
       MediaLibraryShellScope.maybeOf(context)
-          ?.actionFor(MediaLibraryViewKind.sources);
+          ?.actionFor(MediaLibraryViewKind.onlineSources);
 
   /// 页头只在独立 / 库页壳里渲染；不渲染时（embedded、Cupertino）刷新挪进搜索行。
   bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
