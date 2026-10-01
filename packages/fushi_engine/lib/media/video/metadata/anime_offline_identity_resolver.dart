@@ -35,6 +35,7 @@ class AnimeOfflineIdentity {
     this.malId,
     this.tmdbId,
     this.isMovie = false,
+    this.tmdbMediaKind,
     this.tmdbSeason,
     this.tmdbEpisodeOffset,
   });
@@ -44,14 +45,20 @@ class AnimeOfflineIdentity {
   final String queryTitle;
   final int? malId;
   final int? tmdbId;
+  /// 作品形态（Fribb `type` / 命名空间推断），只作类型闸门用。
   final bool isMovie;
+
+  /// [tmdbId] 所在的 TMDB 命名空间（见 [AnimeIdentityEntry.tmdbMediaKind]）。
+  final VideoMetadataMediaKind? tmdbMediaKind;
   final int? tmdbSeason;
   final int? tmdbEpisodeOffset;
 
   bool get hasOnlineIdentity => malId != null || tmdbId != null;
 
   /// 给某一家 provider 的 lookup；该家没有 id 时返回 null。MAL 单一 id 命名
-  /// 空间由源返回真实类型；TMDB 按 Fribb 的 type 分 /movie 与 /tv。
+  /// 空间由源返回真实类型；TMDB 只认 `themoviedb_id` 自己的命名空间，与
+  /// [requestedKind] 不符（剧场版挂在剧的特典季下）时返回 null——tv id 按
+  /// /movie 拉会命中同号的无关电影（BUG-2828）。
   VideoMetadataLookup? lookupFor(
     VideoMetadataProviderKind provider,
     VideoMetadataMediaKind requestedKind,
@@ -67,13 +74,11 @@ class AnimeOfflineIdentity {
         );
       case VideoMetadataProviderKind.tmdb:
         final int? id = tmdbId;
-        if (id == null) return null;
+        if (id == null || tmdbMediaKind != requestedKind) return null;
         return VideoMetadataLookup(
           provider: provider,
           externalId: '$id',
-          mediaKind: isMovie
-              ? VideoMetadataMediaKind.movie
-              : VideoMetadataMediaKind.tv,
+          mediaKind: requestedKind,
         );
       case VideoMetadataProviderKind.anidb:
         return VideoMetadataLookup(
@@ -186,6 +191,7 @@ class AnimeOfflineIdentityResolver {
                 : null,
             tmdbId: entry?.tmdbId,
             isMovie: entry?.isMovie ?? false,
+            tmdbMediaKind: entry?.tmdbMediaKind,
             tmdbSeason: entry?.tmdbSeason,
             tmdbEpisodeOffset: entry?.tmdbEpisodeOffset,
           ),

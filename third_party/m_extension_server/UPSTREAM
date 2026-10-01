@@ -168,6 +168,18 @@ overlay/.../DexAllocationRepair.kt:
   proof even if a matching constructor exists; allocation counts alone cannot
   authorize changing an otherwise valid concrete NEW. This preserves typed
   filter options instead of allowing Object values to fail later in typed arrays.
+  exactAllocationReader (wired into PackageTools.dex2jar by the patch) applies
+  the same receiver proof *before* dex2jar: dex2jar takes the NEW type from the
+  <init> owner, so a proven `invoke-direct Super.<init>` on a `new-instance X`
+  register is pointed at X (Super must be X's direct superclass, X must not
+  already declare that descriptor, Super's constructor must be accessible) and
+  X gets the forwarding constructor R8 erased. Without it, constructor-less
+  subclasses such as every suspend function's continuation all matched the
+  generalized NEW and upstream BytecodeEditor.repairAllocation handed them out
+  by iteration order (BUG-2826: mokuro 1.6.6 getPageList,
+  `w1 cannot be cast to y1`). Across 128 extension APKs the converted jars now
+  match DEX allocations per method except the intended SimpleDateFormat host
+  replacement.
 
 overlay/.../MihonImageProxy.kt:
   Consume and close the extension's network response inside the Rx emission,

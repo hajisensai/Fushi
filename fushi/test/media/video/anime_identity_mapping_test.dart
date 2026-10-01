@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 // Fribb anime-list-full.json 的**实测**形状（2026-09-08 抓真文件核对，39304 行）：
@@ -24,6 +25,11 @@ const String _fribbSample = '[' // Frieren S1
     '"type":"MOVIE"},'
     // 电影但 type 缺失：命名空间本身就足以判定，不能按 tv 拉
     '{"anidb_id":20001,"mal_id":70001,"themoviedb_id":{"movie":[129]}},'
+    // 剧场版挂在剧的特典季下（真数据：リズと青い鳥 anidb 13491 → tv 62564
+    // 吹响！上低音号 season 0；Fribb 共 715 行 MOVIE + tv）：形态是电影，TMDB
+    // id 却是 tv 空间，不能按 /movie/62564 拉（BUG-2828）
+    '{"anidb_id":13491,"mal_id":35677,"themoviedb_id":{"tv":62564},'
+    '"season":{"tvdb":0,"tmdb":0},"type":"MOVIE"},'
     // 脏值：负 id、小数、乱字符串、season 不是对象、空数组
     '{"anidb_id":30000,"mal_id":-1,"anilist_id":2.5,"tvdb_id":"abc",'
     '"themoviedb_id":{"tv":0,"movie":[]},"season":"x",'
@@ -133,6 +139,22 @@ void main() {
     expect(movieNoType!.tmdbId, 129);
     expect(movieNoType.type, isNull);
     expect(movieNoType.isMovie, isTrue, reason: 'movie 命名空间优先于缺失的 type 字段');
+    expect(movie.tmdbMediaKind, VideoMetadataMediaKind.movie);
+    expect(movie.tmdbIdFor(VideoMetadataMediaKind.movie), 128);
+    expect(movie.tmdbIdFor(VideoMetadataMediaKind.tv), isNull);
+
+    // BUG-2828：形态（isMovie）与 TMDB 命名空间是两回事。
+    final AnimeIdentityEntry? movieUnderShow =
+        await mapping.entryForAnidb(13491);
+    expect(movieUnderShow!.isMovie, isTrue);
+    expect(movieUnderShow.tmdbId, 62564);
+    expect(movieUnderShow.tmdbMediaKind, VideoMetadataMediaKind.tv);
+    expect(movieUnderShow.tmdbIdFor(VideoMetadataMediaKind.movie), isNull,
+        reason: 'tv 空间的 id 当 /movie 拉会命中同号无关电影');
+    expect(movieUnderShow.tmdbIdFor(VideoMetadataMediaKind.tv), 62564);
+    expect((await mapping.entryForAnidb(17617))!.tmdbMediaKind,
+        VideoMetadataMediaKind.tv);
+    expect(dirty.tmdbMediaKind, isNull);
 
     expect(await mapping.entryForAnidb(99999), isNull);
     expect(() => mapping.entryForAnidb(0), throwsArgumentError);

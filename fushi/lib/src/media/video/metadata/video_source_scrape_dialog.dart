@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
@@ -62,7 +65,9 @@ class _VideoSourceScrapeTaskPanelState
   final Set<int> _retrying = <int>{};
   List<VideoPendingScrapeWork> _pendingWorks = const <VideoPendingScrapeWork>[];
   final Set<String> _bindingStableKeys = <String>{};
-  String? _bindError;
+
+  /// 待确认页顶部的一行说明：手动指定 / AI 识别的失败原因或 AI 识别的结论。
+  String? _pendingNotice;
   bool _loadingPending = true;
   Object? _pendingError;
   int _pendingLoadGeneration = 0;
@@ -194,10 +199,11 @@ class _VideoSourceScrapeTaskPanelState
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         Text(
-                            '${_pendingWorks.length} · ${t.video_source_scrape_pending_works_hint}'),
+                          '${_pendingWorks.length} · ${t.video_source_scrape_pending_works_hint}',
+                        ),
                         const SizedBox(height: 12),
-                        if (_bindError case final String error)
-                          SelectableText(error),
+                        if (_pendingNotice case final String notice)
+                          SelectableText(notice),
                         Expanded(child: _buildPendingWorks()),
                       ],
                     ),
@@ -248,8 +254,10 @@ class _VideoSourceScrapeTaskPanelState
       else if (confirmation != null)
         ..._confirmationRows(confirmation)
       else if (report != null) ...<Widget>[
-        Text(_phaseLabel(progress.phase),
-            style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          _phaseLabel(progress.phase),
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: 8),
         ..._reportRows(report),
       ] else
@@ -265,8 +273,7 @@ class _VideoSourceScrapeTaskPanelState
             key: ObjectKey(queued[index]),
             leading: Text('${index + 1}'),
             title: Text(queued[index].workTitle),
-            subtitle: Text(
-                '${queued[index].source.label} · ${queued[index].lookup.provider.name.toUpperCase()} ${queued[index].lookup.externalId}'),
+            subtitle: Text(_queuedSubtitle(queued[index])),
             trailing: IconButton(
               tooltip: t.video_source_scrape_queue_remove,
               onPressed: () =>
@@ -293,11 +300,13 @@ class _VideoSourceScrapeTaskPanelState
       children: <Widget>[
         if (progress.isRunning) LinearProgressIndicator(value: value),
         if (progress.isRunning) const SizedBox(height: 12),
-        Text(t.video_source_scrape_progress(
-          phase: phase,
-          current: progress.current,
-          total: total,
-        )),
+        Text(
+          t.video_source_scrape_progress(
+            phase: phase,
+            current: progress.current,
+            total: total,
+          ),
+        ),
         if (progress.sourceLabel case final String label) ...<Widget>[
           const SizedBox(height: 6),
           Text(label),
@@ -340,6 +349,11 @@ class _VideoSourceScrapeTaskPanelState
           workTitle: entry.work.title,
           workStableKey: entry.work.stableKey,
         );
+        // 为什么还没认出来：最近一次刮削留下的原因 + AI 结果；没刮过就如实说。
+        final VideoScrapePendingNote? note = entry.pendingNote;
+        final String reason = note == null
+            ? t.video_scrape_pending_record_missing
+            : describeVideoScrapePendingNote(note);
         return FushiListItem(
           key: ValueKey<String>(
             'video-source-pending-work-${entry.work.stableKey}',
@@ -348,17 +362,82 @@ class _VideoSourceScrapeTaskPanelState
           padding: EdgeInsets.zero,
           leading: const Icon(Icons.rule_folder_outlined),
           title: Text(entry.work.title),
-          subtitle: Text(entry.source.label),
+          subtitle: Text(
+            '${entry.source.label}\n$reason',
+            key: ValueKey<String>(
+              'video-source-pending-reason-${entry.work.stableKey}',
+            ),
+          ),
           trailing: pending || _bindingStableKeys.contains(entry.work.stableKey)
               ? Text(t.video_source_scrape_queue_submitted)
-              : IconButton(
-                  tooltip: t.video_source_scrape_manual_search_title,
-                  onPressed: () => unawaited(_bindPendingWork(entry)),
-                  icon: const Icon(Icons.search),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (widget.controller.supportsAiIdentify)
+                      IconButton(
+                        key: ValueKey<String>(
+                          'video-source-pending-ai-${entry.work.stableKey}',
+                        ),
+                        tooltip: t.video_source_scrape_ai_identify,
+                        onPressed: () => unawaited(_identifyPendingWork(entry)),
+                        icon: const Icon(Icons.auto_awesome),
+                      ),
+                    IconButton(
+                      tooltip: t.video_source_scrape_manual_search_title,
+                      onPressed: () => unawaited(_bindPendingWork(entry)),
+                      icon: const Icon(Icons.search),
+                    ),
+                  ],
                 ),
         );
       },
     );
+  }
+
+  String _queuedSubtitle(
+    VideoSourceScrapeManualRequest request,
+  ) =>
+      switch (request.lookup) {
+        final VideoMetadataLookup lookup =>
+          '${request.source.label} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
+        null =>
+          '${request.source.label} · ${t.video_source_scrape_ai_identify}',
+      };
+
+  /// 「AI 识别」：对这一部重跑识别并强制重问 AI（歧义时在候选里挑、查无时
+  /// 让 AI 给正式标题再搜）。入口对没指派 AI 的用户也可见，点了只引导去
+  /// 「设置 › AI」，不发任何 AI 请求（BUG-2694 的约定）。
+  Future<void> _identifyPendingWork(VideoPendingScrapeWork entry) async {
+    if (!widget.controller.aiIdentityAvailable) {
+      setState(() => _pendingNotice = t.ai_assist_no_provider);
+      return;
+    }
+    await _runPendingWork(
+      entry,
+      () => widget.controller.identifyWorkWithAi(
+        source: entry.source,
+        workTitle: entry.work.title,
+        workStableKey: entry.work.stableKey,
+      ),
+      describeOutcome: _aiOutcome,
+    );
+  }
+
+  /// AI 识别的结论：AI 的每一步（采用 / 不采用 / 失败 / 重搜）都在报告里留了
+  /// `ai:*` 标记，逐条译成文案；一条都没有时退回整体汇总。
+  static String _aiOutcome(SourceScrapeReport report) {
+    final List<String> notes = <String>[
+      for (final SourceScrapeIssue issue in report.warnings)
+        if (parseVideoScrapeAiIdentityNote(issue.message) != null)
+          describeVideoScrapeIssueMessage(issue.message),
+    ];
+    final String summary = t.scrape_all_done(
+      applied: report.succeededWorks,
+      review: report.pendingConfirmations,
+      skipped: report.protectedArtifacts,
+      failed: report.failedWorks,
+    );
+    return <String>[summary, ...notes].join('\n');
   }
 
   Future<void> _bindPendingWork(VideoPendingScrapeWork entry) async {
@@ -371,28 +450,43 @@ class _VideoSourceScrapeTaskPanelState
       workStableKey: entry.work.stableKey,
     );
     if (candidate == null || !mounted) return;
-    setState(() {
-      _bindingStableKeys.add(entry.work.stableKey);
-      _bindError = null;
-    });
-    try {
-      await widget.controller.rescrapeWorkWithLookup(
+    await _runPendingWork(
+      entry,
+      () => widget.controller.rescrapeWorkWithLookup(
         source: entry.source,
         workTitle: entry.work.title,
         workStableKey: entry.work.stableKey,
         lookup: candidate.lookup,
-      );
+      ),
+    );
+  }
+
+  /// 待确认作品的单作品操作（手动指定 / AI 识别）共用的执行与收尾。
+  Future<void> _runPendingWork(
+    VideoPendingScrapeWork entry,
+    Future<SourceScrapeReport> Function() operation, {
+    String Function(SourceScrapeReport report)? describeOutcome,
+  }) async {
+    setState(() {
+      _bindingStableKeys.add(entry.work.stableKey);
+      _pendingNotice = null;
+    });
+    try {
+      final SourceScrapeReport report = await operation();
+      if (describeOutcome != null && mounted) {
+        setState(() => _pendingNotice = describeOutcome(report));
+      }
       await _reloadHistory();
       await _reloadPendingWorks();
     } on VideoSourceScrapeCancelled {
       // 撤回排队是用户操作，不把它显示成一次失败。
     } on VideoSourceScrapeWorkNotFound {
       if (!mounted) return;
-      setState(() => _bindError = t.video_source_scrape_work_missing);
+      setState(() => _pendingNotice = t.video_source_scrape_work_missing);
       unawaited(_reloadPendingWorks());
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _bindError = error.toString());
+      setState(() => _pendingNotice = error.toString());
     } finally {
       if (mounted) {
         setState(() => _bindingStableKeys.remove(entry.work.stableKey));
@@ -543,6 +637,15 @@ class _VideoSourceScrapeTaskPanelState
 
   /// 待确认区块的行：说明头 + 候选（候选之间一条细分割线）。
   List<Widget> _confirmationRows(VideoSourceScrapeConfirmation confirmation) {
+    final VideoSourceScrapeAiSuggestion? ai = confirmation.aiSuggestion;
+    String? aiLabel(int index) {
+      if (ai == null || ai.candidateIndex != index) return null;
+      final String headline = t.video_source_scrape_ai_suggested(
+        percent: ai.confidencePercent,
+      );
+      return ai.reason.isEmpty ? headline : '$headline\n${ai.reason}';
+    }
+
     return <Widget>[
       Text(
         t.video_source_scrape_waiting_confirmation,
@@ -558,6 +661,7 @@ class _VideoSourceScrapeTaskPanelState
         VideoSourceScrapeCandidateTile(
           candidate: confirmation.candidates[index],
           onSelected: widget.controller.confirmPending,
+          aiSuggestion: aiLabel(index),
         ),
       ],
     ];
@@ -570,12 +674,14 @@ class _VideoSourceScrapeTaskPanelState
       for (final SourceScrapeIssue issue in report.errors) (issue, true),
     ];
     return <Widget>[
-      Text(t.scrape_all_done(
-        applied: report.succeededWorks,
-        review: report.pendingConfirmations,
-        skipped: report.protectedArtifacts,
-        failed: report.failedWorks,
-      )),
+      Text(
+        t.scrape_all_done(
+          applied: report.succeededWorks,
+          review: report.pendingConfirmations,
+          skipped: report.protectedArtifacts,
+          failed: report.failedWorks,
+        ),
+      ),
       if (issues.isNotEmpty) const SizedBox(height: 12),
       for (final (SourceScrapeIssue issue, bool isError) in issues)
         FushiListItem(

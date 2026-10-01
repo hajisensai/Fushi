@@ -168,66 +168,133 @@ class AiVideoIdentityDecision {
   int get confidencePercent => (confidence * 100).round();
 }
 
-/// 协调器注入点：给一个提问，回一个判定；null = 本次不问（未指派提供商等）。
-///
-/// 抛异常表示「问了但失败」（网络 / 鉴权 / 超时）：协调器会把本趟 run 余下的
-/// 歧义作品都跳过 AI，本条照旧进人工确认 / 待确认；诊断日志由实现方自己记。
+/// 单次判定函数：给一个提问，回一个判定；null = 本次不问（未指派提供商等）。
+/// AI 下视频（`video_acquisition_service.dart`）按这个形状注入。
 typedef AiVideoIdentityDecider = Future<AiVideoIdentityDecision?> Function(
   AiVideoIdentityQuery query,
 );
 
+/// 刮削协调器的 AI 注入点。
+///
+/// 与裸 [AiVideoIdentityDecider] 的区别是带 [capabilityKey]：协调器的判定缓存、
+/// 补刮账本的「试过没中」都是**某一套 AI 配置下**的结论，换了提供商 / 模型就
+/// 必须作废——以前缓存键里没有这一项，换了提供商仍沿用旧的「不选」（2026-10-01）。
+abstract interface class AiVideoIdentityAdvisor {
+  /// 当前生效的 AI 能力（提供商 + 协议 + 地址 + 模型）的稳定键；null = 未指派
+  /// 或不可用，此时协调器完全不问 AI。实现必须**每次现算**：协调器与补刮器
+  /// 生命周期很长，用户在设置里改了指派要立即生效。
+  String? get capabilityKey;
+
+  /// 在 [AiVideoIdentityQuery.candidates] 里选唯一命中。抛异常 = 问了但失败
+  /// （网络 / 鉴权 / 超时 / 空回复），协调器把它当作临时失败记账。
+  Future<AiVideoIdentityDecision> decide(AiVideoIdentityQuery query);
+
+  /// 资料源一个候选都没给时：根据本地线索给出这部作品可能的正式标题（各语言），
+  /// **只作搜索词**——重搜回来的候选仍要经 [decide] 达到门槛才采用，AI 不能凭空
+  /// 指定作品。[query] 的 candidates 为空。失败语义同 [decide]。
+  Future<List<String>> suggestSearchTitles(AiVideoIdentityQuery query);
+}
+
+/// AI 给出的搜索词最多用几条：每条都是一轮资料源请求（AniDB 有进程级限流）。
+const int kAiVideoIdentitySearchTitleLimit = 3;
+
 // ---------------------------------------------------------------------------
-// 「这条作品是 AI 判定的」在刮削运行记录里的落地形态
+// AI 在刮削运行记录里的落地形态
 // ---------------------------------------------------------------------------
 //
 // 运行记录（`video_source_scrape_runs.summary_json`）只有 warnings/errors 两个
-// 自由文本清单，没有结构化的「判定来源」列，也不为此加 DB 列：AI 判定作为一条
-// warning 记进去，message 用固定前缀 `ai:matched` 编码置信度与理由，UI 侧再用
-// [parseVideoScrapeAiIdentityNote] 还原成可翻译的文案。
+// 自由文本清单，没有结构化的「判定来源」列，也不为此加 DB 列：AI 的每次参与作为
+// 一条 warning 记进去，message 用固定前缀编码，UI 侧再用
+// [parseVideoScrapeAiIdentityNote] 还原成可翻译的文案。四种形态：
+//
+// * `ai:matched confidence=0.93 reason=…`  AI 判定并被采用；
+// * `ai:declined confidence=0.40 reason=…` 问了 AI，但没有达到门槛的唯一命中；
+// * `ai:failed reason=…`                   AI 请求失败（或本趟已失败而跳过）；
+// * `ai:searched reason=标题1 / 标题2`      资料源查无，按 AI 给的标题重搜过。
+//
+// `ai:matched` 是 2026-09 起就在落库的旧形态，格式不变。
 
-/// 标记前缀。整条 message 形如
-/// `ai:matched confidence=0.93 reason=标题与年份完全一致`。
+/// AI 参与刮削的结果种类。
+enum VideoScrapeAiNoteKind { matched, declined, failed, searched }
+
+/// 「AI 判定并采用」标记的前缀（旧形态，格式冻结）。
 const String kVideoScrapeAiIdentityNotePrefix = 'ai:matched';
 
 final RegExp _notePattern = RegExp(
-  '^$kVideoScrapeAiIdentityNotePrefix confidence=([0-9.]+)(?: reason=(.*))?\$',
+  r'^ai:(matched|declined|failed|searched)'
+  r'(?: confidence=([0-9.]+))?(?: reason=(.*))?$',
   dotAll: true,
 );
 
-/// 已解析的 AI 判定标记。
+/// 已解析的 AI 标记。[confidence] 只有 matched / declined 有。
 class VideoScrapeAiIdentityNote {
   const VideoScrapeAiIdentityNote({
-    required this.confidence,
+    this.kind = VideoScrapeAiNoteKind.matched,
+    this.confidence,
     required this.reason,
   });
 
-  final double confidence;
+  final VideoScrapeAiNoteKind kind;
+  final double? confidence;
   final String reason;
 
-  int get confidencePercent => (confidence * 100).round();
+  int get confidencePercent => ((confidence ?? 0) * 100).round();
 }
 
-/// 把 AI 判定编码成运行记录里的一条 message。
-String encodeVideoScrapeAiIdentityNote(AiVideoIdentityDecision decision) {
-  final String confidence = decision.confidence.toStringAsFixed(2);
-  final String reason = decision.reason.trim();
-  return reason.isEmpty
-      ? '$kVideoScrapeAiIdentityNotePrefix confidence=$confidence'
-      : '$kVideoScrapeAiIdentityNotePrefix confidence=$confidence reason=$reason';
+String _encodeNote(
+  VideoScrapeAiNoteKind kind, {
+  double? confidence,
+  String reason = '',
+}) {
+  final StringBuffer out = StringBuffer('ai:${kind.name}');
+  if (confidence != null) {
+    out.write(' confidence=${confidence.toStringAsFixed(2)}');
+  }
+  final String trimmed = reason.trim();
+  if (trimmed.isNotEmpty) out.write(' reason=$trimmed');
+  return out.toString();
 }
 
-/// 从运行记录 message 还原 AI 判定；不是这种标记回 null。
+/// 把被采用的 AI 判定编码成运行记录里的一条 message。
+String encodeVideoScrapeAiIdentityNote(AiVideoIdentityDecision decision) =>
+    _encodeNote(VideoScrapeAiNoteKind.matched,
+        confidence: decision.confidence, reason: decision.reason);
+
+/// AI 给了判定但不采用（没有唯一命中或置信度不够）。
+String encodeVideoScrapeAiDeclinedNote(AiVideoIdentityDecision decision) =>
+    _encodeNote(
+      VideoScrapeAiNoteKind.declined,
+      confidence: decision.confidence,
+      reason: decision.reason,
+    );
+
+/// AI 请求失败；[reason] 是已脱敏的失败描述。
+String encodeVideoScrapeAiFailedNote(String reason) =>
+    _encodeNote(VideoScrapeAiNoteKind.failed, reason: reason);
+
+/// 资料源查无，按 AI 给出的 [titles] 重搜过。
+String encodeVideoScrapeAiSearchedNote(List<String> titles) =>
+    _encodeNote(VideoScrapeAiNoteKind.searched, reason: titles.join(' / '));
+
+/// 从运行记录 message 还原 AI 标记；不是这种标记回 null。
 VideoScrapeAiIdentityNote? parseVideoScrapeAiIdentityNote(String message) {
   final RegExpMatch? match = _notePattern.firstMatch(message.trim());
   if (match == null) {
     return null;
   }
-  final double? confidence = double.tryParse(match.group(1)!);
-  if (confidence == null) {
+  final VideoScrapeAiNoteKind kind =
+      VideoScrapeAiNoteKind.values.byName(match.group(1)!);
+  final String? rawConfidence = match.group(2);
+  final double? confidence =
+      rawConfidence == null ? null : double.tryParse(rawConfidence);
+  final bool scored = kind == VideoScrapeAiNoteKind.matched ||
+      kind == VideoScrapeAiNoteKind.declined;
+  if (scored && confidence == null) {
     return null;
   }
   return VideoScrapeAiIdentityNote(
-    confidence: confidence.clamp(0, 1).toDouble(),
-    reason: (match.group(2) ?? '').trim(),
+    kind: kind,
+    confidence: confidence?.clamp(0, 1).toDouble(),
+    reason: (match.group(3) ?? '').trim(),
   );
 }

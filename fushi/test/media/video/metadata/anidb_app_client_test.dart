@@ -12,10 +12,17 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     addTearDown(prefs.dispose);
     final VideoSourceScrapeGlobalConfig config =
-        VideoSourceScrapeGlobalConfig.fromPreferences(prefs,
-            resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
+        VideoSourceScrapeGlobalConfig.fromPreferences(
+          prefs,
+          resolvedTmdbApiKey: '',
+          uiLocaleTag: 'en-US',
+        );
     expect(config.anidbClientName, 'fushiplayer');
     expect(config.anidbClientVersion, 1);
+    // BUG-2623：fushiplayer 只是 UDP 登记，HTTP 身份随包为空。
+    expect(config.anidbHttpClientName, isEmpty);
+    expect(config.anidbHttpClientVersion, isNull);
+    expect(config.anidbHttpClientConfigured, isFalse);
     expect(config.anidbUsername, isEmpty);
     expect(config.anidbPassword, isEmpty);
     expect(config.hashEnabled, isFalse);
@@ -23,34 +30,112 @@ void main() {
     await prefs.setPref(kVideoAniDbUsernamePref, 'myaccount');
     await prefs.setPref(kVideoAniDbPasswordPref, ' my password ');
     final VideoSourceScrapeGlobalConfig personal =
-        VideoSourceScrapeGlobalConfig.fromPreferences(prefs,
-            resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
+        VideoSourceScrapeGlobalConfig.fromPreferences(
+          prefs,
+          resolvedTmdbApiKey: '',
+          uiLocaleTag: 'en-US',
+        );
     expect(personal.anidbUdpConfig.isAvailable, isTrue);
     expect(personal.anidbPassword, ' my password ');
     expect(personal.hashEnabled, isFalse);
   });
 
-  test('custom identity overrides the pair and never borrows bundled version',
-      () {
-    final AniDbAppClientIdentity custom =
-        resolveAniDbAppClient(customName: ' customclient ', customVersion: 7);
-    expect(custom.name, 'customclient');
-    expect(custom.version, 7);
-    expect(
-        resolveAniDbAppClient(customName: 'customclient', customVersion: null)
-            .version,
-        isNull);
-    final AniDbAppClientIdentity reset =
-        resolveAniDbAppClient(customName: '', customVersion: 999);
-    expect(reset.name, kBundledAniDbClient.name);
-    expect(reset.version, kBundledAniDbClient.version);
+  test(
+    'custom identity overrides the pair and never borrows bundled version',
+    () {
+      final AniDbAppClientIdentity custom = resolveAniDbAppClient(
+        customName: ' customclient ',
+        customVersion: 7,
+      );
+      expect(custom.name, 'customclient');
+      expect(custom.version, 7);
+      expect(
+        resolveAniDbAppClient(
+          customName: 'customclient',
+          customVersion: null,
+        ).version,
+        isNull,
+      );
+      final AniDbAppClientIdentity reset = resolveAniDbAppClient(
+        customName: '',
+        customVersion: 999,
+      );
+      expect(reset.name, kBundledAniDbClient.name);
+      expect(reset.version, kBundledAniDbClient.version);
+    },
+  );
+
+  test('bundled UDP identity is never borrowed for the HTTP API', () {
+    final AniDbAppClients bundled = resolveAniDbAppClients(
+      customName: '  ',
+      customVersion: 5,
+    );
+    expect(bundled.udp.name, kBundledAniDbClient.name);
+    expect(bundled.udp.version, kBundledAniDbClient.version);
+    expect(bundled.http.name, isEmpty);
+    expect(bundled.http.isComplete, isFalse);
+
+    final AniDbAppClients custom = resolveAniDbAppClients(
+      customName: 'customapp',
+      customVersion: 4,
+    );
+    expect(custom.udp.name, 'customapp');
+    expect(custom.http.name, 'customapp');
+    expect(custom.http.version, 4);
+    expect(custom.http.isComplete, isTrue);
+
+    // 将来登记了 HTTP 客户端：只改 kBundledAniDbHttpClient 常量即可。
+    final AniDbAppClients registered = resolveAniDbAppClients(
+      customName: '',
+      customVersion: null,
+      bundledHttp: const AniDbAppClientIdentity(name: 'fushihttp', version: 1),
+    );
+    expect(registered.http.name, 'fushihttp');
+    expect(registered.udp.name, kBundledAniDbClient.name);
   });
+
+  test(
+    'Shoko client names are never usable, in settings or in the provider gate',
+    () async {
+      for (final String reserved in <String>['AnimePlugin', ' ommserver ']) {
+        final AniDbAppClientIdentity identity = AniDbAppClientIdentity(
+          name: reserved,
+          version: 1,
+        );
+        expect(identity.isComplete, isTrue, reason: reserved);
+        expect(identity.isUsable, isFalse, reason: reserved);
+      }
+      expect(
+        const AniDbAppClientIdentity(name: 'customapp', version: 1).isUsable,
+        isTrue,
+      );
+
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final PreferencesRepository prefs = PreferencesRepository(db);
+      addTearDown(prefs.dispose);
+      await prefs.setPref(kVideoMetadataAniDbClientNamePref, 'animeplugin');
+      await prefs.setPref(kVideoMetadataAniDbClientVersionPref, '1');
+      final VideoSourceScrapeGlobalConfig config =
+          VideoSourceScrapeGlobalConfig.fromPreferences(
+            prefs,
+            resolvedTmdbApiKey: '',
+            uiLocaleTag: 'en-US',
+          );
+      // 设置页状态行与 provider 发请求前的闸同一判据：冒用 Shoko 名 = 未登记。
+      expect(config.anidbHttpClientName, 'animeplugin');
+      expect(config.anidbHttpClientConfigured, isFalse);
+    },
+  );
 
   test('an unregistered build cannot invent a client identity', () {
     final AniDbAppClientIdentity pending = resolveAniDbAppClient(
-        customName: '',
-        customVersion: 1,
-        bundled: const AniDbAppClientIdentity.unregistered());
+      customName: '',
+      customVersion: 1,
+      bundled: const AniDbAppClientIdentity.unregistered(),
+    );
     expect(pending.name, isEmpty);
     expect(pending.version, isNull);
   });

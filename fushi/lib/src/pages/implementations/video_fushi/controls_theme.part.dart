@@ -411,7 +411,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           ),
       ],
       bottomButtonBar: <Widget>[
-        // 三区布局（[VideoBottomBarSlots]，BUG-2792）把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
+        // 三簇控制条（[VideoControlBar]，BUG-2792/2832）把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
         // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±10s 带可见标注、5 键带
         // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
         // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。

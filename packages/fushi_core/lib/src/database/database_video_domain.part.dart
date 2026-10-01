@@ -1264,6 +1264,24 @@ mixin _FushiDbVideoDomain
     return query.get();
   }
 
+  /// 某来源最近的、留下了待确认或失败作品的运行（新 → 旧）。只有这种运行带
+  /// 挂起原因标记；全部成功的运行（如逐个导入时的单作品刮削）不占回看窗口。
+  Future<List<VideoSourceScrapeRunRow>> getUnresolvedVideoSourceScrapeRuns({
+    required int sourceId,
+    int limit = 20,
+  }) =>
+      (select(videoSourceScrapeRuns)
+            ..where(($VideoSourceScrapeRunsTable t) =>
+                t.sourceId.equals(sourceId) &
+                (t.pendingConfirmations.isBiggerThanValue(0) |
+                    t.failedWorks.isBiggerThanValue(0)))
+            ..orderBy(<OrderingTerm Function($VideoSourceScrapeRunsTable)>[
+              ($VideoSourceScrapeRunsTable t) => OrderingTerm.desc(t.startedAt),
+              ($VideoSourceScrapeRunsTable t) => OrderingTerm.desc(t.id),
+            ])
+            ..limit(limit))
+          .get();
+
   /// 是否仍有联网视频刮削正在写入。全局清理用它 fail closed，避免清完后活动任务
   /// 又把 work / sidecar ledger 写回来。
   Future<bool> hasRunningVideoSourceScrapeRun() async =>

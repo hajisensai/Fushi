@@ -26,6 +26,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -42,10 +43,19 @@ typedef TmdbChangedTvIdsProbe = Future<Set<int>> Function(
 /// 的「手动指定」永远指向真实存在的作品——不可能再撞
 /// `VideoSourceScrapeWorkNotFound`（BUG-1998 的结构性根治）。
 class VideoPendingScrapeWork {
-  const VideoPendingScrapeWork({required this.source, required this.work});
+  const VideoPendingScrapeWork({
+    required this.source,
+    required this.work,
+    this.pendingNote,
+  });
 
   final SourceLibraryRow source;
   final VideoSourceScrapeWork work;
+
+  /// 最近一次刮削留下的「为什么没认出来」；近期运行记录里没有它的标记时为 null。
+  /// 只有 [VideoLibraryScrapeSweep.pendingWorksWithReasons] 填它（待确认清单要
+  /// 显示），计数 / 补刮路径不为它多查运行记录。
+  final VideoScrapePendingNote? pendingNote;
 }
 
 /// 在所有本地视频来源的刮削计划里定位某个合集对应的作品单元。
@@ -158,6 +168,7 @@ class VideoLibraryScrapeSweep {
     DateTime Function()? now,
     VideoScrapeSweepLedger? ledger,
     String configFingerprint = '',
+    String? Function()? aiCapabilityKey,
     this.refreshProbeInterval = const Duration(hours: 12),
     this.staleAfter = const Duration(days: 14),
     this.maxRefreshPerSweep = 20,
@@ -168,6 +179,7 @@ class VideoLibraryScrapeSweep {
         _tmdbChangedTvIds = tmdbChangedTvIds,
         _ledger = ledger ?? VideoScrapeSweepLedger(),
         _configFingerprint = configFingerprint,
+        _aiCapabilityKey = aiCapabilityKey,
         _now = now ?? DateTime.now;
 
   final FushiDatabase _database;
@@ -195,6 +207,20 @@ class VideoLibraryScrapeSweep {
 
   /// 刮削配置指纹：配置变了，旧配置下「试过没中」的记账作废。
   final String _configFingerprint;
+
+  /// 视频作品识别当前的 AI 能力键（null = 没配 AI），**每轮现取**。
+  ///
+  /// 「试过没中」是某套刮削配置 + 某套 AI 配置下的结论：没配 AI 时歧义 / 查无的
+  /// 作品，配上 AI 后就可能认得出。以前账本指纹只看刮削配置，配好 AI 后旧作品
+  /// 还要再等最多 7 天才会重刮、才会问到 AI（2026-10-01）。
+  final String? Function()? _aiCapabilityKey;
+
+  /// 账本实际使用的指纹：刮削配置 + AI 能力。没配 AI 时与旧指纹逐字相同——
+  /// 不配 AI 的用户（含无头服务端）升级后不该平白清一次账本。
+  String get _ledgerFingerprint {
+    final String? ai = _aiCapabilityKey?.call();
+    return ai == null ? _configFingerprint : '$_configFingerprint|ai=$ai';
+  }
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
@@ -227,6 +253,48 @@ class VideoLibraryScrapeSweep {
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
       _lastPending = (await _plannedWorks()).pending;
+
+  /// 同 [pendingWorks]，每部作品再带上最近一次刮削留下的挂起原因（见
+  /// `video_scrape_pending_note.dart`）。待确认清单用；只要计数的地方别用它。
+  Future<List<VideoPendingScrapeWork>> pendingWorksWithReasons() async =>
+      _withPendingNotes(await pendingWorks());
+
+  /// 每个来源回看多少次「留下了待确认 / 失败作品」的运行：挂起原因只要最近的，
+  /// 全部成功的运行不占窗口（见 `getUnresolvedVideoSourceScrapeRuns`）。
+  static const int _pendingNoteRunLookback = 20;
+
+  Future<List<VideoPendingScrapeWork>> _withPendingNotes(
+      List<VideoPendingScrapeWork> pending) async {
+    final Map<int, Map<String, VideoScrapePendingNote>> bySource =
+        <int, Map<String, VideoScrapePendingNote>>{};
+    for (final VideoPendingScrapeWork entry in pending) {
+      bySource[entry.source.id] ??= await _pendingNotesOf(entry.source.id);
+    }
+    return <VideoPendingScrapeWork>[
+      for (final VideoPendingScrapeWork entry in pending)
+        VideoPendingScrapeWork(
+          source: entry.source,
+          work: entry.work,
+          pendingNote: bySource[entry.source.id]![entry.work.stableKey],
+        ),
+    ];
+  }
+
+  Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
+      int sourceId) async {
+    final List<VideoSourceScrapeRunRow> runs =
+        await _database.getUnresolvedVideoSourceScrapeRuns(
+            sourceId: sourceId, limit: _pendingNoteRunLookback);
+    return latestVideoScrapePendingNotes(<Iterable<String>>[
+      for (final VideoSourceScrapeRunRow run in runs)
+        if (decodeSourceScrapeReport(run.summaryJson)
+            case final SourceScrapeReport report)
+          <String>[
+            for (final SourceScrapeIssue issue in report.warnings) issue.message,
+            for (final SourceScrapeIssue issue in report.errors) issue.message,
+          ],
+    ]);
+  }
 
   /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。
   Future<_PlannedWorks> _plannedWorks() async {
@@ -345,7 +413,7 @@ class VideoLibraryScrapeSweep {
       if (_isEnabled != null && !_isEnabled()) return pending;
       // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
       if (_controller.isBusy) return pending;
-      await _ledger.ensureLoaded(fingerprint: _configFingerprint);
+      await _ledger.ensureLoaded(fingerprint: _ledgerFingerprint);
       final DateTime startedAt = _now();
       final bool hashReady = _isHashReady?.call() ?? false;
       final Map<SourceLibraryRow, List<VideoSourceScrapeWork>> subsets =
@@ -405,10 +473,14 @@ class VideoLibraryScrapeSweep {
       try {
         final SourceScrapeReport report =
             await _controller.scrapeWorkSubsets(subsets);
-        // 只因资料源临时不可用（504 / 超时 / 限流）而失败的作品不是「查无」：
-        // 撤掉记账，下次触发（进视频页 / 库里有新条目）就再试，而不是等 7 天。
+        // 只因资料源 / AI 临时不可用（504 / 超时 / 限流 / AI 请求失败）而没认出
+        // 的作品不是「查无」：撤掉记账，下次触发（进视频页 / 库里有新条目）就
+        // 再试，而不是等 7 天。AI 失败记在 warnings（作品本身是待确认，不算错）。
         final List<String> transient = <String>[
-          for (final SourceScrapeIssue issue in report.errors)
+          for (final SourceScrapeIssue issue in <SourceScrapeIssue>[
+            ...report.errors,
+            ...report.warnings,
+          ])
             if (issue.providerUnavailable && issue.workKey != null)
               issue.workKey!,
         ];
