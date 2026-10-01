@@ -1385,8 +1385,11 @@ void main() {
     final LeaderboardService service = await activeService(tester);
     server.accountGone = true;
     await tester.pumpWidget(wrap(service, const LeaderboardTab()));
-    await settle(tester);
-    await settle(tester);
+    // 401 之后 `_clearLocal` 排进串行写队列、真删账户文件（真 IO）才清空账户；
+    // 固定轮数的 settle 在 CI 忙时等不到它（2026-10-01 develop run 36830851605
+    // 读到 active）。按条件转，到上限仍不成立交给下面的 expect 如实报错。
+    await settleIo(tester, () => service.status == LeaderboardStatus.disabled);
+    await tester.pump();
     expect(service.status, LeaderboardStatus.disabled);
     expect(byKey('leaderboard-intro'), findsOneWidget);
     expect(byKey('leaderboard-intro-account-gone'), findsOneWidget);
