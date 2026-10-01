@@ -7,6 +7,7 @@ import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -37,6 +38,9 @@ class MangaOcrWizardEngines {
     this.initialEnginePreference,
     this.initialLensLanguage,
     this.lensLanguageSetter,
+    this.localModel,
+    this.localModelSetter,
+    this.modelServiceFor,
   });
 
   /// 生产依赖集的**唯一**装配点。所有入口都必须经此，不得再手抄参数表。
@@ -68,6 +72,31 @@ class MangaOcrWizardEngines {
       initialEnginePreference: appModel.mangaOcrEnginePreference,
       initialLensLanguage: appModel.mangaOcrLensLanguage,
       lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+      localModel: MangaOcrLocalModel.forPlatform(appModel.mangaOcrLocalModel),
+      localModelSetter: appModel.setMangaOcrLocalModel,
+      modelServiceFor: (MangaOcrLocalModel model) =>
+          createMangaOcrService(localModel: model),
+    );
+  }
+
+  /// 换一个本机模型后的依赖集：[service] 换成该模型的服务，其余不变。
+  /// [modelServiceFor] 为 null（测试直连）时原样返回。
+  MangaOcrWizardEngines withLocalModel(MangaOcrLocalModel model) {
+    final MangaOcrService Function(MangaOcrLocalModel)? serviceFor =
+        modelServiceFor;
+    if (serviceFor == null) return this;
+    return MangaOcrWizardEngines(
+      service: serviceFor(model),
+      externalRunner: externalRunner,
+      remoteRunner: remoteRunner,
+      lensRunner: lensRunner,
+      systemOcrRunner: systemOcrRunner,
+      initialEnginePreference: initialEnginePreference,
+      initialLensLanguage: initialLensLanguage,
+      lensLanguageSetter: lensLanguageSetter,
+      localModel: model,
+      localModelSetter: localModelSetter,
+      modelServiceFor: modelServiceFor,
     );
   }
 
@@ -97,4 +126,16 @@ class MangaOcrWizardEngines {
 
   /// 用户在向导里改语言时回写偏好；null（测试）= 不持久化。
   final void Function(String value)? lensLanguageSetter;
+
+  /// [service] 对应的本机模型；null = 不在向导里提供模型选择（测试直连）。
+  ///
+  /// 「重新识别本卷」就是为了换引擎 / 换模型重跑，而模型以前只能去设置页改——
+  /// 向导里只有一个「本地 ONNX」段，选不了用哪个模型。
+  final MangaOcrLocalModel? localModel;
+
+  /// 用户在向导里换模型时回写全局模型偏好（与设置页引擎下拉同一份）。
+  final Future<void> Function(String value)? localModelSetter;
+
+  /// 按模型取服务；与 [localModel] 一起非空时向导显示模型选择。
+  final MangaOcrService Function(MangaOcrLocalModel model)? modelServiceFor;
 }
