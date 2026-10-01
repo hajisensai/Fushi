@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "다운로드",
   "ai_media_acquire_started": "다운로드를 시작했습니다",
   "ai_media_acquire_queries": "검색어: $queries",
-  "leaderboard_tab": "랭킹",
+  "leaderboard_title": "랭킹",
   "leaderboard_intro_title": "랭킹 및 Fushi 계정",
   "leaderboard_intro_body": "가입하면 완독한 작품을 친구 및 다른 모든 사용자와 비교할 수 있습니다. 가입하기 전에는 아무것도 업로드되지 않습니다.",
   "leaderboard_intro_public_title": "공개되는 정보",

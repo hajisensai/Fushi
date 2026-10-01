@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "下载",
   "ai_media_acquire_started": "已开始下载",
   "ai_media_acquire_queries": "搜索词：$queries",
-  "leaderboard_tab": "排行",
+  "leaderboard_title": "排行榜",
   "leaderboard_intro_title": "排行榜与 Fushi 账户",
   "leaderboard_intro_body": "注册后可以和好友、所有人比较读完了多少。注册之前不会上传任何东西。",
   "leaderboard_intro_public_title": "会公开",

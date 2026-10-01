@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "Скачать",
   "ai_media_acquire_started": "Загрузка начата",
   "ai_media_acquire_queries": "Выполнен поиск: $queries",
-  "leaderboard_tab": "Рейтинг",
+  "leaderboard_title": "Рейтинг",
   "leaderboard_intro_title": "Таблица лидеров и аккаунт Fushi",
   "leaderboard_intro_body": "Зарегистрируйтесь, чтобы сравнивать свои достижения с друзьями и остальными. Пока вы не зарегистрируетесь, ничего не загружается.",
   "leaderboard_intro_public_title": "Будет общедоступно",

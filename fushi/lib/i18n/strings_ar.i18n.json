@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "تنزيل",
   "ai_media_acquire_started": "بدأ التنزيل",
   "ai_media_acquire_queries": "تم البحث عن: $queries",
-  "leaderboard_tab": "الترتيب",
+  "leaderboard_title": "الترتيب",
   "leaderboard_intro_title": "لوحة المتصدرين وحساب Fushi",
   "leaderboard_intro_body": "سجّل لتقارن ما أنهيته مع الأصدقاء والجميع. لا يُرفع شيء حتى تسجّل.",
   "leaderboard_intro_public_title": "سيكون عامًا",

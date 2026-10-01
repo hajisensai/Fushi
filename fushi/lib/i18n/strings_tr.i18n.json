@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "İndir",
   "ai_media_acquire_started": "İndirme başladı",
   "ai_media_acquire_queries": "Aranan: $queries",
-  "leaderboard_tab": "Sıralama",
+  "leaderboard_title": "Sıralama",
   "leaderboard_intro_title": "Liderlik tablosu ve Fushi hesabı",
   "leaderboard_intro_body": "Bitirdiklerinizi arkadaşlarınızla ve herkesle karşılaştırmak için kaydolun. Kaydolana kadar hiçbir şey yüklenmez.",
   "leaderboard_intro_public_title": "Herkese açık olacak",

@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "Tải xuống",
   "ai_media_acquire_started": "Đã bắt đầu tải",
   "ai_media_acquire_queries": "Đã tìm: $queries",
-  "leaderboard_tab": "Xếp hạng",
+  "leaderboard_title": "Xếp hạng",
   "leaderboard_intro_title": "Bảng xếp hạng & tài khoản Fushi",
   "leaderboard_intro_body": "Đăng ký để so sánh những gì bạn đã hoàn thành với bạn bè và mọi người. Không có gì được tải lên cho đến khi bạn đăng ký.",
   "leaderboard_intro_public_title": "Sẽ công khai",

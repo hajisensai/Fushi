@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "Herunterladen",
   "ai_media_acquire_started": "Download gestartet",
   "ai_media_acquire_queries": "Gesucht nach: $queries",
-  "leaderboard_tab": "Ranking",
+  "leaderboard_title": "Ranking",
   "leaderboard_intro_title": "Bestenliste & Fushi-Konto",
   "leaderboard_intro_body": "Registriere dich, um zu vergleichen, was du abgeschlossen hast, mit Freunden und allen anderen. Bis zur Registrierung wird nichts hochgeladen.",
   "leaderboard_intro_public_title": "Wird öffentlich sein",

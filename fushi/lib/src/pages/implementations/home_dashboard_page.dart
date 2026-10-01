@@ -39,6 +39,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -2023,6 +2024,14 @@ class _HomeDashboardPageState
             icon: Icons.bar_chart_outlined,
             onTap: _openStatisticsCenter,
           ),
+          SizedBox(width: tokens.spacing.gap),
+          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
+          FushiIconButton(
+            tooltip: t.leaderboard_title,
+            label: t.leaderboard_title,
+            icon: Icons.emoji_events_outlined,
+            onTap: _openLeaderboard,
+          ),
         ],
       ),
       child: Column(
@@ -2226,6 +2235,17 @@ class _HomeDashboardPageState
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => const StatisticsCenterPage(),
+      ),
+    );
+  }
+
+  /// 排行榜入口（统计中心入口旁的独立按钮）。
+  void _openLeaderboard() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const LeaderboardPage(),
       ),
     );
   }

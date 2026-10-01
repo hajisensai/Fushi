@@ -20,8 +20,10 @@
 // `R18+`、MAL `Rx - Hentai`）。拿不到信号的条目为 false。
 //
 // 书 / 视频 / 游戏的库表本身不分 Profile（与库页口径一致），只有统计按 Profile 隔离。
-// Profile 口径：只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时只上传
-// **本 Profile 有学习记录（stat facts）**的作品——别的 Profile 读完的书不算到本账户上。
+// Profile 口径：只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时**别的
+// Profile 有学习记录、本 Profile 没有**的作品不上传——别的 Profile 读完的书不算到本账户
+// 上。哪个 Profile 都没有记录的作品（标记读完但没留统计、早于统计域的老书）归不到任何
+// 一个 Profile 名下，照常上传（BUG-2852：此前多建一个 Profile 就把这些书全丢了）。
 //
 // 服务端 normalizeEntry 对单条坏数据会 400 拒掉**整批**，所以这里按同一口径先把形状
 // 修好或丢掉（[sanitizeFinishedAt] / [sanitizeShelfText]），丢掉的记日志。
@@ -101,8 +103,8 @@ Future<LocalShelf> buildLocalShelf(
   );
   final _ShelfBuild build = _ShelfBuild(
     totals: _Totals.fromFacts(facts.daily),
+    otherProfiles: await _otherProfileMedia(db, profileId),
     nowMs: at.millisecondsSinceEpoch,
-    requireFacts: (await db.select(db.profiles).get()).length > 1,
     nsfwExtensions: await _nsfwExtensionPackages(db),
   );
   final List<LocalShelfEntry> entries =
@@ -192,6 +194,24 @@ bool isAdultVideoContentRating(String? contentRating) {
   return rating.startsWith('RX') || rating.startsWith('R18');
 }
 
+/// 别的 Profile 有学习记录的媒体（`mediaKind|mediaKey`）；只有一个 Profile 时为空集。
+/// 与本 Profile 同一口径（[loadStatFacts] 的日面事实），只是换个 profileId。
+Future<Set<String>> _otherProfileMedia(FushiDatabase db, int profileId) async {
+  final Set<String> media = <String>{};
+  for (final ProfileRow p in await db.select(db.profiles).get()) {
+    if (p.id == profileId) continue;
+    final StatFacts facts = await loadStatFacts(
+      db,
+      activityLimit: 0,
+      profileId: p.id,
+    );
+    for (final StatFact f in facts.daily) {
+      if (f.mediaKey.isNotEmpty) media.add('${f.mediaKind}|${f.mediaKey}');
+    }
+  }
+  return media;
+}
+
 /// 分级为 NSFW 的已装扩展包名（漫画 / 视频扩展共表）。
 Future<Set<String>> _nsfwExtensionPackages(FushiDatabase db) async => <String>{
   for (final MangaExtensionRow e in await db.getMangaExtensions())
@@ -203,16 +223,16 @@ Future<Set<String>> _nsfwExtensionPackages(FushiDatabase db) async => <String>{
 class _ShelfBuild {
   _ShelfBuild({
     required this.totals,
+    required this.otherProfiles,
     required this.nowMs,
-    required this.requireFacts,
     required this.nsfwExtensions,
   });
 
   final _Totals totals;
   final int nowMs;
 
-  /// 有多个 Profile：只收本 Profile 有学习记录的作品。
-  final bool requireFacts;
+  /// 别的 Profile 有学习记录的媒体（`mediaKind|mediaKey`），见 [_otherProfileMedia]。
+  final Set<String> otherProfiles;
 
   /// 分级为 NSFW 的扩展包名。
   final Set<String> nsfwExtensions;
@@ -222,9 +242,11 @@ class _ShelfBuild {
 
   final List<String> _skipped = <String>[];
 
-  /// 本 Profile 是否有这部作品（的任一成员）的学习记录。
-  bool hasFacts(String mediaKind, Iterable<String> mediaKeys) =>
-      mediaKeys.any((String k) => totals.has(mediaKind, k));
+  /// 这部作品（的任一成员）是否归别的 Profile：本 Profile 没有学习记录、别的 Profile
+  /// 有。两边都没有记录的作品不归任何 Profile，不算别人的。
+  bool belongsToOtherProfile(String mediaKind, Iterable<String> mediaKeys) =>
+      !mediaKeys.any((String k) => totals.has(mediaKind, k)) &&
+      mediaKeys.any((String k) => otherProfiles.contains('$mediaKind|$k'));
 
   void skip(String localKey, String reason) =>
       _skipped.add('$localKey($reason)');
@@ -470,8 +492,7 @@ Future<List<LocalShelfEntry>> _bookEntries(
     final DateTime? completedAt = row.read(t.completedAt);
     final (int chars, int ms) = totals.of(kActivityMediaBook, bookKey);
     if (completedAt == null && chars <= 0 && ms <= 0) continue;
-    if (build.requireFacts &&
-        !build.hasFacts(kActivityMediaBook, <String>[bookKey])) {
+    if (build.belongsToOtherProfile(kActivityMediaBook, <String>[bookKey])) {
       continue;
     }
     final String title = _nonEmpty(row.read(t.title)) ?? bookKey;
@@ -599,11 +620,10 @@ Future<List<LocalShelfEntry>> _videoEntries(
 
   final List<_VideoCandidate> candidates = <_VideoCandidate>[];
   for (final _VideoUnit unit in units.values) {
-    if (build.requireFacts &&
-        !build.hasFacts(
-          kActivityMediaVideo,
-          unit.members.map((VideoBookRow m) => m.bookUid),
-        )) {
+    if (build.belongsToOtherProfile(
+      kActivityMediaVideo,
+      unit.members.map((VideoBookRow m) => m.bookUid),
+    )) {
       continue;
     }
     final VideoMetadataWorkRow? work = unit.work;
@@ -943,8 +963,7 @@ Future<List<LocalShelfEntry>> _gameEntries(
     final bool reading =
         g.playStatus == _playStatusPlaying || chars > 0 || ms > 0;
     if (!finished && !reading) continue;
-    if (build.requireFacts &&
-        !build.hasFacts(kActivityMediaGame, <String>[g.id])) {
+    if (build.belongsToOtherProfile(kActivityMediaGame, <String>[g.id])) {
       continue;
     }
     final _GameMeta meta = _GameMeta.of(

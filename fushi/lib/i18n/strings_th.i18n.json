@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "ดาวน์โหลด",
   "ai_media_acquire_started": "เริ่มดาวน์โหลดแล้ว",
   "ai_media_acquire_queries": "ค้นหา: $queries",
-  "leaderboard_tab": "อันดับ",
+  "leaderboard_title": "อันดับ",
   "leaderboard_intro_title": "อันดับและบัญชี Fushi",
   "leaderboard_intro_body": "ลงทะเบียนเพื่อเปรียบเทียบสิ่งที่คุณอ่านจบกับเพื่อนและทุกคน จะไม่มีการอัปโหลดอะไรจนกว่าคุณจะลงทะเบียน",
   "leaderboard_intro_public_title": "จะเป็นสาธารณะ",

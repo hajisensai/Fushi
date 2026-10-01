@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "ダウンロード",
   "ai_media_acquire_started": "ダウンロードを開始しました",
   "ai_media_acquire_queries": "検索語: $queries",
-  "leaderboard_tab": "ランキング",
+  "leaderboard_title": "ランキング",
   "leaderboard_intro_title": "ランキングと Fushi アカウント",
   "leaderboard_intro_body": "登録すると、読み終えた作品を友だちやほかのみんなと比べられます。登録するまでは何もアップロードされません。",
   "leaderboard_intro_public_title": "公開される内容",

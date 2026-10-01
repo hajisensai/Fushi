@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "Télécharger",
   "ai_media_acquire_started": "Téléchargement démarré",
   "ai_media_acquire_queries": "Recherché : $queries",
-  "leaderboard_tab": "Classement",
+  "leaderboard_title": "Classement",
   "leaderboard_intro_title": "Classement et compte Fushi",
   "leaderboard_intro_body": "Inscrivez-vous pour comparer ce que vous avez terminé avec vos amis et tous les autres. Rien n'est envoyé tant que vous ne vous inscrivez pas.",
   "leaderboard_intro_public_title": "Sera public",

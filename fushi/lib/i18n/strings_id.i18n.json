@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "Unduh",
   "ai_media_acquire_started": "Unduhan dimulai",
   "ai_media_acquire_queries": "Dicari: $queries",
-  "leaderboard_tab": "Peringkat",
+  "leaderboard_title": "Peringkat",
   "leaderboard_intro_title": "Papan peringkat & akun Fushi",
   "leaderboard_intro_body": "Daftar untuk membandingkan apa yang Anda selesaikan dengan teman dan semua orang. Tidak ada yang diunggah sampai Anda mendaftar.",
   "leaderboard_intro_public_title": "Akan bersifat publik",

@@ -5827,7 +5827,7 @@
   "ai_media_acquire_download": "Downloaden",
   "ai_media_acquire_started": "Download gestart",
   "ai_media_acquire_queries": "Gezocht naar: $queries",
-  "leaderboard_tab": "Ranglijst",
+  "leaderboard_title": "Ranglijst",
   "leaderboard_intro_title": "Ranglijst en Fushi-account",
   "leaderboard_intro_body": "Registreer om te vergelijken wat je hebt uitgelezen met vrienden en iedereen. Er wordt niets geüpload totdat je je registreert.",
   "leaderboard_intro_public_title": "Wordt openbaar",
