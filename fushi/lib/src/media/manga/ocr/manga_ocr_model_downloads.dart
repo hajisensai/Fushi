@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
@@ -82,7 +83,13 @@ class MangaOcrModelDownloads extends ChangeNotifier {
         }
         _notify();
       },
-      onError: (Object error) {
+      onError: (Object error, StackTrace stack) {
+        // 失败只弹 toast 的话，事后用户说「下到一半停了」日志里什么都没有。
+        ErrorLogService.instance.log(
+          'MangaOcrModelDownloads.download[${model.name}]',
+          error,
+          stack,
+        );
         unawaited(slot.cancel());
         _finish(model, slot, failed: true);
       },
