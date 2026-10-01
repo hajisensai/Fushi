@@ -64,7 +64,7 @@ void main() {
     expect(rect, isNot(Rect.zero));
   });
 
-  // BUG-2835：英文等拉丁文从词首起查。点 "world" 中间的 'r' 此前查的是 "rld"，
+  // BUG-2847：英文等拉丁文从词首起查。点 "world" 中间的 'r' 此前查的是 "rld"，
   // 引擎匹配不到就只剩单个字母；锚点下标也要回到词首，高亮才框住整词。
   testWidgets('tapping inside a Latin word looks up from the word start',
       (WidgetTester tester) async {

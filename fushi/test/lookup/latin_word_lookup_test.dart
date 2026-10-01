@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
 
-/// BUG-2835：悬浮球查词（截屏识字 / 剪贴板 / 悬浮字幕）取词未适配英语。
+/// BUG-2847：悬浮球查词（截屏识字 / 剪贴板 / 悬浮字幕）取词未适配英语。
 void main() {
   /// 假分词器：记下起点，按「从起点起的最长前缀 ∈ [dict]」回报，否则单个字。
   ({

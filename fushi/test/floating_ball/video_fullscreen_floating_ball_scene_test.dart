@@ -6,7 +6,7 @@ import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
-/// BUG-2834：视频全屏后悬浮球退回「其它页面」那组按钮（关闭 / 查词 / 剪贴板）。
+/// BUG-2846：视频全屏后悬浮球退回「其它页面」那组按钮（关闭 / 查词 / 剪贴板）。
 ///
 /// 全屏是推到根导航器上的独立整页路由，视频页那份场景登记所在路由不再是当前
 /// 路由，宿主只认当前路由上的场景。修法是全屏路由里再登记一份视频场景。

@@ -33,15 +33,15 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2847](bugs/BUG-2847-floating-ball-english-word.md) | ✅ | ✅ | 悬浮球查词取词未适配英语 |
+| [BUG-2846](bugs/BUG-2846-floating-ball-video-fullscreen.md) | ✅ | ✅ | 视频全屏时悬浮球退回其它页面按钮 |
 | [BUG-2845](bugs/BUG-2845-manga-polluted-default-zoom.md) | ✅ | ✅ | 漫画默认缩放存量坏值与改缩放方式不重置会话缩放 |
 | [BUG-2839](bugs/BUG-2839-windows-a11y-orphan-semantics-crash.md) | ✅ | ✅ | Windows 外部 UIA 查询打到 AX 树失效节点崩溃（孤儿语义节点致桥失步） |
 | [BUG-2838](bugs/BUG-2838-windows-toast-ffi-exception-crash.md) | ✅ | ✅ | Windows 更新通知 WinRT 代理过期抛 C++ 异常穿 FFI 崩溃 |
 | [BUG-2837](bugs/BUG-2837-inline-video-autoplay-stripped-by-anki-editor.md) | ✅ | ✅ | 制卡视频（WebM 内嵌片段）翻面不自动播放，须手动点击 |
 | [BUG-2836](bugs/BUG-2836-ocr-model-download-stall.md) | ✅ | ✅ | 模型下载在劣化或卡死的连接上龟速或停住 |
-| [BUG-2835](bugs/BUG-2835-floating-ball-english-word.md) | ✅ | ✅ | 悬浮球查词取词未适配英语 |
 | [BUG-2835](bugs/BUG-2835-bd-pack-audio-floods-all-videos.md) | ✅ | ✅ | BD 整包 CDs 曲目在全部视频里逐条铺满 |
 | [BUG-2834](bugs/BUG-2834-global-smooth-wheel.md) | ✅ | ✅ | 全 app 鼠标滚轮一格一跳：除正文阅读器外的列表 / 查词弹窗都不是无极滚动 |
-| [BUG-2834](bugs/BUG-2834-floating-ball-video-fullscreen.md) | ✅ | ✅ | 视频全屏时悬浮球退回其它页面按钮 |
 | [BUG-2833](bugs/BUG-2833-desktop-title-bar-reader-paper-color.md) | ✅ | ✅ | 桌面自绘顶栏不跟阅读器纸色，正文顶上一条白带 |
 | [BUG-2832](bugs/BUG-2832-video-bar-overflow.md) | ✅ | ✅ | 视频控制条空间不够时按钮被等比缩小或裁成半个图标 |
 | [BUG-2831](bugs/BUG-2831-mac-trackpad-fling-skips-chapters.md) | ✅ | ✅ | Mac触控板滚动模式乱跳章节 |
