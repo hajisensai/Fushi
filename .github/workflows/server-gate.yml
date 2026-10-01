@@ -32,12 +32,14 @@ on:
       - 'packages/fushi_server/**'
       - 'packages/fushi_engine/**'
       - '.github/workflows/server-gate.yml'
+      - '.github/actions/pdfium-hook-cache/**'
   push:
     branches: ['develop']
     paths:
       - 'packages/fushi_server/**'
       - 'packages/fushi_engine/**'
       - '.github/workflows/server-gate.yml'
+      - '.github/actions/pdfium-hook-cache/**'
 
 permissions:
   contents: read

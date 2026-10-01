@@ -40,6 +40,7 @@ on:
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
+      - '.github/actions/pdfium-hook-cache/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'

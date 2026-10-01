@@ -55,6 +55,7 @@ on:
       - '.github/actions/setup-fushi-anki-sync/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
+      - '.github/actions/pdfium-hook-cache/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 无头服务端不进桌面/Apple 包（它有自己的 release-server.yml 与 server-gate.yml）。

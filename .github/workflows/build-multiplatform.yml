@@ -50,6 +50,7 @@ on:
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
+      - '.github/actions/pdfium-hook-cache/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -148,7 +149,7 @@ jobs:
           echo "event=$EVENT all=$all changed files: $(wc -l < "$files")"
           cat "$files"
 
-          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names)/)'
+          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/setup-fushi-anki-sync/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/fushi_anki_sync/|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
