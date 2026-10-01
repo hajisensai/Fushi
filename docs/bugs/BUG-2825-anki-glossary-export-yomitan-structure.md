@@ -15,7 +15,7 @@
   - `rewriteExportedGlossaryAnchors` 跳过 `.gloss-image-link`：它的 href 是媒体文件名，不是交叉引用（否则「无可见文本」会被删掉 href）。
   - 删除 `normalizeAnkiDictionaryHtml` / `_ankiGaijiImageStyle` 及其调用。
   - 弹窗（非导出）路径：元素、class、data-*、CSS 驱动方式均不变（原本就是带 target/rel 的 `<a>`）。
-  提交：见下方备注。
+  提交：6e52beb77f。
 - **[x] ② 已加自动化测试** — `test/js/popup_anki_export_yomitan_structure.test.mjs`（jsdom 真 DOM，真执行 `constructGlossaryHtml` / `constructSingleGlossaryHtml`）：外层 `<a target rel href=src>`、`.definition a:has(img)` / `.definition a span` 命中 4 张插图；导出义项无 `gloss-*`/`structured-content` class、只剩 `data-sc*`；`vertical-align:middle`、em 容器 `font-size:1em`、非 em 容器 `1px`；表格 th/td 规则内联且 td 自身样式保留；`[data-sc縦中横] > .gloss-sc-span` 在卡上命中 0；文本交叉引用仍改写为 `fushi://lookup`、内嵌图标链接保留媒体 href；弹窗路径不变。嵌套 `<a>` 经 HTML 解析拆开后「句」图标不再落在 0.65em 上标 span 里（与 Yomitan 卡同）。变异实测：换回修复前 popup.js → 4 个用例红 3 个；只撤 `rewriteExportedGlossaryAnchors` 的跳过 → 红 2 个。`fushi/test/anki/anki_gaiji_style_test.dart` 改为守卫「字段渲染不再追加中和 `<style>`，`<a href>` 与 `<img src>` 同步换成真实文件名」。
 - **备注**：
   - 与上游的剩余差异（有意保留）：① 上游图片 `<a>` 里还有一个 `display:none` 的 `<span class="gloss-image-link-text">Image</span>`；Fushi 不加——它会把「Image」拼进外层交叉引用的 `textContent`（`rewriteExportedGlossaryAnchors` 用它当查询词）和收藏释义快照，对显示无任何作用。② 图片几何仍是 Fushi 的 BUG-1676 / BUG-2742 算法（未声明尺寸图交给 `<img>`、无尺寸 SVG 外字 1.2em 行内框），`applyImageStyles` 的显式内联值写在规则样式之后，照旧生效；因此 `collapsed:true` 的图在 Fushi 卡上仍显示（BUG-2742 备注里留给用户决定的那条，本修复不改变）。③ 互联远端制卡若对端仍是旧版 popup.js，导出的 HTML 仍带 class，且已没有中和样式兜底（混版本过渡期影响，升级对端即消失）。
