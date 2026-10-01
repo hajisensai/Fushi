@@ -40,6 +40,7 @@
 | [BUG-2829](bugs/BUG-2829-ai-scrape-not-acting.md) | ✅ | ✅ | 配了 AI 也不代劳视频身份识别，AI 设置多处失效 |
 | [BUG-2828](bugs/BUG-2828-fribb-movie-tv-namespace.md) | ✅ | ✅ | 剧场版的 Fribb TMDB tv id 被当成 movie id 拉取，TMDB 补充绑成无关电影 |
 | [BUG-2826](bugs/BUG-2826-mihon-continuation-allocation-swap.md) | ✅ | ✅ | 桌面 Mihon 扩展取页报 w1 cannot be cast to y1 |
+| [BUG-2825](bugs/BUG-2825-anki-glossary-export-yomitan-structure.md) | ✅ | ✅ | 制卡导出释义 HTML 与 Yomitan 结构不一致（图片外层非 a、class 未转内联样式） |
 | [BUG-2824](bugs/BUG-2824-anki-dedup-full-text-search-timeout.md) | ✅ | ✅ | 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时） |
 | [BUG-2823](bugs/BUG-2823-update-relaunch-startup-stall.md) | ✅ | ✅ | 自动更新后新版本启动卡顿一两秒 |
 | [BUG-2822](bugs/BUG-2822-manga-stream-chapter-ocr.md) | ✅ | ✅ | 在线直读章完全不做 OCR，手机上只能下载后等整章识别完 |
