@@ -199,7 +199,7 @@ void main() {
       await root.delete(recursive: true);
     });
     final String base = 'http://127.0.0.1:${server.port}';
-    final String pluginUrl =
+    const String pluginUrl =
         'https://raw.githubusercontent.com/lnreader/lnreader-plugins/plugins/a.js';
     int statsRequests = 0;
     server.listen((HttpRequest request) async {
