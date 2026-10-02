@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -968,6 +969,7 @@ class ReaderPaginationScripts {
         : (continuousMode ? continuousShellSource() : paginatedShellSource());
     return '''<script>
 $kStudyUnitJs
+$kSentenceAudioOwnershipJs
 window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
 window.__fushiInstallShell = function(C) {
@@ -1790,8 +1792,11 @@ window.__fushiInstallShell = function(C) {
       }
       spans.push({ id: cue.id, start: spanStart, len: spanLen });
     }
+    // BUG-2890：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
+    var isMatchable = this.isMatchableChar.bind(this);
     for (var si = 0; si < spans.length; si++) {
-      out.push({ id: spans[si].id, ranges: this.rangesForNormSpan(map, spans[si].start, spans[si].len) });
+      out.push({ id: spans[si].id, ranges: window.fushiSentenceAudioOwnership.extendSegments(
+        this.rangesForNormSpan(map, spans[si].start, spans[si].len), isMatchable) });
     }
     // TODO-630/BUG-366 observability：full 长度 + 多少 cue 算出空 range（全空=路径/折叠未命中）。
     var emptyRanges = 0;

@@ -753,9 +753,13 @@ $imageRevealSemantics
         if (!cue || !cue.id) continue;
         var start = Math.max(0, Number(cue.start) || 0);
         var length = Math.max(0, Number(cue.length) || 0);
+        // BUG-2890：与翻页 / 滚动同一份标点归属，句末「。」、句首「「」进当前句。
         result.push({
           id: cue.id,
-          ranges: this.collectMatchableSegments(start, start + length)
+          ranges: window.fushiSentenceAudioOwnership.extendSegments(
+            this.collectMatchableSegments(start, start + length),
+            this.reader.isMatchableChar.bind(this.reader)
+          )
         });
       }
       return result;
