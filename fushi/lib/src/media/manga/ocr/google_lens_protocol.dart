@@ -454,7 +454,7 @@ class GoogleLensProtocol {
       if (geometry == null) {
         return null;
       }
-      words.add(_RecognizedWord(characters: characters, geometry: geometry));
+      words.add(_RecognizedWord(glyphs: characters, geometry: geometry));
     }
     return words;
   }
@@ -542,11 +542,11 @@ class GoogleLensProtocol {
     final List<Rect> cells = <Rect>[];
     for (final _RecognizedWord word in words) {
       final Rect rect = word.geometry.rect;
-      final int count = word.characters.length;
+      final int count = word.glyphs.length;
       for (int i = 0; i < count; i++) {
         final int index = cells.length;
         if (index >= characters.length ||
-            characters[index] != word.characters[i]) {
+            characters[index] != word.glyphs[i]) {
           return null;
         }
         cells.add(
@@ -681,12 +681,12 @@ class _RecognizedLine {
 
 class _RecognizedWord {
   const _RecognizedWord({
-    required this.characters,
+    required this.glyphs,
     required this.geometry,
   });
 
   /// 去空白后的字形序列。
-  final List<String> characters;
+  final List<String> glyphs;
   final _LensGeometry geometry;
 }
 
