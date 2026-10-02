@@ -983,7 +983,7 @@ class VideoBookRepository {
       if (deleted.isNotEmpty) {
         await _reclaimDeletedVideoBooksAssetsUnlocked(deleted, survivors);
       }
-      // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2856）是 app
+      // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2863）是 app
       // 自有资产：没勾「同时删除本地文件」也要回收，只是候选限定在副本目录之内，
       // 用户自己的原件仍然只听勾选框的。
       final List<String> importCopyDirs = deleteLocalFiles || deleted.isEmpty

@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2856](bugs/BUG-2856-ios-video-delete-keeps-picker-copy.md) | ✅ | ✅ | iPad 删除视频后仍占用储存（选择器副本未回收） |
+| [BUG-2863](bugs/BUG-2863-ios-video-delete-keeps-picker-copy.md) | ✅ | ✅ | iPad 删除视频后仍占用储存（选择器副本未回收） |
 | [BUG-2853](bugs/BUG-2853-en-yomitan-redirect-phrase.md) | ✅ | ✅ | 英语短语（instead of / in fact / brush off）命中词典重定向记录后不跟随，弹窗只剩单词 |
 | [BUG-2852](bugs/BUG-2852-popup-visible-viewport-helper-overwritten.md) | ✅ | ✅ | 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function |
 | [BUG-2851](bugs/BUG-2851-leaderboard-401-test-fixed-rounds.md) | ✅ | ✅ | 排行榜「账户已在别处删除」用例按固定轮数等真 IO，CI 忙时偶发红 |

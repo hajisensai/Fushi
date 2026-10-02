@@ -49,7 +49,7 @@ abstract class EnginePaths {
   Future<Directory> audiobooksDirectory() =>
       documentsSubdirectory('audiobooks');
 
-  /// 系统文件选择器把用户选中的文件**拷进** app 沙盒时落盘的目录（BUG-2856）。
+  /// 系统文件选择器把用户选中的文件**拷进** app 沙盒时落盘的目录（BUG-2863）。
   ///
   /// 这些目录里的媒体文件不是用户的原件，而是 app 为了能读到它才复制出来的整份
   /// 副本：iOS 的 file_picker 以 `UIDocumentPickerModeImport` 打开，选中的视频被

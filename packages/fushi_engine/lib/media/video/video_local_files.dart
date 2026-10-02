@@ -117,7 +117,7 @@ Set<String> referencedLocalVideoPaths(Iterable<VideoBookRow> rows) => <String>{
           platformPathKey(path),
     };
 
-/// 纯函数：[path] 是否落在某个选择器导入副本目录 [copyDirs] 之内（BUG-2856，
+/// 纯函数：[path] 是否落在某个选择器导入副本目录 [copyDirs] 之内（BUG-2863，
 /// 见 `EnginePaths.pickerImportCopyDirectories`）。落在里面的视频是 app 拷出来的
 /// 副本而非用户原件，删库条目时不论「同时删除本地文件」勾没勾都要回收。
 ///

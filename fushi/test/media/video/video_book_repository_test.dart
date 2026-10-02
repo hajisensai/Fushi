@@ -927,7 +927,7 @@ void main() {
     });
   });
 
-  group('iOS 选择器导入副本随删除回收（BUG-2856）', () {
+  group('iOS 选择器导入副本随删除回收（BUG-2863）', () {
     late EnginePaths previousPaths;
     late Directory copyDir;
     late Directory userDir;
