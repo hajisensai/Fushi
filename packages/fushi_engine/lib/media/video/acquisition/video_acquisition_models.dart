@@ -723,13 +723,14 @@ class VideoAcquisitionFranchiseEntry {
       plan != null;
 
   VideoAcquisitionFranchiseEntry copyWith({
+    VideoDiscoveryItem? item,
     VideoAcquisitionFranchiseEntryStatus? status,
     VideoAcquisitionMode? mode,
     VideoAcquisitionResourcePlan? plan,
     bool? selected,
     bool? owned,
   }) => VideoAcquisitionFranchiseEntry(
-    item: item,
+    item: item ?? this.item,
     status: status ?? this.status,
     mode: mode ?? this.mode,
     plan: plan ?? this.plan,
