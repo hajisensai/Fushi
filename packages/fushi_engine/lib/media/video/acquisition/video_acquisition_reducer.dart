@@ -738,6 +738,10 @@ VideoAcquisitionReduction _onDetailsLoaded(
   final VideoAiringStatus? airing = work?.airingStatus;
   final VideoAcquisitionState next = state.copyWith(
     stage: VideoAcquisitionStage.collectingSlots,
+    // 资源搜索 / 订阅都按这份身份走：搜索列表项的别名可能只有元数据的风格化
+    // 写法（TMDB `FX Senshi KURUMICHAN`，Nyaa 0 条），用详情的罗马字 / 英文名
+    // 补齐——与资源搜索页的别名补齐端口同一条判据（BUG-2794 / BUG-2854）。
+    chosenItem: item.withReference(item.reference.withWorkLatinTitles(work)),
     work: work,
     airing: airing,
     clearAiring: airing == null,
@@ -2113,14 +2117,20 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   }
   final bool owned =
       event.presence?.inLibrary == true || event.alreadySubscribed;
+  // 与单作品路径同一份补齐：订阅行的检索词 / 身份要带上详情的拉丁标题。
+  final VideoDiscoveryItem item = entry.item.withReference(
+    reference.withWorkLatinTitles(event.work),
+  );
   if (found == null) {
     return entry.copyWith(
+      item: item,
       status: VideoAcquisitionFranchiseEntryStatus.noResource,
       selected: false,
       owned: owned,
     );
   }
   return entry.copyWith(
+    item: item,
     status: VideoAcquisitionFranchiseEntryStatus.ready,
     mode: found.mode,
     plan: found.plan,

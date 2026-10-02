@@ -317,12 +317,15 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     VideoAcquisitionResolveFranchiseEntryEffect effect,
   ) async {
     final VideoDiscoveryItem item = effect.item;
-    final VideoMediaReference reference = item.reference;
+    VideoMediaReference reference = item.reference;
     VideoMetadataWork? work;
     VideoLibraryPresence? presence;
     bool subscribed = false;
     List<VideoResourceCandidate> items = const <VideoResourceCandidate>[];
-    if (reference.mediaKind == VideoMetadataMediaKind.tv) {
+    // 剧集要详情定下载还是订阅；没有拉丁标题的条目要详情补罗马字 / 英文名，
+    // 否则 Nyaa 只能拿原名去搜（BUG-2794 / BUG-2854）。
+    if (reference.mediaKind == VideoMetadataMediaKind.tv ||
+        !reference.hasLatinTitle) {
       try {
         work = await _ports.loadDetails(item);
       } catch (error, stack) {
@@ -332,6 +335,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         );
       }
     }
+    reference = reference.withWorkLatinTitles(work);
     try {
       presence = await _ports.queryPresence(reference);
       subscribed = await _ports.isSubscribed(reference);

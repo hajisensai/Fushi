@@ -11,6 +11,7 @@ import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -281,7 +282,7 @@ class GalHookMiningCoordinator {
         repo: repo,
         updateNoteId: updateNoteId,
         addTitleTag: addTitleTag,
-        imageMode: imageMode,
+        preferredImageMode: imageMode,
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
         clipFormat: clipFormat,
@@ -307,7 +308,7 @@ class GalHookMiningCoordinator {
     required BaseAnkiRepository repo,
     required int? updateNoteId,
     required bool addTitleTag,
-    required VideoMiningImageMode imageMode,
+    required VideoMiningImageMode preferredImageMode,
     required MiningAnimatedFormat animatedFormat,
     required MiningStillFormat stillFormat,
     required MiningClipFormat clipFormat,
@@ -425,6 +426,11 @@ class GalHookMiningCoordinator {
               return null;
             });
 
+    // 同步片段只在目标模板原样渲染图片字段时可用（[resolveTargetMiningImageMode]）；
+    // 必须在决定录片段还是录动图**之前**求值。主机冻结的台词帧不看模式，不必问。
+    final VideoMiningImageMode imageMode = providedLineScreenshot != null
+        ? preferredImageMode
+        : await resolveTargetMiningImageMode(preferredImageMode, repo: repo);
     Uint8List? coverBytes;
     String coverName = 'external_window.gif';
     bool degradedToStill = false;

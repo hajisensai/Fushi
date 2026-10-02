@@ -117,6 +117,22 @@ Set<String> referencedLocalVideoPaths(Iterable<VideoBookRow> rows) => <String>{
           platformPathKey(path),
     };
 
+/// 纯函数：[path] 是否落在某个选择器导入副本目录 [copyDirs] 之内（BUG-2863，
+/// 见 `EnginePaths.pickerImportCopyDirectories`）。落在里面的视频是 app 拷出来的
+/// 副本而非用户原件，删库条目时不论「同时删除本地文件」勾没勾都要回收。
+///
+/// 比对走 [platformPathKey] 归一后的 `p.isWithin`：只认严格位于目录**之内**的
+/// 路径，目录本身与同名前缀的兄弟目录（`tmp2/`）都不算。
+bool isPickerImportCopyPath(String path, Iterable<String> copyDirs) {
+  if (!isLocalVideoFilePath(path)) return false;
+  final String key = platformPathKey(path.trim());
+  for (final String dir in copyDirs) {
+    if (dir.trim().isEmpty) continue;
+    if (p.isWithin(platformPathKey(dir.trim()), key)) return true;
+  }
+  return false;
+}
+
 /// 删除 [candidates] 中真实存在、且不在 [stillReferenced]（[platformPathKey] 归一
 /// 的路径集）里的文件；逐条结果原样回传，失败不吞。
 ///

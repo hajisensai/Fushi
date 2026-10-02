@@ -29,13 +29,31 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2627 条。点号进各自文件。
+> 共 2645 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2869](bugs/BUG-2869-synced-clip-non-lapis-template.md) | ✅ | ✅ | 视频片段制卡写进不原样渲染图片字段的模板（Kiku）后动图和音频都不显示 |
+| [BUG-2868](bugs/BUG-2868-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |
+| [BUG-2867](bugs/BUG-2867-hidpi-wheel-not-smooth.md) | ✅ | ✅ | 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素 |
+| [BUG-2866](bugs/BUG-2866-smb-unc-video-open.md) | ✅ | ✅ | Windows 上 SMB/NAS 共享（UNC 路径）里的视频打不开 |
+| [BUG-2865](bugs/BUG-2865-macos-embedded-torrent-engine-missing.md) | ✅ | ✅ | macOS 下载的内置 torrent 引擎不可用 |
+| [BUG-2864](bugs/BUG-2864-gal-lookup-cursor-flicker.md) | ✅ | ✅ | galgame 内嵌查词卡上光标在系统指针与游戏自定义指针之间来回闪 |
+| [BUG-2863](bugs/BUG-2863-ios-video-delete-keeps-picker-copy.md) | ✅ | ✅ | iPad 删除视频后仍占用储存（选择器副本未回收） |
+| [BUG-2861](bugs/BUG-2861-mac-video-washed-out.md) | ✅ | ✅ | macOS 视频画面发灰 |
+| [BUG-2859](bugs/BUG-2859-lookup-bridge-reply-dropped.md) | ✅ | ✅ | 查词卡路由作废后丢弃晚到的 bridge 应答，该词条整个会话无法制卡 |
+| [BUG-2858](bugs/BUG-2858-gal-thread-history-order.md) | ✅ | ✅ | 选定线程后的历史回捞与轮询抢先后，当前台词变成旧句 |
+| [BUG-2857](bugs/BUG-2857-artemis-hover-tooltip-joins-line.md) | ✅ | ✅ | Artemis hover tooltip text is appended to the current line |
+| [BUG-2856](bugs/BUG-2856-artemis-touch-tap-ignored.md) | 🚧 | 🚧 | Artemis 触屏点按：引擎不认触摸提升的单击，游戏内点字查词与推进都不响应 |
+| [BUG-2855](bugs/BUG-2855-update-prerelease-r2-candidate-always-404.md) | ✅ | ✅ | 预发布自动更新每次先撞 fushi.moe 404 再换 GitHub |
 | [BUG-2855](bugs/BUG-2855-leaderboard-hoshi-incomplete.md) | ✅ | ✅ | 排行榜书架漏书：Hoshi 导入的读完书没标读完 + 多 Profile 时无记录的书被丢 |
+| [BUG-2854](bugs/BUG-2854-ai-acquire-latin-aliases.md) | ✅ | ✅ | AI 下视频只用搜索列表项身份搜资源，漏掉详情里的罗马字/英文名致 Nyaa 0 条 |
+| [BUG-2853](bugs/BUG-2853-en-yomitan-redirect-phrase.md) | ✅ | ✅ | 英语短语（instead of / in fact / brush off）命中词典重定向记录后不跟随，弹窗只剩单词 |
+| [BUG-2852](bugs/BUG-2852-popup-visible-viewport-helper-overwritten.md) | ✅ | ✅ | 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function |
 | [BUG-2851](bugs/BUG-2851-leaderboard-401-test-fixed-rounds.md) | ✅ | ✅ | 排行榜「账户已在别处删除」用例按固定轮数等真 IO，CI 忙时偶发红 |
 | [BUG-2850](bugs/BUG-2850-ci-pdfium-hook-download.md) | ✅ | ✅ | CI 构建期实时从 GitHub 下载 PDFium（pdfium_dart 构建钩子），下载一抖 develop 的 Windows / macOS / Android 发布同时红 |
+| [BUG-2849](bugs/BUG-2849-aacs-playback-input.md) | ✅ | ✅ | AACS 蓝光原盘缺少解密读取链路 |
+| [BUG-2848](bugs/BUG-2848-emby-client-whitelist-403.md) | ✅ | ✅ | Emby 公益服按 Client 白名单回 403 被报成连不上 |
 | [BUG-2847](bugs/BUG-2847-floating-ball-english-word.md) | ✅ | ✅ | 悬浮球查词取词未适配英语 |
 | [BUG-2846](bugs/BUG-2846-floating-ball-video-fullscreen.md) | ✅ | ✅ | 视频全屏时悬浮球退回其它页面按钮 |
 | [BUG-2845](bugs/BUG-2845-manga-polluted-default-zoom.md) | ✅ | ✅ | 漫画默认缩放存量坏值与改缩放方式不重置会话缩放 |

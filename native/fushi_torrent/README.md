@@ -293,11 +293,32 @@ Android 同一决策——**vcpkg manifest 静态链**：
    （所有者 2026-09-30 拍板）。
 3. **缓存**：与 Android job 同款双层 vcpkg 缓存，key 带 runner ImageVersion。
 
-## 尚未做（多平台 + 真机）
+## 阶段7 — macOS universal 静态 dylib 随桌面包（BUG-2865）
 
-- **macOS 桌面版**：同样走 vendored 预编译 + runner CMake 的
-  copy-if-present，需 Xcode 工具链编 libtorrent，未在本机验证，另起 job。
-  （Linux 桌面版的 copy-if-present 已接，见上文阶段6「随包」。）
+在此之前 macOS 从没编过这个库：app 早把 macOS 算作支持内置引擎的平台
+（`AppModel._supportsEmbeddedTorrent`），`EmbeddedTorrentEngine.open` 找不到库后内置
+引擎判不可用，用户只能退到外接 qBittorrent。与 Android / Linux 同一决策——**vcpkg
+manifest 静态链**：
+
+1. **产出**：`build_macos_dylib.sh <vcpkg-root> [arm64|x86_64 ...]`，overlay triplet
+   `vcpkg-triplets/{arm64,x64}-osx-fushi.cmake`（= vcpkg 自带 osx triplet + 部署目标钉
+   13.4，与 Runner 的 `MACOSX_DEPLOYMENT_TARGET` 对齐），两片 lipo 成 universal，
+   install name `@rpath/libfushi_torrent_ffi.dylib`。CMakeLists 的 Apple 分支只导出
+   `_ht_*`（`-exported_symbol`）并 `-dead_strip`，静态进来的 libtorrent/boost/openssl
+   符号不外露。产物 `prebuilt/macos/libfushi_torrent_ffi.dylib`，脚本自检 `otool -L`
+   里只许出现 `/usr/lib`、`/System` 系统库。
+2. **随包**：Runner 构建阶段「Bundle fushi_torrent dylib」
+   （`fushi/macos/bundle_fushi_torrent.sh`）copy-if-present 进 `Contents/Frameworks`，
+   缺架构直接报错；`EmbeddedTorrentEngine` 在 macOS 先按 `<exe>/../Frameworks/<名>`
+   绝对路径加载（dyld 对 dlopen 叶名不保证走可执行文件的 rpath），裸名兜底。发布包由
+   Developer ID 签名循环随其它 Mach-O 一起签。
+3. **CI**：`build-multiplatform.yml` macos job（PR）与 `release-desktop.yml` macos job
+   （develop push / 发布）跑同一脚本，持久库同名
+   （`.github/actions/native-store-names/names.sh` 的 `torrent`），出包后核对 Frameworks
+   里确有此库、universal 两片、无非系统依赖、C ABI 符号齐全；PR 门再拿包里那份跑
+   `packages/fushi_torrent` 的真 FFI 测试。冷编两个架构约几十分钟，命中持久库后跳过。
+
+## 尚未做（多平台 + 真机）
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
 - 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
   做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，

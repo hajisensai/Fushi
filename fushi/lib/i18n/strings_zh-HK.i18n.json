@@ -6175,8 +6175,8 @@
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
   "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
-  "ai_feature_video_identify_assist_summary": "When scraping finds several candidates or nothing at all, let AI pick the matching work or suggest titles to search",
-  "ai_feature_video_search_subtitle_summary": "Let AI re-rank subtitle results when subtitles are filled in automatically in the background",
+  "ai_feature_video_identify_assist_summary": "刮削出現多個候選或查無結果時，讓 AI 選出對應作品或給出可搜尋的正式標題",
+  "ai_feature_video_search_subtitle_summary": "背景自動補字幕時，讓 AI 對字幕搜尋結果做語義重排",
   "video_scrape_ai_declined": "AI not adopted",
   "video_scrape_ai_failed": "AI request failed",
   "video_scrape_ai_searched": "Searched again with titles suggested by AI",
@@ -6208,5 +6208,11 @@
   "video_filter_extras_main": "Main only",
   "video_filter_extras_only": "Extras only",
   "video_filter_source": "Source",
-  "video_filter_series_standalone_empty_hint": "No standalone videos. Videos in collections are on the Series tab, or set the Series filter to All."
+  "video_filter_series_standalone_empty_hint": "No standalone videos. Videos in collections are on the Series tab, or set the Series filter to All.",
+  "jellyfin_server_rejected_client": "The server at $url refused this app (HTTP $code). It may only allow specific clients; ask the server administrator. Server message: $reason",
+  "video_bluray_config_network": "Could not download the Blu-ray playback configuration. Check your connection and retry.",
+  "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
+  "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
+  "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
 }

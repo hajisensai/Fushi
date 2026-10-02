@@ -5,16 +5,33 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 
-/// 粗滚轮一档（Windows/Linux 约 100–120 logical px）才需要补间；触控板 / 高精度
-/// 滚轮本来就连续上报小 delta，再套一层动画只会拖尾，走原生同步路径。
+/// 粗滚轮一档才需要补间；触控板 / 高精度滚轮本来就连续上报小 delta，再套一层动画
+/// 只会拖尾，走原生同步路径。
+///
+/// 🔴 判据按**物理像素**（BUG-2867）。引擎发的是物理像素、框架 converter 再除以
+/// devicePixelRatio 才交给 [PointerScrollEvent.scrollDelta]：
+/// - Windows（flutter_window.cc `UpdateScrollOffsetMultiplier`）一档 =
+///   `行数 × 100/3` 物理 px，系统默认 3 行即 100；
+/// - Linux（fl_scrolling_manager.cc）一档 = `53 × 缩放` 物理 px。
+///
+/// 旧判据是逻辑 px `>= 80`：Windows 150% 缩放一档只剩 66.7、200% 只剩 50，Linux
+/// 任何缩放都是 53——全被当成触控板，根部补间在高 DPI 机器上从未生效。高精度滚轮
+/// 1/8 档约 12.5 物理 px，一档最少（每次 1 行）33 物理 px，阈值取两者之间。
 ///
 /// macOS / 移动端：触控板与 Magic Mouse 走 `PointerPanZoom*`，根本不是
 /// [PointerScrollEvent]；到这里的只剩物理滚轮，一律补间。
 ///
 /// 🔴 分类只决定**要不要补间**，不决定距离（BUG-2009）：一档走多远是系统「每次
 /// 滚动行数」设置说了算，app 只补插值、不打折。
-bool isCoarseDesktopPointerScrollDelta(double delta) =>
-    !(Platform.isWindows || Platform.isLinux) || delta.abs() >= 80;
+bool isCoarseDesktopPointerScrollDelta(
+  double delta, {
+  required double devicePixelRatio,
+}) =>
+    !(Platform.isWindows || Platform.isLinux) ||
+    delta.abs() * devicePixelRatio >= kCoarseWheelMinPhysicalDelta;
+
+/// 粗滚轮一档的最小物理像素（见 [isCoarseDesktopPointerScrollDelta]）。
+const double kCoarseWheelMinPhysicalDelta = 30;
 
 const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
 
@@ -104,7 +121,10 @@ class _SmoothWheelScrollScopeState extends State<SmoothWheelScrollScope> {
     _lastWheelStamp = now;
     final Offset d = event.scrollDelta;
     final double magnitude = d.dx.abs() > d.dy.abs() ? d.dx : d.dy;
-    return _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(magnitude);
+    return _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(
+      magnitude,
+      devicePixelRatio: View.maybeOf(context)?.devicePixelRatio ?? 1.0,
+    );
   }
 
   /// 惯性取消（[PointerScrollInertiaCancelEvent]）：Scrollable 已在本监听之前调了

@@ -355,6 +355,8 @@ constexpr uint32_t kTextSourceSgre = 5;
 constexpr uint32_t kTextSourceSmashFzmedia = 6;
 // BGI/Ethornell exact text published by the native message SetTextImpl hook.
 constexpr uint32_t kTextSourceBgi = 7;
+// Artemis exact text: the fully revealed newest Layer::CreateGlyph run.
+constexpr uint32_t kTextSourceArtemis = 8;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

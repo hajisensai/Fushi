@@ -224,6 +224,7 @@ import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
@@ -4662,6 +4663,7 @@ class AppModel with ChangeNotifier {
       httpClientFactory: createAppHttpClient,
       // 只有真实 app 进页即刷新内置官方仓库（单测构造的 manager 不碰外网）。
       refreshOnInitialise: true,
+      fetchDownloadCounts: true,
     );
     unawaited(manager.initialise());
     return manager;
@@ -9404,6 +9406,15 @@ class _AppModelRemoteLookupService
     // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
     // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
+    // 录片段还是录动图由**目标模板**决定（[resolveTargetMiningImageMode]）：模板不原样
+    // 渲染图片字段时同步片段卡什么都显示不出来。必须在下面的转码之前求值；没录到
+    // 片段的来源出不了同步片段，不必问模板。
+    final VideoMiningImageMode imageMode = payload.clipBytes == null
+        ? _appModel.videoMiningImageMode
+        : await resolveTargetMiningImageMode(
+            _appModel.videoMiningImageMode,
+            repo: repo,
+          );
     ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
     if (payload.clipBytes != null) {
       // Netflix 批量录制的片段边界即句子边界（seek 到句首 → 录到字幕变化停），整段转码 [0,时长]。
@@ -9413,7 +9424,7 @@ class _AppModelRemoteLookupService
       // 恒给 providedCoverBytes，引擎的 imageMode 阶梯（immersion_mining_engine.dart 的
       // `if (coverPath == null)`）根本不会被求值。故必须在**产字节这一层**就按偏好分流。
       final ClipStillTarget? stillTarget = resolveClipStillTarget(
-        imageMode: _appModel.videoMiningImageMode,
+        imageMode: imageMode,
         clipAnchorMs: payload.clipAnchorMs,
         cueStartMs: payload.cueStartMs,
         mineAtMs: payload.mineAtMs,
@@ -9423,7 +9434,7 @@ class _AppModelRemoteLookupService
         // 偏移误差在真机上可观测，而不是靠猜：锚点不确定度由扩展在 beginClip 前后实测下发。
         ErrorLogService.instance.logDiagnostic(
           'Anki.mineImmersion.netflix.still',
-          'imageMode=${_appModel.videoMiningImageMode.wireName} '
+          'imageMode=${imageMode.wireName} '
               'offsetMs=${stillTarget.offsetMs} exact=${stillTarget.exact} '
               'anchorMs=${payload.clipAnchorMs} '
               'anchorUncertaintyMs=${payload.clipAnchorUncertaintyMs} '
@@ -9432,7 +9443,7 @@ class _AppModelRemoteLookupService
       }
       cap = await transcodeClipToCapture(
         payload.clipBytes!,
-        imageMode: _appModel.videoMiningImageMode,
+        imageMode: imageMode,
         durationMs: clipDurationMs,
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -9462,7 +9473,7 @@ class _AppModelRemoteLookupService
     // 报错而不是悄悄降级成动图。没录到片段的来源（后台软解动图 / 2A 截图）没有视频可
     // 同步，由 buildImmersionRequest 照常用手上的封面出卡——片段模式是默认值，不能让
     // 这些来源整体报错。
-    if (_appModel.videoMiningImageMode == VideoMiningImageMode.videoClip &&
+    if (imageMode == VideoMiningImageMode.videoClip &&
         payload.clipBytes != null &&
         (!cap.ok || !cap.coverIsVideo || cap.gifBytes == null)) {
       return remoteMineError(
@@ -9480,7 +9491,7 @@ class _AppModelRemoteLookupService
         payload,
         cap,
         audioExpected: audioExpected,
-        imageMode: _appModel.videoMiningImageMode,
+        imageMode: imageMode,
       ),
       compression: compression,
       tempDir: Directory.systemTemp.path,
