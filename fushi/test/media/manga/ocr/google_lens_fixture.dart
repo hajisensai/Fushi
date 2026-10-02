@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 
@@ -20,6 +21,10 @@ import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 ///
 /// 仍未覆盖：真实响应里的可选字段、presence 语义、`coordinate_type` 非归一化
 /// 分支。要覆盖那些必须入库一份脱敏的真实响应字节，本仓目前没有。
+///
+/// [words] 非空时替换首行默认的两个 Word：每个 Word 带自己的归一化框
+/// （`box` 为 null 表示该 Word 不带 geometry），用来钉逐字区按 Word 几何切分
+/// （BUG-2878）。
 Uint8List makeGoogleLensFixture({
   String firstWord = '日 ',
   String secondWord = '本',
@@ -30,6 +35,7 @@ Uint8List makeGoogleLensFixture({
   double rotation = 0,
   String? secondLineText,
   double secondLineCenterY = 0.3,
+  List<({String text, Rect? box})>? words,
 }) {
   void writeGeometry(_ProtoWriter line, double boxCenterY) {
     line.message(GoogleLensWireFields.lineGeometry, (_ProtoWriter geometry) {
@@ -54,16 +60,42 @@ Uint8List makeGoogleLensFixture({
             (_ProtoWriter paragraph) {
           paragraph.message(GoogleLensWireFields.paragraphLines,
               (_ProtoWriter line) {
-            line.message(
-              GoogleLensWireFields.lineWords,
-              (_ProtoWriter word) =>
-                  word.string(GoogleLensWireFields.wordPlainText, firstWord),
-            );
-            line.message(
-              GoogleLensWireFields.lineWords,
-              (_ProtoWriter word) => word.string(
-                  GoogleLensWireFields.wordTextSeparator, secondWord),
-            );
+            if (words != null) {
+              for (final ({String text, Rect? box}) entry in words) {
+                line.message(GoogleLensWireFields.lineWords,
+                    (_ProtoWriter word) {
+                  word.string(GoogleLensWireFields.wordPlainText, entry.text);
+                  final Rect? box = entry.box;
+                  if (box != null) {
+                    word.message(GoogleLensWireFields.wordGeometry,
+                        (_ProtoWriter geometry) {
+                      geometry.message(GoogleLensWireFields.geometryBoundingBox,
+                          (_ProtoWriter rotated) {
+                        rotated.float32(
+                            GoogleLensWireFields.boxCenterX, box.center.dx);
+                        rotated.float32(
+                            GoogleLensWireFields.boxCenterY, box.center.dy);
+                        rotated.float32(
+                            GoogleLensWireFields.boxWidth, box.width);
+                        rotated.float32(
+                            GoogleLensWireFields.boxHeight, box.height);
+                      });
+                    });
+                  }
+                });
+              }
+            } else {
+              line.message(
+                GoogleLensWireFields.lineWords,
+                (_ProtoWriter word) =>
+                    word.string(GoogleLensWireFields.wordPlainText, firstWord),
+              );
+              line.message(
+                GoogleLensWireFields.lineWords,
+                (_ProtoWriter word) => word.string(
+                    GoogleLensWireFields.wordTextSeparator, secondWord),
+              );
+            }
             writeGeometry(line, centerY);
           });
           if (secondLineText != null) {

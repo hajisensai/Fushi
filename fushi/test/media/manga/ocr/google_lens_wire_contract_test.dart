@@ -40,7 +40,7 @@ import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 ///   `TextLayout.getParagraphsList` → `1`；`Paragraph.getLinesList` → `2`、
 ///   `Paragraph.getGeometry` → `3`；`Line.getWordsList` → `1`、
 ///   `Line.getGeometry` → `2`；`Word.getPlainText` → `2`、
-///   `Word.getTextSeparator` → `3`
+///   `Word.getTextSeparator` → `3`、`Word.getGeometry` → `4`
 /// - `lens_overlay_geometry_pb.cjs`：`Geometry.getBoundingBox` → `1`；
 ///   `CenterRotatedBox` 的 `getCenterX/getCenterY/getWidth/getHeight/`
 ///   `getRotationZ` → `1/2/3/4/5`
@@ -88,6 +88,7 @@ void main() {
       'TextLayout.Line.geometry': 2,
       'TextLayout.Word.plain_text': 2,
       'TextLayout.Word.text_separator': 3,
+      'TextLayout.Word.geometry': 4,
       'Geometry.bounding_box': 1,
       'CenterRotatedBox.center_x': 1,
       'CenterRotatedBox.center_y': 2,
@@ -138,6 +139,7 @@ void main() {
       'TextLayout.Line.geometry': GoogleLensWireFields.lineGeometry,
       'TextLayout.Word.plain_text': GoogleLensWireFields.wordPlainText,
       'TextLayout.Word.text_separator': GoogleLensWireFields.wordTextSeparator,
+      'TextLayout.Word.geometry': GoogleLensWireFields.wordGeometry,
       'Geometry.bounding_box': GoogleLensWireFields.geometryBoundingBox,
       'CenterRotatedBox.center_x': GoogleLensWireFields.boxCenterX,
       'CenterRotatedBox.center_y': GoogleLensWireFields.boxCenterY,
