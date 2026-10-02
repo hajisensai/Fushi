@@ -68,15 +68,24 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn('#include "artemis_lookup.inc"', adapter)
         resolve = self._function_body(core, "inline SiteResult ResolveSites(")
         for required in (
-            "FindUniquePatternInExecutableSections(image, factory_pattern)",
-            "DecodeRel32CallTarget",
+            "FindGlyphFactory(image, &factory)",
+            "case FactoryScan::kAmbiguous:\n      return SiteResult::kFactoryMissing;",
             "IsReadOnlyDataImageAddress",
             "MatchesGlyphForwarder(image, draw, 0x18u)",
             "MatchesGlyphForwarder(image, sibling, 0x10u)",
-            "FindUniquePatternInExecutableSections(image, update_pattern)",
+            "FindInputUpdate(image)",
+            "if (update == 0u) return SiteResult::kUpdateMissing;",
             "FindUniquePatternInExecutableSections(image, cursor_pattern)",
         ):
             self.assertIn(required, resolve)
+        # 工厂 / Input::Update 的结构扫描各自只认唯一命中，第二个候选即 fail closed；
+        # 构造函数仍从工厂里的 call rel32 解码，不靠固定偏移。
+        factory = self._function_body(core, "inline FactoryScan FindGlyphFactory(")
+        self.assertIn("if (++count > 1u) return FactoryScan::kAmbiguous;", factory)
+        match = self._function_body(core, "inline bool MatchFactoryAt(")
+        self.assertIn("DecodeRel32CallTarget", match)
+        update = self._function_body(core, "inline uintptr_t FindInputUpdate(")
+        self.assertIn("(found != 0u && found != entry)) return 0u;", update)
         for forbidden in ("Sha256", "GetModuleFileName", "amanatu", "0x18d260"):
             self.assertNotIn(forbidden, resolve)
             self.assertNotIn(forbidden.lower(), core.lower())

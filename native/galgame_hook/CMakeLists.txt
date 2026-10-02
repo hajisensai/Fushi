@@ -58,6 +58,7 @@ add_library(fushi_voice_hook SHARED
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
   "hook/voice_resource_writer.inc"
+  "hook/selected_lane_candidates.inc"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/unity_mono_text.h"

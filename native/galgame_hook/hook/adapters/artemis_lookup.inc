@@ -44,6 +44,7 @@ constexpr uint32_t kArtemisModelLogBudget = 24u;
 struct ArtemisFrame {
   uint64_t frame = 0u;
   uint64_t tick = 0u;
+  uint64_t created = 0u;  // newest glyph creation seq at the frame boundary
   uintptr_t window = 0u;
   artemis_lookup::EngineProjection projection;
   uint32_t count = 0u;
@@ -80,14 +81,24 @@ struct ArtemisLookupRuntime {
   uint64_t processed_submit_seq = 0u;
   uint64_t next_generation = 0u;
   uint32_t logged_models = 0u;
+  uint32_t logged_lines = 0u;
   ArtemisModel model;          // the published model (worker copy)
   std::wstring model_line;     // selected text the model was matched against
   uint64_t model_text_event = 0u;
   ArtemisFrame frame_copy;     // scratch for the seqlock read
+  uint64_t published_line_seq = 0u;  // first creation seq of the last line
+  uint64_t published_last_seq = 0u;  // last creation seq of the last line
+  uintptr_t published_layer = 0u;    // layer of that last glyph
+  uint64_t overlay_logged_seq = 0u;  // first seq of the last logged overlay
+  std::wstring published_line;
+  artemis_lookup::CreationLog creations_copy;
 
   // ── game-thread-owned ──
   artemis_lookup::GlyphCodeTable<> codes;
+  artemis_lookup::CreationLog creations;  // under codes_lock
   uint64_t glyph_seq = 0u;
+  // Frames published so far; the factory stamps each creation with it.
+  std::atomic<uint64_t> frame_clock{0u};
   ArtemisFrame building;
   artemis_lookup::ClaimState claim;
   DWORD game_thread = 0u;
@@ -180,9 +191,9 @@ void InvalidateArtemisModel() {
 
 // ── game-thread detours ─────────────────────────────────────────────────────
 
-uint32_t ReadArtemisFactoryCharacter(const char* text) {
+uint32_t ReadArtemisFactoryCode(const char* text) {
   __try {
-    return artemis_lookup::DecodeFactoryCharacter(
+    return artemis_lookup::FactoryCreationCode(
         reinterpret_cast<const uint8_t*>(text));
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return 0u;
@@ -196,10 +207,14 @@ void* __fastcall ArtemisGlyphFactoryDetour(void* layer, const char* text,
   auto& rt = g_artemis_lookup;
   if (glyph != nullptr && text != nullptr &&
       rt.live.load(std::memory_order_acquire)) {
-    const uint32_t codepoint = ReadArtemisFactoryCharacter(text);
+    const uint32_t code = ReadArtemisFactoryCode(text);
+    const uint32_t codepoint =
+        code == artemis_lookup::kCreatedControl ? 0u : code;
     AcquireSRWLockExclusive(&rt.codes_lock);
     rt.codes.Remember(reinterpret_cast<uintptr_t>(glyph), codepoint,
                       ++rt.glyph_seq);
+    rt.creations.Record(rt.glyph_seq, code, reinterpret_cast<uintptr_t>(layer),
+                        rt.frame_clock.load(std::memory_order_relaxed));
     ReleaseSRWLockExclusive(&rt.codes_lock);
   }
   return glyph;
@@ -285,6 +300,10 @@ void PublishArtemisFrame(void* input) {
   ArtemisFrame& frame = rt.building;
   frame.tick = GetTickCount64();
   ++frame.frame;
+  rt.frame_clock.store(frame.frame, std::memory_order_relaxed);
+  AcquireSRWLockShared(&rt.codes_lock);
+  frame.created = rt.glyph_seq;
+  ReleaseSRWLockShared(&rt.codes_lock);
   uintptr_t window = 0u;
   RECT client = {};
   if (ReadArtemisInputProjection(static_cast<const uint8_t*>(input), &window,
@@ -600,7 +619,14 @@ bool InstallArtemisLookup() {
     return false;
   }
   rt.codes.Clear();
+  rt.creations = artemis_lookup::CreationLog();
   rt.glyph_seq = 0u;
+  rt.frame_clock.store(0u, std::memory_order_relaxed);
+  rt.published_line_seq = 0u;
+  rt.published_last_seq = 0u;
+  rt.published_layer = 0u;
+  rt.overlay_logged_seq = 0u;
+  rt.published_line.clear();
   rt.building = ArtemisFrame();
   rt.claim = artemis_lookup::ClaimState();
   rt.game_thread = 0u;
@@ -806,9 +832,105 @@ bool ReadLatestArtemisSubmit(ArtemisSubmit* out) {
   return slot_seq.load(std::memory_order_acquire) == sequence;
 }
 
+// Copies the newest published frame; false when it is torn, overflowed or
+// older than kArtemisFrameStaleMs (the game thread stopped updating).
+bool ReadFreshArtemisFrame(ArtemisFrame* frame) {
+  auto& rt = g_artemis_lookup;
+  if (!ReadArtemisSlot(rt.frame_seq, rt.frames, rt.published_frame, frame,
+                       offsetof(ArtemisFrame, glyphs))) {
+    return false;
+  }
+  const uint32_t frame_count = (std::min)(
+      frame->count, static_cast<uint32_t>(artemis_lookup::kMaxFrameGlyphs));
+  const uint64_t now = GetTickCount64();
+  return ReadArtemisSlot(rt.frame_seq, rt.frames, rt.published_frame, frame,
+                         ArtemisFrameBytes(frame_count)) &&
+         frame->count == frame_count && !frame->overflow && frame->tick != 0u &&
+         now >= frame->tick && now - frame->tick <= kArtemisFrameStaleMs;
+}
+
+// The engine text lane: the fully revealed newest glyph run, one event per
+// engine layout burst (a redraw of the same burst is not a new line).  It
+// does not depend on LunaHook, whose Artemis hook finds no text on some
+// builds; the host auto-selects the ENGINE: lane.
+void PublishArtemisRevealedLine(ArtemisFrame& frame) {
+  auto& rt = g_artemis_lookup;
+  if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
+      !g_text_cs_ready) {
+    return;
+  }
+  const size_t count =
+      artemis_lookup::OrderFrameGlyphs(frame.glyphs.data(), frame.count);
+  AcquireSRWLockShared(&rt.codes_lock);
+  rt.creations_copy = rt.creations;
+  ReleaseSRWLockShared(&rt.codes_lock);
+  std::wstring text;
+  uint64_t first_seq = 0u;
+  if (!artemis_lookup::ComposeRevealedLine(frame.glyphs.data(), count,
+                                           frame.created, rt.creations_copy,
+                                           &text, &first_seq) ||
+      text.size() * sizeof(wchar_t) > fushi_voice_hook::kTextSlotBytes ||
+      (first_seq == rt.published_line_seq && text == rt.published_line)) {
+    return;
+  }
+  const uint64_t last_seq = frame.glyphs[count - 1u].seq;
+  const uintptr_t layer = rt.creations_copy.LayerAt(last_seq);
+  if (artemis_lookup::OverlaysPublishedLine(frame.glyphs.data(), count, layer,
+                                            rt.published_last_seq,
+                                            rt.published_layer)) {
+    if (first_seq != rt.overlay_logged_seq &&
+        rt.logged_lines < kArtemisModelLogBudget) {
+      ++rt.logged_lines;
+      rt.overlay_logged_seq = first_seq;
+      ArtemisLookupLog(L"artemis-text: overlay seq=%llu..%llu over line ..%llu",
+                       static_cast<unsigned long long>(first_seq),
+                       static_cast<unsigned long long>(last_seq),
+                       static_cast<unsigned long long>(rt.published_last_seq));
+    }
+    return;
+  }
+  constexpr wchar_t kHookCode[] = L"ENGINE:ARTEMIS:Layer::CreateGlyph";
+  constexpr char kHookName[] = "Artemis exact";
+  fushi_voice_hook::TextLaneWrite write;
+  write.thread_id = fushi_voice_hook::NativeTextThreadIdFrom(
+      rt.sites.glyph_factory, kHookCode, kHookName);
+  write.thread_address = rt.sites.glyph_factory;
+  write.thread_context = rt.sites.glyph_factory;
+  write.process_id = GetCurrentProcessId();
+  write.source_kind = fushi_voice_hook::kTextSourceArtemis;
+  write.is_utf8 = 0;
+  write.text = text.data();
+  write.byte_len = static_cast<uint32_t>(text.size() * sizeof(wchar_t));
+  write.hook_name = kHookName;
+  write.hook_code = kHookCode;
+  EnterCriticalSection(&g_text_cs);
+  const uint64_t event = fushi_voice_hook::WriteTextLaneEvent(
+      g_header, fushi_voice_hook::kNativeThreadPreviewStart,
+      fushi_voice_hook::kTextLaneCount, write);
+  LeaveCriticalSection(&g_text_cs);
+  if (event == 0u) return;
+  // An exact engine producer is live: the GDI glyph fallback yields.
+  g_header->luna_active = 1;
+  if (rt.logged_lines < kArtemisModelLogBudget) {
+    ++rt.logged_lines;
+    ArtemisLookupLog(L"artemis-text: event=%llu seq=%llu..%llu units=%u",
+                     static_cast<unsigned long long>(event),
+                     static_cast<unsigned long long>(first_seq),
+                     static_cast<unsigned long long>(frame.created),
+                     static_cast<unsigned>(text.size()));
+  }
+  rt.published_line_seq = first_seq;
+  rt.published_last_seq = last_seq;
+  rt.published_layer = layer;
+  rt.published_line = std::move(text);
+}
+
 void ProcessArtemisLookupTick() {
   auto& rt = g_artemis_lookup;
   if (!rt.installed) return;
+  ArtemisFrame& frame = rt.frame_copy;
+  const bool fresh = ReadFreshArtemisFrame(&frame);
+  if (fresh && !g_stop) PublishArtemisRevealedLine(frame);
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
@@ -817,21 +939,7 @@ void ProcessArtemisLookupTick() {
   }
   fushi_voice_hook::AtomicOrShared32(
       &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
-
-  ArtemisFrame& frame = rt.frame_copy;
-  if (!ReadArtemisSlot(rt.frame_seq, rt.frames, rt.published_frame, &frame,
-                       offsetof(ArtemisFrame, glyphs))) {
-    RetireArtemisLookup();
-    return;
-  }
-  const uint32_t frame_count = (std::min)(
-      frame.count, static_cast<uint32_t>(artemis_lookup::kMaxFrameGlyphs));
-  const uint64_t now = GetTickCount64();
-  if (!ReadArtemisSlot(rt.frame_seq, rt.frames, rt.published_frame, &frame,
-                       ArtemisFrameBytes(frame_count)) ||
-      frame.count != frame_count || frame.overflow || frame.tick == 0u ||
-      now < frame.tick || now - frame.tick > kArtemisFrameStaleMs ||
-      !artemis_lookup::ProjectionUsable(frame.projection)) {
+  if (!fresh || !artemis_lookup::ProjectionUsable(frame.projection)) {
     RetireArtemisLookup();
     return;
   }

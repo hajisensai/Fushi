@@ -6209,5 +6209,10 @@
   "video_filter_extras_only": "仅特典",
   "video_filter_source": "来源",
   "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。",
-  "jellyfin_server_rejected_client": "服务器 $url 拒绝了本应用的访问（HTTP $code）。该服务器可能只允许特定客户端，请联系服务器管理员。服务器说明：$reason"
+  "jellyfin_server_rejected_client": "服务器 $url 拒绝了本应用的访问（HTTP $code）。该服务器可能只允许特定客户端，请联系服务器管理员。服务器说明：$reason",
+  "video_bluray_config_network": "无法下载蓝光播放配置，请检查网络后重试。",
+  "video_bluray_protection_unsupported": "这张盘使用的保护格式尚不支持。目前支持具有匹配播放配置的 AACS 1 蓝光盘。",
+  "video_bluray_config_no_match": "未找到这张盘的匹配播放配置，请提供更新的 KEYDB.cfg 后重试。",
+  "video_bluray_config_invalid": "蓝光播放配置无效，请更换有效的 KEYDB.cfg 后重试。",
+  "video_bluray_config_missing": "播放这张蓝光盘需要匹配的 KEYDB.cfg 配置。"
 }

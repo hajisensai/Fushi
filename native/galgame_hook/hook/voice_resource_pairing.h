@@ -7,6 +7,13 @@ namespace fushi_voice_hook {
 
 constexpr uint64_t kKirikiriFollowingTextWindowMs = 1500;
 constexpr uint64_t kAi6PrecedingTextWindowMs = 1500;
+// Artemis runs a block's {"vo"} before its text: the voice member is read,
+// then the line is published when its glyph burst is drawn (measured
+// アマカノ3: voice 0..165 ms ahead of the text).  The host's unmarked window
+// expects voice 130..330 ms ahead, so most lines missed it.  Must not exceed
+// the host's event-ID tolerance (kGalVoicePairingWindowMs), or a marked
+// resource is refused outright.
+constexpr uint64_t kArtemisFollowingTextWindowMs = 1500;
 
 struct VoiceTextCandidate {
   uint64_t seq = 0;

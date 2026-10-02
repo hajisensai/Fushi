@@ -1,0 +1,6 @@
+## BUG-2855 · 预发布自动更新每次先撞 fushi.moe 404 再换 GitHub
+- **报告**：2026-10-02（用户：每次自动更新都会从 fushi.moe 换到 github 上）
+- **真实性**：✅ 真 bug，线上实测复现。`fushi/lib/src/utils/misc/update_checker_net.dart` 的 `officialR2UrlForUpdateAsset` 对**任何** tag 都生成 `fushi.moe/releases/v/<tag>/<name>?src=r2` 首选候选，但 `.github/workflows/mirror-releases.yml` 按 isPrerelease 跳过全部预发布，R2 只有正式版。实测 debug 最新 `fushi-debug-rolling/fushi-2.9.0-debug.16720-windows-setup.exe`：R2 `404`、GitHub `206`；正式版 `v2.7.0/fushi-2.7.0-windows-setup.exe`：R2 `206`。官网 `/releases/debug/windows` 也只是 `302` + `x-fushi-mirror: github`。于是 debug / beta 通道每次更新都先撞一次必然的 404，再回退 GitHub，界面上看到来源从 fushi.moe 换成 github。附带缺陷：显式选「Cloudflare」时被钉住的正是这个必然 404 的 R2 地址，`preferenceUnavailable` 为 false，「所选来源不可用」提示被吞成静默回退。
+- **[x] ① 已修复** — 客户端候选与镜像范围对齐：只有正式版 tag 形状 `^v\d+(?:\.\d+)*$` 才映射到官网 R2（`_kOfficialMirroredTagPattern`），预发布直接从 GitHub 直连开始，回退链不变；预发布选 Cloudflare 时走既有的「所选来源不可用」提示。用 `workflow_dispatch force_prerelease` 手动镜像的预发布不会被客户端使用（罕见补救路径，可接受）。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/update_checker_mirror_fallback_test.dart`：「预发布 tag 不生成官网 R2 候选」（debug 滚动 tag / debug 版本 tag / beta tag 三种真实形状）+「预发布资产选了 Cloudflare → 降级可观测」。
+- **备注**：用户 2026-10-02 拍板方案 1（客户端不对预发布尝试 fushi.moe），不把 debug 包镜像进 R2（8 GB 上限 + 单文件 300 MB 上传上限）。
