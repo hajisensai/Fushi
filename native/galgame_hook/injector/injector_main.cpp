@@ -300,7 +300,11 @@ struct LunaCtx {
   PFN_Luna_InsertHookCode insert_hook = nullptr;
   PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
+  // 用户 profile 显式打开的 MAGES 控制符归一化（TSV option `normalize-mages-controls`）。
   bool normalize_mages_controls = false;
+  // 引擎身份打开的同一归一化：游戏内 SGRE adapter 的 probe() 成立后锁存为 1，本会话
+  // 不再回落（身份不会撤销）。不按 exe 哈希 / 文件名判，见 LunaMagesNormalizationActive。
+  volatile LONG mages_engine_claimed = 0;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
   std::vector<std::wstring> blocked_hook_names;
@@ -984,6 +988,25 @@ int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
   return written;
 }
 
+// MAGES 控制符归一化是否生效：用户 profile 显式打开，或游戏内引擎 adapter 已确认本进程
+// 是 MAGES/SGRE（wind3d11）引擎。后者读共享头里的 adapter 报告（有界栈拷贝），确认后锁存，
+// 之后每行只看一个原子量。hook 尚未上报时保持原样输出——那是「还不知道」，不猜。
+bool LunaMagesNormalizationActive() {
+  if (g_luna.normalize_mages_controls) return true;
+  if (InterlockedCompareExchange(&g_luna.mages_engine_claimed, 0, 0) != 0) {
+    return true;
+  }
+  if (!fushi_voice_hook::AdapterReportsClaimEngine(
+          g_luna.header, fushi_voice_hook::kLunaMagesControlEngineAdapterId)) {
+    return false;
+  }
+  if (InterlockedExchange(&g_luna.mages_engine_claimed, 1) == 0) {
+    fprintf(stderr, "[luna] engine %s claimed: MAGES control normalization on\n",
+            fushi_voice_hook::kLunaMagesControlEngineAdapterId);
+  }
+  return true;
+}
+
 // ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 void LunaOutput(const wchar_t* hookcode, const char* hookname,
@@ -993,7 +1016,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
     const int raw_len = static_cast<int>(wcslen(text));
     const std::wstring normalized_storage =
         fushi_voice_hook::LunaNormalizeMagesControls(
-            text, raw_len, g_luna.normalize_mages_controls);
+            text, raw_len, LunaMagesNormalizationActive());
     const wchar_t* normalized_text = normalized_storage.c_str();
     const int escaped_len = static_cast<int>(normalized_storage.size());
     // thread_id 只依赖 hook 身份与 ThreadParam，不依赖文本；折叠要按线程记状态，所以先算。
@@ -1237,6 +1260,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   g_luna.remove_hook = bridge.remove_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
   g_luna.normalize_mages_controls = normalize_mages_controls;
+  InterlockedExchange(&g_luna.mages_engine_claimed, 0);
   g_luna.hook_codes = hook_codes;
   g_luna.blocked_hook_codes = blocked_hook_codes;
   g_luna.blocked_hook_names = blocked_hook_names;
@@ -1315,6 +1339,7 @@ void ShutdownLunaHook() {
     g_luna.confirmed_blocked_hook_names.clear();
     g_luna.preferred_hook_codes.clear();
     g_luna.normalize_mages_controls = false;
+    InterlockedExchange(&g_luna.mages_engine_claimed, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
     g_luna.pid = 0;
@@ -2988,8 +3013,9 @@ bool IsSiglusGame(const std::wstring& exe) {
 
 bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
   const std::wstring base = ExecutableBaseName(exe);
-  if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0 ||
-      _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
+  // SiglusEngine.exe 是引擎本体的发行名，不是某一款游戏；Unity 只认 LooksLikeUnityRuntime
+  // 的目录结构（UnityPlayer.dll + IL2CPP/Mono 布局），不按单个游戏 exe 名开。
+  if (_wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
   return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe) ||

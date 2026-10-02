@@ -1667,7 +1667,12 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertIn('L"UnityEngine.TextMesh.set_text(glyphs)"', source)
         self.assertIn("void FlushUnityTextMeshLine()", source)
-        self.assertIn("UsesSasasaLegacyTextMeshTerminator", source)
+        # 引擎级行为判据，不得退回按 exe 名 / 哈希开逐字形重组。
+        self.assertIn("g_unity_glyph_batch_detector.Observe(chars, source_length)", source)
+        self.assertNotIn("Sasasa", source)
+        text_mesh_body = source.split("void RecordUnityTextMesh", 1)[1]
+        text_mesh_body = text_mesh_body.split("void RecordUnityVoiceResourceEvent", 1)[0]
+        self.assertNotIn("GetModuleFileNameW", text_mesh_body)
         self.assertIn("g_unity_text_mesh_reassembler.ShouldTerminate(c, true)", source)
         # v13: text capture is no longer gated on the selected thread. Each
         # component writes its own lane, so a chatty one cannot squeeze the

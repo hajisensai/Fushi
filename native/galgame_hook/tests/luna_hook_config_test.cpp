@@ -5,8 +5,11 @@
 
 #include <array>
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 #include "luna_hook_config.h"
+#include "luna_text_selector.h"
 
 int main() {
   fushi_voice_hook::LunaTargetIdentity wa2;
@@ -78,13 +81,34 @@ int main() {
       "75a83a0e2a7e22055417ae0474b47be98418c4e42c695c548b558705c404b9d8";
   const auto sgre_profile = fushi_voice_hook::MatchLunaHookProfiles(
       fushi_voice_hook::BuiltInLunaHookProfiles(), sgre);
-  if (sgre_profile.codepage != 932 || sgre_profile.enable_pc_hooks ||
-      !sgre_profile.normalize_mages_controls ||
-      sgre_profile.hook_codes.size() != 1 ||
-      sgre_profile.hook_codes.front() !=
-          L"HQFN-24@328E0:sgre_steam.exe") {
-    std::fprintf(stderr, "STEINS;GATE RE:BOOT profile did not match\n");
+  // 引擎级适配：SGRE 的文本走游戏内 adapter 的结构识别（SGRE exact 文本线），MAGES
+  // 控制符归一化由引擎身份打开（kLunaMagesControlEngineAdapterId），内置表里不得再有按
+  // 这份 exe 哈希钉死的 hook code / 选项。
+  if (!sgre_profile.hook_codes.empty() || sgre_profile.normalize_mages_controls ||
+      sgre_profile.enable_pc_hooks || sgre_profile.codepage != 0) {
+    std::fprintf(stderr,
+                 "built-in Luna profiles must not pin STEINS;GATE RE:BOOT by "
+                 "executable hash\n");
     return 8;
+  }
+  if (std::strcmp(fushi_voice_hook::kLunaMagesControlEngineAdapterId, "sgre") !=
+      0) {
+    std::fprintf(stderr, "MAGES normalization must follow the SGRE engine id\n");
+    return 8;
+  }
+  // 显式用户 profile 仍可打开该选项（与引擎身份并列，供未识别的 MAGES 变体兜底）。
+  {
+    const std::string user_profile =
+        "exe_sha256\tmodule_name\tmodule_sha256\tcodepage\thook_code\tlabel\t"
+        "options\n" +
+        std::string(64, 'b') + "\t\t\t932\t\tuser MAGES\tnormalize-mages-controls\n";
+    fushi_voice_hook::LunaTargetIdentity user;
+    user.executable_sha256 = std::string(64, 'b');
+    if (!fushi_voice_hook::MatchLunaHookProfiles(user_profile, user)
+             .normalize_mages_controls) {
+      std::fprintf(stderr, "user normalize-mages-controls option was ignored\n");
+      return 8;
+    }
   }
 
   fushi_voice_hook::LunaTargetIdentity moved = nine;

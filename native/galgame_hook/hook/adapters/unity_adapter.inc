@@ -101,8 +101,8 @@ using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
 NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
 fushi_voice_hook::UnityTextMeshReassembler<501>
     g_unity_text_mesh_reassembler;
-bool g_unity_sasasa_text_mesh_profile = false;
-bool g_unity_text_profile_initialized = false;
+// 旧 KEMCO 式逐字形 TextMesh 约定的行为判据（见 unity_text_profile.h）。读写都在 g_cs 内。
+fushi_voice_hook::UnityLegacyGlyphBatchDetector g_unity_glyph_batch_detector;
 alignas(8) volatile uint64_t g_unity_preview_generation = 0;
 
 int InvokeUnityInt(const void* method, void* instance) {
@@ -366,11 +366,6 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
       g_il2cpp_string_length == nullptr) {
     return;
   }
-  if (!g_unity_sasasa_text_mesh_profile) {
-    RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
-                       L"UnityEngine.TextMesh.set_text");
-    return;
-  }
   const wchar_t* chars =
       string_object == nullptr ? nullptr : g_il2cpp_string_chars(string_object);
   const int source_length =
@@ -378,6 +373,27 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
   if (g_cs_ready) EnterCriticalSection(&g_cs);
   if (!g_capture_enabled) {
     if (g_cs_ready) LeaveCriticalSection(&g_cs);
+    return;
+  }
+  if (!g_unity_glyph_batch_detector.latched()) {
+    // 尚未见到「单字形批次 + 单独 U+3000」签名：按整串文本处理（U+3000 是正文）。
+    // 同时把单字形调用影子累积进重组器，签名一旦补全，这一整句以完整行发布，
+    // 不必等到下一句。签名断开时影子丢弃，绝不发布。
+    const bool latched_now =
+        g_unity_glyph_batch_detector.Observe(chars, source_length);
+    if (latched_now) {
+      FlushUnityTextMeshLine();
+    } else if (fushi_voice_hook::UnityLegacyGlyphBatchDetector::IsSingleGlyph(
+                   chars, source_length)) {
+      g_unity_text_mesh_reassembler.Append(chars[0]);
+    } else {
+      g_unity_text_mesh_reassembler.Reset();
+    }
+    if (g_cs_ready) LeaveCriticalSection(&g_cs);
+    if (!latched_now) {
+      RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
+                         L"UnityEngine.TextMesh.set_text");
+    }
     return;
   }
   for (int i = 0; chars != nullptr && i < source_length; ++i) {
@@ -786,16 +802,6 @@ bool HasCurrentProcessTopLevelWindow() {
 }
 
 bool TryHookUnityIl2CppAudio() {
-  if (!g_unity_text_profile_initialized) {
-    wchar_t executable_path[MAX_PATH] = {0};
-    const DWORD path_length =
-        GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
-    g_unity_sasasa_text_mesh_profile =
-        path_length != 0 && path_length < MAX_PATH &&
-        fushi_voice_hook::UsesSasasaLegacyTextMeshTerminator(
-            executable_path);
-    g_unity_text_profile_initialized = true;
-  }
   const bool audio_ready =
       g_orig_UnityAudioSourcePlay != nullptr ||
       g_orig_UnityAudioSourcePlayOneShot1 != nullptr ||

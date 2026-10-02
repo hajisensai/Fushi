@@ -2151,6 +2151,28 @@ inline uint32_t ReadAdapterReports(const SharedHeader* header,
   return 0u;
 }
 
+// 引擎身份查询：本会话里是否有 id 为 `adapter_id` 的 adapter 报告 probe() 成立。
+// 这是 host 侧按**引擎识别结果**（而不是 exe 哈希 / 文件名）切换行为的唯一入口：
+// adapter 的 probe() 本身就是结构判据，这里只读它发布的结论。seq==0（hook 还没上报）
+// 与「上报了但没有该引擎」同样返回 false——调用方需要的是「已确认是该引擎」，
+// 还不知道时保持默认行为。读取是有界的（最多 kAdapterReportSlots 槽、栈上拷贝）。
+inline bool AdapterReportsClaimEngine(const SharedHeader* header,
+                                      const char* adapter_id) {
+  if (header == nullptr || adapter_id == nullptr || adapter_id[0] == 0) {
+    return false;
+  }
+  AdapterReportSlot slots[kAdapterReportSlots] = {};
+  const uint32_t count =
+      ReadAdapterReports(header, slots, kAdapterReportSlots);
+  for (uint32_t i = 0; i < count; ++i) {
+    if (slots[i].applicable != 0u &&
+        std::strncmp(slots[i].id, adapter_id, kAdapterReportIdChars) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(
     const SharedHeader* header) {
   NativeLoopbackRequestSnapshot result;

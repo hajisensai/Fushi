@@ -1126,7 +1126,8 @@ def validate_manifest(
                 )
     _require(
         lookup_ids == LOOKUP_ACCEPTANCE_ENGINE_IDS,
-        "lookup_support must contain exactly the fixed 16-engine matrix; "
+        "lookup_support must contain exactly the fixed "
+        f"{len(LOOKUP_ACCEPTANCE_ENGINE_IDS)}-engine matrix; "
         "xaudio2_directsound is an audio backend, not an engine",
     )
     # Temporary evidence-test roots contain only synthetic evidence ledgers.

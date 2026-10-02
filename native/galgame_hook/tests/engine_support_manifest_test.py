@@ -663,7 +663,7 @@ class EngineSupportManifestTest(unittest.TestCase):
             GENERATOR.validate_manifest(self.manifest, ROOT)
 
     def test_smash_fzmedia_exact_provider_is_bound_to_lookup_matrix(self) -> None:
-        # 16-engine lookup matrix: smash/fzmedia joins with the exact provider
+        # 18-engine lookup matrix: smash/fzmedia joins with the exact provider
         # id 15 bound to engine_exact_layout, and nothing else may claim it.
         self.assertEqual(18, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
         self.assertIn("cmvs", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)

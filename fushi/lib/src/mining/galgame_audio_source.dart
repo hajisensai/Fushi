@@ -1144,7 +1144,9 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
     executablePath,
   );
   final String lowerBasename = basename.toLowerCase();
-  if (lowerBasename == 'manosaba.exe' || lowerBasename == 'siglusengine.exe') {
+  // SiglusEngine.exe 是引擎本体的发行名（不是某一款游戏），按名认可；Unity 一律走下面的
+  // 目录结构判据，不按单个游戏 exe 名开。
+  if (lowerBasename == 'siglusengine.exe') {
     return true;
   }
 
