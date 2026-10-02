@@ -65,7 +65,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   static bool get _usesReaderResourceCustomScheme =>
-      Platform.isMacOS || Platform.isIOS;
+      webViewUsesCustomSchemeTransport;
 
   static bool _isReaderResourceUrl(WebUri url) {
     if (url.host != ReaderFushiSource.kHost) return false;
@@ -1766,20 +1766,6 @@ updateLive: function(patch) {
   // ── WebView ──────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
-    if (Platform.isLinux) {
-      // flutter_inappwebview has no Linux backend; the EPUB renderer is
-      // unsupported on Linux for now (see
-      // docs/specs/2026-05-30-five-platform-build.md).
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.reader_unsupported_platform,
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
     // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
     // for global→local coordinate mapping (TODO-806), while the ValueKey stays on

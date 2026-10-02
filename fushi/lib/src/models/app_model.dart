@@ -4597,7 +4597,7 @@ class AppModel with ChangeNotifier {
       Directory(path.join(databaseDirectory.path, 'mihon')),
     );
     _mihonRuntime = runtime;
-    if (Platform.isWindows || Platform.isMacOS) {
+    if (MihonRuntimeFactory.usesDesktopSidecar) {
       _mihonRuntimeExitShutdown = ExitFlushRegistry.instance.register(
         _shutdownMihonRuntime,
       );

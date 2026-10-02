@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -174,6 +175,14 @@ class FushiShare {
         // 显式 mime 优先；缺失时用 `*/*`（比 octet-stream 更宽，不会收窄
         // 可分享目标，属 shareXFiles 结果集的超集，无回归）。
         mimeTypes.add(file.mimeType ?? '*/*');
+      }
+      if (Platform.isLinux) {
+        // share_plus 的 Linux 端只会把文本拼成 `mailto:` 链接，文件分享直接抛
+        // `UnimplementedError`（`share_plus_linux.dart`）——桌面 Linux 没有系统
+        // 分享面板这个契约。导出类调用方要的只是「让用户拿到这个文件」，所以
+        // 改为在文件管理器里定位它（与书架「打开文件位置」同一条原语），返回值
+        // 语义不变：文件管理器拉起来了就是 true。
+        return await revealInFileManager(paths.first);
       }
       // 非结果变体：从根上绕开 `ShareSuccessManager` 的结果回调状态机
       // （TODO-1318）。本 App 不使用 `ShareResult`，故不再走

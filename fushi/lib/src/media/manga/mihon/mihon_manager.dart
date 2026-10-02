@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_updates.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 /// 开箱即用的默认扩展仓库（用户指定）。没有它的话「漫画扩展」一节首次打开是空的，
@@ -64,7 +65,7 @@ class MihonManager extends ChangeNotifier {
       Directory(p.join(rootDirectory.path, 'cache', 'covers')),
       maxAge: coverCacheMaxAge,
     );
-    if (ownsRuntime && (Platform.isWindows || Platform.isMacOS)) {
+    if (ownsRuntime && MihonRuntimeFactory.usesDesktopSidecar) {
       _exitShutdown = ExitFlushRegistry.instance.register(
         shutdownRuntimeForExit,
       );
@@ -755,7 +756,7 @@ class MihonManager extends ChangeNotifier {
         p.join(rootDirectory.path, 'extensions', '$packageName.apk'),
       );
       final File backup = File('${target.path}.previous');
-      final bool desktop = Platform.isWindows || Platform.isMacOS;
+      final bool desktop = MihonRuntimeFactory.usesDesktopSidecar;
       if (desktop) {
         if (await backup.exists()) await backup.delete();
         if (await target.exists()) await target.rename(backup.path);
@@ -1172,7 +1173,7 @@ class MihonManager extends ChangeNotifier {
   }) async {
     await _guarded(() async {
       await runtime.uninstallPrivateExtension(extension.packageName);
-      if (Platform.isWindows || Platform.isMacOS) {
+      if (MihonRuntimeFactory.usesDesktopSidecar) {
         final File file = File(resolveApkPath(extension));
         if (await file.exists()) await file.delete();
       }

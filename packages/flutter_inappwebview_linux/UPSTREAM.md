@@ -1,0 +1,53 @@
+# flutter_inappwebview_linux（vendored）
+
+- 上游：pub.dev `flutter_inappwebview_linux` **0.1.0-beta.1**（2026-02-04，
+  https://github.com/pichillilorenzo/flutter_inappwebview/tree/master/flutter_inappwebview_linux），
+  Apache-2.0。`example/` 未带入；`linux/test/` 原样保留。
+- 为什么 vendor：上游这版依赖 `flutter_inappwebview_platform_interface ^1.4.0-beta.3`，
+  只有把整套 `flutter_inappwebview` 升到 6.2.0-beta.3 才解得开；本仓 Windows / Android
+  实现是基于 6.1.5 / 接口 1.3.0 的 fork（`packages/flutter_inappwebview_windows`、
+  `third_party/flutter_inappwebview_android`），整体升 beta 会波及五个平台的阅读器与查词。
+  所以只把 Linux 实现拿进来降到 1.3.0。
+- 注册：6.1.5 的 `flutter_inappwebview` 不 endorse Linux，由 `fushi/pubspec.yaml`
+  直接依赖本包完成注册。
+
+## 本仓改动
+
+### Dart 层降到 platform_interface 1.3.0
+
+- 删除 1.4 才有的 `create*Static()` 覆盖里引用不存在类型的那几个
+  （`PlatformWebNotificationController`、`DefaultInAppLocalhostServer.static()`），其余
+  1.4 新增方法只去掉 `@override`（1.3.0 基类没有它们，保留无害）。
+- `toMap({EnumMethod? enumMethod})` → `toMap()`（1.3.0 无 `EnumMethod`）。
+- JS handler：1.3.0 只有 `JavaScriptHandlerCallback(List<dynamic> args)`；原生侧仍按 1.4
+  形状发 `{args, origin, isMainFrame, ...}`，Dart 侧只取 `args`（`_LinuxJavaScriptHandlerData`），
+  禁用名单按 Windows fork 的 `_JAVASCRIPT_HANDLER_FORBIDDEN_NAMES` 本地化。
+- 1.4 才有的回调：`onDownloadStarting` 去掉（回落 `onDownloadStartRequest` / `onDownloadStart`）；
+  `onShowFileChooser` 无 1.3 对应，直接返回 null（原生侧走默认处理）；
+  `useOnAjaxReadyStateChange` / `useOnAjaxProgress` 设置项不存在，删掉推断。
+- `requestFocus()` 去掉 1.4 的 `direction` / `previouslyFocusedRect` 参数；
+  `getCacheModel()` 删除；`saveWebArchive` 断言去掉 `isSupported()`。
+
+### 原生：薄注册层 + 运行时 dlopen WPE 实现
+
+- 上游把整个插件（连同 libWPEWebKit）直接链进 runner：系统没装 WPE WebKit（Ubuntu 24.04
+  官方源就没有）时**整个 app 起不来**。改为：
+  - `fushi_wpe_loader.cc` → `flutter_inappwebview_linux_plugin`（runner 链接的就是它，
+    不依赖 WPE），注册时从自身所在目录 dlopen `libflutter_inappwebview_linux_wpe.so`
+    并调用改名后的 `fushi_inappwebview_wpe_register_with_registrar`；另注册
+    `fushi/flutter_inappwebview_linux/runtime` channel 报告加载结果。
+  - 上游全部源码编成 `flutter_inappwebview_linux_wpe`（编译期宏把公开注册函数改名，
+    避免与薄层同名），作为 bundled library 装进 `bundle/lib/`。
+  - CMake 里所有 WPE 侧依赖改为可选：缺失时只编薄层并给出 WARNING，而不是 FATAL_ERROR。
+- 不再把系统的 libWPEWebKit / libwpe / libWPEBackend-fdo 拷进 bundle：上游只拷库本体，
+  不带 WPEWebProcess / WPENetworkProcess 辅助进程（按编译期 libexec 路径查找）与依赖树，
+  在没装 WPE 的机器上本来就跑不起来，只会把 bundle 钉死在构建机的 WPE ABI 上。
+  WPE WebKit 改为发行版运行时依赖。
+- Dart：`lib/src/fushi_runtime_status.dart`；`LinuxInAppWebViewWidget.build` 在后端不可用时
+  显示安装提示，`LinuxHeadlessInAppWebView.run` 抛 `LinuxWebViewUnavailableException`。
+
+## 升级
+
+上游发正式版且本仓整体升到 `flutter_inappwebview` 6.2+ / 接口 1.4 时，删掉本目录，改回
+pub.dev 依赖，但**保留薄注册层的做法**（或确认上游已改成可选加载），否则 Ubuntu 用户
+又会回到「缺 WPE 就整个 app 起不来」。

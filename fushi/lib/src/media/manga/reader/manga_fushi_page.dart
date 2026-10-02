@@ -2597,7 +2597,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       imgSrcs.add(
         MangaFushiPage.mangaImageUrl(
           image.url,
-          useCustomScheme: Platform.isMacOS || Platform.isIOS,
+          useCustomScheme: webViewUsesCustomSchemeTransport,
           version: _pageSessionGeneration,
         ),
       );
@@ -6131,20 +6131,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 只在有 WebView 后端的平台构造原生 WebView（Linux 无 flutter_inappwebview
-  /// 后端；widget 测试宿主的加载早退路径也永不触达这里）。
+  /// 构造原生 WebView（widget 测试宿主的加载早退路径永不触达这里）。
   Widget _buildWebView() {
-    if (Platform.isLinux) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.book_file_not_found,
-            style: const TextStyle(color: Colors.white70),
-          ),
-        ),
-      );
-    }
     // 重建 key 挂在 WebView **之上**：`manga_webview` 这个 ValueKey 是集成测试
     // finder 的锚点，不能随代次变化。
     return KeyedSubtree(

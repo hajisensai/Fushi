@@ -267,7 +267,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
   static String epubUrl(String href) {
     final String encoded = href.split('/').map(Uri.encodeComponent).join('/');
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/epub/$encoded';
     }
     return 'https://$kHost/epub/$encoded';
@@ -275,7 +275,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   static String fontUrl(String path) {
     final String encoded = Uri.encodeComponent(path);
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/fonts/$encoded';
     }
     return 'https://$kHost/fonts/$encoded';
