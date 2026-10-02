@@ -5672,6 +5672,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               ? t.manga_direction_rtl
               : t.manga_direction_ltr,
           pinned: true,
+          // 窄屏放不下页码胶囊时先降进 ⋮（planMangaTopBarActions）。
+          secondary: true,
           onPressed: () => unawaited(
             _setSpreadDirection(
               (_pendingSpreadDirection ?? _spreadDirection) == 'rtl'
@@ -5689,6 +5691,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     : Icons.first_page),
           label: t.manga_reader_back_to_start,
           pinned: true,
+          secondary: true,
           onPressed: () => unawaited(_jumpToPage(1)),
         ),
         // 默认进入即整卷识别；只有触发方式设成「手动」时才给这个入口。

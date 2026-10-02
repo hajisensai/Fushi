@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart'
     show mangaSelectionRectFromPayload;
@@ -217,6 +218,264 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('B'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+  });
+
+  // BUG：412dp 竖屏手机上 7~8 颗 pinned 按钮把标题槽挤到 ~68dp，页码胶囊
+  // 「4 / 37」画出槽外、被翻页方向按钮压住。排布必须按真实宽度 + 字号算。
+  group('MangaReaderTopBar 窄屏排布', () {
+    // 与 manga_fushi_page._chromeActionGroups 同形：章节目录在 leading；视图组
+    // 方向 / 回到开头是 pinned + secondary，整卷 OCR 运行中多一颗 pinned 取消；
+    // 界面组设置 / 隐藏是 pinned。
+    Widget phoneHost({
+      required double width,
+      required double textScale,
+      bool ocrRunning = false,
+    }) {
+      return MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: Size(width, 800),
+            padding: const EdgeInsets.only(top: 24),
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: Scaffold(
+            body: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: width,
+                child: MangaReaderTopBar(
+                  title: 'Series · Chapter 12',
+                  floating: true,
+                  backTooltip: 'back',
+                  onBack: () {},
+                  pageLabel: () => '4 / 37',
+                  onPageTap: () {},
+                  leading: <MangaChromeAction>[
+                    MangaChromeAction(
+                      key: const ValueKey<String>('chapters'),
+                      icon: Icons.list_alt_outlined,
+                      label: 'Chapters',
+                      pinned: true,
+                      onPressed: () {},
+                    ),
+                  ],
+                  groups: <List<MangaChromeAction>>[
+                    <MangaChromeAction>[
+                      MangaChromeAction(
+                        key: const ValueKey<String>('direction'),
+                        icon: Icons.arrow_back,
+                        label: 'Right to left',
+                        pinned: true,
+                        secondary: true,
+                        onPressed: () {},
+                      ),
+                      MangaChromeAction(
+                        key: const ValueKey<String>('start'),
+                        icon: Icons.last_page,
+                        label: 'Back to start',
+                        pinned: true,
+                        secondary: true,
+                        onPressed: () {},
+                      ),
+                      MangaChromeAction(
+                        key: const ValueKey<String>('mode'),
+                        icon: Icons.auto_stories_outlined,
+                        label: 'Mode',
+                        onPressed: () {},
+                      ),
+                      MangaChromeAction(
+                        key: const ValueKey<String>('boxes'),
+                        icon: Icons.highlight_alt,
+                        label: 'Boxes',
+                        active: true,
+                        onPressed: () {},
+                      ),
+                      if (ocrRunning)
+                        MangaChromeAction(
+                          key: const ValueKey<String>('cancel_ocr'),
+                          icon: Icons.stop_circle_outlined,
+                          label: 'Cancel',
+                          pinned: true,
+                          onPressed: () {},
+                        ),
+                    ],
+                    <MangaChromeAction>[
+                      MangaChromeAction(
+                        key: const ValueKey<String>('settings'),
+                        icon: Icons.settings_outlined,
+                        label: 'Settings',
+                        pinned: true,
+                        onPressed: () {},
+                      ),
+                      MangaChromeAction(
+                        key: const ValueKey<String>('hide'),
+                        icon: Icons.visibility_off_outlined,
+                        label: 'Hide',
+                        pinned: true,
+                        onPressed: () {},
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    /// 页码胶囊与栏内每一颗图标按钮（含返回键与 ⋮）都不相交；[fullText] 时
+    /// 还要求胶囊文字没被省略（完整画出）。测试字体 Ahem 每字宽 = 字号，比真机
+    /// Roboto 宽一倍多，OCR 运行中多一颗 pinned 时 1.3 倍字号在 Ahem 下确实放不下
+    /// 完整文字，那一档只钉「不相交」。
+    void expectChipClear(WidgetTester tester, {bool fullText = true}) {
+      final Rect chip = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_page_jump_button')),
+      );
+      final Finder buttons = find.descendant(
+        of: find.byType(MangaReaderTopBar),
+        matching: find.byType(IconButton),
+      );
+      expect(buttons, findsWidgets);
+      for (final Element e in buttons.evaluate()) {
+        final Rect r = tester.getRect(find.byElementPredicate((x) => x == e));
+        expect(
+          chip.overlaps(r),
+          isFalse,
+          reason: 'page chip $chip overlaps button $r',
+        );
+      }
+      if (!fullText) return;
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        find.text('4 / 37'),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse);
+    }
+
+    for (final double scale in <double>[1.0, 1.3]) {
+      testWidgets('412dp × 字号 $scale：胶囊不被按钮压住，次要 pinned 进 ⋮', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(phoneHost(width: 412, textScale: scale));
+        expect(tester.takeException(), isNull);
+        expectChipClear(tester);
+        // 返回 / 章节 / 设置 / 隐藏这几颗主 pinned 始终在栏上。
+        for (final String k in <String>['chapters', 'settings', 'hide']) {
+          expect(find.byKey(ValueKey<String>(k)), findsOneWidget);
+        }
+      });
+
+      testWidgets('412dp × 字号 $scale + 整卷 OCR 运行中：胶囊仍完整', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          phoneHost(width: 412, textScale: scale, ocrRunning: true),
+        );
+        expect(tester.takeException(), isNull);
+        expectChipClear(tester, fullText: scale == 1.0);
+        expect(
+          find.byKey(const ValueKey<String>('cancel_ocr')),
+          findsOneWidget,
+        );
+        // 方向按钮被降进 ⋮：栏上没有，菜单里有、点得到。
+        expect(find.byKey(const ValueKey<String>('direction')), findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('manga_chrome_overflow')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Right to left'), findsOneWidget);
+      });
+    }
+
+    testWidgets('极端字号（2.0）降完也放不下：胶囊省略收缩，仍不与按钮相交', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        phoneHost(width: 360, textScale: 2.0, ocrRunning: true),
+      );
+      expect(tester.takeException(), isNull);
+      final Rect chip = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_page_jump_button')),
+      );
+      for (final Element e
+          in find
+              .descendant(
+                of: find.byType(MangaReaderTopBar),
+                matching: find.byType(IconButton),
+              )
+              .evaluate()) {
+        final Rect r = tester.getRect(find.byElementPredicate((x) => x == e));
+        expect(chip.overlaps(r), isFalse);
+      }
+    });
+  });
+
+  group('planMangaTopBarActions', () {
+    MangaChromeAction action(
+      String id, {
+      bool pinned = false,
+      bool secondary = false,
+    }) => MangaChromeAction(
+      key: ValueKey<String>(id),
+      icon: Icons.circle,
+      label: id,
+      pinned: pinned,
+      secondary: secondary,
+      onPressed: () {},
+    );
+
+    test('胶囊放得下时不降任何 pinned；放不下时从后往前降 secondary', () {
+      final MangaChromeAction dir = action(
+        'dir',
+        pinned: true,
+        secondary: true,
+      );
+      final MangaChromeAction start = action(
+        'start',
+        pinned: true,
+        secondary: true,
+      );
+      final MangaChromeAction mode = action('mode');
+      final MangaChromeAction settings = action('settings', pinned: true);
+      final List<List<MangaChromeAction>> groups = <List<MangaChromeAction>>[
+        <MangaChromeAction>[dir, start, mode],
+        <MangaChromeAction>[settings],
+      ];
+      // 8 + (返回 + 章节 + dir + start + settings + ⋮) × 48 = 296。
+      final MangaTopBarActionPlan roomy = planMangaTopBarActions(
+        width: 412,
+        leadingCount: 1,
+        groups: groups,
+        titleAreaMinWidth: 80,
+      );
+      expect(roomy.compact, isTrue);
+      expect(roomy.inline, containsAll(<MangaChromeAction>[dir, start]));
+      expect(roomy.overflow, <MangaChromeAction>[mode]);
+
+      // 胶囊要 130：降 start 一颗（-48）就够。
+      final MangaTopBarActionPlan tight = planMangaTopBarActions(
+        width: 412,
+        leadingCount: 1,
+        groups: groups,
+        titleAreaMinWidth: 130,
+      );
+      expect(tight.inline.contains(start), isFalse);
+      expect(tight.inline.contains(dir), isTrue);
+      expect(tight.overflow, <MangaChromeAction>[start, mode]);
+      expect(tight.titleAreaWidth, greaterThanOrEqualTo(130));
+    });
+
+    test('宽窗未过阈值但按钮 + 胶囊放不下 → 也进紧凑形态', () {
+      final List<MangaChromeAction> many = <MangaChromeAction>[
+        for (int i = 0; i < 16; i++) action('a$i'),
+      ];
+      final MangaTopBarActionPlan plan = planMangaTopBarActions(
+        width: kReaderDesktopHeaderCompactWidth + 40,
+        leadingCount: 1,
+        groups: <List<MangaChromeAction>>[many],
+        titleAreaMinWidth: 80,
+      );
+      expect(plan.compact, isTrue);
+      expect(plan.overflow, hasLength(16));
     });
   });
 }

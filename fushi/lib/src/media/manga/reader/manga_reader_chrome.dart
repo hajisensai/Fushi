@@ -18,7 +18,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:fushi/utils.dart' show FushiBorderRadius;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show kReaderDesktopHeaderHeight, readerHeaderCompact;
+    show
+        kReaderDesktopHeaderButtonWidth,
+        kReaderDesktopHeaderHeight,
+        readerHeaderCompact;
 
 /// 顶栏内容行高（不含系统状态栏）。与 EPUB 顶栏同值，两个阅读器视觉对齐。
 const double kMangaChromeBarHeight = kReaderDesktopHeaderHeight;
@@ -81,6 +84,7 @@ class MangaChromeAction {
     required this.onPressed,
     this.key,
     this.pinned = false,
+    this.secondary = false,
     this.active = false,
     this.busy = false,
   });
@@ -93,11 +97,123 @@ class MangaChromeAction {
   /// 窄窗紧凑形态仍保留为图标按钮；其余收进 ⋮。
   final bool pinned;
 
+  /// pinned 里的**次要**动作（翻页方向 / 回到开头）：紧凑形态下栏宽连页码胶囊
+  /// 都放不下时，先把它们（从后往前）降进 ⋮，而不是让按钮压在胶囊上
+  /// （BUG：412dp 竖屏手机 7 颗 pinned 按钮把胶囊挤到只剩 ~68dp）。见
+  /// [planMangaTopBarActions]。
+  final bool secondary;
+
   /// 开关型动作当前处于开启态：图标用强调色，溢出菜单里带勾。
   final bool active;
 
   /// 忙碌中：图标位画转圈（例如整卷 OCR 进行中）。
   final bool busy;
+}
+
+/// 顶栏一行两端内边距合计：[MangaReaderTopBar] 的 `EdgeInsets.symmetric(horizontal: 4)`。
+const double kMangaTopBarHorizontalPadding = 8;
+
+/// 组间分隔线占宽：左右各 2 + 线宽 1（与 `_divider` 同源）。
+const double kMangaTopBarDividerWidth = 5;
+
+/// 页码胶囊左右内边距（单侧，与胶囊 `Padding` 同源）。
+const double kMangaPageChipHorizontalPadding = 10;
+
+/// [planMangaTopBarActions] 的结果：哪些动作画成图标、哪些进 ⋮。
+@immutable
+class MangaTopBarActionPlan {
+  const MangaTopBarActionPlan({
+    required this.compact,
+    required this.inline,
+    required this.overflow,
+    required this.titleAreaWidth,
+  });
+
+  /// 紧凑形态：不画书名、组间不画分隔线。
+  final bool compact;
+
+  /// 画成图标按钮的动作（按引用比较）。
+  final Set<MangaChromeAction> inline;
+
+  /// 收进 ⋮ 的动作，保持组序。
+  final List<MangaChromeAction> overflow;
+
+  /// 按钮全部排完后留给标题槽（书名 + 页码胶囊 + 状态件）的宽度，下限 0。
+  final double titleAreaWidth;
+}
+
+/// 顶栏按**真实宽度**排布动作（纯函数，单测钉住）。
+///
+/// 固定阈值 [readerHeaderCompact]（760）只决定「要不要折叠」，从不检查折叠后
+/// 留下的 pinned 按钮真的放得下：412dp 竖屏手机上返回 + 章节 + 方向 + 回到开头 +
+/// 设置 + 隐藏 + ⋮ 一共 7 颗 48dp 按钮，标题槽只剩 ~68dp，页码胶囊（加大字号后
+/// 更宽）画出槽外、被下一颗按钮盖住。现在：
+///
+///  1. 宽窗（未过 760 阈值）且全部按钮 + 胶囊放得下 → 全部画出；
+///  2. 否则紧凑：只留 pinned，其余进 ⋮；
+///  3. 紧凑态仍放不下 [titleAreaMinWidth]（页码胶囊的实测宽）时，把 pinned 里的
+///     [MangaChromeAction.secondary] 从后往前逐个降进 ⋮，直到放得下或没有可降的。
+///
+/// [buttonWidth] 取 48（MD3 IconButton 补足 tap target 后的上界），宁可算宽。
+MangaTopBarActionPlan planMangaTopBarActions({
+  required double width,
+  required int leadingCount,
+  required List<List<MangaChromeAction>> groups,
+  required double titleAreaMinWidth,
+  double buttonWidth = kReaderDesktopHeaderButtonWidth,
+}) {
+  final List<List<MangaChromeAction>> visible = <List<MangaChromeAction>>[
+    for (final List<MangaChromeAction> g in groups)
+      if (g.isNotEmpty) g,
+  ];
+  final List<MangaChromeAction> all = <MangaChromeAction>[
+    for (final List<MangaChromeAction> g in visible) ...g,
+  ];
+  // 返回键 + leading（章节目录）恒在。
+  final double fixed =
+      kMangaTopBarHorizontalPadding + (1 + leadingCount) * buttonWidth;
+
+  final double wideUsed =
+      fixed +
+      all.length * buttonWidth +
+      (visible.isEmpty ? 0 : (visible.length - 1) * kMangaTopBarDividerWidth);
+  if (!readerHeaderCompact(width) && wideUsed + titleAreaMinWidth <= width) {
+    return MangaTopBarActionPlan(
+      compact: false,
+      inline: Set<MangaChromeAction>.identity()..addAll(all),
+      overflow: const <MangaChromeAction>[],
+      titleAreaWidth: width - wideUsed,
+    );
+  }
+
+  final List<MangaChromeAction> inline = <MangaChromeAction>[
+    for (final MangaChromeAction a in all)
+      if (a.pinned) a,
+  ];
+  double used() {
+    final bool hasOverflow = inline.length < all.length;
+    return fixed + (inline.length + (hasOverflow ? 1 : 0)) * buttonWidth;
+  }
+
+  while (used() + titleAreaMinWidth > width) {
+    final int demote = inline.lastIndexWhere(
+      (MangaChromeAction a) => a.secondary,
+    );
+    if (demote < 0) break;
+    inline.removeAt(demote);
+  }
+  final Set<MangaChromeAction> inlineSet = Set<MangaChromeAction>.identity()
+    ..addAll(inline);
+  final double usedWidth = used();
+  return MangaTopBarActionPlan(
+    compact: true,
+    inline: inlineSet,
+    overflow: <MangaChromeAction>[
+      for (final MangaChromeAction a in all)
+        if (!inlineSet.contains(a)) a,
+    ],
+    titleAreaWidth: width > usedWidth ? width - usedWidth : 0,
+  );
 }
 
 /// 顶栏。`[← 返回] [标题 · 页码胶囊] ……… [组1] │ [组2] │ [组3] [⋮]`。
@@ -166,38 +282,65 @@ class MangaReaderTopBar extends StatelessWidget {
         padding: EdgeInsets.only(top: statusBar),
         child: SizedBox(
           height: kMangaChromeBarHeight,
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool compact = readerHeaderCompact(constraints.maxWidth);
-              // 折叠规则与 EPUB 顶栏 `readerHeaderOverflow` 同一句：紧凑态只留
-              // pinned，其余按组序收进 ⋮。
-              final List<MangaChromeAction> overflow = <MangaChromeAction>[
-                for (final List<MangaChromeAction> g in visibleGroups)
-                  for (final MangaChromeAction a in g)
-                    if (compact && !a.pinned) a,
-              ];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  children: <Widget>[
-                    IconButton(
-                      key: const ValueKey<String>('manga_reader_back_button'),
-                      tooltip: backTooltip,
-                      color: _fg,
-                      iconSize: 22,
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: onBack,
+          // 胶囊文案随翻页变，排布（降不降次要按钮）要跟着胶囊实测宽走，所以
+          // 整栏随 [pageListenable] 重建——只是这一条栏，页面本体（原生
+          // WebView）照旧不跟着 setState。
+          child: ListenableBuilder(
+            listenable:
+                pageListenable ?? Listenable.merge(const <Listenable>[]),
+            builder: (BuildContext context, Widget? _) {
+              final String? label = pageLabel?.call();
+              return LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final MangaTopBarActionPlan plan = planMangaTopBarActions(
+                    width: constraints.maxWidth,
+                    leadingCount: leading.length,
+                    groups: visibleGroups,
+                    titleAreaMinWidth: label == null
+                        ? 0
+                        : _pageChipWidth(context, label),
+                  );
+                  final bool compact = plan.compact;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: kMangaTopBarHorizontalPadding / 2,
                     ),
-                    for (final MangaChromeAction a in leading) _button(a),
-                    Expanded(child: _buildTitleArea(context, compact)),
-                    for (int i = 0; i < visibleGroups.length; i++) ...<Widget>[
-                      if (i > 0 && !compact) _divider(),
-                      for (final MangaChromeAction a in visibleGroups[i])
-                        if (!compact || a.pinned) _button(a),
-                    ],
-                    if (overflow.isNotEmpty) _overflowMenu(context, overflow),
-                  ],
-                ),
+                    child: Row(
+                      children: <Widget>[
+                        IconButton(
+                          key: const ValueKey<String>(
+                            'manga_reader_back_button',
+                          ),
+                          tooltip: backTooltip,
+                          color: _fg,
+                          iconSize: 22,
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: onBack,
+                        ),
+                        for (final MangaChromeAction a in leading) _button(a),
+                        Expanded(
+                          child: _buildTitleArea(
+                            context,
+                            compact: compact,
+                            label: label,
+                            maxChipWidth: plan.titleAreaWidth,
+                          ),
+                        ),
+                        for (
+                          int i = 0;
+                          i < visibleGroups.length;
+                          i++
+                        ) ...<Widget>[
+                          if (i > 0 && !compact) _divider(),
+                          for (final MangaChromeAction a in visibleGroups[i])
+                            if (plan.inline.contains(a)) _button(a),
+                        ],
+                        if (plan.overflow.isNotEmpty)
+                          _overflowMenu(context, plan.overflow),
+                      ],
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -206,7 +349,36 @@ class MangaReaderTopBar extends StatelessWidget {
     );
   }
 
-  Widget _buildTitleArea(BuildContext context, bool compact) {
+  TextStyle? _pageChipStyle(BuildContext context) =>
+      Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: _fg,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      );
+
+  /// 页码胶囊按当前字号缩放（[MediaQuery.textScalerOf]）的实测宽。
+  double _pageChipWidth(BuildContext context, String label) {
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: DefaultTextStyle.of(
+          context,
+        ).style.merge(_pageChipStyle(context)),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final double width = painter.width.ceilToDouble();
+    painter.dispose();
+    return width + 2 * kMangaPageChipHorizontalPadding;
+  }
+
+  Widget _buildTitleArea(
+    BuildContext context, {
+    required bool compact,
+    required String? label,
+    required double maxChipWidth,
+  }) {
     final TextTheme text = Theme.of(context).textTheme;
     return Row(
       children: <Widget>[
@@ -226,38 +398,33 @@ class MangaReaderTopBar extends StatelessWidget {
               ),
             ),
           ),
-        if (pageLabel != null)
-          ListenableBuilder(
-            listenable:
-                pageListenable ?? Listenable.merge(const <Listenable>[]),
-            builder: (BuildContext context, Widget? _) {
-              final String? label = pageLabel!();
-              if (label == null) return const SizedBox.shrink();
-              return Material(
-                color: Colors.white12,
-                borderRadius: FushiBorderRadius.chip,
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  key: const ValueKey<String>('manga_page_jump_button'),
-                  onTap: onPageTap,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    child: Text(
-                      label,
-                      style: text.labelLarge?.copyWith(
-                        color: _fg,
-                        fontFeatures: const <FontFeature>[
-                          FontFeature.tabularFigures(),
-                        ],
-                      ),
-                    ),
+        if (label != null)
+          // 胶囊取自然宽，但绝不超出标题槽：极端字号下连次要按钮都降完仍放不下
+          // 时，文字省略而不是画出槽外被按钮盖住。
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxChipWidth),
+            child: Material(
+              color: Colors.white12,
+              borderRadius: FushiBorderRadius.chip,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                key: const ValueKey<String>('manga_page_jump_button'),
+                onTap: onPageTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kMangaPageChipHorizontalPadding,
+                    vertical: 5,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: _pageChipStyle(context),
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         if (status != null) ...<Widget>[
           const SizedBox(width: 8),
