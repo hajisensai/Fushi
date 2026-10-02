@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2645 条。点号进各自文件。
+> 共 2646 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2884](bugs/BUG-2884-manga-cross-chapter-stale-doc.md) | ✅ | ✅ | 漫画跨章翻页后正文仍是旧章 |
 | [BUG-2870](bugs/BUG-2870-leaderboard-hoshi-incomplete.md) | ✅ | ✅ | 排行榜书架漏书：Hoshi 导入的读完书没标读完 + 多 Profile 时无记录的书被丢 |
 | [BUG-2869](bugs/BUG-2869-synced-clip-non-lapis-template.md) | ✅ | ✅ | 视频片段制卡写进不原样渲染图片字段的模板（Kiku）后动图和音频都不显示 |
 | [BUG-2868](bugs/BUG-2868-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |

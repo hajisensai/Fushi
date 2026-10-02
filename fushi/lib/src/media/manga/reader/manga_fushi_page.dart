@@ -690,9 +690,14 @@ class MangaFushiPage extends BaseSourcePage {
   /// 纯函数：manga.json 的相对 url → WebView 可加载的拦截器 URL。逐段
   /// percent-encode（保留 `/` 结构），与拦截器侧 `Uri.decodeComponent` 对称
   /// （镜像 epubUrl 的 HBK-AUDIT-127 编解码对称纪律）。
+  ///
+  /// [version]：页会话代次，作查询串挂在 URL 上（拦截器只认 path，不受影响）。
+  /// 已下载章的页名各章同形（`images/page-000001.*`），不带代次时换章后的新文档
+  /// 与旧章同名页 URL 完全相同，响应又带 `max-age`，WebView 会直接复用旧章页图。
   static String mangaImageUrl(
     String relativeUrl, {
     bool useCustomScheme = false,
+    int? version,
   }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
     final String encoded = normalized
@@ -700,7 +705,8 @@ class MangaFushiPage extends BaseSourcePage {
         .map(Uri.encodeComponent)
         .join('/');
     final String scheme = useCustomScheme ? kMangaResourceScheme : 'https';
-    return '$scheme://$kMangaHost/img/$encoded';
+    final String query = version == null ? '' : '?v=$version';
+    return '$scheme://$kMangaHost/img/$encoded$query';
   }
 
   /// 纯函数：围绕 [current]、半径 [radius] 的连续 spread 窗口，clamp 到
@@ -1011,6 +1017,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 仍经 [_turnQueue] 串行化，避免快速反向操作交叠 DOM 更新。
   bool _navigating = false;
   final MangaTurnQueue _turnQueue = MangaTurnQueue();
+
+  /// 当前在飞窗口加载的收尾信号与排队等它的重装请求数（[_loadInitialWindow]）。
+  Completer<void>? _windowLoadDone;
+  int _windowLoadWaiters = 0;
+
+  /// 每装一次页会话（开书 / 换章）+1，编进页图 URL（[MangaFushiPage.mangaImageUrl]）。
+  int _pageSessionGeneration = 0;
 
   /// 窗口文档加载的所有权闸门：generation 与 ready 锁只能经它读写，迟到的旧回调
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
@@ -1884,6 +1897,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _volumeOcrQueued = false;
     _volumeOcrNoEngine = false;
     _pageSession = localPageSession;
+    _pageSessionGeneration++;
     _localPageIndices = <String, int>{
       for (int index = 0; index < relativePagePaths.length; index++)
         _localPageKey(relativePagePaths[index]): index,
@@ -1918,6 +1932,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
+    // 换章 = 同一个 WebView 换正文。首次打开由 onWebViewCreated 装首窗；换章时
+    // WebView 一直挂在树上、那条回调不会再来，必须在这里按新 payload 重装窗口
+    // 文档——否则屏上留着旧章文档，只有页码 / OCR 层跟着变成新章（跨章后「只有
+    // 第一页更新了」）。调用方（换章落末页）随后在新文档上 translate，所以要 await。
+    if (_controller != null) await _loadInitialWindow();
+    if (!mounted) return;
     // 在线直读章没有章目录可供整卷 OCR 读写：缓存恢复、任务接回、整卷识别全部
     // 跳过，改由页级识别从读者当前页起边看边识别。
     if (streaming) {
@@ -2556,6 +2576,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         MangaFushiPage.mangaImageUrl(
           image.url,
           useCustomScheme: Platform.isMacOS || Platform.isIOS,
+          version: _pageSessionGeneration,
         ),
       );
       final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
@@ -2654,8 +2675,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// `_loadedSpreads`（在 [_buildWindowDocument] 内同步赋值）只在本次成功后生效，
   /// 失败回滚为旧文档的集合（否则 translateX 目标缺失、transform 归 0）。
   Future<void> _loadInitialWindow() async {
-    if (_payload == null || _controller == null || _navigating) return;
+    // 在飞的加载装的是它发起那一刻的 payload / spread 快照。后到的重装请求（换章、
+    // 改设置）不能直接丢掉——丢了屏上就停在旧文档——等它收尾再按当前状态重装。
+    while (_navigating) {
+      final Completer<void>? inFlight = _windowLoadDone;
+      if (inFlight == null) return;
+      _windowLoadWaiters++;
+      try {
+        await inFlight.future;
+      } finally {
+        _windowLoadWaiters--;
+      }
+      if (!mounted) return;
+    }
+    if (_payload == null || _controller == null) return;
     _navigating = true;
+    final Completer<void> done = _windowLoadDone = Completer<void>();
     final Set<int> previousLoaded = Set<int>.of(_loadedSpreads);
     final MangaWindowLoadTicket ticket = _windowGate.begin();
     try {
@@ -2689,7 +2724,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } finally {
       _windowGate.finish(ticket);
       _navigating = false;
-      if (mounted && _spreads.isNotEmpty) {
+      done.complete();
+      // 有重装在排队时不 drain：排着的翻页要落在重装后的新文档上，由那次重装
+      // 收尾时再放行。
+      if (mounted && _spreads.isNotEmpty && _windowLoadWaiters == 0) {
         unawaited(
           _turnQueue.drain(
             canApply: () => mounted && !_navigating,
