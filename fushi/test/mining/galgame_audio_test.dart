@@ -711,6 +711,82 @@ void main() {
       }
     });
 
+    // BUG-2891：`--japanese-locale` 只是请求。x64 helper 没有 Locale Emulator 运行时，
+    // injector 退回普通 CreateProcess 并回报 `locale=0`；旧实现照样报「已转区」。
+    for (final (String localeField, bool applied) in <(String, bool)>[
+      ('locale=1', true),
+      ('locale=0', false),
+    ]) {
+      test('转区事实只认 injector 回报：$localeField ⇒ applied=$applied', () async {
+        final Directory temp = await Directory.systemTemp.createTemp(
+          'hibiki_locale_fact_test_',
+        );
+        final File injector = File(
+          '${temp.path}${Platform.pathSeparator}fake.exe',
+        );
+        await injector.writeAsBytes(const <int>[0]);
+        final File game = File('${temp.path}${Platform.pathSeparator}game.exe');
+        await game.writeAsBytes(_craftPe(0x8664));
+        final _FakeProcess process = _FakeProcess();
+        setHandler((MethodCall call) async {
+          switch (call.method) {
+            case 'open':
+              return <String, Object?>{'ok': true};
+            case 'requestNativeLoopbackPolicy':
+              return <String, Object?>{
+                'nativeLoopbackRequested': 0,
+                'nativeLoopbackRequestSeq': 1,
+                'nativeLoopbackState': 0,
+                'nativeLoopbackAppliedSeq': 1,
+              };
+            case 'status':
+              return <Object?, Object?>{
+                'hooked': true,
+                'textHooked': true,
+                'audioHooksReady': true,
+                'ready': false,
+                'rawVoiceReady': false,
+              };
+          }
+          return null;
+        });
+        final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+          launchExe: game.path,
+          injectorPath: injector.path,
+          capabilitiesProbe: (String _) async =>
+              GalHookCapabilityProbeResult.supported,
+          japaneseLocaleMode: GalJapaneseLocaleMode.on,
+          systemAnsiCodePageProbe: () => 936,
+          processStarter: (String _, List<String> arguments) async {
+            expect(arguments, contains('--japanese-locale'));
+            scheduleMicrotask(() {
+              process.stdoutController.add(
+                ('LAUNCH pid=4321 arch=x64 role=game $localeField\n'
+                        'OK hooked pid=4321 mode=launch\n')
+                    .codeUnits,
+              );
+            });
+            return process;
+          },
+          readyTimeout: const Duration(seconds: 1),
+          pollInterval: Duration.zero,
+        );
+        try {
+          await source.start();
+          expect(source.japaneseLocaleRequested, isTrue);
+          expect(source.japaneseLocaleApplied, applied);
+          expect(
+            source.japaneseLocaleSkipReason,
+            applied ? isNull : GalJapaneseLocaleSkipReason.runtimeUnavailable,
+          );
+        } finally {
+          await source.stop();
+          await process.dispose();
+          await temp.delete(recursive: true);
+        }
+      });
+    }
+
     test('attach 等 helper OK 后才打开共享内存', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_attach_ready_test_',

@@ -614,10 +614,11 @@ class GalHookSessionState {
           ? null
           : japaneseLocaleVerdict ?? this.japaneseLocaleVerdict,
       // 原因只在「有判定且没转」时有意义：判定一复位它跟着清；新判定进来时它就是
-      // 随判定一起传进来的那个值（转了 = null），不能拿旧值兜底。
-      japaneseLocaleSkipReason: clearLaunchExe || clearJapaneseLocaleVerdict
+      // 随判定一起传进来的那个值（转了 = null），不能拿旧值兜底。清判定时同理只丢旧值：
+      // 「请求了转区却落空」（BUG-2891）在 `on` 档没有判定，却有原因，随同一次调用传入。
+      japaneseLocaleSkipReason: clearLaunchExe
           ? null
-          : japaneseLocaleVerdict != null
+          : clearJapaneseLocaleVerdict || japaneseLocaleVerdict != null
           ? japaneseLocaleSkipReason
           : japaneseLocaleSkipReason ?? this.japaneseLocaleSkipReason,
     );
@@ -1676,6 +1677,17 @@ class GalHookSessionController extends ChangeNotifier {
         'launch',
         'launch.japanese_locale_applied',
         'Launched the game with a Japanese (CP932) locale',
+        details: localeDetails,
+      );
+    } else if (skipReason == GalJapaneseLocaleSkipReason.runtimeUnavailable) {
+      // BUG-2891：请求了转区、injector 却退回普通启动。`on` 档没有 verdict，旧代码在
+      // 这里要么报「已转区」（把请求当事实），要么一声不吭。
+      _record(
+        GalHookEventSeverity.warning,
+        'launch',
+        'launch.japanese_locale_unavailable',
+        'Requested a Japanese locale, but the helper launched the game '
+            'without Locale Emulator',
         details: localeDetails,
       );
     } else if (verdict != null) {

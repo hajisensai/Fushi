@@ -14,11 +14,7 @@ void main() {
     test('attach 模式（非 launch）永远不转区——进程早就建好了', () {
       for (final GalJapaneseLocaleMode mode in GalJapaneseLocaleMode.values) {
         expect(
-          resolveJapaneseLocale(
-            mode: mode,
-            launchMode: false,
-            is32Bit: true,
-          ),
+          resolveJapaneseLocale(mode: mode, launchMode: false, is32Bit: true),
           isFalse,
           reason: '$mode 下 attach 也必须短路——这是用户当前唯一的临时绕法',
         );
@@ -242,10 +238,10 @@ void main() {
             );
             final GalJapaneseLocaleSkipReason? reason =
                 resolveJapaneseLocaleSkipReason(
-              need: need,
-              is32Bit: is32Bit,
-              systemAnsiCodePage: acp,
-            );
+                  need: need,
+                  is32Bit: is32Bit,
+                  systemAnsiCodePage: acp,
+                );
             expect(reason == null, applied, reason: '$need $is32Bit $acp');
           }
         }
@@ -257,7 +253,13 @@ void main() {
         GalJapaneseLocaleSkipReason.values
             .map(galJapaneseLocaleSkipReasonToKey)
             .toList(),
-        <String>['not_needed', 'unknown', 'acp_932', 'not_32bit'],
+        <String>[
+          'not_needed',
+          'unknown',
+          'acp_932',
+          'not_32bit',
+          'runtime_unavailable',
+        ],
       );
     });
   });
@@ -265,7 +267,9 @@ void main() {
   group('need / evidence key 编码', () {
     test('是稳定字面量，不是 enum.name/index', () {
       expect(
-          galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.needed), 'needed');
+        galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.needed),
+        'needed',
+      );
       expect(
         galJapaneseLocaleNeedToKey(GalJapaneseLocaleNeed.notNeeded),
         'not_needed',
@@ -317,10 +321,7 @@ void main() {
       // 不该转却转了会让汉化版字表越界**直接闪退**，用户还不知道是 Fushi 干的。
       expect(galJapaneseLocaleModeFromKey(''), GalJapaneseLocaleMode.off);
       expect(galJapaneseLocaleModeFromKey(null), GalJapaneseLocaleMode.off);
-      expect(
-        galJapaneseLocaleModeFromKey('未来新档位'),
-        GalJapaneseLocaleMode.off,
-      );
+      expect(galJapaneseLocaleModeFromKey('未来新档位'), GalJapaneseLocaleMode.off);
       expect(kGalDefaultJapaneseLocaleMode, GalJapaneseLocaleMode.off);
     });
 
