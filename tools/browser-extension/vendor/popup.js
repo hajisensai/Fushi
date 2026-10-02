@@ -6711,9 +6711,41 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
     // in-app 弹窗 WebView：整份文档就是弹窗。touchmove 必须 passive:false，否则
     // preventDefault 无效、惯性照旧（这正是 BUG-2415 要掐的东西）。
     document.addEventListener('touchstart', __fushiPopupEinkTouchStart, { passive: true });
-    document.addEventListener('touchmove', __fushiPopupEinkTouchMove, { passive: false });
     document.addEventListener('touchend', __fushiPopupEinkTouchReset, { passive: true });
     document.addEventListener('touchcancel', __fushiPopupEinkTouchReset, { passive: true });
+    __fushiInstallPopupEinkTouchMoveGate();
+}
+
+/* BUG-2877: 非 passive 的 touchmove 只在瞬时滚动开着时才挂。
+   document 级 touchmove 一旦显式 passive:false，Chromium「document 级触摸监听默认
+   passive」的干预就不生效：每次起滑都要等主线程跑完 JS 应答，合成器才肯开始滚动。
+   BUG-2415 把它常驻挂上，而瞬时滚动默认是关的——关着时 move 回调第一行就 return，
+   却让所有用户的词典滑动都背上主线程往返：弹窗滚动期间主线程本来就在解码图片、跑
+   词条状态探测、重排 masonry，弱 CPU 的手机（墨水屏机型尤甚）上滑动跟不住手、惯性
+   被吞（HiBreak 真机：主线程忙 1.2 s 时同一次滑动 901px → 473px）。
+   开关由 popup_settings_injection 运行期写 window.__fushiPopupInstantScroll，可能晚于
+   本文件执行、也会随设置变更重写，所以把它改成访问器属性：每次写入同步挂/卸。 */
+function __fushiInstallPopupEinkTouchMoveGate() {
+    let instantScroll = window.__fushiPopupInstantScroll;
+    let attached = false;
+    const sync = () => {
+        const want = !!instantScroll;
+        if (want === attached) return;
+        attached = want;
+        if (want) {
+            document.addEventListener('touchmove', __fushiPopupEinkTouchMove, { passive: false });
+        } else {
+            document.removeEventListener('touchmove', __fushiPopupEinkTouchMove, { passive: false });
+            __fushiPopupEinkTouchReset();
+        }
+    };
+    Object.defineProperty(window, '__fushiPopupInstantScroll', {
+        configurable: true,
+        enumerable: true,
+        get() { return instantScroll; },
+        set(value) { instantScroll = value; sync(); },
+    });
+    sync();
 }
 
 

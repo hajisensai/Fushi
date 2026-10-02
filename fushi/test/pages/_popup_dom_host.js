@@ -65,6 +65,7 @@ function makeSandbox() {
     createElement(tag) { return makeElement(tag); },
     createTextNode(text) { return makeTextNode(text); },
     addEventListener() {},
+    removeEventListener() {},
   };
 
   const windowObj = {
@@ -93,8 +94,11 @@ function makeSandbox() {
   return sandbox;
 }
 
-function loadPopup() {
+// `beforeRun(sandbox)`：popup.js 执行前改装沙盒（换掉 document 监听记录器、预置
+// 注入全局等），用于断言「脚本加载那一刻」的挂载行为。
+function loadPopup(beforeRun) {
   const sandbox = makeSandbox();
+  if (beforeRun) beforeRun(sandbox);
   vm.createContext(sandbox);
   const exported = source + `
     ;window.__test = {
