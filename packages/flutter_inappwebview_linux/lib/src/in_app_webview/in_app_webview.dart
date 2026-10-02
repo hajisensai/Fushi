@@ -299,6 +299,12 @@ class LinuxInAppWebViewWidget extends PlatformInAppWebViewWidget {
       ),
     );
 
+    // Fushi：原生侧把 widget 的首次加载推迟到这里——控制器构造时已经装好
+    // method-call handler，此时再开载，onLoadStart / onLoadStop 才不会在
+    // handler 就位前被丢掉（initialData 走 load_bytes 几乎同步完成，必丢）。
+    // 复用 headless / keepAlive 的视图没有待载内容，原生侧是 no-op。
+    _controller!.channel?.invokeMethod<void>('fushiLoadInitialContent');
+
     // Initialize the find interaction controller with the same view ID
     if (_linuxParams.findInteractionController != null) {
       var findInteractionController =

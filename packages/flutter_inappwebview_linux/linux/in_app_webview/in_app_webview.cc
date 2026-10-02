@@ -268,6 +268,26 @@ InAppWebView::InAppWebView(FlPluginRegistrar* registrar, FlBinaryMessenger* mess
 
   RegisterCustomSchemes();
 
+  // Fushi: a widget-backed web view defers its first load until the Dart
+  // controller has installed its method-call handler (LoadInitialContent(),
+  // triggered over the channel). Loading here, before AttachChannel() and
+  // before Dart has the view id, raced the load events: initialData via
+  // load_bytes (plus loadData()'s main-loop spin) finished synchronously and
+  // onLoadStart/onLoadStop were dropped, so Dart never saw the page load.
+  if (params.deferInitialLoad) {
+    deferred_initial_load_ = std::make_unique<InAppWebViewCreationParams>(params);
+    return;
+  }
+  StartInitialLoad(params);
+}
+
+void InAppWebView::LoadInitialContent() {
+  if (!deferred_initial_load_) return;
+  std::unique_ptr<InAppWebViewCreationParams> params = std::move(deferred_initial_load_);
+  StartInitialLoad(*params);
+}
+
+void InAppWebView::StartInitialLoad(const InAppWebViewCreationParams& params) {
   // Apply content blockers if specified, then load initial content
   // Content blockers must be compiled asynchronously
   if (settings_ && settings_->contentBlockers != nullptr && content_blocker_handler_) {

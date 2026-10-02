@@ -240,6 +240,7 @@ void InAppWebViewManager::CreateInAppWebView(FlMethodCall* method_call) {
     }
   }
 
+  params.deferInitialLoad = true;  // Fushi: Dart triggers fushiLoadInitialContent
   auto webview = std::make_shared<InAppWebView>(registrar_, messenger_, params.id, params);
 
   auto platform_view =

@@ -100,6 +100,8 @@ struct InAppWebViewCreationParams {
   WebKitWebView* relatedWebView = nullptr;  // For creating related WebViews (shares web process)
   std::vector<std::shared_ptr<UserScript>> initialUserScripts;  // User scripts to inject
   WebKitWebContext* webContext = nullptr;  // Custom WebKitWebContext from WebViewEnvironment
+  // Fushi: widget-backed views wait for LoadInitialContent() (see in_app_webview.cc).
+  bool deferInitialLoad = false;
 };
 
 // Pointer event kind (matches Dart side)
@@ -137,6 +139,8 @@ class InAppWebView {
 
   // Attach/recreate the Dart method channel using the given [channel_id].
   void AttachChannel(FlBinaryMessenger* messenger, int64_t channel_id);
+  // Fushi: performs the initial load deferred by deferInitialLoad (no-op otherwise).
+  void LoadInitialContent();
   
   // Attach/recreate the Dart method channel using a string-based channel ID.
   // This is used for HeadlessInAppWebView where the ID is a long string from Dart.
@@ -553,6 +557,8 @@ class InAppWebView {
 
   // JavaScript bridge secret for security
   std::string js_bridge_secret_;
+  std::unique_ptr<InAppWebViewCreationParams> deferred_initial_load_;
+  void StartInitialLoad(const InAppWebViewCreationParams& params);
 
   // Window ID for multi-window support
   std::optional<int64_t> window_id_;

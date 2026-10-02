@@ -305,6 +305,12 @@ void WebViewChannelDelegate::HandleMethodCall(FlMethodCall* method_call) {
     return;
   }
 
+  if (string_equals(methodName, "fushiLoadInitialContent")) {
+    webView->LoadInitialContent();
+    fl_method_call_respond_success(method_call, nullptr, nullptr);
+    return;
+  }
+
   if (string_equals(methodName, "loadUrl")) {
     FlValue* url_request = get_fl_map_value_raw(args, "urlRequest");
     if (url_request != nullptr && fl_value_get_type(url_request) == FL_VALUE_TYPE_MAP) {

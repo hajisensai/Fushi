@@ -46,6 +46,22 @@
 - Dart：`lib/src/fushi_runtime_status.dart`；`LinuxInAppWebViewWidget.build` 在后端不可用时
   显示安装提示，`LinuxHeadlessInAppWebView.run` 抛 `LinuxWebViewUnavailableException`。
 
+### 原生：首屏加载事件竞态（上游 bug）
+
+- 上游在 `InAppWebView` 构造函数里就开始初始加载，此时 channel 还没 `AttachChannel`、
+  Dart 控制器也还没装 handler；`initialData` 走 `load_bytes`，加上 `loadData()` 自己转一圈
+  主循环，几乎同步载完，`onLoadStart` / `onLoadStop` 全被丢掉——Dart 永远等不到页面载完
+  （实测 `dict_style_preview_null_reply_crash_itest` 卡死在 `onLoadStop`）。URL 加载只是靠
+  网络延迟碰巧赶上。
+- 修法：widget 路径（`InAppWebViewManager::CreateInAppWebView`）设
+  `deferInitialLoad = true`，构造时只记下初始内容；Dart 在
+  `LinuxInAppWebViewWidget._onPlatformViewCreated` 里控制器构造完（handler 已就位）后发
+  `fushiLoadInitialContent`，原生 `LoadInitialContent()` 才开载，顺序与其它平台一致
+  （`onWebViewCreated` 之前触发、事件在之后到达）。headless / 多窗口 / InAppBrowser 路径
+  不变（它们的 handler 在创建前就已装好）。
+- `WEBKIT_CHECK_VERSION(2, 50, 0)` 守住 `webkit_web_view_get_theme_color`（Debian trixie 的
+  WPE 2.48 没有它，2.48 上返回「无主题色」）。
+
 ## 升级
 
 上游发正式版且本仓整体升到 `flutter_inappwebview` 6.2+ / 接口 1.4 时，删掉本目录，改回
