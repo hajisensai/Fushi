@@ -302,7 +302,7 @@ class ExternalReaderImportService {
   /// `charOffset` 显式写 -1——冲突更新只改 companion 里给出的列，不写的话旧的
   /// 精确锚会残留，重开书恢复到旧位置。
   ///
-  /// 「读完」与位置取舍无关（BUG-2855）：Fushi 的位置更新、或重复导入同一份备份
+  /// 「读完」与位置取舍无关（BUG-2870）：Fushi 的位置更新、或重复导入同一份备份
   /// 时位置保留不写，但 Hoshi 书签说这本读完了它就是读完了——此前只在写位置的
   /// 分支里判读完，重导一次也补不上漏标的书。
   Future<void> _writePosition({

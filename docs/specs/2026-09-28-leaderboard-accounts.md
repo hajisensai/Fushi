@@ -64,7 +64,7 @@ ShelfEntry {
 ```
 
 - 读完时刻来源：书/漫画/PDF `EpubBooks.completedAt`；视频 `VideoBooks.completedAt`（合集取成员最晚完成，全部完成才算）；**游戏新增 `Galgames.completedAt`**（见 3.5）。
-- Profile 口径：本机只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时**别的 Profile 有学习记录、当前 Profile 没有**的作品不上传；哪个 Profile 都没有记录的作品照常上传（BUG-2855，`buildLocalShelf` 判定）。
+- Profile 口径：本机只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时**别的 Profile 有学习记录、当前 Profile 没有**的作品不上传；哪个 Profile 都没有记录的作品照常上传（BUG-2870，`buildLocalShelf` 判定）。
 - 另上传按天字数汇总 `DailyChars { dateKey, chars }` 用于字数榜的周/月切窗（不带作品）。
 - 上报是**幂等 upsert**：同一 `(account, work)` 覆盖；每次整份重传书架（有变更才传，按内容 hash 判），无增量游标。
 - 每个条目本地可设「不公开」，被排除的作品从不上传，已上传的会被删除。

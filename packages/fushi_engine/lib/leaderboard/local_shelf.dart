@@ -23,7 +23,7 @@
 // Profile 口径：只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时**别的
 // Profile 有学习记录、本 Profile 没有**的作品不上传——别的 Profile 读完的书不算到本账户
 // 上。哪个 Profile 都没有记录的作品（标记读完但没留统计、早于统计域的老书）归不到任何
-// 一个 Profile 名下，照常上传（BUG-2855：此前多建一个 Profile 就把这些书全丢了）。
+// 一个 Profile 名下，照常上传（BUG-2870：此前多建一个 Profile 就把这些书全丢了）。
 //
 // 服务端 normalizeEntry 对单条坏数据会 400 拒掉**整批**，所以这里按同一口径先把形状
 // 修好或丢掉（[sanitizeFinishedAt] / [sanitizeShelfText]），丢掉的记日志。

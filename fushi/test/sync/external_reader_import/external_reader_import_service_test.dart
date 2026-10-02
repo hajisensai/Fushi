@@ -325,7 +325,7 @@ void main() {
   );
 
   test('a finished Hoshi bookmark marks the book completed even when the Fushi '
-      'position is kept (BUG-2855)', () async {
+      'position is kept (BUG-2870)', () async {
     final File epub = File(p.join(tempRoot.path, 'mine.epub'))
       ..writeAsBytesSync(fixtureEpub(_iosTitle));
     final String key = await EpubImporter.importFromPath(
