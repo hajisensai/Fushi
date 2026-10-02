@@ -17,6 +17,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -259,6 +260,18 @@ void main() {
     // 通道回调只在有系统球 / 截屏识字的平台装；测试机按桌面装上。
     debugDesktopSystemBallPlatformOverride = true;
     addTearDown(() => debugDesktopSystemBallPlatformOverride = null);
+    // Android 原生侧：模型还没由 Play 服务取下。
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      kSystemOcrChannel,
+      (MethodCall call) async =>
+          call.method == 'modelStatus' ? 'missing' : null,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        kSystemOcrChannel,
+        null,
+      ),
+    );
     await pumpHost(tester);
     expect(find.text(t.ocr_system_model_title), findsNothing);
 
@@ -276,8 +289,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(pendingSystemOcrSetup.value, isFalse);
     expect(find.text(t.ocr_system_model_title), findsOneWidget);
-    // 测试机没有系统 OCR 原生侧：没有模型可缺，如实显示就绪。
-    expect(find.text(t.ocr_system_model_ready), findsOneWidget);
+    expect(find.text(t.ocr_system_model_missing), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('system_ocr_setup_download')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('外部查词（深链 / App Intent）在就绪后交给查词弹窗', (WidgetTester tester) async {

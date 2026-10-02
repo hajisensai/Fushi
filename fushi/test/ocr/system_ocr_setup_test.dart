@@ -18,7 +18,7 @@ class _FakeSetup implements SystemOcrModelSetup {
   final List<String> installed = <String>[];
   int resolveCalls = 0;
   Completer<void>? installGate;
-  Object? installError;
+  Exception? installError;
 
   @override
   Future<SystemOcrModelStatus> modelStatus(String language) async {
@@ -33,7 +33,7 @@ class _FakeSetup implements SystemOcrModelSetup {
   Future<void> installModel(String language) async {
     installed.add(language);
     await installGate?.future;
-    final Object? error = installError;
+    final Exception? error = installError;
     if (error != null) throw error;
   }
 
@@ -174,6 +174,8 @@ void main() {
     Finder message(String text) => find.descendant(
       of: find.byKey(const ValueKey<String>('system_ocr_setup_message')),
       matching: find.text(text),
+      // Text 自己就挂着这个 key。
+      matchRoot: true,
     );
 
     testWidgets('缺模型：点「下载」请 Play 服务下载，下完显示就绪', (WidgetTester tester) async {
