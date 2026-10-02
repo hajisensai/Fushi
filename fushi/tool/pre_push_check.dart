@@ -5,7 +5,7 @@
 //                                     [--skip-analyze] [--parallel]
 //                                     [--concurrency=4] [--batch-size=20]
 //                                     [--gate=1] [--gate-timeout-min=60]
-//                                     [--max-minutes=90]
+//                                     [--no-lease] [--max-minutes=90]
 //                                     [--allow-flutter-mismatch]
 //                                     [--files <paths...> | --files-from=<list>]
 //
@@ -24,7 +24,10 @@
 //     process-counting gate ran "anyway" and raced, which is how the machine
 //     ran out of memory. --gate=0 turns the lease off;
 //   * the tool runs in a Windows Job Object: below-normal priority, a memory
-//     ceiling, and its whole process tree dies with it;
+//     ceiling, and its whole process tree dies with it. --gate=0 drops the job
+//     too; --no-lease (for a caller that schedules runs itself, such as
+//     mac-offload's slots) drops the lease and the memory ceiling but keeps
+//     the priority and the kill-on-exit;
 //   * --max-minutes (0 disables) caps the time the tool's own subprocesses run
 //     (gate waits excluded): past it the running subprocess trees are killed and
 //     the verdict is FAILED. A session that dies mid-run leaves this tool behind;
@@ -81,7 +84,7 @@ class _Step {
 /// Flutter test batch and analyze: a free slot, memory to spare and, for test
 /// batches, this worktree's build/ to itself. A step that is never admitted
 /// within --gate-timeout-min fails (it is not run "anyway": that is what took
-/// the machine down); --gate=0 turns the lease off.
+/// the machine down); --gate=0 and --no-lease turn the lease off.
 class _Leases {
   _Leases({required this.enabled, required this.waitMax, required this.root});
 
@@ -234,8 +237,9 @@ Future<void> main(List<String> args) async {
   final bool allowMismatch = args.contains('--allow-flutter-mismatch');
   final int concurrency = _intArg(args, '--concurrency=', 4);
   final int batchSize = _intArg(args, '--batch-size=', 20);
+  final bool noLease = args.contains('--no-lease');
   final _Leases gate = _Leases(
-    enabled: _intArg(args, '--gate=', 1) > 0,
+    enabled: !noLease && _intArg(args, '--gate=', 1) > 0,
     waitMax: Duration(minutes: _intArg(args, '--gate-timeout-min=', 60)),
     root: root,
   );
@@ -427,12 +431,15 @@ Future<void> main(List<String> args) async {
   }
 
   // ---- run ----------------------------------------------------------------
-  // Below-normal priority, a memory ceiling, and no flutter_tester outliving
-  // this tool (one held build/native_assets/windows/sqlite3.dll for the next run).
-  if (gate.enabled) {
+  // Below-normal priority, a memory ceiling (not with --no-lease), and no
+  // flutter_tester outliving this tool (one held
+  // build/native_assets/windows/sqlite3.dll for the next run).
+  if (gate.enabled || noLease) {
     gate.job = joinHeavyJob(
-        heavyNeedFor(HeavyKind.test).capMb +
-            (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
+        noLease
+            ? null
+            : heavyNeedFor(HeavyKind.test).capMb +
+                (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
         log: stdout.writeln);
   }
   final String flutter = _flutterExecutable();

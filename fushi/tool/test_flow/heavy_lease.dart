@@ -488,13 +488,22 @@ const int _kLimitJobMemory = 0x200;
 const int _kLimitKillOnJobClose = 0x2000;
 const int _kBelowNormalPriorityClass = 0x4000;
 
+/// LimitFlags of the [joinHeavyJob] job: below-normal priority and
+/// kill-on-close always, the job-wide memory ceiling only with [memoryCap].
+int heavyJobLimitFlags({required bool memoryCap}) =>
+    _kLimitPriorityClass |
+    _kLimitKillOnJobClose |
+    (memoryCap ? _kLimitJobMemory : 0);
+
 /// This process's throttling Job Object (Windows x64), joined with
 /// [joinHeavyJob]; every process started afterwards is inside it.
 class HeavyJob {
   HeavyJob._(this._handle, this.capMb);
 
   final int _handle;
-  final int capMb;
+
+  /// The tree's memory ceiling in MB; null when the job has none.
+  final int? capMb;
 
   /// Peak committed memory of the whole tree so far, in MB.
   int? peakMb() {
@@ -535,10 +544,11 @@ final int Function() _currentProcess = _kernel32
     .lookupFunction<IntPtr Function(), int Function()>('GetCurrentProcess');
 
 /// Puts this process (and so everything it starts from now on) into a job
-/// with below-normal priority, a [capMb] memory ceiling for the whole tree,
-/// and kill-on-close. Null where unsupported (non-Windows, 32-bit, CI, or the
-/// OS refused); the run then proceeds unthrottled and [log] says so.
-HeavyJob? joinHeavyJob(int capMb, {void Function(String line)? log}) {
+/// with below-normal priority, a [capMb] memory ceiling for the whole tree
+/// (none when [capMb] is null), and kill-on-close. Null where unsupported
+/// (non-Windows, 32-bit, CI, or the OS refused); the run then proceeds
+/// unthrottled and [log] says so.
+HeavyJob? joinHeavyJob(int? capMb, {void Function(String line)? log}) {
   if (!Platform.isWindows || sizeOf<IntPtr>() != 8) return null;
   // CI and FUSHI_HEAVY=off mean "no throttling at all". (Nested holders do
   // join: their own job sits inside the parent's.)
@@ -551,10 +561,9 @@ HeavyJob? joinHeavyJob(int capMb, {void Function(String line)? log}) {
   }
   final Pointer<Uint8> info = calloc<Uint8>(_kExtendedLimitSize);
   try {
-    info.cast<Uint32>()[16 ~/ 4] =
-        _kLimitPriorityClass | _kLimitJobMemory | _kLimitKillOnJobClose;
+    info.cast<Uint32>()[16 ~/ 4] = heavyJobLimitFlags(memoryCap: capMb != null);
     info.cast<Uint32>()[56 ~/ 4] = _kBelowNormalPriorityClass;
-    info.cast<Uint64>()[120 ~/ 8] = capMb * 1024 * 1024;
+    if (capMb != null) info.cast<Uint64>()[120 ~/ 8] = capMb * 1024 * 1024;
     if (_setJob(
               job,
               _kExtendedLimitInformation,
