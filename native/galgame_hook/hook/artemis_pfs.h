@@ -155,6 +155,31 @@ inline size_t TrimmedNameLength(const EntryView& entry) {
   return length;
 }
 
+// Artemis splits a game's data into one archive set: `<name>.pfs` plus
+// numbered continuations `<name>.pfs.000`, `.001`, ... (each a complete
+// PF6/PF8 archive with its own index and key; measured: アマカノ3 keeps 158
+// system voices in .pfs and all 20057 dialogue voices in .pfs.000).  True for
+// a file leaf that belongs to such a set.
+inline bool IsArchiveSetLeaf(const wchar_t* leaf) {
+  if (leaf == nullptr) return false;
+  const wchar_t* dot = nullptr;
+  for (const wchar_t* at = leaf; *at != 0; ++at) {
+    if ((at[0] == L'.') && (at[1] == L'p' || at[1] == L'P') &&
+        (at[2] == L'f' || at[2] == L'F') && (at[3] == L's' || at[3] == L'S') &&
+        (at[4] == 0 || at[4] == L'.')) {
+      dot = at;
+    }
+  }
+  if (dot == nullptr || dot == leaf) return false;
+  const wchar_t* suffix = dot + 4;
+  if (*suffix == 0) return true;
+  size_t digits = 0;
+  for (++suffix; *suffix != 0; ++suffix, ++digits) {
+    if (*suffix < L'0' || *suffix > L'9' || digits == 3) return false;
+  }
+  return digits != 0;
+}
+
 inline bool IsVoiceOgg(const EntryView& entry) {
   const size_t length = TrimmedNameLength(entry);
   const bool voice_directory =
