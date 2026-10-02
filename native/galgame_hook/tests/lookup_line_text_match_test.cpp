@@ -57,12 +57,18 @@ int main() {
   assert(b == 0 && e == second_at);
   // 句段必须覆盖被点的字：点第一句时第二句不算。
   assert(!Segment(page, second, 3, &b, &e));
+  // 反过来点第二句时第一句也不算（句段在被点字之前就结束了）。
+  assert(!Segment(page, first, second_at + 1, &b, &e));
   // 句间有换行 / 全角空格时照样定位，段不含边界空白。
   const wchar_t* spaced = L"「はい」\n　「いいえ」";
   assert(Segment(spaced, L"「いいえ」", 8, &b, &e));
   assert(b == 6 && e == 11);
   // 页里只是碰巧出现的短句不在句界上，不绑：「はい」嵌在「はいはい」后半。
   assert(!Segment(L"「そうだね、はいはい」", L"はい", 8, &b, &e));
+  // 起点也必须在句界：句尾对得上、但前面紧贴着上一句的词，不是这一句。
+  assert(!Segment(L"まあはい。", L"はい。", 2, &b, &e));
+  assert(Segment(L"まあ。はい。", L"はい。", 3, &b, &e));
+  assert(b == 3 && e == 6);
   // 也不能停在半个词上：短句后面紧跟的不是句界。
   assert(!Segment(L"はいからさん。", L"はい", 0, &b, &e));
   // 渐进渲染的半页不包含完整句子。
