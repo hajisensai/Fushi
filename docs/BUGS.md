@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2634 条。点号进各自文件。
+> 共 2635 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2858](bugs/BUG-2858-gal-thread-history-order.md) | ✅ | ✅ | 选定线程后的历史回捞与轮询抢先后，当前台词变成旧句 |
 | [BUG-2857](bugs/BUG-2857-artemis-hover-tooltip-joins-line.md) | ✅ | ✅ | Artemis hover tooltip text is appended to the current line |
 | [BUG-2856](bugs/BUG-2856-artemis-touch-tap-ignored.md) | 🚧 | 🚧 | Artemis 触屏点按：引擎不认触摸提升的单击，游戏内点字查词与推进都不响应 |
 | [BUG-2855](bugs/BUG-2855-update-prerelease-r2-candidate-always-404.md) | ✅ | ✅ | 预发布自动更新每次先撞 fushi.moe 404 再换 GitHub |
