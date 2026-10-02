@@ -966,6 +966,15 @@ class GalHookSessionController extends ChangeNotifier {
   /// 都跟着做一次 IPC 往返——就绪状态是秒级变化的会话属性，与单行台词无关。
   DateTime? _lastReadinessRefreshAt;
   int _lastTextSeq = 0;
+
+  /// 选定线程时尚待回捞的历史上界（含）；0 = 没有待回捞的历史。
+  ///
+  /// 回捞不是另一个轮询者：它由下一趟 [_pollHookedText] 在同一次按 seq 升序的消费里
+  /// 完成——先补上界以内的旧行、再收上界以后的新行，顺序由构造保证。曾经回捞自己
+  /// 另拉一次 pollText(0) 再追加到工作台**尾部**，与并发的轮询抢先后：轮询先收进
+  /// 最新一句，回捞再把更早的几句接在它后面，`lines.last` 变成旧句，当前台词、
+  /// 制卡例句与语音配对一起错位（记忆恢复的现场百分之百踩中）。
+  int _historyRecoveryCeiling = 0;
   int _eventId = 0;
   int _operationGeneration = 0;
   String? _lastObservedLineId;
@@ -2571,83 +2580,50 @@ class GalHookSessionController extends ChangeNotifier {
   /// 一遍剧情。v13 每条线程都在写自己的道，所以「刚才漏掉的那几句」其实还在共享内存里：
   /// 选中它的那一刻按道回捞即可。BUG-2346：已导出的逐句资源仍可按原始事件身份配对，
   /// 晚到资源沿待配队列处理；历史时刻的 PCM/loopback 不重新抓取。
-  Future<void> _recoverSelectedThreadHistory() async {
-    final EngineHookGalAudioSource? engine = _engineSource;
-    final int? selected = _selectedNativeTextThreadId;
-    if (engine == null || selected == null || selected == 0) return;
-    if (_lastTextSeq <= 0) return; // 还没消费过任何行，没有「之前」可补
-    final GalTextPoll? poll = await engine.pollText(0);
-    if (poll == null || engine != _engineSource) return;
-    final Set<int> appended = _lineTextEventIdCache.values.toSet();
-    // 两趟：先把整批的 hook 面学完，再筛。
-    // 单趟不行——[_acceptsLineFromSelectedThread] 是带副作用的判据（精确命中时才学 face），
-    // 而 native 按 seq 升序返回，排在第一条精确命中**之前**的同 hook 面兄弟行会被判 false
-    // 且不再复评，静默漏捞。回捞本身就是"补回选中之前的行"，这个顺序依赖必然踩中。
-    for (final GalHookedLine line in poll.lines) {
-      if (line.eventKind != GalTextEventKind.line) continue;
-      if (line.threadId == selected && line.faceId != 0) {
-        _selectedTextThreadFaceId = line.faceId;
-      }
+  ///
+  /// 本函数只处理一条候选行，由 [_pollHookedText] 在 [_historyRecoveryCeiling] 以内
+  /// 按 seq 升序调用；返回是否真的补进了工作台。
+  bool _recoverHistoryLine(GalHookedLine line, Set<int> appended) {
+    if (line.eventKind != GalTextEventKind.line ||
+        appended.contains(line.seq) ||
+        line.text.trim().isEmpty ||
+        isGalgameSystemUiLine(line.text) ||
+        !_acceptsLineFromSelectedThread(line)) {
+      return false;
     }
-    final List<GalHookedLine> history =
-        poll.lines
-            .where(
-              (GalHookedLine line) =>
-                  line.eventKind == GalTextEventKind.line &&
-                  line.seq <= _lastTextSeq &&
-                  !appended.contains(line.seq) &&
-                  line.text.trim().isNotEmpty &&
-                  !isGalgameSystemUiLine(line.text) &&
-                  _acceptsLineFromSelectedThread(line),
-            )
-            .toList()
-          ..sort((GalHookedLine a, GalHookedLine b) => a.seq.compareTo(b.seq));
-    if (history.isEmpty) return;
-    for (final GalHookedLine line in history) {
-      // 回捞的是**同一条线程的正文**，与 poll 路径必须同样过管线：只处理一半会让
-      // 回捞行（原文）与后续 poll 行（已处理）在 appendLine 的前后缀折叠判据上对不上，
-      // 同一句台词在工作台里留两条。
-      final String? processedText = _processSelectedThreadText(line.text);
-      if (processedText == null) continue;
-      final TexthookerLineEntry? entry = _textService.appendLine(
-        processedText,
-        source: TexthookerLineSource.engineHook,
-        sourceLabel: 'engine_hook',
-        sourceSequence: line.seq,
-        hookTimestampMs: line.timestampMs,
-        eventOwnedVoice: line.eventOwnedVoice,
-        textThreadKey: line.textThreadKey,
-        textThreadLabel: line.textThreadLabel,
-        textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
-        nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
-        audioStatus: TexthookerLineAudioStatus.unavailable,
-      );
-      if (entry == null) continue;
-      _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
-      _lineTimestampCache[entry.id] = line.timestampMs;
-      _lineTextEventIdCache[entry.id] = line.seq;
-      if (_isWindows &&
-          !_isUserAdjudicated(entry.id) &&
-          line.seq > 0 &&
-          line.timestampMs > 0) {
-        _pendingResourceMatches[entry.id] = (
-          timestampMs: line.timestampMs,
-          textEventId: line.seq,
-          eventOwnedOnly: true,
-        );
-      }
-    }
-    _trimCache(_lineTimestampCache);
-    _trimCache(_lineTextEventIdCache);
-    _trimCache(_pendingResourceMatches);
-    _refreshPendingResourceMatches(engine);
-    _record(
-      GalHookEventSeverity.info,
-      'text',
-      'text.thread_history_recovered',
-      'Recovered buffered lines from the newly selected text thread',
-      details: <String, Object?>{'threadId': selected, 'lines': history.length},
+    // 回捞的是**同一条线程的正文**，与 poll 路径必须同样过管线：只处理一半会让
+    // 回捞行（原文）与后续 poll 行（已处理）在 appendLine 的前后缀折叠判据上对不上，
+    // 同一句台词在工作台里留两条。
+    final String? processedText = _processSelectedThreadText(line.text);
+    if (processedText == null) return false;
+    final TexthookerLineEntry? entry = _textService.appendLine(
+      processedText,
+      source: TexthookerLineSource.engineHook,
+      sourceLabel: 'engine_hook',
+      sourceSequence: line.seq,
+      hookTimestampMs: line.timestampMs,
+      eventOwnedVoice: line.eventOwnedVoice,
+      textThreadKey: line.textThreadKey,
+      textThreadLabel: line.textThreadLabel,
+      textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
+      nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
+      audioStatus: TexthookerLineAudioStatus.unavailable,
     );
+    if (entry == null) return false;
+    _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
+    _lineTimestampCache[entry.id] = line.timestampMs;
+    _lineTextEventIdCache[entry.id] = line.seq;
+    if (_isWindows &&
+        !_isUserAdjudicated(entry.id) &&
+        line.seq > 0 &&
+        line.timestampMs > 0) {
+      _pendingResourceMatches[entry.id] = (
+        timestampMs: line.timestampMs,
+        textEventId: line.seq,
+        eventOwnedOnly: true,
+      );
+    }
+    return true;
   }
 
   /// 选择文本线程。
@@ -2714,7 +2690,23 @@ class GalHookSessionController extends ChangeNotifier {
         );
       }
       // 新线程在被选中之前写进自己那条道的行，现在补回来（v13 分道的直接收益）。
-      await _recoverSelectedThreadHistory();
+      // 在飞的那次轮询是按旧选择取的批次，放它继续消费会抢在回捞之前收进新线程的
+      // 最新一句——作废它（与引擎重启同一套 generation 所有权），由这里同步接管消费权
+      // 跑一趟文本道消费：先补历史再收新行，下一个定时 tick 在它结束前一律让路。
+      // 还没消费过任何行（_lastTextSeq == 0）就没有「之前」可补，也就没有顺序可争：
+      // 交给定时 tick 照常消费，首行仍走 readiness 已刷新的那条主路径。
+      if (engine != null &&
+          _selectedNativeTextThreadId != null &&
+          _lastTextSeq > 0) {
+        _historyRecoveryCeiling = _lastTextSeq;
+        final int pollGeneration = ++_pollGeneration;
+        _pollInFlight = true;
+        try {
+          await _consumeTextLane(engine, pollGeneration);
+        } finally {
+          if (pollGeneration == _pollGeneration) _pollInFlight = false;
+        }
+      }
       if (remember) {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
@@ -4624,6 +4616,7 @@ class GalHookSessionController extends ChangeNotifier {
     _engineSource = engine;
     _pollGeneration++;
     _lastTextSeq = 0;
+    _historyRecoveryCeiling = 0;
     _pollInFlight = false;
     _lastReadinessRefreshAt = null;
     _lineVoiceCache.clear();
@@ -5000,6 +4993,22 @@ class GalHookSessionController extends ChangeNotifier {
   bool _isCurrentPoll(EngineHookGalAudioSource engine, int pollGeneration) =>
       pollGeneration == _pollGeneration && identical(engine, _engineSource);
 
+  /// 回捞前先把整批里选定线程的 hook 面学完，再逐行筛。
+  ///
+  /// 单趟不行——[_acceptsLineFromSelectedThread] 是带副作用的判据（精确命中时才学
+  /// face），而批次按 seq 升序，排在第一条精确命中**之前**的同 hook 面兄弟行会被判
+  /// false 且不再复评，静默漏捞。回捞本身就是「补回选中之前的行」，这个顺序依赖必然踩中。
+  void _learnSelectedThreadFace(List<GalHookedLine> lines) {
+    final int? selected = _selectedNativeTextThreadId;
+    if (selected == null) return;
+    for (final GalHookedLine line in lines) {
+      if (line.eventKind != GalTextEventKind.line) continue;
+      if (line.threadId == selected && line.faceId != 0) {
+        _selectedTextThreadFaceId = line.faceId;
+      }
+    }
+  }
+
   Future<void> _pollHookedText() async {
     if (_pollInFlight) return;
     final EngineHookGalAudioSource? engine = _engineSource;
@@ -5015,211 +5024,253 @@ class GalHookSessionController extends ChangeNotifier {
       // 恒空，只轮询它会让选择器永远是一列空壳——那正是本次要修的症状。
       await _pollThreadPreviews(engine, pollGeneration: pollGeneration);
       if (!_isCurrentPoll(engine, pollGeneration)) return;
-      final GalTextPoll? poll = await engine.pollText(_lastTextSeq);
-      if (poll == null || !_isCurrentPoll(engine, pollGeneration)) return;
-      final List<GalHookedLine> ordered = List<GalHookedLine>.from(poll.lines)
-        ..sort((a, b) => a.seq.compareTo(b.seq));
-      int cursor = _lastTextSeq;
-      bool receivedTextLine = false;
-      for (final GalHookedLine line in ordered) {
-        if (!_isCurrentPoll(engine, pollGeneration)) return;
-        if (line.seq <= cursor) {
-          _setState(
-            _state.copyWith(textDuplicateCount: _state.textDuplicateCount + 1),
-          );
-          continue;
-        }
-        if (line.seq > cursor + 1) {
-          _setState(
-            _state.copyWith(
-              textGapCount: _state.textGapCount + line.seq - cursor - 1,
-            ),
-          );
-          _record(
-            GalHookEventSeverity.warning,
-            'text',
-            'text.sequence_gap',
-            'Text sequence gap detected',
-            details: <String, Object?>{'from': cursor, 'to': line.seq},
-          );
-        }
-        // 重连到一个仍在运行、仍已注入的游戏时，旧的 threadDiscovered 事件不会重放。
-        // 如果这里直接执行下面的“未选中就丢”过滤，自定义 hook（SGRE 的 UserHook1
-        // 即为实测现场）虽然持续把正文写进文本环，却永远不会重新进入线程目录，跨会话
-        // 记忆也就永远达不到恢复门槛。先用正文元数据补目录/观测计数；正文是否发布仍由
-        // _acceptsLineFromSelectedThread 独占裁决，不会把噪声线程灌进工作台。
-        if (line.eventKind == GalTextEventKind.line) {
-          final String? threadKey = line.textThreadKey;
-          final String? threadLabel = line.textThreadLabel;
-          if (threadKey != null && threadLabel != null) {
-            _textService.observeTextThreadLine(
-              key: threadKey,
-              label: threadLabel,
-              text: line.text,
-              hookCode: line.hookCode.isEmpty ? null : line.hookCode,
-              nativeThreadId: line.threadId == 0 ? null : line.threadId,
-            );
-            _maybeRestoreTextThread();
-          }
-        }
-        // v13 消费期线程过滤。native 现在把**每条线程**的行都写进各自的道（这正是"多抓
-        // 文本"要的：换线程后旧行仍在、选错线程不再等于那段语音永久孤儿），所以喂进
-        // texthooker / 配对 / 制卡之前必须在这里挑出选定线程的行——否则工作台会被所有
-        // hook 线程的文本灌满。判据与旧 native 门控等价，见 [_selectedTextThreadFaceId]。
-        if (line.eventKind == GalTextEventKind.line &&
-            !_acceptsLineFromSelectedThread(line)) {
-          cursor = line.seq;
-          continue;
-        }
-        if (line.eventKind == GalTextEventKind.threadDiscovered) {
-          final String? threadKey = line.textThreadKey;
-          final String? threadLabel = line.textThreadLabel;
-          if (threadKey != null && threadLabel != null) {
-            _textService.registerTextThread(
-              key: threadKey,
-              label: threadLabel,
-              hookCode: line.hookCode.isEmpty ? null : line.hookCode,
-              nativeThreadId: line.threadId,
-            );
-          }
-          cursor = line.seq;
-          continue;
-        }
-        // 系统 UI 文字（读/存档菜单确认句、存档槽号/时间戳）在 native hook 侧无法与台词区分，
-        // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
-        // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
-        if (isGalgameSystemUiLine(line.text)) {
-          cursor = line.seq;
-          continue;
-        }
-        // 用户编排的文本处理管线（LunaTranslator 同款：逐字重绘去重 / 去整块重复 /
-        // 花括号注音 / 正则替换……）。位置有两条硬约束，不能挪：
-        //   ① 必须在 [_acceptsLineFromSelectedThread] **之后** —— 管线是给「所选线程的
-        //      正文」配的，线程目录/预览仍然要看引擎原样吐出来的串，否则用户在选择器里
-        //      看到的和他为之写规则的东西对不上；
-        //   ② 必须在 appendLine **之前** —— 注音剥离（parseRubyMarkup）与渐进折叠都在
-        //      appendLine 内部按入参文本建坐标系，管线放到后面跑就等于让 rubySpans 的
-        //      下标指向一份已经不存在的文本，振假名会整片错位。
-        final String? processedText = _processSelectedThreadText(line.text);
-        if (processedText == null) {
-          cursor = line.seq;
-          continue;
-        }
-        final TexthookerLineEntry? entry = _textService.appendLine(
-          processedText,
-          source: TexthookerLineSource.engineHook,
-          sourceLabel: 'engine_hook',
-          sourceSequence: line.seq,
-          hookTimestampMs: line.timestampMs,
-          eventOwnedVoice: line.eventOwnedVoice,
-          textThreadKey: line.textThreadKey,
-          textThreadLabel: line.textThreadLabel,
-          textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
-          nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
-          audioStatus: TexthookerLineAudioStatus.pending,
-        );
-        if (entry == null) {
-          cursor = line.seq;
-          continue;
-        }
-        receivedTextLine = true;
-        // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
-        // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
-        _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
-        // A folded row has a new event owner, even when its next resource is
-        // already available. Retire the preceding event's pending request.
-        _pendingResourceMatches.remove(entry.id);
-        // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
-        // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
-        // （增量为空 = 这次重绘没带来新字，不算新活动）。
-        _recordEngineDelta(_textService.lastAppendedDelta);
-        _lineTimestampCache[entry.id] = line.timestampMs;
-        _trimCache(_lineTimestampCache);
-        _lineTextEventIdCache[entry.id] = line.seq;
-        _trimCache(_lineTextEventIdCache);
-        final bool resourceReady = engine.rawVoiceReady;
-        final String? resourceId = resourceReady
-            ? line.eventOwnedVoice
-                  ? engine.findEventOwnedVoiceResourceId(
-                      line.timestampMs,
-                      textEventId: line.seq,
-                    )
-                  : engine.findPairedVoiceResourceId(
-                      line.timestampMs,
-                      textEventId: line.seq,
-                    )
-            : null;
-        final bool resourceMatched = resourceId != null;
-        if (resourceMatched) {
-          _textService.updateLineAudio(
-            entry.id,
-            status: TexthookerLineAudioStatus.matched,
-            backend: 'game_resource',
-            resourceId: resourceId,
-          );
-          _record(
-            GalHookEventSeverity.success,
-            'match',
-            'audio.game_resource_matched',
-            'Original game resource audio matched to captured line',
-            details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
-          );
-        } else if (resourceReady) {
-          _pendingResourceMatches[entry.id] = (
-            timestampMs: line.timestampMs,
-            textEventId: line.seq,
-            eventOwnedOnly: line.eventOwnedVoice,
-          );
-          _trimCache(_pendingResourceMatches);
-          _textService.updateLineAudio(
-            entry.id,
-            status: TexthookerLineAudioStatus.pending,
-            backend: 'game_resource',
-          );
-        }
-        // BUG-1063：台词已进缓冲、UI 已被通知；余下的语音抓取（PCM 拷贝、loopback
-        // 环冻结）一律离开文本主路径，改由串行音频队列执行。此前它们 await 在本循环
-        // 里：同一批的后续台词要排在前一句语音抓取之后，且 _pollInFlight 会让下一个
-        // tick 整轮跳过——台词显示被自己的语音配对拖慢。
-        if (!resourceMatched) {
-          _scheduleLineAudioAttach(
-            engine: engine,
-            entry: entry,
-            line: line,
-            resourceReady: resourceReady,
-          );
-        }
-        cursor = line.seq;
-      }
-      if (!_isCurrentPoll(engine, pollGeneration)) return;
-      _refreshPendingResourceMatches(engine);
-      if (!_isCurrentPoll(engine, pollGeneration)) return;
-      // 只推进到实际看见并处理完成的最大 seq；不能盲用 native header count 跳过未提交槽。
-      if (cursor > _lastTextSeq) _lastTextSeq = cursor;
-      // BUG-1094：新台词到达 = 玩家已经翻过这句，补录窗口没有继续开着的理由。
-      // 定时器不再是唯一的自动收束源（另一个是用户再点一次 ⏺）。只认引擎 hook 的台词：
-      // 剪贴板 / 外部 WS 通道可能与游戏进度无关，不该替用户结束录音。
-      if (receivedTextLine && _recapturingLineId != null) {
-        unawaited(finishLineRecapture());
-      }
-      if (receivedTextLine) {
-        if (!_isCurrentPoll(engine, pollGeneration)) return;
-        _setState(
-          _state.copyWith(
-            phase: _state.fallbackReason == null
-                ? GalHookSessionPhase.running
-                : GalHookSessionPhase.degraded,
-            textSignalReceived: true,
-          ),
-        );
-        if (!_isCurrentPoll(engine, pollGeneration)) return;
-        // 行数变了才值得重评：恢复要求候选线程已出够行数（见 [_maybeRestoreTextThread]）。
-        _maybeRestoreTextThread();
-      }
+      await _consumeTextLane(engine, pollGeneration);
     } finally {
       if (pollGeneration == _pollGeneration) {
         _pollInFlight = false;
       }
+    }
+  }
+
+  /// 消费一次文本道：按 seq 升序把新行喂进工作台；有待回捞的历史时（见
+  /// [_historyRecoveryCeiling]）从头取整批，在同一趟里先补上界以内的旧行。
+  ///
+  /// 调用方必须持有 [_pollInFlight]：定时 tick 经 [_pollHookedText] 进来，选线程经
+  /// [selectTextThread] 直接进来——后者只做这一段，readiness / 预览仍归定时 tick。
+  Future<void> _consumeTextLane(
+    EngineHookGalAudioSource engine,
+    int pollGeneration,
+  ) async {
+    final int recoveryCeiling = _historyRecoveryCeiling;
+    final GalTextPoll? poll = await engine.pollText(
+      recoveryCeiling > 0 ? 0 : _lastTextSeq,
+    );
+    if (poll == null || !_isCurrentPoll(engine, pollGeneration)) return;
+    final List<GalHookedLine> ordered = List<GalHookedLine>.from(poll.lines)
+      ..sort((a, b) => a.seq.compareTo(b.seq));
+    final Set<int> appended = recoveryCeiling > 0
+        ? _lineTextEventIdCache.values.toSet()
+        : const <int>{};
+    if (recoveryCeiling > 0) _learnSelectedThreadFace(ordered);
+    int cursor = _lastTextSeq;
+    int recoveredCount = 0;
+    bool receivedTextLine = false;
+    for (final GalHookedLine line in ordered) {
+      if (!_isCurrentPoll(engine, pollGeneration)) return;
+      if (line.seq <= recoveryCeiling) {
+        if (_recoverHistoryLine(line, appended)) recoveredCount++;
+        continue;
+      }
+      if (line.seq <= cursor) {
+        _setState(
+          _state.copyWith(textDuplicateCount: _state.textDuplicateCount + 1),
+        );
+        continue;
+      }
+      if (line.seq > cursor + 1) {
+        _setState(
+          _state.copyWith(
+            textGapCount: _state.textGapCount + line.seq - cursor - 1,
+          ),
+        );
+        _record(
+          GalHookEventSeverity.warning,
+          'text',
+          'text.sequence_gap',
+          'Text sequence gap detected',
+          details: <String, Object?>{'from': cursor, 'to': line.seq},
+        );
+      }
+      // 重连到一个仍在运行、仍已注入的游戏时，旧的 threadDiscovered 事件不会重放。
+      // 如果这里直接执行下面的“未选中就丢”过滤，自定义 hook（SGRE 的 UserHook1
+      // 即为实测现场）虽然持续把正文写进文本环，却永远不会重新进入线程目录，跨会话
+      // 记忆也就永远达不到恢复门槛。先用正文元数据补目录/观测计数；正文是否发布仍由
+      // _acceptsLineFromSelectedThread 独占裁决，不会把噪声线程灌进工作台。
+      if (line.eventKind == GalTextEventKind.line) {
+        final String? threadKey = line.textThreadKey;
+        final String? threadLabel = line.textThreadLabel;
+        if (threadKey != null && threadLabel != null) {
+          _textService.observeTextThreadLine(
+            key: threadKey,
+            label: threadLabel,
+            text: line.text,
+            hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+            nativeThreadId: line.threadId == 0 ? null : line.threadId,
+          );
+          _maybeRestoreTextThread();
+        }
+      }
+      // v13 消费期线程过滤。native 现在把**每条线程**的行都写进各自的道（这正是"多抓
+      // 文本"要的：换线程后旧行仍在、选错线程不再等于那段语音永久孤儿），所以喂进
+      // texthooker / 配对 / 制卡之前必须在这里挑出选定线程的行——否则工作台会被所有
+      // hook 线程的文本灌满。判据与旧 native 门控等价，见 [_selectedTextThreadFaceId]。
+      if (line.eventKind == GalTextEventKind.line &&
+          !_acceptsLineFromSelectedThread(line)) {
+        cursor = line.seq;
+        continue;
+      }
+      if (line.eventKind == GalTextEventKind.threadDiscovered) {
+        final String? threadKey = line.textThreadKey;
+        final String? threadLabel = line.textThreadLabel;
+        if (threadKey != null && threadLabel != null) {
+          _textService.registerTextThread(
+            key: threadKey,
+            label: threadLabel,
+            hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+            nativeThreadId: line.threadId,
+          );
+        }
+        cursor = line.seq;
+        continue;
+      }
+      // 系统 UI 文字（读/存档菜单确认句、存档槽号/时间戳）在 native hook 侧无法与台词区分，
+      // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
+      // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
+      if (isGalgameSystemUiLine(line.text)) {
+        cursor = line.seq;
+        continue;
+      }
+      // 用户编排的文本处理管线（LunaTranslator 同款：逐字重绘去重 / 去整块重复 /
+      // 花括号注音 / 正则替换……）。位置有两条硬约束，不能挪：
+      //   ① 必须在 [_acceptsLineFromSelectedThread] **之后** —— 管线是给「所选线程的
+      //      正文」配的，线程目录/预览仍然要看引擎原样吐出来的串，否则用户在选择器里
+      //      看到的和他为之写规则的东西对不上；
+      //   ② 必须在 appendLine **之前** —— 注音剥离（parseRubyMarkup）与渐进折叠都在
+      //      appendLine 内部按入参文本建坐标系，管线放到后面跑就等于让 rubySpans 的
+      //      下标指向一份已经不存在的文本，振假名会整片错位。
+      final String? processedText = _processSelectedThreadText(line.text);
+      if (processedText == null) {
+        cursor = line.seq;
+        continue;
+      }
+      final TexthookerLineEntry? entry = _textService.appendLine(
+        processedText,
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'engine_hook',
+        sourceSequence: line.seq,
+        hookTimestampMs: line.timestampMs,
+        eventOwnedVoice: line.eventOwnedVoice,
+        textThreadKey: line.textThreadKey,
+        textThreadLabel: line.textThreadLabel,
+        textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
+        nativeTextThreadId: line.threadId == 0 ? null : line.threadId,
+        audioStatus: TexthookerLineAudioStatus.pending,
+      );
+      if (entry == null) {
+        cursor = line.seq;
+        continue;
+      }
+      receivedTextLine = true;
+      // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
+      // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
+      _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
+      // A folded row has a new event owner, even when its next resource is
+      // already available. Retire the preceding event's pending request.
+      _pendingResourceMatches.remove(entry.id);
+      // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
+      // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
+      // （增量为空 = 这次重绘没带来新字，不算新活动）。
+      _recordEngineDelta(_textService.lastAppendedDelta);
+      _lineTimestampCache[entry.id] = line.timestampMs;
+      _trimCache(_lineTimestampCache);
+      _lineTextEventIdCache[entry.id] = line.seq;
+      _trimCache(_lineTextEventIdCache);
+      final bool resourceReady = engine.rawVoiceReady;
+      final String? resourceId = resourceReady
+          ? line.eventOwnedVoice
+                ? engine.findEventOwnedVoiceResourceId(
+                    line.timestampMs,
+                    textEventId: line.seq,
+                  )
+                : engine.findPairedVoiceResourceId(
+                    line.timestampMs,
+                    textEventId: line.seq,
+                  )
+          : null;
+      final bool resourceMatched = resourceId != null;
+      if (resourceMatched) {
+        _textService.updateLineAudio(
+          entry.id,
+          status: TexthookerLineAudioStatus.matched,
+          backend: 'game_resource',
+          resourceId: resourceId,
+        );
+        _record(
+          GalHookEventSeverity.success,
+          'match',
+          'audio.game_resource_matched',
+          'Original game resource audio matched to captured line',
+          details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
+        );
+      } else if (resourceReady) {
+        _pendingResourceMatches[entry.id] = (
+          timestampMs: line.timestampMs,
+          textEventId: line.seq,
+          eventOwnedOnly: line.eventOwnedVoice,
+        );
+        _trimCache(_pendingResourceMatches);
+        _textService.updateLineAudio(
+          entry.id,
+          status: TexthookerLineAudioStatus.pending,
+          backend: 'game_resource',
+        );
+      }
+      // BUG-1063：台词已进缓冲、UI 已被通知；余下的语音抓取（PCM 拷贝、loopback
+      // 环冻结）一律离开文本主路径，改由串行音频队列执行。此前它们 await 在本循环
+      // 里：同一批的后续台词要排在前一句语音抓取之后，且 _pollInFlight 会让下一个
+      // tick 整轮跳过——台词显示被自己的语音配对拖慢。
+      if (!resourceMatched) {
+        _scheduleLineAudioAttach(
+          engine: engine,
+          entry: entry,
+          line: line,
+          resourceReady: resourceReady,
+        );
+      }
+      cursor = line.seq;
+    }
+    if (!_isCurrentPoll(engine, pollGeneration)) return;
+    if (recoveryCeiling > 0) {
+      _historyRecoveryCeiling = 0;
+      _trimCache(_lineTimestampCache);
+      _trimCache(_lineTextEventIdCache);
+      _trimCache(_pendingResourceMatches);
+      if (recoveredCount > 0) {
+        _record(
+          GalHookEventSeverity.info,
+          'text',
+          'text.thread_history_recovered',
+          'Recovered buffered lines from the newly selected text thread',
+          details: <String, Object?>{
+            'threadId': _selectedNativeTextThreadId ?? 0,
+            'lines': recoveredCount,
+          },
+        );
+      }
+    }
+    _refreshPendingResourceMatches(engine);
+    if (!_isCurrentPoll(engine, pollGeneration)) return;
+    // 只推进到实际看见并处理完成的最大 seq；不能盲用 native header count 跳过未提交槽。
+    if (cursor > _lastTextSeq) _lastTextSeq = cursor;
+    // BUG-1094：新台词到达 = 玩家已经翻过这句，补录窗口没有继续开着的理由。
+    // 定时器不再是唯一的自动收束源（另一个是用户再点一次 ⏺）。只认引擎 hook 的台词：
+    // 剪贴板 / 外部 WS 通道可能与游戏进度无关，不该替用户结束录音。
+    if (receivedTextLine && _recapturingLineId != null) {
+      unawaited(finishLineRecapture());
+    }
+    if (receivedTextLine) {
+      if (!_isCurrentPoll(engine, pollGeneration)) return;
+      _setState(
+        _state.copyWith(
+          phase: _state.fallbackReason == null
+              ? GalHookSessionPhase.running
+              : GalHookSessionPhase.degraded,
+          textSignalReceived: true,
+        ),
+      );
+      if (!_isCurrentPoll(engine, pollGeneration)) return;
+      // 行数变了才值得重评：恢复要求候选线程已出够行数（见 [_maybeRestoreTextThread]）。
+      _maybeRestoreTextThread();
     }
   }
 
