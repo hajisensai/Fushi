@@ -310,6 +310,10 @@ class GlobalLookupWindow {
                                 const fushi::MouseHookWheel& wheel);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
+  // 离屏停放位是「建窗那一刻」的虚拟桌面右缘 + 200：显示拓扑变了（分辨率 / 缩放 /
+  // 热插拔让桌面变宽），已显示未上屏（!revealed_）的停放窗就会落进屏幕，变成一块
+  // 吞点击的不可见区域（BUG-2886）。按新拓扑重新停放；已上屏的卡片不动。
+  void ReparkOffscreenIfParked();
   // TODO-867 P2: round the window corners to match popup.css's card radius.
   // BUG-749: when the host has reported per-shell rects (transient cascade
   // mode), the region is the UNION of those card rects instead of the full
