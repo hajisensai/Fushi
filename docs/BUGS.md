@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2638 条。点号进各自文件。
+> 共 2641 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
+| [BUG-2888](bugs/BUG-2888-kirikiri-silent-stop-voice-paired.md) | ✅ | ✅ | KiriKiri 掐断用的静音语音被配给下一句旁白 |
+| [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |
 | [BUG-2886](bugs/BUG-2886-lookup-parked-window-on-screen.md) | ✅ | ✅ | 显示拓扑变化后，离屏停放的查词覆盖窗落进屏幕右上角吞点击 |
 | [BUG-2885](bugs/BUG-2885-kirikiri-nvl-page-lookup.md) | ✅ | ✅ | KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝 |
 | [BUG-2859](bugs/BUG-2859-lookup-bridge-reply-dropped.md) | ✅ | ✅ | 查词卡路由作废后丢弃晚到的 bridge 应答，该词条整个会话无法制卡 |
