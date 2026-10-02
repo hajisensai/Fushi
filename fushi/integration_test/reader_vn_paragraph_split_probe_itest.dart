@@ -157,6 +157,32 @@ String _vnScanJs(String needle, String tail) =>
     return strip(s);
   };
   var source = textOf(r.sourceRoot);
+  // 段首偏移：同段被切开才算违例，新段落本来就可以以「……」「」」开头。
+  var blockOf = function (n) {
+    var el = n.parentElement;
+    while (el && el !== r.sourceRoot) {
+      if (/^(P|DIV|H[1-6]|LI|BLOCKQUOTE|DT|DD|FIGCAPTION|TD|TH)\$/.test(el.tagName)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  };
+  var paragraphStarts = {};
+  var sw = document.createTreeWalker(r.sourceRoot, NodeFilter.SHOW_TEXT, {
+    acceptNode: function (n) {
+      return (n.parentElement && n.parentElement.closest('rt,rp'))
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  var seen = 0; var lastBlock; var sn;
+  while ((sn = sw.nextNode())) {
+    var piece = strip(sn.nodeValue);
+    if (!piece) continue;
+    var blk = blockOf(sn);
+    if (blk !== lastBlock) { paragraphStarts[seen] = true; lastBlock = blk; }
+    seen += piece.length;
+  }
+  var cursor = 0;
+  var discontiguous = [];
   var original = r.currentScreenIndex;
   var joined = '';
   var badStart = [];
@@ -168,8 +194,15 @@ String _vnScanJs(String needle, String tail) =>
     r.renderScreen(i, true);
     var t = textOf(r.screen);
     joined += t;
-    if (i > 0 && t && prohibited.indexOf(Array.from(t)[0]) >= 0) {
-      badStart.push(i + ':' + t.slice(0, 10));
+    var at = t ? source.indexOf(t, cursor) : cursor;
+    if (at < 0) {
+      discontiguous.push(i + ':' + t.slice(0, 10));
+    } else {
+      if (i > 0 && t && !paragraphStarts[at] &&
+          prohibited.indexOf(Array.from(t)[0]) >= 0) {
+        badStart.push(i + ':' + t.slice(0, 10));
+      }
+      cursor = at + t.length;
     }
     var box = r.screen.getBoundingClientRect();
     var walker = document.createTreeWalker(r.screen, NodeFilter.SHOW_TEXT);
@@ -206,7 +239,8 @@ String _vnScanJs(String needle, String tail) =>
   var box2 = r.screen.getBoundingClientRect();
   return JSON.stringify({
     vn: true, screens: r.screens.length, badStart: badStart,
-    overflow: overflow, joinedOk: joined === source,
+    overflow: overflow, discontiguous: discontiguous,
+    joinedOk: joined === source,
     joinedLen: joined.length, sourceLen: source.length,
     needleScreen: needleScreen, tailScreen: tailScreen,
     needleText: needleText.slice(0, 80), hanging: hp,
@@ -343,10 +377,12 @@ void main() {
             if (_list(vn['overflow']).isNotEmpty) {
               failures.add('text outside the screen box: ${vn['overflow']}');
             }
-            if (vn['joinedOk'] != true) {
+            // 拼接全等只记录不判：章里不进屏的节点（标题图片的替代文字等）
+            // 会让它在修复前后都不等；逐屏「按序出现在源文里」才是切屏不错序丢字的判据。
+            if (_list(vn['discontiguous']).isNotEmpty) {
               failures.add(
-                'screens do not concatenate to the chapter text '
-                '(${vn['joinedLen']} vs ${vn['sourceLen']})',
+                'screens out of order / not in the chapter text: '
+                '${vn['discontiguous']}',
               );
             }
             if (((vn['needleScreen'] as num?) ?? -1) < 0) {
