@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2641 条。点号进各自文件。
+> 共 2642 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2890](bugs/BUG-2890-launch-window-binding-dead-dialog.md) | ✅ | ✅ | 启动会话绑定启动设置对话框后永不改绑主窗口 |
 | [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
 | [BUG-2888](bugs/BUG-2888-kirikiri-silent-stop-voice-paired.md) | ✅ | ✅ | KiriKiri 掐断用的静音语音被配给下一句旁白 |
 | [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |

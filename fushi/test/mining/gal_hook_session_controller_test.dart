@@ -2259,6 +2259,91 @@ void main() {
     endpoints.dispose();
   });
 
+  test('BUG-2890：启动设置对话框关掉后改绑到随后出现的主窗口', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    // CatSystem2 / CMVS：进程第一个可见窗口是「画面モード / 起動時の設定」对话框。
+    const ExternalWindowInfo dialog = ExternalWindowInfo(
+      hwnd: 21,
+      pid: 4242,
+      title: '起動時の設定',
+    );
+    const ExternalWindowInfo main = ExternalWindowInfo(
+      hwnd: 34,
+      pid: 4242,
+      title: 'リアライブ・体験版',
+    );
+    List<ExternalWindowInfo> windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 12, pid: 9, title: '别的窗口'),
+      dialog,
+    ];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => windows,
+      windowPollAttempts: 1,
+      windowRebindInterval: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\realive\cmvs32.exe')).launched,
+      isTrue,
+    );
+    expect(controller.state.boundWindow?.hwnd, dialog.hwnd);
+
+    // 对话框关掉、主窗口还没建：没有替代窗口时保留原绑定，不清空。
+    windows = const <ExternalWindowInfo>[];
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.state.boundWindow?.hwnd, dialog.hwnd);
+
+    // 主窗口出现：改绑过去。
+    windows = const <ExternalWindowInfo>[main];
+    for (int i = 0; i < 40 && controller.state.boundWindow?.hwnd != 34; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(
+      controller.state.boundWindow?.hwnd,
+      main.hwnd,
+      reason: '绑定必须跟着窗口生命周期走，不能永远指着已销毁的对话框',
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('window.rebound'),
+    );
+
+    // 主窗口还活着时，同进程再冒出别的窗口（如游戏内的退出确认框）不得抢走绑定。
+    windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 56, pid: 4242, title: '終了'),
+      main,
+    ];
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.state.boundWindow?.hwnd, main.hwnd);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('BUG-1049：会话停止后不再继续重绑窗口', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
