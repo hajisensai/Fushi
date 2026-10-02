@@ -79,9 +79,10 @@ void main() {
     await s(3).write(account().copyWith(uploadBlockedByOtherDevice: true));
     await s(7).write(account());
     // 临时文件、无关文件、坏文件都不算。
-    File(p.join(root.path, 'leaderboard', 'profile_9.json.tmp'))
-      ..writeAsStringSync('{}');
-    File(p.join(root.path, 'leaderboard', 'notes.txt'))..writeAsStringSync('x');
+    File(
+      p.join(root.path, 'leaderboard', 'profile_9.json.tmp'),
+    ).writeAsStringSync('{}');
+    File(p.join(root.path, 'leaderboard', 'notes.txt')).writeAsStringSync('x');
     await s(8).file.writeAsString('{');
     expect(await LeaderboardStore.uploadingProfileIds(root), <int>{1, 7});
   });
