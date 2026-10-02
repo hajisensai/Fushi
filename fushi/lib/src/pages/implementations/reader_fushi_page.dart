@@ -128,7 +128,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
@@ -2745,11 +2745,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _openTrace.mark('position');
 
     if (_settings!.keepScreenAwake) {
-      try {
-        WakelockPlus.enable();
-      } catch (e) {
-        debugPrint('[Fushi] wakelock enable failed: $e');
-      }
+      unawaited(setScreenWakelock(enable: true, source: 'reader open'));
     }
 
     final ReaderFushiSource src = ReaderFushiSource.instance;
@@ -3156,11 +3152,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _focusNode.dispose();
     _chromeFocusScope.dispose();
     _popupHeaderScope.dispose();
-    try {
-      WakelockPlus.disable();
-    } catch (e) {
-      debugPrint('[Fushi] wakelock disable failed: $e');
-    }
+    unawaited(setScreenWakelock(enable: false, source: 'reader dispose'));
     super.dispose();
   }
 

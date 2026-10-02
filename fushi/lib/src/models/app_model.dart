@@ -25,7 +25,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -6672,11 +6672,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryTheme = null;
 
     if (ReaderFushiSource.instance.keepScreenAwake) {
-      try {
-        await WakelockPlus.enable();
-      } catch (e) {
-        debugPrint('[Fushi] wakelock enable failed: $e');
-      }
+      await setScreenWakelock(enable: true, source: 'openMedia');
     }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -6740,11 +6736,7 @@ class AppModel with ChangeNotifier {
     mediaOpenNotifier.value = false;
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
-    try {
-      await WakelockPlus.disable();
-    } catch (e) {
-      debugPrint('[Fushi] wakelock disable failed: $e');
-    }
+    await setScreenWakelock(enable: false, source: 'closeMedia');
     // Returning to the home/menu shell: hide the Android status bar again
     // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
     await setHomeShellSystemUiMode();

@@ -17,7 +17,7 @@ import 'package:flutter_logs/flutter_logs.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -431,13 +431,9 @@ void main([List<String> args = const <String>[]]) {
     });
 
     /// Ensure wake prevention is disabled if not reverted from entering a
-    /// media source.  WakelockPlus supports all desktop and mobile platforms,
-    /// so clear it unconditionally; the try-catch handles unsupported targets.
-    try {
-      WakelockPlus.disable();
-    } catch (e) {
-      debugPrint('[Fushi] wakelock disable on startup failed: $e');
-    }
+    /// media source. setScreenWakelock never throws (failures such as a missing
+    /// org.freedesktop.ScreenSaver D-Bus service on Linux are only logged).
+    unawaited(setScreenWakelock(enable: false, source: 'startup'));
     if (Platform.isAndroid || Platform.isIOS) {
       // Home/menu shell: hide the Android status bar (keep the nav bar) so the
       // always-on OS clock/battery strip stops crowding the top-right action

@@ -10,7 +10,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 
 const double _swatchSize = 48.0;
 
@@ -154,15 +154,10 @@ Future<void> setKeepScreenAwake(
   bool value,
 ) async {
   settingsContext.readerSource.toggleKeepScreenAwake();
-  try {
-    if (settingsContext.readerSource.keepScreenAwake) {
-      await WakelockPlus.enable();
-    } else {
-      await WakelockPlus.disable();
-    }
-  } catch (e) {
-    debugPrint('[Fushi] wakelock toggle failed: $e');
-  }
+  await setScreenWakelock(
+    enable: settingsContext.readerSource.keepScreenAwake,
+    source: 'settings',
+  );
   notifyReaderSettingsChanged(settingsContext);
 }
 
