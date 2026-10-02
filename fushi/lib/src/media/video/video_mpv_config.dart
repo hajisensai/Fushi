@@ -570,7 +570,7 @@ Map<String, String> resolveAndroidPixelFormatProperties({bool? isAndroid}) {
 
 /// Apple（macOS / iOS）纹理路径的输出色彩目标（`target-prim` / `target-trc`）。纯函数。
 ///
-/// **根治「mac 看视频发灰」（BUG-2854）。** Apple 上 media_kit 让 libmpv 把帧画进一张
+/// **根治「mac 看视频发灰」（BUG-2861）。** Apple 上 media_kit 让 libmpv 把帧画进一张
 /// BGRA `CVPixelBuffer`（`TextureHW` / `TextureSW`），Flutter 按原值采样
 /// （`FlutterExternalTexture` 用 `MTLPixelFormatBGRA8Unorm`，不做色彩转换），再合成进
 /// 自己那张**固定标记为 sRGB** 的 IOSurface（`FlutterSurface` 的 `kIOSurfaceColorSpace`），
@@ -652,7 +652,7 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   out['tone-mapping'] = config.hdrToneMapping;
   out['hdr-compute-peak'] = config.hdrComputePeak;
   // Apple：输出目标钉成 Flutter 合成面的 sRGB，否则 BT.1886 被按 sRGB 解释、画面发灰
-  // （BUG-2854）。见 [resolveTextureColorTargetProperties]。
+  // （BUG-2861）。见 [resolveTextureColorTargetProperties]。
   out.addAll(resolveTextureColorTargetProperties(isApple: isApple));
   // 播放
   out['loop-file'] = config.loopFile ? 'inf' : 'no';

@@ -316,7 +316,7 @@ keep-open=yes
     });
   });
 
-  group('resolveTextureColorTargetProperties (BUG-2854 mac 视频发灰)', () {
+  group('resolveTextureColorTargetProperties (BUG-2861 mac 视频发灰)', () {
     // 根因：Flutter macOS 合成面固定 sRGB、外部纹理按原值采样；mpv target-trc=auto 对
     // SDR 片源不换 gamma，BT.1886 值被按 sRGB 解释 → 暗部抬亮发灰。修复=Apple 两端把输出
     // 目标钉成 sRGB（IINA 按图层色彩空间做色彩管理的同一思路）。

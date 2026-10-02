@@ -1,4 +1,4 @@
-// Apple 视频「发灰」的像素探针（BUG-2854；macOS 真机 / iOS 模拟器）。
+// Apple 视频「发灰」的像素探针（BUG-2861；macOS 真机 / iOS 模拟器）。
 //
 // 背景：Flutter macOS 把外部 BGRA 纹理按原值合成进固定标记为 sRGB 的 IOSurface，而
 // libmpv 在 `target-trc=auto` 下对 SDR 片源不换 gamma、吐 BT.1886（γ2.4）编码值——
