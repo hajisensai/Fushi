@@ -31,6 +31,10 @@ class _Repo implements BaseAnkiRepository {
     return mineEntry(rawPayloadJson: rawPayloadJson, context: context);
   }
 
+  /// 不带模板的后端：无法判定，保持片段偏好。
+  @override
+  Future<bool?> rendersSynchronizedClip() async => null;
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -71,6 +75,16 @@ class _TemplateRepo extends _Repo {
         AnkiCardTemplate(name: 'Card 1', front: '{{Expression}}', back: back),
       ],
       css: '',
+    );
+  }
+
+  // `implements` 型假仓库拿不到基类实现：按同一判据现场回答。
+  @override
+  Future<bool?> rendersSynchronizedClip() async {
+    final AnkiSettings settings = await loadSettings();
+    return noteTypeRendersSynchronizedClip(
+      definition: (await readNoteTypeDefinition(_noteType.name))!,
+      fieldMappings: settings.fieldMappings,
     );
   }
 }

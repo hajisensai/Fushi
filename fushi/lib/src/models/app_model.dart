@@ -9406,11 +9406,14 @@ class _AppModelRemoteLookupService
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
     // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
     // 录片段还是录动图由**目标模板**决定（[resolveTargetMiningImageMode]）：模板不原样
-    // 渲染图片字段时同步片段卡什么都显示不出来。必须在下面的转码之前求值。
-    final VideoMiningImageMode imageMode = await resolveTargetMiningImageMode(
-      _appModel.videoMiningImageMode,
-      repo: repo,
-    );
+    // 渲染图片字段时同步片段卡什么都显示不出来。必须在下面的转码之前求值；没录到
+    // 片段的来源出不了同步片段，不必问模板。
+    final VideoMiningImageMode imageMode = payload.clipBytes == null
+        ? _appModel.videoMiningImageMode
+        : await resolveTargetMiningImageMode(
+            _appModel.videoMiningImageMode,
+            repo: repo,
+          );
     ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
     if (payload.clipBytes != null) {
       // Netflix 批量录制的片段边界即句子边界（seek 到句首 → 录到字幕变化停），整段转码 [0,时长]。

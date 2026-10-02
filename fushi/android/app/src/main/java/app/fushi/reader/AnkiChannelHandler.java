@@ -416,6 +416,11 @@ public class AnkiChannelHandler {
                     case "requestAnkidroidPermissions":
                         requestAnkidroidPermissions(result);
                         break;
+                    case "hasAnkidroidPermission":
+                        // 只查不弹框：制卡前的模板探测不能替后面的加卡再弹一次授权框
+                        // （BUG-2869）。
+                        result.success(!ankiDroid.shouldRequestPermission());
+                        break;
                     case "openAnkiPermissionSettings":
                         // BUG-2098：永久拒绝后系统不再弹框，唯一出路是应用详情页里的
                         // 权限项；把跳转做成显式能力，Dart 侧才能给「去设置」按钮。

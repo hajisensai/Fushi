@@ -777,6 +777,21 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   bool get supportsNoteTypeEditing => true;
 
+  /// 制卡前的模板探测只在**已授权**时读模板：没授权时 [readNoteTypeDefinition] 会弹
+  /// 授权框，用户一拒，紧接着的加卡又弹一次。未授权 / 旧 native 没有这个查询 →
+  /// 无法判定，加卡那一步照常请求授权。
+  @override
+  Future<bool?> rendersSynchronizedClip() async {
+    final Object? granted;
+    try {
+      granted = await _channel.invokeMethod('hasAnkidroidPermission');
+    } on MissingPluginException {
+      return null;
+    }
+    if (granted != true) return null;
+    return super.rendersSynchronizedClip();
+  }
+
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
     String modelName,

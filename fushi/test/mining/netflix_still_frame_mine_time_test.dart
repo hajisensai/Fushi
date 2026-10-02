@@ -394,8 +394,19 @@ void main() {
       expect(nf, contains('resolveClipStillTarget('),
           reason: 'Netflix 段必须按 videoMiningImageMode 解析静态帧目标；'
               '不解析就等于用户选的「制卡时截图」在这条链路上恒被吞成动图（BUG-1416）。');
-      expect(nf, contains('imageMode: _appModel.videoMiningImageMode'),
+      // 生效模式 = 偏好经目标模板裁决（BUG-2869：Kiku 这类模板承载不了同步片段），
+      // 声明紧挨在分界锚点之前。
+      final int modeDecl =
+          body.lastIndexOf('final VideoMiningImageMode imageMode =', netflix);
+      expect(modeDecl, greaterThan(0),
+          reason: 'Netflix 段的生效模式声明不见了，守卫锚点失效。');
+      final String decision = body.substring(modeDecl, netflix);
+      expect(decision, contains('resolveTargetMiningImageMode('),
+          reason: '录片段前必须问目标模板能否承载同步片段（BUG-2869）。');
+      expect(decision, contains('_appModel.videoMiningImageMode'),
           reason: '偏好必须真读 AppModel，不能写死。');
+      expect(nf, contains('imageMode: imageMode'),
+          reason: '解析静态帧目标与转码都必须用裁决后的生效模式。');
       expect(nf, contains('stillTarget: stillTarget'),
           reason: '解析出来还得真传给 transcodeClipToCapture，否则解析了也白解析。');
     });

@@ -27,20 +27,13 @@ Future<VideoMiningImageMode> resolveTargetMiningImageMode(
   return VideoMiningImageMode.gif;
 }
 
-/// null = 无法判定（见 [resolveTargetMiningImageMode]）。
+/// null = 无法判定（见 [resolveTargetMiningImageMode]）。只吞后端异常（Anki 没开、
+/// 主机不可达）：这种情况下制卡还可能被待补发队列接住，探测不能替它判死刑；编程错误
+/// 照抛。
 Future<bool?> _targetRendersSynchronizedClip(BaseAnkiRepository repo) async {
   try {
-    final AnkiSettings settings = await repo.loadSettings();
-    final AnkiNoteType? noteType = settings.selectedNoteType;
-    if (noteType == null) return null;
-    final AnkiNoteTypeDefinition? definition = await repo
-        .readNoteTypeDefinition(noteType.name);
-    if (definition == null) return null;
-    return noteTypeRendersSynchronizedClip(
-      definition: definition,
-      fieldMappings: settings.fieldMappings,
-    );
-  } on Object catch (error) {
+    return await repo.rendersSynchronizedClip();
+  } on Exception catch (error) {
     engineLog.logDiagnostic('Anki.synchronizedVideo.templateProbe', error);
     return null;
   }

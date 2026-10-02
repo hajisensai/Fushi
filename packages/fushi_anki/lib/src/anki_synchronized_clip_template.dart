@@ -46,13 +46,17 @@ final RegExp _inertBlock = RegExp(
   dotAll: true,
 );
 
+// 标签名后必须是空白 / `/` / `>`：`\b` 会把 `<template-card>` 这类自定义元素也当成
+// template。
 final RegExp _templateTag = RegExp(
-  r'<(/?)template\b[^>]*>',
+  r'<(/?)template(?=[\s/>])[^>]*>',
   caseSensitive: false,
 );
 
 /// 去掉浏览器不会直接渲染的部分：注释、`<script>`、`<template>`（可嵌套，Kiku 外层
-/// `<template id="anki-fields">` 里再套每个字段一个 `<template>`）。
+/// `<template id="anki-fields">` 里再套每个字段一个 `<template>`）。带
+/// `shadowrootmode` 的声明式 Shadow DOM 也一并剥掉：Anki 用 innerHTML 注入卡面，
+/// innerHTML 不解析声明式 Shadow DOM，那里面同样是惰性内容。
 String _visibleTemplateMarkup(String html) {
   final String withoutScripts = html.replaceAll(_inertBlock, '');
   final StringBuffer visible = StringBuffer();

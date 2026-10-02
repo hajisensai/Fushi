@@ -265,6 +265,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName) =>
       _client.readNoteTypeDefinition(modelName);
 
+  /// 卡在主机上按**主机的**设置建，本机设置配不上主机的模板；主机也没有回答这个
+  /// 问题的端点 → 无法判定，保持偏好（BUG-2869）。
+  @override
+  Future<bool?> rendersSynchronizedClip() async => null;
+
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) =>
       _client.updateNoteTypeStyling(modelName, css);

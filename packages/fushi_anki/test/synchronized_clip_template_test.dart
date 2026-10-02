@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 
@@ -63,6 +65,29 @@ void main() {
     expect(_renders(kikuBack, front: kikuBack), isFalse);
   });
 
+  test('上游 Kiku 原版模板（fixtures/kiku）→ 不能承载同步片段', () {
+    // Kiku 的字段名与 Lapis 相同，用户按 Lapis 映射配它（LapisPreset.matches 按字段名
+    // 认），所以用 Lapis 默认映射喂真实模板。
+    expect(
+      noteTypeRendersSynchronizedClip(
+        definition: AnkiNoteTypeDefinition(
+          name: 'Kiku',
+          fields: LapisNoteType.fields,
+          templates: <AnkiCardTemplate>[
+            AnkiCardTemplate(
+              name: 'Mining',
+              front: File('test/fixtures/kiku/front.html').readAsStringSync(),
+              back: File('test/fixtures/kiku/back.html').readAsStringSync(),
+            ),
+          ],
+          css: '',
+        ),
+        fieldMappings: LapisNoteType.defaultFieldMappings,
+      ),
+      isFalse,
+    );
+  });
+
   test('过滤器 / 条件段 / script / 注释里的引用都不算渲染', () {
     expect(_renders('{{text:Picture}}'), isFalse);
     expect(
@@ -78,6 +103,16 @@ void main() {
     expect(_renders('{{Expression}}', front: '<div>{{Picture}}</div>'), isTrue);
     expect(
       _renders('<template>{{Picture}}</template><div>{{Picture}}</div>'),
+      isTrue,
+    );
+  });
+
+  test('<template-xxx> 自定义元素不是 template，里面的引用照常渲染', () {
+    expect(_renders('<template-card>{{Picture}}</template-card>'), isTrue);
+    expect(
+      _renders(
+        '<template>x</template><template-card>{{Picture}}</template-card>',
+      ),
       isTrue,
     );
   });

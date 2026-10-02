@@ -427,11 +427,10 @@ class GalHookMiningCoordinator {
             });
 
     // 同步片段只在目标模板原样渲染图片字段时可用（[resolveTargetMiningImageMode]）；
-    // 必须在决定录片段还是录动图**之前**求值。
-    final VideoMiningImageMode imageMode = await resolveTargetMiningImageMode(
-      preferredImageMode,
-      repo: repo,
-    );
+    // 必须在决定录片段还是录动图**之前**求值。主机冻结的台词帧不看模式，不必问。
+    final VideoMiningImageMode imageMode = providedLineScreenshot != null
+        ? preferredImageMode
+        : await resolveTargetMiningImageMode(preferredImageMode, repo: repo);
     Uint8List? coverBytes;
     String coverName = 'external_window.gif';
     bool degradedToStill = false;

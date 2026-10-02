@@ -3,93 +3,57 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 
-/// [definition] 为 null = 后端读不到模板；[throwOnRead] = 读取失败。
+/// [answer] = 仓库对「目标模板能否承载同步片段」的回答；[failure] 非空时改为抛它。
 class _Repo implements BaseAnkiRepository {
-  _Repo({this.definition, this.throwOnRead = false});
+  _Repo({this.answer, this.failure});
 
-  final AnkiNoteTypeDefinition? definition;
-  final bool throwOnRead;
-  int reads = 0;
-
-  @override
-  Future<AnkiSettings> loadSettings() async => const AnkiSettings(
-    selectedNoteTypeId: 1,
-    availableNoteTypes: <AnkiNoteType>[
-      AnkiNoteType(id: 1, name: 'Target', fields: <String>['Picture']),
-    ],
-    fieldMappings: <String, String>{'Picture': '{card-image}'},
-  );
+  final bool? answer;
+  final Object? failure;
+  int probes = 0;
 
   @override
-  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-    String modelName,
-  ) async {
-    reads++;
-    if (throwOnRead) throw StateError('AnkiConnect unreachable');
-    return definition;
+  Future<bool?> rendersSynchronizedClip() async {
+    probes++;
+    if (failure != null) {
+      Error.throwWithStackTrace(failure!, StackTrace.current);
+    }
+    return answer;
   }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-AnkiNoteTypeDefinition _withBack(String back) => AnkiNoteTypeDefinition(
-  name: 'Target',
-  fields: const <String>['Picture'],
-  templates: <AnkiCardTemplate>[
-    AnkiCardTemplate(name: 'Card 1', front: '', back: back),
-  ],
-  css: '',
-);
+Future<VideoMiningImageMode> _clip(_Repo repo) =>
+    resolveTargetMiningImageMode(VideoMiningImageMode.videoClip, repo: repo);
 
 void main() {
-  test('非片段模式原样返回，不读模板', () async {
-    final _Repo repo = _Repo(definition: _withBack(''));
+  test('非片段模式原样返回，不探测模板', () async {
+    final _Repo repo = _Repo(answer: false);
     for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
       if (mode.isVideoClip) continue;
       expect(await resolveTargetMiningImageMode(mode, repo: repo), mode);
     }
-    expect(repo.reads, 0);
+    expect(repo.probes, 0);
   });
 
-  test('模板不原样渲染图片字段 → gif', () async {
-    expect(
-      await resolveTargetMiningImageMode(
-        VideoMiningImageMode.videoClip,
-        repo: _Repo(
-          definition: _withBack(
-            '<template data-field="Picture">{{Picture}}</template>',
-          ),
-        ),
-      ),
-      VideoMiningImageMode.gif,
-    );
+  test('模板承载不了 → gif；承载得了 → 保留片段', () async {
+    expect(await _clip(_Repo(answer: false)), VideoMiningImageMode.gif);
+    expect(await _clip(_Repo(answer: true)), VideoMiningImageMode.videoClip);
   });
 
-  test('模板原样渲染图片字段 → 保留片段', () async {
+  test('无法判定 / 后端异常 → 保留片段（制卡仍可能被待补发队列接住）', () async {
+    expect(await _clip(_Repo()), VideoMiningImageMode.videoClip);
     expect(
-      await resolveTargetMiningImageMode(
-        VideoMiningImageMode.videoClip,
-        repo: _Repo(definition: _withBack('<div>{{Picture}}</div>')),
-      ),
+      await _clip(_Repo(failure: Exception('AnkiConnect unreachable'))),
       VideoMiningImageMode.videoClip,
     );
   });
 
-  test('读不到模板 / 读取失败 → 无法证明不支持，保留片段', () async {
-    expect(
-      await resolveTargetMiningImageMode(
-        VideoMiningImageMode.videoClip,
-        repo: _Repo(),
-      ),
-      VideoMiningImageMode.videoClip,
-    );
-    expect(
-      await resolveTargetMiningImageMode(
-        VideoMiningImageMode.videoClip,
-        repo: _Repo(throwOnRead: true),
-      ),
-      VideoMiningImageMode.videoClip,
+  test('编程错误不吞', () async {
+    await expectLater(
+      _clip(_Repo(failure: StateError('bug'))),
+      throwsStateError,
     );
   });
 }
