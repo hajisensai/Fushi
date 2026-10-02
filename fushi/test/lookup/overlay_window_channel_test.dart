@@ -144,6 +144,26 @@ void main() {
     expect(args['value'], '"{\\"ok\\":true}"');
   });
 
+  test('BUG-2859：route 作废后前向调用照旧丢弃，但 bridge 应答必须送达', () async {
+    final OverlayWindowChannel stale = OverlayWindowChannel(
+      kSecondChannel,
+      target: 'galCard',
+      lookupEpoch: 3,
+      routeIsValid: () => false,
+    );
+    // 前向调用：作废 route 排队的 Timer/Future 不得复活旧卡面。
+    await stale.hide();
+    expect(panelCalls, isEmpty);
+    // 应答：页面还在 await 这颗 promise（查重比关卡慢一步就是这个形态），丢掉它
+    // popup.js 会让这个词条永远等下去、再也点不出卡。
+    await stale.resolveBridge(9, false);
+    expect(panelCalls, <String>['resolveBridge']);
+    final Map<Object?, Object?> args =
+        lastPanelCall!.arguments as Map<Object?, Object?>;
+    expect(args['id'], 9);
+    expect(args['target'], 'galCard');
+  });
+
   test('showAt 解析 native map 回复（work area + 窗口原点偏移）', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(kSecondChannel, (MethodCall call) async {
