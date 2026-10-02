@@ -22,8 +22,10 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ai_ocr_stream.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
@@ -92,20 +94,23 @@ Future<void> discardMangaOcrPageCache(Directory cacheDir) async {
   }
 }
 
-/// 按引擎分发，产出统一的后台事件流。
+/// 按引擎分发，产出统一的后台事件流；设置里开了大模型识别时再套一层
+/// [refineMangaOcrEventsWithAi]（与引擎无关：框是谁检测的都行）。
 Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(MangaOcrJobSpec spec) {
-  switch (spec.engine) {
-    case MangaOcrEngineId.localOnnx:
-      return mangaOcrLocalEvents(spec);
-    case MangaOcrEngineId.systemOcr:
-      return mangaOcrSystemEvents(spec);
-    case MangaOcrEngineId.googleLens:
-      return mangaOcrLensEvents(spec);
-    case MangaOcrEngineId.externalMokuro:
-      return mangaOcrExternalEvents(spec);
-    case MangaOcrEngineId.pairedHost:
-      return mangaOcrRemoteEvents(spec);
-  }
+  final Stream<MangaOcrBackgroundEvent> events = switch (spec.engine) {
+    MangaOcrEngineId.localOnnx => mangaOcrLocalEvents(spec),
+    MangaOcrEngineId.systemOcr => mangaOcrSystemEvents(spec),
+    MangaOcrEngineId.googleLens => mangaOcrLensEvents(spec),
+    MangaOcrEngineId.externalMokuro => mangaOcrExternalEvents(spec),
+    MangaOcrEngineId.pairedHost => mangaOcrRemoteEvents(spec),
+  };
+  final MangaAiOcrRefiner? refiner = spec.engines.aiRefinerFactory?.call();
+  if (refiner == null) return events;
+  return refineMangaOcrEventsWithAi(
+    events,
+    imageDirPath: spec.imageDirPath,
+    refiner: refiner,
+  );
 }
 
 Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(

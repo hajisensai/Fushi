@@ -361,6 +361,7 @@ MokuroPayload buildMangaPayloadFromResults(
         zIndex: b,
         lines: block.lines,
         linesCoords: _linesCoords(block.lineBoxes),
+        confidence: block.confidence,
       ));
     }
     images.add(MokuroImage(

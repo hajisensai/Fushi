@@ -501,6 +501,19 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // AI 按句意挑词条（✨）：关着时顶栏按钮仍可手动点，开了每次查词都问一次。
+          SettingsSwitchItem(
+            id: 'lookup.ai_context_auto',
+            title: t.lookup_ai_context_auto,
+            subtitle: t.lookup_ai_context_auto_desc,
+            icon: Icons.auto_awesome_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupAiContextAuto,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.setLookupAiContextAuto(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
             title: t.show_expression_tags,

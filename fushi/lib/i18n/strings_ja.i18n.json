@@ -6214,5 +6214,22 @@
   "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
   "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
   "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
-  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally.",
+  "ai_feature_manga_ocr": "漫画 OCR（画像認識）",
+  "ai_feature_manga_ocr_summary": "漫画の文字枠の中の文字を画像対応モデルで読み直します。「漫画 OCR」設定でモードを選ぶまでは無効です。切り出した文字枠がこのプロバイダーに送信され、その料金が発生します。",
+  "manga_ocr_ai_mode_label": "AI で読み直す",
+  "manga_ocr_ai_mode_off": "オフ",
+  "manga_ocr_ai_mode_low_confidence": "自信のない文字だけ",
+  "manga_ocr_ai_mode_all": "すべての文字",
+  "manga_ocr_ai_mode_desc": "文字枠の検出はこれまでどおり端末内で行い、枠の中の文字を画像対応モデルが読み直します。切り出した文字枠は「設定 › AI」で割り当てたプロバイダーに送信され、その料金が発生します。「自信のない文字だけ」は端末内モデル専用です。ほかのエンジンは確信度を出さないので「すべての文字」を使ってください。",
+  "manga_ocr_ai_mode_no_provider": "漫画 OCR に AI プロバイダーが割り当てられていないため、今は何も送信されません。",
+  "manga_ocr_ai_mode_open_settings": "AI 設定を開く",
+  "ai_feature_lookup_context": "辞書引き：文脈で語を選ぶ",
+  "ai_feature_lookup_context_summary": "文・調べた語・辞書が見つけた見出し語を AI に渡し、文に合う見出し語をポップアップの先頭に移します。ポップアップ上部の ✨ を押すか、辞書引き設定で自動判定をオンにしてください。",
+  "lookup_ai_pick_tooltip": "文脈に合う語を選ぶ（AI）",
+  "lookup_ai_pick_no_sentence": "判断に使える文がありません",
+  "lookup_ai_pick_nothing": "見出し語が一つだけなので選ぶ必要はありません",
+  "lookup_ai_pick_kept": "AI は先頭の見出し語で合っていると判断しました",
+  "lookup_ai_context_auto": "AI で文脈に合う語を選ぶ",
+  "lookup_ai_context_auto_desc": "文のある辞書引きのたびに「設定 › AI」で割り当てたプロバイダーへ問い合わせ、その料金が発生します。オフのときもポップアップ上部の ✨ で手動で使えます。"
 }

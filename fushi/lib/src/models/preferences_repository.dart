@@ -3441,6 +3441,29 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 查词时自动让 AI 按句意挑词条（`ai_lookup_context_assistant.dart`）。默认关：
+  /// 每次查词一个请求、按量计费；关着时弹窗顶栏的 ✨ 按钮照样可以手动点。设备
+  /// 本地，理由同 [mangaOcrAiMode]。
+  bool get lookupAiContextAuto =>
+      getPref('lookup_ai_context_auto', defaultValue: false) as bool;
+
+  Future<void> setLookupAiContextAuto(bool value) async {
+    await setPref('lookup_ai_context_auto', value);
+    notifyListeners();
+  }
+
+  /// 漫画 OCR 的大模型识别档位（`MangaAiOcrMode.storageKey`）：`off`（默认）/
+  /// `low_confidence`（只重读本地低置信度块）/ `all`（全部块）。用哪家模型走
+  /// 「设置 › AI」的功能指派 `AiFeature.mangaOcr`。设备本地：这是「上传漫画页并
+  /// 按量计费」的开关，不能随同步漂到别的设备上自动生效。
+  String get mangaOcrAiMode =>
+      getPref('manga_ocr_ai_mode', defaultValue: 'off') as String;
+
+  Future<void> setMangaOcrAiMode(String value) async {
+    await setPref('manga_ocr_ai_mode', value);
+    notifyListeners();
+  }
+
   /// 引擎选「Fushi 互联服务端」时点名服务端跑的模型（`MangaOcrLocalModel.key`）；
   /// 空串 = 服务端自己当前的选择。
   String get mangaOcrPairedHostModel =>

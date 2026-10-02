@@ -18,7 +18,12 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
+import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/ai/ai_lookup_context_assistant.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -413,6 +418,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         result: dictionaryResult,
         allLoaded: !dictionaryResult.truncated,
       );
+      // 「查词时自动按句意挑词条」：弹窗照常先显示词典顺序，AI 回来再换（见
+      // [aiPickLookupEntry]）。只在开关打开且有提供商时发请求。
+      if (appModel.lookupAiContextAuto && resolveLookupAiProvider() != null) {
+        unawaited(aiPickLookupEntry(item, automatic: true));
+      }
 
       // TODO-058 / BUG-480：嵌套冷层继续挂起到 popupRendered；复用热槽也不能裸奔
       // 直显内容区。macOS 上隐藏/屏外热槽的 JS 注入可能没跑到当前结果，直 show 会露出
@@ -456,6 +466,132 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         _pendingSelectionRect = null;
       }
     }
+  }
+
+  /// 正在等 AI 挑词条的弹窗层（顶栏 ✨ 换成转圈）。
+  final Set<DictionaryPopupEntry> _aiPickingEntries = <DictionaryPopupEntry>{};
+
+  /// 同一句同一词的 AI 结论（候选集合相同才复用）：回看 / 重查 / 重排后再点都
+  /// 不重复付费。值是选中词头的身份（`表记/读音`），null = AI 认为都不合适；存身份
+  /// 而非下标，因为重排后同一批候选的顺序就变了。
+  final Map<String, String?> _aiPickCache = <String, String?>{};
+
+  /// 测试缝：替换 AI 客户端。
+  @visibleForTesting
+  AiChatClient Function()? debugLookupAiClientFactory;
+
+  /// 测试缝：替换提供商解析（默认读「设置 › AI」的 [AiFeature.lookupContext]）。
+  @visibleForTesting
+  AiProviderConfig? Function()? debugLookupAiProvider;
+
+  /// 查词按句意挑词条用哪家 AI；null = 没指派（顶栏不画 ✨，也不自动发请求）。
+  @protected
+  AiProviderConfig? resolveLookupAiProvider() {
+    final AiProviderConfig? Function()? injected = debugLookupAiProvider;
+    if (injected != null) return injected();
+    // 查词弹窗每次构建都会问：偏好仓库没就绪时（启动早期）就是「没指派」。
+    if (!appModel.isPreferencesReady) return null;
+    return appModel.prefsRepo.aiFeatureAssignments.resolve(
+      AiFeature.lookupContext,
+      appModel.prefsRepo.aiProviders,
+    );
+  }
+
+  /// 让 AI 按句意在 [item] 已查到的词头里挑一个，挪到最前。
+  ///
+  /// 候选、句子都取自本次查词，AI 只回编号（`ai_lookup_context_assistant.dart`）。
+  /// 等待期间用户可能已换词 / 关弹窗 / 加载更多：回来时按「层还在、结果还是那一份」
+  /// 两道身份门校验，对不上就丢弃。[automatic] 时不弹任何提示（没句子、只有一个词头、
+  /// 请求失败都静默——那是每次查词都会走的路径）。
+  Future<void> aiPickLookupEntry(
+    DictionaryPopupEntry item, {
+    bool automatic = false,
+  }) async {
+    if (_aiPickingEntries.contains(item)) return;
+    final DictionarySearchResult? result = item.result;
+    final AiProviderConfig? provider = resolveLookupAiProvider();
+    if (result == null || provider == null) {
+      if (!automatic) {
+        FushiToast.show(
+          msg: t.ai_assist_no_provider,
+          severity: ToastSeverity.info,
+        );
+      }
+      return;
+    }
+    final String sentence = favoriteLookupContext?.sentence.trim() ?? '';
+    final List<AiLookupCandidate> candidates = aiLookupCandidates(result);
+    if (sentence.isEmpty || candidates.length < 2) {
+      if (!automatic) {
+        FushiToast.show(
+          msg: sentence.isEmpty
+              ? t.lookup_ai_pick_no_sentence
+              : t.lookup_ai_pick_nothing,
+          severity: ToastSeverity.info,
+        );
+      }
+      return;
+    }
+    final String matched = aiLookupMatchedText(result);
+    final List<String> identities = <String>[
+      for (final AiLookupCandidate c in candidates)
+        '${c.expression}/${c.reading}',
+    ];
+    final String cacheKey = <String>[
+      sentence,
+      matched,
+      ...(List<String>.of(identities)..sort()),
+    ].join('\u0001');
+    int? choice;
+    if (_aiPickCache.containsKey(cacheKey)) {
+      final String? chosen = _aiPickCache[cacheKey];
+      final int found = chosen == null ? -1 : identities.indexOf(chosen);
+      choice = found < 0 ? null : found;
+    } else {
+      setState(() => _aiPickingEntries.add(item));
+      final AiChatClient client =
+          debugLookupAiClientFactory?.call() ?? AiChatClient();
+      try {
+        choice = await requestAiLookupChoice(
+          client: client,
+          provider: provider,
+          sentence: sentence,
+          matched: matched,
+          candidates: candidates,
+        );
+        _aiPickCache[cacheKey] = choice == null ? null : identities[choice];
+      } on AiChatFailure catch (error) {
+        if (!automatic && mounted) {
+          FushiToast.show(
+            msg: aiFailureText(error.message),
+            severity: ToastSeverity.error,
+          );
+        }
+        return;
+      } finally {
+        client.close();
+        if (mounted) setState(() => _aiPickingEntries.remove(item));
+      }
+    }
+    if (!mounted) return;
+    // 身份门：层还在，且仍是发请求时那一份结果（换词 / 加载更多 / 原地跳转都会换）。
+    if (!_popup.entries.contains(item) || !identical(item.result, result)) {
+      return;
+    }
+    if (choice == null || choice == 0) {
+      if (!automatic) {
+        FushiToast.show(
+          msg: t.lookup_ai_pick_kept,
+          severity: ToastSeverity.info,
+        );
+      }
+      return;
+    }
+    _popup.fillResult(
+      item,
+      result: promoteAiLookupCandidate(result, choice),
+      allLoaded: item.allLoaded,
+    );
   }
 
   /// TODO-962：阅读器/有声书弹窗第 [index] 层「加载更多」——续查下一批词头并增量追加。
@@ -1054,6 +1190,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 onForward: () => _navigatePopupHistory(item, forward: true),
               )
             : null,
+        // 「✨ 按句意挑词条」：给查词指派了 AI 才画；有结果才有得挑。
+        aiPick: item.result != null &&
+                item.result!.entries.isNotEmpty &&
+                resolveLookupAiProvider() != null
+            ? DictionaryPopupAiPick(
+                busy: _aiPickingEntries.contains(item),
+                onTap: () => unawaited(aiPickLookupEntry(item)),
+              )
+            : null,
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头
         // （与 dictionary_page_mixin / home_dictionary_page 同构），webview 的
         // _pushResults 据 searchTerm 不变 + entries 增多自动判 isLoadMore → 走
@@ -1413,6 +1558,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             webViewKey: e.webViewKey,
           ))
       .toList();
+
+  /// 测试钩子：当前弹窗栈的条目本身（[aiPickLookupEntry] 要拿条目身份）。
+  @visibleForTesting
+  List<DictionaryPopupEntry> get debugPopupEntries =>
+      List<DictionaryPopupEntry>.unmodifiable(_popup.entries);
 
   /// TODO-058 test hook: simulate the WebView at [index] firing `popupRendered`
   /// (the fake test WebView never fires real lifecycle callbacks). Reveals a

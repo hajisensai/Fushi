@@ -6214,5 +6214,22 @@
   "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
   "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
   "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
-  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally.",
+  "ai_feature_manga_ocr": "Manga OCR (vision)",
+  "ai_feature_manga_ocr_summary": "A vision model re-reads the text inside manga text boxes. Off until you pick a mode in Manga OCR settings; cropped text boxes are uploaded to this provider and billed by it.",
+  "manga_ocr_ai_mode_label": "AI recognition",
+  "manga_ocr_ai_mode_off": "Off",
+  "manga_ocr_ai_mode_low_confidence": "Only uncertain text",
+  "manga_ocr_ai_mode_all": "All text",
+  "manga_ocr_ai_mode_desc": "Text boxes are still found on this device; a vision model re-reads the text inside them. Cropped text boxes are uploaded to the provider assigned in Settings › AI and billed by it. \"Only uncertain text\" needs a local model; other engines report no confidence, so use \"All text\" with them.",
+  "manga_ocr_ai_mode_no_provider": "No AI provider is assigned to manga OCR yet, so nothing is sent.",
+  "manga_ocr_ai_mode_open_settings": "Open AI settings",
+  "ai_feature_lookup_context": "Lookup: pick the meaning from context",
+  "ai_feature_lookup_context_summary": "Sends the sentence, the looked-up word and the dictionary's headwords; AI picks the one that fits and the popup moves it to the top. Use the ✨ button in the popup, or turn on automatic picking in Lookup settings.",
+  "lookup_ai_pick_tooltip": "Pick the meaning that fits this sentence (AI)",
+  "lookup_ai_pick_no_sentence": "No sentence to judge from",
+  "lookup_ai_pick_nothing": "Only one headword, nothing to choose",
+  "lookup_ai_pick_kept": "AI thinks the first headword already fits",
+  "lookup_ai_context_auto": "Pick meaning from context with AI",
+  "lookup_ai_context_auto_desc": "Every lookup with a sentence asks the AI assigned in Settings › AI, which is billed by that provider. When off, use the ✨ button in the popup."
 }

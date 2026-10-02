@@ -25,6 +25,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
     show SystemOcrMangaRunner;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -91,6 +92,32 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   if (engine == null || !availability.isUsable(engine)) {
     return const MangaStreamOcrNoEngine();
   }
+  final MangaStreamOcrSetup setup = await _prepareEngine(
+    engine,
+    imageDirPath: imageDirPath,
+    engines: engines,
+    lensLanguage: lensLanguage,
+    confirmLensUpload: confirmLensUpload,
+  );
+  final MangaAiOcrRefiner? refiner = engines.aiRefinerFactory?.call();
+  if (setup is! MangaStreamOcrReady || refiner == null) return setup;
+  return MangaStreamOcrReady(
+    setup.engine,
+    AiRefinedMangaStreamPageRecognizer(
+      setup.recognizer,
+      refiner: refiner,
+      cache: MangaAiOcrCache.forVolume(imageDirPath, refiner.provider),
+    ),
+  );
+}
+
+Future<MangaStreamOcrSetup> _prepareEngine(
+  MangaOcrEngineId engine, {
+  required String imageDirPath,
+  required MangaOcrWizardEngines engines,
+  required String lensLanguage,
+  required Future<bool> Function() confirmLensUpload,
+}) async {
   switch (engine) {
     case MangaOcrEngineId.localOnnx:
       final MangaOcrService service = engines.service;
@@ -188,6 +215,39 @@ class LocalMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
       // 会话根本没建起来（模型缺失等）：没有资源要放。
     }
   }
+}
+
+/// 设置里开了大模型识别时套在任意单页识别器外面：先本地识别，再把该页的块交给
+/// [MangaAiOcrRefiner] 重读。重读失败一律交回本地结果（识别器照常可用）。
+class AiRefinedMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
+  AiRefinedMangaStreamPageRecognizer(
+    this._inner, {
+    required MangaAiOcrRefiner refiner,
+    MangaAiOcrCache? cache,
+  })  : _refiner = refiner,
+        _cache = cache;
+
+  final MangaStreamPageRecognizer _inner;
+  final MangaAiOcrRefiner _refiner;
+  final MangaAiOcrCache? _cache;
+
+  @override
+  Future<MokuroImage> recognize(File pageFile) async {
+    final MokuroImage local = await _inner.recognize(pageFile);
+    try {
+      return (await _refiner.refinePage(
+        local,
+        await pageFile.readAsBytes(),
+        cache: _cache,
+      ))
+          .page;
+    } on Object {
+      return local;
+    }
+  }
+
+  @override
+  Future<void> close() => _inner.close();
 }
 
 /// Lens / 系统 OCR：读出页图字节直接识别，没有常驻资源。

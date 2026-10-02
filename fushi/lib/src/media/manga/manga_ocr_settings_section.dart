@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -56,6 +57,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.pairedHostModelGetter,
     this.pairedHostModelSetter,
     this.remoteRunner,
+    this.aiModeGetter,
+    this.aiModeSetter,
+    this.aiProviderReady,
+    this.openAiSettings,
     super.key,
   });
 
@@ -108,6 +113,17 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 探测已配对服务端有哪些模型；null = 不列服务端模型。
   final MangaOcrRemoteRunner? remoteRunner;
 
+  /// 大模型识别档位（`MangaAiOcrMode.storageKey`）读写；省略时下拉不出现。
+  final String Function()? aiModeGetter;
+  final Future<void> Function(String value)? aiModeSetter;
+
+  /// 「设置 › AI」里给漫画 OCR 解析到了能用的提供商（含默认提供商）。档位开着
+  /// 却没有提供商时，下拉下方提示「目前不会发送任何内容」并给入口。
+  final bool Function()? aiProviderReady;
+
+  /// 打开「设置 › AI」；null = 不显示入口。
+  final void Function(BuildContext context)? openAiSettings;
+
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
       _MangaOcrSettingsSectionState();
@@ -120,6 +136,7 @@ class _MangaOcrSettingsSectionState
   late int _parallelTasks;
   late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
+  late MangaAiOcrMode _aiMode;
 
   /// 当前点名的服务端模型；null = 服务端默认。
   String? _pairedHostModel;
@@ -167,6 +184,7 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
+    _aiMode = MangaAiOcrMode.fromStorageKey(widget.aiModeGetter?.call());
     _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(0, 4);
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? 'manga_ocr',
@@ -636,6 +654,10 @@ class _MangaOcrSettingsSectionState
           const SizedBox(height: 12),
           _inset(_buildLensLanguage(theme)),
         ],
+        if (widget.aiModeGetter != null) ...<Widget>[
+          const SizedBox(height: 12),
+          _inset(_buildAiMode(theme)),
+        ],
         const SizedBox(height: 12),
         if (widget.service.isSupportedPlatform)
           _buildLocalModelArea(theme)
@@ -926,6 +948,69 @@ class _MangaOcrSettingsSectionState
         setState(() => _lensLanguage = value);
         unawaited(_writeLensLanguage(value));
       },
+    );
+  }
+
+  /// 大模型识别档位：框仍在本机检测，框里的字交视觉模型重读（见
+  /// `manga_ai_ocr_refiner.dart`）。默认关；开着但没指派提供商时明说「不会发送」。
+  Widget _buildAiMode(ThemeData theme) {
+    final bool missingProvider = _aiMode != MangaAiOcrMode.off &&
+        !(widget.aiProviderReady?.call() ?? false);
+    final void Function(BuildContext context)? openAiSettings =
+        widget.openAiSettings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        DropdownButtonFormField<MangaAiOcrMode>(
+          key: const ValueKey<String>('manga_ocr_ai_mode'),
+          initialValue: _aiMode,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: t.manga_ocr_ai_mode_label,
+            helperText: t.manga_ocr_ai_mode_desc,
+            helperMaxLines: 6,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          items: <DropdownMenuItem<MangaAiOcrMode>>[
+            for (final MangaAiOcrMode mode in MangaAiOcrMode.values)
+              DropdownMenuItem<MangaAiOcrMode>(
+                value: mode,
+                child: Text(switch (mode) {
+                  MangaAiOcrMode.off => t.manga_ocr_ai_mode_off,
+                  MangaAiOcrMode.lowConfidence =>
+                    t.manga_ocr_ai_mode_low_confidence,
+                  MangaAiOcrMode.all => t.manga_ocr_ai_mode_all,
+                }),
+              ),
+          ],
+          onChanged: widget.aiModeSetter == null
+              ? null
+              : (MangaAiOcrMode? value) async {
+                  if (value == null || value == _aiMode) return;
+                  setState(() => _aiMode = value);
+                  await widget.aiModeSetter!(value.storageKey);
+                },
+        ),
+        if (missingProvider) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            t.manga_ocr_ai_mode_no_provider,
+            key: const ValueKey<String>('manga_ocr_ai_mode_no_provider'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+          if (openAiSettings != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: () => openAiSettings(context),
+                child: Text(t.manga_ocr_ai_mode_open_settings),
+              ),
+            ),
+        ],
+      ],
     );
   }
 

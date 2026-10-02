@@ -732,6 +732,15 @@ class DictionaryPopupHistoryNav {
   final VoidCallback onForward;
 }
 
+/// 弹窗顶栏「✨ 按句意挑词条」（`ai_lookup_context_assistant.dart`）的接线。宿主只在
+/// 给查词功能解析到了 AI 提供商时传入；[busy] 时按钮换成转圈且不可再点。
+class DictionaryPopupAiPick {
+  const DictionaryPopupAiPick({required this.busy, required this.onTap});
+
+  final bool busy;
+  final VoidCallback onTap;
+}
+
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
     required this.result,
@@ -776,6 +785,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClose,
     this.onBack,
     this.historyNav,
+    this.aiPick,
     this.restoreScrollTop,
     this.transparentDocumentBackground = false,
     this.showResizeGrip = false,
@@ -923,6 +933,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 与 [onBack] 语义不同：[onBack] 是关掉**一层**弹窗，这里是在**同一层**的历史页
   /// 间来回。
   final DictionaryPopupHistoryNav? historyNav;
+
+  /// 顶栏「✨ 按句意挑词条」（见 [DictionaryPopupAiPick]）。null = 不画。
+  final DictionaryPopupAiPick? aiPick;
 
   /// 透传 [DictionaryPopupWebView.restoreScrollTop]：后退 / 前进回到历史页时该页离开
   /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
@@ -1251,7 +1264,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     if (headerWidget == null &&
         onClose == null &&
         onBack == null &&
-        historyNav == null) {
+        historyNav == null &&
+        aiPick == null) {
       return null;
     }
 
@@ -1296,6 +1310,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         ],
         _buildZoomFontButton(context, zoomIn: false),
         _buildZoomFontButton(context, zoomIn: true),
+        if (aiPick != null) _buildAiPickButton(context, aiPick!),
       ],
     );
 
@@ -1339,6 +1354,30 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 只有标签的单行气泡，TODO-1353 想给的提示等于没给。现在收成一层：把完整 message 直接
   /// 交给 [FushiIconButton.tooltip]，由那唯一一层负责显示（并带
   /// [kIconButtonTooltipHoverDelay] 悬停延迟，避免子弹窗落到光标下就自动冒泡盖住父层正文）。
+  Widget _buildAiPickButton(BuildContext context, DictionaryPopupAiPick pick) {
+    if (pick.busy) {
+      return ConstrainedBox(
+        key: const ValueKey<String>('popup_ai_pick_busy'),
+        constraints: _topActionConstraints,
+        child: const Center(
+          child: SizedBox.square(
+            dimension: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    return FushiIconButton(
+      key: const ValueKey<String>('popup_ai_pick'),
+      icon: Icons.auto_awesome_outlined,
+      size: 20,
+      tooltip: t.lookup_ai_pick_tooltip,
+      constraints: _topActionConstraints,
+      padding: EdgeInsets.zero,
+      onTap: pick.onTap,
+    );
+  }
+
   Widget _buildZoomFontButton(BuildContext context, {required bool zoomIn}) {
     final String label =
         zoomIn ? t.popup_font_size_increase : t.popup_font_size_decrease;
