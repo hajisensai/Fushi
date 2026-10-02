@@ -369,6 +369,12 @@ public class ScreenOcrService extends Service {
                                     "Text recognition model is not ready yet")
                             : label(LABEL_FAILED, "Text recognition failed"));
                     finishFlow();
+                    if (unavailable) {
+                        // 只提示「没就绪」是死胡同：用户不知道该去哪配。拉起 Fushi，
+                        // 由 Dart 弹出系统 OCR 模型配置（查状态 / 立即下载）（BUG-2889）。
+                        FloatingBallChannel.requestSystemOcrSetup();
+                        BackgroundActivityLauncher.bringAppToFront(this);
+                    }
                 });
     }
 

@@ -63,6 +63,7 @@ void main() {
     // 用例已销毁的宿主上。
     FloatingBallChannel.debugResetHandler();
     pendingExternalLookup.value = null;
+    pendingSystemOcrSetup.value = false;
     db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
@@ -250,6 +251,33 @@ void main() {
     );
     await tester.pump();
     expect(ball(), findsNothing);
+  });
+
+  testWidgets('BUG-2889：原生报系统 OCR 模型未就绪 → 就绪后弹出模型配置，而不是只提示', (
+    WidgetTester tester,
+  ) async {
+    // 通道回调只在有系统球 / 截屏识字的平台装；测试机按桌面装上。
+    debugDesktopSystemBallPlatformOverride = true;
+    addTearDown(() => debugDesktopSystemBallPlatformOverride = null);
+    await pumpHost(tester);
+    expect(find.text(t.ocr_system_model_title), findsNothing);
+
+    final ByteData message = const StandardMethodCodec().encodeMethodCall(
+      const MethodCall('openSystemOcrSetup'),
+    );
+    await tester.runAsync(() async {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        FloatingBallChannel.channel.name,
+        message,
+        (_) {},
+      );
+    });
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(pendingSystemOcrSetup.value, isFalse);
+    expect(find.text(t.ocr_system_model_title), findsOneWidget);
+    // 测试机没有系统 OCR 原生侧：没有模型可缺，如实显示就绪。
+    expect(find.text(t.ocr_system_model_ready), findsOneWidget);
   });
 
   testWidgets('外部查词（深链 / App Intent）在就绪后交给查词弹窗', (WidgetTester tester) async {

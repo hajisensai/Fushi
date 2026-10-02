@@ -108,6 +108,11 @@ class FloatingBallChannel {
   static Future<bool> takePendingCameraOcr() async =>
       await _invoke<bool>('takePendingCameraOcr') ?? false;
 
+  /// 取走（并清掉）截屏 OCR 报「模型未就绪」后排队的「打开系统 OCR 配置」请求
+  /// （同 [takePendingOpenLookupPage]，BUG-2889）。
+  static Future<bool> takePendingSystemOcrSetup() async =>
+      await _invoke<bool>('takePendingSystemOcrSetup') ?? false;
+
   /// 取走（并清掉）「用户在系统球上点了关闭」标记。它落在原生偏好里：关闭时主
   /// 引擎可能不在，Dart 下次起来还要据此把「应用外」开关关掉，而不是把球又拉起来。
   static Future<bool> takeSystemBallClosedByUser() async =>
@@ -128,6 +133,8 @@ class FloatingBallChannel {
   ///  - `screenOcrFinished`（Android 截屏 OCR 已截到帧或已放弃）→ [onScreenOcrFinished]；
   ///  - `openLookupPage`（Android 系统球「查词」，Fushi 已被拉到前台）→ [onOpenLookupPage]；
   ///  - `openCameraOcr`（Android 系统球「拍照查词」，Fushi 已被拉到前台）→ [onOpenCameraOcr]；
+  ///  - `openSystemOcrSetup`（Android 截屏 OCR 报模型未就绪，Fushi 已被拉到前台）→
+  ///    [onOpenSystemOcrSetup]；
   ///  - `systemBallClosedByUser`（系统球 / 常驻通知上点了关闭）→
   ///    [onSystemBallClosedByUser]；
   ///  - `systemBallAction {id, anchor}`（桌面系统球上点了某个动作；anchor 是球在
@@ -143,6 +150,7 @@ class FloatingBallChannel {
     required void Function() onScreenOcrFinished,
     void Function()? onOpenLookupPage,
     void Function()? onOpenCameraOcr,
+    void Function()? onOpenSystemOcrSetup,
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
     void Function(String dock, double fraction)? onSystemBallPositionChanged,
@@ -161,6 +169,8 @@ class FloatingBallChannel {
           onOpenLookupPage?.call();
         case 'openCameraOcr':
           onOpenCameraOcr?.call();
+        case 'openSystemOcrSetup':
+          onOpenSystemOcrSetup?.call();
         case 'systemBallClosedByUser':
           onSystemBallClosedByUser?.call();
         case 'systemBallAction':
@@ -182,6 +192,7 @@ class FloatingBallChannel {
     if (Platform.isAndroid) {
       if (await takePendingOpenLookupPage()) onOpenLookupPage?.call();
       if (await takePendingCameraOcr()) onOpenCameraOcr?.call();
+      if (await takePendingSystemOcrSetup()) onOpenSystemOcrSetup?.call();
       return;
     }
     if (!Platform.isIOS) return;

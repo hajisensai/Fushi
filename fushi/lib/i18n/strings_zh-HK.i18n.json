@@ -6213,5 +6213,15 @@
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
   "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
   "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
-  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first."
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
+  "ocr_system_model_title": "系統 OCR 模型",
+  "ocr_system_model_checking": "正在檢查文字識別模型…",
+  "ocr_system_model_missing": "Google Play 服務還沒有下載文字識別模型。現在下載（幾 MB）即可使用截屏識字。",
+  "ocr_system_model_download": "下載",
+  "ocr_system_model_downloading": "正在透過 Google Play 服務下載…可以關掉此視窗，下載會在背景繼續。",
+  "ocr_system_model_ready": "文字識別模型已就緒，請再識別一次。",
+  "ocr_system_model_failed": "模型下載失敗：$error",
+  "ocr_system_model_play_services_resolvable": "系統 OCR 依賴 Google Play 服務，本機的 Google Play 服務缺失、被停用或版本過舊。",
+  "ocr_system_model_play_services_fix": "修復 Google Play 服務",
+  "ocr_system_model_play_services_unavailable": "本機沒有可用的 Google Play 服務，無法使用系統 OCR。"
 }
