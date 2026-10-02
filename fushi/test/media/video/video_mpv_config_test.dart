@@ -316,6 +316,38 @@ keep-open=yes
     });
   });
 
+  group('resolveTextureColorTargetProperties (BUG-2861 mac 视频发灰)', () {
+    // 根因：Flutter macOS 合成面固定 sRGB、外部纹理按原值采样；mpv target-trc=auto 对
+    // SDR 片源不换 gamma，BT.1886 值被按 sRGB 解释 → 暗部抬亮发灰。修复=Apple 两端把输出
+    // 目标钉成 sRGB（IINA 按图层色彩空间做色彩管理的同一思路）。
+    test('Apple（macOS / iOS）: 输出目标钉成 BT.709 + sRGB', () {
+      expect(
+        resolveTextureColorTargetProperties(isApple: true),
+        <String, String>{'target-prim': 'bt.709', 'target-trc': 'srgb'},
+      );
+    });
+    test('非 Apple: 不下发（Windows / Android 零行为变化）', () {
+      expect(resolveTextureColorTargetProperties(isApple: false), isEmpty);
+    });
+    test('buildMpvProperties 端到端：Apple 下发、其它平台不下发', () {
+      final Map<String, String> mac =
+          buildMpvProperties(VideoMpvConfig.defaults, isApple: true);
+      expect(mac['target-trc'], 'srgb');
+      expect(mac['target-prim'], 'bt.709');
+      final Map<String, String> other =
+          buildMpvProperties(VideoMpvConfig.defaults, isApple: false);
+      expect(other.containsKey('target-trc'), isFalse);
+      expect(other.containsKey('target-prim'), isFalse);
+    });
+    test('rawConf 仍可覆盖输出目标（高级逃生口）', () {
+      final Map<String, String> m = buildMpvProperties(
+        VideoMpvConfig.defaults.copyWith(rawConf: 'target-trc=gamma2.2'),
+        isApple: true,
+      );
+      expect(m['target-trc'], 'gamma2.2');
+    });
+  });
+
   group('encode/decode', () {
     test('round-trips all fields', () {
       final VideoMpvConfig c = VideoMpvConfig.defaults.copyWith(
