@@ -112,7 +112,7 @@ export function periodContributions(workId, finishedAt, finishedDate, sign) {
  */
 export function exactWorkPeriodsStatements(db, workIdsJson) {
   const base = `FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0 JOIN works w ON w.id = s.work_id
-                WHERE s.work_id IN (SELECT value FROM json_each(?1)) AND s.finished_at > 0`;
+                WHERE s.work_id IN (SELECT value FROM json_each(?1)) AND s.finished_at > 0 AND s.counted = 1`;
   return [
     db.prepare('DELETE FROM work_periods WHERE work_id IN (SELECT value FROM json_each(?1))').bind(workIdsJson),
     db.prepare(

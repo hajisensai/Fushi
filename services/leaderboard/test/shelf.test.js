@@ -320,6 +320,36 @@ describe('增量协议与增量计数', () => {
     expect(readers()).toBeUndefined();
   });
 
+  it('counted:false（同机另一 Profile）：上架、计入本账户计分，但不计入作品读者数（BUG-2870）', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const a = await registerUser(env, 'a', { now: NOW });
+    const b = await registerUser(env, 'b', { now: NOW });
+    const finished = done('2026-09-29');
+    const [w] = (await delta(env, a, { reset: true, put: [entry('book', ['t:dup|'], 'dup', finished)] })).data.works;
+    const r = await delta(env, b, { reset: true, put: [entry('book', ['t:dup|'], 'dup', { ...finished, counted: false })] });
+    expect(r.status).toBe(200);
+    expect(r.data.shelfCount).toBe(1);
+    const db = env.DB.raw;
+    const readers = () => db.prepare('SELECT readers FROM works WHERE id = ?1').get(w.workId)?.readers;
+    const periodN = () => db.prepare("SELECT n FROM work_periods WHERE work_id = ?1 AND period LIKE 'm:%'").get(w.workId)?.n;
+    const bookTotal = (acc) => db.prepare('SELECT book FROM account_totals WHERE account_id = ?1').get(acc.id)?.book;
+    expect(readers()).toBe(1);
+    expect(periodN()).toBe(1);
+    expect(bookTotal(b)).toBe(1); // 账户自己的读完数不去重
+    // 计数的那个 Profile 不再上传 → 另一个接手计入：0 → 1 也产生增量。
+    await delta(env, b, { put: [entry('book', ['t:dup|'], 'dup', finished)] });
+    expect(readers()).toBe(2);
+    expect(periodN()).toBe(2);
+    await delta(env, b, { put: [entry('book', ['t:dup|'], 'dup', { ...finished, counted: false })] });
+    expect(readers()).toBe(1);
+    expect(periodN()).toBe(1);
+    // 删除不计入的行不动读者数；删除计入的行才减。
+    await delta(env, b, { remove: [w.workId] });
+    expect(readers()).toBe(1);
+    await delta(env, a, { remove: [w.workId] });
+    expect(readers()).toBeUndefined();
+  });
+
   it('对拍：任意增量操作序列之后，增量维护的计数 == 从零精确重算', async () => {
     const env = makeEnv({ autoSnapshot: false });
     const users = [];
@@ -339,7 +369,9 @@ describe('增量协议与增量计数', () => {
       const kind = kinds[k % 4];
       const f = rnd(3);
       const extra = f === 0 ? {} : f === 1 ? { finished: true } : done(dates[rnd(4)]);
-      return entry(kind, [`t:work${k}|`], `w${k}`, { ...extra, chars: rnd(1000) });
+      // 同机多 Profile 去重：约三分之一的条目不计入作品维度读者数（BUG-2870）。
+      const counted = rnd(3) === 0 ? { counted: false } : {};
+      return entry(kind, [`t:work${k}|`], `w${k}`, { ...extra, ...counted, chars: rnd(1000) });
     };
     for (let step = 0; step < 60; step++) {
       const now = NOW + step * 90 * 1000; // 每步 90 秒，免得撞上每小时上传次数限流
@@ -365,7 +397,7 @@ describe('增量协议与增量计数', () => {
       const db = env.DB.raw;
       const drift = db.prepare(
         `SELECT w.id, w.readers, (SELECT COUNT(*) FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-                                  WHERE s.work_id = w.id AND s.finished_at IS NOT NULL) AS exact
+                                  WHERE s.work_id = w.id AND s.finished_at IS NOT NULL AND s.counted = 1) AS exact
          FROM works w`,
       ).all().filter((r) => r.readers !== r.exact);
       expect(drift, `step ${step} readers drift`).toEqual([]);
@@ -393,11 +425,11 @@ describe('增量协议与增量计数', () => {
         `SELECT period, work_id, n FROM (
            SELECT 'w:' || date(s.finished_date, '-6 days', 'weekday 1') AS period, s.work_id, COUNT(*) AS n
            FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-           WHERE s.finished_at > 0 GROUP BY 1, 2
+           WHERE s.finished_at > 0 AND s.counted = 1 GROUP BY 1, 2
            UNION ALL
            SELECT 'm:' || substr(s.finished_date, 1, 7), s.work_id, COUNT(*)
            FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-           WHERE s.finished_at > 0 GROUP BY 1, 2) ORDER BY 1, 2`,
+           WHERE s.finished_at > 0 AND s.counted = 1 GROUP BY 1, 2) ORDER BY 1, 2`,
       ).all().map((r) => ({ ...r }));
       expect(wp, `step ${step} work_periods drift`).toEqual(wpExact);
       // account_periods == 按 stat_days 现场聚合

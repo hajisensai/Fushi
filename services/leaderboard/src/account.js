@@ -149,11 +149,11 @@ export async function deleteAccount(env, account) {
   const id = account.id;
   // 版本与旧行在同一次 CAS 保护下：与本账户的并发上传交错时整批回滚（409，客户端重试删除）。
   const acc = await env.DB.prepare('SELECT shelf_rev, hidden FROM accounts WHERE id = ?1').bind(id).first();
-  const prev = await env.DB.prepare('SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1')
+  const prev = await env.DB.prepare('SELECT work_id, finished_at, finished_date, counted FROM shelf WHERE account_id = ?1')
     .bind(id).all();
   const prevJson = JSON.stringify(prev.results.map((r) => r.work_id));
-  // 读完过的作品读者数 / 周期读者数减一（被隐藏的账户本来就没计入）。
-  const finished = acc.hidden ? [] : prev.results.filter((r) => r.finished_at !== null);
+  // 读完过的作品读者数 / 周期读者数减一（被隐藏的账户、counted = 0 的行本来就没计入）。
+  const finished = acc.hidden ? [] : prev.results.filter((r) => r.finished_at !== null && r.counted !== 0);
   const deltas = finished.map((r) => ({ id: r.work_id, d: -1 }));
   const periodDeltas = finished.flatMap((r) => periodContributions(r.work_id, r.finished_at, r.finished_date, -1));
   const results = await casBatch(env.DB, [
