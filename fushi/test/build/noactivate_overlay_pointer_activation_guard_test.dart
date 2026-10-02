@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2889 — WS_EX_NOACTIVATE 只挡**鼠标**点击激活。触摸 / 触控笔按下另发
 /// WM_POINTERACTIVATE（DefWindowProc 回 PA_ACTIVATE），窗口照样变前台。盖在游戏上的
 /// 划词条 / 工具条一被手指点到，游戏就失去前台，宿主「点卡外吞点击」随之失效
@@ -13,14 +15,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// 自动落进扫描面。扩展样式写成变量的（主窗口测试模式 `ex_style`）不在此列；
 /// 系统 tooltip 类不收指针输入，也不在此列。
 const String _runner = 'windows/runner';
-
-String _stripLineComments(String src) => src
-    .split('\n')
-    .map((String l) {
-      final int i = l.indexOf('//');
-      return i < 0 ? l : l.substring(0, i);
-    })
-    .join('\n');
 
 /// 从 `(` 之后起，取前 [count] 个顶层逗号分隔的实参。
 List<String> _leadingArgs(String src, int openParen, int count) {
@@ -77,7 +71,7 @@ void main() {
     final Map<String, List<String>> out = <String, List<String>>{};
     final RegExp call = RegExp(r'CreateWindowExW?\(');
     for (final File f in sources) {
-      final String src = _stripLineComments(
+      final String src = maskComments(
         f.readAsStringSync().replaceAll('\r\n', '\n'),
       );
       for (final RegExpMatch m in call.allMatches(src)) {
@@ -131,7 +125,7 @@ void main() {
   test('runner 里不再有只挡鼠标的裸 MA_NOACTIVATE 回复', () {
     final List<String> offenders = <String>[
       for (final File f in sources)
-        if (_stripLineComments(
+        if (maskComments(
           f.readAsStringSync(),
         ).contains('return MA_NOACTIVATE;'))
           f.uri.pathSegments.last,

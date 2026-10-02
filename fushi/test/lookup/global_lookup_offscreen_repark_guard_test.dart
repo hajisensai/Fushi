@@ -6,6 +6,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 String _block(String src, String start, String end) {
   final int i = src.indexOf(start);
   expect(i, greaterThan(0), reason: '找不到 $start');
@@ -14,31 +16,27 @@ String _block(String src, String start, String end) {
   return src.substring(i, j);
 }
 
-// 只断言代码：注释里解释「为什么不带 SWP_SHOWWINDOW」本身会提到这个词。
-String _code(String block) => block
-    .split('\n')
-    .map((String line) {
-      final int c = line.indexOf('//');
-      return c < 0 ? line : line.substring(0, c);
-    })
-    .join('\n');
-
 void main() {
-  final String src = File(
-    'windows/runner/global_lookup_window.cpp',
-  ).readAsStringSync();
+  // 只断言代码：注释里解释「为什么不带 SWP_SHOWWINDOW」本身会提到这个词。
+  final String src = maskComments(
+    File('windows/runner/global_lookup_window.cpp').readAsStringSync(),
+  );
 
   test('WM_DISPLAYCHANGE 与 WM_DPICHANGED 都重新停放离屏窗', () {
-    final String display = _code(
-      _block(src, 'case WM_DISPLAYCHANGE:', 'case WM_ENTERSIZEMOVE:'),
+    final String display = _block(
+      src,
+      'case WM_DISPLAYCHANGE:',
+      'case WM_ENTERSIZEMOVE:',
     );
     expect(
       display.contains('ReparkOffscreenIfParked();'),
       isTrue,
       reason: '桌面变宽后停放窗必须回到新的 OffscreenX()',
     );
-    final String dpi = _code(
-      _block(src, 'case WM_DPICHANGED: {', 'case WM_DISPLAYCHANGE:'),
+    final String dpi = _block(
+      src,
+      'case WM_DPICHANGED: {',
+      'case WM_DISPLAYCHANGE:',
     );
     expect(
       dpi.contains('ReparkOffscreenIfParked();'),
@@ -48,12 +46,10 @@ void main() {
   });
 
   test('只挪「显示着但未上屏」的窗，且只换位置', () {
-    final String body = _code(
-      _block(
-        src,
-        'void GlobalLookupWindow::ReparkOffscreenIfParked() {',
-        '\n}\n',
-      ),
+    final String body = _block(
+      src,
+      'void GlobalLookupWindow::ReparkOffscreenIfParked() {',
+      '\n}\n',
     );
     expect(body.contains('revealed_'), isTrue, reason: '已上屏的卡片绝不能被拓扑变化甩出屏幕');
     expect(body.contains('IsWindowVisible(hwnd_)'), isTrue);
