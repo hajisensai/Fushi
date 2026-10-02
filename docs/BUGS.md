@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2859](bugs/BUG-2859-gal-lookup-cursor-flicker.md) | ✅ | ✅ | galgame 内嵌查词卡上光标在系统指针与游戏自定义指针之间来回闪 |
+| [BUG-2864](bugs/BUG-2864-gal-lookup-cursor-flicker.md) | ✅ | ✅ | galgame 内嵌查词卡上光标在系统指针与游戏自定义指针之间来回闪 |
 | [BUG-2859](bugs/BUG-2859-lookup-bridge-reply-dropped.md) | ✅ | ✅ | 查词卡路由作废后丢弃晚到的 bridge 应答，该词条整个会话无法制卡 |
 | [BUG-2858](bugs/BUG-2858-gal-thread-history-order.md) | ✅ | ✅ | 选定线程后的历史回捞与轮询抢先后，当前台词变成旧句 |
 | [BUG-2857](bugs/BUG-2857-artemis-hover-tooltip-joins-line.md) | ✅ | ✅ | Artemis hover tooltip text is appended to the current line |

@@ -1,4 +1,4 @@
-// 游戏光标不得盖过 Fushi 浮层的光标（BUG-2859）。hook DLL（overlay_cursor_guard.inc 的
+// 游戏光标不得盖过 Fushi 浮层的光标（BUG-2864）。hook DLL（overlay_cursor_guard.inc 的
 // SetCursor detour）与 CTest（tests/overlay_cursor_guard_test.cpp，真 Win32 窗口）共用这一份
 // 判据，两边不得各抄一套。
 //

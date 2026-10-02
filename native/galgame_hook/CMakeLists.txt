@@ -616,7 +616,7 @@ target_include_directories(fushi_game_main_window_test PRIVATE "hook")
 add_test(NAME fushi_game_main_window_test
   COMMAND fushi_game_main_window_test)
 
-# 游戏光标不盖过 Fushi 浮层（真 Win32 窗口跨线程判定，BUG-2859）。
+# 游戏光标不盖过 Fushi 浮层（真 Win32 窗口跨线程判定，BUG-2864）。
 add_executable(fushi_overlay_cursor_guard_test
   "tests/overlay_cursor_guard_test.cpp"
 )

@@ -1,4 +1,4 @@
-// BUG-2859 — 游戏光标不得盖过 Fushi 浮层的光标。判据与根因说明见 overlay_cursor_guard.h。
+// BUG-2864 — 游戏光标不得盖过 Fushi 浮层的光标。判据与根因说明见 overlay_cursor_guard.h。
 //
 // 本文件被 include 进 dll_main.cpp 的匿名命名空间，放在 generic_input_shield.inc 之后：
 // 复用它的 IsHookTargetTrackedByThisDll，与精确适配器的所有权规则一致——某个适配器若已

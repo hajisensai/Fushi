@@ -1,4 +1,4 @@
-// ShouldWithholdGameCursor 的真 Win32 窗口测试（BUG-2859）。
+// ShouldWithholdGameCursor 的真 Win32 窗口测试（BUG-2864）。
 //
 // 判据里的「窗口归哪个线程」「类名是什么」只有系统自己能作证，所以这里真建窗口：
 // 游戏线程 = 本测试主线程；Fushi 浮层 = 另一条线程建的窗口（runner 查词卡在 fushi.exe 里、
