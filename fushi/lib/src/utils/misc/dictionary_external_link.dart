@@ -27,7 +27,7 @@ Uri? parseDictionaryExternalLink(String raw) {
 /// popup.js `openLink` 桥的唯一宿主实现：app 内查词弹窗（`DictionaryPopupWebview`）
 /// 与 app 外查词窗（全局查词 / galgame 游戏内查词卡，`GlobalLookupController`）共用。
 ///
-/// BUG-2849：后者此前根本没有 `openLink` 分支，消息进了 `_onJsMessage` 就被丢掉，
+/// BUG-2868：后者此前根本没有 `openLink` 分支，消息进了 `_onJsMessage` 就被丢掉，
 /// 点「pixivで読む」毫无反应。打不开返回 false，**不抛**——桥回调里漏出的异常
 /// 只会变成一条未捕获异步错误，用户看到的仍是「没反应」。
 Future<bool> openDictionaryExternalLink(

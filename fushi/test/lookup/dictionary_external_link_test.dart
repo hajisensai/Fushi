@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// BUG-2849 — 词典外链（Pixiv「pixivで読む」等）在 app 外查词窗 / galgame
+/// BUG-2868 — 词典外链（Pixiv「pixivで読む」等）在 app 外查词窗 / galgame
 /// 游戏内查词卡里点了没反应：popup.js 把 http(s) 链接交给 `openLink` 桥，
 /// 只有 app 内弹窗注册了它，`GlobalLookupController._onJsMessage` 没有分支，
 /// 消息被静默丢弃。
@@ -93,7 +93,7 @@ void main() {
     });
   });
 
-  group('openLink 桥在每个宿主都有实现（BUG-2849 守卫）', () {
+  group('openLink 桥在每个宿主都有实现（BUG-2868 守卫）', () {
     test('popup.js 仍经 openLink 打开外链', () {
       expect(
         read('assets/popup/popup.js'),

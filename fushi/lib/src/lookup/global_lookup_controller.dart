@@ -1886,7 +1886,7 @@ class GlobalLookupController {
       _dispatchNestedLookup(message);
       return;
     }
-    // BUG-2849 — popup.js hands every http(s) dictionary link (Pixiv
+    // BUG-2868 — popup.js hands every http(s) dictionary link (Pixiv
     // 「pixivで読む」, MDX raw-HTML anchors, …) to `openLink` after
     // preventDefault. Only the in-app popup registered it; here the message was
     // dropped, so external links in the overlay / galgame card did nothing.

@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2868](bugs/BUG-2868-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |
 | [BUG-2867](bugs/BUG-2867-hidpi-wheel-not-smooth.md) | ✅ | ✅ | 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素 |
 | [BUG-2865](bugs/BUG-2865-macos-embedded-torrent-engine-missing.md) | ✅ | ✅ | macOS 下载的内置 torrent 引擎不可用 |
 | [BUG-2864](bugs/BUG-2864-gal-lookup-cursor-flicker.md) | ✅ | ✅ | galgame 内嵌查词卡上光标在系统指针与游戏自定义指针之间来回闪 |
@@ -48,7 +49,6 @@
 | [BUG-2852](bugs/BUG-2852-popup-visible-viewport-helper-overwritten.md) | ✅ | ✅ | 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function |
 | [BUG-2851](bugs/BUG-2851-leaderboard-401-test-fixed-rounds.md) | ✅ | ✅ | 排行榜「账户已在别处删除」用例按固定轮数等真 IO，CI 忙时偶发红 |
 | [BUG-2850](bugs/BUG-2850-ci-pdfium-hook-download.md) | ✅ | ✅ | CI 构建期实时从 GitHub 下载 PDFium（pdfium_dart 构建钩子），下载一抖 develop 的 Windows / macOS / Android 发布同时红 |
-| [BUG-2849](bugs/BUG-2849-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |
 | [BUG-2849](bugs/BUG-2849-aacs-playback-input.md) | ✅ | ✅ | AACS 蓝光原盘缺少解密读取链路 |
 | [BUG-2848](bugs/BUG-2848-emby-client-whitelist-403.md) | ✅ | ✅ | Emby 公益服按 Client 白名单回 403 被报成连不上 |
 | [BUG-2847](bugs/BUG-2847-floating-ball-english-word.md) | ✅ | ✅ | 悬浮球查词取词未适配英语 |
