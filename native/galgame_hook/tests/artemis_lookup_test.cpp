@@ -817,6 +817,82 @@ void TestHitTest() {
                              &hit));
 }
 
+// Records a run as created on `layer` during game frame `frame`.
+void RecordRun(core::CreationLog* log, const std::vector<core::FrameGlyph>& run,
+               uintptr_t layer, uint64_t frame) {
+  for (const auto& glyph : run) {
+    log->Record(glyph.seq, glyph.codepoint, layer, frame);
+  }
+}
+
+// Measured on the x64 build: the name plate and the body are separate layers
+// laid out in one frame; hovering the Config button creates its tooltip on a
+// third layer 2400 frames later, with seqs that follow the body's directly.
+void TestTooltipIsNotPartOfTheLine() {
+  std::wstring text;
+  uint64_t first_seq = 0u;
+  const auto ui = GlyphRun(25u, L"　");
+  const auto name = GlyphRun(154u, L"ミサ");
+  const auto body = GlyphRun(156u, L"「さゆが手伝ってくれた」");
+  const uint64_t body_last = 156u + body.size() - 1u;
+  const auto tip = GlyphRun(body_last + 1u, L"コンフィグ画面を開きます。");
+  const uintptr_t kUi = 0x53393de0u, kName = 0x5e5e0e70u,
+                  kBody = 0x6eb5d400u, kTip = 0x6eb6b450u;
+  core::CreationLog log;
+  RecordRun(&log, ui, kUi, 5u);
+  RecordRun(&log, name, kName, 13523u);
+  RecordRun(&log, body, kBody, 13523u);
+
+  std::vector<core::FrameGlyph> frame = ui;
+  frame.insert(frame.end(), name.begin(), name.end());
+  frame.insert(frame.end(), body.begin(), body.end());
+  assert(core::ComposeRevealedLine(frame.data(), frame.size(), body_last, log,
+                                   &text, &first_seq));
+  assert(text == L"ミサ「さゆが手伝ってくれた」" && first_seq == 154u);
+  // Nothing published yet, or the run is on the published layer: no overlay.
+  assert(!core::OverlaysPublishedLine(frame.data(), frame.size(), kBody, 0u,
+                                      0u));
+  assert(!core::OverlaysPublishedLine(frame.data(), frame.size(), kBody,
+                                      body_last, kBody));
+
+  // The tooltip appears over the still-visible line: it splits off, and it
+  // overlays the published line.
+  RecordRun(&log, tip, kTip, 15920u);
+  const uint64_t tip_last = body_last + tip.size();
+  frame.insert(frame.end(), tip.begin(), tip.end());
+  assert(core::ComposeRevealedLine(frame.data(), frame.size(), tip_last, log,
+                                   &text, &first_seq));
+  assert(text == L"コンフィグ画面を開きます。" && first_seq == body_last + 1u);
+  assert(core::OverlaysPublishedLine(frame.data(), frame.size(), kTip,
+                                     body_last, kBody));
+
+  // The next message: the old line is cleared before the new one is laid out,
+  // so a run on another layer is the next line, not an overlay.
+  const auto next = GlyphRun(tip_last + 1u, L"アコ「おお」");
+  const uintptr_t kNext = 0x6eb63b10u;
+  RecordRun(&log, next, kNext, 16000u);
+  std::vector<core::FrameGlyph> next_frame = ui;
+  next_frame.insert(next_frame.end(), next.begin(), next.end());
+  assert(core::ComposeRevealedLine(next_frame.data(), next_frame.size(),
+                                   tip_last + next.size(), log, &text,
+                                   &first_seq));
+  assert(text == L"アコ「おお」");
+  assert(!core::OverlaysPublishedLine(next_frame.data(), next_frame.size(),
+                                      kNext, body_last, kBody));
+
+  // Text appended to the message in a later frame stays one line: same layer.
+  core::CreationLog append_log;
+  const auto part1 = GlyphRun(300u, L"「それで");
+  const auto part2 = GlyphRun(304u, L"……」");
+  RecordRun(&append_log, part1, kBody, 100u);
+  RecordRun(&append_log, part2, kBody, 160u);
+  std::vector<core::FrameGlyph> appended = part1;
+  appended.insert(appended.end(), part2.begin(), part2.end());
+  assert(core::ComposeRevealedLine(appended.data(), appended.size(), 306u,
+                                   append_log, &text, &first_seq));
+  assert(text == L"「それで……」" && first_seq == 300u);
+}
+
 }  // namespace
 
 int main() {
@@ -829,6 +905,7 @@ int main() {
   TestSelectedSuffix();
   TestFactoryCreationCode();
   TestRevealedLine();
+  TestTooltipIsNotPartOfTheLine();
   TestArchiveSetLeaf();
   TestRangeStartingAt();
   TestLeftButtonClaim();

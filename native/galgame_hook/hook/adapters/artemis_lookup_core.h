@@ -638,18 +638,31 @@ inline constexpr size_t kCreationLogSize = 1024u;
 struct CreationLog {
   uint64_t newest = 0u;
   std::array<uint32_t, kCreationLogSize> codes{};
+  std::array<uintptr_t, kCreationLogSize> layers{};  // factory `this`
+  std::array<uint64_t, kCreationLogSize> frames{};   // game frame of creation
 
-  void Record(uint64_t seq, uint32_t code) {
-    codes[seq & (kCreationLogSize - 1u)] = code;
+  void Record(uint64_t seq, uint32_t code, uintptr_t layer = 0u,
+              uint64_t frame = 0u) {
+    const size_t slot = seq & (kCreationLogSize - 1u);
+    codes[slot] = code;
+    layers[slot] = layer;
+    frames[slot] = frame;
     newest = seq;
+  }
+
+  bool Known(uint64_t seq) const {
+    return seq != 0u && seq <= newest && newest - seq < kCreationLogSize;
   }
 
   // 0 when `seq` is outside the window (unknown).
   uint32_t CodeAt(uint64_t seq) const {
-    if (seq == 0u || seq > newest || newest - seq >= kCreationLogSize) {
-      return 0u;
-    }
-    return codes[seq & (kCreationLogSize - 1u)];
+    return Known(seq) ? codes[seq & (kCreationLogSize - 1u)] : 0u;
+  }
+  uintptr_t LayerAt(uint64_t seq) const {
+    return Known(seq) ? layers[seq & (kCreationLogSize - 1u)] : 0u;
+  }
+  uint64_t FrameAt(uint64_t seq) const {
+    return Known(seq) ? frames[seq & (kCreationLogSize - 1u)] : 0u;
   }
 };
 
@@ -942,6 +955,36 @@ inline bool ResolveSelectedSuffix(const FrameGlyph* glyphs, size_t count,
 
 // ── engine text lane ───────────────────────────────────────────────────────
 
+// True when two creations belong to one layout: the same layer, or the same
+// game frame.  A line's name plate and body are separate layers laid out in
+// one frame; a hover tooltip created later on its own layer is neither, even
+// when its seqs follow the line's without a hole (measured on the x64 build:
+// body 156..179 on one layer, the Config tooltip 180..192 on another, 2400
+// frames later).  Unknown creations (0) compare equal only to each other.
+inline bool SameLayout(const CreationLog& log, uint64_t left, uint64_t right) {
+  return log.LayerAt(left) == log.LayerAt(right) ||
+         log.FrameAt(left) == log.FrameAt(right);
+}
+
+// A revealed run on another layer, drawn while the last glyph of the line
+// already published is still on screen, is UI laid over that line (a hover
+// tooltip, a button caption), not the next line: an ADV message clears its
+// text before the next one is laid out, and NVL text appends on the same
+// layer.  `published_last_seq` 0 means nothing was published yet.
+inline bool OverlaysPublishedLine(const FrameGlyph* glyphs, size_t count,
+                                  uintptr_t run_layer,
+                                  uint64_t published_last_seq,
+                                  uintptr_t published_layer) {
+  if (glyphs == nullptr || published_last_seq == 0u ||
+      run_layer == published_layer) {
+    return false;
+  }
+  for (size_t index = 0u; index < count; ++index) {
+    if (glyphs[index].seq == published_last_seq) return true;
+  }
+  return false;
+}
+
 // True when every creation in [begin, end) is invisible: a line-break control
 // or a whitespace character (neither is drawn).  An empty range is.
 inline bool CreationsInvisible(const CreationLog& log, uint64_t begin,
@@ -965,7 +1008,9 @@ inline bool CreationsInvisible(const CreationLog& log, uint64_t begin,
 // that are created but never drawn — the line break of a wrapped line, a
 // space — leave seq holes inside the burst, so the creation log decides
 // whether a hole is part of the line.  The line on screen is the creation-
-// ordered suffix of drawn glyphs joined across invisible holes only, and it
+// ordered suffix of drawn glyphs joined across invisible holes only, between
+// creations of one layout (SameLayout: UI text created later on its own
+// layer, like a hover tooltip, follows the line's seqs without a hole), and it
 // is fully revealed exactly when that suffix reaches the newest glyph the
 // engine created: a choice menu or a title label whose later-created glyphs
 // are not drawn is not a revealed line.  `glyphs` must be ordered by
@@ -984,8 +1029,10 @@ inline bool ComposeRevealedLine(const FrameGlyph* glyphs, size_t count,
     return false;
   }
   size_t first = count - 1u;
-  while (first > 0u && CreationsInvisible(log, glyphs[first - 1u].seq + 1u,
-                                          glyphs[first].seq)) {
+  while (first > 0u &&
+         CreationsInvisible(log, glyphs[first - 1u].seq + 1u,
+                            glyphs[first].seq) &&
+         SameLayout(log, glyphs[first - 1u].seq, glyphs[first].seq)) {
     --first;
   }
   std::wstring line;

@@ -87,6 +87,9 @@ struct ArtemisLookupRuntime {
   uint64_t model_text_event = 0u;
   ArtemisFrame frame_copy;     // scratch for the seqlock read
   uint64_t published_line_seq = 0u;  // first creation seq of the last line
+  uint64_t published_last_seq = 0u;  // last creation seq of the last line
+  uintptr_t published_layer = 0u;    // layer of that last glyph
+  uint64_t overlay_logged_seq = 0u;  // first seq of the last logged overlay
   std::wstring published_line;
   artemis_lookup::CreationLog creations_copy;
 
@@ -94,6 +97,8 @@ struct ArtemisLookupRuntime {
   artemis_lookup::GlyphCodeTable<> codes;
   artemis_lookup::CreationLog creations;  // under codes_lock
   uint64_t glyph_seq = 0u;
+  // Frames published so far; the factory stamps each creation with it.
+  std::atomic<uint64_t> frame_clock{0u};
   ArtemisFrame building;
   artemis_lookup::ClaimState claim;
   DWORD game_thread = 0u;
@@ -208,7 +213,8 @@ void* __fastcall ArtemisGlyphFactoryDetour(void* layer, const char* text,
     AcquireSRWLockExclusive(&rt.codes_lock);
     rt.codes.Remember(reinterpret_cast<uintptr_t>(glyph), codepoint,
                       ++rt.glyph_seq);
-    rt.creations.Record(rt.glyph_seq, code);
+    rt.creations.Record(rt.glyph_seq, code, reinterpret_cast<uintptr_t>(layer),
+                        rt.frame_clock.load(std::memory_order_relaxed));
     ReleaseSRWLockExclusive(&rt.codes_lock);
   }
   return glyph;
@@ -294,6 +300,7 @@ void PublishArtemisFrame(void* input) {
   ArtemisFrame& frame = rt.building;
   frame.tick = GetTickCount64();
   ++frame.frame;
+  rt.frame_clock.store(frame.frame, std::memory_order_relaxed);
   AcquireSRWLockShared(&rt.codes_lock);
   frame.created = rt.glyph_seq;
   ReleaseSRWLockShared(&rt.codes_lock);
@@ -614,6 +621,12 @@ bool InstallArtemisLookup() {
   rt.codes.Clear();
   rt.creations = artemis_lookup::CreationLog();
   rt.glyph_seq = 0u;
+  rt.frame_clock.store(0u, std::memory_order_relaxed);
+  rt.published_line_seq = 0u;
+  rt.published_last_seq = 0u;
+  rt.published_layer = 0u;
+  rt.overlay_logged_seq = 0u;
+  rt.published_line.clear();
   rt.building = ArtemisFrame();
   rt.claim = artemis_lookup::ClaimState();
   rt.game_thread = 0u;
@@ -860,6 +873,22 @@ void PublishArtemisRevealedLine(ArtemisFrame& frame) {
       (first_seq == rt.published_line_seq && text == rt.published_line)) {
     return;
   }
+  const uint64_t last_seq = frame.glyphs[count - 1u].seq;
+  const uintptr_t layer = rt.creations_copy.LayerAt(last_seq);
+  if (artemis_lookup::OverlaysPublishedLine(frame.glyphs.data(), count, layer,
+                                            rt.published_last_seq,
+                                            rt.published_layer)) {
+    if (first_seq != rt.overlay_logged_seq &&
+        rt.logged_lines < kArtemisModelLogBudget) {
+      ++rt.logged_lines;
+      rt.overlay_logged_seq = first_seq;
+      ArtemisLookupLog(L"artemis-text: overlay seq=%llu..%llu over line ..%llu",
+                       static_cast<unsigned long long>(first_seq),
+                       static_cast<unsigned long long>(last_seq),
+                       static_cast<unsigned long long>(rt.published_last_seq));
+    }
+    return;
+  }
   constexpr wchar_t kHookCode[] = L"ENGINE:ARTEMIS:Layer::CreateGlyph";
   constexpr char kHookName[] = "Artemis exact";
   fushi_voice_hook::TextLaneWrite write;
@@ -891,6 +920,8 @@ void PublishArtemisRevealedLine(ArtemisFrame& frame) {
                      static_cast<unsigned>(text.size()));
   }
   rt.published_line_seq = first_seq;
+  rt.published_last_seq = last_seq;
+  rt.published_layer = layer;
   rt.published_line = std::move(text);
 }
 
