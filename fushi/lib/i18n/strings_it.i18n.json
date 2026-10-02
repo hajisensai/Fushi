@@ -6213,5 +6213,10 @@
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
   "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
   "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
-  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first."
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
+  "floating_ball_auto_restore": "Auto-restore floating ball",
+  "floating_ball_auto_restore_hint": "After you close the floating ball, bring it back when you return to Fushi. With Never, closing turns it off until you switch it back on here",
+  "floating_ball_auto_restore_both": "In and out of app",
+  "floating_ball_auto_restore_in_app": "In app only",
+  "floating_ball_auto_restore_off": "Never"
 }

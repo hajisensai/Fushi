@@ -209,3 +209,35 @@ enum FloatingBallGlobalAction {
     return availableOn(isAndroid: isAndroid, isIOS: isIOS);
   }
 }
+
+/// 用户点了「关闭悬浮球」之后，哪些球在回到 Fushi 时自动重新出现。
+///
+/// - [both]：应用内与应用外都恢复——应用外球的关闭只管到下次打开 Fushi（冷启动
+///   或切回前台）为止，不动「应用外显示」开关。
+/// - [inApp]（出厂）：只有应用内球恢复（换页 / 回到 Fushi 即重现）；应用外球的
+///   关闭等于关掉「应用外显示」。
+/// - [off]：都不恢复——应用内球的关闭也等于关掉「应用内显示」，要到设置里重开。
+enum FloatingBallAutoRestore {
+  both('both'),
+  inApp('in_app'),
+  off('off');
+
+  const FloatingBallAutoRestore(this.storageValue);
+
+  final String storageValue;
+
+  static const FloatingBallAutoRestore fallback = inApp;
+
+  static FloatingBallAutoRestore fromStorage(Object? raw) {
+    for (final FloatingBallAutoRestore value in values) {
+      if (value.storageValue == raw) return value;
+    }
+    return fallback;
+  }
+
+  /// 关掉的应用内球在换页 / 回到 Fushi 时重现。
+  bool get restoresInApp => this != off;
+
+  /// 关掉的应用外球在打开 Fushi 时重新拉起（而不是关掉「应用外显示」）。
+  bool get restoresSystem => this == both;
+}
