@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2630 条。点号进各自文件。
+> 共 2631 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2856](bugs/BUG-2856-artemis-touch-tap-ignored.md) | 🚧 | 🚧 | Artemis 触屏点按：引擎不认触摸提升的单击，游戏内点字查词与推进都不响应 |
 | [BUG-2853](bugs/BUG-2853-en-yomitan-redirect-phrase.md) | ✅ | ✅ | 英语短语（instead of / in fact / brush off）命中词典重定向记录后不跟随，弹窗只剩单词 |
 | [BUG-2852](bugs/BUG-2852-popup-visible-viewport-helper-overwritten.md) | ✅ | ✅ | 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function |
 | [BUG-2851](bugs/BUG-2851-leaderboard-401-test-fixed-rounds.md) | ✅ | ✅ | 排行榜「账户已在别处删除」用例按固定轮数等真 IO，CI 忙时偶发红 |
