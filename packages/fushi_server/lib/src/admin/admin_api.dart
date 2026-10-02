@@ -512,6 +512,24 @@ class AdminApi {
       }
     }
     final MangaOcrModelStatus? ocr = await ctx.host.ocrService?.modelStatus();
+    // 每个可点名的模型一行（对端在引擎下拉里选「服务端 · <模型>」，没下好的那个
+    // 会被服务端拒绝，所以这里要能逐个下载）。
+    final List<Map<String, Object?>> ocrModels = <Map<String, Object?>>[];
+    for (final MapEntry<String, MangaOcrService> entry in ctx.host.ocrModelServices.entries) {
+      try {
+        final MangaOcrModelStatus status = await entry.value.modelStatus();
+        ocrModels.add(<String, Object?>{
+          'key': entry.key,
+          'name': _ocrModelName(entry.key),
+          'ready': status.allReady,
+          'obtainedBytes': status.obtainedBytes,
+          'totalBytes': status.totalBytes,
+          'pulling': _pulling.contains('ocr:${entry.key}'),
+        });
+      } catch (e) {
+        ocrModels.add(<String, Object?>{'key': entry.key, 'name': _ocrModelName(entry.key), 'error': '$e'});
+      }
+    }
     _modelsCacheAt = DateTime.now();
     return _json(_modelsCache = <String, Object?>{
       'asr': asrModels,
@@ -524,8 +542,16 @@ class AdminApi {
               'totalBytes': ocr.totalBytes,
               'pulling': _pulling.contains('ocr'),
             },
+      'ocrModels': ocrModels,
     });
   }
+
+  static String _ocrModelName(String key) => switch (key) {
+        'manga_ocr' => 'manga-ocr（经典）',
+        'manga_ctc' => '漫画 CTC（快速）',
+        'baberu' => 'Baberu',
+        _ => key,
+      };
 
   final Set<String> _pulling = <String>{};
 
@@ -536,9 +562,12 @@ class AdminApi {
     _pulling.add(which);
     Future<void> run() async {
       try {
-        if (which == 'ocr') {
-          final MangaOcrService? ocr = ctx.host.ocrService;
-          if (ocr == null) throw StateError('ocr service unavailable');
+        if (which == 'ocr' || which.startsWith('ocr:')) {
+          // `ocr` = 服务端默认模型（老 WebUI）；`ocr:<key>` = 点名的模型。
+          final MangaOcrService? ocr = which == 'ocr'
+              ? ctx.host.ocrService
+              : ctx.host.ocrModelServices[which.substring(4)];
+          if (ocr == null) throw StateError('ocr service unavailable: $which');
           await for (final MangaOcrDownloadEvent _ in ocr.downloadModels()) {}
         } else {
           final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(which);

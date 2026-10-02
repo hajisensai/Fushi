@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "Japanese manga model with horizontal-line recognition. Runs on CPU on Windows.",
   "manga_ocr_engine_local_onnx_desc": "Fully offline. Download the selected model once; speed and accuracy depend on the model and hardware.",
   "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks.",
-  "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
-  "manga_ocr_cuda_desc": "Original manga-ocr with GPU batching. Requires NVIDIA GPU; the first download includes a private Python and CUDA runtime (about 4 GB). No separate installation needed.",
-  "manga_ocr_runtime_installing": "Installing the local OCR engine…",
   "game_lookup_samples_advanced": "Advanced options",
   "game_lookup_samples_advanced_hint": "Fine-tune the cells by hand",
   "game_lookup_samples_apply": "Apply to game",
@@ -6214,5 +6211,7 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first."
 }

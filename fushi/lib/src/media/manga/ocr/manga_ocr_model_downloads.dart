@@ -6,13 +6,12 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
-/// 一个本机 OCR 模型当前的下载 / 安装进度快照。
+/// 一个本机 OCR 模型当前的下载进度快照。
 @immutable
 class MangaOcrModelDownloadProgress {
   const MangaOcrModelDownloadProgress({
     required this.receivedBytes,
     required this.currentFile,
-    required this.installing,
     required this.cancelling,
   });
 
@@ -21,9 +20,6 @@ class MangaOcrModelDownloadProgress {
 
   /// 最近一条事件的文件名；还没收到事件时为 null。
   final String? currentFile;
-
-  /// 正在安装运行时（CUDA 档），进度未知。
-  final bool installing;
 
   /// 已请求取消、正在等待下载器收尾。收尾前文件仍归下载器所有。
   final bool cancelling;
@@ -51,36 +47,26 @@ class MangaOcrModelDownloads extends ChangeNotifier {
 
   bool _disposed = false;
 
-  /// 该模型是否正在下载 / 安装（含取消收尾中）。
+  /// 该模型是否正在下载（含取消收尾中）。
   bool isActive(MangaOcrLocalModel model) => _slots.containsKey(model);
 
   /// 当前进度；未在下载时为 null。
   MangaOcrModelDownloadProgress? progressOf(MangaOcrLocalModel model) =>
       _slots[model]?.snapshot();
 
-  /// 发起下载。[prepareOnly] 只做运行时准备（手动导入 CUDA 档之后）。
+  /// 发起下载。
   ///
   /// 同一模型已在下载时返回 false，不另起第二条流。
-  bool start(
-    MangaOcrLocalModel model,
-    MangaOcrService service, {
-    bool prepareOnly = false,
-  }) {
+  bool start(MangaOcrLocalModel model, MangaOcrService service) {
     if (_disposed || _slots.containsKey(model)) return false;
-    final Stream<MangaOcrDownloadEvent> events =
-        prepareOnly && service is MangaOcrModelPreparationService
-        ? (service as MangaOcrModelPreparationService).prepareModels()
-        : service.downloadModels();
+    final Stream<MangaOcrDownloadEvent> events = service.downloadModels();
     final _DownloadSlot slot = _DownloadSlot();
     _slots[model] = slot;
     slot.subscription = events.listen(
       (MangaOcrDownloadEvent event) {
         slot.currentFile = event.fileName;
-        slot.installing = event.installing;
         // 同名文件取最新值而不是累加：同一文件会连发多条递增进度事件。
-        if (!event.installing) {
-          slot.receivedByFile[event.fileName] = event.receivedBytes;
-        }
+        slot.receivedByFile[event.fileName] = event.receivedBytes;
         _notify();
       },
       onError: (Object error, StackTrace stack) {
@@ -99,7 +85,7 @@ class MangaOcrModelDownloads extends ChangeNotifier {
     return true;
   }
 
-  /// 取消下载。等下载器确认收尾（删 `.part`、停运行时安装）后才释放槽位——
+  /// 取消下载。等下载器确认收尾（删 `.part`）后才释放槽位——
   /// 收尾前那批文件仍归下载器，删除 / 导入入口据此保持禁用。
   Future<void> cancel(MangaOcrLocalModel model) async {
     final _DownloadSlot? slot = _slots[model];
@@ -148,13 +134,11 @@ class _DownloadSlot {
   Future<void> cancel() async => subscription?.cancel();
   final Map<String, int> receivedByFile = <String, int>{};
   String? currentFile;
-  bool installing = false;
   bool cancelling = false;
 
   MangaOcrModelDownloadProgress snapshot() => MangaOcrModelDownloadProgress(
     receivedBytes: receivedByFile.values.fold<int>(0, (int a, int b) => a + b),
     currentFile: currentFile,
-    installing: installing,
     cancelling: cancelling,
   );
 }

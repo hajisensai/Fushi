@@ -42,12 +42,6 @@ abstract class MangaOcrService {
   });
 }
 
-/// Local engines with an installation step after downloading or importing files.
-abstract interface class MangaOcrModelPreparationService {
-  /// Cancellation must stop installation before publishing a ready marker.
-  Stream<MangaOcrDownloadEvent> prepareModels();
-}
-
 /// 读者当前页的「改道请求」：整卷任务运行中跟着读者走。
 ///
 /// 起点页只在开跑那一刻定一次；手机上本地模型一页几十秒，读者翻得比识别快，
@@ -195,7 +189,6 @@ class MangaOcrDownloadEvent {
     required this.receivedBytes,
     required this.totalBytes,
     this.done = false,
-    this.installing = false,
   });
 
   final String fileName;
@@ -204,7 +197,6 @@ class MangaOcrDownloadEvent {
 
   /// 全部文件完成时最后发一次 done=true。
   final bool done;
-  final bool installing;
 }
 
 /// 一次本地整卷 OCR 实际生效的推理加速状态。

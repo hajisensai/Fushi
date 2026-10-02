@@ -13,6 +13,17 @@ import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
+/// 互联「服务端代跑 OCR」客户端的唯一装配点：点名的服务端模型每次探测现读偏好。
+/// 向导与三处 OCR 设置区共用，别各自 new 一个漏掉模型偏好。
+MangaOcrRemoteRunner createInterconnectMangaOcrRunner(
+  AppModel appModel,
+  FushiDatabase db,
+) =>
+    InterconnectMangaOcrClient(
+      repo: SyncRepository(db),
+      preferredModel: () => appModel.mangaOcrPairedHostModel,
+    );
+
 /// `MangaOcrWizardDialog` 的**整套引擎依赖**（四个引擎的 runner + 默认引擎偏好）。
 ///
 /// 存在的唯一理由是消除一类结构性遗漏：向导有多个入口（导入向导 / 已入库整卷
@@ -66,7 +77,7 @@ class MangaOcrWizardEngines {
             )
           : null,
       remoteRunner: remoteRunnerOverride ??
-          InterconnectMangaOcrClient(repo: SyncRepository(db)),
+          createInterconnectMangaOcrRunner(appModel, db),
       lensRunner: GoogleLensMangaOcrService(),
       systemOcrRunner: SystemOcrMangaService(),
       initialEnginePreference: appModel.mangaOcrEnginePreference,

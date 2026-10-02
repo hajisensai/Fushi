@@ -94,6 +94,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
+    show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -626,6 +628,8 @@ class AppModel with ChangeNotifier {
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
     mangaOcrServiceFactory: () =>
         createSelectedMangaOcrService(() => mangaOcrLocalModel),
+    // 对端（手机）可在引擎下拉里点名本机的某个模型跑，不必跟着本机当前选择走。
+    mangaOcrModelServicesFactory: createMangaOcrHostModelServices,
     // 通用任务（ASR 转录）/ 代下载 / 内容订阅：此前只有无头 fushi_server 接线，
     // app 当 host 时这三条端点 404，对端「下载到 <电脑>」的选项因此不出现。
     // 全部挂在本机既有的服务上（ASR 服务工厂与转录弹层同一份；下载管线 / 订阅
@@ -3219,6 +3223,9 @@ class AppModel with ChangeNotifier {
       debugPrint(
           '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
+      // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
+      // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
+      unawaited(deleteRemovedMangaOcrModelDirs());
 
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
@@ -8781,6 +8788,10 @@ class AppModel with ChangeNotifier {
   String get mangaOcrLocalModel => prefsRepo.mangaOcrLocalModel;
   Future<void> setMangaOcrLocalModel(String value) =>
       prefsRepo.setMangaOcrLocalModel(value);
+
+  String get mangaOcrPairedHostModel => prefsRepo.mangaOcrPairedHostModel;
+  Future<void> setMangaOcrPairedHostModel(String value) =>
+      prefsRepo.setMangaOcrPairedHostModel(value);
 
   String get mangaOcrEnginePreference => prefsRepo.mangaOcrEnginePreference;
   Future<void> setMangaOcrEnginePreference(String value) =>

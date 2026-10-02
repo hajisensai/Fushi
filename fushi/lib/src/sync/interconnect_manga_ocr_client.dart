@@ -38,11 +38,21 @@ Duration mangaOcrPollDelay(int attempt) {
   return Duration(milliseconds: min(scaled.round(), maxMs));
 }
 
+/// host 上一个可点名的 OCR 模型（capabilities `mangaOcr.models` 的一项）。
+class MangaOcrRemoteModel {
+  const MangaOcrRemoteModel({required this.key, required this.ready});
+
+  /// `MangaOcrLocalModel.key`。
+  final String key;
+  final bool ready;
+}
+
 /// host 能力协商结果（capabilities 响应的 `mangaOcr` 字段）。
 class MangaOcrRemoteCapability {
   const MangaOcrRemoteCapability({
     required this.supported,
     required this.modelsReady,
+    this.models = const <MangaOcrRemoteModel>[],
   });
 
   final bool supported;
@@ -55,6 +65,26 @@ class MangaOcrRemoteCapability {
   /// `models_not_ready` 兜底。反过来把缺字段当 not ready，会让这类对端上本可用的
   /// 主机凭空消失——为一个不存在的版本付真实的功能倒退，不划算。
   final bool? modelsReady;
+
+  /// host 允许对端点名的模型；老 host 不报 = 空（只能用 host 自己的选择）。
+  final List<MangaOcrRemoteModel> models;
+
+  /// 点名 [model] 时的能力：就绪态换成该模型自己的。host 报了模型表却没有这个
+  /// 模型（对端版本不同）按「明确未就绪」处理——UI 置灰说明原因，而不是悄悄换成
+  /// host 默认模型跑出另一套结果。老 host 不报模型表：它也不认 `model` 字段，
+  /// 保持原样。
+  MangaOcrRemoteCapability forModel(String? model) {
+    if (model == null || models.isEmpty) return this;
+    bool ready = false;
+    for (final MangaOcrRemoteModel m in models) {
+      if (m.key == model) ready = m.ready;
+    }
+    return MangaOcrRemoteCapability(
+      supported: supported,
+      modelsReady: ready,
+      models: models,
+    );
+  }
 
   /// 可选为 OCR 主机：支持，且没有**明确**报模型未下载。
   bool get usable => supported && modelsReady != false;
@@ -72,9 +102,19 @@ class MangaOcrRemoteCapability {
     // 不能直接 `raw['modelsReady'] == true` 把两者压成同一个 false。
     final bool? modelsReady =
         raw.containsKey('modelsReady') ? raw['modelsReady'] == true : null;
+    final List<MangaOcrRemoteModel> models = <MangaOcrRemoteModel>[
+      if (raw['models'] is List)
+        for (final Object? item in raw['models'] as List)
+          if (item is Map && item['key'] is String)
+            MangaOcrRemoteModel(
+              key: item['key'] as String,
+              ready: item['ready'] == true,
+            ),
+    ];
     return MangaOcrRemoteCapability(
       supported: raw['supported'] == true,
       modelsReady: modelsReady,
+      models: models,
     );
   }
 }
@@ -86,10 +126,17 @@ class MangaOcrRemoteTarget {
     required this.capability,
     this.fingerprintSha256,
     this.deviceName,
+    this.model,
   });
 
   final String baseUrl;
+
+  /// 已按 [model] 换算过的能力（见 [MangaOcrRemoteCapability.forModel]）。
   final MangaOcrRemoteCapability capability;
+
+  /// 点名 host 跑的模型；null = 用 host 自己当前的选择。只在 host 报了模型表时
+  /// 才会非 null（老 host 不认这个字段）。
+  final String? model;
 
   /// https 端点的证书指纹（TOFU 钉扎）；http 老路径为 null。
   final String? fingerprintSha256;
@@ -173,7 +220,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     Duration requestTimeout = const Duration(seconds: 30),
     int uploadConcurrency = 2,
     Duration Function(int attempt)? pollDelay,
+    String? Function()? preferredModel,
   })  : _repo = repo,
+        _preferredModel = preferredModel,
         _httpClient = httpClient ?? http.Client(),
         _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
         _probeTimeout = probeTimeout,
@@ -188,6 +237,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
   final Duration _requestTimeout;
   final int _uploadConcurrency;
   final Duration Function(int attempt) _pollDelay;
+
+  /// 用户在引擎下拉里点名的服务端模型（null / 空 = 服务端默认）。每次 probe 现读。
+  final String? Function()? _preferredModel;
 
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
       createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
@@ -217,6 +269,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     );
     final String? fallbackToken = await _repo.getFushiClientToken();
     if (candidates.isEmpty) return null;
+    final String? preferred = _preferredModel?.call();
+    final String? preferredModel =
+        preferred == null || preferred.isEmpty ? null : preferred;
 
     // 「支持但模型明确未下载」的第一台：所有候选都不可用时才拿它回填，让 UI 有
     // 具体原因可讲。一台可用的都不能被它挡住，所以只记不返。
@@ -236,16 +291,19 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
         if (response.statusCode != 200) continue;
         final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded is! Map) continue;
-        final MangaOcrRemoteCapability? capability =
+        final MangaOcrRemoteCapability? hostCapability =
             MangaOcrRemoteCapability.fromCapabilitiesJson(
                 Map<String, dynamic>.from(decoded));
         // 老 host（无字段）或明确不支持 → 换下一个候选。
-        if (capability == null || !capability.supported) continue;
+        if (hostCapability == null || !hostCapability.supported) continue;
+        final MangaOcrRemoteCapability capability =
+            hostCapability.forModel(preferredModel);
         final MangaOcrRemoteTarget target = MangaOcrRemoteTarget(
           baseUrl: candidate.url,
           capability: capability,
           fingerprintSha256: candidate.fingerprintSha256,
           deviceName: candidate.deviceName,
+          model: hostCapability.models.isEmpty ? null : preferredModel,
         );
         if (capability.usable) return target;
         modelsMissingFallback ??= target;
@@ -315,6 +373,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
                   if (volumeTitle != null && volumeTitle.trim().isNotEmpty)
                     'volumeTitle': volumeTitle.trim(),
                   'pageCount': pages.length,
+                  if (target.model != null) 'model': target.model,
                 }),
           );
           final String id = created['jobId']?.toString() ?? '';
@@ -489,6 +548,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
             'no_pages',
             'bad_state',
             'not_done',
+            'unknown_model',
           };
           final String raw = decoded['error'] as String;
           if (known.contains(raw)) {

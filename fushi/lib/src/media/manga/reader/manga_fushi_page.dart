@@ -4858,6 +4858,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 localModelSetter: appModel.setMangaOcrLocalModel,
                 lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
                 lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+                pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
+                pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
+                remoteRunner: createInterconnectMangaOcrRunner(
+                  appModel,
+                  appModel.database,
+                ),
               ),
         ),
         supportedDeviceKeys: <String>{

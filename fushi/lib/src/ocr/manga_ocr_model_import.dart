@@ -202,14 +202,7 @@ class MangaOcrModelImporter {
     final List<File> zips = <File>[];
 
     void visitFile(File file) {
-      // A pinned runtime archive is itself an install input, not an outer
-      // user-created model bundle. Keep it intact for digest verification.
-      if (p.extension(file.path).toLowerCase() == '.zip' &&
-          !_manifest.any(
-            (MangaOcrModelFile model) =>
-                model.fileName.toLowerCase() ==
-                p.basename(file.path).toLowerCase(),
-          )) {
+      if (p.extension(file.path).toLowerCase() == '.zip') {
         zips.add(file);
         return;
       }
