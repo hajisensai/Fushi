@@ -1271,9 +1271,21 @@ class AnkiHandlebarOptions {
   /// 改名前建的、Picture 仍映射到旧别名 `{book-cover}` 的老配置误报成未映射（与
   /// [AnkiHandlebarRenderer.render] 同一套别名语义：三者都渲染 context.coverPath）。
   static bool anyFieldConsumesCardImage(Map<String, String> fieldMappings) =>
-      anyFieldConsumesToken(fieldMappings, '{card-image}') ||
-      anyFieldConsumesToken(fieldMappings, '{book-cover}') ||
-      anyFieldConsumesToken(fieldMappings, '{video-clip}');
+      cardImageFieldNames(fieldMappings).isNotEmpty;
+
+  /// 卡片图片 token 及其旧别名（见 [anyFieldConsumesCardImage]）。
+  static const List<String> cardImageTokens = <String>[
+    '{card-image}',
+    '{book-cover}',
+    '{video-clip}',
+  ];
+
+  /// 映射里消费卡片图片的**字段名**（按 [fieldMappings] 原有顺序）。
+  static List<String> cardImageFieldNames(Map<String, String> fieldMappings) =>
+      <String>[
+        for (final MapEntry<String, String> e in fieldMappings.entries)
+          if (cardImageTokens.any(e.value.contains)) e.key,
+      ];
 }
 
 /// 扩展名（小写、不含点）→ MIME（**镜像副本**，命名统一轮 G8）。

@@ -16,6 +16,7 @@ export 'src/anki_media_naming.dart';
 export 'src/anki_local_media.dart';
 export 'src/anki_note_type_definition.dart';
 export 'src/anki_remote_media_http.dart';
+export 'src/anki_synchronized_clip_template.dart';
 export 'src/anki_template_render.dart';
 export 'src/card_source_link.dart';
 export 'src/ankiconnect/ankiconnect_service.dart';
