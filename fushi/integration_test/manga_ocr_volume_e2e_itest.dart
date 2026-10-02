@@ -334,12 +334,10 @@ void main() {
         final Stopwatch timer = Stopwatch()..start();
         final List<Map<String, Object?>> progress = <Map<String, Object?>>[];
         MangaOcrVolumeEvent? finished;
-        MangaOcrAcceleration? acceleration;
         await for (final MangaOcrVolumeEvent event in service.ocrFolder(
           imageDirPath: realPages.path,
           volumeTitle: 'private full-page native smoke',
         )) {
-          acceleration = event.acceleration ?? acceleration;
           progress.add(<String, Object?>{
             'done': event.pagesDone,
             'total': event.pagesTotal,
@@ -351,9 +349,6 @@ void main() {
         timer.stop();
         expect(finished, isNotNull);
         expect(finished!.pagesTotal, expectedPages.length);
-        if (const bool.fromEnvironment('OCR_REQUIRE_CUDA')) {
-          expect(acceleration?.recognition, OcrExecutionProvider.cuda);
-        }
         final File result = File(finished.mangaJsonPath!);
         expect(result.existsSync(), isTrue);
         final Map<String, dynamic> payload =
@@ -543,9 +538,6 @@ void main() {
 
     expect(finished, isNotNull, reason: 'ocrFolder 未产出 finished 事件');
     expect(finished!.pagesTotal, 1);
-    if (const bool.fromEnvironment('OCR_REQUIRE_CUDA')) {
-      expect(acceleration?.recognition, OcrExecutionProvider.cuda);
-    }
 
     // ignore: avoid_print
     print(

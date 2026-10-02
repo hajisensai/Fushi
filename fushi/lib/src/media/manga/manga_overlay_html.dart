@@ -1455,8 +1455,10 @@ String _mangaGestureJs({
   });
 
   // ── 手势消歧（pointer，覆盖触摸/鼠标）──
-  var sx = 0, sy = 0, st = 0, has = false;
-  function _start(x, y){ has = true; sx = x; sy = y; st = Date.now(); }
+  // spx：按下时的 PAN_X。松手时「手指横移 − 画布实际横移」= 平移**没吃掉**的
+  // 那段（贴边被 _clampPan 钳住的余量），它才参与 swipe 判定。
+  var sx = 0, sy = 0, st = 0, spx = 0, has = false;
+  function _start(x, y){ has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X; }
   // ── 触屏双指捏合缩放 ──
   // 此前触屏**完全无法缩放**：viewport 声明了 user-scalable=no（必须的：浏览器原生
   // 缩放会和 #manga-canvas 的 transform 打架），而 JS 侧没有任何 touch/多指处理。
@@ -1737,11 +1739,18 @@ String _mangaGestureJs({
     has = false;
     var dx = x - sx, dy = y - sy, el = Date.now() - st;
     var ax = Math.abs(dx), ay = Math.abs(dy);
-    var vel = ax / Math.max(1, el) * 1000;
-    // ZOOM>1 时拖动已被 _panBy 消费为平移（放大后必须能看页面各处），
-    // 此时再判 swipe 会让每次平移都翻页。翻页仍可用点击边缘 / 滚轮 / 音量键。
-    if (!IS_WEBTOON && ZOOM <= 1 &&
-        ax > ay && (ax >= 72 || (ax >= 36 && vel >= 900))) {
+    // 放大态（ZOOM>1）的拖动先被 _panBy 消费为平移（放大后必须能看页面各处）；
+    // 只有平移**贴边后没吃掉**的横向余量才算翻页 swipe——与 Mihon、与滚轮的
+    // 「能平移就平移，贴边才翻页」（BUG-1760）同一口径。未放大时 _panBy 不动
+    // PAN_X，余量 = 整段位移，判据与从前逐字一致。
+    //
+    // 此前这里是硬性的 `ZOOM <= 1`：捏合缩回「看起来贴合」时常停在 101%~105%，
+    // 画面与贴合无从分辨，可左右滑永远只是挪几像素的平移、一页也翻不动，
+    // 只剩点边缘能翻（用户 2026-10-02「划不动」）。
+    var ux = dx - (PAN_X - spx), aux = Math.abs(ux);
+    var vel = aux / Math.max(1, el) * 1000;
+    if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) &&
+        (aux >= 72 || (aux >= 36 && vel >= 900))) {
       var b = _bridge();
       if (!b) return;
       // swipe 跟手：拖动内容向左（dx<0）露出的是 strip **右边**那一跨页。右边是哪

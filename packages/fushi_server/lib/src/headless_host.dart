@@ -20,6 +20,7 @@ import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -103,6 +104,7 @@ class HeadlessHost {
   LanAdvertiser? _advertiser;
   InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;
+  Map<String, MangaOcrServiceImpl> _ocrModelServices = const <String, MangaOcrServiceImpl>{};
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
   ServerAnkiLanding? _anki;
@@ -137,6 +139,10 @@ class HeadlessHost {
   bool get isRunning => _server != null;
   int get port => _server?.port ?? config.port;
   MangaOcrServiceImpl? get ocrService => _ocrService;
+
+  /// 对端可点名的漫画 OCR 模型（key → 服务）：本平台列得出的每个本机模型一份。
+  /// WebUI 逐个显示就绪态、逐个下载。
+  Map<String, MangaOcrServiceImpl> get ocrModelServices => _ocrModelServices;
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
   HostSubscriptionHost? get subscriptions => _downloads?.subscriptions;
@@ -172,8 +178,14 @@ class HeadlessHost {
 
     final MangaOcrServiceImpl ocrService = MangaOcrServiceImpl();
     _ocrService = ocrService;
+    _ocrModelServices = <String, MangaOcrServiceImpl>{
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+        if (MangaOcrLocalModel.forPlatform(model.key) == model)
+          model.key: model == MangaOcrLocalModel.mangaOcr ? ocrService : MangaOcrServiceImpl(localModel: model),
+    };
     final MangaOcrHostJobManager ocrJobs = MangaOcrHostJobManager(
       service: ocrService,
+      modelServices: _ocrModelServices,
       jobRoot: paths.mangaOcrJobs,
     );
 

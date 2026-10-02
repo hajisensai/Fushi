@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "نموذج مانجا يابانية مع التعرف على الأسطر الأفقية. يعمل على المعالج في Windows.",
   "manga_ocr_engine_local_onnx_desc": "دون اتصال بالكامل. نزّل النموذج المحدد مرة واحدة؛ وتعتمد السرعة والدقة على النموذج والعتاد.",
   "manga_ocr_baberu_desc": "نحو 284 ميغابايت شاملة نماذج الأسطر الأفقية. يستخدم Windows ترميز الصور على وحدة الرسومات مع فك ترميز النص على المعالج عند التوفر، وإلا فالمعالج. قد تقل الدقة في بعض الأسماء والخط اليدوي. ينطبق على مهام OCR الجديدة.",
-  "manga_ocr_cuda_model": "manga-ocr (وحدة رسومات NVIDIA)",
-  "manga_ocr_cuda_desc": "manga-ocr الأصلي مع المعالجة الدفعية على وحدة الرسومات. يتطلب وحدة رسومات NVIDIA؛ ويشمل التنزيل الأول Python خاصًا وبيئة CUDA (نحو 4 غيغابايت). لا حاجة إلى تثبيت منفصل.",
-  "manga_ocr_runtime_installing": "جارٍ تثبيت محرك OCR المحلي…",
   "game_lookup_samples_advanced": "خيارات متقدمة",
   "game_lookup_samples_advanced_hint": "Extra samples and visual grid correction",
   "game_lookup_samples_apply": "تطبيق على اللعبة",
@@ -6214,5 +6211,7 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first."
 }

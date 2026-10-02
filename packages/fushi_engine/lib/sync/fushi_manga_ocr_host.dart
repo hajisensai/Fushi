@@ -6,6 +6,7 @@
 ///
 /// 端点（全部走 FushiSyncServer 的既有 Basic 鉴权，无一豁免）：
 /// - `POST   /api/ocr/job`                       → `{jobId, pagesExpected}` 创建任务
+///   （body 可带 `model` 点名 capabilities `mangaOcr.models` 里的某个模型）
 /// - `PUT    /api/ocr/job/<id>/page/<i>?name=..` → 逐页上传（body=图片字节）
 /// - `POST   /api/ocr/job/<id>/start`            → 开始跑（串行单并发队列）
 /// - `GET    /api/ocr/job/<id>`                  → `{state, pagesDone, pagesTotal, ...}`
@@ -57,6 +58,7 @@ class MangaOcrHostJob {
     required this.createdAt,
     this.volumeTitle,
     this.pagesExpected,
+    this.model,
   }) : touchedAt = createdAt;
 
   final String id;
@@ -68,6 +70,10 @@ class MangaOcrHostJob {
 
   /// client 预告的页数（仅回显/展示；真实总数以枚举为准）。
   final int? pagesExpected;
+
+  /// client 点名的模型 key（`MangaOcrLocalModel.key`）；null = 用 host 自己的
+  /// 当前选择。已在建任务时按 [MangaOcrHostJobManager.modelKeys] 校验过。
+  final String? model;
 
   final DateTime createdAt;
   DateTime touchedAt;
@@ -95,6 +101,7 @@ class MangaOcrHostJob {
         'pagesUploaded': pagesUploaded,
         'pagesDone': pagesDone,
         'pagesTotal': pagesTotal > 0 ? pagesTotal : (pagesExpected ?? 0),
+        if (model != null) 'model': model,
         if (error != null) 'error': error,
       };
 }
@@ -106,14 +113,21 @@ class MangaOcrHostJobManager {
   MangaOcrHostJobManager({
     required MangaOcrService service,
     required Directory jobRoot,
+    Map<String, MangaOcrService> modelServices =
+        const <String, MangaOcrService>{},
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 1),
   })  : _service = service,
+        _modelServices = modelServices,
         _jobRoot = jobRoot,
         _now = now ?? DateTime.now,
         _jobTtl = jobTtl;
 
+  /// host 自己当前选择的模型（client 不点名时用它）。
   final MangaOcrService _service;
+
+  /// client 可点名的模型（key → 该模型的服务）。空 = 老形态，只跑 [_service]。
+  final Map<String, MangaOcrService> _modelServices;
   final Directory _jobRoot;
   final DateTime Function() _now;
   final Duration _jobTtl;
@@ -139,10 +153,33 @@ class MangaOcrHostJobManager {
         modelsReady = false;
       }
     }
+    // 可点名的模型逐个报就绪态（client 的引擎下拉据此列出「服务端 · <模型>」）。
+    // 老 client 不认这个字段，照旧只看 modelsReady。
+    final List<Map<String, Object?>> models = <Map<String, Object?>>[];
+    for (final MapEntry<String, MangaOcrService> entry
+        in _modelServices.entries) {
+      if (!entry.value.isSupportedPlatform) continue;
+      bool ready = false;
+      try {
+        ready = (await entry.value.modelStatus()).allReady;
+      } catch (_) {
+        ready = false;
+      }
+      models.add(<String, Object?>{'key': entry.key, 'ready': ready});
+    }
     return <String, Object?>{
       'supported': supported,
-      'modelsReady': modelsReady
+      'modelsReady': modelsReady,
+      if (models.isNotEmpty) 'models': models,
     };
+  }
+
+  /// client 可点名的模型 key。
+  Iterable<String> get modelKeys => _modelServices.keys;
+
+  MangaOcrService _serviceFor(MangaOcrHostJob job) {
+    final String? model = job.model;
+    return model == null ? _service : (_modelServices[model] ?? _service);
   }
 
   /// 测试钩子：当前驻留任务数（验证 TTL prune 行为）。
@@ -167,7 +204,12 @@ class MangaOcrHostJobManager {
 
   // ── 任务生命周期 ────────────────────────────────────────────────
 
-  MangaOcrHostJob createJob({String? volumeTitle, int? pageCount}) {
+  /// [model] 必须是 [modelKeys] 之一或 null，调用方负责校验（路由层回 400）。
+  MangaOcrHostJob createJob({
+    String? volumeTitle,
+    int? pageCount,
+    String? model,
+  }) {
     _housekeep();
     final String id = _generateJobId();
     // 目录名从卷名确定性派生（哈希，文件系统安全）：同卷取消后再建新 job 落回同
@@ -190,6 +232,7 @@ class MangaOcrHostJobManager {
           ? null
           : volumeTitle.trim(),
       pagesExpected: pageCount,
+      model: model,
     );
     job.dir.createSync(recursive: true);
     _jobs[id] = job;
@@ -229,10 +272,11 @@ class MangaOcrHostJobManager {
     if (job.state == MangaOcrHostJobState.running) return null; // 幂等。
     if (job.state.isTerminal) return (409, 'bad_state');
     if (job.pagesUploaded <= 0) return (400, 'no_pages');
-    if (!_service.isSupportedPlatform) return (503, 'not_supported');
+    final MangaOcrService service = _serviceFor(job);
+    if (!service.isSupportedPlatform) return (503, 'not_supported');
     final MangaOcrModelStatus status;
     try {
-      status = await _service.modelStatus();
+      status = await service.modelStatus();
     } catch (_) {
       return (503, 'models_not_ready');
     }
@@ -252,7 +296,7 @@ class MangaOcrHostJobManager {
       if (!completed.isCompleted) completed.complete();
     }
 
-    job.subscription = _service
+    job.subscription = _serviceFor(job)
         .ocrFolder(imageDirPath: job.dir.path, volumeTitle: job.volumeTitle)
         .listen(
       (MangaOcrVolumeEvent event) {
@@ -423,9 +467,16 @@ Future<shelf.Response> handleMangaOcrRequest(
     } catch (_) {
       // 空 body 也允许（volumeTitle/pageCount 均可选）。
     }
+    final String? model = body['model']?.toString();
+    // 点名了 host 不认识的模型（对端版本不同 / 已被删掉的模型）：明确拒绝，
+    // 不偷偷换成 host 默认——用户选的是那个模型，悄悄换掉结果就对不上号了。
+    if (model != null && !manager.modelKeys.contains(model)) {
+      return _ocrError(400, 'unknown_model');
+    }
     final MangaOcrHostJob job = manager.createJob(
       volumeTitle: body['volumeTitle']?.toString(),
       pageCount: (body['pageCount'] as num?)?.toInt(),
+      model: model,
     );
     return _ocrJson(<String, Object?>{
       'jobId': job.id,

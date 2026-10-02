@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "가로줄 인식을 지원하는 일본어 만화 모델입니다. Windows에서는 CPU로 실행됩니다.",
   "manga_ocr_engine_local_onnx_desc": "완전 오프라인입니다. 선택한 모델을 한 번 다운로드하세요. 속도와 정확도는 모델과 하드웨어에 따라 달라집니다.",
   "manga_ocr_baberu_desc": "가로줄 모델 포함 약 284 MB입니다. Windows에서는 가능하면 GPU 이미지 인코딩과 CPU 텍스트 디코딩을 사용하며, 그렇지 않으면 CPU를 사용합니다. 일부 이름과 손글씨는 정확도가 낮을 수 있습니다. 새 OCR 작업에 적용됩니다.",
-  "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
-  "manga_ocr_cuda_desc": "GPU 배치 처리를 지원하는 원본 manga-ocr입니다. NVIDIA GPU가 필요하며, 첫 다운로드에는 전용 Python과 CUDA 런타임(약 4 GB)이 포함됩니다. 별도 설치는 필요 없습니다.",
-  "manga_ocr_runtime_installing": "로컬 OCR 엔진 설치 중…",
   "game_lookup_samples_advanced": "고급 옵션",
   "game_lookup_samples_advanced_hint": "Extra samples and visual grid correction",
   "game_lookup_samples_apply": "게임에 적용",
@@ -6214,5 +6211,7 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first."
 }

@@ -30,6 +30,14 @@ MangaOcrService createSelectedMangaOcrService(String Function() modelKey) =>
       ),
     );
 
+/// 互联 host 给对端点名的模型表：本平台列得出的每个本机模型一份服务。
+Map<String, MangaOcrService> createMangaOcrHostModelServices() =>
+    <String, MangaOcrService>{
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+        if (MangaOcrLocalModel.forPlatform(model.key) == model)
+          model.key: createMangaOcrService(localModel: model),
+    };
+
 /// 漫画整卷 OCR 服务的全局单例 provider。
 ///
 /// 默认指向 [MangaOcrServiceImpl]（ONNX 流水线 + 模型下载管理）。widget 测试用

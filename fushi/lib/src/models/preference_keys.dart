@@ -210,6 +210,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
   'manga_ocr_local_model',
+  'manga_ocr_paired_host_model',
   'manga_ocr_parallel_tasks',
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',

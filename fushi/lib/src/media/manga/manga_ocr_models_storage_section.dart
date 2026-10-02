@@ -14,7 +14,7 @@ import 'package:fushi/utils.dart';
 /// 删除。
 ///
 /// 漫画 OCR 设置里只管「用哪个」，那里的下载 / 删除只作用于当前选中的模型；换过
-/// 模型的用户磁盘上会留着别的模型（CUDA 档一套就是 4 GB），以前只能在存储总览里
+/// 模型的用户磁盘上会留着别的模型（经典 manga-ocr 一套约 470 MB），以前只能在存储总览里
 /// 看见一个裸目录。这里把每个模型都摆出来。
 ///
 /// 下载走全局 [MangaOcrModelDownloads]（与设置区同一份，离开页面照跑），删除走
@@ -151,9 +151,7 @@ class _MangaOcrModelsStorageSectionState
     );
     final List<String> parts = <String>[];
     if (progress != null) {
-      if (progress.installing) {
-        parts.add(t.manga_ocr_runtime_installing);
-      } else if (status != null && status.totalBytes > 0) {
+      if (status != null && status.totalBytes > 0) {
         parts.add(
           t.manga_ocr_download_total_progress(
             done: FushiByteFormat.bytes(progress.receivedBytes),
@@ -269,7 +267,7 @@ class _MangaOcrModelsStorageSectionState
               horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
             ),
             child: LinearProgressIndicator(
-              value: progress.installing || total <= 0
+              value: total <= 0
                   ? null
                   : (progress.receivedBytes / total).clamp(0.0, 1.0),
             ),
