@@ -8,8 +8,9 @@ import UIKit
 /// 全局悬浮球的 iOS 半边（契约见 docs/specs/2026-09-28-floating-ball.md，
 /// 通道 `app.fushi.reader/floating_ball`）。
 ///
-/// iOS 不允许应用外悬浮，所以这里只有两件事：
+/// iOS 不允许应用外悬浮，所以这里只有三件事：
 /// - `captureScreen`：截本 app 自己的窗口（含 WKWebView 内容），交 Dart 做 Vision OCR；
+/// - `sensorHousingEdge`：刘海 / 灵动岛在哪条边，应用内球据此只避让那一侧；
 /// - App Intent「Look up in Fushi」把快捷指令 / Siri 给的词送进应用内查词弹窗。
 ///
 /// Android 专有的方法（`canDrawOverlays` / `startSystemBall` …）在这里一律
@@ -42,6 +43,8 @@ enum FushiFloatingBall {
         let word = pendingIntentWord
         pendingIntentWord = nil
         result(word)
+      case "sensorHousingEdge":
+        result(sensorHousingEdge())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -108,6 +111,23 @@ enum FushiFloatingBall {
       return
     }
     result(FlutterStandardTypedData(bytes: png))
+  }
+
+  /// 传感器外壳（刘海 / 灵动岛）此刻在屏幕的哪条边：`left` / `top` / `right` / `bottom`，
+  /// 方向未知时 nil。
+  ///
+  /// iOS 横屏的 `safeAreaInsets` 左右**对称**（两侧都是外壳深度），Flutter 也不上报
+  /// cutout 的 displayFeatures，Dart 分不出哪一侧真被挡住；外壳永远在设备「顶边」，
+  /// 所以按界面方向换算即可。`landscapeRight` = Home 侧在右 → 顶边在左。
+  private static func sensorHousingEdge() -> String? {
+    guard let scene = hostWindow()?.windowScene else { return nil }
+    switch scene.interfaceOrientation {
+    case .portrait: return "top"
+    case .portraitUpsideDown: return "bottom"
+    case .landscapeRight: return "left"
+    case .landscapeLeft: return "right"
+    default: return nil
+    }
   }
 
   /// 前台活跃场景里的 key window；没有就退到任意一个前台窗口，再退到任意窗口。

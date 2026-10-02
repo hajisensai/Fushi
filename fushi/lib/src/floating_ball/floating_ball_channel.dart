@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show AxisDirection;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -118,6 +119,19 @@ class FloatingBallChannel {
   /// 截 app 自己的窗口，返回物理像素 PNG；失败返回 null。
   static Future<Uint8List?> captureScreen() =>
       _invoke<Uint8List>('captureScreen');
+
+  /// 刘海 / 灵动岛此刻在屏幕的哪条边（按界面方向换算）；不知道时 null。
+  /// 只有 iOS 需要：它横屏的左右安全区对称，Dart 自己分不出被挡的是哪一侧。
+  static Future<AxisDirection?> sensorHousingEdge() async {
+    if (!Platform.isIOS) return null;
+    return switch (await _invoke<String>('sensorHousingEdge')) {
+      'left' => AxisDirection.left,
+      'top' => AxisDirection.up,
+      'right' => AxisDirection.right,
+      'bottom' => AxisDirection.down,
+      _ => null,
+    };
+  }
 
   // ── 原生 → Dart ─────────────────────────────────────────────────────
 

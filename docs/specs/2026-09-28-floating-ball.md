@@ -119,6 +119,7 @@ Dart → 原生：
 | `takePendingCameraOcr` | — | bool（系统球「拍照查词」时主引擎不在而排队的请求；取即清） | Android |
 | `takeSystemBallClosedByUser` | — | bool（用户点过系统球关闭的持久标记；取即清。Dart 起系统球前先取，为 true 就改为关掉「应用外」开关） | Android |
 | `captureScreen` | — | `Uint8List` PNG（失败抛 PlatformException） | iOS |
+| `sensorHousingEdge` | — | String?（刘海 / 灵动岛此刻在哪条屏幕边：`left` / `top` / `right` / `bottom`，按界面方向换算；未知 null。iOS 横屏左右安全区对称，应用内球据此只避让外壳那一侧） | iOS |
 
 | `takePendingIntentLookup` | — | String?（冷启动时排队的 App Intent 词；调用即表示 Dart 已就绪） | iOS |
 

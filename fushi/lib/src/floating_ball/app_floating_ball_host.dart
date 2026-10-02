@@ -61,6 +61,32 @@ void deliverExternalLookup(String word) {
   pendingExternalLookup.value = trimmed;
 }
 
+/// 应用内球的活动范围：整窗扣掉系统 inset。
+///
+/// 左右两侧只扣真正挡住画面的那一侧：Android（`shortEdges`）本就只在刘海侧上报
+/// inset；iOS 横屏却左右**对称**上报外壳深度（实测 iPhone 17 Pro 各 61.6），照扣
+/// 会让球在没有灵动岛的那一侧也停在离屏幕边一大截的黑边中间、贴不到边。
+/// [sensorHousingEdge] 是外壳所在的边（[FloatingBallChannel.sensorHousingEdge]）：
+/// 在左 / 右时，对侧的水平 inset 归零；未知时保守地两侧都扣。
+Rect appFloatingBallViewport(
+  Size window,
+  EdgeInsets viewPadding, {
+  AxisDirection? sensorHousingEdge,
+}) {
+  final double left = sensorHousingEdge == AxisDirection.right
+      ? 0
+      : viewPadding.left;
+  final double right = sensorHousingEdge == AxisDirection.left
+      ? 0
+      : viewPadding.right;
+  return Rect.fromLTRB(
+    left,
+    viewPadding.top,
+    window.width - right,
+    window.height - viewPadding.bottom,
+  );
+}
+
 /// 原生系统球的按钮文案（原生侧不维护多语言）。
 Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.lookup.storageValue: t.floating_ball_action_lookup,
@@ -227,6 +253,21 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 当前主题给原生系统球的配色（build 里按 Theme 刷新；变了就重新下发）。
   Map<String, int> _systemBallColors = const <String, int>{};
 
+  /// 刘海 / 灵动岛所在的边（只有 iOS 会有值），见 [appFloatingBallViewport]。
+  AxisDirection? _sensorHousingEdge;
+
+  /// 旋转会改窗口尺寸 / 安全区，届时界面方向已经更新，重新问一次外壳在哪边。
+  Future<void> _refreshSensorHousingEdge() async {
+    final AxisDirection? edge = await FloatingBallChannel.sensorHousingEdge();
+    if (!mounted || edge == _sensorHousingEdge) return;
+    setState(() => _sensorHousingEdge = edge);
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (Platform.isIOS) unawaited(_refreshSensorHousingEdge());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -235,6 +276,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
+    if (Platform.isIOS) unawaited(_refreshSensorHousingEdge());
     if (Platform.isIOS || Platform.isAndroid || isDesktopSystemBallPlatform) {
       unawaited(
         FloatingBallChannel.installHandler(
@@ -779,12 +821,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       ...buttons,
     ];
     final Size window = MediaQuery.sizeOf(context);
-    final EdgeInsets padding = MediaQuery.viewPaddingOf(context);
-    final Rect viewport = Rect.fromLTRB(
-      padding.left,
-      padding.top,
-      window.width - padding.right,
-      window.height - padding.bottom,
+    final Rect viewport = appFloatingBallViewport(
+      window,
+      MediaQuery.viewPaddingOf(context),
+      sensorHousingEdge: _sensorHousingEdge,
     );
     // ReaderFloatingBall 返回 Positioned，必须是 Stack 的直接子节点。本宿主挂在
     // 导航之上，没有 Overlay 祖先，球与按钮的 Tooltip 要自带一层；Stack 只在
