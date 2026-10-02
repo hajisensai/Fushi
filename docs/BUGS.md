@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2662 条。点号进各自文件。
+> 共 2663 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2896](bugs/BUG-2896-catsystem2-voice-reread-republished.md) | ✅ | ✅ | CatSystem2 2016 版同一次播放的二次读取被当成新语音重复发布 |
 | [BUG-2895](bugs/BUG-2895-catsystem2-2016-voice-sites.md) | ✅ | ✅ | CatSystem2 2016 版语音站点因编译形态不同而全部未解析 |
 | [BUG-2894](bugs/BUG-2894-catsystem2-bootmenu-launcher-handoff.md) | ✅ | ✅ | CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随 |
 | [BUG-2893](bugs/BUG-2893-kirikiri-kag-page-swap-anchor.md) | ✅ | ✅ | KiriKiri KAG 换页 backlay+trans 后查词锚点失效 |

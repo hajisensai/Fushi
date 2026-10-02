@@ -2127,6 +2127,17 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("!IsCatSystem2IndexLaneHandle(handle)", classify)
         settle = self._function_body(adapter, "void SettleCs2Member(")
         self.assertLess(settle.index("DecideMember("), settle.index("PublishCs2Member("))
+        # A settled key lives until the next voice is published (BUG-2896):
+        # only publication advances the generation, a rejected member just
+        # records it, and release asks the core rule instead of a timer.
+        self.assertIn("settled_generation = ++g_cs2_publish_generation", settle)
+        self.assertIn("settled_generation = g_cs2_publish_generation;", settle)
+        self.assertEqual(settle.count("++g_cs2_publish_generation"), 1)
+        self.assertLess(settle.index("settled_generation = g_cs2_publish_generation;"),
+                        settle.index("PublishCs2Member("))
+        process = self._function_body(adapter, "void ProcessCatSystem2EngineVoice()")
+        self.assertIn("SettledMemberKeyEnded(", process)
+        self.assertNotIn("kCs2MemberRepeatMs", adapter)
         publish = self._function_body(adapter, "void PublishCs2Member(")
         self.assertIn("WriteVoiceOggAt(", publish)
         self.assertIn("BuildVoiceStorageName(", publish)

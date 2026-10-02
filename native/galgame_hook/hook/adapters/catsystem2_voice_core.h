@@ -485,6 +485,27 @@ inline LineOrder SelectedLineOrder(const char* hook_name) {
              : LineOrder::kFollowsVoice;
 }
 
+// ── how long a settled member stays the same playback ──────────────────────
+//
+// After a member is published (or rejected) its key stays, so the same
+// playback's later reads add nothing.  Time cannot bound that playback: the
+// 2.6 build tops a playing voice up every 0.5–1 s, but the 2016 build reads a
+// whole member when the line starts and reads its first ~90 % again ~5 s later
+// with no click in between (measured: E_00_01_004 41609 bytes read whole, then
+// 38123 bytes 5.06 s later; E_00_01_005 likewise 5.56 s later).  A 2 s window
+// released the key in that gap and published the second pass as a new
+// utterance that paired with the next line.
+//
+// The structural boundary is the next message's voice: a key ends once
+// another member has been published after it.  A rejected (non-voice) member
+// never ends a playback; it only records the generation it settled in.  The
+// same member read again with no other voice in between — a replay of the
+// line that is already on screen — stays the same playback.
+inline bool SettledMemberKeyEnded(uint64_t settled_generation,
+                                  uint64_t publish_generation) {
+  return publish_generation > settled_generation;
+}
+
 // A binding further away than the host's resource pairing window
 // (kGalVoiceResourcePairingWindowMs) could never pair.
 inline constexpr uint64_t kTextBindingWindowMs = 1500u;

@@ -513,9 +513,10 @@ constexpr int kCs2MemberSlots = 8;
 // stopped by the next line.  The margin keeps low-bitrate voices, whose single
 // read lasts longer, from being settled mid-playback.
 constexpr uint64_t kCs2MemberAbandonMs = 4000;
-// After publishing, reads of the same member (ov_open re-reads, EOF polls)
-// are the same playback for this long after its last read.
-constexpr uint64_t kCs2MemberRepeatMs = 2000;
+// After settling, reads of the same member (ov_open re-reads, EOF polls, the
+// 2016 build's second pass) stay the same playback until another member is
+// published (cs2_voice::SettledMemberKeyEnded).  Worker-only.
+uint64_t g_cs2_publish_generation = 0;
 
 struct Cs2VoiceChunk {
   volatile LONG state = 0;  // 0 free, 1 writing, 2 ready, 3 consuming
@@ -742,6 +743,7 @@ struct Cs2Member {
   uint64_t first_tick = 0;
   uint64_t last_tick = 0;
   uint64_t selected_thread_id = 0;
+  uint64_t settled_generation = 0;  // g_cs2_publish_generation when done
   wchar_t archive[kCs2ArchiveLeafChars] = {0};
   char name[cs2_voice::kEntryNameBytes] = {0};
   uint8_t* data = nullptr;
@@ -897,6 +899,7 @@ void SettleCs2Member(Cs2Member* member, bool abandoned, uint64_t now,
                    member->archive, static_cast<unsigned long>(member->size),
                    static_cast<unsigned long>(member->have.Prefix()));
       member->done = true;
+      member->settled_generation = g_cs2_publish_generation;
       free(member->data);
       member->data = nullptr;
       return;
@@ -908,6 +911,7 @@ void SettleCs2Member(Cs2Member* member, bool abandoned, uint64_t now,
   if (!ResolveCatSystem2VoiceText(*member, now, force, &text_event_id)) return;
   PublishCs2Member(member, text_event_id);
   member->done = true;
+  member->settled_generation = ++g_cs2_publish_generation;
   free(member->data);
   member->data = nullptr;
 }
@@ -1008,7 +1012,10 @@ void ProcessCatSystem2EngineVoice() {
     if (!member.done) {
       SettleCs2Member(&member, idle >= kCs2MemberAbandonMs, now, false);
     }
-    if (member.done && idle >= kCs2MemberRepeatMs) ReleaseCs2Member(&member);
+    if (member.done && cs2_voice::SettledMemberKeyEnded(
+                           member.settled_generation, g_cs2_publish_generation)) {
+      ReleaseCs2Member(&member);
+    }
   }
 }
 

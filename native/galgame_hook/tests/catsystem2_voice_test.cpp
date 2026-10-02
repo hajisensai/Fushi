@@ -564,6 +564,26 @@ void TestSelectedLineOrder() {
   assert(voice::kTextBindingWindowMs == 1500u);
 }
 
+// The measured 2016 sequence (BUG-2896), replayed through the same
+// generation bookkeeping the adapter does: publish bumps, reject records.
+void TestSettledMemberKey() {
+  uint64_t generation = 0;
+  // E_00_01_004 read whole at the line start and published.
+  const uint64_t e004 = ++generation;
+  // Its companion member in the same archive fails verification.
+  const uint64_t companion = generation;
+  assert(!voice::SettledMemberKeyEnded(companion, generation));
+  // 5.06 s later, no click: E_00_01_004 is read again.  Same playback.
+  assert(!voice::SettledMemberKeyEnded(e004, generation));
+  // Still the same playback however long the line stays on screen.
+  assert(!voice::SettledMemberKeyEnded(e004, generation));
+  // The next message's voice is published: both keys end.
+  const uint64_t e005 = ++generation;
+  assert(voice::SettledMemberKeyEnded(e004, generation));
+  assert(voice::SettledMemberKeyEnded(companion, generation));
+  assert(!voice::SettledMemberKeyEnded(e005, generation));
+}
+
 void TestStorageName() {
   assert(voice::BuildVoiceStorageName(L"pcm_e.int", L"SAC_griani_003_001.ogg",
                                       false) ==
@@ -594,6 +614,7 @@ int main() {
   TestScanOggPages();
   TestDecideMember();
   TestSelectedLineOrder();
+  TestSettledMemberKey();
   TestStorageName();
   std::puts("catsystem2_voice_test: all passed");
   return 0;
