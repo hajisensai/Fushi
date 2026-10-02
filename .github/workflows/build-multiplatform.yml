@@ -90,8 +90,9 @@ jobs:
   #   * smoke：Windows / macOS 的 appSmoke 契约自己的装置（app_smoke_test 与它 import 的
   #     helpers、comprehensive_test_runner 与 test_flow/、fixture 生成器）。
   #   * windows_only / macos_only / ios_only：各自的平台目录、只进该平台包的原生库 / vendored
-  #     插件 / 打包脚本。native/galgame_hook 与 native/fushi_torrent 只进 Windows 包（Apple
-  #     没有内置 torrent 引擎，galgame 只做 Windows），Mihon runtime 只进 Windows / macOS。
+  #     插件 / 打包脚本。native/galgame_hook 只进 Windows 包（galgame 只做 Windows），
+  #     native/fushi_torrent 进 Windows / macOS 包（iOS 没有内置 torrent 引擎），Mihon runtime
+  #     只进 Windows / macOS。
   #   * server：linux-server job 的输入——服务端的 Dart 依赖闭包（fushi_server → fushi_engine
   #     → core / anki / audio / dictionary / platform / torrent / p2p）、它随包的三块原生库、
   #     持久库基建、本文件、依赖锁与 ci/ 补丁（fushi-subtitles 的 archive 兼容补丁）。
@@ -152,7 +153,7 @@ jobs:
           app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/setup-fushi-anki-sync/)'
-          macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/fushi_anki_sync/|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
+          macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
           server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p)/|native/(fushi_torrent|fushi_p2p|fushi_anki_sync)/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
 
@@ -667,7 +668,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.macos == 'true'
     runs-on: macos-latest
-    timeout-minutes: 60
+    # 120：内置 torrent 引擎 bridge 未命中持久库时要冷编两个架构的 vcpkg 依赖（几十分钟）；
+    # 命中后与原先一样。
+    timeout-minutes: 120
     permissions:
       contents: read
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
@@ -759,6 +762,66 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
+      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
+      # 「Bundle fushi_torrent dylib」构建阶段（fushi/macos/bundle_fushi_torrent.sh）
+      # copy-if-present 进 Contents/Frameworks。此前 macOS 从没编过它，app 把 macOS 算作
+      # 支持内置引擎的平台、加载失败后却只能判不可用（BUG-2865）。持久库与
+      # release-desktop.yml macos job 同名；命中时整段 vcpkg 冷编（两个架构）跳过，
+      # ABI 校验、出包核对与 FFI 测试照跑在还原出来的 dylib 上。
+      - name: Restore torrent bridge dylib from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/macos
+      - name: Resolve vcpkg cache identity (macOS torrent)
+        id: vcpkg_cache_id_macos
+        if: steps.torrent_store.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Cache vcpkg source distfiles (libtorrent macos)
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-
+      - name: Cache vcpkg binary archives (libtorrent macos)
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
+      - name: Build embedded torrent bridge (macOS universal dylib, static)
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+          STORE_HIT: ${{ steps.torrent_store.outputs.hit }}
+        run: |
+          set -euo pipefail
+          if [ "$STORE_HIT" != "true" ]; then
+            vcpkg_root="${VCPKG_INSTALLATION_ROOT:-}"
+            if [ ! -f "$vcpkg_root/scripts/buildsystems/vcpkg.cmake" ]; then
+              # 镜像没带 vcpkg 时自取（build_macos_dylib.sh 会按 vcpkg.json 的 baseline 补 fetch）。
+              vcpkg_root="$RUNNER_TEMP/vcpkg"
+              git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$vcpkg_root"
+              "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics
+            fi
+            mkdir -p "$VCPKG_DOWNLOADS"
+            bash native/fushi_torrent/build_macos_dylib.sh "$vcpkg_root"
+          fi
+          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/macos/libfushi_torrent_ffi.dylib nm
       - name: Build macOS (debug)
         working-directory: fushi
         run: >-
@@ -887,6 +950,54 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.p2p }}
           path: native/fushi_p2p/prebuilt/macos
+      - name: Verify macOS fushi_torrent dylib bundle
+        working-directory: fushi
+        run: |
+          set -euo pipefail
+          app_dir="build/macos/Build/Products/Debug/fushi.app"
+          dylib="$app_dir/Contents/Frameworks/libfushi_torrent_ffi.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
+          lipo -info "$dylib"
+          lipo -archs "$dylib" | grep -qw arm64
+          lipo -archs "$dylib" | grep -qw x86_64
+          # 静态链的意义是「用户机不装任何 libtorrent/ssl/boost」：依赖只许是系统库。
+          otool -L "$dylib" | grep -E '^[[:space:]]' | awk '{ print $1 }' > "$RUNNER_TEMP/torrent_otool.txt"
+          if grep -v -e '^@rpath/libfushi_torrent_ffi\.dylib$' -e '^/usr/lib/' -e '^/System/' "$RUNNER_TEMP/torrent_otool.txt"; then
+            echo "::error::$dylib links non-system libraries (static vcpkg link did not take effect)"
+            exit 1
+          fi
+          bash ../.github/scripts/verify_torrent_abi.sh "$dylib" nm
+          DYLIB_PATH="$dylib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DYLIB_PATH"])
+          lib.ht_libtorrent_version.restype = ctypes.c_char_p
+          version = lib.ht_libtorrent_version()
+          if not version:
+              raise SystemExit("ht_libtorrent_version returned null")
+          print("fushi_torrent dylib smoke ok:", version.decode())
+          PY
+      # 与 windows / linux-server job 同一理由：main.yml / release.yml 的包测试没有原生产物，
+      # 这个包在那里整组 skip。这里拿 **app 包里那一份** 跑真实下载管线（本地 rig，零外网）。
+      - name: Run fushi_torrent FFI tests against the bundled dylib
+        shell: bash
+        working-directory: packages/fushi_torrent
+        env:
+          FUSHI_TORRENT_LIB: ${{ github.workspace }}/fushi/build/macos/Build/Products/Debug/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_TORRENT_LIB" || { echo "::error::dylib not found at $FUSHI_TORRENT_LIB"; exit 1; }
+          dart pub get
+          dart test
+      - name: Save torrent bridge dylib to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/macos
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
 

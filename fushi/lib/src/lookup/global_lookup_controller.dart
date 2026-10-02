@@ -33,6 +33,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart'
     show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
+import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
     show swipeDismissThreshold;
@@ -1883,6 +1884,17 @@ class GlobalLookupController {
     //     case.
     if (handler == 'onLinkClick' || handler == 'textSelected') {
       _dispatchNestedLookup(message);
+      return;
+    }
+    // BUG-2868 — popup.js hands every http(s) dictionary link (Pixiv
+    // 「pixivで読む」, MDX raw-HTML anchors, …) to `openLink` after
+    // preventDefault. Only the in-app popup registered it; here the message was
+    // dropped, so external links in the overlay / galgame card did nothing.
+    if (handler == 'openLink') {
+      final Object? args = message['args'];
+      if (args is List && args.isNotEmpty && args.first != null) {
+        unawaited(openDictionaryExternalLink(args.first.toString()));
+      }
       return;
     }
     // BUG-2054 — the parent realm's whole-word bbox report; completes the wait
