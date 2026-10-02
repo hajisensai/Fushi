@@ -185,7 +185,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#11.
+Copy the new upstream version over this folder, then re-apply deltas #1–#12.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
