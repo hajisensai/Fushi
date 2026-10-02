@@ -281,6 +281,7 @@ std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
 }
 
 #include "voice_resource_writer.inc"
+#include "selected_lane_candidates.inc"
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
 volatile LONG g_format_set = 0;

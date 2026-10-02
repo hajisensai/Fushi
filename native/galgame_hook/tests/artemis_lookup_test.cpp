@@ -719,6 +719,30 @@ void TestArchiveSetLeaf() {
   assert(!IsArchiveSetLeaf(nullptr));
 }
 
+void TestRangeStartingAt() {
+  using fushi_voice_hook::artemis::FindRangeStartingAt;
+  struct Range {
+    uint64_t offset;
+    uint32_t size;
+  };
+  // Measured アマカノ3 layout: X.ogg, X.vol.csv (not a voice range), X+1.ogg.
+  const Range voices[] = {{3607859u, 46049u}, {3655733u, 39997u}};
+  assert(FindRangeStartingAt(voices, 2, 3607859u) == 0);
+  assert(FindRangeStartingAt(voices, 2, 3655733u) == 1);
+  // Streaming continuation inside a voice: not a new playback.
+  assert(FindRangeStartingAt(voices, 2, 3607859u + 65536u - 46049u) == -1);
+  assert(FindRangeStartingAt(voices, 2, 3607860u) == -1);
+  assert(FindRangeStartingAt(voices, 2, 3653907u) == -1);
+  // The sidecar read starts in the gap; its buffer running into X+1 is not a
+  // read of X+1.
+  assert(FindRangeStartingAt(voices, 2, 3653908u) == -1);
+  assert(FindRangeStartingAt(voices, 2, 3655732u) == -1);
+  assert(FindRangeStartingAt(voices, 2, 3695730u) == -1);
+  assert(FindRangeStartingAt(voices, 2, 0u) == -1);
+  assert(FindRangeStartingAt(voices, 0, 3607859u) == -1);
+  assert(FindRangeStartingAt<Range>(nullptr, 2, 3607859u) == -1);
+}
+
 void TestLeftButtonClaim() {
   using core::kKeyStateHeld;
   using core::kKeyStateIdle;
@@ -806,6 +830,7 @@ int main() {
   TestFactoryCreationCode();
   TestRevealedLine();
   TestArchiveSetLeaf();
+  TestRangeStartingAt();
   TestLeftButtonClaim();
   TestHitTest();
   std::puts("artemis_lookup_test: ok");

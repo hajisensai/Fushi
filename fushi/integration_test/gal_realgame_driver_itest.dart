@@ -130,6 +130,31 @@ bool _onVirtualScreen(List<int> rect) {
 bool _lookupCardOnScreen() =>
     _lookupWindows().any((w) => w.visible && _onVirtualScreen(w.rect));
 
+/// Media names behind `<audio class="fushi-inline-audio" src=…>` in a field.
+Iterable<String> _inlineClipAudioNames(String field) =>
+    RegExp(r'<audio class="fushi-inline-audio" src="([^"]+)"')
+        .allMatches(field)
+        .map((RegExpMatch m) => m.group(1)!)
+        .toList();
+
+/// Whether the stored Matroska/WebM clip [name] declares an audio track: a
+/// CodecID element (EBML id 0x86, one-byte size) whose value starts `A_`.
+bool _storedMatroskaHasAudioTrack(String mediaDir, String name) {
+  final File file = File(p.join(mediaDir, name));
+  if (!file.existsSync()) return false;
+  final Uint8List bytes = file.readAsBytesSync();
+  for (int i = 0; i + 3 < bytes.length; i++) {
+    if (bytes[i] == 0x86 &&
+        (bytes[i + 1] & 0x80) != 0 &&
+        bytes[i + 2] == 0x41 && // 'A'
+        bytes[i + 3] == 0x5F) {
+      // '_'
+      return true;
+    }
+  }
+  return false;
+}
+
 const int _inputSize = 40; // x64: DWORD type + 4 pad + 32-byte union
 const int _inputMouse = 0;
 const int _inputKeyboard = 1;
@@ -590,8 +615,14 @@ void main() {
                     fields.values.any((String v) => v
                         .replaceAll(RegExp(r'<[^>]*>'), '')
                         .contains(lineText));
-                final bool hasAudio =
-                    fields.values.any((String v) => v.contains('[sound:'));
+                // 片段封面是默认模式（PR #1717）：WebM 内嵌片段时句子音频字段只放
+                // 重播按钮 + `<audio class="fushi-inline-audio" src=片段>`，不再有
+                // `[sound:]`（anki_note_composer.dart）。认它时必须核实落进媒体库的
+                // 那个片段真有音轨，否则无声片段也会被当成「有句子音频」。
+                final bool hasAudio = fields.values.any((String v) =>
+                    v.contains('[sound:') ||
+                    _inlineClipAudioNames(v).any((String name) =>
+                        _storedMatroskaHasAudioTrack(anki.mediaDirPath, name)));
                 final bool hasImage =
                     fields.values.any((String v) => v.contains('<img'));
                 verdict(

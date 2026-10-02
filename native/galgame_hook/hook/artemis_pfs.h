@@ -180,6 +180,32 @@ inline bool IsArchiveSetLeaf(const wchar_t* leaf) {
   return digits != 0;
 }
 
+// Index of the voice range a read starting at archive byte `at` begins, or
+// -1.  `ranges` is sorted by offset (`Range` has `offset`).  Artemis starts a
+// voice by seeking to its entry, so only a read whose first byte is the
+// entry's first byte is a playback start.  Two other reads land on voices and
+// must not count (measured アマカノ3):
+//  - the small sidecars laid out between voices (`X.ogg`, `X.vol.csv`,
+//    `X+1.ogg`) are read through a buffer that runs on into X+1, which
+//    captured X+1 alongside every X so neither paired;
+//  - a voice over one read buffer is streamed: its next chunk arrives seconds
+//    into playback and re-published the same voice too late to own a line.
+template <typename Range>
+long FindRangeStartingAt(const Range* ranges, long count, uint64_t at) {
+  if (ranges == nullptr || count <= 0) return -1;
+  long low = 0;
+  long high = count;
+  while (low < high) {
+    const long middle = low + (high - low) / 2;
+    if (ranges[middle].offset < at) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low < count && ranges[low].offset == at ? low : -1;
+}
+
 inline bool IsVoiceOgg(const EntryView& entry) {
   const size_t length = TrimmedNameLength(entry);
   const bool voice_directory =

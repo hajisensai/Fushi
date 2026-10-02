@@ -47,6 +47,8 @@ struct ArtemisVoiceTask {
   uint64_t tick_ms = 0;
   uint32_t archive = 0;
   uint32_t entry_index = 0;
+  uint64_t selected_thread_id = 0;  // text selection when the read happened
+  uint64_t baseline_text_seq = 0;   // text_write_count when the read happened
 };
 
 ArtemisArchive g_artemis_archives[kArtemisArchiveSlots];
@@ -284,6 +286,12 @@ void QueueArtemisVoice(uint32_t archive, uint32_t entry_index) {
     g_artemis_tasks[i].tick_ms = GetTickCount64();
     g_artemis_tasks[i].archive = archive;
     g_artemis_tasks[i].entry_index = entry_index;
+    const uint64_t selected = fushi_voice_hook::SelectedTextThreadId(g_header);
+    g_artemis_tasks[i].selected_thread_id = selected;
+    g_artemis_tasks[i].baseline_text_seq =
+        selected != 0 && g_header != nullptr
+            ? fushi_voice_hook::AtomicLoadPreview64(&g_header->text_write_count)
+            : 0;
     InterlockedExchange(&g_artemis_tasks[i].state, 2);
     return;
   }
@@ -311,54 +319,53 @@ void ObserveArtemisPfsRead(HANDLE file, DWORD done, LPOVERLAPPED overlapped) {
     }
     start = static_cast<uint64_t>(current.QuadPart) - done;
   }
-  const uint64_t end = start + done;
-  const LONG count = g_artemis_archives[archive].range_count;
-  const ArtemisVoiceRange* ranges = g_artemis_archives[archive].ranges;
-  if (ranges == nullptr || count <= 0) return;
-  LONG low = 0;
-  LONG high = count;
-  while (low < high) {
-    const LONG middle = low + (high - low) / 2;
-    if (ranges[middle].offset < start) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  LONG candidate = low;
-  if (candidate > 0 &&
-      ranges[candidate - 1].offset + ranges[candidate - 1].size > start) {
-    --candidate;
-  }
-  if (candidate < count && ranges[candidate].offset < end &&
-      ranges[candidate].offset + ranges[candidate].size > start) {
+  const long entry = fushi_voice_hook::artemis::FindRangeStartingAt(
+      g_artemis_archives[archive].ranges,
+      g_artemis_archives[archive].range_count, start);
+  if (entry >= 0) {
     QueueArtemisVoice(static_cast<uint32_t>(archive),
-                      static_cast<uint32_t>(candidate));
+                      static_cast<uint32_t>(entry));
   }
 }
 
-void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
+// Artemis runs a block's {"vo"} before drawing its text, so the voice member
+// is read shortly before the line is published (kArtemisFollowingTextWindowMs).
+// Returns false while that line may still arrive; the task then stays queued.
+bool ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
   const LONG archives =
       InterlockedCompareExchange(&g_artemis_archive_count, 0, 0);
   if (task == nullptr || task->archive >= static_cast<uint32_t>(archives)) {
-    return;
+    return true;
   }
   const ArtemisArchive& archive = g_artemis_archives[task->archive];
   if (archive.ranges == nullptr ||
       task->entry_index >= static_cast<uint32_t>(archive.range_count)) {
-    return;
+    return true;
   }
   const ArtemisVoiceRange range = archive.ranges[task->entry_index];
   if (range.offset == g_artemis_last_offset &&
       task->archive == g_artemis_last_archive &&
+      task->tick_ms >= g_artemis_last_tick &&
       task->tick_ms - g_artemis_last_tick <= 2000) {
-    return;
+    return true;
+  }
+  fushi_voice_hook::VoiceTextCandidate
+      candidates[fushi_voice_hook::kTextLaneSlotCount] = {};
+  const size_t candidate_count =
+      CollectSelectedLaneCandidates(task->selected_thread_id, candidates);
+  const auto decision = fushi_voice_hook::ResolveFollowingSelectedText(
+      task->tick_ms,
+      task->tick_ms + fushi_voice_hook::kArtemisFollowingTextWindowMs,
+      GetTickCount64(), task->selected_thread_id, task->baseline_text_seq,
+      candidates, candidate_count);
+  if (decision.state == fushi_voice_hook::VoiceResourcePairState::kWait) {
+    return false;
   }
   HANDLE file = g_orig_CreateFileW(
       archive.path, GENERIC_READ,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file == INVALID_HANDLE_VALUE) return;
+  if (file == INVALID_HANDLE_VALUE) return true;
   LARGE_INTEGER at = {};
   at.QuadPart = range.offset;
   uint8_t* ogg = static_cast<uint8_t*>(malloc(range.size));
@@ -382,7 +389,7 @@ void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
                           static_cast<int>(kArtemisNameBytes));
     }
     WriteVoiceOggAt(ogg, range.size, name[0] == 0 ? L"voice.ogg" : name,
-                    task->tick_ms);
+                    task->tick_ms, decision.text_event_id);
     g_artemis_last_offset = range.offset;
     g_artemis_last_archive = task->archive;
     g_artemis_last_tick = task->tick_ms;
@@ -393,13 +400,14 @@ void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
   }
   free(ogg);
   g_orig_CloseHandle(file);
+  return true;
 }
 
 void ProcessArtemisVoiceTasks() {
   for (int i = 0; i < kArtemisTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_artemis_tasks[i].state, 3, 2) == 2) {
-      ProcessArtemisVoiceTask(&g_artemis_tasks[i]);
-      InterlockedExchange(&g_artemis_tasks[i].state, 0);
+      const bool done = ProcessArtemisVoiceTask(&g_artemis_tasks[i]);
+      InterlockedExchange(&g_artemis_tasks[i].state, done ? 0 : 2);
     }
   }
 }
