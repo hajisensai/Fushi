@@ -1630,11 +1630,43 @@ $sharedInitViewport
         }
       }
       if (best <= start) best = start + 1;
+      best = this.viewportSplitKinsokuBoundary(units, start, best);
       var splitItems = this.textItemsFromViewportUnits(units, start, best);
       result.push(this.screenFromTextItems(splitItems, 0, splitItems.length, screen.ids));
       start = best;
     }
     return result;
+  },
+  // BUG-2888：二分只认「装得下」，切点落在哪个字上全凭运气——段落恰好多出一个「。」
+  // 就切出一屏孤零零的「。」，「…しょうな！」」切成「…しょうな！」+「」」。同一段被切
+  // 开时，下一屏不得以行首禁则字开头、本屏不得以开括号收尾（与正文 `line-break:
+  // strict` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、
+  // 不往前进，所以退完的屏一定仍装得下；退到只剩一个单元就不再退，保证切屏有进展。
+  viewportSplitKinsokuBoundary: function(units, start, end) {
+    var boundary = end;
+    while (boundary > start + 1 && boundary < units.length) {
+      var head = this.viewportSplitUnitEdgeChar(units[boundary], true);
+      var tail = this.viewportSplitUnitEdgeChar(units[boundary - 1], false);
+      if (!this.isLineStartProhibitedChar(head) && !this.isLineEndProhibitedChar(tail)) break;
+      boundary -= 1;
+    }
+    return boundary;
+  },
+  viewportSplitUnitEdgeChar: function(unit, first) {
+    var items = unit && unit.items;
+    if (!items || !items.length) return '';
+    var item = items[first ? 0 : items.length - 1];
+    return String(item && item.char || '');
+  },
+  lineStartProhibitedChars: '、。，．,.・：；:;？！?!‼⁇⁈⁉゛゜ヽヾゝゞ々〻ー－‐゠–〜～' +
+    '」』）〕］｝〉》】〙〗〟’”｠»)]}' +
+    'ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ…‥',
+  lineEndProhibitedChars: '「『（〔［｛〈《【〘〖〝‘“｟«([{',
+  isLineStartProhibitedChar: function(char) {
+    return !!char && this.lineStartProhibitedChars.indexOf(char) >= 0;
+  },
+  isLineEndProhibitedChar: function(char) {
+    return !!char && this.lineEndProhibitedChars.indexOf(char) >= 0;
   },
   viewportSplitUnitsForItems: function(items) {
     var units = [];
