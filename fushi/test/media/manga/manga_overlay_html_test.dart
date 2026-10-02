@@ -1109,10 +1109,14 @@ void main() {
             reason: '惯性只给触屏：鼠标松手不该继续滑');
       });
 
-      test('放大态的拖动是平移，不是翻页', () {
+      test('放大态的拖动先平移，只有贴边没吃掉的余量才判翻页（BUG-2868）', () {
         final String doc = docFor(MangaReadingMode.spread, zoomPercent: 150);
-        expect(doc.contains('if (!IS_WEBTOON && ZOOM <= 1 &&'), isTrue,
-            reason: 'ZOOM>1 时拖动已被 _panBy 消费为平移，再判 swipe 会每次平移都翻页');
+        expect(doc.contains('var ux = dx - (PAN_X - spx), aux = Math.abs(ux);'),
+            isTrue,
+            reason: 'ZOOM>1 时拖动已被 _panBy 消费为平移，只有余量才能判 swipe；'
+                '行为见 manga_zoomed_swipe_edge_js_test');
+        expect(doc.contains('ZOOM <= 1 &&'), isFalse,
+            reason: '硬性 ZOOM<=1 门让 101%~105% 的捏合残留永远划不动');
         expect(doc.contains('function _panBy(dx, dy)'), isTrue,
             reason: '放大后必须能平移查看页面各处');
       });

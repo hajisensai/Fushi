@@ -29,13 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2646 条。点号进各自文件。
+> 共 2647 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2870](bugs/BUG-2870-leaderboard-hoshi-incomplete.md) | ✅ | ✅ | 排行榜书架漏书：Hoshi 导入的读完书没标读完 + 多 Profile 时无记录的书被丢 |
 | [BUG-2869](bugs/BUG-2869-synced-clip-non-lapis-template.md) | ✅ | ✅ | 视频片段制卡写进不原样渲染图片字段的模板（Kiku）后动图和音频都不显示 |
 | [BUG-2868](bugs/BUG-2868-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |
+| [BUG-2868](bugs/BUG-2868-manga-zoomed-swipe-dead.md) | ✅ | ✅ | 漫画放大态（含捏合残留 101%~105%）左右滑永远翻不了页 |
 | [BUG-2867](bugs/BUG-2867-manga-topbar-chip-overlap.md) | ✅ | ✅ | 漫画顶栏窄屏翻页方向按钮压住页码胶囊 |
 | [BUG-2867](bugs/BUG-2867-hidpi-wheel-not-smooth.md) | ✅ | ✅ | 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素 |
 | [BUG-2866](bugs/BUG-2866-smb-unc-video-open.md) | ✅ | ✅ | Windows 上 SMB/NAS 共享（UNC 路径）里的视频打不开 |
