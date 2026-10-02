@@ -222,6 +222,11 @@ void main() {
 
   testWidgets('BUG-1959/2004：粗鼠标滚轮分帧到达，距离仍是完整原始 delta',
       (WidgetTester tester) async {
+    // 粗细判据按物理像素（BUG-2867）；测试视图默认 DPR 3.0 会把下面「12 逻辑 px
+    // 的细 delta」放大成 36 物理 px 而判成粗滚轮。DPR 设成 1，让它就是高精度
+    // 滚轮 1/8 档的 12 物理 px；120 逻辑 px 仍是 120 物理 px 的粗滚轮。
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetDevicePixelRatio);
     PageScrollRegistry.debugClear();
     // 与生产同形：滚轮补间由根部 SmoothWheelScrollScope 给（BUG-2834）。
     await tester.pumpWidget(buildTestApp(SmoothWheelScrollScope(
