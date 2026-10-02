@@ -5440,6 +5440,9 @@ uint32_t g_lookup_retry_count = 0;
 // registry 拒绝一次发布后它们就不再相等。
 uint64_t g_lookup_hit_seq = 0;
 uint64_t g_lookup_submit_hit_seq = 0;
+// g_lookup_submit_hit_seq 那笔发布把整页收窄成其中一句时，这句在 TJS 渲染行里的起点。
+// host 回投的 highlight_start 是句内下标，属于这笔 hit 的帧要加回它才落在 TJS 行上。
+uint32_t g_lookup_submit_line_offset = 0;
 uint64_t g_lookup_visual_source_seq = 0;
 uint64_t g_lookup_submit_source_seq = 0;
 // 游戏侧 Esc 取消 submit 的单调 fence。它不复用 generic hide：收卡/禁用/失败回滚
@@ -5879,6 +5882,16 @@ bool RefreshKirikiriLookupDismissFence() {
   return true;
 }
 
+// host 的 highlight_start 是发布行（句段）里的下标；只有当前 submit 那笔 hit 的帧才知道
+// 偏移，别的 hit 的帧（已作废的旧查询）原样不动。
+uint32_t KirikiriLookupLineHighlightStart(
+    const fushi_voice_hook::LookupFrame& frame) {
+  if (frame.hit_seq == 0 || frame.hit_seq != g_lookup_submit_hit_seq) {
+    return frame.highlight_start;
+  }
+  return frame.highlight_start + g_lookup_submit_line_offset;
+}
+
 void PresentKirikiriLookupFrame() {
   if (g_header == nullptr) return;
   fushi_voice_hook::LookupFrame* best = nullptr;
@@ -5945,8 +5958,9 @@ void PresentKirikiriLookupFrame() {
     // （tenshi_sz 真机，2026-09-04）。高亮帧本身就是「此刻有卡」的证据——host 只在卡片
     // 成功呈现后才写它；dismiss 帧走 HideKirikiriLookupCard → fushiLookupDismiss → ClearHover
     // 一并擦掉。TJS 侧 fushiLookupApplyHighlight 同步去掉了 card.visible 门。
-    ApplyKirikiriLookupHighlight(best_highlight_frame.highlight_start,
-                                 best_highlight_frame.highlight_len);
+    ApplyKirikiriLookupHighlight(
+        KirikiriLookupLineHighlightStart(best_highlight_frame),
+        best_highlight_frame.highlight_len);
     g_lookup_highlight_presented_seq = best_highlight_seq;
     return;
   }
@@ -6012,7 +6026,7 @@ void PresentKirikiriLookupFrame() {
     return;
   }
 
-  const uint32_t highlight_start = staged.highlight_start;
+  const uint32_t highlight_start = KirikiriLookupLineHighlightStart(staged);
   const uint32_t highlight_len =
       staged.hit_seq == g_lookup_hit_seq ? staged.highlight_len : 0;
   const int32_t anchor_x = staged.anchor_x;
@@ -6128,14 +6142,30 @@ bool RetryOrDropKirikiriLookupHit(uint64_t seq) {
 // geometry 代数，KiriKiri 填成 TJS 提交序号，三家同病，症状都是游戏内「+」恒 ankiConnect:false）。
 // KiriKiri 的文本来自 injector 进程的 Luna 线程，hook 拿不到「当前行」的 seq；但共享内存里
 // 选定线程的道就在手边：按整句内容从最新往回反查最近一条 line 事件。找不到（Luna 未出行、
-// ruby 改写、线程未选）发 0 = 未知，host 走文本回退而不是拿错序号被 fail closed。
-uint64_t ResolveKirikiriLookupTextGeneration(const wchar_t* line) {
-  if (g_header == nullptr || g_text_base == nullptr || line == nullptr) return 0;
+// ruby 改写、线程未选）发 0，registry 按不合格拒绝发布（点击无卡，但绝不绑错行）。
+//
+// NVL / KAG 消息层（Fate/stay night[Realta Nua] 等）的渲染「行」是逐句累积的整页，文本道
+// 里却一句一条，整句相等永远不命中。整句相等优先；都不命中时退到「页里覆盖被点字、落在
+// 句界上的那一句」（LookupPageSentenceCovering），取最长一句（同长取最新）。命中句段时
+// *seg_begin/*seg_end 给出它在 line 里的范围，调用方把发布的行收窄成这一句；整句命中时
+// 段就是整行。
+struct KirikiriLookupLineIdentity {
+  uint64_t text_generation = 0;
+  size_t seg_begin = 0;
+  size_t seg_end = 0;
+};
+
+KirikiriLookupLineIdentity ResolveKirikiriLookupTextGeneration(
+    const wchar_t* line, size_t char_index) {
+  KirikiriLookupLineIdentity none;
+  if (g_header == nullptr || g_text_base == nullptr || line == nullptr) return none;
   const size_t line_len = wcslen(line);
-  if (line_len == 0) return 0;
+  if (line_len == 0) return none;
+  none.seg_end = line_len;
+  KirikiriLookupLineIdentity segment;
   const uint64_t selected =
       ReadKirikiriSharedU64(&g_header->selected_text_thread_id);
-  if (selected == 0) return 0;
+  if (selected == 0) return none;
   fushi_voice_hook::TextLane* lanes = fushi_voice_hook::TextLanesOf(g_header);
   const uint32_t lane_count = lanes == nullptr ? 0 : g_header->text_lane_count;
   for (uint32_t i = 0; i < lane_count; ++i) {
@@ -6167,17 +6197,30 @@ uint64_t ResolveKirikiriLookupTextGeneration(const wchar_t* line) {
       const uint32_t safe_byte_len =
           slot->byte_len > max_text_bytes ? max_text_bytes : slot->byte_len;
       const size_t chars = safe_byte_len / sizeof(wchar_t);
-      if (!fushi_voice_hook::LookupLineTextMatches(line, line_len, text, chars)) {
-        continue;
-      }
+      const bool exact =
+          fushi_voice_hook::LookupLineTextMatches(line, line_len, text, chars);
+      size_t seg_begin = 0;
+      size_t seg_end = 0;
+      const bool covering =
+          !exact &&
+          fushi_voice_hook::LookupPageSentenceCovering(
+              line, line_len, text, chars, char_index, &seg_begin, &seg_end) &&
+          seg_end - seg_begin > segment.seg_end - segment.seg_begin;
+      if (!exact && !covering) continue;
       MemoryBarrier();
       // 复读完成标记：拷完之后槽被覆盖就不算命中（与 ProcessKirikiriVoiceTasks 同纪律）。
       if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
-      return seq;
+      if (exact) {
+        none.text_generation = seq;
+        return none;
+      }
+      segment.text_generation = seq;
+      segment.seg_begin = seg_begin;
+      segment.seg_end = seg_end;
     }
-    return 0;
+    return segment.text_generation != 0 ? segment : KirikiriLookupLineIdentity{};
   }
-  return 0;
+  return KirikiriLookupLineIdentity{};
 }
 
 bool ObserveKirikiriLookupSubmitSeq(uint64_t seq) {
@@ -6328,6 +6371,30 @@ bool PublishKirikiriLookupHit(bool new_notification) {
     return RetryKirikiriLookupSubmitTransient(hit_seq);
   }
 
+  // 文本道里这句的 TextSlot.seq；未知发 0（见 ResolveKirikiriLookupTextGeneration）。
+  // 绝不能填 TJS 提交序号 hit_seq——那与文本行序号毫无关系，host 会按它 fail closed。
+  // 句段定位要求字形与 UTF-16 单元一一对应（char_count == 行长）；不对应时只认整句相等。
+  const size_t line_len = wcslen(line);
+  const KirikiriLookupLineIdentity identity = ResolveKirikiriLookupTextGeneration(
+      line, static_cast<size_t>(char_count) == line_len
+                ? static_cast<size_t>(char_index)
+                : line_len);
+  // 整页命中的是其中一句：发布的行、点击下标、字数都收窄到这一句，host 看到的就是文本道
+  // 里那一行；回投的高亮下标再加回 g_lookup_submit_line_offset。
+  const uint32_t line_offset = static_cast<uint32_t>(identity.seg_begin);
+  uint32_t published_line_bytes = line_bytes;
+  if (identity.text_generation != 0 &&
+      (identity.seg_begin != 0 || identity.seg_end != line_len)) {
+    const size_t seg_len = identity.seg_end - identity.seg_begin;
+    wmemmove(line, line + identity.seg_begin, seg_len);
+    line[seg_len] = L'\0';
+    char_index -= static_cast<int64_t>(identity.seg_begin);
+    char_count = static_cast<int64_t>(seg_len);
+    published_line_bytes = EncodeLookupLineUtf8(
+        line, encoded_line, fushi_voice_hook::kLookupLineBytes);
+    if (published_line_bytes == 0) return RetryOrDropKirikiriLookupHit(hit_seq);
+  }
+
   fushi_voice_hook::LookupGeometryHitPublication publication;
   publication.provider_kind =
       fushi_voice_hook::kLookupGeometryProviderRuntimeLayout;
@@ -6341,9 +6408,7 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   publication.coordinate_space =
       fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer;
   publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  // 文本道里这句的 TextSlot.seq；未知发 0（见 ResolveKirikiriLookupTextGeneration）。
-  // 绝不能填 TJS 提交序号 hit_seq——那与文本行序号毫无关系，host 会按它 fail closed。
-  publication.text_generation = ResolveKirikiriLookupTextGeneration(line);
+  publication.text_generation = identity.text_generation;
   publication.geometry_generation = hit_seq;
   publication.glyph_x = static_cast<int32_t>(glyph_x);
   publication.glyph_y = static_cast<int32_t>(glyph_y);
@@ -6353,7 +6418,7 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   publication.view_h = static_cast<int32_t>(view_h);
   publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
   publication.line_utf8 = encoded_line;
-  publication.line_bytes = line_bytes;
+  publication.line_bytes = published_line_bytes;
   uint64_t published_seq = 0;
   const bool published = fushi_voice_hook::g_geometry_provider_registry.PublishHit(
       g_header, publication, &published_seq);
@@ -6374,6 +6439,7 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   // Card frames answer the registry's global wire sequence, not the TJS-local
   // SubmitSeq. Keep the TJS sequence only in processed/retry bookkeeping.
   g_lookup_submit_hit_seq = published_seq;
+  g_lookup_submit_line_offset = line_offset;
   g_lookup_hit_seq = g_lookup_visual_source_seq == hit_seq ? published_seq : 0;
   g_lookup_processed_submit_seq = hit_seq;
   ResetKirikiriLookupHitRetry(hit_seq);

@@ -15,6 +15,13 @@ bool Match(const wchar_t* a, const wchar_t* b) {
                                                  std::wcslen(b));
 }
 
+bool Segment(const wchar_t* page, const wchar_t* sentence, size_t char_index,
+             size_t* begin, size_t* end) {
+  return fushi_voice_hook::LookupPageSentenceCovering(
+      page, std::wcslen(page), sentence, std::wcslen(sentence), char_index,
+      begin, end);
+}
+
 }  // namespace
 
 int main() {
@@ -35,5 +42,33 @@ int main() {
   assert(!Match(L"", L""));
   assert(!Match(L"　", L" "));
   assert(!fushi_voice_hook::LookupLineTextMatches(nullptr, 0, L"a", 1));
+
+  // Fate/stay night[Realta Nua]（KAG3 NVL）真机：消息层整页累积，渲染面的「行」是
+  // 两句拼在一起，文本道里一句一条。点第二句里的字要落到第二句。
+  const wchar_t* page = L"それは、稲妻のような切っ先だった。心臓を串刺しにせんと繰り出される槍の穂先。";
+  const wchar_t* first = L"それは、稲妻のような切っ先だった。";
+  const wchar_t* second = L"心臓を串刺しにせんと繰り出される槍の穂先。";
+  const size_t second_at = std::wcslen(first);
+  size_t b = 0;
+  size_t e = 0;
+  assert(Segment(page, second, second_at + 1, &b, &e));
+  assert(b == second_at && e == std::wcslen(page));
+  assert(Segment(page, first, 3, &b, &e));
+  assert(b == 0 && e == second_at);
+  // 句段必须覆盖被点的字：点第一句时第二句不算。
+  assert(!Segment(page, second, 3, &b, &e));
+  // 句间有换行 / 全角空格时照样定位，段不含边界空白。
+  const wchar_t* spaced = L"「はい」\n　「いいえ」";
+  assert(Segment(spaced, L"「いいえ」", 8, &b, &e));
+  assert(b == 6 && e == 11);
+  // 页里只是碰巧出现的短句不在句界上，不绑：「はい」嵌在「はいはい」后半。
+  assert(!Segment(L"「そうだね、はいはい」", L"はい", 8, &b, &e));
+  // 也不能停在半个词上：短句后面紧跟的不是句界。
+  assert(!Segment(L"はいからさん。", L"はい", 0, &b, &e));
+  // 渐进渲染的半页不包含完整句子。
+  assert(!Segment(L"体調に問題", L"体調に問題ないなら", 2, &b, &e));
+  // 越界 / 全空白句不是身份。
+  assert(!Segment(page, second, std::wcslen(page), &b, &e));
+  assert(!Segment(page, L"　", 0, &b, &e));
   return 0;
 }
