@@ -184,10 +184,12 @@ void main() {
       'native/galgame_hook/src/hook.cpp': <String>{'windows'},
       'native/fushi_torrent/fushi_torrent_ffi.cpp': <String>{
         'windows',
+        'macos',
         'server',
       },
       'packages/fushi_torrent/lib/src/embedded_torrent_engine.dart': <String>{
         'windows',
+        'macos',
         'server',
       },
       'native/fushi_anki_sync/src/main.rs': <String>{
@@ -237,7 +239,7 @@ void main() {
       '.github/actions/native-store-names/names.sh': all,
       '.github/actions/native-artifact-store/action.yml': all,
       '.github/actions/provide-baked-secrets/action.yml': apps,
-      '.github/scripts/verify_torrent_abi.sh': <String>{'server'},
+      '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
     };
     final List<String> wrong = <String>[
       for (final MapEntry<String, Set<String>> c in cases.entries)
@@ -418,6 +420,38 @@ void main() {
     ).readAsStringSync();
     expect(gate, contains('dart analyze'));
     expect(gate, contains('fushi_server --help'));
+  });
+
+  test('macOS 包带内置 torrent 引擎 dylib（BUG-2865）', () {
+    // macOS 曾经从没编过 libfushi_torrent_ffi.dylib：app 把 macOS 算作支持内置引擎的
+    // 平台，加载失败后内置引擎恒不可用。PR 门与发布构建都得编、出包后都得核对。
+    final Map<String, String> releaseJobs = _parseJobs(
+      File('../.github/workflows/release-desktop.yml').readAsStringSync(),
+    );
+    final Map<String, String> macJobs = <String, String>{
+      'build-multiplatform.yml macos': jobs['macos'] ?? '',
+      'release-desktop.yml macos': releaseJobs['macos'] ?? '',
+    };
+    for (final MapEntry<String, String> job in macJobs.entries) {
+      for (final String needle in <String>[
+        'native/fushi_torrent/build_macos_dylib.sh',
+        '.github/scripts/verify_torrent_abi.sh',
+        'name: \${{ steps.native_store.outputs.torrent }}',
+        'Contents/Frameworks/libfushi_torrent_ffi.dylib',
+      ]) {
+        expect(job.value, contains(needle), reason: '${job.key} 丢了：$needle');
+      }
+    }
+    expect(
+      jobs['macos'],
+      contains('working-directory: packages/fushi_torrent'),
+      reason: 'PR 门要拿包里那份 dylib 跑 fushi_torrent 的真 FFI 测试',
+    );
+    final String pbxproj = File(
+      'macos/Runner.xcodeproj/project.pbxproj',
+    ).readAsStringSync();
+    expect(pbxproj, contains('bundle_fushi_torrent.sh'));
+    expect(File('macos/bundle_fushi_torrent.sh').existsSync(), isTrue);
   });
 }
 

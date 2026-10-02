@@ -31,10 +31,10 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
+import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// TODO-426：暂时砍掉查词弹窗的「上 N 句 / 下 N 句」句子上下文选择器（用户要求暂时移除，
 /// 后面想到好方案再弄回来）。整条后端链路（[MiningSentenceDraft]、reader/video 的
@@ -2740,7 +2740,7 @@ JSON.stringify((function(){
               ErrorLogService.instance,
               () async {
                 if (args.isNotEmpty) {
-                  await _openExternalLink(args[0].toString());
+                  await openDictionaryExternalLink(args[0].toString());
                 }
                 return null;
               },
@@ -3253,14 +3253,6 @@ JSON.stringify((function(){
         'transcriptions': p['transcriptions'] ?? [],
       };
     }).toList();
-  }
-
-  static Future<void> _openExternalLink(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null || !uri.hasScheme) {
-      return;
-    }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 

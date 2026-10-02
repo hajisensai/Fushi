@@ -55,6 +55,13 @@ class AppPathsEngineBridge extends EnginePaths {
 
   @override
   Future<Directory> tempRootDirectory() => AppPaths.tempRootDirectory();
+
+  /// iOS：file_picker 把选中文件搬进 `NSTemporaryDirectory()`（容器 `tmp/`，iOS
+  /// 把 `TMPDIR` 设成它，即 [Directory.systemTemp]）。注意它**不是**
+  /// [tempRootDirectory]——path_provider 在 iOS 上给的是 `Library/Caches`。
+  @override
+  Future<List<Directory>> pickerImportCopyDirectories() async =>
+      Platform.isIOS ? <Directory>[Directory.systemTemp] : const <Directory>[];
 }
 
 /// 写后驱逐：与 `MediaCoverService` 历来的收口同一份双键 evict（裸 FileImage +

@@ -3441,6 +3441,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 引擎选「Fushi 互联服务端」时点名服务端跑的模型（`MangaOcrLocalModel.key`）；
+  /// 空串 = 服务端自己当前的选择。
+  String get mangaOcrPairedHostModel =>
+      getPref('manga_ocr_paired_host_model', defaultValue: '') as String;
+
+  Future<void> setMangaOcrPairedHostModel(String value) async {
+    await setPref('manga_ocr_paired_host_model', value);
+    notifyListeners();
+  }
+
   /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
   /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
   ///

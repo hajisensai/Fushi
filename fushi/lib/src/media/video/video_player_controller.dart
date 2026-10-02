@@ -32,12 +32,34 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 @visibleForTesting
-String mediaUriForVideoPath(String path) {
+String mediaUriForVideoPath(String path, {bool? windows}) {
   final Uri? uri = Uri.tryParse(path);
   if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
     return uri.toString();
   }
+  // Windows 网络共享（SMB / NAS 的 `\\server\share\…`）必须以裸路径交给
+  // media_kit，不能包成 file URI：`File(path).uri` 产出 `file:///server/share/…`
+  // （主机名降成了第一段路径），media_kit 的 uri_parser 再把它还原成
+  // `\server\share\…`、`addPrefix` 又补上 `\\?\` → 指向本机当前盘根下一个不存在
+  // 的目录，libmpv 报 Invalid argument，页面 15 秒后判「打不开」。即便写成
+  // `file://server/share/…`，uri_parser 也会先把它改成三斜杠，同样丢主机。
+  // 裸 UNC 路径则被 uri_parser 归一成 `//server/share/…`、`addPrefix` 认出网络前缀
+  // 还原为 `\\server\share\…`（不加 `\\?\`），libmpv 能直接打开。
+  if (isWindowsUncPath(path, windows: windows ?? Platform.isWindows)) {
+    return path;
+  }
   return File(path).uri.toString();
+}
+
+/// [path] 是否 Windows UNC 网络路径（`\\server\share\…` 或 `//server/share/…`）。
+/// `\\?\` / `\\.\` 设备命名空间路径不算——它们不是网络共享。非 Windows 恒 false。
+@visibleForTesting
+bool isWindowsUncPath(String path, {required bool windows}) {
+  if (!windows || path.length < 3) return false;
+  final String head = path.substring(0, 2);
+  if (head != r'\\' && head != '//') return false;
+  final String third = path[2];
+  return third != '?' && third != '.' && third != r'\' && third != '/';
 }
 
 /// 字幕调轴：把播放位置 [posMs] 按字幕偏移 [delayMs] 平移成「查 cue 用的等效位置」。

@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "日文漫画模型，配合横排文字识别。在 Windows 上使用 CPU。",
   "manga_ocr_engine_local_onnx_desc": "完全离线。首次使用需下载所选模型，速度和准确度取决于模型与硬件。",
   "manga_ocr_baberu_desc": "含横排文字模型约 284 MB。在 Windows 上自动使用 GPU 图像编码与 CPU 文字解码，不可用时使用 CPU。部分名字和手写文字可能更不准确。对新启动的 OCR 任务生效。",
-  "manga_ocr_cuda_model": "manga-ocr（NVIDIA GPU 加速）",
-  "manga_ocr_cuda_desc": "原版 manga-ocr，使用 GPU 批量识别。需要 NVIDIA 显卡；首次下载约 4 GB，应用自动安装独立的 Python 和 CUDA 运行库。",
-  "manga_ocr_runtime_installing": "正在安装本地 OCR 引擎…",
   "game_lookup_samples_advanced": "高级选项",
   "game_lookup_samples_advanced_hint": "手动微调字格",
   "game_lookup_samples_apply": "应用到游戏",
@@ -5827,7 +5824,7 @@
   "ai_media_acquire_download": "下载",
   "ai_media_acquire_started": "已开始下载",
   "ai_media_acquire_queries": "搜索词：$queries",
-  "leaderboard_tab": "排行",
+  "leaderboard_title": "排行榜",
   "leaderboard_intro_title": "排行榜与 Fushi 账户",
   "leaderboard_intro_body": "注册后可以和好友、所有人比较读完了多少。注册之前不会上传任何东西。",
   "leaderboard_intro_public_title": "会公开",
@@ -6215,5 +6212,7 @@
   "video_bluray_config_no_match": "未找到这张盘的匹配播放配置，请提供更新的 KEYDB.cfg 后重试。",
   "video_bluray_config_invalid": "蓝光播放配置无效，请更换有效的 KEYDB.cfg 后重试。",
   "video_bluray_config_missing": "播放这张蓝光盘需要匹配的 KEYDB.cfg 配置。",
+  "manga_ocr_engine_paired_host_model": "互联服务端 · $model",
+  "manga_ocr_engine_paired_host_model_missing": "服务端还没下载这个模型，请先在服务端下载。",
   "game_session_japanese_locale_skipped_hint_runtime_unavailable": "本局未转区：已请求日文区域，但 Locale Emulator 无法启动该游戏（只支持 32 位游戏），已按普通方式启动。"
 }

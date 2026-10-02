@@ -77,6 +77,69 @@ void main() {
     );
   });
 
+  group('BUG-2878 逐字区按 Word 几何切分', () {
+    // 照真实 Lens 响应（《君が一等星に光るまで》第 20 页「アトリは･･･」）建模：
+    // 行框带尾部留白，省略号三个点挤在一个短 Word 里。整行均分时「は」的格子
+    // 被切开、三个点各占一个大格，高亮压到前一个字。
+    const Rect line = Rect.fromLTRB(0.48, 0.10, 0.52, 0.90);
+    List<GoogleLensParagraph> decode(
+      List<({String text, Rect? box})> words,
+    ) =>
+        GoogleLensProtocol.decodeResponse(
+          makeGoogleLensFixture(
+            centerX: line.center.dx,
+            centerY: line.center.dy,
+            width: line.width,
+            height: line.height,
+            words: words,
+          ),
+          language: 'ja',
+          imageWidth: 1000,
+          imageHeight: 1000,
+        );
+
+    test('竖排字格落在各自 Word 框内，不按整行均分', () {
+      final GoogleLensParagraph paragraph = decode(
+        const <({String text, Rect? box})>[
+          (text: 'アトリは', box: Rect.fromLTRB(0.48, 0.12, 0.52, 0.56)),
+          (text: '･･･', box: Rect.fromLTRB(0.48, 0.60, 0.52, 0.78)),
+        ],
+      ).single;
+      expect(paragraph.isVertical, isTrue);
+      final List<Rect> cells = paragraph.regions
+          .map((GoogleLensTextRegion region) => region.normalizedBounds)
+          .toList();
+      expect(cells, hasLength(7));
+      expect(cells.first.top, closeTo(0.12, 1e-6));
+      expect(cells[3].bottom, closeTo(0.56, 1e-6), reason: '「は」止于 Word 底边');
+      expect(cells[4].top, closeTo(0.60, 1e-6));
+      expect(cells.last.bottom, closeTo(0.78, 1e-6), reason: '行尾留白不分给字');
+      expect(cells[0].height, closeTo(0.11, 1e-6));
+      expect(cells[4].height, closeTo(0.06, 1e-6));
+      expect(
+        paragraph.regions.map((GoogleLensTextRegion r) => r.utf16Start),
+        <int>[0, 1, 2, 3, 4, 5, 6],
+      );
+    });
+
+    test('任一 Word 缺几何时整行退回均分', () {
+      final GoogleLensParagraph paragraph = decode(
+        const <({String text, Rect? box})>[
+          (text: 'アトリは', box: Rect.fromLTRB(0.48, 0.12, 0.52, 0.56)),
+          (text: '･･･', box: null),
+        ],
+      ).single;
+      final List<Rect> cells = paragraph.regions
+          .map((GoogleLensTextRegion region) => region.normalizedBounds)
+          .toList();
+      expect(cells, hasLength(7));
+      for (final Rect cell in cells) {
+        expect(cell.height, closeTo(0.8 / 7, 1e-6));
+      }
+      expect(cells.first.top, closeTo(0.10, 1e-6));
+    });
+  });
+
   test('horizontal lines are ordered from visual top to bottom', () {
     final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
       makeGoogleLensFixture(

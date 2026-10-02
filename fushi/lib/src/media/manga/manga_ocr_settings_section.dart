@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
@@ -52,6 +53,9 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.modelImporter,
     this.pickImportPaths,
     this.systemOcrRunner,
+    this.pairedHostModelGetter,
+    this.pairedHostModelSetter,
+    this.remoteRunner,
     super.key,
   });
 
@@ -96,6 +100,14 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 系统 OCR 可用性探测；null = 走真实平台通道。
   final SystemOcrMangaRunner? systemOcrRunner;
 
+  /// 「Fushi 互联服务端」点名的服务端模型（空串 = 服务端默认）。省略时服务端只有
+  /// 一项、跟着服务端自己的选择走。
+  final String Function()? pairedHostModelGetter;
+  final Future<void> Function(String value)? pairedHostModelSetter;
+
+  /// 探测已配对服务端有哪些模型；null = 不列服务端模型。
+  final MangaOcrRemoteRunner? remoteRunner;
+
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
       _MangaOcrSettingsSectionState();
@@ -108,6 +120,12 @@ class _MangaOcrSettingsSectionState
   late int _parallelTasks;
   late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
+
+  /// 当前点名的服务端模型；null = 服务端默认。
+  String? _pairedHostModel;
+
+  /// 已配对服务端报上来的可点名模型（探测完成前为空）。
+  List<MangaOcrRemoteModel> _hostModels = const <MangaOcrRemoteModel>[];
 
   MangaOcrModelStatus? _status;
   bool _loadingStatus = true;
@@ -126,8 +144,6 @@ class _MangaOcrSettingsSectionState
 
   MangaOcrModelDownloadProgress? get _progress =>
       _downloads.progressOf(_localModel);
-
-  bool get _installing => _progress?.installing ?? false;
 
   String? get _downloadingFile => _progress?.currentFile;
 
@@ -167,6 +183,23 @@ class _MangaOcrSettingsSectionState
       _loadingStatus = false;
     }
     unawaited(_probeSystemOcr());
+    final String hostModel = widget.pairedHostModelGetter?.call() ?? '';
+    _pairedHostModel = hostModel.isEmpty ? null : hostModel;
+    if (widget.pairedHostModelGetter != null && widget.remoteRunner != null) {
+      unawaited(_probeHostModels());
+    }
+  }
+
+  Future<void> _probeHostModels() async {
+    MangaOcrRemoteTarget? target;
+    try {
+      target = await widget.remoteRunner!.probe();
+    } catch (_) {
+      // 探测失败就只列「服务端默认」与当前已选那项，选择照样可用。
+      target = null;
+    }
+    if (!mounted || target == null) return;
+    setState(() => _hostModels = target!.capability.models);
   }
 
   @override
@@ -273,9 +306,9 @@ class _MangaOcrSettingsSectionState
 
   int get _downloadReceivedBytes => _progress?.receivedBytes ?? 0;
 
-  void _startDownload({bool prepareOnly = false}) {
+  void _startDownload() {
     if (_importing) return;
-    _downloads.start(_localModel, widget.service, prepareOnly: prepareOnly);
+    _downloads.start(_localModel, widget.service);
   }
 
   Future<void> _cancelDownload() => _downloads.cancel(_localModel);
@@ -443,12 +476,6 @@ class _MangaOcrSettingsSectionState
     }
     _reportImport(result);
     await _loadStatus();
-    if (mounted &&
-        result.allReady &&
-        _localModel == MangaOcrLocalModel.mangaOcrCuda &&
-        widget.service is MangaOcrModelPreparationService) {
-      _startDownload(prepareOnly: true);
-    }
   }
 
   Future<List<String>?> _pickImportPaths(bool folderMode) async {
@@ -661,7 +688,7 @@ class _MangaOcrSettingsSectionState
           enabled: widget.service.isSupportedPlatform,
         )
       else
-        // 逐列 CTC 与经典 manga-ocr 五端都能跑，CUDA / Baberu 只在 Windows 列出
+        // 逐列 CTC 与经典 manga-ocr 五端都能跑，Baberu 只在 Windows 列出
         // （[MangaOcrLocalModel.availableOnAllPlatforms]）。
         for (final MangaOcrLocalModel model in platformMangaOcrLocalModels())
           _EngineOption(
@@ -704,7 +731,58 @@ class _MangaOcrSettingsSectionState
         description: t.manga_ocr_engine_paired_host_desc,
         enabled: true,
       ),
+      // 服务端的模型也逐个列成引擎项（与本机模型同构）：手机上点名让电脑用哪个
+      // 模型跑，不必跑去服务端改它自己的选择。列的是服务端报上来的；探测还没回来
+      // 或服务端离线时，当前已选那项照样保留，免得下拉找不到当前值。
+      if (widget.pairedHostModelGetter != null)
+        for (final String key in _pairedHostModelKeys())
+          _EngineOption(
+            preference: MangaOcrEnginePreference.pairedHost,
+            hostModel: key,
+            label: t.manga_ocr_engine_paired_host_model(
+              model: _hostModelLabel(key),
+            ),
+            description: _hostModelReady(key) == false
+                ? '${_hostModelDescription(key)}\n'
+                      '${t.manga_ocr_engine_paired_host_model_missing}'
+                : _hostModelDescription(key),
+            enabled: true,
+          ),
     ];
+  }
+
+  List<String> _pairedHostModelKeys() => <String>[
+    for (final MangaOcrRemoteModel model in _hostModels) model.key,
+    if (_pairedHostModel != null &&
+        !_hostModels.any((MangaOcrRemoteModel m) => m.key == _pairedHostModel))
+      _pairedHostModel!,
+  ];
+
+  /// 服务端没报这个模型时为 null（未知），报了就是它的就绪态。
+  bool? _hostModelReady(String key) {
+    for (final MangaOcrRemoteModel model in _hostModels) {
+      if (model.key == key) return model.ready;
+    }
+    return null;
+  }
+
+  static MangaOcrLocalModel? _knownModel(String key) {
+    for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+      if (model.key == key) return model;
+    }
+    return null;
+  }
+
+  String _hostModelLabel(String key) {
+    final MangaOcrLocalModel? model = _knownModel(key);
+    return model == null ? key : localModelLabel(model);
+  }
+
+  String _hostModelDescription(String key) {
+    final MangaOcrLocalModel? model = _knownModel(key);
+    return model == null
+        ? t.manga_ocr_engine_paired_host_desc
+        : localModelDescription(model);
   }
 
   Widget _buildParallelTasks() {
@@ -741,6 +819,9 @@ class _MangaOcrSettingsSectionState
             widget.localModelGetter != null
         ? _localModel
         : null,
+    hostModel: _enginePreference == MangaOcrEnginePreference.pairedHost
+        ? _pairedHostModel
+        : null,
   );
 
   Future<void> _selectEngine(_EngineChoice choice) async {
@@ -752,6 +833,12 @@ class _MangaOcrSettingsSectionState
       if (!mounted) return;
       setState(() => _localModel = model);
       _wasDownloading = _downloading;
+    }
+    if (choice.preference == MangaOcrEnginePreference.pairedHost &&
+        choice.hostModel != _pairedHostModel) {
+      await widget.pairedHostModelSetter?.call(choice.hostModel ?? '');
+      if (!mounted) return;
+      setState(() => _pairedHostModel = choice.hostModel);
     }
     if (!mounted) return;
     setState(() => _enginePreference = choice.preference);
@@ -971,22 +1058,16 @@ class _MangaOcrSettingsSectionState
         ),
         if (_downloading) ...<Widget>[
           const SizedBox(height: 8),
-          _inset(
-            LinearProgressIndicator(
-              value: _installing ? null : _downloadProgressValue,
-            ),
-          ),
+          _inset(LinearProgressIndicator(value: _downloadProgressValue)),
           const SizedBox(height: 4),
           if (_downloadingFile != null)
             _inset(
               Text(
-                _installing
-                    ? t.manga_ocr_runtime_installing
-                    : t.manga_ocr_downloading_file(file: _downloadingFile!),
+                t.manga_ocr_downloading_file(file: _downloadingFile!),
                 style: theme.textTheme.bodySmall,
               ),
             ),
-          if (!_installing && _downloadTotalBytes > 0)
+          if (_downloadTotalBytes > 0)
             _inset(
               Text(
                 t.manga_ocr_download_total_progress(
@@ -1215,19 +1296,23 @@ class _MangaOcrSettingsSectionState
 /// 引擎下拉的值：引擎偏好 + （本机 ONNX 时）具体模型。
 @immutable
 class _EngineChoice {
-  const _EngineChoice(this.preference, this.localModel);
+  const _EngineChoice(this.preference, this.localModel, {this.hostModel});
 
   final MangaOcrEnginePreference preference;
   final MangaOcrLocalModel? localModel;
+
+  /// 「Fushi 互联服务端」点名的服务端模型 key；null = 服务端默认。
+  final String? hostModel;
 
   @override
   bool operator ==(Object other) =>
       other is _EngineChoice &&
       other.preference == preference &&
-      other.localModel == localModel;
+      other.localModel == localModel &&
+      other.hostModel == hostModel;
 
   @override
-  int get hashCode => Object.hash(preference, localModel);
+  int get hashCode => Object.hash(preference, localModel, hostModel);
 }
 
 /// 引擎下拉的一项：偏好值 + 标签 + 取舍说明 + 本平台是否可用。
@@ -1235,6 +1320,7 @@ class _EngineOption {
   const _EngineOption({
     required this.preference,
     this.localModel,
+    this.hostModel,
     required this.label,
     required this.description,
     required this.enabled,
@@ -1245,7 +1331,11 @@ class _EngineOption {
   /// 本机 ONNX 项对应的模型；其余引擎为 null。
   final MangaOcrLocalModel? localModel;
 
-  _EngineChoice get choice => _EngineChoice(preference, localModel);
+  /// 服务端模型项对应的 key；「服务端默认」与其余引擎为 null。
+  final String? hostModel;
+
+  _EngineChoice get choice =>
+      _EngineChoice(preference, localModel, hostModel: hostModel);
 
   final String label;
 

@@ -47,6 +47,14 @@ if(APPLE)
       INSTALL_NAME_DIR "@rpath"
       BUILD_WITH_INSTALL_NAME_DIR TRUE
   )
+  # macOS 桌面版（build_macos_dylib.sh）把 libtorrent/boost/openssl 静态链进来：只导出
+  # C ABI（ht_*），静态进来的符号一个都不外露——否则与进程里别的库（Flutter 插件自带的
+  # openssl/boost）同名符号在两级命名空间外也可能被 dlsym 撞上。与 Linux 分支的
+  # -Wl,--exclude-libs,ALL 同一目的。
+  target_link_options(fushi_torrent_ffi PRIVATE
+      "LINKER:-exported_symbol,_ht_*"
+      "LINKER:-dead_strip"
+  )
 endif()
 
 # Android：产物名走默认 lib 前缀（libfushi_torrent_ffi.so，Dart 侧

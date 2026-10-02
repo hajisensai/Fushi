@@ -47,6 +47,8 @@ add_library(fushi_voice_hook SHARED
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
   "hook/generic_input_shield.inc"
+  "hook/overlay_cursor_guard.h"
+  "hook/overlay_cursor_guard.inc"
   "hook/generic_direct_input_wheel.inc"
   "include/lookup_wheel_source.h"
   "hook/xaudio_resource_dispatch.h"
@@ -634,6 +636,14 @@ add_executable(fushi_game_main_window_test
 target_include_directories(fushi_game_main_window_test PRIVATE "hook")
 add_test(NAME fushi_game_main_window_test
   COMMAND fushi_game_main_window_test)
+
+# 游戏光标不盖过 Fushi 浮层（真 Win32 窗口跨线程判定，BUG-2864）。
+add_executable(fushi_overlay_cursor_guard_test
+  "tests/overlay_cursor_guard_test.cpp"
+)
+target_include_directories(fushi_overlay_cursor_guard_test PRIVATE "hook")
+add_test(NAME fushi_overlay_cursor_guard_test
+  COMMAND fushi_overlay_cursor_guard_test)
 
 # 第三条 exporter 路径的判据（形状门用真内存 + VirtualQuery 验；BUG-2145）。
 add_executable(fushi_kirikiri_exporter_scan_test

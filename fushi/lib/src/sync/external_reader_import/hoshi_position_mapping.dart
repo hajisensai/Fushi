@@ -8,8 +8,17 @@ import 'package:path/path.dart' as p;
 const int _kMaxNormOffset = 10000;
 
 /// 阅读器自动标记读完的阈值（`reader_fushi/navigation.part.dart`：最后一章且
-/// 章内进度 ≥ 0.999）。导入沿用同一判据，不另立口径。
+/// 章内进度 ≥ 0.999）。导入保留这条判据（Hoshi「标记已读」写的就是末章末尾）。
 const int _kCompletedNormThreshold = 9990;
+
+/// 导入额外认的「读完」：书签处已读字数占全书 ≥ 99%（BUG-2870）。
+///
+/// 阅读器是**边读边判**——翻过最后一页就记下读完；导入只拿到 Hoshi 的一张书签快照。
+/// 轻小说正文后常挂着后记 / 奥付 / 广告页这几节短章（实测几十到三百字、或纯图 0 字），
+/// 用户读完正文就不再往后翻，书签停在正文最后一章，「末章末尾」一条就把这些读完的书
+/// 全漏掉（用户库里 18 本 99.6%–100% 的書一本都没标读完）。剩下不到 1% 的字数
+/// 只可能是这些尾页，不会是正文。
+const double _kCompletedBookRatio = 0.99;
 
 /// Fushi `EpubBooks.chaptersJson` 里的一章（只取映射要用的两个字段）。
 class FushiChapterRef {
@@ -44,7 +53,7 @@ class ExternalReaderMappedPosition {
   final int normCharOffset;
   final ExternalReaderPositionMethod method;
 
-  /// 映射后已在最后一章末尾（与阅读器自动标记读完同判据）。
+  /// 映射后已在最后一章末尾，或已读字数占全书 ≥ 99%（见 [_kCompletedBookRatio]）。
   final bool completed;
 }
 
@@ -101,7 +110,7 @@ ExternalReaderMappedPosition? mapExternalReaderBookmark({
           sectionIndex: index,
           fraction: _inChapterFraction(bookmark, span),
           method: ExternalReaderPositionMethod.chapterHref,
-          chapterCount: chapters.length,
+          chapters: chapters,
         );
       }
     }
@@ -131,7 +140,7 @@ ExternalReaderMappedPosition? mapExternalReaderBookmark({
         completed: _isCompleted(
           mapped.sectionIndex,
           mapped.normCharOffset,
-          chapters.length,
+          chapters,
         ),
       );
     }
@@ -144,7 +153,7 @@ ExternalReaderMappedPosition? mapExternalReaderBookmark({
       sectionIndex: bookmark.chapterIndex,
       fraction: bookmark.progress,
       method: ExternalReaderPositionMethod.spineIndex,
-      chapterCount: chapters.length,
+      chapters: chapters,
     );
   }
   return null;
@@ -186,7 +195,7 @@ ExternalReaderMappedPosition _position({
   required int sectionIndex,
   required double fraction,
   required ExternalReaderPositionMethod method,
-  required int chapterCount,
+  required List<FushiChapterRef> chapters,
 }) {
   final int norm = (fraction.clamp(0.0, 1.0) * _kMaxNormOffset).round().clamp(
     0,
@@ -196,12 +205,27 @@ ExternalReaderMappedPosition _position({
     sectionIndex: sectionIndex,
     normCharOffset: norm,
     method: method,
-    completed: _isCompleted(sectionIndex, norm, chapterCount),
+    completed: _isCompleted(sectionIndex, norm, chapters),
   );
 }
 
-bool _isCompleted(int sectionIndex, int norm, int chapterCount) =>
-    sectionIndex == chapterCount - 1 && norm >= _kCompletedNormThreshold;
+bool _isCompleted(int sectionIndex, int norm, List<FushiChapterRef> chapters) {
+  if (sectionIndex == chapters.length - 1 && norm >= _kCompletedNormThreshold) {
+    return true;
+  }
+  int total = 0;
+  int read = 0;
+  for (int i = 0; i < chapters.length; i++) {
+    final int characters = chapters[i].characters < 0
+        ? 0
+        : chapters[i].characters;
+    total += characters;
+    if (i < sectionIndex) read += characters;
+    if (i == sectionIndex) read += characters * norm ~/ _kMaxNormOffset;
+  }
+  // 全书 0 字（纯图）没有字数比例可言，只认上面的末章末尾。
+  return total > 0 && read >= total * _kCompletedBookRatio;
+}
 
 /// Hoshi 的 manifest 路径（相对 OPF 目录）对上 Fushi 章节 href（相对解压根）。
 ///

@@ -118,6 +118,19 @@ void main() {
       expect(make(chars: 2).contentHash(), isNot(h));
       expect(make(title: 'U').contentHash(), isNot(h));
     });
+
+    test('counted：默认计入时不上报该键（已有条目哈希不变），false 才上报（BUG-2870）', () {
+      ShelfEntryUpload make({bool counted = true}) => ShelfEntryUpload(
+        kind: LeaderboardKind.book,
+        refs: <String>['t:t|'],
+        title: 'T',
+        finished: true,
+        counted: counted,
+      );
+      expect(make().toJson().containsKey('counted'), isFalse);
+      expect(make(counted: false).toJson()['counted'], isFalse);
+      expect(make(counted: false).contentHash(), isNot(make().contentHash()));
+    });
   });
 
   group('读侧 fromJson ↔ toJson', () {

@@ -778,7 +778,7 @@ void main() {
       }
     }
 
-    test('多个 Profile：只上报本 Profile 有学习记录的作品', () async {
+    test('多个 Profile：别的 Profile 的作品不上报，谁都没记录的照常上报（BUG-2870）', () async {
       await profiles(2);
       await book('Mine', completedAt: DateTime(2026, 9, 1, 12));
       await book('Theirs', completedAt: DateTime(2026, 9, 1, 12));
@@ -794,8 +794,37 @@ void main() {
       final Map<String, LocalShelfEntry> m = byKey(
         await buildLocalShelf(db, profileId: profile),
       );
-      expect(m.keys, <String>['book:Mine']);
+      // NoFacts 读完但哪个 Profile 都没记录（标了读完没留统计 / 早于统计域的老书）：
+      // 不是别人的书，此前多建一个 Profile 就被整批丢掉。
+      expect(m.keys, unorderedEquals(<String>['book:Mine', 'book:NoFacts']));
       expect(m['book:Mine']!.lastActiveAt, isNotNull);
+      expect(m['book:NoFacts']!.lastActiveAt, isNull);
+    });
+
+    test('谁都没记录的作品只由同机代表 Profile 计入读者数（BUG-2870）', () async {
+      await profiles(2);
+      await book('Mine', completedAt: DateTime(2026, 9, 1, 12));
+      await book('NoFacts', completedAt: DateTime(2026, 9, 1, 12));
+      await segment('book', 'Mine', date: '2026-09-01', chars: 5);
+      final Map<String, LocalShelfEntry> owner = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(owner['book:Mine']!.upload.counted, isTrue);
+      expect(owner['book:NoFacts']!.upload.counted, isTrue);
+
+      final Map<String, LocalShelfEntry> other = byKey(
+        await buildLocalShelf(
+          db,
+          profileId: profile,
+          countsUnattributed: false,
+        ),
+      );
+      // 有学习记录的照常计入（同一本书换配置读完不去重）；只有无主的那份不计入，
+      // 但仍上架、仍计入本账户读完数。
+      expect(other['book:Mine']!.upload.counted, isTrue);
+      expect(other['book:NoFacts']!.upload.counted, isFalse);
+      expect(other['book:NoFacts']!.upload.toJson()['counted'], isFalse);
+      expect(other['book:NoFacts']!.upload.finished, isTrue);
     });
 
     test('只有一个 Profile：读完的全部上报（有没有学习记录都算）', () async {

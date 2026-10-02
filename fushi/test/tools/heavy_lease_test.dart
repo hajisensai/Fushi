@@ -184,4 +184,16 @@ void main() {
     nested.release();
     a.release();
   });
+
+  // pre_push_check --no-lease (2026-10-02): a caller that schedules runs
+  // itself drops the memory ceiling, never the priority or the kill-on-exit
+  // that stops a leftover flutter_tester holding sqlite3.dll.
+  test('the job keeps priority and kill-on-close without a memory ceiling', () {
+    const int priorityClass = 0x20; // JOB_OBJECT_LIMIT_PRIORITY_CLASS
+    const int jobMemory = 0x200; // JOB_OBJECT_LIMIT_JOB_MEMORY
+    const int killOnClose = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    expect(heavyJobLimitFlags(memoryCap: true),
+        priorityClass | jobMemory | killOnClose);
+    expect(heavyJobLimitFlags(memoryCap: false), priorityClass | killOnClose);
+  });
 }

@@ -270,6 +270,7 @@
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				B20100000000000000000001 /* Build FushiDicts FFI */,
 				B20100000000000000000002 /* Bundle fushi_p2p dylib */,
+				B20100000000000000000003 /* Bundle fushi_torrent dylib */,
 				6BD9B3C08D0CCB6379299F3A /* [CP] Embed Pods Frameworks */,
 				9B7ACE8C08531AD7CBBD7799 /* [CP] Copy Pods Resources */,
 			);
@@ -515,6 +516,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_p2p.sh\"\n";
+		};
+		B20100000000000000000003 /* Bundle fushi_torrent dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle fushi_torrent dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_torrent.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
