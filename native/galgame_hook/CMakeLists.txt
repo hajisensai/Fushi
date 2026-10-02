@@ -970,7 +970,8 @@ add_test(NAME fushi_unity_mono_lookup_test
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
-target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
+target_include_directories(fushi_engine_identity_layout_test PRIVATE
+  "hook" "include" "injector")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
 
