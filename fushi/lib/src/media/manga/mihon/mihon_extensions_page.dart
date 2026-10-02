@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_updates.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -91,14 +91,6 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 批量安装正在跑：期间禁掉入口，避免用户点第二次把同一批再排一遍。
   bool _bulkInstalling = false;
 
-  /// 批量安装的取消闸门。用户点「取消」置位，[MihonManager.installMany] 在每条
-  /// 之间读它——正在下载的那一条会跑完，不会半途留下残骸。
-  bool _bulkCancelled = false;
-
-  /// 进度对话框要显示的当前进度（done、total、当前扩展名）。
-  final ValueNotifier<(int, int, String)?> _bulkProgress =
-      ValueNotifier<(int, int, String)?>(null);
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -113,7 +105,6 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   void dispose() {
     _manager?.removeListener(_onChanged);
     _searchController.dispose();
-    _bulkProgress.dispose();
     super.dispose();
   }
 
@@ -916,13 +907,6 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     });
   }
 
-  /// 「最低下载量」筛选的档位。0 = 不筛。
-  ///
-  /// 做成固定档而不是自由输入：用户要表达的是「别给我那些没人用的源」，是个量级
-  /// 判断，不是精确阈值；而且不同语言的量级差着一个数量级（英文源上千很常见，
-  /// 日文源过百就算热门），自由输入只会让人反复试数。
-  static const List<int> _minDownloadOptions = <int>[0, 50, 100, 500, 1000];
-
   /// 当前筛选（语言 + 搜索 + 最低下载量）之后的可安装扩展。
   ///
   /// 列表渲染和批量安装**必须**共用这一份判据：批量安装的语义就是「把你现在看见
@@ -935,13 +919,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           (MihonAvailableExtension extension) =>
               _language == '*' || extension.language.toLowerCase() == _language,
         )
-        // 下载量筛选只对**有数据**的条目成立：没有公开计数的（自建仓库、
-        // API 限流）在设了门槛时一律排除，否则「至少 500 次下载」会把一整个
-        // 没有计数的仓库全放进来，用户按下批量安装就装了一堆来路不明的源。
+        // 下载量筛选只对**有数据**的条目成立（见 passesExtensionMinDownloads）。
         .where(
-          (MihonAvailableExtension extension) =>
-              _minDownloads == 0 ||
-              (extension.downloadCount ?? -1) >= _minDownloads,
+          (MihonAvailableExtension extension) => passesExtensionMinDownloads(
+            extension.downloadCount,
+            _minDownloads,
+          ),
         )
         .toList(growable: false),
     _searchQuery,
@@ -979,48 +962,23 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     if (targets.isEmpty) {
       if (mounted) {
         unawaited(
-          showAppDialog<void>(
-            context: context,
-            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-              title: Text(t.mihon_extension_bulk_install),
-              content: Text(t.mihon_extension_bulk_install_nothing),
-              actions: <Widget>[
-                adaptiveDialogAction(
-                  context: dialogContext,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(t.dialog_ok),
-                ),
-              ],
-            ),
+          showExtensionBulkNothing(
+            context,
+            title: t.mihon_extension_bulk_install,
+            message: t.mihon_extension_bulk_install_nothing,
           ),
         );
       }
       return;
     }
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-        title: Text(t.mihon_extension_bulk_install),
-        content: Text(
-          t.mihon_extension_bulk_install_confirm(count: targets.length),
-        ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.mihon_extension_install),
-          ),
-        ],
-      ),
+    final bool confirmed = await confirmExtensionBulk(
+      context,
+      title: t.mihon_extension_bulk_install,
+      message: t.mihon_extension_bulk_install_confirm(count: targets.length),
+      actionLabel: t.mihon_extension_install,
+      destructive: true,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     await _runBulk(targets, upgrade: false);
   }
 
@@ -1037,48 +995,23 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     if (targets.isEmpty) {
       if (mounted) {
         unawaited(
-          showAppDialog<void>(
-            context: context,
-            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-              title: Text(t.mihon_extension_update_all),
-              content: Text(t.mihon_extension_update_all_nothing),
-              actions: <Widget>[
-                adaptiveDialogAction(
-                  context: dialogContext,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(t.dialog_ok),
-                ),
-              ],
-            ),
+          showExtensionBulkNothing(
+            context,
+            title: t.mihon_extension_update_all,
+            message: t.mihon_extension_update_all_nothing,
           ),
         );
       }
       return;
     }
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-        title: Text(t.mihon_extension_update_all),
-        content: Text(
-          t.mihon_extension_update_all_confirm(count: targets.length),
-        ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.mihon_extension_update),
-          ),
-        ],
-      ),
+    final bool confirmed = await confirmExtensionBulk(
+      context,
+      title: t.mihon_extension_update_all,
+      message: t.mihon_extension_update_all_confirm(count: targets.length),
+      actionLabel: t.mihon_extension_update,
+      destructive: false,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     await _runBulk(targets, upgrade: true);
   }
 
@@ -1092,132 +1025,56 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     final String title = upgrade
         ? t.mihon_extension_update_all
         : t.mihon_extension_bulk_install;
-    setState(() {
-      _bulkInstalling = true;
-      _bulkCancelled = false;
-    });
-    _bulkProgress.value = (0, targets.length, targets.first.name);
-    BuildContext? progressContext;
-    unawaited(
-      showAppDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext dialogContext) {
-          progressContext = dialogContext;
-          return AlertDialog.adaptive(
-            title: Text(title),
-            content: ValueListenableBuilder<(int, int, String)?>(
-              valueListenable: _bulkProgress,
-              builder: (BuildContext context, (int, int, String)? progress, _) {
-                final (int done, int total, String name) =
-                    progress ?? (0, targets.length, '');
-                final int current = done + 1 > total ? total : done + 1;
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    LinearProgressIndicator(
-                      value: total == 0 ? null : done / total,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      upgrade
-                          ? t.mihon_extension_update_all_progress(
-                              current: current,
-                              total: total,
-                              name: name,
-                            )
-                          : t.mihon_extension_bulk_install_progress(
-                              current: current,
-                              total: total,
-                              name: name,
-                            ),
-                    ),
-                  ],
-                );
-              },
-            ),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                // 只置位取消闸，不 pop：正在下载的那一条要跑完才收得干净，
-                // 对话框由安装流程自己关。
-                onPressed: () => _bulkCancelled = true,
-                child: Text(t.dialog_cancel),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    MihonBulkInstallReport? report;
-    Object? failure;
+    setState(() => _bulkInstalling = true);
+    final MihonBulkInstallReport? report;
     try {
-      report = await manager.installMany(
-        targets,
-        trustSigner: !upgrade,
-        upgrade: upgrade,
-        onProgress: (int done, int total, MihonAvailableExtension current) {
-          _bulkProgress.value = (done, total, current.name);
-        },
-        isCancelled: () => _bulkCancelled,
+      report = await runExtensionBulkWithProgress<MihonBulkInstallReport>(
+        context,
+        title: title,
+        total: targets.length,
+        firstName: targets.first.name,
+        progressText: (int current, int total, String name) => upgrade
+            ? t.mihon_extension_update_all_progress(
+                current: current,
+                total: total,
+                name: name,
+              )
+            : t.mihon_extension_bulk_install_progress(
+                current: current,
+                total: total,
+                name: name,
+              ),
+        // 取消闸门由 [MihonManager.installMany] 在每条之间读——正在下载的那一条
+        // 会跑完，不会半途留下残骸。
+        run: (onProgress, isCancelled) => manager.installMany(
+          targets,
+          trustSigner: !upgrade,
+          upgrade: upgrade,
+          onProgress: (int done, int total, MihonAvailableExtension current) =>
+              onProgress(done, total, current.name),
+          isCancelled: isCancelled,
+        ),
       );
-    } catch (error) {
-      failure = error;
     } finally {
-      final BuildContext? dialog = progressContext;
-      if (dialog != null && dialog.mounted) Navigator.pop(dialog);
       if (mounted) setState(() => _bulkInstalling = false);
     }
-    if (!mounted) return;
-    if (failure != null) {
-      unawaited(
-        showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: failure,
-        ),
-      );
-      return;
-    }
-    final MihonBulkInstallReport finished = report!;
+    if (report == null || !mounted) return;
     unawaited(
-      showAppDialog<void>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-          title: Text(title),
-          content: SingleChildScrollView(
-            child: SelectableText(
-              <String>[
-                upgrade
-                    ? t.mihon_extension_update_all_done(
-                        installed: finished.installed.length,
-                        skipped: finished.skipped.length,
-                        failed: finished.failed.length,
-                      )
-                    : t.mihon_extension_bulk_install_done(
-                        installed: finished.installed.length,
-                        skipped: finished.skipped.length,
-                        failed: finished.failed.length,
-                      ),
-                // 失败原因逐条列出来：批量里最常见的失败是上游删了某个 release
-                // 或某个源换了签名，只报一个总数用户无从判断要不要重试。
-                ...finished.failed.entries.map(
-                  (MapEntry<String, String> entry) =>
-                      '${entry.key}: ${entry.value}',
-                ),
-              ].join('\n'),
-            ),
-          ),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(t.dialog_ok),
-            ),
-          ],
-        ),
+      showExtensionBulkReport(
+        context,
+        title: title,
+        summary: upgrade
+            ? t.mihon_extension_update_all_done(
+                installed: report.installed.length,
+                skipped: report.skipped.length,
+                failed: report.failed.length,
+              )
+            : t.mihon_extension_bulk_install_done(
+                installed: report.installed.length,
+                skipped: report.skipped.length,
+                failed: report.failed.length,
+              ),
+        failures: report.failed,
       ),
     );
   }
@@ -1229,44 +1086,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       children: <Widget>[
         _buildSearchAndLanguageFilters(languages),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            DropdownButton<int>(
-              key: const ValueKey<String>('mihon_extension_min_downloads'),
-              value: _minDownloads,
-              onChanged: (int? value) =>
-                  setState(() => _minDownloads = value ?? 0),
-              items: <DropdownMenuItem<int>>[
-                for (final int option in _minDownloadOptions)
-                  DropdownMenuItem<int>(
-                    key: ValueKey<String>(
-                      'mihon_extension_min_downloads_$option',
-                    ),
-                    value: option,
-                    child: Text(
-                      option == 0
-                          ? '${t.mihon_extension_min_downloads}: ${t.mihon_extension_language_all}'
-                          : '${t.mihon_extension_min_downloads}: $option',
-                    ),
-                  ),
-              ],
-            ),
-            OutlinedButton.icon(
-              key: const ValueKey<String>('mihon_extension_bulk_install'),
-              onPressed: _bulkInstalling ? null : _bulkInstall,
-              icon: const Icon(Icons.playlist_add_check),
-              label: Text(t.mihon_extension_bulk_install),
-            ),
-            OutlinedButton.icon(
-              key: const ValueKey<String>('mihon_extension_update_all'),
-              onPressed: _bulkInstalling ? null : _updateAll,
-              icon: const Icon(Icons.system_update_alt),
-              label: Text(t.mihon_extension_update_all),
-            ),
-          ],
+        ExtensionCatalogActions(
+          keyPrefix: 'mihon_extension',
+          minDownloads: _minDownloads,
+          onMinDownloadsChanged: (int value) =>
+              setState(() => _minDownloads = value),
+          onBulkInstall: _bulkInstalling ? null : _bulkInstall,
+          onUpdateAll: _bulkInstalling ? null : _updateAll,
         ),
       ],
     );
@@ -1314,22 +1140,11 @@ const int kMihonStoreAutoCollapseThreshold =
 /// 把它当 0 会让一个完全没有数据的仓库看起来像是「所有扩展都没人下」。
 List<MihonAvailableExtension> sortMihonExtensionsByDownloads(
   List<MihonAvailableExtension> extensions,
-) {
-  final List<MihonAvailableExtension> sorted = List<MihonAvailableExtension>.of(
-    extensions,
-  );
-  sorted.sort((MihonAvailableExtension a, MihonAvailableExtension b) {
-    final int? left = a.downloadCount;
-    final int? right = b.downloadCount;
-    if (left != right) {
-      if (left == null) return 1;
-      if (right == null) return -1;
-      if (left != right) return right.compareTo(left);
-    }
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  });
-  return sorted;
-}
+) => sortExtensionsByDownloads<MihonAvailableExtension>(
+  extensions,
+  downloads: (MihonAvailableExtension extension) => extension.downloadCount,
+  name: (MihonAvailableExtension extension) => extension.name,
+);
 
 /// 把「按仓库分组 + 折叠」压平成一维行表，交给 [SliverList.builder] 懒建。
 ///
@@ -1498,11 +1313,7 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
             'lib ${extension.libVersion}',
           ),
           Text(
-            extension.downloadCount == null
-                ? t.mihon_extension_download_count_unknown
-                : t.mihon_extension_download_count(
-                    count: formatMihonDownloadCount(extension.downloadCount!),
-                  ),
+            extensionDownloadCountLabel(extension.downloadCount),
             style: theme.textTheme.labelSmall,
           ),
           if (extension.sources.isNotEmpty) ...<Widget>[

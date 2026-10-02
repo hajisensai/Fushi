@@ -4662,6 +4662,7 @@ class AppModel with ChangeNotifier {
       httpClientFactory: createAppHttpClient,
       // 只有真实 app 进页即刷新内置官方仓库（单测构造的 manager 不碰外网）。
       refreshOnInitialise: true,
+      fetchDownloadCounts: true,
     );
     unawaited(manager.initialise());
     return manager;
