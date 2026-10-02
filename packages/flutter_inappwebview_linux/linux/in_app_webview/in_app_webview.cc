@@ -19,6 +19,7 @@
 #include <nlohmann/json.hpp>
 #include <random>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 // Use epoxy for OpenGL/EGL instead of direct headers to avoid conflicts
@@ -82,6 +83,42 @@ using json = nlohmann::json;
 
 // Forward declaration of InAppWebView for FileChooserContext
 namespace flutter_inappwebview_plugin {
+
+// Fushi: custom URI schemes are registered on the WebKitWebContext, which is
+// SHARED by every web view using it (the default context, or one per
+// WebViewEnvironment). Upstream registered the scheme once per InAppWebView with
+// `this` as user_data; WebKit refuses a second registration of the same scheme
+// on a context, so every later web view's requests kept being routed to the
+// FIRST InAppWebView -- a dangling pointer once that view was disposed. In the
+// app that meant: reopening a book never loaded the chapter (the reader's
+// fushi-reader:// requests went to the closed reader), and a nested dictionary
+// popup's image:// / dictmedia:// requests were answered by the outer popup.
+// Now each scheme is registered once per context with a dispatcher, and the
+// dispatcher resolves the owning InAppWebView from the request's WebKitWebView.
+namespace {
+
+std::unordered_map<WebKitWebView*, InAppWebView*>& CustomSchemeViewRegistry() {
+  static auto* registry = new std::unordered_map<WebKitWebView*, InAppWebView*>();
+  return *registry;
+}
+
+constexpr char kRegisteredSchemesKey[] = "fushi-registered-uri-schemes";
+
+// Schemes already registered on [context]; owned by the context itself so a
+// destroyed context (and a new one reusing its address) never inherits them.
+std::set<std::string>* RegisteredSchemesFor(WebKitWebContext* context) {
+  auto* schemes = static_cast<std::set<std::string>*>(
+      g_object_get_data(G_OBJECT(context), kRegisteredSchemesKey));
+  if (schemes == nullptr) {
+    schemes = new std::set<std::string>();
+    g_object_set_data_full(G_OBJECT(context), kRegisteredSchemesKey, schemes,
+                           [](gpointer data) { delete static_cast<std::set<std::string>*>(data); });
+  }
+  return schemes;
+}
+
+}  // namespace
+
 class InAppWebView;
 }
 
@@ -377,6 +414,15 @@ void InAppWebView::AttachChannel(FlBinaryMessenger* messenger, const std::string
 
 InAppWebView::~InAppWebView() {
   debugLog("dealloc InAppWebView");
+
+  // Fushi: stop routing custom-scheme requests to this (dying) object.
+  if (webview_ != nullptr) {
+    auto& registry = CustomSchemeViewRegistry();
+    auto found = registry.find(webview_);
+    if (found != registry.end() && found->second == this) {
+      registry.erase(found);
+    }
+  }
 
   CleanupMonitorChangeHandlers();
 
@@ -7880,6 +7926,7 @@ void InAppWebView::RegisterCustomSchemes() {
   if (webview_ == nullptr || settings_ == nullptr) {
     return;
   }
+  CustomSchemeViewRegistry()[webview_] = this;
 
   const auto& schemes = settings_->resourceCustomSchemes;
   if (schemes.empty()) {
@@ -7909,14 +7956,23 @@ void InAppWebView::RegisterCustomSchemes() {
       continue;
     }
 
-    // Register the custom URI scheme with the web context
-    webkit_web_context_register_uri_scheme(
-        context, scheme.c_str(), InAppWebView::OnCustomSchemeRequest, this, nullptr);
+    // Register the custom URI scheme with the web context -- once per context;
+    // requests are routed per web view by OnCustomSchemeRequest.
+    if (RegisteredSchemesFor(context)->insert(scheme).second) {
+      webkit_web_context_register_uri_scheme(
+          context, scheme.c_str(), InAppWebView::OnCustomSchemeRequest, nullptr, nullptr);
+    }
   }
 }
 
-void InAppWebView::OnCustomSchemeRequest(WebKitURISchemeRequest* request, gpointer user_data) {
-  auto* self = static_cast<InAppWebView*>(user_data);
+void InAppWebView::OnCustomSchemeRequest(WebKitURISchemeRequest* request, gpointer /*user_data*/) {
+  InAppWebView* self = nullptr;
+  WebKitWebView* requesting_view = webkit_uri_scheme_request_get_web_view(request);
+  auto& registry = CustomSchemeViewRegistry();
+  auto found = registry.find(requesting_view);
+  if (found != registry.end()) {
+    self = found->second;
+  }
   if (self == nullptr || self->webview_ == nullptr || self->channel_delegate_ == nullptr) {
     // Finish with error if we can't handle it
     g_autoptr(GError) error =

@@ -62,6 +62,18 @@
 - `WEBKIT_CHECK_VERSION(2, 50, 0)` 守住 `webkit_web_view_get_theme_color`（Debian trixie 的
   WPE 2.48 没有它，2.48 上返回「无主题色」）。
 
+### 原生：自定义 scheme 按 context 只注册一次、按 web view 分发（上游 bug）
+
+- 上游每个 `InAppWebView` 都以 `this` 为 user_data 在**共享的** `WebKitWebContext` 上
+  `webkit_web_context_register_uri_scheme`；WebKit 拒绝同一 context 重复注册同一 scheme，
+  于是之后所有 web view 的该 scheme 请求都路由给**第一个** `InAppWebView`——它被 dispose
+  之后就是悬空指针。实测：同一会话第二次打开书，`fushi-reader://` 请求打到已关闭的阅读器，
+  章节永远载不出（content ready 超时、停在 `about:blank`）；嵌套查词弹窗的
+  `image://` / `dictmedia://` 由外层弹窗应答。
+- 修法：每个 context 每个 scheme 只注册一次（已注册集合挂在 context 的 GObject data 上，
+  随 context 销毁），回调不带 user_data，按 `webkit_uri_scheme_request_get_web_view`
+  在 `WebKitWebView* → InAppWebView*` 登记表里找归属；析构时注销。
+
 ## 升级
 
 上游发正式版且本仓整体升到 `flutter_inappwebview` 6.2+ / 接口 1.4 时，删掉本目录，改回
