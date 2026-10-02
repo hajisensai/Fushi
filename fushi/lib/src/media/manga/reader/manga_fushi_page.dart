@@ -10,7 +10,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show Consumer, WidgetRef;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show Consumer, WidgetRef;
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
@@ -1047,14 +1048,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   late final WebViewDeathGuard _webViewDeathGuard = WebViewDeathGuard(
     surface: 'manga_reader',
     flushBeforeRebuild: () async {
-      _windowGate.abandon();
-      _controller = null;
+      _releaseWebView();
       await _flushPosition();
     },
     afterRebuild: () {
       if (mounted) setState(() {});
     },
   );
+
+  /// WebView 离开组件树时交还它的 controller 与在飞的加载锁（renderer 死亡、
+  /// 「本章未下载」、加载失败三条路都走这里）。`_controller` 只在 WebView 挂着时
+  /// 非 null：换章重装（[_presentPayload]）据此判断是在现有文档上重装，还是等
+  /// 重新挂上的 WebView 由 `onWebViewCreated` 装首窗——拿已销毁的 controller
+  /// 去 `loadData` 要么抛、要么空等满 10 秒超时（BUG-2884）。
+  void _releaseWebView() {
+    _windowGate.abandon();
+    _controller = null;
+  }
 
   /// 旧选区 payload 的制卡卡图回退：当前 spread 首页图的绝对文件路径。新 payload
   /// 会以 [_miningPageIndex] 精确定位 OCR 命中的页，不能用此值覆盖。
@@ -1624,6 +1634,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
     if (!mounted) return;
     if (row == null) {
+      _releaseWebView();
       setState(() => _loadFailed = true);
       return;
     }
@@ -1658,6 +1669,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }) async {
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
+      _releaseWebView();
       setState(() {
         _bookRow = row;
         _loadFailed = true;
@@ -1694,7 +1706,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required MokuroPayload payload,
     required String imagesDir,
     required Future<MangaReaderSession> Function(List<String> relativePagePaths)
-        openSession,
+    openSession,
     int? initialPage,
     bool streaming = false,
   }) async {
@@ -1872,7 +1884,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       restoredPage = widget.sourceReview!.pageIndex!;
       if (restoredPage >= payload.images.length) {
         await localPageSession.close();
-        if (mounted) setState(() => _loadFailed = true);
+        if (!mounted) return;
+        _releaseWebView();
+        setState(() => _loadFailed = true);
         return;
       }
       restoredFraction = 0;
@@ -2001,6 +2015,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         stack,
       );
       if (mounted) {
+        _releaseWebView();
         setState(() {
           _bookRow = row;
           _loadFailed = true;
@@ -2068,6 +2083,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       if (!mounted) return;
       _detachWholeVolumeOcrObserver();
+      _releaseWebView();
       setState(() {
         _bookRow = row;
         // 换章直读失败时这里还挂着旧章正文：清掉，免得旧页码被当成新章进度落库。
@@ -2148,7 +2164,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           for (int index = 0; index < pages.length; index++)
             MokuroImage(
               // 带章摘要一段：各章页名同形，URL 不能在章与章之间撞（WebView 缓存）。
-              url: '${MangaStorage.kImagesDirName}/'
+              url:
+                  '${MangaStorage.kImagesDirName}/'
                   '${p.basename(chapterDir.path)}/'
                   'page-${(index + 1).toString().padLeft(6, '0')}',
               size: placeholder,
@@ -2296,7 +2313,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         localEngineSignature: p.basename(cacheDir),
       );
     } catch (error, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.relayoutCheck', error, stack);
+      ErrorLogService.instance.log(
+        'MangaFushiPage.relayoutCheck',
+        error,
+        stack,
+      );
       return false;
     }
   }
@@ -2730,7 +2751,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (mounted && _spreads.isNotEmpty && _windowLoadWaiters == 0) {
         unawaited(
           _turnQueue.drain(
-            canApply: () => mounted && !_navigating,
+            // 与章边界那条 drain 同口径：换章期间排队的 step 直接丢掉。
+            canApply: () => mounted && !_navigating && !_switchingChapter,
             applyStep: _applyMangaTurnStep,
           ),
         );

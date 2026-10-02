@@ -52,6 +52,45 @@ void main() {
     },
   );
 
+  test('every state that unmounts the WebView releases its controller first', () {
+    // 「本章未下载」/ 加载失败分支把 WebView 移出树；controller 不交还，之后
+    // 换回正文时 _presentPayload 会拿已销毁的 controller 去 loadData。
+    final RegExp unmount = RegExp(
+      r'_loadFailed = true|_chapterNotDownloaded = true',
+    );
+    final List<RegExpMatch> sites = unmount.allMatches(source).toList();
+    expect(sites, isNotEmpty);
+    for (final RegExpMatch site in sites) {
+      final int setStateAt = source.lastIndexOf('setState(', site.start);
+      final String before = source.substring(
+        source.lastIndexOf('\n', source.lastIndexOf('\n', setStateAt) - 1),
+        setStateAt,
+      );
+      expect(
+        before,
+        contains('_releaseWebView();'),
+        reason:
+            'line ${'\n'.allMatches(source.substring(0, site.start)).length + 1}',
+      );
+    }
+  });
+
+  test(
+    'the turn drain after a window load drops steps during a chapter switch',
+    () {
+      final String load = body(
+        'Future<void> _loadInitialWindow() async {',
+        '// ── 翻页导航',
+      );
+      expect(
+        load,
+        contains(
+          'canApply: () => mounted && !_navigating && !_switchingChapter',
+        ),
+      );
+    },
+  );
+
   test('page image URLs carry the page session generation', () {
     final String build = body(
       'String _buildWindowDocument(',
