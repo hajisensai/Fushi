@@ -35,8 +35,12 @@ inline bool LookupLineTextMatches(const wchar_t* a, size_t a_len,
 }
 
 // 句末/右括号类：页里一句台词结束后紧跟的字符。只用于句段边界判定。
+// 读点也算：KAG 在「、」处 [r] 换行把一句拆成两条文本事件（Fate「この身を貫こうと
+// する稲妻は、」+「この身を救おうとする月光に弾かれた。」），而渲染行把各行字形直接
+// 拼起来、中间没有任何空白。
 inline bool IsLookupSentenceCloser(wchar_t c) {
   switch (c) {
+    case L'、': case L'，': case L',':
     case L'。': case L'．': case L'.': case L'！': case L'？': case L'!':
     case L'?': case L'」': case L'』': case L'）': case L')': case L'】':
     case L'…': case L'―': case L'〜': case L'~': case L'♪':

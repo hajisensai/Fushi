@@ -59,6 +59,16 @@ int main() {
   assert(!Segment(page, second, 3, &b, &e));
   // 反过来点第二句时第一句也不算（句段在被点字之前就结束了）。
   assert(!Segment(page, first, second_at + 1, &b, &e));
+  // KAG 在读点处 [r] 换行：一句拆成两条事件，渲染行把两行字形无空白拼起来。
+  const wchar_t* comma_page =
+      L"この身を貫こうとする稲妻は、この身を救おうとする月光に弾かれた。";
+  const wchar_t* head = L"この身を貫こうとする稲妻は、";
+  const size_t head_len = std::wcslen(head);
+  assert(Segment(comma_page, head, 2, &b, &e));
+  assert(b == 0 && e == head_len);
+  assert(Segment(comma_page, L"この身を救おうとする月光に弾かれた。",
+                 head_len + 3, &b, &e));
+  assert(b == head_len && e == std::wcslen(comma_page));
   // 句间有换行 / 全角空格时照样定位，段不含边界空白。
   const wchar_t* spaced = L"「はい」\n　「いいえ」";
   assert(Segment(spaced, L"「いいえ」", 8, &b, &e));

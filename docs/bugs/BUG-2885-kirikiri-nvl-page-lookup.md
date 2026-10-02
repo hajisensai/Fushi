@@ -9,4 +9,5 @@
   - `ResolveKirikiriLookupTextGeneration` 整句相等仍优先（任何深度）；都不命中时取覆盖点击的最长句段（同长取最新），返回 seq + 句段范围。只有字形与 UTF-16 单元一一对应（`char_count == 行长`）时才启用句段定位。
   - `PublishKirikiriLookupHit` 把发布的行 / 点击下标 / 字数收窄成这一句——host 拿到的就是文本道里那一行，制卡句子也是这一句而不是整页；偏移记在 `g_lookup_submit_line_offset`，回投的卡片 / 高亮帧只对当前 submit 的 hit 加回偏移（`KirikiriLookupLineHighlightStart`）。
 - **[x] ② 已加自动化测试** — `native/galgame_hook/tests/lookup_line_text_match_test.cpp`：Fate 真机整页两句分别定位、点第一句时第二句不算、句间换行/全角空格、嵌入短句与半个词不绑、渐进渲染半页不命中、越界/全空白。
+- **补丁（读点句界）** — 后续提交 `fix(galgame): treat reading commas as NVL sentence boundaries`：真机复测时发现 KAG 会在「、」处 `[r]` 换行，把一句拆成两条文本事件（「この身を貫こうとする稲妻は、」+「この身を救おうとする月光に弾かれた。」），渲染行两段字形之间没有任何空白，读点不算句界时后半句起点恒被拒。`IsLookupSentenceCloser` 补「、」「，」「,」；测试加两段各自定位的用例。
 - **备注**：真机复测见同分支提交后的 Fate 验收记录；Fate 序章旁白无语音，② 语音需在有配音的句子上验。
