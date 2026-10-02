@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2643 条。点号进各自文件。
+> 共 2644 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2871](bugs/BUG-2871-macos-popup-white-scrollbar-gutter.md) | ✅ | ✅ | macOS 查词浮层右侧出现白色竖条（WKWebView 透明背景只透了一半） |
 | [BUG-2868](bugs/BUG-2868-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |
 | [BUG-2867](bugs/BUG-2867-hidpi-wheel-not-smooth.md) | ✅ | ✅ | 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素 |
 | [BUG-2866](bugs/BUG-2866-smb-unc-video-open.md) | ✅ | ✅ | Windows 上 SMB/NAS 共享（UNC 路径）里的视频打不开 |
