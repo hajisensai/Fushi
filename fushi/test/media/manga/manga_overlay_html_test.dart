@@ -1109,7 +1109,7 @@ void main() {
             reason: '惯性只给触屏：鼠标松手不该继续滑');
       });
 
-      test('放大态的拖动先平移，只有贴边没吃掉的余量才判翻页（BUG-2868）', () {
+      test('放大态的拖动先平移，只有贴边没吃掉的余量才判翻页（BUG-2875）', () {
         final String doc = docFor(MangaReadingMode.spread, zoomPercent: 150);
         expect(doc.contains('var ux = dx - (PAN_X - spx), aux = Math.abs(ux);'),
             isTrue,

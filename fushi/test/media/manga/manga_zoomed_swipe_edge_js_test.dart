@@ -5,7 +5,7 @@ import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-/// BUG-2868：放大态（ZOOM>1）的左右滑。平移先吃掉位移，贴边后**没吃掉**的横向
+/// BUG-2875：放大态（ZOOM>1）的左右滑。平移先吃掉位移，贴边后**没吃掉**的横向
 /// 余量才判 swipe 翻页；捏合缩回「看起来贴合」时残留的 101%~105% 不再让左右滑
 /// 永远翻不了页。
 ///
