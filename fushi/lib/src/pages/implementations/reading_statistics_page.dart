@@ -571,6 +571,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               sessions: _sessions,
               titleOf: _sessionTitle,
               collectionOf: _sessionCollectionName,
+              coverOf: _sessionCover,
               onDelete: _deleteSession,
               onEdit: _editSession,
               onClearAll: _clearSessions,
@@ -1517,6 +1518,20 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String _sessionTitle(StudySession s) =>
       ReaderFushiSource.instance.overrideTitleForBookKey(s.mediaKey) ?? s.title;
 
+  /// 会话行封面：段 mediaKey 即 bookKey，与「按书」行 [_buildBookTile] 同一张
+  /// 书条目表、同一条书自己的缩略图链。
+  ImageProvider? _sessionCover(StudySession s) {
+    final MediaItem? item = _bookItemsByKey[s.mediaKey];
+    return item == null
+        ? null
+        : resolveMediaCoverImage(
+            kind: MediaKind.epub,
+            book: item,
+            appModel: appModelNoUpdate,
+            decodeWidth: kActivityCoverDecodePixelWidth,
+          );
+  }
+
   /// 会话行的所属合集名（BUG-2417：合集里段 title 是分册名，行上得写清是哪套
   /// 书）。会话自带 bookKey 身份（段 mediaKey），经 [_epubUidByBookKey] 换算拼
   /// 'epub|<uid>'，与 [_collectionNameForBook] 同一 v83 键契约。
@@ -1561,6 +1576,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       sessions: sessions,
       titleOf: _sessionTitle,
       collectionOf: _sessionCollectionName,
+      coverOf: _sessionCover,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
       onEdit: (StudySession s, StudySessionEdit edit) =>
