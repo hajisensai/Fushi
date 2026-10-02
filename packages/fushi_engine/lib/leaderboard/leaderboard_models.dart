@@ -643,6 +643,7 @@ class ShelfEntryUpload {
     this.finishedDate,
     this.chars = 0,
     this.ms = 0,
+    this.counted = true,
   }) : refs = List<String>.unmodifiable(refs) {
     if (refs.isEmpty) {
       throw ArgumentError.value(refs, 'refs', 'must not be empty');
@@ -670,6 +671,12 @@ class ShelfEntryUpload {
   final int chars;
   final int ms;
 
+  /// 是否计入作品维度的读者数（读者数 / 作品人气 / 作品周月榜 / 读者列表）。false 只用于
+  /// 「本机没有任何 Profile 有学习记录」的作品在非代表 Profile 上的那一份：同一台机器的
+  /// 多个 Profile 共享同一个库，这类作品会被每个开了上传的 Profile 各报一次（BUG-2870）。
+  /// 账户自己的读完数与计分不受影响。只在 false 时上报，已有条目的 [contentHash] 不变。
+  final bool counted;
+
   JsonMap toJson() => <String, dynamic>{
     'kind': kind.wire,
     'refs': refs,
@@ -682,6 +689,7 @@ class ShelfEntryUpload {
     if (finishedDate != null) 'finishedDate': finishedDate,
     'chars': chars,
     'ms': ms,
+    if (!counted) 'counted': false,
   };
 
   /// 规范化 JSON（键按字典序递归排序）的 sha256 hex：同一条目恒得同一值，

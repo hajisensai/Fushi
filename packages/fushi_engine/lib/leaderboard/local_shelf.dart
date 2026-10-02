@@ -88,10 +88,16 @@ class LocalShelf {
 /// [now] 应是**服务器时刻**（app 传按 `Date` 头校准过的时钟；测试注入）：读完时刻的上界
 /// 与每日字数窗口都按它算。每日字数只保留服务端接受的窗口 [leaderboardDailyFrom] ..
 /// [leaderboardDailyTo]（更早的服务端判 too_old、更晚的判 future，都会拒收整批）。
+///
+/// [countsUnattributed]：本机没有任何 Profile 有学习记录的作品（同机 Profile 共享的库里
+/// 只有读完标记的那些）是否由本 Profile 计入作品读者数。同机每个开了上传的 Profile 都会
+/// 报这类作品；只让其中一个（[leaderboardUnattributedOwner]）计入，其余带
+/// `counted: false` 上报，作品读者数才不会按 Profile 个数重复（BUG-2870）。
 Future<LocalShelf> buildLocalShelf(
   FushiDatabase db, {
   required int profileId,
   DateTime? now,
+  bool countsUnattributed = true,
 }) async {
   final DateTime at = now ?? DateTime.now();
   final String dailyFrom = leaderboardDailyFrom(at);
@@ -106,6 +112,7 @@ Future<LocalShelf> buildLocalShelf(
     otherProfiles: await _otherProfileMedia(db, profileId),
     nowMs: at.millisecondsSinceEpoch,
     nsfwExtensions: await _nsfwExtensionPackages(db),
+    countsUnattributed: countsUnattributed,
   );
   final List<LocalShelfEntry> entries =
       <LocalShelfEntry>[
@@ -194,6 +201,22 @@ bool isAdultVideoContentRating(String? contentRating) {
   return rating.startsWith('RX') || rating.startsWith('R18');
 }
 
+/// 同机代表 Profile：在仍存在的 Profile（[existing]）里、开着上传的（[uploading]：有账户、
+/// 同意上传、没被别的设备顶掉）取 id 最小的那个。只有它让「哪个 Profile 都没有学习记录」
+/// 的作品计入作品读者数（BUG-2870）。没有任何候选时返回 null，调用方按「自己就是代表」
+/// 处理——正在上传的 Profile 本身就是候选，null 只出现在账户文件读不到的退化情形。
+int? leaderboardUnattributedOwner({
+  required Iterable<int> uploading,
+  required Iterable<int> existing,
+}) {
+  final Set<int> alive = existing.toSet();
+  int? owner;
+  for (final int id in uploading) {
+    if (alive.contains(id) && (owner == null || id < owner)) owner = id;
+  }
+  return owner;
+}
+
 /// 别的 Profile 有学习记录的媒体（`mediaKind|mediaKey`）；只有一个 Profile 时为空集。
 /// 与本 Profile 同一口径（[loadStatFacts] 的日面事实），只是换个 profileId。
 Future<Set<String>> _otherProfileMedia(FushiDatabase db, int profileId) async {
@@ -226,6 +249,7 @@ class _ShelfBuild {
     required this.otherProfiles,
     required this.nowMs,
     required this.nsfwExtensions,
+    required this.countsUnattributed,
   });
 
   final _Totals totals;
@@ -237,6 +261,9 @@ class _ShelfBuild {
   /// 分级为 NSFW 的扩展包名。
   final Set<String> nsfwExtensions;
 
+  /// 见 [buildLocalShelf] 的同名参数。
+  final bool countsUnattributed;
+
   bool isNsfwExtension(String? packageName) =>
       packageName != null && nsfwExtensions.contains(packageName);
 
@@ -247,6 +274,16 @@ class _ShelfBuild {
   bool belongsToOtherProfile(String mediaKind, Iterable<String> mediaKeys) =>
       !mediaKeys.any((String k) => totals.has(mediaKind, k)) &&
       mediaKeys.any((String k) => otherProfiles.contains('$mediaKind|$k'));
+
+  /// 这部作品是否计入作品读者数：有学习记录的作品归本 Profile（归别人的已在
+  /// [belongsToOtherProfile] 处跳过），照常计入；哪个 Profile 都没有记录的作品由同机
+  /// 代表 Profile 计入，见 [countsUnattributed]。
+  bool counts(String mediaKind, Iterable<String> mediaKeys) =>
+      countsUnattributed ||
+      mediaKeys.any(
+        (String k) =>
+            totals.has(mediaKind, k) || otherProfiles.contains('$mediaKind|$k'),
+      );
 
   void skip(String localKey, String reason) =>
       _skipped.add('$localKey($reason)');
@@ -376,6 +413,7 @@ LocalShelfEntry? _entry(
   required int ms,
   String? localCoverPath,
   int? lastActiveAt,
+  bool counted = true,
 }) {
   final String cleanTitle = sanitizeShelfText(title, kLeaderboardMaxTitle);
   if (refs.isEmpty || refs.length > kLeaderboardMaxRefs) {
@@ -404,6 +442,7 @@ LocalShelfEntry? _entry(
       finishedDate: at == null ? null : _localDate(at),
       chars: chars,
       ms: ms,
+      counted: counted,
     ),
   );
 }
@@ -518,6 +557,7 @@ Future<List<LocalShelfEntry>> _bookEntries(
       nsfw: build.isNsfwExtension(source.extensionPackage),
       finished: completedAt != null,
       finishedAt: completedAt?.millisecondsSinceEpoch,
+      counted: build.counts(kActivityMediaBook, <String>[bookKey]),
       chars: chars,
       ms: ms,
       localCoverPath: row.read(t.coverPath),
@@ -719,6 +759,10 @@ LocalShelfEntry? _videoEntry(
     finishedAt: finished ? finishedAt : null,
     chars: chars,
     ms: ms,
+    counted: build.counts(
+      kActivityMediaVideo,
+      unit.members.map((VideoBookRow m) => m.bookUid),
+    ),
     localCoverPath:
         _nonEmpty(collection?.coverPath) ??
         unit.members
@@ -991,6 +1035,7 @@ Future<List<LocalShelfEntry>> _gameEntries(
       finishedAt: finished ? g.completedAt : null,
       chars: chars,
       ms: ms,
+      counted: build.counts(kActivityMediaGame, <String>[g.id]),
       localCoverPath: g.coverPath,
       lastActiveAt: totals.lastActive(kActivityMediaGame, g.id),
     );

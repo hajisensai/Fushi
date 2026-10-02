@@ -137,6 +137,29 @@ class LeaderboardStore {
   File get file =>
       File(p.join(supportRoot.path, 'leaderboard', 'profile_$profileId.json'));
 
+  static final RegExp _fileName = RegExp(r'^profile_(\d+)\.json$');
+
+  /// 本机正在上传的 Profile：账户文件存在、同意上传、没被别的设备顶掉。用来选同机
+  /// 代表 Profile（`leaderboardUnattributedOwner`，BUG-2870）。
+  static Future<Set<int>> uploadingProfileIds(Directory supportRoot) async {
+    final Directory dir = Directory(p.join(supportRoot.path, 'leaderboard'));
+    if (!await dir.exists()) return <int>{};
+    final Set<int> out = <int>{};
+    for (final FileSystemEntity e in dir.listSync()) {
+      final RegExpMatch? m = _fileName.firstMatch(p.basename(e.path));
+      if (e is! File || m == null) continue;
+      final int id = int.parse(m.group(1)!);
+      final LeaderboardLocalAccount? a = await LeaderboardStore(
+        supportRoot: supportRoot,
+        profileId: id,
+      ).read();
+      if (a != null && a.uploadEnabled && !a.uploadBlockedByOtherDevice) {
+        out.add(id);
+      }
+    }
+    return out;
+  }
+
   /// 读账户；文件不存在返回 null。文件坏了（不是 JSON / 形状不对）同样返回 null
   /// ——视为未开启——并记一条**不含文件内容**的日志（内容里有私钥）。
   Future<LeaderboardLocalAccount?> read() async {
