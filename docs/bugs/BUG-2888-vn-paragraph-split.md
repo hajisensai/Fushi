@@ -7,4 +7,5 @@
 - **[x] ② 已加自动化测试** — `fushi/test/reader/vn_split_kinsoku_behavior_test.dart`（CSS 生成器断言 VN 规则存在且排在正文规则之后；node 真跑生产切点方法，七组切点用例）+ 真书探针 `fushi/integration_test/reader_vn_paragraph_split_probe_itest.dart`（真 app 导入真书、VN 逐屏扫描禁则起首 / 越界 / 文本连续 / 目标段同屏，并记录翻页与滚动模式下 `hanging-punctuation` 未受影响）。两条单测都经变异验证能各自抓回归。
 - **备注**：
   - 三种 view mode：CSS 规则只命中 VN 的 `.fushi-vn-content`，切点逻辑只在 VN 切屏路径；翻页 / 滚动不经这两处，真书探针在这两种模式下记录正文 `hanging-punctuation` 计算值（WebKit 仍为 `allow-end`）。
-  - 同一章在 Chromium 下另有 2 屏（侧排拉丁字母「HA・YA・T…」所在屏）文字越出屏底约 8px，修复前就存在、与本 bug 无关，未在此处理。
+  - 逐屏越界检查按非空白字符判：行尾全角空格按规范悬挂出行盒（不可见），按整个文本节点的矩形判会在 Chromium 下误报 2 屏「越出屏底 8px」，修复前后一致，不是正文越界。
+  - 真 app 验证（2026-10-03，真书导入 → 竖排 40px → VN 开 part0035，探针 `reader_vn_paragraph_split_probe_itest.dart`）：**macOS**（1440×822）与 **Windows**（1424×919）均 249 屏、0 屏在段中以禁则字开头、0 处正文越出屏盒、逐屏拼回与整章源文一致（9696 字）、目标段「そう思ったのは…声援が飛ぶ。」整段在第 154 屏；macOS 下 VN 内容盒 `hanging-punctuation` 为 `none`、翻页 / 滚动正文仍为 `allow-end`（WebView2 不支持该属性，三种模式均为空）。
