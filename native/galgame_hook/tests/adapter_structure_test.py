@@ -236,12 +236,17 @@ class AdapterStructureTest(unittest.TestCase):
         gate = "fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr"
         self.assertIn(gate, body)
         self.assertLess(body.index(gate), body.index("g_kirikiri_voice_tasks[i]"))
-        for detour in (
-            "IStream* __stdcall Detour_TVPCreateIStreamStub(",
-            "TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(",
-        ):
-            self.assertIn("EnqueueKirikiriVoiceResourceOwned(",
-                          self._function_body(source, detour))
+        # COM IStream openers (the import stub and the TVPCreateStream convergence
+        # point, BUG-2887) share one reader that funnels into the same gate.
+        self.assertIn("EnqueueKirikiriVoiceResourceOwned(",
+                      self._function_body(source, "void CaptureKirikiriVoiceIStream("))
+        self.assertIn("CaptureKirikiriVoiceIStream(",
+                      self._function_body(
+                          source, "IStream* __stdcall Detour_TVPCreateIStreamStub("))
+        self.assertIn("EnqueueKirikiriVoiceResourceOwned(",
+                      self._function_body(
+                          source,
+                          "TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream("))
 
     def test_kirikiri_textrender_without_bound_instance_falls_back_to_classic(self) -> None:
         # BUG-2708: a TextRender plugin that is not bound to any message-layer instance
@@ -592,6 +597,20 @@ class AdapterStructureTest(unittest.TestCase):
             copy_draw,
         )
         self.assertIn("MatchesSgreScenarioDrawMetrics", copy_draw)
+        self.assertIn(
+            "capture->layout_glyph_count = static_cast<uint32_t>(glyph_count);",
+            copy_draw,
+        )
+
+        # BUG-2892 — 渲染器先排好整句、再抬可见字数做打字机效果；只有整句显示完才是
+        # 一条台词。门一丢，「聞か」「聞かれ」这些逐字前缀就各自成了文本通道的一行。
+        capture = self._function_body(
+            source, "void CaptureSgreLookupDrawState(void* text_surface)"
+        )
+        gate = capture.index("IsSgreScenarioLineFullyRevealed(")
+        publish_text = capture.index("PublishSgreExactText(snapshot, text_surface)")
+        self.assertLess(gate, publish_text)
+        self.assertEqual(capture.count("PublishSgreExactText("), 1)
 
         # BUG-2087 审查缺陷 D — 两个高亮窗都是 WS_EX_TOPMOST。悬浮分支靠 game_point
         # 自带前台判据，词高亮分支必须显式带上同一个 game_foreground，否则卡片弹出后
