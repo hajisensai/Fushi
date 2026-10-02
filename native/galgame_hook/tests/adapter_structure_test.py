@@ -2082,11 +2082,18 @@ class AdapterStructureTest(unittest.TestCase):
                           "isencryptionkey"):
             self.assertNotIn(forbidden, engine_lane.lower())
         resolve = self._function_body(core, "inline VoiceSiteResult ResolveVoiceSites(")
-        for proof in ("kBigReadBytes", "kReadEntryPrologueBytes",
-                      "kPlainBlockBytes", "DecodeRel32CallTarget",
-                      "imports.set_file_pointer", "imports.read_file",
-                      "OperandNamesSlot("):
+        # Structural proof shared by codegens (BUG-2895): the forwarder shape,
+        # then the plain-path block named by its flag, clamp, imports and lea.
+        for proof in ("FindForwarder(image)", "DecodeRel32CallTarget",
+                      "MatchesPlainBlock(image, code, at, imports",
+                      "blocks != 1u"):
             self.assertIn(proof, resolve)
+        block = self._function_body(core, "inline bool MatchesPlainBlock(")
+        for proof in ("kArchiveEncryptedOffset", "imports.set_file_pointer",
+                      "imports.read_file", "0x8du, 0x14u, entry"):
+            self.assertIn(proof, block)
+        self.assertIn("OperandNamesSlot(",
+                      self._function_body(core, "inline size_t FindImportCall("))
         hook = self._function_body(adapter, "bool TryHookCatSystem2EngineVoice()")
         self.assertIn("ResolveVoiceSites(image, imports, &sites)", hook)
         self.assertIn('FindImportSlotRva(\n        image, "kernel32.dll", "SetFilePointer")',
