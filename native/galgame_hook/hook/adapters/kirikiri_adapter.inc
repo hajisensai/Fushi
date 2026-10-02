@@ -147,8 +147,10 @@ void EnqueueKirikiriVoiceResourceOwned(
   // 引擎对同一句语音开两次流：一次是逻辑名、字节已解密；一次是 32 位十六进制哈希物理名、
   // 字节仍是密文。旧实现两份都当语音落盘，密文那份名字照样是 `.ogg`，配对到它的卡片音频
   // 不可解码（《喫茶ステラと死神の蝶》真机：每句 noz*.ogg 都伴随一份同长度 NOT-OGG 文件）。
-  // 按魔数判定与引擎版本、加密方案、文件命名都无关。
-  if (fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr) {
+  // 按魔数判定与引擎版本、加密方案、文件命名都无关。KiriKiri2 自有的 TCWF（`.tcw`，
+  // wutcwf 解码）也是语音容器，由 worker 解成 WAV 再落盘（消费端不认 TCWF）。
+  if (fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr &&
+      !fushi_voice_hook::tcwf::LooksLikeTcwf(data, len)) {
     free(data);
     return;
   }
@@ -166,6 +168,40 @@ void EnqueueKirikiriVoiceResourceOwned(
     return;
   }
   free(data);
+}
+
+// Worker 侧落盘。Ogg / RIFF 原样写；TCWF 先解成 PCM WAV，落盘名的 `.tcw` 换成 `.wav`
+// （消费端按扩展名索引资源、按容器解码，TCWF 两样都不认）。解码失败整条丢弃，不写半截。
+// PCM 载荷（RIFF 原样或 TCWF 解出）整段静音也丢弃：那是脚本用来掐断上一条语音的静音文件，
+// 不是这一句的配音，落盘就会被配给紧跟其后的旁白（BUG-2888）。
+bool WriteKirikiriVoiceResource(const uint8_t* data, uint32_t len,
+                                const wchar_t* storage_name, uint64_t tick_ms,
+                                uint64_t text_event_id) {
+  namespace tcwf = fushi_voice_hook::tcwf;
+  if (!tcwf::LooksLikeTcwf(data, len)) {
+    if (fushi_voice_hook::IsSilentPcmWav(data, len)) return false;
+    return WriteVoiceOggAt(data, len, storage_name, tick_ms, text_event_id);
+  }
+  tcwf::Header header;
+  if (!tcwf::ParseHeader(data, len, &header)) return false;
+  const size_t wav_bytes = tcwf::WavBytes(header);
+  if (wav_bytes > kMaxVoiceDumpBytes * 4ull) return false;
+  uint8_t* wav = static_cast<uint8_t*>(malloc(wav_bytes));
+  if (wav == nullptr) return false;
+  bool ok = tcwf::DecodeToWav(data, len, header, wav, wav_bytes) &&
+            !fushi_voice_hook::IsSilentPcmWav(wav, wav_bytes);
+  if (ok) {
+    std::wstring name(storage_name == nullptr ? L"voice" : storage_name);
+    const size_t n = name.size();
+    if (n >= 4 && _wcsicmp(name.c_str() + n - 4, L".tcw") == 0) {
+      name.resize(n - 4);
+    }
+    name += L".wav";
+    ok = WriteVoiceOggAt(wav, static_cast<uint32_t>(wav_bytes), name.c_str(),
+                         tick_ms, text_event_id);
+  }
+  free(wav);
+  return ok;
 }
 
 void ProcessKirikiriVoiceTasks() {
@@ -244,8 +280,9 @@ void ProcessKirikiriVoiceTasks() {
       continue;
     }
 
-    WriteVoiceOggAt(task->data, task->len, task->storage_name,
-                    task->pairing.resource_tick_ms, decision.text_event_id);
+    WriteKirikiriVoiceResource(task->data, task->len, task->storage_name,
+                               task->pairing.resource_tick_ms,
+                               decision.text_event_id);
     if (g_header != nullptr) {
       g_header->reserved_luna |= kDiagKirikiriVoiceStreamDumped;
     }
@@ -6993,109 +7030,7 @@ void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
 volatile LONG g_voice_installed = 0;
 
 // E8 rel32 的调用目标 = p + 5 + *(int32*)(p+1)（照 my.h GetCallDestination）。
-inline uint8_t* GetCallDest(const uint8_t* p) {
-  const int32_t rel = *reinterpret_cast<const int32_t*>(p + 1);
-  return const_cast<uint8_t*>(p) + 5 + rel;
-}
-
-// 紧凑 x86 指令长度解码器（覆盖 MSVC SEH 序言指令集，够定位 CallIStream 内首个 call；未知返回 0 使
-// 调用方安全放弃定位而非误步）。替代 KrkrExtract 的完整 LDE GetOpCodeSize32，避免移植整套反汇编器。
-uint32_t InsnLen32(const uint8_t* p) {
-  uint32_t i = 0;
-  for (;;) {  // 前缀（段/操作数/地址/rep/lock）逐个吃掉。
-    const uint8_t b = p[i];
-    if (b == 0x66 || b == 0x67 || b == 0xF0 || b == 0xF2 || b == 0xF3 || b == 0x2E ||
-        b == 0x36 || b == 0x3E || b == 0x26 || b == 0x64 || b == 0x65) {
-      i++;
-      continue;
-    }
-    break;
-  }
-  const uint8_t op = p[i++];
-  auto modrm_len = [&]() -> uint32_t {
-    const uint8_t m = p[i];
-    const uint8_t mod = static_cast<uint8_t>(m >> 6);
-    const uint8_t rm = static_cast<uint8_t>(m & 7);
-    uint32_t len = 1;  // modrm 本身
-    if (mod != 3) {
-      if (rm == 4) {  // SIB
-        const uint8_t sib = p[i + 1];
-        len += 1;
-        if (mod == 0 && (sib & 7) == 5) len += 4;  // disp32
-      } else if (mod == 0 && rm == 5) {
-        len += 4;  // disp32
-      }
-      if (mod == 1) {
-        len += 1;  // disp8
-      } else if (mod == 2) {
-        len += 4;  // disp32
-      }
-    }
-    return len;
-  };
-  switch (op) {
-    case 0x90: case 0xC3: case 0xC9: case 0xCC: case 0xF4:
-      return i;
-    case 0xC2:
-      return i + 2;  // ret imm16
-    case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
-    case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4E: case 0x4F:
-    case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
-    case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5E: case 0x5F:
-    case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
-      return i;  // push/pop/inc/dec/xchg-eax reg
-    case 0x6A:
-      return i + 1;  // push imm8
-    case 0x68:
-      return i + 4;  // push imm32
-    case 0xEB:
-      return i + 1;  // jmp rel8
-    case 0xE8: case 0xE9:
-      return i + 4;  // call/jmp rel32
-    case 0xA0: case 0xA1: case 0xA2: case 0xA3:
-      return i + 4;  // mov al/eax,[moffs32] 及反向
-    case 0xA8:
-      return i + 1;  // test al,imm8
-    case 0xA9:
-      return i + 4;  // test eax,imm32
-    case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB6: case 0xB7:
-      return i + 1;  // mov r8,imm8
-    case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBE: case 0xBF:
-      return i + 4;  // mov r32,imm32
-    case 0x04: case 0x0C: case 0x14: case 0x1C: case 0x24: case 0x2C: case 0x34: case 0x3C:
-      return i + 1;  // arith al,imm8
-    case 0x05: case 0x0D: case 0x15: case 0x1D: case 0x25: case 0x2D: case 0x35: case 0x3D:
-      return i + 4;  // arith eax,imm32
-    case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
-    case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
-      return i + 1;  // jcc rel8
-    case 0x80: case 0x83: case 0xC0: case 0xC1: case 0xC6: case 0x6B:
-      return i + modrm_len() + 1;  // modrm + imm8
-    case 0x81: case 0xC7: case 0x69:
-      return i + modrm_len() + 4;  // modrm + imm32
-    case 0x00: case 0x01: case 0x02: case 0x03:
-    case 0x08: case 0x09: case 0x0A: case 0x0B:
-    case 0x10: case 0x11: case 0x12: case 0x13:
-    case 0x18: case 0x19: case 0x1A: case 0x1B:
-    case 0x20: case 0x21: case 0x22: case 0x23:
-    case 0x28: case 0x29: case 0x2A: case 0x2B:
-    case 0x30: case 0x31: case 0x32: case 0x33:
-    case 0x38: case 0x39: case 0x3A: case 0x3B:
-    case 0x84: case 0x85: case 0x86: case 0x87:
-    case 0x88: case 0x89: case 0x8A: case 0x8B:
-    case 0x8D: case 0x8F:
-    case 0xD0: case 0xD1: case 0xD2: case 0xD3:
-    case 0xFE: case 0xFF: case 0x62: case 0x63:
-      return i + modrm_len();  // 纯 modrm
-    case 0x0F: {
-      const uint8_t op2 = p[i++];
-      if (op2 >= 0x80 && op2 <= 0x8F) return i + 4;  // jcc rel32
-      return i + modrm_len();                        // setcc/movzx/movsx/imul 等（best effort）
-    }
-    default:
-      return 0;  // 未知 → 放弃定位
-  }
-}
+inline uint8_t* GetCallDest(const uint8_t* p) { return fushi_voice_hook::x86::RelCallDest(p); }
 
 // 主模块（游戏 exe）映像范围，用于校验定位到的函数指针落在代码段内。
 void GetMainModuleRange(uint8_t** base, uint32_t* size) {
@@ -7147,23 +7082,13 @@ uint8_t* FindCallIStreamFromStub(uint8_t* stub, bool* is_bcb) {
 // 在 CallIStream 体内步进指令、取首个 call 目标 = 引擎内部 TVPCreateStream。逐指令步进（非裸扫 E8）
 // 从根本上避免立即数里的杂散 E8 被误认；再对目标做模块范围 + IsBadCodePtr + 序言三重校验。
 uint8_t* FindInternalTVPCreateStream(uint8_t* call_istream, uint8_t* mod_base, uint32_t mod_size) {
-  uint32_t off = 0;
-  while (off < 0x100) {
-    const uint8_t* p = call_istream + off;
-    if (p[0] == 0xC3 || p[0] == 0xCC) break;  // ret/int3 兜底
-    if (p[0] == 0xE8) {                        // call rel32
-      uint8_t* dest = GetCallDest(p);
-      const bool in_mod =
-          (mod_base != nullptr && dest >= mod_base && dest < mod_base + mod_size);
-      if (in_mod && !IsBadCodePtr(reinterpret_cast<FARPROC>(dest)) && PlausiblePrologue(dest)) {
-        return dest;
-      }
-    }
-    const uint32_t len = InsnLen32(p);
-    if (len == 0) break;  // 未知指令 → 放弃（宁可不 hook 也不误 hook）
-    off += len;
-  }
-  return nullptr;
+  return fushi_voice_hook::x86::FindFirstAcceptedCallTarget(
+      call_istream, 0x100, [&](uint8_t* dest) -> bool {
+        const bool in_mod =
+            (mod_base != nullptr && dest >= mod_base && dest < mod_base + mod_size);
+        return in_mod && !IsBadCodePtr(reinterpret_cast<FARPROC>(dest)) &&
+               PlausiblePrologue(dest);
+      });
 }
 
 // SEH 守卫读取整条流字节（malloc 缓冲，无 C++ 析构对象故可用 __try）。读前后都 Seek 回 0，务必把
@@ -7297,33 +7222,122 @@ bool IsVoiceStorageName(const wchar_t* name) {
   if (n >= 4 && wcscmp(low + n - 4, L".ogg") == 0) return true;
   if (n >= 5 && wcscmp(low + n - 5, L".opus") == 0) return true;
   if (n >= 4 && wcscmp(low + n - 4, L".wav") == 0) return true;
+  if (n >= 4 && wcscmp(low + n - 4, L".tcw") == 0) return true;  // KiriKiri2 TCWF
   return wcsstr(low, L"voice") != nullptr || wcsstr(low, L"koe") != nullptr;
 }
 
-// Krkr2/BCB：hook 插件导入的稳定 __stdcall 边界。wuvorbis/wuopus 通过该 API 打开 XP3 中的音频；
-// 返回值已是标准 COM IStream，因此无需伪造 eax/edx 寄存器调用，也不触碰 BCB 的 C++ vtable。
-IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) {
-  IStream* stream = g_orig_TVPCreateIStreamStub(name, mode);
+// 任一取流 detour 触发都先记诊断位、借主线程接缝。安装本身还会自查线程身份，
+// 因为 KiriKiri 也会在后台线程开流 (BUG-1724)。
+void NoteKirikiriStreamOpen() {
   if (g_header != nullptr) {
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
-  // 引擎在主线程上开流 = 一个现成的主线程接缝。安装本身还会自查线程身份，
-  // 因为 KiriKiri 也会在后台线程开流 (BUG-1724)。
   RunKirikiriLookupInstallOnMainThread();
-  if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
-    wchar_t storage[520];
-    if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
-      const KiriKiriVoicePairingContext pairing =
-          CaptureKirikiriVoicePairingContext(true);
-      uint8_t* buf = nullptr;
-      uint32_t buf_len = 0;
-      if (ReadIStreamAllGuarded(stream, &buf, &buf_len)) {
-        EnqueueKirikiriVoiceResourceOwned(buf, buf_len, storage, pairing);
-      }
-    }
+}
+
+// 这次开流要不要抓：采集开着、名字粗筛像语音。命中时把 storagename 拷进 storage（cap 520）。
+bool WantKirikiriVoiceStorage(const void* name, wchar_t* storage, size_t cap) {
+  if (!g_capture_enabled || name == nullptr || g_header == nullptr) return false;
+  return ExtractStorageNameGuarded(name, storage, cap) && IsVoiceStorageName(storage);
+}
+
+// 在标准 COM IStream 上读全字节（位置还原）并交给 worker；配对上下文在开流这一刻取。
+void CaptureKirikiriVoiceIStream(const wchar_t* storage, IStream* stream) {
+  const KiriKiriVoicePairingContext pairing = CaptureKirikiriVoicePairingContext(true);
+  uint8_t* buf = nullptr;
+  uint32_t buf_len = 0;
+  if (ReadIStreamAllGuarded(stream, &buf, &buf_len)) {
+    EnqueueKirikiriVoiceResourceOwned(buf, buf_len, storage, pairing);
+  }
+}
+
+// x64 Krkr2/BCB 兜底：hook 插件导入的稳定 __stdcall 边界（返回标准 COM IStream）。
+// 原函数已返回之后才调：引擎的 BCB 异常（找不到存储等）照常穿过调用方帧，不被这里吞掉
+// （BUG-2144：MSVC 的 SEH 拦 BCB 异常会把引擎自己的错误处理废掉）。
+IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) {
+  IStream* stream = g_orig_TVPCreateIStreamStub(name, mode);
+  NoteKirikiriStreamOpen();
+  wchar_t storage[520];
+  if (stream != nullptr && WantKirikiriVoiceStorage(name, storage, 520)) {
+    CaptureKirikiriVoiceIStream(storage, stream);
   }
   return stream;
 }
+
+#if defined(_M_IX86)
+// Krkr2/BCB：hook 引擎内部的 TVPCreateStream——所有取流路径真正的汇合点（BUG-2887）。
+//   - 插件导入桩 TVPCreateIStream → 内部 TVPCreateIStream → TVPCreateStream → new 适配器；
+//   - TSS 解码插件（wutcwf / wumsadp / 老 wuvorbis）经引擎递来的 ITSSStorageProvider 取流：
+//     tTVPStorageProvider::GetStreamForRead 直接调 TVPCreateStream 再自己 new 适配器
+//     （krkr2 2.32 PluginImpl.cpp），既不经导入桩也不经内部 TVPCreateIStream。
+// Fate/stay night[Realta Nua] 真机：语音全是 voice.xp3 里的 .tcw，只 hook 前两层时整局
+// decdiag 0x40000 恒灭。KiriKiri2 不向插件导出 TVPCreateStream，它的地址取自内部
+// TVPCreateIStream 函数体里的首个 call（该函数源码就是 try{ TVPCreateStream(name, flags) }）。
+//
+// TVPCreateStream 返回的是 BCB C++ 对象 tTJSBinaryStream，MSVC 不能安全调它的 vtable。
+// 所以命中语音的只读开流时，再经**未 hook 的**内部 TVPCreateIStream 以同名同 flags 重开一次，
+// 在标准 COM IStream 上读字节后 Release——不触碰任何 BCB C++ vtable。重开时它会再走进本
+// detour，线程局部闩挡住递归。只读（flags 低 4 位为 TJS_BS_READ=0）才重开：写模式重开会
+// 截断用户存档。
+//
+// 两个函数都是 BCB 寄存器约定（eax=name(const ttstr&)，edx=flags，返回 eax，ecx 易失；
+// ebx/esi/edi/ebp 与 MSVC 同为被调方保存），进出各用 naked 适配块转成 __stdcall。
+// 原函数在任何 SEH 之外调用，引擎的 BCB 异常（找不到存储等）照常穿过本帧（BUG-2144）——
+// 本帧没有析构对象也没有 __try，展开时直接被跳过。
+void* g_orig_krkr2_create_stream = nullptr;
+void* g_krkr2_create_istream = nullptr;  // 内部 TVPCreateIStream（未 hook）
+thread_local bool t_krkr2_reopening = false;
+constexpr uint32_t kTjsBsAccessMask = 0x0f;
+constexpr uint32_t kTjsBsRead = 0;
+
+__declspec(naked) void* __stdcall CallOrigKrkr2CreateStream(const void* /*name*/,
+                                                            uint32_t /*flags*/) {
+  __asm {
+    mov eax, [esp + 4]
+    mov edx, [esp + 8]
+    call dword ptr [g_orig_krkr2_create_stream]
+    ret 8
+  }
+}
+
+__declspec(naked) IStream* __stdcall CallKrkr2CreateIStream(const void* /*name*/,
+                                                            uint32_t /*flags*/) {
+  __asm {
+    mov eax, [esp + 4]
+    mov edx, [esp + 8]
+    call dword ptr [g_krkr2_create_istream]
+    ret 8
+  }
+}
+
+void* __stdcall Krkr2CreateStreamBody(const void* name, uint32_t flags) {
+  void* stream = CallOrigKrkr2CreateStream(name, flags);
+  if (t_krkr2_reopening) return stream;  // 下面自己的重开
+  NoteKirikiriStreamOpen();
+  wchar_t storage[520];
+  if (stream == nullptr || (flags & kTjsBsAccessMask) != kTjsBsRead ||
+      !WantKirikiriVoiceStorage(name, storage, 520)) {
+    return stream;
+  }
+  t_krkr2_reopening = true;
+  IStream* reopened = CallKrkr2CreateIStream(name, flags);  // 失败时内部 catch 后返回 NULL
+  t_krkr2_reopening = false;
+  if (reopened != nullptr) {
+    CaptureKirikiriVoiceIStream(storage, reopened);
+    reopened->Release();
+  }
+  return stream;
+}
+
+__declspec(naked) void Detour_Krkr2CreateStream() {
+  __asm {
+    push edx
+    push eax
+    call Krkr2CreateStreamBody  // __stdcall：自己弹掉两个参数
+    ret
+  }
+}
+#endif
 
 // ── detour：引擎内部 TVPCreateStream（MSVC __fastcall：ecx=name(const ttstr&), edx=mode）──────────
 // 先调原函数拿到已解密流；storagename 命中语音则读全字节落盘（流位置在 ReadStreamAllGuarded 内还原
@@ -7529,10 +7543,26 @@ void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
     return;
   }
   if (is_bcb) {
-    // Krkr2 内部是 BCB eax/edx 约定；在外层稳定 __stdcall 导入桩捕获标准 IStream。
+    // Krkr2 内部是 BCB eax/edx 约定；hook 内部 TVPCreateStream（导入桩与 TSS provider 的
+    // 汇合点），经 naked 适配块转成 __stdcall，命中语音时经内部 TVPCreateIStream 重开读字节。
     if (g_header != nullptr) g_header->reserved_luna |= 0x800000;
+#if defined(_M_IX86)
+    uint8_t* bcb_mod_base = nullptr;
+    uint32_t bcb_mod_size = 0;
+    GetMainModuleRange(&bcb_mod_base, &bcb_mod_size);
+    uint8_t* create_stream =
+        FindInternalTVPCreateStream(call_istream, bcb_mod_base, bcb_mod_size);
+    if (create_stream == nullptr) {
+      if (g_header != nullptr) g_header->reserved_luna |= 0x400000;  // 定位失败
+      return;
+    }
+    g_krkr2_create_istream = call_istream;  // 先就位：hook 一装上就可能被调
+    if (HookFn(create_stream, reinterpret_cast<void*>(&Detour_Krkr2CreateStream),
+               &g_orig_krkr2_create_stream)) {
+#else
     if (HookFn(stub, reinterpret_cast<void*>(&Detour_TVPCreateIStreamStub),
                reinterpret_cast<void**>(&g_orig_TVPCreateIStreamStub))) {
+#endif
       if (g_header != nullptr) {
         g_header->reserved_luna |= kDiagKirikiriVoiceStreamHookReady;
       }
