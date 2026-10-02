@@ -2636,15 +2636,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					var groups = global.fushiLookupBindGroups;
 					var spanMatchCount = 0;
 					var visibleMatchCount = 0;
+					var rejectRevision = 0, rejectAnchor = 0, rejectSlot = 0, followedSwap = 0;
 					for(var gi = 0; gi < groups.count; gi++)
 					{
 						var g = groups[gi];
 						if(capturePhase == 3 &&
 							(g.revision <= bindAttemptFloor || g.revision > bindRevision))
+						{
+							rejectRevision++;
 							continue;
+						}
 						if(g.host === void || g.host === null || !isvalid g.host) continue;
 						if(g.count <= 0) continue;
-						if(!global.fushiLookupBindGroupAnchorValid(g)) continue;
+						if(global.fushiLookupBindGroupFollowSwap(g)) followedSwap++;
+						if(!global.fushiLookupBindGroupAnchorValid(g))
+						{
+							rejectAnchor++;
+							continue;
+						}
 						// A refresh may be woken by any renderer's drawCh.  Once an entry has a
 						// proven slot, or render/done observed one, never let a similarly sized
 						// name/body group migrate it to another KAG message slot.
@@ -2654,7 +2663,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							entry.observedIndex;
 						if(capturePhase == 3 && (expectedPage == 0 || expectedIndex < 0 ||
 							g.anchorPage != expectedPage || g.anchorIndex != expectedIndex))
+						{
+							rejectSlot++;
 							continue;
+						}
 						// Both sets are origins in their respective coordinate spaces, so a pure
 						// translation preserves their spans.  BindGroup extrema are reset per draw
 						// run below; historical lines therefore cannot make this comparison pass.
@@ -2879,7 +2891,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							(entry.hasBase ? 1 : 0) + ",sx=" + glyphOriginSpanX +
 							",sy=" + glyphOriginSpanY + ",g0=" + group0SpanX + "/" +
 							group0SpanY + "/" + group0Count + ",g1=" + group1SpanX +
-							"/" + group1SpanY + "/" + group1Count + ",be=" + bestErr;
+							"/" + group1SpanY + "/" + group1Count + ",be=" + bestErr +
+							",rj=" + rejectRevision + "/" + rejectAnchor + "/" + rejectSlot +
+							",fs=" + followedSwap;
 						if(captureTrace != global.fushiLookupCaptureTraceLast)
 						{
 							global.fushiLookupCaptureTraceLast = captureTrace;
@@ -3500,6 +3514,49 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					}
 					catch(e) {}
 				}
+			};
+
+			// KAG 的 backlay + trans（立绘表情/口型切换的常规写法）先把 fore 消息层复制到
+			// back，再交换两页：屏上同一逻辑槽 (page,index) 换成了另一个 MessageLayer 对象，
+			// 刚画完这句的原对象退到另一页的同一下标。entry 侧早已按槽位而非对象认活
+			// （见 fushiLookupCurrentIdentityState 下的说明），bind group 却死守 stamp 时的
+			// 对象，交换后 AnchorValid 恒假，这句在下一次 drawCh 之前点不出卡、点击漏给游戏。
+			// 只有「原对象恰好出现在另一页同一下标」这一交换证据成立时才跟随到现在占据该
+			// 槽位的对象；对象被移到别处或已销毁仍按失效处理。强身份只在 current 正指向
+			// 跟随后的对象时保留。
+			global.fushiLookupBindGroupFollowSwap = function(group)
+			{
+				if(group.anchorPage != 1 && group.anchorPage != 2) return false;
+				if(group.anchorIndex < 0) return false;
+				var anchor = group.anchorIdentity;
+				if(anchor === void || anchor === null || !isvalid anchor) return false;
+				var here = global.fushiLookupMessagesForPage(group.anchorPage);
+				var there = global.fushiLookupMessagesForPage(3 - group.anchorPage);
+				if(here === void || here === null || there === void || there === null)
+					return false;
+				try
+				{
+					if(group.anchorIndex >= here.count || group.anchorIndex >= there.count)
+						return false;
+					if(here[group.anchorIndex] === anchor) return false;
+					if(there[group.anchorIndex] !== anchor) return false;
+					var successor = here[group.anchorIndex];
+					if(successor === void || successor === null || !isvalid successor)
+						return false;
+					group.anchorIdentity = successor;
+					group.currentIdentity = void;
+					group.anchorStrength = 1;
+					var resolved = global.fushiLookupResolveCurrentSlot();
+					if(resolved !== void && resolved.page == group.anchorPage &&
+						resolved.index == group.anchorIndex && resolved.identity === successor)
+					{
+						group.currentIdentity = successor;
+						group.anchorStrength = 2;
+					}
+					return true;
+				}
+				catch(e) {}
+				return false;
 			};
 
 			global.fushiLookupBindGroupAnchorValid = function(group)
