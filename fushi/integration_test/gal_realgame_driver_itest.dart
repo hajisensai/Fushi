@@ -290,6 +290,7 @@ void main() {
           .map((TexthookerLineEntry e) =>
               '${e.id} audio=${e.audioStatus.name}/${e.audioBackend}/'
               '${e.audioDurationMs}ms reason=${e.fallbackReason} '
+              'ev=${e.sourceSequence} res=${e.audioResourceId} '
               'ruby=${e.rubySpans.length} '
               'text=${e.text.replaceAll('\n', '⏎')}')
           .join('\n    ');
@@ -785,7 +786,9 @@ void main() {
               for (final TexthookerTextThread thread in session.textThreads) {
                 sb.write('\n    key=${thread.key} '
                     'native=${thread.nativeThreadId} '
-                    'lines=${thread.lineCount} label=${thread.label}');
+                    'lines=${thread.lineCount} '
+                    'observed=${thread.observedLineCount} '
+                    'code=${thread.hookCode} label=${thread.label}');
               }
               out(sb.toString());
             case 'state':
