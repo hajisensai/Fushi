@@ -1,4 +1,4 @@
-## BUG-2857 · macOS 下载的内置 torrent 引擎不可用
+## BUG-2865 · macOS 下载的内置 torrent 引擎不可用
 - **报告**：2026-10-02（用户：「mac 的下载内置引擎不可用」）
 - **真实性**：✅ 真 bug。macOS 从来没编过、也没随包过 `libfushi_torrent_ffi.dylib`：
   app 侧把 macOS 算作支持内置引擎的平台（`fushi/lib/src/models/app_model.dart` 的

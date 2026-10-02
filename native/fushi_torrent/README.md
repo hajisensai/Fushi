@@ -293,7 +293,7 @@ Android 同一决策——**vcpkg manifest 静态链**：
    （所有者 2026-09-30 拍板）。
 3. **缓存**：与 Android job 同款双层 vcpkg 缓存，key 带 runner ImageVersion。
 
-## 阶段7 — macOS universal 静态 dylib 随桌面包（BUG-2857）
+## 阶段7 — macOS universal 静态 dylib 随桌面包（BUG-2865）
 
 在此之前 macOS 从没编过这个库：app 早把 macOS 算作支持内置引擎的平台
 （`AppModel._supportsEmbeddedTorrent`），`EmbeddedTorrentEngine.open` 找不到库后内置

@@ -422,7 +422,7 @@ void main() {
     expect(gate, contains('fushi_server --help'));
   });
 
-  test('macOS 包带内置 torrent 引擎 dylib（BUG-2857）', () {
+  test('macOS 包带内置 torrent 引擎 dylib（BUG-2865）', () {
     // macOS 曾经从没编过 libfushi_torrent_ffi.dylib：app 把 macOS 算作支持内置引擎的
     // 平台，加载失败后内置引擎恒不可用。PR 门与发布构建都得编、出包后都得核对。
     final Map<String, String> releaseJobs = _parseJobs(

@@ -765,7 +765,7 @@ jobs:
       # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段（fushi/macos/bundle_fushi_torrent.sh）
       # copy-if-present 进 Contents/Frameworks。此前 macOS 从没编过它，app 把 macOS 算作
-      # 支持内置引擎的平台、加载失败后却只能判不可用（BUG-2857）。持久库与
+      # 支持内置引擎的平台、加载失败后却只能判不可用（BUG-2865）。持久库与
       # release-desktop.yml macos job 同名；命中时整段 vcpkg 冷编（两个架构）跳过，
       # ABI 校验、出包核对与 FFI 测试照跑在还原出来的 dylib 上。
       - name: Restore torrent bridge dylib from native artifact store
