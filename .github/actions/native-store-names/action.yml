@@ -11,7 +11,7 @@ inputs:
     required: true
 outputs:
   torrent:
-    description: libtorrent bridge (windows DLLs / linux static .so)
+    description: libtorrent bridge (windows DLLs / macOS universal static dylib / linux static .so)
     value: ${{ steps.names.outputs.torrent }}
   p2p:
     description: fushi_p2p (windows DLL / macOS universal dylib / iOS device staticlib / linux .so)

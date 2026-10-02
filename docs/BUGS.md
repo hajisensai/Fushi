@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2639 条。点号进各自文件。
+> 共 2640 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2865](bugs/BUG-2865-macos-embedded-torrent-engine-missing.md) | ✅ | ✅ | macOS 下载的内置 torrent 引擎不可用 |
 | [BUG-2864](bugs/BUG-2864-gal-lookup-cursor-flicker.md) | ✅ | ✅ | galgame 内嵌查词卡上光标在系统指针与游戏自定义指针之间来回闪 |
 | [BUG-2863](bugs/BUG-2863-ios-video-delete-keeps-picker-copy.md) | ✅ | ✅ | iPad 删除视频后仍占用储存（选择器副本未回收） |
 | [BUG-2861](bugs/BUG-2861-mac-video-washed-out.md) | ✅ | ✅ | macOS 视频画面发灰 |
