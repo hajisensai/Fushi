@@ -33,12 +33,12 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2867](bugs/BUG-2867-hidpi-wheel-not-smooth.md) | ✅ | ✅ | 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素 |
 | [BUG-2865](bugs/BUG-2865-macos-embedded-torrent-engine-missing.md) | ✅ | ✅ | macOS 下载的内置 torrent 引擎不可用 |
 | [BUG-2864](bugs/BUG-2864-gal-lookup-cursor-flicker.md) | ✅ | ✅ | galgame 内嵌查词卡上光标在系统指针与游戏自定义指针之间来回闪 |
 | [BUG-2863](bugs/BUG-2863-ios-video-delete-keeps-picker-copy.md) | ✅ | ✅ | iPad 删除视频后仍占用储存（选择器副本未回收） |
 | [BUG-2861](bugs/BUG-2861-mac-video-washed-out.md) | ✅ | ✅ | macOS 视频画面发灰 |
 | [BUG-2859](bugs/BUG-2859-lookup-bridge-reply-dropped.md) | ✅ | ✅ | 查词卡路由作废后丢弃晚到的 bridge 应答，该词条整个会话无法制卡 |
-| [BUG-2858](bugs/BUG-2858-hidpi-wheel-not-smooth.md) | ✅ | ✅ | 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素 |
 | [BUG-2858](bugs/BUG-2858-gal-thread-history-order.md) | ✅ | ✅ | 选定线程后的历史回捞与轮询抢先后，当前台词变成旧句 |
 | [BUG-2857](bugs/BUG-2857-artemis-hover-tooltip-joins-line.md) | ✅ | ✅ | Artemis hover tooltip text is appended to the current line |
 | [BUG-2856](bugs/BUG-2856-artemis-touch-tap-ignored.md) | 🚧 | 🚧 | Artemis 触屏点按：引擎不认触摸提升的单击，游戏内点字查词与推进都不响应 |

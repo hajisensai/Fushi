@@ -8,7 +8,7 @@ import 'package:flutter/scheduler.dart' show SchedulerBinding;
 /// 粗滚轮一档才需要补间；触控板 / 高精度滚轮本来就连续上报小 delta，再套一层动画
 /// 只会拖尾，走原生同步路径。
 ///
-/// 🔴 判据按**物理像素**（BUG-2858）。引擎发的是物理像素、框架 converter 再除以
+/// 🔴 判据按**物理像素**（BUG-2867）。引擎发的是物理像素、框架 converter 再除以
 /// devicePixelRatio 才交给 [PointerScrollEvent.scrollDelta]：
 /// - Windows（flutter_window.cc `UpdateScrollOffsetMultiplier`）一档 =
 ///   `行数 × 100/3` 物理 px，系统默认 3 行即 100；

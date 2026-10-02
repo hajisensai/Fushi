@@ -24,7 +24,7 @@ void main() {
         isCoarseDesktopPointerScrollDelta(logical, devicePixelRatio: dpr);
     expect(coarse(120, 1), isTrue);
     expect(coarse(-120, 1), isTrue);
-    // BUG-2858：按物理像素判。Windows 默认一档 100 物理 px，150% / 200% 缩放下
+    // BUG-2867：按物理像素判。Windows 默认一档 100 物理 px，150% / 200% 缩放下
     // 逻辑 delta 只剩 66.7 / 50；每次 1 行时一档 33 物理 px；Linux 一档恒 53 逻辑 px。
     expect(coarse(100 / 1.5, 1.5), isTrue);
     expect(coarse(-50, 2), isTrue);

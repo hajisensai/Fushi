@@ -43,7 +43,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
   }
 
-  /// 判据按物理像素（BUG-2858）；测试视图默认 DPR 3.0。细 delta 用例把 DPR 设成 1，
+  /// 判据按物理像素（BUG-2867）；测试视图默认 DPR 3.0。细 delta 用例把 DPR 设成 1，
   /// 让「12 逻辑 px」就是高精度滚轮 1/8 档的 12 物理 px。
   void atDevicePixelRatio(WidgetTester tester, double dpr) {
     tester.view.devicePixelRatio = dpr;
@@ -141,7 +141,7 @@ void main() {
     expect(controller.offset, closeTo(mid - 120, 0.001));
   });
 
-  testWidgets('200% 缩放：Windows 默认一档只有 50 逻辑 px，照样补间（BUG-2858）', (
+  testWidgets('200% 缩放：Windows 默认一档只有 50 逻辑 px，照样补间（BUG-2867）', (
     WidgetTester tester,
   ) async {
     // Windows 引擎一档 = 行数 × 100/3 物理 px（默认 3 行 = 100），框架除以 DPR 2
@@ -162,7 +162,7 @@ void main() {
     expect(controller.offset, 50, reason: '距离 1:1 不变（BUG-2009）');
   });
 
-  testWidgets('200% 缩放 + 每次滚动 1 行：一档 16.5 逻辑 px 仍补间（BUG-2858）', (
+  testWidgets('200% 缩放 + 每次滚动 1 行：一档 16.5 逻辑 px 仍补间（BUG-2867）', (
     WidgetTester tester,
   ) async {
     atDevicePixelRatio(tester, 2.0);
@@ -177,7 +177,7 @@ void main() {
     expect(controller.offset, 16.5);
   });
 
-  testWidgets('200% 缩放下高精度滚轮 1/8 档仍同步 1:1（BUG-2858）', (
+  testWidgets('200% 缩放下高精度滚轮 1/8 档仍同步 1:1（BUG-2867）', (
     WidgetTester tester,
   ) async {
     atDevicePixelRatio(tester, 2.0);

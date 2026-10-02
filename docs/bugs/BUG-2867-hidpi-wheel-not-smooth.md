@@ -1,4 +1,4 @@
-## BUG-2858 · 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素
+## BUG-2867 · 高 DPI 下鼠标滚轮补间从不生效：粗细判据按逻辑像素
 - **报告**：2026-10-02（用户：「fushi 很多地方滚轮滑动都不够流畅没有滚动动画，还有查词框也没滚动动画」）
 - **真实性**：✅ 真 bug。BUG-2834 的根部 `SmoothWheelScrollScope` 只给「粗滚轮」补间，判据 `isCoarseDesktopPointerScrollDelta`（`fushi/lib/src/utils/misc/smooth_wheel_scroll.dart:9`）写的是**逻辑像素** `delta.abs() >= 80`，注释假设「Windows/Linux 一档约 100–120 logical px」。实际引擎发的是**物理像素**、框架 converter 再除以 devicePixelRatio（`packages/flutter/lib/src/gestures/converter.dart:283`）：
   - Windows：`flutter_window.cc` `UpdateScrollOffsetMultiplier` 一档 = `行数 × 100/3` 物理 px（默认 3 行 = 100）→ 150% 缩放 66.7、175% 57、200% 50 逻辑 px；
