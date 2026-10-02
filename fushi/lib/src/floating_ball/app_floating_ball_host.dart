@@ -9,8 +9,8 @@
 ///     `FloatingBallService`，并把前后台状态告诉它（前台时原生球隐藏，应用内球
 ///     开着就由本球接管）。
 ///  3. 外部查词入口（iOS App Intent / `fushi://lookup` 深链）：排队到 app 初始化
-///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）与「拍照
-///     查词」（开相机）同样排队。
+///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）、「拍照
+///     查词」（开相机）与「立即同步」同样排队。
 ///  4. 系统球上点「关闭」= 用户关掉了应用外悬浮球：同步关掉设置里的「应用外」开关，
 ///     两边始终一致（否则下次回到 Fushi 又会按开关把球拉起来）。
 library;
@@ -37,6 +37,7 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/utils.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
@@ -53,6 +54,9 @@ final ValueNotifier<bool> pendingOpenLookupPage = ValueNotifier<bool>(false);
 
 /// Android 系统球「拍照查词」：Fushi 已被拉到前台，等 app 就绪后开相机。
 final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
+
+/// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
+final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
 
 /// 从应用外交来一个要查的词（iOS App Intent、`fushi://lookup?word=`）。
 void deliverExternalLookup(String word) {
@@ -72,6 +76,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
       t.floating_ball_action_screen_ocr,
   FloatingBallGlobalAction.cameraOcr.storageValue:
       t.floating_ball_action_camera_ocr,
+  FloatingBallGlobalAction.sync.storageValue: t.sync_now,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
@@ -93,6 +98,7 @@ IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
+      FloatingBallGlobalAction.sync => Icons.sync,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
@@ -235,6 +241,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
+    pendingSync.addListener(_onChanged);
     if (Platform.isIOS || Platform.isAndroid || isDesktopSystemBallPlatform) {
       unawaited(
         FloatingBallChannel.installHandler(
@@ -242,6 +249,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onScreenOcrFinished: _onScreenOcrFinished,
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
+          onOpenSync: () => pendingSync.value = true,
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
           onSystemBallAction: _onDesktopSystemBallAction,
           onSystemBallPositionChanged: _onDesktopSystemBallMoved,
@@ -257,6 +265,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.removeListener(_onChanged);
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
+    pendingSync.removeListener(_onChanged);
     _prefs?.removeListener(_onPrefsChanged);
     // 还在路上的起球闭包作废。
     _systemGeneration++;
@@ -466,6 +475,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           await target.bringMainWindowToFront();
           FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
         }
+      case 'sync':
+        // 同步的结果、冲突裁决与重新登录提示都在主窗里给：先把主窗唤到前台。
+        await target.bringMainWindowToFront();
+        await _manualSync();
       case 'open_app':
         await target.bringMainWindowToFront();
     }
@@ -507,6 +520,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       if (!pendingCameraOcr.value) return;
       pendingCameraOcr.value = false;
       unawaited(_cameraOcr());
+    });
+  }
+
+  /// 系统球「立即同步」：app 就绪后跑一轮同步（同步要用已初始化的数据库与通道）。
+  void _flushSync() {
+    if (!pendingSync.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingSync.value) return;
+      pendingSync.value = false;
+      unawaited(_manualSync());
     });
   }
 
@@ -554,6 +577,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       return;
     }
     FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+  }
+
+  /// 立即同步：与设置页「立即同步」同一个入口，重入（已有同步在跑）、三种结果的
+  /// 提示、逐通道冲突裁决、鉴权失效登出全由它处理。
+  Future<void> _manualSync() async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    await runManualSyncWithFeedback(
+      context: ctx,
+      appModel: ref.read(appProvider),
+    );
   }
 
   /// Android 截屏 OCR 截到帧（或放弃）：把藏起来的球放回来。
@@ -719,6 +753,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.floating_ball_action_camera_ocr,
           onPressed: () => unawaited(_cameraOcr()),
         ),
+        FloatingBallGlobalAction.sync => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_sync'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.sync_now,
+          onPressed: () => unawaited(_manualSync()),
+        ),
       };
 
   /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
@@ -745,6 +785,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
+    _flushSync();
 
     final FloatingBallSceneSnapshot scene = _registry.current;
     // 页面把必需入口托付给了球（阅读器关掉顶栏和底栏）：球必须在，本页不能被
