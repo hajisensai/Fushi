@@ -39,6 +39,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart'
     show ReaderPaginationScripts;
 import 'package:fushi/src/reader/reader_content_styles.dart'
     show ReaderLayoutDefaults;
+import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 
 /// Builds the VN-mode reader shell `<script>` for the reader WebView. Mirrors
 /// [ReaderPaginationScripts.shellScript]'s shells but installs the hoshi a
@@ -835,6 +836,7 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
+$kSentenceAudioRubyGapJs
   cueSourceRanges: new Map(),
   nodeStartOffsets: new WeakMap(),
   nodeStartRawOffsets: new WeakMap(),
@@ -3006,11 +3008,16 @@ $sharedInitViewport
       var id = cueRanges[i].id;
       var ranges = cueRanges[i].ranges;
       if (!ranges.length) continue;
+      // BUG-2917：与分页 / 连续模式同一套分组（sentenceAudioWrapItems）——同一父节点下
+      // 相邻的片段整组包进一个 wrapper，ruby 内基字就地单独包、ruby 不移动；逐段各包一个
+      // wrapper 时竖排注音处整句高亮断成一截一截。
+      var items = this.sentenceAudioWrapItems(ranges);
       var wrappers = [];
-      for (var j = ranges.length - 1; j >= 0; j--) {
-        var segment = ranges[j];
-        range.setStart(segment.node, segment.start);
-        range.setEnd(segment.node, segment.end);
+      for (var g = items.length - 1; g >= 0; g--) {
+        var first = items[g][0];
+        var last = items[g][items[g].length - 1];
+        range.setStart(first.node, first.start);
+        range.setEnd(last.node, last.end);
         var wrapper = document.createElement('span');
         wrapper.className = 'fushi-sentence-audio-cue';
         wrapper.appendChild(range.extractContents());
@@ -3041,6 +3048,7 @@ $sharedInitViewport
         wrapper.classList.remove('fushi-sentence-audio-active');
       });
     };
+    this.clearSentenceAudioRubyGaps();
     if (cueId) {
       clearWrappers(this.cueWrappers.get(cueId) || []);
       return;
@@ -3052,12 +3060,15 @@ $sharedInitViewport
     wrappers.forEach(function(wrapper) {
       wrapper.classList.add('fushi-sentence-audio-active');
     });
+    // BUG-2917：注音撑出的缝用 box-shadow 补色（与分页 / 连续模式同一实现）。
+    this.fillSentenceAudioRubyGaps(wrappers);
     return wrappers.length > 0;
   },
   clearSentenceAudioCuePresentation: function() {
     this.clearInlineSentenceAudioCue();
   },
   clearCurrentSentenceAudioScreenTargets: function() {
+    this.clearSentenceAudioRubyGaps();
     this.cueSourceRanges.clear();
     this.cueWrappers.clear();
   },

@@ -72,7 +72,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
 
 出处：② PR#716 实测（7 路并发 / 27 个 dart+flutter_tester 进程；分片对账 325 + 2602 = 2927 ≈ 2923 完成 + 4 个没装载上）；③ PR#728 实测。
 
-**2026-10-01 起这三类与下面的僵尸变体都有结构性规避**——前提是运行走了本机重活租约（`dart tool/heavy.dart -- <命令>`；`pre_push_check` / `flutter_test_failures` 已内置，见根 `CLAUDE.md`「本机重活一律走租约」）：同一 worktree 写 `build/` 的运行互斥（①③不再在同一 checkout 里重叠）、全机并发由内存准入与槽位封顶（②的 7 路并发不会再出现）、Job Object 关闭时连带杀掉残留 `flutter_tester`（僵尸变体）。**所以裸跑撞上这些形态，第一反应是改成走租约重跑，而不是去分型**；走了租约仍红，才按下表分型。`dart tool/heavy.dart --status` 能直接看到本机此刻谁占着槽位。
+**2026-10-01 起这三类与下面的僵尸变体都有结构性规避**——前提是运行走了本机重活租约（`dart tool/heavy.dart -- <命令>`；`pre_push_check` / `flutter_test_failures` 已内置，见根 `CLAUDE.md`「本机重活一律走租约」）：同一 worktree 写 `build/` 的运行互斥（①③不再在同一 checkout 里重叠）、全机并发由槽位封顶（②的 7 路并发不会再出现；2026-10-03 起不再做内存准入）、Job Object 关闭时连带杀掉残留 `flutter_tester`（僵尸变体）。**所以裸跑撞上这些形态，第一反应是改成走租约重跑，而不是去分型**；走了租约仍红，才按下表分型。`dart tool/heavy.dart --status` 能直接看到本机此刻谁占着槽位。
 
 **形态 ① 有一个很具体、且不需要别人并发就能自己撞上的变体：僵尸 `flutter_tester` 锁住自己 worktree 的 `sqlite3.dll`。** 症状是
 

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "sgre_anchors.h"
+#include "sgre_family.h"
 #include "sgre_lookup.h"
 #include "sgre_voice_archive.h"
 
@@ -109,19 +110,19 @@ inline bool SgreVoiceArchivePath(std::wstring* archive_path) {
   if (archive_path == nullptr) return false;
   std::wstring path;
   if (!SgreExecutablePath(&path)) return false;
-  const size_t slash = path.find_last_of(L"/\\");
-  if (slash == std::wstring::npos) return false;
-  path.resize(slash + 1);
-  path += L"wind3d11data\\voice_body.bin";
+  path = SgreVoiceArchivePathForExecutable(path);
+  if (path.empty()) return false;
   *archive_path = std::move(path);
   return true;
 }
 
-// Family probe: the wind3d11 voice archive sits next to the executable.
+// Family probe: the wind3d11 voice archive sits next to the executable. The
+// injector applies the same predicate (include/sgre_family.h) to the target
+// path before injection, so both sides reach one verdict.
 inline bool MatchesSgreFamily() {
-  std::wstring archive_path;
-  return SgreVoiceArchivePath(&archive_path) &&
-         GetFileAttributesW(archive_path.c_str()) != INVALID_FILE_ATTRIBUTES;
+  std::wstring path;
+  return SgreExecutablePath(&path) &&
+         SgreVoiceArchiveExistsBesideExecutable(path);
 }
 
 // ── In-process image view ───────────────────────────────────────────────────

@@ -445,8 +445,11 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(13, len(publishers), publishers)
+        self.assertEqual(16, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
+        self.assertIn("yuris_lookup.inc", publishers)
+        self.assertIn("malie_lookup.inc", publishers)
+        self.assertIn("fvp_lookup.inc", publishers)
         self.assertIn("bgi_lookup.inc", publishers)
         self.assertIn("unity_mono_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
@@ -506,9 +509,15 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(13, len(seen), seen)
+        self.assertEqual(16, len(seen), seen)
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
+        )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["bgi_lookup.inc"]
+        )
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["malie_lookup.inc"]
         )
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
         self.assertEqual(
@@ -1667,8 +1676,23 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertIn('L"UnityEngine.TextMesh.set_text(glyphs)"', source)
         self.assertIn("void FlushUnityTextMeshLine()", source)
-        self.assertIn("UsesSasasaLegacyTextMeshTerminator", source)
+        # 引擎级行为判据，不得退回按 exe 名 / 哈希开逐字形重组。
+        self.assertIn("g_unity_glyph_batch_detector.Observe(chars, source_length)", source)
+        self.assertNotIn("Sasasa", source)
+        text_mesh_body = source.split("void RecordUnityTextMesh", 1)[1]
+        text_mesh_body = text_mesh_body.split("void RecordUnityVoiceResourceEvent", 1)[0]
+        self.assertNotIn("GetModuleFileNameW", text_mesh_body)
         self.assertIn("g_unity_text_mesh_reassembler.ShouldTerminate(c, true)", source)
+        # 判定期的单字形只进影子缓冲、不作为组件线程的独立行发布（否则宿主自动选线
+        # 可能先选中一个锁存后再也不出字的组件线程）；只有 kComponentText /
+        # kRevokedComponentText 两条路走整串组件线程。
+        hold = text_mesh_body.split("case Route::kHoldGlyph:", 1)[1]
+        hold = hold.split("break;", 1)[0]
+        self.assertIn("g_unity_text_mesh_reassembler.Append(chars[0]);", hold)
+        self.assertNotIn("publish_component_text", hold)
+        self.assertNotIn("RecordUnityTmpText", hold)
+        self.assertEqual(2, text_mesh_body.count("publish_component_text = true;"))
+        self.assertEqual(1, text_mesh_body.count("RecordUnityTmpText("))
         # v13: text capture is no longer gated on the selected thread. Each
         # component writes its own lane, so a chatty one cannot squeeze the
         # others out; dropping a non-selected component's line here would mean
@@ -2211,6 +2235,167 @@ class AdapterStructureTest(unittest.TestCase):
         install = self._function_body(adapter, "  bool install() override {")
         self.assertIn("if (probe()) text_installed_ = InstallBgiLookup()", install)
 
+    def test_malie_is_structural_keyless_and_callbacks_stay_bounded(self) -> None:
+        """Malie：身份 / 语音 / 文本 / 查词站点只来自结构；不含归档密钥与解密；回调只做有界拷贝。"""
+        adapters = ROOT / "hook" / "adapters"
+        io_core = self._strip_comments(
+            (adapters / "malie_engine_io_core.h").read_text(encoding="utf-8")
+        )
+        lookup_core = self._strip_comments(
+            (adapters / "malie_lookup_core.h").read_text(encoding="utf-8")
+        )
+        adapter = self._strip_comments(
+            (adapters / "malie_adapter.inc").read_text(encoding="utf-8")
+        )
+        runtime = self._strip_comments(
+            (adapters / "malie_lookup.inc").read_text(encoding="utf-8")
+        )
+        profile = self._strip_comments(
+            (adapters / "malie_profile.h").read_text(encoding="utf-8")
+        )
+        # The title CFI key and the archive decryption are gone for good.
+        self.assertFalse((ROOT / "hook" / "malie_cfi.h").exists())
+        self.assertFalse((ROOT / "hook" / "malie_lib.h").exists())
+        everything = io_core + lookup_core + adapter + runtime + profile
+        for forbidden in ("DiesAmantes", "CfiKey", "DecryptCfi", "Camellia",
+                          "data2.dat", "data.dat", "malie.exe", "sha256",
+                          "GetModuleFileName", "Kaziklu", "Amantes"):
+            self.assertNotIn(forbidden.lower(), everything.lower(), forbidden)
+        # Identity is the scheme table only; none of its slots is hooked.
+        self.assertIn("ResolveScheme(", profile)
+        self.assertNotIn("SchemeSites", everything)
+        # Voice comes from the decoder input refill sites (return-address
+        # checked), never from the archive read.
+        detour = self._function_body(adapter, "int32_t __cdecl MalieSyncWroteDetour(")
+        self.assertIn("IsMalieFeedReturn(caller)", detour)
+        for name in ("int32_t __cdecl MalieSyncWroteDetour(",
+                     "bool CopyMalieFeed("):
+            body = self._function_body(adapter, name)
+            for forbidden in ("MalieLog(", "CreateFile", "WriteFile", "malloc(",
+                              "std::wstring", "std::vector", "WriteVoiceOggAt",
+                              "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        # Game / render / message thread callbacks: bounded copies only.
+        for name in ("int32_t __cdecl MalieParserDetour(",
+                     "void __cdecl MalieRevealDetour(",
+                     "int __cdecl MalieDrawDetour(",
+                     "bool ReadMalieGlyphs(",
+                     "LRESULT CALLBACK MalieWndProcDetour(",
+                     "bool MaliePressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("MalieLog(", "MalieLookupLog(", "CreateFile",
+                              "WriteFile", "malloc(", "std::wstring",
+                              "PublishHit(", "WriteTextLaneEvent", "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        eligible = self._function_body(runtime, "bool MaliePressEligible(")
+        for required in ("NativeInputAllowed(", "kLookupGeometryProviderIdMalie",
+                         "MalieShieldActive(hwnd)", "GetForegroundWindow()",
+                         "HitTest("):
+            self.assertIn(required, eligible)
+        # A swallowed press is published before any gate of the tick.
+        tick = self._function_body(runtime, "void ProcessMalieLookupTick(")
+        self.assertLess(tick.index("ReadLatestMalieSubmit("),
+                        tick.index("TryHookMalieWindow("))
+        registry = (ROOT / "hook" / "geometry_provider_registry.h").read_text(
+            encoding="utf-8"
+        )
+        gated = registry[
+            registry.index("kLookupGeometryNativeInputGatedProviders[]") :
+        ]
+        gated = gated[: gated.index("};")]
+        self.assertIn("kLookupGeometryProviderIdMalie", gated)
+
+    def test_fvp_lookup_is_structural_and_callbacks_stay_bounded(self) -> None:
+        """FVP 文本道 + 查词 + 语音：站点只来自结构；游戏线程 / 消息线程回调不做 IO / 转码 / 分配。"""
+        core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_lookup_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_profile.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        # The adapter reports the host digest only on an identity rejection.
+        for source in (core, runtime, profile):
+            for forbidden in ("sha256", "bcrypt", "world.exe", "hoshimemo",
+                              "irotori", "getmodulefilename", "voice.bin"):
+                self.assertNotIn(forbidden, source.lower())
+        # Every site is proven from the syscall registration and cross-checked
+        # between the TextPrint handler, PrimSetText and the render case.
+        resolve = self._function_body(core, "inline SiteResult ResolveSites(")
+        for proof in ('FindRegistration(image, "TextPrint", 2u',
+                      'FindRegistration(image, "PrimSetText", 4u',
+                      "kBufferLoad", "kLengthBound", "kPrintCall", "kLayoutCall",
+                      "kPutGlyph", "kPrimField", "kTranslate", "kScale",
+                      "kDesign"):
+            self.assertIn(proof, resolve)
+        # Game-thread capture and message-thread claim: bounded copies only.
+        for name in ("int __fastcall FvpPrintDetour(",
+                     "int __fastcall FvpPutGlyphDetour(",
+                     "int __fastcall FvpDrawDetour(",
+                     "void PublishFvpTextEvent(",
+                     "LRESULT CALLBACK FvpWndProcDetour(",
+                     "bool FvpPressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("FvpLookupLog(", "CreateFile", "WriteFile",
+                              "malloc(", "std::wstring", "PublishHit(",
+                              "MultiByteToWideChar", "WriteTextLaneEvent",
+                              "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        # Voice comes from the decoder input only: no archive is opened or
+        # read, and the game-thread detours only copy bounded bytes.
+        for forbidden in ("ReadFile", "CreateFile", "Remember", "mmio"):
+            self.assertNotIn(forbidden, adapter)
+        for name in ("int __fastcall FvpChannelPlayDetour(",
+                     "int __fastcall FvpSoundLoadDetour("):
+            body = self._function_body(adapter, name)
+            for forbidden in ("FvpLookupLog(", "malloc(", "WriteVoiceOggAt",
+                              "VirtualAlloc", "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        audio = self._function_body(core, "inline AudioSiteResult ResolveAudioSites(")
+        for proof in ('FindRegistration(image, "AudioPlay", 2u',
+                      "kAudioChannelLoad", "kChannelPlay", "kSoundLoad",
+                      "kSoundLoadOgg"):
+            self.assertIn(proof, audio)
+        # Conversion, lane publication and voice output stay on the worker.
+        worker = self._function_body(runtime, "void ProcessFvpTextEvent(")
+        self.assertIn("MultiByteToWideChar", worker)
+        self.assertIn("PublishFvpTextLine(", worker)
+        self.assertIn("PairLineGlyphs(", worker)
+        voice = self._function_body(adapter, "void ProcessFvpVoiceSlots(")
+        self.assertIn("VorbisChannels(", voice)
+        self.assertIn("BindVoiceToFollowingText(", voice)
+        write = self._function_body(adapter, "void WriteFvpVoiceSlot(")
+        self.assertIn("WriteVoiceOggAt(", write)
+        # The claim never skips the host's native-input admission.
+        eligible = self._function_body(runtime, "bool FvpPressEligible(")
+        for gate in ("NativeInputAllowed(", "FvpShieldActive(",
+                     "GetForegroundWindow()", "FvpTextObjectUnchanged(",
+                     "FvpDrawnOrigin("):
+            self.assertIn(gate, eligible)
+        tick = self._function_body(runtime, "void ProcessFvpLookupTick(")
+        self.assertLess(tick.index("ReadLatestFvpSubmit("),
+                        tick.index("TryHookFvpWindow("))
+        publish = self._function_body(runtime, "bool PublishFvpLookupHit(")
+        self.assertIn("published_lines.Find(submit.generation)", publish)
+        self.assertNotIn("rt.model.", publish)
+        # Identity is structural and installs nothing when it fails.
+        install = self._function_body(adapter, "  bool install() override {")
+        self.assertIn("if (!probe()) return false;", install)
+        self.assertIn("ParseHcbTrailer(", profile)
+
     def test_unity_mono_lookup_is_structural_and_callbacks_stay_bounded(
         self,
     ) -> None:
@@ -2598,6 +2783,42 @@ class AdapterStructureTest(unittest.TestCase):
         )
         poll = registry.split("void Poll() {", 1)[1]
         self.assertIn("loopback_.PollPolicy();", poll)
+
+    def test_sgre_mages_normalization_uses_one_family_predicate_before_injection(
+        self,
+    ) -> None:
+        """MAGES 控制符归一化不能只等 hook DLL 的 adapter 报告（每秒最多一次、DLL
+        未注入时永不到）：注入器在注入前用与 SGRE adapter probe() **同一个**函数判
+        wind3d11 语音归档。两边各写一份路径拼接，迟早漂成两个判据。"""
+        injector = (ROOT / "injector" / "injector_main.cpp").read_text(
+            encoding="utf-8"
+        )
+        apply = self._function_body(
+            injector,
+            "void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,\n"
+            "                       const std::wstring& user_profile,\n"
+            "                       LunaOptions* options)",
+        )
+        self.assertIn(
+            "SgreVoiceArchiveExistsBesideExecutable(executable)", apply
+        )
+        self.assertLess(
+            apply.index("SgreVoiceArchiveExistsBesideExecutable(executable)"),
+            apply.index("BuildTargetIdentity(executable, pid)"),
+        )
+        self.assertIn("options->normalize_mages_controls = true;", apply)
+        # 注入后才可判的锚点路径仍经 adapter 报告兜底。
+        active = self._function_body(
+            injector, "bool LunaMagesNormalizationActive()"
+        )
+        self.assertIn("AdapterReportsClaimEngine(", active)
+
+        profile = (ROOT / "hook" / "adapters" / "sgre_profile.h").read_text(
+            encoding="utf-8"
+        )
+        family = self._function_body(profile, "inline bool MatchesSgreFamily()")
+        self.assertIn("SgreVoiceArchiveExistsBesideExecutable(", family)
+        self.assertNotIn('L"wind3d11data', profile.replace(" ", ""))
 
     @staticmethod
     def _function_body(source: str, signature: str) -> str:

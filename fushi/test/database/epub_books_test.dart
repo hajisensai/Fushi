@@ -168,5 +168,24 @@ void main() {
           .get();
       expect(idx, hasLength(1));
     });
+
+    // BUG-2918：首页「继续」区按 completedAt 剔除读完的书，书架手动标记 / 阅读器
+    // 自动置完成都只写 epub_books——仪表盘的失效信号必须覆盖这张表，否则标记完成后
+    // 首页要等别的统计写入才重算，读完的书继续挂在「继续」里。
+    test('watchDashboardDataChanges 在写入完成标记时 emit', () async {
+      final db = await _openDb();
+      final key = await db.insertEpubBook(_book(title: 'Done Book'));
+      final List<void> emitted = <void>[];
+      final sub = db.watchDashboardDataChanges().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      emitted.clear();
+
+      await db.setEpubBookCompleted(key, DateTime(2026, 10, 3));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(emitted, isNotEmpty);
+      expect(await db.getCompletedEpubBookKeys(), <String>{key});
+    });
   });
 }

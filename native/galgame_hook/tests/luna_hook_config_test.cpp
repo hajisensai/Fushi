@@ -5,8 +5,12 @@
 
 #include <array>
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 #include "luna_hook_config.h"
+#include "luna_text_selector.h"
+#include "sgre_family.h"
 
 int main() {
   fushi_voice_hook::LunaTargetIdentity wa2;
@@ -78,13 +82,85 @@ int main() {
       "75a83a0e2a7e22055417ae0474b47be98418c4e42c695c548b558705c404b9d8";
   const auto sgre_profile = fushi_voice_hook::MatchLunaHookProfiles(
       fushi_voice_hook::BuiltInLunaHookProfiles(), sgre);
-  if (sgre_profile.codepage != 932 || sgre_profile.enable_pc_hooks ||
-      !sgre_profile.normalize_mages_controls ||
-      sgre_profile.hook_codes.size() != 1 ||
-      sgre_profile.hook_codes.front() !=
-          L"HQFN-24@328E0:sgre_steam.exe") {
-    std::fprintf(stderr, "STEINS;GATE RE:BOOT profile did not match\n");
+  // 引擎级适配：SGRE 的文本走游戏内 adapter 的结构识别（SGRE exact 文本线），MAGES
+  // 控制符归一化由引擎身份打开（kLunaMagesControlEngineAdapterId），内置表里不得再有按
+  // 这份 exe 哈希钉死的 hook code / 选项。
+  if (!sgre_profile.hook_codes.empty() || sgre_profile.normalize_mages_controls ||
+      sgre_profile.enable_pc_hooks || sgre_profile.codepage != 0) {
+    std::fprintf(stderr,
+                 "built-in Luna profiles must not pin STEINS;GATE RE:BOOT by "
+                 "executable hash\n");
     return 8;
+  }
+  if (std::strcmp(fushi_voice_hook::kLunaMagesControlEngineAdapterId, "sgre") !=
+      0) {
+    std::fprintf(stderr, "MAGES normalization must follow the SGRE engine id\n");
+    return 8;
+  }
+  // 显式用户 profile 仍可打开该选项（与引擎身份并列，供未识别的 MAGES 变体兜底）。
+  {
+    const std::string user_profile =
+        "exe_sha256\tmodule_name\tmodule_sha256\tcodepage\thook_code\tlabel\t"
+        "options\n" +
+        std::string(64, 'b') + "\t\t\t932\t\tuser MAGES\tnormalize-mages-controls\n";
+    fushi_voice_hook::LunaTargetIdentity user;
+    user.executable_sha256 = std::string(64, 'b');
+    if (!fushi_voice_hook::MatchLunaHookProfiles(user_profile, user)
+             .normalize_mages_controls) {
+      std::fprintf(stderr, "user normalize-mages-controls option was ignored\n");
+      return 8;
+    }
+  }
+
+  // 注入器在注入前用与 SGRE adapter probe() 同一判据（exe 旁 wind3d11 语音归档）打开
+  // MAGES 控制符归一化，Luna 第一行起就生效。判据看目录结构，不看 exe 名 / 哈希。
+  {
+    if (fushi_voice_hook::SgreVoiceArchivePathForExecutable(
+            L"C:\\Games\\SGRE\\any_name.exe") !=
+        L"C:\\Games\\SGRE\\wind3d11data\\voice_body.bin") {
+      std::fprintf(stderr, "SGRE archive path composition drifted\n");
+      return 9;
+    }
+    if (!fushi_voice_hook::SgreVoiceArchivePathForExecutable(L"bare.exe")
+             .empty()) {
+      std::fprintf(stderr, "directory-less path must not resolve an archive\n");
+      return 9;
+    }
+    wchar_t temp[MAX_PATH] = {};
+    const DWORD temp_chars = GetTempPathW(MAX_PATH, temp);
+    if (temp_chars == 0 || temp_chars >= MAX_PATH) return 9;
+    const std::wstring root = std::wstring(temp) + L"fushi_sgre_family_" +
+                              std::to_wstring(GetCurrentProcessId());
+    const std::wstring data = root + L"\\wind3d11data";
+    const std::wstring archive = data + L"\\voice_body.bin";
+    const std::wstring exe = root + L"\\renamed_game.exe";
+    CreateDirectoryW(root.c_str(), nullptr);
+    if (fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(exe)) {
+      std::fprintf(stderr, "SGRE identity claimed without the voice archive\n");
+      return 9;
+    }
+    CreateDirectoryW(data.c_str(), nullptr);
+    CreateDirectoryW(archive.c_str(), nullptr);
+    const bool directory_accepted =
+        fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(exe);
+    RemoveDirectoryW(archive.c_str());
+    if (directory_accepted) {
+      std::fprintf(stderr, "a directory named voice_body.bin is not an archive\n");
+      return 9;
+    }
+    HANDLE file = CreateFileW(archive.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return 9;
+    CloseHandle(file);
+    const bool matched =
+        fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(exe);
+    DeleteFileW(archive.c_str());
+    RemoveDirectoryW(data.c_str());
+    RemoveDirectoryW(root.c_str());
+    if (!matched) {
+      std::fprintf(stderr, "SGRE voice archive was not recognized\n");
+      return 9;
+    }
   }
 
   fushi_voice_hook::LunaTargetIdentity moved = nine;
