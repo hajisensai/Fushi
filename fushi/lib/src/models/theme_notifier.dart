@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1798,9 +1799,11 @@ ThemeData buildFushiThemeData({
                   FushiPredictiveBackPageTransitionsBuilder(),
               TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
               TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.windows: ZoomPageTransitionsBuilder(),
-              TargetPlatform.linux: ZoomPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(),
+              // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
+              // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。
+              TargetPlatform.windows: FushiSharedAxisPageTransitionsBuilder(),
+              TargetPlatform.linux: FushiSharedAxisPageTransitionsBuilder(),
+              TargetPlatform.fuchsia: FushiSharedAxisPageTransitionsBuilder(),
             },
           ),
     splashFactory: eink ? NoSplash.splashFactory : null,
@@ -1893,6 +1896,34 @@ ThemeData buildFushiThemeData({
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.card,
       ),
+      insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
+    ),
+    // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
+    // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路
+    // 闪），离开 100ms 收起。
+    tooltipTheme: TooltipThemeData(
+      waitDuration: const Duration(milliseconds: 400),
+      exitDuration: const Duration(milliseconds: 100),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cs.inverseSurface,
+        borderRadius: FushiBorderRadius.chip,
+      ),
+      textStyle: (tt.labelMedium ?? const TextStyle()).copyWith(
+        color: cs.onInverseSurface,
+      ),
+    ),
+    // 2026-10：M3 2024 版进度条——圆头、轨道与指示器之间留缝、确定态尾端有
+    // 停止点，读数比 2023 版的一整条色带清楚。墨水屏保留 2023 版（缝与停止点在
+    // 低分辨率面板上会糊成灰点）。
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      // year2023 被标为 deprecated 只是为了提示「将来默认 false」；显式传 false
+      // 正是官方给的启用方式。
+      // ignore: deprecated_member_use
+      year2023: eink,
+      linearTrackColor: eink ? null : cs.secondaryContainer,
+      borderRadius: const BorderRadius.all(Radius.circular(4)),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
