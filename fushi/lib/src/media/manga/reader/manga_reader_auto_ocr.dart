@@ -140,6 +140,7 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
         engine: engine,
         events: buildEvents(spec),
         focus: focus,
+        follower: mangaOcrJobFollower(spec),
       ),
       mangaJsonPath: mangaJsonPath,
     ),

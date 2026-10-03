@@ -74,6 +74,7 @@ Future<MangaOcrRunningJob?> runAutoMangaOcrForDownloadedChapter({
     engine: engine,
     events: buildEvents(spec),
     focus: focus,
+    follower: mangaOcrJobFollower(spec),
   );
   return registry.enqueue(job: job, mangaJsonPath: chapter.mangaJsonPath);
 }

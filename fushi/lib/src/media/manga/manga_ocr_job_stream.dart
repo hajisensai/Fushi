@@ -94,22 +94,35 @@ Future<void> discardMangaOcrPageCache(Directory cacheDir) async {
   }
 }
 
-/// 按引擎分发，产出统一的后台事件流；设置里开了大模型识别时再套一层
-/// [refineMangaOcrEventsWithAi]（与引擎无关：框是谁检测的都行）。
+/// 按引擎分发，产出统一的后台事件流。
 Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(MangaOcrJobSpec spec) {
-  final Stream<MangaOcrBackgroundEvent> events = switch (spec.engine) {
-    MangaOcrEngineId.localOnnx => mangaOcrLocalEvents(spec),
-    MangaOcrEngineId.systemOcr => mangaOcrSystemEvents(spec),
-    MangaOcrEngineId.googleLens => mangaOcrLensEvents(spec),
-    MangaOcrEngineId.externalMokuro => mangaOcrExternalEvents(spec),
-    MangaOcrEngineId.pairedHost => mangaOcrRemoteEvents(spec),
-  };
+  switch (spec.engine) {
+    case MangaOcrEngineId.localOnnx:
+      return mangaOcrLocalEvents(spec);
+    case MangaOcrEngineId.systemOcr:
+      return mangaOcrSystemEvents(spec);
+    case MangaOcrEngineId.googleLens:
+      return mangaOcrLensEvents(spec);
+    case MangaOcrEngineId.externalMokuro:
+      return mangaOcrExternalEvents(spec);
+    case MangaOcrEngineId.pairedHost:
+      return mangaOcrRemoteEvents(spec);
+  }
+}
+
+/// 设置里开了大模型识别时，给这个任务配一个跟随步骤（[MangaAiOcrJobFollower]，
+/// 与引擎无关：框是谁检测的都行）；没开 / 没指派提供商时 null。
+///
+/// 和 [mangaOcrBackgroundEvents] 用同一个 [spec] 构造、一起交给
+/// [MangaOcrBackgroundJob]——由注册表驱动，任务结束（释放名额）后它仍可收尾。
+/// [MangaOcrJobSpec.onlyMissing] 为 false（重新识别）时先清掉本卷大模型缓存。
+MangaOcrJobFollower? mangaOcrJobFollower(MangaOcrJobSpec spec) {
   final MangaAiOcrRefiner? refiner = spec.engines.aiRefinerFactory?.call();
-  if (refiner == null) return events;
-  return refineMangaOcrEventsWithAi(
-    events,
+  if (refiner == null) return null;
+  return MangaAiOcrJobFollower(
     imageDirPath: spec.imageDirPath,
     refiner: refiner,
+    discardCache: !spec.onlyMissing,
   );
 }
 
