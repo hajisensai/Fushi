@@ -3,6 +3,7 @@ package app.fushi.reader
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.os.Binder
 import android.os.Build
 import android.os.Bundle
 import android.webkit.WebView
@@ -104,6 +105,9 @@ class PopupDictFlutterActivity : FlutterActivity() {
 
     /** 当前挂着的截屏识字会话号；0 = 本窗不是从截屏选取层打开的。 */
     private var screenOcrSession: Long = 0
+
+    /** 交给 [ScreenOcrService] 的存活令牌：本进程一死，对方经 linkToDeath 收尾。 */
+    private val screenOcrToken: Binder = Binder()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Give the :popup WebView its own data directory before anything in this
@@ -223,9 +227,13 @@ class PopupDictFlutterActivity : FlutterActivity() {
 
     override fun onStop() {
         super.onStop()
+        // 已被别的透明窗压到 paused 再关掉时，finish 不会再走一次 onPause：在这里补报 CLOSED。
         // 没关窗却不可见了（回桌面 / 切 app / 锁屏）：截图已过时，整条流程收尾。
         if (screenOcrSession != 0L) {
-            reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_LEFT)
+            reportScreenOcr(
+                if (isFinishing) ScreenOcrService.ACTION_LOOKUP_CLOSED
+                else ScreenOcrService.ACTION_LOOKUP_LEFT,
+            )
             screenOcrSession = 0
         }
     }
@@ -238,7 +246,12 @@ class PopupDictFlutterActivity : FlutterActivity() {
         sendBroadcast(
             Intent(action)
                 .setPackage(packageName)
-                .putExtra(ScreenOcrService.EXTRA_SESSION, screenOcrSession),
+                .putExtra(ScreenOcrService.EXTRA_SESSION, screenOcrSession)
+                .putExtras(
+                    Bundle().apply {
+                        putBinder(ScreenOcrService.EXTRA_LOOKUP_TOKEN, screenOcrToken)
+                    },
+                ),
         )
     }
 

@@ -106,6 +106,46 @@ void main() {
     },
   );
 
+  test('a dead popup process cannot strand the hidden overlay', () {
+    // 选取层隐藏后，:popup 进程崩了就发不出 CLOSED / LEFT：只能靠 Binder 死亡通知收尾，
+    // 否则选取层永远藏着、流程锁不解、悬浮球回不来。
+    final String receiver = body(
+      service,
+      'private final BroadcastReceiver lookupReceiver',
+      '@Nullable',
+    );
+    final int watch = receiver.indexOf('watchLookupToken(token)');
+    expect(watch, isNonNegative);
+    expect(
+      receiver.indexOf('setSelectionHidden(true)'),
+      greaterThan(watch),
+      reason: '没盯住查词窗进程之前不许隐藏',
+    );
+    expect(service, contains('token.linkToDeath('));
+    final String finish = body(
+      service,
+      'private void finishFlow()',
+      'stopSelf()',
+    );
+    expect(finish, contains('unwatchLookupToken()'));
+    expect(activity, contains('putBinder(ScreenOcrService.EXTRA_LOOKUP_TOKEN'));
+  });
+
+  test(
+    'recognition finishing after the flow ended does not show an overlay',
+    () {
+      final String recognize = body(
+        service,
+        'private void recognize',
+        'private static List<ScreenOcrLayout.Line> toLines',
+      );
+      final int success = recognize.indexOf('addOnSuccessListener');
+      final int guard = recognize.indexOf('if (finished)', success);
+      expect(guard, greaterThan(success));
+      expect(recognize.indexOf('showSelection(lines)'), greaterThan(guard));
+    },
+  );
+
   test('the selection layer draws the frozen frame without dimming or a box '
       'around every line', () {
     final String draw = body(

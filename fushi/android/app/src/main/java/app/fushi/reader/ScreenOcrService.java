@@ -23,10 +23,12 @@ import android.media.ImageReader;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.TextPaint;
 import android.util.DisplayMetrics;
@@ -102,6 +104,8 @@ public class ScreenOcrService extends Service {
     static final String ACTION_LOOKUP_CLOSED = "app.fushi.reader.SCREEN_OCR_LOOKUP_CLOSED";
     static final String ACTION_LOOKUP_LEFT = "app.fushi.reader.SCREEN_OCR_LOOKUP_LEFT";
     static final String EXTRA_SESSION = "screenOcrSession";
+    /** SHOWN 回报带上查词窗的 Binder 令牌：:popup 进程死了也能收到通知（linkToDeath）。 */
+    static final String EXTRA_LOOKUP_TOKEN = "screenOcrLookupToken";
 
     /** 画面静止判据：最后一帧之后这么久没有新帧，就认为退场动画已画完。 */
     private static final long SETTLE_MS = 250;
@@ -137,6 +141,9 @@ public class ScreenOcrService extends Service {
     private long sessionId = 0;
     private boolean receiverRegistered = false;
     private boolean finished = false;
+    /** 隐藏选取层时盯住的查词窗令牌；它所在进程一死就收尾（否则选取层永远藏着、悬浮球回不来）。 */
+    @Nullable private IBinder lookupToken;
+    @Nullable private IBinder.DeathRecipient lookupDeath;
 
     private final BroadcastReceiver lookupReceiver = new BroadcastReceiver() {
         @Override
@@ -145,9 +152,14 @@ public class ScreenOcrService extends Service {
             if (session == 0 || session != sessionId) return;
             String action = intent.getAction();
             if (ACTION_LOOKUP_SHOWN.equals(action)) {
+                Bundle extras = intent.getExtras();
+                IBinder token = extras == null ? null : extras.getBinder(EXTRA_LOOKUP_TOKEN);
+                // 没有令牌就没有死亡通知：宁可不隐藏（查词窗盖在选取层下面），也不藏起来回不来。
+                if (token == null || !watchLookupToken(token)) return;
                 setSelectionHidden(true);
             } else if (ACTION_LOOKUP_CLOSED.equals(action)) {
                 sessionId = 0;
+                unwatchLookupToken();
                 setSelectionHidden(false);
             } else if (ACTION_LOOKUP_LEFT.equals(action)) {
                 sessionId = 0;
@@ -233,6 +245,7 @@ public class ScreenOcrService extends Service {
             unregisterReceiver(lookupReceiver);
             receiverRegistered = false;
         }
+        unwatchLookupToken();
         releaseCapture();
         removeSelectionView();
         releaseFrame();
@@ -402,6 +415,11 @@ public class ScreenOcrService extends Service {
         SystemOcrChannel.recognizerFor(language)
                 .process(InputImage.fromBitmap(bitmap, 0))
                 .addOnSuccessListener(text -> {
+                    // 识别期间流程已被收尾（系统重投空 intent 等）：不能再挂一个没人管的选取层。
+                    if (finished) {
+                        bitmap.recycle();
+                        return;
+                    }
                     List<ScreenOcrLayout.Line> lines = toLines(text);
                     if (lines.isEmpty()) {
                         bitmap.recycle();
@@ -415,6 +433,7 @@ public class ScreenOcrService extends Service {
                 })
                 .addOnFailureListener(error -> {
                     bitmap.recycle();
+                    if (finished) return;
                     // 与 SystemOcrChannel 同口径：模型没就绪 ≠ 识别失败，提示要分开。
                     boolean unavailable = error instanceof MlKitException
                             && ((MlKitException) error).getErrorCode()
@@ -559,6 +578,35 @@ public class ScreenOcrService extends Service {
         if (!hidden) selectionView.requestFocus();
     }
 
+    /** 盯住查词窗进程；令牌已死（进程刚没了）返回 false。主线程。 */
+    private boolean watchLookupToken(@NonNull IBinder token) {
+        if (token == lookupToken) return true;
+        unwatchLookupToken();
+        IBinder.DeathRecipient recipient = () -> mainHandler.post(() -> {
+            if (lookupToken != token) return;
+            lookupToken = null;
+            lookupDeath = null;
+            Log.w(TAG, "lookup popup process died; finishing screen OCR flow");
+            finishFlow();
+        });
+        try {
+            token.linkToDeath(recipient, 0);
+        } catch (RemoteException e) {
+            return false;
+        }
+        lookupToken = token;
+        lookupDeath = recipient;
+        return true;
+    }
+
+    private void unwatchLookupToken() {
+        if (lookupToken != null && lookupDeath != null) {
+            lookupToken.unlinkToDeath(lookupDeath, 0);
+        }
+        lookupToken = null;
+        lookupDeath = null;
+    }
+
     private void removeSelectionView() {
         if (selectionView != null) {
             try {
@@ -581,6 +629,7 @@ public class ScreenOcrService extends Service {
     /** 任何出口都走这里：拆选取层、解流程锁、放回悬浮球、停服务。主线程。 */
     private void finishFlow() {
         sessionId = 0;
+        unwatchLookupToken();
         removeSelectionView();
         releaseFrame();
         if (!finished) {

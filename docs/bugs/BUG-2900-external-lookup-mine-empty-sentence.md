@@ -6,6 +6,7 @@
   - 页面本可以用被点字所在的那一整行，但 BUG-2899 让整行在宿主那一层就丢了。
 - **[x] ① 已修复** — 页面带 `sourceCharIndex >= 0`（整行入口）时，基础层的制卡和覆写会先过一层 `_withSourceSentence`：用整行补 `{sentence}`，判据复用 app 外制卡共用的 `resolveMineSentence`，JS 送来的非空句子仍然优先。
   - 嵌套层查的是释义里的词，句子已经不是这一行，所以仍走原路径。
+  - 基础层原地跳到释义里的别的词（链接 / 词头）后同样不补：判据是「基础层当前查询串是这一行的一段」，后退回原词条时自然恢复。
   - 用户在搜索栏另查别的词后，句子清空。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dictionary_source_line_test.dart`，真页面加假 Anki 仓库，断言三点：
   - 整行入口制卡时，`AnkiMiningContext.sentence` 与 payload 里的 `sentence` 都是 trim 后的整行。

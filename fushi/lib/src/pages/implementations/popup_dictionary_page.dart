@@ -368,8 +368,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// BUG-2900：基础层的结果来自外部入口那一行，制卡 / 覆写时用整行补 `{sentence}`
   /// （JS 送来的非空句子仍优先）。嵌套层查的是释义里的词，句子不再是这行，走原路径。
+  /// 基础层原地跳到释义里的别的词（链接 / 词头）后，当前词条不再出自这行，同样不补；
+  /// 判据是「基础层当前查询串是这行的一段」——点源文本条查的永远是这行的后缀，
+  /// 后退回原词条时自然又成立。
   Map<String, String> _withSourceSentence(Map<String, String> fields) {
     if (_sourceSentence.isEmpty) return fields;
+    final String baseTerm =
+        _popup.entries.isEmpty ? '' : _popup.entries.first.searchTerm.trim();
+    if (baseTerm.isEmpty || !_sourceSentence.contains(baseTerm)) return fields;
     return <String, String>{
       ...fields,
       'sentence': resolveMineSentence(fields, _sourceSentence),

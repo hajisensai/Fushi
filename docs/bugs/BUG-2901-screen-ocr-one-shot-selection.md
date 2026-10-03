@@ -10,11 +10,16 @@
     - `onPause` 时如果 `isFinishing`，发 CLOSED，选取层恢复并重新拿焦点，同一张截图可以接着点。
     - `onStop` 时如果没关窗（回桌面、切 app、锁屏），发 LEFT，整条流程收尾。
     - 别的入口复用这个窗口（`onNewIntent` 换了会话）时，同样发 LEFT。
+    - 查词窗先被别的透明窗压到 paused 再关掉时，finish 不会再走一次 `onPause`。这种情况在 `onStop` 里按 `isFinishing` 补报 CLOSED，不按 LEFT 收尾。
+    - **对端死亡**：`:popup` 进程意外死亡（例如 WebView 渲染进程崩溃把宿主一起带走）时，onPause / onStop 都不会执行，靠回报的协议就漏了。为此 SHOWN 回报里带上查词窗的 Binder 令牌（`EXTRA_LOOKUP_TOKEN`），服务端先 `linkToDeath` 盯住它，盯住了才隐藏选取层；进程一死就 `finishFlow` 收尾。没有这一步，选取层会一直隐藏、流程锁不解、悬浮球回不来。
+    - 识别回调到达时流程可能已经收尾（例如系统重投空 intent）。这时直接回收位图，不再挂一个没人管的选取层。
+    - **有意的行为变化**：选取层存在期间（包括查词窗开着的时候），流程锁一直持有，原生悬浮球保持隐藏；选取层关闭后悬浮球才回来。原因是同一张截图还在用，这期间再点悬浮球就会叠出第二轮截屏。
   - **降噪**：选取层背景画定格的那一帧，也就是识别所用的那一帧。这样框与画面始终对齐，与底下的 app 此刻在播什么无关；这一帧在流程收尾时回收。去掉整屏压暗；静息时每行只铺 `0x1A3D8BFF` 淡底，手指按下的那一行才加深并描边，移动超出 touchSlop、抬起或取消时清除。
 - **[x] ② 已加自动化测试** — 原生 Service 与 Activity 的生命周期在 Dart 测试宿主上跑不了，按「最强可落地层」做了源码守卫，放在 `fushi/test/build/screen_ocr_reusable_selection_guard_test.dart`，钉住四件事：
   - `onSelectionTap` 不再 `finishFlow`，并带上会话号；
   - 隐藏只发生在 SHOWN 之后；
   - Activity 在 resume / finishing pause / stop 三处各回报一次；
   - 选取层不再整屏压暗、静息时不描边。
+  - 后来又加了两条：隐藏选取层前必须先 `linkToDeath` 盯住查词窗的令牌；识别回调先判断 `finished`，再决定是否挂选取层。
   - 另外 `:app:assembleRelease` 编译通过。
 - **备注**：未做真机复测（需要 MediaProjection 授权框和 ML Kit 模型）。
