@@ -172,7 +172,7 @@ int main() {
     assert(!fushi_voice_hook::MatchesCatSystem2Layout(root));
     RemoveTree(root);
   }
-  // BUG-2894：体验版「根目录 WCBOOTMENU 启动器 + data\cs2.exe」。注入器的启动器判据
+  // BUG-2930：体验版「根目录 WCBOOTMENU 启动器 + data\cs2.exe」。注入器的启动器判据
   // （LooksLikeLauncherLayout + DirectoryHasEngineSignature）必须靠同一份 CatSystem2
   // 判据在 data\ 认出真游戏；根目录本身就是 CatSystem2（Grisaia 形态）时不算启动器。
   {

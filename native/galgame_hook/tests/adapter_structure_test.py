@@ -2137,7 +2137,7 @@ class AdapterStructureTest(unittest.TestCase):
                           "isencryptionkey"):
             self.assertNotIn(forbidden, engine_lane.lower())
         resolve = self._function_body(core, "inline VoiceSiteResult ResolveVoiceSites(")
-        # Structural proof shared by codegens (BUG-2895): the forwarder shape,
+        # Structural proof shared by codegens (BUG-2931): the forwarder shape,
         # then the plain-path block named by its flag, clamp, imports and lea.
         for proof in ("FindForwarder(image)", "DecodeRel32CallTarget",
                       "MatchesPlainBlock(image, code, at, imports",

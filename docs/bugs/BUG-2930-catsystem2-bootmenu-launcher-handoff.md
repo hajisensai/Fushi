@@ -1,4 +1,4 @@
-## BUG-2894 · CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随
+## BUG-2930 · CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随
 - **报告**：2026-10-03（用户：「跑完这些下载各种官方试玩版继续适配」——官方体验版实测中发现）
 - **真实性**：✅ 真 bug。样本 初恋サンカイメ体験版（DLsite VJ010553）：根目录 `初恋サンカイメ体験版.exe`（x86，窗口类 `WCBOOTMENU`，按钮 1001「ゲーム起動」）只是启动菜单，真游戏是 `data\cs2.exe`（窗口类 `CoreSystem2`），`data\` 下有 `config\startup.xml` 与 KIF 魔数的 `*.int`。注入器的启动器判据 `LooksLikeLauncherForEngine`（`native/galgame_hook/injector/injector_main.cpp`）与子进程打分 `InspectEngineSignature` 都只问 `DirectoryHasEngineSignature`，而它只认 Siglus 与 UE IoStore 两种签名——CatSystem2 的身份判据 `MatchesCatSystem2Layout`（`hook/adapters/catsystem2_profile.h`）只在 hook 侧用、注入器从没接上。于是启动菜单那层被当成游戏注入，`follow_children` 为假，菜单拉起的 `cs2.exe` 无人跟随，文本/音频/查词全部为零。Grisaia 形态（cs2.exe 与 KIF 同在根目录）不受影响。
 - **[x] ① 已修复** — `DirectoryHasEngineSignature` 抽到 `injector/launch_engine_signature.h`（注入器与单测共用同一个函数），加上复用 hook 侧同一份判据的 `MatchesCatSystem2Layout`，不另写第二套 CatSystem2 识别。
