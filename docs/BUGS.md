@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2686 条。点号进各自文件。
+> 共 2687 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
 | [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
 | [BUG-2922](bugs/BUG-2922-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
