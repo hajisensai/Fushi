@@ -492,7 +492,7 @@ Future<void> _runCombo(
     );
     if (!caret) {
       final Map<String, dynamic> direct = await _js(
-        "JSON.stringify(window.fushiCaret ? window.fushiCaret.enter() : {missing: true})",
+        'JSON.stringify(window.fushiCaret ? window.fushiCaret.enter() : {missing: true})',
       );
       r.evidence['caretDiag'] = <String, Object?>{
         'surface': ReaderFushiPage.debugCaretSurface?.call(),
@@ -510,8 +510,8 @@ Future<void> _runCombo(
       Map<String, dynamic> caretAt = <String, dynamic>{};
       for (int i = 0; i < 20; i++) {
         caretAt = await _js(
-          "JSON.stringify((function () { var c = window.fushiCaret; "
-          "return { active: !!(c && c.isActive && c.isActive()), "
+          'JSON.stringify((function () { var c = window.fushiCaret; '
+          'return { active: !!(c && c.isActive && c.isActive()), '
           "ch: c && c.node ? c.node.textContent.substr(c.offset, 1) : '' }; })())",
         );
         if (RegExp(r'[ぁ-ヿ一-鿿]')
@@ -522,8 +522,8 @@ Future<void> _runCombo(
         await _pumpFor(tester, const Duration(milliseconds: 150));
       }
       final Map<String, dynamic> caretProbe = await _js(
-        "JSON.stringify((function () { var c = window.fushiCaret; "
-        "return { active: !!(c && c.isActive && c.isActive()), "
+        'JSON.stringify((function () { var c = window.fushiCaret; '
+        'return { active: !!(c && c.isActive && c.isActive()), '
         "ch: c && c.node ? c.node.textContent.substr(c.offset, 1) : '' }; })())",
       );
       r.evidence['caretAt'] = caretAt;
