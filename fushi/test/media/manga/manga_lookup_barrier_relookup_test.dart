@@ -71,7 +71,7 @@ void main() {
       expect(body, contains("return 'same'"));
       expect(body, contains("return 'hit'"));
       // 只有真选中新字才 fire onTextSelected 的那条路径（selectFromPosition）。
-      expect(body, contains('selection.selectFromPosition(node, 0, 40, x, y)'));
+      expect(body, contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'));
     });
 
     test('原有 _selectOcrChar 仍是布尔封装（点击/悬停/回放路径不变）', () {

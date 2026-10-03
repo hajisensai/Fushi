@@ -193,9 +193,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'lookup.ime_language',
+  // bool（默认 false）：查词后自动让 AI 按句意把符合用法的词头挪到最前
+  // （「设置 › AI」指派了查词用的提供商才生效；悬停查词与嵌套查词不触发）。
+  'lookup_ai_context_auto',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
-  'lookup_ai_context_auto',
   'lookup_page_escape_minimizes_window',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
