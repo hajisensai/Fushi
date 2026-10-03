@@ -478,7 +478,7 @@ void main() {
     'the page without cutting it into a word',
     (WidgetTester tester) async {
       final _SourceLineAppModel appModel = _SourceLineAppModel();
-      final MethodChannel channel = FushiChannels.popup;
+      const MethodChannel channel = FushiChannels.popup;
       final TestDefaultBinaryMessengerBinding binding =
           TestDefaultBinaryMessengerBinding.instance;
       binding.defaultBinaryMessenger.setMockMethodCallHandler(

@@ -78,10 +78,12 @@ void main() {
         isNot(contains('private long sessionId')),
         reason: '会话号只有状态机一份，Service 不留第二份',
       );
+      // 终点用函数自己的兜底 return：签名里的参数就带 @Nullable，拿它当终点
+      // 只会切出签名一行。
       final String mapping = body(
         service,
         'private static ScreenOcrLookupEvent lookupEventOf',
-        '@Nullable',
+        'return null;',
       );
       expect(mapping, contains('ACTION_LOOKUP_SHOWN.equals(action)'));
       expect(mapping, contains('ACTION_LOOKUP_CLOSED.equals(action)'));
