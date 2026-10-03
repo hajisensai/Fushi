@@ -86,6 +86,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// （那时结果已与这行无关）。
   String _sourceSentence = '';
 
+  /// 最近一次「出自这一行」的基础层查询串：宿主推来整行时的首查（[_lookupWidgetSource]）
+  /// 与源文本条点字两个入口记下，[_withSourceSentence] 用**相等**判定基础层当前词条是否
+  /// 仍出自这一行。不能用「是这行的子串」判：释义里的词头 / 汉字链接原地跳转后，跳到的
+  /// 词（如「天」）恰好也是行的子串，就会把整行误填进无关词条的 `{sentence}`。
+  String _sourceLineQuery = '';
+
   /// 源文本条上「这次查的是哪几个字」的扫描高亮，与首页词典 tab 同一口径。
   ///
   /// 顶层查词（宿主推来新词 / 搜索栏提交 / 开页自动查词）会把 [_sourceLookupText]
@@ -127,6 +133,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     attachLookupCounter(_popup);
     _sourceLookupText = widget.searchTerm.trim();
     _sourceSentence = _sentenceOf(widget);
+    _sourceLineQuery = '';
     // TODO-951 症状C：开页 seed 一个常驻隐藏热槽，弹窗 WebView 冷加载一次后全程复用
     // （与 reader/video/首页查词同范式），消除「每次查词重建 WebView 露白屏一瞬」。
     // appModel 未初始化时 seedWarmSlot 内部据 lowMemory 早退前先设真值；此处与首页
@@ -158,9 +165,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             sourceGraphemeIndexOfUnit(text, unitIndex),
           );
     if (scan == null) {
+      _sourceLineQuery = '';
       _pushSearch(text, Rect.zero, reuseWarmSlot: true);
       return;
     }
+    _sourceLineQuery = scan.suffix.trim();
     final String line = text.trim();
     _searchController.text = line;
     _searchController.selection = TextSelection.collapsed(offset: line.length);
@@ -205,6 +214,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
     _isClosing = false;
     _sourceSentence = _sentenceOf(widget);
+    _sourceLineQuery = '';
     final String trimmed = widget.searchTerm.trim();
     if (trimmed.isEmpty) {
       // 悬浮球「查词」/ 剪贴板为空：宿主有意推来空词，常驻热页回到只有搜索栏的
@@ -296,6 +306,23 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     });
   }
 
+  /// 源文本条点字 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），条上的整句与
+  /// 搜索框里的整句都留着，只有高亮跨度跟着挪。条上是外部入口那一行时，这次查询串
+  /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
+  Future<void> _lookupFromSourceStrip(
+    String query,
+    Rect rect,
+    int charIndex,
+  ) {
+    _sourceLineQuery = _sourceSentence.isEmpty ? '' : query.trim();
+    return _pushSearch(
+      query,
+      rect,
+      reuseWarmSlot: true,
+      scan: SourceLookupScan.fromSuffix(suffix: query, charIndex: charIndex),
+    );
+  }
+
   void _popAt(int index) {
     if (index <= 0) return;
     popNestedPopupAt(index, _popup);
@@ -360,6 +387,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     if (text.trim().isEmpty) return;
     _searchFocusNode.unfocus();
     _sourceSentence = '';
+    _sourceLineQuery = '';
     // TODO-951 症状C：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView；
     // 顶层重查走 reuseWarmSlot 原地复用。
     setState(_popup.pruneToWarmSlot);
@@ -368,14 +396,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// BUG-2900：基础层的结果来自外部入口那一行，制卡 / 覆写时用整行补 `{sentence}`
   /// （JS 送来的非空句子仍优先）。嵌套层查的是释义里的词，句子不再是这行，走原路径。
-  /// 基础层原地跳到释义里的别的词（链接 / 词头）后，当前词条不再出自这行，同样不补；
-  /// 判据是「基础层当前查询串是这行的一段」——点源文本条查的永远是这行的后缀，
-  /// 后退回原词条时自然又成立。
+  /// 基础层原地跳到释义里的别的词（链接 / 词头 / 汉字）后，当前词条不再出自这行，同样
+  /// 不补；判据是「基础层当前查询串**等于**最近一次出自这行的查询串」
+  /// （[_sourceLineQuery]），后退回原词条时自然又成立。
   Map<String, String> _withSourceSentence(Map<String, String> fields) {
-    if (_sourceSentence.isEmpty) return fields;
+    if (_sourceSentence.isEmpty || _sourceLineQuery.isEmpty) return fields;
     final String baseTerm =
         _popup.entries.isEmpty ? '' : _popup.entries.first.searchTerm.trim();
-    if (baseTerm.isEmpty || !_sourceSentence.contains(baseTerm)) return fields;
+    if (baseTerm != _sourceLineQuery) return fields;
     return <String, String>{
       ...fields,
       'sentence': resolveMineSentence(fields, _sourceSentence),
@@ -547,15 +575,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               highlight: _sourceHighlight,
               // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
               // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
-              onLookup: (String query, Rect rect, int charIndex) => _pushSearch(
-                query,
-                rect,
-                reuseWarmSlot: true,
-                scan: SourceLookupScan.fromSuffix(
-                  suffix: query,
-                  charIndex: charIndex,
-                ),
-              ),
+              onLookup: _lookupFromSourceStrip,
             ),
           Expanded(child: _buildStack(context)),
         ],
