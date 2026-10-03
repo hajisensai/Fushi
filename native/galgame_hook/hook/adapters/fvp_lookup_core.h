@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -939,34 +940,110 @@ inline size_t AudioStorageName(const char* name, size_t name_bytes,
   return written;
 }
 
-// A voice line is played (AudioPlay → SoundLoad) in the same script step
-// that then prints its dialogue: the name plate and the dialogue text follow
-// within a frame or two.  The voice is bound to the first line published on
-// the selected (dialogue) lane at or after its decoder input, within
-// `window_ms`; 0 when no such line has been published (yet).
+// Voice ↔ dialogue binding by script order.
+//
+// TextPrint and AudioPlay are both VM syscalls on the game thread, so the
+// Print and ChannelPlay detours take their position from one shared step
+// counter: the order the script executed them in.  The VM runs a batch of
+// instructions per frame and stops at the click wait; the engine then draws.
+// A "dispatch" is the run of steps between two draws: the detours record the
+// draw counter as the step's epoch, and two steps with the same epoch ran in
+// the same dispatch (no frame was drawn between them).  One line's voice and
+// its dialogue print run in one dispatch — whichever the script orders first
+// (`AudioPlay; TextPrint` or `TextPrint; AudioPlay`) — while the next line
+// only starts after a click wait, i.e. after frames were drawn.
 struct PublishedText {
   uint64_t event = 0u;
   uint64_t thread = 0u;
   uint64_t tick = 0u;
+  uint64_t step = 0u;   // script position of the print
+  uint64_t epoch = 0u;  // draws counted when it ran (its dispatch)
 };
 
-inline uint64_t BindVoiceToFollowingText(const PublishedText* texts,
-                                         size_t count, uint64_t voice_tick,
-                                         uint64_t selected_thread,
-                                         uint64_t window_ms) {
-  if (texts == nullptr || selected_thread == 0u) return 0u;
-  uint64_t best_event = 0u;
-  uint64_t best_tick = 0u;
+struct VoiceOrder {
+  uint64_t tick = 0u;
+  uint64_t step = 0u;
+  uint64_t epoch = 0u;
+};
+
+struct DispatchBinding {
+  uint64_t event = 0u;
+  // The dispatch has been decided: either a dialogue print of the same
+  // dispatch was found, or the dispatch ended (a frame was drawn after it)
+  // without one.  While false a print of the same dispatch may still come.
+  bool settled = false;
+};
+
+// The dialogue print (selected lane) that ran in the same dispatch as the
+// voice: the first one after the voice in script order (the usual
+// `AudioPlay; TextPrint`), else — once the dispatch has ended — the last one
+// before it (`TextPrint; AudioPlay`).  A print of another dispatch is never
+// taken here: that is another line.
+inline DispatchBinding BindVoiceInDispatch(const PublishedText* texts,
+                                           size_t count,
+                                           const VoiceOrder& voice,
+                                           uint64_t selected_thread,
+                                           uint64_t current_epoch) {
+  DispatchBinding binding;
+  const bool dispatch_ended = current_epoch != voice.epoch;
+  if (texts == nullptr || selected_thread == 0u || voice.step == 0u) {
+    binding.settled = dispatch_ended;
+    return binding;
+  }
+  uint64_t after_event = 0u, after_step = 0u;
+  uint64_t before_event = 0u, before_step = 0u;
   for (size_t index = 0u; index < count; ++index) {
     const PublishedText& text = texts[index];
     if (text.event == 0u || text.thread != selected_thread ||
-        text.tick < voice_tick || text.tick - voice_tick > window_ms) {
+        text.epoch != voice.epoch || text.step == 0u) {
       continue;
     }
-    if (best_event == 0u || text.tick < best_tick ||
-        (text.tick == best_tick && text.event < best_event)) {
+    if (text.step > voice.step) {
+      if (after_event == 0u || text.step < after_step) {
+        after_event = text.event;
+        after_step = text.step;
+      }
+    } else if (text.step < voice.step) {
+      if (before_event == 0u || text.step > before_step) {
+        before_event = text.event;
+        before_step = text.step;
+      }
+    }
+  }
+  if (after_event != 0u) {
+    binding.event = after_event;
+    binding.settled = true;
+    return binding;
+  }
+  if (!dispatch_ended) return binding;  // a following print may still come
+  binding.event = before_event;
+  binding.settled = true;
+  return binding;
+}
+
+// Fallback when the voice's dispatch printed no dialogue (a script that waits
+// a few frames between AudioPlay and TextPrint): the first dialogue print
+// after the voice in script order, published within `window_ms` of it.  A
+// print that ran before the voice — the previous line — is never taken.
+inline uint64_t BindVoiceToFollowingText(const PublishedText* texts,
+                                         size_t count, const VoiceOrder& voice,
+                                         uint64_t selected_thread,
+                                         uint64_t window_ms) {
+  if (texts == nullptr || selected_thread == 0u || voice.step == 0u) {
+    return 0u;
+  }
+  uint64_t best_event = 0u;
+  uint64_t best_step = 0u;
+  for (size_t index = 0u; index < count; ++index) {
+    const PublishedText& text = texts[index];
+    if (text.event == 0u || text.thread != selected_thread ||
+        text.step <= voice.step ||
+        (text.tick > voice.tick && text.tick - voice.tick > window_ms)) {
+      continue;
+    }
+    if (best_event == 0u || text.step < best_step) {
       best_event = text.event;
-      best_tick = text.tick;
+      best_step = text.step;
     }
   }
   return best_event;
@@ -1333,6 +1410,14 @@ inline bool NeedsEligibility(uint32_t message) {
 
 // A claimed press owns the button until its release; both edges are swallowed
 // so the engine's input state never sees the click.
+//
+// Input coverage: only WM_LBUTTON* is decided here.  A Windows touch tap that
+// the engine does not handle as WM_POINTER* (it forwards those to
+// DefWindowProc) is promoted by the system to back-to-back WM_LBUTTONDOWN /
+// WM_LBUTTONUP on lift, so a tap reaches this decision like a mouse click.
+// A long press is promoted to a right click (WM_RBUTTON*) and a swipe to
+// WM_POINTERUPDATE / a promoted drag; neither is claimed — they reach the
+// engine unchanged.  None of this is verified with real touch input yet.
 inline ClaimDecision DecideMessage(uint32_t message, bool eligible,
                                    ClaimState* claim) {
   ClaimDecision decision;
@@ -1347,6 +1432,118 @@ inline ClaimDecision DecideMessage(uint32_t message, bool eligible,
     decision.swallow = true;
   }
   return decision;
+}
+
+// ── is the model still what is on screen? ─────────────────────────────────
+
+// The engine draws only while something changes and may stop drawing while
+// it is not foreground (a lookup card is up), so "drawn recently" is not a
+// time.  The Draw detour counts every primitive drawn; the watched text
+// surface is off screen once the engine drew more than about two of its own
+// draw periods of other primitives without it (the render walk skips an
+// inactive group entirely).  The period is the draw count between the last
+// two draws of the watched surface, bounded so that one long absence cannot
+// make the gate lenient for long.  A static screen (no draws at all) keeps
+// the model.
+inline constexpr uint64_t kMinStaleDraws = 64u;
+inline constexpr uint64_t kMaxStaleDraws = 1024u;
+
+inline bool WatchedSurfaceDrawn(uint64_t draws_now, uint64_t watched_at,
+                                uint64_t watched_period) {
+  if (watched_at == 0u || draws_now < watched_at) return false;
+  uint64_t limit = watched_period > kMaxStaleDraws / 2u ? kMaxStaleDraws
+                                                         : 2u * watched_period;
+  if (limit < kMinStaleDraws) limit = kMinStaleDraws;
+  return draws_now - watched_at <= limit;
+}
+
+// Prints counted per text buffer: only a print on the model's own buffer
+// invalidates it (a HUD or name-plate buffer printing does not).  `buffer`
+// outside [0, kTextBufferCount) counts nowhere.
+// One writer (the game thread's Print detour), any reader.
+class BufferPrintCounts {
+ public:
+  uint64_t Note(int32_t buffer) {
+    if (buffer < 0 || buffer >= static_cast<int32_t>(kTextBufferCount)) {
+      return 0u;
+    }
+    return counts_[static_cast<size_t>(buffer)].fetch_add(
+               1u, std::memory_order_acq_rel) +
+           1u;
+  }
+  uint64_t Of(int32_t buffer) const {
+    if (buffer < 0 || buffer >= static_cast<int32_t>(kTextBufferCount)) {
+      return 0u;
+    }
+    return counts_[static_cast<size_t>(buffer)].load(
+        std::memory_order_acquire);
+  }
+
+ private:
+  std::array<std::atomic<uint64_t>, kTextBufferCount> counts_{};
+};
+
+// ── which window to hook ───────────────────────────────────────────────────
+
+// A rejection is bound to the window set it was made for, never permanent: a
+// splash / movie window or an ambiguous moment is rejected only until the
+// candidate changes (a destroyed and recreated window has another HWND — the
+// handle's upper word is the window manager's reuse counter).  A hooked
+// window procedure stays hooked for the process; a new window of an already
+// hooked procedure is only re-bound.
+inline constexpr uint32_t kMaxWindowProcedures = 4u;
+
+struct WindowCandidate {
+  uint64_t identity = 0u;  // 0 = no candidate window yet
+  uintptr_t window = 0u;
+  uint32_t procedure_count = 0u;  // in-image procedures (frame + children)
+  uintptr_t procedures[kMaxWindowProcedures] = {};
+  bool acceptable = false;  // the candidate passes the identity checks
+};
+
+struct WindowBindingState {
+  uintptr_t bound = 0u;          // window currently bound (0 = none)
+  bool bound_alive = false;      // it still exists and is visible
+  uint64_t rejected_identity = 0u;
+  uint32_t hooked_count = 0u;
+  uintptr_t hooked[kMaxWindowProcedures] = {};
+};
+
+enum class WindowStep : uint32_t {
+  kKeep = 0,       // the bound window is alive
+  kWait = 1,       // nothing (new) to evaluate
+  kReject = 2,     // remember this candidate's identity as rejected
+  kBind = 3,       // every procedure is hooked already: bind the window
+  kHook = 4,       // hook the missing procedures, then bind
+};
+
+inline bool WindowProcedureHooked(const WindowBindingState& state,
+                                  uintptr_t procedure) {
+  for (uint32_t k = 0u; k < state.hooked_count && k < kMaxWindowProcedures;
+       ++k) {
+    if (state.hooked[k] == procedure) return true;
+  }
+  return false;
+}
+
+inline WindowStep DecideWindowStep(const WindowCandidate& candidate,
+                                   const WindowBindingState& state) {
+  if (state.bound != 0u && state.bound_alive) return WindowStep::kKeep;
+  if (candidate.identity == 0u) return WindowStep::kWait;
+  if (candidate.identity == state.rejected_identity) return WindowStep::kWait;
+  if (!candidate.acceptable || candidate.procedure_count == 0u ||
+      candidate.procedure_count > kMaxWindowProcedures) {
+    return WindowStep::kReject;
+  }
+  uint32_t missing = 0u;
+  for (uint32_t k = 0u; k < candidate.procedure_count; ++k) {
+    if (!WindowProcedureHooked(state, candidate.procedures[k])) ++missing;
+  }
+  if (missing == 0u) return WindowStep::kBind;
+  if (state.hooked_count + missing > kMaxWindowProcedures) {
+    return WindowStep::kReject;
+  }
+  return WindowStep::kHook;
 }
 
 // ── published models ───────────────────────────────────────────────────────

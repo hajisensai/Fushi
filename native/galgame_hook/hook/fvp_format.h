@@ -18,8 +18,10 @@
 //     是对白的输出点。身份判据用整条 trailer 的自洽性 + 该名单里有 TextPrint/2，
 //     不看文件名。
 //
-//   语音判据：引擎交给解码器（SoundLoad）的整段数据若是**单声道 Ogg Vorbis** 即逐句
-//   语音（样本语音全部单声道；BGM 为立体声 Ogg、音效为 RIFF，均不认领）。这里只读
+//   语音判据：以引擎交给 ChannelPlay → SoundLoad 的**资源名**为主判据——引擎的资源名是
+//   「归档目录/条目」（`voice/02000750`），路径里有一个目录分量是 `voice` 才是逐句语音
+//   （IsVoiceResourceName）。声道数只作辅证（VorbisChannels 非 0 = 确实是 Ogg Vorbis
+//   流），不再作分类依据：单声道音效会被误认、立体声语音会被漏掉。这里只读资源名与
 //   Ogg 首页的 Vorbis 识别包，不解析任何归档。
 
 #include <cstddef>
@@ -132,6 +134,36 @@ inline uint32_t VorbisChannels(const uint8_t* head, size_t head_bytes) {
     return 0u;
   }
   return head[packet + 11u];
+}
+
+// ── voice resource name ────────────────────────────────────────────────────
+
+// The engine names a sound resource "<archive directory>/<entry>"
+// (`voice/02000750`, `se/...`, `bgm/...`).  A resource is a voice line when
+// one of its directory components (not the entry itself) is `voice`, ASCII
+// case-insensitive, with `/` or `\` separators.  `name` is read up to its NUL
+// or `name_bytes`, whichever comes first.
+inline bool IsVoiceResourceName(const char* name, size_t name_bytes) {
+  if (name == nullptr) return false;
+  size_t length = 0u;
+  while (length < name_bytes && name[length] != '\0') ++length;
+  static constexpr char kVoice[] = "voice";
+  size_t start = 0u;
+  for (size_t at = 0u; at < length; ++at) {
+    if (name[at] != '/' && name[at] != '\\') continue;
+    // [start, at) is a directory component: it is followed by a separator.
+    if (at - start == 5u) {
+      bool match = true;
+      for (size_t k = 0u; k < 5u && match; ++k) {
+        char c = name[start + k];
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        match = c == kVoice[k];
+      }
+      if (match && at + 1u < length) return true;  // an entry follows
+    }
+    start = at + 1u;
+  }
+  return false;
 }
 
 }  // namespace fushi_voice_hook::fvp
