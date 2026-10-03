@@ -48,6 +48,8 @@ final class FloatingBallChannel {
     static final String METHOD_OPEN_CAMERA_OCR = "openCameraOcr";
     /** 原生 → Dart：系统球「立即同步」，Fushi 已被拉到前台，请跑一轮同步。 */
     static final String METHOD_OPEN_SYNC = "openSync";
+    /** 原生 → Dart：截屏 OCR 报模型未就绪，Fushi 已被拉到前台，请打开系统 OCR 配置。 */
+    static final String METHOD_OPEN_SYSTEM_OCR_SETUP = "openSystemOcrSetup";
     /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
     static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
 
@@ -75,6 +77,8 @@ final class FloatingBallChannel {
 
     /** 同 {@link #pendingOpenLookupPage}，排的是系统球「立即同步」。只在主线程读写。 */
     private static boolean pendingSync = false;
+    /** 同 {@link #pendingOpenLookupPage}，排的是「打开系统 OCR 配置」。只在主线程读写。 */
+    private static boolean pendingSystemOcrSetup = false;
 
     private FloatingBallChannel() {}
 
@@ -178,6 +182,25 @@ final class FloatingBallChannel {
     }
 
     /**
+     * 截屏 OCR 报模型未就绪（BUG-2889）：主引擎在就直接推 {@code openSystemOcrSetup}
+     * （Fushi 随后被拉到前台，Dart 弹配置）；不在就排队，由冷启动的 Dart 经
+     * {@code takePendingSystemOcrSetup} 来取。主线程调用。
+     */
+    static void requestSystemOcrSetup() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingSystemOcrSetup = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_SYSTEM_OCR_SETUP, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openSystemOcrSetup could not be delivered; queued", e);
+            pendingSystemOcrSetup = true;
+        }
+    }
+
+    /**
      * 用户关掉了系统球：主引擎在就立刻通知 Dart 关开关；不在也无妨，持久标记已由
      * {@link FloatingBallService} 落盘，Dart 下次同步开关前会取走。主线程调用。
      */
@@ -266,6 +289,12 @@ final class FloatingBallChannel {
             case "takePendingSync": {
                 boolean pending = pendingSync;
                 pendingSync = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingSystemOcrSetup": {
+                boolean pending = pendingSystemOcrSetup;
+                pendingSystemOcrSetup = false;
                 result.success(pending);
                 return;
             }

@@ -612,7 +612,7 @@ public class MainActivity extends AudioServiceActivity {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
-        SystemOcrChannel.registerWith(flutterEngine);
+        SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());

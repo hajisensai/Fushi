@@ -6219,5 +6219,15 @@
   "floating_ball_auto_restore_hint": "关掉悬浮球后，回到 Fushi 时自动重新显示；选「不自动恢复」则关掉后要在这里重新打开",
   "floating_ball_auto_restore_both": "应用内外",
   "floating_ball_auto_restore_in_app": "仅应用内",
-  "floating_ball_auto_restore_off": "不自动恢复"
+  "floating_ball_auto_restore_off": "不自动恢复",
+  "ocr_system_model_title": "系统 OCR 模型",
+  "ocr_system_model_checking": "正在检查文字识别模型…",
+  "ocr_system_model_missing": "Google Play 服务还没有下载文字识别模型。现在下载（几 MB）即可使用截屏识字。",
+  "ocr_system_model_download": "下载",
+  "ocr_system_model_downloading": "正在通过 Google Play 服务下载…可以关掉此窗口，下载会在后台继续。",
+  "ocr_system_model_ready": "文字识别模型已就绪，请再识别一次。",
+  "ocr_system_model_failed": "模型下载失败：$error",
+  "ocr_system_model_play_services_resolvable": "系统 OCR 依赖 Google Play 服务，本机的 Google Play 服务缺失、被停用或版本过旧。",
+  "ocr_system_model_play_services_fix": "修复 Google Play 服务",
+  "ocr_system_model_play_services_unavailable": "本机没有可用的 Google Play 服务，无法使用系统 OCR。"
 }

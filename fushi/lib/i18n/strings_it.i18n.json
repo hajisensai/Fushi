@@ -6219,5 +6219,15 @@
   "floating_ball_auto_restore_hint": "After you close the floating ball, bring it back when you return to Fushi. With Never, closing turns it off until you switch it back on here",
   "floating_ball_auto_restore_both": "In and out of app",
   "floating_ball_auto_restore_in_app": "In app only",
-  "floating_ball_auto_restore_off": "Never"
+  "floating_ball_auto_restore_off": "Never",
+  "ocr_system_model_title": "System OCR model",
+  "ocr_system_model_checking": "Checking the text recognition model…",
+  "ocr_system_model_missing": "Google Play services hasn't downloaded the text recognition model yet. Download it now (a few MB) to use screen OCR.",
+  "ocr_system_model_download": "Download",
+  "ocr_system_model_downloading": "Downloading through Google Play services… You can close this dialog; the download continues in the background.",
+  "ocr_system_model_ready": "The text recognition model is ready. Try OCR again.",
+  "ocr_system_model_failed": "Couldn't download the model: $error",
+  "ocr_system_model_play_services_resolvable": "System OCR needs Google Play services, which is missing, disabled or outdated on this device.",
+  "ocr_system_model_play_services_fix": "Fix Google Play services",
+  "ocr_system_model_play_services_unavailable": "This device has no usable Google Play services, so system OCR can't run here."
 }

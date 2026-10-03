@@ -34,6 +34,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -57,6 +58,10 @@ final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 
 /// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
 final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
+
+/// 截屏 / 拍照识字报「系统 OCR 模型未就绪」：等 app 就绪后弹出模型配置（BUG-2889）。
+/// Android 截屏 OCR 在原生服务里识别，报错时原生把 Fushi 拉到前台再经通道置位。
+final ValueNotifier<bool> pendingSystemOcrSetup = ValueNotifier<bool>(false);
 
 /// 从应用外交来一个要查的词（iOS App Intent、`fushi://lookup?word=`）。
 void deliverExternalLookup(String word) {
@@ -247,6 +252,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
+    pendingSystemOcrSetup.addListener(_onChanged);
     if (Platform.isIOS || Platform.isAndroid || isDesktopSystemBallPlatform) {
       unawaited(
         FloatingBallChannel.installHandler(
@@ -255,6 +261,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
           onOpenSync: () => pendingSync.value = true,
+          onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
           onSystemBallAction: _onDesktopSystemBallAction,
           onSystemBallPositionChanged: _onDesktopSystemBallMoved,
@@ -271,6 +278,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
+    pendingSystemOcrSetup.removeListener(_onChanged);
     _prefs?.removeListener(_onPrefsChanged);
     // 还在路上的起球闭包作废。
     _systemGeneration++;
@@ -606,6 +614,20 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     });
   }
 
+  /// 系统 OCR 模型未就绪：app 就绪后弹出模型配置（查状态 / 立即下载）。
+  void _flushSystemOcrSetup() {
+    if (!pendingSystemOcrSetup.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingSystemOcrSetup.value) return;
+      final BuildContext? ctx = _navigatorContext;
+      if (ctx == null) return;
+      pendingSystemOcrSetup.value = false;
+      unawaited(
+        showSystemOcrSetupDialog(ctx, language: kFloatingBallOcrLanguage),
+      );
+    });
+  }
+
   /// 外部查词：app 就绪后才交给查词弹窗（弹窗要用已初始化的词典）。
   void _flushExternalLookup() {
     final String? word = pendingExternalLookup.value;
@@ -741,8 +763,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         bytes,
         language: kFloatingBallOcrLanguage,
       );
-    } on SystemOcrUnavailableException {
-      _toast(t.floating_ball_ocr_model_unavailable);
+    } on SystemOcrUnavailableException catch (error) {
+      if (error.reason == kSystemOcrModelUnavailableReason) {
+        // 不只提示「没就绪」：直接带用户去把模型配好（BUG-2889）。
+        pendingSystemOcrSetup.value = true;
+      } else {
+        _toast(t.floating_ball_ocr_failed);
+      }
       return;
     } catch (error, stack) {
       ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
@@ -869,6 +896,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
     _flushSync();
+    _flushSystemOcrSetup();
 
     final FloatingBallSceneSnapshot scene = _registry.current;
     // 页面把必需入口托付给了球（阅读器关掉顶栏和底栏）：球必须在，本页不能被
