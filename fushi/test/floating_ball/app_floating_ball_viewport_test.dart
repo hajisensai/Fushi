@@ -179,8 +179,10 @@ void main() {
         'windowScene.interfaceOrientation)',
       ),
     );
-    // FlutterSceneDelegate 自己实现这条回调转发给插件：必须交回 super。
-    expect(callback[0], contains('super.windowScene('));
+    // FlutterSceneDelegate 只声明遵守 UIWindowSceneDelegate，并没有实现这条可选
+    // 回调；调 super 是向不存在的实现发消息，建 scene 时 unrecognized selector
+    // 直接 abort（2.9.0 TestFlight 打开即闪退）。编译器不拦，只能在这里钉死。
+    expect(callback[0], isNot(contains('super.')));
 
     final String ball = _swiftCode('ios/Runner/FushiFloatingBall.swift');
     final RegExpMatch? push = RegExp(
