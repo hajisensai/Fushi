@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <d3d11.h>
+#include <d3d11_4.h>
 #include <roapi.h>
 
 #include <windows.foundation.h>
@@ -51,6 +52,26 @@ using libwebrtc::RTCVideoFrame;
 using libwebrtc::RTCVideoSource;
 using libwebrtc::scoped_refptr;
 
+// Lock order for this capture (BUG-2909): D3D11 device lock, then
+// frame_mutex_. WGC's present thread already holds the device lock when it
+// raises FrameArrived, so any path that takes frame_mutex_ and then touches
+// the immediate context must enter the device lock first, or the two threads
+// deadlock and Stop()'s join hangs the platform thread.
+class DeviceLock {
+ public:
+  explicit DeviceLock(ComPtr<ID3D11Multithread> multithread)
+      : multithread_(std::move(multithread)) {
+    if (multithread_) multithread_->Enter();
+  }
+  ~DeviceLock() {
+    if (multithread_) multithread_->Leave();
+  }
+  DeviceLock(const DeviceLock&) = delete;
+  DeviceLock& operator=(const DeviceLock&) = delete;
+
+ private:
+  ComPtr<ID3D11Multithread> multithread_;
+};
 
 class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
  public:
@@ -226,6 +247,12 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
 
     d3d_ = CreateD3DDevice();
     if (!d3d_) return "D3D11 device create failed";
+    // WGC's present thread and this capture's threads share the immediate
+    // context; the device lock is what DeviceLock orders against.
+    if (FAILED(d3d_.As(&multithread_)) || !multithread_) {
+      return "ID3D11Multithread query failed";
+    }
+    multithread_->SetMultithreadProtected(TRUE);
     d3d_->GetImmediateContext(context_.GetAddressOf());
     ComPtr<IDXGIDevice> dxgi;
     if (FAILED(d3d_.As(&dxgi))) return "IDXGIDevice query failed";
@@ -306,6 +333,12 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     if (FAILED(item_->add_Closed(closed_handler.Get(), &closed_token_))) {
       return "add_Closed failed";
     }
+    return std::string();
+  }
+
+  // Called without frame_mutex_: once capture starts, the present thread can
+  // fire FrameArrived while holding the device lock.
+  std::string StartCaptureSession() {
     if (FAILED(session_->StartCapture())) {
       return "StartCapture failed";
     }
@@ -313,6 +346,7 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   }
 
   HRESULT OnFrameArrived(WGC::IDirect3D11CaptureFramePool* pool) {
+    DeviceLock device_lock(multithread_);
     std::lock_guard<std::mutex> lock(frame_mutex_);
     if (teardown_) return S_OK;
     ComPtr<WGC::IDirect3D11CaptureFrame> frame;
@@ -343,7 +377,9 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     }
     CloseIfClosable(session_);
     CloseIfClosable(frame_pool_);
+    DeviceLock device_lock(multithread_);
     std::lock_guard<std::mutex> lock(frame_mutex_);
+    multithread_.Reset();
     closed_token_ = {};
     frame_token_ = {};
     session_.Reset();
@@ -509,6 +545,7 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   // pacer held back once its slot has passed, and keeps a still window's
   // last frame flowing (see kCaptureIdleRepeatUs).
   void IdleTick() {
+    DeviceLock device_lock(multithread_);
     std::lock_guard<std::mutex> lock(frame_mutex_);
     if (teardown_) return;
     const int64_t now = NowUs();
@@ -554,10 +591,13 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     if (FAILED(ro) && ro != RPC_E_CHANGED_MODE) {
       error = "RoInitialize failed";
     } else {
-      std::lock_guard<std::mutex> lock(frame_mutex_);
-      teardown_ = false;
-      AttachCallbackGate();
-      error = SetupCaptureLocked();
+      {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        teardown_ = false;
+        AttachCallbackGate();
+        error = SetupCaptureLocked();
+      }
+      if (error.empty()) error = StartCaptureSession();
     }
     if (!error.empty()) {
       SetError(error);
@@ -616,6 +656,9 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   std::mutex frame_mutex_;
   bool teardown_ = false;
   ComPtr<ID3D11Device> d3d_;
+  // Written by the capture thread before add_FrameArrived and reset after the
+  // callback gate drains, so callbacks read it without frame_mutex_.
+  ComPtr<ID3D11Multithread> multithread_;
   ComPtr<ID3D11DeviceContext> context_;
   ComPtr<WGDXD3D::IDirect3DDevice> device_;
   ComPtr<WGC::IGraphicsCaptureItem> item_;
