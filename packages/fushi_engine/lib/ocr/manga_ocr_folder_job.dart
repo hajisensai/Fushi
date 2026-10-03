@@ -37,10 +37,15 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // instead of spreading the whole block text over the block (BUG-2813). The
 // recognised text is unchanged, so v4 caches of the same model are upgraded by
 // re-laying out only (see [kMangaOcrRelayoutRevisions]).
+// v6 re-reads text: side-by-side slanted columns are no longer merged into one
+// (the per-column CTC lost a whole column), and weak detector candidates the
+// detector scored below its threshold (sparse decorative titles) are re-checked
+// by the line detector + recogniser and added back. Text changes, so v5 caches
+// are not reused.
 // 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kMangaOcrPipelineRevision = 'v5-line-geometry';
+const String kMangaOcrPipelineRevision = 'v6-weak-text-sweep';
 const String kLocalMangaOcrEngineSignature =
     'local-onnx-$kMangaOcrPipelineRevision';
 
@@ -361,6 +366,7 @@ MokuroPayload buildMangaPayloadFromResults(
         zIndex: b,
         lines: block.lines,
         linesCoords: _linesCoords(block.lineBoxes),
+        confidence: block.confidence,
       ));
     }
     images.add(MokuroImage(
@@ -406,6 +412,7 @@ Future<String> runMangaOcrFolderJob({
   required OcrDetector detector,
   required OcrRecognizer recognizer,
   required String engineSignature,
+  OcrPageTextSweeper? sweeper,
   List<String>? relativeUrls,
   int startPage = 0,
   OcrCancelToken? cancelToken,
@@ -474,6 +481,7 @@ Future<String> runMangaOcrFolderJob({
     detector: detector,
     recognizer: recognizer,
     cache: cache,
+    sweeper: sweeper,
   );
   final Future<img.Image> Function(File file) decode =
       decodePage ?? decodeMangaPageFile;

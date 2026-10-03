@@ -103,7 +103,7 @@ fushi_voice_injector.exe --launch <游戏exe> [--workdir <目录>] [--arg <参�
 - `--dll`：hook DLL 路径（默认取同目录 arch 匹配的 `fushi_voice_hook.dll`）。
 - `--wait-ms`：等「就绪」事件超时（默认 5000）。
 - `--hold`：注入确认后常驻（host 模式，维持共享内存存活供消费）；缺省=probe 模式，确认后退出。
-- `--luna-pchooks`：LunaHook 连接后补装通用 PC hooks。Unity/Mono/IL2CPP 自绘文本常需要；`manosaba.exe` 与带 `UnityPlayer.dll` + `GameAssembly.dll` / `*_Data/il2cpp_data` / Mono 目录的目标在 `--launch` 和 `--pid` attach 下都会自动启用。
+- `--luna-pchooks`：LunaHook 连接后补装通用 PC hooks。Unity/Mono/IL2CPP 自绘文本常需要；带 `UnityPlayer.dll` + `GameAssembly.dll` / `*_Data/il2cpp_data` / Mono 目录的目标（按目录结构判，不按 exe 名）在 `--launch` 和 `--pid` attach 下都会自动启用。
 
 x86 release 包额外包含 Locale Emulator 的 `LoaderDll.dll`、`LocaleEmulator.dll` 与 LGPL-3.0
 许可文本；二进制从官方 v2.5.0.1 release 以固定 SHA-256 下载，未修改，也不会运行其安装器。

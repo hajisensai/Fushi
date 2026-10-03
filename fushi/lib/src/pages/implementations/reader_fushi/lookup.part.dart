@@ -138,6 +138,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
   }
 
+  /// 选词来源：JS 回传的 `fromHover`（Shift 悬停 / 悬停查词）是悬停，其余是明确的
+  /// 点击 / 按键。宿主据此决定是否跑「每查一次就付费一次」的旁路工作。
+  LookupOrigin _lookupOriginOf(ReaderSelectionData data) =>
+      data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit;
+
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     if (data.text.isEmpty) {
       return;
@@ -241,7 +246,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();
-      await _runLookupAndHighlight(data.text, selectionRect);
+      await _runLookupAndHighlight(
+        data.text,
+        selectionRect,
+        origin: _lookupOriginOf(data),
+      );
       _checkFavoriteStatus();
       return;
     }
@@ -267,7 +276,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
     _syncCueSentence();
 
-    await _runLookupAndHighlight(data.text, selectionRect);
+    await _runLookupAndHighlight(
+      data.text,
+      selectionRect,
+      origin: _lookupOriginOf(data),
+    );
     _cacheMatchableSelection(data);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
       _cachedSelectionRange = (

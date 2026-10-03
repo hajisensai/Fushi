@@ -29,10 +29,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2651 条。点号进各自文件。
+> 共 2678 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2918](bugs/BUG-2918-dashboard-continue-shows-completed-book.md) | ✅ | ✅ | 首页继续面板仍显示已读完的书 |
+| [BUG-2917](bugs/BUG-2917-vn-audio-highlight-ruby-gap.md) | ✅ | ✅ | 视觉小说模式有声书逐句高亮在注音字处断开 |
+| [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | ✅ | ✅ | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
+| [BUG-2915](bugs/BUG-2915-ios-video-connect-chunked-crash.md) | ✅ | ✅ | iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked |
+| [BUG-2914](bugs/BUG-2914-ios-scene-super-crash.md) | ✅ | ✅ | iOS 2.9.0 crashes on launch: SceneDelegate calls super for a scene callback FlutterSceneDelegate does not implement |
+| [BUG-2912](bugs/BUG-2912-manga-settings-sheet-clipped.md) | ✅ | ✅ | 漫画阅读设置侧栏显示不全 |
+| [BUG-2911](bugs/BUG-2911-ios-landscape-ball-edge.md) | ✅ | ✅ | iOS 横屏应用内悬浮球不吸附屏幕侧边 |
+| [BUG-2909](bugs/BUG-2909-game-stream-wgc-lock-order.md) | ✅ | ✅ | 游戏串流停止时主线程 join 捕获线程死锁（WGC 设备锁与 frame_mutex_ 锁序反转） |
+| [BUG-2908](bugs/BUG-2908-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
+| [BUG-2907](bugs/BUG-2907-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
+| [BUG-2906](bugs/BUG-2906-system-ocr-model-setup.md) | ✅ | ✅ | 系统 OCR 模型未就绪时只弹提示、没有配置入口 |
+| [BUG-2905](bugs/BUG-2905-vn-paragraph-split.md) | ✅ | ✅ | VN 模式同一段落被切成两屏（悬挂标点 / 切点禁则） |
+| [BUG-2904](bugs/BUG-2904-library-continue-hero-uid.md) | ✅ | ✅ | 书架「继续阅读」不随最近阅读更新 |
+| [BUG-2903](bugs/BUG-2903-continuous-scroll-progress-stall.md) | ✅ | ✅ | 滚动模式往下滚会卡在某处停一会 |
+| [BUG-2902](bugs/BUG-2902-manga-ocr-missed-text.md) | ✅ | ✅ | 漫画本地 OCR 漏识别：稀疏装饰标题整块没检出、斜体并排两列丢一列 |
+| [BUG-2901](bugs/BUG-2901-screen-ocr-one-shot-selection.md) | ✅ | ✅ | 截屏识字选取层一次性：查一个词就销毁，下个词要重新截屏重新授权 |
+| [BUG-2900](bugs/BUG-2900-external-lookup-mine-empty-sentence.md) | ✅ | ✅ | 外部查词窗制卡句子字段为空 |
+| [BUG-2899](bugs/BUG-2899-external-lookup-loses-source-line.md) | ✅ | ✅ | 外部查词窗（截屏识字/悬浮字幕点字）原句条只剩切出的词，整行上下文丢失 |
+| [BUG-2893](bugs/BUG-2893-kirikiri-kag-page-swap-anchor.md) | ✅ | ✅ | KiriKiri KAG 换页 backlay+trans 后查词锚点失效 |
+| [BUG-2892](bugs/BUG-2892-sgre-typewriter-prefix-lines.md) | ✅ | ✅ | SGRE 打字机逐字显示的半句被当成独立台词 |
+| [BUG-2891](bugs/BUG-2891-x64-locale-claimed-applied.md) | ✅ | ✅ | 64位游戏转区落空仍报已转日文区 |
+| [BUG-2890](bugs/BUG-2890-launch-window-binding-dead-dialog.md) | ✅ | ✅ | 启动会话绑定启动设置对话框后永不改绑主窗口 |
+| [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
+| [BUG-2888](bugs/BUG-2888-kirikiri-silent-stop-voice-paired.md) | ✅ | ✅ | KiriKiri 掐断用的静音语音被配给下一句旁白 |
+| [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |
+| [BUG-2886](bugs/BUG-2886-lookup-parked-window-on-screen.md) | ✅ | ✅ | 显示拓扑变化后，离屏停放的查词覆盖窗落进屏幕右上角吞点击 |
+| [BUG-2885](bugs/BUG-2885-kirikiri-nvl-page-lookup.md) | ✅ | ✅ | KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝 |
 | [BUG-2884](bugs/BUG-2884-manga-cross-chapter-stale-doc.md) | ✅ | ✅ | 漫画跨章翻页后正文仍是旧章 |
 | [BUG-2878](bugs/BUG-2878-manga-lens-char-offset.md) | ✅ | ✅ | 漫画 Lens OCR 逐字命中区相对原图字形漂移（竖排高亮压前字、切后字） |
 | [BUG-2877](bugs/BUG-2877-popup-touchmove-blocks-scroll.md) | ✅ | ✅ | 查词弹窗常驻非 passive touchmove 让词典滑动卡顿 |

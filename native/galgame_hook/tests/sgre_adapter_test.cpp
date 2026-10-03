@@ -872,6 +872,11 @@ int main() {
   // host mines by); the capture generation is only a well-formedness fallback.
   assert(fushi_voice_hook::SgreLookupHitTextGeneration(43, 11) == 43);
   assert(fushi_voice_hook::SgreLookupHitTextGeneration(0, 11) == 11);
+  // Typewriter reveal: only the fully revealed line is a text-lane line.
+  assert(!fushi_voice_hook::IsSgreScenarioLineFullyRevealed(2, 47));
+  assert(!fushi_voice_hook::IsSgreScenarioLineFullyRevealed(46, 47));
+  assert(fushi_voice_hook::IsSgreScenarioLineFullyRevealed(47, 47));
+  assert(!fushi_voice_hook::IsSgreScenarioLineFullyRevealed(0, 0));
   // Client size unknown (shield not published yet): self-consistency band only.
   assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(40.0f, 40.0f, true,
                                                           0.0f));

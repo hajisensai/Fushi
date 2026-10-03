@@ -8785,6 +8785,13 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaOcrParallelTasks(int value) =>
       prefsRepo.setMangaOcrParallelTasks(value);
 
+  /// 查词热路径每次都读：偏好仓库未就绪（弹窗词典入口启动早期）时按关处理。
+  bool get lookupAiContextAuto => _prefsRepo?.lookupAiContextAuto ?? false;
+  Future<void> setLookupAiContextAuto(bool value) =>
+      prefsRepo.setLookupAiContextAuto(value);
+  String get mangaOcrAiMode => prefsRepo.mangaOcrAiMode;
+  Future<void> setMangaOcrAiMode(String value) =>
+      prefsRepo.setMangaOcrAiMode(value);
   String get mangaOcrLocalModel => prefsRepo.mangaOcrLocalModel;
   Future<void> setMangaOcrLocalModel(String value) =>
       prefsRepo.setMangaOcrLocalModel(value);

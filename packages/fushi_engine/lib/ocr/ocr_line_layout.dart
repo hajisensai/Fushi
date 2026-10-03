@@ -111,14 +111,24 @@ List<OcrRect> dropOcrRubyLines(
 /// PP-OCR 会在一列中间的空隙（「っ」、句读、字距大的地方）把列切断；两段在跨轴
 /// 方向重叠达到较薄者厚度的 [overlapRatio] 就算同一列。振假名要在调用前滤掉
 /// （[dropOcrRubyLines]），否则它和正文列部分重叠会被并进来。
+///
+/// 同一列的碎片沿阅读方向首尾相接；沿阅读方向重叠超过较短者 [sideBySideRatio]
+/// 的两段是**并排**的两列 / 两行——斜体字的轴对齐列框在跨轴上能互相压进一半以上
+/// （用户真实页「パステルカラーで / 女子力アップ♡」重叠 54%），按碎片合并会把两列
+/// 并成一条宽列，逐列 CTC 只读出一列、另一列整列丢失。并排的两段只有跨轴也重叠
+/// 到 [duplicateRatio]（同一列被检出两次）时才合并。
 List<OcrRect> mergeOcrLineFragments(
   List<OcrRect> rects, {
   required bool vertical,
   double overlapRatio = 0.5,
+  double sideBySideRatio = 0.5,
+  double duplicateRatio = 0.8,
 }) {
   if (rects.isEmpty) return const <OcrRect>[];
   double crossStart(OcrRect r) => vertical ? r.left : r.top;
   double crossEnd(OcrRect r) => vertical ? r.right : r.bottom;
+  double alongStart(OcrRect r) => vertical ? r.top : r.left;
+  double alongEnd(OcrRect r) => vertical ? r.bottom : r.right;
   final List<OcrRect> sorted = List<OcrRect>.of(rects)
     ..sort(
       (OcrRect a, OcrRect b) =>
@@ -134,7 +144,17 @@ List<OcrRect> mergeOcrLineFragments(
       ocrLineThickness(last, vertical: vertical),
       ocrLineThickness(rect, vertical: vertical),
     );
-    if (thinner > 0 && overlap >= overlapRatio * thinner) {
+    final double alongOverlap =
+        math.min(alongEnd(last), alongEnd(rect)) -
+        math.max(alongStart(last), alongStart(rect));
+    final double shorter = math.min(
+      alongEnd(last) - alongStart(last),
+      alongEnd(rect) - alongStart(rect),
+    );
+    final bool sideBySide =
+        shorter > 0 && alongOverlap > sideBySideRatio * shorter;
+    final double required = sideBySide ? duplicateRatio : overlapRatio;
+    if (thinner > 0 && overlap >= required * thinner) {
       merged[merged.length - 1] = OcrRect(
         left: math.min(last.left, rect.left),
         top: math.min(last.top, rect.top),

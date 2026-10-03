@@ -1,6 +1,7 @@
 #include "hook_toolbar_window.h"
 
 #include "low_level_mouse_hook.h"
+#include "window_activation_policy.h"
 
 #include <d2d1helper.h>
 #include <dwrite_3.h>
@@ -799,6 +800,10 @@ LRESULT CALLBACK HookToolbarWindow::WndProc(HWND hwnd, UINT message,
 LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
                                          LPARAM lparam) noexcept {
   switch (message) {
+    // BUG-2889 — 同划词条：鼠标与触摸 / 触控笔按下都不激活，工具条永不抢游戏前台。
+    case WM_POINTERACTIVATE:
+    case WM_MOUSEACTIVATE:
+      return OverlayNoActivateReply(message);
     case WM_MOUSEMOVE: {
       const int next_hovered_slot =
           SlotAt(static_cast<float>(GET_X_LPARAM(lparam)),

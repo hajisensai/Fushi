@@ -166,7 +166,7 @@ img.Image _resizeMangaGray(Uint8List gray, int width, int height) {
 }
 
 /// manga-ocr 识别器：encoder 跑一次，decoder 以 beam batch 自回归。
-class MangaOcrRecognizer implements OcrRecognizer {
+class MangaOcrRecognizer implements ScoredOcrRecognizer {
   MangaOcrRecognizer({
     required OcrSession encoderSession,
     required OcrSession decoderSession,
@@ -203,7 +203,11 @@ class MangaOcrRecognizer implements OcrRecognizer {
   final String decoderOutputName;
 
   @override
-  Future<String> recognize(img.Image page, OcrRect box) async {
+  Future<String> recognize(img.Image page, OcrRect box) async =>
+      (await recognizeScored(page, box)).text;
+
+  @override
+  Future<ScoredOcrText> recognizeScored(img.Image page, OcrRect box) async {
     final img.Image resized = cropAndResizeForRecognition(page, box);
     final Float32List pixels = mangaOcrNormalize(resized);
 
@@ -253,7 +257,10 @@ class MangaOcrRecognizer implements OcrRecognizer {
       stepLogits: (List<List<int>> sequences) =>
           _decoderStep(sequences, hiddenTensor),
     );
-    return tokenizer.decode(result.tokens);
+    return (
+      text: tokenizer.decode(result.tokens),
+      confidence: beamSearchMeanTokenProbability(result, lengthPenalty),
+    );
   }
 
   Future<List<Float32List>> _decoderStep(

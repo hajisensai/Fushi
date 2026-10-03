@@ -294,6 +294,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
               sessions: _sessions,
               titleOf: _sessionTitle,
               collectionOf: _sessionCollectionName,
+              coverOf: _sessionCover,
               onDelete: _deleteSession,
               onEdit: _editSession,
               onClearAll: _clearSessions,
@@ -531,6 +532,18 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     );
     return displayTitleForGame(entry: entry, rawTitle: s.title);
   }
+
+  /// 会话行封面：与 [_sessionTitle] 同一次库内查找（游戏已删则无封面画占位），
+  /// 与「按游戏」行同一条游戏封面解析链。
+  ImageProvider? _sessionCover(StudySession s) => resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: findGalgameForActivity(
+          _games,
+          mediaKey: s.mediaKey,
+          title: s.title,
+        )?.coverPath,
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      );
 
   /// 会话行的所属合集名（BUG-2417：同一系列的分作单看名字认不出属于哪套）。
   /// 'game|<galgames.id>' 键契约，与时段明细 sheet 的 collectionOf 同一映射。

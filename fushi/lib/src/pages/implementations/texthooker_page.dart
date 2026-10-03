@@ -2580,19 +2580,27 @@ class _SessionOverviewCard extends StatelessWidget {
         state.japaneseLocaleSkipReason;
     // 原因分两类说话：语义门（证据不足 / 判为不需要）提示改「始终开启」；工程门
     // （64 位 / 系统本就日文区）改档位也没用，得直说，否则用户会白改一轮。
+    // 「请求了却落空」（BUG-2891）在 `on` 档也会发生，那里没有 verdict，所以不能再拿
+    // verdict 当前置门；只有语义门那一支要用 verdict 的证据。
     final String? localeSkippedHint =
-        state.japaneseLocaleApplied || verdict == null || skipReason == null
+        state.japaneseLocaleApplied || skipReason == null
         ? null
         : switch (skipReason) {
             GalJapaneseLocaleSkipReason.notNeeded ||
             GalJapaneseLocaleSkipReason.unknown =>
-              t.game_session_japanese_locale_skipped_hint(
-                evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence),
-              ),
+              verdict == null
+                  ? null
+                  : t.game_session_japanese_locale_skipped_hint(
+                      evidence: galJapaneseLocaleEvidenceListLabel(
+                        verdict.evidence,
+                      ),
+                    ),
             GalJapaneseLocaleSkipReason.systemAlreadyJapanese =>
               t.game_session_japanese_locale_skipped_hint_system_japanese,
             GalJapaneseLocaleSkipReason.targetNot32Bit =>
               t.game_session_japanese_locale_skipped_hint_not_32bit,
+            GalJapaneseLocaleSkipReason.runtimeUnavailable =>
+              t.game_session_japanese_locale_skipped_hint_runtime_unavailable,
           };
     final String localeSuffix = state.japaneseLocaleApplied
         ? ' · ${t.game_session_japanese_locale}'

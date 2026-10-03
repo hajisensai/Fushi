@@ -4,6 +4,8 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
+#include "window_activation_policy.h"
+
 namespace fushi {
 
 namespace {
@@ -42,9 +44,11 @@ HdrVideoHostWindow::~HdrVideoHostWindow() { Destroy(); }
 LRESULT CALLBACK HdrVideoHostWindow::WndProc(HWND hwnd, UINT message,
                                              WPARAM wparam, LPARAM lparam) {
   switch (message) {
+    // Never take activation: the main window above owns focus and input.
+    // Touch / pen presses ask through WM_POINTERACTIVATE (BUG-2889).
+    case WM_POINTERACTIVATE:
     case WM_MOUSEACTIVATE:
-      // Never take activation: the main window above owns focus and input.
-      return MA_NOACTIVATE;
+      return OverlayNoActivateReply(message);
     case WM_ERASEBKGND: {
       RECT rc;
       GetClientRect(hwnd, &rc);

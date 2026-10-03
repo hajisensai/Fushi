@@ -78,10 +78,12 @@ class _FakeLineRecognizer extends PpOcrLineRecognizer {
   final List<img.Image> lines = <img.Image>[];
   String reply = 'P';
 
+  // 生产路径调的是 recognizeLineScored（recognizeLine 转调它），假件重写这一个。
   @override
-  Future<String> recognizeLine(img.Image line) async {
+  Future<({String text, double? confidence})> recognizeLineScored(
+      img.Image line) async {
     lines.add(line);
-    return reply;
+    return (text: reply, confidence: null);
   }
 }
 
@@ -124,9 +126,10 @@ class _NestedLineRecognizer extends PpOcrLineRecognizer {
   final List<int> heights = <int>[];
 
   @override
-  Future<String> recognizeLine(img.Image crop) async {
+  Future<({String text, double? confidence})> recognizeLineScored(
+      img.Image crop) async {
     heights.add(crop.height);
-    return crop.height == 10 ? 'BODY' : 'TITLE';
+    return (text: crop.height == 10 ? 'BODY' : 'TITLE', confidence: null);
   }
 }
 

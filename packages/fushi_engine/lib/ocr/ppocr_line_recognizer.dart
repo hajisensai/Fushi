@@ -115,9 +115,22 @@ String ctcGreedyDecode(
   int frames,
   int vocabSize,
   List<String> vocab,
+) => ctcGreedyDecodeScored(logits, frames, vocabSize, vocab).text;
+
+/// CTC 贪心解码，顺带给出各吐字帧 softmax 概率的最小值。
+///
+/// 只对**吐字的帧**额外扫一遍词表求分母（每行十来帧），不像
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 那样逐帧扫——热路径成本几乎不变。
+/// 一个字都没吐出时置信度为 null。文字与 [ctcGreedyDecode] 逐字相同。
+({String text, double? confidence}) ctcGreedyDecodeScored(
+  Float32List logits,
+  int frames,
+  int vocabSize,
+  List<String> vocab,
 ) {
   assert(logits.length == frames * vocabSize);
   final StringBuffer out = StringBuffer();
+  double? minConfidence;
   int previous = -1;
   for (int t = 0; t < frames; t++) {
     final int base = t * vocabSize;
@@ -132,10 +145,19 @@ String ctcGreedyDecode(
     }
     if (best != previous && best != 0) {
       out.write(vocab[best]);
+      final double confidence = _ppOcrFrameConfidence(
+        logits,
+        base,
+        vocabSize,
+        best,
+      );
+      if (minConfidence == null || confidence < minConfidence) {
+        minConfidence = confidence;
+      }
     }
     previous = best;
   }
-  return out.toString();
+  return (text: out.toString(), confidence: minConfidence);
 }
 
 /// One non-blank CTC run from a PP-OCR recognition output.
@@ -413,13 +435,20 @@ class PpOcrLineRecognizer {
 
   /// 识别一张已裁好的横排行图。
   ///
-  /// 漫画 OCR（`routing_ocr_recognizer`）的热路径：只做单遍 argmax 的
-  /// [ctcGreedyDecode]。**不要**改成转调 [recognizeLineDetailed]——详细路径每帧
+  /// 漫画 OCR（`routing_ocr_recognizer`）的热路径：单遍 argmax 的
+  /// [ctcGreedyDecodeScored]（只在吐字帧上多算一个分母）。**不要**改成转调 [recognizeLineDetailed]——详细路径每帧
   /// 要扫整个词表求置信度、对整个输出张量做有限值检查，逐行解码成本约涨数倍，且
   /// 遇到非有限值会抛错（这里照常解码）。解出的文字两条路径一致。
-  Future<String> recognizeLine(img.Image line) async {
+  Future<String> recognizeLine(img.Image line) async =>
+      (await recognizeLineScored(line)).text;
+
+  /// [recognizeLine] 加置信度（见 [ctcGreedyDecodeScored]）：同一次推理、同一段
+  /// 文字，只在吐字帧上多算一个 softmax 分母。
+  Future<({String text, double? confidence})> recognizeLineScored(
+    img.Image line,
+  ) async {
     if (line.width <= 0 || line.height <= 0) {
-      return '';
+      return (text: '', confidence: null);
     }
     final ({Float32List data, int width}) input = ppRecPreprocess(line);
     final Map<String, OcrTensor> outputs = await _session.run(
@@ -445,7 +474,7 @@ class PpOcrLineRecognizer {
         'PP-OCR rec vocab mismatch: model $vocabSize vs dict ${vocab.length}',
       );
     }
-    return ctcGreedyDecode(logits.floatData!, frames, vocabSize, vocab);
+    return ctcGreedyDecodeScored(logits.floatData!, frames, vocabSize, vocab);
   }
 
   /// 识别一张已裁好的横排行图，并保留 CTC 非 blank token 的位置和置信度。

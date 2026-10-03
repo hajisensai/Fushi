@@ -37,7 +37,7 @@ const int kMangaOcrKvLayerSlots = 4;
 const int kMangaOcrKvHeads = 12;
 const int kMangaOcrKvHeadDim = 64;
 
-class MangaOcrKvRecognizer implements OcrRecognizer {
+class MangaOcrKvRecognizer implements ScoredOcrRecognizer {
   MangaOcrKvRecognizer({
     required OcrSession encoderSession,
     required OcrSession crossSession,
@@ -87,7 +87,11 @@ class MangaOcrKvRecognizer implements OcrRecognizer {
       );
 
   @override
-  Future<String> recognize(img.Image page, OcrRect box) async {
+  Future<String> recognize(img.Image page, OcrRect box) async =>
+      (await recognizeScored(page, box)).text;
+
+  @override
+  Future<ScoredOcrText> recognizeScored(img.Image page, OcrRect box) async {
     final Float32List pixels = mangaOcrNormalize(
       cropAndResizeForRecognition(page, box),
     );
@@ -183,7 +187,10 @@ class MangaOcrKvRecognizer implements OcrRecognizer {
               return List<Float32List>.filled(sequences.length, rows.first);
             },
       );
-      return tokenizer.decode(result.tokens);
+      return (
+        text: tokenizer.decode(result.tokens),
+        confidence: beamSearchMeanTokenProbability(result, lengthPenalty),
+      );
     } finally {
       await past?.dispose();
       await cross.dispose();

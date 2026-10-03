@@ -1,0 +1,9 @@
+## BUG-2906 · 系统 OCR 模型未就绪时只弹提示、没有配置入口
+- **报告**：2026-10-03（用户：截屏 / 拍照识字时提示「系统 OCR 模型尚未就绪」，此时应该让我去配置）
+- **真实性**：✅ 真 bug（体验缺口）。Android 系统 OCR 用 unbundled ML Kit，模型由 Google Play 服务保管，只靠 manifest 的 `com.google.mlkit.vision.DEPENDENCIES` 在安装时**顺手**下载——没联网、Play 服务排队、侧载安装都会落空，而 app 里没有任何地方能主动请它下载。模型缺失时：
+  - 悬浮球截屏识字（原生 `ScreenOcrService.java` 的 `recognize` 失败回调）只 `toast(ocr_model_unavailable)` 后结束流程；
+  - 拍照识字（`app_floating_ball_host.dart` `_recognizeAndPick` 的 `on SystemOcrUnavailableException`）只 `_toast(t.floating_ball_ocr_model_unavailable)`。
+  用户拿到一句「没就绪」却不知道模型归谁管、去哪配，只能干等。另外 `SystemOcrChannel.java` 的 `isAvailable` 注释仍写着「模型随 APK 打包」，是改用 unbundled 之前的陈旧事实。
+- **[x] ① 已修复** — 原生 `SystemOcrChannel` 新增 `modelStatus`（Play 服务在位判定 + `ModuleInstallClient.areModulesAvailable`，只查询不下载）、`installModel`（`ModuleInstallClient.installModules`，等终态才回答）、`resolvePlayServices`（`GoogleApiAvailability.makeGooglePlayServicesAvailable`）；Dart `SystemOcrModelSetup` 接口 + `SystemOcrModelStatus`（非 Android 平台没实现 = 恒就绪）。新弹窗 `lib/src/ocr/system_ocr_setup_dialog.dart`：打开即查状态 → 缺模型给「下载」、Play 服务可修给「修复 Google Play 服务」、修不了如实说明、失败可重试。两条入口都改为弹它：截屏识字由原生 `FloatingBallChannel.requestSystemOcrSetup()` + 拉起 Fushi（主引擎不在则排队，冷启动的 Dart 经 `takePendingSystemOcrSetup` 取走），拍照识字直接置 `pendingSystemOcrSetup`。只有原因为 `kSystemOcrModelUnavailableReason` 的才弹配置，其它「不可用」照旧报识别失败。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/system_ocr_setup_test.dart`（通道线上值映射 / 非 Android 恒就绪 / 未知值不当就绪 / `MODEL_UNAVAILABLE` 原因；弹窗：下载→就绪、失败→重试、Play 服务修复→重查、无 Play 服务不给下载）；`fushi/test/floating_ball/app_floating_ball_host_test.dart`「BUG-2906」用例（原生 `openSystemOcrSetup` 消息 → 宿主弹出配置）。
+- **备注**：未在真机上复现「模型缺失」状态（需要清掉 Play 服务里的 ML Kit 模块）；ModuleInstall 路径按 play-services-base 18.5.0 API 编写（已核对 TextRecognizer 实现 OptionalModuleApi），`:app:compileDebugJavaWithJavac` 编译通过。漫画阅读器选「系统 OCR」引擎时模型缺失仍走漫画侧原有的失败提示，本轮未接这个弹窗。

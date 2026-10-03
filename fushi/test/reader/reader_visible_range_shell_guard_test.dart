@@ -192,7 +192,10 @@ void main() {
       );
     });
 
-    test('getLastVisibleCharOffset 传视口末边一次 walk', () {
+    // BUG-2903：两者改走章内文本索引 + 二分（_charsBeforeEdge），边语义原样透传给
+    // countCharsBeforeViewport；数值与旧全章累加逐点一致由
+    // continuous_progress_text_index_test.dart 在真 Chrome 里断言。
+    test('getLastVisibleCharOffset 传视口末边', () {
       final String body = maskJsComments(
         methodBody(
           continuous,
@@ -201,22 +204,34 @@ void main() {
         ),
       );
       expect(
-        body.contains('var edge = vertical ? 0 : window.innerHeight;'),
+        body.contains(
+          'return this._charsBeforeEdge(vertical, vertical ? 0 : window.innerHeight);',
+        ),
         isTrue,
         reason: '末边：横排 window.innerHeight / 竖排 0',
       );
       expect(
-        body.contains('this.countCharsBeforeViewport(node, vertical, edge)'),
-        isTrue,
-      );
-      expect(
-        body.contains('return this.isAtEnd() ? totalChars : exploredChars;'),
+        body.contains('if (this.isAtEnd()) return total;'),
         isTrue,
         reason: '物理到底时 end = 章总字数',
       );
     });
 
-    test('连续 calculateProgress 仍按缺省首边调用（两参）', () {
+    test('边原样透传给 countCharsBeforeViewport', () {
+      final String body = maskJsComments(
+        methodBody(
+          continuous,
+          '_charsBeforeEdge: function(vertical, edge)',
+          lexicon: SourceLexicon.js,
+        ),
+      );
+      expect(
+        body.contains('this.countCharsBeforeViewport(nodes[k], vertical, edge)'),
+        isTrue,
+      );
+    });
+
+    test('连续 calculateProgress 仍按缺省首边调用（不传边）', () {
       final String body = maskJsComments(
         methodBody(
           continuous,
@@ -225,7 +240,7 @@ void main() {
         ),
       );
       expect(
-        body.contains('this.countCharsBeforeViewport(node, vertical)'),
+        body.contains('this._charsBeforeEdge(this.isVertical())'),
         isTrue,
         reason: '进度分子行为不变：不得把末边串进 calculateProgress',
       );
