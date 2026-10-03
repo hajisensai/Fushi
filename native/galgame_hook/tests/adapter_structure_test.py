@@ -2058,6 +2058,7 @@ class AdapterStructureTest(unittest.TestCase):
                      "int __fastcall Cs2RenderTargetDetour(",
                      "LRESULT __stdcall Cs2InputExtraDetour(",
                      "bool Cs2ClaimSwallows(",
+                     "Cs2PressGate Cs2PressGateFor(",
                      "void RecordCs2Render(",
                      "int __fastcall Cs2UpdateDetour(",
                      "LRESULT __stdcall Cs2InputDetour(",
@@ -2067,8 +2068,17 @@ class AdapterStructureTest(unittest.TestCase):
                               "malloc(", "std::wstring", "PublishHit("):
                 self.assertNotIn(forbidden, body, name)
         # The claim never skips the host's native-input admission.
-        eligible = self._function_body(runtime, "bool Cs2PressEligible(")
+        eligible = self._function_body(runtime,
+                                       "Cs2PressGate Cs2PressGateFor(")
+        self.assertIn("Cs2PressGateFor(",
+                      self._function_body(runtime, "bool Cs2PressEligible("))
         self.assertIn("NativeInputAllowed(", eligible)
+        # Press lparam is in the window's own DPI space (2016 builds are
+        # DPI-aware): the model measures "logical" under that context, never
+        # under an assumed-unaware one.
+        build = self._function_body(runtime, "bool BuildCs2Model(")
+        self.assertIn("GetWindowDpiAwarenessContext(game)", build)
+        self.assertNotIn("DPI_AWARENESS_CONTEXT_UNAWARE", build)
         self.assertIn("Cs2ShieldActive(", eligible)
         self.assertIn("GetForegroundWindow()", eligible)
 

@@ -722,8 +722,9 @@ void TestTracker() {
   // 2 (x 345 is outside; 344 is inside the cell of glyph 1) → 2 hidden.
   assert(count == kLineCount - 2u);
 
-  // A cover across the full height of glyph 2's left half keeps the glyph in
-  // the text (it is still drawn) but only its right half is clickable.
+  // A cover box over part of glyph 2 keeps the glyph in the text and its
+  // whole cell clickable: a box only bounds the cover's opaque pixels (the
+  // 2016 message window's menu bar box overlaps the lower text row).
   nodes = DialogueScene();
   nodes.push_back(Node(91, true, 346, 580, 12, 50));  // box {345,579,358,630}
   tracker.SetPlacement(kRenderer,
@@ -732,17 +733,18 @@ void TestTracker() {
   count = core::CollectVisibleGlyphs(*slot, lines, core::kMaxSurfaceGlyphs);
   assert(count == kLineCount);
   assert(lines[2].x == 345 && lines[2].w == 26);
-  assert(lines[2].hit.x0 == 358 && lines[2].hit.x1 == 371 &&
+  assert(lines[2].hit.x0 == 345 && lines[2].hit.x1 == 371 &&
          lines[2].hit.y0 == 591 && lines[2].hit.y1 == 617);
   assert(lines[1].hit.x1 == 345 && lines[3].hit.x0 == 371);
-  // A corner overlap leaves no surely visible rectangle: unclickable.
+  // A corner overlap: still visible, still fully clickable.
   nodes = DialogueScene();
   nodes.push_back(Node(92, true, 350, 600, 40, 40));  // box {349,599,390,640}
   tracker.SetPlacement(kRenderer,
                        core::ResolvePlacement(nodes.data(), nodes.size(),
                                               kTextLayer, kPageW, kPageH));
   count = core::CollectVisibleGlyphs(*slot, lines, core::kMaxSurfaceGlyphs);
-  assert(count == kLineCount && lines[2].hit.Empty() && lines[3].hit.Empty());
+  assert(count == kLineCount && lines[2].hit.x0 == 345 &&
+         lines[2].hit.y1 == 617 && lines[3].hit.x1 == 397);
   assert(!lines[1].hit.Empty() && !lines[4].hit.Empty());
 
   // Hidden window: nothing.
@@ -887,23 +889,46 @@ void TestSuffixAndHit() {
   assert(!core::HitTestLine(lines, count, 293 + 20, 583 + 38 + 5, &hit));
 }
 
-void TestExcludeCover() {
-  const core::IntRect cell = {100, 200, 126, 226};
-  auto same = [](const core::IntRect& a, const core::IntRect& b) {
-    return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1;
+// Text fade draws into the renderer's second page and swaps the two: both
+// pages are the text page (probe: every fade-mode draw went to +0x40).
+void TestRendererPage() {
+  assert(core::kRendererWorkImageOffset == 0x40u);
+  assert(core::IsRendererPage(0x1000u, 0x1000u, 0x2000u));
+  assert(core::IsRendererPage(0x2000u, 0x1000u, 0x2000u));
+  assert(!core::IsRendererPage(0x3000u, 0x1000u, 0x2000u));
+  assert(!core::IsRendererPage(0u, 0u, 0x2000u));
+}
+
+// A spoken line arrives as `「body」【speaker】`; the speaker is on the name
+// layer, so the text page is matched against the body.
+void TestSpeakerTag() {
+  auto start = [](const wchar_t* text) {
+    return core::SpeakerTagStart(text, wcslen(text));
   };
-  assert(same(core::ExcludeCover(cell, {0, 0, 50, 50}), cell));    // apart
-  assert(core::ExcludeCover(cell, {90, 190, 140, 240}).Empty());   // inside
-  assert(same(core::ExcludeCover(cell, {90, 190, 110, 240}),
-              {110, 200, 126, 226}));                               // left
-  assert(same(core::ExcludeCover(cell, {120, 190, 140, 240}),
-              {100, 200, 120, 226}));                               // right
-  assert(same(core::ExcludeCover(cell, {90, 190, 140, 210}),
-              {100, 210, 126, 226}));                               // top
-  assert(same(core::ExcludeCover(cell, {90, 220, 140, 240}),
-              {100, 200, 126, 220}));                               // bottom
-  assert(core::ExcludeCover(cell, {120, 220, 140, 240}).Empty());  // corner
-  assert(core::ExcludeCover(cell, {105, 190, 115, 240}).Empty());  // middle
+  const wchar_t* spoken = L"「許して」【少女】";
+  assert(start(spoken) == 5u);
+  assert(start(L"「あ」【太】  ") == 3u);           // one-char name, spaces
+  assert(start(L"「うん」 【太一】") == 5u);        // space before the tag
+  assert(start(L"考え事だろうか。") == 8u);         // narration: none
+  assert(start(L"【少女】") == 4u);                 // no body
+  assert(start(L"「あ」【】") == 5u);               // empty name
+  assert(start(L"「あ」】") == 4u);                 // no opener
+  assert(start(L"「あ」【太】】") == 7u);           // nested closer
+  assert(core::SpeakerTagStart(nullptr, 0u) == 0u);
+
+  // The page holds only the body: the body maps, the full line does not.
+  core::LineGlyph glyphs[5] = {};
+  const wchar_t page[] = L"「許して」";
+  for (size_t index = 0u; index < 5u; ++index) {
+    glyphs[index].codepoint = page[index];
+  }
+  assert(core::MapSelectedSuffix(glyphs, 5u, spoken, wcslen(spoken)) == 5u);
+  assert(core::MapSelectedSuffix(glyphs, 5u, spoken, start(spoken)) == 0u);
+  assert(glyphs[4].source_index == 4u);
+}
+
+void TestContains() {
+  const core::IntRect cell = {100, 200, 126, 226};
   assert(core::Contains({90, 190, 140, 240}, cell));
   assert(!core::Contains({101, 190, 140, 240}, cell));
 }
@@ -950,7 +975,9 @@ int main() {
   TestResolveSitesEachProofFailsClosed();
   TestResolveTargetedRenderSites();
   TestTargetedRenderEachProofFailsClosed();
-  TestExcludeCover();
+  TestContains();
+  TestSpeakerTag();
+  TestRendererPage();
   TestGlyphCodes();
   TestPlacement();
   TestTracker();

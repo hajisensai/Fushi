@@ -92,6 +92,10 @@ constexpr std::array<uint8_t, Size> WildcardMask(
 // ── engine layout ──────────────────────────────────────────────────────────
 
 inline constexpr size_t kRendererImageOffset = 0x04u;
+// Targeted-render layout: the renderer's second page image.  With text fade
+// on, the engine copies the page into it, draws the new characters there and
+// then swaps the two pointers, so both are the same on-screen text page.
+inline constexpr size_t kRendererWorkImageOffset = 0x40u;
 inline constexpr size_t kRendererPageWidthOffset = 0x14u;
 inline constexpr size_t kRendererPageHeightOffset = 0x18u;
 
@@ -1084,6 +1088,13 @@ struct IntRect {
   }
 };
 
+// Targeted-render RenderChar draws into one of the renderer's two page
+// images; any other target is not this renderer's text page.
+inline bool IsRendererPage(uintptr_t target, uintptr_t page,
+                           uintptr_t work_page) {
+  return target != 0u && (target == page || target == work_page);
+}
+
 inline IntRect Intersect(const IntRect& a, const IntRect& b) {
   return {(std::max)(a.x0, b.x0), (std::max)(a.y0, b.y0),
           (std::min)(a.x1, b.x1), (std::min)(a.y1, b.y1)};
@@ -1092,29 +1103,6 @@ inline IntRect Intersect(const IntRect& a, const IntRect& b) {
 inline bool Contains(const IntRect& outer, const IntRect& inner) {
   return !inner.Empty() && outer.x0 <= inner.x0 && outer.y0 <= inner.y0 &&
          inner.x1 <= outer.x1 && inner.y1 <= outer.y1;
-}
-
-// The part of `cell` left uncovered by `cover`, as one rectangle.  A cover
-// across a full edge of the cell trims that side; any other overlap (a
-// corner, a hole in the middle) leaves no rectangle that is surely visible,
-// so the result is empty.
-inline IntRect ExcludeCover(const IntRect& cell, const IntRect& cover) {
-  if (!cell.Intersects(cover)) return cell;
-  IntRect out = cell;
-  const bool rows = cover.y0 <= cell.y0 && cover.y1 >= cell.y1;
-  const bool columns = cover.x0 <= cell.x0 && cover.x1 >= cell.x1;
-  if (rows && cover.x0 <= cell.x0) {
-    out.x0 = cover.x1;
-  } else if (rows && cover.x1 >= cell.x1) {
-    out.x1 = cover.x0;
-  } else if (columns && cover.y0 <= cell.y0) {
-    out.y0 = cover.y1;
-  } else if (columns && cover.y1 >= cell.y1) {
-    out.y1 = cover.y0;
-  } else {
-    return {};
-  }
-  return out.Empty() ? IntRect{} : out;
 }
 
 // ── scene layers ───────────────────────────────────────────────────────────
@@ -1432,9 +1420,11 @@ struct LineGlyph {
 
 // Glyphs of one bound, visibly placed surface in render order, each cell
 // trimmed to the pen advance of its right neighbour on the same row.  A
-// glyph entirely under a cover is left out (that text is not on screen); a
-// partly covered glyph stays in the text but only its surely uncovered part
-// is clickable.
+// glyph entirely under a cover is left out (that text is not on screen).  A
+// partly covered glyph keeps its whole cell clickable: a cover's box is only
+// an upper bound of its opaque pixels (the message window's own menu bar box
+// reaches over the transparent strip above it and the lower text row), while
+// real occluders such as menus and the backlog cover the text completely.
 inline size_t CollectVisibleGlyphs(const SurfaceRecord& slot, LineGlyph* out,
                                    size_t capacity) {
   const Placement& placement = slot.placement;
@@ -1456,10 +1446,8 @@ inline size_t CollectVisibleGlyphs(const SurfaceRecord& slot, LineGlyph* out,
                           placement.x + glyph.x + w,
                           placement.y + glyph.y + glyph.h};
     bool hidden = false;
-    IntRect hit = cell;
     for (uint32_t c = 0u; c < placement.cover_count && !hidden; ++c) {
       hidden = Contains(placement.covers[c], cell);
-      hit = ExcludeCover(hit, placement.covers[c]);
     }
     if (hidden) continue;
     LineGlyph& line = out[count++];
@@ -1468,7 +1456,7 @@ inline size_t CollectVisibleGlyphs(const SurfaceRecord& slot, LineGlyph* out,
     line.y = cell.y0;
     line.w = w;
     line.h = glyph.h;
-    line.hit = hit;
+    line.hit = cell;
     line.source_index = kNoSource;
     line.source_length = 0u;
   }
@@ -1521,6 +1509,28 @@ inline size_t MapSelectedSuffix(LineGlyph* glyphs, size_t count,
   }
   if (!any) return fail();
   return glyph;
+}
+
+// The 2016 engine's text thread reports a spoken line as `「body」【speaker】`;
+// the speaker is drawn on the separate name layer, never on the text page.
+// Returns the index where that trailing speaker tag starts (trailing
+// whitespace allowed), or `count` when the line has none: a non-empty name
+// without brackets, after a non-empty body.
+inline size_t SpeakerTagStart(const wchar_t* line, size_t count) {
+  if (line == nullptr) return count;
+  size_t end = count;
+  while (end > 0u && IsLookupLineWhitespace(line[end - 1u])) --end;
+  if (end < 3u || line[end - 1u] != L'】') return count;
+  // The name is [open, end - 1); the tag starts at open - 1.
+  size_t open = end - 1u;
+  while (open > 0u && line[open - 1u] != L'【') {
+    if (line[open - 1u] == L'】') return count;
+    --open;
+  }
+  if (open == 0u || open >= end - 1u) return count;
+  size_t body = open - 1u;
+  while (body > 0u && IsLookupLineWhitespace(line[body - 1u])) --body;
+  return body == 0u ? count : open - 1u;
 }
 
 // ── projection and hit testing ─────────────────────────────────────────────

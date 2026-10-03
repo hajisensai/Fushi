@@ -140,6 +140,15 @@ struct Cs2LookupRuntime {
   std::array<Cs2Submit, kCs2SubmitSlots> submits = {};
   std::atomic<uint64_t> submit_count{0u};
   std::atomic<uint64_t> claimed_presses{0u};
+  // Presses that reached Handle and the gate that decided the last one
+  // (Cs2PressGate); the worker logs them, the message thread only stores.
+  std::atomic<uint32_t> presses_seen{0u};
+  std::atomic<uint32_t> last_press_gate{0u};
+  // Design point of the last press that reached the hit test and how many
+  // clickable rectangles contained it (HitTestLine wants exactly one).
+  std::atomic<int32_t> last_press_x{-1};
+  std::atomic<int32_t> last_press_y{-1};
+  std::atomic<uint32_t> last_press_candidates{0u};
   std::atomic<uint32_t> render_hits{0u};
   std::atomic<uint32_t> update_hits{0u};
   std::atomic<uint32_t> placement_failures{0u};
@@ -291,16 +300,17 @@ int __fastcall Cs2RenderDetour(uintptr_t renderer, uintptr_t,
   return result;
 }
 
-// Targeted-render layout: only glyphs drawn into the normal page image
-// (renderer+4, the one SyncLayer copies into the scene layer) are on screen
-// through that layer; the fade page is a transition buffer.
+// Targeted-render layout: the target is one of the renderer's two page
+// images (text fade draws into the second one and swaps them afterwards);
+// both carry the same on-screen page, anything else is not text.
 int __fastcall Cs2RenderTargetDetour(uintptr_t renderer, uintptr_t,
                                      uintptr_t record, uintptr_t target) {
   const int result = g_cs2_render_target_original(renderer, record, target);
-  uintptr_t page = 0u;
-  if (target != 0u &&
-      ReadCs2Value(renderer + cs2_lookup::kRendererImageOffset, &page) &&
-      page == target) {
+  uintptr_t page = 0u, work_page = 0u;
+  if (ReadCs2Value(renderer + cs2_lookup::kRendererImageOffset, &page) &&
+      ReadCs2Value(renderer + cs2_lookup::kRendererWorkImageOffset,
+                   &work_page) &&
+      cs2_lookup::IsRendererPage(target, page, work_page)) {
     RecordCs2Render(renderer, record);
   }
   return result;
@@ -498,59 +508,104 @@ bool Cs2ShieldActive(HWND game) {
 // model, in the foreground game window, with the host's native-input
 // admission applied, no card shielding the game, and nothing on screen
 // changed since the model was built.
-bool Cs2PressEligible(HWND hwnd, WPARAM wparam, LPARAM lparam,
-                      Cs2Submit* submit) {
+// Which gate decided a press (diagnostics only; order = check order).
+enum class Cs2PressGate : uint32_t {
+  kEligible = 0u,
+  kLookupOff,
+  kNoModel,
+  kOtherWindow,
+  kFrameStale,
+  kVersionStale,
+  kInputNotAllowed,
+  kShield,
+  kNotForeground,
+  kModifier,
+  kClientSize,
+  kOutsideDesign,
+  kMiss,
+};
+
+Cs2PressGate Cs2PressGateFor(HWND hwnd, WPARAM wparam, LPARAM lparam,
+                             Cs2Submit* submit) {
   auto& rt = g_cs2_lookup;
   if (!rt.live.load(std::memory_order_acquire) || g_header == nullptr ||
       g_stop || !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
-    return false;
+    return Cs2PressGate::kLookupOff;
   }
   Cs2Model& model = rt.input_model;
   if (!ReadCs2Model(&model) || model.generation == 0u || model.count == 0u) {
-    return false;
+    return Cs2PressGate::kNoModel;
+  }
+  if (reinterpret_cast<uintptr_t>(hwnd) != model.window) {
+    return Cs2PressGate::kOtherWindow;
   }
   const uint64_t now = GetTickCount64();
   const uint64_t frame = rt.last_frame_tick.load(std::memory_order_acquire);
-  if (reinterpret_cast<uintptr_t>(hwnd) != model.window || frame == 0u ||
-      now < frame || now - frame > kCs2FrameStaleMs ||
-      rt.latest_version.load(std::memory_order_acquire) !=
-          model.snapshot_version ||
-      !fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
-          g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
-          fushi_voice_hook::kLookupGeometryProviderIdCatSystem2) ||
-      Cs2ShieldActive(hwnd) || GetForegroundWindow() != hwnd ||
-      (wparam & (MK_SHIFT | MK_CONTROL | MK_RBUTTON | MK_MBUTTON)) != 0u ||
-      (GetKeyState(VK_MENU) & 0x8000) != 0) {
-    return false;
+  if (frame == 0u || now < frame || now - frame > kCs2FrameStaleMs) {
+    return Cs2PressGate::kFrameStale;
   }
-  // The process is DPI-unaware: lparam and GetClientRect are the engine's
-  // logical client pixels.
+  if (rt.latest_version.load(std::memory_order_acquire) !=
+      model.snapshot_version) {
+    return Cs2PressGate::kVersionStale;
+  }
+  if (!fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
+          g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdCatSystem2)) {
+    return Cs2PressGate::kInputNotAllowed;
+  }
+  if (Cs2ShieldActive(hwnd)) return Cs2PressGate::kShield;
+  if (GetForegroundWindow() != hwnd) return Cs2PressGate::kNotForeground;
+  if ((wparam & (MK_SHIFT | MK_CONTROL | MK_RBUTTON | MK_MBUTTON)) != 0u ||
+      (GetKeyState(VK_MENU) & 0x8000) != 0) {
+    return Cs2PressGate::kModifier;
+  }
+  // On the window's own thread lparam and GetClientRect are the logical
+  // client pixels the model measured under the window's DPI awareness.
   RECT client = {};
   if (!GetClientRect(hwnd, &client) ||
       client.right - client.left != model.logical_w ||
       client.bottom - client.top != model.logical_h) {
-    return false;
+    return Cs2PressGate::kClientSize;
   }
   int32_t x = 0, y = 0;
   if (!cs2_lookup::ClientToDesign(
           static_cast<int16_t>(LOWORD(lparam)),
           static_cast<int16_t>(HIWORD(lparam)), model.logical_w,
           model.logical_h, model.design_w, model.design_h, &x, &y)) {
-    return false;
+    return Cs2PressGate::kOutsideDesign;
   }
   auto& lines = rt.input_lines;
+  uint32_t candidates = 0u;
   for (uint32_t index = 0u; index < model.count; ++index) {
     lines[index] = model.glyphs[index].line;
+    const cs2_lookup::IntRect& r = lines[index].hit;
+    if (!r.Empty() && x >= r.x0 && y >= r.y0 && x < r.x1 && y < r.y1) {
+      ++candidates;
+    }
   }
+  rt.last_press_x.store(x, std::memory_order_relaxed);
+  rt.last_press_y.store(y, std::memory_order_relaxed);
+  rt.last_press_candidates.store(candidates, std::memory_order_relaxed);
   size_t hit = 0u;
   if (!cs2_lookup::HitTestLine(lines.data(), model.count, x, y, &hit)) {
-    return false;
+    return Cs2PressGate::kMiss;
   }
   submit->generation = model.generation;
   submit->glyph = static_cast<uint32_t>(hit);
-  return true;
+  return Cs2PressGate::kEligible;
 }
+
+bool Cs2PressEligible(HWND hwnd, WPARAM wparam, LPARAM lparam,
+                      Cs2Submit* submit) {
+  auto& rt = g_cs2_lookup;
+  const Cs2PressGate gate = Cs2PressGateFor(hwnd, wparam, lparam, submit);
+  rt.last_press_gate.store(static_cast<uint32_t>(gate),
+                           std::memory_order_relaxed);
+  rt.presses_seen.fetch_add(1u, std::memory_order_release);
+  return gate == Cs2PressGate::kEligible;
+}
+
 
 // Message-thread claim shared by both Handle shapes: true = swallow.
 bool Cs2ClaimSwallows(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -821,11 +876,17 @@ bool BuildCs2Model(const Cs2Snapshot& snapshot, const std::wstring& line,
       IsIconic(game)) {
     return FailCs2Model(1u);
   }
+  // "Logical" is what the window's own thread sees (lparam and GetClientRect
+  // in Handle): measured under the window's DPI awareness.  Older builds are
+  // DPI-unaware, later ones declare awareness themselves.
   RECT logical = {};
   RECT physical = {};
   {
-    Cs2DpiScope unaware(DPI_AWARENESS_CONTEXT_UNAWARE);
-    if (unaware.previous == nullptr || !GetClientRect(game, &logical)) {
+    const DPI_AWARENESS_CONTEXT window_context =
+        GetWindowDpiAwarenessContext(game);
+    if (window_context == nullptr) return FailCs2Model(2u);
+    Cs2DpiScope own(window_context);
+    if (own.previous == nullptr || !GetClientRect(game, &logical)) {
       return FailCs2Model(2u);
     }
   }
@@ -849,34 +910,43 @@ bool BuildCs2Model(const Cs2Snapshot& snapshot, const std::wstring& line,
                         logical_h);
   }
 
-  // Exactly one surface's visible glyphs must end with the line.
+  // Exactly one surface's visible glyphs must end with the line; a spoken
+  // line's trailing speaker tag is on the name layer, so the text page ends
+  // with its body (a prefix of the line: source indices stay valid).
   const Cs2SnapshotSurface* matched = nullptr;
   size_t matched_first = 0u;
-  for (uint32_t index = 0u; index < snapshot.surface_count; ++index) {
-    const Cs2SnapshotSurface& surface = snapshot.surfaces[index];
-    if (surface.count == 0u || surface.first > snapshot.glyph_count ||
-        surface.count > snapshot.glyph_count - surface.first ||
-        surface.count > rt.match_scratch.size()) {
-      continue;
+  size_t matched_units = line.size();
+  const size_t body = cs2_lookup::SpeakerTagStart(line.data(), line.size());
+  for (const size_t units : {line.size(), body}) {
+    if (matched != nullptr || (units == body && body == line.size())) break;
+    for (uint32_t index = 0u; index < snapshot.surface_count; ++index) {
+      const Cs2SnapshotSurface& surface = snapshot.surfaces[index];
+      if (surface.count == 0u || surface.first > snapshot.glyph_count ||
+          surface.count > snapshot.glyph_count - surface.first ||
+          surface.count > rt.match_scratch.size()) {
+        continue;
+      }
+      std::copy_n(snapshot.glyphs.data() + surface.first, surface.count,
+                  rt.match_scratch.data());
+      const size_t first = cs2_lookup::MapSelectedSuffix(
+          rt.match_scratch.data(), surface.count, line.data(), units);
+      if (first >= surface.count) continue;
+      if (matched != nullptr) return FailCs2Model(5u);  // ambiguous
+      matched = &surface;
+      matched_first = first;
+      matched_units = units;
     }
-    std::copy_n(snapshot.glyphs.data() + surface.first, surface.count,
-                rt.match_scratch.data());
-    const size_t first = cs2_lookup::MapSelectedSuffix(
-        rt.match_scratch.data(), surface.count, line.data(), line.size());
-    if (first >= surface.count) continue;
-    if (matched != nullptr) return FailCs2Model(5u);  // ambiguous
-    matched = &surface;
-    matched_first = first;
   }
   if (matched == nullptr) {
     return FailCs2Model(4u, static_cast<int32_t>(snapshot.surface_count),
                         static_cast<int32_t>(snapshot.glyph_count),
-                        static_cast<int32_t>(line.size()));
+                        static_cast<int32_t>(line.size()),
+                        static_cast<int32_t>(body));
   }
   std::copy_n(snapshot.glyphs.data() + matched->first, matched->count,
               rt.match_scratch.data());
   cs2_lookup::MapSelectedSuffix(rt.match_scratch.data(), matched->count,
-                                line.data(), line.size());
+                                line.data(), matched_units);
 
   model->snapshot_version = snapshot.version;
   model->window = snapshot.window;
@@ -1009,6 +1079,31 @@ bool ReadLatestCs2Submit(Cs2Submit* out) {
   return slot_seq.load(std::memory_order_acquire) == sequence;
 }
 
+// Worker: one line per new press so a press without a card names its gate.
+void NoteCs2Presses() {
+  static uint32_t logged = 0u;
+  static uint32_t budget = 64u;
+  auto& rt = g_cs2_lookup;
+  const uint32_t seen = rt.presses_seen.load(std::memory_order_acquire);
+  if (seen == logged || budget == 0u) return;
+  logged = seen;
+  --budget;
+  static const wchar_t* const kGates[] = {
+      L"eligible", L"lookup-off", L"no-model", L"other-window",
+      L"frame-stale", L"version-stale", L"input-not-allowed", L"shield",
+      L"not-foreground", L"modifier", L"client-size", L"outside-design",
+      L"miss"};
+  const uint32_t gate = rt.last_press_gate.load(std::memory_order_relaxed);
+  Cs2LookupLog(
+      L"catsystem2-lookup: press seen=%u gate=%s claimed=%llu design=%d,%d "
+      L"candidates=%u",
+      seen, gate < 13u ? kGates[gate] : L"?",
+      static_cast<unsigned long long>(rt.claimed_presses.load()),
+      rt.last_press_x.load(std::memory_order_relaxed),
+      rt.last_press_y.load(std::memory_order_relaxed),
+      rt.last_press_candidates.load(std::memory_order_relaxed));
+}
+
 // Why the last tick retired (0 = offered).  Logged once per change so a
 // silent provider always says which gate it is waiting on.
 void NoteCs2Retire(uint32_t reason) {
@@ -1043,6 +1138,7 @@ void NoteCs2Retire(uint32_t reason) {
 void ProcessCatSystem2LookupTick() {
   auto& rt = g_cs2_lookup;
   if (!rt.installed) return;
+  NoteCs2Presses();
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
@@ -1096,13 +1192,20 @@ void ProcessCatSystem2LookupTick() {
       ++rt.logged_models;
       const auto& first = rt.model.glyphs[0];
       const auto& last = rt.model.glyphs[rt.model.count - 1u];
+      uint32_t clickable = 0u;
+      for (uint32_t index = 0u; index < rt.model.count; ++index) {
+        if (!rt.model.glyphs[index].line.hit.Empty()) ++clickable;
+      }
+      const auto& hit = first.line.hit;
       Cs2LookupLog(
           L"catsystem2-lookup: model gen=%llu event=%llu units=%u glyphs=%u "
+          L"clickable=%u first_hit=%d,%d-%d,%d "
           L"skipped=%u first=%d,%d %dx%d (design %d,%d) last=%d,%d %dx%d "
           L"view=%dx%d client=%dx%d design=%dx%d",
           static_cast<unsigned long long>(rt.model.generation),
           static_cast<unsigned long long>(event),
-          static_cast<unsigned>(line.size()), rt.model.count, first_glyph,
+          static_cast<unsigned>(line.size()), rt.model.count, clickable,
+          hit.x0, hit.y0, hit.x1, hit.y1, first_glyph,
           first.rect.x, first.rect.y, first.rect.w, first.rect.h, first.line.x,
           first.line.y, last.rect.x, last.rect.y, last.rect.w, last.rect.h,
           rt.model.physical_w, rt.model.physical_h, rt.model.logical_w,
