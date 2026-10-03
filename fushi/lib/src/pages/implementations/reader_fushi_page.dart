@@ -4338,13 +4338,15 @@ $liveConfigJs
   /// 各分支，因时机不同：歌词从 fragment 提前设，普通从 data 在其后设）。
   Future<void> _runLookupAndHighlight(
     String searchTerm,
-    Rect selectionRect,
-  ) async {
+    Rect selectionRect, {
+    LookupOrigin origin = LookupOrigin.explicit,
+  }) async {
     prunePopupStack(0);
     final int highlightCount = await searchDictionaryResult(
       searchTerm: searchTerm,
       selectionRect: selectionRect,
       deferDisplay: true,
+      origin: origin,
     );
     await _highlightAndShowPopup(highlightCount, selectionRect);
   }

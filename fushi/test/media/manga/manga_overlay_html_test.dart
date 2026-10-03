@@ -437,7 +437,7 @@ void main() {
       expect(doc.contains('window.fushiSelection'), isTrue);
       // 调 selectText 前必须 null-guard bridge
       expect(doc.contains('window.flutter_inappwebview'), isTrue);
-      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y)'),
+      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'),
           isTrue,
           reason: '字符区域命中后必须带 maxLength=40 进入统一查词管线');
       // 唯一一个 pointerup 监听
@@ -499,7 +499,7 @@ void main() {
           reason: '不同缩放下都必须保留 Niratan 的 4 屏幕像素命中余量');
       expect(doc.contains('area < bestArea'), isTrue,
           reason: '重叠字符区域必须选择面积最小者');
-      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y)'),
+      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'),
           isTrue,
           reason: '必须从精确命中的字符节点发起现有查词管线');
       expect(doc.contains('_selectOcrChar(e.clientX, e.clientY, true)'), isTrue,

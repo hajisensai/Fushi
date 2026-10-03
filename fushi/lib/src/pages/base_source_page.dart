@@ -68,6 +68,20 @@ int lookupHighlightCharCount({
   );
 }
 
+/// 一次查词是怎么发起的。决定这次查词要不要跑「每查一次就付费一次」的旁路工作
+/// （查词按句意自动挑词条），以及这一层弹窗有没有可信的原句。
+enum LookupOrigin {
+  /// 明确的一次点击 / 按键 / 菜单「查词」：查的就是读者此刻那句话里的词。
+  explicit,
+
+  /// 指针扫过（Shift 悬停 / 悬停查词）：扫一行就连查十几个词，不自动挑词条。
+  hover,
+
+  /// 在弹窗释义里点词叠出的子层：查的词来自释义，不在读者的原句里，
+  /// 这一层没有可信的句子（不显示 ✨、不自动挑词条）。
+  nested,
+}
+
 /// A page template which assumes use of [BaseSourcePageState] by which all
 /// pages in the app that are used for when using a certain source will
 /// conveniently share base functionality.f
@@ -136,6 +150,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void dispose() {
     ExternalMediaNavigation.instance.unregister(this);
     _visibleRenderFailsafeTimer?.cancel();
+    _closeAutoAiPickClient();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();
     _isSearchingNotifier.dispose();
@@ -158,6 +173,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Rect? _pendingSelectionRect;
 
   int _searchGeneration = 0;
+
+  /// 推进查词代次（新查词 / 关弹窗）。代次一变，上一次查词的自动挑词条请求就
+  /// 作废——当场 close 掉它的客户端（中止在途请求，不再为过期的词付费）。
+  int _bumpSearchGeneration() {
+    _closeAutoAiPickClient();
+    return ++_searchGeneration;
+  }
 
   /// TODO-716：桌面对齐手机的"滑动关闭弹窗"。弹窗显示时全屏 barrier 盖住正文，
   /// 在 barrier 上水平拖累计位移过阈即关一层（[dismissTopPopup]，与光标 B/Esc 逐层
@@ -373,10 +395,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required Rect selectionRect,
     int? overrideMaximumTerms,
     bool deferDisplay = false,
+    LookupOrigin origin = LookupOrigin.explicit,
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
-    final gen = ++_searchGeneration;
+    final gen = _bumpSearchGeneration();
     _pendingSelectionRect = selectionRect;
     _deferredPopupItem = null;
 
@@ -418,9 +441,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         result: dictionaryResult,
         allLoaded: !dictionaryResult.truncated,
       );
+      // 这一层查词时的原句（✨ 与自动挑词条只认它，不再回头读页面「当前句」——
+      // 嵌套层的词来自释义，外层阅读器的句子与它无关）。
+      item.lookupSentence = origin == LookupOrigin.nested
+          ? null
+          : _nonEmptyOrNull(favoriteLookupContext?.sentence);
       // 「查词时自动按句意挑词条」：弹窗照常先显示词典顺序，AI 回来再换（见
-      // [aiPickLookupEntry]）。只在开关打开且有提供商时发请求。
-      if (appModel.lookupAiContextAuto && resolveLookupAiProvider() != null) {
+      // [aiPickLookupEntry]）。只对明确的查词发请求：悬停扫一行会连查十几个词，
+      // 嵌套层没有可信句子；开关关着或没指派提供商时也不发。
+      if (origin == LookupOrigin.explicit &&
+          appModel.lookupAiContextAuto &&
+          resolveLookupAiProvider() != null) {
         unawaited(aiPickLookupEntry(item, automatic: true));
       }
 
@@ -468,8 +499,22 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     }
   }
 
-  /// 正在等 AI 挑词条的弹窗层（顶栏 ✨ 换成转圈）。
-  final Set<DictionaryPopupEntry> _aiPickingEntries = <DictionaryPopupEntry>{};
+  /// 正在等 AI 挑词条的弹窗层 → 那次请求的客户端（顶栏 ✨ 换成转圈）。存客户端
+  /// 而不是只存层：热槽复用让新查词落在**同一个**层对象上，旧请求的收尾只能清掉
+  /// 自己那一条，不能把新请求的转圈一起清掉。
+  final Map<DictionaryPopupEntry, AiChatClient> _aiPickInFlight =
+      <DictionaryPopupEntry, AiChatClient>{};
+
+  /// 当前唯一一个「查词时自动挑词条」请求的客户端。每页最多一个：新查词 / 关弹窗
+  /// 推进代次时 [_bumpSearchGeneration] 把它 close 掉；请求回来时客户端已不是它，
+  /// 结论一律丢弃——只有最后一次查词的结论能落到弹窗上。
+  AiChatClient? _autoAiPickClient;
+
+  void _closeAutoAiPickClient() {
+    final AiChatClient? client = _autoAiPickClient;
+    _autoAiPickClient = null;
+    client?.close();
+  }
 
   /// 同一句同一词的 AI 结论（候选集合相同才复用）：回看 / 重查 / 重排后再点都
   /// 不重复付费。值是选中词头的身份（`表记/读音`），null = AI 认为都不合适；存身份
@@ -485,29 +530,73 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   AiProviderConfig? Function()? debugLookupAiProvider;
 
   /// 查词按句意挑词条用哪家 AI；null = 没指派（顶栏不画 ✨，也不自动发请求）。
+  ///
+  /// 弹窗每次构建都会问；解码缓存在 [PreferencesRepository.resolveAiFeatureProvider]
+  /// （按原始偏好串失效，不会读到陈旧值）。
   @protected
   AiProviderConfig? resolveLookupAiProvider() {
     final AiProviderConfig? Function()? injected = debugLookupAiProvider;
     if (injected != null) return injected();
     // 查词弹窗每次构建都会问：偏好仓库没就绪时（启动早期）就是「没指派」。
     if (!appModel.isPreferencesReady) return null;
-    return appModel.prefsRepo.aiFeatureAssignments.resolve(
-      AiFeature.lookupContext,
-      appModel.prefsRepo.aiProviders,
-    );
+    return appModel.prefsRepo.resolveAiFeatureProvider(AiFeature.lookupContext);
+  }
+
+  /// [result] 的词头语言（BCP 47）：按查到这些词条的词典所声明的词头语言投票
+  /// （[aiLookupHeadwordLanguage]），问不出来再退到本页的查词语言
+  /// [AppModel.currentLookupLanguage]；都没有 = null，提示词用中立措辞。
+  @protected
+  String? lookupHeadwordLanguage(DictionarySearchResult result) {
+    String? fromDictionaries;
+    if (appModel.isDictionaryRepoReady) {
+      final Map<String, String?> byName = <String, String?>{
+        for (final Dictionary dictionary in appModel.dictionaries)
+          dictionary.name: dictionary.effectiveSourceLanguage,
+      };
+      fromDictionaries = aiLookupHeadwordLanguage(
+        result,
+        (String name) => byName[name],
+      );
+    }
+    return fromDictionaries ?? _nonEmptyOrNull(appModel.currentLookupLanguage);
+  }
+
+  /// 「✨ 按句意挑词条」画不画：给查词指派了 AI 才画；有结果才有得挑；这一层还得
+  /// 有自己查词时的原句（嵌套层 / 原地跳转页的词不在读者的句子里，不画）。
+  bool _showsAiPick(DictionaryPopupEntry item) {
+    final DictionarySearchResult? result = item.result;
+    return result != null &&
+        result.entries.isNotEmpty &&
+        item.lookupSentence != null &&
+        resolveLookupAiProvider() != null;
+  }
+
+  /// 测试钩子：[item] 这一层的顶栏会不会画 ✨（与弹窗构建同一判据）。
+  @visibleForTesting
+  bool debugShowsAiPick(DictionaryPopupEntry item) => _showsAiPick(item);
+
+  static String? _nonEmptyOrNull(String? text) {
+    final String trimmed = text?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   /// 让 AI 按句意在 [item] 已查到的词头里挑一个，挪到最前。
   ///
-  /// 候选、句子都取自本次查词，AI 只回编号（`ai_lookup_context_assistant.dart`）。
-  /// 等待期间用户可能已换词 / 关弹窗 / 加载更多：回来时按「层还在、结果还是那一份」
-  /// 两道身份门校验，对不上就丢弃。[automatic] 时不弹任何提示（没句子、只有一个词头、
-  /// 请求失败都静默——那是每次查词都会走的路径）。
+  /// 候选、句子都取自这一层**查词那一刻**（[DictionaryPopupEntry.lookupSentence]），
+  /// AI 只回编号（`ai_lookup_context_assistant.dart`）。等待期间用户可能已换词 /
+  /// 关弹窗 / 加载更多：回来时按「层还在、结果还是那一份」两道身份门校验，对不上就
+  /// 丢弃；[automatic] 还要求自己仍是本页唯一的自动请求（见 [_autoAiPickClient]）。
+  /// 换序走 [DictionaryPopupController.reorderResult]——弹窗只挪卡片，不重渲染。
+  /// [automatic] 时不弹任何提示（没句子、只有一个词头、请求失败都静默——那是每次
+  /// 查词都会走的路径）。
   Future<void> aiPickLookupEntry(
     DictionaryPopupEntry item, {
     bool automatic = false,
   }) async {
-    if (_aiPickingEntries.contains(item)) return;
+    if (!mounted) return;
+    // 手动 ✨ 在请求未回时再点：忽略。自动请求不受挡——它只会在新查词里发起，
+    // 同层上的旧自动请求此刻已被代次推进 close 掉。
+    if (!automatic && _aiPickInFlight.containsKey(item)) return;
     final DictionarySearchResult? result = item.result;
     final AiProviderConfig? provider = resolveLookupAiProvider();
     if (result == null || provider == null) {
@@ -519,7 +608,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       }
       return;
     }
-    final String sentence = favoriteLookupContext?.sentence.trim() ?? '';
+    final String sentence = item.lookupSentence ?? '';
     final List<AiLookupCandidate> candidates = aiLookupCandidates(result);
     if (sentence.isEmpty || candidates.length < 2) {
       if (!automatic) {
@@ -548,9 +637,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       final int found = chosen == null ? -1 : identities.indexOf(chosen);
       choice = found < 0 ? null : found;
     } else {
-      setState(() => _aiPickingEntries.add(item));
       final AiChatClient client =
           debugLookupAiClientFactory?.call() ?? AiChatClient();
+      if (automatic) {
+        _closeAutoAiPickClient();
+        _autoAiPickClient = client;
+      }
+      setState(() {
+        _aiPickInFlight[item] = client;
+      });
+      bool latest = true;
       try {
         choice = await requestAiLookupChoice(
           client: client,
@@ -558,9 +654,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           sentence: sentence,
           matched: matched,
           candidates: candidates,
+          language: lookupHeadwordLanguage(result),
         );
         _aiPickCache[cacheKey] = choice == null ? null : identities[choice];
       } on AiChatFailure catch (error) {
+        // 被新查词 close 掉的自动请求也落在这里（network_error），静默。
         if (!automatic && mounted) {
           FushiToast.show(
             msg: aiFailureText(error.message),
@@ -569,9 +667,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         }
         return;
       } finally {
+        if (automatic) latest = identical(_autoAiPickClient, client);
+        if (identical(_autoAiPickClient, client)) _autoAiPickClient = null;
         client.close();
-        if (mounted) setState(() => _aiPickingEntries.remove(item));
+        if (mounted && identical(_aiPickInFlight[item], client)) {
+          setState(() {
+            _aiPickInFlight.remove(item);
+          });
+        }
       }
+      if (!mounted) return;
+      // 只有最后一次查词的自动结论能落地：期间代次推进过（新查词 / 关弹窗），
+      // 这个客户端早被 close 并换掉了。MockClient / 已经收到回复的请求关不掉，
+      // 所以 close 之外还得在这里认一次身份。
+      if (!latest) return;
     }
     if (!mounted) return;
     // 身份门：层还在，且仍是发请求时那一份结果（换词 / 加载更多 / 原地跳转都会换）。
@@ -587,11 +696,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       }
       return;
     }
-    _popup.fillResult(
-      item,
-      result: promoteAiLookupCandidate(result, choice),
-      allLoaded: item.allLoaded,
-    );
+    _popup.reorderResult(item, promoteAiLookupCandidate(result, choice));
   }
 
   /// TODO-962：阅读器/有声书弹窗第 [index] 层「加载更多」——续查下一批词头并增量追加。
@@ -1093,6 +1198,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,
+        // 「按句意挑词条」换序：只挪卡片，不全量重渲染（见 reorderResult）。
+        resultReorderOf: item.reorderBase,
         restoreScrollTop: item.restoreScrollTop,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
@@ -1153,6 +1260,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           final count = await searchDictionaryResult(
             searchTerm: text,
             selectionRect: childRect,
+            origin: LookupOrigin.nested,
           );
           if (count > 0) {
             final int generation = activeLookupGeneration;
@@ -1190,12 +1298,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 onForward: () => _navigatePopupHistory(item, forward: true),
               )
             : null,
-        // 「✨ 按句意挑词条」：给查词指派了 AI 才画；有结果才有得挑。
-        aiPick: item.result != null &&
-                item.result!.entries.isNotEmpty &&
-                resolveLookupAiProvider() != null
+        aiPick: _showsAiPick(item)
             ? DictionaryPopupAiPick(
-                busy: _aiPickingEntries.contains(item),
+                busy: _aiPickInFlight.containsKey(item),
                 onTap: () => unawaited(aiPickLookupEntry(item)),
               )
             : null,
@@ -1352,7 +1457,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   void _dismissPopupAt(int index) {
-    _searchGeneration++;
+    _bumpSearchGeneration();
     _pendingSelectionRect = null;
     _isSearchingNotifier.value = false;
     _deferredPopupItem = null;
