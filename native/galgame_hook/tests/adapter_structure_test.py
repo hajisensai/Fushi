@@ -34,7 +34,8 @@ class AdapterStructureTest(unittest.TestCase):
 
         * 站点只由主映像异常目录 + 结构判据解析：不读哈希 / 文件名 / 标题。
         * 游戏线程（detour → QueueCmvsVoice）只做判定与有界拷贝：不落盘、不写日志。
-        * worker 先过 Ogg 页完整性再 WriteVoiceOggAt；kResourceAudio 只在语音层已武装时宣告。
+        * worker 先过 Ogg 页完整性再 WriteVoiceOggAt，写成功后才置资源已发布位；
+          kResourceAudio 只在语音层已武装时宣告。
         """
         adapters = ROOT / "hook" / "adapters"
         core = self._strip_comments((adapters / "cmvs_voice_core.h").read_text(encoding="utf-8"))
@@ -51,6 +52,10 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertIn(required, queue)
         worker = self._function_body(lane, "void ProcessCmvsVoiceTask(")
         self.assertLess(worker.index("CompleteOggBytes"), worker.index("WriteVoiceOggAt"))
+        # 宿主只凭这一位把会话从引擎 PCM 环切到逐句资源配对；漏了它文件照写、配对照旧走 PCM。
+        self.assertLess(worker.index("WriteVoiceOggAt"),
+                        worker.index("kXAudioDiagGameResourcePublished"))
+        self.assertNotIn("kXAudioDiagGameResourcePublished", queue)
         install = self._function_body(lane, "bool TryHookCmvsVoice()")
         self.assertIn("FindGroupLoaderSites", install)
         capabilities = self._function_body(

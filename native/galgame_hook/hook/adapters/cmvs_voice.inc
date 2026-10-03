@@ -174,6 +174,10 @@ void ProcessCmvsVoiceTask(CmvsVoiceTask* task) {
     return;
   }
   if (!WriteVoiceOggAt(task->data, task->bytes, name, task->tick_ms)) return;
+  // The bytes are the archive member itself, so the host may switch the
+  // session to per-line resource pairing; without this bit it stays on the
+  // engine-PCM ring and pairs click SEs / BGM as voice.
+  SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagGameResourcePublished);
   strncpy_s(g_cmvs_voice_last_name, task->name, _TRUNCATE);
   g_cmvs_voice_last_tick = task->tick_ms;
   if (InterlockedIncrement(&g_cmvs_voice_written) == 1) {
