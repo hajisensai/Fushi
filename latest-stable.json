@@ -29,13 +29,13 @@
       "version": "2.1.1"
     },
     {
-      "name": "fushi-2.7.0-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.7.0/fushi-2.7.0-macos.zip",
-      "releaseSequence": 14872,
-      "tag": "v2.7.0",
-      "version": "2.7.0",
-      "size": 337249060,
-      "sha256": "cee9c5438180a534b7f28510470a6ea0645a58cb8c10d492c996af2a4007bd37"
+      "name": "fushi-2.9.1-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.9.1/fushi-2.9.1-macos.zip",
+      "releaseSequence": 16909,
+      "tag": "v2.9.1",
+      "version": "2.9.1",
+      "size": 376360045,
+      "sha256": "ddbbf3bc2e7c086d32079655798519c3c1f94fb92908f3a22e80108967674c56"
     },
     {
       "name": "fushi-2.9.1-windows-setup.exe",
