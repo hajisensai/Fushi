@@ -94,5 +94,41 @@ inline CardOrigin GlyphAnchoredCardOrigin(double glyph_left, double glyph_top,
   return CardOrigin{left, above >= 0.0 ? above : below};
 }
 
+// BUG-2921 — 嵌套查词时 HWND 覆盖的是「根卡 + 子卡」的 union，但贴字形的只能是根卡。
+//
+// [root_local_left]/[root_local_top] 是根卡在 host window-local 坐标里的左上角，
+// [bbox_dx]/[bbox_dy] 是 union 在同一坐标里的左上角（两者都是 WebView 物理 px，与客户区
+// 屏幕 px 同尺度，所以不乘 scale）。先按**根卡**尺寸贴字形并夹进客户区，得到根卡的客户区
+// 位置；union 原点 = 根卡位置平移两者之差，再整体夹进客户区。
+//
+// 若直接拿 union 尺寸贴字形：子卡一出现 union 就变高变宽，「上方放得下」不再成立时整个
+// union 翻到字形下方再被客户区夹回，水平方向也改按 union 中心对齐——根卡跳位，子卡顶部
+// 越出客户区被裁掉（用户视频里根卡上移约 200 物理 px、子卡标题栏被视口顶边切掉）。
+struct DirectUnionPlacement {
+  int root_x;
+  int root_y;
+  int union_x;
+  int union_y;
+};
+
+inline DirectUnionPlacement PlaceDirectUnionAroundRoot(
+    double glyph_left, double glyph_top, double glyph_width,
+    double glyph_height, int root_width, int root_height, int root_local_left,
+    int root_local_top, int bbox_dx, int bbox_dy, int union_width,
+    int union_height, int client_width, int client_height) {
+  const CardOrigin root =
+      GlyphAnchoredCardOrigin(glyph_left, glyph_top, glyph_width,
+                              glyph_height, root_width, root_height);
+  const int root_x = ClampDirectCardOrigin(root.left, root_width, client_width);
+  const int root_y = ClampDirectCardOrigin(root.top, root_height, client_height);
+  const int union_x = ClampDirectCardOrigin(
+      static_cast<double>(root_x + bbox_dx - root_local_left), union_width,
+      client_width);
+  const int union_y = ClampDirectCardOrigin(
+      static_cast<double>(root_y + bbox_dy - root_local_top), union_height,
+      client_height);
+  return DirectUnionPlacement{root_x, root_y, union_x, union_y};
+}
+
 }  // namespace gal_direct_card_geometry
 }  // namespace fushi
