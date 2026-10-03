@@ -1324,7 +1324,7 @@ Future<void> _capturePageTransitionFilmstrip(
   final ColorScheme cs = _theme(Brightness.light).colorScheme;
   final List<ui.Image> strips = <ui.Image>[];
   final List<(String, String)> titles = <(String, String)>[
-    ('new', '新：原地淡入 + 旧页压暗（360ms，两页都不位移）'),
+    ('new', '新：新页上滑 24px + 淡入，旧页原地压暗不动（360ms）'),
     ('old', '旧：ZoomPageTransitionsBuilder（300ms，整窗缩放，位移随窗口变大）'),
   ];
   for (int r = 0; r < rows.length; r++) {

@@ -259,9 +259,7 @@ void main() {
       expect(builder.reverseTransitionDuration, FushiMotion.longReverse);
     });
 
-    testWidgets('push 过程中新页原地淡入，全程不位移（用户反馈页面会往上跳）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('push 过程中新页从下方上滑到位，被盖住的旧页全程纹丝不动', (WidgetTester tester) async {
       final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
       const Key homeKey = ValueKey<String>('home');
       const Key pageKey = ValueKey<String>('page');
@@ -285,10 +283,14 @@ void main() {
         ),
       );
       await tester.pump();
-      for (int i = 0; i < 6; i++) {
-        await tester.pump(const Duration(milliseconds: 60));
-        expect(tester.getTopLeft(find.byKey(pageKey)), Offset.zero);
+      // 转场进行中（360ms 内）逐帧检查；结束后旧页进幕后，finder 取不到。
+      for (int ms = 0; ms <= 300; ms += 60) {
+        // 用户反馈「进入页面时整个页面会往上一点」：被覆盖页曾随转场上移 6px。
         expect(tester.getTopLeft(find.byKey(homeKey)), Offset.zero);
+        if (ms == 120) {
+          expect(tester.getTopLeft(find.byKey(pageKey)).dy, greaterThan(0));
+        }
+        await tester.pump(const Duration(milliseconds: 60));
       }
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(find.byKey(pageKey)), Offset.zero);
