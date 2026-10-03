@@ -6214,5 +6214,10 @@
   "video_bluray_config_missing": "播放这张蓝光盘需要匹配的 KEYDB.cfg 配置。",
   "manga_ocr_engine_paired_host_model": "互联服务端 · $model",
   "manga_ocr_engine_paired_host_model_missing": "服务端还没下载这个模型，请先在服务端下载。",
-  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "本局未转区：已请求日文区域，但 Locale Emulator 无法启动该游戏（只支持 32 位游戏），已按普通方式启动。"
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "本局未转区：已请求日文区域，但 Locale Emulator 无法启动该游戏（只支持 32 位游戏），已按普通方式启动。",
+  "floating_ball_auto_restore": "自动恢复悬浮球",
+  "floating_ball_auto_restore_hint": "关掉悬浮球后，回到 Fushi 时自动重新显示；选「不自动恢复」则关掉后要在这里重新打开",
+  "floating_ball_auto_restore_both": "应用内外",
+  "floating_ball_auto_restore_in_app": "仅应用内",
+  "floating_ball_auto_restore_off": "不自动恢复"
 }

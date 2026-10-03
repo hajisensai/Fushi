@@ -24,6 +24,19 @@
 旧版三态 `floating_ball.mode`（`off` / `in_app` / `system`）只作迁移读取：新开关从没写过时，
 显式选过 `off` 的保持应用内关，选过 `system` 的两个都开。
 
+### 关闭后自动恢复（2026-10-03 用户拍板）
+
+`floating_ball.auto_restore`（`FloatingBallAutoRestore`）三态，决定点「关闭悬浮球」之后哪些球
+在回到 Fushi 时自动重新出现：
+
+| 值 | 应用内球的关闭 | 应用外球的关闭 |
+|---|---|---|
+| `both` 应用内外 | 只收这一页；换页或从后台回到 Fushi 即恢复 | 开关不动；下次打开 Fushi（冷启动读到关闭标记 / 任一次 `resumed`，桌面主窗重新拿到焦点也算）重新起球 |
+| `in_app` 仅应用内（出厂） | 同上 | 关掉「应用外显示」开关（下表 `close` 的行为） |
+| `off` 不自动恢复 | 关掉「应用内显示」开关，要到设置里重开 | 同上 |
+
+没有应用外球的平台（iOS / Linux）设置里只给后两档，读到 `both` 按 `in_app` 显示。
+
 ### 场景与按钮
 
 场景 `FloatingBallScope`（`floating_ball_config.dart`）：
@@ -119,7 +132,7 @@ Dart → 原生：
 | `takePendingOpenLookupPage` | — | bool（系统球「查词」时主引擎不在而排队的请求；取即清） | Android |
 | `takePendingCameraOcr` | — | bool（系统球「拍照查词」时主引擎不在而排队的请求；取即清） | Android |
 | `takePendingSync` | — | bool（系统球「立即同步」时主引擎不在而排队的请求；取即清） | Android |
-| `takeSystemBallClosedByUser` | — | bool（用户点过系统球关闭的持久标记；取即清。Dart 起系统球前先取，为 true 就改为关掉「应用外」开关） | Android |
+| `takeSystemBallClosedByUser` | — | bool（用户点过系统球关闭的持久标记；取即清。Dart 起系统球前先取，为 true 就改为关掉「应用外」开关；自动恢复选了 `both` 时照常起球） | Android |
 | `captureScreen` | — | `Uint8List` PNG（失败抛 PlatformException） | iOS |
 
 | `takePendingIntentLookup` | — | String?（冷启动时排队的 App Intent 词；调用即表示 Dart 已就绪） | iOS |
@@ -150,7 +163,7 @@ Android 系统球的按钮：
 | `camera_ocr` | 把 Fushi 带回前台并开相机拍照查词（经 `openCameraOcr` / `takePendingCameraOcr`） |
 | `sync` | 把 Fushi 带回前台并跑一轮手动同步（经 `openSync` / `takePendingSync`） |
 | `open_app` | 把 Fushi 带回前台 |
-| `close` | 用户关掉应用外悬浮球：落持久标记 + 推 `systemBallClosedByUser`，停服务；Dart 同步关掉设置里的「应用外」开关，两边保持一致（2026-09-29 用户要求；此前是「停服务、偏好不变，下次启动 app 时再起」）。常驻通知上的关闭同此 |
+| `close` | 用户关掉应用外悬浮球：落持久标记 + 推 `systemBallClosedByUser`，停服务；Dart 同步关掉设置里的「应用外」开关，两边保持一致（2026-09-29 用户要求；此前是「停服务、偏好不变，下次启动 app 时再起」）。2026-10-03 起自动恢复选 `both` 时开关不动、回到 Fushi 再起球（见「关闭后自动恢复」）。常驻通知上的关闭同此 |
 
 ## 不做的
 

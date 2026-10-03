@@ -441,6 +441,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
+  // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
+  'floatingBall/Auto-restore floating ball':
+      'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案

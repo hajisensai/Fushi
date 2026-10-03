@@ -6214,5 +6214,10 @@
   "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
   "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
   "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
-  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally.",
+  "floating_ball_auto_restore": "自動恢復懸浮球",
+  "floating_ball_auto_restore_hint": "關掉懸浮球後，回到 Fushi 時自動重新顯示；選「不自動恢復」則關掉後要在這裡重新打開",
+  "floating_ball_auto_restore_both": "應用內外",
+  "floating_ball_auto_restore_in_app": "僅應用內",
+  "floating_ball_auto_restore_off": "不自動恢復"
 }

@@ -322,6 +322,95 @@ void main() {
     expect(ball(), findsOneWidget);
   });
 
+  /// 把 app 切到后台再切回来（按真实的生命周期顺序逐级走）。
+  Future<void> backgroundAndReturn(WidgetTester tester) async {
+    for (final AppLifecycleState state in <AppLifecycleState>[
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('自动恢复含应用内：本页关掉的球从后台回到 Fushi 时恢复', (WidgetTester tester) async {
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_close'));
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+
+    await backgroundAndReturn(tester);
+    expect(ball(), findsOneWidget);
+    expect(prefs.floatingBallInApp, isTrue);
+  });
+
+  testWidgets('不自动恢复：关闭即关掉「应用内显示」，换页、回到 Fushi 都不回来', (
+    WidgetTester tester,
+  ) async {
+    await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_close'));
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+    expect(prefs.floatingBallInApp, isFalse);
+
+    appModel.navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const Scaffold(body: SizedBox()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+    await backgroundAndReturn(tester);
+    expect(ball(), findsNothing);
+  });
+
+  testWidgets('本页关掉球后把自动恢复改成「不自动恢复」：关闭落定为关掉「应用内显示」，回到 Fushi 不再出现', (
+    WidgetTester tester,
+  ) async {
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_close'));
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+    expect(prefs.floatingBallInApp, isTrue);
+
+    await tester.runAsync(
+      () => prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off),
+    );
+    await tester.pumpAndSettle();
+    expect(prefs.floatingBallInApp, isFalse, reason: '按新选项落定这次关闭');
+
+    await backgroundAndReturn(tester);
+    expect(ball(), findsNothing);
+  });
+
+  test('自动恢复三态：持久化值往返，未知值回落出厂「仅应用内」', () async {
+    expect(prefs.floatingBallAutoRestore, FloatingBallAutoRestore.inApp);
+    for (final FloatingBallAutoRestore value
+        in FloatingBallAutoRestore.values) {
+      await prefs.setFloatingBallAutoRestore(value);
+      expect(prefs.floatingBallAutoRestore, value);
+    }
+    expect(
+      FloatingBallAutoRestore.fromStorage('bogus'),
+      FloatingBallAutoRestore.inApp,
+    );
+    expect(FloatingBallAutoRestore.both.restoresSystem, isTrue);
+    expect(FloatingBallAutoRestore.inApp.restoresSystem, isFalse);
+    expect(FloatingBallAutoRestore.inApp.restoresInApp, isTrue);
+    expect(FloatingBallAutoRestore.off.restoresInApp, isFalse);
+  });
+
   group('页面把必需入口托付给球（阅读器关掉顶栏和底栏）', () {
     /// 阅读器场景：登记返回 / 设置 / 开回栏 + 播放键；[pinned] 为 true 时前三颗
     /// 固定在球上。
@@ -713,6 +802,132 @@ void main() {
       await tester.pump();
       expect(prefs.floatingBallSystem, isFalse, reason: '用户在系统球上点过关闭');
       expect(starts(), isEmpty, reason: '不得违背用户刚做的「关闭」把球拉起来');
+    });
+
+    /// 开着应用外球、等第一次起球落地。
+    Future<void> startSystemBall(WidgetTester tester) async {
+      await pumpHost(tester);
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(1));
+    }
+
+    testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await startSystemBall(tester);
+      await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
+      expect(prefs.floatingBallSystem, isFalse);
+    });
+
+    testWidgets('自动恢复「应用内外」：关闭不动开关，回到 Fushi 时重新起球', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.both);
+      await startSystemBall(tester);
+      await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
+      expect(prefs.floatingBallSystem, isTrue, reason: '只关这一次，不动设置');
+
+      // 关着期间配置变化（换主题 / 改按钮）不能把球拉起来。
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallButtons(FloatingBallScope.system, <String>[
+          'clipboard',
+        ]);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(1));
+
+      // 主窗失焦再拿回焦点（桌面只到 inactive）：算回到 Fushi。
+      // 起球闭包要在真实 zone 里跑完（见 mockNative 的说明）。
+      await tester.runAsync(() async {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(2));
+      expect(startedActions(starts().last), <String>['clipboard']);
+    });
+
+    testWidgets('关掉应用外球后把自动恢复改成不含应用外：关闭落定为关掉「应用外显示」，回到 Fushi 不再起球', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.both);
+      await startSystemBall(tester);
+      await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
+      expect(prefs.floatingBallSystem, isTrue);
+
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(prefs.floatingBallSystem, isFalse, reason: '按新选项落定这次关闭');
+
+      await tester.runAsync(() async {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(1), reason: '不得按旧选项把关掉的球拉起来');
+      expect(prefs.floatingBallSystem, isFalse);
+    });
+
+    testWidgets('自动恢复「应用内外」：启动时读到「用户关过」标记 → 照常起球、不关开关', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester, takeClosed: () async => true);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.both);
+      await pumpHost(tester);
+      // 起球闭包要在真实 zone 里跑完（见 mockNative 的说明），所以在这里开开关
+      // 触发首次起球；它读到的仍是「主引擎不在时用户关过」的一次性标记。
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallSystem(true);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(prefs.floatingBallSystem, isTrue);
+      expect(starts(), hasLength(1), reason: '打开 Fushi 即自动恢复');
     });
 
     testWidgets('连续两次同步、先发的闭包后醒：以最新配置为准，旧闭包作废', (WidgetTester tester) async {
