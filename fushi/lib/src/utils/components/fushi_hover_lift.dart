@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
 /// 卡片悬浮抬升：鼠标移入时轻微放大，并把 hover 态交给 [builder]，由调用方决定
 /// 还要不要顺带加深阴影/描边。
@@ -204,7 +205,12 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       }
       return widget.builder(context, false);
     }
-    final Widget content = widget.builder(context, _lifted);
+    // 2026-10 交互重做：悬停抬升之外再叠按压下沉——触屏上没有 hover，卡片
+    // 此前点下去只有水波纹；按压反馈放在抬升**内层**，两者独立叠乘（桌面上
+    // 悬停 1.05 × 按下 0.97），抬升的显式 Transform 仍是本组件最外层变换。
+    final Widget content = FushiPressScale(
+      child: widget.builder(context, _lifted),
+    );
     if (!_animate) return _wrapHover(content);
     return _wrapHover(
       AnimatedBuilder(

@@ -39,8 +39,10 @@
 | [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | ✅ | ✅ | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
 | [BUG-2915](bugs/BUG-2915-ios-video-connect-chunked-crash.md) | ✅ | ✅ | iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked |
 | [BUG-2914](bugs/BUG-2914-ios-scene-super-crash.md) | ✅ | ✅ | iOS 2.9.0 crashes on launch: SceneDelegate calls super for a scene callback FlutterSceneDelegate does not implement |
+| [BUG-2913](bugs/BUG-2913-fullscreen-episode-list-switch-exit.md) | ✅ | ✅ | 全屏下从剧集列表换集会退出原生全屏 |
 | [BUG-2912](bugs/BUG-2912-manga-settings-sheet-clipped.md) | ✅ | ✅ | 漫画阅读设置侧栏显示不全 |
 | [BUG-2911](bugs/BUG-2911-ios-landscape-ball-edge.md) | ✅ | ✅ | iOS 横屏应用内悬浮球不吸附屏幕侧边 |
+| [BUG-2910](bugs/BUG-2910-aacs-relay-orphan-readers.md) | ✅ | ✅ | AACS 解密中继：客户端放弃的 Range 请求继续读盘到文件尾，光驱被抢读导致只能播开头 |
 | [BUG-2909](bugs/BUG-2909-game-stream-wgc-lock-order.md) | ✅ | ✅ | 游戏串流停止时主线程 join 捕获线程死锁（WGC 设备锁与 frame_mutex_ 锁序反转） |
 | [BUG-2908](bugs/BUG-2908-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
 | [BUG-2907](bugs/BUG-2907-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
