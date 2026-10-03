@@ -58,7 +58,7 @@ case "$(uname -m)" in
 esac
 
 # 按宿主选校验工具，不按「PATH 里有没有 sha256sum」：macOS 14+ 自带的
-# /sbin/sha256sum 是 BSD 实现，不认 GNU 的 `--check --status`，探测到它就走
+# /sbin/sha256sum 是 BSD 实现，不认 GNU 的 `--status` 选项，探测到它就走
 # GNU 分支会让每个归档都判校验失败。macOS 一律用自带的 shasum；Linux 用
 # coreutils 的 sha256sum（精简镜像常没有 perl 版 shasum）。
 case "$host_os" in
