@@ -33,12 +33,12 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2920](bugs/BUG-2920-shelf-read-status-filter-reset.md) | ✅ | ✅ | 书架阅读状态筛选每次打开软件都重置 |
 | [BUG-2918](bugs/BUG-2918-dashboard-continue-shows-completed-book.md) | ✅ | ✅ | 首页继续面板仍显示已读完的书 |
 | [BUG-2917](bugs/BUG-2917-vn-audio-highlight-ruby-gap.md) | ✅ | ✅ | 视觉小说模式有声书逐句高亮在注音字处断开 |
 | [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | ✅ | ✅ | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
 | [BUG-2915](bugs/BUG-2915-ios-video-connect-chunked-crash.md) | ✅ | ✅ | iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked |
 | [BUG-2914](bugs/BUG-2914-ios-scene-super-crash.md) | ✅ | ✅ | iOS 2.9.0 crashes on launch: SceneDelegate calls super for a scene callback FlutterSceneDelegate does not implement |
-| [BUG-2913](bugs/BUG-2913-shelf-read-status-filter-reset.md) | ✅ | ✅ | 书架阅读状态筛选每次打开软件都重置 |
 | [BUG-2912](bugs/BUG-2912-manga-settings-sheet-clipped.md) | ✅ | ✅ | 漫画阅读设置侧栏显示不全 |
 | [BUG-2911](bugs/BUG-2911-ios-landscape-ball-edge.md) | ✅ | ✅ | iOS 横屏应用内悬浮球不吸附屏幕侧边 |
 | [BUG-2909](bugs/BUG-2909-game-stream-wgc-lock-order.md) | ✅ | ✅ | 游戏串流停止时主线程 join 捕获线程死锁（WGC 设备锁与 frame_mutex_ 锁序反转） |

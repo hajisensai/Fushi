@@ -1,4 +1,4 @@
-// BUG-2913：书架搜索栏「阅读状态」筛选每次打开软件都重置。筛选值只活在 State
+// BUG-2920：书架搜索栏「阅读状态」筛选每次打开软件都重置。筛选值只活在 State
 // 里，重启（State 重建）就回到「全部」。修复后落偏好 `shelf_read_status_filter`，
 // 重建页面时读回。
 import 'dart:io';
@@ -119,7 +119,7 @@ void main() {
     expect(
       dropdownValue(tester),
       ShelfReadStatus.reading,
-      reason: 'BUG-2913：重启后筛选不得回到「全部」',
+      reason: 'BUG-2920：重启后筛选不得回到「全部」',
     );
 
     // 选回「全部」也要落库，否则下次又恢复成旧筛选。
