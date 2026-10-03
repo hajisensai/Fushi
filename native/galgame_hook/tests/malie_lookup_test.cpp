@@ -374,7 +374,61 @@ void TestClaim() {
 
 }  // namespace
 
+namespace {
+
+// Click-window binding: a rejection holds only for that window + procedure.
+void TestWindowStep() {
+  ml::WindowBindingState state;
+  assert(ml::DecideWindowStep(ml::WindowCandidate(), state) ==
+         ml::WindowStep::kWait);
+
+  // A movie / splash child whose procedure is not the game's.
+  ml::WindowCandidate splash;
+  splash.window = 0x1000u;
+  splash.procedure = 0x7ff00000u;
+  splash.in_image = false;
+  assert(ml::DecideWindowStep(splash, state) == ml::WindowStep::kReject);
+  state.rejected_window = splash.window;
+  state.rejected_procedure = splash.procedure;
+  assert(ml::DecideWindowStep(splash, state) == ml::WindowStep::kWait);
+
+  // The game's client child appears later: evaluated, hooked, bound.
+  ml::WindowCandidate game;
+  game.window = 0x2000u;
+  game.procedure = 0x401000u;
+  game.in_image = true;
+  assert(ml::DecideWindowStep(game, state) == ml::WindowStep::kHook);
+  state.hooked[state.hooked_count++] = game.procedure;
+  state.bound = game.window;
+  state.bound_alive = true;
+  assert(ml::DecideWindowStep(splash, state) == ml::WindowStep::kKeep);
+
+  // Destroyed and recreated with the same procedure: re-bound, not re-hooked.
+  state.bound_alive = false;
+  ml::WindowCandidate again = game;
+  again.window = 0x3000u;
+  assert(ml::DecideWindowStep(again, state) == ml::WindowStep::kBind);
+  // Same window, but its procedure was replaced: evaluated again.
+  state.rejected_window = again.window;
+  state.rejected_procedure = 0x405000u;
+  assert(ml::DecideWindowStep(again, state) == ml::WindowStep::kBind);
+
+  // Detour slots exhausted: a new procedure is rejected.
+  state.hooked[state.hooked_count++] = 0x402000u;
+  state.hooked[state.hooked_count++] = 0x403000u;
+  state.hooked[state.hooked_count++] = 0x404000u;
+  ml::WindowCandidate fifth = game;
+  fifth.window = 0x4000u;
+  fifth.procedure = 0x406000u;
+  assert(ml::DecideWindowStep(fifth, state) == ml::WindowStep::kReject);
+  assert(ml::WindowProcedureHooked(state, 0x404000u));
+  assert(!ml::WindowProcedureHooked(state, 0x406000u));
+}
+
+}  // namespace
+
 int main() {
+  TestWindowStep();
   TestDrawResolves();
   TestDrawFailsClosed();
   TestSegmentFailsClosed();
