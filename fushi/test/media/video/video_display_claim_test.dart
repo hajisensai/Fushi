@@ -12,6 +12,20 @@ void main() {
   tearDown(VideoDisplayClaim.resetForTest);
 
   group('VideoDisplayClaim 所有者记账 (BUG-2105)', () {
+    test('退页后旧 owner 不再有权重申沉浸，新集 owner 仍可设置', () {
+      final Object oldPage = Object();
+      final Object newPage = Object();
+      expect(VideoDisplayClaim.owns(oldPage), isFalse);
+      VideoDisplayClaim.claim(oldPage);
+      expect(VideoDisplayClaim.owns(oldPage), isTrue);
+      VideoDisplayClaim.claim(newPage);
+      expect(VideoDisplayClaim.release(oldPage), isFalse);
+      expect(VideoDisplayClaim.owns(oldPage), isFalse);
+      expect(VideoDisplayClaim.owns(newPage), isTrue);
+      expect(VideoDisplayClaim.release(newPage), isTrue);
+      expect(VideoDisplayClaim.owns(newPage), isFalse);
+    });
+
     test('首个认领者返回 true，后续认领者返回 false', () {
       final Object a = Object();
       final Object b = Object();

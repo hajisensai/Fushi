@@ -30,6 +30,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
+    (mainFlutterWindow as? MainFlutterWindow)?.hideForStartupPresentation()
     if let windowController =
         mainFlutterWindow?.contentViewController as? MacOSWindowUtilsViewController {
       let controller = windowController.flutterViewController
@@ -42,6 +43,28 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
       FushiClipboardImage.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      let startupWindowChannel = FlutterMethodChannel(
+        name: "app.fushi/window",
+        binaryMessenger: controller.engine.binaryMessenger)
+      startupWindowChannel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "showStartupWindow" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        guard let window = self?.mainFlutterWindow else {
+          result(FlutterError(code: "window_unavailable", message: nil, details: nil))
+          return
+        }
+        if ProcessInfo.processInfo.environment["HIBIKI_TEST_HIDDEN"] == nil {
+          window.orderOut(nil)
+          window.alphaValue = 1
+          window.animationBehavior = .documentWindow
+          window.makeKeyAndOrderFront(nil)
+          NSApp.activate(ignoringOtherApps: true)
+        }
+        result(nil)
+      }
+
       let sourceUrlChannel = FlutterEventChannel(
         name: "app.fushi.reader/source_urls/stream",
         binaryMessenger: controller.engine.binaryMessenger)

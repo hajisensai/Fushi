@@ -6737,8 +6737,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
     await setScreenWakelock(enable: false, source: 'closeMedia');
-    // Returning to the home/menu shell: hide the Android status bar again
-    // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
+    // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
     // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
     // Windows OS drop registration in case an opened reader/video/lookup

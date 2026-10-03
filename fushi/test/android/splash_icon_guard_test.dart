@@ -29,7 +29,7 @@ void main() {
       'android/app/src/main/res/drawable-$density/'
       'ic_splash_minimal_foreground.png';
 
-  test('v31 / night-v31 splash 前景引用专用 ic_splash_minimal_foreground', () {
+  test('v31 / night-v31 显式引用透明 splash 图标，防止回退到启动器图标', () {
     for (final String rel in <String>[
       'android/app/src/main/res/values-v31/styles.xml',
       'android/app/src/main/res/values-night-v31/styles.xml',
@@ -37,20 +37,38 @@ void main() {
       final String styles = read(rel);
       expect(
         styles.contains('android:windowSplashScreenAnimatedIcon') &&
-            styles.contains('@drawable/ic_splash_minimal_foreground'),
+            styles.contains('@drawable/ic_splash_empty'),
         isTrue,
-        reason: '$rel 的 splash 前景应指向专用 ic_splash_minimal_foreground',
+        reason: '$rel 的 splash 前景应指向透明 ic_splash_empty',
       );
       // 不能再指向启动器图标前景（其 wordmark 太宽会被圆遮罩裁切）。
       expect(
         styles.contains('@drawable/ic_launcher_minimal_foreground'),
         isFalse,
-        reason: '$rel 不应再用 ic_launcher_minimal_foreground 作 splash 前景'
+        reason:
+            '$rel 不应再用 ic_launcher_minimal_foreground 作 splash 前景'
             '（内容过宽，会被圆遮罩裁切——即 TODO-886 的剪切症状）',
       );
     }
   });
 
+  test('启动图标及其背景为透明色', () {
+    final String icon = read(
+      'android/app/src/main/res/drawable/ic_splash_empty.xml',
+    );
+    expect(icon, contains('android:color="@android:color/transparent"'));
+    for (final String rel in <String>[
+      'android/app/src/main/res/values-v31/styles.xml',
+      'android/app/src/main/res/values-night-v31/styles.xml',
+    ]) {
+      expect(
+        read(rel),
+        contains(
+          '<item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>',
+        ),
+      );
+    }
+  });
   test('5 个密度目录都存在 ic_splash_minimal_foreground.png', () {
     for (final String d in densities) {
       final File f = File(splashPng(d));
@@ -85,7 +103,8 @@ void main() {
       expect(
         widthRatio <= 0.60,
         isTrue,
-        reason: '${splashPng(d)} 内容宽占比 $widthRatio 超过 0.60，'
+        reason:
+            '${splashPng(d)} 内容宽占比 $widthRatio 超过 0.60，'
             '会被 Android 12+ splash 圆形遮罩裁切',
       );
     }
