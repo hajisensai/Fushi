@@ -1073,7 +1073,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           _parseBookKey(it.payload.epub!.mediaIdentifier);
       // v82：recency 表键 = uid；bookKey（SRT 卡为其配对 epub bookKey）经换算表
       // 转一跳，换算不上（standalone SRT 空键/书行已删）与旧行为同样查不到。
-      return _lastReadAtByBookKey[_epubUidByKey[bookKey] ?? bookKey] ??
+      return lastReadAtForBookKey(
+              _lastReadAtByBookKey, _epubUidByKey, bookKey) ??
           it.importedAt;
     }
 
@@ -1290,8 +1291,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
     final MediaItem? hero = mostRecentlyReadCandidate(
       tally.inProgress,
+      // BUG-2887：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
       (MediaItem item) =>
-          _lastReadAtByBookKey[_parseBookKey(item.mediaIdentifier)] ?? 0,
+          lastReadAtForBookKey(_lastReadAtByBookKey, _epubUidByKey,
+              _parseBookKey(item.mediaIdentifier)) ??
+          0,
     );
     if (hero == null) return const SizedBox.shrink();
     return Padding(
