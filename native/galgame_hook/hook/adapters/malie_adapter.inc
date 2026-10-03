@@ -5,12 +5,15 @@
 // decoder's input refill `ogg_sync_wrote(dec, n)` (malie_engine_io_core.h).
 // Nothing here reads, decrypts or indexes the archive.
 //   * game / audio threads — ogg_sync_wrote detour: only from the decoder's
-//     refill call sites (return address), a bounded copy of the n bytes at
-//     oy->data + oy->fill and of the decoder's path field, into a fixed slot
-//     ring; no allocation, no IO.
-//   * HookWorker — orders the chunks, keeps the decoders whose path is below
-//     a "voice" directory, assembles each from its first (BOS) page and
-//     publishes it once the Ogg stream is complete through its EOS page.
+//     refill call sites (return address).  Every such refill takes the next
+//     global feed number (the order and the stall clock of the assembler).
+//     The decoder's path field is read onto the stack; only a path below a
+//     "voice" directory takes a ring slot (bounded copy of the n bytes at
+//     oy->data + oy->fill).  A voice refill that finds no free slot is
+//     recorded as lost (decoder + feed) so its stream is cut and marked
+//     damaged instead of being assembled with a hole.  No allocation, no IO.
+//   * HookWorker — hands the chunks and loss records to
+//     malie_io::VoiceAssembler in feed order and writes what it publishes.
 #include "malie_profile.h"
 
 namespace malie_io = ::fushi_voice_hook::malie_io;
@@ -19,21 +22,14 @@ namespace malie_lookup = ::fushi_voice_hook::malie_lookup;
 typedef int32_t(__cdecl* MalieSyncWroteFn)(void* oy, int32_t bytes);
 
 constexpr int kMalieChunkSlots = 96;
+constexpr int kMalieDropSlots = 8;
 constexpr size_t kMaliePathChars = 260;
-constexpr int kMalieMemberSlots = 8;
-constexpr uint32_t kMalieMaxMemberBytes = 16u * 1024u * 1024u;
-constexpr uint64_t kMalieRepeatWindowMs = 3000;
-constexpr uint64_t kMalieIdleDropMs = 20000;
-// A voice usually starts a moment before its message unit is parsed; a
-// complete voice waits this long for the unit naming it.
-constexpr uint64_t kMalieBindWaitMs = 2000;
-// A decoder that stopped receiving input this long before its EOS page was
-// stopped by the next line: its whole-page prefix is published.
-constexpr uint64_t kMaliePartialIdleMs = 3000;
+// How often a not-yet-ready image is fingerprinted again (malie_profile.h).
+constexpr uint64_t kMalieProfileRecheckMs = 1000;
 
 struct MalieChunk {
   volatile LONG state = 0;  // 0 free, 1 filling, 2 ready, 3 worker
-  LONG seq = 0;
+  uint64_t feed = 0;
   uint64_t tick_ms = 0;
   uintptr_t decoder = 0;
   uint32_t length = 0;
@@ -41,27 +37,25 @@ struct MalieChunk {
   uint8_t data[malie_io::kFeedBytes] = {0};
 };
 
-struct MalieMember {  // worker-only
-  bool used = false;
-  bool done = false;
-  uint32_t complete = 0;  // verified Ogg bytes, 0 while incomplete
-  bool partial = false;   // `complete` is a whole-page prefix
-  uint64_t complete_tick = 0;
+// A voice refill that could not be copied (no free chunk slot).
+struct MalieDropRecord {
+  volatile LONG state = 0;  // 0 free, 1 filling, 2 ready, 3 worker
+  uint64_t feed = 0;
   uintptr_t decoder = 0;
-  uint64_t first_tick = 0;
-  uint64_t last_tick = 0;
-  std::wstring path;
-  std::vector<uint8_t> bytes;
 };
 
 MalieSyncWroteFn g_malie_sync_wrote_original = nullptr;
 malie_io::OggFeedSites g_malie_feed;
 volatile LONG g_malie_enabled = 0;
-volatile LONG g_malie_chunk_seq = 0;
+// Refills from the decoder's refill sites, voice or not (feed order).
+volatile LONG64 g_malie_feed_seq = 0;
+// Refills between taking a feed number and publishing their result.
+volatile LONG g_malie_inflight = 0;
+// Lost voice refills whose loss record found no free slot either.
+volatile LONG g_malie_drop_overflow = 0;
 MalieChunk g_malie_chunks[kMalieChunkSlots];
-MalieMember g_malie_members[kMalieMemberSlots];
-std::wstring g_malie_last_published;
-uint64_t g_malie_last_published_tick = 0;
+MalieDropRecord g_malie_drops[kMalieDropSlots];
+malie_io::VoiceAssembler g_malie_assembler;  // worker-only
 
 void MalieLog(const wchar_t* format, ...) {
   wchar_t line[512] = {};
@@ -104,8 +98,27 @@ bool IsMalieFeedReturn(uintptr_t address) {
   return false;
 }
 
-// Copies the refill bytes and the decoder path; false when the object does
-// not read as a decoder (unreadable, out of range or unterminated path).
+// Reads the decoder's path field into `path` (kMaliePathChars, terminated);
+// false when unreadable, empty or unterminated.
+bool ReadMalieDecoderPath(uintptr_t oy, wchar_t* path) {
+  __try {
+    const wchar_t* source =
+        reinterpret_cast<const wchar_t*>(oy + g_malie_feed.path_field);
+    size_t length = 0;
+    while (length < kMaliePathChars && source[length] != 0) {
+      path[length] = source[length];
+      ++length;
+    }
+    if (length == 0 || length == kMaliePathChars) return false;
+    path[length] = 0;
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+// Copies the refill bytes; false when the sync state does not read as one
+// (unreadable or out of range).
 bool CopyMalieFeed(uintptr_t oy, uint32_t bytes, MalieChunk* chunk) {
   __try {
     const uint8_t* data = *reinterpret_cast<uint8_t* const*>(
@@ -118,18 +131,25 @@ bool CopyMalieFeed(uintptr_t oy, uint32_t bytes, MalieChunk* chunk) {
         static_cast<int64_t>(fill) + bytes > storage) {
       return false;
     }
-    const wchar_t* path =
-        reinterpret_cast<const wchar_t*>(oy + g_malie_feed.path_field);
-    size_t length = 0;
-    while (length < kMaliePathChars && path[length] != 0) ++length;
-    if (length == 0 || length == kMaliePathChars) return false;
-    memcpy(chunk->path, path, length * sizeof(wchar_t));
-    chunk->path[length] = 0;
     memcpy(chunk->data, data + fill, bytes);
     return true;
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return false;
   }
+}
+
+// A voice refill that was not copied: its stream must not be assembled across
+// the hole.
+void NoteMalieDrop(uintptr_t decoder, uint64_t feed) {
+  for (int i = 0; i < kMalieDropSlots; ++i) {
+    MalieDropRecord& record = g_malie_drops[i];
+    if (InterlockedCompareExchange(&record.state, 1, 0) != 0) continue;
+    record.feed = feed;
+    record.decoder = decoder;
+    InterlockedExchange(&record.state, 2);
+    return;
+  }
+  InterlockedIncrement(&g_malie_drop_overflow);
 }
 
 int32_t __cdecl MalieSyncWroteDetour(void* oy, int32_t bytes) {
@@ -138,206 +158,157 @@ int32_t __cdecl MalieSyncWroteDetour(void* oy, int32_t bytes) {
       oy != nullptr &&
       InterlockedCompareExchange(&g_malie_enabled, 0, 0) != 0 &&
       IsMalieFeedReturn(caller)) {
-    for (int i = 0; i < kMalieChunkSlots; ++i) {
-      MalieChunk& slot = g_malie_chunks[i];
-      if (InterlockedCompareExchange(&slot.state, 1, 0) != 0) continue;
-      if (CopyMalieFeed(reinterpret_cast<uintptr_t>(oy),
-                        static_cast<uint32_t>(bytes), &slot)) {
-        slot.seq = InterlockedIncrement(&g_malie_chunk_seq);
-        slot.tick_ms = GetTickCount64();
-        slot.decoder = reinterpret_cast<uintptr_t>(oy);
-        slot.length = static_cast<uint32_t>(bytes);
-        InterlockedExchange(&slot.state, 2);
+    // In flight before the feed number exists: the worker only takes feeds
+    // up to a horizon it read while nothing was in flight.
+    InterlockedIncrement(&g_malie_inflight);
+    const uint64_t feed =
+        static_cast<uint64_t>(InterlockedIncrement64(&g_malie_feed_seq));
+    const uintptr_t decoder = reinterpret_cast<uintptr_t>(oy);
+    wchar_t path[kMaliePathChars];
+    if (ReadMalieDecoderPath(decoder, path) && malie_io::IsVoicePath(path)) {
+      MalieChunk* slot = nullptr;
+      for (int i = 0; i < kMalieChunkSlots && slot == nullptr; ++i) {
+        if (InterlockedCompareExchange(&g_malie_chunks[i].state, 1, 0) == 0) {
+          slot = &g_malie_chunks[i];
+        }
+      }
+      if (slot != nullptr &&
+          CopyMalieFeed(decoder, static_cast<uint32_t>(bytes), slot)) {
+        memcpy(slot->path, path, sizeof(slot->path));
+        slot->feed = feed;
+        slot->tick_ms = GetTickCount64();
+        slot->decoder = decoder;
+        slot->length = static_cast<uint32_t>(bytes);
+        InterlockedExchange(&slot->state, 2);
         MarkMalieIo(fushi_voice_hook::kDiagMalieReadRangeObserved);
       } else {
-        InterlockedExchange(&slot.state, 0);
+        if (slot != nullptr) InterlockedExchange(&slot->state, 0);
+        NoteMalieDrop(decoder, feed);
       }
-      break;
     }
+    InterlockedDecrement(&g_malie_inflight);
   }
   return g_malie_sync_wrote_original(oy, bytes);
 }
 
 // ── worker ────────────────────────────────────────────────────────────────
 
-bool MalieChunkStartsStream(const MalieChunk& chunk) {
-  // A BOS page: capture pattern, version 0, header-type "beginning".
-  return chunk.length >= 27 && memcmp(chunk.data, "OggS", 4) == 0 &&
-         chunk.data[4] == 0 && (chunk.data[5] & 0x02) != 0;
-}
-
 // The text event of the latest message unit that carried this voice tag
 // (malie_lookup.inc); 0 when no unit names it.
 uint64_t MalieTextEventForVoice(const std::wstring& key, uint64_t tick);
-void PublishMalieMember(MalieMember* member, uint64_t text_event);
-void StopMalieMember(MalieMember* member, uint64_t now);
 
-uint64_t MalieMemberTextEvent(const MalieMember& member) {
-  return MalieTextEventForVoice(
-      malie_lookup::VoiceKeyFromPath(member.path.c_str()), member.first_tick);
-}
-
-MalieMember* FindMalieMember(uintptr_t decoder, const wchar_t* path) {
-  for (auto& member : g_malie_members) {
-    if (member.used && member.decoder == decoder && member.path == path) {
-      return &member;
-    }
+class MalieVoiceSink final : public malie_io::VoiceSink {
+ public:
+  uint64_t TextEvent(const std::wstring& path, uint64_t first_tick) override {
+    return MalieTextEventForVoice(malie_lookup::VoiceKeyFromPath(path.c_str()),
+                                  first_tick);
   }
-  return nullptr;
-}
-
-MalieMember* StartMalieMember(const MalieChunk& chunk) {
-  MalieMember* slot = FindMalieMember(chunk.decoder, chunk.path);
-  if (slot == nullptr) {
-    for (auto& member : g_malie_members) {
-      if (!member.used) {
-        slot = &member;
-        break;
-      }
-    }
-  }
-  if (slot == nullptr) {
-    // Evict the stalest decoder.
-    slot = &g_malie_members[0];
-    for (auto& member : g_malie_members) {
-      if (member.last_tick < slot->last_tick) slot = &member;
-    }
-    if (slot->complete != 0 && !slot->done) {
-      PublishMalieMember(slot, MalieMemberTextEvent(*slot));
-    }
-    MalieLog(L"voice: evicted %ls bytes=%lu", slot->path.c_str(),
-             static_cast<unsigned long>(slot->bytes.size()));
-  }
-  *slot = MalieMember();
-  slot->used = true;
-  slot->decoder = chunk.decoder;
-  slot->first_tick = chunk.tick_ms;
-  slot->last_tick = chunk.tick_ms;
-  slot->path = chunk.path;
-  return slot;
-}
-
-void PublishMalieMember(MalieMember* member, uint64_t text_event) {
-  member->done = true;
-  const uint32_t complete = member->complete;
-  const std::wstring storage =
-      malie_io::VoiceStorageName(member->path.c_str(), member->partial);
-  if (!member->partial && storage == g_malie_last_published &&
-      member->first_tick - g_malie_last_published_tick <=
-          kMalieRepeatWindowMs) {
-    // The same file decoded twice for one playback (e.g. a lip-sync pass).
-    MalieLog(L"voice: duplicate decode %ls", storage.c_str());
-    return;
-  }
-  const bool written =
-      WriteVoiceOggAt(member->bytes.data(), complete, storage.c_str(),
-                      member->first_tick, text_event);
-  if (written) {
-    g_malie_last_published = storage;
-    g_malie_last_published_tick = member->first_tick;
-    if (g_header != nullptr) {
+  bool Write(const uint8_t* data, uint32_t bytes, const std::wstring& storage,
+             uint64_t first_tick, uint64_t text_event) override {
+    const bool written =
+        WriteVoiceOggAt(data, bytes, storage.c_str(), first_tick, text_event);
+    if (written && g_header != nullptr) {
       g_header->hook_diagnostics |=
           fushi_voice_hook::kDiagMalieLibpVoiceCaptured;
     }
+    MalieLog(L"voice: %ls bytes=%lu tick=%llu text_event=%llu written=%d "
+             L"lost=%lu damaged=%lu",
+             storage.c_str(), static_cast<unsigned long>(bytes),
+             static_cast<unsigned long long>(first_tick),
+             static_cast<unsigned long long>(text_event), written ? 1 : 0,
+             static_cast<unsigned long>(g_malie_assembler.dropped()),
+             static_cast<unsigned long>(g_malie_assembler.damaged()));
+    return written;
   }
-  MalieLog(L"voice: %ls bytes=%lu/%lu tick=%llu text_event=%llu written=%d",
-           storage.c_str(), static_cast<unsigned long>(complete),
-           static_cast<unsigned long>(member->bytes.size()),
-           static_cast<unsigned long long>(member->first_tick),
-           static_cast<unsigned long long>(text_event), written ? 1 : 0);
-}
+  void Note(const wchar_t* what, const std::wstring& path, uint32_t a,
+            uint32_t b) override {
+    MalieLog(L"voice: %ls %ls %lu %lu", what, path.c_str(),
+             static_cast<unsigned long>(a), static_cast<unsigned long>(b));
+  }
+};
 
-void ProcessMalieChunk(const MalieChunk& chunk) {
-  if (!malie_io::IsVoicePath(chunk.path)) return;
-  MalieMember* member = nullptr;
-  if (MalieChunkStartsStream(chunk)) {
-    // A new voice stops every other playback still waiting for input.
-    for (auto& other : g_malie_members) {
-      if (other.used && !(other.decoder == chunk.decoder &&
-                          other.path == chunk.path)) {
-        StopMalieMember(&other, chunk.tick_ms);
-      }
-    }
-    member = StartMalieMember(chunk);
-    MarkMalieIo(fushi_voice_hook::kDiagMalieVoiceRangeQueued);
-  } else {
-    member = FindMalieMember(chunk.decoder, chunk.path);
-    // A decoder whose head was never seen cannot be assembled.
-    if (member == nullptr || member->done || member->complete != 0) return;
+MalieVoiceSink g_malie_voice_sink;
+
+// Returns ready items of the rings to free (after a Stop: they belong to the
+// stopped capture).  Slots still being filled are left to their producer.
+void DiscardMalieReadyItems() {
+  for (auto& chunk : g_malie_chunks) {
+    InterlockedCompareExchange(&chunk.state, 0, 2);
   }
-  if (member->bytes.size() + chunk.length > kMalieMaxMemberBytes) {
-    MalieLog(L"voice: oversized %ls", member->path.c_str());
-    *member = MalieMember();
-    return;
-  }
-  member->bytes.insert(member->bytes.end(), chunk.data,
-                       chunk.data + chunk.length);
-  member->last_tick = chunk.tick_ms;
-  const uint32_t complete = fushi_voice_hook::siglus::CompleteOggBytes(
-      member->bytes.data(), static_cast<uint32_t>(member->bytes.size()));
-  if (complete != 0) {
-    member->complete = complete;
-    member->complete_tick = chunk.tick_ms;
+  for (auto& record : g_malie_drops) {
+    InterlockedCompareExchange(&record.state, 0, 2);
   }
 }
 
-// A playback that will receive no more input: keep its whole-page prefix.
-void StopMalieMember(MalieMember* member, uint64_t now) {
-  if (!member->used || member->done || member->complete != 0) return;
-  const uint32_t prefix = malie_io::OggPagePrefixBytes(
-      member->bytes.data(), static_cast<uint32_t>(member->bytes.size()));
-  if (prefix == 0) {
-    MalieLog(L"voice: incomplete %ls bytes=%lu dropped", member->path.c_str(),
-             static_cast<unsigned long>(member->bytes.size()));
-    member->done = true;
-    return;
-  }
-  member->complete = prefix;
-  member->partial = true;
-  member->complete_tick = now;
-}
-
-// Publishes each complete voice once its message unit is known, or after the
-// bind wait without one.
-void SettleMalieMembers(uint64_t now) {
-  for (auto& member : g_malie_members) {
-    if (!member.used || member.done || member.complete == 0) continue;
-    const uint64_t text_event = MalieMemberTextEvent(member);
-    if (text_event != 0 || now - member.complete_tick >= kMalieBindWaitMs) {
-      PublishMalieMember(&member, text_event);
-    }
-  }
-}
+struct MalieFeedItem {
+  uint64_t feed = 0;
+  int index = 0;
+  bool drop = false;
+};
 
 void ProcessMalieVoiceTasks() {
-  if (InterlockedCompareExchange(&g_malie_enabled, 0, 0) == 0) return;
-  // Ready chunks in feed order.
-  int order[kMalieChunkSlots] = {};
+  if (InterlockedCompareExchange(&g_malie_enabled, 0, 0) == 0) {
+    DiscardMalieReadyItems();
+    return;
+  }
+  // Horizon first, then "nothing in flight": every refill numbered up to the
+  // horizon has then published its chunk / loss record (or was not voice).
+  const uint64_t horizon =
+      static_cast<uint64_t>(InterlockedCompareExchange64(&g_malie_feed_seq, 0, 0));
+  if (InterlockedCompareExchange(&g_malie_inflight, 0, 0) != 0) return;
+  const uint64_t now = GetTickCount64();
+  if (InterlockedExchange(&g_malie_drop_overflow, 0) != 0) {
+    // Where the holes are is unknown: cut every stream still receiving.
+    g_malie_assembler.DropAll(now, g_malie_voice_sink);
+  }
+  MalieFeedItem items[kMalieChunkSlots + kMalieDropSlots];
   int count = 0;
   for (int i = 0; i < kMalieChunkSlots; ++i) {
-    if (InterlockedCompareExchange(&g_malie_chunks[i].state, 3, 2) == 2) {
-      order[count++] = i;
+    MalieChunk& chunk = g_malie_chunks[i];
+    if (InterlockedCompareExchange(&chunk.state, 3, 2) != 2) continue;
+    if (chunk.feed > horizon) {
+      InterlockedExchange(&chunk.state, 2);  // next round
+      continue;
     }
+    items[count++] = {chunk.feed, i, false};
   }
-  std::sort(order, order + count, [](int left, int right) {
-    return g_malie_chunks[left].seq < g_malie_chunks[right].seq;
-  });
+  for (int i = 0; i < kMalieDropSlots; ++i) {
+    MalieDropRecord& record = g_malie_drops[i];
+    if (InterlockedCompareExchange(&record.state, 3, 2) != 2) continue;
+    if (record.feed > horizon) {
+      InterlockedExchange(&record.state, 2);
+      continue;
+    }
+    items[count++] = {record.feed, i, true};
+  }
+  std::sort(items, items + count,
+            [](const MalieFeedItem& left, const MalieFeedItem& right) {
+              return left.feed < right.feed;
+            });
   for (int k = 0; k < count; ++k) {
-    ProcessMalieChunk(g_malie_chunks[order[k]]);
-    InterlockedExchange(&g_malie_chunks[order[k]].state, 0);
-  }
-  const uint64_t now = GetTickCount64();
-  for (auto& member : g_malie_members) {
-    if (member.used && now - member.last_tick > kMaliePartialIdleMs) {
-      StopMalieMember(&member, now);
+    const MalieFeedItem& item = items[k];
+    if (item.drop) {
+      MalieDropRecord& record = g_malie_drops[item.index];
+      g_malie_assembler.Drop(record.decoder, record.feed, now,
+                             g_malie_voice_sink);
+      InterlockedExchange(&record.state, 0);
+      continue;
     }
-  }
-  SettleMalieMembers(now);
-  for (auto& member : g_malie_members) {
-    if (member.used && member.done && now - member.last_tick > kMalieIdleDropMs) {
-      member = MalieMember();
+    MalieChunk& chunk = g_malie_chunks[item.index];
+    if (malie_io::StartsOggStream(chunk.data, chunk.length)) {
+      MarkMalieIo(fushi_voice_hook::kDiagMalieVoiceRangeQueued);
     }
+    malie_io::FeedChunk feed;
+    feed.feed = chunk.feed;
+    feed.decoder = chunk.decoder;
+    feed.tick = chunk.tick_ms;
+    feed.path = chunk.path;
+    feed.data = chunk.data;
+    feed.length = chunk.length;
+    g_malie_assembler.Feed(feed, g_malie_voice_sink);
+    InterlockedExchange(&chunk.state, 0);
   }
+  g_malie_assembler.Settle(horizon, now, g_malie_voice_sink);
 }
 
 bool InstallMalieHook(void* target, void* detour, void** original) {
@@ -407,10 +378,17 @@ bool TryHookMalieDecoderVoice() {
   return true;
 }
 
+// Runs on the HookWorker thread (AdapterRegistry::Shutdown from the worker
+// loop), the only consumer of the rings.  Producers may be inside the detour
+// right now: a slot they are filling (state 1) is theirs and is never
+// touched here — clearing it would let a second producer claim a slot still
+// being written.  Ready items are discarded, the rest after they publish
+// (ProcessMalieVoiceTasks while disabled).
 void StopMalieDecoderVoice() {
   InterlockedExchange(&g_malie_enabled, 0);
-  for (auto& chunk : g_malie_chunks) InterlockedExchange(&chunk.state, 0);
-  for (auto& member : g_malie_members) member = MalieMember();
+  DiscardMalieReadyItems();
+  InterlockedExchange(&g_malie_drop_overflow, 0);
+  g_malie_assembler.Reset();
 }
 
 class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
@@ -420,6 +398,7 @@ class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
     return fushi_voice_hook::MatchesMalieProfile(nullptr);
   }
   bool install() override {
+    NoteProfileState();
     const bool voice = TryHookMalieDecoderVoice();
     const bool lookup = InstallMalieLookup();
     ready_ = voice || lookup;
@@ -427,6 +406,7 @@ class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
     return ready_;
   }
   void ProcessPendingEvents() {
+    RecheckProfile();
     ProcessMalieVoiceTasks();
     ProcessMalieLookupTick();
   }
@@ -441,6 +421,7 @@ class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
     ShutdownMalieLookup();
     installed_ = false;
     ready_ = false;
+    shut_down_ = true;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
@@ -448,6 +429,48 @@ class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  // The first probe ran before the game's main thread resumed; an image that
+  // was not ready then (still unpacking) is measured again once it changed,
+  // and installed when it matches.
+  void RecheckProfile() {
+    if (shut_down_ || installed_ ||
+        fushi_voice_hook::MalieProfileState() !=
+            malie_io::ProfileState::kImageNotReady) {
+      return;
+    }
+    const uint64_t now = GetTickCount64();
+    if (recheck_tick_ != 0 && now - recheck_tick_ < kMalieProfileRecheckMs) {
+      return;
+    }
+    recheck_tick_ = now;
+    fushi_voice_hook::MeasureMalieProfile();
+    NoteProfileState();
+    if (fushi_voice_hook::MalieProfileState() ==
+        malie_io::ProfileState::kMatched) {
+      install();
+    }
+  }
+  // Logs a match and every verdict reached after "image not ready"; the
+  // first refusal of a game that is simply not Malie stays silent.
+  void NoteProfileState() {
+    const auto state = fushi_voice_hook::MalieProfileState();
+    if (state == logged_state_) return;
+    const bool was_not_ready =
+        logged_state_ == malie_io::ProfileState::kImageNotReady;
+    logged_state_ = state;
+    if (state != malie_io::ProfileState::kMatched && !was_not_ready) return;
+    static const wchar_t* const kNames[] = {L"unmeasured", L"matched",
+                                            L"image-not-ready", L"rejected"};
+    const uint32_t index = static_cast<uint32_t>(state);
+    MalieLog(L"identity: %ls (scheme result=%lu)",
+             index < 4u ? kNames[index] : L"?",
+             static_cast<unsigned long>(
+                 fushi_voice_hook::MalieProfile().last_result.load()));
+  }
+
   bool installed_ = false;
   bool ready_ = false;
+  bool shut_down_ = false;
+  uint64_t recheck_tick_ = 0;
+  malie_io::ProfileState logged_state_ = malie_io::ProfileState::kUnmeasured;
 };

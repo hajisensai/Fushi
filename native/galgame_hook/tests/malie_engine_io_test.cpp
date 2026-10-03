@@ -452,9 +452,282 @@ void TestPagePrefix() {
          L"vir_v_vir0002.partial.ogg");
 }
 
+// ── voice assembly ─────────────────────────────────────────────────────────
+
+constexpr uint32_t kPageBytes = 27u + 1u + 10u;
+
+// A logical stream of `pages` pages (BOS first, EOS last when `eos`).
+std::vector<uint8_t> OggStream(uint32_t serial, int pages, bool eos) {
+  std::vector<uint8_t> stream;
+  for (int i = 0; i < pages; ++i) {
+    uint8_t flags = i == 0 ? 0x02u : 0x00u;
+    if (eos && i == pages - 1) flags = static_cast<uint8_t>(flags | 0x04u);
+    const auto page = OggPage(serial, flags, 10u);
+    stream.insert(stream.end(), page.begin(), page.end());
+  }
+  return stream;
+}
+
+struct Written {
+  std::wstring storage;
+  uint32_t bytes = 0u;
+  uint64_t text_event = 0u;
+};
+
+class FakeSink final : public io::VoiceSink {
+ public:
+  uint64_t TextEvent(const std::wstring& path, uint64_t) override {
+    return path == bound_path ? bound_event : 0u;
+  }
+  bool Write(const uint8_t* data, uint32_t bytes, const std::wstring& storage,
+             uint64_t, uint64_t text_event) override {
+    assert(data != nullptr && bytes != 0u);
+    written.push_back({storage, bytes, text_event});
+    return true;
+  }
+  void Note(const wchar_t*, const std::wstring&, uint32_t, uint32_t) override {
+    ++notes;
+  }
+  std::wstring bound_path;
+  uint64_t bound_event = 0u;
+  std::vector<Written> written;
+  int notes = 0;
+};
+
+constexpr wchar_t kVoiceA[] = L"data\\voice\\vir\\v_vir0001.ogg";
+constexpr wchar_t kVoiceB[] = L"data\\voice\\kru\\v_kru0001.ogg";
+
+// Feeds `bytes` as chunks of `chunk` bytes; returns the next feed number.
+uint64_t FeedStream(io::VoiceAssembler* assembler, FakeSink* sink,
+                    uintptr_t decoder, const wchar_t* path,
+                    const std::vector<uint8_t>& bytes, size_t begin,
+                    size_t end, uint64_t feed, uint64_t tick,
+                    size_t chunk = 50u) {
+  for (size_t at = begin; at < end; at += chunk) {
+    io::FeedChunk c;
+    c.feed = feed++;
+    c.decoder = decoder;
+    c.tick = tick;
+    c.path = path;
+    c.data = bytes.data() + at;
+    c.length = static_cast<uint32_t>((std::min)(chunk, end - at));
+    assembler->Feed(c, *sink);
+  }
+  return feed;
+}
+
+void TestAssemblerCompleteStream() {
+  io::VoiceAssembler assembler;
+  FakeSink sink;
+  const auto stream = OggStream(7u, 6, true);
+  uint64_t feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, stream, 0u,
+                             stream.size(), 1u, 1000u);
+  // Complete, no message unit yet, inside the bind wait: kept.
+  assembler.Settle(feed, 1500u, sink);
+  assert(sink.written.empty());
+  sink.bound_path = kVoiceA;
+  sink.bound_event = 42u;
+  assembler.Settle(feed, 1600u, sink);
+  assert(sink.written.size() == 1u);
+  assert(sink.written[0].storage == L"vir_v_vir0001.ogg");
+  assert(sink.written[0].bytes == stream.size());
+  assert(sink.written[0].text_event == 42u);
+  // Published once.
+  assembler.Settle(feed, 5000u, sink);
+  assert(sink.written.size() == 1u);
+  // A non-voice path never takes a member.
+  const auto bgm = OggStream(8u, 6, true);
+  feed = FeedStream(&assembler, &sink, 0x200u, L"data\\bgm\\01.ogg", bgm, 0u,
+                    bgm.size(), feed, 6000u);
+  assembler.Settle(feed, 9000u, sink);
+  assert(sink.written.size() == 1u);
+}
+
+void TestAssemblerBosStopsOnlyItsDecoder() {
+  io::VoiceAssembler assembler;
+  FakeSink sink;
+  const auto a = OggStream(7u, 6, true);
+  const auto b = OggStream(9u, 6, true);
+  // A receives five whole pages, then B starts on another decoder.
+  uint64_t feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 0u,
+                             5u * kPageBytes, 1u, 1000u);
+  feed = FeedStream(&assembler, &sink, 0x200u, kVoiceB, b, 0u, b.size(), feed,
+                    1100u);
+  assert(assembler.member(0).used && assembler.member(0).complete == 0u);
+  // A's decoder keeps going to its EOS: still one whole stream.
+  feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 5u * kPageBytes,
+                    a.size(), feed, 1200u);
+  assembler.Settle(feed, 4000u, sink);  // bind wait over, unbound
+  assert(sink.written.size() == 2u);
+  for (const auto& w : sink.written) {
+    assert(w.storage.find(L".partial") == std::wstring::npos);
+    assert(w.bytes == a.size());
+  }
+
+  // Now a new BOS on the *same* decoder: the unfinished stream is stopped
+  // (its whole-page prefix kept), the new one starts.
+  io::VoiceAssembler second;
+  FakeSink sink2;
+  feed = FeedStream(&second, &sink2, 0x100u, kVoiceA, a, 0u, 5u * kPageBytes,
+                    1u, 1000u);
+  feed = FeedStream(&second, &sink2, 0x100u, kVoiceB, b, 0u, b.size(), feed,
+                    1100u);
+  second.Settle(feed, 4000u, sink2);
+  assert(sink2.written.size() == 2u);
+  bool partial_a = false, whole_b = false;
+  for (const auto& w : sink2.written) {
+    partial_a = partial_a || (w.storage == L"vir_v_vir0001.partial.ogg" &&
+                              w.bytes == 5u * kPageBytes);
+    whole_b = whole_b || (w.storage == L"kru_v_kru0001.ogg" &&
+                          w.bytes == b.size());
+  }
+  assert(partial_a && whole_b);
+  assert(second.damaged() == 0u);
+}
+
+void TestAssemblerCompleteMemberWaitsForBinding() {
+  io::VoiceAssembler assembler;
+  FakeSink sink;
+  const auto a = OggStream(7u, 6, true);
+  const auto b = OggStream(9u, 6, true);
+  uint64_t feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 0u,
+                             a.size(), 1u, 1000u);
+  // The decoder is reused for the next voice before A's unit is parsed.
+  feed = FeedStream(&assembler, &sink, 0x100u, kVoiceB, b, 0u, 3u * kPageBytes,
+                    feed, 1100u);
+  assembler.Settle(feed, 1200u, sink);
+  assert(sink.written.empty());  // A is complete and still waits
+  sink.bound_path = kVoiceA;
+  sink.bound_event = 77u;
+  assembler.Settle(feed, 1300u, sink);
+  assert(sink.written.size() == 1u);
+  assert(sink.written[0].storage == L"vir_v_vir0001.ogg");
+  assert(sink.written[0].bytes == a.size());
+  assert(sink.written[0].text_event == 77u);
+}
+
+void TestAssemblerLostRefillMarksDamaged() {
+  io::VoiceAssembler assembler;
+  FakeSink sink;
+  const auto a = OggStream(7u, 8, true);
+  // Five whole pages, then a refill is lost (exactly on a page boundary:
+  // the bytes after it would still parse as whole pages).
+  uint64_t feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 0u,
+                             5u * kPageBytes, 1u, 1000u, kPageBytes);
+  assembler.Drop(0x100u, feed++, 1100u, sink);
+  feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 6u * kPageBytes,
+                    a.size(), feed, 1200u, kPageBytes);
+  assert(assembler.dropped() == 1u && assembler.damaged() == 1u);
+  assembler.Settle(feed, 4000u, sink);
+  assert(sink.written.size() == 1u);
+  assert(sink.written[0].storage == L"vir_v_vir0001.partial.ogg");
+  assert(sink.written[0].bytes == 5u * kPageBytes);
+  // A loss on another decoder does not touch this one.
+  io::VoiceAssembler other;
+  FakeSink sink2;
+  feed = FeedStream(&other, &sink2, 0x100u, kVoiceA, a, 0u, 5u * kPageBytes,
+                    1u, 1000u);
+  other.Drop(0x900u, feed++, 1100u, sink2);
+  assert(other.dropped() == 1u && other.damaged() == 0u);
+  assert(other.member(0).used && other.member(0).complete == 0u);
+  // Lost records whose decoder is unknown cut every receiving stream.
+  other.DropAll(1200u, sink2);
+  assert(other.damaged() == 1u && other.member(0).complete != 0u);
+}
+
+void TestAssemblerStallCountsFeedsNotTime() {
+  io::VoiceAssembler assembler;
+  FakeSink sink;
+  const auto a = OggStream(7u, 8, true);
+  const uint64_t feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 0u,
+                                   5u * kPageBytes, 1u, 1000u);
+  const uint64_t last = feed - 1u;
+  // Paused / unfocused game: no refills at all, however long — kept.
+  assembler.Settle(feed, 1000u + 3600u * 1000u, sink);
+  assert(sink.written.empty());
+  assert(assembler.member(0).complete == 0u);
+  // Other decoders refilled kStallFeeds times: still within the margin.
+  assembler.Settle(last + io::kStallFeeds, 2000u, sink);
+  assert(assembler.member(0).complete == 0u);
+  // One more: stopped without a successor, whole-page prefix kept.
+  assembler.Settle(last + io::kStallFeeds + 1u, 2000u, sink);
+  assert(assembler.member(0).used && assembler.member(0).partial);
+  assembler.Settle(last + io::kStallFeeds + 1u, 2000u + io::kBindWaitMs, sink);
+  assert(sink.written.size() == 1u &&
+         sink.written[0].storage == L"vir_v_vir0001.partial.ogg");
+}
+
+void TestAssemblerDuplicateDecode() {
+  io::VoiceAssembler assembler;
+  FakeSink sink;
+  sink.bound_path = kVoiceA;
+  sink.bound_event = 5u;
+  const auto a = OggStream(7u, 6, true);
+  uint64_t feed = FeedStream(&assembler, &sink, 0x100u, kVoiceA, a, 0u,
+                             a.size(), 1u, 1000u);
+  assembler.Settle(feed, 1000u, sink);
+  feed = FeedStream(&assembler, &sink, 0x300u, kVoiceA, a, 0u, a.size(), feed,
+                    1500u);
+  assembler.Settle(feed, 1500u, sink);
+  assert(sink.written.size() == 1u);  // second decode of the same file
+  feed = FeedStream(&assembler, &sink, 0x300u, kVoiceA, a, 0u, a.size(), feed,
+                    1000u + io::kRepeatWindowMs + 1u);
+  assembler.Settle(feed, 9000u, sink);
+  assert(sink.written.size() == 2u);  // played again later
+}
+
+// ── identity verdict ───────────────────────────────────────────────────────
+
+void TestProfileState() {
+  using io::ProfileState;
+  using io::SchemeResult;
+  assert(io::ClassifyScheme(SchemeResult::kResolved) == ProfileState::kMatched);
+  assert(io::ClassifyScheme(SchemeResult::kNoName) ==
+         ProfileState::kImageNotReady);
+  assert(io::ClassifyScheme(SchemeResult::kNoNameCopy) ==
+         ProfileState::kImageNotReady);
+  assert(io::ClassifyScheme(SchemeResult::kNotX86) == ProfileState::kRejected);
+  assert(io::ClassifyScheme(SchemeResult::kTellShape) ==
+         ProfileState::kRejected);
+  assert(io::ClassifyScheme(SchemeResult::kRegistrarNotShared) ==
+         ProfileState::kRejected);
+  assert(io::ShouldMeasureProfile(ProfileState::kUnmeasured, 0u, 0u));
+  assert(!io::ShouldMeasureProfile(ProfileState::kImageNotReady, 5u, 5u));
+  assert(io::ShouldMeasureProfile(ProfileState::kImageNotReady, 5u, 6u));
+  assert(!io::ShouldMeasureProfile(ProfileState::kMatched, 5u, 6u));
+  assert(!io::ShouldMeasureProfile(ProfileState::kRejected, 5u, 6u));
+
+  std::vector<uint8_t> code(0x3000u, 0x90u), rdata(0x1000u, 0x11u),
+      data(0x1000u, 0x22u);
+  exact::LoadedPeImage image;
+  image.base = code.data();
+  image.section_count = 3u;
+  image.sections[0] = {code.data(), code.size(), 0x1000u,
+                       IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ |
+                           IMAGE_SCN_MEM_WRITE};  // a packer's RWX section
+  image.sections[1] = {rdata.data(), rdata.size(), 0x4000u, IMAGE_SCN_MEM_READ};
+  image.sections[2] = {data.data(), data.size(), 0x5000u,
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE};
+  const uint64_t before = io::ImageFingerprint(image);
+  data[0] = 0x23u;  // the game writing its data: not an unpack
+  assert(io::ImageFingerprint(image) == before);
+  code[0x2000u] = 0xc3u;  // unpacked code
+  const uint64_t unpacked = io::ImageFingerprint(image);
+  assert(unpacked != before);
+  rdata[0x0005u] = 0x12u;  // unpacked constants
+  assert(io::ImageFingerprint(image) != unpacked);
+}
+
 }  // namespace
 
 int main() {
+  TestAssemblerCompleteStream();
+  TestAssemblerBosStopsOnlyItsDecoder();
+  TestAssemblerCompleteMemberWaitsForBinding();
+  TestAssemblerLostRefillMarksDamaged();
+  TestAssemblerStallCountsFeedsNotTime();
+  TestAssemblerDuplicateDecode();
+  TestProfileState();
   TestPagePrefix();
   TestSchemeResolvesFromStructure();
   TestSchemeFailsClosed();

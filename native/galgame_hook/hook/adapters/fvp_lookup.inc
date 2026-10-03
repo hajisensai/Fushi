@@ -14,7 +14,8 @@
 //     allocation, no IO, no conversion.
 //   * message thread — main window procedure detour: a bare WM_LBUTTONDOWN /
 //     DBLCLK on a mapped glyph of the current model is swallowed together with
-//     its WM_LBUTTONUP, so the engine's input state never sees the click.
+//     its WM_LBUTTONUP, so the engine's input state never sees the click
+//     (touch: see DecideMessage in fvp_lookup_core.h).
 //   * HookWorker — ProcessFvpLookupTick: parses and converts queued prints,
 //     publishes the text lane (one lane per text buffer), keeps the latest
 //     mappable page per buffer, watches the selected buffer's surface, builds
@@ -29,7 +30,11 @@
 // path, a text object whose pen moved (cleared or printed again), a text
 // mismatch, a client with another aspect than the design back buffer or a
 // missing native-input admission retires the provider or refuses the click,
-// and the click then reaches the game unchanged.
+// and the click then reaches the game unchanged.  "Drawn recently" and "the
+// model is current" are counted in engine events (draws, prints on the
+// model's own buffer), never in wall-clock time: a static screen, or an engine
+// that stops drawing while a lookup card is foreground, keeps its model, so a
+// click on a glyph is not let through to advance the line.
 
 #if defined(_M_IX86)
 
@@ -41,9 +46,6 @@ constexpr uint32_t kFvpSubmitSlots = 8u;
 constexpr uint32_t kFvpModelLogBudget = 4096u;
 constexpr uint64_t kFvpWindowRetryMs = 500u;
 constexpr uint64_t kFvpTextDedupeMs = 500u;
-// A watched surface not drawn for this long is not on screen (the render walk
-// skips inactive groups entirely).
-constexpr uint64_t kFvpDrawFreshMs = 400u;
 
 // Adapter-local diagnostic flags (reported through AdapterDiagnostics::flags,
 // never through the shared header words).
@@ -66,6 +68,9 @@ void NoteFvpFlag(uint32_t flag) {
 
 struct FvpTextEvent {
   uint64_t tick = 0u;
+  uint64_t step = 0u;           // script position (shared with AudioPlay)
+  uint64_t epoch = 0u;          // draws counted when it ran (its dispatch)
+  uint64_t buffer_prints = 0u;  // prints on its buffer, this one included
   uintptr_t text_object = 0u;
   int32_t buffer = -1;
   int16_t pen_end_x = 0;
@@ -85,7 +90,7 @@ struct FvpModelGlyph {
 struct FvpModel {
   uint64_t generation = 0u;
   uint64_t page = 0u;
-  uint64_t event_seq = 0u;  // prints captured when the model was built
+  uint64_t buffer_prints = 0u;  // prints on its buffer it was built from
   uintptr_t window = 0u;
   uintptr_t text_object = 0u;
   int32_t buffer = -1;
@@ -116,6 +121,7 @@ struct FvpPage {
   bool valid = false;
   uint64_t id = 0u;
   uintptr_t text_object = 0u;
+  uint64_t buffer_prints = 0u;
   int16_t pen_end_x = 0;
   int16_t pen_end_y = 0;
   uint64_t text_event = 0u;
@@ -128,7 +134,9 @@ struct FvpPage {
 
 // What the Draw detour publishes for the watched surface.
 struct FvpDrawSlot {
-  uint64_t tick = 0u;
+  uint64_t tick = 0u;    // 0 = the last read of the surface failed
+  uint64_t draws = 0u;   // draw counter at this draw of the surface
+  uint64_t period = 0u;  // draws since its previous draw (same surface)
   uintptr_t surface = 0u;
   fvp_lookup::DrawState state;
 };
@@ -140,8 +148,7 @@ struct FvpLookupRuntime {
   bool installed = false;
   fvp_lookup::SiteResult site_result = fvp_lookup::SiteResult::kNotX86;
   bool provider_offered = false;
-  bool window_hooked = false;
-  bool window_rejected = false;
+  fvp_lookup::WindowBindingState window_state;
   uint64_t window_retry_tick = 0u;
   uint64_t processed_event_seq = 0u;
   uint64_t processed_submit_seq = 0u;
@@ -203,12 +210,18 @@ struct FvpLookupRuntime {
   std::atomic<uint32_t> draw_seq{0u};
   FvpDrawSlot draw;
   std::atomic<uint32_t> print_hits{0u};
+  // Every primitive the engine draws (the dispatch epoch and the draw-count
+  // freshness gate), the script step shared by TextPrint and AudioPlay, and
+  // the prints per text buffer.
+  std::atomic<uint64_t> draw_calls{0u};
+  std::atomic<uint64_t> script_steps{0u};
+  fvp_lookup::BufferPrintCounts buffer_prints;
 };
 
 FvpLookupRuntime g_fvp_lookup;
 
-// Worker-only history of published lines, for binding a voice line played in
-// the same script step to the dialogue print that follows it.
+// Worker-only history of published lines with their script step and
+// dispatch, for binding a voice line to the dialogue print of its dispatch.
 constexpr uint32_t kFvpPublishedTextSlots = 16u;
 std::array<fvp_lookup::PublishedText, kFvpPublishedTextSlots>
     g_fvp_published_text{};
@@ -306,7 +319,8 @@ int32_t FvpBufferIndexOf(uintptr_t text_object) {
   return -1;
 }
 
-void PublishFvpTextEvent(uintptr_t self, const char* text) {
+void PublishFvpTextEvent(uintptr_t self, const char* text, uint64_t step,
+                         uint64_t epoch) {
   auto& rt = g_fvp_lookup;
   const uint64_t sequence =
       rt.event_count.fetch_add(1u, std::memory_order_acq_rel) + 1u;
@@ -315,8 +329,13 @@ void PublishFvpTextEvent(uintptr_t self, const char* text) {
   std::atomic_thread_fence(std::memory_order_release);
   FvpTextEvent& event = rt.events[sequence % kFvpEventSlots];
   event.tick = GetTickCount64();
+  event.step = step;
+  event.epoch = epoch;
   event.text_object = self;
   event.buffer = FvpBufferIndexOf(self);
+  // Counted before the slot is published: a press that reads the new count
+  // refuses a model built from an earlier print of this buffer.
+  event.buffer_prints = rt.buffer_prints.Note(event.buffer);
   event.text_bytes = 0u;
   event.glyph_count = 0u;
   event.glyphs_overflow = rt.capture_overflow;
@@ -357,17 +376,21 @@ int __fastcall FvpPrintDetour(uintptr_t self, uintptr_t, const char* text) {
       text != nullptr &&
       rt.capture_thread.compare_exchange_strong(expected, thread,
                                                 std::memory_order_acq_rel);
+  uint64_t step = 0u;
+  uint64_t epoch = 0u;
   if (capture) {
     rt.capture_object = self;
     rt.capture_count = 0u;
     rt.capture_overflow = false;
+    step = rt.script_steps.fetch_add(1u, std::memory_order_acq_rel) + 1u;
+    epoch = rt.draw_calls.load(std::memory_order_acquire);
   }
   const int result = g_fvp_print_original(self, text);
   if (capture) {
     rt.print_hits.fetch_add(1u, std::memory_order_relaxed);
     uint8_t first = 0u;
     if (ReadFvpValue(reinterpret_cast<uintptr_t>(text), &first) && first != 0u) {
-      PublishFvpTextEvent(self, text);
+      PublishFvpTextEvent(self, text, step, epoch);
     }
     rt.capture_object = 0u;
     rt.capture_thread.store(0u, std::memory_order_release);
@@ -414,6 +437,8 @@ int __fastcall FvpPutGlyphDetour(uintptr_t self, uintptr_t, uintptr_t format,
 int __fastcall FvpDrawDetour(uintptr_t self, uintptr_t, int ox, int oy,
                              uintptr_t prim, uintptr_t surface) {
   auto& rt = g_fvp_lookup;
+  const uint64_t draws =
+      rt.draw_calls.fetch_add(1u, std::memory_order_acq_rel) + 1u;
   const uintptr_t watched = rt.watched_surface.load(std::memory_order_acquire);
   if (watched != 0u && surface == watched && prim != 0u &&
       rt.live.load(std::memory_order_acquire)) {
@@ -421,6 +446,12 @@ int __fastcall FvpDrawDetour(uintptr_t self, uintptr_t, int ox, int oy,
     rt.draw_seq.store(seq | 1u, std::memory_order_release);
     std::atomic_thread_fence(std::memory_order_release);
     FvpDrawSlot& slot = rt.draw;
+    // The render thread is the slot's only writer.
+    slot.period = slot.surface == surface && slot.draws != 0u &&
+                          draws > slot.draws
+                      ? draws - slot.draws
+                      : 0u;
+    slot.draws = draws;
     bool ok = true;
     __try {
       const auto& s = rt.sites;
@@ -464,12 +495,15 @@ bool ReadFvpDraw(FvpDrawSlot* out) {
   return rt.draw_seq.load(std::memory_order_acquire) == before;
 }
 
-// The watched surface was drawn recently as a plain visible translation;
-// returns where its pixel (0,0) lands on the design back buffer.
+// The watched surface is still on screen (draw-count gate, see
+// WatchedSurfaceDrawn) as a plain visible translation; returns where its pixel
+// (0,0) lands on the design back buffer.
 bool FvpDrawnOrigin(uintptr_t surface, int32_t* x, int32_t* y) {
   FvpDrawSlot draw;
   if (!ReadFvpDraw(&draw) || draw.surface != surface || draw.tick == 0u ||
-      GetTickCount64() - draw.tick > kFvpDrawFreshMs) {
+      !fvp_lookup::WatchedSurfaceDrawn(
+          g_fvp_lookup.draw_calls.load(std::memory_order_acquire), draw.draws,
+          draw.period)) {
     return false;
   }
   return fvp_lookup::DrawOrigin(draw.state, x, y);
@@ -536,8 +570,10 @@ bool FvpPressEligible(HWND hwnd, WPARAM wparam, LPARAM lparam,
   }
   int32_t origin_x = 0, origin_y = 0;
   const HWND frame = reinterpret_cast<HWND>(model.window);
+  // Only a newer print on the model's own text buffer makes it stale; a HUD
+  // or name-plate buffer printing does not.
   if ((hwnd != frame && !IsChild(frame, hwnd)) ||
-      rt.event_count.load(std::memory_order_acquire) != model.event_seq) {
+      rt.buffer_prints.Of(model.buffer) != model.buffer_prints) {
     return FvpRefusePress(3u);
   }
   if (!fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
@@ -779,7 +815,8 @@ uint64_t FvpLaneId(int32_t buffer) {
 }
 
 uint64_t PublishFvpTextLine(const std::wstring& text, int32_t buffer,
-                            uintptr_t address, uint64_t tick) {
+                            uintptr_t address, uint64_t tick, uint64_t step,
+                            uint64_t epoch) {
   auto& rt = g_fvp_lookup;
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
       !g_text_cs_ready || text.empty() ||
@@ -812,7 +849,7 @@ uint64_t PublishFvpTextLine(const std::wstring& text, int32_t buffer,
   if (event == 0u) return 0u;
   NoteFvpFlag(kFvpFlagTextObserved);
   g_fvp_published_text[g_fvp_published_text_next++ % kFvpPublishedTextSlots] =
-      {event, thread_id, tick};
+      {event, thread_id, tick, step, epoch};
   // An exact engine producer is live: the GDI glyph fallback yields (FVP
   // rasterises every glyph through GetGlyphOutlineA).
   g_header->luna_active = 1;
@@ -861,7 +898,8 @@ void ProcessFvpTextEvent(const FvpTextEvent& event) {
   }
   if (text.empty()) return;
   const uint64_t text_event =
-      PublishFvpTextLine(text, event.buffer, event.text_object, event.tick);
+      PublishFvpTextLine(text, event.buffer, event.text_object, event.tick,
+                         event.step, event.epoch);
 
   FvpPage& page = rt.pages[static_cast<size_t>(event.buffer)];
   page.valid = false;
@@ -897,6 +935,7 @@ void ProcessFvpTextEvent(const FvpTextEvent& event) {
   page.valid = true;
   page.id = ++rt.next_page;
   page.text_object = event.text_object;
+  page.buffer_prints = event.buffer_prints;
   page.pen_end_x = event.pen_end_x;
   page.pen_end_y = event.pen_end_y;
   page.text_event = text_event;
@@ -929,110 +968,164 @@ void DrainFvpTextEvents() {
 }
 
 // The main window: the one visible top-level ANSI window of this process whose
-// window procedure lies in the game image's code.  Hooked once.
+// window procedure lies in the game image's code, with every distinct in-image
+// procedure of the frame and its descendants (the client-covering child
+// receives the mouse).  `identity` names the window set seen (0 = none yet):
+// a rejection holds only for that set, so a splash window that goes away or
+// a window destroyed and recreated is evaluated again.
+struct FvpWindowSearch {
+  uintptr_t base = 0u;
+  fushi_voice_hook::exact_lookup::LoadedPeImage image;
+  HWND window = nullptr;
+  uintptr_t procedure = 0u;
+  uintptr_t window_xor = 0u;
+  uint32_t matches = 0u;
+};
+
+struct FvpWindowChildren {
+  const FvpWindowSearch* search = nullptr;
+  fvp_lookup::WindowCandidate* candidate = nullptr;
+  bool overflow = false;
+};
+
+bool FvpInImageProcedure(const FvpWindowSearch& search, uintptr_t procedure) {
+  return procedure >= search.base &&
+         fvp_lookup::IsExecutableRva(search.image, procedure - search.base,
+                                     16u);
+}
+
+BOOL CALLBACK FvpCollectTopWindow(HWND hwnd, LPARAM context) {
+  auto* s = reinterpret_cast<FvpWindowSearch*>(context);
+  DWORD pid = 0;
+  GetWindowThreadProcessId(hwnd, &pid);
+  if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd) ||
+      IsWindowUnicode(hwnd)) {
+    return TRUE;
+  }
+  const uintptr_t procedure =
+      static_cast<uintptr_t>(GetWindowLongPtrA(hwnd, GWLP_WNDPROC));
+  if (!FvpInImageProcedure(*s, procedure)) return TRUE;
+  ++s->matches;
+  s->window = hwnd;
+  s->procedure = procedure;
+  s->window_xor ^= reinterpret_cast<uintptr_t>(hwnd);
+  return TRUE;
+}
+
+BOOL CALLBACK FvpCollectChildProcedure(HWND hwnd, LPARAM context) {
+  auto* c = reinterpret_cast<FvpWindowChildren*>(context);
+  if (IsWindowUnicode(hwnd)) return TRUE;
+  const uintptr_t procedure =
+      static_cast<uintptr_t>(GetWindowLongPtrA(hwnd, GWLP_WNDPROC));
+  if (!FvpInImageProcedure(*c->search, procedure)) return TRUE;
+  fvp_lookup::WindowCandidate& candidate = *c->candidate;
+  for (uint32_t k = 0u; k < candidate.procedure_count; ++k) {
+    if (candidate.procedures[k] == procedure) return TRUE;
+  }
+  if (candidate.procedure_count >= fvp_lookup::kMaxWindowProcedures) {
+    c->overflow = true;
+    return FALSE;
+  }
+  candidate.procedures[candidate.procedure_count++] = procedure;
+  return TRUE;
+}
+
+bool CollectFvpWindowCandidate(fvp_lookup::WindowCandidate* candidate) {
+  FvpWindowSearch search;
+  search.base = g_fvp_lookup.image_base;
+  if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
+          reinterpret_cast<HMODULE>(search.base), &search.image)) {
+    return false;
+  }
+  EnumWindows(&FvpCollectTopWindow, reinterpret_cast<LPARAM>(&search));
+  *candidate = fvp_lookup::WindowCandidate();
+  if (search.matches == 0u) return true;  // not created yet
+  candidate->identity =
+      (static_cast<uint64_t>(search.window_xor) << 8) ^ search.matches;
+  if (search.matches != 1u) return true;  // ambiguous: not acceptable
+  candidate->window = reinterpret_cast<uintptr_t>(search.window);
+  candidate->procedures[candidate->procedure_count++] = search.procedure;
+  FvpWindowChildren children;
+  children.search = &search;
+  children.candidate = candidate;
+  EnumChildWindows(search.window, &FvpCollectChildProcedure,
+                   reinterpret_cast<LPARAM>(&children));
+  candidate->acceptable = !children.overflow;
+  return true;
+}
+
+// Hooks the candidate's procedures that are not hooked yet, each into the
+// next free detour slot.  A procedure hooked once stays hooked.
+bool HookFvpWindowProcedures(const fvp_lookup::WindowCandidate& candidate) {
+  auto& state = g_fvp_lookup.window_state;
+  for (uint32_t k = 0u; k < candidate.procedure_count; ++k) {
+    const uintptr_t procedure = candidate.procedures[k];
+    if (fvp_lookup::WindowProcedureHooked(state, procedure)) continue;
+    const uint32_t slot = state.hooked_count;
+    if (slot >= kFvpWndProcSlots) return false;
+    const bool hooked = InstallFvpHook(
+        reinterpret_cast<void*>(procedure),
+        reinterpret_cast<void*>(kFvpWndProcDetours[slot]),
+        reinterpret_cast<void**>(&g_fvp_wndproc_original[slot]));
+    FvpLookupLog(L"fvp-lookup: window procedure %u +0x%lx hooked=%d", slot,
+                 static_cast<unsigned long>(procedure -
+                                            g_fvp_lookup.image_base),
+                 hooked ? 1 : 0);
+    if (!hooked) return false;
+    state.hooked[state.hooked_count++] = procedure;
+  }
+  return true;
+}
+
 void TryHookFvpWindow() {
   auto& rt = g_fvp_lookup;
-  if (rt.window_hooked || rt.window_rejected) return;
+  auto& state = rt.window_state;
+  const HWND bound = reinterpret_cast<HWND>(state.bound);
+  DWORD pid = 0u;
+  state.bound_alive = bound != nullptr && IsWindow(bound) &&
+                      GetWindowThreadProcessId(bound, &pid) != 0u &&
+                      pid == GetCurrentProcessId();
+  if (fvp_lookup::DecideWindowStep(fvp_lookup::WindowCandidate(), state) ==
+      fvp_lookup::WindowStep::kKeep) {
+    return;
+  }
+  if (state.bound != 0u) {
+    FvpLookupLog(L"fvp-lookup: bound window gone, re-evaluating");
+    state.bound = 0u;
+    rt.window = nullptr;
+  }
   const uint64_t now = GetTickCount64();
   if (rt.window_retry_tick != 0u &&
       now - rt.window_retry_tick < kFvpWindowRetryMs) {
     return;
   }
   rt.window_retry_tick = now;
-  struct Search {
-    uintptr_t base = 0u;
-    fushi_voice_hook::exact_lookup::LoadedPeImage image;
-    HWND window = nullptr;
-    uintptr_t procedure = 0u;
-    uint32_t matches = 0u;
-  } search;
-  search.base = rt.image_base;
-  if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
-          reinterpret_cast<HMODULE>(search.base), &search.image)) {
-    return;
+  fvp_lookup::WindowCandidate candidate;
+  if (!CollectFvpWindowCandidate(&candidate)) return;
+  switch (fvp_lookup::DecideWindowStep(candidate, state)) {
+    case fvp_lookup::WindowStep::kKeep:
+    case fvp_lookup::WindowStep::kWait:
+      return;
+    case fvp_lookup::WindowStep::kReject:
+      state.rejected_identity = candidate.identity;
+      FvpLookupLog(L"fvp-lookup: window set rejected (acceptable=%d procs=%u)",
+                   candidate.acceptable ? 1 : 0, candidate.procedure_count);
+      return;
+    case fvp_lookup::WindowStep::kHook:
+      if (!HookFvpWindowProcedures(candidate)) {
+        state.rejected_identity = candidate.identity;
+        return;
+      }
+      break;
+    case fvp_lookup::WindowStep::kBind:
+      break;
   }
-  EnumWindows(
-      [](HWND hwnd, LPARAM context) -> BOOL {
-        auto* s = reinterpret_cast<Search*>(context);
-        DWORD pid = 0;
-        GetWindowThreadProcessId(hwnd, &pid);
-        if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd) ||
-            IsWindowUnicode(hwnd)) {
-          return TRUE;
-        }
-        const uintptr_t procedure =
-            static_cast<uintptr_t>(GetWindowLongPtrA(hwnd, GWLP_WNDPROC));
-        if (procedure < s->base ||
-            !fvp_lookup::IsExecutableRva(s->image, procedure - s->base, 16u)) {
-          return TRUE;
-        }
-        ++s->matches;
-        s->window = hwnd;
-        s->procedure = procedure;
-        return TRUE;
-      },
-      reinterpret_cast<LPARAM>(&search));
-  if (search.matches == 0u) return;  // not created yet
-  if (search.matches != 1u) {
-    rt.window_rejected = true;
-    FvpLookupLog(L"fvp-lookup: main window ambiguous (%u candidates)",
-                 search.matches);
-    return;
-  }
-  rt.window = search.window;
-  // The frame's procedure and every distinct in-image procedure of its
-  // descendants (the client-covering child receives the mouse).
-  struct Children {
-    Search* search = nullptr;
-    std::array<uintptr_t, kFvpWndProcSlots> procedures{};
-    uint32_t count = 0u;
-    bool overflow = false;
-  } children;
-  children.search = &search;
-  children.procedures[children.count++] = search.procedure;
-  EnumChildWindows(
-      search.window,
-      [](HWND hwnd, LPARAM context) -> BOOL {
-        auto* c = reinterpret_cast<Children*>(context);
-        if (IsWindowUnicode(hwnd)) return TRUE;
-        const uintptr_t procedure =
-            static_cast<uintptr_t>(GetWindowLongPtrA(hwnd, GWLP_WNDPROC));
-        if (procedure < c->search->base ||
-            !fvp_lookup::IsExecutableRva(c->search->image,
-                                         procedure - c->search->base, 16u)) {
-          return TRUE;
-        }
-        for (uint32_t k = 0u; k < c->count; ++k) {
-          if (c->procedures[k] == procedure) return TRUE;
-        }
-        if (c->count >= kFvpWndProcSlots) {
-          c->overflow = true;
-          return FALSE;
-        }
-        c->procedures[c->count++] = procedure;
-        return TRUE;
-      },
-      reinterpret_cast<LPARAM>(&children));
-  if (children.overflow) {
-    rt.window_rejected = true;
-    FvpLookupLog(L"fvp-lookup: too many window procedures");
-    return;
-  }
-  bool all = true;
-  for (uint32_t k = 0u; k < children.count; ++k) {
-    const bool hooked = InstallFvpHook(
-        reinterpret_cast<void*>(children.procedures[k]),
-        reinterpret_cast<void*>(kFvpWndProcDetours[k]),
-        reinterpret_cast<void**>(&g_fvp_wndproc_original[k]));
-    all = all && hooked;
-    FvpLookupLog(L"fvp-lookup: window procedure %u +0x%lx hooked=%d", k,
-                 static_cast<unsigned long>(children.procedures[k] -
-                                            search.base),
-                 hooked ? 1 : 0);
-  }
-  rt.window_hooked = all;
-  if (!rt.window_hooked) rt.window_rejected = true;
-  if (rt.window_hooked) NoteFvpFlag(kFvpFlagWindowHooked);
+  state.bound = candidate.window;
+  state.bound_alive = true;
+  rt.window = reinterpret_cast<HWND>(candidate.window);
+  NoteFvpFlag(kFvpFlagWindowHooked);
+  FvpLookupLog(L"fvp-lookup: window bound procs=%u hooked=%u",
+               candidate.procedure_count, state.hooked_count);
 }
 
 void RetireFvpLookup() {
@@ -1117,8 +1210,8 @@ bool BuildFvpModel(const FvpPage& page, int32_t buffer,
     const bool read = ReadFvpDraw(&draw);
     return FailFvpModel(4u, read ? draw.state.alpha : -1,
                         read ? draw.state.flags : -1,
-                        read ? static_cast<int32_t>(GetTickCount64() -
-                                                    draw.tick)
+                        read ? static_cast<int32_t>(
+                                   g_fvp_lookup.draw_calls.load() - draw.draws)
                              : -1,
                         read ? draw.state.rotation : -1);
   }
@@ -1147,7 +1240,7 @@ bool BuildFvpModel(const FvpPage& page, int32_t buffer,
                         static_cast<int32_t>(line.size()));
   }
   model->page = page.id;
-  model->event_seq = rt.processed_event_seq;
+  model->buffer_prints = page.buffer_prints;
   model->window = reinterpret_cast<uintptr_t>(game);
   model->text_object = page.text_object;
   model->buffer = buffer;
@@ -1180,7 +1273,7 @@ bool BuildFvpModel(const FvpPage& page, int32_t buffer,
 }
 
 bool SameFvpModelGeometry(const FvpModel& left, const FvpModel& right) {
-  if (left.page != right.page || left.event_seq != right.event_seq ||
+  if (left.page != right.page || left.buffer_prints != right.buffer_prints ||
       left.window != right.window || left.text_object != right.text_object ||
       left.origin_x != right.origin_x || left.origin_y != right.origin_y ||
       left.design_w != right.design_w || left.design_h != right.design_h ||
@@ -1344,7 +1437,7 @@ void ProcessFvpLookupTick() {
   FvpSubmit submit;
   if (ReadLatestFvpSubmit(&submit)) (void)PublishFvpLookupHit(submit);
   TryHookFvpWindow();
-  if (!rt.window_hooked) {
+  if (rt.window_state.bound == 0u) {
     NoteFvpRetire(6u);
     RetireFvpLookup();
     return;

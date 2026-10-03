@@ -126,11 +126,34 @@ void TestVorbis() {
   assert(fvp::VorbisChannels(other.data(), other.size()) == 0u);
 }
 
+// The resource name decides what is a voice line, whatever its channels.
+void TestVoiceResourceName() {
+  const auto is_voice = [](const char* name) {
+    return fvp::IsVoiceResourceName(name, std::strlen(name) + 1u);
+  };
+  assert(is_voice("voice/02000750"));
+  assert(is_voice("VOICE/02000750"));
+  assert(is_voice("voice\\02000750"));
+  assert(is_voice("data/voice/02000750"));
+  assert(!is_voice("se/02000750"));
+  assert(!is_voice("bgm/voice"));      // `voice` is the entry, not a directory
+  assert(!is_voice("voice/"));         // no entry after it
+  assert(!is_voice("voices/02000750"));
+  assert(!is_voice("myvoice/02000750"));
+  assert(!is_voice("voice"));
+  assert(!is_voice(""));
+  assert(!fvp::IsVoiceResourceName(nullptr, 16u));
+  // Bounded: only the first `name_bytes` count.
+  assert(!fvp::IsVoiceResourceName("voice/02000750", 6u));
+  assert(fvp::IsVoiceResourceName("voice/02000750", 7u));
+}
+
 }  // namespace
 
 int main() {
   TestHcb();
   TestVorbis();
+  TestVoiceResourceName();
   std::printf("fvp_format_test ok\n");
   return 0;
 }

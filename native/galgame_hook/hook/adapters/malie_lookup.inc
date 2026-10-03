@@ -14,7 +14,8 @@
 //     two-slot seqlock when anything changed, plus the last draw tick.
 //   * message thread — window procedure detour: a bare WM_LBUTTONDOWN /
 //     DBLCLK on a glyph of the current model is swallowed with its
-//     WM_LBUTTONUP, so the engine's input dispatcher never sees the click.
+//     WM_LBUTTONUP, so the engine's input dispatcher never sees the click
+//     (touch: see DecideMessage in malie_lookup_core.h).
 //   * HookWorker — cleans the unit (voice tag, ruby, codes), publishes the
 //     text lane, keeps the voice-key -> text-event binding, builds the model
 //     against the selected line, offers / retires the provider and turns
@@ -109,8 +110,7 @@ struct MalieLookupRuntime {
   bool resolved = false;
   bool installed = false;
   bool provider_offered = false;
-  bool window_hooked = false;
-  bool window_rejected = false;
+  malie_lookup::WindowBindingState window_state;
   uint64_t window_retry_tick = 0u;
   uint64_t processed_segments = 0u;
   uint64_t processed_submit = 0u;
@@ -183,7 +183,10 @@ MalieLookupRuntime g_malie_lookup;
 MalieDrawFn g_malie_draw_original = nullptr;
 MalieParserFn g_malie_parser_original = nullptr;
 MalieRevealFn g_malie_reveal_original = nullptr;
-WNDPROC g_malie_wndproc_original = nullptr;
+// One detour slot per distinct click-window procedure (a recreated or
+// replaced click window may come with another procedure of the image).
+std::array<WNDPROC, malie_lookup::kMaxWindowProcedures>
+    g_malie_wndproc_original{};
 
 void MalieLookupLog(const wchar_t* format, ...) {
   auto& rt = g_malie_lookup;
@@ -447,6 +450,7 @@ bool MaliePressEligible(HWND hwnd, WPARAM wparam, LPARAM lparam,
   return true;
 }
 
+template <uint32_t Slot>
 LRESULT CALLBACK MalieWndProcDetour(HWND hwnd, UINT message, WPARAM wparam,
                                     LPARAM lparam) {
   auto& rt = g_malie_lookup;
@@ -468,8 +472,12 @@ LRESULT CALLBACK MalieWndProcDetour(HWND hwnd, UINT message, WPARAM wparam,
     }
     if (decision.swallow) return 0;
   }
-  return g_malie_wndproc_original(hwnd, message, wparam, lparam);
+  return g_malie_wndproc_original[Slot](hwnd, message, wparam, lparam);
 }
+
+constexpr std::array<WNDPROC, malie_lookup::kMaxWindowProcedures>
+    kMalieWndProcDetours = {&MalieWndProcDetour<0u>, &MalieWndProcDetour<1u>,
+                            &MalieWndProcDetour<2u>, &MalieWndProcDetour<3u>};
 
 // ── HookWorker ─────────────────────────────────────────────────────────────
 
@@ -535,8 +543,10 @@ bool InstallMalieLookup() {
     return true;
   }
   if (rt.resolved) return false;
-  rt.resolved = true;
+  // Not resolved until the identity matched: an image that was not ready
+  // (still unpacking) is measured again later and may match then.
   if (!fushi_voice_hook::MatchesMalieProfile(nullptr)) return false;
+  rt.resolved = true;
   ::fushi_voice_hook::exact_lookup::LoadedPeImage image;
   const HMODULE module = GetModuleHandleW(nullptr);
   if (!::fushi_voice_hook::exact_lookup::OpenLoadedPeImage(module, &image)) {
@@ -700,19 +710,18 @@ void DrainMalieSegments() {
 
 // The window whose procedure receives the clicks: the game's window that
 // lies under the main window's client and has its procedure in the image
-// (the frame forwards; the client child dispatches).  Hooked once.
-void TryHookMalieWindow() {
+// (the frame forwards; the client child dispatches).  Re-evaluated whenever
+// the bound window is gone or hidden; a rejection holds only for the window
+// and procedure it was made for (malie_lookup_core.h DecideWindowStep).
+bool CollectMalieWindowCandidate(malie_lookup::WindowCandidate* candidate,
+                                 HWND* main_window) {
   auto& rt = g_malie_lookup;
-  if (rt.window_hooked || rt.window_rejected) return;
-  const uint64_t now = GetTickCount64();
-  if (rt.window_retry_tick != 0u && now - rt.window_retry_tick < kMalieWindowRetryMs) {
-    return;
-  }
-  rt.window_retry_tick = now;
+  *candidate = malie_lookup::WindowCandidate();
   const HWND main = fushi_voice_hook::FindGameMainWindow();
-  if (main == nullptr) return;
+  *main_window = main;
+  if (main == nullptr) return true;  // not created yet
   RECT client = {};
-  if (!GetClientRect(main, &client)) return;
+  if (!GetClientRect(main, &client)) return true;
   POINT center = {(client.right - client.left) / 2,
                   (client.bottom - client.top) / 2};
   HWND target = ChildWindowFromPointEx(main, center, CWP_SKIPINVISIBLE);
@@ -720,32 +729,83 @@ void TryHookMalieWindow() {
   ::fushi_voice_hook::exact_lookup::LoadedPeImage image;
   if (!::fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
           reinterpret_cast<HMODULE>(rt.image_base), &image)) {
-    return;
+    return false;
   }
   const uintptr_t procedure =
       static_cast<uintptr_t>(GetWindowLongPtrW(target, GWLP_WNDPROC));
-  if (procedure < rt.image_base ||
-      !::fushi_voice_hook::malie_io::ExecutableAt(image, procedure - rt.image_base,
-                                                  16u)) {
-    rt.window_rejected = true;
-    MalieLookupLog(L"lookup: click window procedure outside the image");
+  candidate->window = reinterpret_cast<uintptr_t>(target);
+  candidate->procedure = procedure;
+  candidate->in_image =
+      procedure >= rt.image_base &&
+      ::fushi_voice_hook::malie_io::ExecutableAt(image, procedure - rt.image_base,
+                                                 16u);
+  return true;
+}
+
+void TryHookMalieWindow() {
+  auto& rt = g_malie_lookup;
+  auto& state = rt.window_state;
+  const HWND bound = reinterpret_cast<HWND>(state.bound);
+  state.bound_alive = bound != nullptr && IsWindow(bound) &&
+                      IsWindowVisible(bound);
+  if (malie_lookup::DecideWindowStep(malie_lookup::WindowCandidate(), state) ==
+      malie_lookup::WindowStep::kKeep) {
     return;
   }
-  rt.window = target;
-  rt.window_hooked = InstallMalieHook(
-      reinterpret_cast<void*>(procedure),
-      reinterpret_cast<void*>(&MalieWndProcDetour),
-      reinterpret_cast<void**>(&g_malie_wndproc_original));
-  if (!rt.window_hooked) rt.window_rejected = true;
+  if (state.bound != 0u) {
+    MalieLookupLog(L"lookup: click window gone or hidden, re-evaluating");
+    state.bound = 0u;
+    rt.window = nullptr;
+  }
+  const uint64_t now = GetTickCount64();
+  if (rt.window_retry_tick != 0u && now - rt.window_retry_tick < kMalieWindowRetryMs) {
+    return;
+  }
+  rt.window_retry_tick = now;
+  malie_lookup::WindowCandidate candidate;
+  HWND main = nullptr;
+  if (!CollectMalieWindowCandidate(&candidate, &main)) return;
+  const auto step = malie_lookup::DecideWindowStep(candidate, state);
+  if (step == malie_lookup::WindowStep::kKeep ||
+      step == malie_lookup::WindowStep::kWait) {
+    return;
+  }
+  if (step == malie_lookup::WindowStep::kReject) {
+    state.rejected_window = candidate.window;
+    state.rejected_procedure = candidate.procedure;
+    MalieLookupLog(L"lookup: click window rejected in_image=%d hooked=%u",
+                   candidate.in_image ? 1 : 0, state.hooked_count);
+    return;
+  }
+  if (step == malie_lookup::WindowStep::kHook) {
+    const uint32_t slot = state.hooked_count;
+    const bool hooked = InstallMalieHook(
+        reinterpret_cast<void*>(candidate.procedure),
+        reinterpret_cast<void*>(kMalieWndProcDetours[slot]),
+        reinterpret_cast<void**>(&g_malie_wndproc_original[slot]));
+    MalieLookupLog(L"lookup: click window procedure %u +0x%lx hooked=%d", slot,
+                   static_cast<unsigned long>(candidate.procedure -
+                                              rt.image_base),
+                   hooked ? 1 : 0);
+    if (!hooked) {
+      state.rejected_window = candidate.window;
+      state.rejected_procedure = candidate.procedure;
+      return;
+    }
+    state.hooked[state.hooked_count++] = candidate.procedure;
+  }
+  state.bound = candidate.window;
+  state.bound_alive = true;
+  rt.window = reinterpret_cast<HWND>(candidate.window);
   RECT child = {};
-  GetWindowRect(target, &child);
+  GetWindowRect(rt.window, &child);
   POINT origin = {child.left, child.top};
   ScreenToClient(main, &origin);
-  MalieLookupLog(L"lookup: click window %s procedure=+0x%lx origin=%ld,%ld "
-                 L"hooked=%d",
-                 target == main ? L"main" : L"child",
-                 static_cast<unsigned long>(procedure - rt.image_base),
-                 origin.x, origin.y, rt.window_hooked ? 1 : 0);
+  MalieLookupLog(L"lookup: click window %s bound procedure=+0x%lx "
+                 L"origin=%ld,%ld",
+                 rt.window == main ? L"main" : L"child",
+                 static_cast<unsigned long>(candidate.procedure - rt.image_base),
+                 origin.x, origin.y);
 }
 
 void RetireMalieLookup() {
@@ -1057,7 +1117,7 @@ void ProcessMalieLookupTick() {
   MalieSubmit submit;
   if (ReadLatestMalieSubmit(&submit)) (void)PublishMalieLookupHit(submit);
   TryHookMalieWindow();
-  if (!rt.window_hooked) {
+  if (rt.window_state.bound == 0u) {
     NoteMalieRetire(6u);
     RetireMalieLookup();
     return;

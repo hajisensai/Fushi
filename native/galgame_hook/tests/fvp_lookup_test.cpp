@@ -263,19 +263,6 @@ void TestAudio() {
     assert(core::ResolveAudioSites(img.image, kVmGlobal, &sites) ==
            core::AudioSiteResult::kAudioPlayMissing);
   }
-  // Voice → the first dialogue line printed on the selected lane after it.
-  const core::PublishedText texts[] = {
-      {10u, 7u, 1000u},  // earlier line on the dialogue lane
-      {11u, 9u, 2010u},  // name plate lane, right after the voice
-      {12u, 7u, 2017u},  // the dialogue the voice belongs to
-      {13u, 7u, 4000u},  // the next line, outside the window
-  };
-  assert(core::BindVoiceToFollowingText(texts, 4u, 2000u, 7u, 1500u) == 12u);
-  assert(core::BindVoiceToFollowingText(texts, 4u, 2000u, 9u, 1500u) == 11u);
-  assert(core::BindVoiceToFollowingText(texts, 4u, 2000u, 0u, 1500u) == 0u);
-  assert(core::BindVoiceToFollowingText(texts, 4u, 2100u, 5u, 1500u) == 0u);
-  assert(core::BindVoiceToFollowingText(texts, 3u, 2018u, 7u, 1500u) == 0u);
-
   wchar_t name[32] = {};
   assert(core::AudioStorageName("voice/02000750", 15u, name, 32u) == 18u);
   assert(std::wcscmp(name, L"voice_02000750.ogg") == 0);
@@ -497,11 +484,169 @@ void TestDrawAndProject() {
   assert(!miss_up.swallow);
 }
 
+// Voice ↔ dialogue binding by script order: {event, lane, tick, step, epoch}.
+void TestVoiceBinding() {
+  constexpr uint64_t kDialogue = 7u, kName = 9u;
+  {  // `AudioPlay; TextPrint` in one dispatch: the print after the voice.
+    const core::PublishedText texts[] = {
+        {10u, kDialogue, 1000u, 3u, 100u},  // previous line, other dispatch
+        {11u, kName, 2001u, 6u, 200u},      // name plate, other lane
+        {12u, kDialogue, 2001u, 7u, 200u},  // this line
+    };
+    const core::VoiceOrder voice{2000u, 5u, 200u};
+    const auto open = core::BindVoiceInDispatch(texts, 3u, voice, kDialogue,
+                                                200u);
+    assert(open.settled && open.event == 12u);
+    // The name-plate lane binds to its own print only when it is selected.
+    const auto plate = core::BindVoiceInDispatch(texts, 3u, voice, kName,
+                                                 200u);
+    assert(plate.settled && plate.event == 11u);
+  }
+  {  // `TextPrint; AudioPlay`: the print before it, once the dispatch ended.
+    const core::PublishedText texts[] = {
+        {10u, kDialogue, 1000u, 3u, 100u},  // previous line
+        {12u, kDialogue, 2000u, 8u, 200u},  // this line, printed first
+    };
+    const core::VoiceOrder voice{2001u, 9u, 200u};
+    // Same dispatch still running: a later print could still come.
+    const auto running =
+        core::BindVoiceInDispatch(texts, 2u, voice, kDialogue, 200u);
+    assert(!running.settled && running.event == 0u);
+    const auto ended =
+        core::BindVoiceInDispatch(texts, 2u, voice, kDialogue, 260u);
+    assert(ended.settled && ended.event == 12u);
+  }
+  {  // Never across dispatches: the previous / next line are other lines.
+    const core::PublishedText texts[] = {
+        {10u, kDialogue, 1000u, 3u, 100u},  // previous line (before, older)
+        {13u, kDialogue, 2300u, 9u, 240u},  // next line after a click wait
+    };
+    const core::VoiceOrder voice{2000u, 5u, 200u};
+    const auto ended =
+        core::BindVoiceInDispatch(texts, 2u, voice, kDialogue, 300u);
+    assert(ended.settled && ended.event == 0u);
+    // Fallback: the next print in script order, bounded by the window; the
+    // previous line (step before the voice) is never taken.
+    assert(core::BindVoiceToFollowingText(texts, 2u, voice, kDialogue,
+                                          1500u) == 13u);
+    assert(core::BindVoiceToFollowingText(texts, 2u, voice, kDialogue,
+                                          200u) == 0u);
+    const core::VoiceOrder late{2400u, 12u, 260u};
+    assert(core::BindVoiceToFollowingText(texts, 2u, late, kDialogue,
+                                          1500u) == 0u);
+  }
+  {  // The first print after the voice wins, not the last.
+    const core::PublishedText texts[] = {
+        {14u, kDialogue, 2002u, 9u, 200u},
+        {12u, kDialogue, 2001u, 7u, 200u},
+    };
+    const core::VoiceOrder voice{2000u, 5u, 200u};
+    assert(core::BindVoiceInDispatch(texts, 2u, voice, kDialogue, 200u).event ==
+           12u);
+    assert(core::BindVoiceToFollowingText(texts, 2u, voice, kDialogue,
+                                          1500u) == 12u);
+  }
+  {  // No lane selected / no voice position: settled only by the dispatch.
+    const core::PublishedText texts[] = {{12u, kDialogue, 2001u, 7u, 200u}};
+    const core::VoiceOrder voice{2000u, 5u, 200u};
+    assert(!core::BindVoiceInDispatch(texts, 1u, voice, 0u, 200u).settled);
+    const auto none = core::BindVoiceInDispatch(texts, 1u, voice, 0u, 201u);
+    assert(none.settled && none.event == 0u);
+    assert(core::BindVoiceToFollowingText(texts, 1u, voice, 0u, 1500u) == 0u);
+    const core::VoiceOrder unordered{2000u, 0u, 200u};
+    assert(core::BindVoiceToFollowingText(texts, 1u, unordered, kDialogue,
+                                          1500u) == 0u);
+    assert(core::BindVoiceInDispatch(nullptr, 0u, voice, kDialogue, 200u)
+               .event == 0u);
+  }
+}
+
+// Model freshness counted in engine events, never wall-clock time.
+void TestFreshnessCounters() {
+  // Never drawn / counter behind: not on screen.
+  assert(!core::WatchedSurfaceDrawn(100u, 0u, 0u));
+  assert(!core::WatchedSurfaceDrawn(10u, 20u, 4u));
+  // No draws at all since (static screen, engine idle behind a card): kept.
+  assert(core::WatchedSurfaceDrawn(500u, 500u, 30u));
+  // Within the floor of 64 draws even with a tiny period.
+  assert(core::WatchedSurfaceDrawn(564u, 500u, 2u));
+  assert(!core::WatchedSurfaceDrawn(565u, 500u, 2u));
+  // Twice the observed period of the surface.
+  assert(core::WatchedSurfaceDrawn(700u, 500u, 100u));
+  assert(!core::WatchedSurfaceDrawn(701u, 500u, 100u));
+  // Bounded above: one long absence does not make the gate lenient.
+  assert(core::WatchedSurfaceDrawn(1524u, 500u, 100000u));
+  assert(!core::WatchedSurfaceDrawn(1525u, 500u, 100000u));
+
+  core::BufferPrintCounts counts;
+  assert(counts.Of(3) == 0u);
+  assert(counts.Note(3) == 1u);
+  assert(counts.Note(3) == 2u);
+  assert(counts.Note(5) == 1u);  // another buffer does not touch buffer 3
+  assert(counts.Of(3) == 2u && counts.Of(5) == 1u);
+  assert(counts.Note(-1) == 0u && counts.Of(-1) == 0u);
+  assert(counts.Note(static_cast<int32_t>(core::kTextBufferCount)) == 0u);
+}
+
+// Window binding: rejections bound to the window set, re-evaluated on change.
+void TestWindowStep() {
+  core::WindowBindingState state;
+  core::WindowCandidate none;
+  assert(core::DecideWindowStep(none, state) == core::WindowStep::kWait);
+
+  core::WindowCandidate splash;
+  splash.identity = 0x1001u;
+  splash.window = 0x1000u;
+  splash.procedure_count = 1u;
+  splash.procedures[0] = 0x401000u;
+  splash.acceptable = false;  // e.g. ambiguous or too many procedures
+  assert(core::DecideWindowStep(splash, state) == core::WindowStep::kReject);
+  state.rejected_identity = splash.identity;
+  assert(core::DecideWindowStep(splash, state) == core::WindowStep::kWait);
+
+  core::WindowCandidate game;
+  game.identity = 0x2001u;
+  game.window = 0x2000u;
+  game.procedure_count = 2u;
+  game.procedures[0] = 0x402000u;
+  game.procedures[1] = 0x403000u;
+  game.acceptable = true;
+  assert(core::DecideWindowStep(game, state) == core::WindowStep::kHook);
+  state.hooked[state.hooked_count++] = 0x402000u;
+  state.hooked[state.hooked_count++] = 0x403000u;
+  state.bound = game.window;
+  state.bound_alive = true;
+  assert(core::DecideWindowStep(game, state) == core::WindowStep::kKeep);
+
+  // Destroyed and recreated (same procedures, new HWND): re-bound only.
+  state.bound_alive = false;
+  core::WindowCandidate again = game;
+  again.identity = 0x3001u;
+  again.window = 0x3000u;
+  assert(core::DecideWindowStep(again, state) == core::WindowStep::kBind);
+
+  // A new procedure that would exceed the detour slots is rejected.
+  state.hooked[state.hooked_count++] = 0x404000u;
+  state.hooked[state.hooked_count++] = 0x405000u;
+  core::WindowCandidate more = again;
+  more.identity = 0x4001u;
+  more.procedures[1] = 0x406000u;
+  assert(core::DecideWindowStep(more, state) == core::WindowStep::kReject);
+  core::WindowCandidate empty = again;
+  empty.procedure_count = 0u;
+  assert(core::DecideWindowStep(empty, state) == core::WindowStep::kReject);
+  assert(core::WindowProcedureHooked(state, 0x405000u));
+  assert(!core::WindowProcedureHooked(state, 0x406000u));
+}
+
 }  // namespace
 
 int main() {
   TestResolve();
   TestAudio();
+  TestVoiceBinding();
+  TestFreshnessCounters();
+  TestWindowStep();
   TestParse();
   TestPair();
   TestDrawAndProject();

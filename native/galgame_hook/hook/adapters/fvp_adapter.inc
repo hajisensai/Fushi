@@ -6,11 +6,15 @@
 // resource into memory and hands that memory to the channel sound object's
 // SoundLoad (the decoder's input; it sniffs RIFF / OggS and opens the stream
 // from those bytes) — see fvp_lookup_core.h ResolveAudioSites.  The
-// ChannelPlay detour remembers the resource name (bounded) for its own
-// thread; the SoundLoad detour copies the bytes it is handed into a
-// preallocated slot.  Classification (a mono Ogg Vorbis stream is a voice
-// line; BGM is stereo, effects are RIFF), validation and file output run from
-// AdapterRegistry::Poll.  No archive is opened or parsed.
+// ChannelPlay detour remembers the resource name (bounded) and its script
+// position for its own thread; the SoundLoad detour copies the bytes it is
+// handed into a preallocated slot only when that resource name is a voice
+// resource (a `voice` directory component, fvp_format.h IsVoiceResourceName).
+// The channel count is corroboration only (the bytes really are Ogg Vorbis),
+// never the classifier.  Binding to the dialogue print goes by script order:
+// the print of the same dispatch (fvp_lookup_core.h BindVoiceInDispatch),
+// with a bounded "next print in script order" fallback.  Validation and file
+// output run from AdapterRegistry::Poll.  No archive is opened or parsed.
 #include "fvp_profile.h"
 #include "fvp_lookup.inc"
 
@@ -24,6 +28,8 @@ constexpr size_t kFvpVoiceNameBytes = 64u;
 struct FvpVoiceSlot {
   volatile LONG state = 0;  // 0=free, 1=producing, 2=pending, 3=consuming
   uint64_t tick_ms = 0u;
+  uint64_t step = 0u;   // script position of its AudioPlay
+  uint64_t epoch = 0u;  // draws counted when it ran (its dispatch)
   uint32_t bytes = 0u;
   char name[kFvpVoiceNameBytes] = {};
   uint8_t* data = nullptr;  // kFvpVoiceMaxBytes, allocated at install
@@ -39,6 +45,8 @@ struct FvpVoiceRuntime {
   // Game thread: ChannelPlay → SoundLoad context (one game thread).
   std::atomic<DWORD> play_thread{0u};
   char play_name[kFvpVoiceNameBytes] = {};
+  uint64_t play_step = 0u;
+  uint64_t play_epoch = 0u;
   std::array<FvpVoiceSlot, kFvpVoiceSlots> slots{};
   std::atomic<uint32_t> dropped{0u};
   uint32_t logged = 0u;
@@ -60,6 +68,11 @@ int __fastcall FvpChannelPlayDetour(uintptr_t self, uintptr_t, int a, int b) {
                                              std::memory_order_acq_rel);
   if (owned) {
     rt.play_name[0] = 0;
+    // Same step counter and draw epoch as the TextPrint detour.
+    rt.play_step = g_fvp_lookup.script_steps.fetch_add(
+                       1u, std::memory_order_acq_rel) +
+                   1u;
+    rt.play_epoch = g_fvp_lookup.draw_calls.load(std::memory_order_acquire);
     __try {
       const char* name =
           *reinterpret_cast<const char* const*>(self + rt.sites.channel_name);
@@ -82,8 +95,11 @@ int __fastcall FvpChannelPlayDetour(uintptr_t self, uintptr_t, int a, int b) {
 int __fastcall FvpSoundLoadDetour(uintptr_t self, uintptr_t, const void* data,
                                   uint32_t size, int flag) {
   auto& rt = g_fvp_voice;
+  // Only a voice resource is copied: SE / BGM never take a slot.
   if (rt.play_thread.load(std::memory_order_acquire) == GetCurrentThreadId() &&
-      data != nullptr && size >= 64u && size <= kFvpVoiceMaxBytes) {
+      data != nullptr && size >= 64u && size <= kFvpVoiceMaxBytes &&
+      fushi_voice_hook::fvp::IsVoiceResourceName(rt.play_name,
+                                                 kFvpVoiceNameBytes)) {
     bool ogg = false;
     __try {
       ogg = memcmp(data, "OggS", 4) == 0;
@@ -107,6 +123,8 @@ int __fastcall FvpSoundLoadDetour(uintptr_t self, uintptr_t, const void* data,
         copied = false;
       }
       slot->tick_ms = GetTickCount64();
+      slot->step = rt.play_step;
+      slot->epoch = rt.play_epoch;
       slot->bytes = size;
       memcpy(slot->name, rt.play_name, kFvpVoiceNameBytes);
       InterlockedExchange(&slot->state, copied ? 2 : 0);
@@ -130,8 +148,11 @@ void WriteFvpVoiceSlot(FvpVoiceSlot& slot, uint64_t text_event) {
   fvp_lookup::AudioStorageName(slot.name, kFvpVoiceNameBytes, storage,
                                std::size(storage));
   bool written = false;
-  // A mono Ogg Vorbis stream is a voice line (BGM is stereo, SE is RIFF).
-  if (channels == 1u && complete) {
+  // The resource name decides (a voice resource); the channel count only
+  // corroborates that the bytes are an Ogg Vorbis stream.
+  const bool voice = fushi_voice_hook::fvp::IsVoiceResourceName(
+      slot.name, kFvpVoiceNameBytes);
+  if (voice && channels != 0u && complete) {
     written = WriteVoiceOggAt(slot.data, slot.bytes, storage, slot.tick_ms,
                               text_event);
     if (written) {
@@ -151,7 +172,10 @@ void WriteFvpVoiceSlot(FvpVoiceSlot& slot, uint64_t text_event) {
   InterlockedExchange(&slot.state, 0);
 }
 
-void ProcessFvpVoiceSlots() {
+// `epoch_now` is the draw counter read before this tick drained the text
+// events: every print of a dispatch that ended by then is already in the
+// published-text history (Print publishes before the game thread draws).
+void ProcessFvpVoiceSlots(uint64_t epoch_now) {
   const uint64_t now = GetTickCount64();
   const uint64_t selected =
       g_header == nullptr
@@ -161,14 +185,23 @@ void ProcessFvpVoiceSlots() {
   for (FvpVoiceSlot& slot : g_fvp_voice.slots) {
     InterlockedCompareExchange(&slot.state, 3, 2);  // claim new captures
     if (InterlockedCompareExchange(&slot.state, 3, 3) != 3) continue;
-    // Not a voice candidate: release without waiting.
-    if (fushi_voice_hook::fvp::VorbisChannels(slot.data, slot.bytes) != 1u) {
+    // Not an Ogg Vorbis stream: nothing to bind, release without waiting.
+    if (fushi_voice_hook::fvp::VorbisChannels(slot.data, slot.bytes) == 0u) {
       WriteFvpVoiceSlot(slot, 0u);
       continue;
     }
-    const uint64_t event = fvp_lookup::BindVoiceToFollowingText(
-        g_fvp_published_text.data(), g_fvp_published_text.size(),
-        slot.tick_ms, selected, kFvpVoiceBindWindowMs);
+    const fvp_lookup::VoiceOrder order{slot.tick_ms, slot.step, slot.epoch};
+    const fvp_lookup::DispatchBinding in_dispatch =
+        fvp_lookup::BindVoiceInDispatch(g_fvp_published_text.data(),
+                                        g_fvp_published_text.size(), order,
+                                        selected, epoch_now);
+    uint64_t event = in_dispatch.event;
+    if (in_dispatch.settled && event == 0u) {
+      // The dispatch printed no dialogue: the next print in script order.
+      event = fvp_lookup::BindVoiceToFollowingText(
+          g_fvp_published_text.data(), g_fvp_published_text.size(), order,
+          selected, kFvpVoiceBindWindowMs);
+    }
     if (event != 0u || selected == 0u ||
         now - slot.tick_ms > kFvpVoiceBindWindowMs) {
       WriteFvpVoiceSlot(slot, event);
@@ -227,6 +260,10 @@ bool InstallFvpVoice() {
   return rt.installed;
 }
 
+uint64_t FvpDrawEpoch() {
+  return g_fvp_lookup.draw_calls.load(std::memory_order_acquire);
+}
+
 void ShutdownFvpVoice() {
   auto& rt = g_fvp_voice;
   // Detours stay chained; clearing `live` makes them pure forwarders.
@@ -237,7 +274,8 @@ void ShutdownFvpVoice() {
 #else  // !_M_IX86
 
 bool InstallFvpVoice() { return false; }
-void ProcessFvpVoiceSlots() {}
+void ProcessFvpVoiceSlots(uint64_t) {}
+uint64_t FvpDrawEpoch() { return 0u; }
 void ShutdownFvpVoice() {}
 
 #endif  // _M_IX86
@@ -263,8 +301,10 @@ class FvpAdapter final : public fushi_voice_hook::EngineAdapter {
     return installed_;
   }
   void ProcessPendingEvents() {
-    ProcessFvpVoiceSlots();
+    // Epoch first, then drain the prints, then bind the voices against them.
+    const uint64_t epoch = FvpDrawEpoch();
     ProcessFvpLookupTick();
+    ProcessFvpVoiceSlots(epoch);
   }
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     fushi_voice_hook::LookupAdmissionReport report;

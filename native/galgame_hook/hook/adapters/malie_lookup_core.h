@@ -623,6 +623,16 @@ inline bool NeedsEligibility(uint32_t message) {
 
 // A claimed press owns the button until its release; both edges are
 // swallowed so the engine's input dispatcher never sees the click.
+//
+// Touch: only the WM_LBUTTON* edges are handled.  A touch tap reaches the
+// window procedure as the WM_LBUTTONDOWN / WM_LBUTTONUP pair the system
+// promotes it to (possibly back to back in one message batch), so a tap on a
+// glyph is claimed exactly like a mouse click.  Not handled here: a long
+// press (the system turns it into WM_RBUTTON*, which this never claims, so it
+// reaches the game as its right-click action), WM_POINTER* (a swipe or a
+// pointer-aware path never comes through these edges) and a lookup card
+// taking the foreground on touch activation.  None of this was verified with
+// real touch input.
 inline ClaimDecision DecideMessage(uint32_t message, bool eligible,
                                    ClaimState* claim) {
   ClaimDecision decision;
@@ -635,6 +645,67 @@ inline ClaimDecision DecideMessage(uint32_t message, bool eligible,
     decision.swallow = true;
   }
   return decision;
+}
+
+// ── which window to hook ───────────────────────────────────────────────────
+
+// The click window is the game's window under the main window's client
+// centre.  A rejection is bound to that window and its procedure, never
+// permanent: a splash / movie child or a window destroyed and recreated is
+// evaluated again once the candidate changes (a recreated window has another
+// HWND — the handle's upper word is the window manager's reuse counter).  A
+// hooked procedure stays hooked for the process (MinHook owns the detour);
+// a new window of an already hooked procedure is only re-bound.
+inline constexpr uint32_t kMaxWindowProcedures = 4u;
+
+struct WindowCandidate {
+  uintptr_t window = 0u;     // 0 = no candidate yet
+  uintptr_t procedure = 0u;
+  bool in_image = false;     // its procedure lies in the game image's code
+};
+
+struct WindowBindingState {
+  uintptr_t bound = 0u;  // window currently bound (0 = none)
+  bool bound_alive = false;
+  uintptr_t rejected_window = 0u;
+  uintptr_t rejected_procedure = 0u;
+  uint32_t hooked_count = 0u;
+  uintptr_t hooked[kMaxWindowProcedures] = {};
+};
+
+enum class WindowStep : uint32_t {
+  kKeep = 0,    // the bound window is alive
+  kWait = 1,    // nothing (new) to evaluate
+  kReject = 2,  // remember this window + procedure as rejected
+  kBind = 3,    // its procedure is hooked already: bind the window
+  kHook = 4,    // hook its procedure into the next free slot, then bind
+};
+
+inline bool WindowProcedureHooked(const WindowBindingState& state,
+                                  uintptr_t procedure) {
+  for (uint32_t k = 0u; k < state.hooked_count && k < kMaxWindowProcedures;
+       ++k) {
+    if (state.hooked[k] == procedure) return true;
+  }
+  return false;
+}
+
+inline WindowStep DecideWindowStep(const WindowCandidate& candidate,
+                                   const WindowBindingState& state) {
+  if (state.bound != 0u && state.bound_alive) return WindowStep::kKeep;
+  if (candidate.window == 0u) return WindowStep::kWait;
+  if (candidate.window == state.rejected_window &&
+      candidate.procedure == state.rejected_procedure) {
+    return WindowStep::kWait;
+  }
+  if (!candidate.in_image || candidate.procedure == 0u) {
+    return WindowStep::kReject;
+  }
+  if (WindowProcedureHooked(state, candidate.procedure)) {
+    return WindowStep::kBind;
+  }
+  if (state.hooked_count >= kMaxWindowProcedures) return WindowStep::kReject;
+  return WindowStep::kHook;
 }
 
 }  // namespace fushi_voice_hook::malie_lookup

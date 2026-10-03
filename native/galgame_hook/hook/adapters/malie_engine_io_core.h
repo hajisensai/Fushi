@@ -42,6 +42,7 @@
 #include <string>
 #include <vector>
 
+#include "../siglus_ovk.h"
 #include "exact_lookup_signature.h"
 
 namespace fushi_voice_hook::malie_io {
@@ -403,6 +404,71 @@ inline SchemeResult ResolveScheme(const exact::LoadedPeImage& image,
   return SchemeResult::kResolved;
 }
 
+// ── identity verdict over the process lifetime ─────────────────────────────
+//
+// The first probe runs before the game's main thread is resumed.  A packed or
+// self-decrypting exe has not unpacked its code / data yet: the scheme name
+// literal or its copy site is simply not there.  That is "image not ready",
+// not "not Malie": it is measured again once the image changed (sampled
+// fingerprint of every section).  Every other refusal is structural (the
+// literal is there but the code around it is not the scheme table build) and
+// final.
+enum class ProfileState : uint32_t {
+  kUnmeasured = 0,
+  kMatched = 1,
+  kImageNotReady = 2,
+  kRejected = 3,
+};
+
+inline ProfileState ClassifyScheme(SchemeResult result) {
+  switch (result) {
+    case SchemeResult::kResolved:
+      return ProfileState::kMatched;
+    case SchemeResult::kNoName:
+    case SchemeResult::kNoNameCopy:
+      return ProfileState::kImageNotReady;
+    default:
+      return ProfileState::kRejected;
+  }
+}
+
+inline constexpr size_t kFingerprintStride = 0x1000u;
+inline constexpr size_t kFingerprintRun = 16u;
+
+// FNV-1a over the first kFingerprintRun bytes of every kFingerprintStride of
+// every executable or read-only section: cheap, changes when an unpacker
+// writes code / constants, and never changes for an image that is not being
+// unpacked (plain writable data sections, which every game writes all the
+// time, are left out — otherwise a non-Malie game would be re-measured
+// forever).
+inline uint64_t ImageFingerprint(const exact::LoadedPeImage& image) {
+  uint64_t hash = 0xcbf29ce484222325ull;
+  const auto mix = [&hash](uint8_t byte) {
+    hash ^= byte;
+    hash *= 0x100000001b3ull;
+  };
+  for (size_t s = 0u; s < image.section_count; ++s) {
+    const auto& section = image.sections[s];
+    const bool executable =
+        (section.characteristics & IMAGE_SCN_MEM_EXECUTE) != 0u;
+    const bool writable = (section.characteristics & IMAGE_SCN_MEM_WRITE) != 0u;
+    if (section.bytes == nullptr || (writable && !executable)) continue;
+    for (size_t at = 0u; at < section.size; at += kFingerprintStride) {
+      const size_t run = (std::min)(kFingerprintRun, section.size - at);
+      for (size_t k = 0u; k < run; ++k) mix(section.bytes[at + k]);
+    }
+  }
+  return hash;
+}
+
+// Measure (again)?  Only an unmeasured image, or one that was not ready and
+// has changed since that measurement.
+inline bool ShouldMeasureProfile(ProfileState state, uint64_t measured,
+                                 uint64_t current) {
+  return state == ProfileState::kUnmeasured ||
+         (state == ProfileState::kImageNotReady && current != measured);
+}
+
 // ── voice: the Ogg decoder input ───────────────────────────────────────────
 
 inline constexpr size_t kMaxFeedSites = 8u;
@@ -679,5 +745,246 @@ inline std::wstring VoiceStorageName(const wchar_t* path, bool partial) {
   }
   return name;
 }
+
+// ── voice assembly from the decoder input (worker side) ───────────────────
+//
+// The detour hands over every voice refill of a decoder in feed order, plus
+// "a voice refill of this decoder was lost" records (no free ring slot).  The
+// lifecycle of a voice is decided from decoder signals, never from wall-clock
+// idleness (a paused or unfocused game feeds nothing and must not have its
+// voice cut):
+//   * EOS page reached → complete;
+//   * a new BOS page on the *same* decoder → that decoder's unfinished stream
+//     was stopped by the engine: its whole-page prefix is kept (partial);
+//     other decoders are untouched, and completed voices stay until bound;
+//   * a lost refill → the decoder's unfinished stream is cut before the hole
+//     and marked damaged (CompleteOggBytes does not check page sequence
+//     numbers, so a hole on a page boundary would otherwise pass as whole);
+//   * the decoder received nothing while the engine refilled other decoders
+//     kStallFeeds times → it was stopped without a successor (partial).
+// Wall-clock time is used only for what is not a lifecycle question: how
+// long a complete voice waits for its message unit, and the repeat window of
+// a file decoded twice for one playback.
+
+inline constexpr int kAssemblerMembers = 8;
+inline constexpr uint32_t kMaxMemberBytes = 16u * 1024u * 1024u;
+// Other refills seen while a decoder got none: a playing voice refills every
+// few hundred milliseconds of audio, BGM about as often, so 48 refills of
+// other decoders mean this one stopped.
+inline constexpr uint64_t kStallFeeds = 48u;
+inline constexpr uint64_t kBindWaitMs = 2000u;
+inline constexpr uint64_t kRepeatWindowMs = 3000u;
+
+struct FeedChunk {
+  uint64_t feed = 0u;  // global refill order (every refill site call counts)
+  uintptr_t decoder = 0u;
+  uint64_t tick = 0u;
+  const wchar_t* path = nullptr;
+  const uint8_t* data = nullptr;
+  uint32_t length = 0u;
+};
+
+// What the assembler needs from its host (the adapter, or a test double).
+class VoiceSink {
+ public:
+  virtual ~VoiceSink() = default;
+  // The text event of the message unit naming this voice; 0 when none yet.
+  virtual uint64_t TextEvent(const std::wstring& path, uint64_t first_tick) = 0;
+  virtual bool Write(const uint8_t* data, uint32_t bytes,
+                     const std::wstring& storage, uint64_t first_tick,
+                     uint64_t text_event) = 0;
+  virtual void Note(const wchar_t* what, const std::wstring& path,
+                    uint32_t a, uint32_t b) = 0;
+};
+
+struct VoiceMember {
+  bool used = false;
+  bool partial = false;   // `complete` is a whole-page prefix
+  bool damaged = false;   // cut at a lost refill
+  uint32_t complete = 0;  // publishable bytes, 0 while still receiving
+  uint64_t complete_tick = 0;
+  uintptr_t decoder = 0;
+  uint64_t first_tick = 0;
+  uint64_t last_feed = 0;
+  std::wstring path;
+  std::vector<uint8_t> bytes;
+};
+
+inline bool StartsOggStream(const uint8_t* data, uint32_t length) {
+  // A BOS page: capture pattern, version 0, header-type "beginning".
+  return data != nullptr && length >= 27u && std::memcmp(data, "OggS", 4) == 0 &&
+         data[4] == 0u && (data[5] & 0x02u) != 0u;
+}
+
+class VoiceAssembler {
+ public:
+  void Feed(const FeedChunk& chunk, VoiceSink& sink) {
+    if (chunk.data == nullptr || chunk.length == 0u || !IsVoicePath(chunk.path)) {
+      return;
+    }
+    VoiceMember* member = nullptr;
+    if (StartsOggStream(chunk.data, chunk.length)) {
+      // The engine reused this decoder for a new stream: what it was still
+      // receiving was stopped.  Completed members wait for their binding.
+      for (auto& other : members_) {
+        if (Receiving(other) && other.decoder == chunk.decoder) {
+          Stop(&other, chunk.tick, false, sink);
+        }
+      }
+      member = Allocate(chunk, sink);
+    } else {
+      member = FindReceiving(chunk.decoder, chunk.path);
+      if (member == nullptr) return;  // its head was never seen
+    }
+    if (member->bytes.size() + chunk.length > kMaxMemberBytes) {
+      sink.Note(L"oversized", member->path,
+                static_cast<uint32_t>(member->bytes.size()), 0u);
+      *member = VoiceMember();
+      return;
+    }
+    member->bytes.insert(member->bytes.end(), chunk.data,
+                         chunk.data + chunk.length);
+    member->last_feed = chunk.feed;
+    const uint32_t complete = siglus::CompleteOggBytes(
+        member->bytes.data(), static_cast<uint32_t>(member->bytes.size()));
+    if (complete != 0u) {
+      member->complete = complete;
+      member->complete_tick = chunk.tick;
+    }
+  }
+
+  // A voice refill of `decoder` at `feed` was lost: the stream it was
+  // receiving is cut before the hole.
+  void Drop(uintptr_t decoder, uint64_t feed, uint64_t now, VoiceSink& sink) {
+    ++dropped_;
+    for (auto& member : members_) {
+      if (Receiving(member) && member.decoder == decoder &&
+          member.last_feed < feed) {
+        Stop(&member, now, true, sink);
+      }
+    }
+  }
+
+  // Lost refills whose decoder is unknown (the loss record itself was lost):
+  // every stream still receiving may have a hole.
+  void DropAll(uint64_t now, VoiceSink& sink) {
+    ++dropped_;
+    for (auto& member : members_) {
+      if (Receiving(member)) Stop(&member, now, true, sink);
+    }
+  }
+
+  // `feeds_now` is the global refill count already handed over.
+  void Settle(uint64_t feeds_now, uint64_t now, VoiceSink& sink) {
+    for (auto& member : members_) {
+      if (Receiving(member) && feeds_now > member.last_feed &&
+          feeds_now - member.last_feed > kStallFeeds) {
+        Stop(&member, now, false, sink);
+      }
+    }
+    for (auto& member : members_) {
+      if (!member.used || member.complete == 0u) continue;
+      const uint64_t text_event = sink.TextEvent(member.path, member.first_tick);
+      if (text_event != 0u || now - member.complete_tick >= kBindWaitMs) {
+        Publish(&member, text_event, sink);
+      }
+    }
+  }
+
+  void Reset() {
+    for (auto& member : members_) member = VoiceMember();
+    last_published_.clear();
+    last_published_tick_ = 0u;
+  }
+
+  uint32_t dropped() const { return dropped_; }
+  uint32_t damaged() const { return damaged_; }
+  const VoiceMember& member(int index) const { return members_[index]; }
+
+ private:
+  static bool Receiving(const VoiceMember& member) {
+    return member.used && member.complete == 0u;
+  }
+
+  VoiceMember* FindReceiving(uintptr_t decoder, const wchar_t* path) {
+    for (auto& member : members_) {
+      if (Receiving(member) && member.decoder == decoder &&
+          member.path == path) {
+        return &member;
+      }
+    }
+    return nullptr;
+  }
+
+  // A free member, else the one that was fed least recently (published
+  // first when it has publishable bytes).
+  VoiceMember* Allocate(const FeedChunk& chunk, VoiceSink& sink) {
+    VoiceMember* slot = nullptr;
+    for (auto& member : members_) {
+      if (!member.used) {
+        slot = &member;
+        break;
+      }
+    }
+    if (slot == nullptr) {
+      slot = &members_[0];
+      for (auto& member : members_) {
+        if (member.last_feed < slot->last_feed) slot = &member;
+      }
+      sink.Note(L"evicted", slot->path,
+                static_cast<uint32_t>(slot->bytes.size()), slot->complete);
+      if (Receiving(*slot)) Stop(slot, chunk.tick, false, sink);
+      if (slot->used && slot->complete != 0u) {
+        Publish(slot, sink.TextEvent(slot->path, slot->first_tick), sink);
+      }
+    }
+    *slot = VoiceMember();
+    slot->used = true;
+    slot->decoder = chunk.decoder;
+    slot->first_tick = chunk.tick;
+    slot->last_feed = chunk.feed;
+    slot->path = chunk.path;
+    return slot;
+  }
+
+  // A stream that will receive no more input: keep its whole-page prefix.
+  void Stop(VoiceMember* member, uint64_t now, bool damaged, VoiceSink& sink) {
+    if (!Receiving(*member)) return;
+    if (damaged) ++damaged_;
+    const uint32_t prefix = OggPagePrefixBytes(
+        member->bytes.data(), static_cast<uint32_t>(member->bytes.size()));
+    if (prefix == 0u) {
+      sink.Note(damaged ? L"damaged, dropped" : L"incomplete, dropped",
+                member->path, static_cast<uint32_t>(member->bytes.size()), 0u);
+      *member = VoiceMember();
+      return;
+    }
+    member->complete = prefix;
+    member->partial = true;
+    member->damaged = damaged;
+    member->complete_tick = now;
+  }
+
+  void Publish(VoiceMember* member, uint64_t text_event, VoiceSink& sink) {
+    const std::wstring storage =
+        VoiceStorageName(member->path.c_str(), member->partial);
+    if (!member->partial && storage == last_published_ &&
+        member->first_tick - last_published_tick_ <= kRepeatWindowMs) {
+      // The same file decoded twice for one playback (e.g. a lip-sync pass).
+      sink.Note(L"duplicate decode", storage, member->complete, 0u);
+    } else if (sink.Write(member->bytes.data(), member->complete, storage,
+                          member->first_tick, text_event)) {
+      last_published_ = storage;
+      last_published_tick_ = member->first_tick;
+    }
+    *member = VoiceMember();
+  }
+
+  VoiceMember members_[kAssemblerMembers];
+  std::wstring last_published_;
+  uint64_t last_published_tick_ = 0u;
+  uint32_t dropped_ = 0u;
+  uint32_t damaged_ = 0u;
+};
 
 }  // namespace fushi_voice_hook::malie_io
