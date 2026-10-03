@@ -22,6 +22,7 @@ import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/anki_video_template_page.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
@@ -660,13 +661,61 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildFieldsPanel(AnkiUiState uiState, AnkiViewModel vm) {
     final AnkiSettings settings = uiState.settings;
-    return SettingsSearchTarget(
-      id: 'card_creation.anki.field_mappings',
-      child: AdaptiveSettingsSection(
-        title: t.anki_field_mappings,
-        children: _buildFieldMappings(settings, vm),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            SettingsSearchTarget(
+              id: 'card_creation.anki.video_template',
+              child: AdaptiveSettingsRow(
+                title: t.anki_video_template_title,
+                subtitle: vm.videoTemplateService.supportsEditing
+                    ? t.anki_video_template_media_hint
+                    : t.anki_video_template_unsupported,
+                icon: Icons.video_settings_outlined,
+                showIcon: true,
+                trailing: vm.videoTemplateService.supportsEditing
+                    ? const Icon(Icons.chevron_right)
+                    : null,
+                onTap: vm.videoTemplateService.supportsEditing
+                    ? () => _openVideoTemplate(settings, vm)
+                    : null,
+              ),
+            ),
+            _buildVideoMiningImageModePicker(),
+            if (appModel.videoMiningImageMode.isVideoClip)
+              _buildVideoMiningClipFormatPicker(),
+          ],
+        ),
+        SettingsSearchTarget(
+          id: 'card_creation.anki.field_mappings',
+          child: AdaptiveSettingsSection(
+            title: t.anki_field_mappings,
+            children: _buildFieldMappings(settings, vm),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openVideoTemplate(
+    AnkiSettings settings,
+    AnkiViewModel vm,
+  ) async {
+    final AnkiNoteType? noteType = settings.selectedNoteType;
+    if (noteType == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AnkiVideoTemplatePage(
+          service: vm.videoTemplateService,
+          modelName: noteType.name,
+          initialFieldMappings: settings.fieldMappings,
+          onApplied: vm.refreshSettingsFromStore,
+        ),
       ),
     );
+    if (mounted) await vm.refreshSettingsFromStore();
   }
 
   Widget _buildMediaPanel(AnkiUiState uiState, AnkiViewModel vm) {
@@ -1998,6 +2047,8 @@ String ankiHandlebarLabel(String option) {
 /// [ankiHandlebarLabel] 的裸标签部分（不含「已弃用」标注）。
 String _ankiHandlebarBaseLabel(String option) {
   switch (option) {
+    case '{card-video}':
+      return t.anki_video_template_title;
     case '{expression}':
       return t.handlebar_expression;
     case '{reading}':

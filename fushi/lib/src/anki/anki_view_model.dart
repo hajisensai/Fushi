@@ -9,6 +9,7 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
@@ -388,6 +389,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 与当前仓库绑定的模板服务（无状态，随用随建）。
   LapisTemplateService get lapisTemplateService =>
       LapisTemplateService(_repository);
+
+  /// 视频适配同时修改目标模板与字段映射，两者必须属于同一后端。
+  AnkiVideoTemplateService get videoTemplateService =>
+      AnkiVideoTemplateService(_repository);
 
   Future<void> setLapisFontScalePercent(int percent) async {
     final updated = await _repository

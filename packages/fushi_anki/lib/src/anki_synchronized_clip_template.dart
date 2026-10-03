@@ -1,3 +1,4 @@
+import 'anki_video_template.dart';
 import 'anki_models.dart';
 import 'anki_note_type_definition.dart';
 
@@ -23,6 +24,21 @@ bool noteTypeRendersSynchronizedClip({
   required AnkiNoteTypeDefinition definition,
   required Map<String, String> fieldMappings,
 }) {
+  final AnkiVideoTemplateOptions? videoOptions = readAnkiVideoTemplateOptions(
+    definition,
+  );
+  if (fieldMappings.values.any(
+    (String value) => value.contains('{card-video}'),
+  )) {
+    final String? audioField = AnkiHandlebarOptions.singleSentenceAudioField(
+      fieldMappings,
+    );
+    return videoOptions != null &&
+        audioField != null &&
+        audioField != videoOptions.field &&
+        definition.fields.contains(audioField) &&
+        fieldMappings[videoOptions.field] == '{card-video}';
+  }
   final List<String> imageFields = AnkiHandlebarOptions.cardImageFieldNames(
     fieldMappings,
   );
