@@ -108,6 +108,8 @@ class AdapterStructureTest(unittest.TestCase):
             "uint64_t __fastcall ArtemisInputUpdateDetour(",
             "void ClaimArtemisLeftButton(",
             "void PublishArtemisFrame(",
+            "void ObserveArtemisTap(",
+            "LRESULT CALLBACK ArtemisTapHookProc(",
         ):
             body = self._function_body(runtime, detour)
             for forbidden in (
@@ -126,15 +128,38 @@ class AdapterStructureTest(unittest.TestCase):
         claim = self._function_body(runtime, "void ClaimArtemisLeftButton(")
         self.assertIn("!rt.claim.owned && value == artemis_lookup::kKeyStatePressed", claim)
         self.assertIn("DecideLeftButton", claim)
-        eligible = self._function_body(runtime, "bool ArtemisPressEligible(")
+        self.assertIn("++rt.sampled_presses", claim)
+        press = self._function_body(runtime, "bool ArtemisPressEligible(")
+        self.assertIn("ArtemisPointEligible(window, cursor, submit)", press)
+        eligible = self._function_body(runtime, "bool ArtemisPointEligible(")
         for required in (
             "NativeInputAllowed",
             "kLookupGeometryProviderIdArtemis",
             "ArtemisShieldActive(game)",
             "GetForegroundWindow() != game",
+            "window != model.window",
             "HitTestModel",
         ):
             self.assertIn(required, eligible)
+        # 触摸点按（BUG-2856）：系统把它提升成亚帧 WM_LBUTTONDOWN/UP，逐帧采样看不到。
+        # 消息层只在 down 武装、up 处同一套准入门复核后提交；采样器在中间见过按下
+        # 就归 claim 所有，消息本身原样放行（只观察不吞）。
+        tap = self._function_body(runtime, "void ObserveArtemisTap(")
+        for required in (
+            "!rt.claim.owned",
+            "ArtemisPointEligible(",
+            "artemis_lookup::ArmTap(&rt.tap, eligible, rt.sampled_presses",
+            "artemis_lookup::ReleaseTap(&rt.tap, rt.sampled_presses, eligible",
+            "GetCurrentThreadId() != rt.game_thread",
+        ):
+            self.assertIn(required, tap)
+        hook_proc = self._function_body(runtime, "LRESULT CALLBACK ArtemisTapHookProc(")
+        self.assertIn("wparam == PM_REMOVE", hook_proc)
+        self.assertIn("CallNextHookEx(nullptr, code, wparam, lparam)", hook_proc)
+        release = self._function_body(core, "inline bool ReleaseTap(")
+        self.assertIn("armed.sampled == sampled", release)
+        shutdown = self._function_body(runtime, "void ShutdownArtemisLookup()")
+        self.assertIn("ReleaseArtemisTapHook()", shutdown)
         tick = self._function_body(runtime, "void ProcessArtemisLookupTick()")
         self.assertLess(
             tick.index("g_geometry_provider_registry.OfferReady"),
