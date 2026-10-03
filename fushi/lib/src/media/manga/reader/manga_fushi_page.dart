@@ -55,6 +55,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
@@ -3959,12 +3960,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return;
       }
       switch (setup) {
-        case MangaStreamOcrReady(:final MangaStreamPageRecognizer recognizer):
+        case MangaStreamOcrReady(
+          :final MangaStreamPageRecognizer recognizer,
+          :final MangaStreamAiRefinement? ai,
+        ):
           if (_volumeOcrNoEngine) setState(() => _volumeOcrNoEngine = false);
           final MangaStreamPageOcr ocr = MangaStreamPageOcr(
             pageCount: session.pageCount,
             pageFile: session.localFile,
             recognizer: recognizer,
+            ai: ai,
+            onAiError: (Object error, StackTrace stack) =>
+                ErrorLogService.instance.log(
+                  'MangaFushiPage.streamOcrAi',
+                  error,
+                  stack,
+                ),
             onPage: _applyStreamOcrPage,
             onBusyChanged: (bool busy) {
               if (mounted && _streamOcrBusy != busy) {
@@ -4288,6 +4299,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         final int highlightCount = await searchDictionaryResult(
           searchTerm: term,
           selectionRect: selectionRect,
+          // Shift 悬停扫过 OCR 字时 JS 回传 fromHover：不为每个扫到的词付费挑词条。
+          origin: data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit,
         );
         if (!mounted) return;
         unawaited(_highlightMangaSelection(highlightCount));
@@ -4920,6 +4933,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 lensLanguageSetter: appModel.setMangaOcrLensLanguage,
                 pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
                 pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
+                aiModeGetter: () => appModel.mangaOcrAiMode,
+                aiModeSetter: appModel.setMangaOcrAiMode,
+                aiProviderReady: () => mangaAiOcrProviderReady(appModel),
+                openAiSettings: pushAiSettingsPage,
                 remoteRunner: createInterconnectMangaOcrRunner(
                   appModel,
                   appModel.database,

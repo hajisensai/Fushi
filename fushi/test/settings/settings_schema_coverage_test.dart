@@ -479,6 +479,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
+  // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
+  'lookup/Pick meaning from context with AI':
+      'test/pages/base_source_page_ai_pick_test.dart: 自动判断开着：查词后 AI 回来即换到最前 / 没指派提供商：自动开着也不发请求',
   // 持久化/焦点/写穿由 settings_flatten_anki_profile_test 覆盖；真正加标签的消费点在
   // 制卡路径 reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart 的
   // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test
