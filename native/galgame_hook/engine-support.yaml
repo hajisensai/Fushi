@@ -853,6 +853,12 @@
       "audio": {
         "priority": [
           {
+            "kind": "cmvs_group_loader_voice_ogg_resource",
+            "format": "Decrypted per-line Ogg member returned by the engine's own archive-group loader for voice*.cpz groups (x64 only; loader sites resolved structurally from the main image exception directory)",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
             "kind": "xaudio2_or_directsound_pcm",
             "format": "DirectSound source PCM via the generic Windows audio adapter",
             "status": "implemented_unverified",
@@ -869,7 +875,7 @@
       "verified_games": [],
       "current_status": "implemented_unverified",
       "known_limitations": [
-        "Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.",
+        "Per-line voice comes from the engine's archive-group loader (BUG-2932): x64 builds only, because x86 images carry no unwind table to prove the loader entry; x86 stays on the generic PCM path, which has no voice/SE floor and can pair click SEs as voice. The 2026-10-04 リアライブ体験版v2 session wrote the right per-line Ogg files, but no same-session card E2E is recorded yet.",
         "Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.",
         "In-game Shift lookup is wired only for the measured ChronoClock trial v2 x64 executable hash. Other CMVS builds, transformed/faded/ambiguous sprites and unproved presentation modes fail closed; real popup/input/card E2E is pending."
       ],

@@ -11,7 +11,7 @@
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | reallive_nwk_nwa_resource (implemented_unverified)；visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
-| `cmvs` | CMVS (Purple Software) | `implemented_unverified` | luna_hook (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `cmvs` | CMVS (Purple Software) | `implemented_unverified` | luna_hook (implemented_unverified) | cmvs_group_loader_voice_ogg_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified)；xwma_compressed_resource (implemented_unverified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
@@ -275,15 +275,16 @@ Tests：`tests/reallive_adapter_test.cpp`、`tests/reallive_nwk_test.cpp`
 
 音频优先级：
 
-1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：DirectSound source PCM via the generic Windows audio adapter；clean voice：engine_dependent
-2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+1. `cmvs_group_loader_voice_ogg_resource` — `implemented_unverified`；格式：Decrypted per-line Ogg member returned by the engine's own archive-group loader for voice*.cpz groups (x64 only; loader sites resolved structurally from the main image exception directory)；clean voice：是
+2. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：DirectSound source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
 
 真实样本证据：
 
 
 已知限制：
 
-- Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.
+- Per-line voice comes from the engine's archive-group loader (BUG-2932): x64 builds only, because x86 images carry no unwind table to prove the loader entry; x86 stays on the generic PCM path, which has no voice/SE floor and can pair click SEs as voice. The 2026-10-04 リアライブ体験版v2 session wrote the right per-line Ogg files, but no same-session card E2E is recorded yet.
 - Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.
 - In-game Shift lookup is wired only for the measured ChronoClock trial v2 x64 executable hash. Other CMVS builds, transformed/faded/ambiguous sprites and unproved presentation modes fail closed; real popup/input/card E2E is pending.
 
