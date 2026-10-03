@@ -31,8 +31,8 @@
 1. **桌面页面转场**：Windows / Linux / Fuchsia 由 `ZoomPageTransitionsBuilder` 换成
    `FushiSharedAxisPageTransitionsBuilder`（`lib/src/utils/adaptive/fushi_page_transitions.dart`）。
    Zoom 是为手机「卡片放大成整页」设计的，整窗缩放的位移随窗口尺寸线性增长，4K 全屏下一次 push
-   等于把几百像素整体推拉一遍，并且两页同时缩放要两层离屏合成。新转场只做固定 24 px 的纵向位移
-   + 淡入，被覆盖页轻微上移并压暗 6%。Android 预测性返回、iOS / macOS Cupertino、墨水屏零转场
+   等于把几百像素整体推拉一遍，并且两页同时缩放要两层离屏合成。新转场两页都不位移：进入页原地淡入，
+   被覆盖页原地压暗 6%（早先版本带 24px 上移，用户实测觉得「进入页面时整个页面往上跳」，已去掉）。Android 预测性返回、iOS / macOS Cupertino、墨水屏零转场
    矩阵不变（守卫 `test/models/theme_page_transitions_guard_test.dart` 新增桌面断言）。
 2. **导航药丸展开**：`_FushiNavTile` 选中指示器从 32 横向展开到 64 并渐入填充色，图标线框 ↔ 实心
    轻缩放交叉淡化，标签字重过渡。settle 后的几何与配色与改造前逐值相同（eink 守卫不变）。

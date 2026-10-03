@@ -259,8 +259,11 @@ void main() {
       expect(builder.reverseTransitionDuration, FushiMotion.longReverse);
     });
 
-    testWidgets('push 过程中新页从下方淡入，结束后无残余位移', (WidgetTester tester) async {
+    testWidgets('push 过程中新页原地淡入，全程不位移（用户反馈页面会往上跳）', (
+      WidgetTester tester,
+    ) async {
       final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
+      const Key homeKey = ValueKey<String>('home');
       const Key pageKey = ValueKey<String>('page');
       await tester.pumpWidget(
         MaterialApp(
@@ -273,7 +276,7 @@ void main() {
               },
             ),
           ),
-          home: const SizedBox(),
+          home: const SizedBox.expand(key: homeKey),
         ),
       );
       nav.currentState!.push(
@@ -282,11 +285,33 @@ void main() {
         ),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 120));
-      final double midY = tester.getTopLeft(find.byKey(pageKey)).dy;
-      expect(midY, greaterThan(0));
+      for (int i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(tester.getTopLeft(find.byKey(pageKey)), Offset.zero);
+        expect(tester.getTopLeft(find.byKey(homeKey)), Offset.zero);
+      }
       await tester.pumpAndSettle();
-      expect(tester.getTopLeft(find.byKey(pageKey)).dy, 0);
+      expect(tester.getTopLeft(find.byKey(pageKey)), Offset.zero);
+    });
+
+    testWidgets('进入页中途半透明（淡入确实在播）', (WidgetTester tester) async {
+      const Key key = ValueKey<String>('child');
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: FushiSharedAxisTransition(
+            animation: AlwaysStoppedAnimation<double>(0.5),
+            secondaryAnimation: kAlwaysDismissedAnimation,
+            child: SizedBox.expand(key: key),
+          ),
+        ),
+      );
+      final double opacity = tester
+          .widget<Opacity>(
+            find.ancestor(of: find.byKey(key), matching: find.byType(Opacity)),
+          )
+          .opacity;
+      expect(opacity, greaterThan(0));
+      expect(opacity, lessThan(1));
     });
   });
 

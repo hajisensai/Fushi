@@ -2,21 +2,24 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
-/// 桌面（Windows / Linux / Fuchsia）页面转场：**纵向共享轴 + 淡入**。
+/// 桌面（Windows / Linux / Fuchsia）页面转场：**原地淡入，不位移**。
 ///
 /// 取代此前的 [ZoomPageTransitionsBuilder]。Zoom 转场为「手机上从卡片放大成整页」
 /// 设计：新页从 85% 放大、旧页同时放大到 105% 并淡出，在 1080p+ 的大窗口里是
 /// 整窗缩放，位移量随窗口尺寸线性增长——4K 全屏下一次 push 等于把几百像素的
 /// 画面整体推拉一遍，视觉上很「重」，而且两页同时缩放需要两层离屏合成。
 ///
-/// 这里改成只与**固定像素距离**相关的轻量动作，与窗口大小无关：
-/// - 进入页：从下方 [FushiMotion.enterOffset] × 1.5 处上移到位，透明度在动画前
-///   20% 保持 0、随后淡入（先让旧页「让路」再出现，读起来是一次干净的切换而不是
-///   两页叠影）。
-/// - 被覆盖页：轻微上移并压暗到 [_kScrimOpacity]，提示层级「新页在上面」。
+/// 这里两页都**不做任何位移 / 缩放**，页面内容始终停在最终位置：
+/// - 进入页：透明度在动画前 20% 保持 0、随后淡入（先让旧页「让路」再出现，读起来
+///   是一次干净的切换而不是两页叠影）。
+/// - 被覆盖页：原地压暗到 [_kScrimOpacity]，提示层级「新页在上面」。
 /// - 返回（pop）走同一路径的反向，时长取 [FushiMotion.longReverse]，退出更快。
 ///
-/// 系统「减弱动态效果」/ 墨水屏（[fushiMotionEnabled]）下退化成纯淡入、不位移。
+/// 早先版本让进入页从下方 24px 上移到位、被覆盖页同时上移 6px，用户实测反馈
+/// 「进入页面时整个页面会往上一点」——整页位移在桌面大窗里读成页面在跳，所以
+/// 去掉位移只留淡入。
+///
+/// 系统「减弱动态效果」/ 墨水屏（[fushiMotionEnabled]）下淡入改为线性、不压暗。
 /// 墨水屏的主题本就整套换成 `EinkNoPageTransitionsBuilder`，这里只是兜底。
 class FushiSharedAxisPageTransitionsBuilder extends PageTransitionsBuilder {
   const FushiSharedAxisPageTransitionsBuilder();
@@ -63,9 +66,6 @@ class FushiSharedAxisTransition extends StatelessWidget {
   static final Animatable<double> _fadeIn = CurveTween(
     curve: const Interval(0.2, 1, curve: FushiMotion.enter),
   );
-  static final Animatable<double> _riseIn = CurveTween(
-    curve: FushiMotion.enter,
-  );
   static final Animatable<double> _coverOut = CurveTween(
     curve: FushiMotion.standard,
   );
@@ -73,27 +73,23 @@ class FushiSharedAxisTransition extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool motion = fushiMotionEnabled(context);
-    const double distance = FushiMotion.enterOffset * 1.5;
     final Color scrim = Theme.of(context).colorScheme.scrim;
     return AnimatedBuilder(
       animation: Listenable.merge(<Listenable>[animation, secondaryAnimation]),
       child: child,
       builder: (BuildContext context, Widget? child) {
         final double enter = animation.value;
-        final double fade = _fadeIn.transform(enter);
-        final double rise = motion ? _riseIn.transform(enter) : 1;
-        final double cover = _coverOut.transform(secondaryAnimation.value);
+        final double cover = motion
+            ? _coverOut.transform(secondaryAnimation.value)
+            : 0;
         return Opacity(
-          opacity: motion ? fade : enter,
-          child: Transform.translate(
-            offset: Offset(0, (1 - rise) * distance - cover * distance * 0.25),
-            child: DecoratedBox(
-              position: DecorationPosition.foreground,
-              decoration: BoxDecoration(
-                color: scrim.withValues(alpha: cover * _kScrimOpacity),
-              ),
-              child: child,
+          opacity: motion ? _fadeIn.transform(enter) : enter,
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              color: scrim.withValues(alpha: cover * _kScrimOpacity),
             ),
+            child: child,
           ),
         );
       },

@@ -1799,7 +1799,7 @@ ThemeData buildFushiThemeData({
                   FushiPredictiveBackPageTransitionsBuilder(),
               TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
               TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-              // 桌面：纵向共享轴 + 淡入（2026-10 动效重做）。Zoom 的整窗缩放位移
+              // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。
               TargetPlatform.windows: FushiSharedAxisPageTransitionsBuilder(),
               TargetPlatform.linux: FushiSharedAxisPageTransitionsBuilder(),
