@@ -532,12 +532,16 @@ body::after {
     final String fontWeightCss =
         fontWeight == 400 ? '' : 'font-weight: $fontWeight !important;';
 
+    // 行首禁则用 `normal` 而不是 `strict`（BUG-2929）：二者唯一的差别是 CJ 类（小假名 っゃゅょ…
+    // 与长音 ー）在 `strict` 下也不许出现在行首，于是「たった」「コート」恰好落在列尾时，
+    // 浏览器只能把前一个字一起推到下一列，本列留出一格空白、视觉上像被错误换行。
+    // 。、」） 等标点在 `normal` 下仍然禁止行首，与日文出版的常规排版一致。
     final String gridCss = settings.enableTextJustification
         ? ''
         : '''
 text-align: start !important;
 hanging-punctuation: allow-end !important;
-line-break: strict !important;''';
+line-break: normal !important;''';
 
     const String pageBreakCss = '''
 p {
