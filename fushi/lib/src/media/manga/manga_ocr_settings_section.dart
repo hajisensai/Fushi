@@ -121,8 +121,9 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 却没有提供商时，下拉下方提示「目前不会发送任何内容」并给入口。
   final bool Function()? aiProviderReady;
 
-  /// 打开「设置 › AI」；null = 不显示入口。
-  final void Function(BuildContext context)? openAiSettings;
+  /// 打开「设置 › AI」；null = 不显示入口。返回的 Future 在用户从那一页回来时
+  /// 完成：回来后重算「有没有提供商」（用户多半就是去指派提供商的）。
+  final Future<void> Function(BuildContext context)? openAiSettings;
 
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
@@ -957,7 +958,7 @@ class _MangaOcrSettingsSectionState
     final bool missingProvider =
         _aiMode != MangaAiOcrMode.off &&
         !(widget.aiProviderReady?.call() ?? false);
-    final void Function(BuildContext context)? openAiSettings =
+    final Future<void> Function(BuildContext context)? openAiSettings =
         widget.openAiSettings;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -993,6 +994,21 @@ class _MangaOcrSettingsSectionState
                   await widget.aiModeSetter!(value.storageKey);
                 },
         ),
+        // 「只读低置信度」靠本地识别器给的置信度；旧版识别的卷没有这个字段，此档
+        // 位对它们什么都不做。不把「没有置信度」当成「需要重读」：Lens / 系统 OCR
+        // 永远不出分，那样等于在用户选了「省钱档」时悄悄全量计费。
+        if (_aiMode == MangaAiOcrMode.lowConfidence) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            t.manga_ocr_ai_mode_low_confidence_legacy,
+            key: const ValueKey<String>(
+              'manga_ocr_ai_mode_low_confidence_legacy',
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         if (missingProvider) ...<Widget>[
           const SizedBox(height: 4),
           Text(
@@ -1006,7 +1022,11 @@ class _MangaOcrSettingsSectionState
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: TextButton(
-                onPressed: () => openAiSettings(context),
+                onPressed: () async {
+                  await openAiSettings(context);
+                  // build 里现算 missingProvider：回来后重建一次即刷新。
+                  if (mounted) setState(() {});
+                },
                 child: Text(t.manga_ocr_ai_mode_open_settings),
               ),
             ),
