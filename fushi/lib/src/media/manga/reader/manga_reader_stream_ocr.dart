@@ -224,8 +224,8 @@ class AiRefinedMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
     this._inner, {
     required MangaAiOcrRefiner refiner,
     MangaAiOcrCache? cache,
-  })  : _refiner = refiner,
-        _cache = cache;
+  }) : _refiner = refiner,
+       _cache = cache;
 
   final MangaStreamPageRecognizer _inner;
   final MangaAiOcrRefiner _refiner;
@@ -239,8 +239,7 @@ class AiRefinedMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
         local,
         await pageFile.readAsBytes(),
         cache: _cache,
-      ))
-          .page;
+      )).page;
     } on Object {
       return local;
     }

@@ -100,8 +100,7 @@ void main() {
     );
     final List<Object?> messages = sent['messages']! as List<Object?>;
     final List<Object?> content =
-        (messages.single! as Map<String, Object?>)['content']!
-            as List<Object?>;
+        (messages.single! as Map<String, Object?>)['content']! as List<Object?>;
     expect(content, <Object?>[
       <String, Object?>{
         'type': 'image',

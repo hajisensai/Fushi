@@ -396,7 +396,8 @@ class MangaOcrPipeline {
     if (recognizer is OrientedOcrRecognizer) {
       return recognizer.recognizeOriented(image, boxes);
     }
-    if (recognizer is ScoredOcrRecognizer && recognizer is! BatchOcrRecognizer) {
+    if (recognizer is ScoredOcrRecognizer &&
+        recognizer is! BatchOcrRecognizer) {
       final ScoredOcrText scored =
           await recognizer.recognizeScored(image, boxes.single);
       return <OcrRecognition>[

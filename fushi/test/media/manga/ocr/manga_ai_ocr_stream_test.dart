@@ -7,7 +7,6 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ai_ocr_stream.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
-import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:http/http.dart' as http;

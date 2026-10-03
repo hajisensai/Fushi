@@ -258,9 +258,9 @@ class MangaOcrRecognizer implements ScoredOcrRecognizer {
           _decoderStep(sequences, hiddenTensor),
     );
     return (
-        text: tokenizer.decode(result.tokens),
-        confidence: beamSearchMeanTokenProbability(result, lengthPenalty),
-      );
+      text: tokenizer.decode(result.tokens),
+      confidence: beamSearchMeanTokenProbability(result, lengthPenalty),
+    );
   }
 
   Future<List<Float32List>> _decoderStep(

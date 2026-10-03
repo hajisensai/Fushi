@@ -438,9 +438,8 @@ MokuroBlock _parseBlock(
     lines: lines,
     linesCoords: _parseLinesCoords(raw['lines_coords']),
     regions: _parseRegions(raw['regions']),
-    confidence: raw['confidence'] is num
-        ? (raw['confidence'] as num).toDouble()
-        : null,
+    confidence:
+        raw['confidence'] is num ? (raw['confidence'] as num).toDouble() : null,
     aiRecognized: raw['ai_recognized'] == true,
   );
 }

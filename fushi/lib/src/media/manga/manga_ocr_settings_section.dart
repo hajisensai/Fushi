@@ -954,7 +954,8 @@ class _MangaOcrSettingsSectionState
   /// 大模型识别档位：框仍在本机检测，框里的字交视觉模型重读（见
   /// `manga_ai_ocr_refiner.dart`）。默认关；开着但没指派提供商时明说「不会发送」。
   Widget _buildAiMode(ThemeData theme) {
-    final bool missingProvider = _aiMode != MangaAiOcrMode.off &&
+    final bool missingProvider =
+        _aiMode != MangaAiOcrMode.off &&
         !(widget.aiProviderReady?.call() ?? false);
     final void Function(BuildContext context)? openAiSettings =
         widget.openAiSettings;

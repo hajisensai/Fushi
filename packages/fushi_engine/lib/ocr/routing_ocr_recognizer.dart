@@ -136,8 +136,7 @@ class RoutingOcrRecognizer
       read.text,
       vertical: routed.recognition.vertical,
       lineHints: routed.lineHints,
-    ))
-        .withConfidence(read.confidence);
+    )).withConfidence(read.confidence);
   }
 
   /// 主识别器出分就取分，不出分的（Baberu 等）置信度为 null。

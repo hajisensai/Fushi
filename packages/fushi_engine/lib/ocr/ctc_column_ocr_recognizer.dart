@@ -73,8 +73,11 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     );
     if (lines.isEmpty) {
       // 一行都没检到：整块当一行读（竖排同样先转向），没有行几何可给。
-      final ({String text, double? confidence}) whole =
-          await _readRegion(page, box, vertical: blockVertical);
+      final ({String text, double? confidence}) whole = await _readRegion(
+        page,
+        box,
+        vertical: blockVertical,
+      );
       return OcrRecognition(
         text: whole.text,
         vertical: blockVertical,

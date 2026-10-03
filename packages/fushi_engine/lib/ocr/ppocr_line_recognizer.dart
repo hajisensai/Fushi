@@ -115,8 +115,7 @@ String ctcGreedyDecode(
   int frames,
   int vocabSize,
   List<String> vocab,
-) =>
-    ctcGreedyDecodeScored(logits, frames, vocabSize, vocab).text;
+) => ctcGreedyDecodeScored(logits, frames, vocabSize, vocab).text;
 
 /// CTC 贪心解码，顺带给出各吐字帧 softmax 概率的最小值。
 ///
@@ -146,8 +145,12 @@ String ctcGreedyDecode(
     }
     if (best != previous && best != 0) {
       out.write(vocab[best]);
-      final double confidence =
-          _ppOcrFrameConfidence(logits, base, vocabSize, best);
+      final double confidence = _ppOcrFrameConfidence(
+        logits,
+        base,
+        vocabSize,
+        best,
+      );
       if (minConfidence == null || confidence < minConfidence) {
         minConfidence = confidence;
       }
