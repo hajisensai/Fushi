@@ -29,14 +29,17 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const source = fs.readFileSync(
-  path.resolve(__dirname, '../../lib/src/reader/reader_pagination_scripts.dart'),
-  'utf8',
-);
+const readSrc = (f) => fs.readFileSync(path.resolve(__dirname, '../../lib/src/reader/' + f), 'utf8');
+// The grouping + ruby-gap fill is one shared snippet inserted into every shell's
+// `window.fushiReader` literal (BUG-2917); each shell is tested with it attached.
+const gapSource = readSrc('reader_sentence_audio_ruby_gap_script.dart');
+const source = readSrc('reader_pagination_scripts.dart') + '\n' + gapSource;
+const vnSource = readSrc('reader_visual_novel_scripts.dart') + '\n' + gapSource;
 
-function extractMethod(name) {
+function extractMethod(name, from) {
   const re = new RegExp('\\n  ' + name + ': function\\([\\s\\S]*?\\n  \\},');
-  const m = source.match(re);
+  // `.map(extractMethod)` passes the array index as the second argument.
+  const m = (typeof from === 'string' ? from : source).match(re);
   assert.ok(m, 'missing method ' + name);
   return m[0].trim().replace(/,$/, '');
 }
@@ -399,6 +402,72 @@ function kids(n) { return n.childNodes.filter((c) => c.nodeType === 1 || c.nodeV
   R._setReanchorPending(true);
   R._setReanchorPending(false);
   assert.strictEqual(ws[1].style.boxShadow, '', 'a settle after the cue is cleared paints nothing');
+}
+
+// ── 10. VN shell (BUG-2917): same grouping + gap fill as the paginated shell ──
+// VN used to wrap every segment on its own and never fill gaps, so a vertical
+// sentence highlight broke into pieces around every annotated kanji.
+function makeVnReader() {
+  const sandbox = {
+    document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {}, head: {} },
+    getComputedStyle: (n) => ({
+      display: n.display || 'inline', getPropertyValue: () => '',
+      writingMode: 'vertical-rl', fontSize: '22px',
+    }),
+    Map,
+    Node: { TEXT_NODE: 3 },
+    window: {},
+    console: { log() {} },
+  };
+  vm.createContext(sandbox);
+  const methods = ['wrapSentenceAudioCueRanges', 'clearInlineSentenceAudioCue', 'applyInlineSentenceAudioCue',
+    'clearCurrentSentenceAudioScreenTargets']
+    .map((n) => extractMethod(n, vnSource))
+    .concat(['sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode', 'fillSentenceAudioRubyGaps',
+      'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps', 'eraseSentenceAudioRubyGaps',
+      'clearSentenceAudioRubyGaps'].map((n) => extractMethod(n, gapSource)))
+    .join(',\n');
+  vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
+  const R = sandbox.R;
+  R.cueWrappers = new Map();
+  R.cueSourceRanges = new Map();
+  return R;
+}
+{
+  const r = ruby('縦', 'じゅう');
+  const p = el('p', ['コートの中で', r, '横無尽に舞う']);
+  const R = makeVnReader();
+  const wrapped = R.wrapSentenceAudioCueRanges([{
+    id: 'v1',
+    ranges: baseTextNodes(p).map((n) => ({ node: n, start: 0, end: n.nodeValue.length })),
+  }]);
+  const ws = R.cueWrappers.get('v1');
+  assert.strictEqual(wrapped.get('v1'), ws);
+  assert.strictEqual(ws.length, 3, 'text / ruby base / text, got ' + ws.length);
+  assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['コートの中で', '縦', '横無尽に舞う']);
+  assert.strictEqual(r.parentNode, p, 'ruby not moved');
+  assert.strictEqual(ws[1].parentNode, r, 'base wrapper lives inside the ruby');
+  assert.strictEqual(rtOf(r).length, 1, 'rt untouched');
+  assert.strictEqual(p.textContent, 'コートの中で縦じゅう横無尽に舞う');
+
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 132 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 146, bottom: 168 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 182, bottom: 314 }];
+  assert.strictEqual(R.applyInlineSentenceAudioCue('v1'), true);
+  ws.forEach((w) => assert.ok(w.classList.contains('fushi-sentence-audio-active')));
+  assert.strictEqual(ws[1].style.boxShadow,
+    '0px -14px 0 0 var(--fushi-sentence-audio-background-color), ' +
+    '0px 14px 0 0 var(--fushi-sentence-audio-background-color)',
+    'VN highlight bridges the ruby gaps like the paginated shell');
+  R.clearInlineSentenceAudioCue('v1');
+  assert.strictEqual(ws[1].style.boxShadow, '', 'gap fill cleared with the highlight');
+  ws.forEach((w) => assert.ok(!w.classList.contains('fushi-sentence-audio-active')));
+
+  R.applyInlineSentenceAudioCue('v1');
+  assert.ok(ws[1].style.boxShadow);
+  R.clearCurrentSentenceAudioScreenTargets();
+  assert.strictEqual(ws[1].style.boxShadow, '', 'screen-target reset also drops the gap fill');
+  assert.strictEqual(R.cueWrappers.size, 0);
 }
 
 console.log('all assertions passed');
