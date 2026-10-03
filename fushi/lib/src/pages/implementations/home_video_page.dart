@@ -6096,14 +6096,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 被 `if (!mounted) return;` 吃掉 → 用户永远不知道下载挂了。这里让失败态跟进度
   /// 一样落在卡片上，重进页面照样看得到；再点一次下载即重试（新任务顶掉旧失败态）。
   Widget? _remoteDownloadBadge(RemoteVideoInfo video, String safeKey) {
-    final InterconnectDownloadTask? task =
-        ref.watch(interconnectDownloadManagerProvider).taskFor(video.id);
+    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2926）。
+    final InterconnectDownloadBadgeState? task = ref.watch(
+        interconnectDownloadManagerProvider
+            .select((m) => m.badgeStateFor(video.id)));
     if (task == null) return null;
     switch (task.status) {
       case InterconnectDownloadStatus.running:
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('remote_video_downloading_$safeKey'),
-          progress: task.progress,
+          progress: task.percent < 0 ? null : task.percent / 100,
           tooltip: t.remote_video_downloading,
         );
       case InterconnectDownloadStatus.failed:
@@ -6123,13 +6125,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 有任务在跑 → 进度环（各成员进度均值，已完成计满）；全部结束且有失败 → 失败
   /// 角标；没有成员有任务 / 全部完成 → null（画回云角标）。
   Widget? _collectionDownloadBadge(int collectionId, List<String> memberIds) {
-    final InterconnectDownloadAggregate? agg =
-        ref.watch(interconnectDownloadManagerProvider).aggregateFor(memberIds);
+    final InterconnectDownloadAggregateBadgeState? agg = ref.watch(
+        interconnectDownloadManagerProvider
+            .select((m) => m.aggregateBadgeStateFor(memberIds)));
     if (agg == null) return null;
     if (agg.isRunning) {
       return RemoteDownloadProgressBadge(
         key: ValueKey<String>('home_video_collection_downloading_$collectionId'),
-        progress: agg.progress,
+        progress: agg.percent / 100,
         tooltip: t.remote_video_downloading,
       );
     }

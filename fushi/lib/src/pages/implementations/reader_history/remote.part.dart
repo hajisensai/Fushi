@@ -336,14 +336,16 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     required String safeKey,
     required String keyPrefix,
   }) {
-    final InterconnectDownloadTask? task =
-        ref.watch(interconnectDownloadManagerProvider).taskFor(taskId);
+    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2926）。
+    final InterconnectDownloadBadgeState? task = ref.watch(
+        interconnectDownloadManagerProvider
+            .select((m) => m.badgeStateFor(taskId)));
     if (task == null) return null;
     switch (task.status) {
       case InterconnectDownloadStatus.running:
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('${keyPrefix}_downloading_$safeKey'),
-          progress: task.progress,
+          progress: task.percent < 0 ? null : task.percent / 100,
           tooltip: t.remote_book_downloading,
         );
       case InterconnectDownloadStatus.failed:

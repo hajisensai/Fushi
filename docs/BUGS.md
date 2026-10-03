@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2686 条。点号进各自文件。
+> 共 2688 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2927](bugs/BUG-2927-host-delete-book-no-tombstone.md) | ✅ | ✅ | 互联「从所有设备删除」对书/有声书不生效：host 删除不写墓碑 |
+| [BUG-2926](bugs/BUG-2926-interconnect-download-progress-jank.md) | ✅ | ✅ | 下载互联书时 iOS 掉帧：进度回报每次整页重建书架/媒体库 |
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
 | [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
 | [BUG-2922](bugs/BUG-2922-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
