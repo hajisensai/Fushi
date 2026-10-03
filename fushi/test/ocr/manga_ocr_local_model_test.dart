@@ -23,26 +23,81 @@ void main() {
     );
   });
 
+  test('Windows supports Baberu and unknown values retain the default', () {
+    expect(
+      MangaOcrLocalModel.forPlatform('baberu', operatingSystem: 'windows'),
+      MangaOcrLocalModel.baberu,
+    );
+    expect(
+      MangaOcrLocalModel.forPlatform('unknown', operatingSystem: 'windows'),
+      MangaOcrLocalModel.mangaOcr,
+    );
+  });
+
+  test('removed manga_ocr_cuda preference falls back to classic manga-ocr', () {
+    // 2026-10 删除了 Windows 本地 Python + torch CUDA 档；旧偏好 / 备份 / 互联
+    // 对端可能还带着这个 key，必须落回默认模型而不是选到不存在的引擎。
+    expect(
+      MangaOcrLocalModel.values.map((MangaOcrLocalModel m) => m.key),
+      isNot(contains('manga_ocr_cuda')),
+    );
+    expect(
+      MangaOcrLocalModel.fromKey('manga_ocr_cuda'),
+      MangaOcrLocalModel.mangaOcr,
+    );
+    expect(
+      MangaOcrLocalModel.forPlatform(
+        'manga_ocr_cuda',
+        operatingSystem: 'windows',
+      ),
+      MangaOcrLocalModel.mangaOcr,
+    );
+  });
+
   test(
-    'Windows supports both models and unknown values retain the default',
-    () {
-      expect(
-        MangaOcrLocalModel.forPlatform(
-          'manga_ocr_cuda',
-          operatingSystem: 'windows',
-        ),
-        MangaOcrLocalModel.mangaOcrCuda,
+    'leftover manga-cuda directory is deleted, live models untouched',
+    () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'ocr-removed-models',
       );
-      expect(
-        MangaOcrLocalModel.forPlatform('baberu', operatingSystem: 'windows'),
-        MangaOcrLocalModel.baberu,
-      );
-      expect(
-        MangaOcrLocalModel.forPlatform('unknown', operatingSystem: 'windows'),
-        MangaOcrLocalModel.mangaOcr,
-      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final Directory cuda = Directory(p.join(root.path, 'manga-cuda'));
+      Directory(p.join(cuda.path, 'python', 'Lib')).createSync(recursive: true);
+      File(p.join(cuda.path, 'torch.whl')).writeAsBytesSync(<int>[1, 2, 3]);
+      final List<Directory> live = <Directory>[
+        for (final String name in <String>[
+          'manga',
+          'manga-ctc',
+          'manga-baberu',
+        ])
+          Directory(p.join(root.path, name))..createSync(),
+      ];
+
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 1);
+      expect(cuda.existsSync(), isFalse);
+      for (final Directory dir in live) {
+        expect(dir.existsSync(), isTrue, reason: dir.path);
+      }
+      // 幂等：再调一次什么都不删。
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 0);
     },
   );
+
+  test('removed directory names never collide with a live model', () async {
+    final EnginePaths previous = enginePaths;
+    final Directory root = Directory(
+      p.join(Directory.systemTemp.path, 'ocr-removed-models-collision'),
+    );
+    enginePaths = FixedEnginePaths(documents: root, support: root, temp: root);
+    addTearDown(() => enginePaths = previous);
+    for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+      expect(
+        kRemovedMangaOcrModelDirNames,
+        isNot(contains(p.basename((await model.modelsDirectory()).path))),
+        reason: model.key,
+      );
+    }
+  });
 
   group('per-column CTC (manga_ctc)', () {
     test('selectable on every platform, own directory and signature', () async {
@@ -73,7 +128,6 @@ void main() {
       const MangaOcrLocalModel ctc = MangaOcrLocalModel.mangaCtc;
       expect(ctc.availableOnAllPlatforms, isTrue);
       expect(MangaOcrLocalModel.baberu.availableOnAllPlatforms, isFalse);
-      expect(MangaOcrLocalModel.mangaOcrCuda.availableOnAllPlatforms, isFalse);
       expect(ctc.accelerator, isEmpty);
       expect(
         (await ctc.modelsDirectory()).path,

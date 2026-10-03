@@ -6739,5 +6739,76 @@ class ReviewFixGuardTest(unittest.TestCase):
         self.assertNotEqual([], find_cpp_catch_on_tjs_string_abi(dirty))
 
 
+def find_bind_group_swap_not_followed(source: MaskedSource) -> list[str]:
+    """BUG-2893：KAG backlay+trans 交换 fore/back 消息层后，bind group 必须跟随到
+    现在占据同一 (page,index) 的对象，且只在「原对象出现在另一页同一下标」时跟随。
+
+    没有跟随：表情切换后 AnchorValid 恒假，这句点不出卡、点击漏给游戏。
+    没有交换证据门：任何对象替换（含被移走/重排）都会被当成同一句继续命中。
+    """
+    tjs = _joined_tjs_payload(source)
+    follows = _assigned_tjs_functions(tjs, "fushiLookupBindGroupFollowSwap")
+    if len(follows) != 1:
+        return [
+            f"{ADAPTER.name}: fushiLookupBindGroupFollowSwap 定义数应为 1，"
+            f"实际 {len(follows)}"
+        ]
+    follow = _compact_tjs(follows[0][1])
+    violations: list[str] = []
+    for needle, why in (
+        ("if(here[group.anchorIndex]===anchor)returnfalse;", "原对象仍在原位时不得跟随"),
+        ("if(there[group.anchorIndex]!==anchor)returnfalse;", "缺少「原对象在另一页同一下标」的交换证据门"),
+        ("varsuccessor=here[group.anchorIndex];", "跟随目标必须是现在占据同一槽位的对象"),
+        ("group.anchorIdentity=successor;", "跟随后必须改写组的锚点对象"),
+    ):
+        if needle not in follow:
+            violations.append(f"{ADAPTER.name}: FollowSwap {why}")
+
+    captures = _assigned_tjs_functions(tjs, "fushiLookupCapture")
+    if len(captures) != 1:
+        return violations + [
+            f"{ADAPTER.name}: fushiLookupCapture 定义数应为 1，实际 {len(captures)}"
+        ]
+    capture = _compact_tjs(captures[0][1])
+    call = capture.find("global.fushiLookupBindGroupFollowSwap(g)")
+    valid = capture.find("global.fushiLookupBindGroupAnchorValid(g)")
+    if call < 0:
+        violations.append(f"{ADAPTER.name}: Capture 的候选循环没有调用 FollowSwap")
+    elif valid < 0 or call > valid:
+        violations.append(
+            f"{ADAPTER.name}: Capture 必须先 FollowSwap 再判 BindGroupAnchorValid"
+        )
+    return violations
+
+
+class BindGroupSwapFollowTest(unittest.TestCase):
+    """BUG-2893 正向守卫 + 变异自测（变异跑在真文件的副本上）。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raw = ADAPTER.read_text(encoding="utf-8")
+
+    def _mutate_real(self, old: str, new: str) -> MaskedSource:
+        self.assertIn(old, self.raw, "变异锚点必须真的存在于当前实现里")
+        dirty = self.raw.replace(old, new, 1)
+        self.assertNotEqual(dirty, self.raw, "变异必须真的改变了源码")
+        return MaskedSource(dirty)
+
+    def test_real_adapter_follows_kag_page_swaps(self) -> None:
+        self.assertEqual([], find_bind_group_swap_not_followed(MaskedSource(self.raw)))
+
+    def test_missing_swap_evidence_gate_is_red(self) -> None:
+        dirty = self._mutate_real(
+            "if(there[group.anchorIndex] !== anchor) return false;", ""
+        )
+        self.assertNotEqual([], find_bind_group_swap_not_followed(dirty))
+
+    def test_capture_not_following_is_red(self) -> None:
+        dirty = self._mutate_real(
+            "if(global.fushiLookupBindGroupFollowSwap(g)) followedSwap++;", ""
+        )
+        self.assertNotEqual([], find_bind_group_swap_not_followed(dirty))
+
+
 if __name__ == "__main__":
     unittest.main()

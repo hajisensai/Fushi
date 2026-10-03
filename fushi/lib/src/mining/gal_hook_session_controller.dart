@@ -614,10 +614,11 @@ class GalHookSessionState {
           ? null
           : japaneseLocaleVerdict ?? this.japaneseLocaleVerdict,
       // 原因只在「有判定且没转」时有意义：判定一复位它跟着清；新判定进来时它就是
-      // 随判定一起传进来的那个值（转了 = null），不能拿旧值兜底。
-      japaneseLocaleSkipReason: clearLaunchExe || clearJapaneseLocaleVerdict
+      // 随判定一起传进来的那个值（转了 = null），不能拿旧值兜底。清判定时同理只丢旧值：
+      // 「请求了转区却落空」（BUG-2891）在 `on` 档没有判定，却有原因，随同一次调用传入。
+      japaneseLocaleSkipReason: clearLaunchExe
           ? null
-          : japaneseLocaleVerdict != null
+          : clearJapaneseLocaleVerdict || japaneseLocaleVerdict != null
           ? japaneseLocaleSkipReason
           : japaneseLocaleSkipReason ?? this.japaneseLocaleSkipReason,
     );
@@ -1678,6 +1679,17 @@ class GalHookSessionController extends ChangeNotifier {
         'Launched the game with a Japanese (CP932) locale',
         details: localeDetails,
       );
+    } else if (skipReason == GalJapaneseLocaleSkipReason.runtimeUnavailable) {
+      // BUG-2891：请求了转区、injector 却退回普通启动。`on` 档没有 verdict，旧代码在
+      // 这里要么报「已转区」（把请求当事实），要么一声不吭。
+      _record(
+        GalHookEventSeverity.warning,
+        'launch',
+        'launch.japanese_locale_unavailable',
+        'Requested a Japanese locale, but the helper launched the game '
+            'without Locale Emulator',
+        details: localeDetails,
+      );
     } else if (verdict != null) {
       // `auto` 判为不转区也要留痕（BUG-2047）：证据空白的日文原版会先乱码，事后排障
       // 得能看到「当时为什么没转」。
@@ -1863,9 +1875,10 @@ class GalHookSessionController extends ChangeNotifier {
       // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Hibiki 自己
       // 启动的进程）。绑定因此改成会话级监视：只要这条会话还活着且仍没有窗口，就继续
       // 按同一个 pid 找，找到即自动绑上。
-      // gamePid 为空表示 hook 根本没拿到目标进程，没有可重试的匹配依据。
-      if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     }
+    // 绑上之后同一个监视继续跟踪窗口生命周期（BUG-2890）。gamePid 为空表示 hook
+    // 根本没拿到目标进程，没有可重试的匹配依据。
+    if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     _startPlayTracker(
       generation: generation,
       identity: identity,
@@ -1874,19 +1887,22 @@ class GalHookSessionController extends ChangeNotifier {
     return const GalHookLaunchResult.launched();
   }
 
-  /// launch 会话的窗口重绑监视：周期性按 [gamePid] 找顶层窗口，找到就补上绑定并把
-  /// 因 `window_not_found` 降级的会话恢复回真实 phase（文本信号来了就是 running，
-  /// 否则还在等信号）。绑定成功 / 会话被换代（stop、重启、attach）即自停。
+  /// launch 会话的窗口绑定监视，跟随整条会话的生命周期：
+  /// - 还没绑上：周期性按 [gamePid] 找顶层窗口，找到就补上绑定并把因
+  ///   `window_not_found` 降级的会话恢复回真实 phase（BUG-1049）；
+  /// - 已绑上：绑定的窗口从该进程的存活窗口里消失、而同进程已有别的窗口时改绑过去
+  ///   （BUG-2890：CatSystem2 / CMVS 先弹启动设置对话框，对话框关掉后主窗口才建，
+  ///   只绑一次就会永远指着死掉的对话框）。没有替代窗口时保留原绑定，不清空——
+  ///   主窗口切显示模式时短暂不可见不该让绑定在 null 与原窗口之间来回跳。
   ///
-  /// 只更新状态，不走 [bindWindow]——那条路径是给「用户手动改绑另一个窗口」用的，
-  /// 会 [startAttachedCapture] 重启整条会话；这里 hook 已经在跑，重启只会丢台词。
+  /// 会话被换代（stop、重启、attach）即自停。只更新状态，不走 [bindWindow]——那条
+  /// 路径是给「用户手动改绑另一个窗口」用的，会 [startAttachedCapture] 重启整条会话；
+  /// 这里 hook 已经在跑，重启只会丢台词。
   void _startWindowRebindWatch(int generation, int gamePid) {
     final int rebindGeneration = ++_windowRebindGeneration;
     _windowRebindTimer?.cancel();
     _windowRebindTimer = Timer.periodic(_windowRebindInterval, (Timer timer) {
-      if (generation != _operationGeneration ||
-          _state.boundWindow != null ||
-          _state.gamePid != gamePid) {
+      if (generation != _operationGeneration || _state.gamePid != gamePid) {
         timer.cancel();
         _windowRebindTimer = null;
         return;
@@ -1905,15 +1921,16 @@ class GalHookSessionController extends ChangeNotifier {
 
   Future<void> _tryRebindWindow(int generation, int gamePid) async {
     final List<ExternalWindowInfo> windows = await _windowListLoader();
-    if (generation != _operationGeneration ||
-        _state.boundWindow != null ||
-        _state.gamePid != gamePid) {
+    if (generation != _operationGeneration || _state.gamePid != gamePid) {
+      return;
+    }
+    final ExternalWindowInfo? bound = _state.boundWindow;
+    if (bound != null) {
+      _replaceDeadBoundWindow(bound, windows, gamePid);
       return;
     }
     for (final ExternalWindowInfo candidate in windows) {
       if (candidate.pid != gamePid) continue;
-      _windowRebindTimer?.cancel();
-      _windowRebindTimer = null;
       final bool degradedForWindow =
           _state.phase == GalHookSessionPhase.degraded &&
           _state.fallbackReason == 'window_not_found';
@@ -1938,6 +1955,34 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return;
     }
+  }
+
+  /// 已绑定的窗口不在 [gamePid] 的存活窗口里了：改绑到同进程的第一个存活窗口。
+  /// 没有替代窗口时不动（见 [_startWindowRebindWatch]）。
+  void _replaceDeadBoundWindow(
+    ExternalWindowInfo bound,
+    List<ExternalWindowInfo> windows,
+    int gamePid,
+  ) {
+    ExternalWindowInfo? replacement;
+    for (final ExternalWindowInfo candidate in windows) {
+      if (candidate.pid != gamePid) continue;
+      if (candidate.hwnd == bound.hwnd) return;
+      replacement ??= candidate;
+    }
+    if (replacement == null) return;
+    _setState(_state.copyWith(boundWindow: replacement));
+    _record(
+      GalHookEventSeverity.success,
+      'window',
+      'window.rebound',
+      'The bound game window closed; bound the game window that replaced it',
+      details: <String, Object?>{
+        'pid': gamePid,
+        'from': bound.hwnd,
+        'to': replacement.hwnd,
+      },
+    );
   }
 
   Future<void> stopCapture({bool keepBinding = true}) async {

@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "Yatay satır tanımalı Japonca manga modeli. Windows'ta CPU üzerinde çalışır.",
   "manga_ocr_engine_local_onnx_desc": "Tamamen çevrimdışı. Seçilen modeli bir kez indirin; hız ve doğruluk modele ve donanıma bağlıdır.",
   "manga_ocr_baberu_desc": "Yatay satır modelleri dahil yaklaşık 284 MB. Windows, varsa görüntü kodlamada GPU, metin çözmede CPU kullanır; yoksa CPU. Bazı isimler ve el yazısı daha az doğru olabilir. Yeni OCR görevlerine uygulanır.",
-  "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
-  "manga_ocr_cuda_desc": "GPU toplu işlemeli özgün manga-ocr. NVIDIA GPU gerektirir; ilk indirme özel bir Python ve CUDA çalışma zamanı içerir (yaklaşık 4 GB). Ayrı bir kurulum gerekmez.",
-  "manga_ocr_runtime_installing": "Yerel OCR motoru yükleniyor…",
   "game_lookup_samples_advanced": "Gelişmiş seçenekler",
   "game_lookup_samples_advanced_hint": "Extra samples and visual grid correction",
   "game_lookup_samples_apply": "Oyuna uygula",
@@ -6214,5 +6211,8 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
 }

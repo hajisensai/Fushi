@@ -29,11 +29,26 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2646 条。点号进各自文件。
+> 共 2661 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2893](bugs/BUG-2893-kirikiri-kag-page-swap-anchor.md) | ✅ | ✅ | KiriKiri KAG 换页 backlay+trans 后查词锚点失效 |
+| [BUG-2892](bugs/BUG-2892-sgre-typewriter-prefix-lines.md) | ✅ | ✅ | SGRE 打字机逐字显示的半句被当成独立台词 |
+| [BUG-2891](bugs/BUG-2891-x64-locale-claimed-applied.md) | ✅ | ✅ | 64位游戏转区落空仍报已转日文区 |
+| [BUG-2890](bugs/BUG-2890-launch-window-binding-dead-dialog.md) | ✅ | ✅ | 启动会话绑定启动设置对话框后永不改绑主窗口 |
+| [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
+| [BUG-2888](bugs/BUG-2888-kirikiri-silent-stop-voice-paired.md) | ✅ | ✅ | KiriKiri 掐断用的静音语音被配给下一句旁白 |
+| [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |
+| [BUG-2886](bugs/BUG-2886-lookup-parked-window-on-screen.md) | ✅ | ✅ | 显示拓扑变化后，离屏停放的查词覆盖窗落进屏幕右上角吞点击 |
 | [BUG-2885](bugs/BUG-2885-manga-ocr-missed-text.md) | ✅ | ✅ | 漫画本地 OCR 漏识别：稀疏装饰标题整块没检出、斜体并排两列丢一列 |
+| [BUG-2885](bugs/BUG-2885-kirikiri-nvl-page-lookup.md) | ✅ | ✅ | KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝 |
+| [BUG-2884](bugs/BUG-2884-manga-cross-chapter-stale-doc.md) | ✅ | ✅ | 漫画跨章翻页后正文仍是旧章 |
+| [BUG-2878](bugs/BUG-2878-manga-lens-char-offset.md) | ✅ | ✅ | 漫画 Lens OCR 逐字命中区相对原图字形漂移（竖排高亮压前字、切后字） |
+| [BUG-2877](bugs/BUG-2877-popup-touchmove-blocks-scroll.md) | ✅ | ✅ | 查词弹窗常驻非 passive touchmove 让词典滑动卡顿 |
+| [BUG-2875](bugs/BUG-2875-manga-zoomed-swipe-dead.md) | ✅ | ✅ | 漫画放大态（含捏合残留 101%~105%）左右滑永远翻不了页 |
+| [BUG-2874](bugs/BUG-2874-manga-topbar-chip-overlap.md) | ✅ | ✅ | 漫画顶栏窄屏翻页方向按钮压住页码胶囊 |
+| [BUG-2871](bugs/BUG-2871-macos-popup-white-scrollbar-gutter.md) | ✅ | ✅ | macOS 查词浮层右侧出现白色竖条（WKWebView 透明背景只透了一半） |
 | [BUG-2870](bugs/BUG-2870-leaderboard-hoshi-incomplete.md) | ✅ | ✅ | 排行榜书架漏书：Hoshi 导入的读完书没标读完 + 多 Profile 时无记录的书被丢 |
 | [BUG-2869](bugs/BUG-2869-synced-clip-non-lapis-template.md) | ✅ | ✅ | 视频片段制卡写进不原样渲染图片字段的模板（Kiku）后动图和音频都不显示 |
 | [BUG-2868](bugs/BUG-2868-pixiv-dict-link-overlay.md) | ✅ | ✅ | app 外查词窗（含 galgame 内嵌卡）点词典外链没反应 |

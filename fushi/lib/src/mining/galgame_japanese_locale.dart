@@ -22,8 +22,8 @@ int? readSystemAnsiCodePage() {
   if (!Platform.isWindows) return null;
   try {
     final DynamicLibrary kernel32 = DynamicLibrary.open('kernel32.dll');
-    final int Function() getAcp =
-        kernel32.lookupFunction<Uint32 Function(), int Function()>('GetACP');
+    final int Function() getAcp = kernel32
+        .lookupFunction<Uint32 Function(), int Function()>('GetACP');
     final int acp = getAcp();
     return acp > 0 ? acp : null;
   } catch (_) {
@@ -246,8 +246,9 @@ class GalJapaneseLocaleVerdict {
   });
 
   /// 一条证据都没有时的结论。
-  static const GalJapaneseLocaleVerdict unknown =
-      GalJapaneseLocaleVerdict(need: GalJapaneseLocaleNeed.unknown);
+  static const GalJapaneseLocaleVerdict unknown = GalJapaneseLocaleVerdict(
+    need: GalJapaneseLocaleNeed.unknown,
+  );
 
   final GalJapaneseLocaleNeed need;
   final List<GalJapaneseLocaleEvidence> evidence;
@@ -270,8 +271,9 @@ class GalJapaneseLocaleVerdict {
 GalJapaneseLocaleVerdict judgeJapaneseLocaleNeed(
   Iterable<GalJapaneseLocaleEvidence> evidence,
 ) {
-  final List<GalJapaneseLocaleEvidence> seen =
-      <GalJapaneseLocaleEvidence>{...evidence}.toList(growable: false);
+  final List<GalJapaneseLocaleEvidence> seen = <GalJapaneseLocaleEvidence>{
+    ...evidence,
+  }.toList(growable: false);
   if (seen.contains(GalJapaneseLocaleEvidence.userLanguageJapanese)) {
     return const GalJapaneseLocaleVerdict(
       need: GalJapaneseLocaleNeed.needed,
@@ -288,20 +290,23 @@ GalJapaneseLocaleVerdict judgeJapaneseLocaleNeed(
       ],
     );
   }
-  final List<GalJapaneseLocaleEvidence> negative =
-      seen.where(galJapaneseLocaleEvidenceIsNegative).toList(growable: false);
+  final List<GalJapaneseLocaleEvidence> negative = seen
+      .where(galJapaneseLocaleEvidenceIsNegative)
+      .toList(growable: false);
   if (negative.isNotEmpty) {
     return GalJapaneseLocaleVerdict(
       need: GalJapaneseLocaleNeed.notNeeded,
       evidence: negative,
     );
   }
-  final List<GalJapaneseLocaleEvidence> positive =
-      seen.where(galJapaneseLocaleEvidenceIsPositive).toList(growable: false);
+  final List<GalJapaneseLocaleEvidence> positive = seen
+      .where(galJapaneseLocaleEvidenceIsPositive)
+      .toList(growable: false);
   // 版本资源 0x0411 只回答「发行商是日本的」，不回答「字符串是 CP932 字节」：
   // KiriKiri Z / Unity / Ren'Py 这类 Unicode 引擎的日文游戏一样带 0x0411，转区对它们
   // 轻则无用、重则把多语言版的字符串解坏（BUG-1691）。所以它只做佐证：单独出现 ⇒ unknown。
-  final bool onlyVersionInfo = positive.length == 1 &&
+  final bool onlyVersionInfo =
+      positive.length == 1 &&
       positive.single == GalJapaneseLocaleEvidence.versionInfoJapanese;
   if (positive.isNotEmpty && !onlyVersionInfo) {
     return GalJapaneseLocaleVerdict(
@@ -321,6 +326,10 @@ enum GalJapaneseLocaleSkipReason {
   unknown,
   systemAlreadyJapanese,
   targetNot32Bit,
+
+  /// 命令行请求了转区，injector 却退回普通启动（Locale Emulator 运行时缺失 /
+  /// `LeCreateProcess` 失败）。任何档位都可能出现，改档位没用（BUG-2891）。
+  runtimeUnavailable,
 }
 
 /// 稳定字面量 key（事件 / 诊断用），不用 `enum.name`。
@@ -334,6 +343,8 @@ String galJapaneseLocaleSkipReasonToKey(GalJapaneseLocaleSkipReason reason) {
       return 'acp_932';
     case GalJapaneseLocaleSkipReason.targetNot32Bit:
       return 'not_32bit';
+    case GalJapaneseLocaleSkipReason.runtimeUnavailable:
+      return 'runtime_unavailable';
   }
 }
 

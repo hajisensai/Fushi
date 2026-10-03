@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "Modelo de mangá japonês com reconhecimento de linhas horizontais. Executa na CPU no Windows.",
   "manga_ocr_engine_local_onnx_desc": "Totalmente offline. Baixe o modelo selecionado uma vez; velocidade e precisão dependem do modelo e do hardware.",
   "manga_ocr_baberu_desc": "Cerca de 284 MB, incluindo modelos de linhas horizontais. O Windows usa codificação de imagem na GPU com decodificação de texto na CPU quando disponível, caso contrário CPU. Alguns nomes e escrita à mão podem ser menos precisos. Vale para novas tarefas de OCR.",
-  "manga_ocr_cuda_model": "manga-ocr (GPU NVIDIA)",
-  "manga_ocr_cuda_desc": "O manga-ocr original com processamento em lote na GPU. Requer GPU NVIDIA; o primeiro download inclui um Python privado e o runtime CUDA (cerca de 4 GB). Não é necessária instalação separada.",
-  "manga_ocr_runtime_installing": "Instalando o mecanismo de OCR local…",
   "game_lookup_samples_advanced": "Opções avançadas",
   "game_lookup_samples_advanced_hint": "Extra samples and visual grid correction",
   "game_lookup_samples_apply": "Aplicar ao jogo",
@@ -6214,5 +6211,8 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
 }

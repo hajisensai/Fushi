@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "Modello per manga giapponesi con riconoscimento delle righe orizzontali. Su Windows funziona su CPU.",
   "manga_ocr_engine_local_onnx_desc": "Completamente offline. Scarica una volta il modello selezionato; velocità e precisione dipendono dal modello e dall'hardware.",
   "manga_ocr_baberu_desc": "Circa 284 MB inclusi i modelli per righe orizzontali. Windows usa la codifica delle immagini su GPU con decodifica del testo su CPU quando disponibile, altrimenti CPU. Alcuni nomi e la scrittura a mano possono essere meno accurati. Si applica alle nuove attività OCR.",
-  "manga_ocr_cuda_model": "manga-ocr (GPU NVIDIA)",
-  "manga_ocr_cuda_desc": "manga-ocr originale con batching su GPU. Richiede una GPU NVIDIA; il primo download include un Python privato e il runtime CUDA (circa 4 GB). Nessuna installazione separata necessaria.",
-  "manga_ocr_runtime_installing": "Installazione del motore OCR locale…",
   "game_lookup_samples_advanced": "Opzioni avanzate",
   "game_lookup_samples_advanced_hint": "Extra samples and visual grid correction",
   "game_lookup_samples_apply": "Applica al gioco",
@@ -6214,5 +6211,8 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
 }

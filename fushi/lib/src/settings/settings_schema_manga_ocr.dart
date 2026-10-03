@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
+    show createInterconnectMangaOcrRunner;
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
@@ -48,6 +50,12 @@ SettingsDestination _buildMangaOcrDestination() {
       localModelSetter: c.appModel.setMangaOcrLocalModel,
       lensLanguageGetter: () => c.appModel.mangaOcrLensLanguage,
       lensLanguageSetter: c.appModel.setMangaOcrLensLanguage,
+      pairedHostModelGetter: () => c.appModel.mangaOcrPairedHostModel,
+      pairedHostModelSetter: c.appModel.setMangaOcrPairedHostModel,
+      remoteRunner: createInterconnectMangaOcrRunner(
+        c.appModel,
+        c.appModel.database,
+      ),
     ),
   );
 }

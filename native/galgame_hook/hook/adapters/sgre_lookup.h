@@ -408,6 +408,15 @@ inline uint64_t SgreLookupHitTextGeneration(uint64_t text_seq,
   return text_seq != 0 ? text_seq : capture_generation;
 }
 
+// The scenario renderer lays out the whole line into its glyph vector up front
+// and then types it out by raising the visible-glyph counter. Only a fully
+// revealed line is dialogue text; every earlier frame is a typing prefix
+// (「聞か」, 「聞かれ」, ...) that must not become a text-lane line of its own.
+inline bool IsSgreScenarioLineFullyRevealed(uint32_t visible_glyphs,
+                                            uint32_t layout_glyphs) {
+  return visible_glyphs != 0 && visible_glyphs == layout_glyphs;
+}
+
 // Expected scenario line height for a client size; 0 when unknown.
 inline float SgreScenarioLineHeightForClient(int32_t client_width,
                                              int32_t client_height) {

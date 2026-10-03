@@ -1173,6 +1173,28 @@ int GlobalLookupWindow::OffscreenX() const {
          GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
 }
 
+void GlobalLookupWindow::ReparkOffscreenIfParked() {
+  // SW_HIDE 的窗不在屏上，挪不挪无所谓；只有「显示着但没 Reveal」的停放窗
+  // （PrewarmWebView / ShowAt 的离屏测量 / ResizeOffscreen 的 gal 采集面）会被
+  // 变宽的桌面吞进来。不带 SWP_SHOWWINDOW、不改尺寸与 Z 序：只换位置。
+  if (!OwnsLiveWindow() || revealed_ || !IsWindowVisible(hwnd_)) {
+    return;
+  }
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int off_x = OffscreenX();
+  if (rc.left == off_x && rc.top == 0) {
+    return;
+  }
+  NativeGlog("lookup repark offscreen from=" + std::to_string(rc.left) + "," +
+             std::to_string(rc.top) + " to=" + std::to_string(off_x) + ",0");
+  SetWindowPos(hwnd_, nullptr, off_x, 0, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_NOOWNERZORDER);
+}
+
 bool GlobalLookupWindow::OwnsLiveWindow() const {
   if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
     return false;
@@ -4128,8 +4150,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         // 圆角区域的直径按 DPI 算（ApplyRoundedRegion），换屏必须重算。
         ApplyRoundedRegion();
       }
+      // 系统建议矩形是按旧位置换算的；停放窗要回到新拓扑下的离屏位。
+      ReparkOffscreenIfParked();
       return 0;
     }
+    case WM_DISPLAYCHANGE:
+      ReparkOffscreenIfParked();
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case WM_ENTERSIZEMOVE:
       // Phase C（弹窗尺寸精细化 2026-07-13）— 进入模态 move/size 循环（面板拖动/调整，
       // 或 —— Phase C 起 —— 瞬态覆盖窗拖右下角 grip）。瞬态窗平时按 shell 卡矩形裁剪

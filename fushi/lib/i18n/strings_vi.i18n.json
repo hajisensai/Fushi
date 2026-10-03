@@ -5433,9 +5433,6 @@
   "manga_ocr_manga_model_desc": "Mô hình manga tiếng Nhật có nhận dạng dòng ngang. Chạy trên CPU trên Windows.",
   "manga_ocr_engine_local_onnx_desc": "Hoàn toàn ngoại tuyến. Tải mô hình đã chọn một lần; tốc độ và độ chính xác phụ thuộc vào mô hình và phần cứng.",
   "manga_ocr_baberu_desc": "Khoảng 284 MB gồm cả các mô hình dòng ngang. Windows dùng GPU để mã hóa ảnh và CPU để giải mã văn bản khi có, nếu không thì dùng CPU. Một số tên riêng và chữ viết tay có thể kém chính xác hơn. Áp dụng cho các tác vụ OCR mới.",
-  "manga_ocr_cuda_model": "manga-ocr (GPU NVIDIA)",
-  "manga_ocr_cuda_desc": "manga-ocr gốc với xử lý theo lô trên GPU. Cần GPU NVIDIA; lần tải đầu gồm Python riêng và runtime CUDA (khoảng 4 GB). Không cần cài đặt riêng.",
-  "manga_ocr_runtime_installing": "Đang cài công cụ OCR cục bộ…",
   "game_lookup_samples_advanced": "Tùy chọn nâng cao",
   "game_lookup_samples_advanced_hint": "Extra samples and visual grid correction",
   "game_lookup_samples_apply": "Áp dụng cho game",
@@ -6214,5 +6211,8 @@
   "video_bluray_protection_unsupported": "This disc uses an unsupported protection format. AACS 1 with a matching playback configuration is supported.",
   "video_bluray_config_no_match": "No matching playback configuration was found for this disc. Provide an updated KEYDB.cfg and retry.",
   "video_bluray_config_invalid": "The Blu-ray playback configuration is invalid. Replace KEYDB.cfg with a valid file and retry.",
-  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration."
+  "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
+  "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
+  "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
 }
