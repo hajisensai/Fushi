@@ -577,7 +577,7 @@ String mangaPageDivHtml(
 ///
 /// OCR 框有两条明确的查词入口（单击 / Shift 悬停），都走同一个字级选词函数
 /// `_selectOcrChar()`：命中层先定位到字符节点，再调
-/// `fushiSelection.selectFromPosition(node, 0, 40, x, y)`。第三个参数是
+/// `fushiSelection.selectFromPosition(node, 0, 40, x, y, fromHover)`（fromHover 随 payload 回传，宿主据此区分悬停与点击）。第三个参数是
 /// maxLength，漏传 → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
 /// onTextSelected 永不触发（查词哑火）。Task 19 的内联选区 JS 只注入
 /// ReaderSelectionScripts 的定义。手势机与选词 pointerup 共存；裸图单击保持 no-op。
@@ -1626,7 +1626,7 @@ String _mangaGestureJs({
       return 'same';
     }
     selection.clearSelection();
-    selection.selectFromPosition(node, 0, 40, x, y);
+    selection.selectFromPosition(node, 0, 40, x, y, fromHover);
     var bridge = _bridge();
     if (bridge) bridge.callHandler('onMangaOcrHitDebug',
       JSON.stringify(window.__mangaLastOcrHit));

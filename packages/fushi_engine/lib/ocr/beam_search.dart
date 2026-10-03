@@ -81,6 +81,21 @@ class BeamSearchResult {
   final double score;
 }
 
+/// 把 [result] 的长度惩罚分数换回逐步概率的几何平均（0–1），作识别置信度。
+///
+/// 假设分数 = 对数概率和 / L^[lengthPenalty]，L 是含起始 token 的序列长度，也
+/// 正好是对数概率的项数（L−1 个 token 加一个 EOS）。所以平均对数概率 =
+/// 分数 × L^([lengthPenalty]−1)。收编的存活 beam 没有 EOS 项，偏差可忽略。
+double beamSearchMeanTokenProbability(
+  BeamSearchResult result,
+  double lengthPenalty,
+) {
+  final int length = result.tokens.length + 1;
+  final double meanLogProb =
+      result.score * math.pow(length, lengthPenalty - 1).toDouble();
+  return math.exp(meanLogProb).clamp(0.0, 1.0);
+}
+
 class _Hypothesis {
   _Hypothesis(this.tokens, this.score);
 

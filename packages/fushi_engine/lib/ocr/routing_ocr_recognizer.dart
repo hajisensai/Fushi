@@ -129,13 +129,26 @@ class RoutingOcrRecognizer
         lineHints: routed.lineHints,
       );
     }
-    return _withLineLayout(
+    final ScoredOcrText read = await _readScored(primary, page, box);
+    return (await _withLineLayout(
       page,
       box,
-      await primary.recognize(page, box),
+      read.text,
       vertical: routed.recognition.vertical,
       lineHints: routed.lineHints,
-    );
+    )).withConfidence(read.confidence);
+  }
+
+  /// 主识别器出分就取分，不出分的（Baberu 等）置信度为 null。
+  static Future<ScoredOcrText> _readScored(
+    OcrRecognizer recognizer,
+    img.Image page,
+    OcrRect box,
+  ) async {
+    if (recognizer is ScoredOcrRecognizer) {
+      return recognizer.recognizeScored(page, box);
+    }
+    return (text: await recognizer.recognize(page, box), confidence: null);
   }
 
   /// 整块识别出的 [text] 按块内的列/行切开，带上行几何。
@@ -207,15 +220,17 @@ class RoutingOcrRecognizer
     final List<PpTextLine> lines = orderLinesForReading(detected);
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
+    double? confidence;
     for (final PpTextLine line in lines) {
       final OcrRect r = line.rect.clamp(w.toDouble(), h.toDouble());
       if (r.width < 1 || r.height < 1) {
         continue;
       }
-      final String lineText;
+      final ScoredOcrText lineRead;
       if (line.vertical) {
         // 竖行回到页面坐标、外扩边距，仍由 manga-ocr 识别。
-        lineText = await _mangaOcr.recognize(
+        lineRead = await _readScored(
+          _mangaOcr,
           page,
           OcrRect(
             left: x + r.left - kRoutingLinePadding,
@@ -234,11 +249,12 @@ class RoutingOcrRecognizer
           width: math.min(math.max(1, r.width.ceil()), w - lx),
           height: math.min(math.max(1, r.height.ceil()), h - ly),
         );
-        lineText = await _lineRecognizer.recognizeLine(lineCrop);
+        lineRead = await _lineRecognizer.recognizeLineScored(lineCrop);
       }
-      if (lineText.isEmpty) continue;
-      texts.add(lineText);
+      if (lineRead.text.isEmpty) continue;
+      texts.add(lineRead.text);
       boxes.add(crop.toPage(r));
+      confidence = minOcrConfidence(confidence, lineRead.confidence);
     }
     final String text = texts.join();
     return _RoutedBlock(
@@ -247,6 +263,7 @@ class RoutingOcrRecognizer
         vertical: false,
         lines: text.isEmpty ? null : texts,
         lineBoxes: text.isEmpty ? null : boxes,
+        confidence: text.isEmpty ? null : confidence,
       ),
       lineHints: lineHints,
     );
