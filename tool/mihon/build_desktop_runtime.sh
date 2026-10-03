@@ -57,20 +57,19 @@ case "$(uname -m)" in
   *) echo "unsupported build architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-# macOS 自带 shasum，精简 Linux 镜像常只有 coreutils 的 sha256sum。
+# 按宿主选校验工具，不按「PATH 里有没有 sha256sum」：macOS 14+ 自带的
+# /sbin/sha256sum 是 BSD 实现，不认 GNU 的 `--check --status`，探测到它就走
+# GNU 分支会让每个归档都判校验失败。macOS 一律用自带的 shasum；Linux 用
+# coreutils 的 sha256sum（精简镜像常没有 perl 版 shasum）。
+case "$host_os" in
+  Darwin) sha256_tool=(shasum -a 256) ;;
+  *) sha256_tool=(sha256sum) ;;
+esac
 sha256_check() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum --check --status
-  else
-    shasum -a 256 --check >/dev/null 2>&1
-  fi
+  "${sha256_tool[@]}" --check >/dev/null 2>&1
 }
 sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
-  fi
+  "${sha256_tool[@]}" "$1" | awk '{print $1}'
 }
 
 case "$output_directory" in

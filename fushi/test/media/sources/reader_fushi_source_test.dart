@@ -10,6 +10,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 void main() {
@@ -58,10 +59,10 @@ void main() {
       );
     });
 
-    test('Apple 平台 EPUB 资源 URL 走 WebKit custom scheme', () {
+    test('WebKit 宿主（Apple / Linux）EPUB 资源 URL 走 custom scheme', () {
       final String url = ReaderFushiSource.epubUrl('OEBPS/ch 2.xhtml');
 
-      if (Platform.isMacOS || Platform.isIOS) {
+      if (webViewUsesCustomSchemeTransport) {
         expect(
           url,
           '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch%202.xhtml',
@@ -130,7 +131,7 @@ void main() {
       expect(
         result.fontFaces,
         contains(
-          Platform.isMacOS || Platform.isIOS
+          webViewUsesCustomSchemeTransport
               ? '${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'
               : 'https://fushi.local/fonts/',
         ),
