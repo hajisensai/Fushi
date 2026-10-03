@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../tool/test_flow/heavy_budget.dart';
 import '../../tool/test_flow/heavy_lease.dart';
 
-// Real OS file locks in a private state directory; memory is injected so the
-// machine's live load cannot make these flaky.
+// Real OS file locks in a private state directory; memory is injected (it
+// only sizes the default slot count) so the machine's live load cannot make
+// these flaky.
 void main() {
   late Directory tmp;
   const MemorySnapshot roomy = MemorySnapshot(
@@ -86,50 +87,22 @@ void main() {
     },
   );
 
-  test(
-    'waits on memory even with a slot free, and admits once it frees',
-    () async {
-      const MemorySnapshot tight = MemorySnapshot(
-        totalPhysMb: 64 * 1024,
-        availPhysMb: 5000,
-        availCommitMb: 60000,
-      );
-      await expectLater(
-        take(4, memory: tight),
-        throwsA(
-          isA<HeavyLeaseTimeout>().having(
-            (HeavyLeaseTimeout e) => e.message,
-            'message',
-            contains('available RAM'),
-          ),
-        ),
-      );
-      int reads = 0;
-      final HeavyLease admitted = await acquireHeavyLease(
-        need: heavyNeedFor(HeavyKind.analyze),
-        label: 'late',
-        waitMax: const Duration(seconds: 5),
-        environment: env(4),
-        readMemory: () => ++reads < 3 ? tight : roomy,
-        poll: const Duration(milliseconds: 50),
-        log: (_) {},
-      );
-      expect(admitted.slot, isNotNull);
-      expect(reads, greaterThanOrEqualTo(3));
-      admitted.release();
-    },
-  );
-
-  test('just-admitted runs reserve their need for the next waiter', () async {
-    // Room for one 3 GB run on top of the 4 GB reserve, not for two.
-    const MemorySnapshot one = MemorySnapshot(
-      totalPhysMb: 64 * 1024,
-      availPhysMb: 8000,
-      availCommitMb: 60000,
+  // No memory admission (2026-10-03, owner's call): a busy desktop with a
+  // free slot must not keep an agent -- and everyone queued behind it --
+  // waiting for "available RAM above a reserve".
+  test('a free slot is taken at once however little memory is free', () async {
+    const MemorySnapshot starved = MemorySnapshot(
+      totalPhysMb: 32 * 1024,
+      availPhysMb: 600,
+      availCommitMb: 300,
     );
-    final HeavyLease a = await take(4, memory: one);
-    await expectLater(take(4, memory: one), throwsA(isA<HeavyLeaseTimeout>()));
+    final HeavyLease a = await take(2, kind: HeavyKind.build, memory: starved);
+    final HeavyLease b = await take(2, kind: HeavyKind.test, memory: starved);
+    expect(<int?>{a.slot, b.slot}, <int>{0, 1});
+    expect(a.waited, lessThan(const Duration(seconds: 1)));
+    expect(b.waited, lessThan(const Duration(seconds: 1)));
     a.release();
+    b.release();
   });
 
   test(

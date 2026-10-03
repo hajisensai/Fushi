@@ -1,15 +1,15 @@
 // Runs one heavy command under the machine-wide lease (test_flow/heavy_lease.dart):
 //
 //   dart run tool/heavy.dart [--wait-max-min=120] [--max-minutes=120]
-//                            [--need-mb=N] [--cap-mb=N] -- <command...>
+//                            [--cap-mb=N] -- <command...>
 //   dart run tool/heavy.dart --status
 //
 //   e.g. dart run tool/heavy.dart -- flutter test test/foo_test.dart --no-pub
 //        dart run tool/heavy.dart -- flutter analyze --no-pub
 //        dart run tool/heavy.dart -- .\gradlew.bat :app:assembleRelease
 //
-// It waits for a free slot and for memory to spare (it never "runs anyway"),
-// keeps one build/-writing run per worktree, and on Windows runs the command
+// It waits for a free slot (it never "runs anyway"; there is no memory
+// admission), keeps one build/-writing run per worktree, and on Windows runs the command
 // tree at below-normal priority under a memory ceiling, killing whatever the
 // command leaves behind when it ends. Exit code: the command's; 75 when it
 // was never admitted; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
@@ -35,7 +35,6 @@ Future<void> main(List<String> args) async {
   final HeavyNeed classified = classifyHeavyCommand(command);
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,
-    needMb: _intArg(own, '--need-mb=') ?? classified.needMb,
     capMb: _intArg(own, '--cap-mb=') ?? classified.capMb,
     worktreeExclusive: classified.worktreeExclusive,
   );
@@ -124,10 +123,8 @@ void _status() {
   stdout.writeln('heavy: ${holders.length}/$slots slots busy (${dir.path})');
   if (m != null) {
     stdout.writeln(
-      '  RAM available ${m.availPhysMb} / ${m.totalPhysMb} MB '
-      '(reserve ${physReserveMb(m.totalPhysMb)} MB)'
-      '${m.availCommitMb != null ? '; commit headroom ${m.availCommitMb} MB '
-          '(reserve ${commitReserveMb(m.totalPhysMb)} MB)' : ''}',
+      '  RAM available ${m.availPhysMb} / ${m.totalPhysMb} MB'
+      '${m.availCommitMb != null ? '; commit headroom ${m.availCommitMb} MB' : ''}',
     );
   }
   final int now = DateTime.now().millisecondsSinceEpoch;
@@ -135,7 +132,7 @@ void _status() {
     stdout.writeln(
       '  slot ${h.slot}: pid ${h.pid}, ${h.label}, '
       '${((now - h.startedAtMs) / 60000).toStringAsFixed(1)} min, '
-      'need ${h.needMb} MB, ${h.cwd}',
+      '${h.cwd}',
     );
   }
 }

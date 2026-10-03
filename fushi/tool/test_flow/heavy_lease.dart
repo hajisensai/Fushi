@@ -6,10 +6,9 @@
 //     Taking one is atomic, and a process that dies releases it -- no polling
 //     race (the old gate let every waiter start at once) and no stale holder
 //     (a dead run used to keep the gate shut for hours).
-//   * A slot is only taken when the machine has the memory for the run on top
-//     of a reserve kept for the user (available RAM and Windows commit
-//     headroom), minus what runs admitted in the last 90 s will still take.
-//     That also accounts for work that never took a lease.
+//   * A free slot is taken right away: there is no memory admission (removed
+//     2026-10-03, see heavy_budget.dart). The slot count alone bounds the
+//     machine's concurrency.
 //   * Writers of one checkout's build/ (native assets, sqlite3.dll, result
 //     files) additionally hold <repo>/.codex-test/heavy/worktree.lock.
 //   * On Windows the holder joins a Job Object: below-normal priority (the
@@ -135,7 +134,7 @@ class HeavyLease {
   }
 }
 
-/// Thrown when no slot was free (with memory to spare) within the wait limit.
+/// Thrown when no slot was free within the wait limit.
 class HeavyLeaseTimeout implements Exception {
   HeavyLeaseTimeout(this.message);
   final String message;
@@ -293,7 +292,6 @@ List<HeavyHolder> readHeavyHolders(Directory dir, int slots) {
           HeavyHolder(
             slot: i,
             pid: 0,
-            needMb: 0,
             startedAtMs: 0,
             label: '?',
             cwd: '',
@@ -340,7 +338,7 @@ Future<HeavyLease> _waitSlot(
   String? lastReason;
   while (true) {
     // One admission at a time across the machine: two waiters must not both
-    // read "room for one more" before either has registered its need.
+    // read the same slot as free and race over its holder info.
     final RandomAccessFile gate = File(
       '${dir.path}/admission.lock',
     ).openSync(mode: FileMode.append);
@@ -351,21 +349,9 @@ Future<HeavyLease> _waitSlot(
       final int slots = heavySlotCount(memory, env);
       final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
       final Set<int> busy = holders.map((HeavyHolder h) => h.slot).toSet();
-      final String? memoryBlocker = memory == null
-          ? null
-          : heavyAdmissionBlocker(
-              memory,
-              need.needMb,
-              pendingMb: pendingReservationMb(
-                holders,
-                DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
       if (busy.length >= slots) {
         reason = 'all $slots slots busy: '
             '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}';
-      } else if (memoryBlocker != null) {
-        reason = memoryBlocker;
       } else {
         for (int i = 0; i < slots; i++) {
           if (busy.contains(i) || _heldInProcess.contains(i)) continue;
@@ -381,7 +367,6 @@ Future<HeavyLease> _waitSlot(
                 HeavyHolder(
                   slot: i,
                   pid: pid,
-                  needMb: need.needMb,
                   startedAtMs: DateTime.now().millisecondsSinceEpoch,
                   label: label,
                   cwd: Directory.current.path,
@@ -421,8 +406,7 @@ Future<HeavyLease> _waitSlot(
     if (waitMax != null && sw.elapsed > waitMax) {
       throw HeavyLeaseTimeout(
         'heavy: $label not admitted after '
-        '${sw.elapsed.inMinutes} min -- $reason. Not running it anyway: the '
-        'machine is busy (other runs or the user\'s own programs).',
+        '${sw.elapsed.inMinutes} min -- $reason. Not running it anyway.',
       );
     }
     await Future<void>.delayed(poll);
