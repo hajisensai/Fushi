@@ -355,6 +355,27 @@ void main() {
     expect(ball(), findsNothing);
   });
 
+  testWidgets('本页关掉球后把自动恢复改成「不自动恢复」：关闭落定为关掉「应用内显示」，回到 Fushi 不再出现', (
+    WidgetTester tester,
+  ) async {
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_close'));
+    await tester.pumpAndSettle();
+    expect(ball(), findsNothing);
+    expect(prefs.floatingBallInApp, isTrue);
+
+    await tester.runAsync(
+      () => prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off),
+    );
+    await tester.pumpAndSettle();
+    expect(prefs.floatingBallInApp, isFalse, reason: '按新选项落定这次关闭');
+
+    await backgroundAndReturn(tester);
+    expect(ball(), findsNothing);
+  });
+
   test('自动恢复三态：持久化值往返，未知值回落出厂「仅应用内」', () async {
     expect(prefs.floatingBallAutoRestore, FloatingBallAutoRestore.inApp);
     for (final FloatingBallAutoRestore value
@@ -830,6 +851,42 @@ void main() {
       await tester.pump();
       expect(starts(), hasLength(2));
       expect(startedActions(starts().last), <String>['clipboard']);
+    });
+
+    testWidgets('关掉应用外球后把自动恢复改成不含应用外：关闭落定为关掉「应用外显示」，回到 Fushi 不再起球', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.both);
+      await startSystemBall(tester);
+      await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
+      expect(prefs.floatingBallSystem, isTrue);
+
+      await tester.runAsync(() async {
+        await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(prefs.floatingBallSystem, isFalse, reason: '按新选项落定这次关闭');
+
+      await tester.runAsync(() async {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await debugLatestSystemBallSync;
+      });
+      await tester.pump();
+      expect(starts(), hasLength(1), reason: '不得按旧选项把关掉的球拉起来');
+      expect(prefs.floatingBallSystem, isFalse);
     });
 
     testWidgets('自动恢复「应用内外」：启动时读到「用户关过」标记 → 照常起球、不关开关', (

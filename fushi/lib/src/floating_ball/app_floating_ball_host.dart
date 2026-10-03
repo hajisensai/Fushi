@@ -273,8 +273,35 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   }
 
   void _onPrefsChanged() {
+    _settleClosedBalls();
     _syncSystemBall();
     if (mounted) setState(() {});
+  }
+
+  /// 「关闭悬浮球」留下的临时关闭态（[_systemBallClosed] / [_dismissed]）只在
+  /// 「自动恢复」覆盖那颗球时才成立；选项改成不再恢复它，就按新选项把这次关闭
+  /// 落定成关掉对应的显示开关——与在新选项下点关闭的结果一致，开关仍是唯一
+  /// 真相源，不留一个「等回到 Fushi 再起」的标记去违背用户刚改的选项。
+  ///
+  /// setPref 先同步写内存缓存再落盘，所以紧随其后的 [_syncSystemBall] 读到的
+  /// 已是关掉的开关，直接走停球分支。
+  void _settleClosedBalls() {
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null) return;
+    final FloatingBallAutoRestore restore = prefs.floatingBallAutoRestore;
+    if (_systemBallClosed && !restore.restoresSystem) {
+      _systemBallClosed = false;
+      if (prefs.floatingBallSystem) {
+        unawaited(prefs.setFloatingBallSystem(false));
+      }
+    }
+    if (_dismissed && !restore.restoresInApp) {
+      _dismissed = false;
+      _dismissedOwner = null;
+      if (prefs.floatingBallInApp) {
+        unawaited(prefs.setFloatingBallInApp(false));
+      }
+    }
   }
 
   @override
