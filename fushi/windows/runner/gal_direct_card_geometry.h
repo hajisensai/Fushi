@@ -94,7 +94,7 @@ inline CardOrigin GlyphAnchoredCardOrigin(double glyph_left, double glyph_top,
   return CardOrigin{left, above >= 0.0 ? above : below};
 }
 
-// BUG-2917 — 嵌套查词时 HWND 覆盖的是「根卡 + 子卡」的 union，但贴字形的只能是根卡。
+// BUG-2921 — 嵌套查词时 HWND 覆盖的是「根卡 + 子卡」的 union，但贴字形的只能是根卡。
 //
 // [root_local_left]/[root_local_top] 是根卡在 host window-local 坐标里的左上角，
 // [bbox_dx]/[bbox_dy] 是 union 在同一坐标里的左上角（两者都是 WebView 物理 px，与客户区

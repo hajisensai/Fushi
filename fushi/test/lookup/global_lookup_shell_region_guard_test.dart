@@ -282,7 +282,7 @@ void main() {
           '字形路径的启用条件只能来自字形尺寸本身；写死成常量会让 '
           'GlyphAnchoredCardOrigin 整条分支变成死代码',
     );
-    // BUG-2917 — 贴字形的是**根卡**（钉住的宽高），union 由根卡位置 + bbox 偏移推出并
+    // BUG-2921 — 贴字形的是**根卡**（钉住的宽高），union 由根卡位置 + bbox 偏移推出并
     // 整体夹进客户区（两轴的夹取在 PlaceDirectUnionAroundRoot 内，由 C++ 几何单测
     // gal_direct_card_geometry_test 逐像素钉住）。
     expect(
@@ -296,12 +296,12 @@ void main() {
       ),
       reason:
           '卡片不再是画布单位，贴附必须以字形在**屏幕**上的矩形重排；且贴的是根卡，'
-          '拿 union 尺寸贴字形会在子卡出现时把根卡整体挪走（BUG-2917）',
+          '拿 union 尺寸贴字形会在子卡出现时把根卡整体挪走（BUG-2921）',
     );
     expect(
       compactReveal,
       isNot(contains('GlyphAnchoredCardOrigin(')),
-      reason: 'present 不得再拿 union（card_width/height）直接贴字形（BUG-2917）',
+      reason: 'present 不得再拿 union（card_width/height）直接贴字形（BUG-2921）',
     );
     expect(
       compactReveal,
@@ -406,18 +406,18 @@ void main() {
         'dx,dy,screen_width,screen_height,client_width,client_height)',
       ),
       reason:
-          'BUG-2917：子卡出现时 union 变高，拿 union 尺寸重新贴字形会翻到字形下方再被'
+          'BUG-2921：子卡出现时 union 变高，拿 union 尺寸重新贴字形会翻到字形下方再被'
           '夹回，根卡跳位、子卡顶部越出客户区；必须按钉住的根卡 + bbox 偏移放 union',
     );
     expect(
       compactResize,
       isNot(contains('GlyphAnchoredCardOrigin(')),
-      reason: 'BUG-2917：嵌套 resize 不得拿 union 尺寸贴字形',
+      reason: 'BUG-2921：嵌套 resize 不得拿 union 尺寸贴字形',
     );
     expect(
       compactResize,
       contains('if(root_height>0){direct_root_height_=root_height;}'),
-      reason: 'BUG-2917：根卡实测高度随 revealStack 更新，根卡长高时仍贴字形那条边',
+      reason: 'BUG-2921：根卡实测高度随 revealStack 更新，根卡长高时仍贴字形那条边',
     );
     expect(
       compactResize,

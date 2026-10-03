@@ -1729,7 +1729,7 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
   }
-  // BUG-2917 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
+  // BUG-2921 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
   // 而不是 union 高度。
   if (root_height > 0) {
     direct_root_height_ = root_height;
@@ -1780,7 +1780,7 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
         const int screen_width = std::max(1, width);
         const int screen_height = std::max(1, height);
         // 嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位。
-        // BUG-2917 — 贴字形的是根卡：union 原点由根卡位置 + bbox 偏移推出，绝不拿
+        // BUG-2921 — 贴字形的是根卡：union 原点由根卡位置 + bbox 偏移推出，绝不拿
         // union 尺寸重新贴字形（那会在子卡出现时把根卡整体挪走）。
         int clamped_x = 0;
         int clamped_y = 0;
@@ -2652,7 +2652,7 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // 有意的策略变更。只有字形缺失（glyph_w/h == 0）才退回旧的 anchor 映射，那条路径在
   // 1:1 下与旧行为逐像素相同。
   direct_glyph_valid_ = glyph_w > 0 && glyph_h > 0;
-  // BUG-2917 — 本次查词第一次直连上屏时只有根卡（union == 根卡），以此钉住根卡在
+  // BUG-2921 — 本次查词第一次直连上屏时只有根卡（union == 根卡），以此钉住根卡在
   // window-local 里的位置与宽度。之后的 present（嵌套 resize 后的重投、制卡截图后的
   // 恢复）都复用这枚钉子，union 跟着 bbox 平移，根卡在屏幕上不动。
   if (!direct_root_pin_valid_) {

@@ -350,7 +350,7 @@ StackRenderScript buildStackRenderScript({
   // nearly full-height child is clamped across the selected word. Keep this
   // opt-in so the desktop global-lookup cascade remains unchanged.
   bool fitNestedHeightToAnchorSide = false,
-  // BUG-2917 — galCard passes false: the runner places the game card's root
+  // BUG-2921 — galCard passes false: the runner places the game card's root
   // (glyph-anchored in the client area) and pins it there; the layout root is
   // only the children's coordinate origin, so it must stay at window-local 0.
   bool clampRootShellToWorkArea = true,

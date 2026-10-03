@@ -312,7 +312,7 @@ class GlobalLookupController {
   // window-local for the host shell. 0 = native did not report a work area.
   double _cursorWorkX = 0;
   double _cursorWorkY = 0;
-  // BUG-2917 — the monitor dpr that converted the work area above to CSS px.
+  // BUG-2921 — the monitor dpr that converted the work area above to CSS px.
   // [adoptGalDirectLayoutViewport] reuses it so the client-domain viewport the
   // runner reports later lands in the SAME CSS scale the cards render in.
   double _workDpr = 0;
@@ -903,7 +903,7 @@ class GlobalLookupController {
         : (w: workWidth, h: workHeight, x: workOriginX, y: workOriginY);
   }
 
-  /// BUG-2917 — 游戏内查词卡直连上屏后，把嵌套子卡的布局视口换成**真实客户区**。
+  /// BUG-2921 — 游戏内查词卡直连上屏后，把嵌套子卡的布局视口换成**真实客户区**。
   ///
   /// [setPhysicalCap] 交来的视口与原点是**画布**域（位图回退按画布 1:1 贴卡，只能这么
   /// 排）。直连路径的卡片却是屏幕物理 px 的真窗口，根卡由 runner 按字形在客户区里居中、
@@ -2438,7 +2438,7 @@ class GlobalLookupController {
       // viewport. Match the in-app child popup's above/below fitting there while
       // preserving the desktop global-lookup cascade.
       fitNestedHeightToAnchorSide: route.source == 'galCard',
-      // BUG-2917 — the game card's root is placed by the runner (glyph-anchored
+      // BUG-2921 — the game card's root is placed by the runner (glyph-anchored
       // in the client area); the layout root is only the coordinate origin for
       // the children and must not be nudged inside the window-local frame, or
       // the runner's pinned root/bbox relationship would no longer hold.

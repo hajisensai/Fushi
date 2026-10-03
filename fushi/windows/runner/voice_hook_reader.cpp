@@ -1063,7 +1063,7 @@ void HandleLookupPresent(
            flutter::EncodableValue(static_cast<int64_t>(client_width))},
           {flutter::EncodableValue("clientHeight"),
            flutter::EncodableValue(static_cast<int64_t>(client_height))},
-          // BUG-2917 — 根卡在客户区里的真实左上角（物理 px）。嵌套子卡要以它为原点、
+          // BUG-2921 — 根卡在客户区里的真实左上角（物理 px）。嵌套子卡要以它为原点、
           // 以客户区为视口排版；画布域的视口与原点在放大/缩小运行的游戏里对不上真实画面。
           {flutter::EncodableValue("rootClientX"),
            flutter::EncodableValue(static_cast<int64_t>(root_client_x))},

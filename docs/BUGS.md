@@ -33,10 +33,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2918](bugs/BUG-2918-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
+| [BUG-2922](bugs/BUG-2922-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
+| [BUG-2921](bugs/BUG-2921-gal-nested-card-root-jump.md) | ✅ | ✅ | 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁 |
 | [BUG-2918](bugs/BUG-2918-dashboard-continue-shows-completed-book.md) | ✅ | ✅ | 首页继续面板仍显示已读完的书 |
 | [BUG-2917](bugs/BUG-2917-vn-audio-highlight-ruby-gap.md) | ✅ | ✅ | 视觉小说模式有声书逐句高亮在注音字处断开 |
-| [BUG-2917](bugs/BUG-2917-gal-nested-card-root-jump.md) | ✅ | ✅ | 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁 |
 | [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | ✅ | ✅ | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
 | [BUG-2915](bugs/BUG-2915-ios-video-connect-chunked-crash.md) | ✅ | ✅ | iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked |
 | [BUG-2914](bugs/BUG-2914-ios-scene-super-crash.md) | ✅ | ✅ | iOS 2.9.0 crashes on launch: SceneDelegate calls super for a scene callback FlutterSceneDelegate does not implement |

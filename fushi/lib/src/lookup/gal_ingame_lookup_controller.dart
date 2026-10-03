@@ -928,7 +928,7 @@ class GalIngameLookupController {
           '${result.error ?? "malformed_reply"}',
         );
       }
-      // BUG-2918 — the direct composition card is NOT hidden here. It is a
+      // BUG-2922 — the direct composition card is NOT hidden here. It is a
       // separate top-level HWND (owned by the game, never the game's child),
       // and every game-window capture path is per-window: WGC CreateForWindow
       // and the PrintWindow fallback render only the target window's own
@@ -1446,7 +1446,7 @@ class GalIngameLookupController {
     if (_directSurfaceActive) {
       _recaptureDirty = false;
       glog('gal-ingame: direct WebView surface active seq=${hit.seq}');
-      // BUG-2917 — nested child cards must be laid out in the domain the card
+      // BUG-2921 — nested child cards must be laid out in the domain the card
       // actually lives in: the game client area around the runner-placed root.
       final int? rootClientX = result.rootClientX;
       final int? rootClientY = result.rootClientY;

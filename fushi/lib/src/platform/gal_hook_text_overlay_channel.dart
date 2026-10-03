@@ -1053,7 +1053,7 @@ class GalLookupCallResult {
   final int clientWidth;
   final int clientHeight;
 
-  /// BUG-2917 — 直连 present 时根卡在客户区里的真实左上角（物理 px）；null = runner
+  /// BUG-2921 — 直连 present 时根卡在客户区里的真实左上角（物理 px）；null = runner
   /// 未上报（旧 runner / 位图回退）。嵌套子卡以它为原点、以客户区为视口排版。
   final int? rootClientX;
   final int? rootClientY;

@@ -267,7 +267,7 @@ class GlobalLookupWindow {
                                uint32_t* out_client_height,
                                int32_t* out_root_client_x = nullptr,
                                int32_t* out_root_client_y = nullptr);
-  // BUG-2917 — [out_root_client_x]/[out_root_client_y]：根卡在游戏客户区里的真实左上角
+  // BUG-2921 — [out_root_client_x]/[out_root_client_y]：根卡在游戏客户区里的真实左上角
   // （物理 px）。Dart 拿它把嵌套子卡的布局视口切到客户区域，子卡才排得进真实画面。
 
   // 把游戏侧转发来的一条 LookupInputSlot 喂给已有的 composition controller。
@@ -481,7 +481,7 @@ class GlobalLookupWindow {
   double direct_glyph_top_ = 0.0;
   double direct_glyph_width_ = 0.0;
   double direct_glyph_height_ = 0.0;
-  // BUG-2917 — 贴字形的是**根卡**，不是整个 union。本次查词首次直连上屏时只有根卡
+  // BUG-2921 — 贴字形的是**根卡**，不是整个 union。本次查词首次直连上屏时只有根卡
   // （union == 根卡），记下根卡在 host window-local 坐标里的左上角与宽度；之后每次
   // present / 嵌套 resize 都先按根卡尺寸贴字形，再用 bbox 偏移推出 union 原点。
   // 拿 union 尺寸去贴字形会在子卡出现时把根卡整体挪走（翻到字形下方再被夹回），

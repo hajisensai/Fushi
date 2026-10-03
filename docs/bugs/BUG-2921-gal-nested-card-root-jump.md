@@ -1,4 +1,4 @@
-## BUG-2917 · 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁
+## BUG-2921 · 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁
 - **报告**：2026-10-03（用户：录屏 CLANNAD，在游戏内查词卡里再点「へたへた」查词）
 - **真实性**：✅ 真 bug。录屏逐帧：点子词后根卡先整体上移约 200 物理 px（不再贴着台词）持续约 4 帧，随后子卡出现在客户区顶部、盖住根卡标题栏，子卡自己的标题栏（词头 + 按钮）在淡入结束后被视口顶边切掉。两层根因叠加：
   1. 原生直连路径把**整个 union**（根卡 + 子卡）当一张卡贴字形：`fushi/windows/runner/global_lookup_window.cpp:1779`（`ResizeStackForGal`）与 `:2646`（`RevealOverProcessClient`，嵌套后每次 captureReady 都会重投）都用 `GlyphAnchoredCardOrigin(..., screen_width, screen_height)`，宽高是 union 的。子卡一出现 union 变高变宽，「上方放得下」不再成立就整体翻到字形下方再被客户区夹回，水平也改按 union 中心对齐——根卡跳位。

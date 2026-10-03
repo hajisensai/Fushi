@@ -276,7 +276,7 @@ class OverlayWindowChannel {
     required int geometryEpoch,
     double left = 0,
     double top = 0,
-    // BUG-2917 — root card's measured height (physical px, 0 = unknown). The
+    // BUG-2921 — root card's measured height (physical px, 0 = unknown). The
     // in-game direct card anchors the ROOT to the glyph with it; anchoring the
     // whole nested union moved the root whenever a child appeared.
     int rootHeight = 0,

@@ -928,7 +928,7 @@ void main() {
       }
     });
 
-    // BUG-2917 / BUG-2918 接线：直连 present 回执带回的根卡客户区位置要把嵌套布局域切到
+    // BUG-2921 / BUG-2922 接线：直连 present 回执带回的根卡客户区位置要把嵌套布局域切到
     // 客户区；点制卡取截图租约时不得 hide 直连卡（只让 hook 藏游戏层里的东西）。
     test('直连 present 切换嵌套布局域；制卡截图租约不隐藏直连卡', () async {
       final List<MethodCall> globalCalls = <MethodCall>[];
@@ -1003,7 +1003,7 @@ void main() {
         expect(
           GlobalLookupController.instance.debugCascadeLayoutDomain,
           (w: 1000.0, h: 750.0, x: 160.0, y: 175.0),
-          reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2917）',
+          reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2921）',
         );
 
         globalCalls.clear();
@@ -1019,7 +1019,7 @@ void main() {
         expect(
           globalCalls.where((MethodCall c) => c.method == 'hide'),
           isEmpty,
-          reason: 'BUG-2918：直连卡拍不进窗口截图，hide 只会让它闪一下',
+          reason: 'BUG-2922：直连卡拍不进窗口截图，hide 只会让它闪一下',
         );
         await lease.release();
         expect(
@@ -1128,18 +1128,18 @@ void main() {
         isTrue,
         reason: '制卡截图 lease 只能在 hook suppress ack 后发放',
       );
-      // BUG-2918 — 直连卡是独立顶层 HWND，按窗口捕获（WGC / PrintWindow）拍不进它；
+      // BUG-2922 — 直连卡是独立顶层 HWND，按窗口捕获（WGC / PrintWindow）拍不进它；
       // 在 lease 里把它 hide 只会让卡片每次点制卡都消失一下。
       final String acquireBody = source.substring(acquireAt, leaseAt);
       expect(
         acquireBody,
         isNot(contains('GlobalLookupChannel.hide(')),
-        reason: 'BUG-2918：制卡截图不得隐藏直连查词卡（点制卡时卡片会闪一下）',
+        reason: 'BUG-2922：制卡截图不得隐藏直连查词卡（点制卡时卡片会闪一下）',
       );
       expect(
         acquireBody,
         isNot(contains('_directSurfaceActive = false')),
-        reason: 'BUG-2918：截图不改变直连上屏状态，release 只需重投一次解除 hook suppress',
+        reason: 'BUG-2922：截图不改变直连上屏状态，release 只需重投一次解除 hook suppress',
       );
       expect(source, contains('static const int _kCardBitmapBytes ='));
       expect(
