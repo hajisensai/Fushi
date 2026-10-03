@@ -18,8 +18,8 @@
 //     overlap for a machine nobody else is using);
 //   * every `flutter test` batch and every analyze holds the machine-wide
 //     heavy-run lease (test_flow/heavy_lease.dart, shared with tool/heavy.dart
-//     and flutter_test_failures.dart): an OS-locked slot, memory to spare on
-//     top of the user's reserve, and the worktree's build/ to itself. A step
+//     and flutter_test_failures.dart): an OS-locked slot and the worktree's
+//     build/ to itself (no memory admission since 2026-10-03). A step
 //     not admitted within --gate-timeout-min (default 60) FAILS -- the old
 //     process-counting gate ran "anyway" and raced, which is how the machine
 //     ran out of memory. --gate=0 turns the lease off;
@@ -81,8 +81,8 @@ class _Step {
 }
 
 /// The machine-wide heavy-run lease (test_flow/heavy_lease.dart) around every
-/// Flutter test batch and analyze: a free slot, memory to spare and, for test
-/// batches, this worktree's build/ to itself. A step that is never admitted
+/// Flutter test batch and analyze: a free slot and, for test batches, this
+/// worktree's build/ to itself. A step that is never admitted
 /// within --gate-timeout-min fails (it is not run "anyway": that is what took
 /// the machine down); --gate=0 and --no-lease turn the lease off.
 class _Leases {

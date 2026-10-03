@@ -1,31 +1,31 @@
 // Pure decisions of the machine-wide heavy-run lease (tool/heavy.dart,
-// heavy_lease.dart): what a command costs, how many may run at once, and
-// whether the machine has room for one more right now. No I/O here, so the
-// rules are unit-tested (test/tools/heavy_budget_test.dart).
+// heavy_lease.dart): what a command is, how many may run at once, and the
+// memory ceiling of its process tree. No I/O here, so the rules are
+// unit-tested (test/tools/heavy_budget_test.dart).
 //
 // Why (2026-09-30 / 10-01): several agents ran `flutter test` / analyze /
 // builds at once on the user's desktop. The old gate counted dart.exe
 // processes every 30 s (all waiters saw "2 busy" and started together), ran
-// anyway after 30 min, ignored memory, and only pre_push_check used it. The
-// machine went down to ~1 GB free and the user's own programs stalled.
+// anyway after 30 min, and only pre_push_check used it.
+//
+// There is no memory admission (removed 2026-10-03, owner's call): waiting
+// for "available RAM above a reserve" kept agents queued for many minutes on
+// a busy desktop while a slot sat free, and every other agent queued behind
+// them. Concurrency is bounded by the slot count alone; a runaway run is
+// still stopped by its tree's memory ceiling ([HeavyNeed.capMb]).
 
 /// What kind of work a wrapped command is; decides its cost.
 enum HeavyKind { test, analyze, build, other }
 
-/// The cost model of one heavy run.
+/// The limits of one heavy run.
 class HeavyNeed {
   const HeavyNeed({
     required this.kind,
-    required this.needMb,
     required this.capMb,
     required this.worktreeExclusive,
   });
 
   final HeavyKind kind;
-
-  /// Memory the run is expected to take; admission waits until the machine
-  /// has this much on top of the reserve kept for the user.
-  final int needMb;
 
   /// Hard ceiling (Windows job memory limit) for the whole process tree; a
   /// runaway run fails alone instead of paging out the desktop.
@@ -38,25 +38,21 @@ class HeavyNeed {
 
 const HeavyNeed _test = HeavyNeed(
   kind: HeavyKind.test,
-  needMb: 3072,
   capMb: 12288,
   worktreeExclusive: true,
 );
 const HeavyNeed _analyze = HeavyNeed(
   kind: HeavyKind.analyze,
-  needMb: 3072,
   capMb: 8192,
   worktreeExclusive: false,
 );
 const HeavyNeed _build = HeavyNeed(
   kind: HeavyKind.build,
-  needMb: 6144,
   capMb: 16384,
   worktreeExclusive: true,
 );
 const HeavyNeed _other = HeavyNeed(
   kind: HeavyKind.other,
-  needMb: 2048,
   capMb: 16384,
   worktreeExclusive: true,
 );
@@ -124,43 +120,11 @@ class MemorySnapshot {
   final int? availCommitMb;
 }
 
-/// Physical memory always left to the user: 4 GB, less on small machines.
-int physReserveMb(int totalPhysMb) => (totalPhysMb ~/ 8).clamp(1024, 4096);
-
-/// Commit headroom always left: Windows fails allocations (every program,
-/// not just ours) when the commit charge reaches the limit, RAM free or not.
-int commitReserveMb(int totalPhysMb) => (totalPhysMb ~/ 6).clamp(2048, 8192);
-
-/// Null when a run needing [needMb] may start; otherwise why not.
-/// [pendingMb] is memory promised to runs that just started and have not
-/// allocated it yet (see [pendingReservationMb]).
-String? heavyAdmissionBlocker(
-  MemorySnapshot m,
-  int needMb, {
-  int pendingMb = 0,
-}) {
-  final int want = needMb + pendingMb;
-  final int phys = physReserveMb(m.totalPhysMb);
-  if (m.availPhysMb - want < phys) {
-    return 'available RAM ${m.availPhysMb} MB < need $needMb'
-        '${pendingMb > 0 ? ' + starting $pendingMb' : ''} + reserve $phys MB';
-  }
-  final int? commit = m.availCommitMb;
-  final int commitReserve = commitReserveMb(m.totalPhysMb);
-  if (commit != null && commit - want < commitReserve) {
-    return 'commit headroom $commit MB < need $needMb'
-        '${pendingMb > 0 ? ' + starting $pendingMb' : ''} + reserve '
-        '$commitReserve MB';
-  }
-  return null;
-}
-
 /// One held slot, as its holder recorded it.
 class HeavyHolder {
   const HeavyHolder({
     required this.slot,
     required this.pid,
-    required this.needMb,
     required this.startedAtMs,
     required this.label,
     required this.cwd,
@@ -168,14 +132,12 @@ class HeavyHolder {
 
   final int slot;
   final int pid;
-  final int needMb;
   final int startedAtMs;
   final String label;
   final String cwd;
 
   Map<String, Object> toJson() => <String, Object>{
         'pid': pid,
-        'needMb': needMb,
         'startedAt': startedAtMs,
         'label': label,
         'cwd': cwd,
@@ -184,34 +146,16 @@ class HeavyHolder {
   static HeavyHolder? fromJson(int slot, Object? json) {
     if (json is! Map) return null;
     final Object? pid = json['pid'];
-    final Object? need = json['needMb'];
     final Object? at = json['startedAt'];
-    if (pid is! int || need is! int || at is! int) return null;
+    if (pid is! int || at is! int) return null;
     return HeavyHolder(
       slot: slot,
       pid: pid,
-      needMb: need,
       startedAtMs: at,
       label: '${json['label'] ?? ''}',
       cwd: '${json['cwd'] ?? ''}',
     );
   }
-}
-
-/// Memory promised to holders that started within [warmup]: a run admitted a
-/// second ago has not allocated its memory yet, so the next waiter reading
-/// "available" would see room that is already spoken for (the old gate's
-/// race, moved from process counts to megabytes).
-int pendingReservationMb(
-  Iterable<HeavyHolder> holders,
-  int nowMs, {
-  Duration warmup = const Duration(seconds: 90),
-}) {
-  int sum = 0;
-  for (final HeavyHolder h in holders) {
-    if (nowMs - h.startedAtMs < warmup.inMilliseconds) sum += h.needMb;
-  }
-  return sum;
 }
 
 /// True when [peakMb] means the run hit its [capMb] (allocations near the
@@ -225,8 +169,7 @@ bool heavyCapHit(int peakMb, int capMb) => peakMb >= capMb - 64;
 const String kHeavyLeaseEnv = 'FUSHI_HEAVY_LEASE';
 
 /// Why no lease is taken in [env], or null when one is. CI runners are
-/// single-tenant (and small: a reserve sized for a desktop would keep a 7 GB
-/// runner waiting forever); `FUSHI_HEAVY=off` is the manual escape.
+/// single-tenant; `FUSHI_HEAVY=off` is the manual escape.
 String? heavyLeaseSkipReason(Map<String, String> env) {
   if (env['CI'] == 'true') return 'CI';
   if ((env['FUSHI_HEAVY'] ?? '').toLowerCase() == 'off') {

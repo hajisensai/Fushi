@@ -11,7 +11,7 @@ Future<void> main(List<String> args) async {
   final _FlutterTestFailureOptions options =
       _FlutterTestFailureOptions.parse(args);
   // The machine-wide heavy-run lease (test_flow/heavy_lease.dart; nothing on
-  // CI): a slot, memory to spare, and this worktree's build/ and default
+  // CI): a slot, and this worktree's build/ and default
   // output directory to itself -- two runs in one checkout used to fight over
   // sqlite3.dll and flutter_test.jsonl.
   final HeavyNeed need = heavyNeedFor(HeavyKind.test);
