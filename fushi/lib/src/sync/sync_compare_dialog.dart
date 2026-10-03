@@ -155,6 +155,14 @@ class SyncDictEntry {
   final String? remoteAssetId;
 
   bool get hasRemote => remoteAssetId != null;
+
+  /// Every side that actually holds this dictionary, local first. A bare
+  /// "Remote" for a dictionary that is also installed locally made it look
+  /// identical to a cloud-only one (#1473).
+  String get presenceLabel => <String>[
+        if (hasLocal) t.sync_compare_local,
+        if (hasRemote) t.sync_compare_remote,
+      ].join(' · ');
 }
 
 /// True if a remote book folder holds a downloadable EPUB content asset.
@@ -1718,7 +1726,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             ),
           ),
           Text(
-            d.hasRemote ? t.sync_compare_remote : t.sync_compare_local,
+            d.presenceLabel,
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),

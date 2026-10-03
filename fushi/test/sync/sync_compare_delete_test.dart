@@ -197,12 +197,25 @@ void main() {
 
   /// Pumps the compare dialog with [fake] injected, then waits for its async
   /// `_load` to settle so the book/dictionary rows are rendered.
+  ///
+  /// [localDicts] are seeded into `dictionary_metadata` first, i.e. the
+  /// dictionaries installed on this device.
   Future<FushiDatabase> pumpDialog(
     WidgetTester tester,
-    _FakeSyncBackend fake,
-  ) async {
+    _FakeSyncBackend fake, {
+    List<String> localDicts = const <String>[],
+  }) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
+    await tester.runAsync(() async {
+      for (final (int i, String name) in localDicts.indexed) {
+        await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+          name: name,
+          formatKey: 'yomichan',
+          order: i,
+        ));
+      }
+    });
     tester.view.physicalSize = const Size(1200, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -337,5 +350,59 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
     expect(find.text(t.sync_compare_delete_book), findsOneWidget);
+  });
+
+  group('dictionary row presence label (#1473)', () {
+    _FakeSyncBackend dictOnly(List<String> remoteNames) => _FakeSyncBackend(
+          books: const <SyncFileRef>[],
+          dictAssets: <AssetEntry>[
+            for (final String n in remoteNames)
+              AssetEntry(
+                id: '__dictionaries__/$n.fushidict',
+                name: '$n.fushidict',
+              ),
+          ],
+        );
+
+    testWidgets('dictionary on both sides shows Local and Remote',
+        (WidgetTester tester) async {
+      await pumpDialog(tester, dictOnly(<String>['JMdict']),
+          localDicts: <String>['JMdict']);
+
+      expect(find.text('JMdict'), findsOneWidget);
+      expect(
+        find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
+        findsOneWidget,
+      );
+      // Still deletable on the remote side.
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    });
+
+    testWidgets('remote-only dictionary shows Remote, never Local',
+        (WidgetTester tester) async {
+      await pumpDialog(tester, dictOnly(<String>['JMdict']));
+
+      expect(find.text(t.sync_compare_remote), findsOneWidget);
+      expect(find.text(t.sync_compare_local), findsNothing);
+      expect(
+        find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('local-only dictionary shows Local and no remote delete',
+        (WidgetTester tester) async {
+      await pumpDialog(tester, dictOnly(const <String>[]),
+          localDicts: <String>['JMdict']);
+
+      expect(find.text('JMdict'), findsOneWidget);
+      expect(find.text(t.sync_compare_local), findsOneWidget);
+      expect(find.text(t.sync_compare_remote), findsNothing);
+      expect(
+        find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
+        findsNothing,
+      );
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
+    });
   });
 }
