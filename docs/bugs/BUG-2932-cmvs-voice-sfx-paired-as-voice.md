@@ -36,5 +36,10 @@
       - 第 66–69 行四句有声台词依次配上 `game_resource` 的 `icsn101001`–`icsn101004.ogg`。
       - 之后的无语音旁白「もとより、そのつもりだ。」停在 `pending`，不再抓点击音效。
       - 切换前的旁白行（第 61–65 行）仍配上 185–278 ms 的点击音，即根因 2，属于资源层武装前的 PCM 期。
-    - 同场 `accept4`：text=PASS、audio=PASS（`backend=game_resource resource=…icsn101002.ogg`）。lookup / no_advance=FAIL：这一版 cmvs64 的游戏内查词还没接（查词另立任务），所以本条只宣称 ①② 两条。
+    - 第二个 CMVS 版本（クロノクロック体験版v2 cmvs64，pid 193856，同一份 DLL）：
+      - `group loader +0x275b0 hooked=1` 与 `+0x827f0 hooked=1`，两处站点都由结构判据解析，与离线实测一致。
+      - 女主有声台词配上 `game_resource` 的 `musnky01002` / `musnky01003.ogg`。
+      - 主角（无语音）台词与旁白停在 `pending`。
+      - `accept4`：text=PASS，audio=PASS（`resource=…musnky01003.ogg`）。lookup / no_advance=FAIL：现有 CMVS 查词只做 Shift、不拦左键（见 engine-support 的 `risky_left_click`），点击查词另立任务。
+    - リアライブ同场 `accept4`：text=PASS、audio=PASS（`backend=game_resource resource=…icsn101002.ogg`）。lookup / no_advance=FAIL：这一版 cmvs64 的游戏内查词还没接（查词另立任务），所以本条只宣称 ①② 两条。
   - 无资源层的其它引擎仍会碰到根因 2（PCM 取窗无下限），另行处理。
