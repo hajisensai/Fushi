@@ -17,6 +17,11 @@ Future<AppNativeProxy>? _sharedProxy;
 Future<AppNativeProxy>? _challengeProxy;
 final Set<String> _nativeProxySecrets = <String>{};
 
+/// The whole reply to a successful CONNECT: status line and blank line only.
+final Uint8List _connectEstablished = latin1.encode(
+  'HTTP/1.1 200 Connection established\r\n\r\n',
+);
+
 /// 已登记的「钉扎原点」`host:port → 证书 SHA-256 指纹`。
 ///
 /// 互联 host 用自签证书，信任判据是配对时 TOFU 记下的指纹——只有 Dart 侧知道它。
@@ -603,10 +608,14 @@ class AppNativeProxy {
     final StreamIterator<List<int>> reader = tunnel.reader;
     Socket? downstream;
     try {
-      request.response.statusCode = HttpStatus.ok;
-      downstream = await request.response.detachSocket();
+      // RFC 9110 §9.3.6: a 2xx CONNECT reply carries no Transfer-Encoding /
+      // Content-Length. dart:io's own headers would say `transfer-encoding:
+      // chunked`, and FFmpeg's httpproxy then parses the TLS bytes as chunk
+      // sizes, drops the socket and crashes mbedtls on iOS (BUG-2915).
+      downstream = await request.response.detachSocket(writeHeaders: false);
       _sockets.add(downstream);
       final Socket client = downstream;
+      client.add(_connectEstablished);
       await Future.wait(<Future<void>>[
         upstream.addStream(client).then((_) async {
           await upstream.close();

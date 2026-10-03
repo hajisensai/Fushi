@@ -35,18 +35,16 @@ class SceneDelegate: FlutterSceneDelegate {
 
   // 界面方向变了（含横屏左 ↔ 右翻转）：告诉应用内悬浮球灵动岛换到了哪条边
   // （BUG-2911，见 FushiFloatingBall.interfaceOrientationDidChange）。
-  // FlutterSceneDelegate 自己实现了这条回调（转发给插件的 scene 生命周期），所以
-  // 这里是 override，且必须先交回 super，否则插件收不到。
+  // 写 override 只是因为 FlutterSceneDelegate 声明遵守 UIWindowSceneDelegate，
+  // Swift 把这条可选协议方法算作继承成员；它的 .mm 并没有实现这条回调。所以
+  // **绝不能调 super**：UIKit 在建 scene 时就会回调这里，super 是向不存在的实现
+  // 发消息，unrecognized selector 直接 abort（2.9.0 TestFlight 打开即闪退）。
   override func windowScene(
     _ windowScene: UIWindowScene,
     didUpdate previousCoordinateSpace: UICoordinateSpace,
     interfaceOrientation previousInterfaceOrientation: UIInterfaceOrientation,
     traitCollection previousTraitCollection: UITraitCollection
   ) {
-    super.windowScene(
-      windowScene, didUpdate: previousCoordinateSpace,
-      interfaceOrientation: previousInterfaceOrientation,
-      traitCollection: previousTraitCollection)
     guard windowScene.interfaceOrientation != previousInterfaceOrientation else { return }
     FushiFloatingBall.interfaceOrientationDidChange(windowScene.interfaceOrientation)
   }

@@ -26,30 +26,59 @@ const List<String> dictionaryMediaCustomSchemes = <String>[
 /// ——于是「在弹窗里点词」每点一次就重新序列化、跨平台通道、重新解析这三十多 MB。
 /// 这正是用户报的「查词弹窗慢的逆天，特别是嵌套查词开始」。
 ///
-/// 换成 URL 之后，字节由下面的拦截器按需供，而且**跨 WebView 共享 HTTP 缓存**
-/// （`data:` URL 每次都是一个全新资源，永远共享不了）。
+/// 换成 URL 之后，字节由下面的拦截器按需供：Android / Windows 上还能**跨 WebView
+/// 共享 HTTP 缓存**（`data:` URL 每次都是一个全新资源，永远共享不了）；iOS / macOS
+/// 的 `WKURLSchemeHandler` 响应不进缓存，每个新 WebView 仍会重新取一次字体，但走的
+/// 是二进制字节而不是几十 MB 的 base64 字符串（BUG-2916）。
 ///
 /// host 沿用阅读器那套 `fushi.local`（与阅读器 WebView 各自拦截，互不干扰），
 /// 路径段是 URI 编码后的绝对路径。
 const String kDictionaryFontUrlPrefix = 'https://fushi.local/dictfonts/';
 
-/// in-app 查词弹窗能不能用 URL 投递字体，取决于该平台有没有**能带 CORS 头**的资源
-/// 拦截器。字体是强制 CORS 模式的子资源，而弹窗文档与 `fushi.local` 从来不同源
-/// （Android 是 `file://`，Windows 是 `initialData` 的 opaque origin），拿不到
-/// `Access-Control-Allow-Origin` 就会被静默拒绝——表现为「字体没生效」，比慢更糟。
+/// iOS / macOS 上 in-app 弹窗文档自己的自定义 scheme（与阅读器的 `fushi-reader`
+/// 同一套做法）。
+const String kPopupDocumentScheme = 'fushi-popup';
+
+/// [kPopupDocumentScheme] 下的弹窗文档 URL 前缀。
+const String kPopupDocumentUrlPrefix =
+    '$kPopupDocumentScheme://${ReaderFushiSource.kHost}/popup.html';
+
+/// 与弹窗文档**同源**的字体 URL 前缀（iOS / macOS）。
+const String kDictionaryFontSchemeUrlPrefix =
+    '$kPopupDocumentScheme://${ReaderFushiSource.kHost}/dictfonts/';
+
+/// 本平台的 in-app 弹窗文档是否从 [kPopupDocumentScheme] 加载。
+///
+/// iOS / macOS **没有** `shouldInterceptRequest`，只有 `WKURLSchemeHandler`，而它
+/// 构造的 `URLResponse` 带不了任何 header（CORS 头也就无从谈起）。字体是强制 CORS
+/// 的子资源，所以这两个平台只能让文档与字体**同源**：文档本身由自定义 scheme 供，
+/// 字体走同一 scheme + host，同源请求不需要 CORS。
+///
+/// 此前这两个平台把导入字体整份 base64 内联进经 `evaluateJavascript` 下发的静态段
+/// ——两个 CJK 字体就是三十多 MB 的方法通道字符串，嵌套弹窗每层重发（BUG-2916 的
+/// 最强候选：iOS 解码超大方法调用字符串分配失败，`CFAutorelease(NULL)` 崩溃）。
+bool get kPopupDocumentServedViaCustomScheme =>
+    defaultTargetPlatform == TargetPlatform.iOS ||
+    defaultTargetPlatform == TargetPlatform.macOS;
+
+/// in-app 查词弹窗能不能用 URL 投递字体，取决于该平台的弹窗文档能否合法拿到字体：
 ///
 ///   - Android：`useShouldInterceptRequest: true` 让所有请求进 Dart，
-///     `WebResourceResponse` 支持 headers。✅（阅读器的 `fushi.local/fonts/` 已在
-///     生产用同一套机制跑了很久）
+///     `WebResourceResponse` 支持 headers，带 `Access-Control-Allow-Origin`。✅
 ///   - Windows：fork 的 `WebResourceRequested` 对 file/http/https 恒触发，并把
 ///     `shouldInterceptRequest` 的响应连同 headers 灌回去。✅
-///   - iOS / macOS：**没有** `shouldInterceptRequest`，只有 `WKURLSchemeHandler`，
-///     而它构造的 `URLResponse` 带不了任何 header。❌ 这两个平台继续内联 `data:`
-///     URL——不是偷懒，是平台能力边界；要绕开只能把 popup 文档本身改成从自定义
-///     scheme 加载以取得同源，那是另一个量级的改动。
+///   - iOS / macOS：文档与字体同源（[kPopupDocumentServedViaCustomScheme]）。✅
+///   - Linux：都不具备，继续内联 `data:` URL。
 bool get kInAppPopupFontUrlSupported =>
     defaultTargetPlatform == TargetPlatform.android ||
-    defaultTargetPlatform == TargetPlatform.windows;
+    defaultTargetPlatform == TargetPlatform.windows ||
+    kPopupDocumentServedViaCustomScheme;
+
+/// 本平台 in-app 弹窗应使用的字体 URL 构造器（前提 [kInAppPopupFontUrlSupported]）。
+String inAppDictionaryFontUrl(String safePath) =>
+    kPopupDocumentServedViaCustomScheme
+    ? _versionedFontUrl(kDictionaryFontSchemeUrlPrefix, safePath)
+    : dictionaryFontUrl(safePath);
 
 /// 把通过白名单校验的绝对字体路径编成 [kDictionaryFontUrlPrefix] 下的 URL。
 ///
@@ -59,7 +88,10 @@ bool get kInAppPopupFontUrlSupported =>
 /// 用同名文件覆盖导入的字体后产出的 URL 一字不变，而响应带着 `max-age`——浏览器可能
 /// 在缓存期内继续用旧字节。那是相对内联模式的**行为倒退**。版本戳让覆盖后的 URL 天然
 /// 变成一条新资源。stat 失败时退化成不带版本（仍可用，只是失去自动失效）。
-String dictionaryFontUrl(String safePath) {
+String dictionaryFontUrl(String safePath) =>
+    _versionedFontUrl(kDictionaryFontUrlPrefix, safePath);
+
+String _versionedFontUrl(String prefix, String safePath) {
   String version = '';
   try {
     final FileStat stat = FileStat.statSync(safePath);
@@ -69,7 +101,19 @@ String dictionaryFontUrl(String safePath) {
   } catch (_) {
     // 拿不到版本不影响可用性，只是少了自动失效。
   }
-  return '$kDictionaryFontUrlPrefix${Uri.encodeComponent(safePath)}$version';
+  return '$prefix${Uri.encodeComponent(safePath)}$version';
+}
+
+/// 这条 URL 后面跟着的字体路径段（去掉前缀）；不是字体 URL 时返回 null。
+String? _fontUrlTail(Uri url) {
+  final String full = url.toString();
+  for (final String prefix in const <String>[
+    kDictionaryFontUrlPrefix,
+    kDictionaryFontSchemeUrlPrefix,
+  ]) {
+    if (full.startsWith(prefix)) return full.substring(prefix.length);
+  }
+  return null;
 }
 
 /// 这条 URL 是否是字体请求。
@@ -77,8 +121,7 @@ String dictionaryFontUrl(String safePath) {
 /// 拦截器闭包必须先用它做**廉价前缀判定**，再去构造白名单实参——`shouldInterceptRequest`
 /// 接住的是 WebView 的每一条子资源请求，把白名单当实参写在调用处会让它们在前缀判定
 /// 之前就被求值（其中一个要全量 decode 两串 JSON）。
-bool isDictionaryFontUrl(Uri url) =>
-    url.toString().startsWith(kDictionaryFontUrlPrefix);
+bool isDictionaryFontUrl(Uri url) => _fontUrlTail(url) != null;
 
 /// 服务 [kDictionaryFontUrlPrefix] 下的字体请求；不是字体 URL 时返回 null（交回
 /// 其它拦截分支）。
@@ -97,9 +140,68 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
   required Iterable<String> allowedRoots,
   required Set<String> whitelistedPaths,
 }) async {
-  final String full = url.toString();
-  if (!full.startsWith(kDictionaryFontUrlPrefix)) return null;
-  String raw = full.substring(kDictionaryFontUrlPrefix.length);
+  final _FontLookup? font = await _lookupDictionaryFont(
+    url,
+    allowedRoots: allowedRoots,
+    whitelistedPaths: whitelistedPaths,
+  );
+  if (font == null) return null;
+  final Uint8List? data = font.data;
+  if (data == null) return _fontDenied();
+  return WebResourceResponse(
+    contentType: font.contentType,
+    statusCode: 200,
+    reasonPhrase: 'OK',
+    headers: const <String, String>{
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'max-age=3600',
+    },
+    data: data,
+  );
+}
+
+/// iOS / macOS 版的字体供给：经 `onLoadResourceWithCustomScheme` 服务
+/// [kDictionaryFontSchemeUrlPrefix] 下的请求，三道校验与
+/// [dictionaryFontWebResourceResponse] 是同一份实现。文档与字体同源，不需要 CORS 头
+/// （`CustomSchemeResponse` 也带不了）。不是字体 URL 时返回 null。
+///
+/// 拒绝时回空体：`CustomSchemeResponse` 没有状态码，空字节解不出字体，WebView 立刻
+/// 回退到字体链下一位，与 403 的效果一致。
+Future<CustomSchemeResponse?> dictionaryFontCustomSchemeResponse(
+  Uri url, {
+  required Iterable<String> allowedRoots,
+  required Set<String> whitelistedPaths,
+}) async {
+  final _FontLookup? font = await _lookupDictionaryFont(
+    url,
+    allowedRoots: allowedRoots,
+    whitelistedPaths: whitelistedPaths,
+  );
+  if (font == null) return null;
+  return CustomSchemeResponse(
+    data: font.data ?? Uint8List(0),
+    contentType: font.data == null ? 'text/plain' : font.contentType,
+    contentEncoding: '',
+  );
+}
+
+/// 字体查找结果：[data] 为 null 表示被拒绝（原因已记日志）。
+class _FontLookup {
+  const _FontLookup.ok(Uint8List this.data, this.contentType);
+  const _FontLookup.denied() : data = null, contentType = 'text/plain';
+
+  final Uint8List? data;
+  final String contentType;
+}
+
+/// 两种宿主共用的三道校验；不是字体 URL 时返回 null。
+Future<_FontLookup?> _lookupDictionaryFont(
+  Uri url, {
+  required Iterable<String> allowedRoots,
+  required Set<String> whitelistedPaths,
+}) async {
+  String? raw = _fontUrlTail(url);
+  if (raw == null) return null;
   // 剥掉 `?v=<mtime>-<size>` 内容版本戳：它只为让覆盖字体后的 URL 成为新资源，
   // 不参与路径解析。
   final int q = raw.indexOf('?');
@@ -111,7 +213,7 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
     requested = Uri.decodeComponent(raw);
   } catch (e) {
     _logFontDenial('font url undecodable: $raw ($e)');
-    return _fontDenied();
+    return const _FontLookup.denied();
   }
 
   final String? safePath = ReaderFushiSource.safeCustomFontPath(
@@ -120,38 +222,74 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
   );
   if (safePath == null) {
     _logFontDenial('font outside allowed directory: $requested');
-    return _fontDenied();
+    return const _FontLookup.denied();
   }
   if (!whitelistedPaths.contains(p.canonicalize(safePath))) {
     _logFontDenial('font not in configured list: $requested');
-    return _fontDenied();
+    return const _FontLookup.denied();
   }
 
   try {
     final File file = File(safePath);
     if (!file.existsSync()) {
       _logFontDenial('font not found: $safePath');
-      return _fontDenied();
+      return const _FontLookup.denied();
     }
     final Uint8List data = await file.readAsBytes();
     if (!isValidFontData(data)) {
       _logFontDenial('font corrupted: $safePath (${data.length} B)');
-      return _fontDenied();
+      return const _FontLookup.denied();
     }
-    return WebResourceResponse(
-      contentType: fallbackMimeType(safePath),
-      statusCode: 200,
-      reasonPhrase: 'OK',
-      headers: const <String, String>{
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'max-age=3600',
-      },
-      data: data,
-    );
+    return _FontLookup.ok(data, fallbackMimeType(safePath));
   } catch (e) {
     _logFontDenial('font read failed: $safePath ($e)');
-    return _fontDenied();
+    return const _FontLookup.denied();
   }
+}
+
+/// iOS / macOS 弹窗文档 URL：主题与底色放进查询串，handler 据此拼出与原
+/// `initialData` 逐字节相同的内联 HTML（首帧底色不闪）。
+String popupDocumentUrl({required String themeAttr, required String bgHex}) =>
+    '$kPopupDocumentUrlPrefix?theme=${Uri.encodeQueryComponent(themeAttr)}'
+    '&bg=${Uri.encodeQueryComponent(bgHex)}';
+
+final RegExp _popupBgHex = RegExp(r'^#[0-9a-fA-F]{6}$');
+
+/// 服务 [popupDocumentUrl]；不是弹窗文档 URL 时返回 null。
+///
+/// 查询参数会被拼进 HTML 属性，所以只认白名单形态（主题 light/dark、底色 #rrggbb），
+/// 其它值退回默认，不把任意字符串写进文档。[buildHtml] 返回 null（内联资产读盘失败）
+/// 时回一个空文档——文件 URL 回退在这里没有意义（同一批文件同样读不到）。空文档会
+/// 「加载成功」、不触发 `onReceivedError`，所以宿主的 [buildHtml] 拿到 null 时必须
+/// 自己报渲染失败（见 dictionary_popup_webview 的 onLoadResourceWithCustomScheme）。
+CustomSchemeResponse? popupDocumentCustomSchemeResponse(
+  Uri url, {
+  required String? Function(String themeAttr, String bgHex) buildHtml,
+}) {
+  if (url.scheme != kPopupDocumentScheme ||
+      url.host != ReaderFushiSource.kHost ||
+      url.path != '/popup.html') {
+    return null;
+  }
+  final String theme = url.queryParameters['theme'] == 'dark'
+      ? 'dark'
+      : 'light';
+  final String rawBg = url.queryParameters['bg'] ?? '';
+  final String bg = _popupBgHex.hasMatch(rawBg) ? rawBg : '#ffffff';
+  final String? html = buildHtml(theme, bg);
+  if (html == null) {
+    ErrorLogService.instance.log(
+      'PopupWebView.document',
+      'popup assets unavailable; serving empty document',
+    );
+  }
+  return CustomSchemeResponse(
+    data: Uint8List.fromList(
+      utf8.encode(html ?? '<!DOCTYPE html><html></html>'),
+    ),
+    contentType: 'text/html',
+    contentEncoding: 'utf-8',
+  );
 }
 
 /// 拒绝一条字体请求：回 403 空体而不是 null。
