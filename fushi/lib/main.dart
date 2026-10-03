@@ -1743,37 +1743,65 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _loadingTimedOut = false;
   }
 
+  /// 首帧释放 + 显窗是一次性的：`allowFirstFrame()` 只能对应一次 `deferFirstFrame()`，
+  /// 所以失败后不复位调度标志（重调度会二次 allow 触发断言），而是直接兜底显窗——
+  /// runner 普通启动隐藏建窗，这里不显窗进程就永远不可见。
   void _scheduleStartupFrameRelease() {
     if (!_deferStartupFrame || _startupFrameReleaseScheduled) {
       return;
     }
     _startupFrameReleaseScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(() async {
-        try {
-          final WidgetsBinding binding = WidgetsBinding.instance;
-          binding.allowFirstFrame();
-          await binding.waitUntilFirstFrameRasterized;
-          if (!mounted) return;
-          if (Platform.isWindows) {
-            await windowManager.show();
-            try {
-              await windowManager.focus();
-            } catch (e) {
-              debugPrint('[Fushi] startup window focus skipped: $e');
-            }
-          } else if (Platform.isMacOS) {
-            await WindowCaptionChannel.showStartupWindow();
-          }
-          if (mounted) {
-            setState(() => _initialThemePresented = true);
-          }
-        } catch (e) {
-          _startupFrameReleaseScheduled = false;
-          debugPrint('[Fushi] startup presentation release failed: $e');
-        }
-      }());
+      unawaited(_releaseStartupFrame());
     });
+  }
+
+  Future<void> _releaseStartupFrame() async {
+    final WidgetsBinding binding = WidgetsBinding.instance;
+    bool firstFrameAllowed = false;
+    try {
+      binding.allowFirstFrame();
+      firstFrameAllowed = true;
+      await binding.waitUntilFirstFrameRasterized;
+      if (!mounted) return;
+      await _revealStartupWindow();
+    } catch (e) {
+      debugPrint('[Fushi] startup presentation release failed: $e');
+      if (!firstFrameAllowed) {
+        try {
+          binding.allowFirstFrame();
+        } catch (e) {
+          debugPrint('[Fushi] startup first frame fallback failed: $e');
+        }
+      }
+      await _revealStartupWindowFallback();
+    }
+    if (mounted) {
+      setState(() => _initialThemePresented = true);
+    }
+  }
+
+  /// 隐藏建窗的唯一显窗点（含迁移后自动重启的新进程，TODO-959）：首帧光栅化后
+  /// show + focus 抢回前台。
+  Future<void> _revealStartupWindow() async {
+    if (Platform.isWindows) {
+      await windowManager.show();
+      try {
+        await windowManager.focus();
+      } catch (e) {
+        debugPrint('[Fushi] startup window focus skipped: $e');
+      }
+    } else if (Platform.isMacOS) {
+      await WindowCaptionChannel.showStartupWindow();
+    }
+  }
+
+  Future<void> _revealStartupWindowFallback() async {
+    try {
+      await _revealStartupWindow();
+    } catch (e) {
+      debugPrint('[Fushi] startup window fallback show failed: $e');
+    }
   }
 
   void _scheduleInitialThemeAnimationRestore() {

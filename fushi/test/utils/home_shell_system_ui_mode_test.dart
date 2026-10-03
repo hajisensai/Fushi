@@ -4,13 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
 
-/// TODO-097 / BUG-181 + BUG-2894 守卫：首页外壳的系统 UI 模式。
+/// TODO-097 / BUG-181 + BUG-2925 守卫：首页外壳的系统 UI 模式。
 ///
-/// Android：`manual` + 只开 bottom——隐藏状态栏（竖屏时挤压右上角动作图标），
-/// 保留导航/手势栏；`manual` 同时清掉视频页留下的 IMMERSIVE_STICKY。
-/// 其它平台：先显式显示全部 overlay，再 edge-to-edge（3.44 的 edgeToEdge 不清
-/// sticky 沉浸）。host runner 上 [Platform.isAndroid] 为 false，故行为测试只覆盖
-/// 非 Android 分支；Android 分支的具体模式用源码守卫锁定。
+/// 所有平台（含 Android，用户 2026-10-04 反转 TODO-097：Android 首页显示状态栏）
+/// 走同一条路径：先 `manual` 显式显示全部 overlay（清掉视频页留下的
+/// IMMERSIVE_STICKY，3.44 的 edgeToEdge 不清），再 edge-to-edge。host runner 上
+/// [Platform.isAndroid] 为 false，所以「没有平台分支」用源码守卫锁定，保证
+/// 行为测试覆盖的就是 Android 真机走的那条路径。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -115,35 +115,24 @@ void main() {
     }
 
     test(
-      'home-shell helper hides the Android status bar, keeps the nav bar',
+      'home-shell helper has no per-platform branch (TODO-097 reversed)',
       () {
         final String fn = bodyOf(
           utils,
           'Future<void> setHomeShellSystemUiMode()',
         );
-        final int androidAt = fn.indexOf('if (Platform.isAndroid) {');
-        expect(androidAt, isNonNegative, reason: 'Android branch is required');
-        final int returnAt = fn.indexOf('return;', androidAt);
-        expect(returnAt, isNonNegative, reason: 'Android branch must return');
-        final String android = fn.substring(androidAt, returnAt);
-        expect(android, contains('SystemUiMode.manual'));
         expect(
-          android,
-          contains('overlays: <SystemUiOverlay>[SystemUiOverlay.bottom]'),
-        );
-        expect(
-          android.contains('SystemUiOverlay.top') ||
-              android.contains('SystemUiOverlay.values'),
+          fn.contains('Platform.'),
           isFalse,
-          reason: 'enabling the top overlay would re-show the status bar',
+          reason:
+              'a platform branch would let Android diverge from the path the '
+              'behaviour tests above cover (e.g. hiding the status bar again)',
         );
-
-        final String rest = fn.substring(returnAt);
-        expect(rest, contains('overlays: SystemUiOverlay.values'));
+        expect(fn, contains('overlays: SystemUiOverlay.values'));
         expect(
-          rest.indexOf('SystemUiMode.manual'),
-          lessThan(rest.indexOf('SystemUiMode.edgeToEdge')),
-          reason: 'non-Android must clear sticky immersion before edge-to-edge',
+          fn.indexOf('SystemUiMode.manual'),
+          lessThan(fn.indexOf('SystemUiMode.edgeToEdge')),
+          reason: 'must clear sticky immersion before edge-to-edge',
         );
       },
     );

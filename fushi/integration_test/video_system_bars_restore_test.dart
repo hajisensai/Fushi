@@ -19,7 +19,7 @@ import 'helpers/media_fixtures.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-2894：在独立 Android 测试包里走真实启动 / 播放 / Esc 退出。
+/// BUG-2925：在独立 Android 测试包里走真实启动 / 播放 / Esc 退出。
 /// 阶段文件供 adb 采集 dumpsys window 和含系统栏的屏幕截图；不改用户设备设置。
 Future<void> _checkpoint(WidgetTester tester, String stage) async {
   debugPrint('[system-bars] $stage: top=${tester.view.padding.top}');

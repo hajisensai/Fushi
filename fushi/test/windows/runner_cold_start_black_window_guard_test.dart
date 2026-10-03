@@ -129,6 +129,35 @@ void main() {
       expect(mainDart, contains('_loadingTimedOut'));
     });
 
+    test('a failed release still allows the frame once and shows the window',
+        () {
+      final int start = mainDart.indexOf('Future<void> _releaseStartupFrame()');
+      final int end = mainDart.indexOf(
+        'Future<void> _revealStartupWindow()',
+        start,
+      );
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+      final String body = mainDart.substring(start, end);
+      final int catchAt = body.indexOf('} catch (e) {');
+      expect(catchAt, isNonNegative);
+      final String catchBody = body.substring(catchAt);
+      // allowFirstFrame() may be called once per deferFirstFrame(); the catch
+      // only re-allows when the try never got that far.
+      expect(catchBody, contains('if (!firstFrameAllowed)'));
+      expect(catchBody, contains('binding.allowFirstFrame()'));
+      // Without this the hidden window could stay invisible forever.
+      expect(catchBody, contains('await _revealStartupWindowFallback()'),
+          reason: 'catch must still reveal so the window is never stuck '
+              'invisible');
+      final int fbStart =
+          mainDart.indexOf('Future<void> _revealStartupWindowFallback()');
+      expect(fbStart, isNonNegative);
+      final String fb = mainDart.substring(fbStart, fbStart + 400);
+      expect(fb, contains('await _revealStartupWindow()'));
+      expect(fb, contains('catch'));
+    });
+
     test('startup placement batches intermediate child sizes', () {
       expect(
         cpp,

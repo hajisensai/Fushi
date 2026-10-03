@@ -33,26 +33,16 @@ bool get isMacOSPlatform => Platform.isMacOS;
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///
-/// Android: [SystemUiMode.manual] with only [SystemUiOverlay.bottom] -- the
-/// status bar stays hidden (TODO-097 / BUG-181: in portrait it crowds the
-/// top-right action icons) while the navigation/gesture bar is kept. `manual`
-/// rewrites the visibility flags, so it also clears the FULLSCREEN /
-/// IMMERSIVE_STICKY a video page leaves behind (BUG-2894).
-///
-/// Other platforms: show every overlay first, then edge-to-edge. Flutter
-/// 3.44's edgeToEdge only changes decor fitting and does not clear sticky
-/// immersion, so visibility must be restored explicitly.
+/// Every platform, Android included, shows both the status bar and the
+/// navigation bar (the user reversed TODO-097 on 2026-10-04: the Android home
+/// shell shows the status bar again). Show every overlay first, then
+/// edge-to-edge: Flutter 3.44's edgeToEdge only changes decor fitting and does
+/// not clear the FULLSCREEN / IMMERSIVE_STICKY a video page leaves behind, so
+/// visibility must be restored explicitly through `manual` (BUG-2925).
 ///
 /// Readers restore this mode through AppModel.closeMedia; video pages restore
 /// it when the last display owner exits.
 Future<void> setHomeShellSystemUiMode() async {
-  if (Platform.isAndroid) {
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: <SystemUiOverlay>[SystemUiOverlay.bottom],
-    );
-    return;
-  }
   await SystemChrome.setEnabledSystemUIMode(
     SystemUiMode.manual,
     overlays: SystemUiOverlay.values,
