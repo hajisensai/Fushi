@@ -6,6 +6,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart';
+import 'package:meta/meta.dart';
 
 /// An authenticated loopback view of one decrypted M2TS file.
 ///
@@ -65,6 +66,10 @@ final class AacsStreamRelay {
     final commands = ReceivePort();
     HttpServer? server;
     final requests = <Future<void>>{};
+    // Bodies are written on detached sockets, which the server no longer
+    // tracks: shutdown has to destroy them itself or a paused player keeps
+    // its request (and the disc handle) alive forever.
+    final bodies = <Socket>{};
     var closing = false;
     try {
       final file = File(args[1] as String);
@@ -99,6 +104,7 @@ final class AacsStreamRelay {
           length,
           path,
           decoder,
+          bodies,
           () => closing,
         ).whenComplete(() => requests.remove(task));
         requests.add(task);
@@ -111,6 +117,9 @@ final class AacsStreamRelay {
     } finally {
       closing = true;
       await server?.close(force: true);
+      for (final socket in bodies.toList()) {
+        socket.destroy();
+      }
       await Future.wait(requests.toList());
       commands.close();
     }
@@ -122,10 +131,10 @@ final class AacsStreamRelay {
     int length,
     String path,
     AacsContentDecoder decoder,
+    Set<Socket> bodies,
     bool Function() isClosing,
   ) async {
     final response = request.response;
-    RandomAccessFile? input;
     try {
       response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
       if (request.uri.path != path || request.uri.hasQuery) {
@@ -159,31 +168,18 @@ final class AacsStreamRelay {
       }
       response.contentLength = end - start + 1;
       if (request.method == 'HEAD') return;
-      input = await file.open();
-      const unitLength = AacsContentDecoder.alignedUnitLength;
-      var position = start ~/ unitLength * unitLength;
-      await input.setPosition(position);
-      while (position <= end && !isClosing()) {
-        final chunkLength = min(
-          32 * unitLength,
-          ((end - position) ~/ unitLength + 1) * unitLength,
+      response.persistentConnection = false;
+      final socket = await response.detachSocket();
+      bodies.add(socket);
+      // Shutdown may have swept `bodies` while the headers were being written.
+      if (isClosing()) socket.destroy();
+      try {
+        await _writeBody(
+          socket,
+          decryptedRange(file, decoder, start, end, isClosing: isClosing),
         );
-        final chunk = await _readExactly(input, chunkLength);
-        if (isClosing()) break;
-        for (var offset = 0; offset < chunkLength; offset += unitLength) {
-          decoder.decryptUnit(
-            Uint8List.sublistView(chunk, offset, offset + unitLength),
-          );
-        }
-        response.add(
-          Uint8List.sublistView(
-            chunk,
-            max(0, start - position),
-            min(chunkLength, end - position + 1),
-          ),
-        );
-        await response.flush();
-        position += chunkLength;
+      } finally {
+        bodies.remove(socket);
       }
     } catch (_) {
       // A failed decode must terminate the byte stream, never serve ciphertext.
@@ -194,12 +190,79 @@ final class AacsStreamRelay {
         // A disconnected consumer has already disposed the response socket.
       }
     } finally {
-      await input?.close();
       try {
         await response.close();
       } catch (_) {
         // Expected after consumer cancellation or forced session shutdown.
       }
+    }
+  }
+
+  /// Streams [body] onto the detached [socket] until it ends or the player
+  /// leaves.
+  ///
+  /// Players abandon range requests constantly (probe, seek, cache refill).
+  /// `HttpResponse.add`/`flush`/`addStream`/`done` all swallow the write
+  /// failure of a peer that went away mid-body, so a loop on the response
+  /// reads and decrypts the rest of the title for nobody; on an optical drive
+  /// those orphans starve the live request until playback stalls. The raw
+  /// socket does surface it: `flush` throws, the loop ends and cancelling
+  /// [body] closes the file. A decode failure destroys the socket too, so the
+  /// body is cut short, never filled with ciphertext.
+  static Future<void> _writeBody(Socket socket, Stream<Uint8List> body) async {
+    // `close()` only completes once the inbound side is done, which needs a
+    // listener; a player sends nothing after its request.
+    unawaited(socket.drain<void>().then((_) {}, onError: (Object _) {}));
+    try {
+      await for (final chunk in body) {
+        socket.add(chunk);
+        await socket.flush();
+      }
+      await socket.close();
+    } catch (_) {
+      socket.destroy();
+    }
+  }
+
+  /// Decrypted bytes `[start, end]` of [file], read one 32-unit chunk ahead of
+  /// demand.
+  ///
+  /// Each chunk is read only when the listener asks for it, and cancelling the
+  /// subscription closes the file at the pending `yield`. A unit that fails to
+  /// decrypt ends the stream with an error before any of its bytes are emitted.
+  @visibleForTesting
+  static Stream<Uint8List> decryptedRange(
+    File file,
+    AacsContentDecoder decoder,
+    int start,
+    int end, {
+    bool Function()? isClosing,
+  }) async* {
+    final RandomAccessFile input = await file.open();
+    try {
+      const int unitLength = AacsContentDecoder.alignedUnitLength;
+      int position = start ~/ unitLength * unitLength;
+      await input.setPosition(position);
+      while (position <= end && !(isClosing?.call() ?? false)) {
+        final int chunkLength = min(
+          32 * unitLength,
+          ((end - position) ~/ unitLength + 1) * unitLength,
+        );
+        final Uint8List chunk = await _readExactly(input, chunkLength);
+        for (int offset = 0; offset < chunkLength; offset += unitLength) {
+          decoder.decryptUnit(
+            Uint8List.sublistView(chunk, offset, offset + unitLength),
+          );
+        }
+        yield Uint8List.sublistView(
+          chunk,
+          max(0, start - position),
+          min(chunkLength, end - position + 1),
+        );
+        position += chunkLength;
+      }
+    } finally {
+      await input.close();
     }
   }
 

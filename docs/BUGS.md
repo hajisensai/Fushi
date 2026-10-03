@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2672 条。点号进各自文件。
+> 共 2673 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2912](bugs/BUG-2912-manga-settings-sheet-clipped.md) | ✅ | ✅ | 漫画阅读设置侧栏显示不全 |
 | [BUG-2911](bugs/BUG-2911-ios-landscape-ball-edge.md) | ✅ | ✅ | iOS 横屏应用内悬浮球不吸附屏幕侧边 |
+| [BUG-2910](bugs/BUG-2910-aacs-relay-orphan-readers.md) | ✅ | ✅ | AACS 解密中继：客户端放弃的 Range 请求继续读盘到文件尾，光驱被抢读导致只能播开头 |
 | [BUG-2908](bugs/BUG-2908-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
 | [BUG-2907](bugs/BUG-2907-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
 | [BUG-2906](bugs/BUG-2906-system-ocr-model-setup.md) | ✅ | ✅ | 系统 OCR 模型未就绪时只弹提示、没有配置入口 |
