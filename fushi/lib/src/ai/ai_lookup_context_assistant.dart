@@ -91,12 +91,49 @@ String aiLookupMatchedText(DictionarySearchResult result) {
   return term;
 }
 
-const String _kSystemPrompt = '''
-You help a language learner read Japanese. Given a sentence, the word the learner looked up (as written in the sentence) and numbered dictionary headwords, choose the headword that matches how the word is used in this sentence.
+/// 查到这批词头的词典所声明的词头语言（BCP 47，如 `ja` / `zh` / `en`）：按
+/// [DictionarySearchResult.entries] 逐条问 [languageOf]（词典名 → 词头语言，即
+/// `Dictionary.effectiveSourceLanguage`），取出现最多的那个；票数相同取先出现的。
+/// 一条都问不出来返回 null——调用方不猜（Fushi 没有全局学习语言）。
+String? aiLookupHeadwordLanguage(
+  DictionarySearchResult result,
+  String? Function(String dictionaryName) languageOf,
+) {
+  final Map<String, int> votes = <String, int>{};
+  for (final DictionaryEntry entry in result.entries) {
+    final String language = languageOf(entry.dictionaryName)?.trim() ?? '';
+    if (language.isEmpty) continue;
+    votes[language] = (votes[language] ?? 0) + 1;
+  }
+  String? best;
+  int bestVotes = 0;
+  votes.forEach((String language, int count) {
+    if (count > bestVotes) {
+      best = language;
+      bestVotes = count;
+    }
+  });
+  return best;
+}
 
-Reply with JSON only: {"choice": n} where n is the candidate number. Use {"choice": 0} if none of the candidates fits or the sentence does not decide it.''';
+/// 系统提示词。[language] 是词头语言的 BCP 47 标签；null 时用中立措辞，
+/// 绝不默认成某一种语言（查词可能是任何一门在学的语言）。
+String aiLookupSystemPrompt(String? language) {
+  final String tag = language?.trim() ?? '';
+  final String reading = tag.isEmpty
+      ? 'read text in a language they are learning'
+      : 'read text in the language with BCP 47 tag "$tag"';
+  return 'You help a language learner $reading. Given a sentence, the word '
+      'the learner looked up (as written in the sentence) and numbered '
+      'dictionary headwords, choose the headword that matches how the word is '
+      'used in this sentence.\n\n'
+      'Reply with JSON only: {"choice": n} where n is the candidate number. '
+      'Use {"choice": 0} if none of the candidates fits or the sentence does '
+      'not decide it.';
+}
 
 /// 问 AI 选哪个候选；返回 0 起的候选下标，null = AI 认为都不合适 / 回复不合格。
+/// [language] 是词头语言（见 [aiLookupHeadwordLanguage]），null = 不知道。
 ///
 /// [AiChatFailure] 原样抛给调用方（UI 用 `aiFailureText` 提示）。
 Future<int?> requestAiLookupChoice({
@@ -105,6 +142,7 @@ Future<int?> requestAiLookupChoice({
   required String sentence,
   required String matched,
   required List<AiLookupCandidate> candidates,
+  String? language,
 }) async {
   if (candidates.length < 2 || sentence.trim().isEmpty) return null;
   final StringBuffer prompt = StringBuffer()
@@ -123,7 +161,7 @@ Future<int?> requestAiLookupChoice({
     provider: provider,
     maxTokens: 64,
     messages: <AiChatMessage>[
-      const AiChatMessage.system(_kSystemPrompt),
+      AiChatMessage.system(aiLookupSystemPrompt(language)),
       AiChatMessage.user(prompt.toString()),
     ],
   );

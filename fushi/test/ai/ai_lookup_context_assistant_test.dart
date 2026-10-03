@@ -192,4 +192,103 @@ void main() {
     expect(identical(promoteAiLookupCandidate(original, 0), original), isTrue);
     expect(identical(promoteAiLookupCandidate(original, 9), original), isTrue);
   });
+
+  /// 发一次请求，返回系统提示词原文。
+  Future<String> systemPromptFor(String? language) async {
+    late String sent;
+    final AiChatClient client = AiChatClient(
+      client: MockClient((http.Request request) async {
+        sent = request.body;
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'choices': <Object?>[
+              <String, Object?>{
+                'message': <String, Object?>{'content': '{"choice": 1}'},
+              },
+            ],
+          }),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+    addTearDown(client.close);
+    await requestAiLookupChoice(
+      client: client,
+      provider: provider,
+      sentence: 'キゲンの悪いうみな',
+      matched: 'キゲン',
+      candidates: aiLookupCandidates(kigen()),
+      language: language,
+    );
+    final List<Object?> messages =
+        (jsonDecode(sent) as Map<String, Object?>)['messages']!
+            as List<Object?>;
+    return ((messages.first as Map<String, Object?>)['content'] ?? '')
+        .toString();
+  }
+
+  test('系统提示词带上真实的查词语言，不再写死日语', () async {
+    final String zh = await systemPromptFor('zh');
+    expect(zh, contains('BCP 47 tag "zh"'));
+    expect(zh, isNot(contains('Japanese')));
+    final String ja = await systemPromptFor('ja');
+    expect(ja, contains('BCP 47 tag "ja"'));
+  });
+
+  test('拿不到语言：中立措辞，不默认成任何一门语言', () async {
+    for (final String? language in <String?>[null, '', '  ']) {
+      final String prompt = await systemPromptFor(language);
+      expect(prompt, contains('a language they are learning'));
+      expect(prompt, isNot(contains('Japanese')));
+      expect(prompt, isNot(contains('BCP 47 tag')));
+    }
+  });
+
+  test('词头语言按查到词条的词典投票，取多数；问不出来为 null', () {
+    DictionarySearchResult from(List<String> dictionaries) =>
+        DictionarySearchResult(
+          searchTerm: 'x',
+          entries: <DictionaryEntry>[
+            for (final String name in dictionaries)
+              DictionaryEntry(
+                word: 'x',
+                reading: '',
+                meaning: '',
+                dictionaryName: name,
+              ),
+          ],
+        );
+    const Map<String, String?> languages = <String, String?>{
+      'JMdict': 'ja',
+      '大辞林': 'ja',
+      'CC-CEDICT': 'zh',
+      'Unknown': null,
+      'Blank': '  ',
+    };
+    String? languageOf(String name) => languages[name];
+
+    expect(
+      aiLookupHeadwordLanguage(
+        from(<String>['CC-CEDICT', 'JMdict', '大辞林']),
+        languageOf,
+      ),
+      'ja',
+    );
+    // 票数相同：取先出现的。
+    expect(
+      aiLookupHeadwordLanguage(
+        from(<String>['CC-CEDICT', 'JMdict']),
+        languageOf,
+      ),
+      'zh',
+    );
+    expect(
+      aiLookupHeadwordLanguage(
+        from(<String>['Unknown', 'Blank', 'Missing']),
+        languageOf,
+      ),
+      isNull,
+    );
+  });
 }
