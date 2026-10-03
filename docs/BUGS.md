@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | 🚧 | 🚧 | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
+| [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | ✅ | ✅ | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
 | [BUG-2915](bugs/BUG-2915-ios-video-connect-chunked-crash.md) | ✅ | ✅ | iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked |
 | [BUG-2914](bugs/BUG-2914-ios-scene-super-crash.md) | ✅ | ✅ | iOS 2.9.0 crashes on launch: SceneDelegate calls super for a scene callback FlutterSceneDelegate does not implement |
 | [BUG-2912](bugs/BUG-2912-manga-settings-sheet-clipped.md) | ✅ | ✅ | 漫画阅读设置侧栏显示不全 |
