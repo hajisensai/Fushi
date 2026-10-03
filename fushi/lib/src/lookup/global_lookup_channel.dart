@@ -123,6 +123,7 @@ abstract final class GlobalLookupChannel {
     required int geometryEpoch,
     double left = 0,
     double top = 0,
+    int rootHeight = 0,
   }) => _impl.revealStack(
     dx: dx,
     dy: dy,
@@ -131,6 +132,7 @@ abstract final class GlobalLookupChannel {
     geometryEpoch: geometryEpoch,
     left: left,
     top: top,
+    rootHeight: rootHeight,
   );
 
   /// 防截屏（与剪贴板面板同一 pref）：把 display affinity 应用到瞬态覆盖窗。
