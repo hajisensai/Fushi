@@ -462,6 +462,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 书架搜索栏「阅读状态」筛选的 [ShelfReadStatus] `.name`（unread/reading/
+  /// finished）；空串 = 全部。跨重启保留（与游戏库页游玩状态筛选同一决定）。
+  String get shelfReadStatusFilterName =>
+      getPref('shelf_read_status_filter', defaultValue: '') as String;
+
+  Future<void> setShelfReadStatusFilterName(String name) async {
+    await setPref('shelf_read_status_filter', name);
+  }
+
   /// 视频库排序方式 `.name`。默认 recent（最近观看，用户拍板；一键可切回导入时间）。
   String get videoSortModeName =>
       getPref('video_sort_mode', defaultValue: 'recent') as String;
