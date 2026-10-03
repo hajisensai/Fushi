@@ -29,6 +29,35 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("g_cmvs_hook_installation.Install(HookFn,", install)
         self.assertNotIn("if (g_cmvs_frame_original)", install)
 
+    def test_cmvs_voice_lane_is_structural_and_game_thread_light(self) -> None:
+        """BUG-2932：CMVS 逐句语音只认引擎组加载器返回的语音组 Ogg。
+
+        * 站点只由主映像异常目录 + 结构判据解析：不读哈希 / 文件名 / 标题。
+        * 游戏线程（detour → QueueCmvsVoice）只做判定与有界拷贝：不落盘、不写日志。
+        * worker 先过 Ogg 页完整性再 WriteVoiceOggAt；kResourceAudio 只在语音层已武装时宣告。
+        """
+        adapters = ROOT / "hook" / "adapters"
+        core = self._strip_comments((adapters / "cmvs_voice_core.h").read_text(encoding="utf-8"))
+        lane = self._strip_comments((adapters / "cmvs_voice.inc").read_text(encoding="utf-8"))
+        adapter = self._strip_comments((adapters / "cmvs_adapter.inc").read_text(encoding="utf-8"))
+        for forbidden in ("sha256", "matchesexecutable", "getmodulefilename",
+                          "realive", "chronoclock", "icsn"):
+            self.assertNotIn(forbidden, core.lower())
+            self.assertNotIn(forbidden, lane.lower())
+        queue = self._function_body(lane, "void QueueCmvsVoice(")
+        for forbidden in ("HookLogLine", "WriteVoiceOggAt", "CreateFile", "CompleteOggBytes"):
+            self.assertNotIn(forbidden, queue)
+        for required in ("IsVoiceGroup", "IsVoiceMemberName", "HasOggHead", "kMaxMemberBytes"):
+            self.assertIn(required, queue)
+        worker = self._function_body(lane, "void ProcessCmvsVoiceTask(")
+        self.assertLess(worker.index("CompleteOggBytes"), worker.index("WriteVoiceOggAt"))
+        install = self._function_body(lane, "bool TryHookCmvsVoice()")
+        self.assertIn("FindGroupLoaderSites", install)
+        capabilities = self._function_body(
+            adapter, "fushi_voice_hook::AdapterCapability capabilities() const override")
+        self.assertIn("CmvsVoiceArmed()", capabilities)
+        self.assertIn("AdapterCapability::kResourceAudio", capabilities)
+
     def test_cmvs_shift_is_owned_before_native_keyboard_consumption(self) -> None:
         source = self._strip_comments((ROOT / "hook/adapters/cmvs_lookup.inc").read_text(encoding="utf-8"))
         consumer = self._function_body(source, "void __fastcall CmvsInputDetour(")
