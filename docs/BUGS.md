@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2664 条。点号进各自文件。
+> 共 2665 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -45,6 +45,7 @@
 | [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |
 | [BUG-2886](bugs/BUG-2886-lookup-parked-window-on-screen.md) | ✅ | ✅ | 显示拓扑变化后，离屏停放的查词覆盖窗落进屏幕右上角吞点击 |
 | [BUG-2886](bugs/BUG-2886-continuous-scroll-progress-stall.md) | ✅ | ✅ | 滚动模式往下滚会卡在某处停一会 |
+| [BUG-2885](bugs/BUG-2885-manga-ocr-missed-text.md) | ✅ | ✅ | 漫画本地 OCR 漏识别：稀疏装饰标题整块没检出、斜体并排两列丢一列 |
 | [BUG-2885](bugs/BUG-2885-kirikiri-nvl-page-lookup.md) | ✅ | ✅ | KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝 |
 | [BUG-2884](bugs/BUG-2884-manga-cross-chapter-stale-doc.md) | ✅ | ✅ | 漫画跨章翻页后正文仍是旧章 |
 | [BUG-2878](bugs/BUG-2878-manga-lens-char-offset.md) | ✅ | ✅ | 漫画 Lens OCR 逐字命中区相对原图字形漂移（竖排高亮压前字、切后字） |

@@ -107,12 +107,20 @@ class DetectedTextRegion {
 
 /// 单页检测结果。
 class PageDetections {
-  const PageDetections({required this.textRegions, required this.bubbles});
+  const PageDetections({
+    required this.textRegions,
+    required this.bubbles,
+    this.weakTextRegions = const <DetectedTextRegion>[],
+  });
 
   final List<DetectedTextRegion> textRegions;
 
   /// bubble（类别 0）框，仅用于内/外判定与后续 UI 需要。
   final List<OcrRect> bubbles;
+
+  /// 没过正式阈值、但过了弱阈值的文字框（未做 NMS）：不直接识别，只给补检
+  /// （`page_text_sweep.dart`）当候选——字距稀疏的装饰性标题常落在这一档。
+  final List<DetectedTextRegion> weakTextRegions;
 }
 
 /// 识别 + 排序之后的最终文字块（供上层消费 / 缓存序列化）。
