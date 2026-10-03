@@ -23,3 +23,22 @@
   - 后来又加了两条：隐藏选取层前必须先 `linkToDeath` 盯住查词窗的令牌；识别回调先判断 `finished`，再决定是否挂选取层。
   - 另外 `:app:assembleRelease` 编译通过。
 - **备注**：未做真机复测（需要 MediaProjection 授权框和 ML Kit 模型）。
+- **审查返工（2026-10-03，提交 `322a3123bc`）**
+  - **选取层随屏幕几何失效**：原实现没有任何失效条件。用户点字后在查词窗里转屏（`PopupDictFlutterActivity` 的 configChanges 含 `orientation|screenSize`，不重建也不走 LEFT），关窗后 CLOSED 会恢复一层竖屏几何的旧定格帧，横屏被裁、行点不到，还盖住真实画面。现在 `startCapture` 把截屏时的屏幕物理尺寸 + display rotation 记为这张截图的身份（`ScreenOcrSelectionSession.ScreenIdentity`），`Service.onConfigurationChanged` 和 CLOSED 恢复之前都按 `realScreenBounds()` + `DisplayManager` 默认屏 `getRotation()` 比对，不一致就 `finishFlow()`，不尝试映射旧框。rotation 也纳入身份，因为 0° 和 180° 尺寸相同，但定格帧是倒的。
+  - **会话协议抽成纯状态机**：新文件 `fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrSession.kt`，不依赖 android.*。
+    - `ScreenOcrLookupReporter` 是查词窗侧，负责把生命周期翻译成 SHOWN / CLOSED / LEFT。
+    - `ScreenOcrSelectionSession` 是选取层侧，负责过期会话忽略、先盯令牌再隐藏、CLOSED 恢复前核对几何、LEFT / 进程死亡 / 几何变化时收尾。
+    - `ScreenOcrService` 与 `PopupDictFlutterActivity` 只负责接线，除新增的几何失效外行为不变。
+  - **测试**：
+    - JVM 表驱动单测 `fushi/android/app/src/test/kotlin/app/fushi/reader/ScreenOcrSessionTest.kt`，覆盖以下场景：
+      - onPause 已报 CLOSED 后 onStop 不重复报；
+      - 被透明窗压到 paused 后再 finish，补报 CLOSED；
+      - 不可见了报 LEFT；
+      - onNewIntent 换会话；
+      - 过期 / 0 号会话忽略；
+      - 没有活令牌就不隐藏；
+      - 进程死亡收尾；
+      - 几何变化下 CLOSED 收尾与 onConfigurationChanged 收尾。
+    - 源码守卫 `fushi/test/build/screen_ocr_reusable_selection_guard_test.dart` 改为钉住结构：接线层只经状态机做决定、状态机不 import android.*、JVM 单测文件存在。
+    - **注意**：本仓 CI 不跑 Android JVM 单测，那份测试只在本地 `gradlew :app:testDebugUnitTest` 时运行。
+  - **验证状态**：本机内存租约（`tool/heavy.dart`）连续排队 20 分钟未获准入（退出码 75），以上测试与 `flutter analyze` 本地均**未运行**，待 PR CI；JVM 单测 CI 不跑，需本地补跑。

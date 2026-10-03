@@ -9,3 +9,10 @@
   - `charIndex < 0` 的整串入口（系统 PROCESS_TEXT / `fushi://lookup`）行为不变。
 - **[x] ② 已加自动化测试** — 纯函数边界：`fushi/test/widgets/source_lookup_suffix_test.dart`；真页面：`fushi/test/pages/popup_dictionary_source_line_test.dart`。后者断言三点：整行留在条上、首查后缀是从被点字起、条上还能点被点字左边的字。
 - **备注**：未做真机复测。
+- **审查返工（2026-10-03，提交 `9e1f97490a`）**：补主路径测试，都在 `fushi/test/pages/popup_dictionary_source_line_test.dart`。
+  - **常驻页连续推词**：`:popup` 引擎常驻时，第二次及以后的查词走 `didUpdateWidget → _lookupWidgetSource`。测试在同一 State 上连续推两行，再推一次只变 generation 的同一行，断言三点：
+    - 查询串是第二行被点字起的后缀；
+    - 条上是第二行，制卡句子也是第二行；
+    - State 没有被重建。
+  - **宿主层不再切词**：直接 pump `PopupDictApp`，经 `PopupChannel` 原生回调 `onNewProcessText` 送词，断言整行原样进页面（守住已删除的 `_extractWord` 不再回来）。
+  - **验证状态**：本机内存租约（`tool/heavy.dart`）连续排队 20 分钟未获准入（退出码 75），以上测试与 `flutter analyze` 本地均**未运行**，待 PR CI；JVM 单测 CI 不跑，需本地补跑。

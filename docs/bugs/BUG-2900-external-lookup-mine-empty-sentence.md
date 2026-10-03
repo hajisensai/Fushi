@@ -13,3 +13,11 @@
   - JS 送来的非空句子优先。
   - 整串入口不会凭空造出句子。
 - **备注**：未做真机复测。
+- **审查返工（2026-10-03，提交 `9e1f97490a`）**
+  - **问题**：原先用 `_sourceSentence.contains(baseTerm)` 判断「当前词条出自这一行」，会误判。在基础层点释义里的汉字 / 词头链接时，原地跳转把基础层查询串换成了「天」；「天」恰好是行的子串，于是给这个无关词条制卡时 `{sentence}` 被填成整行。
+  - **修复**：在真正出自这一行的两个入口记下查询串 `_sourceLineQuery`，判定改为相等比较。两个入口是宿主推来整行时的首查 `_lookupWidgetSource`，以及源文本条点字 `_lookupFromSourceStrip`。搜索栏提交、宿主推来新词时清空 `_sourceLineQuery`。
+  - **测试**：都在 `fushi/test/pages/popup_dictionary_source_line_test.dart`：
+    - 原地跳到「天」后制卡，句子为空；再点源文本条，句子恢复。
+    - 搜索栏提交后制卡，句子为空。
+    - 整行推送后接着推一次整串（`charIndex=-1`），不残留上一行的句子。
+  - **验证状态**：本机内存租约（`tool/heavy.dart`）连续排队 20 分钟未获准入（退出码 75），以上测试与 `flutter analyze` 本地均**未运行**，待 PR CI；JVM 单测 CI 不跑，需本地补跑。
