@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -280,6 +282,189 @@ void main() {
 
     test('DB / prefs 未就绪时返回空集而不是抛异常', () {
       expect(configuredDictionaryFontPaths(_UnreadyAppModel()), isEmpty);
+    });
+
+    // BUG-2916：iOS / macOS 不再把字体 base64 内联进静态段。注入侧在这两个平台
+    // 产出的必须是与弹窗文档同源的 fushi-popup:// URL，scheme handler 必须放行。
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+    ]) {
+      test('$platform：注入侧产同源 URL（不含 data:），scheme handler 逐条放行',
+          () async {
+        debugDefaultTargetPlatformOverride = platform;
+        try {
+          expect(kInAppPopupFontUrlSupported, isTrue);
+          final ReaderSettings injected =
+              ReaderFushiSource.resolveEffectiveReaderSettings(appModel)!;
+          final String fontFaces = DictionaryFontCss.build(
+            injected.dictionaryFonts,
+            allowedDirectories: <String>[allowed.path],
+            fontUrlBuilder: inAppDictionaryFontUrl,
+          ).fontFaces;
+          expect(fontFaces, isNot(contains('data:')),
+              reason: '字体字节一旦回到静态段，就又经方法通道传几十 MB 字符串');
+          final List<String> urls = RegExp(r'url\("([^"]+)"\)')
+              .allMatches(fontFaces)
+              .map((RegExpMatch m) => m.group(1)!)
+              .toList();
+          expect(urls, isNotEmpty);
+          final Uri doc = Uri.parse(
+              popupDocumentUrl(themeAttr: 'light', bgHex: '#ffffff'));
+          final Set<String> whitelist = configuredDictionaryFontPaths(appModel);
+          for (final String url in urls) {
+            final Uri u = Uri.parse(url);
+            expect((u.scheme, u.host), (doc.scheme, doc.host),
+                reason: '字体与弹窗文档必须同源，否则强制 CORS 的字体被静默拒绝');
+            final CustomSchemeResponse? r =
+                await dictionaryFontCustomSchemeResponse(
+              u,
+              allowedRoots: <String>[allowed.path],
+              whitelistedPaths: whitelist,
+            );
+            expect(r?.data, ttfBytes());
+            expect(r?.contentType, isNot('text/plain'));
+          }
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      });
+    }
+  });
+
+  group('iOS / macOS 同源 scheme（BUG-2916）', () {
+    Future<CustomSchemeResponse?> serveScheme(
+      String url, {
+      Set<String>? whitelist,
+    }) =>
+        dictionaryFontCustomSchemeResponse(
+          Uri.parse(url),
+          allowedRoots: <String>[allowed.path],
+          whitelistedPaths:
+              whitelist ?? <String>{p.canonicalize(goodFont.path)},
+        );
+
+    String schemeUrl(String path) =>
+        '$kDictionaryFontSchemeUrlPrefix${Uri.encodeComponent(path)}';
+
+    test('平台矩阵：只有 Linux 仍内联字体；iOS/macOS 用 fushi-popup 前缀', () {
+      final Map<TargetPlatform, String?> expected = <TargetPlatform, String?>{
+        TargetPlatform.android: kDictionaryFontUrlPrefix,
+        TargetPlatform.windows: kDictionaryFontUrlPrefix,
+        TargetPlatform.iOS: kDictionaryFontSchemeUrlPrefix,
+        TargetPlatform.macOS: kDictionaryFontSchemeUrlPrefix,
+        TargetPlatform.linux: null,
+      };
+      try {
+        expected.forEach((TargetPlatform platform, String? prefix) {
+          debugDefaultTargetPlatformOverride = platform;
+          expect(kInAppPopupFontUrlSupported, prefix != null,
+              reason: '$platform');
+          if (prefix != null) {
+            expect(inAppDictionaryFontUrl(goodFont.path), startsWith(prefix),
+                reason: '$platform');
+          }
+        });
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('合法字体 → 字节；非字体 URL → null', () async {
+      final CustomSchemeResponse? ok =
+          await serveScheme('${schemeUrl(goodFont.path)}?v=1-2');
+      expect(ok?.data, ttfBytes());
+      expect(ok?.contentType, isNot('text/plain'));
+      expect(await serveScheme('image://?dictionary=X&path=a.png'), isNull);
+      expect(await serveScheme('fushi-popup://fushi.local/popup.html'), isNull);
+    });
+
+    test('三道校验同样生效：拒绝 → 空体（字体链立即回退）', () async {
+      final File bad = File(p.join(allowed.path, 'Bad.ttf'));
+      await bad.writeAsBytes(<int>[1, 2, 3, 4, 5, 6]);
+      final File out = File(p.join(outside.path, 'Out.ttf'));
+      await out.writeAsBytes(ttfBytes());
+      final String escaped =
+          p.join(allowed.path, '..', p.basename(outside.path), 'Out.ttf');
+      final List<(String, Set<String>)> denied = <(String, Set<String>)>[
+        // 目录白名单之外。
+        (schemeUrl(out.path), <String>{p.canonicalize(out.path)}),
+        // `..` 逃逸。
+        (schemeUrl(escaped), <String>{p.canonicalize(out.path)}),
+        // 魔数不合法。
+        (schemeUrl(bad.path), <String>{p.canonicalize(bad.path)}),
+        // 不在当前配置条目里。
+        (schemeUrl(goodFont.path), <String>{}),
+        // 文件不存在。
+        (
+          schemeUrl(p.join(allowed.path, 'Missing.ttf')),
+          <String>{p.canonicalize(p.join(allowed.path, 'Missing.ttf'))},
+        ),
+      ];
+      for (final (String url, Set<String> wl) in denied) {
+        final CustomSchemeResponse? r = await serveScheme(url, whitelist: wl);
+        expect(r, isNotNull, reason: url);
+        expect(r!.data, isEmpty, reason: url);
+        expect(r.contentType, 'text/plain', reason: url);
+      }
+    });
+
+    test('弹窗文档：按查询串拼 HTML，参数不合法退回默认、不写进文档', () {
+      final List<(String, String)> calls = <(String, String)>[];
+      String? build(String theme, String bg) {
+        calls.add((theme, bg));
+        return '<html data-theme="$theme" bg="$bg"></html>';
+      }
+
+      final CustomSchemeResponse? r = popupDocumentCustomSchemeResponse(
+        Uri.parse(popupDocumentUrl(themeAttr: 'dark', bgHex: '#1a2B3c')),
+        buildHtml: build,
+      );
+      expect(r?.contentType, 'text/html');
+      expect(String.fromCharCodes(r!.data), contains('#1a2B3c'));
+      expect(calls.single, ('dark', '#1a2B3c'));
+
+      popupDocumentCustomSchemeResponse(
+        Uri.parse('$kPopupDocumentUrlPrefix?theme=x&bg=%22%3E%3Cscript%3E'),
+        buildHtml: build,
+      );
+      expect(calls.last, ('light', '#ffffff'));
+
+      for (final String other in <String>[
+        'fushi-popup://fushi.local/other.html',
+        'fushi-popup://evil.example/popup.html',
+        'image://?dictionary=X',
+      ]) {
+        expect(
+            popupDocumentCustomSchemeResponse(Uri.parse(other),
+                buildHtml: build),
+            isNull,
+            reason: other);
+      }
+    });
+
+    test('资产读不到时回空文档而不是 null（null 会让请求无人应答）', () {
+      final CustomSchemeResponse? r = popupDocumentCustomSchemeResponse(
+        Uri.parse(popupDocumentUrl(themeAttr: 'light', bgHex: '#ffffff')),
+        buildHtml: (String _, String __) => null,
+      );
+      expect(r?.contentType, 'text/html');
+      expect(r!.data, isNotEmpty);
+    });
+
+    test('弹窗宿主接线：文档、字体、媒体三路都进 scheme handler', () {
+      final String src = File(
+              'lib/src/pages/implementations/dictionary_popup_webview.dart')
+          .readAsStringSync();
+      expect(src, contains('if (servedViaScheme) kPopupDocumentScheme'));
+      expect(src, contains('popupDocumentCustomSchemeResponse('));
+      expect(src, contains('dictionaryFontCustomSchemeResponse('));
+      expect(src, contains('if (html == null && mounted) widget.onRenderError'),
+          reason: '空文档加载成功不触发 onReceivedError，必须显式报渲染失败');
+      expect(
+          src,
+          matches(RegExp(
+              r'kInAppPopupFontUrlSupported\s*\?\s*inAppDictionaryFontUrl')));
     });
   });
 }
