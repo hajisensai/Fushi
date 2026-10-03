@@ -21,7 +21,7 @@
 
 `startSystemBall` 参数：
 
-- `actions: List<String>` — 用户勾选的动作 id（桌面只会出现 `lookup` / `popup_lookup` / `clipboard`），按自上而下顺序。
+- `actions: List<String>` — 用户勾选的动作 id（桌面只会出现 `lookup` / `popup_lookup` / `clipboard` / `sync`），按自上而下顺序。
 - `labels: Map<String, String>` — 按钮文案 / tooltip，键为动作 id 加 `open_app` / `close` / `ball`。
 - `iconImages: Map<String, Uint8List>` — 每颗按钮（含 `open_app` / `close`）的图标 PNG：正方形 66×66px（= 22 逻辑像素 × 3），前景色已按主题 `onSurface` 着色、背景透明。原生按当前 DPI 缩放到 22 DIP / pt 画在按钮正中。
 - `ballImage: Uint8List` — 球面 PNG（`assets/meta/icon.png` 原图字节）。
@@ -32,7 +32,7 @@
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
-| `systemBallAction` | `{id: String, anchor: [left, top, right, bottom]}` | 用户点了 `lookup` / `popup_lookup` / `clipboard` / `open_app`。`anchor` = 球在屏幕上的矩形，**物理像素、左上原点**（与 `global_lookup` 通道同一约定），供查词卡锚在球旁边；Dart 经 `GlobalLookupPhysicalPlacement`（物理像素通道）交给覆盖窗，**不能**当逻辑像素的 `anchorScreenRect` 再乘主窗 DPR。原生先收起菜单再报。 |
+| `systemBallAction` | `{id: String, anchor: [left, top, right, bottom]}` | 用户点了 `lookup` / `popup_lookup` / `clipboard` / `sync` / `open_app`。`anchor` = 球在屏幕上的矩形，**物理像素、左上原点**（与 `global_lookup` 通道同一约定），供查词卡锚在球旁边；Dart 经 `GlobalLookupPhysicalPlacement`（物理像素通道）交给覆盖窗，**不能**当逻辑像素的 `anchorScreenRect` 再乘主窗 DPR。原生先收起菜单再报。 |
 | `systemBallClosedByUser` | — | 用户点了 `close`：原生已自行销毁窗口，Dart 把「应用外显示」开关关掉。 |
 | `systemBallPositionChanged` | `{dock: 'left'|'right', fraction: double}` | 拖动松手吸附后报一次，Dart 落库。 |
 
@@ -64,7 +64,7 @@
 ## 设置
 
 - 「应用外显示」开关在 Android / Windows / macOS 可见（iOS 不提供）；桌面文案不提「显示在其他应用上层」权限。
-- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）。截屏识字 / 拍照查词桌面不提供。`lookup` 与 `popup_lookup` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口、全局查词不启动）；模块开关一变，宿主重新同步球的按钮。
+- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）、`sync`（唤起主窗并跑一轮手动同步，结果在主窗里给）。截屏识字 / 拍照查词桌面不提供。`lookup` 与 `popup_lookup` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口、全局查词不启动）；模块开关一变，宿主重新同步球的按钮。
 - 位置偏好：`floating_ball.system_dock` / `floating_ball.system_y`（与应用内球的 `floating_ball.dock` / `floating_ball.y` 分开——两颗球可以同时在）。
 
 ## 验证记录（2026-09-30）

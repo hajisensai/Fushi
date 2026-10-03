@@ -6214,5 +6214,20 @@
   "video_bluray_config_missing": "Blu-ray playback requires a matching KEYDB.cfg configuration.",
   "manga_ocr_engine_paired_host_model": "Interconnect server · $model",
   "manga_ocr_engine_paired_host_model_missing": "Not downloaded on the server yet. Download it on the server first.",
-  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally."
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "Not switched this time: a Japanese locale was requested, but Locale Emulator could not launch this game (it only supports 32-bit games), so it started normally.",
+  "floating_ball_auto_restore": "フローティングボールの自動復元",
+  "floating_ball_auto_restore_hint": "閉じたフローティングボールを Fushi に戻ったときに再表示します。「復元しない」では閉じたあとここで再度オンにする必要があります",
+  "floating_ball_auto_restore_both": "アプリ内外",
+  "floating_ball_auto_restore_in_app": "アプリ内のみ",
+  "floating_ball_auto_restore_off": "復元しない",
+  "ocr_system_model_title": "システム OCR モデル",
+  "ocr_system_model_checking": "文字認識モデルを確認しています…",
+  "ocr_system_model_missing": "Google Play 開発者サービスがまだ文字認識モデルをダウンロードしていません。今すぐダウンロード（数 MB）すると画面 OCR を使えます。",
+  "ocr_system_model_download": "ダウンロード",
+  "ocr_system_model_downloading": "Google Play 開発者サービス経由でダウンロード中…このダイアログを閉じてもバックグラウンドで続行します。",
+  "ocr_system_model_ready": "文字認識モデルの準備ができました。もう一度認識してください。",
+  "ocr_system_model_failed": "モデルをダウンロードできませんでした：$error",
+  "ocr_system_model_play_services_resolvable": "システム OCR には Google Play 開発者サービスが必要ですが、この端末では見つからないか、無効、または古いバージョンです。",
+  "ocr_system_model_play_services_fix": "Google Play 開発者サービスを修復",
+  "ocr_system_model_play_services_unavailable": "この端末には利用できる Google Play 開発者サービスがないため、システム OCR は使えません。"
 }

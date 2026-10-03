@@ -45,7 +45,9 @@ void main() {
   test('宿主窗 = 非激活工具窗 popup，不被主窗拥有（owned 窗永远在 owner 之上）', () {
     expect(host, contains('WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW'));
     expect(host, contains('WS_POPUP'));
-    expect(host, contains('return MA_NOACTIVATE'));
+    // 鼠标与触摸激活请求统一交给共用策略（MA_NOACTIVATE / PA_NOACTIVATE 在
+    // window_activation_policy.h 里，BUG-2889）。
+    expect(host, contains('return OverlayNoActivateReply(message);'));
     final RegExp create = RegExp(r'CreateWindowExW\([^;]*?\);', dotAll: true);
     final String call = create.firstMatch(host)!.group(0)!;
     // hWndParent 参数必须是 nullptr（第 8 个实参）。

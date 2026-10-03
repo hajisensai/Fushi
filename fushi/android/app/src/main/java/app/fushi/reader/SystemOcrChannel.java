@@ -1,5 +1,6 @@
 package app.fushi.reader;
 
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
@@ -9,6 +10,13 @@ import androidx.annotation.Nullable;
 
 import app.fushi.reader.constants.ChannelNames;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
+import com.google.android.gms.common.moduleinstall.InstallStatusListener;
+import com.google.android.gms.common.moduleinstall.ModuleInstall;
+import com.google.android.gms.common.moduleinstall.ModuleInstallClient;
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest;
+import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate;
 import com.google.mlkit.common.MlKitException;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
@@ -24,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
@@ -51,6 +60,15 @@ import io.flutter.plugin.common.MethodChannel;
 public final class SystemOcrChannel {
     private static final String METHOD_IS_AVAILABLE = "isAvailable";
     private static final String METHOD_RECOGNIZE = "recognize";
+    private static final String METHOD_MODEL_STATUS = "modelStatus";
+    private static final String METHOD_INSTALL_MODEL = "installModel";
+    private static final String METHOD_RESOLVE_PLAY_SERVICES = "resolvePlayServices";
+
+    /** {@code modelStatus} 的回答（与 Dart 侧 {@code SystemOcrModelStatus} 一一对应）。 */
+    private static final String STATUS_READY = "ready";
+    private static final String STATUS_MISSING = "missing";
+    private static final String STATUS_PLAY_SERVICES_RESOLVABLE = "play_services_resolvable";
+    private static final String STATUS_PLAY_SERVICES_UNAVAILABLE = "play_services_unavailable";
     private static final String ARG_BYTES = "bytes";
     private static final String ARG_LANGUAGE = "language";
 
@@ -66,20 +84,39 @@ public final class SystemOcrChannel {
 
     private SystemOcrChannel() {}
 
-    public static void registerWith(@NonNull FlutterEngine flutterEngine) {
+    /**
+     * @param activity 宿主 Activity：「修复 Google Play 服务」的系统对话框要从 Activity 起；
+     *     模型状态查询 / 下载只用它的 Context。
+     */
+    public static void registerWith(
+            @NonNull FlutterEngine flutterEngine, @NonNull Activity activity) {
         new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 ChannelNames.SYSTEM_OCR)
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {
                     case METHOD_IS_AVAILABLE:
-                        // 模型随 APK 打包，设备上恒可用——不需要探测下载状态，
-                        // 也不该在这里触发任何网络请求。
+                        // 能力探测只答「这个平台有没有系统 OCR」：恒 true。模型是否已由
+                        // Play 服务取下是另一件事，由 modelStatus 回答；缺模型时 recognize
+                        // 报 MODEL_UNAVAILABLE，调用方据此带用户去下载（BUG-2906），而不是
+                        // 在这里把整个引擎置灰——置灰了用户就再也走不到下载入口。
                         result.success(Boolean.TRUE);
                         return;
                     case METHOD_RECOGNIZE:
                         handleRecognize(call.argument(ARG_BYTES),
                                 call.argument(ARG_LANGUAGE), result);
+                        return;
+                    case METHOD_MODEL_STATUS:
+                        handleModelStatus(activity, call.argument(ARG_LANGUAGE), result);
+                        return;
+                    case METHOD_INSTALL_MODEL:
+                        handleInstallModel(activity, call.argument(ARG_LANGUAGE), result);
+                        return;
+                    case METHOD_RESOLVE_PLAY_SERVICES:
+                        GoogleApiAvailability.getInstance()
+                                .makeGooglePlayServicesAvailable(activity)
+                                .addOnSuccessListener(unused -> result.success(Boolean.TRUE))
+                                .addOnFailureListener(error -> result.success(Boolean.FALSE));
                         return;
                     default:
                         result.notImplemented();
@@ -122,6 +159,100 @@ public final class SystemOcrChannel {
                     error.getMessage(),
                     null);
             });
+    }
+
+    /**
+     * Play 服务不在 / 版本不对时的状态码；在位返回 null。模型由 Play 服务保管，它不在就
+     * 无从谈起下载，必须先把这件事告诉用户（能修的给修复入口，修不了的如实说）。
+     */
+    @Nullable
+    private static String playServicesProblem(@NonNull Activity activity) {
+        final GoogleApiAvailability gms = GoogleApiAvailability.getInstance();
+        final int code = gms.isGooglePlayServicesAvailable(activity);
+        if (code == ConnectionResult.SUCCESS) return null;
+        return gms.isUserResolvableError(code)
+                ? STATUS_PLAY_SERVICES_RESOLVABLE
+                : STATUS_PLAY_SERVICES_UNAVAILABLE;
+    }
+
+    /**
+     * 该语言的文字模型是否已由 Play 服务取下。只查询、不触发下载（BUG-2906）。
+     *
+     * <p>manifest 的 DEPENDENCIES 只是请 Play 服务在安装时**顺手**取模型，不保证真取到
+     * （没联网、Play 服务排队、侧载安装都会落空）；这里如实回答「现在有没有」。
+     */
+    private static void handleModelStatus(
+            @NonNull Activity activity,
+            @Nullable String language,
+            @NonNull MethodChannel.Result result) {
+        final String problem = playServicesProblem(activity);
+        if (problem != null) {
+            result.success(problem);
+            return;
+        }
+        ModuleInstall.getClient(activity)
+                .areModulesAvailable(recognizerFor(language))
+                .addOnSuccessListener(response -> result.success(
+                        response.areModulesAvailable() ? STATUS_READY : STATUS_MISSING))
+                .addOnFailureListener(error ->
+                        result.error("STATUS_FAILED", error.getMessage(), null));
+    }
+
+    /**
+     * 请 Play 服务立即下载该语言的文字模型（ModuleInstall API），下完 / 失败才回答。
+     *
+     * <p>不回进度：模型只有几 MB，Dart 侧显示不定进度即可；用户关掉弹窗也不取消，
+     * 下载仍由 Play 服务在后台做完。
+     */
+    private static void handleInstallModel(
+            @NonNull Activity activity,
+            @Nullable String language,
+            @NonNull MethodChannel.Result result) {
+        final String problem = playServicesProblem(activity);
+        if (problem != null) {
+            result.error("PLAY_SERVICES_UNAVAILABLE", problem, null);
+            return;
+        }
+        final ModuleInstallClient client = ModuleInstall.getClient(activity);
+        // 安装终态与「本来就装好了」两条路都可能回答，result 只许回一次。
+        final AtomicBoolean answered = new AtomicBoolean(false);
+        final InstallStatusListener[] holder = new InstallStatusListener[1];
+        final InstallStatusListener listener = update -> {
+            final int state = update.getInstallState();
+            final boolean done =
+                    state == ModuleInstallStatusUpdate.InstallState.STATE_COMPLETED;
+            final boolean failed =
+                    state == ModuleInstallStatusUpdate.InstallState.STATE_FAILED
+                            || state == ModuleInstallStatusUpdate.InstallState.STATE_CANCELED;
+            if (!done && !failed) return;
+            client.unregisterListener(holder[0]);
+            if (!answered.compareAndSet(false, true)) return;
+            if (done) {
+                result.success(STATUS_READY);
+            } else {
+                result.error("INSTALL_FAILED",
+                        "module install ended in state " + state
+                                + " (error " + update.getErrorCode() + ")",
+                        null);
+            }
+        };
+        holder[0] = listener;
+        final ModuleInstallRequest request = ModuleInstallRequest.newBuilder()
+                .addApi(recognizerFor(language))
+                .setListener(listener)
+                .build();
+        client.installModules(request)
+                .addOnSuccessListener(response -> {
+                    if (!response.areModulesAlreadyInstalled()) return;
+                    client.unregisterListener(listener);
+                    if (answered.compareAndSet(false, true)) result.success(STATUS_READY);
+                })
+                .addOnFailureListener(error -> {
+                    client.unregisterListener(listener);
+                    if (answered.compareAndSet(false, true)) {
+                        result.error("INSTALL_FAILED", error.getMessage(), null);
+                    }
+                });
     }
 
     /**

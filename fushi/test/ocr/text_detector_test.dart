@@ -464,6 +464,71 @@ void main() {
       expect(page.textRegions.single.rect.left, closeTo(64, 1e-6));
     });
 
+    test('弱档：低于正式阈值、高于弱阈值的文字框只进 weakTextRegions', () async {
+      // 用户真实页的稀疏标题：检测器只给 0.125 / 0.02 左右，过不了 0.3。
+      final FakeSession session = FakeSession(<String, OcrTensor>{
+        'scores': OcrTensor.float32(
+          Float32List.fromList(<double>[0.9, 0.125, 0.021, 0.01, 0.1]),
+          const <int>[1, 5],
+        ),
+        'labels': OcrTensor.float32(
+          Float32List.fromList(<double>[1, 2, 2, 2, 0]),
+          const <int>[1, 5],
+        ),
+        'boxes': OcrTensor.float32(
+          Float32List.fromList(<double>[
+            0, 0, 100, 100, // 正式块
+            200, 200, 400, 260, // 弱：标题第一行
+            220, 280, 380, 330, // 弱：标题第二行
+            500, 500, 600, 600, // 低于弱阈值
+            300, 300, 640, 640, // 弱气泡：不当文字候选
+          ]),
+          const <int>[1, 5, 4],
+        ),
+      });
+      final TextDetector detector = TextDetector(session);
+      final PageDetections page = await detector.detect(
+        img.Image(width: 640, height: 640),
+      );
+      expect(page.textRegions, hasLength(1));
+      expect(page.textRegions.single.score, closeTo(0.9, 1e-6));
+      expect(page.bubbles, isEmpty);
+      expect(
+        page.weakTextRegions.map((DetectedTextRegion r) => r.rect.top),
+        <double>[200, 280],
+      );
+      expect(
+        page.weakTextRegions.map((DetectedTextRegion r) => r.classId),
+        everyElement(kDetClassTextFree),
+      );
+    });
+
+    test('弱阈值不低于正式阈值时等于关掉弱档', () async {
+      final FakeSession session = FakeSession(<String, OcrTensor>{
+        'scores': OcrTensor.float32(
+          Float32List.fromList(<double>[0.125]),
+          const <int>[1, 1],
+        ),
+        'labels': OcrTensor.float32(
+          Float32List.fromList(<double>[2]),
+          const <int>[1, 1],
+        ),
+        'boxes': OcrTensor.float32(
+          Float32List.fromList(<double>[200, 200, 400, 260]),
+          const <int>[1, 1, 4],
+        ),
+      });
+      final TextDetector detector = TextDetector(
+        session,
+        weakScoreThreshold: 0.3,
+      );
+      final PageDetections page = await detector.detect(
+        img.Image(width: 640, height: 640),
+      );
+      expect(page.textRegions, isEmpty);
+      expect(page.weakTextRegions, isEmpty);
+    });
+
     test('输出名缺失时报错而非静默', () async {
       final FakeSession session = FakeSession(<String, OcrTensor>{
         'wrong': OcrTensor.float32(Float32List(3), <int>[1, 1, 3]),
