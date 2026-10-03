@@ -1,0 +1,11 @@
+## BUG-2899 · 外部查词窗（截屏识字/悬浮字幕点字）原句条只剩切出的词，整行上下文丢失
+- **报告**：2026-10-03（用户转述 TheMoeWay 社区反馈「popup ui could use some work」，并点明「说的是外部ocr」：外部 OCR 弹出的查词窗不如 Chimahon）
+- **真实性**：✅ 真 bug（沿代码路径确认）。
+  - 截屏识字点字把**整行** OCR 文本与被点字下标（`EXTRA_CHAR_INDEX`）一起交给查词窗（`ScreenOcrService.java` `onSelectionTap`），但 Dart 宿主在交给页面之前就用 `_extractWord → lookupWordAtIndex` 把整行换成了切出来的单词（`fushi/lib/popup_main.dart` 旧 :19 `_extractWord`、:104 `onNewProcessText`、:192 `_pendingWordExtraction`）。
+  - 查词页拿到的 `searchTerm` 只剩那个词，原句条（`SourceLookupTextPanel`）也就只显示这个词，被点字两侧的上下文全丢了，用户没法在条上改点同一行的别的字。悬浮字幕点字走的是同一条路径，症状相同。
+- **[x] ① 已修复** — 宿主不再切词，原文和下标原样交给 `PopupDictionaryPage`（新增 `sourceCharIndex` 参数）。页面上原句条保留整行，首查走扫描查词：从被点字到行尾的后缀，高亮锚在被点字上，与在条上点那个字是同一条路径。
+  - UTF-16 下标换算成字素簇下标，以及查词后缀的规则（截断上限、拉丁词回到词首），收进两个纯函数 `sourceGraphemeIndexOfUnit` / `sourceLookupSuffixAt`，放在 `fushi/lib/src/utils/components/clipboard_lookup_text_panel.dart`。
+  - 原句条点字也改用 `sourceLookupSuffixAt`，两处共用一套规则。
+  - `charIndex < 0` 的整串入口（系统 PROCESS_TEXT / `fushi://lookup`）行为不变。
+- **[x] ② 已加自动化测试** — 纯函数边界：`fushi/test/widgets/source_lookup_suffix_test.dart`；真页面：`fushi/test/pages/popup_dictionary_source_line_test.dart`。后者断言三点：整行留在条上、首查后缀是从被点字起、条上还能点被点字左边的字。
+- **备注**：未做真机复测。

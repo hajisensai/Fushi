@@ -1,0 +1,20 @@
+## BUG-2901 · 截屏识字选取层一次性：查一个词就销毁，下个词要重新截屏重新授权
+- **报告**：2026-10-03（随 BUG-2899 一并处理：外部 OCR 查词窗打磨）
+- **真实性**：✅ 真 bug（沿代码路径确认）。
+  - 选取层是 `TYPE_APPLICATION_OVERLAY`，压在一切 Activity 之上。为了不盖住查词窗，`onSelectionTap` 拉起查词窗后立刻 `finishFlow()`，拆掉选取层并停掉服务（`fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrService.java` 旧 :476-477）。
+  - 结果是点一个字就整条流程结束：想查同一屏的下一个词，得重新点悬浮球、重新过 MediaProjection 授权框、重新截屏识别。
+  - 同一个文件里的选取层画法（旧 :541-548）是整屏压暗 `0x33000000`，每行再画 2dp 实线蓝框加填充。满屏蓝框盖住要读的字，也就是用户看到的「popup ui could use some work」。
+- **[x] ① 已修复**
+  - **选取层可复用**：点字后选取层不拆。查词窗和选取层之间建一次会话（`EXTRA_SCREEN_OCR_SESSION`），由 `PopupDictFlutterActivity` 经定向广播回报（`setPackage`，接收端 `RECEIVER_NOT_EXPORTED`，会话号对不上的一律忽略）：
+    - `onResume` 发 SHOWN，选取层这时才隐藏，并带上 `NOT_TOUCHABLE | NOT_FOCUSABLE`。拉起失败的话选取层留在原处，不会藏起来再也回不来。启动那一刻选取层仍然可见，Android 15 的后台启动豁免照样成立。
+    - `onPause` 时如果 `isFinishing`，发 CLOSED，选取层恢复并重新拿焦点，同一张截图可以接着点。
+    - `onStop` 时如果没关窗（回桌面、切 app、锁屏），发 LEFT，整条流程收尾。
+    - 别的入口复用这个窗口（`onNewIntent` 换了会话）时，同样发 LEFT。
+  - **降噪**：选取层背景画定格的那一帧，也就是识别所用的那一帧。这样框与画面始终对齐，与底下的 app 此刻在播什么无关；这一帧在流程收尾时回收。去掉整屏压暗；静息时每行只铺 `0x1A3D8BFF` 淡底，手指按下的那一行才加深并描边，移动超出 touchSlop、抬起或取消时清除。
+- **[x] ② 已加自动化测试** — 原生 Service 与 Activity 的生命周期在 Dart 测试宿主上跑不了，按「最强可落地层」做了源码守卫，放在 `fushi/test/build/screen_ocr_reusable_selection_guard_test.dart`，钉住四件事：
+  - `onSelectionTap` 不再 `finishFlow`，并带上会话号；
+  - 隐藏只发生在 SHOWN 之后；
+  - Activity 在 resume / finishing pause / stop 三处各回报一次；
+  - 选取层不再整屏压暗、静息时不描边。
+  - 另外 `:app:assembleRelease` 编译通过。
+- **备注**：未做真机复测（需要 MediaProjection 授权框和 ML Kit 模型）。

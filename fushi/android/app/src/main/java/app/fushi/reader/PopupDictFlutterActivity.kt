@@ -65,6 +65,13 @@ class PopupDictFlutterActivity : FlutterActivity() {
          */
         const val EXTRA_OPEN_SEARCH: String = "openSearch"
 
+        /**
+         * 截屏识字的查词会话号（BUG-2901，Long，非 0 才算）。带它的查词窗在显示 / 被关掉 /
+         * 用户离开时把会话号经定向广播回报给 [ScreenOcrService]，让选取层先隐藏、关窗后
+         * 恢复，同一张截图可以接着点字查词。
+         */
+        const val EXTRA_SCREEN_OCR_SESSION: String = "screenOcrSession"
+
         @Volatile
         private var webViewDataDirConfigured = false
 
@@ -95,6 +102,9 @@ class PopupDictFlutterActivity : FlutterActivity() {
     /** 本次 intent 是否还欠一次「读剪贴板」（拿到焦点后消费，每个 intent 只读一次）。 */
     private var clipboardReadPending: Boolean = false
 
+    /** 当前挂着的截屏识字会话号；0 = 本窗不是从截屏选取层打开的。 */
+    private var screenOcrSession: Long = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Give the :popup WebView its own data directory before anything in this
         // process touches WebView (the engine renders entries via inappwebview).
@@ -114,6 +124,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         // 不主动请求就被系统按默认策略压到 60Hz，滚动列表明显卡顿。安全 no-op 退化。
         HighRefreshRate.applyToActivity(this)
         clipboardReadPending = intent?.getBooleanExtra(EXTRA_READ_CLIPBOARD, false) == true
+        screenOcrSession = extractScreenOcrSession(intent)
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
@@ -140,6 +151,12 @@ class PopupDictFlutterActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // 别的入口（悬浮字幕点字 / 系统划词）复用了本窗：原来那张截图的会话到此为止。
+        val nextSession: Long = extractScreenOcrSession(intent)
+        if (screenOcrSession != 0L && nextSession != screenOcrSession) {
+            reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_LEFT)
+        }
+        screenOcrSession = nextSession
         val text: String = extractProcessText(intent).orEmpty()
         PopupEngineHolder.pushProcessText(
             text,
@@ -187,6 +204,42 @@ class PopupDictFlutterActivity : FlutterActivity() {
             // 没拿到焦点 / ROM 额外限制：当作空剪贴板，留空查词窗让用户手输。
             ""
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 查词窗已在前台：选取层这时才隐藏（拉起失败时它留着，用户还能再点）。
+        if (screenOcrSession != 0L) reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_SHOWN)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 用户关掉了查词窗（关闭键 / 点卡外 / 横滑 / 返回都走 finish）：恢复选取层。
+        if (isFinishing && screenOcrSession != 0L) {
+            reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_CLOSED)
+            screenOcrSession = 0
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 没关窗却不可见了（回桌面 / 切 app / 锁屏）：截图已过时，整条流程收尾。
+        if (screenOcrSession != 0L) {
+            reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_LEFT)
+            screenOcrSession = 0
+        }
+    }
+
+    private fun extractScreenOcrSession(intent: Intent?): Long =
+        intent?.getLongExtra(EXTRA_SCREEN_OCR_SESSION, 0L) ?: 0L
+
+    /** 回报给主进程的 [ScreenOcrService]；定向本包，对方接收端不导出。 */
+    private fun reportScreenOcr(action: String) {
+        sendBroadcast(
+            Intent(action)
+                .setPackage(packageName)
+                .putExtra(ScreenOcrService.EXTRA_SESSION, screenOcrSession),
+        )
     }
 
     override fun onDestroy() {

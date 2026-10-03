@@ -1,0 +1,14 @@
+## BUG-2900 · 外部查词窗制卡句子字段为空
+- **报告**：2026-10-03（随 BUG-2899 一并处理：外部 OCR 查词窗打磨）
+- **真实性**：✅ 真 bug（沿代码路径确认）。
+  - app 外查词窗（`PopupDictionaryPage`）直接用 mixin 的 `onMineEntry` / `onUpdateEntry`，句子只认 JS 送来的 `fields['sentence'] ?? ''`（`fushi/lib/src/pages/implementations/dictionary_page_mixin.dart` :416 / :462）。
+  - 独立查词窗的 popup.js 里没有句子上下文，所以截屏识字 / 悬浮字幕点字制出的卡 `{sentence}` 恒为空，收藏句子记录也是空句。
+  - 页面本可以用被点字所在的那一整行，但 BUG-2899 让整行在宿主那一层就丢了。
+- **[x] ① 已修复** — 页面带 `sourceCharIndex >= 0`（整行入口）时，基础层的制卡和覆写会先过一层 `_withSourceSentence`：用整行补 `{sentence}`，判据复用 app 外制卡共用的 `resolveMineSentence`，JS 送来的非空句子仍然优先。
+  - 嵌套层查的是释义里的词，句子已经不是这一行，所以仍走原路径。
+  - 用户在搜索栏另查别的词后，句子清空。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dictionary_source_line_test.dart`，真页面加假 Anki 仓库，断言三点：
+  - 整行入口制卡时，`AnkiMiningContext.sentence` 与 payload 里的 `sentence` 都是 trim 后的整行。
+  - JS 送来的非空句子优先。
+  - 整串入口不会凭空造出句子。
+- **备注**：未做真机复测。
