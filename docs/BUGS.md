@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2692 条。点号进各自文件。
+> 共 2693 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2932](bugs/BUG-2932-asr-truncated-audio-finished.md) | ✅ | ✅ | ASR 转录把解不完的音频当文件末尾，残卷标成完成 |
 | [BUG-2931](bugs/BUG-2931-catsystem2-2016-voice-sites.md) | ✅ | ✅ | CatSystem2 2016 版语音站点因编译形态不同而全部未解析 |
 | [BUG-2930](bugs/BUG-2930-catsystem2-bootmenu-launcher-handoff.md) | ✅ | ✅ | CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随 |
 | [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |

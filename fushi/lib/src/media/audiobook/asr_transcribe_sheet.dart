@@ -1028,7 +1028,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         }
         return sb.toString();
       case _Phase.error:
-        return t.audiobook_transcribe_failed(error: _error ?? '');
+        final String error = _error ?? '';
+        final String failed = t.audiobook_transcribe_failed(error: error);
+        // 音频文件本身只能解出一部分（损坏 / 没下完）：原文是 ffmpeg 细节，先给一句
+        // 用户能照着做的话。转录在后台 isolate 跑，这里只剩文本，按引擎的稳定标记认。
+        return isAsrIncompleteAudioFailure(error)
+            ? '${t.audiobook_transcribe_audio_incomplete}\n$failed'
+            : failed;
     }
   }
 

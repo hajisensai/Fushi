@@ -6246,5 +6246,6 @@
   "ocr_system_model_play_services_resolvable": "System OCR needs Google Play services, which is missing, disabled or outdated on this device.",
   "ocr_system_model_play_services_fix": "Fix Google Play services",
   "ocr_system_model_play_services_unavailable": "This device has no usable Google Play services, so system OCR can't run here.",
-  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text."
+  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
+  "audiobook_transcribe_audio_incomplete": "The audio file is damaged or not fully downloaded, so only part of it can be decoded. Re-download or replace the file, then transcribe again."
 }

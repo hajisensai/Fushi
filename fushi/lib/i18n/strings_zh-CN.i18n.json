@@ -6246,5 +6246,6 @@
   "ocr_system_model_play_services_resolvable": "系统 OCR 依赖 Google Play 服务，本机的 Google Play 服务缺失、被停用或版本过旧。",
   "ocr_system_model_play_services_fix": "修复 Google Play 服务",
   "ocr_system_model_play_services_unavailable": "本机没有可用的 Google Play 服务，无法使用系统 OCR。",
-  "manga_ocr_ai_mode_low_confidence_legacy": "启用本选项之前识别的卷没有置信度记录，此档位不会动它们。想让大模型重读这类卷里没把握的字，请用本机模型对该卷重新识别。"
+  "manga_ocr_ai_mode_low_confidence_legacy": "启用本选项之前识别的卷没有置信度记录，此档位不会动它们。想让大模型重读这类卷里没把握的字，请用本机模型对该卷重新识别。",
+  "audiobook_transcribe_audio_incomplete": "音频文件已损坏或没有下载完整，只能解出其中一部分。请重新下载或替换文件后再转录。"
 }

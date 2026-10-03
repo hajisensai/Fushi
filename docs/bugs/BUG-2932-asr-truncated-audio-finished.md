@@ -1,0 +1,9 @@
+## BUG-2932 · ASR 转录把解不完的音频当文件末尾，残卷标成完成
+- **报告**：2026-10-04（用户：《やはり俺の青春ラブコメはまちがっている。2》m4b 转录「问题很大」）
+- **真实性**：✅ 真 bug。6 h 10 m 的 m4b 只转出前 4 分 34 秒的 78 条 cue，任务 `state.json` 却是 `finished: true`，书架 62 条 cue / 74% partial。
+  - 数据层：该文件 353 MB 中 87.5% 是全零 1 MiB 块（torrent 未下完就被移除，文件是预分配全尺寸、尾部 moov 已到位，所以 ffprobe 时长正常）；ffmpeg 从 274.8 s 起一个 AAC 包都解不出，但 exit 0、输出空文件。完整版 ffmpeg 同样 853029/958562 个包解码失败，不是 ffmpeg-min 缺能力。
+  - 软件层根因（引擎 `hajisensai/fushi-subtitles`，基线 `308e236`）：`packages/asr_core/lib/src/asr/asr_pcm_source.dart` `FfmpegAsrPcmSource.decode` 的 `if (samples.isEmpty) break;` 把任何空块当 EOF；`asr_transcribe_job.dart` 文件收尾不与探测时长对账，直接 `_withResume(-1)` + `finished: true`。另：任务 id 只哈希「文件名 + 字节数 + 模型」，重新下完整的同尺寸文件仍命中这份残卷缓存。
+  - 同批对照：第 1 卷（同合集、文件完整）转录覆盖到 25797.9 s / 25800.3 s，匹配 6353/6527（97%），无此问题。
+- **[x] ① 已修复** — 引擎 PR hajisensai/fushi-subtitles#21（`976963a`）：空块离探测时长 >1 s 即抛 `AsrPcmDecodeException`；文件收尾对账（`checkAsrFileTruncation`，3 s 容差）；加载时作废「已完成但最后一段语音离文件末尾 > max(120 s, 10%)」的残卷任务（`isAsrFinishedJobTruncated`）；无 ffprobe 时读 ffmpeg `Duration:` 横幅；接缝 ≤4096 样本漂移容错；稳定标记 `kAsrIncompleteAudioMarker`。本仓：七处 pin 升到 `976963a`，转录面板错误态命中 `isAsrIncompleteAudioFailure` 时先给「音频文件已损坏或没有下载完整…」（`fushi/lib/src/media/audiobook/asr_transcribe_sheet.dart`，i18n `audiobook_transcribe_audio_incomplete`）。真文件复验：捆绑 ffmpeg-min 解该卷报 `audio stops decoding at 0:04:34 of 6:10:57 … audio file is damaged or incomplete`。
+- **[x] ② 已加自动化测试** — 引擎侧 `asr_pcm_source_test.dart` / `asr_transcribe_job_test.dart`（空块判 EOF / 判故障、收尾对账、残卷作废、横幅兜底、漂移容差）；本仓 `fushi/test/media/audiobook/asr_transcribe_sheet_test.dart`「音频解不完：错误态提示文件损坏或没下完」（走真 `AsrTranscribeJob`）与「其他失败不带『文件不完整』提示」。
+- **备注**：同一引擎 PR 还把段首 cue 起点改到 VAD 未外扩边界（原来继承 500 ms speech pad，字幕早于人声；20 分钟真书对照 |起点 − 开口| 中位 756 → 24 ms，文本逐字不变）。用户手上的第 2 卷需重新下载完整文件后再转录；旧残卷任务会因 `isAsrFinishedJobTruncated` 自动重跑。引擎 PR 合并后若合并提交 sha 变化，需把七处 pin 与 `ci/patches/git/fushi-subtitles-<sha>/` 改到合并后的 sha。
