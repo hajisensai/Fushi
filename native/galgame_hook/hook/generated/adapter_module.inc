@@ -16,3 +16,4 @@
         smash_fzmedia_.onModuleLoaded(entry.szModule);
         yuris_.onModuleLoaded(entry.szModule);
         fvp_.onModuleLoaded(entry.szModule);
+        kogado_hy_.onModuleLoaded(entry.szModule);

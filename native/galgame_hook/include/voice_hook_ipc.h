@@ -360,9 +360,12 @@ constexpr uint32_t kTextSourceArtemis = 8;
 // YU-RIS exact text: the message line the engine's per-character text step
 // draws, read from its message state at the line's first character.
 constexpr uint32_t kTextSourceYuris = 9;
-// Text source ids 11-14: reserved, unassigned. The Malie adapter took 15 while
+// Kogado "Hy" exact text: the script page the message window's row renderer
+// shows, rows joined, speaker row removed.
+constexpr uint32_t kTextSourceKogadoHy = 11;
+// Text source ids 12-14: reserved, unassigned. The Malie adapter took 15 while
 // other engine adapters were in flight; no branch in this repository uses
-// 11-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// 12-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
 // to the generic 'hook:' lane, so a new kind must be registered here AND in
 // GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
 // galgame_audio_source.dart) in the same change; register the number here

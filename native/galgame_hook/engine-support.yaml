@@ -3506,6 +3506,136 @@
         "tests/fvp_format_test.cpp",
         "tests/fvp_lookup_test.cpp"
       ]
+    },
+    {
+      "id": "kogado_hy",
+      "display_name": "Kogado Hy engine",
+      "aliases": [
+        "工画堂スタジオ",
+        "Kogado Studio",
+        "Hy library"
+      ],
+      "family": {
+        "id": "kogado_hy",
+        "relation": "Kogado Studio in-house Borland C++Builder engine on its exported \"Hy\" runtime library; no verified sibling"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "SR.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: 2004 シンフォニック=レイン (SR.exe). The adapter never matches on names; identity is the exported Hy runtime library (THyRGBText::SetText, THyAlpha::BoxFill, THyAlpha::Draw)."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SR.exe is PE32 machine 0x14c"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "Script.pak",
+            "Voice/*.PAK"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: Script.pak, Ev*.pak and Voice\\srev%03d.pak next to SR.exe"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "GDI32.DLL",
+            "DSOUND.DLL",
+            "DDRAW.DLL",
+            "USER32.DLL"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SR.exe import table: TextOutA is the only text API (THyRGBText renders rows into an offscreen buffer), DirectSound plays, DirectDraw presents; mouse input arrives as VCL window messages"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".pak"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Voice\\srev%03d.pak archives addressed by voice id / 1000000; script text is pre-wrapped rows separated by the script newline marker and closed by its page marker"
+          }
+        },
+        "hashes": {
+          "values": [
+            "SR.exe sha256:04b4c08bb976c2a311d6a720433e5c20f38c24c1008464a773634c333479ce4c"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is SR.exe started directly under the Japanese locale (Locale Emulator); there is no launcher process.",
+          "The click-wait and row-render detours are resolved from the executable read from disk and installed at startup; a unit already on screen is published at its next row render."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "kogado_hy_message_page_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 11, hook 'Kogado Hy exact', ENGINE:KOGADO_HY:message_page): the message window's row renderer (the one function that renders a row through THyRGBText::SetText between THyAlpha::BoxFill and THyAlpha::Draw and whose every call site is fed by a counter-indexed page buffer) and the script's click wait (the one short game method that shows the window's wait cursor in both window modes, through the window field and mode byte the row fillers' caller reads) are detoured. A click unit runs from the row after a click wait (or row 0 of a cleared page) to the current row; the detour copies the page rows (bounded, 16 rows) and the worker drops the unit's speaker row (【name】), joins the rows, strips a continuation row's quote indent, converts from CP932 and republishes the unit so far at every row, so the host folds the rows of one unit into one line. Native run 2026-10-04 on the original path: adventure-window pages and full-screen-window paragraphs published as whole click units, speaker rows removed. No Fushi-host text_ready run is recorded yet."
+          },
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "LunaHook attaches only generic GDI hooks (TextOutA); each TextOutA call is one pre-wrapped row drawn seconds after the previous one, so that lane splits a page into rows. It is not used as the selected thread."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Select the 'Kogado Hy exact' lane; the TextOutA LunaHook lane splits every page into its rows."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Single sample: the resolver is proven offline on one executable (2004 Symphonic Rain); other Hy-engine titles may refuse and then install nothing. 37 x86 executables of RealLive, Siglus, BGI, CMVS, Leaf and other engines resolve to no Hy exports.",
+        "The unit is the script's click unit (text between two click waits): one page of the 4-row adventure window, one paragraph of the 16-row full-screen window. If the click wait does not resolve, the adapter falls back to the page (correct for the adventure window, whole pages for the full-screen window) and logs the result.",
+        "No in-game lookup yet; voice reaches the host only through the generic DirectSound PCM capture, paired by time."
+      ],
+      "adapter_path": "hook/adapters/kogado_hy_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/kogado_hy_adapter_test.cpp"
+      ]
     }
   ]
 }

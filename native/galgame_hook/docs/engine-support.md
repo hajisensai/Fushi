@@ -31,6 +31,7 @@
 | `unity_mono` | Unity (Mono runtime) | `implemented_unverified` | luna_hook (implemented_unverified)；unity_mono_managed_text_events (implemented_unverified)；unity_mono_fungus_say_events (implemented_unverified) | unity_audioclip_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `yuris` | YU-RIS | `implemented_unverified` | yuris_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | yuris_decoder_input_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `fvp` | FVP (Favorite View Point) | `implemented_unverified` | fvp_text_print_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | fvp_decoder_input_ogg_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `kogado_hy` | Kogado Hy engine | `implemented_unverified` | kogado_hy_message_page_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified) | directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -1138,6 +1139,48 @@ Tests：`tests/yuris_adapter_test.cpp`
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/fvp_format_test.cpp`、`tests/fvp_lookup_test.cpp`
+
+### Kogado Hy engine (`kogado_hy`)
+
+- 状态：`implemented_unverified`
+- 别名：工画堂スタジオ、Kogado Studio、Hy library
+- 家族：`kogado_hy`（Kogado Studio in-house Borland C++Builder engine on its exported "Hy" runtime library; no verified sibling）
+- 当前 adapter：`hook/adapters/kogado_hy_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：SR.exe；证据：real_sample — Catalogue only: 2004 シンフォニック=レイン (SR.exe). The adapter never matches on names; identity is the exported Hy runtime library (THyRGBText::SetText, THyAlpha::BoxFill, THyAlpha::Draw).
+- `pe_architectures`：x86；证据：real_sample — SR.exe is PE32 machine 0x14c
+- `directory_files_all`：Script.pak、Voice/*.PAK；证据：real_sample — Catalogue only: Script.pak, Ev*.pak and Voice\srev%03d.pak next to SR.exe
+- `pe_imports`：GDI32.DLL、DSOUND.DLL、DDRAW.DLL、USER32.DLL；证据：real_sample — SR.exe import table: TextOutA is the only text API (THyRGBText renders rows into an offscreen buffer), DirectSound plays, DirectDraw presents; mouse input arrives as VCL window messages
+- `resource_extensions`：.pak；证据：real_sample — Voice\srev%03d.pak archives addressed by voice id / 1000000; script text is pre-wrapped rows separated by the script newline marker and closed by its page marker
+- `hashes`：SR.exe sha256:04b4c08bb976c2a311d6a720433e5c20f38c24c1008464a773634c333479ce4c；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `kogado_hy_message_page_hook`：`implemented_unverified` — Native exact text lane (source kind 11, hook 'Kogado Hy exact', ENGINE:KOGADO_HY:message_page): the message window's row renderer (the one function that renders a row through THyRGBText::SetText between THyAlpha::BoxFill and THyAlpha::Draw and whose every call site is fed by a counter-indexed page buffer) and the script's click wait (the one short game method that shows the window's wait cursor in both window modes, through the window field and mode byte the row fillers' caller reads) are detoured. A click unit runs from the row after a click wait (or row 0 of a cleared page) to the current row; the detour copies the page rows (bounded, 16 rows) and the worker drops the unit's speaker row (【name】), joins the rows, strips a continuation row's quote indent, converts from CP932 and republishes the unit so far at every row, so the host folds the rows of one unit into one line. Native run 2026-10-04 on the original path: adventure-window pages and full-screen-window paragraphs published as whole click units, speaker rows removed. No Fushi-host text_ready run is recorded yet.
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — LunaHook attaches only generic GDI hooks (TextOutA); each TextOutA call is one pre-wrapped row drawn seconds after the previous one, so that lane splits a page into rows. It is not used as the selected thread.
+- codepage：932
+- 线程提示：Select the 'Kogado Hy exact' lane; the TextOutA LunaHook lane splits every page into its rows.
+
+音频优先级：
+
+1. `directsound_pcm` — `implemented_unverified`；格式：generic DirectSound fallback；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Single sample: the resolver is proven offline on one executable (2004 Symphonic Rain); other Hy-engine titles may refuse and then install nothing. 37 x86 executables of RealLive, Siglus, BGI, CMVS, Leaf and other engines resolve to no Hy exports.
+- The unit is the script's click unit (text between two click waits): one page of the 4-row adventure window, one paragraph of the 16-row full-screen window. If the click wait does not resolve, the adapter falls back to the page (correct for the adventure window, whole pages for the full-screen window) and logs the result.
+- No in-game lookup yet; voice reaches the host only through the generic DirectSound PCM capture, paired by time.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：`tests/kogado_hy_adapter_test.cpp`
 
 ## 状态定义
 
