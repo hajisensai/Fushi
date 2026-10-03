@@ -7,7 +7,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart'
+    show HitTestEntry, HitTestResult, PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,49 +81,89 @@ String? _currentPageUid() {
 
 bool _videoMounted() => find.byType(Video).evaluate().isNotEmpty;
 
-bool _episodeCardMounted() =>
-    find.byKey(_kEpisode2CardKey).evaluate().isNotEmpty;
-
 const Key _kEpisode1CardKey = ValueKey<String>('video-episode-card-0');
 
-/// 在当前（全屏）集页上：hover 唤控制条 → 焦点 + Enter 打开剧集列表 → **鼠标**
-/// 按下 / 抬起 [cardKey] 卡片。之后每 500ms 采样一次，返回原生全屏掉线的采样数。
+/// [finder] 匹配到的控件里，**命中测试点得中**的那一个的中心点；一个都点不中返回 null。
+///
+/// 全屏路由下面的视频页同样在树里（同 key 卡片 / 同图标按钮各有两份），收起的剧集
+/// 横轨也常驻挂载（[FadingChromeGate] 只淡出 + 屏蔽指针），所以「找得到」不等于
+/// 「用户看得见、点得到」。逐个做命中测试才挑得出用户真正会点到的那一个。
+Offset? _hittableCenter(Finder finder, int viewId, String label) {
+  for (final Element e in finder.evaluate()) {
+    final RenderObject? ro = e.renderObject;
+    if (ro is! RenderBox || !ro.attached || !ro.hasSize) continue;
+    final Offset c = ro.localToGlobal(ro.size.center(Offset.zero));
+    final HitTestResult hit = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(hit, c, viewId);
+    final bool hits = hit.path.any(
+      (HitTestEntry entry) => identical(entry.target, ro),
+    );
+    debugPrint('[fs-eplist] $label candidate center=$c hittable=$hits');
+    if (hits) return c;
+  }
+  return null;
+}
+
+/// 合成鼠标在 [at] 处按下 / 抬起一次（先移过去，让 hover 态与真实点击一致）。
+Future<void> _mouseClick(
+  WidgetTester tester,
+  TestGesture mouse,
+  Offset at,
+) async {
+  await mouse.moveTo(at);
+  await tester.pump(const Duration(milliseconds: 100));
+  await mouse.down(at);
+  await tester.pump(const Duration(milliseconds: 80));
+  await mouse.up();
+}
+
+/// 在当前（全屏）集页上：hover 唤控制条 → **鼠标**点控制条剧集按钮打开横轨 →
+/// **鼠标**点 [cardKey] 卡片。之后每 500ms 采样一次，返回原生全屏掉线的采样数。
 Future<int> _switchByMouseClick(
   WidgetTester tester,
-  FocusDriver driver,
-  TestGesture mouse,
-  Finder episodeButton, {
+  TestGesture mouse, {
   required Key cardKey,
   required String targetUid,
   required String tag,
 }) async {
+  final int viewId = tester.view.viewId;
+  final Finder episodeButton = find.byIcon(
+    Icons.playlist_play,
+    skipOffstage: false,
+  );
   final RenderBox videoBox = tester.renderObject<RenderBox>(
     find.byType(Video).last,
   );
   final Offset center = videoBox.localToGlobal(
     videoBox.size.center(Offset.zero),
   );
-  for (int i = 0; i < 20 && episodeButton.evaluate().isEmpty; i++) {
+  Offset? buttonAt;
+  for (int i = 0; i < 20 && buttonAt == null; i++) {
     await mouse.moveTo(center + Offset(i.toDouble(), 10));
     await tester.pump(const Duration(milliseconds: 150));
+    buttonAt = _hittableCenter(episodeButton, viewId, '[$tag] button');
   }
-  expect(episodeButton.evaluate(), isNotEmpty, reason: '[$tag] 应有剧集按钮');
-  expect(await driver.requestFocusInside(episodeButton.first), isTrue);
-  await driver.activate();
-  final Finder card = find.byKey(cardKey);
-  for (int i = 0; i < 20 && card.evaluate().isEmpty; i++) {
-    await tester.pump(const Duration(milliseconds: 250));
+  expect(buttonAt, isNotNull, reason: '[$tag] 全屏控制条应有点得中的剧集按钮');
+  await _mouseClick(tester, mouse, buttonAt!);
+
+  final Finder card = find.byKey(cardKey, skipOffstage: false);
+  Offset? cardAt;
+  for (int i = 0; i < 20 && cardAt == null; i++) {
+    await tester.pump(const Duration(milliseconds: 150));
+    cardAt = _hittableCenter(card, viewId, '[$tag] card');
   }
-  expect(card.evaluate(), isNotEmpty, reason: '[$tag] 剧集列表应有目标卡片');
-  // 等横轨 slide-in 动画走完再取几何。
-  await tester.pump(const Duration(milliseconds: 400));
-  final Offset cardCenter = tester.getCenter(card);
-  await mouse.moveTo(cardCenter);
-  await tester.pump(const Duration(milliseconds: 100));
-  await mouse.down(cardCenter);
-  await tester.pump(const Duration(milliseconds: 80));
-  await mouse.up();
-  debugPrint('[fs-eplist] [$tag] clicked card at $cardCenter');
+  await captureFlutterFrame(tester, 'fs-eplist-02-$tag-list-open');
+  expect(cardAt, isNotNull, reason: '[$tag] 剧集横轨应打开且目标卡片点得中');
+  expect(
+    await WindowCaptionChannel.isFullscreen(),
+    isTrue,
+    reason: '[$tag] 打开剧集横轨不应退全屏',
+  );
+  // 等横轨 slide-in 走完再按，位置才是终态。
+  await tester.pump(const Duration(milliseconds: 300));
+  cardAt = _hittableCenter(card, viewId, '[$tag] card(settled)') ?? cardAt;
+  await _mouseClick(tester, mouse, cardAt!);
+  debugPrint('[fs-eplist] [$tag] clicked card at $cardAt');
 
   final Stopwatch sw = Stopwatch()..start();
   int drops = 0;
@@ -228,10 +269,11 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 500));
 
-      // 控制条剧集按钮（默认在右上角）：焦点到按钮 → Enter。
-      final Finder episodeButton = find.byIcon(Icons.playlist_play);
-      // 控制条自动隐藏时顶栏按钮不在树里：用真实鼠标 hover 唤起（与
-      // video_keyboard_controls_keepalive_itest 同范式，只 hover 不点击）。
+      // 用户真实输入是**鼠标点剧集卡片**：焦点驱动在全屏剧集横轨里落不到卡片上
+      // （实测 requestFocus 后 primary 仍是 videoKeyboard，Enter 不换集），且被测的
+      // 嫌疑正好在指针路径上，所以这里刻意用合成鼠标（与
+      // video_keyboard_controls_keepalive_itest 同范式）。来回各换一次集：
+      // ep1 → ep2 覆盖「初始全屏路由」的接管，ep2 → ep1 覆盖「接管来的全屏」再接管。
       final RenderBox videoBox = tester.renderObject<RenderBox>(
         find.byType(Video).last,
       );
@@ -244,104 +286,36 @@ void main() {
       );
       await mouse.addPointer(location: center - const Offset(0, 40));
       addTearDown(() => mouse.removePointer());
-      for (int i = 0; i < 20 && episodeButton.evaluate().isEmpty; i++) {
-        await mouse.moveTo(center + Offset(i.toDouble(), 0));
-        await tester.pump(const Duration(milliseconds: 150));
-      }
-      expect(episodeButton.evaluate(), isNotEmpty, reason: '全屏控制条应有剧集按钮');
-      final bool buttonFocused = await driver.requestFocusInside(
-        episodeButton.first,
-      );
-      debugPrint(
-        '[fs-eplist] episodeButtonFocused=$buttonFocused '
-        'primary=${primaryFocus?.debugLabel}',
-      );
-      expect(buttonFocused, isTrue, reason: '剧集按钮应能获得焦点');
-      await driver.activate();
-      for (int i = 0; i < 20 && !_episodeCardMounted(); i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
-      expect(_episodeCardMounted(), isTrue, reason: '剧集列表应打开并有第 2 集卡片');
-      expect(
-        await WindowCaptionChannel.isFullscreen(),
-        isTrue,
-        reason: '打开剧集列表不应退全屏',
-      );
-      await captureFlutterFrame(tester, 'fs-eplist-01-list-open');
 
-      // 焦点到第 2 集卡片 → Enter（InkWell canRequestFocus → ActivateIntent → onTap）。
-      final bool cardFocused = await driver.requestFocusInside(
-        find.byKey(_kEpisode2CardKey),
-      );
-      debugPrint(
-        '[fs-eplist] cardFocused=$cardFocused '
-        'primary=${primaryFocus?.debugLabel}',
-      );
-      expect(cardFocused, isTrue, reason: '第 2 集卡片应能获得焦点');
-      await driver.activate();
-
-      final Stopwatch sw = Stopwatch()..start();
-      int nativeFullscreenDrops = 0;
-      int settledTicks = 0;
-      while (sw.elapsed < const Duration(seconds: 30)) {
-        await tester.pump(const Duration(milliseconds: 500));
-        final String? uid = _currentPageUid();
-        final bool mounted = _videoMounted();
-        final bool fs = await WindowCaptionChannel.isFullscreen();
-        if (!fs) nativeFullscreenDrops++;
-        final String page = uid == ep2
-            ? 'ep2'
-            : uid == ep1
-            ? 'ep1'
-            : '$uid';
-        debugPrint(
-          '[fs-eplist] t=${sw.elapsed.inMilliseconds}ms '
-          'page=$page video=$mounted fullscreen=$fs',
-        );
-        if (uid == ep2 && mounted && fs) {
-          if (++settledTicks >= 6) break;
-        }
-      }
-      final ObserveShot after = await captureFlutterFrame(
+      final int drops2 = await _switchByMouseClick(
         tester,
-        'fs-eplist-02-after-switch',
+        mouse,
+        cardKey: _kEpisode2CardKey,
+        targetUid: ep2,
+        tag: 'to-ep2',
       );
-      debugPrint(
-        '[fs-eplist] after=${after.path} drops=$nativeFullscreenDrops '
-        'errors=${errors.length}',
-      );
-
-      expect(_currentPageUid(), ep2, reason: '应已换到第 2 集页');
-      expect(
-        nativeFullscreenDrops,
-        0,
-        reason: '换集过程中原生全屏掉了 $nativeFullscreenDrops 个采样点（应恒为全屏）',
-      );
+      expect(_currentPageUid(), ep2, reason: '鼠标点卡片后应已换到第 2 集页');
+      expect(drops2, 0, reason: '换到第 2 集时原生全屏掉了 $drops2 个采样点（应恒为全屏）');
       expect(_videoMounted(), isTrue, reason: '第 2 集应就绪');
       expect(
         await WindowCaptionChannel.isFullscreen(),
         isTrue,
-        reason: '换集后应仍在原生全屏',
+        reason: '换到第 2 集后应仍在原生全屏',
       );
 
-      // 第二段：用户真实输入是**鼠标点卡片**（焦点 + Enter 走不到指针路径）。
-      // 在第 2 集页上重开剧集列表，鼠标按下 / 抬起第 1 集卡片切回去。这里刻意
-      // 用合成鼠标而非焦点驱动：被测的正是指针路径。
       final int drops1 = await _switchByMouseClick(
         tester,
-        driver,
         mouse,
-        episodeButton,
         cardKey: _kEpisode1CardKey,
         targetUid: ep1,
-        tag: 'mouse',
+        tag: 'to-ep1',
       );
       expect(_currentPageUid(), ep1, reason: '鼠标点卡片后应已换回第 1 集页');
-      expect(drops1, 0, reason: '鼠标点卡片换集时原生全屏掉了 $drops1 个采样点（应恒为全屏）');
+      expect(drops1, 0, reason: '换回第 1 集时原生全屏掉了 $drops1 个采样点（应恒为全屏）');
       expect(
         await WindowCaptionChannel.isFullscreen(),
         isTrue,
-        reason: '鼠标点卡片换集后应仍在原生全屏',
+        reason: '换回第 1 集后应仍在原生全屏',
       );
       assertStrictErrors(errors);
     } finally {
