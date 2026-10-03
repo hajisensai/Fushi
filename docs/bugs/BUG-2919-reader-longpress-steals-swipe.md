@@ -1,0 +1,6 @@
+## BUG-2919 · 阅读器长按选择太容易触发，慢滑翻页被抢成选区
+- **报告**：2026-10-03（用户反馈：「现在好容易触发这个长按的啊……翻个页有时都会选中」，Android 小说阅读器）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/reader/reader_selection_scripts.dart` `longPressDragGestureScript` 的默认参数。长按拖选 IIFE 与滑动翻页是并行识别器：touchstart 后长按计时器 `LPS_DELAY` 到点就 `beginRangeSelection` 并置 `__fushiTextSelectDragActive`，`_gestureEnd` / `_bEnd` 见标志一律让路；只有手指在计时器之前移出 `LPS_SLOP_SQ` 才撤掉计时器。BUG-2563 为了「长按不灵敏」把参数放宽到 280ms / 16px，于是：① 翻页前手指停 ≥280ms 就被判成长按；② 翻页距离门（默认 24px）没有时限，<16px/280ms ≈ 57px/s 的慢滑在识别为滑动之前就被计时器抢走。两个识别器接受的输入区间重叠，计时器先赢。BUG-2563 真正的「不灵敏」根因是命中测试（查词剔除词边界导致选择命中失败），已由命中测试分层修好，与这两个阈值无关。
+- **[x] ① 已修复** — 长按时限回到 Android `ViewConfiguration` 长按超时 400ms；移动阈值不再自带 16px，改用单一点按 slop 真相源 `ReaderSettings.tapSlopPx`（10px）。重叠区从 <57px/s 缩到 <25px/s（10px/400ms），停顿 350ms 再滑不再选中；原地按住 400ms 仍正常选中。（提交见 git log：`fix(reader): stop long-press drag-select from stealing slow swipes (BUG-2919)`）
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_longpress_vs_swipe_behavior_test.dart` + `.js`：Node 真执行生成的长按 IIFE（伪 DOM + 虚拟时钟），回放原地按住 / 停顿 350ms 后横滑 / 40px/s 慢滑 / 轻点四个序列，并用旧参数 280ms/16px 断言 harness 能复现抢手势（防空壳）；`reader_longpress_drag_select_guard_test.dart` 把默认值钉到 `400` 与 `tapSlopPx²`。
+- **备注**：部分回退 BUG-2563 放宽的阈值（命中测试修复保留）。未做真机复测，缺口：Android 真机上按手感确认 400ms 长按不显得迟钝。
