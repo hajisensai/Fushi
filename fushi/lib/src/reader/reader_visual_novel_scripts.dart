@@ -1641,16 +1641,18 @@ $sharedInitViewport
   // 就切出一屏孤零零的「。」，「…しょうな！」」切成「…しょうな！」+「」」。同一段被切
   // 开时，下一屏不得以行首禁则字开头、本屏不得以开括号收尾（与正文 `line-break:
   // strict` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、
-  // 不往前进，所以退完的屏一定仍装得下；退到只剩一个单元就不再退，保证切屏有进展。
+  // 不往前进，所以退完的屏一定仍装得下。若退过本屏起点都找不到合规切点（连续禁则字比
+  // 一整屏还长，如「ーーーー…」「っっっ」「！？！？…」），禁则在本屏内无解：放弃禁则、
+  // 用二分得到的最宽切点 end（与浏览器 line-break 遇到无法满足的禁则时照常断开一致），
+  // 而不是退到只剩一个单元——那样每屏只放一个字，屏数暴增。end > start，切屏仍有进展。
   viewportSplitKinsokuBoundary: function(units, start, end) {
-    var boundary = end;
-    while (boundary > start + 1 && boundary < units.length) {
+    if (end >= units.length) return end;
+    for (var boundary = end; boundary > start; boundary--) {
       var head = this.viewportSplitUnitEdgeChar(units[boundary], true);
       var tail = this.viewportSplitUnitEdgeChar(units[boundary - 1], false);
-      if (!this.isLineStartProhibitedChar(head) && !this.isLineEndProhibitedChar(tail)) break;
-      boundary -= 1;
+      if (!this.isLineStartProhibitedChar(head) && !this.isLineEndProhibitedChar(tail)) return boundary;
     }
-    return boundary;
+    return end;
   },
   viewportSplitUnitEdgeChar: function(unit, first) {
     var items = unit && unit.items;
