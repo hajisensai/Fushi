@@ -793,7 +793,9 @@ class _MangaOcrSettingsSectionState
       decoration: InputDecoration(
         labelText: t.manga_ocr_parallel_tasks,
         helperText: t.manga_ocr_parallel_tasks_desc,
-        helperMaxLines: 3,
+        // 阅读器侧栏只有 400px，这段说明要折四五行；限 3 行会把结尾吞成省略号。
+        // 不能传 null：InputDecorator 的 helper 带 ellipsis，null 反而退化成单行。
+        helperMaxLines: 8,
         isDense: true,
         border: const OutlineInputBorder(),
       ),
@@ -851,6 +853,8 @@ class _MangaOcrSettingsSectionState
       key: const ValueKey<String>('manga_ocr_default_engine'),
       initialValue: _currentChoice,
       isExpanded: true,
+      // 闭合态标签在窄面板里会折行；dense 按钮高度固定一行，第二行会被裁掉。
+      isDense: false,
       decoration: InputDecoration(
         labelText: t.manga_ocr_default_engine,
         isDense: true,
@@ -862,7 +866,9 @@ class _MangaOcrSettingsSectionState
         for (final _EngineOption option in options)
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: Text(option.label, overflow: TextOverflow.ellipsis),
+            // 窄面板（阅读器侧栏）里一行放不下「自动（不会上传到 Lens）」这类
+            // 标签：换行显示，不省略。
+            child: Text(option.label),
           ),
       ],
       items: <DropdownMenuItem<_EngineChoice>>[
@@ -1243,6 +1249,7 @@ class _MangaOcrSettingsSectionState
           decoration: InputDecoration(
             labelText: t.manga_ocr_external_cli_label,
             hintText: t.manga_ocr_external_cli_hint,
+            hintMaxLines: 3,
             isDense: true,
             border: const OutlineInputBorder(),
           ),
@@ -1268,6 +1275,7 @@ class _MangaOcrSettingsSectionState
                 child: Text(
                   _probeResult!,
                   style: theme.textTheme.bodySmall,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -1166,5 +1167,46 @@ void main() {
     await tester.pumpAndSettle();
     // 闭合态显示的就是点名的那项（下拉找不到当前值会直接断言崩溃）。
     expect(find.text(hostLabel(MangaOcrLocalModel.mangaCtc)), findsOneWidget);
+  });
+
+  testWidgets('BUG-2895: narrow reader sheet shows engine and helper in full',
+      (WidgetTester tester) async {
+    // 阅读器侧栏的 OCR 标签只有 ~320px：引擎下拉闭合态被 dense 高度裁成半行，
+    // 并行任务说明被限死 3 行吞掉结尾。
+    await tester.pumpWidget(wrap(SizedBox(
+      width: 320,
+      child: MangaOcrSettingsSection(
+        service: _FakeOcrService(),
+        mokuroPathGetter: () => '',
+        mokuroPathSetter: (String _) async {},
+        probeExternal: (String _) async => null,
+        enginePreferenceGetter: () => 'auto',
+        parallelTasksGetter: () => 0,
+        parallelTasksSetter: (int _) async {},
+      ),
+    )));
+    await tester.pumpAndSettle();
+
+    final Rect field = tester.getRect(find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('manga_ocr_default_engine')),
+          matching: find.byType(InputDecorator),
+        )
+        .first);
+    final Rect label = tester.getRect(find.text(t.manga_ocr_engine_auto));
+    expect(label.bottom, lessThanOrEqualTo(field.bottom));
+    expect(
+      tester
+          .renderObject<RenderParagraph>(find.text(t.manga_ocr_engine_auto))
+          .didExceedMaxLines,
+      isFalse,
+    );
+    expect(
+      tester
+          .renderObject<RenderParagraph>(
+              find.text(t.manga_ocr_parallel_tasks_desc))
+          .didExceedMaxLines,
+      isFalse,
+    );
   });
 }

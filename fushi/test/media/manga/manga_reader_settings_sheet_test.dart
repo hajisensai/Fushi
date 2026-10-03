@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
+import 'package:fushi/utils.dart';
 
 void main() {
   test('descriptor list gates device settings and preserves every mode', () {
@@ -237,5 +238,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('This title'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('BUG-2895: choice dropdowns span the narrow sheet, not a sliver', (
+    WidgetTester tester,
+  ) async {
+    // 侧栏 400px、窄屏更窄：下拉跟标题并排时只分到一百来像素，「Right to left」
+    // 「Fit screen」被直接裁掉。下拉必须放到标题下方、拿到整行宽度。
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 320,
+            child: MangaReaderSettingsSheet(
+              globalDefaults: const MangaReaderPreferences(),
+              overrides: const <String, Object?>{},
+              onChanged: (Map<String, Object?> next) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder rows = find.byType(AdaptiveSettingsPickerRow<String>);
+    expect(rows, findsWidgets);
+    for (final Element row in rows.evaluate()) {
+      final Finder field = find
+          .descendant(
+            of: find.byWidget(row.widget),
+            matching: find.byType(InputDecorator),
+          )
+          .first;
+      expect(
+        tester.getSize(field).width,
+        greaterThanOrEqualTo(260),
+        reason: (row.widget as AdaptiveSettingsPickerRow<String>).title,
+      );
+    }
   });
 }

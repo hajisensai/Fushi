@@ -461,6 +461,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
         )
       : AdaptiveSettingsPickerRow<String>(
           title: d.title,
+          // 面板只有 400px（窄屏更窄）：控件跟标题并排时下拉只分到一百来像素，
+          // 「从右到左」「适应屏幕」之类的值被直接裁掉。放到标题下方占满整行。
+          controlBelow: true,
           options: <AdaptiveSettingsPickerOption<String>>[
             for (final String choice in d.choices)
               AdaptiveSettingsPickerOption<String>(
@@ -641,28 +644,32 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
             ),
           ),
           const Divider(height: 1),
+          // 状态与重置按钮放得下就并排一行（竖排时页脚独占近 100px，横屏手机上
+          // 留给设置列表的只剩一两行），放不下按钮整体折到下一行，不裁切。
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  _overrides.isEmpty
-                      ? t.manga_reader_global
-                      : t.manga_reader_override,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+            // Wrap 默认按内容收窄，要占满行宽 spaceBetween 才能把按钮推到右侧。
+            child: SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  Text(
+                    _overrides.isEmpty
+                        ? t.manga_reader_global
+                        : t.manga_reader_override,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  TextButton(
                     onPressed: _overrides.isEmpty ? null : _reset,
                     child: Text(
                       t.manga_reader_restore,
                       textAlign: TextAlign.end,
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
