@@ -166,7 +166,7 @@ void main() {
     // 必须由 scene 的界面方向回调推给 Dart。钉住这条链的结构，而不是某行写法。
     final String scene = _swiftCode('ios/Runner/SceneDelegate.swift');
     final RegExpMatch? callback = RegExp(
-      r'@objc func windowScene\(\s*_ windowScene: UIWindowScene,\s*'
+      r'override func windowScene\(\s*_ windowScene: UIWindowScene,\s*'
       r'didUpdate previousCoordinateSpace: UICoordinateSpace,\s*'
       r'interfaceOrientation previousInterfaceOrientation: UIInterfaceOrientation,'
       r'[\s\S]*?\n  \}',
@@ -179,6 +179,8 @@ void main() {
         'windowScene.interfaceOrientation)',
       ),
     );
+    // FlutterSceneDelegate 自己实现这条回调转发给插件：必须交回 super。
+    expect(callback[0], contains('super.windowScene('));
 
     final String ball = _swiftCode('ios/Runner/FushiFloatingBall.swift');
     final RegExpMatch? push = RegExp(
