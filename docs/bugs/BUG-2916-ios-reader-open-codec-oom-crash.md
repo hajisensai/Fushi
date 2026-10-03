@@ -5,6 +5,7 @@
   - 最强候选：开书时 `base_source_page.dart` `_seedWarmPopup()` 预热隐藏词典弹窗，就绪后 `dictionary_popup_webview.dart` `_pushResults()` 经 `evaluateJavascript` 下发静态段；iOS/macOS 上 `kInAppPopupFontUrlSupported == false`（`dictionary_webview_media.dart:50`），导入的词典字体整份 `data:…;base64,` 内联（`dictionary_font_css.dart`），注释自述两个 CJK 字体 base64 后三十多 MB，嵌套弹窗每层重发。前提是该用户导入了词典字体——**未核实**。
   - 次候选：每章整段重发的阅读器 setup 脚本（`reader_fushi/webview.part.dart`，~147K 字符；有声书书还拼本章 `sentenceAudioCuesJson`）。
   - 2.3.0 之后这两条路径未改（字体 URL 化 `8408b83dde` 早于 2.3.0 且只覆盖 Android/Windows），若根因成立当前 develop 仍会崩；同一用户 2.7.0 起只再报了视频崩溃（BUG-2915），可作弱反证。
-- **[ ] ① 未修复** — 待确认根因。需要：该用户是否导入了词典字体（及大小）、或开书前后的 Fushi 日志（`LookupPerfTrace` 的 `push static=…B`）。若确认是字体内联：根因修法是让 iOS/macOS 弹窗文档从自定义 scheme（与 `fushi.local` 同源）加载，字体改走 URL，不再经方法通道传字节；不是加大小上限或跳过预热这类绕法。
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复最强候选（根因仍未确认）** — 用户 2026-10-03 拍板根本性修复字体内联：iOS / macOS 的 in-app 弹窗文档改由自定义 scheme `fushi-popup://fushi.local/popup.html` 供（`dictionary_webview_media.dart` `popupDocumentCustomSchemeResponse`，HTML 与原 `initialData` 同一份内联产物，主题 / 底色走白名单校验的查询串），导入字体改走同源 URL `fushi-popup://fushi.local/dictfonts/…`（`inAppDictionaryFontUrl`），由同一 scheme handler 经与 Android/Windows 共用的三道校验（目录白名单 / 配置条目白名单 / 字体魔数，`_lookupDictionaryFont`）供字节。同源请求不需要 CORS 头，绕开了 `CustomSchemeResponse` 带不了 header 的平台限制。`kInAppPopupFontUrlSupported` 扩到 iOS / macOS，静态段从此不含 base64 字体，方法通道上不再有几十 MB 的字符串。做法与阅读器在这两个平台已在生产使用的 `fushi-reader://` 同源加载一致。次候选（阅读器 setup 脚本）未动。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/dictionary_font_interceptor_test.dart` 新增 8 条：iOS / macOS 下注入侧产出的 `@font-face` 不含 `data:`、URL 与弹窗文档同源，并被 scheme handler 逐条放行（生产白名单取值路径）；平台矩阵（只有 Linux 仍内联）；三道校验在 scheme 路径同样拒绝；文档 handler 的参数白名单 / 非本 URL 返回 null / 资产缺失回空文档；宿主接线源码断言。变异实测：把 iOS/macOS 从 `kInAppPopupFontUrlSupported` 撤掉，3 条变红。
+- **验证缺口**：远程 Mac（iOS 模拟器 / macOS）本轮 SSH 不可达，未在 iOS / macOS 上实测导入字体在弹窗里生效；崩溃本身也未复现。
 - **备注**：与 BUG-2915 同批 TestFlight 反馈分析得出。

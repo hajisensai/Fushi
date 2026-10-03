@@ -22,7 +22,9 @@ Future<void> main(List<String> args) async {
       need: need,
       label: 'flutter_test_failures -> ${options.outputDir}',
       worktreeRoot: locateCheckoutRoot(),
-      waitMax: Duration(minutes: options.waitMaxMinutes),
+      waitMax: options.waitMaxMinutes > 0
+          ? Duration(minutes: options.waitMaxMinutes)
+          : null,
     );
   } on HeavyLeaseTimeout catch (e) {
     stderr.writeln(e.message);
@@ -130,7 +132,8 @@ class _FlutterTestFailureOptions {
   final List<String> flutterTestArgs;
   final TestFileShard? fileShard;
 
-  /// How long to queue for the heavy-run lease before failing.
+  /// How long to queue for the heavy-run lease before failing; 0 (the
+  /// default) waits in the queue until admitted.
   final int waitMaxMinutes;
 
   static _FlutterTestFailureOptions parse(List<String> args) {
@@ -139,13 +142,13 @@ class _FlutterTestFailureOptions {
     int minimumTests = 1;
     final List<String> flutterTestArgs = <String>[];
     TestFileShard? fileShard;
-    int waitMaxMinutes = 120;
+    int waitMaxMinutes = 0;
 
     for (final String arg in args) {
       if (arg.startsWith('--wait-max-min=')) {
         final String raw = arg.substring('--wait-max-min='.length);
         final int? parsed = int.tryParse(raw);
-        if (parsed == null || parsed <= 0) {
+        if (parsed == null || parsed < 0) {
           stderr.writeln('Invalid --wait-max-min value: $raw');
           exit(64);
         }

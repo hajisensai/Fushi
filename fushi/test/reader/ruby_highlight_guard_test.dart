@@ -30,30 +30,54 @@ void main() {
 
   group('BUG-110 ruby 高亮改元素 class（消竖排深色带）', () {
     test('sentenceAudioHighlight：ruby 节点分流出 ::highlight，改加 ruby class', () {
-      expect(pagination, contains('cueRubyElements'),
-          reason:
-              'sentenceAudioHighlight 须用 cueRubyElements 单独存 <ruby> 元素，不混进 ::highlight range');
-      expect(pagination, contains('rubyForNode'),
-          reason: '须用 rubyForNode 判定节点是否在 <ruby> 内以分流');
-      expect(pagination, contains('fushi-sentence-audio-ruby-active'),
-          reason:
-              'sentenceAudioHighlight 的 ruby 元素须用 class fushi-sentence-audio-ruby-active 高亮（单次绘背景）');
+      expect(
+        pagination,
+        contains('cueRubyElements'),
+        reason:
+            'sentenceAudioHighlight 须用 cueRubyElements 单独存 <ruby> 元素，不混进 ::highlight range',
+      );
+      expect(
+        pagination,
+        contains('rubyForNode'),
+        reason: '须用 rubyForNode 判定节点是否在 <ruby> 内以分流',
+      );
+      expect(
+        pagination,
+        contains('fushi-sentence-audio-ruby-active'),
+        reason:
+            'sentenceAudioHighlight 的 ruby 元素须用 class fushi-sentence-audio-ruby-active 高亮（单次绘背景）',
+      );
     });
 
     test('selection：ruby 节点分流出 ::highlight，改加 ruby class', () {
-      expect(selection, contains('rubyForNode'),
-          reason: '查词高亮须用 rubyForNode 分流 <ruby> 内节点');
-      expect(selection, contains('fushi-selection-ruby-active'),
-          reason: '查词的 ruby 元素须用 class fushi-selection-ruby-active 高亮');
-      expect(selection, contains('clearSelectionRubyHighlights'),
-          reason: '清除选区时须移除 ruby class，避免残留');
+      expect(
+        selection,
+        contains('rubyForNode'),
+        reason: '查词高亮须用 rubyForNode 分流 <ruby> 内节点',
+      );
+      expect(
+        selection,
+        contains('fushi-selection-ruby-active'),
+        reason: '查词的 ruby 元素须用 class fushi-selection-ruby-active 高亮',
+      );
+      expect(
+        selection,
+        contains('clearSelectionRubyHighlights'),
+        reason: '清除选区时须移除 ruby class，避免残留',
+      );
     });
 
     test('CSS：两个 ruby-active class 都有背景规则', () {
-      expect(styles, contains('ruby.fushi-sentence-audio-ruby-active'),
-          reason: 'reader CSS 须给 ruby.fushi-sentence-audio-ruby-active 设背景');
-      expect(styles, contains('ruby.fushi-selection-ruby-active'),
-          reason: 'reader CSS 须给 ruby.fushi-selection-ruby-active 设背景');
+      expect(
+        styles,
+        contains('ruby.fushi-sentence-audio-ruby-active'),
+        reason: 'reader CSS 须给 ruby.fushi-sentence-audio-ruby-active 设背景',
+      );
+      expect(
+        styles,
+        contains('ruby.fushi-selection-ruby-active'),
+        reason: 'reader CSS 须给 ruby.fushi-selection-ruby-active 设背景',
+      );
     });
 
     test('sentenceAudioHighlight：普通正文也不用 ::highlight，改由 cue span 画窄条', () {
@@ -62,11 +86,16 @@ void main() {
         isFalse,
         reason: 'sentenceAudioHighlight 普通正文不能再走 CSS Highlight；竖排下它会按行盒刷宽背景',
       );
-      final int applyStart =
-          pagination.indexOf('applySentenceAudioCues: function(cues)');
+      final int applyStart = pagination.indexOf(
+        'applySentenceAudioCues: function(cues)',
+      );
       expect(applyStart, isNonNegative);
-      final int applyEnd =
-          pagination.indexOf('rubyForNode: function', applyStart);
+      // rubyForNode 等 ruby 缝方法已搬进共享片段 kSentenceAudioRubyGapJs（BUG-2917），
+      // 这里以紧随其后的方法为终点，只切 applySentenceAudioCues 本体。
+      final int applyEnd = pagination.indexOf(
+        'highlightSentenceAudioCue: function',
+        applyStart,
+      );
       expect(applyEnd, isNonNegative);
       final String applyBody = pagination.substring(applyStart, applyEnd);
       expect(
@@ -102,10 +131,16 @@ void main() {
     });
 
     test('CSS：查词高亮用预合成的不透明色（composeOpaqueColor）', () {
-      expect(styles, contains('composeOpaqueColor'),
-          reason: '查词高亮须用合成到背景色的不透明色，重叠区才能覆盖音频层');
-      expect(styles, contains('selectionOpaque'),
-          reason: 'css() 须算出 selectionOpaque 并用于查词高亮各处');
+      expect(
+        styles,
+        contains('composeOpaqueColor'),
+        reason: '查词高亮须用合成到背景色的不透明色，重叠区才能覆盖音频层',
+      );
+      expect(
+        styles,
+        contains('selectionOpaque'),
+        reason: 'css() 须算出 selectionOpaque 并用于查词高亮各处',
+      );
       // ::highlight(fushi-selection) 的背景用 selectionOpaque（不是半透明 selectionColor）。
       final int selIdx = styles.indexOf('::highlight(fushi-selection)');
       final int bgIdx = styles.indexOf('background-color', selIdx);
@@ -121,7 +156,8 @@ void main() {
       expect(
         styles,
         contains(
-            'ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active'),
+          'ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active',
+        ),
         reason: '同一 ruby 带两 class 时须有双类规则让查词不透明色胜出（查词优先）',
       );
     });
