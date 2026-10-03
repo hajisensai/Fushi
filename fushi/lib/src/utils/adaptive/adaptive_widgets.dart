@@ -4,6 +4,8 @@ import 'package:macos_ui/macos_ui.dart'
     show MacosSwitch, MacosSlider, PushButton, ControlSize;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 Widget adaptiveDialogAction({
@@ -222,6 +224,23 @@ Future<T?> adaptiveModalSheet<T>({
       builder: builder,
     );
   }
+  if (glassMaterialOf(context) != FushiGlassMaterial.off) {
+    // 毛玻璃：BottomSheet 自己的底色让位，表面交给 FushiGlassSurface。拖动条
+    // 由 BottomSheet 画在 child 之外，底色透明后会悬在未模糊的内容上，所以这里
+    // 关掉它、在玻璃里按 M3 同一几何（48 高交互区 + 32x4 横条）自己画。
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: isScrollControlled,
+      showDragHandle: false,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      sheetAnimationStyle: fushiMd3SheetAnimationStyle,
+      builder: (BuildContext sheetContext) => _GlassSheetBody(
+        showDragHandle: showDragHandle,
+        child: builder(sheetContext),
+      ),
+    );
+  }
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: isScrollControlled,
@@ -229,6 +248,48 @@ Future<T?> adaptiveModalSheet<T>({
     sheetAnimationStyle: fushiMd3SheetAnimationStyle,
     builder: builder,
   );
+}
+
+class _GlassSheetBody extends StatelessWidget {
+  const _GlassSheetBody({required this.showDragHandle, required this.child});
+
+  final bool showDragHandle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return FushiGlassSurface(
+      borderRadius: FushiBorderRadius.sheet,
+      // M3 底部弹层的色阶（BottomSheet 默认底色 surfaceContainerLow）。
+      baseColor: FushiDesignTokens.of(context).surfaces.group,
+      child: showDragHandle
+          ? Stack(
+              alignment: Alignment.topCenter,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(top: kMinInteractiveDimension),
+                  child: child,
+                ),
+                SizedBox(
+                  height: kMinInteractiveDimension,
+                  child: Center(
+                    child: Container(
+                      width: 32,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+                        borderRadius:
+                            const BorderRadius.all(Radius.circular(2)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : child,
+    );
+  }
 }
 
 Widget adaptiveSegmentedButton<T extends Object>({

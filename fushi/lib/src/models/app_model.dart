@@ -3655,6 +3655,11 @@ class AppModel with ChangeNotifier {
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
 
+  /// 功能层表面材质（导航 / 底部弹层 / 对话框的毛玻璃），与颜色主题正交。
+  FushiGlassMaterial get glassMaterial => themeNotifier.glassMaterial;
+  Future<void> setGlassMaterial(FushiGlassMaterial value) =>
+      themeNotifier.setGlassMaterial(value);
+
   /// BUG-1718：查词弹窗「CSS 尾段」供给器——词典包自带 CSS（`FushiDicts.dictionaryStyles`，
   /// mdx 导入落成的词典目录 `styles.css`）+ 用户全局/单典自定义 CSS，随查词响应按 revision
   /// 门控下发给浏览器扩展弹窗。与 in-app 弹窗注入的 `window.dictionaryStyles` /

@@ -61,6 +61,61 @@ bool isEinkTheme(BuildContext context) {
   return Theme.of(context).extension<FushiEinkTheme>()?.einkMode ?? false;
 }
 
+/// 功能层表面（导航 / 底部弹层 / 对话框）的材质。与颜色主题正交：颜色仍由
+/// ColorScheme 决定，这里只决定表面是实心还是半透明 + 背景模糊。
+enum FushiGlassMaterial {
+  /// 实心表面（默认）。
+  off,
+
+  /// 毛玻璃：半透明填充 + BackdropFilter 模糊。
+  frosted;
+
+  /// 偏好值（`glass_material`）→ 枚举；未知值回落 [off]。
+  static FushiGlassMaterial fromPrefValue(String? value) {
+    for (final FushiGlassMaterial m in FushiGlassMaterial.values) {
+      if (m.name == value) return m;
+    }
+    return FushiGlassMaterial.off;
+  }
+}
+
+/// 玻璃材质的 ThemeExtension 载体，与 [FushiEinkTheme] 同一写法：挂在
+/// `buildFushiThemeData` 的 extensions 里，随主题重建自动更新。
+@immutable
+class FushiGlassTheme extends ThemeExtension<FushiGlassTheme> {
+  const FushiGlassTheme(this.material);
+
+  final FushiGlassMaterial material;
+
+  @override
+  FushiGlassTheme copyWith({FushiGlassMaterial? material}) {
+    return FushiGlassTheme(material ?? this.material);
+  }
+
+  @override
+  FushiGlassTheme lerp(
+    covariant ThemeExtension<FushiGlassTheme>? other,
+    double t,
+  ) {
+    return this;
+  }
+}
+
+/// 当前上下文实际生效的玻璃材质。墨水屏（半透明 = 灰阶抖动 + 残影）与系统
+/// 「增强对比度」（[MediaQueryData.highContrast]）下一律回退 [FushiGlassMaterial.off]；
+/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样是 off。
+FushiGlassMaterial glassMaterialOf(BuildContext context) {
+  final FushiGlassMaterial material =
+      Theme.of(context).extension<FushiGlassTheme>()?.material ??
+          FushiGlassMaterial.off;
+  if (material == FushiGlassMaterial.off) return material;
+  if (isEinkTheme(context)) return FushiGlassMaterial.off;
+  if (MediaQuery.maybeHighContrastOf(context) ?? false) {
+    return FushiGlassMaterial.off;
+  }
+  return material;
+}
+
 /// eink 下把动画时长归零（墨水屏连续重绘=残影），否则原样返回。
 /// 共享组件与页面级 Animated* 统一走这里，别再手写三元。
 Duration einkSafeDuration(BuildContext context, Duration duration) {

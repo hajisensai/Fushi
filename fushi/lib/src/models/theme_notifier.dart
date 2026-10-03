@@ -1095,6 +1095,18 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
+  /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
+  FushiGlassMaterial get glassMaterial => FushiGlassMaterial.fromPrefValue(
+        _get('glass_material', defaultValue: FushiGlassMaterial.off.name)
+            as String?,
+      );
+
+  Future<void> setGlassMaterial(FushiGlassMaterial value) async {
+    await _set('glass_material', value.name);
+    notifyListeners();
+  }
+
   String get brightnessMode {
     final String mode = _get('brightness_mode', defaultValue: '');
     if (mode.isNotEmpty) return mode;
@@ -1409,6 +1421,7 @@ class ThemeNotifier extends ChangeNotifier {
         textTheme: _textThemeBuilder(),
         eink: einkMode,
         designSystem: designSystemTheme,
+        glass: glassMaterial,
       );
 
   // ── Custom theme prefs ─────────────────────────────────────────────
@@ -1762,6 +1775,7 @@ ThemeData buildFushiThemeData({
   required TextTheme textTheme,
   bool eink = false,
   FushiDesignSystem designSystem = FushiDesignSystem.auto,
+  FushiGlassMaterial glass = FushiGlassMaterial.off,
 }) {
   final ColorScheme cs = scheme;
   final TextTheme tt = textTheme;
@@ -1816,6 +1830,7 @@ ThemeData buildFushiThemeData({
     extensions: <ThemeExtension<dynamic>>[
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
+      FushiGlassTheme(glass),
     ],
     appBarTheme: const AppBarTheme(
       elevation: 0,

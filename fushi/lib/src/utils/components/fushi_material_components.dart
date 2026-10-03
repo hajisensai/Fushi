@@ -30,6 +30,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -1409,17 +1410,28 @@ class FushiDialogFrame extends StatelessWidget {
       padding: padding,
       child: child,
     );
+    final Widget body = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: maxWidth,
+        maxHeight: screenHeight * maxHeightFactor,
+      ),
+      child: scrollable ? SingleChildScrollView(child: padded) : padded,
+    );
+    // 毛玻璃：Dialog 自己的底色与 tint 让位，表面交给 FushiGlassSurface 画；
+    // off 时保持原样（Dialog 默认 surfaceContainerHigh 实心底），像素零变化。
+    final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
     return Dialog(
       clipBehavior: Clip.antiAlias,
       insetPadding: _resolveInsetPadding(screenSize.width),
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth,
-          maxHeight: screenHeight * maxHeightFactor,
-        ),
-        child: scrollable ? SingleChildScrollView(child: padded) : padded,
-      ),
+      backgroundColor: glass ? Colors.transparent : null,
+      surfaceTintColor: glass ? Colors.transparent : null,
+      child: glass
+          ? FushiGlassSurface(
+              borderRadius: tokens.radii.dialogRadius,
+              child: body,
+            )
+          : body,
     );
   }
 }
