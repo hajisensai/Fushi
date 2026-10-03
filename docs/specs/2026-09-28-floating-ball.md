@@ -134,8 +134,7 @@ Dart → 原生：
 | `takePendingSync` | — | bool（系统球「立即同步」时主引擎不在而排队的请求；取即清） | Android |
 | `takeSystemBallClosedByUser` | — | bool（用户点过系统球关闭的持久标记；取即清。Dart 起系统球前先取，为 true 就改为关掉「应用外」开关；自动恢复选了 `both` 时照常起球） | Android |
 | `captureScreen` | — | `Uint8List` PNG（失败抛 PlatformException） | iOS |
-| `sensorHousingEdge` | — | String?（刘海 / 灵动岛此刻在哪条屏幕边：`left` / `top` / `right` / `bottom`，按界面方向换算；未知 null。iOS 横屏左右安全区对称，应用内球据此只避让外壳那一侧） | iOS |
-
+| `sensorHousingEdge` | — | String?（刘海 / 灵动岛此刻在哪条屏幕边：`left` / `top` / `right` / `bottom`，按界面方向换算；未知 null。iOS 横屏左右安全区对称，应用内球据此只避让外壳那一侧。只用于首次取值，方向变化走下面的 `sensorHousingEdgeChanged` 推送） | iOS |
 | `takePendingIntentLookup` | — | String?（冷启动时排队的 App Intent 词；调用即表示 Dart 已就绪） | iOS |
 
 `labels` 把文案从 Dart i18n 传给原生（原生不维护 17 种语言），键为动作 id 加
@@ -152,6 +151,7 @@ Dart → 原生：
 | `openCameraOcr` | — | Android | 系统球「拍照查词」，Fushi 随后被拉到前台；Dart 就绪后开相机。主引擎不在时改为排队，由 `takePendingCameraOcr` 取 |
 | `openSync` | — | Android | 系统球「立即同步」，Fushi 随后被拉到前台；Dart 就绪后跑一轮手动同步。主引擎不在时改为排队，由 `takePendingSync` 取 |
 | `systemBallClosedByUser` | — | Android | 系统球 / 常驻通知上点了关闭；Dart 把「应用外」开关关掉 |
+| `sensorHousingEdgeChanged` | String?（同 `sensorHousingEdge` 的回话） | iOS | 界面方向变化（SceneDelegate 的 `windowScene(_:didUpdate:interfaceOrientation:traitCollection:)`）时主动推。横屏左 ↔ 右翻转窗口尺寸与对称安全区都不变，Dart 没有可靠的重查时机，必须由原生推（BUG-2894） |
 
 Android 系统球的按钮：
 

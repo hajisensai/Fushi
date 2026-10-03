@@ -15,6 +15,16 @@ import 'package:flutter/painting.dart' show AxisDirection;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// 测试缝，与 `debugDesktopSystemBallPlatformOverride` 同形：「原生会不会上报传感器
+/// 外壳（刘海 / 灵动岛）在哪条边」与外壳边 → 视口 / 推送回调这些 Dart 逻辑正交。
+/// 不覆盖的话覆盖它的宿主测试只能在 iOS 上跑，桌面与 Linux CI 恒跳过。
+@visibleForTesting
+bool? debugSensorHousingEdgePlatformOverride;
+
+/// 只有 iOS 上报外壳边：它横屏的左右安全区对称，Dart 自己分不出被挡的是哪一侧。
+bool get floatingBallSensorHousingEdgeSupported =>
+    debugSensorHousingEdgePlatformOverride ?? Platform.isIOS;
+
 class FloatingBallChannel {
   FloatingBallChannel._();
 
@@ -131,17 +141,25 @@ class FloatingBallChannel {
       _invoke<Uint8List>('captureScreen');
 
   /// 刘海 / 灵动岛此刻在屏幕的哪条边（按界面方向换算）；不知道时 null。
-  /// 只有 iOS 需要：它横屏的左右安全区对称，Dart 自己分不出被挡的是哪一侧。
+  /// 只用于首次取值（及尺寸变化时的兜底）：界面方向一变，原生主动推
+  /// `sensorHousingEdgeChanged`（见 [installHandler]）。
   static Future<AxisDirection?> sensorHousingEdge() async {
-    if (!Platform.isIOS) return null;
-    return switch (await _invoke<String>('sensorHousingEdge')) {
-      'left' => AxisDirection.left,
-      'top' => AxisDirection.up,
-      'right' => AxisDirection.right,
-      'bottom' => AxisDirection.down,
-      _ => null,
-    };
+    if (!floatingBallSensorHousingEdgeSupported) return null;
+    return sensorHousingEdgeFromWire(
+      await _invoke<Object>('sensorHousingEdge'),
+    );
   }
+
+  /// 原生的外壳边字符串（查询回话与推送同一套）→ [AxisDirection]；
+  /// 未知值 / null 一律当「不知道」（视口两侧都避让）。
+  @visibleForTesting
+  static AxisDirection? sensorHousingEdgeFromWire(Object? raw) => switch (raw) {
+    'left' => AxisDirection.left,
+    'top' => AxisDirection.up,
+    'right' => AxisDirection.right,
+    'bottom' => AxisDirection.down,
+    _ => null,
+  };
 
   // ── 原生 → Dart ─────────────────────────────────────────────────────
 
@@ -160,7 +178,10 @@ class FloatingBallChannel {
   ///  - `systemBallAction {id, anchor}`（桌面系统球上点了某个动作；anchor 是球在
   ///    屏幕上的矩形，物理像素、左上原点）→ [onSystemBallAction]；
   ///  - `systemBallPositionChanged {dock, fraction}`（桌面系统球拖动吸附后）→
-  ///    [onSystemBallPositionChanged]。
+  ///    [onSystemBallPositionChanged]；
+  ///  - `sensorHousingEdgeChanged 'left'|'top'|'right'|'bottom'|null`（iOS 界面方向
+  ///    变了，含横屏左 ↔ 右翻转——那种翻转窗口尺寸与对称安全区都不变，宿主的
+  ///    didChangeMetrics 不一定触发，只能靠原生推）→ [onSensorHousingEdgeChanged]。
   ///
   /// 必须先装 handler、再取冷启动时排队的那个词：iOS 原生侧把这次 take 当作
   /// 「Dart 已就绪」的信号，之后才会直接推送。Android 同理：主引擎不在时原生只
@@ -175,6 +196,7 @@ class FloatingBallChannel {
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
     void Function(String dock, double fraction)? onSystemBallPositionChanged,
+    void Function(AxisDirection? edge)? onSensorHousingEdgeChanged,
   }) async {
     if (_handlerInstalled) return;
     _handlerInstalled = true;
@@ -209,6 +231,10 @@ class FloatingBallChannel {
           if (dock is String && fraction is num) {
             onSystemBallPositionChanged?.call(dock, fraction.toDouble());
           }
+        case 'sensorHousingEdgeChanged':
+          onSensorHousingEdgeChanged?.call(
+            sensorHousingEdgeFromWire(call.arguments),
+          );
       }
       return null;
     });
