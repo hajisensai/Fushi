@@ -1184,10 +1184,17 @@ String _mangaGestureJs({
   function _doubleTapZoom(x,y){
     _animateZoomTo(Math.abs(ZOOM-1)>0.01 ? 1 : 2,x,y);
   }
-  // 捏合松手吸附：落在正常比例 ±ZOOM_SNAP 内就收回正好 100%（并回中）。
+  // 捏合结束吸附：落在正常比例 ±ZOOM_SNAP 内就收回正好 100%（并回中）。
   // 无级捏合人手凑不准 100%，残留的 95%/104% 既不贴合、也不触发放大态平移。
+  // 只在**这次捏合真的改变了缩放**时吸附：fromZoom 是捏合开始时的倍率，
+  // 两指只是搭上屏幕（或几乎没动）时不吸附——否则设置里定好的 105% 会被
+  // 任何一次两指触碰拉回 100%。阈值 PINCH_NOOP=2%：两指静置的抖动约几像素，
+  // 在 ~200px 的指距上是 1% 量级的比例，再经 ^ZOOM_SENS 更小；而有意的捏合
+  // 远超 2%。
   var ZOOM_SNAP=0.1;
-  function _snapPinchZoom(x,y){
+  var PINCH_NOOP=0.02;
+  function _snapPinchZoom(x,y,fromZoom){
+    if(!(Math.abs(ZOOM-fromZoom)>PINCH_NOOP))return;
     if(ZOOM!==1&&Math.abs(ZOOM-1)<=ZOOM_SNAP+1e-9)_animateZoomTo(1,x,y);
   }
   document.addEventListener('pointerdown',_cancelDoubleTapZoom,{passive:true});
@@ -1838,11 +1845,13 @@ String _mangaGestureJs({
     if (e.pointerType === 'touch') {
       delete touchPts[e.pointerId];
       if (pinch) {
-        // 还剩一指时仍不恢复 swipe：等全部手指抬起，避免捏合尾巴被判成翻页。
+        // 不足两指即结束捏合并吸附（通常是两指中先抬起的那一指，另一指可能
+        // 还在屏上）。剩下那一指仍不恢复 swipe：pinchGuard 等全部手指抬起，
+        // 避免捏合尾巴被判成翻页。
         if (Object.keys(touchPts).length < 2) {
           var lastPinch = pinch;
           pinch = null;
-          _snapPinchZoom(lastPinch.cx, lastPinch.cy);
+          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
         }
         return;
       }

@@ -7,7 +7,8 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// BUG-2891：缩小到贴合以下后回不到正常比例。双击在任何非 100% 倍率下都要一击
 /// 回到正好 100%（旧判据 ZOOM>1.01 让缩小态先跳 2×）；捏合松手落在 100% ±10%
-/// 内要吸附回正好 100%（无级捏合人手凑不准）。
+/// 内要吸附回正好 100%（无级捏合人手凑不准）——但只在这次捏合真的改变了缩放时；
+/// 两指只是搭上屏幕不能把设置里定的 105% 拉回 100%。
 ///
 /// 跑的是生成文档里**真实的** `_clampZoom` / `_zoomAbout` / `_animateZoomTo` /
 /// `_doubleTapZoom` / `_snapPinchZoom`，不是复刻。
@@ -109,9 +110,9 @@ assert.equal(ZOOM,2);
     test('$label：捏合松手落在 100% ±10% 内吸附到正好 100%', () async {
       await runJs(
         harness(document, '''
-for (const z of [0.9, 0.95, 1.04, 1.1]) {
+for (const [from, z] of [[0.6, 0.9], [0.7, 0.95], [1.5, 1.04], [2, 1.1], [1.05, 0.97]]) {
   setZoom(z); PAN_X+=7;
-  _snapPinchZoom(200,400);
+  _snapPinchZoom(200,400,from);
   flushFrames();
   assert.equal(ZOOM,1,'吸附 '+z);
   assert.equal(PAN_X,0,'吸附后回中 '+z);
@@ -125,16 +126,30 @@ for (const z of [0.9, 0.95, 1.04, 1.1]) {
         harness(document, '''
 for (const z of [0.6, 0.85, 1.2, 2]) {
   setZoom(z);
-  _snapPinchZoom(200,400);
+  _snapPinchZoom(200,400,1);
   flushFrames();
   assert.equal(ZOOM,z,'不该吸附 '+z);
 }
 '''),
       );
     });
+
+    test('$label：起点 105% 的两指触碰几乎没缩放就抬起，保持 105%', () async {
+      await runJs(
+        harness(document, '''
+for (const end of [1.05, 1.052, 1.06, 1.035]) {
+  setZoom(end); const panX=PAN_X;
+  _snapPinchZoom(200,400,1.05);
+  flushFrames();
+  assert.equal(ZOOM,end,'没缩放的两指触碰不该吸附 '+end);
+  assert.equal(PAN_X,panX);
+}
+'''),
+      );
+    });
   }
 
-  test('最后一指抬起结束捏合时才吸附，锚点取最后的捏合中心', () {
+  test('捏合结束（不足两指）时吸附，锚点取最后的捏合中心、起点取捏合开始的倍率', () {
     final String document = documentFor(animate: true);
     expect(
       document.contains(
@@ -145,7 +160,7 @@ for (const z of [0.6, 0.85, 1.2, 2]) {
     expect(document.contains('pinch.cx = g.cx;'), isTrue);
     final int nullAt = document.indexOf(
       '          pinch = null;\n'
-      '          _snapPinchZoom(lastPinch.cx, lastPinch.cy);',
+      '          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);',
     );
     expect(nullAt, greaterThanOrEqualTo(0));
   });
