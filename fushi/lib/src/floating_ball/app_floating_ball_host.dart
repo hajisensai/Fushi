@@ -193,6 +193,11 @@ class DesktopSystemBallActionTarget {
 @visibleForTesting
 Future<void>? debugLatestSystemBallSync;
 
+/// 最近一次「按新的自动恢复选项落定已关闭的球」（关掉对应显示开关）的落盘
+/// Future。测试 await 它确认写库真的完成，再断言 / 拆库。
+@visibleForTesting
+Future<void>? debugLatestClosedBallSettle;
+
 /// 桌面系统球动作的执行面（测试替换）。
 @visibleForTesting
 DesktopSystemBallActionTarget desktopSystemBallActionTarget =
@@ -306,19 +311,24 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final PreferencesRepository? prefs = _prefs;
     if (prefs == null) return;
     final FloatingBallAutoRestore restore = prefs.floatingBallAutoRestore;
+    final List<Future<void>> writes = <Future<void>>[];
     if (_systemBallClosed && !restore.restoresSystem) {
       _systemBallClosed = false;
       if (prefs.floatingBallSystem) {
-        unawaited(prefs.setFloatingBallSystem(false));
+        writes.add(prefs.setFloatingBallSystem(false));
       }
     }
     if (_dismissed && !restore.restoresInApp) {
       _dismissed = false;
       _dismissedOwner = null;
       if (prefs.floatingBallInApp) {
-        unawaited(prefs.setFloatingBallInApp(false));
+        writes.add(prefs.setFloatingBallInApp(false));
       }
     }
+    if (writes.isEmpty) return;
+    final Future<void> settle = Future.wait(writes).then((_) {});
+    debugLatestClosedBallSettle = settle;
+    unawaited(settle);
   }
 
   @override

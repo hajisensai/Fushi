@@ -428,9 +428,12 @@ void main() {
     expect(ball(), findsNothing);
     expect(prefs.floatingBallInApp, isTrue);
 
-    await tester.runAsync(
-      () => prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off),
-    );
+    debugLatestClosedBallSettle = null;
+    await tester.runAsync(() async {
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+      expect(debugLatestClosedBallSettle, isNotNull, reason: '应当落定这次关闭');
+      await debugLatestClosedBallSettle;
+    });
     await tester.pumpAndSettle();
     expect(prefs.floatingBallInApp, isFalse, reason: '按新选项落定这次关闭');
 
@@ -930,8 +933,11 @@ void main() {
       await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
       expect(prefs.floatingBallSystem, isTrue);
 
+      debugLatestClosedBallSettle = null;
       await tester.runAsync(() async {
         await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+        expect(debugLatestClosedBallSettle, isNotNull, reason: '应当落定这次关闭');
+        await debugLatestClosedBallSettle;
         await debugLatestSystemBallSync;
       });
       await tester.pump();
