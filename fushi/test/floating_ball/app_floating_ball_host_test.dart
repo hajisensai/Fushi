@@ -18,6 +18,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -126,6 +127,8 @@ void main() {
       byKey('floating_ball_action_popup_lookup'),
       Platform.isAndroid ? findsOneWidget : findsNothing,
     );
+    // 立即同步出厂不勾（多数人没配同步），要在设置里自己勾上。
+    expect(byKey('floating_ball_action_sync'), findsNothing);
   });
 
   testWidgets('设置里关掉应用内悬浮球：不画球', (WidgetTester tester) async {
@@ -222,6 +225,21 @@ void main() {
         .consume();
     expect(request?.text, '猫');
     expect(request?.index, 0);
+  });
+
+  testWidgets('立即同步走与设置页同一个手动同步入口（已有同步在跑时只提示）', (WidgetTester tester) async {
+    // 已有一轮同步在跑：统一入口第一步就返回 busy 并提示，不碰同步通道——用它
+    // 证明按钮接的是 runManualSyncWithFeedback 而不是另起一套。
+    syncInProgress.value = true;
+    addTearDown(() => syncInProgress.value = false);
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'sync',
+    ]);
+    await pumpHost(tester);
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_sync'));
+    await tester.pump();
+    expect(find.text(t.sync_now_busy), findsOneWidget);
   });
 
   testWidgets('球外的空白处点击照常落到底下页面', (WidgetTester tester) async {
@@ -823,6 +841,27 @@ void main() {
         await tapAction(tester, 'clipboard');
         expect(target.log, <String>['front']);
         expect(FloatingLyricLookupNotifier.instance.consume()?.text, '犬');
+      });
+
+      testWidgets('立即同步：唤起主窗再走手动同步入口（结果提示在主窗里）', (WidgetTester tester) async {
+        syncInProgress.value = true;
+        addTearDown(() => syncInProgress.value = false);
+        await pumpHost(tester);
+        await tapAction(tester, 'sync');
+        expect(target.log, <String>['front']);
+        expect(find.text(t.sync_now_busy), findsOneWidget);
+      });
+
+      testWidgets('Android 系统球推来的 openSync：就绪后走手动同步入口', (
+        WidgetTester tester,
+      ) async {
+        syncInProgress.value = true;
+        addTearDown(() => syncInProgress.value = false);
+        await pumpHost(tester);
+        await fromNative(tester, 'openSync', const <String, Object?>{});
+        await tester.pump();
+        expect(pendingSync.value, isFalse);
+        expect(find.text(t.sync_now_busy), findsOneWidget);
       });
 
       testWidgets('打开 Fushi：只唤起主窗', (WidgetTester tester) async {

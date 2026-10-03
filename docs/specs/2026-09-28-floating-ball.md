@@ -36,7 +36,7 @@
 | `general` 其它页面 | —（没有登记场景的页面） | — |
 | `system` 应用外 | —（原生侧拿不到页面按钮） | — |
 
-每个场景都还能勾选下面的全局按钮（出厂全勾）。勾选存在 `floating_ball.buttons.<场景>`
+每个场景都还能勾选下面的全局按钮（出厂除 `sync` 外全勾）。勾选存在 `floating_ball.buttons.<场景>`
 （逗号分隔 id，按目录顺序；空串 = 出厂，`-` = 全关）。旧版单份全局勾选
 `floating_ball.actions` 只作迁移读取：没单独设过的场景沿用它对全局按钮的取舍。
 
@@ -65,6 +65,7 @@
 | `clipboard` | 读剪贴板 → 查词 | 全部 |
 | `screen_ocr` | 截屏 → 系统 OCR → 点选文字行查词 | Android、iOS |
 | `camera_ocr` | 拍照查词：系统相机拍一张 → 转正方向 → 系统 OCR → 点选文字行查词（2026-09-29 用户提出：悬浮球支持拍照，拍完识字查词） | Android、iOS |
+| `sync` | 立即同步：与设置页「立即同步」、媒体页下拉刷新同一个入口 `runManualSyncWithFeedback`（重入、结果提示、逐通道冲突裁决、鉴权失效登出都由它管）。应用外球先把 Fushi 唤到前台再同步，结果在主窗里给。**出厂不勾**（多数人没配同步后端，出厂按钮点了只会说「同步不可用」），在设置里自己勾（2026-10-03 用户提出） | 全部 |
 
 ### 截屏 OCR
 
@@ -117,6 +118,7 @@ Dart → 原生：
 | `openPopupLookup` | — | null（弹出独立查词窗） | Android |
 | `takePendingOpenLookupPage` | — | bool（系统球「查词」时主引擎不在而排队的请求；取即清） | Android |
 | `takePendingCameraOcr` | — | bool（系统球「拍照查词」时主引擎不在而排队的请求；取即清） | Android |
+| `takePendingSync` | — | bool（系统球「立即同步」时主引擎不在而排队的请求；取即清） | Android |
 | `takeSystemBallClosedByUser` | — | bool（用户点过系统球关闭的持久标记；取即清。Dart 起系统球前先取，为 true 就改为关掉「应用外」开关） | Android |
 | `captureScreen` | — | `Uint8List` PNG（失败抛 PlatformException） | iOS |
 
@@ -134,6 +136,7 @@ Dart → 原生：
 | `screenOcrFinished` | — | Android | 每次 `startScreenOcr` 返回 true 后恰好一次：截到帧或流程放弃时发出。Dart 在调用前藏起 Flutter 球，收到后放回来（原生只藏得了原生球） |
 | `openLookupPage` | — | Android | 系统球「查词」，Fushi 随后被拉到前台；Dart 就绪后打开查词页。主引擎不在时改为排队，由 `takePendingOpenLookupPage` 取 |
 | `openCameraOcr` | — | Android | 系统球「拍照查词」，Fushi 随后被拉到前台；Dart 就绪后开相机。主引擎不在时改为排队，由 `takePendingCameraOcr` 取 |
+| `openSync` | — | Android | 系统球「立即同步」，Fushi 随后被拉到前台；Dart 就绪后跑一轮手动同步。主引擎不在时改为排队，由 `takePendingSync` 取 |
 | `systemBallClosedByUser` | — | Android | 系统球 / 常驻通知上点了关闭；Dart 把「应用外」开关关掉 |
 
 Android 系统球的按钮：
@@ -145,6 +148,7 @@ Android 系统球的按钮：
 | `clipboard` | 拉起 `PopupDictFlutterActivity` 并带 `readClipboard=true`；activity 拿到窗口焦点后自己读剪贴板（Android 10+ 后台服务读不到剪贴板） |
 | `screen_ocr` | 走截屏 OCR 流程。选取层是一次性的：点一个字就关（它在所有 Activity 之上，不关会盖住查词窗），同一行别的字在查词窗的原句条里点 |
 | `camera_ocr` | 把 Fushi 带回前台并开相机拍照查词（经 `openCameraOcr` / `takePendingCameraOcr`） |
+| `sync` | 把 Fushi 带回前台并跑一轮手动同步（经 `openSync` / `takePendingSync`） |
 | `open_app` | 把 Fushi 带回前台 |
 | `close` | 用户关掉应用外悬浮球：落持久标记 + 推 `systemBallClosedByUser`，停服务；Dart 同步关掉设置里的「应用外」开关，两边保持一致（2026-09-29 用户要求；此前是「停服务、偏好不变，下次启动 app 时再起」）。常驻通知上的关闭同此 |
 
