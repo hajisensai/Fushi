@@ -1683,6 +1683,16 @@ class AdapterStructureTest(unittest.TestCase):
         text_mesh_body = text_mesh_body.split("void RecordUnityVoiceResourceEvent", 1)[0]
         self.assertNotIn("GetModuleFileNameW", text_mesh_body)
         self.assertIn("g_unity_text_mesh_reassembler.ShouldTerminate(c, true)", source)
+        # 判定期的单字形只进影子缓冲、不作为组件线程的独立行发布（否则宿主自动选线
+        # 可能先选中一个锁存后再也不出字的组件线程）；只有 kComponentText /
+        # kRevokedComponentText 两条路走整串组件线程。
+        hold = text_mesh_body.split("case Route::kHoldGlyph:", 1)[1]
+        hold = hold.split("break;", 1)[0]
+        self.assertIn("g_unity_text_mesh_reassembler.Append(chars[0]);", hold)
+        self.assertNotIn("publish_component_text", hold)
+        self.assertNotIn("RecordUnityTmpText", hold)
+        self.assertEqual(2, text_mesh_body.count("publish_component_text = true;"))
+        self.assertEqual(1, text_mesh_body.count("RecordUnityTmpText("))
         # v13: text capture is no longer gated on the selected thread. Each
         # component writes its own lane, so a chatty one cannot squeeze the
         # others out; dropping a non-selected component's line here would mean
@@ -2773,6 +2783,42 @@ class AdapterStructureTest(unittest.TestCase):
         )
         poll = registry.split("void Poll() {", 1)[1]
         self.assertIn("loopback_.PollPolicy();", poll)
+
+    def test_sgre_mages_normalization_uses_one_family_predicate_before_injection(
+        self,
+    ) -> None:
+        """MAGES 控制符归一化不能只等 hook DLL 的 adapter 报告（每秒最多一次、DLL
+        未注入时永不到）：注入器在注入前用与 SGRE adapter probe() **同一个**函数判
+        wind3d11 语音归档。两边各写一份路径拼接，迟早漂成两个判据。"""
+        injector = (ROOT / "injector" / "injector_main.cpp").read_text(
+            encoding="utf-8"
+        )
+        apply = self._function_body(
+            injector,
+            "void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,\n"
+            "                       const std::wstring& user_profile,\n"
+            "                       LunaOptions* options)",
+        )
+        self.assertIn(
+            "SgreVoiceArchiveExistsBesideExecutable(executable)", apply
+        )
+        self.assertLess(
+            apply.index("SgreVoiceArchiveExistsBesideExecutable(executable)"),
+            apply.index("BuildTargetIdentity(executable, pid)"),
+        )
+        self.assertIn("options->normalize_mages_controls = true;", apply)
+        # 注入后才可判的锚点路径仍经 adapter 报告兜底。
+        active = self._function_body(
+            injector, "bool LunaMagesNormalizationActive()"
+        )
+        self.assertIn("AdapterReportsClaimEngine(", active)
+
+        profile = (ROOT / "hook" / "adapters" / "sgre_profile.h").read_text(
+            encoding="utf-8"
+        )
+        family = self._function_body(profile, "inline bool MatchesSgreFamily()")
+        self.assertIn("SgreVoiceArchiveExistsBesideExecutable(", family)
+        self.assertNotIn('L"wind3d11data', profile.replace(" ", ""))
 
     @staticmethod
     def _function_body(source: str, signature: str) -> str:
