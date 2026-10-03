@@ -3960,12 +3960,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return;
       }
       switch (setup) {
-        case MangaStreamOcrReady(:final MangaStreamPageRecognizer recognizer):
+        case MangaStreamOcrReady(
+          :final MangaStreamPageRecognizer recognizer,
+          :final MangaStreamAiRefinement? ai,
+        ):
           if (_volumeOcrNoEngine) setState(() => _volumeOcrNoEngine = false);
           final MangaStreamPageOcr ocr = MangaStreamPageOcr(
             pageCount: session.pageCount,
             pageFile: session.localFile,
             recognizer: recognizer,
+            ai: ai,
+            onAiError: (Object error, StackTrace stack) =>
+                ErrorLogService.instance.log(
+                  'MangaFushiPage.streamOcrAi',
+                  error,
+                  stack,
+                ),
             onPage: _applyStreamOcrPage,
             onBusyChanged: (bool busy) {
               if (mounted && _streamOcrBusy != busy) {
