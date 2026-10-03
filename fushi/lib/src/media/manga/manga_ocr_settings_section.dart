@@ -849,26 +849,37 @@ class _MangaOcrSettingsSectionState
 
   Widget _buildEnginePreference(ThemeData theme) {
     final List<_EngineOption> options = _engineOptions();
+    final _EngineChoice selected = _currentChoice;
     return DropdownButtonFormField<_EngineChoice>(
       key: const ValueKey<String>('manga_ocr_default_engine'),
-      initialValue: _currentChoice,
+      initialValue: selected,
       isExpanded: true,
-      // 闭合态标签在窄面板里会折行；dense 按钮高度固定一行，第二行会被裁掉。
+      // dense 把按钮钉死在一行高（SizedBox），窄面板里折行的标签第二行会被裁掉；
+      // 非 dense 时按钮高度由闭合态内容决定，见下方 selectedItemBuilder。
       isDense: false,
       decoration: InputDecoration(
         labelText: t.manga_ocr_default_engine,
         isDense: true,
         border: const OutlineInputBorder(),
       ),
-      // 闭合态只显示单行标签：说明是给「挑的时候」看的，收起后再占两行只会把
-      // 设置行撑高。
+      // 闭合态只显示标签（说明是给「挑的时候」看的）。选中项的标签完整显示、
+      // 放不下就换行（阅读器侧栏只有 ~320px，「自动（不会上传到 Lens）」这类
+      // 标签一行放不下）；其余项只渲染单行。原因：非 dense 的闭合态是一个
+      // IndexedStack，高度取**所有**子项的最大值——其余项也允许折行的话，只要
+      // 有一项折两行，设置页上不管选的是哪项，按钮都恒为两行高。
+      // （onChanged 落盘期间下拉值可能先于 _currentChoice 更新，那一瞬新项按
+      // 单行省略显示，setState 后即恢复。）
       selectedItemBuilder: (BuildContext context) => <Widget>[
         for (final _EngineOption option in options)
           Align(
             alignment: AlignmentDirectional.centerStart,
-            // 窄面板（阅读器侧栏）里一行放不下「自动（不会上传到 Lens）」这类
-            // 标签：换行显示，不省略。
-            child: Text(option.label),
+            child: option.choice == selected
+                ? Text(option.label)
+                : Text(
+                    option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
           ),
       ],
       items: <DropdownMenuItem<_EngineChoice>>[
