@@ -114,6 +114,7 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 
 part 'reader_history/card_widgets.part.dart';
@@ -1676,45 +1677,49 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             )
           : buildPlaceholder();
     }
-    return RawScrollbar(
-      thumbVisibility: true,
-      thickness: 3,
-      controller: mediaType.scrollController,
-      child: LayoutBuilder(
-        // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
-        builder: (context, constraints) => RefreshIndicator(
-          onRefresh: _pullToRefreshBooks,
-          child: CustomScrollView(
-            controller: mediaType.scrollController,
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
+    // 2026-10 动效重做：书架首屏的散书卡错峰淡入（见 FushiStaggeredEntrance）；
+    // 窗口关闭后滚动带出的卡瞬间出现，不拖影。
+    return FushiEntranceScope(
+      child: RawScrollbar(
+        thumbVisibility: true,
+        thickness: 3,
+        controller: mediaType.scrollController,
+        child: LayoutBuilder(
+          // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
+          builder: (context, constraints) => RefreshIndicator(
+            onRefresh: _pullToRefreshBooks,
+            child: CustomScrollView(
+              controller: mediaType.scrollController,
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+                // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
+                // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
+                // 属重复信息。无在读候选时整条隐藏。
+                // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
+                // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
+                if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: _buildShelfOverviewSection(shelfBooks),
+                  ),
+                // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+                // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+                // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
+                // （归「视频」tab 独占）。
+                // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
+                // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
+                // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
+                // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
+                if (shelfGroups.isNotEmpty)
+                  ..._buildShelfGroupSlivers(
+                    shelfGroups,
+                    epubCoverUrisByBookKey,
+                    constraints,
+                  ),
+              ],
             ),
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
-              // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
-              // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
-              // 属重复信息。无在读候选时整条隐藏。
-              // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
-              // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
-              if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: _buildShelfOverviewSection(shelfBooks),
-                ),
-              // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-              // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-              // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
-              // （归「视频」tab 独占）。
-              // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
-              // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
-              // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
-              // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
-              if (shelfGroups.isNotEmpty)
-                ..._buildShelfGroupSlivers(
-                  shelfGroups,
-                  epubCoverUrisByBookKey,
-                  constraints,
-                ),
-            ],
           ),
         ),
       ),
@@ -1764,9 +1769,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             childAspectRatio: kShelfBookCardAspectRatio,
           ),
           itemCount: loose.length,
-          itemBuilder: (_, i) => _buildShelfGroupCard(
-            loose[i],
-            epubCoverUrisByBookKey,
+          itemBuilder: (_, i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildShelfGroupCard(
+              loose[i],
+              epubCoverUrisByBookKey,
+            ),
           ),
         ),
       );

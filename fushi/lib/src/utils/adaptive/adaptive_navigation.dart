@@ -8,6 +8,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 class AdaptiveNavItem {
   final IconData icon;
@@ -29,9 +31,15 @@ class AdaptiveNavItem {
 /// 当 [item] 标记为实验性时，给其图标 [child] 叠加一个 MD3 小圆点 [Badge]（无 label
 /// 即默认小圆点，用 error 色吸引注意），否则原样返回。底栏（Material/Cupertino）与
 /// 侧栏共用，保证徽标位置/样式一致。
-Widget _maybeBadge({required AdaptiveNavItem item, required Widget child}) {
-  if (!item.experimentalBadge) return child;
-  return Badge(child: child);
+Widget _maybeBadge({
+  required AdaptiveNavItem item,
+  required Widget child,
+  Key? key,
+}) {
+  // key 挂在外层 KeyedSubtree：导航药丸的 AnimatedSwitcher 靠它区分线框 /
+  // 实心两态图标。
+  if (!item.experimentalBadge) return KeyedSubtree(key: key, child: child);
+  return KeyedSubtree(key: key, child: Badge(child: child));
 }
 
 /// Marks the root of the self-drawn Material navigation (bottom bar / side rail)
@@ -143,7 +151,10 @@ class _MaterialNavCluster extends StatelessWidget {
           item: items[i],
           selected: i == currentIndex,
           horizontal: horizontal,
-          onSelect: () => onTap(i),
+          onSelect: () {
+            if (i != currentIndex) fushiSelectionHaptic(context);
+            onTap(i);
+          },
         ),
     ];
 
@@ -294,11 +305,20 @@ class _NavFocusCell extends StatelessWidget {
 
 /// Pure MD3 destination visual: an indicator pill behind the icon (filled when
 /// selected) over a label. Shared by the bottom bar and the side rail.
+///
+/// 2026-10 动效重做：选中药丸不再一帧跳出——它从图标宽度（32）横向展开到 64、
+/// 同时由透明渐入填充色（M3 导航栏的「指示器展开」）；图标的线框 ↔ 实心切换走
+/// 一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下
+/// [fushiMotionDuration] 归零，三处都瞬间到位，最终几何与配色不变。
 class _FushiNavTile extends StatelessWidget {
   const _FushiNavTile({required this.item, required this.selected});
 
   final AdaptiveNavItem item;
   final bool selected;
+
+  /// 药丸展开后的宽 / 高（与 MD3 NavigationBar 指示器同尺寸）。
+  static const double _pillWidth = 64;
+  static const double _pillHeight = 32;
 
   @override
   Widget build(BuildContext context) {
@@ -310,34 +330,81 @@ class _FushiNavTile extends StatelessWidget {
     final Color pillColor = eink ? colors.onSurface : colors.secondaryContainer;
     final Color pillIconColor =
         eink ? colors.surface : colors.onSecondaryContainer;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final BorderRadius radius =
+        FushiDesignTokens.of(context).radii.controlRadius;
+    final IconData icon =
+        selected ? (item.selectedIcon ?? item.icon) : item.icon;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Container(
-          width: 64,
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? pillColor : Colors.transparent,
-            borderRadius: FushiDesignTokens.of(context).radii.controlRadius,
-          ),
-          child: _maybeBadge(
-            item: item,
-            child: Icon(
-              selected ? (item.selectedIcon ?? item.icon) : item.icon,
-              size: 24,
-              color: selected ? pillIconColor : colors.onSurfaceVariant,
+        SizedBox(
+          width: _pillWidth,
+          height: _pillHeight,
+          child: Center(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: selected ? 1 : 0),
+              duration: duration,
+              curve: FushiMotion.enter,
+              builder: (BuildContext context, double t, Widget? child) {
+                // t 落到端点时直接用目标色：settle 后的药丸与改造前逐值相同
+                // （eink 守卫按 `decoration.color == onSurface` 断言）。
+                final Color fill = t >= 1
+                    ? pillColor
+                    : t <= 0
+                        ? Colors.transparent
+                        : pillColor.withValues(alpha: pillColor.a * t);
+                return Container(
+                  width: _pillHeight + (_pillWidth - _pillHeight) * t,
+                  height: _pillHeight,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: fill,
+                    borderRadius: radius,
+                  ),
+                  child: child,
+                );
+              },
+              child: AnimatedSwitcher(
+                duration: duration,
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                transitionBuilder:
+                    (Widget child, Animation<double> animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.8, end: 1)
+                          .animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _maybeBadge(
+                  key: ValueKey<(IconData, bool)>((icon, selected)),
+                  item: item,
+                  child: Icon(
+                    icon,
+                    size: 24,
+                    color: selected ? pillIconColor : colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          item.label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.labelSmall?.copyWith(
+        AnimatedDefaultTextStyle(
+          duration: duration,
+          curve: FushiMotion.standard,
+          style: (textTheme.labelSmall ?? const TextStyle()).copyWith(
             color: selected ? colors.onSurface : colors.onSurfaceVariant,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
+          child: Text(
+            item.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

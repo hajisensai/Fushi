@@ -2269,14 +2269,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           themeMode: themeMode,
           theme: appModel.theme,
           darkTheme: appModel.darkTheme,
-          // The loading branch uses a fallback theme. On completion this
-          // Resolve the persisted/system theme without animating the initial
-          // transition from the loading fallback on every platform. Restore
-          // normal theme animations after the first themed frame is built
-          // (or, on Windows, after the native window is revealed).
-          themeAnimationDuration: _initialThemePresented
-              ? kThemeAnimationDuration
-              : Duration.zero,
+          // 启动首帧从 fallback 主题切到持久化主题时不做过渡；首帧呈现后恢复
+          // 正常的主题交叉过渡。墨水屏下始终关闭（中间灰帧每帧一次局部刷新）。
+          themeAnimationStyle:
+              (!_initialThemePresented || appModel.themeNotifier.einkMode)
+                  ? AnimationStyle.noAnimation
+                  : fushiThemeAnimationStyle,
           // This is responsible for the initialising the global spacing across
           // the entire project, making use of the [spaces] package.
           builder: (context, child) {

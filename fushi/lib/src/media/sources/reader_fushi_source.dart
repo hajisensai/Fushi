@@ -76,6 +76,17 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   };
 });
 
+/// 「读完」的书的 bookKey 集合（`EpubBooks.completedAt` 非 null：手动标记或读到
+/// 末尾由阅读器自动写入），口径与书架 `_completedBookKeys` 同源。BUG-2918：首页
+/// 「继续」区判在读必须经 [classifyShelfReadStatus] 查它——阅读器落库的位置是
+/// 末页**首个可见字符**，读到最后一页 position 也永远 < duration，只看进度会把
+/// 读完的书当「在读」并显示四舍五入出的 100%。与 [bookLastReadAtProvider] 同点失效。
+final completedEpubBookKeysProvider =
+    FutureProvider<Set<String>>((ref) async {
+  final FushiDatabase db = ref.watch(appProvider).database;
+  return db.getCompletedEpubBookKeys();
+});
+
 /// bookKey → `EpubBooks.uid` 换算表（v82）。书架/首页的通货是 MediaItem
 /// （身份 = mediaIdentifier 里的 bookKey），查 [bookLastReadAtProvider] 前经此
 /// 换算；空 uid 行不进表（查不到 = 无阅读记录，与 resolveEpubBookUid 契约一致）。
@@ -441,6 +452,8 @@ class ReaderFushiSource extends ReaderMediaSource {
     // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
+    // BUG-2918：读到末尾时阅读器写 completedAt，关书回首页「继续」区立即剔除。
+    ref.invalidate(completedEpubBookKeysProvider);
   }
 
   @override

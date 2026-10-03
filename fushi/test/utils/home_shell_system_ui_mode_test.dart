@@ -4,8 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
 
-/// 首页与媒体退页统一恢复 edge-to-edge：状态栏和导航栏保持可见。
-/// 平台通道验证实际发出的模式；源码守卫验证启动与阅读器退出接线。
+/// TODO-097 / BUG-181 + BUG-2894 守卫：首页外壳的系统 UI 模式。
+///
+/// Android：`manual` + 只开 bottom——隐藏状态栏（竖屏时挤压右上角动作图标），
+/// 保留导航/手势栏；`manual` 同时清掉视频页留下的 IMMERSIVE_STICKY。
+/// 其它平台：先显式显示全部 overlay，再 edge-to-edge（3.44 的 edgeToEdge 不清
+/// sticky 沉浸）。host runner 上 [Platform.isAndroid] 为 false，故行为测试只覆盖
+/// 非 Android 分支；Android 分支的具体模式用源码守卫锁定。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -110,19 +115,36 @@ void main() {
     }
 
     test(
-      'home-shell helper keeps both system bars visible on every platform',
+      'home-shell helper hides the Android status bar, keeps the nav bar',
       () {
         final String fn = bodyOf(
           utils,
           'Future<void> setHomeShellSystemUiMode()',
         );
-        expect(fn, contains('SystemUiMode.edgeToEdge'));
-        expect(fn, contains('overlays: SystemUiOverlay.values'));
+        final int androidAt = fn.indexOf('if (Platform.isAndroid) {');
+        expect(androidAt, isNonNegative, reason: 'Android branch is required');
+        final int returnAt = fn.indexOf('return;', androidAt);
+        expect(returnAt, isNonNegative, reason: 'Android branch must return');
+        final String android = fn.substring(androidAt, returnAt);
+        expect(android, contains('SystemUiMode.manual'));
         expect(
-          fn.indexOf('SystemUiMode.manual'),
-          lessThan(fn.indexOf('SystemUiMode.edgeToEdge')),
+          android,
+          contains('overlays: <SystemUiOverlay>[SystemUiOverlay.bottom]'),
         );
-        expect(fn, isNot(contains('Platform.isAndroid')));
+        expect(
+          android.contains('SystemUiOverlay.top') ||
+              android.contains('SystemUiOverlay.values'),
+          isFalse,
+          reason: 'enabling the top overlay would re-show the status bar',
+        );
+
+        final String rest = fn.substring(returnAt);
+        expect(rest, contains('overlays: SystemUiOverlay.values'));
+        expect(
+          rest.indexOf('SystemUiMode.manual'),
+          lessThan(rest.indexOf('SystemUiMode.edgeToEdge')),
+          reason: 'non-Android must clear sticky immersion before edge-to-edge',
+        );
       },
     );
 
@@ -147,7 +169,7 @@ void main() {
       expect(
         fn,
         contains('setHomeShellSystemUiMode()'),
-        reason: 'exiting media must restore the visible home system bars',
+        reason: 'exiting media must restore the home-shell system UI mode',
       );
       expect(
         fn.contains(
