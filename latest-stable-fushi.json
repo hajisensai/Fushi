@@ -26,6 +26,15 @@
       "sha256": "da3a6b468a637b955a5af5419490f7426f37599d0972e035e3eaafe5843615cf"
     },
     {
+      "name": "fushi-2.9.1-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.9.1/fushi-2.9.1-windows-setup.exe",
+      "releaseSequence": 16909,
+      "tag": "v2.9.1",
+      "version": "2.9.1",
+      "size": 284703920,
+      "sha256": "52f7471be3e030e9089ab9c80f1ad17951406fe94d51e8e15e2dae142832059b"
+    },
+    {
       "name": "fushi-2.9.1-x86_64.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.9.1/fushi-2.9.1-x86_64.apk",
       "releaseSequence": 16909,
