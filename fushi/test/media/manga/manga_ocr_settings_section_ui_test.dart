@@ -1184,9 +1184,13 @@ void main() {
       ));
   Finder engineField() =>
       find.byKey(const ValueKey<String>('manga_ocr_default_engine'));
+  // 闭合态是 IndexedStack：它只把选中项报成 onstage，未选中项的标签默认被
+  // finder 跳过，必须 skipOffstage: false 才查得到。
   RenderParagraph closedLabel(WidgetTester tester, String label) =>
-      tester.renderObject<RenderParagraph>(
-          find.descendant(of: engineField(), matching: find.text(label)));
+      tester.renderObject<RenderParagraph>(find.descendant(
+          of: engineField(),
+          matching: find.text(label, skipOffstage: false),
+          skipOffstage: false));
 
   testWidgets('BUG-2895: narrow reader sheet shows engine and helper in full',
       (WidgetTester tester) async {
