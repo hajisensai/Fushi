@@ -74,7 +74,8 @@ import io.flutter.FlutterInjector;
  * 几何全部在 {@link FloatingBallGeometry}（与 Dart 同一套公式）。
  *
  * <p>按钮：Dart 下发的动作（{@code lookup} / {@code popup_lookup} / {@code clipboard} /
- * {@code screen_ocr} / {@code camera_ocr}）+ 固定的 {@code open_app} / {@code close}。
+ * {@code screen_ocr} / {@code camera_ocr} / {@code sync}）+ 固定的 {@code open_app} /
+ * {@code close}。
  * 图标是 Dart 下发的 Material Icons 码位（与应用内同一颗 IconData，字体取 app 自带的
  * Flutter 资源），颜色是 Dart 下发的主题色。契约见 docs/specs/2026-09-28-floating-ball.md。
  *
@@ -115,6 +116,7 @@ public class FloatingBallService extends BaseFloatingService {
     static final String ACTION_CLIPBOARD = "clipboard";
     static final String ACTION_SCREEN_OCR = "screen_ocr";
     static final String ACTION_CAMERA_OCR = "camera_ocr";
+    static final String ACTION_SYNC = "sync";
     static final String ACTION_OPEN_APP = "open_app";
     static final String ACTION_CLOSE = "close";
 
@@ -122,7 +124,7 @@ public class FloatingBallService extends BaseFloatingService {
     private static final List<String> CONFIGURABLE_ACTIONS =
             Arrays.asList(
                     ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR,
-                    ACTION_CAMERA_OCR);
+                    ACTION_CAMERA_OCR, ACTION_SYNC);
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
@@ -919,6 +921,11 @@ public class FloatingBallService extends BaseFloatingService {
                 FloatingBallChannel.requestCameraOcr();
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
+            case ACTION_SYNC:
+                // 同步的结果、冲突裁决与重新登录提示都在主窗里给：同样先排请求再拉前台。
+                FloatingBallChannel.requestSync();
+                BackgroundActivityLauncher.bringAppToFront(this);
+                break;
             case ACTION_OPEN_APP:
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
@@ -959,6 +966,7 @@ public class FloatingBallService extends BaseFloatingService {
             case ACTION_CLIPBOARD: return "Clipboard";
             case ACTION_SCREEN_OCR: return "Screen OCR";
             case ACTION_CAMERA_OCR: return "Photo lookup";
+            case ACTION_SYNC: return "Sync now";
             case ACTION_OPEN_APP: return "Open Fushi";
             case ACTION_CLOSE: return "Close";
             case LABEL_BALL: return "Floating ball";

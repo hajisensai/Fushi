@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -968,6 +969,7 @@ class ReaderPaginationScripts {
         : (continuousMode ? continuousShellSource() : paginatedShellSource());
     return '''<script>
 $kStudyUnitJs
+$kSentenceAudioOwnershipJs
 window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
 window.__fushiInstallShell = function(C) {
@@ -1481,6 +1483,8 @@ window.__fushiInstallShell = function(C) {
   // 的字符坐标系同口径，逆运算），无 caret 几何依赖。仅连续模式调用（分页有 snap/lock）。
   firstVisibleCharOffsetByScan: function() {
     var vertical = this.isVertical();
+    // BUG-2903：连续 shell 有章内文本索引，同一个数走二分，不再全章 walk。
+    if (typeof this._charsBeforeEdge === 'function') return this._charsBeforeEdge(vertical);
     var walker = this.createWalker();
     var explored = 0;
     var node;
@@ -1790,8 +1794,11 @@ window.__fushiInstallShell = function(C) {
       }
       spans.push({ id: cue.id, start: spanStart, len: spanLen });
     }
+    // BUG-2907：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
+    var isMatchable = this.isMatchableChar.bind(this);
     for (var si = 0; si < spans.length; si++) {
-      out.push({ id: spans[si].id, ranges: this.rangesForNormSpan(map, spans[si].start, spans[si].len) });
+      out.push({ id: spans[si].id, ranges: window.fushiSentenceAudioOwnership.extendSegments(
+        this.rangesForNormSpan(map, spans[si].start, spans[si].len), isMatchable) });
     }
     // TODO-630/BUG-366 observability：full 长度 + 多少 cue 算出空 range（全空=路径/折叠未命中）。
     var emptyRanges = 0;
@@ -3694,25 +3701,113 @@ $_sharedJs
   revealElement: function(element) {
     return this.scrollToTarget(element);
   },
-  calculateProgress: function() {
-    // TODO-736 A-1：字符级进度（对齐安卓 reader-continuous.js calculateProgress:529-541）。
-    // 分子改用 countCharsBeforeViewport 逐节点累加「已滚出视口首边的可匹配字符数」，
-    // 替代旧的「整节点 in/out」段落级粗粒度——后者把跨视口的长节点整块算未读，长节点滚
-    // 动期进度按整节点跳变、滚一大段都不动（滚动模式「进度像没保存」的根因之一）。分母
-    // 仍是 countChars 总可匹配字符；createWalker 排除 rt/rp，分子分母同套。
-    var vertical = this.isVertical();
+  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
+  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
+  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
+  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
+  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
+  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
+  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
+  // 同步 takeRecords 判脏，不吃异步回调的时序。
+  _textIndexCache: null,
+  _textIndexObserver: null,
+  _textIndex: function() {
+    var obs = this._textIndexObserver;
+    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
+    var cache = this._textIndexCache;
+    if (cache && cache.body === document.body) return cache;
+    if (!obs) {
+      var self = this;
+      obs = new MutationObserver(function() { self._textIndexCache = null; });
+      this._textIndexObserver = obs;
+    }
+    obs.disconnect();
+    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
+    var nodes = [];
+    var starts = [];
+    var total = 0;
     var walker = this.createWalker();
-    var totalChars = 0;
-    var exploredChars = 0;
     var node;
     while (node = walker.nextNode()) {
-      var nodeLen = this.countChars(node.textContent);
-      totalChars += nodeLen;
-      if (nodeLen > 0) {
-        exploredChars += this.countCharsBeforeViewport(node, vertical);
-      }
+      var len = this.countChars(node.textContent);
+      if (len <= 0) continue;
+      nodes.push(node);
+      starts.push(total);
+      total += len;
     }
-    return totalChars > 0 ? exploredChars / totalChars : 0;
+    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
+    this._textIndexCache = cache;
+    return cache;
+  },
+  chapterCharTotal: function() {
+    return this._textIndex().total;
+  },
+  // 文本节点相对视口边的位置：-1 整段在边之前 / 0 跨边 / 1 整段在边之后 / null 无几何。
+  // 判据与 countCharsBeforeViewport 的两个早返回逐条同口径（横排沿 top/bottom、竖排
+  // vertical-rl 沿 left/right，「之前」在右侧）。
+  _textNodeEdgeSide: function(node, vertical, edge) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var start = vertical ? rect.left : rect.top;
+      var end = vertical ? rect.right : rect.bottom;
+      if (start < minStart) minStart = start;
+      if (end > maxEnd) maxEnd = end;
+    }
+    if (minStart === Infinity) return null;
+    if (vertical) {
+      if (minStart >= edge) return -1;
+      if (maxEnd <= edge) return 1;
+    } else {
+      if (maxEnd <= edge) return -1;
+      if (minStart >= edge) return 1;
+    }
+    return 0;
+  },
+  // 视口边（edge 缺省 = 首边，与 countCharsBeforeViewport 同语义）之前的可匹配字符数。
+  // 连续模式单栏顺排，文本节点沿书写轴单调：二分出第一个不整段在边之前的节点 k，
+  // 结果 = starts[k] + 从 k 起逐个跨边节点的局部计数，遇到整段在边之后即止。每次只
+  // 量 O(log n) 个节点的几何，取代逐节点全章累加。无几何的节点（display:none 等）
+  // 借其后最近一个有几何的节点判边。
+  _charsBeforeEdge: function(vertical, edge) {
+    var index = this._textIndex();
+    var nodes = index.nodes;
+    var n = nodes.length;
+    if (n === 0) return 0;
+    var probeEdge = edge === undefined ? (vertical ? window.innerWidth : 0) : edge;
+    var lo = 0;
+    var hi = n;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var j = mid;
+      var side = null;
+      while (j < hi && (side = this._textNodeEdgeSide(nodes[j], vertical, probeEdge)) === null) j++;
+      if (side === null || side >= 0) hi = mid;
+      else lo = j + 1;
+    }
+    if (lo >= n) return index.total;
+    var explored = index.starts[lo];
+    for (var k = lo; k < n; k++) {
+      var kSide = this._textNodeEdgeSide(nodes[k], vertical, probeEdge);
+      if (kSide === null) continue;
+      if (kSide > 0) break;
+      explored += this.countCharsBeforeViewport(nodes[k], vertical, edge);
+    }
+    return explored;
+  },
+  calculateProgress: function() {
+    // TODO-736 A-1：字符级进度（对齐安卓 reader-continuous.js calculateProgress:529-541）。
+    // 分子是「已滚出视口首边的可匹配字符数」（跨视口的长节点按字计，不整节点跳变），
+    // 分母是 countChars 总可匹配字符；createWalker 排除 rt/rp，分子分母同套。
+    // BUG-2903：两者都走章内文本索引 + 二分，不再逐帧全章 walk。
+    var total = this._textIndex().total;
+    if (total <= 0) return 0;
+    return this._charsBeforeEdge(this.isVertical()) / total;
   },
   // BUG-1241：连续模式同样以视口首字符算 progress，物理滚到底时分数仍可能小于 1。
   // 横排读 scrollTop；竖排 WebView 在 vertical-rl 下 scrollX 为负，因此用绝对位移
@@ -3728,24 +3823,14 @@ $_sharedJs
   },
   // 连续模式当前视口可见字符区间的终点（半开 end，章内学习单位偏移；口径与
   // calculateProgress 分子同源）。一次 walk 用 countCharsBeforeViewport 传视口**末边**
-  // （横排 window.innerHeight / 竖排 0）累加「末边之前的字数」；物理到底（isAtEnd）时
-  // end = 章总字数。calculateProgress 行为不变。
+  // （横排 window.innerHeight / 竖排 0）求「末边之前的字数」；物理到底（isAtEnd）时
+  // end = 章总字数。BUG-2903：同走章内文本索引 + 二分。
   getLastVisibleCharOffset: function() {
+    var total = this._textIndex().total;
+    if (total <= 0) return -1;
+    if (this.isAtEnd()) return total;
     var vertical = this.isVertical();
-    var edge = vertical ? 0 : window.innerHeight;
-    var walker = this.createWalker();
-    var totalChars = 0;
-    var exploredChars = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      var nodeLen = this.countChars(node.textContent);
-      totalChars += nodeLen;
-      if (nodeLen > 0) {
-        exploredChars += this.countCharsBeforeViewport(node, vertical, edge);
-      }
-    }
-    if (totalChars <= 0) return -1;
-    return this.isAtEnd() ? totalChars : exploredChars;
+    return this._charsBeforeEdge(vertical, vertical ? 0 : window.innerHeight);
   },
   // 连续模式恢复落点 settle：等一帧让恢复滚动落定后通知 Dart。
   //

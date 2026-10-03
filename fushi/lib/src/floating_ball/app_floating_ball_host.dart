@@ -9,8 +9,8 @@
 ///     `FloatingBallService`，并把前后台状态告诉它（前台时原生球隐藏，应用内球
 ///     开着就由本球接管）。
 ///  3. 外部查词入口（iOS App Intent / `fushi://lookup` 深链）：排队到 app 初始化
-///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）与「拍照
-///     查词」（开相机）同样排队。
+///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）、「拍照
+///     查词」（开相机）与「立即同步」同样排队。
 ///  4. 系统球上点「关闭」= 用户关掉了应用外悬浮球：同步关掉设置里的「应用外」开关，
 ///     两边始终一致（否则下次回到 Fushi 又会按开关把球拉起来）。
 library;
@@ -34,9 +34,11 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/utils.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
@@ -53,6 +55,13 @@ final ValueNotifier<bool> pendingOpenLookupPage = ValueNotifier<bool>(false);
 
 /// Android 系统球「拍照查词」：Fushi 已被拉到前台，等 app 就绪后开相机。
 final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
+
+/// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
+final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
+
+/// 截屏 / 拍照识字报「系统 OCR 模型未就绪」：等 app 就绪后弹出模型配置（BUG-2906）。
+/// Android 截屏 OCR 在原生服务里识别，报错时原生把 Fushi 拉到前台再经通道置位。
+final ValueNotifier<bool> pendingSystemOcrSetup = ValueNotifier<bool>(false);
 
 /// 从应用外交来一个要查的词（iOS App Intent、`fushi://lookup?word=`）。
 void deliverExternalLookup(String word) {
@@ -72,6 +81,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
       t.floating_ball_action_screen_ocr,
   FloatingBallGlobalAction.cameraOcr.storageValue:
       t.floating_ball_action_camera_ocr,
+  FloatingBallGlobalAction.sync.storageValue: t.sync_now,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
@@ -93,6 +103,7 @@ IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
+      FloatingBallGlobalAction.sync => Icons.sync,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
@@ -182,6 +193,11 @@ class DesktopSystemBallActionTarget {
 @visibleForTesting
 Future<void>? debugLatestSystemBallSync;
 
+/// 最近一次「按新的自动恢复选项落定已关闭的球」（关掉对应显示开关）的落盘
+/// Future。测试 await 它确认写库真的完成，再断言 / 拆库。
+@visibleForTesting
+Future<void>? debugLatestClosedBallSettle;
+
 /// 桌面系统球动作的执行面（测试替换）。
 @visibleForTesting
 DesktopSystemBallActionTarget desktopSystemBallActionTarget =
@@ -224,6 +240,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   bool _dismissed = false;
   Object? _dismissedOwner;
 
+  /// 用户在应用外球上点了关闭、而「自动恢复」含应用外
+  /// （[FloatingBallAutoRestore.restoresSystem]）：开关不动，球停到下次回到
+  /// Fushi（[didChangeAppLifecycleState] 收到 resumed）再拉起。
+  bool _systemBallClosed = false;
+
   /// 当前主题给原生系统球的配色（build 里按 Theme 刷新；变了就重新下发）。
   Map<String, int> _systemBallColors = const <String, int>{};
 
@@ -235,6 +256,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
+    pendingSync.addListener(_onChanged);
+    pendingSystemOcrSetup.addListener(_onChanged);
     if (Platform.isIOS || Platform.isAndroid || isDesktopSystemBallPlatform) {
       unawaited(
         FloatingBallChannel.installHandler(
@@ -242,6 +265,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onScreenOcrFinished: _onScreenOcrFinished,
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
+          onOpenSync: () => pendingSync.value = true,
+          onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
           onSystemBallAction: _onDesktopSystemBallAction,
           onSystemBallPositionChanged: _onDesktopSystemBallMoved,
@@ -257,6 +282,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingExternalLookup.removeListener(_onChanged);
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
+    pendingSync.removeListener(_onChanged);
+    pendingSystemOcrSetup.removeListener(_onChanged);
     _prefs?.removeListener(_onPrefsChanged);
     // 还在路上的起球闭包作废。
     _systemGeneration++;
@@ -268,12 +295,52 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   }
 
   void _onPrefsChanged() {
+    _settleClosedBalls();
     _syncSystemBall();
     if (mounted) setState(() {});
   }
 
+  /// 「关闭悬浮球」留下的临时关闭态（[_systemBallClosed] / [_dismissed]）只在
+  /// 「自动恢复」覆盖那颗球时才成立；选项改成不再恢复它，就按新选项把这次关闭
+  /// 落定成关掉对应的显示开关——与在新选项下点关闭的结果一致，开关仍是唯一
+  /// 真相源，不留一个「等回到 Fushi 再起」的标记去违背用户刚改的选项。
+  ///
+  /// setPref 先同步写内存缓存再落盘，所以紧随其后的 [_syncSystemBall] 读到的
+  /// 已是关掉的开关，直接走停球分支。
+  void _settleClosedBalls() {
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null) return;
+    final FloatingBallAutoRestore restore = prefs.floatingBallAutoRestore;
+    final List<Future<void>> writes = <Future<void>>[];
+    if (_systemBallClosed && !restore.restoresSystem) {
+      _systemBallClosed = false;
+      if (prefs.floatingBallSystem) {
+        writes.add(prefs.setFloatingBallSystem(false));
+      }
+    }
+    if (_dismissed && !restore.restoresInApp) {
+      _dismissed = false;
+      _dismissedOwner = null;
+      if (prefs.floatingBallInApp) {
+        writes.add(prefs.setFloatingBallInApp(false));
+      }
+    }
+    if (writes.isEmpty) return;
+    final Future<void> settle = Future.wait(writes).then((_) {});
+    debugLatestClosedBallSettle = settle;
+    unawaited(settle);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 回到 Fushi：关掉的应用外球按「自动恢复」重新拉起。桌面主窗失焦只到
+    // inactive，所以这里认任何一次 resumed，而不只认后台 → 前台。
+    final bool restoreSystem =
+        state == AppLifecycleState.resumed && _systemBallClosed;
+    if (restoreSystem) {
+      _systemBallClosed = false;
+      _syncSystemBall(force: true);
+    }
     final bool foreground = switch (state) {
       AppLifecycleState.resumed => true,
       AppLifecycleState.paused || AppLifecycleState.hidden => false,
@@ -282,12 +349,22 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     };
     if (foreground == _foreground) return;
     _foreground = foreground;
+    // 从后台回到 Fushi：本页关掉的应用内球也恢复（「不自动恢复」时关闭已经
+    // 落成了关掉「应用内显示」，不会走到这里）。
+    if (foreground && _dismissed) {
+      setState(() {
+        _dismissed = false;
+        _dismissedOwner = null;
+      });
+    }
     if (_systemSignature != null) {
       unawaited(FloatingBallChannel.setAppForeground(foreground));
     }
     // 从「显示在其他应用上层」授权页回来：再试一次起系统球。桌面没有这道权限，
     // 主窗每次拿回焦点都重发一遍（重画图标、收起菜单）只是白做。
-    if (foreground && Platform.isAndroid) _syncSystemBall(force: true);
+    if (foreground && Platform.isAndroid && !restoreSystem) {
+      _syncSystemBall(force: true);
+    }
   }
 
   /// 按偏好起停原生系统球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。
@@ -295,9 +372,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final PreferencesRepository? prefs = _prefs;
     if (prefs == null || !floatingBallSystemBallSupported) return;
     if (!prefs.floatingBallSystem) {
+      _systemBallClosed = false;
       _stopSystemBall();
       return;
     }
+    // 用户关掉的球等回到 Fushi 再起，期间配置变化不能把它拉起来。
+    if (_systemBallClosed) return;
     final bool lookupModuleEnabled = ref
         .read(appProvider)
         .moduleVisibility
@@ -326,11 +406,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final int generation = ++_systemGeneration;
     _systemRequested = true;
     // 起球要 await 原生回话与桌面资源；回来时还是最新一代、开关还开着，才继续。
+    // 「用户关过、等回到 Fushi 再起」也算过期：那个标记可能是同时在路上的另一代
+    // 读到并落下的，本代已经过了入口那道门。
     bool stale() =>
-        generation != _systemGeneration || !prefs.floatingBallSystem;
+        generation != _systemGeneration ||
+        !prefs.floatingBallSystem ||
+        _systemBallClosed;
     final Future<void> run = () async {
-      // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：这时按开关把球
-      // 拉起来就违背了用户刚做的事，改为把开关关掉。
+      // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：按「自动恢复」
+      // 处理——含应用外时这次起球就是「打开 Fushi 自动恢复」（还在后台则等回到
+      // 前台）；否则按开关把球拉起来就违背了用户刚做的事，改为把开关关掉。
       //
       // 这个标记是一次性的（Android 读即清，见 FloatingBallService
       // .takeClosedByUser）：拿到它的那一代就必须处理，不论自己是否已被新一代
@@ -338,9 +423,18 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final bool closedByUser =
           await FloatingBallChannel.takeSystemBallClosedByUser();
       if (closedByUser) {
-        _systemSignature = null;
-        if (prefs.floatingBallSystem) await prefs.setFloatingBallSystem(false);
-        return;
+        if (!prefs.floatingBallAutoRestore.restoresSystem) {
+          _systemSignature = null;
+          if (prefs.floatingBallSystem) {
+            await prefs.setFloatingBallSystem(false);
+          }
+          return;
+        }
+        if (!_foreground) {
+          _systemSignature = null;
+          _systemBallClosed = true;
+          return;
+        }
       }
       // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
       // Dart 持久化后交给它。
@@ -466,6 +560,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           await target.bringMainWindowToFront();
           FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
         }
+      case 'sync':
+        // 同步的结果、冲突裁决与重新登录提示都在主窗里给：先把主窗唤到前台。
+        await target.bringMainWindowToFront();
+        await _manualSync();
       case 'open_app':
         await target.bringMainWindowToFront();
     }
@@ -483,9 +581,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       await FloatingBallChannel.takeSystemBallClosedByUser();
       _systemSignature = null;
       final PreferencesRepository? prefs = _prefs;
-      if (prefs != null && prefs.floatingBallSystem) {
-        await prefs.setFloatingBallSystem(false);
+      if (prefs == null || !prefs.floatingBallSystem) return;
+      // 「自动恢复」含应用外：开关不动，回到 Fushi 再拉起。原生那边球已经收了，
+      // 让在路上的起球闭包作废，免得它又把球摆出来。
+      if (prefs.floatingBallAutoRestore.restoresSystem) {
+        _systemGeneration++;
+        _systemBallClosed = true;
+        return;
       }
+      await prefs.setFloatingBallSystem(false);
     }());
   }
 
@@ -507,6 +611,30 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       if (!pendingCameraOcr.value) return;
       pendingCameraOcr.value = false;
       unawaited(_cameraOcr());
+    });
+  }
+
+  /// 系统球「立即同步」：app 就绪后跑一轮同步（同步要用已初始化的数据库与通道）。
+  void _flushSync() {
+    if (!pendingSync.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingSync.value) return;
+      pendingSync.value = false;
+      unawaited(_manualSync());
+    });
+  }
+
+  /// 系统 OCR 模型未就绪：app 就绪后弹出模型配置（查状态 / 立即下载）。
+  void _flushSystemOcrSetup() {
+    if (!pendingSystemOcrSetup.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingSystemOcrSetup.value) return;
+      final BuildContext? ctx = _navigatorContext;
+      if (ctx == null) return;
+      pendingSystemOcrSetup.value = false;
+      unawaited(
+        showSystemOcrSetupDialog(ctx, language: kFloatingBallOcrLanguage),
+      );
     });
   }
 
@@ -554,6 +682,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       return;
     }
     FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+  }
+
+  /// 立即同步：与设置页「立即同步」同一个入口，重入（已有同步在跑）、三种结果的
+  /// 提示、逐通道冲突裁决、鉴权失效登出全由它处理。
+  Future<void> _manualSync() async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    await runManualSyncWithFeedback(
+      context: ctx,
+      appModel: ref.read(appProvider),
+    );
   }
 
   /// Android 截屏 OCR 截到帧（或放弃）：把藏起来的球放回来。
@@ -634,8 +773,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         bytes,
         language: kFloatingBallOcrLanguage,
       );
-    } on SystemOcrUnavailableException {
-      _toast(t.floating_ball_ocr_model_unavailable);
+    } on SystemOcrUnavailableException catch (error) {
+      if (error.reason == kSystemOcrModelUnavailableReason) {
+        // 不只提示「没就绪」：直接带用户去把模型配好（BUG-2906）。
+        pendingSystemOcrSetup.value = true;
+      } else {
+        _toast(t.floating_ball_ocr_failed);
+      }
       return;
     } catch (error, stack) {
       ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
@@ -673,19 +817,29 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
-  /// 应用内球的「关闭悬浮球」：只在**这一次页面**里收起，离开这个页面就自动
-  /// 恢复（下次再进同一个视频 / 书也照常出现）。不动设置里的「应用内显示」——
-  /// 用户的原话是「这次不要，之后要」。
-  ReaderHeaderAction _closeInAppAction(FloatingBallSceneSnapshot scene) =>
-      ReaderHeaderAction(
-        key: const ValueKey<String>('floating_ball_action_close'),
-        icon: kFloatingBallCloseIcon,
-        label: t.floating_ball_action_close,
-        onPressed: () => setState(() {
-          _dismissed = true;
-          _dismissedOwner = scene.owner;
-        }),
-      );
+  /// 应用内球的「关闭悬浮球」，按「自动恢复」（[FloatingBallAutoRestore]）：
+  /// 含应用内时只在**这一次页面**里收起，离开这个页面或从后台回到 Fushi 就自动
+  /// 恢复（下次再进同一个视频 / 书也照常出现），不动设置里的「应用内显示」——
+  /// 用户的原话是「这次不要，之后要」；选了「不自动恢复」则直接关掉「应用内
+  /// 显示」，要到设置里重开。
+  ReaderHeaderAction _closeInAppAction(
+    FloatingBallSceneSnapshot scene,
+    PreferencesRepository prefs,
+  ) => ReaderHeaderAction(
+    key: const ValueKey<String>('floating_ball_action_close'),
+    icon: kFloatingBallCloseIcon,
+    label: t.floating_ball_action_close,
+    onPressed: () {
+      if (!prefs.floatingBallAutoRestore.restoresInApp) {
+        unawaited(prefs.setFloatingBallInApp(false));
+        return;
+      }
+      setState(() {
+        _dismissed = true;
+        _dismissedOwner = scene.owner;
+      });
+    },
+  );
 
   ReaderHeaderAction _globalAction(FloatingBallGlobalAction action) =>
       switch (action) {
@@ -719,6 +873,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.floating_ball_action_camera_ocr,
           onPressed: () => unawaited(_cameraOcr()),
         ),
+        FloatingBallGlobalAction.sync => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_sync'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.sync_now,
+          onPressed: () => unawaited(_manualSync()),
+        ),
       };
 
   /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
@@ -745,6 +905,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
+    _flushSync();
+    _flushSystemOcrSetup();
 
     final FloatingBallSceneSnapshot scene = _registry.current;
     // 页面把必需入口托付给了球（阅读器关掉顶栏和底栏）：球必须在，本页不能被
@@ -775,7 +937,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // 「关闭悬浮球」排最上（离球最远，防误触）；按钮在下、末颗紧贴球。接管中的
     // 页面没有关闭键，固定按钮占最上面那几格。
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
-      if (!pinned) _closeInAppAction(scene),
+      if (!pinned) _closeInAppAction(scene, prefs),
       ...buttons,
     ];
     final Size window = MediaQuery.sizeOf(context);

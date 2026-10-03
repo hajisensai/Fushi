@@ -753,9 +753,13 @@ $imageRevealSemantics
         if (!cue || !cue.id) continue;
         var start = Math.max(0, Number(cue.start) || 0);
         var length = Math.max(0, Number(cue.length) || 0);
+        // BUG-2907：与翻页 / 滚动同一份标点归属，句末「。」、句首「「」进当前句。
         result.push({
           id: cue.id,
-          ranges: this.collectMatchableSegments(start, start + length)
+          ranges: window.fushiSentenceAudioOwnership.extendSegments(
+            this.collectMatchableSegments(start, start + length),
+            this.reader.isMatchableChar.bind(this.reader)
+          )
         });
       }
       return result;
@@ -1630,11 +1634,45 @@ $sharedInitViewport
         }
       }
       if (best <= start) best = start + 1;
+      best = this.viewportSplitKinsokuBoundary(units, start, best);
       var splitItems = this.textItemsFromViewportUnits(units, start, best);
       result.push(this.screenFromTextItems(splitItems, 0, splitItems.length, screen.ids));
       start = best;
     }
     return result;
+  },
+  // BUG-2905：二分只认「装得下」，切点落在哪个字上全凭运气——段落恰好多出一个「。」
+  // 就切出一屏孤零零的「。」，「…しょうな！」」切成「…しょうな！」+「」」。同一段被切
+  // 开时，下一屏不得以行首禁则字开头、本屏不得以开括号收尾（与正文 `line-break:
+  // strict` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、
+  // 不往前进，所以退完的屏一定仍装得下。若退过本屏起点都找不到合规切点（连续禁则字比
+  // 一整屏还长，如「ーーーー…」「っっっ」「！？！？…」），禁则在本屏内无解：放弃禁则、
+  // 用二分得到的最宽切点 end（与浏览器 line-break 遇到无法满足的禁则时照常断开一致），
+  // 而不是退到只剩一个单元——那样每屏只放一个字，屏数暴增。end > start，切屏仍有进展。
+  viewportSplitKinsokuBoundary: function(units, start, end) {
+    if (end >= units.length) return end;
+    for (var boundary = end; boundary > start; boundary--) {
+      var head = this.viewportSplitUnitEdgeChar(units[boundary], true);
+      var tail = this.viewportSplitUnitEdgeChar(units[boundary - 1], false);
+      if (!this.isLineStartProhibitedChar(head) && !this.isLineEndProhibitedChar(tail)) return boundary;
+    }
+    return end;
+  },
+  viewportSplitUnitEdgeChar: function(unit, first) {
+    var items = unit && unit.items;
+    if (!items || !items.length) return '';
+    var item = items[first ? 0 : items.length - 1];
+    return String(item && item.char || '');
+  },
+  lineStartProhibitedChars: '、。，．,.・：；:;？！?!‼⁇⁈⁉゛゜ヽヾゝゞ々〻ー－‐゠–〜～' +
+    '」』）〕］｝〉》】〙〗〟’”｠»)]}' +
+    'ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ…‥',
+  lineEndProhibitedChars: '「『（〔［｛〈《【〘〖〝‘“｟«([{',
+  isLineStartProhibitedChar: function(char) {
+    return !!char && this.lineStartProhibitedChars.indexOf(char) >= 0;
+  },
+  isLineEndProhibitedChar: function(char) {
+    return !!char && this.lineEndProhibitedChars.indexOf(char) >= 0;
   },
   viewportSplitUnitsForItems: function(items) {
     var units = [];

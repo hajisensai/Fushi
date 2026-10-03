@@ -403,12 +403,18 @@ void main() {
     // 移到新首页 HomeDashboardPage，此处只守卫书架页仍在用的「最近阅读」排序语义。）
     // v82/v83：recency 表键 = 书稳定 uid，页面身份 bookKey 经 _epubUidByKey 换算
     // 一跳再查；没读过仍退 importedAt。退回裸 bookKey 直查（丢换算）即红。
+    // BUG-2904：hero 与排序都必须走同一个换算 helper；hero 曾拿裸 bookKey 直查
+    // uid 键表恒查空、退化成「最近导入」——任何 `_lastReadAtByBookKey[` 直接下标
+    // 访问都算回潮。
     expect(
-        historySrc.contains(
-            '_lastReadAtByBookKey[_epubUidByKey[bookKey] ?? bookKey] ??'),
-        isTrue,
-        reason: '「最近阅读」= updatedAt（uid 键，bookKey 经换算表一跳），'
-            '没读过按导入时间融入（与视频页语义镜像）');
+        RegExp(r'lastReadAtForBookKey\(\s*_lastReadAtByBookKey,\s*_epubUidByKey,')
+            .allMatches(historySrc)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: '「最近阅读」排序与继续阅读 hero 都按 uid 键查'
+            '（bookKey 经换算表一跳），没读过按导入时间融入');
+    expect(historySrc.contains('_lastReadAtByBookKey['), isFalse,
+        reason: 'recency 表键是 uid，裸下标访问会绕过 bookKey→uid 换算（BUG-2904）');
     expect(historySrc.contains('payload.seq'), isFalse,
         reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
   });

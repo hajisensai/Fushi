@@ -133,6 +133,35 @@ void main() {
     }
   });
 
+  /// 会话行封面（用户 2026-10-03「统计中心的会话也支持封面」）：总览三域混排，
+  /// 单看标题认不出作品时封面是最快的辨认线索。四个挂会话区块的页面一个都不能
+  /// 漏传封面解析器，否则那一页的会话行又只剩一颗小图标。
+  test('四个页面的会话区块都传 coverOf', () {
+    const Map<String, String> pagesWithSessions = <String, String>{
+      ..._pages,
+      'center': 'lib/src/pages/implementations/statistics_center_page.dart',
+    };
+    for (final MapEntry<String, String> e in pagesWithSessions.entries) {
+      final String src = maskComments(
+        File(e.value).readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      for (final String call in <String>[
+        'buildStatSessionSection(',
+        'showStatSessionsSheet(',
+      ]) {
+        int at = src.indexOf(call);
+        while (at >= 0) {
+          expect(
+            _callArguments(src, at + call.length - 1).contains('coverOf:'),
+            isTrue,
+            reason: '${e.key} 的 $call 漏传封面解析器',
+          );
+          at = src.indexOf(call, at + call.length);
+        }
+      }
+    }
+  });
+
   test('视频页：小时分布折进「分析」', () {
     final String src = maskComments(
       File(_pages['video']!).readAsStringSync().replaceAll('\r\n', '\n'),

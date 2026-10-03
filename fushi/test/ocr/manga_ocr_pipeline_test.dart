@@ -171,6 +171,58 @@ DetectedTextRegion _region(OcrRect rect, double score) => DetectedTextRegion(
     );
 
 void main() {
+  group('补检（检测器弱候选）', () {
+    test('弱候选与已有块交给补检器，补回的块按阅读序并入', () async {
+      final _SweepDetector detector = _SweepDetector();
+      final _RecordingSweeper sweeper = _RecordingSweeper(<OcrBlock>[
+        const OcrBlock(
+          box: OcrRect(left: 30, top: 300, right: 300, bottom: 360),
+          vertical: false,
+          lines: <String>['モテる女子の', 'オキテ'],
+          lineBoxes: <OcrRect>[
+            OcrRect(left: 30, top: 300, right: 300, bottom: 330),
+            OcrRect(left: 60, top: 335, right: 200, bottom: 360),
+          ],
+          score: 0.97,
+        ),
+      ]);
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: detector,
+        recognizer: FakeRecognizer(),
+        sweeper: sweeper,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+
+      expect(sweeper.calls, 1);
+      expect(sweeper.candidates, detector.weak);
+      expect(sweeper.covered, <OcrRect>[_SweepDetector.top]);
+      // 上面的正式块在前，下面补回的标题在后；补回块的行几何原样保留。
+      expect(result.blocks.map((OcrBlock b) => b.text), <String>[
+        'p0@400',
+        'モテる女子のオキテ',
+      ]);
+      expect(result.blocks.last.lineBoxes, hasLength(2));
+    });
+
+    test('没有弱候选时不调补检器', () async {
+      final _RecordingSweeper sweeper = _RecordingSweeper(const <OcrBlock>[]);
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _SweepDetector(weak: const <DetectedTextRegion>[]),
+        recognizer: FakeRecognizer(),
+        sweeper: sweeper,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(sweeper.calls, 0);
+      expect(result.blocks, hasLength(1));
+    });
+
+    test('没有补检器时弱候选被忽略，结果与原来一致', () async {
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _SweepDetector(),
+        recognizer: FakeRecognizer(),
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(result.blocks.map((OcrBlock b) => b.text), <String>['p0@400']);
+    });
+  });
+
   group('识别后包含去重', () {
     const OcrRect parent = OcrRect(left: 0, top: 0, right: 400, bottom: 200);
     const OcrRect child = OcrRect(left: 20, top: 120, right: 220, bottom: 130);
@@ -1071,4 +1123,68 @@ class _TwoLineParentRecognizer implements OrientedOcrRecognizer {
                 )
               : const OcrRecognition(text: '本文', vertical: false),
       ];
+}
+
+/// 一个正式块（右上竖排）+ 两个弱候选（下方的标题两行）。
+class _SweepDetector implements OcrDetector {
+  _SweepDetector({List<DetectedTextRegion>? weak}) : weak = weak ?? _title;
+
+  static const OcrRect top = OcrRect(
+    left: 400,
+    top: 10,
+    right: 440,
+    bottom: 130,
+  );
+
+  static const List<DetectedTextRegion> _title = <DetectedTextRegion>[
+    DetectedTextRegion(
+      rect: OcrRect(left: 30, top: 300, right: 250, bottom: 330),
+      score: 0.125,
+      classId: 2,
+      insideBubble: false,
+    ),
+    DetectedTextRegion(
+      rect: OcrRect(left: 80, top: 335, right: 200, bottom: 360),
+      score: 0.021,
+      classId: 2,
+      insideBubble: false,
+    ),
+  ];
+
+  final List<DetectedTextRegion> weak;
+
+  @override
+  Future<PageDetections> detect(img.Image page) async => PageDetections(
+        textRegions: const <DetectedTextRegion>[
+          DetectedTextRegion(
+            rect: top,
+            score: 0.9,
+            classId: 1,
+            insideBubble: true,
+          ),
+        ],
+        bubbles: const <OcrRect>[],
+        weakTextRegions: weak,
+      );
+}
+
+class _RecordingSweeper implements OcrPageTextSweeper {
+  _RecordingSweeper(this.result);
+
+  final List<OcrBlock> result;
+  int calls = 0;
+  List<DetectedTextRegion>? candidates;
+  List<OcrRect>? covered;
+
+  @override
+  Future<List<OcrBlock>> sweep(
+    img.Image page, {
+    required List<DetectedTextRegion> candidates,
+    required List<OcrRect> covered,
+  }) async {
+    calls++;
+    this.candidates = candidates;
+    this.covered = covered;
+    return result;
+  }
 }
