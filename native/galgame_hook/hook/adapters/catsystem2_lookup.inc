@@ -148,10 +148,12 @@ struct Cs2LookupRuntime {
 Cs2LookupRuntime g_cs2_lookup;
 using Cs2ClearFn = int(__thiscall*)(uintptr_t);
 using Cs2RenderFn = int(__thiscall*)(uintptr_t, uintptr_t);
+using Cs2RenderTargetFn = int(__thiscall*)(uintptr_t, uintptr_t, uintptr_t);
 using Cs2UpdateFn = int(__thiscall*)(uintptr_t, uintptr_t, uintptr_t);
 using Cs2InputFn = LRESULT(__stdcall*)(uintptr_t, HWND, UINT, WPARAM, LPARAM);
 Cs2ClearFn g_cs2_clear_original = nullptr;
 Cs2RenderFn g_cs2_render_original = nullptr;
+Cs2RenderTargetFn g_cs2_render_target_original = nullptr;
 Cs2UpdateFn g_cs2_update_original = nullptr;
 Cs2InputFn g_cs2_input_original = nullptr;
 
@@ -255,19 +257,18 @@ int __fastcall Cs2ClearDetour(uintptr_t renderer, uintptr_t) {
   return result;
 }
 
-int __fastcall Cs2RenderDetour(uintptr_t renderer, uintptr_t,
-                               uintptr_t record) {
-  const int result = g_cs2_render_original(renderer, record);
+// One rendered record of `renderer`'s page (bounded copy, game thread).
+void RecordCs2Render(uintptr_t renderer, uintptr_t record) {
   auto& rt = g_cs2_lookup;
   rt.render_hits.fetch_add(1u, std::memory_order_relaxed);
-  if (!Cs2OnGameThread()) return result;
+  if (!Cs2OnGameThread()) return;
   uint8_t bytes[cs2_lookup::kRecordBytes] = {};
   int32_t page_w = 0, page_h = 0;
   if (!ReadCs2Value(record, &bytes) ||
       !ReadCs2Value(renderer + cs2_lookup::kRendererPageWidthOffset, &page_w) ||
       !ReadCs2Value(renderer + cs2_lookup::kRendererPageHeightOffset,
                     &page_h)) {
-    return result;
+    return;
   }
   uint16_t code = 0u;
   int32_t x = 0, y = 0, advance = 0, size = 0;
@@ -278,16 +279,38 @@ int __fastcall Cs2RenderDetour(uintptr_t renderer, uintptr_t,
               sizeof(advance));
   std::memcpy(&size, bytes + cs2_lookup::kRecordSizeOffset, sizeof(size));
   rt.tracker.RecordGlyph(renderer, page_w, page_h, code, x, y, advance, size);
+}
+
+int __fastcall Cs2RenderDetour(uintptr_t renderer, uintptr_t,
+                               uintptr_t record) {
+  const int result = g_cs2_render_original(renderer, record);
+  RecordCs2Render(renderer, record);
+  return result;
+}
+
+// Targeted-render layout: only glyphs drawn into the normal page image
+// (renderer+4, the one SyncLayer copies into the scene layer) are on screen
+// through that layer; the fade page is a transition buffer.
+int __fastcall Cs2RenderTargetDetour(uintptr_t renderer, uintptr_t,
+                                     uintptr_t record, uintptr_t target) {
+  const int result = g_cs2_render_target_original(renderer, record, target);
+  uintptr_t page = 0u;
+  if (target != 0u &&
+      ReadCs2Value(renderer + cs2_lookup::kRendererImageOffset, &page) &&
+      page == target) {
+    RecordCs2Render(renderer, record);
+  }
   return result;
 }
 
 // Reads the draw-ordered layer list of the screen object into rt.nodes.
 size_t ReadCs2LayerNodes(uintptr_t screen) {
   auto& rt = g_cs2_lookup;
+  const cs2_lookup::SceneWalk& walk = rt.sites.walk;
   uintptr_t scene = 0u, list = 0u, head = 0u, node = 0u;
   if (!ReadCs2Value(screen + cs2_lookup::kScreenSceneOffset, &scene) ||
-      !ReadCs2Value(scene, &list) ||
-      !ReadCs2Value(list + cs2_lookup::kListHeadOffset, &head) ||
+      !ReadCs2Value(scene + walk.list_offset, &list) ||
+      !ReadCs2Value(list + walk.head_offset, &head) ||
       !ReadCs2Value(head + cs2_lookup::kNodeNextOffset, &node)) {
     return 0u;
   }
@@ -297,11 +320,15 @@ size_t ReadCs2LayerNodes(uintptr_t screen) {
     cs2_lookup::LayerNode& out = rt.nodes[count++];
     out = cs2_lookup::LayerNode();
     int32_t visible = 0;
+    uintptr_t layer = node + cs2_lookup::kNodeLayerOffset;
     uintptr_t sprite = 0u, next = 0u;
-    if (!ReadCs2Value(node + cs2_lookup::kNodeIdOffset, &out.id) ||
-        !ReadCs2Value(node + cs2_lookup::kNodeVisibleOffset, &visible) ||
-        !ReadCs2Value(node + cs2_lookup::kNodeSpriteOffset, &sprite) ||
-        !ReadCs2Value(node + cs2_lookup::kNodeNextOffset, &next)) {
+    if (!ReadCs2Value(node + cs2_lookup::kNodeNextOffset, &next) ||
+        (walk.layer_by_pointer &&
+         (!ReadCs2Value(node + cs2_lookup::kNodeLayerOffset, &layer) ||
+          layer == 0u)) ||
+        !ReadCs2Value(layer + cs2_lookup::kLayerIdOffset, &out.id) ||
+        !ReadCs2Value(layer + cs2_lookup::kLayerVisibleOffset, &visible) ||
+        !ReadCs2Value(layer + cs2_lookup::kLayerSpriteOffset, &sprite)) {
       return 0u;
     }
     out.visible = visible != 0;
@@ -595,9 +622,13 @@ bool InstallCs2HooksBatched(const cs2_lookup::Sites& sites) {
       {reinterpret_cast<void*>(sites.clear_page),
        reinterpret_cast<void*>(&Cs2ClearDetour),
        reinterpret_cast<void**>(&g_cs2_clear_original)},
-      {reinterpret_cast<void*>(sites.render_char),
-       reinterpret_cast<void*>(&Cs2RenderDetour),
-       reinterpret_cast<void**>(&g_cs2_render_original)},
+      sites.render_stack_args == cs2_lookup::kRenderTStackArgs
+          ? Site{reinterpret_cast<void*>(sites.render_char),
+                 reinterpret_cast<void*>(&Cs2RenderTargetDetour),
+                 reinterpret_cast<void**>(&g_cs2_render_target_original)}
+          : Site{reinterpret_cast<void*>(sites.render_char),
+                 reinterpret_cast<void*>(&Cs2RenderDetour),
+                 reinterpret_cast<void**>(&g_cs2_render_original)},
       {reinterpret_cast<void*>(sites.window_update),
        reinterpret_cast<void*>(&Cs2UpdateDetour),
        reinterpret_cast<void**>(&g_cs2_update_original)},
@@ -606,7 +637,10 @@ bool InstallCs2HooksBatched(const cs2_lookup::Sites& sites) {
        reinterpret_cast<void**>(&g_cs2_input_original)},
   };
   constexpr int kSites = static_cast<int>(sizeof(plan) / sizeof(plan[0]));
-  if (!g_cs_ready) return false;
+  if (!g_cs_ready || (sites.render_stack_args != 1u &&
+                      sites.render_stack_args != cs2_lookup::kRenderTStackArgs)) {
+    return false;
+  }
   EnterCriticalSection(&g_cs);
   bool ok = g_hooked_count + kSites <= 64;
   for (int i = 0; ok && i < g_hooked_count; ++i) {
@@ -692,8 +726,10 @@ bool InstallCatSystem2Lookup() {
   rt.installed = hooked;
   if (!rt.installed) rt.live.store(false, std::memory_order_release);
   Cs2LookupLog(
-      L"catsystem2-lookup: sites clear=+0x%lx render=+0x%lx update=+0x%lx "
-      L"input=+0x%lx charimage=+0x%lx raster=+0x%lx hooks=%d scan=%.1fms",
+      L"catsystem2-lookup: sites variant=%u clear=+0x%lx render=+0x%lx "
+      L"update=+0x%lx input=+0x%lx charimage=+0x%lx raster=+0x%lx hooks=%d "
+      L"scan=%.1fms",
+      static_cast<unsigned>(rt.sites.variant),
       static_cast<unsigned long>(rt.sites.clear_page - base),
       static_cast<unsigned long>(rt.sites.render_char - base),
       static_cast<unsigned long>(rt.sites.window_update - base),
@@ -858,6 +894,8 @@ bool SameCs2ModelGeometry(const Cs2Model& left, const Cs2Model& right) {
     const auto& b = right.glyphs[index];
     if (a.rect.x != b.rect.x || a.rect.y != b.rect.y || a.rect.w != b.rect.w ||
         a.rect.h != b.rect.h || a.line.x != b.line.x || a.line.y != b.line.y ||
+        a.line.hit.x0 != b.line.hit.x0 || a.line.hit.y0 != b.line.hit.y0 ||
+        a.line.hit.x1 != b.line.hit.x1 || a.line.hit.y1 != b.line.hit.y1 ||
         a.line.source_index != b.line.source_index ||
         a.line.source_length != b.line.source_length) {
       return false;

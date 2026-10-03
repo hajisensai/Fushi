@@ -2029,15 +2029,34 @@ class AdapterStructureTest(unittest.TestCase):
                           "cs2.exe", "cs2_open"):
             self.assertNotIn(forbidden, core.lower())
             self.assertNotIn(forbidden, runtime.lower())
-        # The site proof walks the GetGlyphOutlineA chain and the capture imports.
+        # Both layout proofs walk the GetGlyphOutlineA chain and the capture
+        # imports; the dispatcher only chooses between them and publishes the
+        # sites of a complete proof.
         resolve = self._function_body(core, "inline SiteResult ResolveSites(")
-        for proof in ("ProveCharImage(", "CallsTarget(", "FindAgreeingCallTarget(",
-                      "imports.set_capture", "imports.release_capture",
-                      "imports.window_from_point"):
-            self.assertIn(proof, resolve)
+        self.assertIn("ResolveAdjacentPageSites(", resolve)
+        self.assertIn("ResolveTargetedRenderSites(", resolve)
+        self.assertIn("if (result == SiteResult::kResolved) *sites = found;",
+                      resolve)
+        for variant in ("inline SiteResult ResolveAdjacentPageSites(",
+                        "inline SiteResult ResolveTargetedRenderSites("):
+            body = self._function_body(core, variant)
+            for proof in ("CallsTarget(", "FindAgreeingCallTarget(",
+                          "imports.set_capture", "imports.release_capture",
+                          "imports.window_from_point"):
+                self.assertIn(proof, body, variant)
+        self.assertIn("ProveCharImage(", self._function_body(
+            core, "inline SiteResult ResolveAdjacentPageSites("))
+        targeted = self._function_body(
+            core, "inline SiteResult ResolveTargetedRenderSites(")
+        self.assertIn("FindVirtualCharImage(", targeted)
+        self.assertIn("AnyCallTargets(", targeted)
+        self.assertIn("ProveCharImage(", self._function_body(
+            core, "inline bool FindVirtualCharImage("))
         # Detours: bounded copies only; logging / file IO stays on the worker.
         for name in ("int __fastcall Cs2ClearDetour(",
                      "int __fastcall Cs2RenderDetour(",
+                     "int __fastcall Cs2RenderTargetDetour(",
+                     "void RecordCs2Render(",
                      "int __fastcall Cs2UpdateDetour(",
                      "LRESULT __stdcall Cs2InputDetour(",
                      "bool Cs2PressEligible("):
