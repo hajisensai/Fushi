@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -34,9 +35,11 @@ import android.text.TextPaint;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowInsets;
@@ -75,11 +78,16 @@ import app.fushi.reader.constants.NotificationIds;
  * {@link #MAX_WAIT_MS} 封顶后取当时最新一帧；封顶时一帧都没有就按失败处理。
  *
  * <p><b>选取层可重复用（BUG-2901）</b>：点字拉起查词窗后选取层只是<em>隐藏</em>，不拆。
- * 查词窗与选取层之间是一次「会话」（{@link #sessionId}），查词窗经定向广播回报：
+ * 查词窗与选取层之间是一次「会话」（会话号见 {@link ScreenOcrSelectionSession}），查词窗经定向广播回报：
  * 显示出来了（{@link #ACTION_LOOKUP_SHOWN}，此时才隐藏选取层——拉起失败时选取层留着，
  * 不会藏起来再也回不来）、被关掉了（{@link #ACTION_LOOKUP_CLOSED}，恢复选取层，同一张
  * 截图接着点）、用户离开了（{@link #ACTION_LOOKUP_LEFT}，整条流程收尾）。选取层画的是
  * 定格的那一帧，所以恢复时框与画面始终对齐，与底下的 app 此刻在播什么无关。
+ * 会话的取舍全在纯状态机 {@link ScreenOcrSelectionSession} 里（JVM 单测钉住），本服务只接线。
+ *
+ * <p><b>选取层随屏幕几何失效</b>：截屏时记下屏幕物理尺寸 + display rotation 作这张截图的
+ * 身份；之后屏幕转了 / 尺寸变了（{@link #onConfigurationChanged}，或查词窗关掉、恢复选取层
+ * 之前核对）就收尾，不把竖屏几何的旧定格帧盖到横屏上，也不尝试映射旧框。
  *
  * <p>整条流程的「进行中」锁与悬浮球的隐藏由 {@link ScreenCaptureRequestActivity} 持有，
  * 本服务在任何出口（选取层关闭 / 失败 / 被系统停掉）都经 {@link #finishFlow} 收尾。
@@ -137,36 +145,55 @@ public class ScreenOcrService extends Service {
     private WindowManager.LayoutParams selectionParams;
     /** 识别用的那一帧，选取层拿它当背景；流程收尾时回收。 */
     private Bitmap frozenFrame;
-    /** 当前查词会话号；0 = 没有查词窗挂在这张截图上。 */
-    private long sessionId = 0;
     private boolean receiverRegistered = false;
     private boolean finished = false;
     /** 隐藏选取层时盯住的查词窗令牌；它所在进程一死就收尾（否则选取层永远藏着、悬浮球回不来）。 */
     @Nullable private IBinder lookupToken;
     @Nullable private IBinder.DeathRecipient lookupDeath;
 
+    /** 会话协议的全部决定（隐藏 / 恢复 / 收尾 / 失效）；本服务只把副作用接到 Android 上。 */
+    private final ScreenOcrSelectionSession<IBinder> session =
+            new ScreenOcrSelectionSession<>(new ScreenOcrSelectionSession.Effects<IBinder>() {
+                @Override
+                public boolean watchLookupToken(@NonNull IBinder token) {
+                    return ScreenOcrService.this.watchLookupToken(token);
+                }
+
+                @Override
+                public void unwatchLookupToken() {
+                    ScreenOcrService.this.unwatchLookupToken();
+                }
+
+                @Override
+                public void setSelectionHidden(boolean hidden) {
+                    ScreenOcrService.this.setSelectionHidden(hidden);
+                }
+
+                @Override
+                public void finishFlow() {
+                    ScreenOcrService.this.finishFlow();
+                }
+            });
+
     private final BroadcastReceiver lookupReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            long session = intent.getLongExtra(EXTRA_SESSION, 0);
-            if (session == 0 || session != sessionId) return;
-            String action = intent.getAction();
-            if (ACTION_LOOKUP_SHOWN.equals(action)) {
-                Bundle extras = intent.getExtras();
-                IBinder token = extras == null ? null : extras.getBinder(EXTRA_LOOKUP_TOKEN);
-                // 没有令牌就没有死亡通知：宁可不隐藏（查词窗盖在选取层下面），也不藏起来回不来。
-                if (token == null || !watchLookupToken(token)) return;
-                setSelectionHidden(true);
-            } else if (ACTION_LOOKUP_CLOSED.equals(action)) {
-                sessionId = 0;
-                unwatchLookupToken();
-                setSelectionHidden(false);
-            } else if (ACTION_LOOKUP_LEFT.equals(action)) {
-                sessionId = 0;
-                finishFlow();
-            }
+            ScreenOcrLookupEvent event = lookupEventOf(intent.getAction());
+            if (event == null) return;
+            Bundle extras = intent.getExtras();
+            IBinder token = extras == null ? null : extras.getBinder(EXTRA_LOOKUP_TOKEN);
+            session.onLookupEvent(event, intent.getLongExtra(EXTRA_SESSION, 0), token,
+                    currentScreenIdentity());
         }
     };
+
+    @Nullable
+    private static ScreenOcrLookupEvent lookupEventOf(@Nullable String action) {
+        if (ACTION_LOOKUP_SHOWN.equals(action)) return ScreenOcrLookupEvent.SHOWN;
+        if (ACTION_LOOKUP_CLOSED.equals(action)) return ScreenOcrLookupEvent.CLOSED;
+        if (ACTION_LOOKUP_LEFT.equals(action)) return ScreenOcrLookupEvent.LEFT;
+        return null;
+    }
 
     private final Runnable settleTimeout = this::finishCapture;
     private final Runnable maxWaitTimeout = this::finishCapture;
@@ -240,6 +267,13 @@ public class ScreenOcrService extends Service {
     }
 
     @Override
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // 选取层（含隐藏中的）画的是截屏那一刻的几何：屏幕转了 / 尺寸变了就收尾。
+        session.onConfigurationChanged(currentScreenIdentity());
+    }
+
+    @Override
     public void onDestroy() {
         if (receiverRegistered) {
             unregisterReceiver(lookupReceiver);
@@ -267,6 +301,9 @@ public class ScreenOcrService extends Service {
         screenWidth = bounds.width();
         screenHeight = bounds.height();
         screenDensityDpi = getResources().getDisplayMetrics().densityDpi;
+        // 这张截图的屏幕身份：虚拟屏按此尺寸建，定格帧与行框都按它算。
+        session.onCaptureStarted(new ScreenOcrSelectionSession.ScreenIdentity(
+                screenWidth, screenHeight, displayRotation()));
 
         captureThread = new HandlerThread("fushi-screen-ocr");
         captureThread.start();
@@ -556,8 +593,9 @@ public class ScreenOcrService extends Service {
         // BUG-2901：选取层不再随点字拆掉。它是 TYPE_APPLICATION_OVERLAY、压在一切 Activity
         // 之上，查词窗显示出来后（ACTION_LOOKUP_SHOWN）才隐藏它；查词窗关掉再恢复。启动
         // 那一刻选取层仍可见，Android 15 的后台启动豁免（要求有可见悬浮窗）照样成立。
-        sessionId = SystemClock.elapsedRealtimeNanos();
-        intent.putExtra(PopupDictFlutterActivity.EXTRA_SCREEN_OCR_SESSION, sessionId);
+        session.onLookupLaunched(SystemClock.elapsedRealtimeNanos());
+        intent.putExtra(PopupDictFlutterActivity.EXTRA_SCREEN_OCR_SESSION,
+                session.getSessionId());
         BackgroundActivityLauncher.start(this, intent);
     }
 
@@ -593,7 +631,7 @@ public class ScreenOcrService extends Service {
             lookupToken = null;
             lookupDeath = null;
             Log.w(TAG, "lookup popup process died; finishing screen OCR flow");
-            finishFlow();
+            session.onLookupProcessDied();
         });
         try {
             token.linkToDeath(recipient, 0);
@@ -634,7 +672,7 @@ public class ScreenOcrService extends Service {
 
     /** 任何出口都走这里：拆选取层、解流程锁、放回悬浮球、停服务。主线程。 */
     private void finishFlow() {
-        sessionId = 0;
+        session.reset();
         unwatchLookupToken();
         removeSelectionView();
         releaseFrame();
@@ -792,6 +830,24 @@ public class ScreenOcrService extends Service {
         DisplayMetrics dm = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(dm);
         return new Rect(0, 0, dm.widthPixels, dm.heightPixels);
+    }
+
+    /** 此刻的屏幕身份：与截屏时同一口径（物理像素尺寸 + 默认屏 rotation）。 */
+    @NonNull
+    private ScreenOcrSelectionSession.ScreenIdentity currentScreenIdentity() {
+        Rect bounds = realScreenBounds();
+        return new ScreenOcrSelectionSession.ScreenIdentity(
+                bounds.width(), bounds.height(), displayRotation());
+    }
+
+    /**
+     * 默认屏的 rotation。Service 不是视觉 Context，R+ 上 {@code getDisplay()} 会抛，
+     * 走 DisplayManager 取。0 与 180 尺寸相同但定格帧是倒的，所以 rotation 必须进身份。
+     */
+    private int displayRotation() {
+        DisplayManager dm = getSystemService(DisplayManager.class);
+        Display display = dm == null ? null : dm.getDisplay(Display.DEFAULT_DISPLAY);
+        return display == null ? Surface.ROTATION_0 : display.getRotation();
     }
 
     private String label(String key, String fallback) {

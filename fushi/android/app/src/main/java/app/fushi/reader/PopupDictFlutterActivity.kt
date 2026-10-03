@@ -103,8 +103,12 @@ class PopupDictFlutterActivity : FlutterActivity() {
     /** 本次 intent 是否还欠一次「读剪贴板」（拿到焦点后消费，每个 intent 只读一次）。 */
     private var clipboardReadPending: Boolean = false
 
-    /** 当前挂着的截屏识字会话号；0 = 本窗不是从截屏选取层打开的。 */
-    private var screenOcrSession: Long = 0
+    /**
+     * 截屏识字会话的回报取舍（SHOWN / CLOSED / LEFT 何时报、报给哪个会话）全在纯状态机
+     * [ScreenOcrLookupReporter] 里（JVM 单测钉住），本窗只把生命周期喂给它、把回报发出去。
+     */
+    private val screenOcrReporter: ScreenOcrLookupReporter =
+        ScreenOcrLookupReporter { event, session -> reportScreenOcr(event, session) }
 
     /** 交给 [ScreenOcrService] 的存活令牌：本进程一死，对方经 linkToDeath 收尾。 */
     private val screenOcrToken: Binder = Binder()
@@ -128,7 +132,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         // 不主动请求就被系统按默认策略压到 60Hz，滚动列表明显卡顿。安全 no-op 退化。
         HighRefreshRate.applyToActivity(this)
         clipboardReadPending = intent?.getBooleanExtra(EXTRA_READ_CLIPBOARD, false) == true
-        screenOcrSession = extractScreenOcrSession(intent)
+        screenOcrReporter.onCreate(extractScreenOcrSession(intent))
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
@@ -156,11 +160,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // 别的入口（悬浮字幕点字 / 系统划词）复用了本窗：原来那张截图的会话到此为止。
-        val nextSession: Long = extractScreenOcrSession(intent)
-        if (screenOcrSession != 0L && nextSession != screenOcrSession) {
-            reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_LEFT)
-        }
-        screenOcrSession = nextSession
+        screenOcrReporter.onNewIntent(extractScreenOcrSession(intent))
         val text: String = extractProcessText(intent).orEmpty()
         PopupEngineHolder.pushProcessText(
             text,
@@ -213,40 +213,36 @@ class PopupDictFlutterActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         // 查词窗已在前台：选取层这时才隐藏（拉起失败时它留着，用户还能再点）。
-        if (screenOcrSession != 0L) reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_SHOWN)
+        screenOcrReporter.onResume()
     }
 
     override fun onPause() {
         super.onPause()
         // 用户关掉了查词窗（关闭键 / 点卡外 / 横滑 / 返回都走 finish）：恢复选取层。
-        if (isFinishing && screenOcrSession != 0L) {
-            reportScreenOcr(ScreenOcrService.ACTION_LOOKUP_CLOSED)
-            screenOcrSession = 0
-        }
+        screenOcrReporter.onPause(isFinishing)
     }
 
     override fun onStop() {
         super.onStop()
         // 已被别的透明窗压到 paused 再关掉时，finish 不会再走一次 onPause：在这里补报 CLOSED。
         // 没关窗却不可见了（回桌面 / 切 app / 锁屏）：截图已过时，整条流程收尾。
-        if (screenOcrSession != 0L) {
-            reportScreenOcr(
-                if (isFinishing) ScreenOcrService.ACTION_LOOKUP_CLOSED
-                else ScreenOcrService.ACTION_LOOKUP_LEFT,
-            )
-            screenOcrSession = 0
-        }
+        screenOcrReporter.onStop(isFinishing)
     }
 
     private fun extractScreenOcrSession(intent: Intent?): Long =
         intent?.getLongExtra(EXTRA_SCREEN_OCR_SESSION, 0L) ?: 0L
 
     /** 回报给主进程的 [ScreenOcrService]；定向本包，对方接收端不导出。 */
-    private fun reportScreenOcr(action: String) {
+    private fun reportScreenOcr(event: ScreenOcrLookupEvent, session: Long) {
+        val action: String = when (event) {
+            ScreenOcrLookupEvent.SHOWN -> ScreenOcrService.ACTION_LOOKUP_SHOWN
+            ScreenOcrLookupEvent.CLOSED -> ScreenOcrService.ACTION_LOOKUP_CLOSED
+            ScreenOcrLookupEvent.LEFT -> ScreenOcrService.ACTION_LOOKUP_LEFT
+        }
         sendBroadcast(
             Intent(action)
                 .setPackage(packageName)
-                .putExtra(ScreenOcrService.EXTRA_SESSION, screenOcrSession)
+                .putExtra(ScreenOcrService.EXTRA_SESSION, session)
                 .putExtras(
                     Bundle().apply {
                         putBinder(ScreenOcrService.EXTRA_LOOKUP_TOKEN, screenOcrToken)
