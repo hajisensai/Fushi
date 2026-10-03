@@ -223,6 +223,8 @@ void BuildEngineT(SyntheticImage* img) {
   img->CallSlot(kInputT + 0x100u, kSlotReleaseCapture);
   img->CallSlot(kInputT + 0x300u, kSlotWindowFromPoint);
   img->CallSlot(kInputT + 0x420u, kSlotSetCapture);
+  img->Put(kInputT + 0x5adu, core::kInputTRetBytes,
+           sizeof(core::kInputTRetBytes));
 }
 
 void TestResolveSites() {
@@ -258,6 +260,7 @@ void TestResolveSites() {
   assert(sites.input_handler == img.At(kInput));
   assert(sites.variant == core::SiteVariant::kAdjacentPage);
   assert(sites.render_stack_args == 1u);
+  assert(sites.input_stack_args == 5u);
   assert(sites.walk.list_offset == 0u && sites.walk.head_offset == 0x14u &&
          !sites.walk.layer_by_pointer);
 
@@ -283,6 +286,7 @@ void TestResolveTargetedRenderSites() {
   assert(sites.window_update == img.At(kUpdateT));
   assert(sites.input_handler == img.At(kInputT));
   assert(sites.render_stack_args == 2u);
+  assert(sites.input_stack_args == 6u);
   assert(sites.walk.list_offset == 4u && sites.walk.head_offset == 0u &&
          sites.walk.layer_by_pointer);
 
@@ -398,6 +402,9 @@ void TestTargetedRenderEachProofFailsClosed() {
          std::memset(img->base + kInputT + 0x300u, 0xcc, 6u);
        },
        core::SiteResult::kInputImportsInvalid},
+      // Handle pops another number of arguments than the detour would.
+      {[](SyntheticImage* img) { img->base[kInputT + 0x5aeu] = 0x14u; },
+       core::SiteResult::kInputFrameInvalid},
   };
   for (const Breaker& breaker : breakers) {
     SyntheticImage img;

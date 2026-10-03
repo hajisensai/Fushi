@@ -2056,6 +2056,8 @@ class AdapterStructureTest(unittest.TestCase):
         for name in ("int __fastcall Cs2ClearDetour(",
                      "int __fastcall Cs2RenderDetour(",
                      "int __fastcall Cs2RenderTargetDetour(",
+                     "LRESULT __stdcall Cs2InputExtraDetour(",
+                     "bool Cs2ClaimSwallows(",
                      "void RecordCs2Render(",
                      "int __fastcall Cs2UpdateDetour(",
                      "LRESULT __stdcall Cs2InputDetour(",

@@ -151,11 +151,14 @@ using Cs2RenderFn = int(__thiscall*)(uintptr_t, uintptr_t);
 using Cs2RenderTargetFn = int(__thiscall*)(uintptr_t, uintptr_t, uintptr_t);
 using Cs2UpdateFn = int(__thiscall*)(uintptr_t, uintptr_t, uintptr_t);
 using Cs2InputFn = LRESULT(__stdcall*)(uintptr_t, HWND, UINT, WPARAM, LPARAM);
+using Cs2InputExtraFn = LRESULT(__stdcall*)(uintptr_t, HWND, UINT, WPARAM,
+                                            LPARAM, uintptr_t);
 Cs2ClearFn g_cs2_clear_original = nullptr;
 Cs2RenderFn g_cs2_render_original = nullptr;
 Cs2RenderTargetFn g_cs2_render_target_original = nullptr;
 Cs2UpdateFn g_cs2_update_original = nullptr;
 Cs2InputFn g_cs2_input_original = nullptr;
+Cs2InputExtraFn g_cs2_input_extra_original = nullptr;
 
 // ── two-slot seqlocks ──────────────────────────────────────────────────────
 
@@ -549,30 +552,45 @@ bool Cs2PressEligible(HWND hwnd, WPARAM wparam, LPARAM lparam,
   return true;
 }
 
+// Message-thread claim shared by both Handle shapes: true = swallow.
+bool Cs2ClaimSwallows(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  auto& rt = g_cs2_lookup;
+  if (!rt.live.load(std::memory_order_acquire) ||
+      (!cs2_lookup::NeedsEligibility(message) &&
+       message != cs2_lookup::kMessageLeftUp)) {
+    return false;
+  }
+  bool eligible = false;
+  Cs2Submit submit;
+  if (cs2_lookup::NeedsEligibility(message)) {
+    __try {
+      eligible = Cs2PressEligible(hwnd, wparam, lparam, &submit);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      eligible = false;
+    }
+  }
+  const auto decision = cs2_lookup::DecideMessage(message, eligible, &rt.claim);
+  if (decision.submit) {
+    QueueCs2Submit(submit);
+    rt.claimed_presses.fetch_add(1u, std::memory_order_relaxed);
+  }
+  return decision.swallow;
+}
+
 LRESULT __stdcall Cs2InputDetour(uintptr_t input, HWND hwnd, UINT message,
                                  WPARAM wparam, LPARAM lparam) {
-  auto& rt = g_cs2_lookup;
-  if (rt.live.load(std::memory_order_acquire) &&
-      (cs2_lookup::NeedsEligibility(message) ||
-       message == cs2_lookup::kMessageLeftUp)) {
-    bool eligible = false;
-    Cs2Submit submit;
-    if (cs2_lookup::NeedsEligibility(message)) {
-      __try {
-        eligible = Cs2PressEligible(hwnd, wparam, lparam, &submit);
-      } __except (EXCEPTION_EXECUTE_HANDLER) {
-        eligible = false;
-      }
-    }
-    const auto decision =
-        cs2_lookup::DecideMessage(message, eligible, &rt.claim);
-    if (decision.submit) {
-      QueueCs2Submit(submit);
-      rt.claimed_presses.fetch_add(1u, std::memory_order_relaxed);
-    }
-    if (decision.swallow) return 0;
-  }
+  if (Cs2ClaimSwallows(hwnd, message, wparam, lparam)) return 0;
   return g_cs2_input_original(input, hwnd, message, wparam, lparam);
+}
+
+// Targeted-render layout: Handle takes one more stack argument (`ret 0x18`);
+// it is forwarded untouched.
+LRESULT __stdcall Cs2InputExtraDetour(uintptr_t input, HWND hwnd,
+                                      UINT message, WPARAM wparam,
+                                      LPARAM lparam, uintptr_t extra) {
+  if (Cs2ClaimSwallows(hwnd, message, wparam, lparam)) return 0;
+  return g_cs2_input_extra_original(input, hwnd, message, wparam, lparam,
+                                    extra);
 }
 
 // ── HookWorker ─────────────────────────────────────────────────────────────
@@ -632,13 +650,20 @@ bool InstallCs2HooksBatched(const cs2_lookup::Sites& sites) {
       {reinterpret_cast<void*>(sites.window_update),
        reinterpret_cast<void*>(&Cs2UpdateDetour),
        reinterpret_cast<void**>(&g_cs2_update_original)},
-      {reinterpret_cast<void*>(sites.input_handler),
-       reinterpret_cast<void*>(&Cs2InputDetour),
-       reinterpret_cast<void**>(&g_cs2_input_original)},
+      sites.input_stack_args == cs2_lookup::kInputTStackArgs
+          ? Site{reinterpret_cast<void*>(sites.input_handler),
+                 reinterpret_cast<void*>(&Cs2InputExtraDetour),
+                 reinterpret_cast<void**>(&g_cs2_input_extra_original)}
+          : Site{reinterpret_cast<void*>(sites.input_handler),
+                 reinterpret_cast<void*>(&Cs2InputDetour),
+                 reinterpret_cast<void**>(&g_cs2_input_original)},
   };
   constexpr int kSites = static_cast<int>(sizeof(plan) / sizeof(plan[0]));
-  if (!g_cs_ready || (sites.render_stack_args != 1u &&
-                      sites.render_stack_args != cs2_lookup::kRenderTStackArgs)) {
+  if (!g_cs_ready ||
+      (sites.render_stack_args != 1u &&
+       sites.render_stack_args != cs2_lookup::kRenderTStackArgs) ||
+      (sites.input_stack_args != cs2_lookup::kInputStackArgs &&
+       sites.input_stack_args != cs2_lookup::kInputTStackArgs)) {
     return false;
   }
   EnterCriticalSection(&g_cs);

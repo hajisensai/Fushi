@@ -415,6 +415,12 @@ inline constexpr size_t kInputTWildcards[][2] = {
     {66u, 70u}, {80u, 84u}, {87u, 91u}};
 inline constexpr auto kInputTMask =
     WildcardMask<sizeof(kInputTBytes)>(kInputTWildcards);
+// It returns with `ret 0x18`: one stack argument more than the first layout's
+// Handle (input, hwnd, msg, wparam, lparam, extra).  The detour must pop the
+// same number of bytes, so the epilogue is part of the proof.
+inline constexpr uint8_t kInputTRetBytes[] = {0xc2, 0x18, 0x00};
+inline constexpr uint32_t kInputStackArgs = 5u;
+inline constexpr uint32_t kInputTStackArgs = 6u;
 
 struct ImportSlots {
   uintptr_t get_glyph_outline = 0u;  // IAT slot RVAs
@@ -439,6 +445,7 @@ struct Sites {
   uintptr_t rasteriser = 0u;
   SiteVariant variant = SiteVariant::kNone;
   uint32_t render_stack_args = 0u;  // RenderChar arguments after `this`
+  uint32_t input_stack_args = 0u;   // Input::Handle stdcall arguments
   SceneWalk walk;
 };
 
@@ -457,6 +464,7 @@ enum class SiteResult : uint32_t {
   kInputMissing = 11u,
   kInputImportsInvalid = 12u,
   kClearInvalid = 13u,
+  kInputFrameInvalid = 14u,
 };
 
 inline bool IsExecutableImageAddress(const exact::LoadedPeImage& image,
@@ -797,6 +805,7 @@ inline SiteResult ResolveAdjacentPageSites(const exact::LoadedPeImage& image,
   found->input_handler = handler;
   found->variant = SiteVariant::kAdjacentPage;
   found->render_stack_args = 1u;
+  found->input_stack_args = kInputStackArgs;
   found->walk = kAdjacentPageWalk;
   return SiteResult::kResolved;
 }
@@ -912,7 +921,12 @@ inline SiteResult ResolveTargetedRenderSites(
                    imports.window_from_point)) {
     return SiteResult::kInputImportsInvalid;
   }
+  if (!ContainsBytes(input.address, kInputScanBytes, kInputTRetBytes,
+                     sizeof(kInputTRetBytes))) {
+    return SiteResult::kInputFrameInvalid;
+  }
   found->input_handler = handler;
+  found->input_stack_args = kInputTStackArgs;
   found->variant = SiteVariant::kTargetedRender;
   found->render_stack_args = kRenderTStackArgs;
   found->walk = kTargetedRenderWalk;
