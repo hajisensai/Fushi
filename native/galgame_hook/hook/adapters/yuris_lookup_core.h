@@ -860,11 +860,26 @@ inline std::wstring StripRubyMarkup(const std::wstring& text, bool* had_ruby) {
   return out;
 }
 
-// A message whose text is `NAME「…」` (or 『…』 / （…）) carries its speaker in
-// front of the quoted line; the speaker is drawn on its own name plate and
-// the message layer shows only the quote.  Returns the index where the
-// spoken line starts (0 when there is no such prefix).
-inline size_t SpokenLineStart(const wchar_t* text, size_t length) {
+// The text lane line of a message: the decoded text with ruby groups reduced
+// to their base.  Nothing else is removed.  In particular a bracketed quote
+// after some leading text is NOT taken as `NAME「…」`: the shape alone cannot
+// tell a speaker prefix from narration (`そう言って「ありがとう」`,
+// `彼女は小さく「うん」`), and the message text carries no separate name
+// field, so the line is published as the engine holds it.  Whether a prefix
+// is a name plate is decided only for lookup, from where the engine drew it
+// (ChooseLineLayer).
+inline std::wstring PublishedMessageText(const std::wstring& decoded,
+                                         bool* had_ruby) {
+  return StripRubyMarkup(decoded, had_ruby);
+}
+
+// Shape candidate only: `PREFIX「…」` (or 『…』 / （…）) with a bracket-free
+// prefix of at most 32 units and the line ending in the matching closer.
+// Returns the index where the quote starts (0 = no candidate).  A candidate
+// is never acted on by itself; ChooseLineLayer needs the engine to have drawn
+// exactly the prefix on a layer of its own (the name plate) before it treats
+// the prefix as a speaker.
+inline size_t SpeakerPrefixCandidate(const wchar_t* text, size_t length) {
   constexpr size_t kMaxSpeaker = 32u;
   if (text == nullptr || length < 3u) return 0u;
   static constexpr wchar_t kOpen[] = {0x300c, 0x300e, 0xff08};
@@ -1011,6 +1026,78 @@ inline size_t MapSelectedSuffix(LineGlyph* glyphs, size_t count,
   return glyph;
 }
 
+// `text` is exactly the glyph run (whitespace-insensitive): every glyph is
+// consumed by it.  Mapping state in `glyphs` is overwritten.
+inline bool GlyphRunIs(LineGlyph* glyphs, size_t count, const wchar_t* text,
+                       size_t length) {
+  return count != 0u && MapSelectedSuffix(glyphs, count, text, length) == 0u;
+}
+
+// Mapped glyphs of a sub-line `line[offset..]` -> indices into `line`.
+inline bool ShiftSources(LineGlyph* glyphs, size_t count, size_t offset) {
+  if (glyphs == nullptr) return false;
+  for (size_t i = 0u; i < count; ++i) {
+    if (glyphs[i].source_index == kNoSource) continue;
+    const size_t source = glyphs[i].source_index + offset;
+    if (source >= kNoSource) return false;
+    glyphs[i].source_index = static_cast<uint16_t>(source);
+  }
+  return true;
+}
+
+// How one layer of a page relates to the selected line.
+struct LayerFit {
+  bool line = false;   // the whole line is its render-order suffix
+  bool quote = false;  // line[speaker..] is its render-order suffix
+  bool name = false;   // its glyph run is exactly line[0..speaker)
+};
+
+struct LineLayerChoice {
+  size_t layer = SIZE_MAX;   // SIZE_MAX = none
+  size_t source_offset = 0;  // line index of the layer's first mapped glyph
+  bool ambiguous = false;
+};
+
+// Which layer carries the selected line.  Exactly one layer holding the whole
+// line wins.  Failing that, a speaker split (`speaker` from
+// SpeakerPrefixCandidate, 0 = none) is accepted only on the engine's own
+// structural evidence: exactly one layer drew exactly the prefix and nothing
+// else (the name plate) and exactly one other layer holds the quote.  Without
+// that evidence nothing is matched (lookup fails closed; the line is never
+// cut).
+inline LineLayerChoice ChooseLineLayer(const LayerFit* fits, size_t count,
+                                       size_t speaker) {
+  LineLayerChoice choice;
+  if (fits == nullptr) return choice;
+  size_t lines = 0u, quotes = 0u, names = 0u;
+  size_t line_at = SIZE_MAX, quote_at = SIZE_MAX, name_at = SIZE_MAX;
+  auto note = [](bool fit, size_t k, size_t* seen, size_t* at) {
+    if (!fit) return;
+    ++*seen;
+    *at = k;
+  };
+  for (size_t k = 0u; k < count; ++k) {
+    note(fits[k].line, k, &lines, &line_at);
+    note(speaker != 0u && fits[k].quote, k, &quotes, &quote_at);
+    note(speaker != 0u && fits[k].name, k, &names, &name_at);
+  }
+  if (lines == 1u) {
+    choice.layer = line_at;
+    return choice;
+  }
+  if (lines > 1u) {
+    choice.ambiguous = true;
+    return choice;
+  }
+  if (quotes != 1u || names != 1u || quote_at == name_at) {
+    choice.ambiguous = quotes > 1u || names > 1u;
+    return choice;
+  }
+  choice.layer = quote_at;
+  choice.source_offset = speaker;
+  return choice;
+}
+
 // ── projection and hit testing ─────────────────────────────────────────────
 
 struct PixelRect {
@@ -1136,6 +1223,33 @@ inline ClaimDecision DecideLeftButton(uint8_t raw, bool eligible,
     decision.submit = true;
   }
   claim->was_down = down;
+  return decision;
+}
+
+// The window-procedure half of the touch claim.  A claimed promoted-touch
+// press swallows its own UP (`*up_pending`).  When that UP never reaches this
+// window (the system delivered it elsewhere, or the window lost it), the next
+// left DOWN proves the claimed press is over: the stale pending is dropped
+// there, so it can never eat the UP of a later, unrelated press.
+enum class LeftButtonMessage : uint8_t { kOther = 0, kDown = 1, kUp = 2 };
+
+struct TouchDecision {
+  bool evaluate = false;  // a promoted touch press: try to claim it
+  bool swallow = false;   // the UP of a claimed touch press
+};
+
+inline TouchDecision DecideTouchMessage(LeftButtonMessage message,
+                                        bool promoted_touch, bool claim_owned,
+                                        bool* up_pending) {
+  TouchDecision decision;
+  if (up_pending == nullptr) return decision;
+  if (message == LeftButtonMessage::kDown) {
+    *up_pending = false;
+    decision.evaluate = promoted_touch && !claim_owned;
+  } else if (message == LeftButtonMessage::kUp) {
+    decision.swallow = *up_pending;
+    *up_pending = false;
+  }
   return decision;
 }
 

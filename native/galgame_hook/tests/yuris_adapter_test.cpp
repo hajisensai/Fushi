@@ -47,10 +47,12 @@ uint8_t EncodeLength(uint32_t length, bool swapped) {
 }
 
 // A YPF image: header, index, members back to back (member payload is filler).
+// `pad` zero bytes sit between the last entry and index_end.
 std::vector<uint8_t> BuildYpf(const std::vector<std::string>& names,
-                              bool swapped, uint32_t offset_bytes) {
+                              bool swapped, uint32_t offset_bytes,
+                              uint32_t pad = 0) {
   std::vector<uint8_t> index;
-  size_t index_bytes = 0;
+  size_t index_bytes = pad;
   for (const auto& name : names) index_bytes += 4 + 1 + name.size() + 10 + offset_bytes + 4;
   const uint32_t index_end = static_cast<uint32_t>(32 + index_bytes);
   uint64_t data = index_end;
@@ -67,6 +69,7 @@ std::vector<uint8_t> BuildYpf(const std::vector<std::string>& names,
     Put32(&index, 0);
     data += 16;
   }
+  index.resize(index.size() + pad, 0);
   std::vector<uint8_t> out = {'Y', 'P', 'F', 0};
   Put32(&out, 500);
   Put32(&out, static_cast<uint32_t>(names.size()));
@@ -97,25 +100,73 @@ void TestYpfIdentity() {
         assert(entry.stored_size == 16 && !entry.packed && entry.offset >= header.index_end);
       }
       assert(cursor == header.index_end - 32);
-      assert(fushi_voice_hook::IsYurisArchivePrefix(archive.data(), archive.size(),
-                                                    archive.size()));
+      yuris::YpfLayout resolved;
+      assert(yuris::ResolveYpfLayout(archive.data(), archive.size(), header,
+                                     archive.size(), &resolved) ==
+             yuris::YpfIndexResult::kValid);
+      assert(resolved.swapped_lengths == swapped && resolved.offset_bytes == width);
+      assert(fushi_voice_hook::IsYurisArchiveHead(archive.data(), archive.size(),
+                                                  archive.size()));
+      // The other name-length table reads entry 1 (13 <-> 16) differently.
+      const yuris::YpfLayout other{!swapped, width};
+      assert(!yuris::YpfIndexParses(archive.data() + 32, header.index_end - 32,
+                                    header, other, archive.size()));
+      assert(!yuris::YpfLayoutsAgree(archive.data() + 32, header.index_end - 32,
+                                     header, layout, other, archive.size()));
     }
+  }
+  {  // no length in a swapped pair: both tables pass and agree -> accepted
+    const std::vector<std::string> plain = {"a.ogg", "ccc.ogg", "dddd.ogg"};  // 5, 7, 8
+    const std::vector<uint8_t> archive = BuildYpf(plain, true, 4);
+    yuris::YpfHeader header;
+    assert(yuris::ParseYpfHeader(archive.data(), archive.size(), archive.size(), &header));
+    assert(yuris::YpfIndexParses(archive.data() + 32, header.index_end - 32, header,
+                                 {false, 4}, archive.size()));
+    assert(yuris::YpfLayoutsAgree(archive.data() + 32, header.index_end - 32, header,
+                                  {true, 4}, {false, 4}, archive.size()));
+    assert(fushi_voice_hook::IsYurisArchiveHead(archive.data(), archive.size(),
+                                                archive.size()));
+  }
+  {  // every entry is checked, not only the first four
+    const std::vector<std::string> five = {"voice\\a01.ogg", "voice\\a02.ogg",
+                                           "voice\\a03.ogg", "voice\\a04.ogg",
+                                           "voice\\a05.ogg"};
+    std::vector<uint8_t> archive = BuildYpf(five, true, 4);
+    assert(fushi_voice_hook::IsYurisArchiveHead(archive.data(), archive.size(),
+                                                archive.size()));
+    const size_t entry = 4 + 1 + 13 + 10 + 4 + 4;
+    archive[32 + 4 * entry + 4 + 1 + 13 + 1] = 7;  // entry 5: packed = 7
+    assert(!fushi_voice_hook::IsYurisArchiveHead(archive.data(), archive.size(),
+                                                 archive.size()));
+  }
+  {  // the last entry must end exactly at index_end
+    const std::vector<uint8_t> padded = BuildYpf(names, true, 4, 4);
+    yuris::YpfHeader header;
+    assert(yuris::ParseYpfHeader(padded.data(), padded.size(), padded.size(), &header));
+    assert(yuris::ResolveYpfLayout(padded.data(), padded.size(), header, padded.size(),
+                                   nullptr) == yuris::YpfIndexResult::kNoLayout);
+    assert(!fushi_voice_hook::IsYurisArchiveHead(padded.data(), padded.size(),
+                                                 padded.size()));
+    // Fewer bytes than the index: never judged.
+    assert(yuris::ResolveYpfLayout(padded.data(), header.index_end - 1, header,
+                                   padded.size(), nullptr) ==
+           yuris::YpfIndexResult::kTruncated);
   }
   std::vector<uint8_t> magic = BuildYpf(names, true, 4);
   magic[0] = 'X';
   assert(!yuris::ParseYpfHeader(magic.data(), magic.size(), magic.size(), nullptr));
-  assert(!fushi_voice_hook::IsYurisArchivePrefix(magic.data(), magic.size(), magic.size()));
+  assert(!fushi_voice_hook::IsYurisArchiveHead(magic.data(), magic.size(), magic.size()));
   std::vector<uint8_t> reserved = BuildYpf(names, true, 4);
   reserved[20] = 1;
   assert(!yuris::ParseYpfHeader(reserved.data(), reserved.size(), reserved.size(), nullptr));
   // A member past the end of the file is no archive.
   std::vector<uint8_t> cut = BuildYpf(names, true, 4);
   cut.resize(cut.size() - 1);
-  assert(!fushi_voice_hook::IsYurisArchivePrefix(cut.data(), cut.size(), cut.size()));
+  assert(!fushi_voice_hook::IsYurisArchiveHead(cut.data(), cut.size(), cut.size()));
   // A 16-byte placeholder ("YPD" + spaces) is not an archive.
   const uint8_t placeholder[16] = {'Y', 'P', 'D', ' ', ' ', ' ', ' ', ' ',
                                    ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
-  assert(!fushi_voice_hook::IsYurisArchivePrefix(placeholder, 16, 16));
+  assert(!fushi_voice_hook::IsYurisArchiveHead(placeholder, 16, 16));
 }
 
 // ── synthetic x86 images ────────────────────────────────────────────────────
@@ -439,17 +490,188 @@ void TestText() {
   assert(yl::StripRubyMarkup(open_only, &ruby) == open_only && !ruby);
   const std::wstring no_base = L"\x226a\xff0f\x304b\x226b";
   assert(yl::StripRubyMarkup(no_base, &ruby) == no_base && !ruby);
-  // NAME「line」 -> the quote; plain narration and bare quotes are unchanged.
+  // PREFIX「line」 is only a shape candidate; plain text and bare quotes are not.
   const std::wstring spoken = L"\xff1f\xff1f\xff1f\xff0f\x53f6\x300c\x6075\x300d";
-  assert(yl::SpokenLineStart(spoken.data(), spoken.size()) == 5);
+  assert(yl::SpeakerPrefixCandidate(spoken.data(), spoken.size()) == 5);
   const std::wstring quote = L"\x300c\x6075\x300d";
-  assert(yl::SpokenLineStart(quote.data(), quote.size()) == 0);
+  assert(yl::SpeakerPrefixCandidate(quote.data(), quote.size()) == 0);
   const std::wstring narration = L"\x3042\x3044\x3046";
-  assert(yl::SpokenLineStart(narration.data(), narration.size()) == 0);
+  assert(yl::SpeakerPrefixCandidate(narration.data(), narration.size()) == 0);
   const std::wstring unclosed = L"A\x300c\x6075";
-  assert(yl::SpokenLineStart(unclosed.data(), unclosed.size()) == 0);
+  assert(yl::SpeakerPrefixCandidate(unclosed.data(), unclosed.size()) == 0);
   const std::wstring nested = L"A\x300d B\x300c\x6075\x300d";
-  assert(yl::SpokenLineStart(nested.data(), nested.size()) == 0);
+  assert(yl::SpeakerPrefixCandidate(nested.data(), nested.size()) == 0);
+  // The text lane never cuts a prefix: narration that ends in a quote
+  // (そう言って「ありがとう」 / 彼女は小さく「うん」) has the same shape as a
+  // speaker line and is published whole; so is a real NAME「…」 message.
+  const std::wstring said =
+      L"\x305d\x3046\x8a00\x3063\x3066\x300c\x3042\x308a\x304c\x3068\x3046\x300d";
+  assert(yl::SpeakerPrefixCandidate(said.data(), said.size()) == 5);
+  assert(yl::PublishedMessageText(said, &ruby) == said && !ruby);
+  const std::wstring softly =
+      L"\x5f7c\x5973\x306f\x5c0f\x3055\x304f\x300c\x3046\x3093\x300d";
+  assert(yl::PublishedMessageText(softly, &ruby) == softly && !ruby);
+  assert(yl::PublishedMessageText(spoken, &ruby) == spoken && !ruby);
+  // Ruby is still reduced to its base.
+  assert(yl::PublishedMessageText(grouped, &ruby) == L"\x53f6\x2026\x53f6" && ruby);
+}
+
+// One layer's glyph run (one row, 24 px cells) for the layer choice below.
+std::vector<yl::LineGlyph> LayerRun(const std::wstring& text) {
+  std::vector<yl::LineGlyph> glyphs;
+  for (size_t i = 0; i < text.size(); ++i) {
+    yl::LineGlyph glyph;
+    glyph.codepoint = text[i];
+    glyph.x = static_cast<int32_t>(24 * i);
+    glyph.y = 0;
+    glyph.w = 24;
+    glyph.h = 24;
+    glyphs.push_back(glyph);
+  }
+  return glyphs;
+}
+
+// Mirrors BuildYurisModel: how each layer fits the line, then the choice.
+yl::LineLayerChoice ChooseFor(std::vector<std::vector<yl::LineGlyph>>* layers,
+                              const std::wstring& line) {
+  const size_t speaker = yl::SpeakerPrefixCandidate(line.data(), line.size());
+  std::vector<yl::LayerFit> fits(layers->size());
+  for (size_t k = 0; k < layers->size(); ++k) {
+    auto& run = (*layers)[k];
+    fits[k].line = yl::MapSelectedSuffix(run.data(), run.size(), line.data(),
+                                         line.size()) < run.size();
+    if (speaker == 0) continue;
+    fits[k].quote = yl::MapSelectedSuffix(run.data(), run.size(), line.data() + speaker,
+                                          line.size() - speaker) < run.size();
+    fits[k].name = yl::GlyphRunIs(run.data(), run.size(), line.data(), speaker);
+  }
+  return yl::ChooseLineLayer(fits.data(), fits.size(), speaker);
+}
+
+void TestSpeakerLayers() {
+  const std::wstring name = L"\x82b1\x5b50";               // 花子
+  const std::wstring quote = L"\x300c\x3046\x3093\x300d";  // 「うん」
+  const std::wstring line = name + quote;
+  {  // narration drawn whole on the message layer: matched whole, offset 0
+    const std::wstring said = L"\x5f7c\x5973\x306f" + quote;  // 彼女は「うん」
+    std::vector<std::vector<yl::LineGlyph>> layers = {LayerRun(said)};
+    const yl::LineLayerChoice choice = ChooseFor(&layers, said);
+    assert(choice.layer == 0 && choice.source_offset == 0 && !choice.ambiguous);
+  }
+  {  // a name plate drawing exactly the prefix: the quote layer, offset 2
+    std::vector<std::vector<yl::LineGlyph>> layers = {LayerRun(name), LayerRun(quote)};
+    const yl::LineLayerChoice choice = ChooseFor(&layers, line);
+    assert(choice.layer == 1 && choice.source_offset == name.size() && !choice.ambiguous);
+    auto& run = layers[1];
+    assert(yl::MapSelectedSuffix(run.data(), run.size(), line.data() + choice.source_offset,
+                                 line.size() - choice.source_offset) == 0);
+    assert(yl::ShiftSources(run.data(), run.size(), choice.source_offset));
+    assert(run[0].source_index == 2 && run[3].source_index == 5);
+    assert(!yl::ShiftSources(run.data(), run.size(), yl::kNoSource));
+  }
+  {  // the shape without a name plate: nothing matched, nothing cut
+    std::vector<std::vector<yl::LineGlyph>> layers = {LayerRun(quote)};
+    assert(ChooseFor(&layers, line).layer == SIZE_MAX);
+  }
+  {  // a layer that drew something else besides the prefix is no name plate
+    std::vector<std::vector<yl::LineGlyph>> layers = {
+        LayerRun(name + L"\x3042"), LayerRun(quote)};
+    assert(ChooseFor(&layers, line).layer == SIZE_MAX);
+    layers = {LayerRun(L"\x3042" + name), LayerRun(quote)};
+    assert(ChooseFor(&layers, line).layer == SIZE_MAX);
+  }
+  {  // two layers holding the quote: ambiguous
+    std::vector<std::vector<yl::LineGlyph>> layers = {LayerRun(name), LayerRun(quote),
+                                                      LayerRun(quote)};
+    const yl::LineLayerChoice choice = ChooseFor(&layers, line);
+    assert(choice.layer == SIZE_MAX && choice.ambiguous);
+  }
+  {  // the whole line on one layer wins over a split
+    std::vector<std::vector<yl::LineGlyph>> layers = {LayerRun(name), LayerRun(line)};
+    const yl::LineLayerChoice choice = ChooseFor(&layers, line);
+    assert(choice.layer == 1 && choice.source_offset == 0);
+  }
+  {  // the whole line on two layers: ambiguous
+    std::vector<std::vector<yl::LineGlyph>> layers = {LayerRun(line), LayerRun(line)};
+    assert(ChooseFor(&layers, line).ambiguous);
+  }
+  std::vector<yl::LineGlyph> empty;
+  assert(!yl::GlyphRunIs(empty.data(), 0, name.data(), name.size()));
+}
+
+void TestVoiceBinding() {
+  using yv::ClipFate;
+  const uint64_t w = yv::kVoiceToTextWindowMs;
+  ClipFate fates[4];
+  {  // one clip opened before message 1: its voice
+    const yv::PendingClip clips[4] = {{true, 1000, 1, 0}};
+    assert(yv::SettlePendingClips(clips, 4, 1, 1200, true, fates) == 0);
+    assert(fates[0] == ClipFate::kBind && fates[1] == ClipFate::kKeep);
+  }
+  {  // two clips before one message: only the last opened is its voice
+    const yv::PendingClip clips[4] = {{true, 1100, 2, 0}, {true, 1000, 1, 0}};
+    assert(yv::SettlePendingClips(clips, 4, 1, 1200, true, fates) == 0);
+    assert(fates[0] == ClipFate::kBind && fates[1] == ClipFate::kOrphan);
+  }
+  {  // a message that was not published owns nothing and hands nothing on
+    const yv::PendingClip clips[4] = {{true, 1000, 1, 0}, {true, 1100, 2, 0}};
+    assert(yv::SettlePendingClips(clips, 4, 1, 1200, false, fates) == 4);
+    assert(fates[0] == ClipFate::kOrphan && fates[1] == ClipFate::kOrphan);
+  }
+  {  // a clip opened after the message waits for the next one
+    const yv::PendingClip clips[4] = {{true, 1000, 1, 0}, {true, 1300, 2, 1}};
+    assert(yv::SettlePendingClips(clips, 4, 1, 1200, true, fates) == 0);
+    assert(fates[0] == ClipFate::kBind && fates[1] == ClipFate::kKeep);
+  }
+  {  // a repeated line pushes no message: its clip and the next line's clip
+     // both precede message 2; only the last one opened is bound
+    const yv::PendingClip clips[4] = {{true, 2000, 1, 1}, {true, 2600, 2, 1}};
+    assert(yv::SettlePendingClips(clips, 4, 2, 2800, true, fates) == 1);
+    assert(fates[0] == ClipFate::kOrphan && fates[1] == ClipFate::kBind);
+  }
+  {  // outside the window: not this message's voice, and no later one's either
+    const yv::PendingClip clips[4] = {{true, 1000, 1, 0}};
+    assert(yv::SettlePendingClips(clips, 4, 1, 1000 + w + 1, true, fates) == 4);
+    assert(fates[0] == ClipFate::kOrphan);
+    assert(yv::SettlePendingClips(clips, 4, 1, 1000 + w, true, fates) == 0);
+  }
+  {  // a message stamped before the clip opened is not voiced by it
+    const yv::PendingClip clips[4] = {{true, 1000, 1, 0}};
+    assert(yv::SettlePendingClips(clips, 4, 1, 999, true, fates) == 4);
+    assert(fates[0] == ClipFate::kOrphan);
+  }
+  {  // free slots are untouched
+    const yv::PendingClip clips[4] = {};
+    assert(yv::SettlePendingClips(clips, 4, 1, 1000, true, fates) == 4);
+    assert(fates[0] == ClipFate::kKeep && fates[3] == ClipFate::kKeep);
+    assert(yv::SettlePendingClips(nullptr, 4, 1, 1000, true, fates) == 4);
+  }
+}
+
+void TestTouchUp() {
+  using M = yl::LeftButtonMessage;
+  bool pending = false;
+  // A promoted touch press is evaluated; the caller claimed it.
+  auto d = yl::DecideTouchMessage(M::kDown, true, false, &pending);
+  assert(d.evaluate && !d.swallow);
+  pending = true;
+  d = yl::DecideTouchMessage(M::kUp, false, true, &pending);
+  assert(d.swallow && !pending);
+  // A claimed touch whose UP never arrives: the next press drops the stale
+  // pending, so that press's own UP reaches the game.
+  pending = true;
+  d = yl::DecideTouchMessage(M::kDown, false, false, &pending);
+  assert(!d.evaluate && !pending);
+  d = yl::DecideTouchMessage(M::kUp, false, false, &pending);
+  assert(!d.swallow);
+  // A press while the key loop still owns the button is not evaluated.
+  d = yl::DecideTouchMessage(M::kDown, true, true, &pending);
+  assert(!d.evaluate);
+  // Other messages change nothing.
+  pending = true;
+  d = yl::DecideTouchMessage(M::kOther, false, false, &pending);
+  assert(!d.evaluate && !d.swallow && pending);
+  assert(!yl::DecideTouchMessage(M::kUp, false, false, nullptr).swallow);
 }
 
 void TestPageAndHit() {
@@ -545,6 +767,9 @@ int main() {
   TestDecoderInput();
   TestVoiceHelpers();
   TestText();
+  TestSpeakerLayers();
+  TestVoiceBinding();
+  TestTouchUp();
   TestPageAndHit();
   TestClaim();
   std::puts("yuris adapter tests passed");

@@ -58,6 +58,7 @@ struct YurisGlyphEvent {
 
 struct YurisTextEvent {
   uint64_t page = 0u;
+  uint64_t sequence = 0u;  // text ring sequence (voice clips order against it)
   uint64_t tick = 0u;
   uintptr_t state = 0u;
   uintptr_t layer = 0u;
@@ -153,7 +154,14 @@ struct YurisLookupRuntime {
   uintptr_t image_base = 0u;
 
   // ── game-thread-owned ──
+  // "Game thread" is the thread that owns the main window: the key loop reads
+  // the table GetKeyboardState filled, and that table is per-thread input
+  // state, so the loop only sees clicks at all because it runs on the thread
+  // that receives the window's mouse messages — the same thread the window
+  // procedure detour runs on.  claim and touch_up_pending are shared between
+  // the two on that one thread and need no synchronisation.
   bool touch_up_pending = false;  // swallow the UP of a claimed touch press
+                                  // (dropped at the next DOWN if it never came)
   uint64_t current_page = 0u;  // page of the last message-text change
   uint64_t text_signature = 0u;
   yuris_lookup::ClaimState claim;
@@ -180,7 +188,8 @@ struct YurisLookupRuntime {
 };
 
 YurisLookupRuntime g_yuris_lookup;
-void BindYurisPendingVoice(uint64_t text_event, uint64_t text_tick);
+void BindYurisPendingVoice(uint64_t text_event, uint64_t text_order,
+                           uint64_t text_tick);
 bool ReadYurisLayerOrigin(uintptr_t layer, int32_t* origin_x,
                           int32_t* origin_y);
 void* g_yuris_draw_original = nullptr;
@@ -259,6 +268,7 @@ void PushYurisText(uintptr_t state, uintptr_t layer, uint64_t page,
   std::atomic_thread_fence(std::memory_order_release);
   YurisTextEvent& event = rt.texts[sequence % kYurisTextSlots];
   event.page = page;
+  event.sequence = sequence;
   event.tick = GetTickCount64();
   event.state = state;
   event.layer = layer;
@@ -488,22 +498,29 @@ LRESULT CALLBACK YurisWndProcDetour(HWND hwnd, UINT message, WPARAM wparam,
   if (rt.live.load(std::memory_order_acquire)) {
     bool swallow = false;
     __try {
-      if ((message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK) &&
-          yuris_lookup::IsPromotedTouch(GetMessageExtraInfo()) &&
-          !rt.claim.owned) {
+      const auto kind =
+          message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK
+              ? yuris_lookup::LeftButtonMessage::kDown
+          : message == WM_LBUTTONUP ? yuris_lookup::LeftButtonMessage::kUp
+                                    : yuris_lookup::LeftButtonMessage::kOther;
+      const bool promoted =
+          kind == yuris_lookup::LeftButtonMessage::kDown &&
+          yuris_lookup::IsPromotedTouch(GetMessageExtraInfo());
+      const yuris_lookup::TouchDecision decision =
+          yuris_lookup::DecideTouchMessage(kind, promoted, rt.claim.owned,
+                                           &rt.touch_up_pending);
+      swallow = decision.swallow;
+      YurisSubmit submit;
+      if (decision.evaluate) {
         g_yuris_press_count.fetch_add(1u, std::memory_order_relaxed);
-        YurisSubmit submit;
-        if (YurisPressEligible(&submit)) {
-          RejectYurisPress(0u);
-          QueueYurisSubmit(submit);
-          rt.claimed_presses.fetch_add(1u, std::memory_order_relaxed);
-          rt.claim.owned = true;
-          rt.claim.was_down = true;
-          rt.touch_up_pending = true;
-          swallow = true;
-        }
-      } else if (message == WM_LBUTTONUP && rt.touch_up_pending) {
-        rt.touch_up_pending = false;
+      }
+      if (decision.evaluate && YurisPressEligible(&submit)) {
+        RejectYurisPress(0u);
+        QueueYurisSubmit(submit);
+        rt.claimed_presses.fetch_add(1u, std::memory_order_relaxed);
+        rt.claim.owned = true;
+        rt.claim.was_down = true;
+        rt.touch_up_pending = true;
         swallow = true;
       }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -764,9 +781,13 @@ bool InstallYurisLookup() {
   return rt.installed;
 }
 
+// Returns the text event the line is published under (0 = not published).
+// *fresh is true only when this call wrote a new event; a repeat of the last
+// line inside the dedupe window returns that line's event with *fresh false.
 uint64_t PublishYurisTextLine(const std::wstring& text, uint64_t identity,
-                              uintptr_t address, uint64_t tick) {
+                              uintptr_t address, uint64_t tick, bool* fresh) {
   auto& rt = g_yuris_lookup;
+  *fresh = false;
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
       !g_text_cs_ready || text.empty() ||
       text.size() * sizeof(wchar_t) > fushi_voice_hook::kTextSlotBytes) {
@@ -804,11 +825,13 @@ uint64_t PublishYurisTextLine(const std::wstring& text, uint64_t identity,
   rt.last_text_thread = thread_id;
   rt.last_text_tick = tick;
   rt.last_text_event = event;
+  *fresh = true;
   return event;
 }
 
-// A new message: decode, publish and make it the current page.
-void ProcessYurisTextEvent(const YurisTextEvent& event) {
+// Decode and publish a message and make it the current page.  Returns the
+// text event when this message became a new published line, else 0.
+uint64_t PublishYurisMessage(const YurisTextEvent& event) {
   auto& rt = g_yuris_lookup;
   YurisPage& page = rt.page;
   page.valid = false;
@@ -818,38 +841,44 @@ void ProcessYurisTextEvent(const YurisTextEvent& event) {
     YurisLookupLog(L"yuris-lookup: message %llu text rejected bytes=%u",
                    static_cast<unsigned long long>(event.page),
                    event.text_bytes);
-    return;
+    return 0u;
   }
-  std::wstring text =
-      yuris_lookup::DecodeMessageText(event.text, event.text_bytes);
+  bool had_ruby = false;
+  const std::wstring text = yuris_lookup::PublishedMessageText(
+      yuris_lookup::DecodeMessageText(event.text, event.text_bytes),
+      &had_ruby);
   if (text.empty()) {
     YurisLookupLog(L"yuris-lookup: message %llu not convertible",
                    static_cast<unsigned long long>(event.page));
-    return;
+    return 0u;
   }
-  // `≪base／reading≫`: publish the base text; the readings are drawn smaller.
-  bool had_ruby = false;
-  text = yuris_lookup::StripRubyMarkup(text, &had_ruby);
-  // `NAME「…」`: publish the spoken line; the name plate is another layer.
-  text.erase(0, yuris_lookup::SpokenLineStart(text.data(), text.size()));
   // Lane identity: the engine's message state global (one message system per
   // process), stable across runs, unlike the heap address of the state.
+  bool fresh = false;
   const uint64_t text_event = PublishYurisTextLine(
       text, (static_cast<uint64_t>(rt.sites.state_global) << 8) ^
                 rt.sites.text_ptr,
-      event.state, event.tick);
-  YurisLookupLog(L"yuris-lookup: message %llu bytes=%u units=%u event=%llu",
+      event.state, event.tick, &fresh);
+  YurisLookupLog(L"yuris-lookup: message %llu bytes=%u units=%u event=%llu "
+                 L"fresh=%d",
                  static_cast<unsigned long long>(event.page), event.text_bytes,
                  static_cast<unsigned>(text.size()),
-                 static_cast<unsigned long long>(text_event));
-  if (text_event == 0u) return;
-  BindYurisPendingVoice(text_event, event.tick);
+                 static_cast<unsigned long long>(text_event), fresh ? 1 : 0);
+  if (text_event == 0u) return 0u;
   page.valid = true;
   page.has_ruby = had_ruby;
   page.id = event.page;
   page.text_event = text_event;
   page.state = event.state;
   page.text = text;
+  return fresh ? text_event : 0u;
+}
+
+// Every message settles the voice clips opened before it, whether or not it
+// was published (BindYurisPendingVoice).
+void ProcessYurisTextEvent(const YurisTextEvent& event) {
+  const uint64_t text_event = PublishYurisMessage(event);
+  BindYurisPendingVoice(text_event, event.sequence, event.tick);
 }
 
 void ProcessYurisGlyphEvent(const YurisGlyphEvent& event) {
@@ -1166,8 +1195,11 @@ bool BuildYurisModel(const YurisPage& page, const std::wstring& line,
     if (layer_count >= layers.size()) return FailYurisModel(3u);
     layers[layer_count++] = page.glyphs[i].layer;
   }
-  uintptr_t matched_layer = 0u;
-  size_t matched_count = 0u, matched_first = 0u;
+  // A `NAME「…」` message is matched across two layers only when the engine
+  // drew exactly NAME on a layer of its own (yuris_lookup::ChooseLineLayer).
+  const size_t speaker =
+      yuris_lookup::SpeakerPrefixCandidate(line.data(), line.size());
+  std::array<yuris_lookup::LayerFit, kYurisPageLayers> fits{};
   for (uint32_t k = 0u; k < layer_count; ++k) {
     const uint32_t count = CollectYurisLayerCells(page, layers[k]);
     if (count == 0u) continue;
@@ -1175,15 +1207,24 @@ bool BuildYurisModel(const YurisPage& page, const std::wstring& line,
         rt.cells.data(), count, rt.codepoints.data(), rt.sources.data(), 0, 0,
         rt.scratch.data(), rt.scratch.size());
     if (built == 0u) continue;
-    const size_t first = yuris_lookup::MapSelectedSuffix(
-        rt.scratch.data(), built, line.data(), line.size());
-    if (first >= built) continue;
-    if (matched_layer != 0u) return FailYurisModel(4u);  // ambiguous
-    matched_layer = layers[k];
-    matched_count = built;
-    matched_first = first;
+    fits[k].line = yuris_lookup::MapSelectedSuffix(
+                       rt.scratch.data(), built, line.data(), line.size()) <
+                   built;
+    if (speaker == 0u) continue;
+    fits[k].quote =
+        yuris_lookup::MapSelectedSuffix(rt.scratch.data(), built,
+                                        line.data() + speaker,
+                                        line.size() - speaker) < built;
+    fits[k].name = yuris_lookup::GlyphRunIs(rt.scratch.data(), built,
+                                            line.data(), speaker);
   }
-  if (matched_layer == 0u) return FailYurisModel(5u);
+  const yuris_lookup::LineLayerChoice choice =
+      yuris_lookup::ChooseLineLayer(fits.data(), layer_count, speaker);
+  if (choice.ambiguous) return FailYurisModel(4u);
+  if (choice.layer >= layer_count) return FailYurisModel(5u);
+  const uintptr_t matched_layer = layers[choice.layer];
+  const wchar_t* const matched_text = line.data() + choice.source_offset;
+  const size_t matched_units = line.size() - choice.source_offset;
   int32_t origin_x = 0, origin_y = 0, design_w = 0, design_h = 0;
   if (!ReadYurisLayerPlacement(matched_layer, game, &origin_x, &origin_y,
                                &design_w, &design_h)) {
@@ -1205,8 +1246,10 @@ bool BuildYurisModel(const YurisPage& page, const std::wstring& line,
       rt.cells.data(), count, rt.codepoints.data(), rt.sources.data(),
       origin_x, origin_y, rt.scratch.data(), rt.scratch.size());
   const size_t first = yuris_lookup::MapSelectedSuffix(
-      rt.scratch.data(), built, line.data(), line.size());
-  if (built != matched_count || first != matched_first) {
+      rt.scratch.data(), built, matched_text, matched_units);
+  if (built == 0u || first >= built ||
+      !yuris_lookup::ShiftSources(rt.scratch.data(), built,
+                                  choice.source_offset)) {
     return FailYurisModel(5u);
   }
   model->page = page.id;

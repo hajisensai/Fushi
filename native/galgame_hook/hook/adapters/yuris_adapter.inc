@@ -14,8 +14,18 @@
 class YurisAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "yuris"; }
+  // The identity is a property of the files next to the executable: measured
+  // once (it reads archive indexes from disk), then reused by install() and
+  // diagnostics().  install() (startup) and diagnostics() (Poll) may run on
+  // different threads: the cache is atomic, and two first calls racing only
+  // measure the same files twice.
   bool probe() const override {
-    return fushi_voice_hook::MatchesYurisProfile(nullptr);
+    int state = probe_state_.load(std::memory_order_acquire);
+    if (state == 0) {
+      state = fushi_voice_hook::MatchesYurisProfile(nullptr) ? 1 : 2;
+      probe_state_.store(state, std::memory_order_release);
+    }
+    return state == 1;
   }
   bool install() override {
     if (!probe()) return false;
@@ -26,8 +36,11 @@ class YurisAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void ProcessPendingEvents() {
     if (!installed_) return;
-    ProcessYurisVoiceTasks();
+    // Messages first: each one settles the voice clips opened before it, so
+    // a clip is only published without an owner (expiry) once every message
+    // pushed so far has been seen.
     ProcessYurisLookupTick();
+    ProcessYurisVoiceTasks();
   }
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     fushi_voice_hook::LookupAdmissionReport report;
@@ -63,6 +76,7 @@ class YurisAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  mutable std::atomic<int> probe_state_{0};  // 0 unmeasured, 1 YU-RIS, 2 not
   bool installed_ = false;
   bool text_installed_ = false;
   bool voice_ready_ = false;

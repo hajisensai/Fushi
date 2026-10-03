@@ -33,6 +33,57 @@ namespace yl = fushi_voice_hook::yuris_lookup;
 // the clip opened.
 inline constexpr uint64_t kVoiceToTextWindowMs = 1500u;
 
+// ── binding a message to its voice clip ────────────────────────────────────
+//
+// The script plays a line's voice and then shows the line, so a clip can only
+// belong to the first message pushed after it opened.  `texts_before` is the
+// number of messages the engine had pushed when the clip opened (the text
+// ring's counter, read at capture), `order` the clip's open sequence (strict,
+// assigned at capture) and `tick` its open time.
+struct PendingClip {
+  bool used = false;
+  uint64_t tick = 0u;
+  uint64_t order = 0u;
+  uint64_t texts_before = 0u;
+};
+
+enum class ClipFate : uint8_t {
+  kKeep = 0,    // opened after this message: waits for a later one
+  kBind = 1,    // the voice of this message (written with its text event id)
+  kOrphan = 2,  // opened before this message but not its voice: no owner
+};
+
+// Settles every pending clip that opened before message `text_order`
+// (1-based text ring sequence) at `text_tick`.  At most one clip is bound: the
+// last one opened within kVoiceToTextWindowMs before the message, and only
+// when the message became a new published line (`new_line`).  Every other
+// clip that opened before the message can no longer belong to any later
+// message and loses its owner now instead of waiting for the next line: a
+// rejected / unpublished / repeated message never hands its clips on.
+// Returns the index of the bound clip, or `count` when none is bound.
+inline size_t SettlePendingClips(const PendingClip* clips, size_t count,
+                                 uint64_t text_order, uint64_t text_tick,
+                                 bool new_line, ClipFate* fates) {
+  if (clips == nullptr || fates == nullptr) return count;
+  size_t bound = count;
+  for (size_t i = 0u; i < count; ++i) {
+    const PendingClip& clip = clips[i];
+    if (!clip.used || clip.texts_before >= text_order) {
+      fates[i] = ClipFate::kKeep;
+      continue;
+    }
+    fates[i] = ClipFate::kOrphan;
+    const bool in_window = text_tick >= clip.tick &&
+                           text_tick - clip.tick <= kVoiceToTextWindowMs;
+    if (new_line && in_window &&
+        (bound == count || clip.order > clips[bound].order)) {
+      bound = i;
+    }
+  }
+  if (bound < count) fates[bound] = ClipFate::kBind;
+  return bound;
+}
+
 struct DecoderSites {
   uint32_t ov_open = 0u;     // RVA of ov_open_callbacks
   uint32_t callbacks = 0u;   // RVA of the static ov_callbacks table

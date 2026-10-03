@@ -152,4 +152,86 @@ inline bool ReadYpfEntry(const uint8_t* index, size_t index_bytes,
   return true;
 }
 
+inline bool SameYpfEntry(const YpfEntry& a, const YpfEntry& b) {
+  return a.name_hash == b.name_hash && a.name_bytes == b.name_bytes &&
+         std::memcmp(a.name, b.name, a.name_bytes) == 0 && a.type == b.type &&
+         a.packed == b.packed && a.unpacked_size == b.unpacked_size &&
+         a.stored_size == b.stored_size && a.offset == b.offset &&
+         a.check == b.check;
+}
+
+// Every one of `count` entries parses under `layout` and the last one ends
+// exactly at index_end (`index` holds bytes [32, index_end)).
+inline bool YpfIndexParses(const uint8_t* index, size_t index_bytes,
+                           const YpfHeader& header, const YpfLayout& layout,
+                           uint64_t file_size) {
+  size_t cursor = 0u;
+  for (uint32_t i = 0u; i < header.count; ++i) {
+    if (!ReadYpfEntry(index, index_bytes, header, layout, file_size, &cursor,
+                      nullptr)) {
+      return false;
+    }
+  }
+  return cursor == index_bytes;
+}
+
+// Two passing layouts read the same entries (byte-identical decode).
+inline bool YpfLayoutsAgree(const uint8_t* index, size_t index_bytes,
+                            const YpfHeader& header, const YpfLayout& a,
+                            const YpfLayout& b, uint64_t file_size) {
+  size_t cursor_a = 0u, cursor_b = 0u;
+  YpfEntry entry_a, entry_b;
+  for (uint32_t i = 0u; i < header.count; ++i) {
+    if (!ReadYpfEntry(index, index_bytes, header, a, file_size, &cursor_a,
+                      &entry_a) ||
+        !ReadYpfEntry(index, index_bytes, header, b, file_size, &cursor_b,
+                      &entry_b) ||
+        !SameYpfEntry(entry_a, entry_b)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+enum class YpfIndexResult : uint32_t {
+  kValid = 0,
+  kNoLayout = 1,   // no layout parses the whole index
+  kAmbiguous = 2,  // two layouts parse it but read different entries
+  kTruncated = 3,  // fewer than index_end bytes supplied
+};
+
+// The archive's index layout, decided structurally (header comment): every
+// candidate (name-length table variant x member offset width) must parse all
+// `count` entries ending exactly at index_end; when several pass they must
+// decode identical entries, else the archive is rejected.  `bytes` is the
+// file from offset 0 and must hold at least index_end bytes.
+inline YpfIndexResult ResolveYpfLayout(const uint8_t* bytes, size_t size,
+                                       const YpfHeader& header,
+                                       uint64_t file_size, YpfLayout* out) {
+  if (bytes == nullptr || size < header.index_end ||
+      header.index_end <= kYpfHeaderBytes) {
+    return YpfIndexResult::kTruncated;
+  }
+  const uint8_t* index = bytes + kYpfHeaderBytes;
+  const size_t index_bytes = header.index_end - kYpfHeaderBytes;
+  YpfLayout chosen;
+  for (const bool swapped : {true, false}) {
+    for (const uint32_t width : {4u, 8u}) {
+      const YpfLayout layout{swapped, width};
+      if (!YpfIndexParses(index, index_bytes, header, layout, file_size)) {
+        continue;
+      }
+      if (chosen.offset_bytes != 0u &&
+          !YpfLayoutsAgree(index, index_bytes, header, chosen, layout,
+                           file_size)) {
+        return YpfIndexResult::kAmbiguous;
+      }
+      if (chosen.offset_bytes == 0u) chosen = layout;
+    }
+  }
+  if (chosen.offset_bytes == 0u) return YpfIndexResult::kNoLayout;
+  if (out != nullptr) *out = chosen;
+  return YpfIndexResult::kValid;
+}
+
 }  // namespace fushi_voice_hook::yuris

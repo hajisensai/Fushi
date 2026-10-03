@@ -2,10 +2,12 @@
 //
 // Structural rule: next to the game executable (its own directory or the
 // `pac` subdirectory the engine searches) there is at least one `*.ypf` whose
-// 32-byte header is a valid YPF header and whose first entries parse under
-// one of the engine's index layouts (yuris_ypf.h: name-length table variant x
-// 32/64-bit member offsets, every member after the index and inside the file).
-// A magic alone is not enough: the first entries must agree with the layout.
+// 32-byte header is a valid YPF header and whose whole index parses under
+// exactly one reading of the engine's index layouts (yuris_ypf.h:
+// name-length table variant x 32/64-bit member offsets; every entry parses,
+// every member lies after the index and inside the file, the last entry ends
+// exactly at index_end, and layouts that both pass must decode the same
+// entries).  A magic alone is not enough.
 //
 // The executable name, title and hash are never consulted.  The lookup and
 // text sites are resolved separately from the image's own code
@@ -18,53 +20,48 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "../yuris_ypf.h"
 #include "engine_dir_signature.h"
 
 namespace fushi_voice_hook {
 
-// Header + the first entries (bounded read).  The index walk stops at the
-// end of the prefix: a prefix that holds at least `kPrefixEntries` entries
-// must parse them all under a single layout candidate.
-inline bool IsYurisArchivePrefix(const uint8_t* prefix, size_t prefix_bytes,
-                                 uint64_t file_size) {
+// The probe reads a whole index; an archive whose index is larger than this
+// is not used as identity evidence (the scan moves on to the next archive).
+// Real indexes are a few dozen bytes per member.
+constexpr uint32_t kYurisProbeIndexBytes = 16u << 20;
+
+// `head` is the file from offset 0 and holds the whole index (header through
+// index_end): the archive is YU-RIS when exactly one index layout reads every
+// entry (yuris::ResolveYpfLayout).
+inline bool IsYurisArchiveHead(const uint8_t* head, size_t head_bytes,
+                               uint64_t file_size) {
   namespace yuris = ::fushi_voice_hook::yuris;
-  constexpr uint32_t kPrefixEntries = 4u;
   yuris::YpfHeader header;
-  if (!yuris::ParseYpfHeader(prefix, prefix_bytes, file_size, &header)) {
-    return false;
-  }
-  const size_t index_bytes = header.index_end - yuris::kYpfHeaderBytes;
-  const size_t available = prefix_bytes - yuris::kYpfHeaderBytes;
-  const uint8_t* index = prefix + yuris::kYpfHeaderBytes;
-  const size_t usable = available < index_bytes ? available : index_bytes;
-  const uint32_t wanted =
-      header.count < kPrefixEntries ? header.count : kPrefixEntries;
-  for (const bool swapped : {true, false}) {
-    for (const uint32_t width : {4u, 8u}) {
-      const yuris::YpfLayout layout{swapped, width};
-      size_t cursor = 0u;
-      uint32_t parsed = 0u;
-      while (parsed < wanted &&
-             yuris::ReadYpfEntry(index, usable, header, layout, file_size,
-                                 &cursor, nullptr)) {
-        ++parsed;
-      }
-      if (parsed == wanted) return true;
-    }
-  }
-  return false;
+  return yuris::ParseYpfHeader(head, head_bytes, file_size, &header) &&
+         yuris::ResolveYpfLayout(head, head_bytes, header, file_size,
+                                 nullptr) == yuris::YpfIndexResult::kValid;
 }
 
 inline bool IsYurisArchiveFile(const std::wstring& path) {
-  constexpr DWORD kPrefixBytes = 4096u;
-  uint8_t prefix[kPrefixBytes] = {0};
-  DWORD read = 0;
+  namespace yuris = ::fushi_voice_hook::yuris;
   uint64_t size = 0;
-  return engine_dir::FileSize(path, &size) &&
-         engine_dir::ReadFilePrefix(path, prefix, kPrefixBytes, &read) &&
-         IsYurisArchivePrefix(prefix, read, size);
+  uint8_t header_bytes[yuris::kYpfHeaderBytes] = {0};
+  DWORD read = 0;
+  yuris::YpfHeader header;
+  if (!engine_dir::FileSize(path, &size) ||
+      !engine_dir::ReadFilePrefix(path, header_bytes, sizeof(header_bytes),
+                                  &read) ||
+      !yuris::ParseYpfHeader(header_bytes, read, size, &header) ||
+      header.index_end > kYurisProbeIndexBytes) {
+    return false;
+  }
+  std::vector<uint8_t> head(header.index_end);
+  return engine_dir::ReadFilePrefix(path, head.data(), header.index_end,
+                                    &read) &&
+         read == header.index_end &&
+         IsYurisArchiveHead(head.data(), head.size(), size);
 }
 
 inline bool DirectoryHasYurisArchive(const std::wstring& directory,
