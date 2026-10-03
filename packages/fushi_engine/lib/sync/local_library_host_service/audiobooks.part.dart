@@ -225,11 +225,15 @@ mixin _LocalLibraryHostAudiobooks
         // getSrtBookByBookKey 先拿 uid，再用 deleteSrtBookByUid 级联删 audioCue 行。
         final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
         if (srt != null) {
-          await _db.deleteSrtBookByUid(srt.uid);
+          if (await _db.deleteSrtBookByUid(srt.uid) > 0) {
+            await _writeHostSyncTombstone(SyncTombstoneKind.srtbook, srt.uid);
+          }
         }
 
         // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
         await _db.deleteAudiobookByBookKey(bookKey);
+        // BUG-2927：同步删除墓碑，其它设备经 /api/tombstones 跟着删。
+        await _writeHostSyncTombstone(SyncTombstoneKind.audiobook, bookKey);
 
         await _deleteAudioRootIfPersisted(audioRoot);
         return;
@@ -240,7 +244,9 @@ mixin _LocalLibraryHostAudiobooks
       final SrtBookRow? srt = await _db.getSrtBookByUid(bookKey);
       if (srt == null) return; // 幂等：都不存在则静默跳过
       final String? audioRoot = srt.audioRoot;
-      await _db.deleteSrtBookByUid(srt.uid);
+      if (await _db.deleteSrtBookByUid(srt.uid) > 0) {
+        await _writeHostSyncTombstone(SyncTombstoneKind.srtbook, srt.uid);
+      }
       await _deleteAudioRootIfPersisted(audioRoot);
     });
   }

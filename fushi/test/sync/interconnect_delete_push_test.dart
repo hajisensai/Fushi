@@ -299,6 +299,98 @@ void main() {
     );
   });
 
+  /// host 上 [kind]/[key] 的同步删除墓碑条数。
+  Future<int> hostTombstoneCount(SyncTombstoneKind kind, String key) async =>
+      (await hostDb.getSyncDeletionTombstones())
+          .where((SyncDeletionTombstoneRow r) =>
+              r.mediaType == kind.dbValue && r.itemKey == key)
+          .length;
+
+  /// client 写一条 [kind]/[key] 墓碑并跑一轮互联推送。
+  Future<SyncRunReport> pushClientTombstone(
+    SyncTombstoneKind kind,
+    String key,
+  ) async {
+    final FushiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+    await localDb.writeSyncDeletionTombstone(
+      kind.dbValue,
+      key,
+      DateTime.now().millisecondsSinceEpoch - 1000,
+    );
+    final InterconnectSyncBackend backend =
+        await _buildClientBackend(base: base, token: token);
+    final SyncRunReport report = SyncRunReport();
+    await _orchestrator(db: localDb, backend: backend, tmp: work)
+        .syncDeletionTombstonesLiveForTest(report, backend);
+    return report;
+  }
+
+  // BUG-2927：书 / 有声书 / 纯 SRT 书在 host 上被删后，host 此前不写同步墓碑，
+  // 第三台设备拉 /api/tombstones 什么都拿不到——「从所有设备删除」只删了两端。
+  test('client 删书推送到 host：host 删行并写自己的 book 墓碑', () async {
+    final String extractDir = p.join(work.path, 'host_books', 'bk-1');
+    Directory(extractDir).createSync(recursive: true);
+    await hostDb.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'bk-1',
+      title: 'Book One',
+      epubPath: p.join(extractDir, 'original.epub'),
+      extractDir: extractDir,
+      chapterCount: 1,
+      chaptersJson: '["c"]',
+      importedAt: 0,
+    ));
+
+    final SyncRunReport report =
+        await pushClientTombstone(SyncTombstoneKind.book, 'bk-1');
+
+    expect(report.errors, isEmpty);
+    expect(await hostDb.getAllEpubBooks(), isEmpty);
+    expect(await hostTombstoneCount(SyncTombstoneKind.book, 'bk-1'), 1,
+        reason: 'host 删书后必须记同步墓碑，否则删除传播在 host 这里断链');
+  });
+
+  test('client 删有声书推送到 host：host 写 audiobook 与关联 srtbook 墓碑', () async {
+    await hostDb.upsertAudiobook(AudiobooksCompanion.insert(
+      bookKey: 'ab-1',
+      alignmentFormat: 'srt',
+      alignmentPath: p.join(work.path, 'ab-1.srt'),
+    ));
+    await hostDb.upsertSrtBook(SrtBooksCompanion.insert(
+      uid: 'srt-of-ab-1',
+      title: 'AB One',
+      srtPath: p.join(work.path, 'ab-1.srt'),
+      importedAt: 0,
+      bookKey: const Value<String>('ab-1'),
+    ));
+
+    final SyncRunReport report =
+        await pushClientTombstone(SyncTombstoneKind.audiobook, 'ab-1');
+
+    expect(report.errors, isEmpty);
+    expect(await hostDb.getAllAudiobooks(), isEmpty);
+    expect(await hostDb.getAllSrtBooks(), isEmpty);
+    expect(await hostTombstoneCount(SyncTombstoneKind.audiobook, 'ab-1'), 1);
+    expect(
+        await hostTombstoneCount(SyncTombstoneKind.srtbook, 'srt-of-ab-1'), 1);
+  });
+
+  test('client 删纯 SRT 书推送到 host：host 写 srtbook 墓碑', () async {
+    await hostDb.upsertSrtBook(SrtBooksCompanion.insert(
+      uid: 'srt-solo',
+      title: 'Solo',
+      srtPath: p.join(work.path, 'solo.srt'),
+      importedAt: 0,
+    ));
+
+    final SyncRunReport report =
+        await pushClientTombstone(SyncTombstoneKind.srtbook, 'srt-solo');
+
+    expect(report.errors, isEmpty);
+    expect(await hostDb.getAllSrtBooks(), isEmpty);
+    expect(await hostTombstoneCount(SyncTombstoneKind.srtbook, 'srt-solo'), 1);
+  });
+
   test('DELETE /api/library/videos/<id> 路径穿越拒绝', () async {
     final HttpClient client = HttpClient();
     addTearDown(client.close);

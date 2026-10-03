@@ -565,13 +565,21 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         child: const Icon(Icons.download_done),
       );
     }
-    final InterconnectDownloadTask? task = _appModelOrNull == null
+    // 只订阅整数百分比，字节级进度回报不整页重建（BUG-2926）。
+    final InterconnectDownloadBadgeState? task = _appModelOrNull == null
         ? null
-        : ref.watch(interconnectDownloadManagerProvider).taskFor(id);
-    if (task != null && task.isRunning) {
+        : ref.watch(
+            interconnectDownloadManagerProvider.select(
+              (m) => m.badgeStateFor(id),
+            ),
+          );
+    if (task != null && task.status == InterconnectDownloadStatus.running) {
       return SizedBox.square(
         dimension: 24,
-        child: CircularProgressIndicator(strokeWidth: 2, value: task.progress),
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          value: task.percent < 0 ? null : task.percent / 100,
+        ),
       );
     }
     return IconButton(
