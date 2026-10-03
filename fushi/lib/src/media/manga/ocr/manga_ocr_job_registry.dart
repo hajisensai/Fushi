@@ -18,6 +18,8 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
@@ -75,7 +77,28 @@ class MangaOcrRunningJob {
   Future<void> get whenEnded => _endedCompleter.future;
 
   /// 广播给观察者的事件流：与底层流同序，finished 事件在落盘**之后**才转发。
+  ///
+  /// 有跟随步骤（[MangaOcrBackgroundJob.follower]，大模型重读）时，它改好的页
+  /// 以带页的 progress 事件插进来——任务结束（[whenEnded]，名额已释放）之后也
+  /// 可能还有，流要等跟随步骤做完才关。
   Stream<MangaOcrBackgroundEvent> get events => _observers.stream;
+
+  MangaOcrJobFollower? get _follower => job.follower;
+  StreamSubscription<MangaOcrPageUpdate>? _followerUpdates;
+
+  /// 跟随步骤改好一页：转成带页的进度事件给观察者（计数沿用最近一次快照）。
+  void _forwardFollowerUpdate(MangaOcrPageUpdate update) {
+    if (_observers.isClosed) return;
+    final MangaOcrBackgroundEvent? last = _lastEvent;
+    _observers.add(
+      MangaOcrBackgroundEvent.progress(
+        pagesDone: last?.pagesDone ?? 0,
+        pagesTotal: last?.pagesTotal ?? 0,
+        pageIndex: update.pageIndex,
+        page: update.page,
+      ),
+    );
+  }
 
   /// 读者翻到了 [pageIndex]：任务下一页先跑它，再从它往后接着跑。任务不支持
   /// 改道（[MangaOcrBackgroundJob.focus] 为 null）或已结束时什么都不做。
@@ -89,11 +112,17 @@ class MangaOcrRunningJob {
 
   /// 用户主动取消：真停底层任务（各执行器既有的取消语义），并释放会话。
   Future<void> cancel() async {
+    await _cancelFollower();
     if (_ended) return;
     _cancelled = true;
     await _source?.cancel();
     _source = null;
     await _end();
+  }
+
+  /// 停掉跟随步骤（任务已结束、它还在收尾时也有效）。
+  Future<void> _cancelFollower() async {
+    await _follower?.cancel();
   }
 
   Future<void> _end() async {
@@ -111,10 +140,18 @@ class MangaOcrRunningJob {
       }
     }
     _sessions.clear();
-    // 刻意不 await：广播流的 done 要等每个观察者消费完才算送达，一个正卡在异步
-    // 事件处理里的页面观察者不该把「真停任务」也一起卡住。
-    unawaited(_observers.close());
     if (!_endedCompleter.isCompleted) _endedCompleter.complete();
+    // 观察者流等跟随步骤收完尾再关（没有跟随步骤时立即关）。
+    final Future<void> followerDone = _follower?.done ?? Future<void>.value();
+    unawaited(
+      followerDone.whenComplete(() async {
+        await _followerUpdates?.cancel();
+        _followerUpdates = null;
+        // 刻意不 await：广播流的 done 要等每个观察者消费完才算送达，一个正卡在
+        // 异步事件处理里的页面观察者不该把「真停任务」也一起卡住。
+        unawaited(_observers.close());
+      }),
+    );
   }
 }
 
@@ -223,6 +260,17 @@ class MangaOcrJobRegistry {
     );
     _jobs[job.bookKey] = running;
     _notifyChanged();
+    // 同目录上一个任务的跟随步骤还在收尾：新任务会重写这份 manga.json 并带着
+    // 自己的跟随步骤，旧的继续跑只会对着过期的页花钱。
+    unawaited(
+      _cancelFollowersFor(job.bookKey, directory: job.managedDirectory),
+    );
+    final MangaOcrJobFollower? follower = job.follower;
+    if (follower != null) {
+      running._followerUpdates = follower.updates.listen(
+        running._forwardFollowerUpdate,
+      );
+    }
     // asyncMap 串行化事件处理：finished 的落盘有 await，期间源流被暂停，观察者
     // 收到 finished 时文件已经在盘上。
     running._source = job.events
@@ -240,6 +288,8 @@ class MangaOcrJobRegistry {
               error,
               stack,
             );
+            // 任务失败：没有整卷结果可落，跟随步骤也就没有落点。
+            unawaited(running._cancelFollower());
             running._error = error;
             if (!running._observers.isClosed) {
               running._observers.addError(error, stack);
@@ -249,6 +299,7 @@ class MangaOcrJobRegistry {
           },
           onDone: () {
             _forget(running);
+            _trackFollower(running);
             unawaited(running._end());
           },
           cancelOnError: true,
@@ -313,6 +364,7 @@ class MangaOcrJobRegistry {
   /// 则 no-op。只停正在跑的那一个是不够的——它一结束链尾就把下一个 start 起来
   /// （BUG-2513「移出书架」删完目录后排队者仍会对空目录开跑）。
   Future<void> cancel(String bookKey) async {
+    await _cancelFollowersFor(bookKey);
     final bool hadQueued = _queuedDirectories.remove(bookKey) != null;
     final MangaOcrRunningJob? running = _jobs.remove(bookKey);
     if (running == null && !hadQueued) return;
@@ -322,10 +374,50 @@ class MangaOcrJobRegistry {
 
   /// 退出 app / 切换 Profile 等整体拆栈：把所有任务真停掉。
   Future<void> cancelAll() async {
-    final List<MangaOcrRunningJob> jobs = _jobs.values.toList();
+    final List<MangaOcrRunningJob> jobs = <MangaOcrRunningJob>[
+      ..._jobs.values,
+      for (final List<MangaOcrRunningJob> list in _finishing.values) ...list,
+    ];
     _jobs.clear();
+    _finishing.clear();
     for (final MangaOcrRunningJob running in jobs) {
       await running.cancel();
+    }
+  }
+
+  /// 任务已结束、跟随步骤（大模型重读）还在收尾的，按 bookKey。删书 / 取消本书
+  /// 也要停它们：否则删完目录后它还会往原路径写 manga.json。
+  final Map<String, List<MangaOcrRunningJob>> _finishing =
+      <String, List<MangaOcrRunningJob>>{};
+
+  void _trackFollower(MangaOcrRunningJob running) {
+    final MangaOcrJobFollower? follower = running.job.follower;
+    if (follower == null || running.isCancelled) return;
+    final List<MangaOcrRunningJob> list = _finishing.putIfAbsent(
+      running.bookKey,
+      () => <MangaOcrRunningJob>[],
+    )..add(running);
+    unawaited(
+      follower.done.whenComplete(() {
+        list.remove(running);
+        if (list.isEmpty && identical(_finishing[running.bookKey], list)) {
+          _finishing.remove(running.bookKey);
+        }
+      }),
+    );
+  }
+
+  /// 停掉本书还在收尾的跟随步骤；给了 [directory] 时只停同目录的。
+  Future<void> _cancelFollowersFor(String bookKey, {String? directory}) async {
+    final List<MangaOcrRunningJob> list = <MangaOcrRunningJob>[
+      ...?_finishing[bookKey],
+    ];
+    for (final MangaOcrRunningJob running in list) {
+      if (directory != null &&
+          !p.equals(running.job.managedDirectory, directory)) {
+        continue;
+      }
+      await running._cancelFollower();
     }
   }
 
@@ -336,23 +428,29 @@ class MangaOcrJobRegistry {
     }
   }
 
-  /// 事件进注册表：progress 原样透传；finished 先把产物落进书根 manga.json。
+  /// 事件进注册表：progress 原样透传（同时交给跟随步骤）；finished 先把产物落进
+  /// 书根 manga.json——跟随步骤已改好的页同步并进去，**不等**它还没做完的页。
   Future<MangaOcrBackgroundEvent> _ingest(
     MangaOcrRunningJob running,
     MangaOcrBackgroundEvent event,
   ) async {
-    if (!event.finished) return event;
+    final MangaOcrJobFollower? follower = running.job.follower;
+    if (!event.finished) {
+      follower?.onProgress(event);
+      return event;
+    }
     final String? resultPath = event.resultPath;
     if (resultPath == null) {
       throw StateError('OCR finished without a result path');
     }
     final String source = await File(resultPath).readAsString();
-    final MokuroPayload payload = event.external
+    final MokuroPayload local = event.external
         ? parseMokuro(source)
         : parseMangaJson(source);
-    if (payload.images.isEmpty) {
+    if (local.images.isEmpty) {
       throw StateError('OCR result has no pages');
     }
+    final MokuroPayload payload = follower?.mergeInto(local) ?? local;
     // 整卷落盘与在线几何回填共用同一把 per-path 写锁：两者都是整份读-改-写，
     // 交叠会互相覆盖。
     final String target = running.mangaJsonPath;
@@ -361,6 +459,7 @@ class MangaOcrJobRegistry {
       () => writeMangaJsonAtomically(target, payload),
     );
     running._result = payload;
+    follower?.onPersisted(target, payload);
     return event;
   }
 }

@@ -1144,7 +1144,9 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
     executablePath,
   );
   final String lowerBasename = basename.toLowerCase();
-  if (lowerBasename == 'manosaba.exe' || lowerBasename == 'siglusengine.exe') {
+  // SiglusEngine.exe 是引擎本体的发行名（不是某一款游戏），按名认可；Unity 一律走下面的
+  // 目录结构判据，不按单个游戏 exe 名开。
+  if (lowerBasename == 'siglusengine.exe') {
     return true;
   }
 
@@ -3006,6 +3008,9 @@ class GalHookedLine {
       6 => 'smash',
       7 => 'bgi',
       8 => 'artemis',
+      9 => 'yuris',
+      10 => 'fvp',
+      15 => 'malie',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -3024,6 +3029,9 @@ class GalHookedLine {
             6 => 'smash exact',
             7 => 'BGI exact',
             8 => 'Artemis exact',
+            9 => 'YU-RIS exact',
+            10 => 'FVP exact',
+            15 => 'Malie exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

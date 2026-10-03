@@ -461,6 +461,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
         )
       : AdaptiveSettingsPickerRow<String>(
           title: d.title,
+          // 面板只有 400px（窄屏更窄）：控件跟标题并排时下拉只分到一百来像素，
+          // 「从右到左」「适应屏幕」之类的值被直接裁掉。放到标题下方占满整行。
+          controlBelow: true,
           options: <AdaptiveSettingsPickerOption<String>>[
             for (final String choice in d.choices)
               AdaptiveSettingsPickerOption<String>(
@@ -641,10 +644,16 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
             ),
           ),
           const Divider(height: 1),
+          // 状态与重置按钮放得下就并排一行：状态贴左、按钮贴右（竖排时页脚独占
+          // 近 100px，横屏手机上留给设置列表的只剩一两行）。放不下就上下叠放、
+          // 都贴右，按钮始终在右下角。不用 Wrap(spaceBetween)：折行后按钮独占
+          // 一个 run，spaceBetween 对单元素 run 等于 start，按钮会跳到左边。
+          // OverflowBar 的两态（alignment / overflowAlignment）正好各管一种。
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+            child: OverflowBar(
+              alignment: MainAxisAlignment.spaceBetween,
+              overflowAlignment: OverflowBarAlignment.end,
               children: <Widget>[
                 Text(
                   _overrides.isEmpty
@@ -652,15 +661,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
                       : t.manga_reader_override,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _overrides.isEmpty ? null : _reset,
-                    child: Text(
-                      t.manga_reader_restore,
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
+                TextButton(
+                  onPressed: _overrides.isEmpty ? null : _reset,
+                  child: Text(t.manga_reader_restore, textAlign: TextAlign.end),
                 ),
               ],
             ),

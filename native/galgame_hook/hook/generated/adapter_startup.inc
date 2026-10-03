@@ -10,3 +10,4 @@
     aos_sfa_.install();
     unity_mono_.install();
     smash_fzmedia_.install();
+    yuris_.install();

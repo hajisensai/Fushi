@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -56,6 +57,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.pairedHostModelGetter,
     this.pairedHostModelSetter,
     this.remoteRunner,
+    this.aiModeGetter,
+    this.aiModeSetter,
+    this.aiProviderReady,
+    this.openAiSettings,
     super.key,
   });
 
@@ -108,6 +113,18 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 探测已配对服务端有哪些模型；null = 不列服务端模型。
   final MangaOcrRemoteRunner? remoteRunner;
 
+  /// 大模型识别档位（`MangaAiOcrMode.storageKey`）读写；省略时下拉不出现。
+  final String Function()? aiModeGetter;
+  final Future<void> Function(String value)? aiModeSetter;
+
+  /// 「设置 › AI」里给漫画 OCR 解析到了能用的提供商（含默认提供商）。档位开着
+  /// 却没有提供商时，下拉下方提示「目前不会发送任何内容」并给入口。
+  final bool Function()? aiProviderReady;
+
+  /// 打开「设置 › AI」；null = 不显示入口。返回的 Future 在用户从那一页回来时
+  /// 完成：回来后重算「有没有提供商」（用户多半就是去指派提供商的）。
+  final Future<void> Function(BuildContext context)? openAiSettings;
+
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
       _MangaOcrSettingsSectionState();
@@ -120,6 +137,7 @@ class _MangaOcrSettingsSectionState
   late int _parallelTasks;
   late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
+  late MangaAiOcrMode _aiMode;
 
   /// 当前点名的服务端模型；null = 服务端默认。
   String? _pairedHostModel;
@@ -167,6 +185,7 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
+    _aiMode = MangaAiOcrMode.fromStorageKey(widget.aiModeGetter?.call());
     _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(0, 4);
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? 'manga_ocr',
@@ -636,6 +655,10 @@ class _MangaOcrSettingsSectionState
           const SizedBox(height: 12),
           _inset(_buildLensLanguage(theme)),
         ],
+        if (widget.aiModeGetter != null) ...<Widget>[
+          const SizedBox(height: 12),
+          _inset(_buildAiMode(theme)),
+        ],
         const SizedBox(height: 12),
         if (widget.service.isSupportedPlatform)
           _buildLocalModelArea(theme)
@@ -793,7 +816,9 @@ class _MangaOcrSettingsSectionState
       decoration: InputDecoration(
         labelText: t.manga_ocr_parallel_tasks,
         helperText: t.manga_ocr_parallel_tasks_desc,
-        helperMaxLines: 3,
+        // 阅读器侧栏只有 400px，这段说明要折四五行；限 3 行会把结尾吞成省略号。
+        // 不能传 null：InputDecorator 的 helper 带 ellipsis，null 反而退化成单行。
+        helperMaxLines: 8,
         isDense: true,
         border: const OutlineInputBorder(),
       ),
@@ -847,22 +872,37 @@ class _MangaOcrSettingsSectionState
 
   Widget _buildEnginePreference(ThemeData theme) {
     final List<_EngineOption> options = _engineOptions();
+    final _EngineChoice selected = _currentChoice;
     return DropdownButtonFormField<_EngineChoice>(
       key: const ValueKey<String>('manga_ocr_default_engine'),
-      initialValue: _currentChoice,
+      initialValue: selected,
       isExpanded: true,
+      // dense 把按钮钉死在一行高（SizedBox），窄面板里折行的标签第二行会被裁掉；
+      // 非 dense 时按钮高度由闭合态内容决定，见下方 selectedItemBuilder。
+      isDense: false,
       decoration: InputDecoration(
         labelText: t.manga_ocr_default_engine,
         isDense: true,
         border: const OutlineInputBorder(),
       ),
-      // 闭合态只显示单行标签：说明是给「挑的时候」看的，收起后再占两行只会把
-      // 设置行撑高。
+      // 闭合态只显示标签（说明是给「挑的时候」看的）。选中项的标签完整显示、
+      // 放不下就换行（阅读器侧栏只有 ~320px，「自动（不会上传到 Lens）」这类
+      // 标签一行放不下）；其余项只渲染单行。原因：非 dense 的闭合态是一个
+      // IndexedStack，高度取**所有**子项的最大值——其余项也允许折行的话，只要
+      // 有一项折两行，设置页上不管选的是哪项，按钮都恒为两行高。
+      // （onChanged 落盘期间下拉值可能先于 _currentChoice 更新，那一瞬新项按
+      // 单行省略显示，setState 后即恢复。）
       selectedItemBuilder: (BuildContext context) => <Widget>[
         for (final _EngineOption option in options)
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: Text(option.label, overflow: TextOverflow.ellipsis),
+            child: option.choice == selected
+                ? Text(option.label)
+                : Text(
+                    option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
           ),
       ],
       items: <DropdownMenuItem<_EngineChoice>>[
@@ -926,6 +966,89 @@ class _MangaOcrSettingsSectionState
         setState(() => _lensLanguage = value);
         unawaited(_writeLensLanguage(value));
       },
+    );
+  }
+
+  /// 大模型识别档位：框仍在本机检测，框里的字交视觉模型重读（见
+  /// `manga_ai_ocr_refiner.dart`）。默认关；开着但没指派提供商时明说「不会发送」。
+  Widget _buildAiMode(ThemeData theme) {
+    final bool missingProvider =
+        _aiMode != MangaAiOcrMode.off &&
+        !(widget.aiProviderReady?.call() ?? false);
+    final Future<void> Function(BuildContext context)? openAiSettings =
+        widget.openAiSettings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        DropdownButtonFormField<MangaAiOcrMode>(
+          key: const ValueKey<String>('manga_ocr_ai_mode'),
+          initialValue: _aiMode,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: t.manga_ocr_ai_mode_label,
+            helperText: t.manga_ocr_ai_mode_desc,
+            helperMaxLines: 6,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          items: <DropdownMenuItem<MangaAiOcrMode>>[
+            for (final MangaAiOcrMode mode in MangaAiOcrMode.values)
+              DropdownMenuItem<MangaAiOcrMode>(
+                value: mode,
+                child: Text(switch (mode) {
+                  MangaAiOcrMode.off => t.manga_ocr_ai_mode_off,
+                  MangaAiOcrMode.lowConfidence =>
+                    t.manga_ocr_ai_mode_low_confidence,
+                  MangaAiOcrMode.all => t.manga_ocr_ai_mode_all,
+                }),
+              ),
+          ],
+          onChanged: widget.aiModeSetter == null
+              ? null
+              : (MangaAiOcrMode? value) async {
+                  if (value == null || value == _aiMode) return;
+                  setState(() => _aiMode = value);
+                  await widget.aiModeSetter!(value.storageKey);
+                },
+        ),
+        // 「只读低置信度」靠本地识别器给的置信度；旧版识别的卷没有这个字段，此档
+        // 位对它们什么都不做。不把「没有置信度」当成「需要重读」：Lens / 系统 OCR
+        // 永远不出分，那样等于在用户选了「省钱档」时悄悄全量计费。
+        if (_aiMode == MangaAiOcrMode.lowConfidence) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            t.manga_ocr_ai_mode_low_confidence_legacy,
+            key: const ValueKey<String>(
+              'manga_ocr_ai_mode_low_confidence_legacy',
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (missingProvider) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            t.manga_ocr_ai_mode_no_provider,
+            key: const ValueKey<String>('manga_ocr_ai_mode_no_provider'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+          if (openAiSettings != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: () async {
+                  await openAiSettings(context);
+                  // build 里现算 missingProvider：回来后重建一次即刷新。
+                  if (mounted) setState(() {});
+                },
+                child: Text(t.manga_ocr_ai_mode_open_settings),
+              ),
+            ),
+        ],
+      ],
     );
   }
 
@@ -1243,6 +1366,7 @@ class _MangaOcrSettingsSectionState
           decoration: InputDecoration(
             labelText: t.manga_ocr_external_cli_label,
             hintText: t.manga_ocr_external_cli_hint,
+            hintMaxLines: 3,
             isDense: true,
             border: const OutlineInputBorder(),
           ),
@@ -1268,6 +1392,7 @@ class _MangaOcrSettingsSectionState
                 child: Text(
                   _probeResult!,
                   style: theme.textTheme.bodySmall,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

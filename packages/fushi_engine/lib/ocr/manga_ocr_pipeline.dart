@@ -310,6 +310,7 @@ class MangaOcrPipeline {
             lineBoxes: hasLayout ? laidOut.lineBoxes : null,
             score: block.score,
             insideBubble: block.insideBubble,
+            confidence: block.confidence,
           ),
         );
       }
@@ -384,6 +385,7 @@ class MangaOcrPipeline {
             lineBoxes: hasLayout ? recognition.lineBoxes : null,
             score: region.score,
             insideBubble: region.insideBubble,
+            confidence: recognition.confidence,
           ),
         );
       }
@@ -443,6 +445,18 @@ class MangaOcrPipeline {
     ];
     if (recognizer is OrientedOcrRecognizer) {
       return recognizer.recognizeOriented(image, boxes);
+    }
+    if (recognizer is ScoredOcrRecognizer &&
+        recognizer is! BatchOcrRecognizer) {
+      final ScoredOcrText scored =
+          await recognizer.recognizeScored(image, boxes.single);
+      return <OcrRecognition>[
+        OcrRecognition(
+          text: scored.text,
+          vertical: isVerticalBlock(boxes.single),
+          confidence: scored.confidence,
+        ),
+      ];
     }
     final List<String> texts = recognizer is BatchOcrRecognizer
         ? await recognizer.recognizeBatch(image, boxes)

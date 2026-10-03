@@ -1138,6 +1138,97 @@ void main() {
       });
     });
   });
+
+  // BUG-2911：iOS 横屏左右安全区对称，只避让灵动岛那一侧。平台门走测试缝，
+  // 任何平台都跑这组。
+  group('BUG-2911 iOS 横屏外壳边', () {
+    const Size window = Size(869, 399.7);
+    const double inset = 61.6;
+    late Object? nativeEdge;
+    late int queries;
+
+    setUp(() {
+      debugSensorHousingEdgePlatformOverride = true;
+      nativeEdge = 'left';
+      queries = 0;
+    });
+
+    tearDown(() {
+      debugSensorHousingEdgePlatformOverride = null;
+      FloatingBallChannel.debugResetHandler();
+    });
+
+    /// iPhone 17 Pro 横屏实测窗口与安全区；原生查询回 [nativeEdge]。
+    Future<void> pumpLandscape(WidgetTester tester, String dock) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = window;
+      tester.view.viewPadding = const FakeViewPadding(
+        left: inset,
+        right: inset,
+        bottom: 19.9,
+      );
+      addTearDown(tester.view.reset);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        FloatingBallChannel.channel,
+        (MethodCall call) async {
+          if (call.method != 'sensorHousingEdge') return null;
+          queries++;
+          return nativeEdge;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallPosition(dock, 0.5);
+      await pumpHost(tester);
+      await tester.pumpAndSettle();
+    }
+
+    /// 原生在界面方向变化时推来的新外壳边。
+    Future<void> pushEdge(WidgetTester tester, String? edge) async {
+      final ByteData message = const StandardMethodCodec().encodeMethodCall(
+        MethodCall('sensorHousingEdgeChanged', edge),
+      );
+      await tester.runAsync(() async {
+        await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          FloatingBallChannel.channel.name,
+          message,
+          (_) {},
+        );
+      });
+      await tester.pumpAndSettle();
+    }
+
+    Rect ballRect(WidgetTester tester) =>
+        tester.getRect(byKey('fushi_reader_floating_ball_icon'));
+
+    testWidgets('外壳在左：右停靠收起球贴屏幕右缘；推来「右」后改为避让右侧', (WidgetTester tester) async {
+      await pumpLandscape(tester, 'right');
+      expect(queries, 1, reason: '首次取值走查询');
+      expect(ballRect(tester).right, greaterThan(window.width));
+
+      // 横屏左 ↔ 右翻转：窗口尺寸与安全区都不变，查询也不再发生（原生若被
+      // 重查仍会答旧的 left），只有推送能把球挪出灵动岛底下。
+      await pushEdge(tester, 'right');
+      expect(queries, 1);
+      expect(ballRect(tester).right, lessThan(window.width - inset + 20));
+    });
+
+    testWidgets('外壳在左：左停靠球仍避让 inset；推来「右」后左侧贴边', (WidgetTester tester) async {
+      await pumpLandscape(tester, 'left');
+      expect(ballRect(tester).left, greaterThan(inset - 20));
+
+      await pushEdge(tester, 'right');
+      expect(ballRect(tester).left, lessThan(0));
+
+      // 原生说不知道（方向未知）：两侧都避让。
+      await pushEdge(tester, null);
+      expect(ballRect(tester).left, greaterThan(inset - 20));
+    });
+  });
 }
 
 class _LookupTextCall {

@@ -1083,6 +1083,40 @@ void main() {
       expect(line.textThreadLabel, 'Siglus exact · 0x25c880');
     });
 
+    test('engine exact text sources map to their own thread namespace', () {
+      // native voice_hook_ipc.h: kTextSourceYuris = 9, kTextSourceFvp = 10,
+      // kTextSourceMalie = 15. An unmapped kind falls back to 'hook:' /
+      // 'Text hook', which hides the engine lane from thread selection.
+      const Map<int, (String, String)> expected = <int, (String, String)>{
+        9: ('yuris', 'YU-RIS exact'),
+        10: ('fvp', 'FVP exact'),
+        15: ('malie', 'Malie exact'),
+      };
+      for (final MapEntry<int, (String, String)> entry in expected.entries) {
+        final GalHookedLine line = GalHookedLine(
+          seq: 1,
+          timestampMs: 2,
+          text: '「テスト」',
+          threadId: 0x2a,
+          threadAddress: 0x1000,
+          sourceKind: entry.key,
+        );
+        expect(line.textThreadKey, '${entry.value.$1}:2a');
+        expect(line.textThreadLabel, '${entry.value.$2} · 0x1000');
+      }
+      // 11–14 are registered in voice_hook_ipc.h as reserved / unassigned.
+      for (int kind = 11; kind <= 14; kind++) {
+        final GalHookedLine line = GalHookedLine(
+          seq: 1,
+          timestampMs: 2,
+          text: '「テスト」',
+          threadId: 0x2a,
+          sourceKind: kind,
+        );
+        expect(line.textThreadKey, 'hook:2a', reason: '$kind');
+      }
+    });
+
     test(
       'selectTextThread forwards the native thread id and can reset to auto',
       () async {
@@ -1570,10 +1604,40 @@ void main() {
 
     String join(String a, String b) => '$a${Platform.pathSeparator}$b';
 
-    test('manosaba.exe 明确启用 Unity/Mono 文本 hook 兜底', () async {
+    test('单个游戏 exe 名不触发 PC hooks：没有 Unity 目录结构的 manosaba.exe 不启用', () async {
       final File exe = File(join(dir.path, 'manosaba.exe'));
       await exe.writeAsBytes(_craftPe(0x8664), flush: true);
-      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
+    });
+
+    test(
+      'manosaba 按 Unity IL2CPP 目录结构（_Data/il2cpp_data）启用 PC hooks',
+      () async {
+        final File exe = File(join(dir.path, 'manosaba.exe'));
+        await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+        await File(join(dir.path, 'UnityPlayer.dll')).writeAsBytes(<int>[1]);
+        final File metadata = File(
+          join(
+            join(
+              join(join(dir.path, 'manosaba_Data'), 'il2cpp_data'),
+              'Metadata',
+            ),
+            'global-metadata.dat',
+          ),
+        );
+        await metadata.create(recursive: true);
+        await metadata.writeAsBytes(<int>[1]);
+
+        expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+      },
+    );
+
+    test('只有 UnityPlayer.dll、没有 IL2CPP/Mono 布局的 PE 不启用', () async {
+      final File exe = File(join(dir.path, 'sample.exe'));
+      await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      await File(join(dir.path, 'UnityPlayer.dll')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
     });
 
     test('SiglusEngine.exe 启用 PC hooks 以避开 GDI 描边伪影', () async {

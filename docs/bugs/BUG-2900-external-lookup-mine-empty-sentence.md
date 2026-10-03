@@ -1,0 +1,23 @@
+## BUG-2900 · 外部查词窗制卡句子字段为空
+- **报告**：2026-10-03（随 BUG-2899 一并处理：外部 OCR 查词窗打磨）
+- **真实性**：✅ 真 bug（沿代码路径确认）。
+  - app 外查词窗（`PopupDictionaryPage`）直接用 mixin 的 `onMineEntry` / `onUpdateEntry`，句子只认 JS 送来的 `fields['sentence'] ?? ''`（`fushi/lib/src/pages/implementations/dictionary_page_mixin.dart` :416 / :462）。
+  - 独立查词窗的 popup.js 里没有句子上下文，所以截屏识字 / 悬浮字幕点字制出的卡 `{sentence}` 恒为空，收藏句子记录也是空句。
+  - 页面本可以用被点字所在的那一整行，但 BUG-2899 让整行在宿主那一层就丢了。
+- **[x] ① 已修复** — 页面带 `sourceCharIndex >= 0`（整行入口）时，基础层的制卡和覆写会先过一层 `_withSourceSentence`：用整行补 `{sentence}`，判据复用 app 外制卡共用的 `resolveMineSentence`，JS 送来的非空句子仍然优先。
+  - 嵌套层查的是释义里的词，句子已经不是这一行，所以仍走原路径。
+  - 基础层原地跳到释义里的别的词（链接 / 词头）后同样不补：判据是「基础层当前查询串是这一行的一段」，后退回原词条时自然恢复。
+  - 用户在搜索栏另查别的词后，句子清空。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dictionary_source_line_test.dart`，真页面加假 Anki 仓库，断言三点：
+  - 整行入口制卡时，`AnkiMiningContext.sentence` 与 payload 里的 `sentence` 都是 trim 后的整行。
+  - JS 送来的非空句子优先。
+  - 整串入口不会凭空造出句子。
+- **备注**：未做真机复测。
+- **审查返工（2026-10-03，提交 `9e1f97490a`）**
+  - **问题**：原先用 `_sourceSentence.contains(baseTerm)` 判断「当前词条出自这一行」，会误判。在基础层点释义里的汉字 / 词头链接时，原地跳转把基础层查询串换成了「天」；「天」恰好是行的子串，于是给这个无关词条制卡时 `{sentence}` 被填成整行。
+  - **修复**：在真正出自这一行的两个入口记下查询串 `_sourceLineQuery`，判定改为相等比较。两个入口是宿主推来整行时的首查 `_lookupWidgetSource`，以及源文本条点字 `_lookupFromSourceStrip`。搜索栏提交、宿主推来新词时清空 `_sourceLineQuery`。
+  - **测试**：都在 `fushi/test/pages/popup_dictionary_source_line_test.dart`：
+    - 原地跳到「天」后制卡，句子为空；再点源文本条，句子恢复。
+    - 搜索栏提交后制卡，句子为空。
+    - 整行推送后接着推一次整串（`charIndex=-1`），不残留上一行的句子。
+  - **验证状态**：本机内存租约（`tool/heavy.dart`）连续排队 20 分钟未获准入（退出码 75），以上测试与 `flutter analyze` 本地均**未运行**，待 PR CI；JVM 单测 CI 不跑，需本地补跑。

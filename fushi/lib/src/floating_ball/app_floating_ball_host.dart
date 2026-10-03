@@ -70,6 +70,36 @@ void deliverExternalLookup(String word) {
   pendingExternalLookup.value = trimmed;
 }
 
+/// 应用内球的活动范围：整窗扣掉系统 inset。
+///
+/// 左右两侧只扣真正挡住画面的那一侧：Android（`shortEdges`）本就只在刘海侧上报
+/// inset；iOS 横屏却左右**对称**上报外壳深度（实测 iPhone 17 Pro 各 61.6），照扣
+/// 会让球在没有灵动岛的那一侧也停在离屏幕边一大截的黑边中间、贴不到边。
+/// [sensorHousingEdge] 是外壳所在的边（[FloatingBallChannel.sensorHousingEdge]）：
+/// 在左 / 右时，对侧的水平 inset 归零；未知时保守地两侧都扣。
+///
+/// 旋转那一帧新 inset 可能先于新外壳边到达：竖 ↔ 横时旧值是 up / down（两侧照扣）
+/// 或 left / right 遇上竖屏（左右 inset 本就为 0），都无害；只有横屏左 ↔ 右翻转
+/// 会错侧，那条靠原生在界面方向变化时推送新值（见宿主的 `_sensorHousingEdge`）。
+Rect appFloatingBallViewport(
+  Size window,
+  EdgeInsets viewPadding, {
+  AxisDirection? sensorHousingEdge,
+}) {
+  final double left = sensorHousingEdge == AxisDirection.right
+      ? 0
+      : viewPadding.left;
+  final double right = sensorHousingEdge == AxisDirection.left
+      ? 0
+      : viewPadding.right;
+  return Rect.fromLTRB(
+    left,
+    viewPadding.top,
+    window.width - right,
+    window.height - viewPadding.bottom,
+  );
+}
+
 /// 原生系统球的按钮文案（原生侧不维护多语言）。
 Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.lookup.storageValue: t.floating_ball_action_lookup,
@@ -248,6 +278,30 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 当前主题给原生系统球的配色（build 里按 Theme 刷新；变了就重新下发）。
   Map<String, int> _systemBallColors = const <String, int>{};
 
+  /// 刘海 / 灵动岛所在的边（只有 iOS 会有值），见 [appFloatingBallViewport]。
+  ///
+  /// 主路径是原生推送（`sensorHousingEdgeChanged`，iOS 界面方向一变就推）：
+  /// 横屏左 ↔ 右翻转 180° 时窗口尺寸与左右对称的安全区都不变，[didChangeMetrics]
+  /// 不一定触发，只靠它重查会让球停在灵动岛底下（BUG-2911）。查询只做首次取值
+  /// 与尺寸变化时的兜底；两条路的回话按原生发出顺序到达、都是当时的真值，谁后到
+  /// 谁准。
+  AxisDirection? _sensorHousingEdge;
+
+  void _onSensorHousingEdge(AxisDirection? edge) {
+    if (!mounted || edge == _sensorHousingEdge) return;
+    setState(() => _sensorHousingEdge = edge);
+  }
+
+  Future<void> _refreshSensorHousingEdge() async =>
+      _onSensorHousingEdge(await FloatingBallChannel.sensorHousingEdge());
+
+  @override
+  void didChangeMetrics() {
+    if (floatingBallSensorHousingEdgeSupported) {
+      unawaited(_refreshSensorHousingEdge());
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -258,7 +312,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
-    if (Platform.isIOS || Platform.isAndroid || isDesktopSystemBallPlatform) {
+    if (Platform.isIOS ||
+        Platform.isAndroid ||
+        isDesktopSystemBallPlatform ||
+        floatingBallSensorHousingEdgeSupported) {
       unawaited(
         FloatingBallChannel.installHandler(
           onLookup: deliverExternalLookup,
@@ -270,8 +327,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
           onSystemBallAction: _onDesktopSystemBallAction,
           onSystemBallPositionChanged: _onDesktopSystemBallMoved,
+          onSensorHousingEdgeChanged: _onSensorHousingEdge,
         ),
       );
+    }
+    // 处理器（同步装上）先于首次查询：查询在路上时原生若推来新方向，两条消息
+    // 按发出顺序到达，不会被后到的旧值盖掉，也不会因为还没处理器而丢。
+    if (floatingBallSensorHousingEdgeSupported) {
+      unawaited(_refreshSensorHousingEdge());
     }
   }
 
@@ -941,12 +1004,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       ...buttons,
     ];
     final Size window = MediaQuery.sizeOf(context);
-    final EdgeInsets padding = MediaQuery.viewPaddingOf(context);
-    final Rect viewport = Rect.fromLTRB(
-      padding.left,
-      padding.top,
-      window.width - padding.right,
-      window.height - padding.bottom,
+    final Rect viewport = appFloatingBallViewport(
+      window,
+      MediaQuery.viewPaddingOf(context),
+      sensorHousingEdge: _sensorHousingEdge,
     );
     // ReaderFloatingBall 返回 Positioned，必须是 Stack 的直接子节点。本宿主挂在
     // 导航之上，没有 Overlay 祖先，球与按钮的 Tooltip 要自带一层；Stack 只在

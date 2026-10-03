@@ -1,64 +1,89 @@
 // Malie（light / Greenwood 系）身份探测。
 //
-// 结构判据：exe 同级 `data2.dat` 的头 16 字节经 CFI 解块后是一个自洽的 LIBP 头
-//（魔数 + 条目数/偏移数与文件大小互不矛盾，见 hook/malie_lib.h 的 ParseLibpHeader）。
+// 结构判据：主模块里能从结构唯一解析出名为 "CFI" 的引擎 I/O scheme 表（见
+// malie_engine_io_core.h）：UTF-16 名字字面量 → 唯一的逐字拷贝点 → 同一帧函数里
+// `lea r,[ebp+T]; push r; call registrar` 的表交接 → T+0..0x1c 六个槽位都是帧函数、
+// tell 槽是 `mov eax,[arg+pos]` 的形状、getc 槽直接调用 read 槽、registrar 同时也
+// 被别的 scheme（WC_I / TC_I / LFILE_I …）的表构造调用。只用判定结果，槽位一个都不挂。
 //
-// exe 名（`malie.exe` / `malie_dsp.exe` / `malie_fabla.exe`）**不进判据**。原实现把名字
-// 当先决条件，名字不符时连 `data2.dat` 都不看；而"这个 data2.dat 能不能按 Malie 的
-// 格式解开"本身就是比名字强得多的判据——它是内容级的，与发行方怎么给 exe 命名无关。
+// exe 名、归档文件名、标题与归档密钥都不进判据。旧实现用写死的作品 CFI 密钥去解归档头
+// 来认引擎，并在 worker 上自己解密归档取语音——那只认得一个作品系列。现在身份按 exe
+// 结构、语音取 Ogg 解码器输入（malie_adapter.inc），密钥常量与解密代码已整体删除。
 //
-// 关于 CFI 密钥：解密用的是 malie_cfi.h 里那把 Dies Amantes 密钥。它是**内容级**常量
-// （归档加密方案），不是 exe 级判据——同一把密钥覆盖整个 Malie 发布系列，改名不影响。
-// 但它确实是单一作品系列的密钥：用别的密钥加密的 Malie 归档解不出 LIBP，会在这里判为
-// 不匹配。这不是本次改动引入的限制（原实现在 LoadMalieArchive 里同样解不开、只是把
-// 失败推迟到 install 阶段），而是 Malie 支持面本身的边界——诊断上"密钥不对"与"根本不是
-// Malie"仍然同形，要分辨得靠另一条独立证据，记在 BUG-2153 里待后续。
+// 判定区分「未匹配」与「镜像未就绪」（malie_engine_io_core.h ProfileState）：首次探测
+// 在游戏主线程恢复之前，加壳 / 自解密 exe 此时还没展开，找不到名字字面量或其拷贝点只
+// 说明镜像未就绪；镜像（代码与只读节）采样指纹变化后重新判定——由
+// MalieLibpAdapter::ProcessPendingEvents 每秒检查一次（registry 不向本 adapter 派发
+// onModuleLoaded）。结构性拒绝是终局。
 #pragma once
 
 #include <windows.h>
 
-#include <cstdint>
-#include <string>
+#include <atomic>
 
-#include "../malie_cfi.h"
-#include "../malie_lib.h"
-#include "engine_dir_signature.h"
+#include "malie_engine_io_core.h"
+#include "malie_lookup_core.h"
 
 namespace fushi_voice_hook {
 
-constexpr const wchar_t* kMalieArchiveFileName = L"\\data2.dat";
+struct MalieProfileCache {
+  std::atomic<uint32_t> state{
+      static_cast<uint32_t>(malie_io::ProfileState::kUnmeasured)};
+  std::atomic<uint32_t> last_result{0u};
+  uint64_t fingerprint = 0u;     // image fingerprint at the last measurement
+  volatile LONG measuring = 0;   // one measurement at a time
+};
 
-// 给定游戏根目录的结构判据；测试用临时目录直接喂它。
-inline bool MatchesMalieLayout(const std::wstring& directory) {
-  const std::wstring archive = directory + kMalieArchiveFileName;
-  uint64_t archive_size = 0;
-  if (!engine_dir::FileSize(archive, &archive_size) || archive_size == 0) {
-    return false;
+inline MalieProfileCache& MalieProfile() {
+  static MalieProfileCache cache;
+  return cache;
+}
+
+inline malie_io::ProfileState MalieProfileState() {
+  return static_cast<malie_io::ProfileState>(
+      MalieProfile().state.load(std::memory_order_acquire));
+}
+
+// Measures the identity when it was never measured, or when the image was
+// not ready and has changed since.  Returns the state after the call; a
+// concurrent caller sees the state as it was.
+inline malie_io::ProfileState MeasureMalieProfile() {
+  MalieProfileCache& cache = MalieProfile();
+  const malie_io::ProfileState state = MalieProfileState();
+  if (state == malie_io::ProfileState::kMatched ||
+      state == malie_io::ProfileState::kRejected) {
+    return state;
   }
-  // 从根限定 `::fushi_voice_hook::malie`：本头在 dll_main.cpp 里是从匿名命名空间内部被
-  // 包的（malie_adapter.inc → generated/adapter_includes.inc → dll_main.cpp:604，在 128
-  // 的 `namespace {` 之内），而 malie_lib.h 早在 dll_main.cpp:62 顶层就包过了。include
-  // guard 会让里面这次变成空操作，非全限定的 `malie::` 会去 `(匿名)::fushi_voice_hook`
-  // 里找、找不到。测试 TU 从全局作用域包本头时，`::` 限定同样成立。
-  namespace mal = ::fushi_voice_hook::malie;
-  uint8_t encrypted[mal::kLibpHeaderBytes] = {0};
-  DWORD read = 0;
-  if (!engine_dir::ReadFilePrefix(archive, encrypted, sizeof(encrypted),
-                                  &read) ||
-      read != sizeof(encrypted)) {
-    return false;
+  if (InterlockedCompareExchange(&cache.measuring, 1, 0) != 0) return state;
+  exact_lookup::LoadedPeImage image;
+  malie_io::ProfileState next = state;
+  if (!exact_lookup::OpenLoadedPeImage(GetModuleHandleW(nullptr), &image)) {
+    next = malie_io::ProfileState::kRejected;
+    cache.last_result.store(
+        static_cast<uint32_t>(malie_io::SchemeResult::kNotX86),
+        std::memory_order_release);
+  } else {
+    const uint64_t fingerprint = malie_io::ImageFingerprint(image);
+    if (malie_io::ShouldMeasureProfile(state, cache.fingerprint, fingerprint)) {
+      const malie_io::SchemeResult result =
+          malie_io::ResolveScheme(image, malie_io::kArchiveSchemeName);
+      cache.fingerprint = fingerprint;
+      cache.last_result.store(static_cast<uint32_t>(result),
+                              std::memory_order_release);
+      next = malie_io::ClassifyScheme(result);
+    }
   }
-  uint8_t decrypted[mal::kLibpHeaderBytes] = {0};
-  mal::DecryptCfiBlock(0, encrypted, decrypted);
-  mal::LibpHeader header;
-  return mal::ParseLibpHeader(decrypted, sizeof(decrypted), archive_size,
-                              &header);
+  cache.state.store(static_cast<uint32_t>(next), std::memory_order_release);
+  InterlockedExchange(&cache.measuring, 0);
+  return next;
 }
 
 inline bool MatchesMalieProfile(const wchar_t*) {
-  std::wstring directory;
-  if (!engine_dir::ModuleDirectory(&directory)) return false;
-  return MatchesMalieLayout(directory);
+  const malie_io::ProfileState state = MalieProfileState();
+  if (state != malie_io::ProfileState::kUnmeasured) {
+    return state == malie_io::ProfileState::kMatched;
+  }
+  return MeasureMalieProfile() == malie_io::ProfileState::kMatched;
 }
 
 }  // namespace fushi_voice_hook

@@ -148,6 +148,47 @@ class SourceLookupScan {
   String toString() => 'SourceLookupScan(query: $query, charIndex: $charIndex)';
 }
 
+/// 把整句 [text] 里的 UTF-16 下标 [unitIndex] 换成源文本条上的字素簇下标。
+///
+/// 源文本条渲染的是 `text.trim()` 的字素簇（见 [SourceLookupTextPanel]），而外部入口
+/// （截屏识字 / 悬浮字幕点字）报的是原生字符串里的 UTF-16 下标。越界钳到首 / 末字，
+/// 空串返回 -1。
+int sourceGraphemeIndexOfUnit(String text, int unitIndex) {
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return -1;
+  final int leading = text.length - text.trimLeft().length;
+  final int unit = unitIndex - leading;
+  int consumed = 0;
+  int index = 0;
+  for (final String grapheme in trimmed.characters) {
+    consumed += grapheme.length;
+    if (unit < consumed) return index;
+    index++;
+  }
+  return index - 1;
+}
+
+/// 源文本条上点第 [graphemeIndex] 个字时要查的后缀与实际起点（字素簇下标）。
+///
+/// 与 [SourceLookupTextPanel] 的点字同一规则：按查词输入上限截断，拉丁单词从词首
+/// 起查（与视频字幕点词同口径）。下标越界返回 null。
+({String suffix, int start})? sourceLookupSuffixAt(
+  String text,
+  int graphemeIndex,
+) {
+  // BUG-442：与渲染同一上限——后缀从截断后的字符序列取，与可点字符一一对应。
+  final List<String> capped =
+      text.trim().characters.take(kMaxLookupInputChars).toList();
+  if (graphemeIndex < 0 || graphemeIndex >= capped.length) return null;
+  int start = graphemeIndex;
+  if (isLatinWordGrapheme(capped[start])) {
+    while (start > 0 && isLatinWordGrapheme(capped[start - 1])) {
+      start--;
+    }
+  }
+  return (suffix: capped.skip(start).join(), start: start);
+}
+
 class SourceLookupTextPanel extends StatefulWidget {
   const SourceLookupTextPanel({
     required this.text,
@@ -321,25 +362,14 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     BuildContext panelContext,
     BuildContext charContext,
   ) {
-    final String trimmed = widget.text.trim();
-    // BUG-442：与 build 同一上限——查词后缀从截断后的字符序列取，避免对超长串
-    // 重新展开整个 characters（也与渲染出来的可点字符一一对应）。
-    final List<String> capped =
-        trimmed.characters.take(kMaxLookupInputChars).toList();
-    // 英文等拉丁文：点单词里任一字母都从词首起查（与视频字幕点词同口径），否则从
-    // 词中间起查只会命中单个字母。高亮锚点随之落在词首。
-    int start = index;
-    if (start >= 0 &&
-        start < capped.length &&
-        isLatinWordGrapheme(capped[start])) {
-      while (start > 0 && isLatinWordGrapheme(capped[start - 1])) {
-        start--;
-      }
-    }
+    // 英文等拉丁文：点单词里任一字母都从词首起查，高亮锚点随之落在词首。
+    final ({String suffix, int start})? scan =
+        sourceLookupSuffixAt(widget.text, index);
+    if (scan == null) return;
     widget.onLookup(
-      capped.skip(start).join(),
+      scan.suffix,
       _localRectOf(panelContext, charContext),
-      start,
+      scan.start,
     );
   }
 

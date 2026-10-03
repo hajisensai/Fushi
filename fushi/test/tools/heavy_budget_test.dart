@@ -43,11 +43,11 @@ void main() {
       expect(kind(<String>[]), HeavyKind.other);
     });
 
-    test('only analyze may share a worktree; caps sit above needs', () {
+    test('only analyze may share a worktree; every kind has a ceiling', () {
       for (final HeavyKind k in HeavyKind.values) {
         final HeavyNeed n = heavyNeedFor(k);
         expect(n.worktreeExclusive, k != HeavyKind.analyze, reason: '$k');
-        expect(n.capMb, greaterThan(n.needMb), reason: '$k');
+        expect(n.capMb, greaterThanOrEqualTo(8192), reason: '$k');
       }
     });
   });
@@ -59,115 +59,28 @@ void main() {
     expect(defaultHeavySlots(256 * 1024), 4);
   });
 
-  group('heavyAdmissionBlocker', () {
-    const int total = 64 * 1024;
-
-    test('admits when RAM and commit both leave the reserves', () {
-      expect(
-        heavyAdmissionBlocker(
-          const MemorySnapshot(
-            totalPhysMb: total,
-            availPhysMb: 20000,
-            availCommitMb: 30000,
-          ),
-          3072,
-        ),
-        isNull,
-      );
-    });
-
-    test('blocks on available RAM below need + reserve', () {
-      expect(
-        heavyAdmissionBlocker(
-          const MemorySnapshot(
-            totalPhysMb: total,
-            availPhysMb: 7000,
-            availCommitMb: 30000,
-          ),
-          3072,
-        ),
-        contains('available RAM'),
-      );
-    });
-
-    test('blocks on commit headroom even with RAM free', () {
-      // Commit exhaustion fails every program's allocations, RAM free or not.
-      expect(
-        heavyAdmissionBlocker(
-          const MemorySnapshot(
-            totalPhysMb: total,
-            availPhysMb: 30000,
-            availCommitMb: 10000,
-          ),
-          3072,
-        ),
-        contains('commit headroom'),
-      );
-    });
-
-    test('memory promised to just-started runs counts against the room', () {
-      const MemorySnapshot m = MemorySnapshot(
-        totalPhysMb: total,
-        availPhysMb: 10000,
-        availCommitMb: 30000,
-      );
-      expect(heavyAdmissionBlocker(m, 3072), isNull);
-      expect(
-        heavyAdmissionBlocker(m, 3072, pendingMb: 3072),
-        contains('starting 3072'),
-      );
-    });
-
-    test('no commit reading (POSIX): RAM alone decides', () {
-      expect(
-        heavyAdmissionBlocker(
-          const MemorySnapshot(totalPhysMb: total, availPhysMb: 20000),
-          3072,
-        ),
-        isNull,
-      );
-    });
-
-    test('reserves shrink on small machines but never below a floor', () {
-      expect(physReserveMb(64 * 1024), 4096);
-      expect(physReserveMb(8 * 1024), 1024);
-      expect(commitReserveMb(64 * 1024), 8192);
-      expect(commitReserveMb(8 * 1024), 2048);
-    });
-  });
-
-  test('pendingReservationMb counts only holders inside the warm-up', () {
-    const int now = 1000000;
-    HeavyHolder h(int slot, int ageMs, int need) => HeavyHolder(
-          slot: slot,
-          pid: 1,
-          needMb: need,
-          startedAtMs: now - ageMs,
-          label: 'x',
-          cwd: '',
-        );
-    expect(
-      pendingReservationMb(<HeavyHolder>[
-        h(0, 10000, 3072),
-        h(1, 89000, 6144),
-        h(2, 91000, 9999),
-      ], now),
-      3072 + 6144,
-    );
-  });
-
   test('HeavyHolder JSON round-trips and rejects junk', () {
     const HeavyHolder h = HeavyHolder(
       slot: 2,
       pid: 42,
-      needMb: 3072,
       startedAtMs: 7,
       label: 'flutter test',
       cwd: 'D:/x',
     );
     final HeavyHolder? back = HeavyHolder.fromJson(2, h.toJson());
     expect(back?.pid, 42);
-    expect(back?.needMb, 3072);
+    // A holder written by an older checkout still carries needMb; it is read
+    // as usual (the field is simply ignored now).
+    expect(
+      HeavyHolder.fromJson(1, <String, Object>{
+        'pid': 7,
+        'needMb': 3072,
+        'startedAt': 1,
+        'label': 'old',
+        'cwd': '',
+      })?.label,
+      'old',
+    );
     expect(back?.label, 'flutter test');
     expect(HeavyHolder.fromJson(0, ''), isNull);
     expect(HeavyHolder.fromJson(0, <String, Object>{'pid': 'x'}), isNull);

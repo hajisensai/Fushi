@@ -825,6 +825,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             engine: engine,
             events: mangaOcrBackgroundEvents(spec),
             focus: focus,
+            follower: mangaOcrJobFollower(spec),
           ),
           mangaJsonPath: mangaChapterJsonFile(chapterDir).path,
         ),
