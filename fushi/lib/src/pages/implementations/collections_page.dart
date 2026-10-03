@@ -1005,8 +1005,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (available.isEmpty) return;
 
     final Set<_CollectionType>? scopes =
-        await showModalBottomSheet<Set<_CollectionType>>(
+        await adaptiveModalSheet<Set<_CollectionType>>(
       context: context,
+      isScrollControlled: false,
+      showDragHandle: false,
       builder: (ctx) => _ClearSheet(availableTypes: available),
     );
     if (scopes == null || scopes.isEmpty || !mounted) return;
@@ -1822,9 +1824,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return;
     }
     final List<_CollectionItem>? picked =
-        await showModalBottomSheet<List<_CollectionItem>>(
+        await adaptiveModalSheet<List<_CollectionItem>>(
       context: context,
-      isScrollControlled: true,
+      showDragHandle: false,
       builder: (BuildContext ctx) => _BatchMineSheet(
         candidates: candidates,
         titleOf: (_CollectionItem i) =>

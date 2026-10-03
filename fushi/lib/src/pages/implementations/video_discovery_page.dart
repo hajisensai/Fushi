@@ -640,11 +640,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     int year = _year;
     String region = _region;
     String genre = _genre;
-    final bool? apply = await showModalBottomSheet<bool>(
+    final bool? apply = await adaptiveModalSheet<bool>(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
       builder: (BuildContext sheetContext) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setSheetState) {
           final FushiDesignTokens tokens = FushiDesignTokens.of(context);

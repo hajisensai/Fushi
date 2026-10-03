@@ -9,6 +9,7 @@ import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
@@ -387,6 +388,10 @@ void main([List<String> args = const <String>[]]) {
     JustAudioMediaKit.pitch = false;
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
+    // 液态玻璃材质的着色器预热：只把 FragmentProgram 读进内存，免得第一次打开
+    // 弹层时闪一帧占位。纯 IO、与启动无依赖，后台跑不挡首帧；没开 liquid 档的
+    // 用户也只是多读几个着色器文件。
+    unawaited(LiquidGlassWidgets.initialize(enablePerformanceMonitor: false));
 
     // BUG-1015 的查词播放器冷启动静音预热**不在启动路径**（BUG-1690）：预热要在真实
     // 音频输出设备上开渲染流，启动即预热会打断其他 app 正在播的音乐（iOS 激活音频会话
@@ -2256,6 +2261,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             WindowCaptionChannel.setCaptionColors(
               caption: cs.surface,
               text: cs.onSurface,
+            );
+            // Glass material on Windows 11: ask the runner for the Mica system
+            // backdrop. The home shell only turns translucent once the runner
+            // reports success (`systemBackdropActive`), so Win10 stays solid.
+            WindowCaptionChannel.setSystemBackdrop(
+              mica: glassMaterialOf(context) != FushiGlassMaterial.off,
+              dark: Theme.of(context).brightness == Brightness.dark,
             );
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder

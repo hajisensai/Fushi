@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// 把标题栏配色推给 Windows 原生 runner（DWM caption / text color）。
@@ -38,6 +39,44 @@ class WindowCaptionChannel {
       // 旧 Windows（< Win11 build 22000）不支持 DWMWA_CAPTION_COLOR，
       // 原生侧静默失败即可，标题栏维持系统默认绘制。
     }
+  }
+
+  /// 原生 Windows 11 Mica 系统背景是否已在窗口上生效。只有它为 true 时，
+  /// 首页外壳才把 scaffold 底色调成半透明让 Mica 透出来；Win10 / 旧 runner /
+  /// 非 Windows 恒 false，外壳保持实心。
+  static final ValueNotifier<bool> systemBackdropActive =
+      ValueNotifier<bool>(false);
+
+  static bool? _lastMica;
+  static bool? _lastDark;
+
+  /// 玻璃材质开启时请求 runner 打开 Mica（[mica]），[dark] 决定 Mica 的明暗。
+  /// 同值不重复下发；结果写进 [systemBackdropActive]。
+  static Future<void> setSystemBackdrop({
+    required bool mica,
+    required bool dark,
+  }) async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    if (mica == _lastMica && dark == _lastDark) {
+      return;
+    }
+    _lastMica = mica;
+    _lastDark = dark;
+    bool active = false;
+    try {
+      active = await _channel.invokeMethod<bool>(
+            'setSystemBackdrop',
+            <String, bool>{'mica': mica, 'dark': dark},
+          ) ??
+          false;
+    } on PlatformException {
+      active = false;
+    } on MissingPluginException {
+      active = false;
+    }
+    systemBackdropActive.value = active;
   }
 
   /// TODO-615：主动熄灭 Windows 任务栏的「请求注意」高亮（FlashWindowEx +

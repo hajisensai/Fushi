@@ -217,6 +217,7 @@ Future<T?> adaptiveModalSheet<T>({
   required WidgetBuilder builder,
   bool isScrollControlled = true,
   bool showDragHandle = true,
+  bool useSafeArea = false,
 }) {
   if (isCupertinoPlatform(context)) {
     return showCupertinoModalPopup<T>(
@@ -231,6 +232,7 @@ Future<T?> adaptiveModalSheet<T>({
     return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: isScrollControlled,
+      useSafeArea: useSafeArea,
       showDragHandle: false,
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -244,6 +246,7 @@ Future<T?> adaptiveModalSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: isScrollControlled,
+    useSafeArea: useSafeArea,
     showDragHandle: showDragHandle,
     sheetAnimationStyle: fushiMd3SheetAnimationStyle,
     builder: builder,

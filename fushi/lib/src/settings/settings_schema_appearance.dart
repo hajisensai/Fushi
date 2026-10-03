@@ -146,20 +146,33 @@ SettingsDestination buildAppearanceDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-          // 毛玻璃材质：只作用于导航 / 底部弹层 / 对话框这些功能层表面，正文、
-          // 视频与查词弹窗不变；墨水屏与系统增强对比度下自动回退实心。随 Profile 走。
-          SettingsSwitchItem(
+          // 玻璃材质：只作用于导航 / 底部弹层 / 对话框这些功能层表面，正文、
+          // 视频与查词弹窗不变；墨水屏与系统增强对比度下自动回退实心，liquid
+          // 在引擎不支持着色器 ImageFilter 时降级为 frosted。随 Profile 走。
+          SettingsSegmentedItem<FushiGlassMaterial>(
             id: 'appearance.glass_material',
             title: t.glass_material,
             subtitle: t.glass_material_hint,
             icon: Icons.blur_on_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.glassMaterial ==
-                FushiGlassMaterial.frosted,
-            onChanged: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setGlassMaterial(
-                  value ? FushiGlassMaterial.frosted : FushiGlassMaterial.off,
-                ),
+            options: <SettingsSegmentOption<FushiGlassMaterial>>[
+              SettingsSegmentOption<FushiGlassMaterial>(
+                value: FushiGlassMaterial.off,
+                label: t.glass_material_off,
+              ),
+              SettingsSegmentOption<FushiGlassMaterial>(
+                value: FushiGlassMaterial.frosted,
+                label: t.glass_material_frosted,
+              ),
+              SettingsSegmentOption<FushiGlassMaterial>(
+                value: FushiGlassMaterial.liquid,
+                label: t.glass_material_liquid,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.glassMaterial,
+            onChanged:
+                (SettingsContext settingsContext, FushiGlassMaterial value) =>
+                    settingsContext.appModel.setGlassMaterial(value),
           ),
           // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
           // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、

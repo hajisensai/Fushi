@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -68,7 +69,12 @@ enum FushiGlassMaterial {
   off,
 
   /// 毛玻璃：半透明填充 + BackdropFilter 模糊。
-  frosted;
+  frosted,
+
+  /// 液态玻璃：折射 / 色散 / 高光着色器（`liquid_glass_widgets`）。只在引擎
+  /// 支持着色器 ImageFilter（Impeller）时生效，否则 [glassMaterialOf] 降级为
+  /// [frosted]。
+  liquid;
 
   /// 偏好值（`glass_material`）→ 枚举；未知值回落 [off]。
   static FushiGlassMaterial fromPrefValue(String? value) {
@@ -101,9 +107,15 @@ class FushiGlassTheme extends ThemeExtension<FushiGlassTheme> {
   }
 }
 
+/// 引擎是否支持着色器 ImageFilter（液态玻璃的前提）。测试可覆盖。
+@visibleForTesting
+bool Function() debugShaderFilterSupported = () =>
+    ImageFilter.isShaderFilterSupported;
+
 /// 当前上下文实际生效的玻璃材质。墨水屏（半透明 = 灰阶抖动 + 残影）与系统
 /// 「增强对比度」（[MediaQueryData.highContrast]）下一律回退 [FushiGlassMaterial.off]；
-/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样是 off。
+/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样是 off。[FushiGlassMaterial.liquid]
+/// 在不支持着色器 ImageFilter 的引擎（Skia 后端）上降级为 frosted。
 FushiGlassMaterial glassMaterialOf(BuildContext context) {
   final FushiGlassMaterial material =
       Theme.of(context).extension<FushiGlassTheme>()?.material ??
@@ -112,6 +124,9 @@ FushiGlassMaterial glassMaterialOf(BuildContext context) {
   if (isEinkTheme(context)) return FushiGlassMaterial.off;
   if (MediaQuery.maybeHighContrastOf(context) ?? false) {
     return FushiGlassMaterial.off;
+  }
+  if (material == FushiGlassMaterial.liquid && !debugShaderFilterSupported()) {
+    return FushiGlassMaterial.frosted;
   }
   return material;
 }

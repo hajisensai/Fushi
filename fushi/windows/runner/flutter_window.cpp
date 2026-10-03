@@ -518,6 +518,22 @@ bool FlutterWindow::OnCreate() {
                                static_cast<uint32_t>(text_argb));
           }
           result->Success();
+        } else if (call.method_name() == "setSystemBackdrop") {
+          const auto* backdrop_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          auto read_flag = [backdrop_args](const char* key) -> bool {
+            if (backdrop_args == nullptr) {
+              return false;
+            }
+            const auto it = backdrop_args->find(flutter::EncodableValue(key));
+            if (it == backdrop_args->end()) {
+              return false;
+            }
+            const bool* value = std::get_if<bool>(&it->second);
+            return value != nullptr && *value;
+          };
+          result->Success(flutter::EncodableValue(
+              ApplySystemBackdrop(read_flag("mica"), read_flag("dark"))));
         } else if (call.method_name() == "clearTaskbarFlash") {
           // TODO-615: actively stop any taskbar "flash / request attention"
           // state on the main window. SetForegroundWindow (window_manager's
@@ -4298,6 +4314,50 @@ void FlutterWindow::ApplyCaptionColors(uint32_t caption_argb,
   // window's own surface too, so a maximize / restore / DPI transition that
   // momentarily shows the surface shows the app background, not the splash.
   SetBackdropColor(caption);
+}
+
+bool FlutterWindow::ApplySystemBackdrop(bool mica, bool dark) {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr) {
+    return false;
+  }
+  // DWMWA_USE_IMMERSIVE_DARK_MODE (20): Mica tints itself from this flag.
+  const BOOL dark_mode = dark ? TRUE : FALSE;
+  DwmSetWindowAttribute(hwnd, 20, &dark_mode, sizeof(dark_mode));
+  if (mica) {
+    // DWMWA_SYSTEMBACKDROP_TYPE (38) = DWMSBT_MAINWINDOW (2), Windows 11 22621+.
+    // 22000 only knows the undocumented DWMWA_MICA_EFFECT (1029) = TRUE.
+    const int backdrop_type = 2;
+    bool active = SUCCEEDED(DwmSetWindowAttribute(
+        hwnd, 38, &backdrop_type, sizeof(backdrop_type)));
+    if (!active) {
+      const BOOL mica_effect = TRUE;
+      active = SUCCEEDED(
+          DwmSetWindowAttribute(hwnd, 1029, &mica_effect, sizeof(mica_effect)));
+    }
+    if (!active) {
+      return false;
+    }
+    // The backdrop only shows through client pixels DWM treats as glass:
+    // extend the frame over the whole client area (transparent Flutter
+    // pixels and the black surface fill then reveal Mica).
+    const MARGINS glass_margins{-1, -1, -1, -1};
+    DwmExtendFrameIntoClientArea(hwnd, &glass_margins);
+    SetSystemBackdrop(true);
+    return true;
+  }
+  const int backdrop_none = 1;  // DWMSBT_NONE
+  DwmSetWindowAttribute(hwnd, 38, &backdrop_none, sizeof(backdrop_none));
+  const BOOL mica_off = FALSE;
+  DwmSetWindowAttribute(hwnd, 1029, &mica_off, sizeof(mica_off));
+  // Back to window_manager's hidden-title-bar shadow margins
+  // (TitleBarStyle.hidden with a shadow extends 1px at the top), not zero:
+  // zero would drop the shadow, -1 would keep pure black (AMOLED themes)
+  // rendering as see-through glass.
+  const MARGINS shadow_margins{0, 0, 1, 0};
+  DwmExtendFrameIntoClientArea(hwnd, &shadow_margins);
+  SetSystemBackdrop(false);
+  return false;
 }
 
 bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {

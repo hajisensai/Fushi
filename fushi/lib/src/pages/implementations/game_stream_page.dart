@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart'
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -467,9 +468,9 @@ class _GameStreamPageState extends State<GameStreamPage>
     final bool restoreLookup = _lookupVisible;
     setState(() => _lookupVisible = false);
     try {
-      await showModalBottomSheet<void>(
+      await adaptiveModalSheet<void>(
         context: context,
-        isScrollControlled: true,
+        showDragHandle: false,
         builder: (BuildContext context) => StatefulBuilder(
           builder: (BuildContext context, StateSetter updateSheet) => SafeArea(
             child: SizedBox(

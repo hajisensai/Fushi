@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
@@ -11,9 +12,9 @@ Future<GameStreamVideoSettings?> showGameStreamSettingsSheet(
   BuildContext context, {
   required GameStreamVideoSettings initial,
 }) {
-  return showModalBottomSheet<GameStreamVideoSettings>(
+  return adaptiveModalSheet<GameStreamVideoSettings>(
     context: context,
-    isScrollControlled: true,
+    showDragHandle: false,
     builder: (BuildContext context) =>
         GameStreamSettingsSheet(initial: initial),
   );

@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 毛玻璃材质（偏好 `glass_material`）第一阶段契约：
 // - 偏好值解析容错、主题工厂把材质注入 [FushiGlassTheme]；
@@ -65,7 +66,9 @@ void main() {
         FushiGlassMaterial.frosted);
     expect(FushiGlassMaterial.fromPrefValue('off'), FushiGlassMaterial.off);
     expect(FushiGlassMaterial.fromPrefValue(null), FushiGlassMaterial.off);
-    expect(FushiGlassMaterial.fromPrefValue('liquid'), FushiGlassMaterial.off);
+    expect(
+        FushiGlassMaterial.fromPrefValue('liquid'), FushiGlassMaterial.liquid);
+    expect(FushiGlassMaterial.fromPrefValue('bogus'), FushiGlassMaterial.off);
   });
 
   test('buildFushiThemeData injects the glass extension', () {
@@ -88,6 +91,65 @@ void main() {
       await resolve(tester, theme(glass: FushiGlassMaterial.frosted)),
       FushiGlassMaterial.frosted,
     );
+  });
+
+  group('liquid', () {
+    late bool Function() original;
+    setUp(() => original = debugShaderFilterSupported);
+    tearDown(() => debugShaderFilterSupported = original);
+
+    testWidgets('stays liquid when the engine supports shader filters', (
+      WidgetTester tester,
+    ) async {
+      debugShaderFilterSupported = () => true;
+      expect(
+        await resolve(tester, theme(glass: FushiGlassMaterial.liquid)),
+        FushiGlassMaterial.liquid,
+      );
+    });
+
+    testWidgets('degrades to frosted without shader filter support', (
+      WidgetTester tester,
+    ) async {
+      debugShaderFilterSupported = () => false;
+      expect(
+        await resolve(tester, theme(glass: FushiGlassMaterial.liquid)),
+        FushiGlassMaterial.frosted,
+      );
+    });
+
+    testWidgets('still falls back to off under e-ink', (
+      WidgetTester tester,
+    ) async {
+      debugShaderFilterSupported = () => true;
+      expect(
+        await resolve(
+          tester,
+          theme(glass: FushiGlassMaterial.liquid, eink: true),
+        ),
+        FushiGlassMaterial.off,
+      );
+    });
+
+    testWidgets('FushiGlassSurface renders the liquid shader container', (
+      WidgetTester tester,
+    ) async {
+      debugShaderFilterSupported = () => true;
+      await tester.pumpWidget(
+        Theme(
+          data: theme(glass: FushiGlassMaterial.liquid),
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: FushiGlassSurface(
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+              child: SizedBox(width: 10, height: 10),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(GlassContainer), findsOneWidget);
+      expect(hasBlur(tester), isFalse);
+    });
   });
 
   testWidgets('glassMaterialOf falls back to off under e-ink', (

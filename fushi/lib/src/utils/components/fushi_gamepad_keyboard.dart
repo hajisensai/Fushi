@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// An on-screen keyboard driven entirely by a game controller / keyboard: the
@@ -269,8 +270,10 @@ Future<void> showGamepadKeyboard(
   TextEditingController controller, {
   ValueChanged<String>? onChanged,
 }) {
-  return showModalBottomSheet<void>(
+  return adaptiveModalSheet<void>(
     context: context,
+    isScrollControlled: false,
+    showDragHandle: false,
     builder: (BuildContext ctx) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(8),

@@ -23,6 +23,7 @@ import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
@@ -1350,7 +1351,23 @@ class _HomePageState extends BasePageState<HomePage>
                   ),
                 ))));
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
-    return home;
+    // Windows 11 Mica 生效时首页外壳 scaffold 半透明让系统背景透出；push 出去
+    // 的页面不受影响，仍是实心底。
+    return ValueListenableBuilder<bool>(
+      valueListenable: WindowCaptionChannel.systemBackdropActive,
+      child: home,
+      builder: (BuildContext context, bool mica, Widget? child) {
+        if (!mica) return child!;
+        final ThemeData theme = Theme.of(context);
+        return Theme(
+          data: theme.copyWith(
+            scaffoldBackgroundColor:
+                theme.colorScheme.surface.withValues(alpha: 0.6),
+          ),
+          child: child!,
+        );
+      },
+    );
   }
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层

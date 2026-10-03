@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 毛玻璃表面的模糊半径（sigma）。比阅读器顶部进度条（12）更重：弹层 / 对话框
 /// 下面是整页内容，需要更强的模糊才能让文字不和表面内容打架。
@@ -13,9 +14,14 @@ const double kFushiGlassBlurSigma = 20;
 double fushiGlassFillOpacity(Brightness brightness) =>
     brightness == Brightness.dark ? 0.62 : 0.72;
 
+/// 液态玻璃档的背景模糊。着色器本身还叠折射与高光，模糊比 frosted 轻一些
+/// 才看得出折射，但仍要压住背后的文字。
+const double kFushiLiquidGlassBlur = 12;
+
 /// 功能层表面的统一材质包装：[glassMaterialOf] 为 off 时就是一块 [baseColor]
 /// 实心底（与改造前像素一致），frosted 时是 ClipRRect + BackdropFilter 模糊 +
-/// 半透明 [baseColor] + 一圈细高光描边。
+/// 半透明 [baseColor] + 一圈细高光描边，liquid 时换成 `liquid_glass_widgets`
+/// 的折射着色器（[glassMaterialOf] 已保证此时引擎支持着色器 ImageFilter）。
 ///
 /// 只用于导航 / 底部弹层 / 对话框这类「浮在内容之上」的功能层；阅读器正文、
 /// 视频画面与查词弹窗不用（查词弹窗的主题根本不挂 [FushiGlassTheme]）。
@@ -54,6 +60,11 @@ class FushiGlassSurface extends StatelessWidget {
       );
     }
     final Brightness brightness = theme.brightness;
+    final Color fill =
+        base.withValues(alpha: fushiGlassFillOpacity(brightness));
+    if (glassMaterialOf(context) == FushiGlassMaterial.liquid) {
+      return _buildLiquid(fill);
+    }
     return ClipRRect(
       borderRadius: borderRadius,
       child: BackdropFilter(
@@ -63,7 +74,7 @@ class FushiGlassSurface extends StatelessWidget {
         ),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: base.withValues(alpha: fushiGlassFillOpacity(brightness)),
+            color: fill,
             borderRadius: borderRadius,
             border: showBorder
                 ? Border.all(
@@ -78,5 +89,27 @@ class FushiGlassSurface extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// 液态玻璃只支持四角同半径的形状；底部弹层这种只有上圆角的表面，着色器用
+  /// 直角矩形、外面再按真实圆角裁一次。
+  Widget _buildLiquid(Color fill) {
+    final double radius = borderRadius.topLeft.x;
+    final bool uniform =
+        borderRadius == BorderRadius.all(Radius.circular(radius));
+    final Widget glass = GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.premium,
+      shape: uniform && radius > 0
+          ? LiquidRoundedSuperellipse(borderRadius: radius)
+          : const LiquidRoundedRectangle(borderRadius: 0),
+      settings: LiquidGlassSettings(
+        glassColor: fill,
+        blur: kFushiLiquidGlassBlur,
+      ),
+      child: child,
+    );
+    if (uniform && radius > 0) return glass;
+    return ClipRRect(borderRadius: borderRadius, child: glass);
   }
 }
