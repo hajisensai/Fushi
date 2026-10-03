@@ -26,6 +26,24 @@
       "sha256": "32ea09f70b9023e061c93622ea2a14e84dd678bfdb298e6a67cc9e57b11583e4"
     },
     {
+      "name": "fushi-2.9.0-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.9.0/fushi-2.9.0-ios.ipa",
+      "releaseSequence": 16898,
+      "tag": "v2.9.0",
+      "version": "2.9.0",
+      "size": 74995229,
+      "sha256": "2e61b44d32f368b062fd4ca7d3c898936369634097481dc4d5e22ef607561191"
+    },
+    {
+      "name": "fushi-2.9.0-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.9.0/fushi-2.9.0-macos.zip",
+      "releaseSequence": 16898,
+      "tag": "v2.9.0",
+      "version": "2.9.0",
+      "size": 376368455,
+      "sha256": "51673394d644c0046019955b439d5703fdfa218f3dd4a852b3d65ada9e2cc8a3"
+    },
+    {
       "name": "fushi-2.9.0-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.9.0/fushi-2.9.0-windows-setup.exe",
       "releaseSequence": 16898,
