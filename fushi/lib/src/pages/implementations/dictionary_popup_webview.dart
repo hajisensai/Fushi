@@ -1390,9 +1390,9 @@ JSON.stringify((function(){
   @override
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.result != widget.result &&
-        !_tryPushReorder(oldWidget.result)) {
-      _pushResults();
+    if (oldWidget.result != widget.result) {
+      // 只是同一批词条换了顺序（AI 挑词）就只挪 DOM，否则全量重推。
+      if (!_tryPushReorder(oldWidget.result)) _pushResults();
     }
     // TODO-869：独立比较，不搭 result 便车——子弹窗增减时 result 可能没变（卡片内容
     // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。

@@ -23,7 +23,7 @@ function deferred() {
 }
 
 function makeSandbox(fontReady, configured) {
-  const calls = { rendered: 0, relayout: 0, layoutReads: 0, renderedArgs: null };
+  const calls = { rendered: 0, relayout: 0, layoutReads: 0, renderedArgs: null, pendingOrder: 0 };
   const body = {};
   Object.defineProperty(body, 'offsetWidth', {
     get() { calls.layoutReads += 1; return 640; },
@@ -49,6 +49,8 @@ function makeSandbox(fontReady, configured) {
     document: { body, documentElement: { scrollHeight: 100 }, fonts: { ready: fontReady } },
     window: windowObj,
     __fushiScrollHeight() { return 100; },
+    // Lives outside the sliced block (entry reorder, popup.js); stubbed here.
+    applyPendingPopupEntryOrder() { calls.pendingOrder += 1; },
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -85,6 +87,15 @@ async function flushPromises() {
     sandbox._firePopupRendered(false);
     assert.strictEqual(calls.rendered, 1,
       'without a configured custom font, reveal remains synchronous');
+    assert.strictEqual(calls.pendingOrder, 1,
+      'the final render signal must land a reorder that arrived mid-render');
+  }
+
+  {
+    const { sandbox, calls } = makeSandbox(Promise.resolve(), false);
+    sandbox._firePopupRendered(true);
+    assert.strictEqual(calls.pendingOrder, 0,
+      'a reorder must stay parked while tail entries are still rendering');
   }
 
   {
