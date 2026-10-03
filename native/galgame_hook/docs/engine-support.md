@@ -1067,7 +1067,7 @@ Tests：`tests/unity_mono_adapter_test.cpp`、`tests/unity_mono_text_test.cpp`�
 
 文本能力：
 
-- `yuris_message_text`：`implemented_unverified` — Native exact text lane (source kind 9, hook 'YU-RIS exact', ENGINE:YURIS:message_draw): the engine message text S+T (CP932, display characters only, NUL-terminated) is copied at the first DRAW call after it changed and published once per message; a `NAME「…」` message publishes the quoted line (the name plate is its own layer). Lane identity is the message state global, stable across runs. See lookup_support geometry for the site resolution.
+- `yuris_message_text`：`implemented_unverified` — Native exact text lane (source kind 9, hook 'YU-RIS exact', ENGINE:YURIS:message_draw): the engine message text S+T (CP932, display characters only, NUL-terminated) is copied at the first DRAW call after it changed and published once per message as the engine's own text (ruby reduced to its base; a leading speaker name is kept, never stripped by shape, so narration such as 「そう言って「…」」 is not cut). Lookup splits a `NAME「…」` line only when one layer drew exactly the name and another the quoted part (the name plate is its own layer); without that structure the line is not mapped. Lane identity is the message state global, stable across runs. See lookup_support geometry for the site resolution.
 - `luna_auto_or_pc_hooks`：`implemented_unverified` — LunaHook's YU-RIS engine hooks attach on euphoria (YU-RIS, YU-RIS2, YU-RIS5, YU-RIS6 threads); not used as the selected lane.
 - `ingame_lookup_geometry`：`implemented_unverified` — Engine-exact message-layer provider kLookupGeometryProviderIdYuris (22), see lookup_support geometry.
 - codepage：CP932
@@ -1088,7 +1088,8 @@ Tests：`tests/unity_mono_adapter_test.cpp`、`tests/unity_mono_text_test.cpp`�
 - The click claim masks the engine's GetKeyboardState table only; a build whose script advances on WM_LBUTTONDOWN directly is not covered.
 - Only two titles were measured (euphoria 2011, アイカギ 2016); アイカギ was run with its loose Chinese-patch directories moved aside.
 - The text lane drops the engine line-break code 0xEFF0; any other code outside CP932 fails that message closed (not published).
-- Voice pairing binds a clip to the first message published within 1.5 s after the clip opened (the script plays the voice, then shows the line); a voice played without a following message is published without an owner and only time-paired.
+- Voice pairing: each newly published message binds only the last clip opened (by open order, not timestamp) within 1.5 s before it; every clip opened before a message that was refused, empty, too long or not a new page is published without an owner instead of waiting for the next line. Two consecutive identical lines (the engine opens no new page) and mono recollection/system voices can still pair with the next voiced-less line; needs a real-device check.
+- Unverified on hardware: the ov_open_callbacks call site is assumed cdecl (only the read callback's shape is checked), and a build that keeps drawing glyphs while waiting for a click would refuse every press (fail closed). The stricter YPF identity (last entry exactly at index_end) must be re-checked against the euphoria v500 and アイカギ v481 archives.
 - Inline ruby `≪base／reading≫` is published as its base; on such pages only glyphs of the line's largest font size are mapped (readings are drawn smaller).
 
 Fixtures：`tests/fixtures/yuris_replay.json`
