@@ -307,8 +307,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   bool _matchesShelfSearch(Iterable<String> titles) =>
       matchesMediaSearch(query: _searchQuery, titles: titles);
 
-  /// 搜索栏「阅读状态」下拉（null = 全部）。与搜索词同理不持久化。
+  /// 搜索栏「阅读状态」下拉（null = 全部）。与搜索词不同，**持久化**到偏好
+  /// `shelf_read_status_filter`：这是用户刻意选的视图（同排序方式、游戏库页游玩
+  /// 状态筛选），重启就丢等于每次打开都要重选（用户实报）。initState 读回。
   ShelfReadStatus? _readStatusFilter;
+
+  void _setReadStatusFilter(ShelfReadStatus? value) {
+    setState(() => _readStatusFilter = value);
+    unawaited(
+      appModel.prefsRepo.setShelfReadStatusFilterName(value?.name ?? ''),
+    );
+  }
 
   /// 阅读状态筛选命中判据，本地 EPUB / 漫画卡与 SRT 有声书卡共用：读完看
   /// [_completedBookKeys]，在读 / 未读看进度（无进度 = 未读），口径即
@@ -508,6 +517,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
     // 「initState 完成前依赖 InheritedWidget」断言。
     appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
+    _readStatusFilter = ShelfReadStatus.values
+        .asNameMap()[appModelNoUpdate.prefsRepo.shelfReadStatusFilterName];
   }
 
   /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转（BUG-1182）。其余偏好
@@ -1005,8 +1016,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             labelOf: _readStatusLabel,
             title: t.shelf_filter_read_status,
             allLabel: t.home_filter_all,
-            onSelected: (ShelfReadStatus? value) =>
-                setState(() => _readStatusFilter = value),
+            onSelected: _setReadStatusFilter,
           ),
           if (_compactLibraryToolbar) ...<Widget>[
             const SizedBox(width: 8),
