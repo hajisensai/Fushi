@@ -126,6 +126,14 @@ index f77332c..6b07a8a 100644
 diff --git a/server/src/main/kotlin/mextensionserver/util/PackageTools.kt b/server/src/main/kotlin/mextensionserver/util/PackageTools.kt
 --- a/server/src/main/kotlin/mextensionserver/util/PackageTools.kt
 +++ b/server/src/main/kotlin/mextensionserver/util/PackageTools.kt
+@@ -48,6 +48,6 @@
+ 
+         val jarFilePath = jarFile.toPath()
+-        val reader = MultiDexFileReader.open(Files.readAllBytes(dexFile.toPath()))
++        val reader = DexAllocationRepair.exactAllocationReader(MultiDexFileReader.open(Files.readAllBytes(dexFile.toPath())))
+         val handler = BaksmaliBaseDexExceptionHandler()
+         Dex2jar
+             .from(reader)
 @@ -77,6 +77,11 @@
              handler.dump(errorFile, emptyArray<String>())
          } else {

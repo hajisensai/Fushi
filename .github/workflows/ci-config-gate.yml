@@ -1,0 +1,77 @@
+# CI 配置与发布脚本的轻量守卫门（2026-09-30 精简 CI 时新增）。
+#
+# 为什么要有它：main.yml（~90 min）以前挂整个 `.github/workflows/**`，两条发布 workflow 的
+# push 挂整个 `tool/**` + `.github/workflows/**`——改任何一条 workflow 或 tool/bug.dart 都要
+# 白跑一整轮 Android 构建 / 发布构建。这些触发收窄到「各自真正读到的文件」之后，改 workflow
+# 或发布脚本的 PR / 直推就不再经过 fushi/test 全量——而钉死 workflow 不变式的守卫
+# （concurrency 组名、发布通道、缓存配额、路径过滤、密钥注入 parity、PR 合并白名单 …）
+# 恰恰住在那里。本门只跑那一批守卫，几分钟、一台 ubuntu，把这层保护留住。
+#
+# 选哪些测试：**按磁盘枚举，不写死清单**——fushi/test 下凡是引用 `.github/`（workflow /
+# composite action / 脚本）或根 `tool/`（`../tool/`、`../../tool/`）的测试文件都跑。新加
+# 一条 workflow 守卫自动落进来。另跑一遍 tool/check_release_policy.ps1（发布 workflow 的
+# 第一步），让发布策略红在 PR 上而不是红在发布当天。
+name: CI config guards
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - '.github/**'
+      - 'tool/**'
+  # 本仓日常大量直推 develop（不走 PR），而发布 workflow 的 push 已不再因 workflow / tool
+  # 改动触发——直推也要有门。
+  push:
+    branches: ['develop']
+    paths:
+      - '.github/**'
+      - 'tool/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate unified release policy
+        shell: pwsh
+        run: ./tool/check_release_policy.ps1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: test
+      - name: Flutter pub get
+        working-directory: fushi
+        run: flutter pub get
+      # 少数被选中的守卫会 import package:fushi 编 app 代码，需要与 main.yml 同样的补丁。
+      - name: Apply pub cache patches
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+      - name: Run workflow / release-script guard tests
+        working-directory: fushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(grep -rlE '\.github/|\.\./tool/|\.\./\.\./tool/' test --include='*_test.dart' | sort)
+          # 规模哨兵：枚举写错会让本门一个测试都不跑，而「零个测试」与「全绿」退出码相同。
+          # 2026-09-30 实测 51 个文件。
+          if [ "${#files[@]}" -lt 40 ]; then
+            echo "::error title=Guard enumeration collapsed::只枚举到 ${#files[@]} 个守卫测试文件，实测应有 ~51 个。去修枚举，不要调低这个下界。"
+            exit 1
+          fi
+          printf '%s\n' "${files[@]}"
+          flutter test --no-pub "${files[@]}"

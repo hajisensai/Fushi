@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/utils.dart' show FushiToast, ToastSeverity, t;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_selected_service.dart';
@@ -27,6 +29,14 @@ MangaOcrService createSelectedMangaOcrService(String Function() modelKey) =>
         localModel: MangaOcrLocalModel.forPlatform(modelKey()),
       ),
     );
+
+/// 互联 host 给对端点名的模型表：本平台列得出的每个本机模型一份服务。
+Map<String, MangaOcrService> createMangaOcrHostModelServices() =>
+    <String, MangaOcrService>{
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+        if (MangaOcrLocalModel.forPlatform(model.key) == model)
+          model.key: createMangaOcrService(localModel: model),
+    };
 
 /// 漫画整卷 OCR 服务的全局单例 provider。
 ///
@@ -73,4 +83,23 @@ final Provider<MangaOcrJobRegistry> mangaOcrJobRegistryProvider =
         registry.refreshConcurrencyLimit();
       });
       return registry;
+    });
+
+/// 本机 OCR 模型后台下载登记表的全局单例（设置区与「设置 › 存储」共用）。
+///
+/// 下载订阅归这里而不归页面：离开设置页下载照跑，结束时在此弹全局提示。
+final Provider<MangaOcrModelDownloads> mangaOcrModelDownloadsProvider =
+    Provider<MangaOcrModelDownloads>((Ref ref) {
+      final MangaOcrModelDownloads downloads = MangaOcrModelDownloads(
+        onFinished: (MangaOcrLocalModel model, {required bool failed}) {
+          FushiToast.show(
+            msg: failed
+                ? t.manga_ocr_download_failed
+                : t.manga_ocr_download_done,
+            severity: failed ? ToastSeverity.error : ToastSeverity.success,
+          );
+        },
+      );
+      ref.onDispose(downloads.dispose);
+      return downloads;
     });

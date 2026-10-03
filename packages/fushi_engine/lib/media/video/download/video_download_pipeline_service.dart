@@ -32,6 +32,7 @@ import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_organizer.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
@@ -767,6 +768,17 @@ Future<Set<String>> loadEmbeddedTorrentResumeIds(FushiDatabase database) async {
 
 class VideoDownloadPipelineActionRequired implements Exception {
   const VideoDownloadPipelineActionRequired(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// 刮削失败只因为资料源暂时不可用（网络 / 5xx / 限流）：刮削阶段唯一按退避
+/// 重试的失败，次数用完落 failed。
+class VideoDownloadScrapeProviderUnavailable implements Exception {
+  const VideoDownloadScrapeProviderUnavailable(this.message);
 
   final String message;
 
@@ -2072,11 +2084,35 @@ class VideoDownloadPipelineService {
       final bool retryable =
           error is! ExternalProviderFailure || error.retryable;
       final int now = DateTime.now().millisecondsSinceEpoch;
-      if (job.stage == VideoDownloadJobStage.scrape || !retryable) {
+      // 刮削阶段只有「资料源暂时不可用」可重试；其余（映射不回来源、待确认…）
+      // 重试也不会变，交给人处理。
+      final bool scrapeNeedsHuman = job.stage == VideoDownloadJobStage.scrape &&
+          error is! VideoDownloadScrapeProviderUnavailable;
+      if (scrapeNeedsHuman || !retryable) {
         await _markNeedsAttention(
           job,
           _safeError(error.toString()),
           nowAt: now,
+        );
+        return;
+      }
+      if (error is VideoDownloadScrapeProviderUnavailable &&
+          job.attemptCount + 1 >= job.maxAttempts) {
+        // 资料源长时间不可用：文件早已入库，下载这件事做完了。刮削交给库内补刮
+        // ——它在作品没有规范身份时会用本任务确认过的身份去刮
+        // （`downloadConfirmedLookupsForWorks`），资料源恢复后自然补上。判成
+        // failed 只会留下一个误导的「出错」和一条永远不会自己好的任务。
+        fushiDebugPrint(
+          '[download-scrape] ${job.jobId}: metadata provider still '
+          'unavailable after ${job.maxAttempts} attempts; completing the '
+          'download and leaving the scrape to the library backfill: $error',
+        );
+        await _releaseLeaseWith(
+          () => database.completeVideoDownloadJob(
+            jobId: job.jobId,
+            workerId: workerId,
+            completedAt: now,
+          ),
         );
         return;
       }
@@ -4346,58 +4382,12 @@ class VideoDownloadPipelineService {
       database,
     ).plan(source);
     _ensureLeaseHeld();
-    final List<VideoSourceScrapeWork> pathMatches = works
-        .where(
-          (VideoSourceScrapeWork value) => value.members.any(
-            (VideoBookRow member) =>
-                importedPaths.contains(normalizeVideoPath(member.videoPath)),
-          ),
-        )
-        .toList(growable: false);
-    VideoSourceScrapeWork? work;
-    if (job.collectionId != null) {
-      work = pathMatches
-          .where(
-            (VideoSourceScrapeWork value) =>
-                value.collection?.id == job.collectionId,
-          )
-          .firstOrNull;
-      // A newly imported series can contain only one episode. The source work
-      // planner intentionally does not promote a single-member collection to
-      // an episodic work yet, so its exact path match has no collection here.
-      // Accept that one unambiguous imported-path match; this is still an
-      // identity-safe lookup and never falls back to a title comparison.
-      work ??= pathMatches.length == 1 ? pathMatches.single : null;
-    } else if (pathMatches.length == 1) {
-      work = pathMatches.single;
-    } else if (pathMatches.length > 1 &&
-        job.mediaKind == VideoMetadataMediaKind.movie.name) {
-      // 多部电影一个种子（BUG-2007）：一条 job 落成多个独立作品，而 job 携带
-      // 的已确认身份只属于用户在下载确认时选定的那一部（= 主片）。绑给主片
-      // 所在作品；并列正片留在待确认队列（刮削重设计 P2）由自动补刮/人工
-      // 认领——整批完成会把用户确认过的身份也丢掉，整批强绑则必然误绑。
-      final VideoDownloadJobFileRow? movieMain = _mainMovieRow(
-        rows
-            .where(
-              (VideoDownloadJobFileRow row) =>
-                  row.kind == 'video' && row.finalAbsolutePath != null,
-            )
-            .toList(),
-      );
-      if (movieMain != null) {
-        final String mainPath = normalizeVideoPath(
-          movieMain.finalAbsolutePath!,
-        );
-        work = pathMatches
-            .where(
-              (VideoSourceScrapeWork value) => value.members.any(
-                (VideoBookRow member) =>
-                    normalizeVideoPath(member.videoPath) == mainPath,
-              ),
-            )
-            .firstOrNull;
-      }
-    }
+    final List<VideoSourceScrapeWork> pathMatches = downloadJobPathMatches(
+      rows,
+      works,
+    );
+    // 与库内补刮 / 整源刮削同一个「任务 → 作品」判据（download_confirmed_identity）。
+    final VideoSourceScrapeWork? work = downloadJobWork(job, rows, works);
     if (work == null) {
       // 把「为什么」说出来：是计划器压根没看到这些文件（附件分类 / 归属），还是
       // 看到了却分在多个作品里且没有一个是本任务的合集。
@@ -4420,6 +4410,11 @@ class VideoDownloadPipelineService {
     );
     _ensureLeaseHeld();
     database.notifyVideoLibraryChanged();
+    if (report.failedOnlyBecauseProviderUnavailable) {
+      // 资料源临时连不上（Jikan 504 之类）：文件已在库，身份已确认，过一会儿原样
+      // 再刮就行——走任务的退避重试，不停在「需要处理」。
+      throw VideoDownloadScrapeProviderUnavailable(report.errors.first.message);
+    }
     if (report.cancelled ||
         report.failedWorks > 0 ||
         report.pendingConfirmations > 0 ||
@@ -4639,71 +4634,8 @@ class VideoDownloadPipelineService {
     }
   }
 
-  VideoMediaReference _mediaReference(VideoDownloadJobRow job) {
-    final VideoMetadataMediaKind mediaKind =
-        VideoMetadataMediaKind.values.asNameMap()[job.mediaKind] ??
-        VideoMetadataMediaKind.tv;
-    final VideoDiscoveryCategory category =
-        VideoDiscoveryCategory.values.asNameMap()[job.discoveryCategory] ??
-        (mediaKind == VideoMetadataMediaKind.movie
-            ? VideoDiscoveryCategory.movie
-            : VideoDiscoveryCategory.tv);
-    // v94（BUG-2003）：身份面（原名/别名/全部外部 id）从入队快照恢复——字幕
-    // 搜索从此拿得到日文原名与罗马字别名。任务列（title/year/season/kind）仍是
-    // 用户可见与流程真值。旧行（NULL 快照）走修前的单 id 重建。
-    final VideoMediaReference? stored = decodeVideoMediaReference(
-      job.identityJson,
-    );
-    if (stored != null) {
-      // 任务形态被整理器改判过（BUG-2760：电影身份配上多集合集包）：TMDB 的
-      // /movie 与 /tv 是两个 id 空间，IMDb 的电影条目也不是剧集条目。这些 id
-      // 描述的是**另一部作品**，带着它们刮削/搜字幕只会绑错，丢掉交给自动识别；
-      // MAL / AniDB 等不分形态的 id 照旧保留。
-      final bool kindDrifted = stored.mediaKind != mediaKind;
-      final bool tmdbIdentity = stored.providerId.toLowerCase() == 'tmdb';
-      return VideoMediaReference(
-        providerId: kindDrifted && tmdbIdentity ? 'unknown' : stored.providerId,
-        mediaId: stored.mediaId,
-        mediaKind: mediaKind,
-        discoveryCategory: category,
-        title: job.title,
-        originalTitle: stored.originalTitle,
-        aliases: stored.aliases,
-        year: job.year ?? stored.year,
-        season: job.season ?? stored.season,
-        tmdbId: kindDrifted ? null : stored.tmdbId,
-        imdbId: kindDrifted ? null : stored.imdbId,
-        tvdbId: stored.tvdbId,
-        anidbId: stored.anidbId,
-        anilistId: stored.anilistId,
-        bangumiId: stored.bangumiId,
-        externalIds: kindDrifted
-            ? <String, String>{
-                for (final MapEntry<String, String> entry
-                    in stored.externalIds.entries)
-                  if (entry.key.toLowerCase() != 'tmdb' &&
-                      entry.key.toLowerCase() != 'imdb')
-                    entry.key: entry.value,
-              }
-            : stored.externalIds,
-      );
-    }
-    final String provider = job.metadataProvider ?? 'unknown';
-    final String id = job.externalId ?? job.title;
-    return VideoMediaReference(
-      providerId: provider,
-      mediaId: id,
-      mediaKind: mediaKind,
-      discoveryCategory: category,
-      title: job.title,
-      year: job.year,
-      season: job.season,
-      anidbId: provider == 'anidb' ? int.tryParse(id) : null,
-      tmdbId: provider == 'tmdb' ? int.tryParse(id) : null,
-      anilistId: provider == 'anilist' ? int.tryParse(id) : null,
-      bangumiId: provider == 'bangumi' ? int.tryParse(id) : null,
-    );
-  }
+  VideoMediaReference _mediaReference(VideoDownloadJobRow job) =>
+      videoDownloadJobMediaReference(job);
 
   Future<VideoDownloadJobFileRow?> _jobFileByIndex(
     String jobId,
@@ -4720,15 +4652,8 @@ class VideoDownloadPipelineService {
   /// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
   static VideoDownloadJobFileRow? _mainMovieRow(
     List<VideoDownloadJobFileRow> files,
-  ) {
-    VideoDownloadJobFileRow? main;
-    for (final VideoDownloadJobFileRow file in files) {
-      if (main == null || (file.sizeBytes ?? 0) > (main.sizeBytes ?? 0)) {
-        main = file;
-      }
-    }
-    return main;
-  }
+  ) =>
+      mainMovieDownloadFile(files);
 
   /// 并列正片的入库标题（BUG-2007）：优先文件名解析出的标题（剥字幕组/分辨率
   /// 噪音）；解析为空、与主片标题相同或与其他并列正片撞名时退回整理后文件名。

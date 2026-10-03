@@ -28,6 +28,7 @@ add_executable(${BINARY_NAME} WIN32
   "crash_dump.cpp"
   "external_video_handoff.cpp"
   "flutter_window.cpp"
+  "floating_ball_window.cpp"
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
   "game_stream_input.cpp"
@@ -42,6 +43,7 @@ add_executable(${BINARY_NAME} WIN32
   "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
+  "system_font_list.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"
@@ -420,6 +422,22 @@ add_custom_target(fushi_windows_attached_hover_tracker_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_attached_hover_tracker_gate)
+
+# 桌面应用外悬浮球的几何与动画曲线（floating_ball_geometry.h）必须与 Dart
+# ReaderFloatingBallLayout / Android FloatingBallGeometry 逐项同一套公式：一旦漂移，
+# 球就会停错位置、按钮列排错或越出屏幕。纯头文件，随每次 runner 构建执行一遍。
+add_executable(fushi_windows_floating_ball_geometry_test
+  "tests/floating_ball_geometry_test.cpp"
+)
+apply_standard_settings(fushi_windows_floating_ball_geometry_test)
+target_compile_definitions(fushi_windows_floating_ball_geometry_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_floating_ball_geometry_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_floating_ball_geometry_test>"
+  DEPENDS fushi_windows_floating_ball_geometry_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_floating_ball_geometry_gate)
 
 # Rolling window recording for galgame video cards: the fps keep decision, the
 # max_seconds / byte-cap eviction, the export range (to<=0 = now) and the box

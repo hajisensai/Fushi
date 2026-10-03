@@ -123,8 +123,17 @@ void main() {
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
 
+    // 限定在溢出菜单项内找：工具栏的「游玩状态」下拉 chip 与菜单项同文案，
+    // 全局 find.text 会把它也数进来。
     for (final String label in menuLabels()) {
-      expect(find.text(label), findsOneWidget, reason: '溢出菜单缺「$label」');
+      expect(
+        find.descendant(
+          of: find.byType(PopupMenuItem<String>),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+        reason: '溢出菜单缺「$label」',
+      );
     }
 
     // 次序也要钉住（统一约定：重命名 → 封面类 → 刮削 → 加入合集 → 标签 → 删除）。

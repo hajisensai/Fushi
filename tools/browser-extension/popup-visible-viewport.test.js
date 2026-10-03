@@ -73,11 +73,11 @@ function load({ innerHeight = 450, visibleHeight, zoom = 1, tipSize } = {}) {
       body: root,
       documentElement: { clientHeight: innerHeight, style: { zoom: String(zoom) } },
     },
-    window: {
-      innerHeight,
-      __fushiVisibleViewportHeight: visibleHeight,
-      flutter_inappwebview: { callHandler: (...args) => { calls.push(args); } },
-    },
+    // 浏览器里 window === 全局对象：顶层函数声明就是 window 属性。替身必须同构，否则
+    // 「注入值与 helper 同名、赋值把函数覆盖掉」这类真 bug 在这里永远测不出来。
+    innerHeight,
+    __fushiVisibleViewportHeightPx: visibleHeight,
+    flutter_inappwebview: { callHandler: (...args) => { calls.push(args); } },
     // 真浏览器的 rAF 是异步的：排队，测试里显式冲帧（同步回调会让「句柄先清零、
     // 返回值再写回」的顺序颠倒，测出替身自己的 bug）。
     requestAnimationFrame: (cb) => { frames.push(cb); return frames.length; },
@@ -104,6 +104,7 @@ function load({ innerHeight = 450, visibleHeight, zoom = 1, tipSize } = {}) {
   };
   ctx.__fushiReportedContentHeight = () => ctx.__contentHeight;
   ctx.globalThis = ctx;
+  ctx.window = ctx;
   vm.createContext(ctx);
   const code = [
     sliceFunction('function __fushiVisibleViewportHeight(){'),
@@ -165,7 +166,7 @@ test('注入可见高度即开始观察内容尺寸，变化才复报 popupConte
   assert.strictEqual(env.observers.length, 0, '没注入前不装观察器（扩展 / 其它宿主零开销）');
 
   env.ctx.window.__fushiSetVisibleViewportHeight(150);
-  assert.strictEqual(env.ctx.window.__fushiVisibleViewportHeight, 150);
+  assert.strictEqual(env.ctx.window.__fushiVisibleViewportHeightPx, 150);
   assert.strictEqual(env.observers.length, 1);
   assert.strictEqual(env.observers[0].targets[0], env.root, '无 #entries-container 时回落 body');
 
@@ -192,6 +193,26 @@ test('注入 null 撤销可见高度，回到 innerHeight', () => {
   const env = load({ innerHeight: 450 });
   env.ctx.window.__fushiSetVisibleViewportHeight(150);
   env.ctx.window.__fushiSetVisibleViewportHeight(null);
-  assert.strictEqual(env.ctx.window.__fushiVisibleViewportHeight, null);
+  assert.strictEqual(env.ctx.window.__fushiVisibleViewportHeightPx, null);
+  assert.strictEqual(env.ctx.__fushiVisibleViewportHeight(), 450);
+});
+
+test('宿主经 __fushiSetVisibleViewportHeight 注入后，helper 仍是函数、按钮提示照常翻到上方', () => {
+  // 回归：注入值曾写进与 helper 同名的 window.__fushiVisibleViewportHeight，把顶层函数
+  // 覆盖成数字，悬停任一按钮即抛 "__fushiVisibleViewportHeight is not a function"。
+  const env = load({ innerHeight: 450, tipSize: { width: 80, height: 30 } });
+  env.ctx.window.__fushiSetVisibleViewportHeight(150);
+  assert.strictEqual(typeof env.ctx.__fushiVisibleViewportHeight, 'function');
+  assert.strictEqual(env.ctx.__fushiVisibleViewportHeight(), 150);
+
+  const button = makeEl('button');
+  button.dataset.fushiTip = '收藏';
+  button._rect = { left: 100, top: 110, right: 130, bottom: 130, width: 30, height: 20 };
+  env.ctx.__exports.__fushiShowButtonTip(button);
+  const tip = env.root.children.find((c) => String(c.className).includes('fushi-btn-tip'));
+  assert.strictEqual(parseFloat(tip.style.top), 110 - 30 - 6);
+
+  env.ctx.window.__fushiSetVisibleViewportHeight(null);
+  assert.strictEqual(typeof env.ctx.__fushiVisibleViewportHeight, 'function');
   assert.strictEqual(env.ctx.__fushiVisibleViewportHeight(), 450);
 });

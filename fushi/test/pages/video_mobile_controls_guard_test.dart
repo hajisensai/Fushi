@@ -50,28 +50,19 @@ void main() {
       'Widget _topBarSlotGroup(',
       'String get _clipExportTooltip',
     );
-    expect(group.contains('Alignment.centerRight'), isTrue,
-        reason: 'topRight must stay aligned as one group at the right edge');
-    // 组内仍必须能横滚（窄窗按钮不被裁没），但**不能**再用 SingleChildScrollView：
-    // 它的 viewport 在主轴上恒撑满约束，顶栏拿不到按钮组的内容固有宽，也就没法把
-    // 「按钮用剩的」宽度交给标题（见 VideoTopBarSlots）。改用 shrinkWrap 横向 ListView：
-    // 内容少时按内容宽收缩、内容多时照旧滚动。
-    expect(group.contains('scrollDirection: Axis.horizontal'), isTrue,
+    // BUG-2832：按钮放得下时照旧直接摆在顶栏上（不依赖菜单）；只有放不下的才按优先级
+    // 收进组尾「⋯」——取代旧的横滚 ListView（右组从左边被裁，只剩半个图标）。组按实际
+    // 显示的内容宽收缩（fill: false），顶栏才能把按钮用剩的宽度交给标题。
+    expect(group.contains('return VideoControlBar('), isTrue,
+        reason: 'top-bar groups must lay out through VideoControlBar');
+    expect(group.contains('fill: false'), isTrue,
         reason:
-            'topRight group must scroll horizontally instead of overflowing');
-    expect(group.contains('shrinkWrap: true'), isTrue,
-        reason:
-            'topRight group must shrink-wrap to its content width so the top bar '
-            'can hand the leftover width to the title');
+            'top-bar groups must shrink-wrap to their visible content so the top '
+            'bar can hand the leftover width to the title');
+    expect(group.contains('ListView('), isFalse,
+        reason: 'top-bar groups must not scroll/clip buttons when squeezed');
     expect(group.contains('SingleChildScrollView('), isFalse,
-        reason:
-            'SingleChildScrollView always fills the main axis — it would hide the '
-            'group content width and re-break the button/title width priority');
-    expect(group.contains('reverse: slot == VideoControlSlot.topRight'), isTrue,
-        reason: 'topRight scroll origin should keep the end buttons reachable');
-    expect(group.contains('MainAxisAlignment.end'), isTrue,
-        reason:
-            'topRight buttons should align to the group end, not spread as individual flex children');
+        reason: 'top-bar groups must not scroll/clip buttons when squeezed');
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     expect(topRightItems.contains(VideoControlItem.subtitleTrack), isTrue,
@@ -96,16 +87,29 @@ void main() {
             'speed remains reachable from settings without crowding top bar');
   });
 
+  test('mobile fullscreen is excluded at the render gate, not drawn zero-width',
+      () {
+    // BUG-221：移动端不提供全屏。BUG-2832 审查：只在按钮里画成 SizedBox.shrink 不够——
+    // 零宽条目照样进 VideoControlBar、被收进「⋯」，菜单里冒出一行点了无效的「全屏」。
+    final String gate = region(
+      'bool _shouldRenderControlItem(',
+      'Widget _topBarSlotGroup(',
+    );
+    expect(
+      RegExp(r'case VideoControlItem\.fullscreen:\s*return !isMobilePlatform;')
+          .hasMatch(gate),
+      isTrue,
+      reason: 'fullscreen must be filtered out on mobile before it becomes a bar entry',
+    );
+  });
+
   test('video bottom bar is one shared width-gated helper (BUG-257)', () {
     // BUG-257：桌面 + 移动底栏合并为单一 [_centeredBottomControlBar]（按 desktop: 参数
     // 择 Material*/MaterialDesktop* 组件），故各按钮只出现一次，不再 per-theme 重复。
-    expect(
-      src.contains('bool _hasRoomyVideoBottomBar() =>'),
-      isTrue,
-      reason: 'bottom bar width check should be shared, not mobile-only',
-    );
-    expect(src.contains('MediaQuery.of(context).size.width >= 600'), isTrue,
-        reason: 'bottom bar should branch by available width');
+    // BUG-2832：±10s 带不带文字不再按任何宽度阈值判（旧 `barWidth >= 600`），而是由
+    // VideoControlBar 按这条栏实际放不放得下决定（compactChild = 纯图标形态）。
+    expect(src.contains('_hasRoomyVideoBottomBar'), isFalse,
+        reason: 'seek labels must follow actual fit, not a width threshold');
     // 两套 controls 主题 bottomButtonBar 都委托同一个共享 helper。
     expect(
       'child: _centeredBottomControlBar('.allMatches(src).length,
@@ -119,13 +123,10 @@ void main() {
       'Widget _seekLabelButton(',
     );
     expect(
-      bar.contains('final bool roomyBottomBar = _hasRoomyVideoBottomBar();'),
+      bar.contains('return VideoControlBar('),
       isTrue,
-      reason: 'shared bottom bar should use the shared width predicate',
+      reason: 'shared bottom bar should collapse into one VideoControlBar',
     );
-    expect(src.contains('if (roomyBottomBar)'), isTrue,
-        reason:
-            'shared bottom bar should hide 10s buttons only on narrow widths');
     expect(bar.contains('PositionIndicator'), isTrue);
     expect(src.contains('PlayOrPauseButton'), isTrue);
     expect(src.contains('_buildVolumeButton(controller'), isTrue,

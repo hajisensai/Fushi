@@ -111,9 +111,21 @@ void main() {
     expect(orderedStart, greaterThanOrEqualTo(0));
     expect(orderedEnd, greaterThan(orderedStart));
     final String orderedBlock = page.substring(orderedStart, orderedEnd);
+    // BUG-2835 起条目级筛选收进 `_passesLocalFilters`：ordered 必须经它过，
+    // 它的方法体里必须仍有系列页的花絮排除。
+    expect(orderedBlock, contains('_passesLocalFilters(b)'));
+    final int passesStart = page.indexOf('bool _passesLocalFilters(');
+    final int passesEnd = page.indexOf(
+      'bool _isCollectionMember(',
+      passesStart,
+    );
+    expect(passesStart, greaterThanOrEqualTo(0));
+    expect(passesEnd, greaterThan(passesStart));
+    final String passesBlock = page.substring(passesStart, passesEnd);
     expect(
-      orderedBlock,
-      contains('_localExtraBookUids.contains(b.bookUid)'),
+      passesBlock,
+      contains('widget.section == VideoLibrarySection.series &&\n'
+          '          _localExtraBookUids.contains(b.bookUid)'),
       reason: '放宽准入不等于放行花絮：父作品的短篇/花絮仍须排除',
     );
 

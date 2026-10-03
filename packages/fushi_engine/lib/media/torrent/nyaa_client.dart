@@ -6,6 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -705,102 +706,123 @@ List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
   }
 
   final List<NyaaTorrent> torrents = <NyaaTorrent>[];
-  for (final html_dom.Element row in table.querySelectorAll('tbody tr')) {
-    final List<html_dom.Element> cells = row.children
-        .where((html_dom.Element element) => element.localName == 'td')
-        .toList(growable: false);
-    if (cells.length < 5) {
-      throw NyaaFeedFormatException(
-        NyaaFeedErrorCode.missingStructure,
-        'HTML torrent row has fewer than five cells',
-      );
+  final List<html_dom.Element> rows =
+      table.querySelectorAll('tbody tr').toList(growable: false);
+  NyaaFeedFormatException? firstRowError;
+  int skipped = 0;
+  for (final html_dom.Element row in rows) {
+    try {
+      torrents.add(_parseNyaaHtmlRow(row, requestUri));
+    } on NyaaFeedFormatException catch (error) {
+      // 一行坏（缺 infohash / 链接）不该让整页失败（BUG-2794）：跳过它、记诊断，
+      // 其余合法行照常交出去。只有**每一行都坏**才说明页面结构变了，那时仍抛，
+      // 否则站点改版会被伪装成「0 条」。
+      skipped += 1;
+      firstRowError ??= error;
     }
-
-    // 标题单元格里可能有两个 `/view/<id>` 链接：有评论的行，nyaa 模板会先
-    // 写一个 `<a class="comments" href="/view/<id>#comments" title="N comments">`
-    // 再写标题链接（CSS 右浮，DOM 顺序在前）。只认路径的话带评论的行标题
-    // 会被抓成 `1 comment`，随后被系列名匹配整行丢掉（BUG-2523）。详情链接
-    // 永远不带 fragment，按这个结构差异区分。
-    final html_dom.Element? detailLink = cells[1]
-        .querySelectorAll('a[href]')
-        .cast<html_dom.Element?>()
-        .firstWhere(
-      (html_dom.Element? link) {
-        final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
-        return href != null &&
-            href.path.startsWith('/view/') &&
-            href.fragment.isEmpty;
-      },
-      orElse: () => null,
-    );
-    final html_dom.Element? magnetLink = cells[2]
-        .querySelectorAll('a[href]')
-        .cast<html_dom.Element?>()
-        .firstWhere(
-          (html_dom.Element? link) =>
-              (link?.attributes['href'] ?? '').startsWith('magnet:'),
-          orElse: () => null,
-        );
-    final String title =
-        (detailLink?.attributes['title'] ?? detailLink?.text ?? '').trim();
-    final String magnet = magnetLink?.attributes['href'] ?? '';
-    final String? exactTopic = Uri.tryParse(magnet)?.queryParameters['xt'];
-    final String infoHash =
-        exactTopic?.toLowerCase().startsWith('urn:btih:') == true
-            ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
-            : '';
-    if (title.isEmpty ||
-        detailLink == null ||
-        !RegExp(r'^[0-9a-f]{40}$').hasMatch(infoHash)) {
-      throw NyaaFeedFormatException(
-        NyaaFeedErrorCode.missingField,
-        'HTML torrent row is missing title, detail URL, or info hash',
-      );
-    }
-
-    String torrentUrl = '';
-    for (final html_dom.Element link in cells[2].querySelectorAll('a[href]')) {
-      final String href = link.attributes['href'] ?? '';
-      if (Uri.tryParse(href)?.path.endsWith('.torrent') == true) {
-        torrentUrl = requestUri.resolve(href).toString();
-        break;
-      }
-    }
-    String categoryId = '';
-    for (final html_dom.Element link in cells[0].querySelectorAll('a[href]')) {
-      final String? candidate =
-          Uri.tryParse(link.attributes['href'] ?? '')?.queryParameters['c'];
-      if (candidate?.isNotEmpty == true) {
-        categoryId = candidate!;
-        break;
-      }
-    }
-    final int? timestampSeconds =
-        int.tryParse(cells[4].attributes['data-timestamp'] ?? '');
-    torrents.add(
-      NyaaTorrent(
-        title: title,
-        torrentUrl: torrentUrl,
-        pageUrl: requestUri.resolve(detailLink.attributes['href']!).toString(),
-        infoHash: infoHash,
-        seeders: cells.length > 5 ? int.tryParse(cells[5].text.trim()) ?? 0 : 0,
-        leechers:
-            cells.length > 6 ? int.tryParse(cells[6].text.trim()) ?? 0 : 0,
-        downloads:
-            cells.length > 7 ? int.tryParse(cells[7].text.trim()) ?? 0 : 0,
-        sizeText: cells[3].text.trim(),
-        sizeBytes: parseNyaaSize(cells[3].text.trim()),
-        categoryId: categoryId,
-        trusted: row.classes.contains('success'),
-        remake: row.classes.contains('danger'),
-        pubDate: timestampSeconds == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(
-                timestampSeconds * 1000,
-                isUtc: true,
-              ),
-      ),
+  }
+  if (firstRowError != null) {
+    if (torrents.isEmpty) throw firstRowError;
+    engineLog.logDiagnostic(
+      'NyaaClient.search',
+      'skipped $skipped of ${rows.length} malformed rows: '
+          '${firstRowError.message}',
     );
   }
   return List<NyaaTorrent>.unmodifiable(torrents);
+}
+
+/// 解析一行搜索结果；缺必需字段抛 [NyaaFeedFormatException]。
+NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
+  final List<html_dom.Element> cells = row.children
+      .where((html_dom.Element element) => element.localName == 'td')
+      .toList(growable: false);
+  if (cells.length < 5) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.missingStructure,
+      'HTML torrent row has fewer than five cells',
+    );
+  }
+
+  // 标题单元格里可能有两个 `/view/<id>` 链接：有评论的行，nyaa 模板会先
+  // 写一个 `<a class="comments" href="/view/<id>#comments" title="N comments">`
+  // 再写标题链接（CSS 右浮，DOM 顺序在前）。只认路径的话带评论的行标题
+  // 会被抓成 `1 comment`，随后被系列名匹配整行丢掉（BUG-2523）。详情链接
+  // 永远不带 fragment，按这个结构差异区分。
+  final html_dom.Element? detailLink = cells[1]
+      .querySelectorAll('a[href]')
+      .cast<html_dom.Element?>()
+      .firstWhere(
+    (html_dom.Element? link) {
+      final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
+      return href != null &&
+          href.path.startsWith('/view/') &&
+          href.fragment.isEmpty;
+    },
+    orElse: () => null,
+  );
+  final html_dom.Element? magnetLink = cells[2]
+      .querySelectorAll('a[href]')
+      .cast<html_dom.Element?>()
+      .firstWhere(
+        (html_dom.Element? link) =>
+            (link?.attributes['href'] ?? '').startsWith('magnet:'),
+        orElse: () => null,
+      );
+  final String title =
+      (detailLink?.attributes['title'] ?? detailLink?.text ?? '').trim();
+  final String magnet = magnetLink?.attributes['href'] ?? '';
+  final String? exactTopic = Uri.tryParse(magnet)?.queryParameters['xt'];
+  final String infoHash =
+      exactTopic?.toLowerCase().startsWith('urn:btih:') == true
+          ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
+          : '';
+  if (title.isEmpty ||
+      detailLink == null ||
+      !RegExp(r'^[0-9a-f]{40}$').hasMatch(infoHash)) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.missingField,
+      'HTML torrent row is missing title, detail URL, or info hash',
+    );
+  }
+
+  String torrentUrl = '';
+  for (final html_dom.Element link in cells[2].querySelectorAll('a[href]')) {
+    final String href = link.attributes['href'] ?? '';
+    if (Uri.tryParse(href)?.path.endsWith('.torrent') == true) {
+      torrentUrl = requestUri.resolve(href).toString();
+      break;
+    }
+  }
+  String categoryId = '';
+  for (final html_dom.Element link in cells[0].querySelectorAll('a[href]')) {
+    final String? candidate =
+        Uri.tryParse(link.attributes['href'] ?? '')?.queryParameters['c'];
+    if (candidate?.isNotEmpty == true) {
+      categoryId = candidate!;
+      break;
+    }
+  }
+  final int? timestampSeconds =
+      int.tryParse(cells[4].attributes['data-timestamp'] ?? '');
+  return NyaaTorrent(
+    title: title,
+    torrentUrl: torrentUrl,
+    pageUrl: requestUri.resolve(detailLink.attributes['href']!).toString(),
+    infoHash: infoHash,
+    seeders: cells.length > 5 ? int.tryParse(cells[5].text.trim()) ?? 0 : 0,
+    leechers: cells.length > 6 ? int.tryParse(cells[6].text.trim()) ?? 0 : 0,
+    downloads: cells.length > 7 ? int.tryParse(cells[7].text.trim()) ?? 0 : 0,
+    sizeText: cells[3].text.trim(),
+    sizeBytes: parseNyaaSize(cells[3].text.trim()),
+    categoryId: categoryId,
+    trusted: row.classes.contains('success'),
+    remake: row.classes.contains('danger'),
+    pubDate: timestampSeconds == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(
+            timestampSeconds * 1000,
+            isUtc: true,
+          ),
+  );
 }

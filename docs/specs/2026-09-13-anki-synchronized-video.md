@@ -55,3 +55,9 @@ AnkiConnect/AnkiDroid 媒体渲染、AnkiMobile 裸 URL 与媒体快照由自动
 - **VP9 改 realtime**：`-deadline realtime -cpu-used 8`。1080p30 实拍源 3.6 秒窗（960 宽 24fps）：good/5 10.2–11.7 s / 1.14 MB → realtime/8 2.3–2.9 s / 1.44 MB；AV1 SVT p8 5.0–5.5 s / 0.88 MB；H.264 veryfast 2.7 s / 1.25 MB。AV1 文案据此改为「体积最小，编码耗时约为 VP9 的 2 倍；仅桌面端」。
 - **移动端 ffmpeg-kit 加 libvpx + opus（以所有者 #1717 为准）**：Android AAR 与 iOS xcframework 都由所有者的 `.github/workflows/ffmpeg-kit-mobile.yml` 重编并 vendor（b94ecd1a1ed，run 36369238562）；#1727 早先自建的 `ffmpeg-kit-android.yml` 与 Android-only AAR 已并入所有者版本后删除。两端都带 `libvpx-vp9` + `libopus`、都没有 SVT-AV1 / libaom / rav1e，所以 VP9 五端都能内嵌，AV1 只有桌面编得出，移动端按 `encodeAttempts` 降级 VP9（仍内嵌）——设置页 AV1 文案写「仅桌面端」，不再有按 iOS 切换的「本机编不出、退回 MP4」文案（`encodableOn` 与两条 `_unsupported` key 已删）。守卫 `ffmpeg_kit_mobile_recipe_guard_test.dart` 钉住「移动端无 AV1 编码器 ⇔ AV1 以 VP9 兜底」。
 - **只在格式编不出时降级**：`exportWithClipFormatFallback` 只在 `isClipFormatUnsupportedFailure`（缺编码器 / muxer）时换下一个格式；远端超时、输入打不开、ffmpeg 不可用立即返回首个失败。
+
+## 2026-10-01 更新：老用户也迁到片段（推翻上面第一条）
+
+- 所有者改口：存量用户的封面模式默认也是 `videoClip`。上面那次迁移把升级用户没设过的模式键**显式写成了 `gif`**，与用户自己选的 `gif` 在数据里分不开，按所有者决定一并迁走。
+- `settleMiningImageModeInstallDefault()`（去掉 `freshInstall` 参数）把 `mining_image_mode_install_default` 当一次性迁移标记：标记为 `gif` 的安装，仍是 `gif` 的视频 / gal 模式改成 `video_clip`，格式键没设过时先按改动前的推导钉成平台默认（iOS MP4、其余 WebM VP9），否则显式 `video_clip` 会被当成 MP4 时代老用户推成 MP4；其它显式值不碰。标记写成 `video_clip` 后不再重跑，此后用户再选 GIF 保留。标记缺失（新装 / 从 09-28 之前直接升级）只写标记。没设过的模式键一律按 `fromWireName(null)` = `video_clip` 取，不再有「本安装默认」分叉。
+- 已知限制：在 09-28 之后建的 Profile 快照里若存着 `gif`，切到那个 Profile 会恢复成 GIF（快照分不清来源），需在设置里手动改。

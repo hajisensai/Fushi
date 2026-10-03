@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

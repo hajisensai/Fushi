@@ -38,6 +38,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -611,7 +612,7 @@ public class MainActivity extends AudioServiceActivity {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
-        SystemOcrChannel.registerWith(flutterEngine);
+        SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
@@ -1054,50 +1055,48 @@ public class MainActivity extends AudioServiceActivity {
             .setMethodCallHandler((call, result) -> {
                 if ("listSystemFonts".equals(call.method)) {
                     ioExecutor.execute(() -> {
+                        // 只从系统字体配置取「族名」：fonts.xml 的 <family name> 与 <alias name>
+                        // 正是 Skia（Flutter 引擎）与 WebView CSS 按 font-family 能解析到的名字。
+                        // Android 12+ 另有 font_fallback.xml，两份都读。不再扫 /system/fonts 目录：
+                        // 由文件名猜出的「NotoSansCJK-Regular」之类按族名谁都解析不到，是死条目。
+                        // supportsJapanese 省略：Paint.hasGlyph 走系统回退链，判不出字体本身覆盖。
                         TreeSet<String> families = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-                        // 1) 解析 /system/etc/fonts.xml
-                        try {
-                            File xml = new File("/system/etc/fonts.xml");
-                            if (xml.exists()) {
-                                try (BufferedReader reader = new BufferedReader(
-                                        new InputStreamReader(new FileInputStream(xml)))) {
-                                    StringBuilder sb = new StringBuilder();
-                                    String line;
-                                    while ((line = reader.readLine()) != null) {
-                                        sb.append(line);
-                                    }
-                                    Pattern p = Pattern.compile("<family\\s+name=\"([^\"]+)\"");
-                                    Matcher m = p.matcher(sb.toString());
-                                    while (m.find()) {
-                                        families.add(m.group(1));
-                                    }
+                        Pattern comment = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
+                        Pattern named = Pattern.compile(
+                                "<(?:family|alias)\\b[^>]*?\\bname\\s*=\\s*\"([^\"]+)\"");
+                        String[] configs = {
+                                "/system/etc/fonts.xml",
+                                "/system/etc/font_fallback.xml",
+                        };
+                        for (String path : configs) {
+                            File xml = new File(path);
+                            if (!xml.isFile()) continue;
+                            try (BufferedReader reader = new BufferedReader(
+                                    new InputStreamReader(new FileInputStream(xml),
+                                            java.nio.charset.StandardCharsets.UTF_8))) {
+                                StringBuilder sb = new StringBuilder();
+                                String line;
+                                while ((line = reader.readLine()) != null) {
+                                    sb.append(line).append('\n');
                                 }
-                            }
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-fonts", "Failed to parse fonts.xml", e);
-                        }
-                        // 2) 扫描 /system/fonts/ 目录
-                        try {
-                            File dir = new File("/system/fonts");
-                            if (dir.exists() && dir.isDirectory()) {
-                                File[] files = dir.listFiles();
-                                if (files != null) {
-                                    for (File f : files) {
-                                        String name = f.getName();
-                                        if (name.endsWith(".ttf") || name.endsWith(".otf") || name.endsWith(".ttc")) {
-                                            String base = name.replaceAll("\\.(ttf|otf|ttc)$", "");
-                                            base = base.replaceAll("-(Regular|Bold|Italic|BoldItalic|Light|Medium|Thin|Black|SemiBold|ExtraBold|ExtraLight)$", "");
-                                            families.add(base);
-                                        }
-                                    }
+                                String body = comment.matcher(sb).replaceAll("");
+                                Matcher m = named.matcher(body);
+                                while (m.find()) {
+                                    String name = m.group(1).trim();
+                                    if (!name.isEmpty()) families.add(name);
                                 }
+                            } catch (Exception e) {
+                                android.util.Log.w("hibiki-fonts", "Failed to parse " + path, e);
                             }
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-fonts", "Failed to scan /system/fonts", e);
                         }
-                        List<String> sorted = new ArrayList<>(families);
-                        android.util.Log.d("hibiki-fonts", "Found " + sorted.size() + " fonts: " + sorted.subList(0, Math.min(5, sorted.size())));
-                        new Handler(Looper.getMainLooper()).post(() -> result.success(sorted));
+                        List<Map<String, Object>> entries = new ArrayList<>(families.size());
+                        for (String family : families) {
+                            Map<String, Object> entry = new HashMap<>();
+                            entry.put("family", family);
+                            entries.add(entry);
+                        }
+                        android.util.Log.d("hibiki-fonts", "Found " + entries.size() + " font families");
+                        new Handler(Looper.getMainLooper()).post(() -> result.success(entries));
                     });
                 } else {
                     result.notImplemented();

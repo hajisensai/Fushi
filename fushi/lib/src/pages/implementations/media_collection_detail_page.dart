@@ -32,7 +32,7 @@ import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookHasLocalFiles;
@@ -267,7 +267,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final List<MediaImageRow> imageRows =
         await widget.database.getMediaImagesForCollection(widget.collection.id);
     VideoMetadataWorkRow? canonicalWork = await widget.database
-        .getVideoMetadataWorkByCollection(widget.collection.id);
+        .resolveVideoMetadataWorkForCollection(widget.collection.id);
     if (canonicalWork == null) {
       final Set<int> sourceIds = <int>{
         for (final VideoBookRow member in members)
@@ -281,7 +281,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (source != null) await indexer.index(source);
       }
       canonicalWork = await widget.database
-          .getVideoMetadataWorkByCollection(widget.collection.id);
+          .resolveVideoMetadataWorkForCollection(widget.collection.id);
     }
     final VideoMetadataWorkCredits? workCredits =
         await VideoMetadataCreditRepository(widget.database)

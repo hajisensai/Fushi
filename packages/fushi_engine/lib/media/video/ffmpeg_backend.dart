@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -61,11 +63,12 @@ class FfmpegRunResult {
   }
 }
 
-typedef FfmpegProcessRunner = Future<FfmpegRunResult> Function(
-  String executable,
-  List<String> args,
-  Duration timeout,
-);
+typedef FfmpegProcessRunner =
+    Future<FfmpegRunResult> Function(
+      String executable,
+      List<String> args,
+      Duration timeout,
+    );
 
 const int _windowsStatusInvalidImageFormatSigned = -1073741701;
 const int _windowsStatusInvalidImageFormatUnsigned = 0xC000007B;
@@ -270,9 +273,9 @@ abstract class FfmpegBackend {
 ///    用户自己装 ffmpeg；否则没装 ffmpeg 的电脑会丢内封字幕/cue 动图/制卡音频）；
 /// 3. 回退系统 PATH 上的 `ffmpeg`。
 String resolveFfmpegExecutable() => resolveFfmpegExecutableFrom(
-      override: ffmpegExplicitOverride(),
-      bundledPath: _bundledFfmpegPath(),
-    );
+  override: ffmpegExplicitOverride(),
+  bundledPath: _bundledFfmpegPath(),
+);
 
 /// 宿主**显式装配**的 ffmpeg / ffprobe 可执行路径（无头服务端从 `fushi_server.yaml`
 /// 的 `ffmpeg:` / `ffprobe:` 装；app 不装 = null）。
@@ -308,15 +311,15 @@ String? resolveHostOverrideFrom(String? hostOverride, String? envOverride) {
 /// ——两边同名，注释承诺的旧名回退**从未生效**（改名批次的复制粘贴漏改）。让"回退去问
 /// 哪个名字"只存在一处，这类错误就无处可写。
 String? ffmpegEnvOverride() => resolveEnvOverrideFrom(
-      Platform.environment,
-      const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
-    );
+  Platform.environment,
+  const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
+);
 
 /// ffprobe 版的 [ffmpegEnvOverride]（同样新名优先、旧名回退）。
 String? ffprobeEnvOverride() => resolveEnvOverrideFrom(
-      Platform.environment,
-      const <String>['FUSHI_FFPROBE', 'HIBIKI_FFPROBE'],
-    );
+  Platform.environment,
+  const <String>['FUSHI_FFPROBE', 'HIBIKI_FFPROBE'],
+);
 
 /// 纯函数：在 [env] 里按 [names] 的先后顺序取第一个**非空**值（新名在前、旧名在后）。
 ///
@@ -354,9 +357,9 @@ String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 /// 同款优先级：`FUSHI_FFPROBE` 覆盖 > 程序旁捆绑 `ffprobe(.exe)`（打包时与 ffmpeg
 /// 并排塞进各桌面产物）> 系统 PATH 上的 `ffprobe`。
 String resolveFfprobeExecutable() => resolveFfprobeExecutableFrom(
-      override: ffprobeExplicitOverride(),
-      bundledPath: _bundledFfprobePath(),
-    );
+  override: ffprobeExplicitOverride(),
+  bundledPath: _bundledFfprobePath(),
+);
 
 /// 纯函数：按「覆盖 > 捆绑 > PATH」决定 ffprobe 可执行（镜像
 /// [resolveFfmpegExecutableFrom]，便于单测优先级）。
@@ -398,13 +401,16 @@ Future<FfmpegRunResult> runFfmpegProcess(
   List<String> args,
   Duration timeout,
 ) async {
-  final Process process =
-      await HelperProcessRegistry.instance.start(executable, args);
+  final Process process = await HelperProcessRegistry.instance.start(
+    executable,
+    args,
+  );
   // Drain both pipes: a full OS pipe buffer (ffmpeg writes progress to stderr)
   // would otherwise deadlock the process before it can exit.
   unawaited(process.stdout.drain<void>());
-  final Future<String> stderrText =
-      process.stderr.transform(const Utf8Decoder(allowMalformed: true)).join();
+  final Future<String> stderrText = process.stderr
+      .transform(const Utf8Decoder(allowMalformed: true))
+      .join();
   try {
     final int code = await process.exitCode.timeout(timeout);
     final String output = await stderrText;
@@ -416,6 +422,10 @@ Future<FfmpegRunResult> runFfmpegProcess(
     );
   } on TimeoutException {
     process.kill(ProcessSignal.sigkill);
+    // Reap the killed process before its caller removes command-scoped inputs.
+    // On Windows an open concat manifest cannot be deleted while FFmpeg lives.
+    await process.exitCode;
+    await stderrText;
     return FfmpegRunResult(
       returnCode: null,
       output: '',
@@ -437,10 +447,13 @@ Future<FfmpegRunResult> runFfprobeProcess(
   List<String> args,
   Duration timeout,
 ) async {
-  final Process process =
-      await HelperProcessRegistry.instance.start(executable, args);
-  final Future<String> stdoutText =
-      process.stdout.transform(const Utf8Decoder(allowMalformed: true)).join();
+  final Process process = await HelperProcessRegistry.instance.start(
+    executable,
+    args,
+  );
+  final Future<String> stdoutText = process.stdout
+      .transform(const Utf8Decoder(allowMalformed: true))
+      .join();
   unawaited(process.stderr.drain<void>());
   try {
     final int code = await process.exitCode.timeout(timeout);
@@ -453,6 +466,8 @@ Future<FfmpegRunResult> runFfprobeProcess(
     );
   } on TimeoutException {
     process.kill(ProcessSignal.sigkill);
+    await process.exitCode;
+    await stdoutText;
     return FfmpegRunResult(
       returnCode: null,
       output: '',
@@ -533,14 +548,15 @@ Future<FfmpegRunResult> _runCliFfmpeg({
     try {
       final FfmpegRunResult bundledResult =
           (await runner(bundled, args, timeout)).withExecutionContext(
-        executable: bundled,
-        attemptedExecutables: <String>[bundled],
-      );
+            executable: bundled,
+            attemptedExecutables: <String>[bundled],
+          );
       // 回退条件统一：① Windows STATUS_INVALID_IMAGE_FORMAT 退出码（BUG-275 实证的
       // 损坏 PE）② bundled 跑起来了但完全没产出 ffmpeg 工作输出（DLL 缺失等加载期崩，
       // BUG-283）——两者都意味着 bundled 这个文件无法真正当 ffmpeg 用，回退 PATH。
       // 其余结果（含 `-i` 恒非 0 但 stderr 满是流信息的正常枚举）原样返回。
-      final bool fallBack = _isWindowsInvalidImageFormatExitCode(
+      final bool fallBack =
+          _isWindowsInvalidImageFormatExitCode(
             bundledResult.returnCode,
             isWindows: isWindows,
           ) ||
@@ -565,7 +581,8 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       // 却跑不起来，唯一正确处置就是回退到 PATH 上的 ffmpeg（app 拥有的安全网），
       // 而不是死盯单一错误码——否则字幕枚举 / 制卡音频会把真失败吞成「无字幕」。
       // 显式 FUSHI_FFMPEG 覆盖走上面的分支、不进这里，旧契约不变（如实报错）。
-      fallbackReason = 'bundled ffmpeg launch failed '
+      fallbackReason =
+          'bundled ffmpeg launch failed '
           '(errorCode=${e.errorCode}, message=${e.message})';
       fushiDebugPrint(
         '[fushi-ffmpeg] bundled ffmpeg failed to launch '
@@ -605,15 +622,14 @@ Future<FfmpegRunResult> runCliFfmpegForTesting({
   required List<String> args,
   required Duration timeout,
   required FfmpegProcessRunner runner,
-}) =>
-    _runCliFfmpeg(
-      override: override,
-      bundledPath: bundledPath,
-      isWindows: isWindows,
-      args: args,
-      timeout: timeout,
-      runner: runner,
-    );
+}) => _runCliFfmpeg(
+  override: override,
+  bundledPath: bundledPath,
+  isWindows: isWindows,
+  args: args,
+  timeout: timeout,
+  runner: runner,
+);
 
 /// 桌面 ffprobe 执行（`resolveFfprobeExecutable` 解析：覆盖>捆绑>PATH）：先试解析出的
 /// 可执行，若它是捆绑路径且 `Process.start` 抛 [ProcessException]（损坏/权限/架构不匹配），
@@ -630,7 +646,9 @@ Future<FfmpegRunResult> _runCliFfprobe({
   required FfmpegProcessRunner runner,
 }) async {
   final String resolved = resolveFfprobeExecutableFrom(
-      override: override, bundledPath: bundledPath);
+    override: override,
+    bundledPath: bundledPath,
+  );
   try {
     return (await runner(resolved, args, timeout)).withExecutionContext(
       executable: resolved,
@@ -643,7 +661,8 @@ Future<FfmpegRunResult> _runCliFfprobe({
     // 已经就是裸 PATH `ffprobe` 了，无处可退，向上抛。
     if (isOverride || resolved == 'ffprobe') rethrow;
     final List<String> attempted = <String>[resolved, 'ffprobe'];
-    final String reason = 'bundled ffprobe launch failed '
+    final String reason =
+        'bundled ffprobe launch failed '
         '(errorCode=${e.errorCode}, message=${e.message})';
     try {
       return (await runner('ffprobe', args, timeout)).withExecutionContext(
@@ -668,14 +687,13 @@ Future<FfmpegRunResult> runCliFfprobeForTesting({
   required List<String> args,
   required Duration timeout,
   required FfmpegProcessRunner runner,
-}) =>
-    _runCliFfprobe(
-      override: override,
-      bundledPath: bundledPath,
-      args: args,
-      timeout: timeout,
-      runner: runner,
-    );
+}) => _runCliFfprobe(
+  override: override,
+  bundledPath: bundledPath,
+  args: args,
+  timeout: timeout,
+  runner: runner,
+);
 
 /// 系统 ffmpeg（`Process.start`）后端：桌面三端（Windows/macOS/Linux）。
 /// 委托 [runFfmpegProcess]，可执行文件经 [resolveFfmpegExecutable] 解析（覆盖>捆绑>PATH）。
@@ -713,7 +731,61 @@ FfmpegBackend? _cachedBackend;
 /// - Android / iOS → app 经 [ffmpegPlatformBackendProvider] 装的 `KitFfmpegBackend`
 ///   （进程内自编 ffmpeg-kit；移动端无系统 ffmpeg 且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
-FfmpegBackend resolveFfmpegBackend() => _cachedBackend ??= _selectBackend();
+FfmpegBackend resolveFfmpegBackend() =>
+    _cachedBackend ??= BlurayFfmpegBackend(_selectBackend());
+
+/// Adapts the shared input contract for desktop and platform FFmpeg backends.
+class BlurayFfmpegBackend implements FfmpegBackend {
+  const BlurayFfmpegBackend(this.delegate);
+
+  final FfmpegBackend delegate;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    final AacsMediaSession session = AacsMediaSession();
+    BlurayFfmpegInput? input;
+    try {
+      input = await prepareBlurayFfmpegArgs(
+        args,
+        resolveStream: session.resolve,
+      );
+      final FfmpegRunResult result = await delegate.run(
+        await session.ffmpegInputs(input.args),
+        timeout,
+      );
+      return _redactResult(result, session);
+    } finally {
+      await input?.dispose();
+      await session.close();
+    }
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
+    final AacsMediaSession session = AacsMediaSession();
+    BlurayFfmpegInput? input;
+    try {
+      input = await prepareBlurayFfmpegArgs(
+        args,
+        probe: true,
+        resolveStream: session.resolve,
+      );
+      final FfmpegRunResult result = await delegate.runProbe(
+        await session.ffmpegInputs(input.args, probe: true),
+        timeout,
+      );
+      return _redactResult(result, session);
+    } finally {
+      await input?.dispose();
+      await session.close();
+    }
+  }
+  FfmpegRunResult _redactResult(FfmpegRunResult result, AacsMediaSession session) =>
+      FfmpegRunResult(returnCode: result.returnCode,
+          output: session.redact(result.output), executable: result.executable,
+          attemptedExecutables: result.attemptedExecutables,
+          fallbackReason: result.fallbackReason);
+}
 
 @visibleForTesting
 void setFfmpegBackendForTesting(FfmpegBackend? backend) {

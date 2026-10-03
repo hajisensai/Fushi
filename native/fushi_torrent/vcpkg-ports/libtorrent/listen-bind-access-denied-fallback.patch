@@ -1,0 +1,71 @@
+Fushi: fall back on access_denied as well as address_in_use when binding
+listen sockets (TCP and the uTP/UDP socket that reuses the TCP port).
+
+settings_pack::listen_system_port_fallback is documented as "if binding
+to a specific port fails, let the OS pick one", but setup_listener only
+retried/fell back on address_in_use. On Windows the UDP bind of the port the
+OS just handed to TCP fails with WSAEACCES (10013) when that port is inside a
+UDP exclusion range or held exclusively by a system service, and the whole
+listen socket was dropped: listen_port() == 0 and no outgoing peer
+connections ("[sock_bind] not supported"). Not fixed upstream (RC_2_0 and
+master still only check address_in_use).
+
+--- a/src/session_impl.cpp
++++ b/src/session_impl.cpp
+@@ -1609,6 +1609,20 @@
+ 		int retries = m_settings.get_int(settings_pack::max_retry_port_bind);
+ 		tcp::endpoint bind_ep(lep.addr, std::uint16_t(lep.port));
+ 
++		// Fushi: a port can also be refused with access_denied (WSAEACCES /
++		// EACCES), not only address_in_use. On Windows that is what a UDP bind
++		// gets for a port inside a Hyper-V/WinNAT UDP exclusion range, or one a
++		// system service holds exclusively (mDNS on 5353) -- while TCP accepts
++		// the very same port. Since the UDP socket reuses the port the OS just
++		// picked for TCP, a "127.0.0.1:0" listen then threw away the whole
++		// listen socket, and without one the session cannot connect out either.
++		// Retry and fall back (listen_system_port_fallback) on both errors.
++		auto const bind_retryable = [](error_code const& e)
++		{
++			return e == error_code(error::address_in_use)
++				|| e == error_code(error::access_denied);
++		};
++
+ #ifndef TORRENT_DISABLE_LOGGING
+ 		if (should_log())
+ 		{
+@@ -1732,7 +1746,7 @@
+ 			ret->sock->bind(bind_ep, ec);
+ 			last_op = operation_t::sock_bind;
+ 
+-			while (ec == error_code(error::address_in_use) && retries > 0)
++			while (bind_retryable(ec) && retries > 0)
+ 			{
+ 				TORRENT_ASSERT_VAL(ec, ec);
+ #ifndef TORRENT_DISABLE_LOGGING
+@@ -1752,7 +1766,7 @@
+ 				ret->sock->bind(bind_ep, ec);
+ 			}
+ 
+-			if (ec == error_code(error::address_in_use)
++			if (bind_retryable(ec)
+ 				&& m_settings.get_bool(settings_pack::listen_system_port_fallback)
+ 				&& bind_ep.port() != 0)
+ 			{
+@@ -1872,7 +1886,7 @@
+ #endif
+ 		ret->udp_sock->sock.bind(udp_bind_ep, ec);
+ 
+-		while (ec == error_code(error::address_in_use) && retries > 0)
++		while (bind_retryable(ec) && retries > 0)
+ 		{
+ 			TORRENT_ASSERT_VAL(ec, ec);
+ #ifndef TORRENT_DISABLE_LOGGING
+@@ -1892,7 +1906,7 @@
+ 			ret->udp_sock->sock.bind(udp_bind_ep, ec);
+ 		}
+ 
+-		if (ec == error_code(error::address_in_use)
++		if (bind_retryable(ec)
+ 			&& m_settings.get_bool(settings_pack::listen_system_port_fallback)
+ 			&& udp_bind_ep.port() != 0)
+ 		{

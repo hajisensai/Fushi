@@ -1,0 +1,18 @@
+## BUG-2899 · 外部查词窗（截屏识字/悬浮字幕点字）原句条只剩切出的词，整行上下文丢失
+- **报告**：2026-10-03（用户转述 TheMoeWay 社区反馈「popup ui could use some work」，并点明「说的是外部ocr」：外部 OCR 弹出的查词窗不如 Chimahon）
+- **真实性**：✅ 真 bug（沿代码路径确认）。
+  - 截屏识字点字把**整行** OCR 文本与被点字下标（`EXTRA_CHAR_INDEX`）一起交给查词窗（`ScreenOcrService.java` `onSelectionTap`），但 Dart 宿主在交给页面之前就用 `_extractWord → lookupWordAtIndex` 把整行换成了切出来的单词（`fushi/lib/popup_main.dart` 旧 :19 `_extractWord`、:104 `onNewProcessText`、:192 `_pendingWordExtraction`）。
+  - 查词页拿到的 `searchTerm` 只剩那个词，原句条（`SourceLookupTextPanel`）也就只显示这个词，被点字两侧的上下文全丢了，用户没法在条上改点同一行的别的字。悬浮字幕点字走的是同一条路径，症状相同。
+- **[x] ① 已修复** — 宿主不再切词，原文和下标原样交给 `PopupDictionaryPage`（新增 `sourceCharIndex` 参数）。页面上原句条保留整行，首查走扫描查词：从被点字到行尾的后缀，高亮锚在被点字上，与在条上点那个字是同一条路径。
+  - UTF-16 下标换算成字素簇下标，以及查词后缀的规则（截断上限、拉丁词回到词首），收进两个纯函数 `sourceGraphemeIndexOfUnit` / `sourceLookupSuffixAt`，放在 `fushi/lib/src/utils/components/clipboard_lookup_text_panel.dart`。
+  - 原句条点字也改用 `sourceLookupSuffixAt`，两处共用一套规则。
+  - `charIndex < 0` 的整串入口（系统 PROCESS_TEXT / `fushi://lookup`）行为不变。
+- **[x] ② 已加自动化测试** — 纯函数边界：`fushi/test/widgets/source_lookup_suffix_test.dart`；真页面：`fushi/test/pages/popup_dictionary_source_line_test.dart`。后者断言三点：整行留在条上、首查后缀是从被点字起、条上还能点被点字左边的字。
+- **备注**：未做真机复测。
+- **审查返工（2026-10-03，提交 `9e1f97490a`）**：补主路径测试，都在 `fushi/test/pages/popup_dictionary_source_line_test.dart`。
+  - **常驻页连续推词**：`:popup` 引擎常驻时，第二次及以后的查词走 `didUpdateWidget → _lookupWidgetSource`。测试在同一 State 上连续推两行，再推一次只变 generation 的同一行，断言三点：
+    - 查询串是第二行被点字起的后缀；
+    - 条上是第二行，制卡句子也是第二行；
+    - State 没有被重建。
+  - **宿主层不再切词**：直接 pump `PopupDictApp`，经 `PopupChannel` 原生回调 `onNewProcessText` 送词，断言整行原样进页面（守住已删除的 `_extractWord` 不再回来）。
+  - **验证状态**：本机内存租约（`tool/heavy.dart`）连续排队 20 分钟未获准入（退出码 75），以上测试与 `flutter analyze` 本地均**未运行**，待 PR CI；JVM 单测 CI 不跑，需本地补跑。

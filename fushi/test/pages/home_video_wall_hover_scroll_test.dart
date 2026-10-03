@@ -18,6 +18,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -101,6 +102,9 @@ void main() {
       ],
       child: TranslationProvider(
         child: MaterialApp(
+          // 与生产同形：滚轮补间由根部 SmoothWheelScrollScope 给（BUG-2834）。
+          builder: (BuildContext context, Widget? child) =>
+              SmoothWheelScrollScope(child: child!),
           home: uiScale == 1.0
               ? page
               : FushiAppUiScale(scale: uiScale, child: page),
@@ -148,7 +152,7 @@ void main() {
     expect(anyLift, findsWidgets, reason: '墙格必须有悬停壳');
     for (int i = 0; i < anyLift.evaluate().length; i++) {
       final Rect r = tester.getRect(anyLift.at(i));
-      if (r.center.dy > 350 && r.center.dy < 650) return r.center;
+      if (r.center.dy > 350 && r.center.dy < 750) return r.center;
     }
     fail('需要一张视口下半部的卡');
   }
@@ -159,7 +163,8 @@ void main() {
     double uiScale = 1.0,
   }) async {
     await seedMany(40);
-    tester.view.physicalSize = const Size(900, 700);
+    // BUG-2835：「全部视频」多一行筛选，1.3 缩放下第二排卡中心会被挤到 650 以下。
+    tester.view.physicalSize = const Size(900, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -229,7 +234,8 @@ void main() {
     WidgetTester tester,
   ) async {
     await seedMany(40);
-    tester.view.physicalSize = const Size(900, 700);
+    // BUG-2835：「全部视频」多一行筛选，1.3 缩放下第二排卡中心会被挤到 650 以下。
+    tester.view.physicalSize = const Size(900, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

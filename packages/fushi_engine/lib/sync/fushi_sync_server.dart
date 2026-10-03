@@ -784,8 +784,9 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/downloads' || reqPath.startsWith('/api/downloads/')) {
       final HostDownloadHost? downloads = _downloads;
-      if (downloads == null)
+      if (downloads == null) {
         return shelf.Response.notFound('Host downloads off');
+      }
       return handleHostDownloadRequest(downloads, request, method, reqPath);
     }
     if (reqPath == '/api/assistant' || reqPath.startsWith('/api/assistant/')) {
@@ -798,8 +799,9 @@ class FushiSyncServer {
     if (reqPath == '/api/subscriptions' ||
         reqPath.startsWith('/api/subscriptions/')) {
       final HostSubscriptionHost? subscriptions = _subscriptions;
-      if (subscriptions == null)
+      if (subscriptions == null) {
         return shelf.Response.notFound('Host subscriptions off');
+      }
       return handleHostSubscriptionRequest(
         subscriptions,
         request,

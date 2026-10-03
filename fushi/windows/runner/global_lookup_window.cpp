@@ -1173,6 +1173,28 @@ int GlobalLookupWindow::OffscreenX() const {
          GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
 }
 
+void GlobalLookupWindow::ReparkOffscreenIfParked() {
+  // SW_HIDE 的窗不在屏上，挪不挪无所谓；只有「显示着但没 Reveal」的停放窗
+  // （PrewarmWebView / ShowAt 的离屏测量 / ResizeOffscreen 的 gal 采集面）会被
+  // 变宽的桌面吞进来。不带 SWP_SHOWWINDOW、不改尺寸与 Z 序：只换位置。
+  if (!OwnsLiveWindow() || revealed_ || !IsWindowVisible(hwnd_)) {
+    return;
+  }
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int off_x = OffscreenX();
+  if (rc.left == off_x && rc.top == 0) {
+    return;
+  }
+  NativeGlog("lookup repark offscreen from=" + std::to_string(rc.left) + "," +
+             std::to_string(rc.top) + " to=" + std::to_string(off_x) + ",0");
+  SetWindowPos(hwnd_, nullptr, off_x, 0, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_NOOWNERZORDER);
+}
+
 bool GlobalLookupWindow::OwnsLiveWindow() const {
   if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
     return false;
@@ -1182,6 +1204,14 @@ bool GlobalLookupWindow::OwnsLiveWindow() const {
   // back at us via the GWLP_USERDATA we stamped in WM_NCCREATE.
   return reinterpret_cast<GlobalLookupWindow*>(
              GetWindowLongPtr(hwnd_, GWLP_USERDATA)) == this;
+}
+
+// BUG-1471 / BUG-2746 — 上屏前同步 Arm 的钩子，在上屏失败（Arm 未确认 / 滚轮 source
+// 未确认 / SetWindowPos 失败）时的唯一撤销出口。Reveal 与 RevealStack 的四条失败
+// 路径都走这里，解钩只剩「常规 ReleaseDismissHooks」与「上屏失败回滚」两处。
+void GlobalLookupWindow::RollBackRevealArm() {
+  fushi::DisarmLowLevelMouseHook(hwnd_);
+  mouse_hook_armed_ = false;
 }
 
 void GlobalLookupWindow::ReleaseDismissHooks() {
@@ -1414,9 +1444,10 @@ void GlobalLookupWindow::Reveal(int width, int height,
              " visible=" + std::to_string(visible_ ? 1 : 0));
   if (prearm_direct_click_swallow) {
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
-      if (consume_outside_owner != pending_outside_click_owner_) {
+      RollBackRevealArm();
+      if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner) ||
+          consume_outside_owner != pending_outside_click_owner_) {
+        if (fushi::LowLevelMouseWheelSourceRequired(consume_outside_owner)) Hide();
         NativeGlog(
             "gal direct reveal declined: mouse hook install was not "
             "acknowledged");
@@ -1440,8 +1471,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
     // to RevealOverProcessClient's bitmap fallback; otherwise the still
     // off-screen prewarm HWND reports no card while continuing to eat clicks.
     if (prearm_direct_click_swallow) {
-      fushi::DisarmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = false;
+      RollBackRevealArm();
     }
     revealed_ = false;
     visible_ = false;
@@ -1528,8 +1558,25 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   if (width <= 0 || height <= 0) {
     return;
   }
+  bool consume_armed = false;
+  if (pending_outside_click_owner_ != nullptr) {
+    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
+        hwnd_, pending_outside_click_owner_);
+    if (!consume_armed) {
+      RollBackRevealArm();
+      if (fushi::LowLevelMouseWheelSourceRequired(pending_outside_click_owner_)) {
+        Hide();
+        NativeGlog("lookup revealStack declined: wheel source not acknowledged");
+        return;
+      }
+      NativeGlog("attached desktop revealStack: consume-owner arm was not acknowledged; falling back to pass-through arm");
+    }
+  }
   if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                     SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+    if (consume_armed) {
+      RollBackRevealArm();
+    }
     // A geometry epoch is an acknowledgement of the HWND bounds, not merely of
     // native control flow. Leave the host gate closed so the same epoch can be
     // retried instead of revealing into the preceding window rectangle.
@@ -1606,17 +1653,7 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   //
   // attached 表面打开的桌面 route（pending_outside_click_owner_ 非空）：点卡外
   // 关闭的 down/up 必须成对吞掉、不得推进游戏，改走与 direct galCard 同款的
-  // 同步吞点击 Arm。失败只记日志并退回原异步穿透 Arm（卡片照常显示）。
-  bool consume_armed = false;
-  if (pending_outside_click_owner_ != nullptr) {
-    consume_armed = fushi::ArmLowLevelMouseHookAndWait(
-        hwnd_, pending_outside_click_owner_);
-    if (!consume_armed) {
-      NativeGlog(
-          "attached desktop revealStack: consume-owner arm was not "
-          "acknowledged; falling back to pass-through arm");
-    }
-  }
+  // 同步 Arm 已在上屏前完成；其它桌面 route 沿用异步 Arm。
   if (!consume_armed) {
     fushi::ArmLowLevelMouseHook(hwnd_);
   }
@@ -4113,8 +4150,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         // 圆角区域的直径按 DPI 算（ApplyRoundedRegion），换屏必须重算。
         ApplyRoundedRegion();
       }
+      // 系统建议矩形是按旧位置换算的；停放窗要回到新拓扑下的离屏位。
+      ReparkOffscreenIfParked();
       return 0;
     }
+    case WM_DISPLAYCHANGE:
+      ReparkOffscreenIfParked();
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case WM_ENTERSIZEMOVE:
       // Phase C（弹窗尺寸精细化 2026-07-13）— 进入模态 move/size 循环（面板拖动/调整，
       // 或 —— Phase C 起 —— 瞬态覆盖窗拖右下角 grip）。瞬态窗平时按 shell 卡矩形裁剪

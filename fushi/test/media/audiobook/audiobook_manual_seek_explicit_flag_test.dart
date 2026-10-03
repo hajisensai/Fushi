@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -102,7 +103,7 @@ void main() {
   // 源码守卫：手动改位置路径必须复位抑制窗；删掉复位就会让 BUG-903 复发。
   test('源码守卫：seekMs / noteManualReaderNavigation 均复位显式 seek 抑制窗', () {
     final String src = File(
-      '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
+      'lib/src/media/audiobook/audiobook_controller.dart',
     ).readAsStringSync();
 
     int bodyOf(String signature) {

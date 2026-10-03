@@ -39,6 +39,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -412,10 +413,9 @@ class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
   static const int _kActivityPageSize = 24;
 
-  /// 首页主纵向滚动区自己的控制器。走 [FushiScrollController]（全仓唯一那套桌面
-  /// 滚轮细化实现），**不再另起一个平行控制器**——两套都拦 pointerScroll，同时在
-  /// 场就是两层折扣，而且「粗滚轮阈值 / 倍率 / 要不要动画」会在两处各写一遍。
-  final ScrollController _dashboardScrollController = FushiScrollController();
+  /// 首页主纵向滚动区自己的控制器。滚轮平滑由根部 `SmoothWheelScrollScope`
+  /// 统一处理（BUG-2834），这里不再需要特制控制器。
+  final ScrollController _dashboardScrollController = ScrollController();
 
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
@@ -2024,6 +2024,14 @@ class _HomeDashboardPageState
             icon: Icons.bar_chart_outlined,
             onTap: _openStatisticsCenter,
           ),
+          SizedBox(width: tokens.spacing.gap),
+          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
+          FushiIconButton(
+            tooltip: t.leaderboard_title,
+            label: t.leaderboard_title,
+            icon: Icons.emoji_events_outlined,
+            onTap: _openLeaderboard,
+          ),
         ],
       ),
       child: Column(
@@ -2227,6 +2235,17 @@ class _HomeDashboardPageState
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => const StatisticsCenterPage(),
+      ),
+    );
+  }
+
+  /// 排行榜入口（统计中心入口旁的独立按钮）。
+  void _openLeaderboard() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const LeaderboardPage(),
       ),
     );
   }

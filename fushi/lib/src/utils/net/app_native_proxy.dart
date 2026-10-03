@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart'
+    show redactAacsRelayUrls;
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 
@@ -118,7 +120,7 @@ String redactAppNativeProxySecrets(String value) {
   for (final String secret in _nativeProxySecrets) {
     value = value.replaceAll(secret, '[native-proxy]');
   }
-  return value;
+  return redactAacsRelayUrls(value);
 }
 
 /// 中继失败原因的落点。默认 [debugPrint]（被 `DebugLogService` 钩住，进得了

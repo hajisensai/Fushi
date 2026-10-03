@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_storage.dart';
 import 'package:path/path.dart' as p;
 

@@ -27,6 +27,9 @@ on:
     # 不变式守卫：fushi/test/build/release_workflow_push_branches_guard_test.dart
     # ——两条发布 workflow 产出的平台集合不相交，所以它们的 push 分支清单必须一致。
     branches: ['main', 'develop']
+    # 2026-09-30 精简 CI：push 路径 = 本 workflow 真正读到的文件，逐个列出（同
+    # release.yml 顶部注释）。以前挂整个 `tool/**` 与 `.github/workflows/**`，改
+    # tool/bug.dart 或任何一条别的 workflow 都会在 develop 上跑一整轮桌面/Apple 发布。
     paths:
       - 'fushi/**'
       - 'packages/**'
@@ -34,13 +37,29 @@ on:
       # 编译挂了要等下一个不相关改动才暴露。
       - 'native/**'
       - 'ci/**'
-      - 'tool/**'
+      - 'tool/check_release_policy.ps1'
+      - 'tool/release_sequence.sh'
+      - 'tool/publish_update_manifest.sh'
+      - 'tool/merge_update_manifest.py'
+      - 'tool/mihon/**'
+      - 'tool/ffmpeg-min/**'
+      - 'tool/sign_windows_release.ps1'
+      - 'tool/simplysign_connect.ps1'
+      - 'tool/sign_kazumi_adhoc.sh'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
-      - '.github/workflows/**'
+      - 'tools/bundle_7za.ps1'
+      - '.github/workflows/release-desktop.yml'
+      - '.github/workflows/release.yml'
+      - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/setup-fushi-anki-sync/**'
+      - '.github/actions/native-artifact-store/**'
+      - '.github/actions/native-store-names/**'
+      - '.github/actions/pdfium-hook-cache/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      # 无头服务端不进桌面/Apple 包（它有自己的 release-server.yml 与 server-gate.yml）。
+      - '!packages/fushi_server/**'
   release:
     types: [published]
   workflow_dispatch:
@@ -126,15 +145,27 @@ concurrency:
   # 撞号：TF 构建号 = 发布序列，同 sha 上 push 那条若也传了 TF（序列被 3 整除），串行时
   # 后传的一样被 App Store Connect 拒，排队从来挡不住它。后缀追加在末尾，前缀仍是两条
   # workflow 共用的那个字面量（check_release_policy.ps1 按包含校验）。
-  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
+  #
+  # push 事件按**分支**分组（2026-09-30，理由与代价见 release.yml 同处注释）：正在跑的
+  # 那轮跑完，排队中的旧 pending 被后来者顶掉，仍不 cancel-in-progress。本条额外的代价：
+  # push debug 通道的 TestFlight 只在「发布序列 % 3 == 0」的那轮上传，被顶掉的 pending
+  # 若恰好是那一轮，这一次上传就跳过（下一个整除的序列照传；需要时 testflight_only 手动补）。
+  group: fushi-release-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
   cancel-in-progress: false
 
 jobs:
   windows:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: windows-2022
+    timeout-minutes: 150
     permissions:
       contents: write
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -148,6 +179,11 @@ jobs:
           flutter-version: '3.44.0'
           cache: false
           pub-cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: windows
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -358,19 +394,6 @@ jobs:
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
           opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
-      # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
-      # downloads from GitHub into the CMake binary dir (fushi/build/windows/x64).
-      # media_kit's download_and_verify skips the download when the archive exists
-      # with a matching MD5, so restoring just the .7z blobs (NOT the build tree /
-      # CMakeCache -- avoids stale-abspath breakage) cuts the slow GitHub fetch.
-      # Keyed on pubspec.lock so a media_kit version bump re-fetches.
-      - name: Cache media_kit Windows mpv/ANGLE archives
-        uses: actions/cache@v4
-        with:
-          path: fushi/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
         working-directory: fushi
         run: flutter pub get
@@ -419,6 +442,27 @@ jobs:
           # 别换成 `Out-File -Encoding utf8`：那在 Windows PowerShell 5.1 下会写 BOM，
           # BOM 会跟着糊进第一个 key，GITHUB_OUTPUT 的 key=value 解析当场失效。
           "image=$image" >> $env:GITHUB_OUTPUT
+      # 原生产物持久库（.github/actions/native-artifact-store）：名字 = 全部构建输入的哈希
+      # （已提交源码树的 blob 哈希 + runner 镜像 + 工具链钉版）。唯一算法在
+      # .github/actions/native-store-names/names.sh，生产方（develop 上的 release-desktop /
+      # native-cache-warm）与消费方（PR 门）都只 uses 这个 action，名字不可能两边各算一套
+      # （守卫 fushi/test/build/native_store_names_single_source_guard_test.dart）。
+      # 为什么不用 actions/cache：仓库 10 GB 配额常年超额，整个缓存约 1 小时换一轮，
+      # 这几条 Windows 条目几乎总在下一次读之前被 LRU 驱逐（实测数据见该 action 头注释）。
+      # torrent / p2p / mihon / galgame / anki-sync release 由 develop 上的 release-desktop
+      # 存、PR 门直接复用；PR 专用的 anki-sync debug 由 native-cache-warm.yml 预存。
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: windows
+      - name: Restore libtorrent DLLs from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native\fushi_torrent\prebuilt\windows-x64
       # 第二层，只兜「新镜像上线那一次必然冷编」的残余：把 vcpkg 的 distfile 目录也
       # 缓存住，等价于 vcpkg 官方 asset cache 要解决的问题，但不需要额外的 Azure 或
       # 自建存储。distfile 全部按 SHA512 校验，所以前缀 restore-key 拿回上一个镜像的
@@ -428,6 +472,7 @@ jobs:
       # 条目撑到 GB 级；重新解压是纯本地操作，不碰网络。该目录长期只增不减，体积不
       # 合适了就把 key 里的 -v1 递增一次。
       - name: Cache vcpkg source distfiles (libtorrent)
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -437,6 +482,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
@@ -450,6 +496,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
+        if: steps.torrent_store.outputs.hit != 'true'
         shell: pwsh
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
@@ -461,25 +508,51 @@ jobs:
           # baseline 可用性由 build_windows_dll.ps1 的 Assert-VcpkgBaseline 前置检查。
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
+      - name: Save libtorrent DLLs to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native\fushi_torrent\prebuilt\windows-x64
       # 互联 P2P 隧道（iroh）DLL：产物落 native/fushi_p2p/prebuilt/windows-x64/，由
       # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同上面的 libtorrent：
       # **构建失败即 job 失败**，不降级出一个悄悄少了 P2P 的安装包；出包后下面还会核对
       # bundle 里确有这个 DLL（CMake 那头故意不在 Release 强制，保证在流水线这头）。
+      - name: Restore fushi_p2p DLL from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native\fushi_p2p\prebuilt\windows-x64
       - name: Set up Rust (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-windows-x64
       - name: Build fushi_p2p DLL
+        if: steps.p2p_store.outputs.hit != 'true'
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
+      - name: Save fushi_p2p DLL to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native\fushi_p2p\prebuilt\windows-x64
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
@@ -536,19 +609,20 @@ jobs:
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
-      # 缓存理由与 key 契约见 build-multiplatform.yml windows job 同名步骤（key 逐字一致）。
-      # 下面 Sign Windows bundle binaries 签的是拷进 bundle 的副本，缓存里保持未签原样。
+      # 持久库理由与名字契约见 build-multiplatform.yml windows job 同名步骤（名字逐字一致）。
+      # 下面 Sign Windows bundle binaries 签的是拷进 bundle 的副本，库里保持未签原样。
       - name: Restore pinned Mihon desktop runtime
-        id: mihon_runtime_cache
-        uses: actions/cache@v4
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
         with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}\mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |
           $built = "$env:RUNNER_TEMP\mihon-runtime"
-          if ('${{ steps.mihon_runtime_cache.outputs.cache-hit }}' -ne 'true') {
+          if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
             .\tool\mihon\build_desktop_runtime.ps1 `
               -OutputDirectory $built `
               -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
@@ -558,13 +632,22 @@ jobs:
           if (Test-Path -LiteralPath $runtime) { Remove-Item -LiteralPath $runtime -Recurse -Force }
           Copy-Item -LiteralPath $built -Destination $runtime -Recurse
           .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
-      # 缓存理由与 key 契约见 build-multiplatform.yml windows job 同名步骤（key 逐字一致）。
-      - name: Restore galgame helper archives
-        id: galgame_helper_cache
-        uses: actions/cache@v4
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
         with:
-          path: native/galgame_hook/dist
-          key: ${{ runner.os }}-galgame-helper-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/galgame_hook/**') }}
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: ${{ runner.temp }}\mihon-runtime
+      # 持久库理由与名字契约见 build-multiplatform.yml windows job 同名步骤（名字逐字一致）。
+      - name: Restore galgame helper archives
+        id: galgame_helper_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.galgame }}
+          path: native\galgame_hook\dist
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -576,7 +659,7 @@ jobs:
           # 但这份正确性完全依赖「后面没有第二条 native 命令」：任何人在下方插入
           # 一条 git / 7z / certutil，`-RunTests` 里双架构 22 个 ctest 的判决就会
           # 被静默顶掉。显式断言后这个隐性前提消失。
-          if ('${{ steps.galgame_helper_cache.outputs.cache-hit }}' -ne 'true') {
+          if ('${{ steps.galgame_helper_store.outputs.hit }}' -ne 'true') {
             powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
             if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
           }
@@ -589,6 +672,14 @@ jobs:
           # 而「两份各自漂移」就是本次要根治的形态，不要再复制粘贴回来。
           powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release"
           if ($LASTEXITCODE -ne 0) { throw "install_into_bundle.ps1 failed ($LASTEXITCODE)" }
+      - name: Save galgame helper archives to native artifact store
+        if: steps.galgame_helper_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.galgame }}
+          path: native\galgame_hook\dist
       - name: Bundle slim Magpie for offline upscaling install
         shell: pwsh
         run: |
@@ -627,13 +718,35 @@ jobs:
       # build.ps1 从 SOURCE.txt.in 生成并对装好的副本跑一次 version 冒烟。
       # 排在签名步骤之前：「Sign Windows bundle binaries」递归签整个 Release 目录，
       # fushi.iss 的 `Source: {#SourceDir}\*` 整目录收包，不需要改 iss。
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_release }}
+          path: ${{ runner.temp }}\fushi-anki-sync-prebuilt
       - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build and bundle fushi-anki-sync
         shell: pwsh
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Release"
+          # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过；只跳 cargo，
+          # 安装 + SOURCE.txt（指向本次 commit）+ version 冒烟照跑。
+          $prebuilt = @()
+          if ('${{ steps.anki_sync_store.outputs.hit }}' -eq 'true') {
+            $prebuilt = @('-PrebuiltBinary', "$env:RUNNER_TEMP\fushi-anki-sync-prebuilt\fushi-anki-sync.exe")
+          }
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Release" @prebuilt
           if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_release }}
+          path: native\fushi_anki_sync\target\release\fushi-anki-sync.exe
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
@@ -1116,18 +1229,40 @@ jobs:
           retention-days: 14
 
   macos:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
+    # 120：内置 torrent 引擎 bridge 冷编（两个架构的 boost + openssl + libtorrent）要几十分钟，
+    # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
+    timeout-minutes: 120
     permissions:
       contents: write
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。p2p
+      # universal dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
+      # 就是 PR 门首跑命中的那一份。
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: macos
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
           cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: macos
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -1356,22 +1491,95 @@ jobs:
       # release 对齐）：Runner 的「Bundle fushi_p2p dylib」构建阶段 copy-if-present 进
       # Contents/Frameworks，之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
       # 失败口径同 Windows：构建失败即 job 失败；出包后再核对 Frameworks 里确有此库。
+      # 持久库命中只跳 Rust 工具链与 cargo（2~3 min）；ABI 校验与出包核对照跑在还原的件上。
+      - name: Restore fushi_p2p dylib from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/macos
       - name: Set up Rust (fushi_p2p, macOS targets)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
       - name: Build fushi_p2p (macOS universal dylib)
         shell: bash
+        env:
+          STORE_HIT: ${{ steps.p2p_store.outputs.hit }}
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/build_macos_dylib.sh
+          if [ "$STORE_HIT" != "true" ]; then
+            bash native/fushi_p2p/build_macos_dylib.sh
+          fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
+      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
+      # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
+      # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
+      # 在 macOS 上恒不可用（BUG-2865）。失败口径同 p2p：构建失败即 job 失败；出包后再核对。
+      # 持久库与 build-multiplatform.yml macos job 同名：这里（develop push）存的件就是 PR 门
+      # 首跑命中的那一份；命中时跳过两个架构的 vcpkg 冷编。
+      - name: Restore torrent bridge dylib from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/macos
+      - name: Resolve vcpkg cache identity (macOS torrent)
+        id: vcpkg_cache_id_macos
+        if: steps.torrent_store.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Cache vcpkg source distfiles (libtorrent macos)
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-
+      - name: Cache vcpkg binary archives (libtorrent macos)
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
+      - name: Build embedded torrent bridge (macOS universal dylib, static)
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+          STORE_HIT: ${{ steps.torrent_store.outputs.hit }}
+        run: |
+          set -euo pipefail
+          if [ "$STORE_HIT" != "true" ]; then
+            vcpkg_root="${VCPKG_INSTALLATION_ROOT:-}"
+            if [ ! -f "$vcpkg_root/scripts/buildsystems/vcpkg.cmake" ]; then
+              vcpkg_root="$RUNNER_TEMP/vcpkg"
+              git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$vcpkg_root"
+              "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics
+            fi
+            mkdir -p "$VCPKG_DOWNLOADS"
+            bash native/fushi_torrent/build_macos_dylib.sh "$vcpkg_root"
+          fi
+          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/macos/libfushi_torrent_ffi.dylib nm
       - name: Build macOS release
         working-directory: fushi
         run: >-
@@ -1393,6 +1601,41 @@ jobs:
             case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
           done
           bash native/fushi_p2p/verify_abi.sh "$dylib" nm
+      - name: Save fushi_p2p dylib to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/macos
+      - name: Verify fushi_torrent is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
+          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上内置引擎静默不可用。
+          archs=" $(lipo -archs "$dylib") "
+          for arch in arm64 x86_64; do
+            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
+          done
+          # 依赖只许是系统库（静态链真生效）。
+          otool -L "$dylib" | grep -E '^[[:space:]]' | awk '{ print $1 }' > "$RUNNER_TEMP/torrent_otool.txt"
+          if grep -v -e '^@rpath/libfushi_torrent_ffi\.dylib$' -e '^/usr/lib/' -e '^/System/' "$RUNNER_TEMP/torrent_otool.txt"; then
+            echo "::error::$dylib links non-system libraries (static vcpkg link did not take effect)"
+            exit 1
+          fi
+          bash .github/scripts/verify_torrent_abi.sh "$dylib" nm
+      - name: Save torrent bridge dylib to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/macos
       # 缓存理由与 key 契约见 build-multiplatform.yml macos job 同名步骤（key 逐字一致）。
       # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
       - name: Restore pinned Mihon desktop runtimes
@@ -1499,15 +1742,32 @@ jobs:
       # Contents/MacOS 只放代码，那里的非 Mach-O 文件会被 codesign 当代码签（签名写进
       # 扩展属性），打 zip 丢了扩展属性就验不过。
       # 必须排在 Developer ID 签名之前（那一步按 `file` 找出 Contents 下全部 Mach-O 重签）。
+      # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过 universal release：
+      # 只跳工具链与两遍 cargo（~6 min）；安装、SOURCE.txt（指向本次 commit）、version 冒烟、
+      # 签名与架构核对照跑。存进库的是未签名的原始 lipo 输出，签名只作用于 .app 里的副本。
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_release }}
+          path: ${{ runner.temp }}/fushi-anki-sync-prebuilt
       - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build and bundle fushi-anki-sync (universal)
         shell: bash
+        env:
+          STORE_HIT: ${{ steps.anki_sync_store.outputs.hit }}
         run: |
           set -euo pipefail
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           target_dir="$app_dir/Contents/MacOS"
-          bash native/fushi_anki_sync/build.sh --universal --install-dir "$target_dir"
+          prebuilt=()
+          if [ "$STORE_HIT" = "true" ]; then
+            prebuilt=(--prebuilt-binary "$RUNNER_TEMP/fushi-anki-sync-prebuilt/fushi-anki-sync")
+          fi
+          bash native/fushi_anki_sync/build.sh --universal --install-dir "$target_dir" ${prebuilt[@]+"${prebuilt[@]}"}
           mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
           codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
@@ -1524,6 +1784,14 @@ jobs:
                 ;;
             esac
           done
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_release }}
+          path: native/fushi_anki_sync/target/universal/release/fushi-anki-sync
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
       # **必须排在上面 Mihon / ffmpeg / fushi-anki-sync 三步之后**：这几步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
@@ -1768,14 +2036,28 @@ jobs:
           retention-days: 14
 
   ios:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
+    # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
+    # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
+    # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
+    # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
+    timeout-minutes: 90
     permissions:
       contents: write
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。与
+      # build-multiplatform.yml ios job 同名：同一个 device staticlib。
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: ios
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -2016,17 +2298,29 @@ jobs:
       # 不挂 testflight_only 条件：未签名 IPA 与 TestFlight 签名 IPA 两条出包路径都要它。
       # P2P 互联不属于 store_compliance.dart 的三类受限能力，App Store 包照带。
       # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 符号。
+      # 持久库存整个 prebuilt/ios（.a + 系统库清单 + 生成的 xcconfig）；命中只跳 Rust，
+      # 两条出包路径上的 Runner 符号核对照跑。
+      - name: Restore fushi_p2p staticlib from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/ios
       - name: Set up Rust (fushi_p2p, iOS device target)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95.0'
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-ios
       - name: Build fushi_p2p (iOS device staticlib)
+        if: steps.p2p_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -2047,6 +2341,15 @@ jobs:
         run: |
           set -euo pipefail
           bash native/fushi_p2p/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+      # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
+      - name: Save fushi_p2p staticlib to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native/fushi_p2p/prebuilt/ios
       - name: Prepare unsigned iOS IPA release asset
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
@@ -2344,6 +2647,7 @@ jobs:
   kazumi-adhoc:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
     runs-on: macos-latest
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -2375,8 +2679,10 @@ jobs:
     needs: [windows, macos, ios]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
-    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
@@ -2713,7 +3019,15 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.channel.outputs.publish_tag }}
-          target_commitish: ${{ github.sha }}
+          # Rolling debug: target the DEFAULT branch, not github.sha. GitHub rejects a
+          # GITHUB_TOKEN update of a release whose resolved target commit changes
+          # .github/workflows/ relative to the default branch (REST docs, "Update a release";
+          # the token cannot hold `workflows`). develop diverged from main in workflows from
+          # 2026-09-29 21:13 on and the rolling publish failed intermittently with
+          # "Resource not accessible by integration" (10 of 27 attempts; Android stuck ~3 h).
+          # The rolling tag already exists, so target_commitish never moves it; the develop
+          # sha stays in the release name/body. Beta/formal keep github.sha.
+          target_commitish: ${{ steps.channel.outputs.rolling_debug == 'true' && github.event.repository.default_branch || github.sha }}
           name: ${{ steps.channel.outputs.name }}
           body: ${{ steps.channel.outputs.body }}
           prerelease: ${{ steps.channel.outputs.prerelease }}

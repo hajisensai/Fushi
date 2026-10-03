@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart'
     show VideoDownloadBackendUnavailable;

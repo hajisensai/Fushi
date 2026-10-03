@@ -171,6 +171,11 @@ void main() {
     await tester.pumpWidget(buildVideoTab(client));
     await tester.pumpAndSettle();
 
+    // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+    );
+    await tester.pumpAndSettle();
     await tester.longPress(find.byKey(
       const ValueKey<String>('remote_video_card_remote_video-1'),
     ));

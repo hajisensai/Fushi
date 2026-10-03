@@ -28,8 +28,8 @@ void main() {
   });
 
   test('audiobook controller no longer emits [hibiki-crossChapter] probes', () {
-    final String source = readSource(
-        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart');
+    final String source =
+        readSource('lib/src/media/audiobook/audiobook_controller.dart');
     expect(source, isNot(contains('[hibiki-crossChapter]')),
         reason: 'BUG-914: _maybeEmitCrossChapter 按句同步热路径的 '
             '[hibiki-crossChapter] print 必须移除');

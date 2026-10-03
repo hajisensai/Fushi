@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/source_guard.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -292,7 +293,7 @@ void main() {
   test('stop path must never await the play activation chain (deadlock guard)',
       () {
     final String source = File(
-      '${Directory.current.path}/../packages/fushi_audio/lib/src/audiobook/'
+      '${Directory.current.path}/lib/src/media/audiobook/'
       'audiobook_controller.dart',
     ).readAsStringSync();
     final int start =

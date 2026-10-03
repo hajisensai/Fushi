@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/fake_anki_search.dart';
+
 /// `AnkiConnectRepository.runMediaDedup` 的**编排**测试。
 ///
 /// 纯函数层已在 `anki_media_dedup_test.dart` 覆盖；这里测真正会删文件的那条
@@ -56,21 +58,18 @@ class _FakeAnkiConnectService extends AnkiConnectService {
   Future<String> modelStyling(String modelName) async =>
       styling[modelName] ?? '';
 
-  /// 去重只用 `findNotes("<文件名>")`：朴素子串检索，和真 Anki 一样**不做**
-  /// 文件名边界判断——正是这一点让「命中但改不动」的保守分支有意义。
+  /// 本轮被改过的笔记（`edited:N` 的范围）。
+  final Set<int> edited = <int>{};
+
+  /// 检索语义见 [fakeAnkiFindNotes]：朴素子串、大小写不敏感，和真 Anki 一样
+  /// **不做**文件名边界判断——正是这一点让「命中但改不动」的保守分支有意义。
   @override
   Future<List<int>> findNotesByQuery(String query) async {
     if (!_findNotesHookFired && onFindNotes != null) {
       _findNotesHookFired = true;
       await onFindNotes!();
     }
-    final String needle = query.replaceAll('"', '');
-    return notes.entries
-        .where((MapEntry<int, Map<String, String>> e) =>
-            e.value.values.any((String v) => v.contains(needle)))
-        .map((MapEntry<int, Map<String, String>> e) => e.key)
-        .toList()
-      ..sort();
+    return fakeAnkiFindNotes(query, notes, edited: edited);
   }
 
   @override
@@ -117,12 +116,6 @@ class _FakeAnkiConnectService extends AnkiConnectService {
   Future<AnkiConnectBatchResult> _dispatch(AnkiConnectAction a) async {
     final Map<String, dynamic> params = a.params ?? const <String, dynamic>{};
     switch (a.action) {
-      case 'findNotes':
-        if (failFindNotesFor.contains(params['query'])) {
-          return const AnkiConnectBatchResult(error: 'search failed');
-        }
-        return AnkiConnectBatchResult(
-            result: await findNotesByQuery(params['query'] as String));
       case 'updateNoteFields':
         final Map<String, dynamic> note =
             params['note'] as Map<String, dynamic>;
@@ -144,14 +137,14 @@ class _FakeAnkiConnectService extends AnkiConnectService {
     }
   }
 
-  /// 批内单条失败注入（文件名 / noteId / 查询式）。
+  /// 批内单条失败注入（文件名 / noteId）。
   final Set<String> failDeletesFor = <String>{};
   final Set<int> failNoteUpdatesFor = <int>{};
-  final Set<String> failFindNotesFor = <String>{};
 
   @override
   Future<void> updateNoteFields(int noteId, Map<String, String> fields) async {
     notes[noteId]!.addAll(fields);
+    edited.add(noteId);
   }
 
   @override
@@ -572,7 +565,8 @@ void main() {
     expect(untouched, groups - kAnkiMediaDedupBatchSize);
   });
 
-  test('BUG-1263：进度按 scanning → hashing → resolving 推进且计数自洽', () async {
+  test('BUG-1263：进度按 scanning → hashing → indexing → resolving 推进且计数自洽',
+      () async {
     writeMedia('a.jpg', <int>[1, 2, 3]);
     writeMedia('bbbb.jpg', <int>[1, 2, 3]);
     final _FakeAnkiConnectService service = _FakeAnkiConnectService(
@@ -598,6 +592,11 @@ void main() {
     final AnkiMediaDedupProgress lastHash = events.lastWhere(
         (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.hashing);
     expect(lastHash.total, 2);
+    // BUG-2824：对照表阶段按笔记计数，收尾一次 1/1。
+    final AnkiMediaDedupProgress lastIndex = events.lastWhere(
+        (AnkiMediaDedupProgress p) => p.stage == AnkiMediaDedupStage.indexing);
+    expect(lastIndex.done, 1);
+    expect(lastIndex.total, 1);
     // 末次事件是 resolving 完成态：1/1，已释放 3 字节。
     final AnkiMediaDedupProgress last = events.last;
     expect(last.stage, AnkiMediaDedupStage.resolving);

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/external_provider.dart';

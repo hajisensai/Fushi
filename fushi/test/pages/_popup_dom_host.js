@@ -22,6 +22,7 @@ function makeElement(tag) {
     className: '',
     id: '',
     textContent: '',
+    title: '',
     innerHTML: '',
     nodeType: 1,
     style: {},
@@ -37,9 +38,12 @@ function makeElement(tag) {
     },
     appendChild(child) { this.children.push(child); this.childNodes.push(child); return child; },
     append(...nodes) { this.children.push(...nodes); this.childNodes.push(...nodes); },
+    listeners: {},
     setAttribute(k, v) { this.attributes[k] = v; },
+    getAttribute(k) { return k in this.attributes ? this.attributes[k] : null; },
     removeAttribute(k) { delete this.attributes[k]; },
-    addEventListener() {},
+    // 记下监听器，测试可用 dispatch(el, 'click') 真跑交互。
+    addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
     querySelectorAll() { return []; },
     querySelector() { return null; },
     closest() { return null; },
@@ -61,6 +65,7 @@ function makeSandbox() {
     createElement(tag) { return makeElement(tag); },
     createTextNode(text) { return makeTextNode(text); },
     addEventListener() {},
+    removeEventListener() {},
   };
 
   const windowObj = {
@@ -89,8 +94,11 @@ function makeSandbox() {
   return sandbox;
 }
 
-function loadPopup() {
+// `beforeRun(sandbox)`：popup.js 执行前改装沙盒（换掉 document 监听记录器、预置
+// 注入全局等），用于断言「脚本加载那一刻」的挂载行为。
+function loadPopup(beforeRun) {
   const sandbox = makeSandbox();
+  if (beforeRun) beforeRun(sandbox);
   vm.createContext(sandbox);
   const exported = source + `
     ;window.__test = {
@@ -99,6 +107,10 @@ function loadPopup() {
   `;
   vm.runInContext(exported, sandbox, { filename: 'popup.js' });
   return sandbox;
+}
+
+function dispatch(node, type) {
+  (node.listeners[type] || []).forEach(fn => fn({ type, target: node }));
 }
 
 // 深度优先收集所有 className == cls 的元素节点。
@@ -127,4 +139,5 @@ module.exports = {
   loadPopup: loadPopup,
   collectByClass: collectByClass,
   collectText: collectText,
+  dispatch: dispatch,
 };

@@ -35,28 +35,12 @@ Widget buildStatMediaRow(
   final TextStyle metaStyle = tokens.type.metadata.copyWith(
     color: colors.onSurfaceVariant,
   );
-  final Widget placeholder = Center(child: Icon(icon, color: colors.primary));
   final Widget card = FushiCard(
     onTap: onTap,
     onLongPress: onDelete,
     child: Row(
       children: <Widget>[
-        ClipRRect(
-          borderRadius: tokens.radii.chipRadius,
-          child: Container(
-            width: kStatMediaCoverWidth,
-            height: kStatMediaCoverWidth * 1.4,
-            color: tokens.surfaces.overlay,
-            child: cover == null
-                ? placeholder
-                : Image(
-                    image: cover,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) => placeholder,
-                  ),
-          ),
-        ),
+        buildStatCoverSlot(context, icon: icon, cover: cover),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Column(
@@ -124,6 +108,44 @@ Widget buildStatMediaRow(
 
 /// 「按媒体」行封面槽宽（逻辑像素，高 = 宽 × 1.4，接近 2:3 海报 / 书封）。
 const double kStatMediaCoverWidth = 40;
+
+/// 会话行封面槽宽（会话行是 compact 列表项，槽比「按媒体」行窄一号）。
+const double kStatSessionCoverWidth = 32;
+
+/// 统计行的定宽 2:3 封面槽：有封面画封面，没有 / 加载失败画 [icon] 占位，
+/// 所以同一列里有封面、没封面的行左缘对齐。「按媒体」行与会话行共用这一个，
+/// 别在两处各搭一遍（占位 / 失败回退 / 圆角三处口径要一致）。
+Widget buildStatCoverSlot(
+  BuildContext context, {
+  required IconData icon,
+  ImageProvider? cover,
+  double width = kStatMediaCoverWidth,
+}) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final Widget placeholder = Center(
+    child: Icon(
+      icon,
+      size: width * 0.6,
+      color: Theme.of(context).colorScheme.primary,
+    ),
+  );
+  return ClipRRect(
+    borderRadius: tokens.radii.chipRadius,
+    child: Container(
+      width: width,
+      height: width * 1.4,
+      color: tokens.surfaces.overlay,
+      child: cover == null
+          ? placeholder
+          : Image(
+              image: cover,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => placeholder,
+            ),
+    ),
+  );
+}
 
 /// 统计页「分析」折叠区：三个域 tab 收敛到「时段卡 → 每日图 → 最近会话 → 按媒体」
 /// 的游戏页骨架后，阅读页的 KPI 条 / 趋势 / 今日环 / 速度摘要 / 来源分布 / 小时×格式

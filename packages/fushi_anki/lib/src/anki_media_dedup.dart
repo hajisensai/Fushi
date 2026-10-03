@@ -158,30 +158,146 @@ bool isReferencingMediaFile(String filename) {
 
 /// 真删/干跑的 resolving 阶段一次处理多少个副本。
 ///
-/// 每个副本的判定（查引用、拉字段）与落地（改字段、复核、删文件）都被打成
-/// AnkiConnect `multi` 批量请求，所以这个数字直接决定「往返数 ≈ 副本数 ÷ 它」。
+/// 每批的判定（拉命中笔记的字段）与落地（改字段、复核、删文件）都被打成
+/// AnkiConnect 批量请求，所以这个数字直接决定「往返数 ≈ 副本数 ÷ 它」。
 ///
 /// 取 50 的取舍：
 /// - **收益**：AnkiConnect 的 HTTP 服务是 25 ms QTimer 协作轮询、每 tick 只
 ///   accept 一条连接、无 keep-alive（见 `AnkiConnectService.kMultiBatchSize`
 ///   的注释），每个请求的地板成本与请求大小无关。940 个副本从 ~4700 次往返降
 ///   到 ~95 次，量级差别就是这个常数。
-/// - **代价**：**取消粒度变粗**——取消只在批边界生效，一批之内不可中断。50 个
-///   副本一批 = 5 次往返 + Anki 主线程上约 100 次全库检索，取消延迟在秒级而不
-///   是瞬时。再调大就该让用户觉得「取消按钮没反应」了。
+/// - **代价**：**取消粒度变粗**——取消只在批边界生效，一批之内不可中断。
+///
+/// 一批里**没有**按文件名的全库检索：谁引用了哪个副本查的是规划前建好的本地
+/// 对照表（见 [MediaNameMatcher]），复核也只发一条限定在「本轮改过的笔记」上
+/// 的检索（见 [mediaDedupRecheckQuery]）。BUG-2824 之前每个副本要两次全库
+/// `findNotes "<文件名>"`，大库上单次 4 秒以上，一批 100 次必然超时。
 const int kAnkiMediaDedupBatchSize = 50;
+
+/// 建本地引用对照表时一次 `notesInfo` 读多少条笔记。
+///
+/// 释义字段十万字级的库里，一条笔记的字段正文就有上百 KB；100 条一批让单次
+/// 响应停在 10 MB 量级，Anki 主线程每次只被占几秒，进度也能持续推进。
+const int kAnkiMediaDedupIndexBatchSize = 100;
+
+/// 在笔记字段正文里找出引用了哪些媒体文件名——本地对照表的匹配核心。
+///
+/// **语义与 Anki 的 `findNotes "<文件名>"` 对齐**：大小写不敏感的朴素子串，
+/// 不判文件名边界。宽于真实引用是刻意的：命中却改写不动（引用形态不认识、或
+/// 恰是别的更长文件名的子串）的笔记会让这份副本整个跳过——与旧的全库检索
+/// 同一个保守口径，只是不再让 Anki 对每个文件名扫一遍全库。
+///
+/// 多模式匹配的做法：每个文件名都以它的扩展名（最后一个 `.` 起的后缀）结尾，
+/// 所以只需在正文里定位各扩展名的出现处，再按「同扩展名的文件名有哪些长度」
+/// 回切子串查表。成本 ≈ 扩展名种类 × 正文长度，与文件名个数（实测上万）无关。
+/// 没有 `.` 的文件名没有锚点，逐个 `contains`（实际极少）。
+class MediaNameMatcher {
+  MediaNameMatcher(Iterable<String> names) {
+    for (final String name in names) {
+      final String lower = name.toLowerCase();
+      if (lower.isEmpty) continue;
+      (_byLower[lower] ??= <String>[]).add(name);
+      final int dot = lower.lastIndexOf('.');
+      if (dot < 0) {
+        _unanchored.add(lower);
+        continue;
+      }
+      (_lengthsBySuffix[lower.substring(dot)] ??= <int>{}).add(lower.length);
+    }
+  }
+
+  /// 小写文件名 → 原文件名（大小写不同的同名文件在大小写敏感的文件系统上
+  /// 可以并存，都要报出来）。
+  final Map<String, List<String>> _byLower = <String, List<String>>{};
+
+  /// 小写扩展名（含 `.`）→ 以它结尾的文件名的全部长度。
+  final Map<String, Set<int>> _lengthsBySuffix = <String, Set<int>>{};
+
+  /// 没有扩展名、无法锚定的文件名（小写）。
+  final Set<String> _unanchored = <String>{};
+
+  /// [text] 里出现过的全部文件名（原大小写）。
+  Set<String> namesIn(String text) {
+    final Set<String> hits = <String>{};
+    if (text.isEmpty) return hits;
+    final String lower = text.toLowerCase();
+    _lengthsBySuffix.forEach((String suffix, Set<int> lengths) {
+      for (
+        int at = lower.indexOf(suffix);
+        at >= 0;
+        at = lower.indexOf(suffix, at + 1)
+      ) {
+        _collectEndingAt(lower, at + suffix.length, lengths, hits);
+      }
+    });
+    for (final String name in _unanchored) {
+      if (lower.contains(name)) hits.addAll(_byLower[name]!);
+    }
+    return hits;
+  }
+
+  /// 一条笔记全部字段里出现过的文件名。
+  Set<String> namesInAll(Iterable<String> texts) => <String>{
+    for (final String text in texts) ...namesIn(text),
+  };
+
+  void _collectEndingAt(
+    String lower,
+    int end,
+    Set<int> lengths,
+    Set<String> hits,
+  ) {
+    for (final int length in lengths) {
+      final int start = end - length;
+      if (start < 0) continue;
+      final List<String>? names = _byLower[lower.substring(start, end)];
+      if (names != null) hits.addAll(names);
+    }
+  }
+}
+
+/// 删除前复核要回看多少天内被改过的笔记（Anki `edited:N`）。
+///
+/// 本地对照表是本轮开头的快照；之后能变的只有「本轮期间被改过的笔记」。
+/// `edited:1` 只到今天的日界线，任务跨过日界线就会漏掉日界线前的改动，所以
+/// 在已过天数上再多看一天。
+int mediaDedupRecheckEditedDays(Duration sinceIndexed) =>
+    sinceIndexed.inDays + 2;
+
+/// 删除前的复核检索式：在「本轮期间改过的笔记 + 本批写过的笔记」里找
+/// 仍然包含 [names] 任一文件名的笔记。
+///
+/// 一批只发**一条**检索。`edited:` 只比修改时间，未改过的笔记不必做文本匹配，
+/// 代价远小于一次全库文本检索。显式带上 [noteIds]：写失败、或 Anki 没有刷新
+/// 修改时间的笔记也照样被复核到，不依赖 `edited:` 的实现细节。
+String mediaDedupRecheckQuery(
+  Iterable<String> names, {
+  required int editedDays,
+  Iterable<int> noteIds = const <int>[],
+}) {
+  final List<int> ids = noteIds.toList()..sort();
+  final String scope = ids.isEmpty
+      ? 'edited:$editedDays'
+      : '(edited:$editedDays OR nid:${ids.join(',')})';
+  final String terms = names.map((String n) => '"$n"').join(' OR ');
+  return '$scope ($terms)';
+}
 
 /// 去重进行到哪个阶段（进度回调用）。
 ///
 /// 940 个副本的真删 = 数千次串行 AnkiConnect 请求，分钟级长任务；没有阶段化
 /// 进度，UI 只能给用户一个「假死」。阶段顺序固定：scanning → hashing →
-/// resolving。
+/// indexing → resolving。
 enum AnkiMediaDedupStage {
   /// 枚举媒体目录、记录每个文件的字节数。
   scanning,
 
   /// 对「大小撞车」的候选算全文件哈希（读文件内容）。
   hashing,
+
+  /// 分批读出全部笔记字段，建「文件名 → 引用它的笔记」本地对照表。
+  /// [AnkiMediaDedupProgress.done] / [AnkiMediaDedupProgress.total] 按笔记计。
+  indexing,
 
   /// 逐个副本判定引用并（真跑时）改写/删除。
   resolving,

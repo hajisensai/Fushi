@@ -85,6 +85,8 @@ class MokuroBlock {
     required this.lines,
     this.linesCoords,
     this.regions,
+    this.confidence,
+    this.aiRecognized = false,
   });
 
   /// Coordinates for this block (the `box` = `[x1, y1, x2, y2]`).
@@ -118,6 +120,14 @@ class MokuroBlock {
   /// retaining UTF-16 offsets into [lines] joined without separators. Other
   /// OCR producers may omit this field and keep using the block-level overlay.
   final List<MangaOcrTextRegion>? regions;
+
+  /// 本地识别器的置信度（0–1），见 `OcrRecognition.confidence`；null = 引擎不出分
+  /// （Lens / 系统 OCR / 外部 mokuro / 旧结果）。只有「AI 只补低置信度块」用它。
+  final double? confidence;
+
+  /// 文字已由视觉大模型改写过（`manga_ai_ocr_refiner.dart`）。只是记账：再跑一遍
+  /// AI 识别时跳过它，不重复花钱。
+  final bool aiRecognized;
 
   @override
   String toString() {
@@ -349,6 +359,8 @@ Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
                 'lines': block.lines,
                 if (block.linesCoords != null)
                   'lines_coords': block.linesCoords,
+                if (block.confidence != null) 'confidence': block.confidence,
+                if (block.aiRecognized) 'ai_recognized': true,
                 if (block.regions != null)
                   'regions': <Map<String, Object?>>[
                     for (final MangaOcrTextRegion region in block.regions!)
@@ -426,6 +438,9 @@ MokuroBlock _parseBlock(
     lines: lines,
     linesCoords: _parseLinesCoords(raw['lines_coords']),
     regions: _parseRegions(raw['regions']),
+    confidence:
+        raw['confidence'] is num ? (raw['confidence'] as num).toDouble() : null,
+    aiRecognized: raw['ai_recognized'] == true,
   );
 }
 

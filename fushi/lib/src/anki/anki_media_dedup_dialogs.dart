@@ -128,6 +128,9 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
         } else if (p.stage == AnkiMediaDedupStage.hashing) {
           line = t.anki_dedup_progress_hashing(
               done: '${p.done}', total: '${p.total}');
+        } else if (p.stage == AnkiMediaDedupStage.indexing) {
+          line = t.anki_dedup_progress_indexing(
+              done: '${p.done}', total: '${p.total}');
         } else {
           line = t.anki_dedup_progress_resolving(
               done: '${p.done}', total: '${p.total}');

@@ -66,10 +66,9 @@ void main() {
   /// 「dragging_ 的清零点」，于是一个**命名完全正当**的新成员把这条守卫判红。
   /// 新成员名可以合法地以被数的 flag（`dragging_` / `pressed_` …）结尾，
   /// 所以左边界必须钉死：紧邻的前一个字符不能是标识符字符。
-  int countOf(String haystack, String needle) =>
-      RegExp('(?<![A-Za-z0-9_])${RegExp.escape(needle)}')
-          .allMatches(haystack)
-          .length;
+  int countOf(String haystack, String needle) => RegExp(
+    '(?<![A-Za-z0-9_])${RegExp.escape(needle)}',
+  ).allMatches(haystack).length;
 
   /// `dragging_ = false;` 有两种合法出现：终止（在 CancelPointerGesture 里）与
   /// **起始**（WM_LBUTTONDOWN 里紧跟 `pressed_ = true;` 的初始化）。后者不是
@@ -79,9 +78,9 @@ void main() {
     int count = 0;
     // 同 countOf：左边界不能是标识符字符，否则 `scroll_thumb_dragging_ =
     // false;` 会被当成 `dragging_ = false;` 的第二个终止点。
-    for (final Match m
-        in RegExp('(?<![A-Za-z0-9_])${RegExp.escape(flag)}')
-            .allMatches(maskedSource)) {
+    for (final Match m in RegExp(
+      '(?<![A-Za-z0-9_])${RegExp.escape(flag)}',
+    ).allMatches(maskedSource)) {
       final int from = m.start - 80 < 0 ? 0 : m.start - 80;
       if (maskedSource.substring(from, m.start).contains('pressed_ = true;')) {
         continue; // 手势起始的初始化，不是终止
@@ -206,10 +205,34 @@ void main() {
       );
       expect(
         countOf(masked, 'DisarmLowLevelMouseHook(hwnd_)'),
-        3,
-        reason: '常规 Release 出口加 direct cold-arm/SetWindowPos 两条上屏失败回滚',
+        2,
+        reason: '只有两个出口：常规 ReleaseDismissHooks 与上屏失败回滚 RollBackRevealArm',
       );
       expect(lookupHeader.contains('void ReleaseDismissHooks();'), isTrue);
+    });
+
+    // BUG-2746 — RevealStack（attached 表面的桌面卡片）也改成上屏前同步 Arm，
+    // 失败路径与 direct Reveal 一样要撤钩。四条失败回滚共用一个出口，
+    // 不许各自再写一份 Disarm。
+    test('上屏失败回滚只有一个出口，Reveal 与 RevealStack 都走它', () {
+      final String rollback = functionBody(
+        lookup,
+        'void GlobalLookupWindow::RollBackRevealArm()',
+      );
+      expect(rollback.contains('DisarmLowLevelMouseHook(hwnd_)'), isTrue);
+      expect(rollback.contains('mouse_hook_armed_ = false;'), isTrue);
+      expect(lookupHeader.contains('void RollBackRevealArm();'), isTrue);
+      for (final String fn in <String>[
+        'void GlobalLookupWindow::Reveal(',
+        'void GlobalLookupWindow::RevealStack(',
+      ]) {
+        final String body = maskComments(functionBody(lookup, fn));
+        expect(
+          countOf(body, 'RollBackRevealArm();'),
+          2,
+          reason: '$fn 的 Arm 未确认与 SetWindowPos 失败两条路都必须撤钩',
+        );
+      }
     });
 
     test('ForgetDeadWindow 必须解钩：低级鼠标钩子有 1s 重装定时器，泄漏不会自愈', () {

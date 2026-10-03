@@ -367,6 +367,8 @@ bool RegisterGenericDirectInputDevice(void *device) {
   return false;
 }
 
+#include "generic_direct_input_wheel.inc"
+
 bool IsStandardDirectInputMouseFormat(LPCDIDATAFORMAT format,
                                       uint32_t *state_bytes) {
   if (state_bytes != nullptr)
@@ -413,6 +415,7 @@ Detour_GenericDirectInputSetDataFormat(void *device, LPCDIDATAFORMAT format) {
   const HRESULT result = original(device, format);
   if (FAILED(result))
     return result;
+  ForgetGenericDirectInputKind(device);
   uint32_t state_bytes = 0;
   const bool standard = IsStandardDirectInputMouseFormat(format, &state_bytes);
   AcquireSRWLockExclusive(&g_generic_shield_state_lock);
@@ -440,8 +443,11 @@ HRESULT STDMETHODCALLTYPE Detour_GenericDirectInputGetDeviceState(
   if (original == nullptr)
     return DIERR_GENERIC;
   const HRESULT result = original(device, bytes, state);
-  if (FAILED(result) || state == nullptr)
+  if (FAILED(result) || state == nullptr) {
+    ForgetGenericDirectInputKind(device);
     return result;
+  }
+  StripHostOverlayWheelFromMouseState(device, bytes, state);
   MarkGenericShieldObserved(
       fushi_voice_hook::kLookupShieldSurfaceDirectInputImmediate);
   const auto request = fushi_voice_hook::ReadLookupShieldRequest(g_header);
@@ -559,6 +565,7 @@ ULONG STDMETHODCALLTYPE Detour_GenericDirectInputRelease(void *device) {
     return 0;
   const ULONG refs = original(device);
   if (refs == 0) {
+    ForgetGenericDirectInputKind(device);
     AcquireSRWLockExclusive(&g_generic_shield_state_lock);
     auto *record = FindGenericDirectInputDeviceLocked(device);
     if (record != nullptr)
@@ -601,6 +608,28 @@ bool HookGenericDirectInputMouseDevice(void *device) {
   return true;
 }
 
+void HookGenericDirectInputMouseInterfaces(void* device) {
+  HookGenericDirectInputMouseDevice(device);
+  using Query = HRESULT(STDMETHODCALLTYPE*)(void*, REFIID, void**);
+  constexpr GUID interfaces[] = {
+    {0x5944e680u,0xc92eu,0x11cfu,{0xbf,0xc7,0x44,0x45,0x53,0x54,0,0}},
+    {0x5944e681u,0xc92eu,0x11cfu,{0xbf,0xc7,0x44,0x45,0x53,0x54,0,0}},
+    {0x57d7c6bcu,0x2356u,0x11d3u,{0x8e,0x9d,0,0xc0,0x4f,0x68,0x44,0xae}},
+    {0x57d7c6bdu,0x2356u,0x11d3u,{0x8e,0x9d,0,0xc0,0x4f,0x68,0x44,0xae}}
+  };
+  __try {
+    const auto query = reinterpret_cast<Query>(VtableSlot(device, 0));
+    if (!query) return;
+    for (const auto& iid : interfaces) {
+      void* alternate = nullptr;
+      if (SUCCEEDED(query(device, iid, &alternate)) && alternate) {
+        HookGenericDirectInputMouseDevice(alternate);
+        reinterpret_cast<GenericDirectInputReleaseFn>(VtableSlot(alternate, 2))(alternate);
+      }
+    }
+  } __except(EXCEPTION_EXECUTE_HANDLER) {}
+}
+
 bool IsSystemMouseGuid(REFGUID guid) {
   // GUID_SysMouse = 6F1D2B60-D5A0-11CF-BFC7-444553540000.  Compare the
   // literal wire value to avoid a dxguid.lib dependency in the injected DLL.
@@ -622,7 +651,7 @@ HRESULT STDMETHODCALLTYPE Detour_GenericDirectInputCreateDevice(
   const HRESULT result = original(direct_input, guid, out_device, outer);
   if (SUCCEEDED(result) && out_device != nullptr && *out_device != nullptr &&
       IsSystemMouseGuid(guid)) {
-    HookGenericDirectInputMouseDevice(*out_device);
+    HookGenericDirectInputMouseInterfaces(*out_device);
   }
   return result;
 }
@@ -884,9 +913,119 @@ void TryInstallGenericDirectInputFactories() {
   }
 }
 
+using GenericDirectInputObjectReleaseFn = ULONG(STDMETHODCALLTYPE *)(void *);
+
+void ProbeGenericDirectInputDevice(void *direct_input) {
+  if (direct_input == nullptr)
+    return;
+  static constexpr GUID kSystemMouse = {
+      0x6f1d2b60u,
+      0xd5a0u,
+      0x11cfu,
+      {0xbfu, 0xc7u, 0x44u, 0x45u, 0x53u, 0x54u, 0x00u, 0x00u}};
+  __try {
+    const auto create_device = reinterpret_cast<GenericDirectInputCreateDeviceFn>(
+        VtableSlot(direct_input, 3));
+    void *device = nullptr;
+    const HRESULT created =
+        create_device != nullptr
+            ? create_device(direct_input, kSystemMouse, &device, nullptr)
+            : E_POINTER;
+    wchar_t line[192] = {};
+    _snwprintf_s(line, _TRUNCATE,
+                 L"dinput.probe device hr=0x%08lx state_fn=%p hooked=%d",
+                 static_cast<unsigned long>(created),
+                 device != nullptr ? VtableSlot(device, 9) : nullptr,
+                 device != nullptr &&
+                         g_generic_direct_input_get_device_state_originals
+                                 .Lookup(VtableSlot(device, 9)) != nullptr
+                     ? 1
+                     : 0);
+    GenericWheelLogLine(line);
+    if (SUCCEEDED(created) && device != nullptr) {
+      reinterpret_cast<GenericDirectInputObjectReleaseFn>(VtableSlot(device, 2))(
+          device);
+    }
+    reinterpret_cast<GenericDirectInputObjectReleaseFn>(
+        VtableSlot(direct_input, 2))(direct_input);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
+void ProbeGenericDirectInputImplementations() {
+  // 引擎主窗出现 = 静态初始化与 dinput 的 DllMain 早已完成（与 exe 直取 exporter 同一
+  // 判据，BUG-2118）；在那之前从 worker 线程建 DirectInput 对象可能撞上加载期。
+  if (!g_generic_kirikiri_wheel_enabled.load(std::memory_order_acquire) ||
+      FindGameMainWindow() == nullptr)
+    return;
+  static bool probed_dinput8 = false;
+  static bool probed_dinput_a = false;
+  static bool probed_dinput_w = false;
+  const HINSTANCE instance = GetModuleHandleW(nullptr);
+  HMODULE dinput8 = GetModuleHandleW(L"dinput8.dll");
+  if (!probed_dinput8 && dinput8 != nullptr &&
+      g_generic_dinput8_factory_hooked.load(std::memory_order_relaxed)) {
+    probed_dinput8 = true;
+    // A/W 设备可能是两张 vtable，各探一次。
+    // IID_IDirectInput8A = BF798030-…，IID_IDirectInput8W = BF798031-…。
+    static constexpr GUID kDirectInput8Interfaces[] = {
+        {0xbf798030u, 0x483au, 0x4da2u,
+         {0xaau, 0x99u, 0x5du, 0x64u, 0xedu, 0x36u, 0x97u, 0x00u}},
+        {0xbf798031u, 0x483au, 0x4da2u,
+         {0xaau, 0x99u, 0x5du, 0x64u, 0xedu, 0x36u, 0x97u, 0x00u}},
+    };
+    const auto create = reinterpret_cast<GenericDirectInput8CreateFn>(
+        GetProcAddress(dinput8, "DirectInput8Create"));
+    for (const GUID &iid : kDirectInput8Interfaces) {
+      void *direct_input = nullptr;
+      const bool ok = create != nullptr &&
+                      SUCCEEDED(create(instance, 0x0800, iid, &direct_input,
+                                       nullptr));
+      if (ok)
+        ProbeGenericDirectInputDevice(direct_input);
+      GenericWheelLogLine(ok ? L"dinput.probe factory=DirectInput8Create ok=1"
+                     : L"dinput.probe factory=DirectInput8Create ok=0");
+    }
+  }
+  HMODULE dinput = GetModuleHandleW(L"dinput.dll");
+  if (dinput == nullptr)
+    return;
+  // A/W 设备在 dinput.dll 里是两张 vtable，各探一次。
+  const struct {
+    bool *probed;
+    const std::atomic<bool> *hooked;
+    const char *name;
+  } factories[] = {
+      {&probed_dinput_a, &g_generic_dinput_factory_a_hooked,
+       "DirectInputCreateA"},
+      {&probed_dinput_w, &g_generic_dinput_factory_w_hooked,
+       "DirectInputCreateW"},
+  };
+  for (const auto &factory : factories) {
+    if (*factory.probed || !factory.hooked->load(std::memory_order_relaxed))
+      continue;
+    *factory.probed = true;
+    const auto create = reinterpret_cast<GenericDirectInputCreateFn>(
+        GetProcAddress(dinput, factory.name));
+    void *direct_input = nullptr;
+    const bool ok = create != nullptr &&
+                    SUCCEEDED(create(instance, 0x0700, &direct_input, nullptr));
+    if (ok)
+      ProbeGenericDirectInputDevice(direct_input);
+    wchar_t line[96] = {};
+    _snwprintf_s(line, _TRUNCATE, L"dinput.probe factory=%hs ok=%d",
+                 factory.name, ok ? 1 : 0);
+    GenericWheelLogLine(line);
+  }
+}
+
 void TryInstallGenericLookupInputShield() {
   TryInstallGenericKeyAndRawInputShield();
   TryInstallGenericDirectInputFactories();
+  g_generic_kirikiri_wheel_enabled.store(KirikiriLookupExporterAvailable(),
+                                         std::memory_order_release);
+  ProbeGenericDirectInputImplementations();
+  PrepareKirikiriWheelSource();
 }
 
 void PreArmGenericShieldForRequest(uint32_t request_seq,

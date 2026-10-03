@@ -226,6 +226,55 @@ void main() {
     }
   });
 
+  test('libtorrent overlay 的补丁都挂在 PATCHES 上，且关键 hunk 没被改丢', () {
+    final String portfile =
+        File('$nativeDir/vcpkg-ports/libtorrent/portfile.cmake')
+            .readAsStringSync();
+    // 只认 arvidn/libtorrent 那个 vcpkg_from_github 调用里的 PATCHES：同一
+    // portfile 里还有 try_signal / libsimulator 等几个 vcpkg_from_github。
+    final int repo = portfile.indexOf('REPO arvidn/libtorrent\n');
+    expect(repo, greaterThan(0), reason: 'portfile 里找不到 libtorrent 源');
+    final String call = portfile.substring(repo, portfile.indexOf(')', repo));
+    final Map<String, List<String>> hunks = <String, List<String>>{
+      // BUG-2814：上游 e7049d21d335 回移。req3 掩码必须用补齐到 96 字节的
+      // export_key，否则约 1/256 次加密握手被对端以 invalid info-hash 拒绝。
+      'dh-shared-secret-padding.patch': <String>[
+        '-\t\tstd::array<char, 96> buffer;\n',
+        '+\t\tstd::array<char, 96> const buffer = '
+            'export_key(m_dh_shared_secret);\n',
+      ],
+      // BUG-2023：access_denied 也要重试/回退，TCP 与 UDP 两段各两处。
+      'listen-bind-access-denied-fallback.patch': <String>[
+        '+\t\t\t\t|| e == error_code(error::access_denied);\n',
+        '+\t\t\twhile (bind_retryable(ec) && retries > 0)\n',
+        '+\t\twhile (bind_retryable(ec) && retries > 0)\n',
+        '+\t\t\tif (bind_retryable(ec)\n',
+        '+\t\tif (bind_retryable(ec)\n',
+      ],
+      'dht-follows-peer-proxy-exemption.patch': <String>[],
+    };
+    for (final MapEntry<String, List<String>> e in hunks.entries) {
+      expect(call, contains(e.key),
+          reason: '${e.key} 不在 libtorrent 的 PATCHES 里 = 编出来的库没有这个修复');
+      final File patch = File('$nativeDir/vcpkg-ports/libtorrent/${e.key}');
+      expect(patch.existsSync(), isTrue, reason: '${e.key} 被 PATCHES 引用却不存在');
+      final String text = patch.readAsStringSync();
+      for (final String hunk in e.value) {
+        expect(text, contains(hunk), reason: '${e.key} 缺关键 hunk：$hunk');
+      }
+    }
+    // 旧判据一处都不能漏改：漏一处，那一段照旧在 access_denied 上直接放弃。
+    final String listen = File(
+            '$nativeDir/vcpkg-ports/libtorrent/listen-bind-access-denied-fallback.patch')
+        .readAsStringSync();
+    expect(
+      RegExp(r'^-.*ec == error_code\(error::address_in_use\)', multiLine: true)
+          .allMatches(listen)
+          .length,
+      4,
+    );
+  });
+
   test('native-torrent-gate 只读、不发布、不得 continue-on-error', () {
     final File gate = File('$workflowDir/native-torrent-gate.yml');
     expect(gate.existsSync(), isTrue,

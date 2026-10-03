@@ -5,10 +5,10 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_resource_picker.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_resource_picker.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 
 class _Resource extends VideoResourceCandidate {
   _Resource({

@@ -29,11 +29,13 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-const String _srtOriginal = '1\n'
+const String _srtOriginal =
+    '1\n'
     '00:00:01,000 --> 00:00:02,000\n'
     'もとの字幕\n';
 
-const String _srtUploaded = '1\n'
+const String _srtUploaded =
+    '1\n'
     '00:00:05,000 --> 00:00:06,000\n'
     'こんにちは\n'
     '\n'
@@ -47,15 +49,14 @@ FushiDatabase _memDb() =>
 LocalLibraryHostService _hostService({
   required FushiDatabase db,
   required Directory work,
-}) =>
-    LocalLibraryHostService(
-      db: db,
-      dictionaryResourceRoot: work,
-      packages: SyncAssetPackageService(db: db),
-      refreshDictionaryCache: () async {},
-      runExclusive: (Future<void> Function() body) => body(),
-      videoSubtitleLangCode: 'ja',
-    );
+}) => LocalLibraryHostService(
+  db: db,
+  dictionaryResourceRoot: work,
+  packages: SyncAssetPackageService(db: db),
+  refreshDictionaryCache: () async {},
+  runExclusive: (Future<void> Function() body) => body(),
+  videoSubtitleLangCode: 'ja',
+);
 
 Future<InterconnectSyncBackend> _clientBackend({
   required String base,
@@ -67,8 +68,9 @@ Future<InterconnectSyncBackend> _clientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -77,11 +79,13 @@ Future<InterconnectSyncBackend> _clientBackend({
 Future<File> _seedVideo(FushiDatabase db, Directory dir) async {
   final File vid = File(p.join(dir.path, 'movie.mp4'))
     ..writeAsBytesSync(<int>[1, 2, 3]);
-  await db.upsertVideoBook(VideoBooksCompanion.insert(
-    bookUid: 'video/movie',
-    title: 'Movie',
-    videoPath: vid.path,
-  ));
+  await db.upsertVideoBook(
+    VideoBooksCompanion.insert(
+      bookUid: 'video/movie',
+      title: 'Movie',
+      videoPath: vid.path,
+    ),
+  );
   return vid;
 }
 
@@ -96,21 +100,29 @@ void main() {
     });
 
     test('sidecarSuffixesDisplacedBy 返回优先级不低于自身的全部后缀', () {
-      expect(sidecarSuffixesDisplacedBy('.ja.srt', langCode: 'ja'),
-          <String>['.ja.srt']);
-      expect(sidecarSuffixesDisplacedBy('.ja.ass', langCode: 'ja'),
-          <String>['.ja.srt', '.ja.ass']);
+      expect(sidecarSuffixesDisplacedBy('.ja.srt', langCode: 'ja'), <String>[
+        '.ja.srt',
+      ]);
+      expect(sidecarSuffixesDisplacedBy('.ja.ass', langCode: 'ja'), <String>[
+        '.ja.srt',
+        '.ja.ass',
+      ]);
       // 不在优先级表里（别的语言标记）：只让位同名文件。
-      expect(sidecarSuffixesDisplacedBy('.en.srt', langCode: 'ja'),
-          <String>['.en.srt']);
+      expect(sidecarSuffixesDisplacedBy('.en.srt', langCode: 'ja'), <String>[
+        '.en.srt',
+      ]);
     });
 
     test('clipVideoAudioTimeout：句子片段 120s，整集按 10 倍速放大', () {
       expect(clipVideoAudioTimeout(8000), const Duration(seconds: 120));
       expect(
-          clipVideoAudioTimeout(24 * 60 * 1000), const Duration(seconds: 144));
-      expect(clipVideoAudioTimeout(2 * 60 * 60 * 1000),
-          const Duration(seconds: 720));
+        clipVideoAudioTimeout(24 * 60 * 1000),
+        const Duration(seconds: 144),
+      );
+      expect(
+        clipVideoAudioTimeout(2 * 60 * 60 * 1000),
+        const Duration(seconds: 720),
+      );
     });
   });
 
@@ -140,23 +152,31 @@ void main() {
         ..writeAsStringSync(_srtUploaded);
 
       final LocalLibraryHostService svc = _hostService(db: db, work: work);
-      final String placed = await svc.importDefaultVideoSubtitle(upload,
-          id: 'video/movie', format: '.ass');
+      final String placed = await svc.importDefaultVideoSubtitle(
+        upload,
+        id: 'video/movie',
+        format: '.ass',
+      );
 
       expect(placed, '.ja.ass');
       final File landed = File(p.join(vidDir.path, 'movie.ja.ass'));
       expect(landed.readAsStringSync(), _srtUploaded);
-      expect(oldJa.existsSync(), isFalse,
-          reason: '.ja.srt 优先级高于 .ja.ass，不让位的话 host 仍会选旧档');
       expect(
-          File('${oldJa.path}$kDisplacedSidecarBackupSuffix')
-              .readAsStringSync(),
-          _srtOriginal,
-          reason: '让位是改名备份，不是删除');
+        oldJa.existsSync(),
+        isFalse,
+        reason: '.ja.srt 优先级高于 .ja.ass，不让位的话 host 仍会选旧档',
+      );
+      expect(
+        File('${oldJa.path}$kDisplacedSidecarBackupSuffix').readAsStringSync(),
+        _srtOriginal,
+        reason: '让位是改名备份，不是删除',
+      );
       expect(plain.existsSync(), isTrue, reason: '低优先级 sidecar 不动');
 
       expect(
-          (await svc.resolveVideoSubtitle('video/movie'))?.path, landed.path);
+        (await svc.resolveVideoSubtitle('video/movie'))?.path,
+        landed.path,
+      );
       final VideoBookRow row = (await db.getVideoBookByBookUid('video/movie'))!;
       expect(row.subtitleSource, landed.path);
       expect(row.subtitleFormat, 'ass');
@@ -173,22 +193,26 @@ void main() {
       for (int i = 0; i < 2; i++) {
         final File upload = File(p.join(work.path, 'upload$i.tmp'))
           ..writeAsStringSync('$_srtUploaded\n$i\n');
-        await svc.importDefaultVideoSubtitle(upload,
-            id: 'video/movie', format: 'srt');
+        await svc.importDefaultVideoSubtitle(
+          upload,
+          id: 'video/movie',
+          format: 'srt',
+        );
       }
 
       expect(jaSrt.readAsStringSync(), '$_srtUploaded\n1\n');
       expect(
-          File('${jaSrt.path}$kDisplacedSidecarBackupSuffix')
-              .readAsStringSync(),
-          _srtOriginal,
-          reason: '第二次上传不能用第一次的上传产物覆盖掉原始备份');
+        File('${jaSrt.path}$kDisplacedSidecarBackupSuffix').readAsStringSync(),
+        _srtOriginal,
+        reason: '第二次上传不能用第一次的上传产物覆盖掉原始备份',
+      );
       expect(
-          vidDir
-              .listSync()
-              .map((FileSystemEntity e) => p.basename(e.path))
-              .where((String n) => n.endsWith(kDisplacedSidecarBackupSuffix)),
-          hasLength(1));
+        vidDir
+            .listSync()
+            .map((FileSystemEntity e) => p.basename(e.path))
+            .where((String n) => n.endsWith(kDisplacedSidecarBackupSuffix)),
+        hasLength(1),
+      );
       expect((await db.getCuesForBook('video/movie')).length, 2);
     });
 
@@ -197,13 +221,21 @@ void main() {
         ..writeAsStringSync(_srtUploaded);
       final LocalLibraryHostService svc = _hostService(db: db, work: work);
       expect(
-          () => svc.importDefaultVideoSubtitle(upload,
-              id: 'video/nope', format: 'srt'),
-          throwsStateError);
+        () => svc.importDefaultVideoSubtitle(
+          upload,
+          id: 'video/nope',
+          format: 'srt',
+        ),
+        throwsStateError,
+      );
       expect(
-          () => svc.importDefaultVideoSubtitle(upload,
-              id: 'video/movie', format: 'exe'),
-          throwsArgumentError);
+        () => svc.importDefaultVideoSubtitle(
+          upload,
+          id: 'video/movie',
+          format: 'exe',
+        ),
+        throwsArgumentError,
+      );
     });
   });
 
@@ -241,61 +273,79 @@ void main() {
     test('新 host 的 capabilities 声明 liveLibrary.videoSubtitleDefault', () async {
       final HttpClient http = HttpClient();
       try {
-        final HttpClientRequest req =
-            await http.getUrl(Uri.parse('$base/api/capabilities'));
-        req.headers.set(HttpHeaders.authorizationHeader,
-            'Basic ${base64Encode(utf8.encode('fushi:$token'))}');
+        final HttpClientRequest req = await http.getUrl(
+          Uri.parse('$base/api/capabilities'),
+        );
+        req.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Basic ${base64Encode(utf8.encode('fushi:$token'))}',
+        );
         final HttpClientResponse res = await req.close();
         final String body = await res.transform(utf8.decoder).join();
         expect(res.statusCode, 200, reason: body);
         final Map<String, dynamic> json =
             jsonDecode(body) as Map<String, dynamic>;
         expect(
-            (json['liveLibrary']
-                as Map<String, dynamic>)['videoSubtitleDefault'],
-            isTrue);
+          (json['liveLibrary'] as Map<String, dynamic>)['videoSubtitleDefault'],
+          isTrue,
+        );
       } finally {
         http.close(force: true);
       }
-      final InterconnectSyncBackend backend =
-          await _clientBackend(base: base, token: token);
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
       expect(await backend.hostSupportsVideoSubtitleDefault(), isTrue);
     });
 
     test('asDefault：host 按自己的学习语言定后缀、旧档备份让位并成为首选字幕', () async {
       final File oldJa = File(p.join(vidDir.path, 'movie.ja.srt'))
         ..writeAsStringSync(_srtOriginal);
-      final InterconnectSyncBackend backend =
-          await _clientBackend(base: base, token: token);
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
       final File sub = File(p.join(work.path, 'picked.srt'))
         ..writeAsStringSync(_srtUploaded);
 
       // client 的学习语言（en）与 host（ja）不同：后缀以 host 为准。
       expect(
-          await backend.putRemoteVideoSubtitleAsDefault('video/movie', sub,
-              suffix: '.en.srt'),
-          RemoteSubtitleDefaultUpload.applied);
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.en.srt',
+        ),
+        RemoteSubtitleDefaultUpload.applied,
+      );
 
       expect(oldJa.readAsStringSync(), _srtUploaded);
       expect(File(p.join(vidDir.path, 'movie.en.srt')).existsSync(), isFalse);
       expect(
-          File('${oldJa.path}$kDisplacedSidecarBackupSuffix')
-              .readAsStringSync(),
-          _srtOriginal);
-      final VideoBookRow row =
-          (await hostDb.getVideoBookByBookUid('video/movie'))!;
+        File('${oldJa.path}$kDisplacedSidecarBackupSuffix').readAsStringSync(),
+        _srtOriginal,
+      );
+      final VideoBookRow row = (await hostDb.getVideoBookByBookUid(
+        'video/movie',
+      ))!;
       expect(row.subtitleSource, oldJa.path);
     });
 
     test('不带 asDefault：仍按 client 报的后缀落盘（live push 语义不变）', () async {
-      final InterconnectSyncBackend backend =
-          await _clientBackend(base: base, token: token);
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
       final File sub = File(p.join(work.path, 'picked.srt'))
         ..writeAsStringSync(_srtUploaded);
       expect(
-          await backend.putRemoteVideoSubtitle('video/movie', sub,
-              suffix: '.en.srt'),
-          isTrue);
+        await backend.putRemoteVideoSubtitle(
+          'video/movie',
+          sub,
+          suffix: '.en.srt',
+        ),
+        isTrue,
+      );
       expect(File(p.join(vidDir.path, 'movie.en.srt')).existsSync(), isTrue);
     });
   });
@@ -335,7 +385,8 @@ void main() {
           subtitlePuts++;
           // 老 host 的 importVideoSubtitle：按 client 报的后缀直接覆盖，无备份。
           final String suffix = Uri.decodeComponent(
-              req.headers.value('x-hibiki-subtitle-suffix') ?? '');
+            req.headers.value('x-hibiki-subtitle-suffix') ?? '',
+          );
           final List<int> body = <int>[];
           await req.forEach(body.addAll);
           File(p.join(work.path, 'movie$suffix')).writeAsBytesSync(body);
@@ -354,36 +405,42 @@ void main() {
 
     for (final (String label, Map<String, dynamic>? caps)
         in <(String, Map<String, dynamic>?)>[
-      (
-        '能力位缺失',
-        <String, dynamic>{
-          'liveLibrary': <String, dynamic>{'videos': true},
-        },
-      ),
-      (
-        '能力位为 false',
-        <String, dynamic>{
-          'liveLibrary': <String, dynamic>{
-            'videos': true,
-            'videoSubtitleDefault': false,
-          },
-        },
-      ),
-      ('capabilities 端点 404', null),
-    ]) {
+          (
+            '能力位缺失',
+            <String, dynamic>{
+              'liveLibrary': <String, dynamic>{'videos': true},
+            },
+          ),
+          (
+            '能力位为 false',
+            <String, dynamic>{
+              'liveLibrary': <String, dynamic>{
+                'videos': true,
+                'videoSubtitleDefault': false,
+              },
+            },
+          ),
+          ('capabilities 端点 404', null),
+        ]) {
       test('$label：不发上传请求，host 原字幕字节不变', () async {
         capabilities = caps;
         final List<int> before = hostJa.readAsBytesSync();
-        final InterconnectSyncBackend backend =
-            await _clientBackend(base: base, token: 'old-host-token');
+        final InterconnectSyncBackend backend = await _clientBackend(
+          base: base,
+          token: 'old-host-token',
+        );
         final File sub = File(p.join(work.path, 'picked.srt'))
           ..writeAsStringSync(_srtUploaded);
 
         for (int i = 0; i < 2; i++) {
           expect(
-              await backend.putRemoteVideoSubtitleAsDefault('video/movie', sub,
-                  suffix: '.ja.srt'),
-              RemoteSubtitleDefaultUpload.hostUnsupported);
+            await backend.putRemoteVideoSubtitleAsDefault(
+              'video/movie',
+              sub,
+              suffix: '.ja.srt',
+            ),
+            RemoteSubtitleDefaultUpload.hostUnsupported,
+          );
         }
 
         expect(subtitlePuts, 0, reason: '老 host 会按 .ja.srt 覆盖旧字幕，一个 PUT 都不能发');
@@ -396,26 +453,32 @@ void main() {
       capabilities = <String, dynamic>{
         'liveLibrary': <String, dynamic>{'videoSubtitleDefault': true},
       };
-      final InterconnectSyncBackend backend =
-          await _clientBackend(base: base, token: 'old-host-token');
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'old-host-token',
+      );
       final File sub = File(p.join(work.path, 'picked.srt'))
         ..writeAsStringSync(_srtUploaded);
       // 假 host 回 200 但没有 x-hibiki-subtitle-suffix：不能报「已设为默认」。
       expect(
-          await backend.putRemoteVideoSubtitleAsDefault('video/movie', sub,
-              suffix: '.ja.srt'),
-          RemoteSubtitleDefaultUpload.hostUnsupported);
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.ja.srt',
+        ),
+        RemoteSubtitleDefaultUpload.hostUnsupported,
+      );
       expect(subtitlePuts, 1);
     });
   });
 
   group('视频页接线（源码守卫）', () {
-    final String part =
-        File('lib/src/pages/implementations/video_fushi/subtitle.part.dart')
-            .readAsStringSync();
-    final String page =
-        File('lib/src/pages/implementations/video_fushi_page.dart')
-            .readAsStringSync();
+    final String part = File(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    ).readAsStringSync();
+    final String page = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
 
     String body(String source, String signature) {
       final int start = source.indexOf(signature);
@@ -425,36 +488,49 @@ void main() {
     }
 
     test('远端导入字幕在应用成功后上传 host', () {
-      expect(body(part, 'Future<void> _pickAndImportRemoteSubtitle('),
-          contains('_uploadRemoteSubtitleToHost('));
-      final String upload =
-          body(part, 'Future<void> _uploadRemoteSubtitleToHost(');
+      expect(
+        body(part, 'Future<void> _pickAndImportRemoteSubtitle('),
+        contains('_uploadRemoteSubtitleToHost('),
+      );
+      final String upload = body(
+        part,
+        'Future<void> _uploadRemoteSubtitleToHost(',
+      );
       // BUG-2728：必须走带能力位门的 AsDefault 入口，不能直接调 live push 的
       // putRemoteVideoSubtitle（老 host 上会覆盖同名旧字幕）。
       expect(upload, contains('putRemoteVideoSubtitleAsDefault('));
       expect(upload, isNot(contains('putRemoteVideoSubtitle(')));
       // 「已设为默认」只在 host 确认新语义生效时提示；不支持时如实说只留本机。
       final int applied = upload.indexOf('RemoteSubtitleDefaultUpload.applied');
-      final int unsupported =
-          upload.indexOf('RemoteSubtitleDefaultUpload.hostUnsupported');
+      final int unsupported = upload.indexOf(
+        'RemoteSubtitleDefaultUpload.hostUnsupported',
+      );
       expect(applied, isNonNegative);
       expect(unsupported, greaterThan(applied));
-      expect(upload.substring(applied, unsupported),
-          contains('video_subtitle_host_upload_done'));
-      expect(upload.substring(unsupported),
-          contains('video_subtitle_host_upload_unsupported'));
+      expect(
+        upload.substring(applied, unsupported),
+        contains('video_subtitle_host_upload_done'),
+      );
+      expect(
+        upload.substring(unsupported),
+        contains('video_subtitle_host_upload_unsupported'),
+      );
     });
 
     test('开关关掉时不上传：进场门在任何上传调用之前', () {
-      final String upload =
-          body(part, 'Future<void> _uploadRemoteSubtitleToHost(');
+      final String upload = body(
+        part,
+        'Future<void> _uploadRemoteSubtitleToHost(',
+      );
       const String gate =
           'if (!appModel.videoSubtitleAutoUploadToHost) return;';
       final int gateAt = upload.indexOf(gate);
       expect(gateAt, isNonNegative, reason: '「导入的字幕自动上传到服务端」关掉时必须直接返回');
       expect(gateAt, lessThan(upload.indexOf('_remoteHostVideoTarget()')));
       expect(
-          gateAt, lessThan(upload.indexOf('putRemoteVideoSubtitleAsDefault(')));
+        gateAt,
+        lessThan(upload.indexOf('putRemoteVideoSubtitleAsDefault(')),
+      );
       // 门之前不许有任何提示：关掉时既不上传也不提示「已设为默认」。
       expect(upload.substring(0, gateAt), isNot(contains('_showOsd(')));
       // 页面里只有这一处调上传入口，导入与重定时两条路径都经过同一道门。
@@ -465,10 +541,11 @@ void main() {
           .map((File f) => f.readAsStringSync())
           .join('\n');
       expect(
-          RegExp(r'\.putRemoteVideoSubtitleAsDefault\(')
-              .allMatches(pageSources)
-              .length,
-          1);
+        RegExp(
+          r'\.putRemoteVideoSubtitleAsDefault\(',
+        ).allMatches(pageSources).length,
+        1,
+      );
     });
 
     test('对轴 / 重定时入口不再只认本地视频文件', () {
@@ -476,14 +553,24 @@ void main() {
       for (final String fn in <String>[
         'Future<int?> _autoAlignSubtitle(',
         'Future<List<double>> _loadSubtitleWaveformEnvelope(',
-        'Future<void> _retimeSubtitleWithSpeechModel(',
+        'Future<String?> _transcribeVideoSpeech(',
       ]) {
-        expect(body(part, fn), contains('_resolveSubtitleTimingAudio()'),
-            reason: '$fn 要经统一音源解析，远端才拿得到 host 裁的整集音轨');
+        expect(
+          body(part, fn),
+          contains('_resolveSubtitleTimingAudio()'),
+          reason: '$fn 要经统一音源解析，远端才拿得到 host 裁的整集音轨',
+        );
       }
-      expect(RegExp('_canResolveSubtitleTimingAudio').allMatches(page).length,
-          greaterThanOrEqualTo(2),
-          reason: '快速设置面板的自动对轴与波形入口都要用新判据');
+      expect(
+        body(part, 'Future<void> _retimeSubtitleWithSpeechModel('),
+        contains('_transcribeVideoSpeech(controller)'),
+        reason: '重定时与生成字幕共用当前音轨转录，再经统一音源解析',
+      );
+      expect(
+        RegExp('_canResolveSubtitleTimingAudio').allMatches(page).length,
+        greaterThanOrEqualTo(2),
+        reason: '快速设置面板的自动对轴与波形入口都要用新判据',
+      );
     });
   });
 }

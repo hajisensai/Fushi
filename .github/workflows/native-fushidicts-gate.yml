@@ -1,7 +1,13 @@
-# fushidicts 原生测试套件的 **MSVC/Windows** 门。
+# fushidicts 原生测试套件（`native/fushidicts/tests` 的 ctest）的门：MSVC/Windows 与
+# gcc-14/libstdc++/Linux 两个 job。
 #
-# 补的缺口：`native/fushidicts/tests` 的 17 个 ctest 目前只在 Linux/gcc-14 上跑
-# （build-multiplatform.yml 的 linux job，PR 上已生效）。Windows 侧 CI 只有
+# ctest-gcc：2026-09-30 从 build-multiplatform.yml 的 linux job 搬来。那个 job 原先在
+# `flutter build linux` 之前先跑这套 ctest；Linux app 不再在 CI 构建（所有者拍板）之后，
+# 那个 job 只剩无头服务端的随包原生库（服务端不带 fushidicts），ctest 于是搬到这里。
+# 触发面因此变窄且更准：只在 ctest 真正读到的输入（fushidicts 源码 + 它引用的
+# fushi/assets/transforms/）变化时跑，而不是每条碰 fushi/** 的 PR 都跑。
+#
+# ctest-msvc 补的缺口：此前 17 个 ctest 只在 Linux/gcc-14 上跑。Windows 侧 CI 只有
 # `flutter build windows --debug` 间接**编译** fushidicts_ffi —— 编译错误挡得住，
 # 但 MSVC 下的运行时行为（zip64 / mdx 加密 keyinfo / 词典名 UAF / 解压空指针守卫
 # 等）从未被执行过一次。词典查询/导入是 C++ FFI 核心，MSVC 与 libstdc++ 在
@@ -22,6 +28,9 @@ on:
     branches: ['main', 'develop']
     paths:
       - 'native/fushidicts/**'
+      # tests/CMakeLists.txt 把 fushi/assets/transforms/{en,en_irregular}.json 作为
+      # 变形规则 fixture 喂给 ctest：改规则就改了测试输入。
+      - 'fushi/assets/transforms/**'
       - '.github/workflows/native-fushidicts-gate.yml'
 
 # 全程只读：不产出制品、不碰任何 release/tag/发布通道。
@@ -42,7 +51,7 @@ jobs:
       # 必须构建到 RUNNER_TEMP 这种**短路径**：vendored zstd/glaze 的嵌套 object
       # 目录叠加深 checkout 路径会撞破 CMAKE_OBJECT_PATH_MAX(250)，MSVC 报
       # "Cannot open compiler generated file"。native/fushidicts/tests/run_all.bat
-      # 出于同样原因用 %TEMP%，build-multiplatform.yml 的 linux job 同理用
+      # 出于同样原因用 %TEMP%，下面的 ctest-gcc job 同理用
       # $RUNNER_TEMP。别把 -B 改回仓库内目录。
       #
       # 用 Visual Studio 生成器而不是 Ninja：不需要先 source vcvars 就能定位 MSVC。
@@ -68,3 +77,55 @@ jobs:
           ctest --test-dir "$env:RUNNER_TEMP\fushi-tests" -C Release `
             --output-on-failure --no-tests=error
           if ($LASTEXITCODE -ne 0) { throw "ctest failed ($LASTEXITCODE)" }
+
+  # gcc-14 / libstdc++ 上的同一套 ctest（原 build-multiplatform.yml linux job 的两步，
+  # 逐字搬来）。fushidicts 用了 std::expected，要 C++23 标准库：先单独编一个最小
+  # std::expected 程序确认工具链，失败时报错指向编译器而不是一堆 fushidicts 编译错误。
+  ctest-gcc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build cmake \
+            gcc-14 g++-14 libstdc++-14-dev
+      - name: Verify Linux C++23 compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CC" --version
+          "$CXX" --version
+          cat > /tmp/fushidicts_expected.cpp <<'CPP'
+          #include <expected>
+          #ifndef __cpp_lib_expected
+          #error __cpp_lib_expected missing
+          #endif
+          int main() {
+            std::expected<int, int> ok = 23;
+            std::expected<int, int> fail = std::unexpected(1);
+            return ok.value() == 23 && fail.error() == 1 ? 0 : 1;
+          }
+          CPP
+          "$CXX" -std=c++23 /tmp/fushidicts_expected.cpp -o /tmp/fushidicts_expected
+      # Native engine e2e/guard suite (TODO-578): build the real fushidicts
+      # static lib via the unified CMake/ctest harness and run every native test
+      # (UAF dict-name, kanji round-trip, media import/query, freq+pitch, plus
+      # the pure-memory zip64/word-scan/text-processor guards). Self-contained
+      # in-memory zip fixtures, no emulator/external assets.
+      - name: Run fushidicts native tests (ctest)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S native/fushidicts/tests -B "$RUNNER_TEMP/fushi-tests" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/fushi-tests" --config Release
+          # --no-tests=error：ctest 在「一个测试都没注册」时默认返回 0，于是一次
+          # CMake 回归让 tests/CMakeLists.txt 的 add_test 列表变空就会读成通过。
+          # 与 BUG-1157 同族的「零测试执行伪装成绿」。对齐上面的 ctest-msvc。
+          ctest --test-dir "$RUNNER_TEMP/fushi-tests" --output-on-failure -C Release --no-tests=error

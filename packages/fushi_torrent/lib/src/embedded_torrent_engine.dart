@@ -93,15 +93,54 @@ class EmbeddedTorrentEngine {
     return const <String>[];
   }
 
+  /// 平台默认加载候选（按顺序尝试）。
+  ///
+  /// Linux 桌面包先试 `<exe 同级>/lib/<名>`：runner CMake 把
+  /// `prebuilt/linux-x64/libfushi_torrent_ffi.so` copy-if-present 进 `bundle/lib/`
+  /// （`fushi/linux/CMakeLists.txt`）。裸名 dlopen 能否命中取决于**发起调用的那个
+  /// 共享对象**的 RUNPATH（glibc 语义；可执行文件的 `$ORIGIN/lib` 管不到 Flutter 引擎
+  /// 里发起的 dlopen），所以显式给出绝对路径，不押在链接器 dtag 上；裸名留作兜底
+  /// （系统路径 / `LD_LIBRARY_PATH`）。
+  ///
+  /// macOS 包先试 `<exe>/../Frameworks/<名>`：Runner 构建阶段
+  /// （`fushi/macos/bundle_fushi_torrent.sh`）把
+  /// `prebuilt/macos/libfushi_torrent_ffi.dylib` copy-if-present 进
+  /// `Contents/Frameworks`。dyld 对 dlopen 的**叶名**只查 `DYLD_*` 环境变量与当前
+  /// 目录，不保证走可执行文件的 `@executable_path/../Frameworks` rpath，所以同样显式给
+  /// 绝对路径；裸名留作兜底。
+  ///
+  /// 其余平台只有裸名：Windows 走 exe 同目录、Android 走 APK native lib 目录。
+  /// [executablePath] 仅供测试覆盖。
+  static List<String> defaultLibraryCandidates({String? executablePath}) {
+    final List<String> names = defaultLibraryNames();
+    final String? bundledDir;
+    if (Platform.isLinux) {
+      final String exe = executablePath ?? Platform.resolvedExecutable;
+      bundledDir = '${File(exe).parent.path}/lib';
+    } else if (Platform.isMacOS) {
+      final String exe = executablePath ?? Platform.resolvedExecutable;
+      bundledDir = '${File(exe).parent.parent.path}/Frameworks';
+    } else {
+      bundledDir = null;
+    }
+    if (bundledDir == null) return names;
+    return <String>[
+      for (final String name in names) '$bundledDir/$name',
+      ...names,
+    ];
+  }
+
   static DynamicLibrary _openByPlatformDefault() {
     if (Platform.isIOS) return DynamicLibrary.process();
-    final List<String> names = defaultLibraryNames();
+    final List<String> names = defaultLibraryCandidates();
     if (names.isEmpty) {
       throw UnsupportedError(
           'fushi_torrent: unsupported platform ${Platform.operatingSystem}');
     }
     ArgumentError? lastError;
     for (final String name in names) {
+      // 绝对路径候选不存在就跳过（不让「文件不在」盖掉裸名那次的真实错误）。
+      if (name.contains('/') && !File(name).existsSync()) continue;
       try {
         return DynamicLibrary.open(name);
       } on ArgumentError catch (e) {

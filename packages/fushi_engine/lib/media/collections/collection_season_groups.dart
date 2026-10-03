@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 /// 合集内分季分组的**单一真相源**：键派生规则、多组判定、分节构建、按季重排。
@@ -28,6 +30,9 @@ String collectionSeasonGroupKey({int? season, int? episode}) =>
 /// 走**整条路径**而非 basename：季号可能只写在父目录上（`Show/Season 2/01.mkv`），
 /// 见 [parseVideoPath]。传纯文件名同样可用（无父目录段即退化回 basename 口径）。
 String collectionGroupKeyForFilename(String filename) {
+  // BUG-2835：纯音频（专辑曲目）不是任何一季的分集。`24. 悲愴.flac` 现在解不出
+  // 集号只是因为刮削器不剥音频扩展名——这里显式判，不靠那个巧合。
+  if (isAudioOnlyMediaPath(filename)) return kCollectionExtrasGroupKey;
   final VideoNameInfo info = parseVideoPath(filename);
   return collectionSeasonGroupKey(season: info.season, episode: info.episode);
 }
@@ -138,10 +143,7 @@ CollectionSeasonRegroup<T> regroupMembersBySeason<T>({
     ordered: ordered,
     keyOf: <T, String>{
       for (final T m in members)
-        m: collectionSeasonGroupKey(
-          season: infoOf[m]!.season,
-          episode: infoOf[m]!.episode,
-        ),
+        m: collectionGroupKeyForFilename(filenameOf(m)),
     },
   );
 }

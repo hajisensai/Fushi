@@ -186,7 +186,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
         // seek 簇。±10s 带可见标注（旧底栏只有 tooltip，用户看不懂图标）。media_kit 把
-        // bottomButtonBar 放进 Row，用单个 [Expanded] 占满整宽承接绝对定位布局。
+        // bottomButtonBar 放进 Row，用单个 [Expanded] 占满整宽承接三区布局。
         // 进度/时长文字吃「界面大小」（TODO-128）、5 键带 Tooltip（BUG-247）均在
         // [_centeredBottomControlBar] 内保留。
         // mini 档整行让位给本仓自绘的居中大三键（[_buildMiniWindowCenterControls]，
@@ -411,7 +411,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           ),
       ],
       bottomButtonBar: <Widget>[
-        // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
+        // 三簇控制条（[VideoControlBar]，BUG-2792/2832）把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
         // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±10s 带可见标注、5 键带
         // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
         // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。

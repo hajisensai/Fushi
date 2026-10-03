@@ -1227,7 +1227,7 @@ window.fushiSelection = {
       return null;
     }
     this.clearSelection();
-    return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y);
+    return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y, fromHover);
   },
   // Build the dictionary selection starting at (node, offset): expand a
   // non-Japanese hit left to its token start, scan forward up to maxLength
@@ -1236,7 +1236,7 @@ window.fushiSelection = {
   // caret path. x/y are optional — the caret path omits them, in which case the
   // selection rect falls back to the first character's bounding box. The caller
   // is responsible for clearing any prior selection first.
-  selectFromPosition: function(node, offset, maxLength, x, y) {
+  selectFromPosition: function(node, offset, maxLength, x, y, fromHover) {
     var startNode = node;
     var startOffset = offset;
     var hitContent = startNode.textContent;
@@ -1286,7 +1286,7 @@ window.fushiSelection = {
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
-    return this.fireTextSelected(x, y);
+    return this.fireTextSelected(x, y, fromHover);
   },
   // Build the onTextSelected/onSelectionMenu payload for the current
   // this.selection. Extracted verbatim from selectFromPosition's tail so the
@@ -1401,9 +1401,13 @@ window.fushiSelection = {
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and
   // the caret/keyboard path). Goes straight to the dictionary/mining popup.
-  fireTextSelected: function(x, y) {
+  // fromHover tells the host this lookup came from a pointer sweep (Shift-hover /
+  // hover lookup), not an explicit tap — the host skips paid per-lookup work
+  // (AI headword pick) for those; see ReaderSelectionData.fromHover.
+  fireTextSelected: function(x, y, fromHover) {
     var payload = this.buildSelectionPayload(x, y);
     if (!payload) return null;
+    payload.fromHover = !!fromHover;
     window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
     return payload.text;
   },

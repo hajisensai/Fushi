@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show hdrHostActiveGlobal;
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
@@ -96,6 +98,51 @@ class FushiDesktopTitleBar extends StatefulWidget {
 
   static bool get isWindowManagerFullscreen =>
       _contentFullscreenOwners.contains(_windowManagerFullscreenOwner);
+
+  /// 页面自带底色时（阅读器预设纸色等），顶栏跟它走而不是根主题的
+  /// `colorScheme.surface`——顶栏挂在 Navigator 外，`Theme.of` 只读得到根主题，
+  /// 页面不上报就会在页面顶上切出一条异色带。
+  ///
+  /// 与全屏同一套 owner 语义：多个 owner 同时在场时取最近一次**首次**上报的
+  /// 那个（插入序最后一个，同一 owner 改色不改位次）；全部撤回即回落到根主题。
+  /// 页面一般不直接调，而是用 [FushiTitleBarColorScope]（它负责「被别的整页
+  /// 盖住时撤回」与 dispose）。
+  static final Map<Object, FushiTitleBarColors> _pageColorOwners =
+      <Object, FushiTitleBarColors>{};
+  static final ValueNotifier<FushiTitleBarColors?> _pageColors =
+      ValueNotifier<FushiTitleBarColors?>(null);
+
+  /// 当前生效的页面配色；null = 用根主题。
+  static ValueListenable<FushiTitleBarColors?> get pageColors => _pageColors;
+
+  static void setPageColors({
+    required Object owner,
+    required FushiTitleBarColors? colors,
+  }) {
+    if (colors == null) {
+      if (_pageColorOwners.remove(owner) == null) return;
+    } else {
+      if (_pageColorOwners[owner] == colors) return;
+      _pageColorOwners[owner] = colors;
+    }
+    // 上报方通常在自己的 build 里调用，而顶栏是它的祖先：build 阶段直接改
+    // notifier 会在构建中把祖先标脏（断言失败）。挪到本帧收尾再发布，下一帧
+    // 顶栏重画。其余阶段（dispose、动画状态回调）立即发布。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => _publishPageColors(),
+      );
+    } else {
+      _publishPageColors();
+    }
+  }
+
+  static void _publishPageColors() {
+    _pageColors.value = _pageColorOwners.isEmpty
+        ? null
+        : _pageColorOwners.values.last;
+  }
 
   final Widget title;
   final Widget child;
@@ -253,62 +300,9 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               if (!hideFrame)
-                Container(
-                  height: FushiDesktopTitleBar.height,
-                  // The caption row keeps its own surface fill: only the page
-                  // area below may go transparent for HDR passthrough.
-                  color: colors.surface,
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: DragToMoveArea(
-                          child: Row(
-                            children: <Widget>[
-                              SizedBox(width: widget.leadingInset),
-                              Expanded(
-                                child: Align(
-                                  alignment: AlignmentDirectional.centerStart,
-                                  child: Padding(
-                                    padding: const EdgeInsetsDirectional.only(
-                                      start: 16,
-                                    ),
-                                    child: DefaultTextStyle(
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall!
-                                          .copyWith(
-                                            color: colors.onSurface,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                      child: widget.title,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      _FushiCaptionButton(
-                        icon: Icons.remove_rounded,
-                        onPressed: _minimize,
-                      ),
-                      _FushiCaptionButton(
-                        icon: _isMaximized
-                            ? Icons.filter_none_rounded
-                            : Icons.crop_square_rounded,
-                        onPressed: _toggleMaximize,
-                      ),
-                      _FushiCaptionButton(
-                        icon: Icons.close_rounded,
-                        isClose: true,
-                        onPressed: _close,
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                  ),
+                ValueListenableBuilder<FushiTitleBarColors?>(
+                  valueListenable: FushiDesktopTitleBar._pageColors,
+                  builder: _buildCaptionRow,
                 ),
               Expanded(
                 child: LayoutBuilder(
@@ -351,6 +345,77 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     );
   }
 
+  /// 顶栏本体。底色 / 前景优先取页面上报的 [FushiTitleBarColors]（阅读器纸色），
+  /// 没有上报时用根主题——顶栏自己的 surface 填充不随 HDR 让开，只有下方页面区
+  /// 才会透明。
+  Widget _buildCaptionRow(
+    BuildContext context,
+    FushiTitleBarColors? page,
+    Widget? _,
+  ) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 标题行自带不透明底色、不听 hdrHostActiveGlobal：HDR 直通时下方页面区整层
+    // 透明，标题行若跟着透就能看见后面的窗口。页面上报色可能带透明度，先叠到
+    // surface 上再用——结果恒不透明，不靠上报方自觉。
+    final Color captionFill = page == null
+        ? colors.surface
+        : Color.alphaBlend(page.background, colors.surface);
+    return Container(
+      height: FushiDesktopTitleBar.height,
+      color: captionFill,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: DragToMoveArea(
+              child: Row(
+                children: <Widget>[
+                  SizedBox(width: widget.leadingInset),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Padding(
+                        padding: const EdgeInsetsDirectional.only(start: 16),
+                        child: DefaultTextStyle(
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall!
+                              .copyWith(
+                                color: page?.foreground ?? colors.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                          child: widget.title,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _FushiCaptionButton(
+            icon: Icons.remove_rounded,
+            foreground: page?.foreground,
+            onPressed: _minimize,
+          ),
+          _FushiCaptionButton(
+            icon: _isMaximized
+                ? Icons.filter_none_rounded
+                : Icons.crop_square_rounded,
+            foreground: page?.foreground,
+            onPressed: _toggleMaximize,
+          ),
+          _FushiCaptionButton(
+            icon: Icons.close_rounded,
+            isClose: true,
+            foreground: page?.foreground,
+            onPressed: _close,
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+
   /// 哪些边由 app 自己转发拖拽给原生「开始改变窗口大小」。
   ///
   /// macOS 恒为空表：`window_manager` 的 macOS 插件根本没有 `startResizing`
@@ -373,12 +438,17 @@ class _FushiCaptionButton extends StatelessWidget {
   const _FushiCaptionButton({
     required this.icon,
     required this.onPressed,
+    this.foreground,
     this.isClose = false,
   });
 
   final IconData icon;
   final VoidCallback onPressed;
   final bool isClose;
+
+  /// 页面上报的前景色；null = 根主题 token。页面底色与根主题明暗可能相反，
+  /// 图标与悬停底都必须从它派生，不能再用根主题的 onVariant / overlay。
+  final Color? foreground;
 
   @override
   Widget build(BuildContext context) {
@@ -402,7 +472,7 @@ class _FushiCaptionButton extends StatelessWidget {
             if (isClose && states.contains(WidgetState.hovered)) {
               return colors.onError;
             }
-            return tokens.surfaces.onVariant;
+            return foreground ?? tokens.surfaces.onVariant;
           }),
           backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
             if (isClose && states.contains(WidgetState.hovered)) {
@@ -410,7 +480,8 @@ class _FushiCaptionButton extends StatelessWidget {
             }
             if (states.contains(WidgetState.hovered) ||
                 states.contains(WidgetState.focused)) {
-              return tokens.surfaces.overlay;
+              return foreground?.withValues(alpha: 0.12) ??
+                  tokens.surfaces.overlay;
             }
             return Colors.transparent;
           }),
@@ -418,5 +489,71 @@ class _FushiCaptionButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 页面上报给桌面顶栏的配色：底色 + 标题 / 窗口按钮的前景色。
+typedef FushiTitleBarColors = ({Color background, Color foreground});
+
+/// 让桌面顶栏跟随本页底色（[FushiDesktopTitleBar.setPageColors] 的唯一推荐入口）。
+///
+/// 只在本页是「最上面那一整页」时生效：本页路由被另一个整页（PageRoute）盖住
+/// 时，它的 `secondaryAnimation` 离开 dismissed——此刻撤回，顶栏回落到根主题，
+/// 盖上来的页面自己决定颜色；弹窗 / 底部面板不是 PageRoute，不推动这条动画，
+/// 所以打开它们顶栏不会闪色。离开树时撤回。
+///
+/// 没有挂自绘顶栏（移动端、Linux）时上报无人消费，零副作用。
+class FushiTitleBarColorScope extends StatefulWidget {
+  const FushiTitleBarColorScope({
+    required this.colors,
+    required this.child,
+    super.key,
+  });
+
+  final FushiTitleBarColors colors;
+  final Widget child;
+
+  @override
+  State<FushiTitleBarColorScope> createState() =>
+      _FushiTitleBarColorScopeState();
+}
+
+class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
+  Animation<double>? _coverAnimation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
+    if (identical(next, _coverAnimation)) return;
+    _coverAnimation?.removeStatusListener(_onCoverStatus);
+    _coverAnimation = next;
+    _coverAnimation?.addStatusListener(_onCoverStatus);
+  }
+
+  void _onCoverStatus(AnimationStatus _) => _publish();
+
+  bool get _covered =>
+      (_coverAnimation?.status ?? AnimationStatus.dismissed) !=
+      AnimationStatus.dismissed;
+
+  void _publish() {
+    FushiDesktopTitleBar.setPageColors(
+      owner: this,
+      colors: _covered ? null : widget.colors,
+    );
+  }
+
+  @override
+  void dispose() {
+    _coverAnimation?.removeStatusListener(_onCoverStatus);
+    FushiDesktopTitleBar.setPageColors(owner: this, colors: null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _publish();
+    return widget.child;
   }
 }

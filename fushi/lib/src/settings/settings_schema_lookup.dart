@@ -10,6 +10,7 @@ import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
@@ -500,6 +501,19 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // AI 按句意挑词条（✨）：关着时顶栏按钮仍可手动点，开了每次查词都问一次。
+          SettingsSwitchItem(
+            id: 'lookup.ai_context_auto',
+            title: t.lookup_ai_context_auto,
+            subtitle: t.lookup_ai_context_auto_desc,
+            icon: Icons.auto_awesome_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupAiContextAuto,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.setLookupAiContextAuto(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
             title: t.show_expression_tags,
@@ -545,6 +559,22 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.compactGlossaries,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.appModel.toggleCompactGlossaries();
+              settingsContext.refresh();
+            },
+          ),
+          // 词典字体原本只能去「外观 · 字体库」里给某款字体勾「词典」用途，词典设置
+          // 里找不到入口。这里以词典作用域打开同一个字体库：新加的字体挂到词典、
+          // 预览区默认显示词典样张。
+          SettingsNavigationItem(
+            id: 'lookup.dictionary_font',
+            title: t.custom_fonts_catalog_title,
+            subtitle: t.lookup_dictionary_font_hint,
+            icon: Icons.font_download_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const CustomFontsPage(target: FontTarget.dictionary),
+              );
               settingsContext.refresh();
             },
           ),

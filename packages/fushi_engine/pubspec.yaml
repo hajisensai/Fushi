@@ -8,7 +8,8 @@ publish_to: none
 
 # 本包 pubspec 不声明 flutter sdk：源码禁止 package:flutter / dart:ui / 任何
 # method-channel 插件 import（守卫 fushi/test/build/fushi_engine_purity_guard_test.dart）。
-# 依赖的 fushi_core / fushi_audio 等目前仍声明 flutter，所以解析依赖时需要
+# fushi_core / fushi_audio 已零 Flutter（2026-09-30）；fushi_anki / fushi_dictionary /
+# fushi_platform 仍声明 flutter，所以解析依赖时需要
 # Flutter SDK 作为构建工具链；运行时二进制不含 Flutter（dart compile exe 是最终门）。
 environment:
   sdk: ">=3.8.0 <4.0.0"
@@ -34,7 +35,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 2168e85cc69b564eef36c57db36e9dbb82528ab3
+      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
   # 外挂字幕按内嵌参考轨对时间轴的算法（subtitle_reference_alignment /
   # subtitle_time_rewriter）住在上游；本包只留 ffmpeg 抽轨与原稿备份的装配层
   # （media/video/subtitle/embedded_reference_subtitle_sync.dart）。同仓同 sha。
@@ -42,9 +43,10 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 2168e85cc69b564eef36c57db36e9dbb82528ab3
+      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
   archive: ^3.6.1
   basic_utils: ^5.7.0
+  characters: ^1.3.0
   collection: any
   crypto: ^3.0.0
   dio: ^5.1.1

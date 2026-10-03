@@ -142,40 +142,150 @@ void main() {
   });
 
   group('发现入口全部过同一道门', () {
-    test('发现视图只住在「浏览」模块：库页不再声明发现视图，浏览整模块过 downloads 门', () {
-      // 2026-09-27 起在线发现从书 / 漫画 / 视频 / 游戏四个库页搬进顶层「浏览」
-      // 模块（browse_page.dart 的「发现」页签）。合规边界随之上移：库页里不得
-      // 再长出发现视图（否则它不在任何门后），浏览模块整个在 iOS 上缺席。
-      expect(
-        compactCode(
-          read('lib/src/pages/implementations/home_reader_page.dart'),
-        ),
-        allOf(
-          isNot(contains('MediaLibraryViewKind.browse')),
-          isNot(contains('MediaLibraryViewKind.discover')),
-        ),
-        reason: '书 tab 的统一发现页已搬进「浏览」，书架页不得再挂发现视图。',
+    test('库页的发现 / 来源 / 扩展子标签都挂在合规门后，浏览整模块过 downloads 门', () {
+      // 2026-09-27 在线发现与来源 / 扩展搬进顶层「浏览」模块；2026-10-01 用户拍板
+      // 浏览保留、同时把它们加回四个库页的子标签。库页里的每一个在线入口都必须
+      // 自己过门——库模块本身在 iOS 上是开着的，漏门就是上架被拒。
+      final String reader = compactCode(
+        read('lib/src/pages/implementations/home_reader_page.dart'),
       );
       expect(
-        compactCode(read('lib/src/media/manga/manga_library_page.dart')),
-        allOf(
-          isNot(contains('MediaLibraryViewKind.discover')),
-          isNot(contains('MediaLibraryViewKind.browse')),
+        reader,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '漫画发现（AniList 榜单 / 来源热门 / mokuro.moe）已搬进「浏览」。',
+        reason: '书架「发现」视图必须挂在外部发现合规门后。',
       );
       expect(
-        compactCode(
-          read('lib/src/pages/implementations/video_library_shell.dart'),
+        reader,
+        contains(
+          'finalboolonline=isOnlineSourcesDomainAvailable('
+          'OnlineSourcesDomain.novel,);',
         ),
-        isNot(contains('VideoLibrarySection.discover')),
-        reason: '视频发现（番剧发现 → 资源索引器 → 种子获取）已搬进「浏览」。',
+        reason: '书架来源 / 扩展必须问小说在线源的合规 + 平台门。',
+      );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expect(
+          reader,
+          contains(
+            'if(online)MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          ),
+          reason: '书架「$kind」视图必须挂在在线源门后。',
+        );
+      }
+
+      final String manga = compactCode(
+        read('lib/src/media/manga/manga_library_page.dart'),
       );
       expect(
-        compactCode(read('lib/src/pages/implementations/game_shared.dart')),
-        isNot(contains('GameSection.discover')),
-        reason: '游戏资源发现已搬进「浏览」。',
+        manga,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+        ),
+        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）必须挂在合规门后。',
       );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expect(
+          manga,
+          contains(
+            'if(isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))'
+            'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          ),
+          reason: '漫画「$kind」视图必须挂在在线漫画源合规门后。',
+        );
+      }
+
+      final String video = compactCode(
+        read('lib/src/pages/implementations/video_library_shell.dart'),
+      );
+      expect(
+        video,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'LibrarySectionTab<VideoLibrarySection>('
+          'value:VideoLibrarySection.discover,',
+        ),
+        reason: '视频「发现」（番剧发现 → 资源索引器 → 种子获取）必须挂在合规门后。',
+      );
+      expect(
+        video,
+        contains(
+          'finalboolonline=isOnlineSourcesDomainAvailable('
+          'OnlineSourcesDomain.video,);',
+        ),
+      );
+      for (final String section in <String>['onlineSources', 'extensions']) {
+        expect(
+          video,
+          contains(
+            'if(online)LibrarySectionTab<VideoLibrarySection>('
+            'value:VideoLibrarySection.$section,',
+          ),
+          reason: '视频「$section」分区必须挂在视频源合规门后。',
+        );
+      }
+
+      // 游戏「发现」与其它库页同样自己过门，不靠「iOS 没有游戏模块」这条会变的前提。
+      final String game = compactCode(
+        read('lib/src/pages/implementations/game_shared.dart'),
+      );
+      expect(
+        game,
+        contains(
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'GameSection.discover,',
+        ),
+        reason: '游戏「发现」子区必须挂在外部发现合规门后。',
+      );
+
+      // 上面只证明「有一处带门的写法」；再钉死同一文件里没有第二处不带门的入口：
+      // 每类入口的全部出现次数必须等于带门的出现次数。
+      void expectAllGated(String source, String entry, String gate) {
+        final int total = entry.allMatches(source).length;
+        expect(total, greaterThan(0), reason: '找不到入口 $entry');
+        expect(
+          '$gate$entry'.allMatches(source).length,
+          total,
+          reason: '$entry 有不带合规门的出现',
+        );
+      }
+
+      const String discoverGate =
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
+      expectAllGated(game, 'GameSection.discover,', discoverGate);
+      for (final String source in <String>[reader, manga]) {
+        expectAllGated(
+          source,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+          discoverGate,
+        );
+      }
+      expectAllGated(
+        video,
+        'LibrarySectionTab<VideoLibrarySection>('
+            'value:VideoLibrarySection.discover,',
+        discoverGate,
+      );
+      for (final String kind in <String>['onlineSources', 'extensions']) {
+        expectAllGated(
+          reader,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          'if(online)',
+        );
+        expectAllGated(
+          manga,
+          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.$kind,',
+          'if(isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))',
+        );
+        expectAllGated(
+          video,
+          'LibrarySectionTab<VideoLibrarySection>('
+              'value:VideoLibrarySection.$kind,',
+          'if(online)',
+        );
+      }
 
       // 浏览模块的可用性委托给合规边界的唯一真相源，不自己写平台判断。
       expect(
@@ -226,16 +336,31 @@ void main() {
     });
 
     test('视频域的发现 provider 过门，元数据 provider 不过门', () {
+      // 发现服务 2026-09-30 起下沉到引擎（无头服务端也用），门变成 production 的
+      // 必填参数：引擎里没有 app 的合规判据，每个 app 装配点必须显式把
+      // externalDiscovery 传进去——漏传编译不过，传错由下面逐个装配点钉死。
       final String source = compactCode(
-        read('lib/src/media/video/discovery/video_discovery_service.dart'),
-      );
-      expect(
-        source,
-        contains(
-          'finalbooldiscoveryAvailable='
-          'StoreRestrictedCapability.externalDiscovery.isAvailable;',
+        read(
+          '../packages/fushi_engine/lib/media/video/discovery/'
+          'video_discovery_service.dart',
         ),
       );
+      expect(source, contains('requiredbooldiscoveryAvailable,'));
+      for (final String caller in <String>[
+        'lib/src/pages/implementations/home_page.dart',
+        'lib/src/media/video/acquisition/app_video_acquisition_assembly.dart',
+      ]) {
+        final String wiring = compactCode(read(caller));
+        final int calls = 'VideoDiscoveryService.production('
+            .allMatches(wiring)
+            .length;
+        final int gated = 'discoveryAvailable:'
+                'StoreRestrictedCapability.externalDiscovery.isAvailable,'
+            .allMatches(wiring)
+            .length;
+        expect(calls, greaterThan(0), reason: caller);
+        expect(gated, calls, reason: '$caller 的每个发现服务装配点都要过门');
+      }
       expect(
         source,
         contains('if(discoveryAvailable)AniListVideoDiscoveryProvider(),'),
@@ -620,6 +745,43 @@ void main() {
         File('../native/aidoku_runtime/src/main.rs').existsSync(),
         isFalse,
       );
+    });
+  });
+
+  group('蓝光 AACS 解密由 aacsDecryption 门控', () {
+    test('app 用合规判据给引擎装配点赋值，引擎默认值按同一判据 fail-closed', () {
+      expect(
+        compactCode(read('lib/src/engine_bindings.dart')),
+        contains(
+          'aacsDecryptionAvailable='
+          'StoreRestrictedCapability.aacsDecryption.isAvailable;',
+        ),
+      );
+      final String session = compactCode(
+        read(
+          '../packages/fushi_engine/lib/media/video/bluray/'
+          'aacs_media_session.dart',
+        ),
+      );
+      expect(
+        session,
+        contains('boolaacsDecryptionAvailable=!Platform.isIOS;'),
+        reason:
+            '全局变量带不过 isolate 边界：后台 isolate 里没人赋值时，'
+            'iOS 也必须默认不解密、不下载 KEYDB。',
+      );
+      expect(
+        session,
+        contains(
+          'if(!aacsDecryptionAvailable)'
+          'throwBlurayEncryptedStreamException(path);',
+        ),
+        reason: '门要挡在读取 / 下载播放配置之前。',
+      );
+      final int gate = session.indexOf('if(!aacsDecryptionAvailable)');
+      final int load = session.indexOf('loadAacsConfiguration(');
+      expect(gate, greaterThanOrEqualTo(0));
+      expect(load, greaterThan(gate));
     });
   });
 }

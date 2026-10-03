@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/ai/ai_feature.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/web_knowledge.dart'
+import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart'
     show
         WebKnowledgeSite,
         encodeWebKnowledgeCustomSites,
@@ -130,7 +132,8 @@ const String kGameStreamRemoteLaunchPrefKey = 'game_stream_remote_launch';
 /// 存的是整张表（连隐式默认一起固化），已弃用不读。
 const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 
-class PreferencesRepository extends ChangeNotifier implements PrefStore {
+class PreferencesRepository extends ChangeNotifier
+    implements PrefStore, AiSettingsSource {
   PreferencesRepository(this._db);
 
   static const String videoOnlineServicesSetupDismissedKey =
@@ -468,6 +471,16 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 「全部视频」系列归属筛选 `.name`（all / inSeries / standalone）。默认
+  /// standalone：合集里的视频在系列页折成卡片，平铺视图默认只看散片（BUG-2835）。
+  String get videoAllSeriesFilterName =>
+      getPref('video_all_series_filter', defaultValue: 'standalone') as String;
+
+  Future<void> setVideoAllSeriesFilterName(String name) async {
+    await setPref('video_all_series_filter', name);
+    notifyListeners();
+  }
+
   /// 已折叠的合集横排行 collectionId 集（书架/视频页共用；折叠 = 行只剩行头）。
   /// 逗号串存储；解析对空串/脏值宽容（tryParse 过滤）。
   Set<int> get collapsedCollectionIds {
@@ -712,8 +725,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// 应用外悬浮球（Android 系统球）。默认关。旧版选过 `system` 的用户保持开。
-  /// 只在 Android 生效；别的平台读到 true（例如备份从 Android 恢复）也不起球。
+  /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
+  /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {
     final Object? value = getPref('floating_ball.system', defaultValue: null);
     if (value is bool) return value;
@@ -722,6 +735,18 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setFloatingBallSystem(bool value) async {
     await setPref('floating_ball.system', value);
+    notifyListeners();
+  }
+
+  /// 关掉的悬浮球回到 Fushi 时自动恢复哪些（见 [FloatingBallAutoRestore]）。
+  /// 默认「仅应用内」：与引入本设置前的行为一致。
+  FloatingBallAutoRestore get floatingBallAutoRestore =>
+      FloatingBallAutoRestore.fromStorage(
+        getPref('floating_ball.auto_restore', defaultValue: null),
+      );
+
+  Future<void> setFloatingBallAutoRestore(FloatingBallAutoRestore value) async {
+    await setPref('floating_ball.auto_restore', value.storageValue);
     notifyListeners();
   }
 
@@ -763,6 +788,22 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
         FloatingBallScope.general => 'floating_ball.buttons.general',
         FloatingBallScope.system => 'floating_ball.buttons.system',
       };
+
+  /// 桌面应用外悬浮球的停靠边与纵向比例（与应用内球分开存：两颗球可以同时在）。
+  /// Android 原生球的位置存在原生偏好里，不走这里。
+  String get floatingBallSystemDock =>
+      getPref('floating_ball.system_dock', defaultValue: 'right') as String;
+
+  double get floatingBallSystemVerticalFraction =>
+      (getPref('floating_ball.system_y', defaultValue: 0.35) as num).toDouble();
+
+  Future<void> setFloatingBallSystemPosition(
+      String dock, double fraction) =>
+      // 一个逻辑位置、两个键：同一事务落盘，不会只写进一半。
+      setPrefs(<String, dynamic>{
+        'floating_ball.system_dock': dock,
+        'floating_ball.system_y': fraction,
+      });
 
   /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。
   String get floatingBallDock =>
@@ -1554,6 +1595,7 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   ///
   /// 与 [discoveryOpdsServers] 同范式：逐条容错在 [decodeAiProviderConfigs] 里，
   /// 一条记录坏掉只丢那一条，不让整份清单消失。
+  @override
   List<AiProviderConfig> get aiProviders {
     final String raw = getPref('ai_providers', defaultValue: '') as String;
     if (raw.trim().isEmpty) return const <AiProviderConfig>[];
@@ -1575,6 +1617,7 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 「哪个功能用哪家 AI」的映射（设备本地）。
+  @override
   AiFeatureAssignments get aiFeatureAssignments {
     final String raw = getPref(
       'ai_feature_providers',
@@ -1586,6 +1629,38 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   Future<void> setAiFeatureAssignments(AiFeatureAssignments value) async {
     await setPref('ai_feature_providers', value.toJson());
     notifyListeners();
+  }
+
+  /// [resolveAiFeatureProvider] 的解码缓存，键是两份**原始**偏好串。
+  ({
+    String? providersRaw,
+    String? assignmentsRaw,
+    List<AiProviderConfig> providers,
+    AiFeatureAssignments assignments,
+  })? _aiResolveCache;
+
+  /// 「[feature] 当前该用哪家 AI」，与
+  /// `aiFeatureAssignments.resolve(feature, aiProviders)` 同义。
+  ///
+  /// 查词弹窗每次构建都要问一遍（决定画不画 ✨），而 [aiProviders] 每读一次都要
+  /// 解 JSON + base64。这里以 `ai_providers` / `ai_feature_providers` 的原始串为
+  /// 缓存键：任何写入（[setPref]、[loadFromDb] 换整份缓存、跨进程刷新）都会换串，
+  /// 串一变就重新解码——判据就是数据本身，不存在漏掉失效通知而读到陈旧值的路径。
+  AiProviderConfig? resolveAiFeatureProvider(AiFeature feature) {
+    final String? providersRaw = _prefCache['ai_providers'];
+    final String? assignmentsRaw = _prefCache['ai_feature_providers'];
+    var cache = _aiResolveCache;
+    if (cache == null ||
+        cache.providersRaw != providersRaw ||
+        cache.assignmentsRaw != assignmentsRaw) {
+      cache = _aiResolveCache = (
+        providersRaw: providersRaw,
+        assignmentsRaw: assignmentsRaw,
+        providers: aiProviders,
+        assignments: aiFeatureAssignments,
+      );
+    }
+    return cache.assignments.resolve(feature, cache.providers);
   }
 
   /// OpenSubtitles 的设备本地配置。登录 token 只存在 client 内存中，绝不写入本键。
@@ -2002,30 +2077,30 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// `480p` `any`）。
   /// 类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadQuality =>
-      getPref('ai_video_download_quality', defaultValue: '') as String;
+      getPref(kAiVideoDownloadQualityPref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadQuality(String value) async {
-    await setPref('ai_video_download_quality', value);
+    await setPref(kAiVideoDownloadQualityPref, value);
     notifyListeners();
   }
 
   /// 「AI 下视频」的片源偏好（只排序不过滤）：`''` 不限 / `best` / `bluray` / `web`。
   /// 类型化读法 `VideoAcquisitionSourcePref.parse`。
   String get aiVideoDownloadSource =>
-      getPref('ai_video_download_source', defaultValue: '') as String;
+      getPref(kAiVideoDownloadSourcePref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadSource(String value) async {
-    await setPref('ai_video_download_source', value);
+    await setPref(kAiVideoDownloadSourcePref, value);
     notifyListeners();
   }
 
   /// 「AI 下视频」的码率偏好（只排序不过滤）：`''` 不限 / `high` / `low`。
   /// 类型化读法 `VideoAcquisitionBitratePref.parse`。
   String get aiVideoDownloadBitrate =>
-      getPref('ai_video_download_bitrate', defaultValue: '') as String;
+      getPref(kAiVideoDownloadBitratePref, defaultValue: '') as String;
 
   Future<void> setAiVideoDownloadBitrate(String value) async {
-    await setPref('ai_video_download_bitrate', value);
+    await setPref(kAiVideoDownloadBitratePref, value);
     notifyListeners();
   }
 
@@ -2035,11 +2110,11 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// `none` 不配字幕。与 [jimakuDefaultLanguage] 分开：那是字幕面板的全局默认，
   /// 这是 AI 对话流程自己的默认。类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadSubtitleLanguage =>
-      getPref('ai_video_download_subtitle_language', defaultValue: '')
+      getPref(kAiVideoDownloadSubtitleLanguagePref, defaultValue: '')
           as String;
 
   Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
-    await setPref('ai_video_download_subtitle_language', value);
+    await setPref(kAiVideoDownloadSubtitleLanguagePref, value);
     notifyListeners();
   }
 
@@ -2102,6 +2177,7 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 实际要查的站点：启用的内置站（内置顺序）+ 启用的自定义站（添加顺序）。
+  @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites {
     final Set<String> enabled = aiWebKnowledgeEnabledSiteIds;
     return <WebKnowledgeSite>[
@@ -2134,10 +2210,10 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// 下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）。默认关：
   /// 整颗种子全下（旧行为）。下载管线每轮现读，改了对还没拿到文件表的任务生效。
   bool get videoDownloadSkipExtras =>
-      getPref('video_download_skip_extras', defaultValue: false) as bool;
+      getPref(kVideoDownloadSkipExtrasPref, defaultValue: false) as bool;
 
   Future<void> setVideoDownloadSkipExtras(bool enabled) async {
-    await setPref('video_download_skip_extras', enabled);
+    await setPref(kVideoDownloadSkipExtrasPref, enabled);
     notifyListeners();
   }
 
@@ -2328,9 +2404,9 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。没显式
-  // 设过时取**本安装的默认**（[miningImageModeInstallDefault]：全新安装 videoClip，
-  // 升级上来的存量用户 gif）。存稳定字符串键（[VideoMiningImageMode.wireName]），
-  // 解析未知值回退 videoClip（[VideoMiningImageMode.fromWireName]）。
+  // 设过时取 videoClip（存量安装由 [settleMiningImageModeInstallDefault] 迁过来）。
+  // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析 null / 未知值回退 videoClip
+  // （[VideoMiningImageMode.fromWireName]）。
   VideoMiningImageMode get videoMiningImageMode =>
       _miningImageMode('video_mining_image_mode');
 
@@ -2352,63 +2428,56 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   // galgame 场景卡封面模式，与视频**分开存**：视频的动图能拍出口型和动作，galgame
   // 画面在一句台词内基本静止，动图多半只是把同一帧存二十遍。两者的取舍不同，共用一
-  // 个开关会逼用户为一边将就另一边。默认同视频项（本安装默认）；galgame 没有「字幕
+  // 个开关会逼用户为一边将就另一边。默认同视频项（videoClip）；galgame 没有「字幕
   // 区间」，故只在 gif / currentFrame / videoClip 三档间取值，其余值按
   // [VideoMiningImageMode.isStill] 归入静态截图。
   VideoMiningImageMode get galMiningImageMode =>
       _miningImageMode('gal_mining_image_mode');
 
-  /// 记录「封面模式没显式设过时取什么」的本安装默认值（wireName）。
+  /// 封面模式迁移标记（wireName）。键名是历史名（冻结），现在只当「迁到片段默认」的
+  /// 一次性标记用。
   ///
-  /// 音画同步片段成为默认（PR #1717）只给**全新安装**；升级上来、从没显式选过封面模式
-  /// 的存量用户保持原行为 GIF + 独立句子音频（所有者 2026-09-28 拍板）。这个键描述本
-  /// 安装自身，同 `first_time_setup` 不随 Profile 走（`ProfileKeys` 排除）：封面模式键
-  /// 本身会进 Profile 快照，切到一个在迁移前建的老快照会把显式写下的 gif 删掉，那时回落
-  /// 的仍是这里记下的本安装默认，而不是全局 videoClip。
+  /// 历史：PR #1717 让片段成为默认时只给全新安装，2026-09-28 的迁移给升级用户记 `gif`
+  /// 并把没设过的视频 / gal 封面模式键**显式写成 gif**。所有者 2026-10-01 改口：老用户
+  /// 也用片段。那次写进去的 gif 和用户自己选的 gif 在数据里分不开，按所有者决定一并迁走。
+  /// 本键不随 Profile 走（`ProfileKeys` 排除），描述的是本安装是否已迁过。
   static const String miningImageModeInstallDefaultKey =
       'mining_image_mode_install_default';
 
-  /// 本安装的封面模式默认值。键还没落（[settleMiningImageModeInstallDefault] 没跑过：
-  /// 弹窗词典等不经 `AppModel.initialise()` 的入口、或迁移前的读）一律按存量用户处理
-  /// 取 gif——宁可让新用户晚一步吃到新默认，也不能把老用户翻成片段。
-  VideoMiningImageMode get miningImageModeInstallDefault =>
-      getPref(miningImageModeInstallDefaultKey, defaultValue: null) ==
-              VideoMiningImageMode.videoClip.wireName
-          ? VideoMiningImageMode.videoClip
-          : VideoMiningImageMode.gif;
+  /// 封面模式键（视频 / gal）与各自片段格式键的配对，迁移时一起处理。
+  static const List<(String, String)> _miningImageModeKeys = <(String, String)>[
+    ('video_mining_image_mode', 'video_mining_clip_format'),
+    ('gal_mining_image_mode', 'gal_mining_clip_format'),
+  ];
 
-  VideoMiningImageMode _miningImageMode(String key) {
-    final String? stored = getPref(key, defaultValue: null) as String?;
-    return stored == null
-        ? miningImageModeInstallDefault
-        : VideoMiningImageMode.fromWireName(stored);
-  }
+  VideoMiningImageMode _miningImageMode(String key) =>
+      VideoMiningImageMode.fromWireName(
+          getPref(key, defaultValue: null) as String?);
 
-  /// 启动时（`AppModel.initialise()`，首页首帧改写 `first_time_setup` 之前）落一次本安装
-  /// 的封面模式默认值；已落过直接返回（幂等）。
+  /// 启动时（`AppModel.initialise()`）跑一次封面模式迁移；标记已是 videoClip 直接返回。
   ///
-  /// [freshInstall] 取自 `first_time_setup`（与「下载 → 浏览」搬迁提示同一判据，见
-  /// `browse_moved_notice.dart`）：全新安装记 videoClip；存量用户记 gif，并把视频 / gal
-  /// 两个**没显式设过**的封面模式键显式写成 gif（原行为落成显式值，此后与默认值怎么变
-  /// 都无关）。显式设过的值一律不碰。与标记同一次 [setPrefs] 落盘。
-  Future<void> settleMiningImageModeInstallDefault({
-    required bool freshInstall,
-  }) {
-    if (getPref(miningImageModeInstallDefaultKey, defaultValue: null) != null) {
+  /// 标记为 gif（被 2026-09-28 迁移钉过）的安装：仍是 gif 的封面模式改成 videoClip，
+  /// 格式从没设过就把**改模式前**推导出的平台默认一起钉死——否则显式 video_clip 会被
+  /// [_miningClipFormat] 当成 MP4 时代的老用户推成 MP4。其它显式值（当前帧 / 字幕开头帧 /
+  /// 片段）一律不碰。标记缺失（全新安装，或从 09-28 之前的版本直接升上来）只写标记：没设过
+  /// 的模式键本就按 videoClip 取。与标记同一次 [setPrefs] 落盘，此后用户再选 gif 不会被改回。
+  Future<void> settleMiningImageModeInstallDefault() {
+    final Object? marker =
+        getPref(miningImageModeInstallDefaultKey, defaultValue: null);
+    if (marker == VideoMiningImageMode.videoClip.wireName) {
       return Future<void>.value();
     }
-    final VideoMiningImageMode installDefault = freshInstall
-        ? VideoMiningImageMode.videoClip
-        : VideoMiningImageMode.gif;
+    final bool pinnedToGif = marker == VideoMiningImageMode.gif.wireName;
     final Map<String, dynamic> values = <String, dynamic>{
-      miningImageModeInstallDefaultKey: installDefault.wireName,
-      if (!freshInstall)
-        for (final String modeKey in const <String>[
-          'video_mining_image_mode',
-          'gal_mining_image_mode',
-        ])
-          if (getPref(modeKey, defaultValue: null) == null)
-            modeKey: VideoMiningImageMode.gif.wireName,
+      miningImageModeInstallDefaultKey: VideoMiningImageMode.videoClip.wireName,
+      if (pinnedToGif)
+        for (final (String modeKey, String formatKey) in _miningImageModeKeys)
+          if (getPref(modeKey, defaultValue: null) ==
+              VideoMiningImageMode.gif.wireName) ...<String, dynamic>{
+            if (getPref(formatKey, defaultValue: null) == null)
+              formatKey: _miningClipFormat(formatKey, modeKey).wireName,
+            modeKey: VideoMiningImageMode.videoClip.wireName,
+          },
     };
     return setPrefs(values);
   }
@@ -3416,6 +3485,39 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 查词时自动让 AI 按句意挑词条（`ai_lookup_context_assistant.dart`）。默认关：
+  /// 每次查词一个请求、按量计费；关着时弹窗顶栏的 ✨ 按钮照样可以手动点。设备
+  /// 本地，理由同 [mangaOcrAiMode]。
+  bool get lookupAiContextAuto =>
+      getPref('lookup_ai_context_auto', defaultValue: false) as bool;
+
+  Future<void> setLookupAiContextAuto(bool value) async {
+    await setPref('lookup_ai_context_auto', value);
+    notifyListeners();
+  }
+
+  /// 漫画 OCR 的大模型识别档位（`MangaAiOcrMode.storageKey`）：`off`（默认）/
+  /// `low_confidence`（只重读本地低置信度块）/ `all`（全部块）。用哪家模型走
+  /// 「设置 › AI」的功能指派 `AiFeature.mangaOcr`。设备本地：这是「上传漫画页并
+  /// 按量计费」的开关，不能随同步漂到别的设备上自动生效。
+  String get mangaOcrAiMode =>
+      getPref('manga_ocr_ai_mode', defaultValue: 'off') as String;
+
+  Future<void> setMangaOcrAiMode(String value) async {
+    await setPref('manga_ocr_ai_mode', value);
+    notifyListeners();
+  }
+
+  /// 引擎选「Fushi 互联服务端」时点名服务端跑的模型（`MangaOcrLocalModel.key`）；
+  /// 空串 = 服务端自己当前的选择。
+  String get mangaOcrPairedHostModel =>
+      getPref('manga_ocr_paired_host_model', defaultValue: '') as String;
+
+  Future<void> setMangaOcrPairedHostModel(String value) async {
+    await setPref('manga_ocr_paired_host_model', value);
+    notifyListeners();
+  }
+
   /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
   /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
   ///
@@ -3488,8 +3590,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  int get mangaZoomPercent =>
-      getPref('manga_zoom_percent', defaultValue: 100) as int;
+  int get mangaZoomPercent => normalizeStoredMangaZoomPercent(
+      getPref('manga_zoom_percent', defaultValue: 100) as int);
 
   Future<void> setMangaZoomPercent(int value) async {
     await setPref(

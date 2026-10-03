@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show min;
 
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart' as crypto;
@@ -280,6 +281,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   Future<AnkiConnectService> _getService() async =>
       _serviceForSettings(await loadSettings());
+
+  /// 集合级长任务（媒体去重）用的服务：同一组连接设置，单请求预算换成
+  /// [AnkiConnectService.kLongTaskTimeout]。不改缓存实例——制卡等交互路径
+  /// 仍要 10 秒内失败（BUG-2824）。
+  Future<AnkiConnectService> _getLongTaskService() async {
+    if (_fixedService != null) return _fixedService;
+    final AnkiSettings settings = await loadSettings();
+    return AnkiConnectService(
+      host: settings.ankiConnectHost,
+      port: settings.ankiConnectPort,
+      apiKey: settings.ankiConnectApiKey,
+      useHttps: settings.ankiConnectUseHttps,
+      timeout: AnkiConnectService.kLongTaskTimeout,
+    );
+  }
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async {
@@ -1502,37 +1518,179 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     return hits;
   }
 
+  /// 分批 `notesInfo`，单次请求最多 [kAnkiMediaDedupIndexBatchSize] 条笔记。
+  ///
+  /// 一个被几千条笔记引用的副本（词典外字图标很常见）不能把几千条十万字级的
+  /// 笔记塞进一次响应。
+  Future<Map<int, Map<String, String>>> _notesInfoChunked(
+    AnkiConnectService service,
+    List<int> noteIds,
+  ) async {
+    final Map<int, Map<String, String>> out = <int, Map<String, String>>{};
+    for (
+      int start = 0;
+      start < noteIds.length;
+      start += kAnkiMediaDedupIndexBatchSize
+    ) {
+      final int end = min(
+        start + kAnkiMediaDedupIndexBatchSize,
+        noteIds.length,
+      );
+      out.addAll(await service.notesInfoMany(noteIds.sublist(start, end)));
+    }
+    return out;
+  }
+
+  /// 建「副本文件名 → 字段里出现它的笔记」本地对照表（BUG-2824）。
+  ///
+  /// 旧实现让 Anki 对每个副本跑一次全库 `findNotes "<文件名>"`：8400 条十万字级
+  /// 笔记的库上单次约 4.4 秒，1.8 万个副本要 3.6 万次全库扫描，第一批就撞上
+  /// 10 秒超时。这里改成**一次** `findNotes deck:*` + 分批 `notesInfo` 把字段
+  /// 读回本地，用 [MediaNameMatcher]（与 Anki 文本检索同口径）一遍匹配完。
+  /// 只留下 note id，不留字段正文——全库正文可达数百 MB。
+  ///
+  /// 返回 null = 用户中途取消。拿不到字段、却仍然存在的笔记会让整轮中止：
+  /// 不知道它引用了什么，就不能断言任何副本「没人引用」。
+  Future<Map<String, List<int>>?> _buildNoteReferenceIndex(
+    AnkiConnectService service,
+    MediaNameMatcher matcher, {
+    AnkiMediaDedupOnProgress? onProgress,
+    required bool Function() shouldCancel,
+  }) async {
+    final List<int> ids = (await service.findNotesByQuery('deck:*'))..sort();
+    final Map<String, List<int>> index = <String, List<int>>{};
+    final List<int> unread = <int>[];
+    for (
+      int start = 0;
+      start < ids.length;
+      start += kAnkiMediaDedupIndexBatchSize
+    ) {
+      if (shouldCancel()) return null;
+      onProgress?.call(
+        AnkiMediaDedupProgress(
+          stage: AnkiMediaDedupStage.indexing,
+          done: start,
+          total: ids.length,
+        ),
+      );
+      final List<int> chunk = ids.sublist(
+        start,
+        min(start + kAnkiMediaDedupIndexBatchSize, ids.length),
+      );
+      final Map<int, Map<String, String>> fields = await service.notesInfoMany(
+        chunk,
+      );
+      for (final int id in chunk) {
+        final Map<String, String>? noteFields = fields[id];
+        if (noteFields == null) {
+          unread.add(id);
+          continue;
+        }
+        for (final String name in matcher.namesInAll(noteFields.values)) {
+          (index[name] ??= <int>[]).add(id);
+        }
+      }
+    }
+    await _requireNotesGone(service, unread);
+    onProgress?.call(
+      AnkiMediaDedupProgress(
+        stage: AnkiMediaDedupStage.indexing,
+        done: ids.length,
+        total: ids.length,
+      ),
+    );
+    return index;
+  }
+
+  /// `notesInfo` 没给字段的笔记必须是**已经被删掉**的（检索后、读取前被删）；
+  /// 还在却读不出来就中止整轮。
+  Future<void> _requireNotesGone(
+    AnkiConnectService service,
+    List<int> noteIds,
+  ) async {
+    if (noteIds.isEmpty) return;
+    final List<int> existing = await service.findNotesByQuery(
+      'nid:${noteIds.join(',')}',
+    );
+    if (existing.isEmpty) return;
+    throw AnkiConnectException(
+      'AnkiConnect returned no fields for ${existing.length} existing note(s) '
+      '(e.g. ${existing.first}); media dedup aborted before changing anything '
+      'because their media references are unknown',
+    );
+  }
+
+  /// 删除前复核：本批 [survivors] 里哪些副本**仍**被笔记字段引用。
+  ///
+  /// 对照表是本轮开头的快照，之后能变的只有本轮期间改过的笔记（含本批刚写的），
+  /// 所以只发一条限定在这些笔记上的检索（[mediaDedupRecheckQuery]），命中的
+  /// 少量笔记再拉字段本地判定是哪个副本。返回 null = Anki 拒绝了这条检索
+  /// （例如文件名里有它不认的语法）——不知道清没清干净，整批都不许删。
+  Future<Set<String>?> _stillReferencedDupes(
+    AnkiConnectService service,
+    List<_DedupPlan> survivors, {
+    required DateTime indexedAt,
+  }) async {
+    if (survivors.isEmpty) return <String>{};
+    final List<String> names = <String>[
+      for (final _DedupPlan p in survivors) p.candidate.dupe,
+    ];
+    final List<int> hits;
+    try {
+      hits = await service.findNotesByQuery(
+        mediaDedupRecheckQuery(
+          names,
+          editedDays: mediaDedupRecheckEditedDays(
+            DateTime.now().difference(indexedAt),
+          ),
+          noteIds: <int>{
+            for (final _DedupPlan p in survivors) ...p.notePlan.keys,
+          },
+        ),
+      );
+    } on AnkiConnectException {
+      return null;
+    }
+    if (hits.isEmpty) return <String>{};
+    final Map<int, Map<String, String>> fields = await _notesInfoChunked(
+      service,
+      hits.toSet().toList()..sort(),
+    );
+    // 命中了却读不到字段：分不出是哪个副本，整批按「仍被引用」处理。
+    if (hits.any((int id) => !fields.containsKey(id))) return names.toSet();
+    final MediaNameMatcher matcher = MediaNameMatcher(names);
+    return <String>{
+      for (final Map<String, String> f in fields.values)
+        ...matcher.namesInAll(f.values),
+    };
+  }
+
   /// 一批副本的**判定**：查引用、拉字段、逐条过安全闸，返回允许进入删除路径
   /// 的那些（顺序与 [chunk] 一致）。一个字节都不写。
   ///
-  /// 往返数是**常数 2**（`findNotes` 批 + `notesInfo` 批），不随 [chunk] 长度
-  /// 增长；旧实现是「每个副本 1 次 findNotes + 每条命中笔记 1 次 notesInfo」。
+  /// 谁引用了哪个副本来自本地对照表 [references]（[_buildNoteReferenceIndex]），
+  /// Anki 只负责把命中笔记的字段读回来改写——一批里没有任何全库文本检索。
   Future<List<_DedupPlan>> _planDedupChunk(
     AnkiConnectService service,
     Directory mediaDir,
     List<_DedupCandidate> chunk, {
+    required Map<String, List<int>> references,
     required Map<String, int> sizes,
     required Map<String, String> referencingMedia,
     required void Function() onSkipped,
   }) async {
-    final List<List<int>?> hits = await service.findNotesByQueries(
-      <String>[for (final _DedupCandidate c in chunk) '"${c.dupe}"'],
-    );
     // 整批涉及的全部笔记一次拉齐（同一条笔记被多个副本命中也只拉一次）。
-    final Set<int> noteIds = <int>{for (final List<int>? ids in hits) ...?ids};
-    final Map<int, Map<String, String>> noteFields = noteIds.isEmpty
-        ? <int, Map<String, String>>{}
-        : await service.notesInfoMany(noteIds.toList()..sort());
+    final Set<int> noteIds = <int>{
+      for (final _DedupCandidate c in chunk) ...?references[c.dupe],
+    };
+    final Map<int, Map<String, String>> noteFields = await _notesInfoChunked(
+      service,
+      noteIds.toList()..sort(),
+    );
 
     final List<_DedupPlan> survivors = <_DedupPlan>[];
-    for (int i = 0; i < chunk.length; i++) {
-      final _DedupCandidate c = chunk[i];
-      final List<int>? ids = i < hits.length ? hits[i] : null;
-      // 检索失败 = 不知道还有没有人引用 → 绝不删（保守，同 BUG-1262 口径）。
-      if (ids == null) {
-        onSkipped();
-        continue;
-      }
+    for (final _DedupCandidate c in chunk) {
+      final List<int> ids = references[c.dupe] ?? const <int>[];
       final Map<int, Map<String, String>> notePlan =
           <int, Map<String, String>>{};
       bool referencesResolvable = true;
@@ -1748,7 +1906,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
   }) async {
-    final AnkiConnectService service = await _getService();
+    final AnkiConnectService service = await _getLongTaskService();
     final Directory? mediaDir = await _localMediaDir();
     // 媒体目录本机不存在（AnkiConnect 在另一台机器上）= 不支持，绝不盲扫。
     // 判据与 [probeMediaMaintenance] 共用 [_localMediaDir]，不在这里再写一遍。
@@ -1757,6 +1915,16 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     bool cancelled = false;
     bool checkCancel() =>
         cancelled = cancelled || (shouldCancel?.call() ?? false);
+    AnkiMediaDedupReport cancelledBeforeResolving(int groupCount) =>
+        AnkiMediaDedupReport(
+          dryRun: dryRun,
+          groupCount: groupCount,
+          deletions: const <MediaDedupDeletion>[],
+          notesRewritten: 0,
+          modelsRewritten: 0,
+          skipped: 0,
+          cancelled: true,
+        );
 
     onProgress?.call(
       const AnkiMediaDedupProgress(stage: AnkiMediaDedupStage.scanning),
@@ -1774,17 +1942,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       ),
       sizes: sizes,
     );
-    if (checkCancel()) {
-      return AnkiMediaDedupReport(
-        dryRun: dryRun,
-        groupCount: groups.length,
-        deletions: const <MediaDedupDeletion>[],
-        notesRewritten: 0,
-        modelsRewritten: 0,
-        skipped: 0,
-        cancelled: true,
-      );
-    }
+    if (checkCancel()) return cancelledBeforeResolving(groups.length);
     // 媒体文件**内部**的引用只作为「不许删」的证据：本轮不改写媒体正文，
     // 所以只要还有人从里面引用，这份副本就留着。
     final Map<String, String> referencingMedia = await _readReferencingMedia(
@@ -1818,6 +1976,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     int processedDupes = 0;
     int bytesFreed = 0;
 
+    // 谁引用了哪个副本：整轮只读一遍笔记，在本地建表（BUG-2824）。没有副本
+    // 就没有必要读全库。
+    final DateTime indexedAt = DateTime.now();
+    final Map<String, List<int>>? references = candidates.isEmpty
+        ? const <String, List<int>>{}
+        : await _buildNoteReferenceIndex(
+            service,
+            MediaNameMatcher(<String>[
+              for (final _DedupCandidate c in candidates) c.dupe,
+            ]),
+            onProgress: onProgress,
+            shouldCancel: checkCancel,
+          );
+    if (references == null) return cancelledBeforeResolving(groups.length);
+
     for (int start = 0;
         start < candidates.length;
         start += kAnkiMediaDedupBatchSize) {
@@ -1847,6 +2020,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         service,
         mediaDir,
         chunk,
+        references: references,
         sizes: sizes,
         referencingMedia: referencingMedia,
         onSkipped: () => skippedCount++,
@@ -1878,20 +2052,22 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         await _rewriteNoteFieldsBatch(service, survivors, onJournal: onJournal),
       );
 
-      // 复核：一次往返把整批「字段里还有没有这个文件名」查完。没清干净的副本
+      // 复核：一条检索把整批「字段里还有没有这个文件名」查完。没清干净的副本
       // 到此为止——模板/styling 一个字都没动，Lapis 指纹不会漂。
-      final List<List<int>?> remaining = await service.findNotesByQueries(
-        <String>[for (final _DedupPlan p in survivors) '"${p.candidate.dupe}"'],
+      final Set<String>? stillReferenced = await _stillReferencedDupes(
+        service,
+        survivors,
+        indexedAt: indexedAt,
       );
       final List<_DedupPlan> clean = <_DedupPlan>[];
-      for (int i = 0; i < survivors.length; i++) {
-        final List<int>? ids = i < remaining.length ? remaining[i] : null;
-        // 查询失败 = 不知道清没清干净 → 不删（与 BUG-1262 的保守口径一致）。
-        if (ids == null || ids.isNotEmpty) {
+      for (final _DedupPlan plan in survivors) {
+        // 复核失败 = 不知道清没清干净 → 不删（与 BUG-1262 的保守口径一致）。
+        if (stillReferenced == null ||
+            stillReferenced.contains(plan.candidate.dupe)) {
           skippedCount++;
           continue;
         }
-        clean.add(survivors[i]);
+        clean.add(plan);
       }
 
       // 模板与 styling：整批一起算，每个 note type 最多写一次（旧实现是

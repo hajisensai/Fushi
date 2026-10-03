@@ -1,10 +1,8 @@
 library hibiki_audio;
 
-// 零 Flutter 子集（解析 / 仓储 / 匹配）——无头服务端只 import 这一半。
+// 本包已不依赖 Flutter SDK（2026-09-30）：全 barrel 与 `fushi_audio_core.dart`
+// 导出同一份纯 Dart 面。原先只由这里导出的三个重文件（just_audio 播放控制器、
+// path_provider / just_audio 的存储平台装配、flutter_charset_detector 插件实现）
+// 已搬到 app：`fushi/lib/src/media/audiobook/{audiobook_controller,
+// audiobook_storage_platform,platform_charset_detector}.dart`。
 export 'fushi_audio_core.dart';
-
-// 重文件：just_audio / audio_session / path_provider / method-channel 插件，
-// 只有 Flutter app 需要。
-export 'src/audiobook/audiobook_controller.dart';
-export 'src/audiobook/audiobook_storage_platform.dart';
-export 'src/parsers/platform_charset_detector.dart';

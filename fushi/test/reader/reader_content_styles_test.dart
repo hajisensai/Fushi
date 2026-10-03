@@ -502,6 +502,43 @@ void main() {
           reason: 'BUG-716：查词 ruby 不再走窄 lane');
     });
 
+    test(
+        'audio wrapper inside a lookup ruby yields to the lookup highlight (BUG-2806)',
+        () async {
+      // BUG-2806 起基字 wrapper 挪进 <ruby> 里面：子元素背景画在 ruby 的查词背景
+      // 之上，不让位就把 BUG-125 的「查词优先」反过来了（连同内联补缝阴影）。
+      const String selector = 'ruby.fushi-selection-ruby-active '
+          '.fushi-sentence-audio-cue.fushi-sentence-audio-active {';
+      // 墨水屏在普通规则之后再追加一条同选择器覆盖，按出现顺序取全部块。
+      List<String> blocksOf(String css) {
+        final List<String> blocks = <String>[];
+        int start = css.indexOf(selector);
+        while (start >= 0) {
+          blocks.add(css.substring(start, css.indexOf('}', start)));
+          start = css.indexOf(selector, start + selector.length);
+        }
+        expect(blocks, isNotEmpty, reason: '缺少查词 ruby 内 wrapper 的让位规则');
+        return blocks;
+      }
+
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setWritingMode('vertical-rl');
+
+      final String normal =
+          blocksOf(ReaderContentStyles.css(settings: settings)).first;
+      expect(normal, contains('background-color: transparent !important'));
+      expect(normal, contains('color: inherit !important'));
+      expect(normal, contains('box-shadow: none !important'),
+          reason: '内联补缝 box-shadow 没有 !important，只有这里能压住它');
+
+      final String eink =
+          blocksOf(ReaderContentStyles.css(settings: settings, einkMode: true))
+              .last;
+      expect(eink, contains('text-decoration-line: none !important'),
+          reason: '墨水屏只留查词的粗实线');
+      expect(eink, contains('box-shadow: none !important'));
+    });
+
     test('active highlight blocks are paint-only in both writing modes',
         () async {
       // TODO-1371/BUG-690 守卫：跟随句/查词/收藏的运行时 toggle 高亮（-active 类、
@@ -520,6 +557,8 @@ void main() {
         'text-underline-offset',
         'box-decoration-break',
         '-webkit-box-decoration-break',
+        // BUG-2806：box-shadow 不占盒、不改排版；补缝就是靠它做到「只画不排」。
+        'box-shadow',
       };
       final RegExp blockPattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
       final RegExp declPattern = RegExp(r'^\s*([a-zA-Z-]+)\s*:');

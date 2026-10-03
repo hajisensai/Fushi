@@ -81,6 +81,11 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// 窗口全屏（桌面）。
   fullscreen('fullscreen', recoverySlot: ReaderControlSlot.topRight),
 
+  /// 关掉 / 开回顶栏和底栏（与 设置 → 阅读界面 的开关同一个偏好）。出厂在托盘。
+  /// 栏关掉后由悬浮球接管：这颗键连同返回、设置被固定在球上（见
+  /// [kReaderToolbarsTakeoverItems]），开回来的入口就是球上的它。
+  toolbars('toolbars', recoverySlot: ReaderControlSlot.topRight),
+
   /// 外观 / 阅读设置抽屉。必需。
   settings(
     'settings',
@@ -163,6 +168,17 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   }
 }
 
+/// 顶栏和底栏被关掉后，悬浮球**必带**的按钮（不看 设置 → 悬浮球 → 阅读器 的勾选，
+/// 按此顺序排在球的最上面、离球最远）：布局里的必需项（返回 = 退书的唯一可见入口、
+/// 设置 = 其它所有面板的入口，理由同 [ReaderControlItem.pinnedRequired]）+ 开回栏
+/// 的那颗键。歌词模式另加模式切换键（页面追加，与顶栏在歌词模式强制保留它同理）。
+const List<ReaderControlItem> kReaderToolbarsTakeoverItems =
+    <ReaderControlItem>[
+  ReaderControlItem.back,
+  ReaderControlItem.settings,
+  ReaderControlItem.toolbars,
+];
+
 /// 顶栏中间只有书名：其它按钮误进 topCenter 时挪回各自的 recoverySlot。
 void _readerPostNormalize(
   Map<ReaderControlSlot, List<ReaderControlItem>> slots,
@@ -202,7 +218,8 @@ class ReaderControlLayout {
       ReaderControlLayout._(core);
 
   /// 出厂布局 = 2026-09 之前硬编码的顶栏：左「← / 模式 / 目录 / 插图 / 统计」，
-  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；有声书传输键留在托盘。
+  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；有声书传输键与顶栏 /
+  /// 底栏开关留在托盘。
   static final ReaderControlLayout defaults = ReaderControlLayout._(
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,

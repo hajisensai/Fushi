@@ -85,13 +85,15 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: appModel.overrideDictionaryTheme ??
-          ThemeData(
-            useMaterial3: true,
-            colorSchemeSeed: const Color(0xFF1F4959),
-            brightness:
-                appModel.isDarkMode ? Brightness.dark : Brightness.light,
-          ),
+      // 与 popup_main 同一口径：有书内覆盖主题用它，否则用用户真实主题
+      // （主题色 / 自定义主题 / 墨水屏 / 组件主题都跟着走）。以前这里写死默认
+      // 种子色现造一份裸 ThemeData，悬浮词典因此无视用户的主题设置。
+      theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+      darkTheme:
+          appModel.overrideDictionaryTheme != null ? null : appModel.darkTheme,
+      themeMode: appModel.overrideDictionaryTheme != null
+          ? ThemeMode.light
+          : appModel.themeMode,
       home: FloatingDictPage(
         channel: widget.channel,
         pendingSearch: _pendingSearch,

@@ -2,7 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
+import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -426,6 +426,165 @@ void main() {
             .map((MediaCollectionItemRow i) => i.entryKey),
         <String>['show-14']);
     expect(await db.getAllMediaCollections(), hasLength(2));
+  });
+
+  // BUG-2835：VCB BD 包的 `CDs/` 里十几张专辑、一百多首 flac。按系列名归组时
+  // 曲目名（`24. 悲愴.flac`）没有系列名 → 一首一个散片，全部平铺进「全部视频」。
+  group('BUG-2835 纯音频按专辑目录成辑', () {
+    const String root = '/anime/Mushoku Tensei S2';
+    const String albumA =
+        '$root/CDs/[230927] TVアニメ「無職転生Ⅱ」オリジナル・サウンドトラック [24bit_48kHz] (flac)';
+    const String albumB = '$root/CDs/[230712] 聖域 (flac+webp)';
+    final List<String> tracks = <String>[
+      '$albumA/01. 異世界の朝.flac',
+      '$albumA/24. 悲愴.flac',
+      '$albumB/01. 聖域.flac',
+      '$albumB/02. 聖域 (Instrumental).flac',
+    ];
+    final List<String> episodes = <String>[
+      '$root/[VCB-Studio] Mushoku Tensei S2 [01][Ma10p_1080p][x265_flac].mkv',
+      '$root/[VCB-Studio] Mushoku Tensei S2 [02][Ma10p_1080p][x265_flac].mkv',
+    ];
+
+    Future<int> seed() async {
+      final int sourceId = await addSource(root);
+      int i = 0;
+      for (final String path in <String>[...tracks, ...episodes]) {
+        await addVideo(uid: 'v${i++}', path: path, sourceId: sourceId);
+      }
+      return sourceId;
+    }
+
+    Future<Map<String, List<String>>> membersByName() async {
+      return <String, List<String>>{
+        for (final MediaCollectionRow c in await db.getAllMediaCollections())
+          c.name: <String>[
+            for (final MediaCollectionItemRow item
+                in await db.getCollectionItems(c.id))
+              item.entryKey,
+          ],
+      };
+    }
+
+    test('作品模式：一张专辑一个目录合集，正片照旧按系列归组', () async {
+      final int sourceId = await seed();
+      final VideoFolderGroupSummary first = await coordinator.groupPaths(
+        videoPaths: <String>[...tracks, ...episodes],
+        sourceId: sourceId,
+      );
+      expect(first.createdCollectionIds, hasLength(3));
+      final Map<String, List<String>> byName = await membersByName();
+      expect(
+        byName['TVアニメ「無職転生Ⅱ」オリジナル・サウンドトラック'],
+        <String>['v0', 'v1'],
+        reason: '剥掉发售日前缀与结尾规格标签；同专辑曲目进同一个合集',
+      );
+      expect(byName['聖域'], <String>['v2', 'v3']);
+      expect(
+        byName.values.where(
+          (List<String> m) => m.contains('v4') && m.contains('v5'),
+        ),
+        hasLength(1),
+        reason: '正片仍走系列归组，且不与任何专辑混在一起',
+      );
+      for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+        if (c.name == '聖域') {
+          expect(c.collectionType, 'collection');
+          expect(c.sourceFolderPath, albumB);
+        }
+      }
+      final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+        videoPaths: <String>[...episodes, ...tracks].reversed.toList(),
+        sourceId: sourceId,
+      );
+      expect(rescan.createdCollectionIds, isEmpty, reason: '重扫幂等');
+      expect(rescan.updatedCollectionIds, isEmpty);
+      expect(
+        applyVideoFolderCollectionPolicy(
+          primary: await db.getPrimaryCollectionIdByEntry(),
+          collections: await db.getAllMediaCollections(),
+          items: await db.getAllCollectionItems(),
+          books: await db.allVideoBooks(),
+          sources: await db.getMediaSourcesByKind('video'),
+        ).keys,
+        containsAll(<String>['video|v0', 'video|v1', 'video|v2', 'video|v3']),
+        reason: '作品模式下专辑合集也必须是曲目的主归属，否则系列墙上仍是散片',
+      );
+    });
+
+    test('目录模式：专辑不被并进 CDs 这一级目录合集', () async {
+      final int sourceId = await seed();
+      await coordinator.groupPaths(
+        videoPaths: <String>[...tracks, ...episodes],
+        sourceId: sourceId,
+        groupingMode: 'folder',
+        sourceRoot: root,
+      );
+      final Map<String, List<String>> byName = await membersByName();
+      expect(byName['聖域'], <String>['v2', 'v3']);
+      expect(byName.containsKey('CDs'), isFalse,
+          reason: '一级目录口径会把所有专辑糊成一个「CDs」合集');
+      expect(byName.values.expand((List<String> m) => m),
+          containsAll(<String>['v4', 'v5']),
+          reason: '正片照旧进根目录合集');
+    });
+
+    test('存量库：曲目早已在一级目录大合集里，主归属仍是专辑合集', () async {
+      final int sourceId = await seed();
+      await (db.update(db.mediaSources)
+            ..where((tbl) => tbl.id.equals(sourceId)))
+          .write(const MediaSourcesCompanion(videoGroupingMode: Value('folder')));
+      // 修复前的目录模式产物：整个 `CDs` 一个合集（id 更小、先被遍历到）。
+      final int legacy =
+          await db.createMediaCollection('CDs', collectionType: 'collection');
+      await (db.update(db.mediaCollections)
+            ..where((tbl) => tbl.id.equals(legacy)))
+          .write(const MediaCollectionsCompanion(
+              sourceFolderPath: Value<String?>('$root/CDs')));
+      for (final String uid in <String>['v0', 'v1', 'v2', 'v3']) {
+        await db.addToCollection(legacy, MediaKind.video, uid);
+      }
+
+      await coordinator.groupPaths(
+        videoPaths: <String>[...tracks, ...episodes],
+        sourceId: sourceId,
+        groupingMode: 'folder',
+        sourceRoot: root,
+      );
+      final Map<String, int> primary = applyVideoFolderCollectionPolicy(
+        primary: await db.getPrimaryCollectionIdByEntry(),
+        collections: await db.getAllMediaCollections(),
+        items: await db.getAllCollectionItems(),
+        books: await db.allVideoBooks(),
+        sources: await db.getMediaSourcesByKind('video'),
+      );
+      final MediaCollectionRow album = (await db.getAllMediaCollections())
+          .singleWhere((MediaCollectionRow c) => c.name == '聖域');
+      expect(primary['video|v2'], album.id,
+          reason: '重扫只补不删，旧大合集仍含曲目——主归属不能取决于遍历先后');
+      expect(primary['video|v3'], album.id);
+      expect(await db.getCollectionItems(legacy), hasLength(4),
+          reason: '不动用户既有合集的成员');
+    });
+
+    test('专辑名清洗：只剥首尾修饰，剥空退回原名', () async {
+      expect(audioAlbumDisplayName('[230712] 聖域 (flac+webp)'), '聖域');
+      expect(
+        audioAlbumDisplayName('(20231025) Album [24bit_96kHz] [FLAC]'),
+        'Album',
+      );
+      expect(audioAlbumDisplayName('Disc (Bonus) Mix'), 'Disc (Bonus) Mix',
+          reason: '中间的括号是名字的一部分');
+      expect(audioAlbumDisplayName('[FLAC]'), '[FLAC]');
+      expect(audioAlbumDisplayName('Album (Disc 1) [FLAC]'), 'Album (Disc 1)',
+          reason: '分碟信息是名字的一部分，剥掉会让两张碟撞名');
+      expect(audioAlbumDisplayName('Symphony (Live) (24bit_96kHz)'),
+          'Symphony (Live)');
+      expect(
+        videoAudioAlbumFolderPath(r'D:\Anime\CDs\Album\01.flac'),
+        'd:/anime/cds/album',
+      );
+    });
   });
 
   test('全新单片保持独立，不强制创建合集', () async {

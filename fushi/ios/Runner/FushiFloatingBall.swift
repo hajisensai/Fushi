@@ -8,8 +8,10 @@ import UIKit
 /// 全局悬浮球的 iOS 半边（契约见 docs/specs/2026-09-28-floating-ball.md，
 /// 通道 `app.fushi.reader/floating_ball`）。
 ///
-/// iOS 不允许应用外悬浮，所以这里只有两件事：
+/// iOS 不允许应用外悬浮，所以这里只有三件事：
 /// - `captureScreen`：截本 app 自己的窗口（含 WKWebView 内容），交 Dart 做 Vision OCR；
+/// - `sensorHousingEdge`：刘海 / 灵动岛在哪条边，应用内球据此只避让那一侧；界面方向
+///   变化时原生主动推 `sensorHousingEdgeChanged`（`interfaceOrientationDidChange`）；
 /// - App Intent「Look up in Fushi」把快捷指令 / Siri 给的词送进应用内查词弹窗。
 ///
 /// Android 专有的方法（`canDrawOverlays` / `startSystemBall` …）在这里一律
@@ -42,6 +44,8 @@ enum FushiFloatingBall {
         let word = pendingIntentWord
         pendingIntentWord = nil
         result(word)
+      case "sensorHousingEdge":
+        result(sensorHousingEdge())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -108,6 +112,42 @@ enum FushiFloatingBall {
       return
     }
     result(FlutterStandardTypedData(bytes: png))
+  }
+
+  /// 界面方向变了（SceneDelegate 的 `windowScene(_:didUpdate:interfaceOrientation:…)`
+  /// 转进来，主线程）：主动把新的外壳边推给 Dart（BUG-2911）。
+  ///
+  /// 必须推而不是等 Dart 重查：横屏左 ↔ 右翻转 180° 时窗口尺寸不变、左右安全区
+  /// 又对称，Flutter 的 metrics 不一定变，Dart 的 didChangeMetrics 不一定触发。
+  /// 时机取舍：`viewWillTransition(to:with:)` 开头 `interfaceOrientation` 还是旧值，
+  /// 那里推只会推旧边；scene 的这条回调在 `interfaceOrientation` 更新之后才来，
+  /// 推出去的一定是新值，代价是可能比 Flutter 收到新 inset 晚一点（左 ↔ 右翻转时
+  /// 那一两帧球还按旧边算，随后挪正）。Dart 没装处理器时消息无人接，Dart 起来后的
+  /// 首次查询会补上。
+  static func interfaceOrientationDidChange(_ orientation: UIInterfaceOrientation) {
+    channel?.invokeMethod(
+      "sensorHousingEdgeChanged", arguments: sensorHousingEdge(for: orientation))
+  }
+
+  /// 传感器外壳（刘海 / 灵动岛）此刻在屏幕的哪条边：`left` / `top` / `right` / `bottom`，
+  /// 方向未知时 nil。
+  ///
+  /// iOS 横屏的 `safeAreaInsets` 左右**对称**（两侧都是外壳深度），Flutter 也不上报
+  /// cutout 的 displayFeatures，Dart 分不出哪一侧真被挡住；外壳永远在设备「顶边」，
+  /// 所以按界面方向换算即可。`landscapeRight` = Home 侧在右 → 顶边在左。
+  private static func sensorHousingEdge() -> String? {
+    guard let scene = hostWindow()?.windowScene else { return nil }
+    return sensorHousingEdge(for: scene.interfaceOrientation)
+  }
+
+  private static func sensorHousingEdge(for orientation: UIInterfaceOrientation) -> String? {
+    switch orientation {
+    case .portrait: return "top"
+    case .portraitUpsideDown: return "bottom"
+    case .landscapeRight: return "left"
+    case .landscapeLeft: return "right"
+    default: return nil
+    }
   }
 
   /// 前台活跃场景里的 key window；没有就退到任意一个前台窗口，再退到任意窗口。

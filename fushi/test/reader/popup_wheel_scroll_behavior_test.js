@@ -32,6 +32,9 @@ function makeContext() {
   const documentElement = { style: { zoom: '1' } };
   const body = { nodeType: 1, style: {}, scrollHeight: 1000000, clientHeight: 400, scrollTop: 0 };
   let scrollY = 0;
+  // BUG-2834: 粗滚轮一格走 rAF 缓动——帧回调排队，由 flush() 逐帧推进。
+  const frames = [];
+  let frameSeq = 0;
   const noopEl = () => ({
     tagName: 'DIV', nodeType: 1, style: {}, dataset: {}, children: [],
     classList: { add() {}, remove() {}, contains() { return false; } },
@@ -60,7 +63,12 @@ function makeContext() {
     console, document, window: win,
     performance: { now() { return clockMs; } },
     getComputedStyle() { return { overflowY: 'visible', fontSize: '15px' }; },
-    setTimeout() { return 0; }, clearTimeout() {}, requestAnimationFrame() { return 0; },
+    setTimeout() { return 0; }, clearTimeout() {},
+    requestAnimationFrame(cb) { frameSeq += 1; frames.push([frameSeq, cb]); return frameSeq; },
+    cancelAnimationFrame(id) {
+      const i = frames.findIndex((f) => f[0] === id);
+      if (i >= 0) frames.splice(i, 1);
+    },
     // ELEMENT_NODE 不能少：缺了它，生产代码里
     // `nodeType !== Node.ELEMENT_NODE` 会恒真 → 遍历静默返回空，不抛错。
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
@@ -72,6 +80,19 @@ function makeContext() {
   context.__listeners = listeners;
   context.__win = win;
   context.__setZoom = (z) => { documentElement.style.zoom = String(z); };
+  context.__setScrollY = (y) => { scrollY = y; };
+  context.__pendingFrames = () => frames.length;
+  // 跑 n 帧（缺省跑到队列空）；返回实际跑了几帧。
+  context.__flush = (n) => {
+    let ran = 0;
+    while (frames.length && (n === undefined || ran < n)) {
+      const batch = frames.splice(0, frames.length);
+      for (const f of batch) f[1]();
+      ran += 1;
+      if (ran > 1000) throw new Error('rAF never settles');
+    }
+    return ran;
+  };
   return context;
 }
 
@@ -156,6 +177,7 @@ test('mouse notch (large delta) moves the calibrated full step every notch, zoom
   for (let n = 1; n <= 3; n++) {
     clockMs += 200; // notch-to-notch; even crossing idle the whole step is intact
     fireWheel(ctx, { deltaY: 100, deltaMode: 0 });
+    ctx.__flush();
     assert.equal(ctx.__win.scrollY, 48 * n,
       'mouse notch ' + n + ' must move a full 48px, got ' + ctx.__win.scrollY);
   }
@@ -166,6 +188,7 @@ test('mouse notch under zoom keeps a zoom-independent 48px visual step', () => {
   ctx.__setZoom(2);
   clockMs = 1000; clockMs += 16;
   fireWheel(ctx, { deltaY: 100, deltaMode: 0 }); // 48 visual / 2 zoom = 24 layout px
+  ctx.__flush();
   assert.equal(ctx.__win.scrollY, 24,
     'mouse notch at zoom 2 must move 24 layout px, got ' + ctx.__win.scrollY);
   assert.ok(ctx.__win.scrollY > 1, 'a mouse notch must never freeze');
@@ -229,6 +252,67 @@ test('stale sub-pixel carry is reset after an idle gap (zoom 3)', () => {
   fireWheel(ctx, { deltaY: 1, deltaMode: 0 }); // reset first => residual 0.333, still 0
   assert.equal(ctx.__win.scrollY, 0,
     'after idle reset the stale 0.666 must NOT combine into a delayed 1px jump');
+});
+
+// F. BUG-2834: 粗滚轮一格不再瞬跳——同一距离分多帧缓动到位。
+test('mouse notch eases over several frames instead of jumping (BUG-2834)', () => {
+  const ctx = loadPopup();
+  clockMs = 1000; clockMs += 16;
+  const prevented = fireWheel(ctx, { deltaY: 100, deltaMode: 0 });
+  assert.equal(prevented, true, 'the notch is still taken over');
+  assert.equal(ctx.__win.scrollY, 0, 'no synchronous jump on the wheel event itself');
+  ctx.__flush(1);
+  assert.ok(ctx.__win.scrollY > 0 && ctx.__win.scrollY < 48,
+    'first frame lands mid-way, got ' + ctx.__win.scrollY);
+  const frames = 1 + ctx.__flush();
+  assert.ok(frames >= 5, 'easing spans several frames, ran ' + frames);
+  assert.equal(ctx.__win.scrollY, 48, 'and arrives exactly at the 48px step');
+});
+
+test('rapid notches accumulate onto the pending target (no distance lost)', () => {
+  const ctx = loadPopup();
+  clockMs = 1000;
+  for (let n = 0; n < 3; n++) {
+    clockMs += 16;
+    fireWheel(ctx, { deltaY: 100, deltaMode: 0 });
+    ctx.__flush(1);
+  }
+  ctx.__flush();
+  assert.equal(ctx.__win.scrollY, 144, '3 rapid notches = 3 x 48, got ' + ctx.__win.scrollY);
+});
+
+test('reverse notch starts from the visual position', () => {
+  const ctx = loadPopup();
+  ctx.__setScrollY(1000);
+  clockMs = 1000; clockMs += 16;
+  fireWheel(ctx, { deltaY: 100, deltaMode: 0 });
+  ctx.__flush(2);
+  const mid = ctx.__win.scrollY;
+  assert.ok(mid > 1000 && mid < 1048, 'mid-ease, got ' + mid);
+  clockMs += 16;
+  fireWheel(ctx, { deltaY: -100, deltaMode: 0 });
+  ctx.__flush();
+  assert.ok(Math.abs(ctx.__win.scrollY - (mid - 48)) < 0.001,
+    'reverse = visual position - 48, got ' + ctx.__win.scrollY + ' from ' + mid);
+});
+
+test('an external scroll mid-ease wins; the ease yields', () => {
+  const ctx = loadPopup();
+  clockMs = 1000; clockMs += 16;
+  fireWheel(ctx, { deltaY: 100, deltaMode: 0 });
+  ctx.__flush(1);
+  ctx.__setScrollY(500); // keyboard / jump-to-entry / scrollIntoView
+  ctx.__flush();
+  assert.equal(ctx.__win.scrollY, 500, 'the ease must not drag the page back');
+  assert.equal(ctx.__pendingFrames(), 0, 'and must stop scheduling frames');
+});
+
+test('fine devices stay synchronous 1:1 (no easing)', () => {
+  const ctx = loadPopup();
+  clockMs = 1000; clockMs += 16;
+  fireWheel(ctx, { deltaY: 4, deltaMode: 0 });
+  assert.equal(ctx.__win.scrollY, 4, 'touchpad frame lands in the same event');
+  assert.equal(ctx.__pendingFrames(), 0, 'no frame scheduled for a fine device');
 });
 
 let failed = 0;

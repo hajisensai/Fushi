@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
@@ -16,6 +18,7 @@ import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -205,6 +208,91 @@ void main() {
     expect(anidb.isHttpApiAvailable, isTrue, reason: '网络故障不是身份问题');
     expect(anidb.httpIdentityRejection, isNull);
     expect(anidb.httpDetailUnavailableReason, contains('anime XML 请求失败'));
+  });
+
+  // BUG-2623 根治：随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空。用随包
+  // 配置时 anime XML 链必须在发请求前判不可用——零请求，而不是每次启动先撞一次
+  // 302 再闩住。自定义客户端仍同时用于 UDP 与 HTTP，302 照旧走闩。
+  group('bundled vs custom AniDB client identities', () {
+    AniDbVideoMetadataProvider fromConfig(
+      VideoSourceScrapeGlobalConfig config,
+      Future<http.Response> Function(http.Request) handler,
+    ) {
+      final AniDbVideoMetadataProvider result = AniDbVideoMetadataProvider(
+        clientName: config.anidbHttpClientName,
+        clientVersion: config.anidbHttpClientVersion,
+        language: 'zh-CN',
+        titleCatalog: catalog,
+        client: MockClient(handler),
+        sleep: (Duration _) async {},
+      );
+      addTearDown(result.close);
+      return result;
+    }
+
+    test('bundled config never contacts the HTTP API and says why', () async {
+      final VideoSourceScrapeGlobalConfig config =
+          VideoSourceScrapeGlobalConfig.fromPreferences(_MapPrefStore(),
+              resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
+      // UDP 身份不变：哈希识别照旧用已登记的 fushiplayer/1。
+      expect(config.anidbUdpConfig.clientName, kBundledAniDbClient.name);
+      expect(config.anidbUdpConfig.clientVersion, kBundledAniDbClient.version);
+      expect(config.anidbHttpClientConfigured, isFalse);
+
+      int calls = 0;
+      final AniDbVideoMetadataProvider anidb =
+          fromConfig(config, (http.Request request) async {
+        calls++;
+        return xml(_animeXml);
+      });
+      expect(anidb.isHttpApiAvailable, isFalse);
+      expect(anidb.httpIdentityRejection, isNull, reason: '没发过请求，谈不上被拒');
+      expect(
+        (await anidb.fetchWork(lookup))!
+            .rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
+        isTrue,
+        reason: '作品层仍由离线标题目录给出',
+      );
+      expect(await anidb.fetchSeasons(lookup), hasLength(1));
+      await expectLater(
+        anidb.fetchEpisodes(lookup, seasonNumber: 1),
+        throwsA(isA<VideoMetadataNetworkException>()),
+      );
+      expect(await anidb.episodeInfo(animeId: 42, episodeId: 4201), isNull);
+      expect(calls, 0, reason: '随包配置下 httpapi 一次都不许请求');
+      expect(anidb.httpDetailUnavailableReason,
+          allOf(contains('未配置已登记'), contains('UDP')));
+    });
+
+    test('custom client is used for both protocols and 302 still latches',
+        () async {
+      final VideoSourceScrapeGlobalConfig config =
+          VideoSourceScrapeGlobalConfig.fromPreferences(
+              _MapPrefStore(<String, Object?>{
+                kVideoMetadataAniDbClientNamePref: 'customapp',
+                kVideoMetadataAniDbClientVersionPref: '3',
+              }),
+              resolvedTmdbApiKey: '',
+              uiLocaleTag: 'en-US');
+      expect(config.anidbUdpConfig.clientName, 'customapp');
+      expect(config.anidbHttpClientName, 'customapp');
+      expect(config.anidbHttpClientVersion, 3);
+
+      final List<Uri> requests = <Uri>[];
+      final AniDbVideoMetadataProvider anidb =
+          fromConfig(config, (http.Request request) async {
+        requests.add(request.url);
+        return xml(
+            '<error code="302">client version missing or invalid</error>');
+      });
+      expect(anidb.isHttpApiAvailable, isTrue);
+      await anidb.fetchWork(lookup);
+      await anidb.fetchWork(lookup);
+      expect(requests, hasLength(1), reason: '302 后闩住，不再重发');
+      expect(requests.single.queryParameters['client'], 'customapp');
+      expect(requests.single.queryParameters['clientver'], '3');
+      expect(anidb.httpDetailUnavailableReason, contains('customapp/3'));
+    });
   });
 
   group('AnimeDoc_{aid}.xml disk cache', () {
@@ -486,3 +574,19 @@ const String _titleCatalogXml = '''
   </anime>
 </animetitles>
 ''';
+
+class _MapPrefStore implements PrefStore {
+  _MapPrefStore([Map<String, Object?>? values])
+      : _values = <String, Object?>{...?values};
+
+  final Map<String, Object?> _values;
+
+  @override
+  dynamic getPref(String key, {dynamic defaultValue}) =>
+      _values.containsKey(key) ? _values[key] : defaultValue;
+
+  @override
+  Future<void> setPref(String key, dynamic value) async {
+    _values[key] = value;
+  }
+}

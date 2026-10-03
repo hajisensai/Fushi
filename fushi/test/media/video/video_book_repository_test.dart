@@ -5,8 +5,11 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show isPickerImportCopyPath;
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
@@ -923,4 +926,128 @@ void main() {
       expect(File(p.join(dir.path, 'ep02.ja.srt')).existsSync(), isFalse);
     });
   });
+
+  group('iOS 选择器导入副本随删除回收（BUG-2863）', () {
+    late EnginePaths previousPaths;
+    late Directory copyDir;
+    late Directory userDir;
+
+    setUp(() async {
+      previousPaths = enginePaths;
+      copyDir = await Directory.systemTemp.createTemp('fushi_picker_copy_');
+      userDir = await Directory.systemTemp.createTemp('fushi_user_media_');
+      enginePaths = _PickerCopyEnginePaths(previousPaths, copyDir);
+    });
+
+    tearDown(() async {
+      enginePaths = previousPaths;
+      await copyDir.delete(recursive: true);
+      await userDir.delete(recursive: true);
+    });
+
+    Future<String> touch(Directory dir, String name) async {
+      final File file = File(p.join(dir.path, name));
+      await file.writeAsString('x');
+      return file.path;
+    }
+
+    test('没勾「同时删除本地文件」也回收副本目录里的视频与同名字幕，原件不动', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final String copy = await touch(copyDir, 'ep01.mp4');
+      final String copySub = await touch(copyDir, 'ep01.srt');
+      final String original = await touch(userDir, 'ep02.mkv');
+      final String originalSub = await touch(userDir, 'ep02.srt');
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/copy'),
+          title: const Value('copy'),
+          videoPath: Value(copy),
+        ),
+      );
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/original'),
+          title: const Value('original'),
+          videoPath: Value(original),
+        ),
+      );
+
+      final int deleted = await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/copy', 'video/original'],
+        compactDatabase: false,
+      );
+
+      expect(deleted, 2);
+      expect(File(copy).existsSync(), isFalse);
+      expect(File(copySub).existsSync(), isFalse);
+      expect(File(original).existsSync(), isTrue);
+      expect(File(originalSub).existsSync(), isTrue);
+    });
+
+    test('副本仍被幸存行引用 → 保留', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final String copy = await touch(copyDir, 'shared.mp4');
+      for (final String uid in <String>['video/a', 'video/b']) {
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(uid),
+            title: Value(uid),
+            videoPath: Value(copy),
+          ),
+        );
+      }
+
+      await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/a'],
+        compactDatabase: false,
+      );
+
+      expect(File(copy).existsSync(), isTrue);
+    });
+
+    test('isPickerImportCopyPath 只认严格位于副本目录之内的本地路径', () {
+      final String root = copyDir.path;
+      final List<String> roots = <String>[root];
+      expect(isPickerImportCopyPath(p.join(root, 'a.mp4'), roots), isTrue);
+      expect(
+        isPickerImportCopyPath(p.join(root, 'sub', 'a.mp4'), roots),
+        isTrue,
+      );
+      expect(isPickerImportCopyPath(root, roots), isFalse);
+      expect(
+        isPickerImportCopyPath('${root}2${p.separator}a.mp4', roots),
+        isFalse,
+      );
+      expect(isPickerImportCopyPath('https://host/a.mp4', roots), isFalse);
+      expect(
+        isPickerImportCopyPath(p.join(root, 'a.mp4'), const <String>[]),
+        isFalse,
+      );
+    });
+  });
+}
+
+/// 模拟 iOS：选择器把文件拷进 [copyDir]；其余根委派原装配。
+class _PickerCopyEnginePaths extends EnginePaths {
+  const _PickerCopyEnginePaths(this.inner, this.copyDir);
+
+  final EnginePaths inner;
+  final Directory copyDir;
+
+  @override
+  Future<Directory> documentsRootDirectory() => inner.documentsRootDirectory();
+
+  @override
+  Future<Directory> supportRootDirectory() => inner.supportRootDirectory();
+
+  @override
+  Future<Directory> tempRootDirectory() => inner.tempRootDirectory();
+
+  @override
+  Future<List<Directory>> pickerImportCopyDirectories() async =>
+      <Directory>[copyDir];
 }

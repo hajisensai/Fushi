@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
@@ -185,6 +186,19 @@ class OnlineMangaReaderSession implements MangaReaderSession {
   Future<File?> localFile(int index) async {
     _validateIndex(index);
     return _ensureFile(index, priority: true);
+  }
+
+  /// 等到当前所有排队 / 在飞的取页（含 [page] 顺带发起的 fire-and-forget 预取）
+  /// 都落定——成功落盘或失败摘掉。预取没有别的完成信号，测试据此断言，而不是
+  /// 睡一段墙钟时间赌它跑完（BUG-2802：CI 高负载下 80ms 不够，预取只起了一半）。
+  @visibleForTesting
+  Future<void> debugWaitForIdle() async {
+    while (_pending.isNotEmpty) {
+      await Future.wait<void>(<Future<void>>[
+        for (final Future<File> pending in _pending.values.toList())
+          pending.then<void>((_) {}, onError: (Object _) {}),
+      ]);
+    }
   }
 
   /// 已经落盘的第 [index] 页（同步；没取过 / 越界 → null）。卡图路径这类同步读者用。

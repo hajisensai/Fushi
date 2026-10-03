@@ -35,6 +35,10 @@ abstract interface class InterconnectProfileHost {
   /// 导出 host **当前激活 Profile** 的分享 JSON。
   ///
   /// 产物与「配置管理」页的导出完全一致（已剔凭据、已剥字体绝对路径）。
+  ///
+  /// host 上**此刻没有可交出的配置**（无头服务端还没收到过任何对端推来的配置）时抛
+  /// [InterconnectProfileUnavailableException]，wire 层回 409——不能回 404（client 会
+  /// 当成「对端不支持」），也不能回 500（那是 host 坏了）。
   Future<String> exportInterconnectProfile();
 
   /// 把对端上传的 Profile JSON 作为**新** Profile 导入本机，返回新建的 Profile 名。
@@ -46,6 +50,15 @@ abstract interface class InterconnectProfileHost {
   /// 实现方负责把 `ProfileImportException` 翻成它，好让 wire 层不必依赖 profile 层的
   /// 异常类型就能回 400。解析在写库之前完成，失败时 host 的 DB 零改动。
   Future<String> importInterconnectProfile(String json);
+}
+
+/// host 懂这个端点、开关也开着，但眼下没有可交出的配置（见
+/// [InterconnectProfileHost.exportInterconnectProfile]）。
+class InterconnectProfileUnavailableException implements Exception {
+  const InterconnectProfileUnavailableException(this.message);
+  final String message;
+  @override
+  String toString() => 'InterconnectProfileUnavailableException: $message';
 }
 
 /// 互联「配置文件」端点路径（host 与 client 共用的唯一字面量）。

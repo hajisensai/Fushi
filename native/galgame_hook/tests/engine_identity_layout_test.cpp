@@ -3,7 +3,7 @@
 // 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
 #undef NDEBUG
 
-// BGI / CatSystem2 / elf AI6 / Malie 四个引擎的身份判据（BUG-2153）。
+// BGI / CatSystem2 / elf AI6 三个引擎的磁盘结构身份判据（BUG-2153）；Malie 只留负向一档。
 //
 // 本测试要钉住的不变式只有一条：**身份由磁盘结构决定，与 exe 叫什么名字无关**。
 // 这四个引擎原来都把 exe 名当先决条件（`BGI.exe` / `cs2_open.exe` / `AI6WIN.exe` /
@@ -29,7 +29,6 @@
 
 namespace {
 
-namespace mal = ::fushi_voice_hook::malie;
 namespace ai6 = ::fushi_voice_hook::elf_ai6;
 
 std::wstring MakeTempRoot(const wchar_t* tag) {
@@ -87,70 +86,59 @@ void WriteBe32(uint8_t* out, uint32_t value) {
   out[3] = static_cast<uint8_t>(value);
 }
 
-// DecryptCfiBlock 的逆。测试自己实现逆变换有「测的是我的逆而不是真解密」的风险，
-// 所以下面 main 里第一件事就是 round-trip 自校验：Decrypt(Encrypt(x)) == x。
-// 逆推自 hook/malie_cfi.h:52-91，两步各自取逆并倒序：
-//   解密 = 先 pivot-XOR 再字变换；所以加密 = 先字逆变换再 pivot-XOR。
-void EncryptCfiBlockAtZero(const uint8_t* plain, uint8_t* encrypted) {
-  uint32_t words[4] = {};
-  std::memcpy(words, plain, sizeof(words));
-  const uint32_t block_index = 0;
-  words[0] = mal::RotateLeft(words[0],
-                             mal::kDiesAmantesCfiKey[(block_index + 12) & 0x1F] ^ 0xA5) ^
-             mal::RotateRight(mal::kDiesAmantesCfiRotateKey[0],
-                              mal::kDiesAmantesCfiKey[block_index & 0x1F] ^ 0xA5);
-  words[1] = mal::RotateRight(words[1],
-                              mal::kDiesAmantesCfiKey[(block_index + 15) & 0x1F] ^ 0xA5) ^
-             mal::RotateLeft(mal::kDiesAmantesCfiRotateKey[1],
-                             mal::kDiesAmantesCfiKey[(block_index + 3) & 0x1F] ^ 0xA5);
-  words[2] = mal::RotateLeft(words[2],
-                             mal::kDiesAmantesCfiKey[(block_index + 18) & 0x1F] ^ 0xA5) ^
-             mal::RotateRight(mal::kDiesAmantesCfiRotateKey[2],
-                              mal::kDiesAmantesCfiKey[(block_index + 6) & 0x1F] ^ 0xA5);
-  words[3] = mal::RotateRight(words[3],
-                              mal::kDiesAmantesCfiKey[(block_index + 21) & 0x1F] ^ 0xA5) ^
-             mal::RotateLeft(mal::kDiesAmantesCfiRotateKey[3],
-                             mal::kDiesAmantesCfiKey[(block_index + 9) & 0x1F] ^ 0xA5);
-  uint8_t pivoted[16] = {};
-  std::memcpy(pivoted, words, sizeof(words));
-  // block_offset 0 ⇒ pivot_index 0，pivot 值在两步之间保持不变。
-  const uint8_t pivot = pivoted[0];
-  encrypted[0] = pivoted[0];
-  for (uint32_t i = 1; i < 16; ++i) encrypted[i] = pivoted[i] ^ pivot;
-}
-
 }  // namespace
 
 int main() {
-  // ── 0. 先自校验 Malie CFI 逆变换，后面所有 Malie 正向夹具都建在它之上 ──────────
-  {
-    uint8_t plain[16] = {'L', 'I', 'B', 'P', 1, 2, 3, 4,
-                         5,   6,   7,   8,   9, 10, 11, 12};
-    uint8_t encrypted[16] = {};
-    uint8_t roundtrip[16] = {};
-    EncryptCfiBlockAtZero(plain, encrypted);
-    mal::DecryptCfiBlock(0, encrypted, roundtrip);
-    assert(std::memcmp(plain, roundtrip, sizeof(plain)) == 0);
-  }
-
-  // ── 1. BGI / Ethornell：`*.arc` 的 BURIKO ARC20 魔数 ─────────────────────────
-  {
-    const std::wstring root = MakeTempRoot(L"bgi_ok");
-    // 目录里刻意**没有** BGI.exe，exe 名不是必要条件。
-    char archive[64] = {0};
-    std::memcpy(archive, ::fushi_voice_hook::bgi::kArc20Signature,
-                ::fushi_voice_hook::bgi::kArc20SignatureBytes);
-    WriteBytes(root + L"\\data03100.arc", archive, sizeof(archive));
+  // ── 1. BGI / Ethornell：`*.arc` 是自洽的 BURIKO ARC20 或 PackFile 索引 ───────
+  // 两代格式各一份：1 条目、成员 8 字节、首条目 offset 0。
+  const auto bgi_archive = [](bool arc20) {
+    namespace bgi = ::fushi_voice_hook::bgi;
+    const size_t entry = arc20 ? bgi::kArc20EntryBytes : bgi::kPackFileEntryBytes;
+    const size_t name = arc20 ? bgi::kArc20NameBytes : bgi::kPackFileNameBytes;
+    std::vector<uint8_t> a(bgi::kArcHeaderBytes + entry + 8, 0);
+    std::memcpy(a.data(), arc20 ? bgi::kArc20Signature : bgi::kPackFileSignature,
+                bgi::kArcSignatureBytes);
+    WriteLe32(a.data() + 12, 1);
+    std::memcpy(a.data() + bgi::kArcHeaderBytes, "00010", 5);
+    WriteLe32(a.data() + bgi::kArcHeaderBytes + name + 4, 8);
+    return a;
+  };
+  for (const bool arc20 : {true, false}) {
+    const std::wstring root = MakeTempRoot(arc20 ? L"bgi_arc20" : L"bgi_packfile");
+    // 目录里刻意**没有** BGI.exe，exe 名不是必要条件；同目录另放一个非 BGI 的 .arc
+    // （旧版样本里就有 MPEG-PS 视频包），不影响认领。
+    const uint8_t mpeg[16] = {0, 0, 1, 0xBA, 0x21, 0, 1, 0, 1, 0x80, 0xA2, 0x61};
+    WriteBytes(root + L"\\data06010.arc", mpeg, sizeof(mpeg));
+    const std::vector<uint8_t> archive = bgi_archive(arc20);
+    WriteBytes(root + L"\\data04001.arc", archive.data(), archive.size());
     assert(fushi_voice_hook::MatchesBgiEthornellLayout(root));
     RemoveTree(root);
   }
   {
     const std::wstring root = MakeTempRoot(L"bgi_name_only");
-    // 只有一个叫 BGI.exe 的空文件、没有 ARC20 归档 → 名字不是充分条件。
+    // 只有一个叫 BGI.exe 的空文件、归档只有魔数没有自洽索引 → 名字与魔数都不是充分条件。
     const char stub[8] = {'M', 'Z', 0, 0, 0, 0, 0, 0};
     WriteBytes(root + L"\\BGI.exe", stub, sizeof(stub));
-    const char not_arc20[16] = "PackFile    \0\0\0";
-    WriteBytes(root + L"\\data03100.arc", not_arc20, sizeof(not_arc20));
+    const char magic_only[16] = "PackFile    \0\0\0";
+    WriteBytes(root + L"\\data03100.arc", magic_only, sizeof(magic_only));
+    char arc20_magic_only[16] = {0};
+    std::memcpy(arc20_magic_only, ::fushi_voice_hook::bgi::kArc20Signature,
+                ::fushi_voice_hook::bgi::kArc20SignatureBytes);
+    arc20_magic_only[12] = 1;
+    WriteBytes(root + L"\\data03110.arc", arc20_magic_only,
+               sizeof(arc20_magic_only));
+    assert(!fushi_voice_hook::MatchesBgiEthornellLayout(root));
+    RemoveTree(root);
+  }
+  {
+    const std::wstring root = MakeTempRoot(L"bgi_foreign_arc");
+    // 别家引擎的 .arc：相近词根（QLiE 的 FilePackVer / PackFileVer）与 elf AI6 的
+    // 「首 u32 = 条目数」形状，都不能被 BGI 认领。
+    const char qlie_like[32] = "PackFileVer3.1";
+    WriteBytes(root + L"\\data.arc", qlie_like, sizeof(qlie_like));
+    std::vector<uint8_t> ai6(256, 0);
+    WriteLe32(ai6.data(), 1);
+    WriteBytes(root + L"\\voice.arc", ai6.data(), ai6.size());
     assert(!fushi_voice_hook::MatchesBgiEthornellLayout(root));
     RemoveTree(root);
   }
@@ -210,38 +198,9 @@ int main() {
   }
   assert(!fushi_voice_hook::MatchesElfAi6Profile(nullptr));
 
-  // ── 4. Malie：data2.dat 头 16 字节 CFI 解块后是自洽 LIBP 头 ──────────────────
-  {
-    const std::wstring root = MakeTempRoot(L"malie_ok");
-    uint8_t plain[16] = {0};
-    std::memcpy(plain, "LIBP", 4);
-    WriteLe32(plain + 4, 2);  // entry_count
-    WriteLe32(plain + 8, 1);  // offset_count（必须 <= entry_count）
-    uint8_t header[16] = {};
-    EncryptCfiBlockAtZero(plain, header);
-    // index_bytes = 16 + 2*32 + 1*4 = 84；data_base = AlignUp(84, 4096) = 4096，
-    // 两者都必须 <= 文件大小，所以夹具至少 4096 字节。
-    std::vector<uint8_t> archive(8192, 0);
-    std::memcpy(archive.data(), header, sizeof(header));
-    WriteBytes(root + L"\\data2.dat", archive.data(), archive.size());
-    // 目录里没有 malie.exe，照样认得出来。
-    assert(fushi_voice_hook::MatchesMalieLayout(root));
-
-    // 文件太小 → data_base 越界 → 不匹配（头字节完全相同，只有大小变了）。
-    WriteBytes(root + L"\\data2.dat", archive.data(), 1024);
-    assert(!fushi_voice_hook::MatchesMalieLayout(root));
-    RemoveTree(root);
-  }
-  {
-    const std::wstring root = MakeTempRoot(L"malie_name_only");
-    // 只有 malie.exe 和一个解不出 LIBP 的 data2.dat → 名字不是充分条件。
-    const char stub[8] = {'M', 'Z', 0, 0, 0, 0, 0, 0};
-    WriteBytes(root + L"\\malie.exe", stub, sizeof(stub));
-    std::vector<uint8_t> junk(8192, 0x5A);
-    WriteBytes(root + L"\\data2.dat", junk.data(), junk.size());
-    assert(!fushi_voice_hook::MatchesMalieLayout(root));
-    RemoveTree(root);
-  }
+  // ── 4. Malie：身份不看磁盘，看主模块里能否从结构解析出 "CFI" I/O scheme 表
+  //（hook/adapters/malie_engine_io_core.h；正反夹具在 tests/malie_engine_io_test.cpp）。
+  // 测试进程自己的映像没有这张表 → 不得误认领。
   assert(!fushi_voice_hook::MatchesMalieProfile(nullptr));
 
   std::printf("engine_identity_layout_test: ok\n");

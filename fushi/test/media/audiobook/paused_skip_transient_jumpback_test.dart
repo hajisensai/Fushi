@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -71,7 +72,7 @@ void main() {
   // 源码守卫：暂停态抑制必须接在显式 seek guard 内，删掉就会让「跳两次」复发。
   test('源码守卫：_updateCurrentCue 显式 seek 段内有暂停态抑制', () {
     final String src = File(
-      '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
+      'lib/src/media/audiobook/audiobook_controller.dart',
     ).readAsStringSync();
     final int guardIdx = src.indexOf('if (_explicitSeekInFlight) {');
     expect(guardIdx, greaterThanOrEqualTo(0));

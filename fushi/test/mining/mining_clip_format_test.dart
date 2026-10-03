@@ -312,8 +312,20 @@ void main() {
       isIOS: Platform.isIOS,
     );
 
+    Future<PreferencesRepository> seeded(Map<String, String> prefs) async {
+      for (final MapEntry<String, String> e in prefs.entries) {
+        await db.setPref(e.key, PrefCodec.encode(e.value));
+      }
+      final PreferencesRepository seededRepo = PreferencesRepository(db);
+      await seededRepo.loadFromDb();
+      return seededRepo;
+    }
+
+    const String markerKey =
+        PreferencesRepository.miningImageModeInstallDefaultKey;
+
     test('全新安装：模式默认 videoClip，格式取平台默认，不写模式键', () async {
-      await repo.settleMiningImageModeInstallDefault(freshInstall: true);
+      await repo.settleMiningImageModeInstallDefault();
       expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
       expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
       expect(repo.videoMiningClipFormat, platformDefault);
@@ -330,64 +342,93 @@ void main() {
         restored.prefsSnapshot.containsKey('gal_mining_image_mode'),
         isFalse,
       );
+      expect(
+        restored.prefsSnapshot[markerKey],
+        PrefCodec.encode(VideoMiningImageMode.videoClip.wireName),
+      );
       expect(restored.videoMiningClipFormat, platformDefault);
       restored.dispose();
     });
 
-    test('存量用户（从没设过）升级：落显式 gif，不翻成片段', () async {
-      await repo.settleMiningImageModeInstallDefault(freshInstall: false);
-      expect(repo.videoMiningImageMode, VideoMiningImageMode.gif);
-      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
-      final PreferencesRepository restored = PreferencesRepository(db);
-      await restored.loadFromDb();
-      expect(restored.videoMiningImageMode, VideoMiningImageMode.gif);
-      expect(restored.galMiningImageMode, VideoMiningImageMode.gif);
-      expect(
-        restored.prefsSnapshot['video_mining_image_mode'],
-        PrefCodec.encode(VideoMiningImageMode.gif.wireName),
-      );
-      restored.dispose();
-      // 模式键被 Profile 快照删掉时，回落的是本安装默认 gif，不是全局 videoClip。
-      await db.deletePref('video_mining_image_mode');
-      final PreferencesRepository afterProfileSwitch = PreferencesRepository(
-        db,
-      );
-      await afterProfileSwitch.loadFromDb();
-      expect(afterProfileSwitch.videoMiningImageMode, VideoMiningImageMode.gif);
-      afterProfileSwitch.dispose();
+    test('还没跑迁移（弹窗入口）：没设过的模式取 videoClip', () {
+      expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
     });
 
-    test('存量用户显式设过的模式原样保留', () async {
-      await db.setPref(
-        'video_mining_image_mode',
-        PrefCodec.encode(VideoMiningImageMode.currentFrame.wireName),
+    test('被 09-28 钉成 gif 的存量安装：迁到片段，格式钉平台默认（不推成 MP4）', () async {
+      final PreferencesRepository legacy = await seeded(<String, String>{
+        markerKey: VideoMiningImageMode.gif.wireName,
+        'video_mining_image_mode': VideoMiningImageMode.gif.wireName,
+        'gal_mining_image_mode': VideoMiningImageMode.gif.wireName,
+      });
+      await legacy.settleMiningImageModeInstallDefault();
+      expect(legacy.videoMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(legacy.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(legacy.videoMiningClipFormat, platformDefault);
+      expect(legacy.galMiningClipFormat, platformDefault);
+      legacy.dispose();
+      final PreferencesRepository restored = PreferencesRepository(db);
+      await restored.loadFromDb();
+      expect(restored.videoMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(restored.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(restored.videoMiningClipFormat, platformDefault);
+      expect(restored.galMiningClipFormat, platformDefault);
+      expect(
+        restored.prefsSnapshot[markerKey],
+        PrefCodec.encode(VideoMiningImageMode.videoClip.wireName),
       );
-      final PreferencesRepository legacy = PreferencesRepository(db);
-      await legacy.loadFromDb();
-      await legacy.settleMiningImageModeInstallDefault(freshInstall: false);
+      restored.dispose();
+    });
+
+    test('迁移只改 gif：其它显式模式与显式格式原样保留', () async {
+      final PreferencesRepository legacy = await seeded(<String, String>{
+        markerKey: VideoMiningImageMode.gif.wireName,
+        'video_mining_image_mode': VideoMiningImageMode.currentFrame.wireName,
+        'gal_mining_image_mode': VideoMiningImageMode.gif.wireName,
+        'gal_mining_clip_format': MiningClipFormat.webmAv1.wireName,
+      });
+      await legacy.settleMiningImageModeInstallDefault();
       expect(legacy.videoMiningImageMode, VideoMiningImageMode.currentFrame);
-      expect(legacy.galMiningImageMode, VideoMiningImageMode.gif);
+      expect(legacy.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(legacy.galMiningClipFormat, MiningClipFormat.webmAv1);
+      expect(
+        legacy.prefsSnapshot.containsKey('video_mining_clip_format'),
+        isFalse,
+      );
       legacy.dispose();
     });
 
-    test('只落一次：之后再判成全新安装也不改（幂等）', () async {
-      await repo.settleMiningImageModeInstallDefault(freshInstall: false);
-      await repo.settleMiningImageModeInstallDefault(freshInstall: true);
-      expect(repo.miningImageModeInstallDefault, VideoMiningImageMode.gif);
-      await db.deletePref('video_mining_image_mode');
-      final PreferencesRepository restored = PreferencesRepository(db);
-      await restored.loadFromDb();
-      expect(restored.videoMiningImageMode, VideoMiningImageMode.gif);
-      restored.dispose();
+    test('只迁一次：迁完后用户再选 gif 不会被改回片段', () async {
+      final PreferencesRepository legacy = await seeded(<String, String>{
+        markerKey: VideoMiningImageMode.gif.wireName,
+        'video_mining_image_mode': VideoMiningImageMode.gif.wireName,
+      });
+      await legacy.settleMiningImageModeInstallDefault();
+      legacy.setVideoMiningImageMode(VideoMiningImageMode.gif);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      legacy.dispose();
+      final PreferencesRepository nextLaunch = PreferencesRepository(db);
+      await nextLaunch.loadFromDb();
+      await nextLaunch.settleMiningImageModeInstallDefault();
+      expect(nextLaunch.videoMiningImageMode, VideoMiningImageMode.gif);
+      nextLaunch.dispose();
     });
 
-    test('还没落本安装默认（弹窗入口 / 迁移前）：按存量用户取 gif', () {
-      expect(repo.miningImageModeInstallDefault, VideoMiningImageMode.gif);
-      expect(repo.videoMiningImageMode, VideoMiningImageMode.gif);
-      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
+    test('标记缺失（09-28 之前的版本直接升级）：显式 gif 是用户自己选的，不改', () async {
+      final PreferencesRepository legacy = await seeded(<String, String>{
+        'video_mining_image_mode': VideoMiningImageMode.gif.wireName,
+      });
+      await legacy.settleMiningImageModeInstallDefault();
+      expect(legacy.videoMiningImageMode, VideoMiningImageMode.gif);
+      expect(legacy.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(
+        legacy.prefsSnapshot[markerKey],
+        PrefCodec.encode(VideoMiningImageMode.videoClip.wireName),
+      );
+      legacy.dispose();
     });
 
-    test('本安装默认键登记为已知偏好，且不随 Profile 快照走', () {
+    test('迁移标记键登记为已知偏好，且不随 Profile 快照走', () {
       expect(
         kKnownPreferenceKeys,
         contains(PreferencesRepository.miningImageModeInstallDefaultKey),

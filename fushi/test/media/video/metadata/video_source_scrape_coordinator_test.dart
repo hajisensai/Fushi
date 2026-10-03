@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
@@ -14,7 +15,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloade
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -1340,7 +1342,8 @@ void main() {
     // 人工确认后抓取选中项详情」同一套假 provider，AI 只是在人工确认前多一道。
     Future<VideoSourceScrapeCoordinator> buildCoordinator(
       _CatalogConfirmationAniDbProvider provider, {
-      required AiVideoIdentityDecider? decider,
+      AiVideoIdentityDecider? decider,
+      _FakeAiAdvisor? advisor,
     }) async =>
         VideoSourceScrapeCoordinator(
           primaryProvider: VideoMetadataProviderKind.anidb,
@@ -1349,8 +1352,21 @@ void main() {
           registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
             provider,
           ]),
-          aiIdentityDecider: decider,
+          aiIdentityAdvisor: advisor ??
+              (decider == null
+                  ? null
+                  : _FakeAiAdvisor(
+                      decide: decider,
+                    )),
         );
+
+    List<VideoScrapeAiIdentityNote> aiNotes(SourceScrapeReport report) =>
+        <VideoScrapeAiIdentityNote>[
+          for (final SourceScrapeIssue issue in report.warnings)
+            if (parseVideoScrapeAiIdentityNote(issue.message)
+                case final VideoScrapeAiIdentityNote note)
+              note,
+        ];
 
     test('高置信判定：不弹人工确认，绑定该候选并在运行记录留 ai:matched 标记',
         () async {
@@ -1416,7 +1432,7 @@ void main() {
       expect(runs.single.summaryJson, contains('ai:matched'));
     });
 
-    test('低置信判定：仍弹人工确认，运行记录不留 AI 标记', () async {
+    test('低置信判定：仍弹人工确认并标出 AI 建议，运行记录记 ai:declined', () async {
       final SourceLibraryRow source = await _createMovieSource(
         db,
         root,
@@ -1438,6 +1454,14 @@ void main() {
         onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
           confirmationAsked = true;
           expect(confirmation.candidates, hasLength(15));
+          final VideoSourceScrapeAiSuggestion suggestion =
+              confirmation.aiSuggestion!;
+          expect(
+            confirmation
+                .candidates[suggestion.candidateIndex].lookup.externalId,
+            '7',
+          );
+          expect(suggestion.confidencePercent, 60);
           return confirmation.candidates.last;
         },
       );
@@ -1446,24 +1470,21 @@ void main() {
       expect(report.succeededWorks, 1, reason: '${report.errors}');
       expect(provider.fetchedIds, <String>['15']);
       expect(
-        report.warnings.where((SourceScrapeIssue issue) =>
-            parseVideoScrapeAiIdentityNote(issue.message) != null),
-        isEmpty,
+        aiNotes(report).map((VideoScrapeAiIdentityNote n) => n.kind),
+        <VideoScrapeAiNoteKind>[VideoScrapeAiNoteKind.declined],
       );
     });
 
-    test('decider 抛异常：仍弹人工确认，刮削不失败', () async {
+    Future<SourceScrapeIssue> aiFailureFor(Object error) async {
       final SourceLibraryRow source = await _createMovieSource(
         db,
         root,
         provider: VideoMetadataProviderKind.anidb,
       );
-      final _CatalogConfirmationAniDbProvider provider =
-          _CatalogConfirmationAniDbProvider();
       final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
-        provider,
-        decider: (AiVideoIdentityQuery query) async =>
-            throw StateError('ai down'),
+        _CatalogConfirmationAniDbProvider(),
+        decider: (AiVideoIdentityQuery query) =>
+            Future<AiVideoIdentityDecision?>.error(error),
       );
       bool confirmationAsked = false;
 
@@ -1477,6 +1498,7 @@ void main() {
         },
       );
 
+      // AI 失败不连累刮削：照常弹人工确认、照常完成。
       expect(confirmationAsked, isTrue);
       expect(report.succeededWorks, 1, reason: '${report.errors}');
       expect(report.failedWorks, 0);
@@ -1484,6 +1506,45 @@ void main() {
       final List<VideoSourceScrapeRunRow> runs =
           await db.getVideoSourceScrapeRuns(sourceId: source.id);
       expect(runs.single.status, 'completed');
+      // 失败不再无痕：运行记录有 ai:failed。
+      return report.warnings.singleWhere(
+        (SourceScrapeIssue issue) =>
+            parseVideoScrapeAiIdentityNote(issue.message)?.kind ==
+            VideoScrapeAiNoteKind.failed,
+      );
+    }
+
+    test('AI 临时失败（断网 / 超时）：标成临时失败，补刮撤账下轮再试', () async {
+      final SourceScrapeIssue failure =
+          await aiFailureFor(const AiChatFailure('network_error'));
+      expect(failure.providerUnavailable, isTrue);
+      expect(failure.workKey, isNotNull);
+      expect(
+        parseVideoScrapeAiIdentityNote(failure.message)!.reason,
+        'network_error',
+      );
+    });
+
+    test('AI 鉴权失败：照常记账——重试也一样，不能每轮补刮对整库重问', () async {
+      final SourceScrapeIssue failure =
+          await aiFailureFor(const AiChatFailure('unauthorized'));
+      expect(failure.providerUnavailable, isFalse);
+      expect(
+        parseVideoScrapeAiIdentityNote(failure.message)!.reason,
+        'unauthorized',
+      );
+    });
+
+    test('非 AiChatFailure 异常：不算临时，理由只留类型名不透出原文', () async {
+      final SourceScrapeIssue failure = await aiFailureFor(
+        StateError('https://example.test/v1?key=sk-secret'),
+      );
+      expect(failure.providerUnavailable, isFalse);
+      expect(
+        parseVideoScrapeAiIdentityNote(failure.message)!.reason,
+        'StateError',
+      );
+      expect(failure.message, isNot(contains('sk-secret')));
     });
 
     test('后台批次（无确认回调）：高置信判定直接收敛，不再落待确认', () async {
@@ -1533,6 +1594,161 @@ void main() {
       expect(provider.fetchCount, 0);
     });
 
+    // BUG-2828：挂起原因结构化落库，事后能分出是哪条分支、AI 问没问、问了什么。
+    Future<VideoScrapePendingNote> pendingNoteAfter(
+      AiVideoIdentityDecider? decider, {
+      VideoSourceScrapeConfirmationCallback? onConfirmation,
+      bool assigned = true,
+    }) async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        _CatalogConfirmationAniDbProvider(),
+        advisor: decider == null
+            ? null
+            : (_FakeAiAdvisor(decide: decider)
+              ..capability = assigned ? 'provider-a|model-1' : null),
+      );
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: onConfirmation,
+      );
+      expect(report.pendingConfirmations, 1);
+      final VideoScrapePendingNote note = report.warnings
+          .map((SourceScrapeIssue issue) =>
+              parseVideoScrapePendingNote(issue.message))
+          .whereType<VideoScrapePendingNote>()
+          .single;
+      // 作品键与计划器同源，待确认清单靠它对号；落库后解出来的是同一条。
+      expect(note.workKeys, <String>[
+        (await VideoSourceWorkPlanner(db).plan(source)).single.stableKey,
+      ]);
+      final List<VideoSourceScrapeRunRow> runs =
+          await db.getVideoSourceScrapeRuns(sourceId: source.id);
+      final SourceScrapeReport stored =
+          decodeSourceScrapeReport(runs.single.summaryJson)!;
+      expect(
+        stored.warnings
+            .map((SourceScrapeIssue issue) =>
+                parseVideoScrapePendingNote(issue.message)?.cause)
+            .whereType<VideoScrapePendingCause>(),
+        <VideoScrapePendingCause>[note.cause],
+      );
+      // 原有的人类可读文案整段保留。
+      expect(note.reason, contains('需要人工确认'));
+      return note;
+    }
+
+    test('挂起原因：后台批次 AI 低置信 → 等确认 · AI 不够确定', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:7', confidence: 0.6),
+      );
+      expect(note.cause, VideoScrapePendingCause.awaitingConfirmation);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.declined);
+      expect(note.candidateCount, 15);
+    });
+
+    test('挂起原因：未指派 AI 提供商 → unassigned', () async {
+      bool asked = false;
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async {
+          asked = true;
+          return null;
+        },
+        assigned: false,
+      );
+      // 未指派时完全不发 AI 请求（AI 硬边界）。
+      expect(asked, isFalse);
+      expect(note.cause, VideoScrapePendingCause.awaitingConfirmation);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.unassigned);
+    });
+
+    test('挂起原因：没装配 AI → unavailable', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(null);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.unavailable);
+    });
+
+    test('挂起原因：AI 调用失败 → failed', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async => throw StateError('ai down'),
+      );
+      expect(note.aiOutcome, VideoScrapeAiOutcome.failed);
+    });
+
+    test('挂起原因：用户取消确认 → dismissed', () async {
+      final VideoScrapePendingNote note = await pendingNoteAfter(
+        (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:7', confidence: 0.6),
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async =>
+            null,
+      );
+      expect(note.cause, VideoScrapePendingCause.dismissed);
+      expect(note.aiOutcome, VideoScrapeAiOutcome.declined);
+      expect(note.candidateCount, 15);
+    });
+
+    // 刮过却没留标记的路径会让待确认清单对用户说「没有记录」，所以异常与来源级
+    // 结账也必须带作品键。
+    test('挂起原因：单作品异常记成 error 并带作品键', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final VideoSourceScrapeCoordinator coordinator =
+          await buildCoordinator(_CatalogConfirmationAniDbProvider(),
+              decider: null);
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async =>
+            throw StateError('boom'),
+      );
+      expect(report.failedWorks, 1);
+      final VideoScrapePendingNote note =
+          parseVideoScrapePendingNote(report.errors.single.message)!;
+      expect(note.cause, VideoScrapePendingCause.error);
+      expect(note.reason, contains('boom'));
+      expect(note.workKeys, <String>[
+        (await VideoSourceWorkPlanner(db).plan(source)).single.stableKey,
+      ]);
+    });
+
+    test('挂起原因：整批没有可用资料源时来源级结账带全部作品键', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final VideoSourceScrapeCoordinator coordinator =
+          VideoSourceScrapeCoordinator(
+        primaryProvider: VideoMetadataProviderKind.anidb,
+        database: db,
+        config: const VideoSourceScrapeGlobalConfig(),
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[]),
+      );
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+      final VideoScrapePendingNote note =
+          parseVideoScrapePendingNote(report.errors.single.message)!;
+      expect(note.cause, VideoScrapePendingCause.providerUnavailable);
+      expect(note.workKeys, <String>[
+        for (final VideoSourceScrapeWork work
+            in await VideoSourceWorkPlanner(db).plan(source))
+          work.stableKey,
+      ]);
+    });
+
     test('同一目录同一批候选只问一次 AI（用户取消后重扫不重问）', () async {
       final SourceLibraryRow source = await _createMovieSource(
         db,
@@ -1563,7 +1779,344 @@ void main() {
 
       expect(deciderCalls, 1);
     });
+
+    test('换了 AI 提供商 / 模型：缓存的「不选」作废，同一批候选重问', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      int calls = 0;
+      final _FakeAiAdvisor advisor = _FakeAiAdvisor(
+        decide: (AiVideoIdentityQuery query) async {
+          calls++;
+          return calls == 1
+              ? const AiVideoIdentityDecision(key: null, confidence: 0)
+              : const AiVideoIdentityDecision(key: 'anidb:4', confidence: 0.95);
+        },
+      );
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        advisor: advisor,
+      );
+
+      final SourceScrapeReport first = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+      expect(first.pendingConfirmations, 1);
+
+      advisor.capability = 'provider-b|model-2';
+      final SourceScrapeReport second = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(calls, 2, reason: '能力键变了必须重问，不能沿用旧提供商的「不选」');
+      expect(second.succeededWorks, 1, reason: '${second.errors}');
+      expect(provider.fetchedIds, <String>['4']);
+    });
+
+    test('未指派 AI（能力键为 null）：一次都不问，也不记 AI 标记', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      int calls = 0;
+      final _FakeAiAdvisor advisor = _FakeAiAdvisor(
+        decide: (AiVideoIdentityQuery query) async {
+          calls++;
+          return const AiVideoIdentityDecision(key: 'anidb:1', confidence: 1);
+        },
+      )..capability = null;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        _CatalogConfirmationAniDbProvider(),
+        advisor: advisor,
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(calls, 0);
+      expect(report.pendingConfirmations, 1);
+      expect(aiNotes(report), isEmpty);
+      expect(coordinator.aiIdentityAvailable, isFalse);
+    });
+
+    test('「AI 识别」单作品：绕过缓存强制重问，高置信即采用', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      int calls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async {
+          calls++;
+          return calls == 1
+              ? const AiVideoIdentityDecision(key: null, confidence: 0)
+              : const AiVideoIdentityDecision(key: 'anidb:9', confidence: 0.9);
+        },
+      );
+      final SourceScrapeReport background = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+      expect(background.pendingConfirmations, 1);
+
+      final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(
+        db,
+      ).plan(source))
+          .single;
+      final SourceScrapeReport identified =
+          await coordinator.identifyWorkWithAi(
+        source: source,
+        workTitle: work.title,
+        workStableKey: work.stableKey,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(calls, 2, reason: '用户点「AI 识别」就是要重问，不能回缓存');
+      expect(identified.succeededWorks, 1, reason: '${identified.errors}');
+      expect(provider.fetchedIds, <String>['9']);
+      expect(
+        aiNotes(identified).map((VideoScrapeAiIdentityNote n) => n.kind),
+        <VideoScrapeAiNoteKind>[VideoScrapeAiNoteKind.matched],
+      );
+    });
+
+    test('资料源查无：按 AI 给的标题重搜，重搜候选仍要过 AI 判定才采用', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider(
+        answersTitle: (String title) => title == 'Official Title',
+      );
+      final List<AiVideoIdentityQuery> decided = <AiVideoIdentityQuery>[];
+      final _FakeAiAdvisor advisor = _FakeAiAdvisor(
+        decide: (AiVideoIdentityQuery query) async {
+          decided.add(query);
+          return const AiVideoIdentityDecision(key: 'anidb:2', confidence: 0.9);
+        },
+        suggest: (AiVideoIdentityQuery query) async {
+          expect(query.candidates, isEmpty);
+          return <String>['Official Title'];
+        },
+      );
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        advisor: advisor,
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(provider.searchedTitles, contains('Official Title'));
+      expect(decided.single.candidateKeys, hasLength(15));
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(provider.fetchedIds, <String>['2']);
+      expect(
+        aiNotes(report).map((VideoScrapeAiIdentityNote n) => n.kind),
+        <VideoScrapeAiNoteKind>[
+          VideoScrapeAiNoteKind.searched,
+          VideoScrapeAiNoteKind.matched,
+        ],
+      );
+    });
+
+    test('资料源查无且 AI 没给新标题：保留查无结论，不问判定', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      int decideCalls = 0;
+      final _FakeAiAdvisor advisor = _FakeAiAdvisor(
+        decide: (AiVideoIdentityQuery query) async {
+          decideCalls++;
+          return const AiVideoIdentityDecision(key: null, confidence: 0);
+        },
+        suggest: (AiVideoIdentityQuery query) async => const <String>[],
+      );
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        _CatalogConfirmationAniDbProvider(answersTitle: (String _) => false),
+        advisor: advisor,
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(decideCalls, 0);
+      expect(report.succeededWorks, 0);
+      expect(report.pendingConfirmations, 0);
+      expect(report.failedWorks, 1);
+    });
+
+    test('AI 给的「标题」是站点 URL / 显式 id：丢掉，不当身份直取', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider(answersTitle: (String _) => false);
+      int decideCalls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        advisor: _FakeAiAdvisor(
+          decide: (AiVideoIdentityQuery query) async {
+            decideCalls++;
+            return const AiVideoIdentityDecision(
+                key: 'anidb:12', confidence: 1);
+          },
+          suggest: (AiVideoIdentityQuery query) async =>
+              <String>['https://anidb.net/anime/12'],
+        ),
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(provider.fetchedIds, isEmpty, reason: 'AI 只出搜索词，不能指定身份');
+      expect(decideCalls, 0);
+      expect(report.succeededWorks, 0);
+    });
+
+    test('资料源搜索失败（鉴权 401）：没搜成，不找 AI 要搜索词', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      int suggestCalls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        _CatalogConfirmationAniDbProvider(
+          searchError: const VideoMetadataProviderUnavailable(
+            VideoMetadataProviderKind.anidb,
+            'HTTP 401',
+          ),
+        ),
+        advisor: _FakeAiAdvisor(
+          decide: (AiVideoIdentityQuery query) async => null,
+          suggest: (AiVideoIdentityQuery query) async {
+            suggestCalls++;
+            return <String>['Official Title'];
+          },
+        ),
+      );
+
+      await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(suggestCalls, 0, reason: '换标题重搜只会撞同一个故障');
+    });
+
+    test('AI 标题重搜到唯一精确命中：仍要过 AI 判定，低置信落待确认', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider(
+        answersTitle: (String _) => false,
+        uniqueExactTitle: 'Official Title',
+      );
+      // 前提：同一请求直接交给 resolver 会被判为唯一精确命中。
+      final VideoMetadataResolution direct = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.anidb,
+          mediaKind: VideoMetadataMediaKind.movie,
+          titleCandidates: const <String>['Official Title'],
+          year: 2024,
+        ),
+      );
+      expect(direct.status, VideoMetadataResolutionStatus.matched);
+
+      final List<AiVideoIdentityQuery> decided = <AiVideoIdentityQuery>[];
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        advisor: _FakeAiAdvisor(
+          decide: (AiVideoIdentityQuery query) async {
+            decided.add(query);
+            return const AiVideoIdentityDecision(
+              key: 'anidb:42',
+              confidence: 0.5,
+            );
+          },
+          suggest: (AiVideoIdentityQuery query) async =>
+              <String>['Official Title'],
+        ),
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(decided.single.candidateKeys, <String>['anidb:42']);
+      expect(report.succeededWorks, 0, reason: 'AI 给的词恰好精确命中也不绕过门槛');
+      expect(report.pendingConfirmations, 1);
+    });
   });
+}
+
+class _FakeAiAdvisor implements AiVideoIdentityAdvisor {
+  _FakeAiAdvisor({
+    required AiVideoIdentityDecider decide,
+    Future<List<String>> Function(AiVideoIdentityQuery query)? suggest,
+  })  : _decide = decide,
+        _suggest =
+            suggest ?? ((AiVideoIdentityQuery query) async => const <String>[]);
+
+  String? capability = 'provider-a|model-1';
+  final AiVideoIdentityDecider _decide;
+  final Future<List<String>> Function(AiVideoIdentityQuery query) _suggest;
+
+  @override
+  String? get capabilityKey => capability;
+
+  @override
+  Future<AiVideoIdentityDecision> decide(AiVideoIdentityQuery query) async =>
+      await _decide(query) ??
+      const AiVideoIdentityDecision(key: null, confidence: 0);
+
+  @override
+  Future<List<String>> suggestSearchTitles(AiVideoIdentityQuery query) =>
+      _suggest(query);
 }
 
 Future<({int collectionId, SourceLibraryRow source})> _createContinuationSource(
@@ -1736,8 +2289,23 @@ class _FakeAniDbProvider implements VideoMetadataProvider {
 }
 
 class _CatalogConfirmationAniDbProvider implements VideoMetadataProvider {
+  _CatalogConfirmationAniDbProvider({
+    this.answersTitle,
+    this.searchError,
+    this.uniqueExactTitle,
+  });
+
+  /// null = 任何标题都给 15 条模糊候选；否则只有它放行的标题才有结果。
+  final bool Function(String title)? answersTitle;
+
+  /// 非 null 时每次搜索都抛它（模拟资料源鉴权失败等）。
+  final Exception? searchError;
+
+  /// 搜这个标题时只回一条标题、类型、年份都精确的作品（anidb:42）。
+  final String? uniqueExactTitle;
   int fetchCount = 0;
   final List<String> fetchedIds = <String>[];
+  final List<String> searchedTitles = <String>[];
 
   @override
   VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.anidb;
@@ -1748,25 +2316,51 @@ class _CatalogConfirmationAniDbProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataWork>> search(
     VideoMetadataSearchRequest request,
-  ) async =>
-      <VideoMetadataWork>[
-        for (int id = 1; id <= 15; id++)
-          VideoMetadataWork(
-            provider: providerKind,
-            kind: VideoMetadataMediaKind.movie,
-            title: 'Fuzzy catalog result $id',
-            ids: <VideoMetadataId>[
-              VideoMetadataId(
-                type: 'anidb',
-                value: '$id',
-                isDefault: true,
-              ),
-            ],
-            rawPayload: const <String, Object?>{
-              AniDbVideoMetadataProvider.catalogOnlyPayloadKey: true,
-            },
-          ),
+  ) async {
+    final Exception? error = searchError;
+    if (error != null) throw error;
+    if (request.title == uniqueExactTitle) {
+      searchedTitles.add(request.title);
+      return <VideoMetadataWork>[
+        VideoMetadataWork(
+          provider: providerKind,
+          kind: VideoMetadataMediaKind.movie,
+          title: request.title,
+          year: 2024,
+          ids: <VideoMetadataId>[
+            VideoMetadataId(type: 'anidb', value: '42', isDefault: true),
+          ],
+        ),
       ];
+    }
+    return _catalog(request);
+  }
+
+  List<VideoMetadataWork> _catalog(VideoMetadataSearchRequest request) =>
+      <VideoMetadataWork>[
+        if (_record(request.title))
+          for (int id = 1; id <= 15; id++)
+            VideoMetadataWork(
+              provider: providerKind,
+              kind: VideoMetadataMediaKind.movie,
+              title: 'Fuzzy catalog result $id',
+              ids: <VideoMetadataId>[
+                VideoMetadataId(
+                  type: 'anidb',
+                  value: '$id',
+                  isDefault: true,
+                ),
+              ],
+              rawPayload: const <String, Object?>{
+                AniDbVideoMetadataProvider.catalogOnlyPayloadKey: true,
+              },
+            ),
+      ];
+
+  bool _record(String title) {
+    searchedTitles.add(title);
+    return answersTitle?.call(title) ?? true;
+  }
 
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {

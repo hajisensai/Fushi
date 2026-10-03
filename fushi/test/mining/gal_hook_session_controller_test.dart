@@ -1470,12 +1470,20 @@ void main() {
     },
   );
 
-  test('launchGame passes Luna PC hooks for manosaba Unity target', () async {
+  test('launchGame passes Luna PC hooks for Unity IL2CPP layout', () async {
     final Directory dir = await Directory.systemTemp.createTemp(
       'gal_manosaba_',
     );
     final File exe = File('${dir.path}${Platform.pathSeparator}manosaba.exe');
     await exe.writeAsBytes(<int>[0], flush: true);
+    // 判据是 Unity 目录结构，不是 exe 名：manosaba 的真实布局是
+    // UnityPlayer.dll + GameAssembly.dll。
+    await File(
+      '${dir.path}${Platform.pathSeparator}UnityPlayer.dll',
+    ).writeAsBytes(<int>[1], flush: true);
+    await File(
+      '${dir.path}${Platform.pathSeparator}GameAssembly.dll',
+    ).writeAsBytes(<int>[1], flush: true);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(
@@ -2254,6 +2262,91 @@ void main() {
       controller.events.map((GalHookEvent event) => event.code),
       contains('window.auto_bound_late'),
     );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-2890：启动设置对话框关掉后改绑到随后出现的主窗口', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    // CatSystem2 / CMVS：进程第一个可见窗口是「画面モード / 起動時の設定」对话框。
+    const ExternalWindowInfo dialog = ExternalWindowInfo(
+      hwnd: 21,
+      pid: 4242,
+      title: '起動時の設定',
+    );
+    const ExternalWindowInfo main = ExternalWindowInfo(
+      hwnd: 34,
+      pid: 4242,
+      title: 'リアライブ・体験版',
+    );
+    List<ExternalWindowInfo> windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 12, pid: 9, title: '别的窗口'),
+      dialog,
+    ];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => windows,
+      windowPollAttempts: 1,
+      windowRebindInterval: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\realive\cmvs32.exe')).launched,
+      isTrue,
+    );
+    expect(controller.state.boundWindow?.hwnd, dialog.hwnd);
+
+    // 对话框关掉、主窗口还没建：没有替代窗口时保留原绑定，不清空。
+    windows = const <ExternalWindowInfo>[];
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.state.boundWindow?.hwnd, dialog.hwnd);
+
+    // 主窗口出现：改绑过去。
+    windows = const <ExternalWindowInfo>[main];
+    for (int i = 0; i < 40 && controller.state.boundWindow?.hwnd != 34; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(
+      controller.state.boundWindow?.hwnd,
+      main.hwnd,
+      reason: '绑定必须跟着窗口生命周期走，不能永远指着已销毁的对话框',
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('window.rebound'),
+    );
+
+    // 主窗口还活着时，同进程再冒出别的窗口（如游戏内的退出确认框）不得抢走绑定。
+    windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 56, pid: 4242, title: '終了'),
+      main,
+    ];
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.state.boundWindow?.hwnd, main.hwnd);
 
     await controller.close();
     endpoints.dispose();
@@ -3358,25 +3451,34 @@ void _bug950Guard() {
     final String body = src.readAsStringSync();
     final int pollAt = body.indexOf('Future<void> _pollHookedText()');
     expect(pollAt, greaterThan(0), reason: '_pollHookedText 不存在，守卫需更新');
-    final int pollEnd = body.indexOf(
-      'Future<void> _refreshReadinessThrottled',
+    // BUG-2858：文本道消费拆成 _consumeTextLane（选线程时也直接调它），两段各自钉住。
+    final int consumeAt = body.indexOf(
+      'Future<void> _consumeTextLane(',
       pollAt,
     );
-    expect(pollEnd, greaterThan(pollAt), reason: '找不到 _pollHookedText 结尾');
-    final List<String> awaited = RegExp(r'await ([A-Za-z_.]+)\(')
-        .allMatches(body.substring(pollAt, pollEnd))
+    expect(consumeAt, greaterThan(pollAt), reason: '找不到 _consumeTextLane');
+    final int consumeEnd = body.indexOf(
+      'Future<void> _refreshReadinessThrottled',
+      consumeAt,
+    );
+    expect(
+      consumeEnd,
+      greaterThan(consumeAt),
+      reason: '找不到 _consumeTextLane 结尾',
+    );
+    List<String> awaitedIn(int from, int to) => RegExp(r'await ([A-Za-z_.]+)\(')
+        .allMatches(body.substring(from, to))
         .map((RegExpMatch m) => m.group(1)!)
         .toList();
+    expect(awaitedIn(pollAt, consumeAt), <String>[
+      '_refreshReadinessThrottled',
+      '_pollThreadPreviews',
+      '_consumeTextLane',
+    ], reason: 'v12 的线程预览必须先于文本环轮询');
     expect(
-      awaited,
-      <String>[
-        '_refreshReadinessThrottled',
-        '_pollThreadPreviews',
-        'engine.pollText',
-      ],
-      reason:
-          'v12 的线程预览必须先于文本环轮询，且 BUG-1063 仍要求'
-          '语音抓取走 _scheduleLineAudioAttach 的后台队列',
+      awaitedIn(consumeAt, consumeEnd),
+      <String>['engine.pollText'],
+      reason: 'BUG-1063 仍要求语音抓取走 _scheduleLineAudioAttach 的后台队列',
     );
 
     final int attachAt = body.indexOf('Future<void> _attachLineAudio(');
@@ -3387,6 +3489,90 @@ void _bug950Guard() {
           attachBody.contains('BUG-950'),
       isTrue,
       reason: 'BUG-950：语音抓取 await 归来后必须复检 engine generation',
+    );
+  });
+
+  test('BUG-2858：选定线程后回捞的旧句必须排在新句之前，最后一行是最新台词', () async {
+    GalHookedLine line(int seq, String text) => GalHookedLine(
+      seq: seq,
+      timestampMs: 1790000000000 + seq,
+      text: text,
+      threadId: 5,
+      hookName: 'TestScenario',
+    );
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final List<GalHookedLine> ring = <GalHookedLine>[
+      line(1, '選ぶ前の一行目'),
+      line(2, '選ぶ前の二行目'),
+    ];
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3]),
+      replayBufferedLines: true,
+      polledLines: ring,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      textPollInterval: const Duration(milliseconds: 5),
+      resourceAudioWait: Duration.zero,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    addTearDown(() async {
+      await controller.close();
+      endpoints.dispose();
+    });
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 9, pid: 4242, title: 'synthetic game'),
+    );
+    for (int i = 0; i < 200 && !engine.pollCursors.contains(2); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(engine.pollCursors, contains(2), reason: '选择前两行已被消费为未选定');
+    expect(service.entries, isEmpty);
+
+    // 选中之后玩家翻到下一句；全量回放（回捞）被拖住，增量轮询照常跑。
+    // 旧实现里回捞是独立的第二个轮询者：定时轮询先收进第 3 句，回捞再把第 1、2 句
+    // 接在它后面，工作台最后一行变成旧句。
+    ring.add(line(3, '選んだ後の最新の台詞'));
+    final Completer<void> gate = Completer<void>();
+    engine.fullReplayGate = gate;
+    final Future<bool> selecting = controller.selectTextThread(
+      5,
+      threadKey: ring.first.textThreadKey,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    gate.complete();
+    expect(await selecting, isTrue);
+    for (int i = 0; i < 100 && service.entries.length < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(
+      service.entries.map((TexthookerLineEntry e) => e.sourceSequence),
+      <int>[1, 2, 3],
+      reason: '回捞与新行必须在同一次按 seq 升序的消费里落地',
+    );
+    expect(service.entries.last.text, '選んだ後の最新の台詞');
+    expect(
+      controller.events.map((e) => e.code),
+      contains('text.thread_history_recovered'),
     );
   });
 
@@ -4287,6 +4473,9 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final GalVoiceDumpIndex? voiceDumpIndex;
   final List<GalHookedLine> Function(int invocation)? pollLinesForInvocation;
   Future<void> Function()? beforePoll;
+
+  /// 非空时，`pollText(0)`（全量回放）卡在这里直到它完成；增量轮询不受影响。
+  Completer<void>? fullReplayGate;
   final List<int> pollCursors = <int>[];
   int pollInvocations = 0;
   final GalAudioSlice? utteranceSlice;
@@ -4418,6 +4607,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     final Future<void> Function()? callback = beforePoll;
     beforePoll = null;
     if (callback != null) await callback();
+    final Completer<void>? gate = fullReplayGate;
+    if (sinceSeq == 0 && gate != null) await gate.future;
     _pollCalls++;
     pollCursors.add(sinceSeq);
     final List<GalHookedLine> lines =

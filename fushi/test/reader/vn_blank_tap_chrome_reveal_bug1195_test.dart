@@ -28,6 +28,7 @@ void main() {
           chromeExpanded: false,
           bottomBarFloating: false,
           transientVisible: false,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.expandChrome,
       );
@@ -39,6 +40,7 @@ void main() {
           chromeExpanded: false,
           bottomBarFloating: true,
           transientVisible: false,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.revealChrome,
       );
@@ -50,6 +52,7 @@ void main() {
           chromeExpanded: true,
           bottomBarFloating: true,
           transientVisible: false,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.revealChrome,
       );
@@ -61,6 +64,7 @@ void main() {
           chromeExpanded: true,
           bottomBarFloating: true,
           transientVisible: true,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.advanceAndRevealChrome,
       );
@@ -72,6 +76,7 @@ void main() {
           chromeExpanded: true,
           bottomBarFloating: false,
           transientVisible: false,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.advance,
       );
@@ -83,6 +88,7 @@ void main() {
           chromeExpanded: true,
           bottomBarFloating: true,
           transientVisible: false,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.revealChrome,
         reason: '底栏隐藏时必须把这一下完整留给唤栏',
@@ -92,6 +98,7 @@ void main() {
           chromeExpanded: true,
           bottomBarFloating: true,
           transientVisible: true,
+          toolbarsHidden: false,
         ),
         ReaderVnBlankTapAction.advanceAndRevealChrome,
         reason: '底栏已经可见时，空白点击才是推进意图',
@@ -107,6 +114,7 @@ void main() {
             chromeExpanded: true,
             bottomBarFloating: true,
             transientVisible: visible,
+            toolbarsHidden: false,
           ),
           expandChrome: () => actions.add('expand'),
           revealChrome: () => actions.add('reveal'),

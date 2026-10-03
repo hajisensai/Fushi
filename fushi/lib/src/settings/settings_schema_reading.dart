@@ -20,6 +20,8 @@ SettingsDestination buildReadingDestination() {
   // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
       c.readerSource.readerViewMode == 'paginated';
+  bool isContinuous(SettingsContext c) =>
+      c.readerSource.readerViewMode == 'continuous';
   bool isVisualNovel(SettingsContext c) =>
       c.readerSource.readerViewMode == 'vn';
   bool isVisualNovelSentenceMode(SettingsContext c) =>
@@ -580,6 +582,9 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.wheel_page_turn_interval',
             titleReadout: true,
             title: t.wheel_page_turn_interval,
+            // 滚动模式的滚轮是无极滚动、不翻页（kContinuousWheelScrollJs），
+            // 「翻页间隔」在那里无从谈起；分页与 VN 仍按它限速。
+            visible: (SettingsContext c) => !isContinuous(c),
             icon: Icons.mouse_outlined,
             min: 150,
             max: 1000,
@@ -774,6 +779,29 @@ SettingsDestination buildReadingDestination() {
                 (value * 1000).round(),
               );
               notifyReaderChromeChanged(settingsContext);
+            },
+          ),
+          // 关掉顶栏和底栏，由应用内悬浮球接管（返回 / 设置 / 开回栏固定在球上）。
+          // 偏好只在应用内悬浮球开着时生效（readerToolbarsHidden），所以拨开时球若
+          // 关着就一并打开（setHideReaderToolbars）；球后来被关掉则栏自动回来，
+          // 副标题说明原因。改变栏的占位 → 走重锚通道。
+          SettingsSwitchItem(
+            id: 'reading_controls.hide_toolbars',
+            title: t.reader_toolbars_hide,
+            icon: Icons.web_asset_off_outlined,
+            subtitleBuilder: (SettingsContext c) =>
+                c.readerSource.hideToolbars &&
+                        !c.appModel.prefsRepo.floatingBallInApp
+                    ? t.reader_toolbars_hide_ball_off
+                    : t.reader_toolbars_hide_subtitle,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 21,
+            ),
+            value: (SettingsContext c) => c.readerSource.hideToolbars,
+            onChanged: (SettingsContext c, bool value) async {
+              await setHideReaderToolbars(c.appModel, value);
+              notifyReaderChromeReanchored(c);
             },
           ),
           SettingsSwitchItem(

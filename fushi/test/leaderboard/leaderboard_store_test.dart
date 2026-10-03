@@ -70,6 +70,23 @@ void main() {
     expect(await s1.read(), isNull);
   });
 
+  test('uploadingProfileIds：只认同意上传且没被顶掉的账户文件（BUG-2870）', () async {
+    expect(await LeaderboardStore.uploadingProfileIds(root), isEmpty);
+    LeaderboardStore s(int id) =>
+        LeaderboardStore(supportRoot: root, profileId: id);
+    await s(1).write(account());
+    await s(2).write(account().copyWith(uploadEnabled: false));
+    await s(3).write(account().copyWith(uploadBlockedByOtherDevice: true));
+    await s(7).write(account());
+    // 临时文件、无关文件、坏文件都不算。
+    File(
+      p.join(root.path, 'leaderboard', 'profile_9.json.tmp'),
+    ).writeAsStringSync('{}');
+    File(p.join(root.path, 'leaderboard', 'notes.txt')).writeAsStringSync('x');
+    await s(8).file.writeAsString('{');
+    expect(await LeaderboardStore.uploadingProfileIds(root), <int>{1, 7});
+  });
+
   test('坏文件视为未开启，日志里不带文件内容（私钥）', () async {
     final LeaderboardStore s = LeaderboardStore(
       supportRoot: root,

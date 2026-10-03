@@ -314,7 +314,7 @@ public abstract class BaseFloatingService extends Service {
      * touch can never see the sentinel {@code -1} (which would make every gesture a
      * drag and swallow taps). TODO-1268.
      */
-    private int dragSlopPx() {
+    protected int dragSlopPx() {
         if (touchSlopPx < 0) {
             touchSlopPx = ViewConfiguration.get(this).getScaledTouchSlop();
         }

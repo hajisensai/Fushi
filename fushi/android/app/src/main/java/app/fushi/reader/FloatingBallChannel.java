@@ -32,6 +32,9 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
  *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
+ *   <li>{@code startSystemBall.icons}：按钮 id → Material Icons 码位（与应用内球同一颗
+ *       IconData），{@code startSystemBall.colors}：{@code surface / onSurface / primary}
+ *       的 ARGB。都用来把系统球画得和应用内球一样（BUG-2793），缺省回退首字 / 默认配色。</li>
  * </ul>
  */
 final class FloatingBallChannel {
@@ -41,6 +44,12 @@ final class FloatingBallChannel {
     static final String METHOD_SCREEN_OCR_FINISHED = "screenOcrFinished";
     /** 原生 → Dart：系统球「查词」，Fushi 已被拉到前台，请打开查词页。 */
     static final String METHOD_OPEN_LOOKUP_PAGE = "openLookupPage";
+    /** 原生 → Dart：系统球「拍照查词」，Fushi 已被拉到前台，请开相机。 */
+    static final String METHOD_OPEN_CAMERA_OCR = "openCameraOcr";
+    /** 原生 → Dart：系统球「立即同步」，Fushi 已被拉到前台，请跑一轮同步。 */
+    static final String METHOD_OPEN_SYNC = "openSync";
+    /** 原生 → Dart：截屏 OCR 报模型未就绪，Fushi 已被拉到前台，请打开系统 OCR 配置。 */
+    static final String METHOD_OPEN_SYSTEM_OCR_SETUP = "openSystemOcrSetup";
     /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
     static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
 
@@ -62,6 +71,14 @@ final class FloatingBallChannel {
      * 装好 handler 后经 {@code takePendingOpenLookupPage} 取走。只在主线程读写。
      */
     private static boolean pendingOpenLookupPage = false;
+
+    /** 同 {@link #pendingOpenLookupPage}，排的是系统球「拍照查词」。只在主线程读写。 */
+    private static boolean pendingCameraOcr = false;
+
+    /** 同 {@link #pendingOpenLookupPage}，排的是系统球「立即同步」。只在主线程读写。 */
+    private static boolean pendingSync = false;
+    /** 同 {@link #pendingOpenLookupPage}，排的是「打开系统 OCR 配置」。只在主线程读写。 */
+    private static boolean pendingSystemOcrSetup = false;
 
     private FloatingBallChannel() {}
 
@@ -127,6 +144,63 @@ final class FloatingBallChannel {
     }
 
     /**
+     * 系统球「拍照查词」：主引擎在就直接推 {@code openCameraOcr}（Fushi 随后被拉到前台，
+     * Dart 开相机）；不在就排队，由冷启动的 Dart 经 {@code takePendingCameraOcr} 来取。
+     * 主线程调用。
+     */
+    static void requestCameraOcr() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingCameraOcr = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_CAMERA_OCR, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openCameraOcr could not be delivered; queued", e);
+            pendingCameraOcr = true;
+        }
+    }
+
+    /**
+     * 系统球「立即同步」：主引擎在就直接推 {@code openSync}（Fushi 随后被拉到前台，
+     * Dart 跑同步）；不在就排队，由冷启动的 Dart 经 {@code takePendingSync} 来取。
+     * 主线程调用。
+     */
+    static void requestSync() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingSync = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_SYNC, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openSync could not be delivered; queued", e);
+            pendingSync = true;
+        }
+    }
+
+    /**
+     * 截屏 OCR 报模型未就绪（BUG-2906）：主引擎在就直接推 {@code openSystemOcrSetup}
+     * （Fushi 随后被拉到前台，Dart 弹配置）；不在就排队，由冷启动的 Dart 经
+     * {@code takePendingSystemOcrSetup} 来取。主线程调用。
+     */
+    static void requestSystemOcrSetup() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingSystemOcrSetup = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_SYSTEM_OCR_SETUP, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openSystemOcrSetup could not be delivered; queued", e);
+            pendingSystemOcrSetup = true;
+        }
+    }
+
+    /**
      * 用户关掉了系统球：主引擎在就立刻通知 Dart 关开关；不在也无妨，持久标记已由
      * {@link FloatingBallService} 落盘，Dart 下次同步开关前会取走。主线程调用。
      */
@@ -169,6 +243,8 @@ final class FloatingBallChannel {
                         app,
                         stringList(call.argument("actions")),
                         stringMap(call.argument("labels")),
+                        intMap(call.argument("icons")),
+                        intMap(call.argument("colors")),
                         call.argument("ocrLanguage"));
                 if (FloatingBallService.getInstance() == null) {
                     Intent svc = new Intent(app, FloatingBallService.class);
@@ -204,6 +280,24 @@ final class FloatingBallChannel {
                 result.success(pending);
                 return;
             }
+            case "takePendingCameraOcr": {
+                boolean pending = pendingCameraOcr;
+                pendingCameraOcr = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingSync": {
+                boolean pending = pendingSync;
+                pendingSync = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingSystemOcrSetup": {
+                boolean pending = pendingSystemOcrSetup;
+                pendingSystemOcrSetup = false;
+                result.success(pending);
+                return;
+            }
             case "takeSystemBallClosedByUser":
                 result.success(FloatingBallService.takeClosedByUser(app));
                 return;
@@ -228,6 +322,22 @@ final class FloatingBallChannel {
         List<String> out = new ArrayList<>();
         for (Object o : (List<?>) raw) {
             if (o != null) out.add(o.toString());
+        }
+        return out;
+    }
+
+    /**
+     * 数值表（图标码位 / ARGB 颜色）。Dart int 按大小落成 Integer 或 Long（ARGB 高位为 1
+     * 时是 Long），统一按 {@link Number#intValue} 截成 32 位——ARGB 正好是 32 位。
+     */
+    private static Map<String, Integer> intMap(@Nullable Object raw) {
+        Map<String, Integer> out = new HashMap<>();
+        if (raw instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) raw).entrySet()) {
+                if (e.getKey() != null && e.getValue() instanceof Number) {
+                    out.put(e.getKey().toString(), ((Number) e.getValue()).intValue());
+                }
+            }
         }
         return out;
     }

@@ -1,0 +1,88 @@
+<!-- Kiku Note __VERSION__
+This file is auto-generated. Any manual changes will be lost on save.
+-->
+
+<kiku-host-anki
+  id="kiku-host"
+  side="front"
+  ssr
+  data-theme="__DATA_THEME__"
+  data-theme-dark="__DATA_THEME_DARK__"
+></kiku-host-anki>
+<div
+  id="kiku-root"
+  part="root"
+  data-kiku-cloak
+  data-side="front"
+  data-theme="__DATA_THEME__"
+  data-theme-dark="__DATA_THEME_DARK__"
+  data-blur-nsfw="__DATA_BLUR_NSFW__"
+  data-picture-on-front="__DATA_PICTURE_ON_FRONT__"
+  data-mod-vertical="__DATA_MOD_VERTICAL__"
+>
+  <!-- Do not modify anything if you don't know what you're doing Σ(°ロ°) -->
+  <!-- SSR_TEMPLATE -->
+</div>
+
+<link rel="stylesheet" href="_kiku.css" id="kiku-css" />
+<link rel="stylesheet" href="_kiku_plugin.css" id="kiku-css-plugin" />
+<link href="_kiku.js" data-anki-include />
+<link href="_kiku_libs.js" data-anki-include />
+<link href="_kiku_shared.js" data-anki-include />
+<link href="_kiku_lazy.js" data-anki-include />
+<link href="_kiku_worker.js" data-anki-include />
+<link href="_kiku_plugin.js" data-anki-include />
+<link href="_kiku_db_main.tar" data-anki-include />
+<link href="_kiku_db_main_manifest.json" data-anki-include />
+<link href="_kiku_back.html" data-anki-include />
+<link href="_kiku_front.html" data-anki-include />
+<link href="_kiku_style.css" data-anki-include />
+
+<template id="anki-fields">
+  {{#IsAudioCard}}
+  <template data-field="ExpressionAudio"></template>
+  <template data-field="SentenceAudio">{{SentenceAudio}}</template>
+  {{/IsAudioCard}} {{^IsAudioCard}}
+  <template data-field="ExpressionAudio"></template>
+  <template data-field="SentenceAudio"></template>
+  {{/IsAudioCard}}
+
+  <template data-field="Expression">{{Expression}}</template>
+  <template data-field="ExpressionFurigana">{{ExpressionFurigana}}</template>
+  <template data-field="ExpressionReading">{{ExpressionReading}}</template>
+  <template data-field="RelatedExpression">{{RelatedExpression}}</template>
+  <template data-field="SelectionText">{{SelectionText}}</template>
+  <template data-field="MainDefinition">{{MainDefinition}}</template>
+  <template data-field="DefinitionPicture">{{DefinitionPicture}}</template>
+  <template data-field="Sentence">{{Sentence}}</template>
+  <template data-field="SentenceFurigana">{{SentenceFurigana}}</template>
+  <template data-field="SentenceTranslation">{{SentenceTranslation}}</template>
+  <template data-field="Picture">{{Picture}}</template>
+  <template data-field="Glossary">{{Glossary}}</template>
+  <template data-field="Hint">{{Hint}}</template>
+  <template data-field="IsWordAndSentenceCard">{{IsWordAndSentenceCard}}</template>
+  <template data-field="IsClickCard">{{IsClickCard}}</template>
+  <template data-field="IsSentenceCard">{{IsSentenceCard}}</template>
+  <template data-field="IsAudioCard">{{IsAudioCard}}</template>
+  <template data-field="PitchPosition">{{PitchPosition}}</template>
+  <template data-field="PitchCategories">{{PitchCategories}}</template>
+  <template data-field="Frequency">{{Frequency}}</template>
+  <template data-field="FreqSort">{{FreqSort}}</template>
+  <template data-field="MiscInfo">{{MiscInfo}}</template>
+  <template data-field="Tags">{{Tags}}</template>
+  <template data-field="CardID">{{CardID}}</template>
+  <template data-field="furigana:ExpressionFurigana">{{furigana:ExpressionFurigana}}</template>
+  <template data-field="kana:ExpressionFurigana">{{kana:ExpressionFurigana}}</template>
+  <template data-field="furigana:Sentence">{{furigana:Sentence}}</template>
+  <template data-field="kanji:Sentence">{{kanji:Sentence}}</template>
+  <template data-field="furigana:SentenceFurigana">{{furigana:SentenceFurigana}}</template>
+  <template data-field="kana:SentenceFurigana">{{kana:SentenceFurigana}}</template>
+</template>
+
+<!-- ERROR_TEMPLATE -->
+
+<!-- HYDRATION_SCRIPT -->
+
+<script type="module" id="kiku-script">
+  import "./_kiku.js";
+</script>

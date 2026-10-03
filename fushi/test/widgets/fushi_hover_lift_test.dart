@@ -214,7 +214,7 @@ void main() {
         src.contains(banned),
         isFalse,
         reason: '$banned 不保证配对；压制只能认 ScrollUpdateNotification '
-            '（它同时覆盖滚轮、拖拽与 FushiScrollController 的补间）',
+            '（它同时覆盖滚轮、拖拽与 SmoothWheelScrollScope 的补间）',
       );
     }
     expect(

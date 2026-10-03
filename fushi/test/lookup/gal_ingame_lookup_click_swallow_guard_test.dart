@@ -198,9 +198,19 @@ void main() {
     expect(show, greaterThanOrEqualTo(0));
     expect(showWindow, greaterThan(show));
     final String failedShow = reveal.substring(show, showWindow);
+    // 撤钩收口在 RollBackRevealArm（BUG-1471 / BUG-2746：上屏失败回滚只有一个出口），
+    // 这里认调用，再单独确认该出口真的解钩并清 armed 标记。
+    final String rollback = compactCode(
+      methodBody(windowSource, 'void GlobalLookupWindow::RollBackRevealArm('),
+    );
     expect(
-      failedShow.contains('fushi::DisarmLowLevelMouseHook(hwnd_)') &&
-          failedShow.contains('mouse_hook_armed_=false') &&
+      rollback.contains('fushi::DisarmLowLevelMouseHook(hwnd_)') &&
+          rollback.contains('mouse_hook_armed_=false'),
+      isTrue,
+      reason: '上屏失败回滚出口必须真的解钩并清 armed 标记',
+    );
+    expect(
+      failedShow.contains('RollBackRevealArm();') &&
           failedShow.contains('revealed_=false') &&
           failedShow.contains('visible_=false') &&
           failedShow.contains('return;'),

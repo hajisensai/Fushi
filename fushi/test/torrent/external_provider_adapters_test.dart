@@ -78,13 +78,20 @@ void main() {
     expect(result.failures, isEmpty);
   });
 
-  for (final String query in <String>[
-    '死亡笔记',
-    'デスノート',
-    'Death Note 1080p -batch',
+  // BUG-2794：显式词只是候选之一。资源页会把首选词预填进搜索框，旧契约「有显式
+  // 词就只搜显式词」让预填的日文原名覆盖掉作品的罗马字别名（Nyaa 0 条）。
+  for (final (String query, List<String> expected) in <(String, List<String>)>[
+    // 作品自己的标题（非拉丁）→ 补查罗马字 + 日文原名。
+    ('死亡笔记', <String>['死亡笔记', 'Death Note', 'デスノート']),
+    ('デスノート', <String>['デスノート', 'Death Note']),
+    // 作品的已知拉丁别名 → 也补查日文原名。
+    ('DEATH NOTE', <String>['DEATH NOTE', 'デスノート']),
+    // 用户手输的非拉丁词 → Nyaa 发布名多为罗马字，补查别名。
+    ('死亡笔记 第二季', <String>['死亡笔记 第二季', 'Death Note', 'デスノート']),
+    // 用户手输的拉丁词是在收窄，不补查。
+    ('Death Note 1080p -batch', <String>['Death Note 1080p -batch']),
   ]) {
-    test('Nyaa explicit query is independent of hidden aliases: $query',
-        () async {
+    test('Nyaa explicit query plus work spellings: $query', () async {
       final List<String> queries = <String>[];
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
         client: NyaaClient(
@@ -96,27 +103,31 @@ void main() {
         ),
       );
       addTearDown(provider.close);
-      for (final VideoMediaReference? media in <VideoMediaReference?>[
-        null,
-        VideoMediaReference(
-          providerId: 'anilist',
-          mediaId: '1535',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.anime,
-          title: '死亡笔记',
-          originalTitle: 'デスノート',
-          aliases: const <String>['Death Note', 'DEATH NOTE'],
-          anilistId: 1535,
+      // 没有作品身份（纯关键词搜索）时只有显式词可查。
+      await provider.search(VideoResourceSearchRequest(query: '  $query  '));
+      expect(queries, <String>[query]);
+      queries.clear();
+
+      final ProviderBatchResult<VideoResourceCandidate> result =
+          await provider.search(
+        VideoResourceSearchRequest(
+          media: VideoMediaReference(
+            providerId: 'anilist',
+            mediaId: '1535',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: '死亡笔记',
+            originalTitle: 'デスノート',
+            aliases: const <String>['Death Note', 'DEATH NOTE'],
+            anilistId: 1535,
+          ),
+          query: '  $query  ',
         ),
-      ]) {
-        final ProviderBatchResult<VideoResourceCandidate> result =
-            await provider.search(
-          VideoResourceSearchRequest(media: media, query: '  $query  '),
-        );
-        expect(result.failures, isEmpty);
-        expect(result.items, hasLength(1));
-      }
-      expect(queries, <String>[query, query]);
+      );
+      expect(queries, expected);
+      expect(result.failures, isEmpty);
+      // 每条查询都回同一个种子：按 infohash 去重后只剩一条。
+      expect(result.items, hasLength(1));
     });
   }
 

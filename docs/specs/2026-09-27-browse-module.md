@@ -109,3 +109,20 @@
   - 流程：一句话 →（AI）最多 3 个搜索词 →（本地）各后端并发搜 →（AI）在按做种数排好的前 40 条里挑 ≤3 条推荐 → 用户逐条点「下载」。AI 任一步失败不挡流程：按原文搜、按本地分排。
   - 后端（`lib/src/media/acquisition/media_acquisition_backends.dart`）只复用既有下载路径：发现源 → `startDiscoveryItemDownload`（从发现页 `_download` 抽出，两处共用）；Mihon 漫画 → 加入书架 + 全部未锁章节进漫画下载队列（与作品页「下载全部」同一服务）；LNReader 小说 → 作品页同一个整本下载对话框。在线源是否参与与「来源」页签同一门；漫画在线源另需 Mihon 运行时。
   - 已知限制：Mihon / LNReader 只搜各源第 1 页；AI 推荐不做跨源同作品合并。
+
+## 阶段 4：发现 / 来源 / 扩展加回库页子标签（2026-10-01）
+起因：社区用户找不到漫画 / 小说的 OPDS（它只在「浏览 › 发现」里），并认为「往库里加东西」应该挂在各自的库下。所有者 / 用户拍板：**浏览模块保留、不回滚**，把发现 / 来源 / 扩展同时做成各库页的子标签，两处复用同一组组件。
+
+| 库页 | 子标签（顺序） |
+|---|---|
+| 书架 | 书架 / 发现 / 来源 / 扩展 / 导入 / 设置 |
+| 漫画库 | 书架 / 发现 / 来源 / 扩展 / 导入 / 设置 |
+| 视频库 | 首页 / 系列 / 全部视频 / 媒体服务器 / 发现 / 来源 / 扩展 / 导入 / 设置 |
+| 游戏（本机库形态） | 首页 / 游戏库 / 工作台 / 发现 / 导入 / 设置 |
+
+- 共享件从 `browse_page.dart` 抽成公开：`visibleOnlineSourcesDomains` / `onlineSourcesDomainLabel` / `openOnlineSourceStores` / `BrowseSubPage`（`browse_online_sources_view.dart`），`discoveryAiAcquireAction`（`discovery_ai_acquire_action.dart`）。库页的来源 / 扩展是 `LibraryOnlineSourcesView`（页头主位放库页分段条，「扩展」页头挂「仓库」）。
+- 门：发现过 `externalDiscovery`；来源 / 扩展过 `isOnlineSourcesDomainAvailable(域)`；游戏只在 Windows 本机库形态存在，不另过门。**不依赖浏览模块开关**——库页入口跟着库模块走，与 9/27 之前一致。
+- 漫画发现页的「浏览来源」在库页里切到本库「来源」子标签（`MediaLibraryViewKind.onlineSources`），不再落到「导入」。
+- 视频库「发现」与浏览页签共用 HomePage 的同一个生产发现端口实例。
+- 游戏「发现」访问过才构建（`IndexedStack` 会急切构建全部子区，不能一开游戏 tab 就联网）。
+- 未动：`browse_moved_notice.dart`（升级前关着「下载」的用户的一次性提示）。库页入口回来后它说的「搬到了浏览」只剩一半成立，是否删掉待所有者定。

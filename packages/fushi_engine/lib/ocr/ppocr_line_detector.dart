@@ -1,7 +1,8 @@
 /// PP-OCRv6 文本行检测器（DB，PaddlePaddle/PP-OCRv6_small_det_onnx，Apache-2.0）。
 ///
-/// 只在一个**横排文字块**内部把段落切成行，交给行识别器；竖排块不经过这里
-/// （整块喂 manga-ocr 实测最好，见 `routing_ocr_recognizer.dart`）。
+/// 只在一个文字块的裁图（[cropOcrBlock]）内部把段落切成行（横排）/列（竖排）：
+/// 横排块的行交行识别器（`routing_ocr_recognizer.dart`）；竖排块的列给整块识别
+/// 结果切出行几何，或逐列交 CTC 识别（`ctc_column_ocr_recognizer.dart`）。
 ///
 /// IO 规格（已核实：该 repo 的 `inference.yml` + PaddleOCR 3.x `DetResizeForTest`
 /// / `DBPostProcess`，与 2026-09-11 对拍脚本 `ppocr.py` 逐步对齐）：
@@ -229,12 +230,60 @@ List<PpTextLine> orderLinesForReading(List<PpTextLine> lines) {
   return sorted;
 }
 
+/// 文字块在页面上的裁图 + 裁图坐标 → 页面坐标的换算。
+class OcrBlockCrop {
+  const OcrBlockCrop(this.image, this.x, this.y);
+
+  final img.Image image;
+
+  /// 裁图左上角在页面上的像素坐标。
+  final int x;
+  final int y;
+
+  OcrRect toPage(OcrRect rect) => OcrRect(
+    left: x + rect.left,
+    top: y + rect.top,
+    right: x + rect.right,
+    bottom: y + rect.bottom,
+  );
+}
+
+/// 把 [box] 夹进页面后按整像素裁出来：左上取 floor，宽高取 ceil 且至少 1 像素；
+/// 夹完没有面积返回 null。
+OcrBlockCrop? cropOcrBlock(img.Image page, OcrRect box) {
+  final OcrRect clamped = box.clamp(
+    page.width.toDouble(),
+    page.height.toDouble(),
+  );
+  final int x = clamped.left.floor();
+  final int y = clamped.top.floor();
+  final int w = math.min(math.max(1, clamped.width.ceil()), page.width - x);
+  final int h = math.min(math.max(1, clamped.height.ceil()), page.height - y);
+  if (w <= 0 || h <= 0) return null;
+  return OcrBlockCrop(
+    img.copyCrop(page, x: x, y: y, width: w, height: h),
+    x,
+    y,
+  );
+}
+
 /// 行检测器：会话注入。
 class PpOcrLineDetector {
   PpOcrLineDetector(this._session, {this.inputName = 'x'});
 
   final OcrSession _session;
   final String inputName;
+
+  /// 在页面 [page] 的文字块 [box] 内检测文本行，行框换回页面坐标（未滤振假名）；
+  /// 块夹进页面后没有面积时返回空列表。
+  Future<List<OcrRect>> detectInBlock(img.Image page, OcrRect box) async {
+    final OcrBlockCrop? crop = cropOcrBlock(page, box);
+    if (crop == null) return const <OcrRect>[];
+    return <OcrRect>[
+      for (final PpTextLine line in await detect(crop.image))
+        crop.toPage(line.rect),
+    ];
+  }
 
   /// 在 [crop]（一个文字块的裁图）内检测文本行，坐标为 [crop] 像素系。
   Future<List<PpTextLine>> detect(img.Image crop) async {

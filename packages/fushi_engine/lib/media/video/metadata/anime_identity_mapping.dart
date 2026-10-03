@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 /// Cross-service identifiers only. This catalog supplies no anime metadata and
@@ -47,9 +48,27 @@ class AnimeIdentityEntry {
   /// [tmdbId] 取自 `themoviedb_id.movie`（TMDB 电影命名空间）而非 `.tv`。
   final bool tmdbIsMovieNamespace;
 
-  /// 是否按 TMDB 电影处理：`themoviedb_id` 自己给出的命名空间优先（它是这条
-  /// 映射的直接事实），其次才看 Fribb 的 `type` 字段。
+  /// 作品**形态**是否为电影：`themoviedb_id` 落在 movie 空间，或 Fribb `type`
+  /// 是 MOVIE。只用于形态推断与类型闸门，**不能**拿来决定 [tmdbId] 属于
+  /// /movie 还是 /tv——那是 [tmdbMediaKind] 的事。
   bool get isMovie => tmdbIsMovieNamespace || type?.toUpperCase() == 'MOVIE';
+
+  /// [tmdbId] 所在的 TMDB 命名空间；没有 TMDB id 时为 null。
+  ///
+  /// 与 [isMovie] 不是一回事：TMDB 常把剧场版收成所属电视剧的第 0 季（特典），
+  /// Fribb 于是给出 `type: MOVIE` + `themoviedb_id: {tv: N}`（实测 715 行，如
+  /// リズと青い鳥 = anidb 13491 → tv 62564 吹响！上低音号）。把这种 tv id 按
+  /// /movie/N 拉会命中同号的无关电影（BUG-2828），所以拼 TMDB lookup 只认这里。
+  VideoMetadataMediaKind? get tmdbMediaKind => tmdbId == null
+      ? null
+      : tmdbIsMovieNamespace
+          ? VideoMetadataMediaKind.movie
+          : VideoMetadataMediaKind.tv;
+
+  /// 按请求的形态给 TMDB id：命名空间对不上（剧场版挂在剧的特典季下）时为
+  /// null，调用方据此回退标题补充，而不是把 tv id 当 movie id 用。
+  int? tmdbIdFor(VideoMetadataMediaKind kind) =>
+      tmdbMediaKind == kind ? tmdbId : null;
 
   AnimeIdentityMappingResult toMappingResult() =>
       AnimeIdentityMappingResult(anidbId: anidbId, malIds: malIds);

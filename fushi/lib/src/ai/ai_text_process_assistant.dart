@@ -11,9 +11,9 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_reply_json.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_reply_json.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 
 /// AI 给出的一组建议步骤。
@@ -139,28 +139,32 @@ AiTextProcessSuggestion parseAiTextProcessSuggestion(
     if (raw is! Map) {
       continue;
     }
-    final GalTextProcessKind? kind = GalTextProcessKind.fromStorageKey(
-      raw['kind'] as String?,
-    );
+    // 模型不守 schema 是常态（`"kind": 3`、`"isRegex": "true"`）：这里不能用强转，
+    // 否则一个 TypeError 会越过 UI 只接 AiChatFailure 的 catch，界面停在转圈无提示。
+    // 类型不对的条目整条丢掉；全丢光时返回空建议，UI 显示「没有给出可用的规则」。
+    final Object? rawKind = raw['kind'];
+    final GalTextProcessKind? kind = rawKind is String
+        ? GalTextProcessKind.fromStorageKey(rawKind)
+        : null;
     if (kind == null) {
+      continue;
+    }
+    final GalTextProcessStep? step =
+        GalTextProcessStep.tryFromJson(<Object?, Object?>{
+          ...raw.cast<Object?, Object?>(),
+          'id': scratch.nextIdFor(kind),
+          'kind': kind.storageKey,
+        });
+    if (step == null) {
       continue;
     }
     // 模型给的正则编译不过就整步丢掉：留着只会在预览里表现成「这步什么也没做」，
     // 比直接告诉用户「这条没生成出来」更难排查。
-    if (kind == GalTextProcessKind.replace) {
-      final String pattern = raw['pattern'] as String? ?? '';
-      final bool isRegex = raw['isRegex'] as bool? ?? true;
-      if (pattern.isEmpty ||
-          (isRegex && tryCompileGalTextPattern(pattern) == null)) {
-        continue;
-      }
+    if (kind == GalTextProcessKind.replace &&
+        (step.pattern.isEmpty ||
+            (step.isRegex && tryCompileGalTextPattern(step.pattern) == null))) {
+      continue;
     }
-    final Map<Object?, Object?> withId = <Object?, Object?>{
-      ...raw.cast<Object?, Object?>(),
-      'id': scratch.nextIdFor(kind),
-      'kind': kind.storageKey,
-    };
-    final GalTextProcessStep step = GalTextProcessStep.fromJson(withId);
     steps.add(step);
     scratch = scratch.withSteps(<GalTextProcessStep>[...scratch.steps, step]);
   }

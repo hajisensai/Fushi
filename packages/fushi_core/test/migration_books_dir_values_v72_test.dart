@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v71 -> v72 书库目录名库内路径改写迁移（Fushi 终局清算 W2-7）的正确性证明：

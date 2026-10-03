@@ -179,12 +179,92 @@ void main() {
         DropIntent.needCardTarget,
       );
     });
-    test('audio-only on video surface -> unsupportedSurface', () {
+    // 纯音频 = 无画面的视频：视频页上拖专辑曲目即新建视频条目（此前回「不支持」）。
+    test('audio-only on video surface -> importNewVideo (on or off a card)', () {
+      for (final bool cardHit in <bool>[true, false]) {
+        expect(
+          decideDropIntent(
+              surface: DropSurface.video,
+              files: _files(audios: ['/a.flac']),
+              cardHit: cardHit),
+          DropIntent.importNewVideo,
+          reason: 'cardHit=$cardHit',
+        );
+      }
+    });
+    test('audio + subtitle on video surface -> importNewVideo', () {
       expect(
         decideDropIntent(
             surface: DropSurface.video,
-            files: _files(audios: ['/a.mp3']),
+            files: _files(audios: ['/a.mp3'], subtitles: ['/a.srt']),
             cardHit: true),
+        DropIntent.importNewVideo,
+      );
+    });
+    test('audio-only on books surface still means audiobook material', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(audios: ['/a.flac']),
+            cardHit: false),
+        DropIntent.needCardTarget,
+      );
+    });
+    test('videoLibraryMedia = videos + non-video audio, mp4 counted once', () {
+      final DroppedFiles files = classifyDroppedFiles(
+          <String>['/x/ep.mp4', '/x/01.flac', '/x/a.srt', '/x/02.MP3']);
+      expect(files.videoLibraryMedia,
+          <String>['/x/ep.mp4', '/x/01.flac', '/x/02.MP3']);
+    });
+    test('Blu-ray disc fragment (index.bdmv) -> addFolderAsSource', () {
+      // 回归：拖 `.bdmv` 进视频页此前落 unknown → 静默无反应。
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>[],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video, files: files, cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    test('disc m2ts wins over importing it as a lone video', () {
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>['/disc/BDMV/STREAM/00001.m2ts'],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video, files: files, cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    test('disc on the books surface is not silently eaten', () {
+      const DroppedFiles files = DroppedFiles(
+          books: <String>[],
+          videos: <String>[],
+          subtitles: <String>[],
+          audios: <String>[],
+          playlists: <String>[],
+          dictionaries: <String>[],
+          urls: <String>[],
+          unknown: <String>[],
+          blurayDiscs: <String>['/disc']);
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books, files: files, cardHit: false),
         DropIntent.unsupportedSurface,
       );
     });

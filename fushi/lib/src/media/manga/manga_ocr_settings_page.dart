@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
+    show createInterconnectMangaOcrRunner, mangaAiOcrProviderReady;
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
@@ -42,6 +45,16 @@ class MangaOcrSettingsPage extends ConsumerWidget {
           localModelSetter: appModel.setMangaOcrLocalModel,
           lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
           lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+          pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
+          pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
+          aiModeGetter: () => appModel.mangaOcrAiMode,
+          aiModeSetter: appModel.setMangaOcrAiMode,
+          aiProviderReady: () => mangaAiOcrProviderReady(appModel),
+          openAiSettings: pushAiSettingsPage,
+          remoteRunner: createInterconnectMangaOcrRunner(
+            appModel,
+            appModel.database,
+          ),
         ),
       ),
     );

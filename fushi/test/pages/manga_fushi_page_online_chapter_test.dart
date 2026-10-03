@@ -438,9 +438,10 @@ void main() {
     );
   });
 
-  // 直读章在阅读器内不触发、不接回任何 OCR（设计稿 2026-09-12 §1.2 / §1.3 不变）。
-  // 顶栏按钮在窄窗会折进溢出菜单、widget 层断言不稳，所以在源码层钉住每个入口的门。
-  test('在线直读章：阅读器内每个 OCR 入口都过 _noChapterOcr 门', () {
+  // 直读章在阅读器内不触发、不接回任何**整卷** OCR（设计稿 2026-09-12 §1.3）；
+  // 2026-10-01 补记（BUG-2822）起改走页级的边看边识别。顶栏按钮在窄窗会折进溢出
+  // 菜单、widget 层断言不稳，所以在源码层钉住每个入口的门。
+  test('在线直读章：阅读器内每个整卷 OCR 入口都过 _noChapterOcr 门', () {
     final String source = File(
       'lib/src/media/manga/reader/manga_fushi_page.dart',
     ).readAsStringSync();
@@ -464,11 +465,23 @@ void main() {
         reason: '$head 必须挡住在线直读章',
       );
     }
-    // 装载尾部的缓存恢复 / 任务接回 / 进入即识别在直读时整段跳过。
-    final int tail = source.indexOf('    if (streaming) return;');
+    // 装载尾部的缓存恢复 / 任务接回 / 进入即识别在直读时整段跳过，改起页级识别
+    // （BUG-2822）。
+    final int tail = source.indexOf('    if (streaming) {');
     expect(tail, isNonNegative);
-    final String rest = source.substring(tail, tail + 800);
-    expect(rest, contains('_recoverIncrementalOcrCache('));
-    expect(rest, contains('_maybeStartVolumeOcr()'));
+    final String rest = source.substring(tail, tail + 900);
+    final int streamingReturn = rest.indexOf('return;');
+    expect(streamingReturn, isNonNegative);
+    expect(
+      rest.substring(0, streamingReturn),
+      contains('_maybeStartStreamingOcr()'),
+      reason: '直读章就绪时要起边看边识别',
+    );
+    expect(
+      rest.indexOf('_recoverIncrementalOcrCache('),
+      greaterThan(streamingReturn),
+      reason: '整卷缓存恢复必须在直读分支 return 之后',
+    );
+    expect(rest.indexOf('_maybeStartVolumeOcr()'), greaterThan(streamingReturn));
   });
 }

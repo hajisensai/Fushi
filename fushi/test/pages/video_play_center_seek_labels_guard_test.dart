@@ -10,8 +10,8 @@ import 'video_fushi_page_source_corpus.dart';
 /// 「尾部按钮」间均分，尾部按钮越多 seek 簇离整条几何中心越远 → play 偏左；±10s/上下一句
 /// 只有 tooltip、无可见标注，用户看不懂图标。
 ///
-/// 修复：共享 [_centeredBottomControlBar] 用三区 Stack（左时间 / 右尾部 / Center 居中 seek
-/// 簇）把 play 钉在几何中心；±10s 经 [_seekLabelButton] 带可见标注；上/下一句仍走动态
+/// 修复：共享 [_centeredBottomControlBar] 用三区布局（左时间 / 右尾部 / 居中 seek 簇，
+/// BUG-2832 起由一条 VideoControlBar 排布）把 play 钉在几何中心；±10s 经 [_seekLabelButton] 带可见标注；上/下一句仍走动态
 /// _asbConfig.seekSeconds 不写死 ±3s。桌面/移动共用同一 helper。
 ///
 /// media_kit controls 跑不了 headless，故锁源码结构不变量。
@@ -52,15 +52,22 @@ void main() {
     );
   });
 
-  test('play 钉几何中心：三区 Stack（左时间 / 右尾部 / Center 居中 seek 簇）', () {
-    // Center 包 seek 传输簇，play 恒处整条几何中心。
-    expect(helper.contains('Center(child: transport)'), isTrue,
-        reason: 'seek 传输簇应绝对居中（play 钉几何中心）');
-    // 左区时间 / 右区尾部按钮各自绝对对齐，不靠 Spacer 均分挤偏 play。
-    expect(helper.contains('alignment: Alignment.centerLeft'), isTrue,
-        reason: '时间指示器应左对齐绝对定位');
-    expect(helper.contains('alignment: Alignment.centerRight'), isTrue,
-        reason: '尾部按钮应右对齐绝对定位');
+  test('play 钉几何中心：三区布局（左时间 / 右尾部 / 居中 seek 簇）', () {
+    // BUG-2792：三区不再 Stack 叠放——Stack 三区互不知道对方宽度，窄了就叠画。
+    // BUG-2832：三区合成一条 VideoControlBar（左 start / 传输簇 center / 右 end），
+    // 放不下时退紧凑形态、再收进「⋯」，不再 FittedBox 等比缩小。几何行为由
+    // test/media/video/video_control_bar_test.dart 真布局钉住。
+    expect(helper.contains('return VideoControlBar('), isTrue,
+        reason: '底栏三区应交 VideoControlBar 排布');
+    expect(
+        RegExp(r'VideoControlSlot\.bottomCenter,[^)]*cluster: VideoBarCluster\.center')
+            .hasMatch(helper),
+        isTrue,
+        reason: 'seek 传输簇应作为居中簇（play 钉几何中心）');
+    expect(helper.contains('FittedBox'), isFalse,
+        reason: '放不下时不得把按钮等比缩小（BUG-2832）');
+    expect(helper.contains('Stack('), isFalse,
+        reason: 'Stack 叠放会在底栏变窄时让传输簇与右簇重叠（BUG-2792）');
     // 旧的 Spacer 平铺布局已从共享 helper 移除（不再用 Spacer 定位 seek 簇）。
     expect(helper.contains('Spacer()'), isFalse,
         reason: '居中布局不再依赖 Spacer 均分（那会随尾部按钮数量挤偏 play）');

@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
+    show AiMediaAcquisitionDomain;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
+import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -42,6 +47,13 @@ typedef GameSettingsBuilder = Widget Function(
   Widget navigation,
 );
 
+/// 「发现」子区构造器；测试可注入桩，绕开 [MediaDiscoveryPage] 对 `appProvider`
+/// （发现服务 / 偏好）的依赖。
+typedef GameDiscoverBuilder = Widget Function(
+  BuildContext context,
+  Widget navigation,
+);
+
 /// 首页一级「游戏」模块。
 ///
 /// 集成持久化游戏库、Hook 监控工作台与兼容性诊断。内部使用 [IndexedStack]，
@@ -54,6 +66,7 @@ class HomeGamePage extends StatefulWidget {
     this.libraryBuilder,
     this.dashboardBuilder,
     this.settingsBuilder,
+    this.discoverBuilder,
     this.controller,
   });
 
@@ -61,6 +74,7 @@ class HomeGamePage extends StatefulWidget {
   final GameLibraryBuilder? libraryBuilder;
   final GameDashboardBuilder? dashboardBuilder;
   final GameSettingsBuilder? settingsBuilder;
+  final GameDiscoverBuilder? discoverBuilder;
   final GalHookSessionController? controller;
 
   static const Key dashboardKey = ValueKey<String>('game-dashboard');
@@ -69,6 +83,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
   static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
+  static const Key discoverKey = ValueKey<String>('game-discover');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -79,6 +94,10 @@ class HomeGamePage extends StatefulWidget {
 
 class _HomeGamePageState extends State<HomeGamePage> {
   late GameSection _section = gameSectionNotifier.value;
+
+  /// 「发现」子区访问过才构建：[IndexedStack] 会急切构建全部子区，而发现页一挂载
+  /// 就向资源站发请求——不能因为打开游戏 tab 就联网。
+  late bool _discoverVisited = _section == GameSection.discover;
   late final GalHookSessionController _controller =
       widget.controller ?? GalHookSessionController.instance;
 
@@ -101,7 +120,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _onSectionRequested() {
     final GameSection requested = gameSectionNotifier.value;
     if (requested == _section || !mounted) return;
-    setState(() => _section = requested);
+    setState(() {
+      _section = requested;
+      if (requested == GameSection.discover) _discoverVisited = true;
+    });
   }
 
   void _showSection(GameSection section) {
@@ -189,6 +211,12 @@ class _HomeGamePageState extends State<HomeGamePage> {
         key: HomeGamePage.importKey,
         child: _buildImport(context),
       ),
+      GameSection.discover: KeyedSubtree(
+        key: HomeGamePage.discoverKey,
+        child: _discoverVisited
+            ? _buildDiscover()
+            : const SizedBox.shrink(),
+      ),
     };
     return Material(
       type: MaterialType.transparency,
@@ -220,6 +248,38 @@ class _HomeGamePageState extends State<HomeGamePage> {
         ],
         ),
       ),
+      ),
+    );
+  }
+
+  /// 游戏「发现」视图：与「浏览 › 发现 › 游戏」同一个生产发现页，页头主位放本模块
+  /// 的分段页签。
+  Widget _buildDiscover() {
+    final Widget navigation = GameSectionTabs(
+      selected: GameSection.discover,
+      focusIdPrefix: 'game-discover-tab',
+      onSelectDashboard: _showDashboard,
+      onSelectLibrary: _showLibrary,
+      onSelectMonitor: _showMonitor,
+      onSelectSettings: _showSettings,
+    );
+    final GameDiscoverBuilder? builder = widget.discoverBuilder;
+    if (builder != null) {
+      return Builder(
+        builder: (BuildContext context) => builder(context, navigation),
+      );
+    }
+    return Consumer(
+      builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+          MediaDiscoveryPage(
+        kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+        navigation: navigation,
+        onAiAcquire: discoveryAiAcquireAction(
+          context: context,
+          readAppModel: () => ref.read(appProvider),
+          domain: AiMediaAcquisitionDomain.game,
+          domainLabel: t.nav_game,
+        ),
       ),
     );
   }

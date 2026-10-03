@@ -9,10 +9,18 @@
 # PR 合并/关闭后那些桶永远不会再被读到，但 GitHub 只在「7 天无访问」后才回收。
 # 这一步把它们立刻删掉，把配额还给 develop。
 #
-# 本 workflow **不发布任何东西**：无 checkout、无构建、无 release，只调
-# `DELETE /repos/{owner}/{repo}/actions/caches?key=...&ref=...`。
+# 本 workflow **不发布任何东西**：只稀疏检出 base 分支上的 tool/cleanup_pr_ci.sh，
+# 无构建、无 release，只调 Actions API 取消 run 与删缓存。
 name: Cleanup PR caches
 
+# pull_request, same-repo PRs only (2026-09-30). #1829 moved this to
+# pull_request_target so fork PRs (79%; their pull_request token is read-only) get
+# the base repo's token -- but pull_request_target takes the workflow definition
+# from the DEFAULT branch, main, which lags develop and is not synced by agents, and
+# main's copy only knew `pull_request`: from then on the job never ran for anyone.
+# Merged PRs of any origin are now cleaned on the develop push instead
+# (merged-pr-cleanup.yml; merging IS a push, which runs develop's own file with a
+# writable token). This workflow keeps same-repo PRs closed without merging.
 on:
   pull_request:
     types: [closed]
@@ -27,53 +35,25 @@ concurrency:
 
 jobs:
   cleanup:
-    # fork PR 的 GITHUB_TOKEN 是只读的，`actions: write` 拿不到，跑了必红。
-    # 本仓的开发模式是同仓分支 PR，fork 直接跳过即可。
+    # A fork PR's token here is read-only: every cancel / delete would 403.
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Delete caches scoped to this PR ref
+      # The script from the base branch, not the closed PR's merge ref (which may
+      # be gone once the PR is closed).
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          sparse-checkout: tool/cleanup_pr_ci.sh
+          sparse-checkout-cone-mode: false
+      # Cancels first, then deletes the PR ref's caches (tool/cleanup_pr_ci.sh).
+      - name: Cancel this PR's leftover CI and delete its caches
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
-        run: |
-          set -euo pipefail
-          freed=0
-          count=0
-          # 分页取完这个 ref 下的全部缓存再删（边列边删会跳页）。
-          keys="$(gh api --paginate \
-            "repos/$REPO/actions/caches?per_page=100&ref=$PR_REF" \
-            --jq '.actions_caches[] | "\(.id)\t\(.size_in_bytes)\t\(.key)"')"
-          if [ -z "$keys" ]; then
-            echo "No caches scoped to $PR_REF."
-            exit 0
-          fi
-          while IFS=$'\t' read -r id size key; do
-            [ -n "${id:-}" ] || continue
-            echo "Deleting $key ($((size / 1024 / 1024)) MB, id=$id)"
-            # 按 id 删是精确的；失败不让整条 workflow 红（缓存可能刚被 LRU 驱逐）。
-            gh api -X DELETE "repos/$REPO/actions/caches/$id" || \
-              echo "::warning title=Cache delete failed::$key"
-            freed=$((freed + size))
-            count=$((count + 1))
-          done <<< "$keys"
-          echo "Deleted $count cache(s), freed $((freed / 1024 / 1024)) MB from $PR_REF." \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Report repository cache usage
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          usage="$(gh api "repos/$REPO/actions/cache/usage")"
-          bytes="$(echo "$usage" | jq -r '.active_caches_size_in_bytes')"
-          entries="$(echo "$usage" | jq -r '.active_caches_count')"
-          mb=$((bytes / 1024 / 1024))
-          echo "Repository cache usage: ${mb} MB in ${entries} entries (limit 10240 MB)." \
-            >> "$GITHUB_STEP_SUMMARY"
-          # 超配额只警告不失败：这条 workflow 的职责是回收，不是守门。
-          if [ "$mb" -gt 10240 ]; then
-            echo "::warning title=Actions cache over quota::${mb} MB > 10240 MB; GitHub is LRU-evicting."
-          fi
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          SKIP_WORKFLOW_PATHS: .github/workflows/cache-cleanup.yml
+        run: bash tool/cleanup_pr_ci.sh

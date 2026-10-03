@@ -100,7 +100,11 @@ void main() {
         }
       }
       final List<String> block = masked.sublist(i, end);
-      if (!block.any((String l) => l.contains('uses: actions/cache@'))) {
+      // `actions/cache/restore@` 也算：它读同一份配额里的条目，只是不写。
+      final bool restoreOnly =
+          block.any((String l) => l.contains('uses: actions/cache/restore@'));
+      if (!restoreOnly &&
+          !block.any((String l) => l.contains('uses: actions/cache@'))) {
         continue;
       }
 
@@ -153,6 +157,7 @@ void main() {
         paths: paths,
         key: keyText,
         restoreKeys: restoreKeys,
+        restoreOnly: restoreOnly,
       ));
     }
   }
@@ -218,6 +223,21 @@ void main() {
                   "path=${s.paths} key=${s.key}").join("\n")}');
     });
 
+    // 2026-09-30 实测：缓存 10.8 GB > 10 GB 配额、约一小时整体轮换一遍，最大的搅动是
+    // 每个 PR ref 各存一份约 1.7 GB 的 `Linux-gradle-v2`。PR 本来就能读到基线分支
+    // （develop）的条目，精确命中时不会再存；可一旦 develop 那份被挤掉，每个 PR 都
+    // miss、都各存一份，再把更多条目挤掉——恶性循环。所以只让 push develop/main 的
+    // release.yml 写，PR 侧的 main.yml / build-multiplatform.yml 只读。
+    test('只有 release.yml 写 Gradle 缓存，PR 侧只读', () {
+      final List<String> writers = gradleSteps
+          .where((_CacheStep s) => !s.restoreOnly)
+          .map((_CacheStep s) => s.workflow)
+          .toList();
+      expect(writers, equals(<String>['release.yml']),
+          reason: '每个 PR ref 各存一份 1.7 GB Gradle 缓存会把整个配额冲掉；'
+              'PR 侧请用 actions/cache/restore@。实际写入方：$writers');
+    });
+
     test('只缓存下载物，不缓存 transforms 之类的派生产物', () {
       final List<String> offenders = <String>[];
       for (final _CacheStep step in gradleSteps) {
@@ -267,21 +287,37 @@ void main() {
   });
 
   test('PR 关闭后回收 PR 作用域缓存的 workflow 还在，且不碰发布', () {
-    final File cleanup = File('../.github/workflows/cache-cleanup.yml');
-    expect(cleanup.existsSync(), isTrue,
-        reason: 'cache-cleanup.yml 是把 refs/pull/<N>/merge 桶还给配额的唯一入口；'
-            'GitHub 自己要等 7 天无访问才回收。');
-    final String masked = maskHashComments(cleanup.readAsStringSync());
-    expect(masked, contains('actions/caches'),
-        reason: '清理步骤必须真的调 DELETE /actions/caches');
-    // 这条 workflow 只做回收，绝不能长出发布动作（CLAUDE.md 发布通道硬规则）。
-    for (final String forbidden in <String>[
-      'softprops/action-gh-release',
-      'gh release create',
-      'make_latest',
+    // refs/pull/<N>/merge 桶还给配额的入口：合并的 PR 在 push 到 develop 时由
+    // merged-pr-cleanup.yml 清（fork PR 也覆盖），同仓 PR 未合并就关由
+    // cache-cleanup.yml 清；两者共用 tool/cleanup_pr_ci.sh。GitHub 自己要等
+    // 7 天无访问才回收。
+    final File script = File('../tool/cleanup_pr_ci.sh');
+    expect(script.existsSync(), isTrue);
+    final String sh = script.readAsStringSync();
+    expect(sh, contains(r'gh api -X DELETE "repos/$REPO/actions/caches/$id"'),
+        reason: '清理必须真的调 DELETE /actions/caches');
+    final List<String> texts = <String>[sh];
+    for (final String name in <String>[
+      'cache-cleanup.yml',
+      'merged-pr-cleanup.yml',
     ]) {
-      expect(masked.contains(forbidden), isFalse,
-          reason: 'cache-cleanup.yml 不得触碰发布链路，发现：$forbidden');
+      final File wf = File('../.github/workflows/$name');
+      expect(wf.existsSync(), isTrue, reason: '$name 不见了');
+      final String masked = maskHashComments(wf.readAsStringSync());
+      expect(masked, contains('bash tool/cleanup_pr_ci.sh'),
+          reason: '$name 必须真的跑清理脚本');
+      texts.add(masked);
+    }
+    // 回收链路绝不能长出发布动作（CLAUDE.md 发布通道硬规则）。
+    for (final String text in texts) {
+      for (final String forbidden in <String>[
+        'softprops/action-gh-release',
+        'gh release create',
+        'make_latest',
+      ]) {
+        expect(text.contains(forbidden), isFalse,
+            reason: 'PR 缓存回收链路不得触碰发布链路，发现：$forbidden');
+      }
     }
   });
 }
@@ -295,6 +331,7 @@ class _CacheStep {
     required this.paths,
     required this.key,
     required this.restoreKeys,
+    required this.restoreOnly,
   });
 
   final String workflow;
@@ -305,4 +342,7 @@ class _CacheStep {
   final List<String> paths;
   final String key;
   final List<String> restoreKeys;
+
+  /// `actions/cache/restore@`：只读，不写配额。
+  final bool restoreOnly;
 }

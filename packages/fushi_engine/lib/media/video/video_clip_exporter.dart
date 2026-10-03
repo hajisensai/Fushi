@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:path/path.dart' as p;
@@ -36,10 +37,10 @@ class VideoClipExportResult {
     String outputPath, {
     int subtitleTrackCount = 0,
   }) : this._(
-          outputPath: outputPath,
-          failure: null,
-          subtitleTrackCount: subtitleTrackCount,
-        );
+         outputPath: outputPath,
+         failure: null,
+         subtitleTrackCount: subtitleTrackCount,
+       );
 
   const VideoClipExportResult.failure(
     VideoClipExportFailure failure, {
@@ -207,8 +208,10 @@ class ClipCodecPlan {
 
   /// 中性计划：与加这层门控之前的行为**逐参数等价**（`-c copy`、不改 tag）。
   /// 探测不可用、解析不出、或源本来就通用可播时用它。
-  static const ClipCodecPlan fullCopy =
-      ClipCodecPlan(copyVideo: true, copyAudio: true);
+  static const ClipCodecPlan fullCopy = ClipCodecPlan(
+    copyVideo: true,
+    copyAudio: true,
+  );
 
   final bool copyVideo;
   final bool copyAudio;
@@ -246,17 +249,14 @@ List<String> buildClipVideoEncoderArgs({int? videoBitrateKbps}) {
     'libx264',
     '-preset',
     'veryfast',
-    if (kbps == null)
-      ...<String>['-crf', '20']
-    else
-      ...<String>[
-        '-b:v',
-        '${kbps}k',
-        '-maxrate',
-        '${kbps}k',
-        '-bufsize',
-        '${kbps * 2}k',
-      ],
+    if (kbps == null) ...<String>['-crf', '20'] else ...<String>[
+      '-b:v',
+      '${kbps}k',
+      '-maxrate',
+      '${kbps}k',
+      '-bufsize',
+      '${kbps * 2}k',
+    ],
     '-pix_fmt',
     'yuv420p',
   ];
@@ -295,14 +295,16 @@ ClipCodecPlan resolveClipCodecPlan(
   }
 
   final String? video = codecs.videoCodec;
-  final bool copyVideo = !forceVideoReencode &&
+  final bool copyVideo =
+      !forceVideoReencode &&
       (video == null ||
           (_kClipCopyableVideoCodecs.contains(video) &&
               _isCopyableVideoPixFmt(codecs.videoPixFmt)));
 
   // 空列表 = 没探到音频流信息，保持原 copy 行为；探到了就要求**每一条**都可播，
   // 因为 `-map 0:a?` 会把它们全部带进输出。视频重编码时一律不 copy（见上）。
-  final bool copyAudio = copyVideo &&
+  final bool copyAudio =
+      copyVideo &&
       (codecs.audioCodecs.isEmpty ||
           codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains));
 
@@ -330,9 +332,7 @@ List<String> buildClipCodecArgs({
       : <String>['-tag:v', plan.videoTag!];
   if (plan.isFullCopy) return <String>['-c', 'copy', ...tag];
   return <String>[
-    if (plan.copyVideo)
-      ...<String>['-c:v', 'copy']
-    else
+    if (plan.copyVideo) ...<String>['-c:v', 'copy'] else
       ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     ...tag,
     '-c:a',
@@ -355,10 +355,11 @@ Future<_ClipProbe> _probeClipCodecPlan(
   int? videoBitrateKbps,
 }) async {
   try {
-    final FfmpegRunResult probe = await backend.run(
-      <String>['-hide_banner', '-i', inputPath],
-      timeout,
-    );
+    final FfmpegRunResult probe = await backend.run(<String>[
+      '-hide_banner',
+      '-i',
+      inputPath,
+    ], timeout);
     // 同一份日志解两样东西，**不额外起进程**：编码（决定哪些流能 copy）和画面尺寸
     // （决定字幕 PNG 渲染成多大，BUG-2202）。
     return _ClipProbe(
@@ -405,10 +406,10 @@ Future<Set<String>> _probeFfmpegFilters(
   Duration timeout,
 ) async {
   try {
-    final FfmpegRunResult probe = await backend.run(
-      <String>['-hide_banner', '-filters'],
-      timeout,
-    );
+    final FfmpegRunResult probe = await backend.run(<String>[
+      '-hide_banner',
+      '-filters',
+    ], timeout);
     return parseFfmpegFilterNames(probe.output);
   } catch (e, stack) {
     engineLog.log('VideoClipExport', e, stack);
@@ -493,6 +494,11 @@ List<String> buildFfmpegVideoClipExportArgs({
   ClipCodecPlan codecPlan = ClipCodecPlan.fullCopy,
   int? videoBitrateKbps,
 }) {
+  // Playlist edits can fall between keyframes. Filtering decoded preroll is
+  // required for accurate boundaries and cannot be combined with stream copy.
+  if (isBlurayPlaylistPath(inputPath)) {
+    codecPlan = const ClipCodecPlan(copyVideo: false, copyAudio: false);
+  }
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
   final int? explicitAudio = resolveAudioMapIndex(
@@ -530,10 +536,7 @@ List<String> buildFfmpegVideoClipExportArgs({
     // （BUG-2011）。片段继承整集章节本就没有意义，两条路径一律丢弃。
     '-map_chapters',
     '-1',
-    ...buildClipCodecArgs(
-      plan: codecPlan,
-      videoBitrateKbps: videoBitrateKbps,
-    ),
+    ...buildClipCodecArgs(plan: codecPlan, videoBitrateKbps: videoBitrateKbps),
     // 字幕流单独指定编码：Matroska 能直接 copy SRT，mp4/mov 系必须转 mov_text。
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
     // `-avoid_negative_ts make_zero` 只在**视频重编码**时给（BUG-2011）：
@@ -790,8 +793,10 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // 导出变成失败。失败原因写进错误日志，排查时看那条。
     if (subtitleCues.isNotEmpty && subtitleRenderer != null) {
       final ClipFrameSize? frame = probe.frameSize;
-      final Set<String> filters =
-          await _probeFfmpegFilters(resolved, _kClipProbeTimeout);
+      final Set<String> filters = await _probeFfmpegFilters(
+        resolved,
+        _kClipProbeTimeout,
+      );
       if (frame != null && ffmpegCanBurnClipSubtitles(filters)) {
         final _BurnFrames? frames = await _renderClipBurnFrames(
           cues: subtitleCues,
@@ -924,7 +929,10 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // C 修（BUG-345）：把两轮 ffmpeg 的真实失败原因（退出码 + stderr）写进错误日志，
     // 与 desktop_audio_clipper 的 _reportFfmpegFailure 对齐——否则失败是黑盒，真机只
     // 看到一句固定文案，看不到「Stream map matches no streams」/「Invalid argument」。
-    engineLog.log('VideoClipExport', 'stream-copy: ${result.copy.failureSummary}');
+    engineLog.log(
+      'VideoClipExport',
+      'stream-copy: ${result.copy.failureSummary}',
+    );
     final FfmpegRunResult? reencode = result.reencode;
     if (reencode != null) {
       engineLog.log('VideoClipExport', 'reencode: ${reencode.failureSummary}');
@@ -940,11 +948,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     );
   } on ProcessException catch (e, stack) {
     _deleteIfPresent(output);
-    engineLog.log(
-      'VideoClipExport',
-      describeFfmpegProcessException(e),
-      stack,
-    );
+    engineLog.log('VideoClipExport', describeFfmpegProcessException(e), stack);
     return VideoClipExportResult.failure(
       VideoClipExportFailure.ffmpegUnavailable,
       detail: e.message,
@@ -1008,11 +1012,9 @@ Future<_BurnFrames?> _renderClipBurnFrames({
       if (png == null || png.isEmpty) continue;
       final String path = p.join(dir.path, 'c$i.png');
       await File(path).writeAsBytes(png, flush: true);
-      out.add(ClipBurnCue(
-        startMs: cue.startMs,
-        endMs: cue.endMs,
-        pngPath: path,
-      ));
+      out.add(
+        ClipBurnCue(startMs: cue.startMs, endMs: cue.endMs, pngPath: path),
+      );
     }
     if (out.isEmpty) {
       try {
@@ -1041,8 +1043,9 @@ Future<Directory?> _writeTempSubtitleFiles(List<String> contents) async {
     for (int i = 0; i < contents.length; i++) {
       // flush: true——ffmpeg 进程随后立刻读这些文件，不能停在 OS 写缓冲里。
       // encoding: utf8 且不写 BOM：ffmpeg 的 srt demuxer 默认按 UTF-8 解析。
-      await File(_tempSubtitlePath(dir, i))
-          .writeAsString(contents[i], encoding: utf8, flush: true);
+      await File(
+        _tempSubtitlePath(dir, i),
+      ).writeAsString(contents[i], encoding: utf8, flush: true);
     }
     return dir;
   } catch (e, stack) {

@@ -140,6 +140,28 @@ T? mostRecentlyReadCandidate<T>(
   return best;
 }
 
+/// 书架条目的阅读状态（书 / 漫画 / 有声书共用一个口径）。书架 / 漫画库搜索栏
+/// 「阅读状态」下拉的档位也是它（null = 全部）。
+enum ShelfReadStatus { unread, reading, finished }
+
+/// 条目阅读状态的**唯一判据**，书架概览统计（[tallyShelfProgress]）与阅读状态
+/// 筛选共用：
+/// * [completed]（`EpubBooks.completedAt` 非 null，手动标记或读到末尾自动写入）
+///   → 读完，不受进度约束；
+/// * `duration<=0`（无进度维度，如纯字幕书）→ 未读；
+/// * `position>=duration` → 读完；`0<position<duration` → 在读；其余未读。
+ShelfReadStatus classifyShelfReadStatus({
+  required bool completed,
+  required int position,
+  required int duration,
+}) {
+  if (completed) return ShelfReadStatus.finished;
+  if (duration <= 0 || position <= 0) return ShelfReadStatus.unread;
+  return position >= duration
+      ? ShelfReadStatus.finished
+      : ShelfReadStatus.reading;
+}
+
 /// 书架概览统计（在读数 / 读完数 / 在读候选列表）。
 ///
 /// BUG-804：输入必须是**全量 EPUB-backed 书**——含有声书（EPUB 正文 + SRT
@@ -178,18 +200,18 @@ ShelfProgressTally<T> tallyShelfProgress<T>(
   int finished = 0;
   final List<T> inProgress = <T>[];
   for (final T book in epubBackedBooks) {
-    if (isCompleted != null && isCompleted(book)) {
-      finished++;
-      continue;
-    }
-    final int dur = duration(book);
-    if (dur <= 0) continue;
-    final int pos = position(book);
-    if (pos >= dur) {
-      finished++;
-    } else if (pos > 0) {
-      reading++;
-      inProgress.add(book);
+    switch (classifyShelfReadStatus(
+      completed: isCompleted != null && isCompleted(book),
+      position: position(book),
+      duration: duration(book),
+    )) {
+      case ShelfReadStatus.finished:
+        finished++;
+      case ShelfReadStatus.reading:
+        reading++;
+        inProgress.add(book);
+      case ShelfReadStatus.unread:
+        break;
     }
   }
   return ShelfProgressTally<T>(

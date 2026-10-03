@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 void main() {
   group('VideoMetadataResolver strict single-source gate', () {
@@ -714,6 +715,129 @@ void main() {
       },
     );
 
+    group('providerUnavailable 区分临时故障与没配置', () {
+      Future<VideoMetadataResolution> resolveConfirmed(
+        List<VideoMetadataProvider> providers,
+      ) =>
+          VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(providers),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.mal,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Show'],
+              confirmedLookup: const VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.mal,
+                externalId: '63337',
+                mediaKind: VideoMetadataMediaKind.tv,
+              ),
+            ),
+          );
+
+      test('已确认身份的源回 504 → 临时故障', () async {
+        final VideoMetadataResolution result =
+            await resolveConfirmed(<VideoMetadataProvider>[
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.mal,
+            fetchError: const VideoMetadataNetworkException(
+              'MAL anime/63337/full HTTP 504',
+              statusCode: 504,
+            ),
+          ),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isTrue);
+      });
+
+      test('4xx 不是临时故障', () async {
+        final VideoMetadataResolution result =
+            await resolveConfirmed(<VideoMetadataProvider>[
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.mal,
+            fetchError: const VideoMetadataNetworkException(
+              'MAL anime/63337/full HTTP 404',
+              statusCode: 404,
+            ),
+          ),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isFalse);
+      });
+
+      test('没配置不是临时故障（重试也不会变）', () async {
+        final VideoMetadataResolution result = await resolveConfirmed(
+          const <VideoMetadataProvider>[],
+        );
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isFalse);
+      });
+    });
+
+    // 「搜过但查无」是资料源查无后让 AI 出搜索词的唯一判据（BUG-2829）：
+    // 状态本身分不出「搜了没有」与「没搜成」，两者都可能是 providerUnavailable。
+    group('searchedWithoutResult 只认「搜了没有」', () {
+      Future<VideoMetadataResolution> resolveChain(
+        List<VideoMetadataProvider> providers,
+      ) =>
+          VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(providers),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              fallbackProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Show'],
+            ),
+          );
+
+      test('主源查无 + 兜底源没配置：状态是 providerUnavailable，但算搜了没有', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(<VideoMetadataProvider>[
+          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.searchedWithoutResult, isTrue);
+      });
+
+      test('两家都查无', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(<VideoMetadataProvider>[
+          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+          _FakeProvider(kind: VideoMetadataProviderKind.tmdb),
+        ]);
+        expect(result.status, VideoMetadataResolutionStatus.notFound);
+        expect(result.searchedWithoutResult, isTrue);
+      });
+
+      test('任一家鉴权失败（非临时）：没搜成，不算查无', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(<VideoMetadataProvider>[
+          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+          _FakeProvider(
+            kind: VideoMetadataProviderKind.tmdb,
+            searchError: const VideoMetadataNetworkException(
+              'TMDB search HTTP 401',
+              statusCode: 401,
+            ),
+          ),
+        ]);
+        expect(
+            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+        expect(result.transient, isFalse);
+        expect(result.searchedWithoutResult, isFalse);
+      });
+
+      test('一家都没配置：没有可搜的源', () async {
+        final VideoMetadataResolution result =
+            await resolveChain(const <VideoMetadataProvider>[]);
+        expect(result.searchedWithoutResult, isFalse);
+      });
+    });
+
     test('unconfigured selected provider fails before network', () async {
       final VideoMetadataResolution result = await VideoMetadataResolver(
         registry: VideoMetadataProviderRegistry(
@@ -924,12 +1048,20 @@ class _FakeProvider implements VideoMetadataProvider {
     this.searchResults = const <VideoMetadataWork>[],
     this.works = const <String, VideoMetadataWork>{},
     this.available = true,
+    this.fetchError,
+    this.searchError,
   });
 
   final VideoMetadataProviderKind kind;
   final List<VideoMetadataWork> searchResults;
   final Map<String, VideoMetadataWork> works;
   final bool available;
+
+  /// 非 null 时 [fetchWork] 抛它（模拟资料源网络故障）。
+  final Exception? fetchError;
+
+  /// 非 null 时 [search] 抛它。
+  final Exception? searchError;
   int searchCalls = 0;
   int fetchCalls = 0;
 
@@ -944,12 +1076,16 @@ class _FakeProvider implements VideoMetadataProvider {
     VideoMetadataSearchRequest request,
   ) async {
     searchCalls++;
+    final Exception? error = searchError;
+    if (error != null) throw error;
     return searchResults;
   }
 
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
     fetchCalls++;
+    final Exception? error = fetchError;
+    if (error != null) throw error;
     return works[lookup.externalId];
   }
 

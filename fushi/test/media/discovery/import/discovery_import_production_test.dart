@@ -9,7 +9,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:path/path.dart' as p;

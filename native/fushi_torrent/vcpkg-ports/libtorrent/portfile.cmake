@@ -35,6 +35,8 @@ vcpkg_from_github(
         HEAD_REF RC_2_0
         PATCHES
             dht-follows-peer-proxy-exemption.patch
+            dh-shared-secret-padding.patch
+            listen-bind-access-denied-fallback.patch
 )
 
 vcpkg_from_github(

@@ -9,7 +9,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, JapaneseLanguage;
-import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi/src/anki/anki_backup_word_reader.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';

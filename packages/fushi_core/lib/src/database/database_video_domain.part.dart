@@ -276,6 +276,38 @@ mixin _FushiDbVideoDomain
                 t.collectionId.equals(collectionId)))
           .getSingleOrNull();
 
+  /// 合集在界面上对应的作品资料（只读）。
+  ///
+  /// 刮削计划器对合集有两种合法表示：多成员合集整体是一部作品（行挂在合集
+  /// 上），单成员合集按单集刮（行挂在那一集的 bookUid 上）。只按合集查会让
+  /// 「刚下完第一集」的剧集页一直显示「尚未刮削」——资料其实已经在库。所以：
+  /// 合集行优先；没有时，视频成员上**恰好一条**作品行就是它。多条（按集各自
+  /// 刮的播放列表）不猜，返回 null。
+  ///
+  /// 写路径（upsert 回读、索引器判断合集行在不在）仍用
+  /// [getVideoMetadataWorkByCollection]，不能换成这里。
+  Future<VideoMetadataWorkRow?> resolveVideoMetadataWorkForCollection(
+    int collectionId,
+  ) async {
+    final VideoMetadataWorkRow? own =
+        await getVideoMetadataWorkByCollection(collectionId);
+    if (own != null) return own;
+    final List<VideoMetadataWorkRow> memberWorks = await (select(
+      videoMetadataWorks,
+    ).join(<Join>[
+      innerJoin(
+        mediaCollectionItems,
+        mediaCollectionItems.entryKey.equalsExp(videoMetadataWorks.bookUid) &
+            mediaCollectionItems.collectionId.equals(collectionId) &
+            mediaCollectionItems.mediaType.equals('video'),
+      ),
+    ])
+          ..limit(2))
+        .map((TypedResult row) => row.readTable(videoMetadataWorks))
+        .get();
+    return memberWorks.length == 1 ? memberWorks.single : null;
+  }
+
   Future<VideoMetadataWorkRow?> getVideoMetadataWorkByBook(String bookUid) =>
       (select(videoMetadataWorks)
             ..where(($VideoMetadataWorksTable t) => t.bookUid.equals(bookUid)))
@@ -1232,6 +1264,24 @@ mixin _FushiDbVideoDomain
     return query.get();
   }
 
+  /// 某来源最近的、留下了待确认或失败作品的运行（新 → 旧）。只有这种运行带
+  /// 挂起原因标记；全部成功的运行（如逐个导入时的单作品刮削）不占回看窗口。
+  Future<List<VideoSourceScrapeRunRow>> getUnresolvedVideoSourceScrapeRuns({
+    required int sourceId,
+    int limit = 20,
+  }) =>
+      (select(videoSourceScrapeRuns)
+            ..where(($VideoSourceScrapeRunsTable t) =>
+                t.sourceId.equals(sourceId) &
+                (t.pendingConfirmations.isBiggerThanValue(0) |
+                    t.failedWorks.isBiggerThanValue(0)))
+            ..orderBy(<OrderingTerm Function($VideoSourceScrapeRunsTable)>[
+              ($VideoSourceScrapeRunsTable t) => OrderingTerm.desc(t.startedAt),
+              ($VideoSourceScrapeRunsTable t) => OrderingTerm.desc(t.id),
+            ])
+            ..limit(limit))
+          .get();
+
   /// 是否仍有联网视频刮削正在写入。全局清理用它 fail closed，避免清完后活动任务
   /// 又把 work / sidecar ledger 写回来。
   Future<bool> hasRunningVideoSourceScrapeRun() async =>
@@ -1995,6 +2045,22 @@ mixin _FushiDbVideoDomain
       ),
     );
   }
+
+  /// 所有任务里已经落进库的视频文件（`kind = video` 且有最终路径）。「这部作品
+  /// 是哪条下载任务下来的」按它反查，一次查完，不逐任务查。
+  Future<List<VideoDownloadJobFileRow>> getImportedVideoDownloadJobFiles() =>
+      (select(videoDownloadJobFiles)
+            ..where(($VideoDownloadJobFilesTable t) =>
+                t.kind.equals('video') & t.finalAbsolutePath.isNotNull())
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobFilesTable)>[
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.jobId),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.backendFileIndex),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.originalRelativePath),
+            ]))
+          .get();
 
   Future<List<VideoDownloadJobFileRow>> getVideoDownloadJobFiles(
     String jobId,

@@ -47,7 +47,7 @@ void main() {
       expect(source.duration, const Duration(minutes: 30));
     });
 
-    test('零点未知时单段也交文件路径（宁可整段照播）', () {
+    test('缺 CLPI 时仍按 MPLS 截取，播放与制卡保持同一零点', () {
       final BlurayPlaylist playlist = _playlist(const <FixturePlayItem>[
         FixturePlayItem(
           clipId: '00001',
@@ -62,8 +62,11 @@ void main() {
         timebases: const <String, BlurayClipTimebase>{},
       )!;
 
-      expect(source.isPlainFile, isTrue);
-      expect(source.uri, stream('00001'));
+      expect(source.isPlainFile, isFalse);
+      expect(
+        source.uri,
+        'edl://${encodeEdlField(stream('00001'))},100.000000,100.000000;',
+      );
     });
 
     test('单段但只用中间一截 → EDL 带起止，起点用源文件原始时间戳', () {

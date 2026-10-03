@@ -1,0 +1,90 @@
+# 无头服务端 packages/fushi_server 的轻量门（2026-09-30 精简 CI 时新增）。
+#
+# 为什么要有它：main.yml（Android 构建 + 全量单测，~90 min）与 build-multiplatform.yml
+# （五平台编译）现在用 `!packages/fushi_server/**` 排除了「只改服务端」的 PR——app 不依赖
+# 服务端，为它跑五平台 app 构建是纯开销。但此前服务端恰恰只挂在这两条上：包测试在
+# main.yml 的「Run package tests」循环里，`dart build cli` + `--help` 冒烟在
+# build-multiplatform.yml 的 linux job 里；release-server.yml 只是 workflow_call 发布、不是
+# PR 门。排除之后若没有这条，只改服务端的 PR 就一个门都没有了。
+#
+# 本门做三件事，都只要一台 ubuntu、几分钟：
+#   1. `dart analyze`（此前没有任何 workflow 分析服务端包——main.yml 的 flutter analyze
+#      只分析 fushi/）；
+#   2. 服务端包测试（与 main.yml 同一个 runner：fushi/tool/flutter_test_failures.dart）；
+#   3. `dart build cli` + `--help` 冒烟：fushi_engine「闭包里没有 dart:ui」的最终门，
+#      也抓 sqlite3 native asset 构建断裂。
+# 带随包原生库（内置 torrent .so / onnxruntime / fushi_p2p / fushi-anki-sync）的完整
+# serve 冒烟仍只在 build-multiplatform.yml 的 linux-server job 里——它要冷编 libtorrent，
+# 不适合挂在轻量门上。2026-09-30 起那个 job 只剩服务端覆盖（Linux app 不再在 CI 构建），
+# PR 上由路径门在服务端的 Dart 依赖闭包（fushi_server / fushi_engine / core / anki / audio /
+# dictionary / platform / torrent / p2p）或三块原生库变动时开。
+#
+# 触发面：服务端自身 + 它最直接的依赖 fushi_engine（引擎改动同时也会触发 main.yml /
+# build-multiplatform.yml）+ 本文件。develop push 也跑：本仓日常大量直推 develop，
+# 而发布 workflow 的 push 同样排除了服务端，不跑这里就没有任何门。
+name: fushi_server gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'packages/fushi_server/**'
+      - 'packages/fushi_engine/**'
+      - '.github/workflows/server-gate.yml'
+      - '.github/actions/pdfium-hook-cache/**'
+  push:
+    branches: ['develop']
+    paths:
+      - 'packages/fushi_server/**'
+      - 'packages/fushi_engine/**'
+      - '.github/workflows/server-gate.yml'
+      - '.github/actions/pdfium-hook-cache/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: test
+      # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_anki / fushi_dictionary /
+      # fushi_platform 尚声明 flutter），与 build-multiplatform.yml linux-server job 同一个入口解析整个 workspace。
+      - name: Flutter pub get (workspace)
+        working-directory: fushi
+        run: flutter pub get
+      # fushi_asr_onnx_ffi 的 archive 兼容补丁（见 CLAUDE.md「archive override + ci/patches」），
+      # 缺了服务端编不过。
+      - name: Apply pub cache patches
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+      - name: Analyze fushi_server
+        working-directory: packages/fushi_server
+        run: dart analyze
+      - name: Test fushi_server
+        working-directory: packages/fushi_server
+        run: dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/fushi_server
+      - name: Build headless fushi_server (Linux) and smoke --help
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart build cli --target packages/fushi_server/bin/fushi_server.dart \
+            --output build/fushi_server_linux
+          ls -la build/fushi_server_linux/bundle
+          build/fushi_server_linux/bundle/bin/fushi_server --help

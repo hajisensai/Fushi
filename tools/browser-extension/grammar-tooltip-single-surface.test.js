@@ -130,12 +130,12 @@ function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canH
       addEventListener(type, fn) { (docListeners[type] ||= []).push(fn); },
       documentElement: { style: { zoom: String(zoom) } },
     },
-    window: {
-      innerHeight: viewportHeight,
-      __fushiVisibleViewportHeight: visibleHeight,
-      __fushiPopupViewportWidth: viewportWidth,
-      matchMedia: (q) => ({ matches: q.includes('hover') ? canHover : false }),
-    },
+    // 浏览器里 window === 全局对象（见下方 ctx.window = ctx）：顶层函数声明就是 window
+    // 属性，替身不同构就测不出「注入值与 helper 同名、把函数覆盖掉」。
+    innerHeight: viewportHeight,
+    __fushiVisibleViewportHeightPx: visibleHeight,
+    __fushiPopupViewportWidth: viewportWidth,
+    matchMedia: (q) => ({ matches: q.includes('hover') ? canHover : false }),
     // popup.js 里这些 helper 住在切片之外，按其真实语义提供最小实现。
     __fushiRootNode: () => root,
     __fushiOverlayParent: () => root,
@@ -157,6 +157,7 @@ function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canH
     iconSvg: () => '<svg></svg>',
   };
   ctx.globalThis = ctx;
+  ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(slice, ctx);
   return { ctx, root, docListeners };

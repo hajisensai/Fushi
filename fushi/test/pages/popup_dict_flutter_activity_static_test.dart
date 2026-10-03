@@ -8,8 +8,13 @@ void main() {
 
   test('popup engine holder runs popupMain on a cached engine', () {
     final String src = File(holderPath).readAsStringSync();
-    expect(src,
-        contains('FlutterEngine(context.applicationContext, null, false)'));
+    // 引擎参数（BUG-2790 的 --enable-impeller=false）由
+    // test/build/popup_engine_impeller_guard_test.dart 钉；这里只钉应用级
+    // context 与 automaticallyRegisterPlugins=false。
+    expect(
+        src,
+        matches(RegExp(r'FlutterEngine\(\s*context\.applicationContext,'
+            r'[^;]*?,\s*false,?\s*\)')));
     expect(src,
         contains('FloatingDictPluginRegistrant.registerWith(engine, context.applicationContext)'));
     expect(src, isNot(contains('GeneratedPluginRegistrant')));

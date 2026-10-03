@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_asr_onnx_ffi/asr_onnx_ffi.dart';
+import 'package:fushi_audio/fushi_audio_core.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -26,6 +27,9 @@ void installServerHostBindings({
   engineLog = log;
   fushiDebugPrint = (String? message, {int? wrapWidth}) => log.debug(message);
   enginePaths = paths;
+  // 有声书持久目录 `<documents>/audiobooks/<hash>/`（与库服务的 audioDatabaseRoot 同根）。
+  // 不装的话代下载的有声书在对齐落盘时抛 StateError（`AudiobookStorage` 的单一解析点）。
+  AudiobookStorage.documentsRootResolver = () async => paths.documents;
   // ffmpeg / ffprobe：配置文件路径装进引擎的显式覆盖（优先于 FUSHI_FFMPEG 与 PATH，
   // 语义同环境变量覆盖：不做捆绑回退、跑不起来如实抛）。必须在首个
   // resolveFfmpegBackend() 之前装——后端选择是进程级单例。

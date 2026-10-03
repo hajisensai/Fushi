@@ -380,7 +380,15 @@ void main() {
       final int end = continuous.indexOf('\n  },', idx);
       final String body =
           continuous.substring(idx, end < 0 ? continuous.length : end);
-      expect(body, contains('countCharsBeforeViewport'),
+      // BUG-2903：分子经章内文本索引 + 二分（_charsBeforeEdge）求，跨边节点仍逐字
+      // countCharsBeforeViewport。
+      expect(body, contains('this._charsBeforeEdge('));
+      final int edgeIdx =
+          continuous.indexOf('_charsBeforeEdge: function(vertical, edge) {');
+      expect(edgeIdx, greaterThanOrEqualTo(0));
+      final String edgeBody = continuous.substring(
+          edgeIdx, continuous.indexOf('\n  },', edgeIdx));
+      expect(edgeBody, contains('countCharsBeforeViewport'),
           reason: '连续进度分子必须用 countCharsBeforeViewport 字符级累加（TODO-736 A-1），'
               '替代整节点 in/out 的段落级粗粒度（长节点滚动期进度跳变/不动）');
       // 旧实现整节点判定的标志（selectNodeContents 整节点矩形 + 整 nodeLen 累加）应消失。

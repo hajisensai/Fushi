@@ -654,6 +654,12 @@ void main() {
           'Theme preview content intentionally displays generated surface roles.',
       'lib/src/pages/implementations/custom_theme_page.dart':
           'Theme preview studio intentionally displays user-selected colors.',
+      'lib/src/pages/implementations/font_preview/font_target_preview.dart':
+          'Font preview specimens size sample content (ruby, subtitle, game '
+          'dialogue) relative to the rendered sample, not UI type.',
+      'lib/src/floating_ball/desktop_system_ball_assets.dart':
+          'Rasterizes Material icon glyphs into PNGs for the native desktop '
+          'ball window; the font size is the bitmap edge, not UI type.',
       'lib/src/pages/implementations/reading_statistics_page.dart':
           'Chart and metric preview content keeps small chart typography.',
       // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
@@ -748,8 +754,6 @@ void main() {
           'Book-cover badges/progress are reader-shelf card content.',
       'lib/src/pages/implementations/reader_history/remote.part.dart':
           'Remote book download control density is reader-shelf content.',
-      'lib/src/pages/implementations/reader_history/dialogs.part.dart':
-          'Reader-shelf dialog/segment typography is content chrome.',
       'lib/src/pages/implementations/reader_fushi_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
@@ -1087,21 +1091,6 @@ void main() {
           'manga.json blocks; pure data layer, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
-      'lib/src/storage/data_root_migration_view.dart':
-          'TODO-959 data-root migration overlay is pre-init startup chrome '
-          '(rendered while the DB is closed / isInitialised=false during '
-          'the move), mirroring the main.dart loading/error scaffolds '
-          'verbatim — design tokens are not reliably available there, so it '
-          'uses raw fontSize + ColorScheme roles, the same reviewed '
-          'startup-chrome exception class as the main.dart splash branches.',
-      'lib/src/startup/loading_watchdog_view.dart':
-          'TODO-1260 startup loading/timeout escape view is pre-init startup '
-          'chrome (rendered while isInitialised=false, extracted verbatim '
-          'from the main.dart loading scaffold) — design tokens are not '
-          'reliably available there, so it uses raw fontSize + ColorScheme '
-          'roles, the same reviewed startup-chrome exception class as the '
-          'data-root migration / backup import overlays and the main.dart '
-          'splash branches.',
       // BUG-1425：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
       // BUG-175 / TODO-222 要求它与查词弹窗 headword 同级，而那个 headword 是
       // WebView 里 assets/popup/popup.css 的 `.expression { font-size: 26px }`。
@@ -1117,14 +1106,6 @@ void main() {
           'cross-boundary parity constant (scaled by the user dictionary '
           'font ratio), the same reviewed exception class as '
           'dictionary_popup_native / popup_theme_css.',
-      'lib/src/sync/backup_import_overlay_view.dart':
-          'TODO-1151 backup import/restore overlay is pre-init startup chrome '
-          '(rendered while the DB is closed / isInitialised=false during the '
-          'import, mirroring the main.dart loading/error scaffolds and the '
-          'sibling data_root_migration_view verbatim) — design tokens are not '
-          'reliably available there, so it uses raw fontSize + ColorScheme '
-          'roles, the same reviewed startup-chrome exception class as the '
-          'data-root migration overlay and the main.dart splash branches.',
       // BUG-2166 批：桌面端阅读器 chrome 改 ッツ 形态时，原本长在
       // reader_fushi/chrome.part.dart 里的那几块（工具栏 / 状态行 / 画廊 /
       // 统计浮层 / 有声书面板）被拆成 lib/src/reader/ 下的独立文件。豁免随搬运
@@ -1180,6 +1161,9 @@ void main() {
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
       'lib/src/anki/anki_mined_card_action_sheet.dart': <String>{'ListTile('},
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
+      'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/lookup/gal_hook_text_overlay_controller.dart': <String>{
         'fontSize:',
       },
@@ -1283,6 +1267,10 @@ void main() {
         'VisualDensity.compact',
         'surfaceContainerHighest',
       },
+      // 字体样张：振假名、视频字幕、游戏台词的字号按样张内容等比推导（字幕照播放器
+      // 1080p 基准缩放），是内容尺寸而非界面字号。
+      'lib/src/pages/implementations/font_preview/font_target_preview.dart':
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
         'surfaceContainerHighest',
       },
@@ -1299,7 +1287,6 @@ void main() {
       },
       'lib/src/pages/implementations/home_video_page.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:',
       },
       'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
         'BorderRadius.circular(',
@@ -1314,7 +1301,6 @@ void main() {
         'BorderRadius.circular(',
         'surfaceContainerLow',
         'surfaceContainerHighest',
-        'fontSize:',
       },
       // 更新中心（#1427）：行骨架走 FushiListItem，唯一命中的是新集截图缩略图的
       // ClipRRect 圆角。范围就写这一个 token——多写一个就是预留通行证。
@@ -1369,8 +1355,6 @@ void main() {
       },
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
           <String>{'surfaceContainerHighest'},
-      'lib/src/pages/implementations/reader_history/dialogs.part.dart':
-          <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_history/remote.part.dart': <String>{
         'VisualDensity.compact',
         'surfaceContainerHighest',
@@ -1427,9 +1411,6 @@ void main() {
         'CheckboxListTile(',
       },
       'lib/src/settings/settings_schema_video.dart': <String>{'fontSize:'},
-      'lib/src/startup/loading_watchdog_view.dart': <String>{'fontSize:'},
-      'lib/src/storage/data_root_migration_view.dart': <String>{'fontSize:'},
-      'lib/src/sync/backup_import_overlay_view.dart': <String>{'fontSize:'},
       'lib/src/utils/components/clipboard_lookup_text_panel.dart': <String>{
         'fontSize:',
       },
@@ -3114,13 +3095,14 @@ void main() {
   });
 
   test('system font picker search uses shared MD3 spacing tokens', () {
+    // 系统字体选择页已换成独立文件里的浏览页（每款字体用自己渲染日文样张）。
     final String source = File(
-      'lib/src/pages/implementations/custom_fonts_page.dart',
+      'lib/src/pages/implementations/font_preview/system_font_browser_page.dart',
     ).readAsStringSync();
     final String pickerSource = _sectionSource(
       source,
-      'class _SystemFontPickerPageState',
-      'class CustomFontsPage',
+      'class _SystemFontBrowserPageState',
+      source.length,
     );
 
     expect(pickerSource, contains('FushiDesignTokens.of(context)'));

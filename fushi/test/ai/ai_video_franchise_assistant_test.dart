@@ -1,9 +1,9 @@
 // 「整套下载」联网补全：AI 只能从正文列作品，列出的每一部都要回资料源核对。
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/ai/ai_video_franchise_assistant.dart';
-import 'package:fushi/src/ai/web_knowledge.dart';
-import 'package:fushi/src/media/video/discovery/video_franchise.dart';
+import 'package:fushi_engine/ai/ai_video_franchise_assistant.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 

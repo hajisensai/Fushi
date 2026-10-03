@@ -63,7 +63,6 @@ void main() {
       expect(spec.showTopBar, isFalse);
       expect(spec.showBottomButtonBar, isFalse);
       expect(spec.showCenterTransport, isTrue);
-      expect(spec.showSeekLabels, isFalse);
     });
 
     test('手机横屏不因为「矮」被误判成小窗（宽度判据的存在理由）', () {
@@ -114,7 +113,6 @@ void main() {
       density: VideoControlsDensity.full,
       scale: 1,
       showSeekBar: true,
-      showSeekLabels: true,
       showTopBar: true,
       showBottomButtonBar: true,
       showCenterTransport: false,
@@ -123,7 +121,6 @@ void main() {
       density: VideoControlsDensity.mini,
       scale: 0.72,
       showSeekBar: false,
-      showSeekLabels: false,
       showTopBar: false,
       showBottomButtonBar: false,
       showCenterTransport: true,

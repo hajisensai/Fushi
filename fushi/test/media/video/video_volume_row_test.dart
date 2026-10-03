@@ -133,7 +133,7 @@ void main() {
       final String bottom = methodBody(
         page,
         RegExp(
-          r'List<Widget> _bottomSlotButtons\(\s*VideoControlSlot slot,\s*VideoPlayerController controller, \{\s*required bool desktop,\s*required bool roomyBottomBar,\s*\}\) \{(.*?)\n  \}',
+          r'List<VideoBarEntry> _bottomSlotButtons\(\s*VideoControlSlot slot,\s*VideoPlayerController controller, \{\s*required bool desktop,\s*required VideoBarCluster cluster,\s*\}\) \{(.*?)\n  \}',
           dotAll: true,
         ),
         '_bottomSlotButtons',

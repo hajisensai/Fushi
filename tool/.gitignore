@@ -1,0 +1,6 @@
+# 机器本地 CI 门禁包装(gh 专用),不入库
+ci-check
+
+# tool/bootstrap.ps1 的本机私有配置(代理等)。develop 的根 .gitignore 已收录同名规则,
+# 这里再挡一道,免得主 checkout 还没拉到那次提交时它露成 untracked。
+bootstrap.local.env

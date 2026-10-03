@@ -84,6 +84,96 @@ abstract class VideoResourceCandidate {
   }
 }
 
+/// 一个资源源在一次搜索里发出的**一个**查询词及其结果（BUG-2794）。
+///
+/// [failure] 非空 = 这一条查询失败；否则 [itemCount] 是它拿回的条数（0 也是
+/// 合法结果，必须能被用户看见——「Nyaa 搜了日文原名、0 条」与「Nyaa 挂了」
+/// 是两件事，混成一个空列表用户只会以为这家没资源）。
+class VideoResourceQueryReport {
+  const VideoResourceQueryReport({
+    required this.query,
+    this.itemCount = 0,
+    this.failure,
+  });
+
+  final String query;
+  final int itemCount;
+  final ExternalProviderFailure? failure;
+}
+
+/// 一个资源源在一次搜索里的回执：发了哪些查询词、各得几条、有没有失败。
+class VideoResourceSourceReport {
+  VideoResourceSourceReport({
+    required this.providerId,
+    Iterable<VideoResourceQueryReport> queries =
+        const <VideoResourceQueryReport>[],
+    this.itemCount = 0,
+    Iterable<ExternalProviderFailure> failures =
+        const <ExternalProviderFailure>[],
+    this.succeeded = false,
+  })  : queries = List<VideoResourceQueryReport>.unmodifiable(queries),
+        failures = List<ExternalProviderFailure>.unmodifiable(failures);
+
+  final String providerId;
+  final List<VideoResourceQueryReport> queries;
+
+  /// 本源（自身去重后）交出的条数；跨源去重前。
+  final int itemCount;
+  final List<ExternalProviderFailure> failures;
+
+  /// 至少一条查询成功（哪怕 0 条）。
+  final bool succeeded;
+
+  /// 一条都没成功且有失败 = 这家这次整体失败。
+  bool get failed => !succeeded && failures.isNotEmpty;
+
+  /// 没成功也没失败 = 这家表达不了这条查询、没有参与（如 apibay 遇纯 CJK 词）。
+  bool get skipped => !succeeded && failures.isEmpty;
+}
+
+/// 带按源回执的资源搜索结果。[ProviderBatchResult] 的子类型，旧调用方照旧只读
+/// items / failures；需要逐源展示的调用方（资源搜索页）再读 [sources]。
+class VideoResourceSearchResult
+    extends ProviderBatchResult<VideoResourceCandidate> {
+  VideoResourceSearchResult({
+    super.items,
+    super.failures,
+    super.successfulProviderCount,
+    Iterable<VideoResourceSourceReport> sources =
+        const <VideoResourceSourceReport>[],
+  }) : sources = List<VideoResourceSourceReport>.unmodifiable(sources);
+
+  final List<VideoResourceSourceReport> sources;
+}
+
+/// 把单个 provider 的结果归成一份按源回执。provider 自己给了回执（[result] 是
+/// 带 [VideoResourceSearchResult.sources] 的结果）就原样用；否则按「发了
+/// [fallbackQuery] 这一条」合成——Torznab 等外部 provider 不必各自实现回执。
+VideoResourceSourceReport videoResourceSourceReportOf({
+  required String providerId,
+  required ProviderBatchResult<VideoResourceCandidate> result,
+  required String fallbackQuery,
+}) {
+  if (result is VideoResourceSearchResult && result.sources.isNotEmpty) {
+    return result.sources.first;
+  }
+  final bool succeeded = result.successfulProviderCount > 0;
+  return VideoResourceSourceReport(
+    providerId: providerId,
+    queries: <VideoResourceQueryReport>[
+      if (succeeded || result.hasFailures)
+        VideoResourceQueryReport(
+          query: fallbackQuery,
+          itemCount: result.items.length,
+          failure: succeeded ? null : result.failures.firstOrNull,
+        ),
+    ],
+    itemCount: result.items.length,
+    failures: result.failures,
+    succeeded: succeeded,
+  );
+}
+
 abstract interface class VideoResourceProvider {
   String get id;
 

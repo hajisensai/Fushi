@@ -30,6 +30,7 @@ void main() {
         readerForeground: paperFg,
         readerDark: false,
         buildColorScheme: buildEinkColorScheme,
+        textTheme: const TextTheme(),
       );
 
       // ① 扩展必须在——丢了它 popup.css 的 html.eink 块整块失效。
@@ -54,6 +55,7 @@ void main() {
         // 不读阅读器 theme key（与正文 CSS 的 einkDark 同一真值）。
         readerDark: false,
         buildColorScheme: buildEinkColorScheme,
+        textTheme: const TextTheme(),
       );
 
       expect(resolved.theme.extension<FushiEinkTheme>()?.einkMode, isTrue);
@@ -72,6 +74,7 @@ void main() {
         readerForeground: paperFg,
         readerDark: false,
         buildColorScheme: plainScheme,
+        textTheme: const TextTheme(),
       );
 
       final SurfaceRoles paper = deriveSurfaceRolesFrom(paperBg);
@@ -95,6 +98,7 @@ void main() {
         readerForeground: paperFg,
         readerDark: false,
         buildColorScheme: plainScheme,
+        textTheme: const TextTheme(),
       );
 
       expect(resolved.theme.extension<FushiEinkTheme>(), isNotNull);
@@ -109,6 +113,7 @@ void main() {
         readerForeground: const Color(0xFFE0E0E0),
         readerDark: true,
         buildColorScheme: plainScheme,
+        textTheme: const TextTheme(),
       );
 
       expect(resolved.theme.colorScheme.brightness, Brightness.dark);

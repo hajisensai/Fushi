@@ -91,6 +91,19 @@ final epubBookUidByKeyProvider =
   };
 });
 
+/// 按 bookKey 查 [bookLastReadAtProvider] 映射：先经 [epubBookUidByKeyProvider]
+/// 换算成 uid 再查，换算不上（非 epub 遗留行 / 空键）退回原键。书架 hero 与
+/// 「最近阅读」排序共用这一跳——BUG-2904：hero 曾直接拿 bookKey 查 uid 键表，
+/// 恒查空、退化成列表序（= 最近导入的在读书），读了新书「继续阅读」也不换。
+int? lastReadAtForBookKey(
+  Map<String, int> lastReadAtByUid,
+  Map<String, String> epubUidByKey,
+  String? bookKey,
+) {
+  if (bookKey == null) return null;
+  return lastReadAtByUid[epubUidByKey[bookKey] ?? bookKey];
+}
+
 /// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
 /// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
 /// （charOffset 再大也不计）时书架显示极低%，让用户以为「进度没了」。
@@ -635,11 +648,19 @@ class ReaderFushiSource extends ReaderMediaSource {
             // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
             // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
             // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
+            // 1-based 只对**有阅读记录**的书成立：没有记录（pos==null）= 一页没
+            // 翻过，position 0 = 未读。旧写法 `(pos?.sectionIndex ?? 0) + 1` 把没开
+            // 过的卷也算成停在第 1 页——书架「未读」筛选永远筛不出本地漫画 / PDF，
+            // 只有 1 页的卷还直接算「读完」。
             ? (
                 // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
                 // position 溢出 duration（>100%）。
-                position: ((pos?.sectionIndex ?? 0) + 1)
-                    .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
+                position: pos == null
+                    ? 0
+                    : (pos.sectionIndex + 1).clamp(
+                        1,
+                        book.chapterCount > 0 ? book.chapterCount : 1,
+                      ),
                 duration: book.chapterCount > 0 ? book.chapterCount : 1,
               )
             : computeBookProgress(
@@ -1627,6 +1648,17 @@ class ReaderFushiSource extends ReaderMediaSource {
           key: 'auto_hide_chrome_millis',
           value: normalized,
         ));
+  }
+
+  /// 关掉顶栏和底栏、由应用内悬浮球接管（per-reader，分层同上）。默认 false。
+  /// 是否真的生效还要看应用内悬浮球开没开（`readerToolbarsHidden`）。
+  bool get hideToolbars =>
+      readerSettings?.hideToolbars ??
+      getPreference<bool>(key: 'hide_toolbars', defaultValue: false);
+
+  Future<void> setHideToolbars(bool value) async {
+    await (readerSettings?.setHideToolbars(value) ??
+        setPreference<bool>(key: 'hide_toolbars', value: value));
   }
 
   // ── ttu 阅读器设置 ─────────────────────────────────────────────────

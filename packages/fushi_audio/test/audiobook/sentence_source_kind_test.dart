@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-1120：收藏句来源枚举 [SentenceSourceKind] 的解析契约。

@@ -151,6 +151,15 @@ void main() {
     },
   );
 
+  test('AACS input capabilities are redacted from upstream proxy failures', () {
+    final String token = '${'a' * 43}=';
+    final String sanitized = redactAppNativeProxySecrets(
+      'native proxy: GET http://127.0.0.1:1234/$token/stream.m2ts -> closed',
+    );
+    expect(sanitized, isNot(contains(token)));
+    expect(sanitized, contains('[decrypted Blu-ray]'));
+  });
+
   Future<({int status, String body})> get(
     Uri target, {
     bool authenticate = true,

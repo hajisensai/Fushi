@@ -17,7 +17,7 @@
 
 import 'dart:typed_data';
 
-import 'bluray_playlist.dart' show kBlurayTimeScale;
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart' show kBlurayTimeScale;
 
 /// 一段 m2ts 在自身时间轴上的呈现区间（45kHz ticks）。
 class BlurayClipTimebase {

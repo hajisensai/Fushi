@@ -27,23 +27,25 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/baberu_ocr_recognizer.dart';
-import 'package:fushi_engine/ocr/manga_ocr_cuda_recognizer.dart';
-import 'package:fushi_engine/ocr/manga_ocr_cuda_runtime.dart';
+import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_downloader.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/manga_ocr_kv_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_tokenizer.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/ocr/page_text_sweep.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
 import 'package:fushi_engine/ocr/routing_ocr_recognizer.dart';
@@ -79,7 +81,8 @@ class MangaOcrModelPaths {
     this.ppRecPath = '',
     this.ppRecDictPath = '',
     this.baberu,
-    this.cuda,
+    this.kv,
+    this.ctcRecPath = '',
   });
 
   final String detectorPath;
@@ -87,7 +90,12 @@ class MangaOcrModelPaths {
   final String decoderPath;
   final String vocabPath;
   final BaberuOcrModelPaths? baberu;
-  final MangaOcrCudaModelPaths? cuda;
+
+  /// 经典 manga-ocr 的提速组件（KV cache decoder）；null = 走无 cache 的经典 decoder。
+  final MangaOcrKvModelPaths? kv;
+
+  /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
+  final String ctcRecPath;
 
   /// 横排行路径：PP-OCRv6 small det / rec / rec 字典（`inference.yml`）。
   final String ppDetPath;
@@ -95,16 +103,15 @@ class MangaOcrModelPaths {
   final String ppRecDictPath;
 }
 
-class MangaOcrCudaModelPaths {
-  const MangaOcrCudaModelPaths({
-    required this.pythonExecutable,
-    required this.modelDirectory,
-    required this.workerPath,
+/// 经典 manga-ocr KV cache 解码的两个图（encoder 沿用 [MangaOcrModelPaths.encoderPath]）。
+class MangaOcrKvModelPaths {
+  const MangaOcrKvModelPaths({
+    required this.crossPath,
+    required this.decoderPath,
   });
 
-  final String pythonExecutable;
-  final String modelDirectory;
-  final String workerPath;
+  final String crossPath;
+  final String decoderPath;
 }
 
 class BaberuOcrModelPaths {
@@ -149,6 +156,9 @@ abstract interface class MangaOcrVolumeJob {
 
   /// 请求取消（页/块边界生效，幂等）。
   void cancel();
+
+  /// 读者翻到了 [pageIndex]：下一页先跑它，再从它往后接着跑（页边界生效）。
+  void focus(int pageIndex);
 }
 
 /// 整卷任务 runner 接口（生产 = isolate；测试 = 进程内 fake）。
@@ -228,6 +238,12 @@ class _JobErrorMessage {
 
 /// isolate 收到即置位取消令牌的控制消息。
 const String _kJobCancelMessage = 'cancel';
+
+/// 主 isolate → 整卷 isolate：读者翻到了这一页（[MangaOcrPageFocus]）。
+class _JobFocusMessage {
+  const _JobFocusMessage(this.pageIndex);
+  final int pageIndex;
+}
 
 class _JobIsolateArgs {
   const _JobIsolateArgs({
@@ -381,36 +397,50 @@ OcrAccelerationPlan planOcrAcceleration({
 /// 字段在 [_openIsolateOcrEngine] 里**边建边赋值**：建到一半抛异常时，已建好的
 /// 会话仍挂在这里，由调用方 finally 里的 [close] 逐个释放，不会泄漏。
 class _IsolateOcrEngine {
-  MangaOcrCudaRecognizer? cudaRecognizer;
   TextDetector? detector;
   OcrSession? encoder;
   OcrSession? decoder;
   MangaOcrRecognizer? mangaOcr;
+  OcrSession? kvCross;
+  OcrSession? kvDecoder;
+  MangaOcrKvRecognizer? mangaOcrKv;
   PpOcrLineDetector? lineDetector;
   PpOcrLineRecognizer? lineRecognizer;
+
+  /// 逐列 CTC 的列识别 rec（与 [lineRecognizer] 是同一个对象时只关一次）。
+  PpOcrLineRecognizer? columnRecognizer;
   OcrRecognizer? recognizer;
+
+  /// 补检（检测器弱候选复核，仅逐列 CTC 模式）：只引用 [lineDetector] /
+  /// [columnRecognizer] 的会话，不另持有会话，关闭时置空即可。
+  OcrPageTextSweeper? sweeper;
   final List<OcrSession> baberuSessions = <OcrSession>[];
 
   /// 逐个关闭（幂等、吞单个关闭错误）：建到一半时 [recognizer] 还是 null，只关
   /// 它会漏掉已建好的会话，所以每个持有会话的对象各关各的。
   Future<void> close() async {
-    try {
-      await cudaRecognizer?.close();
-    } catch (_) {}
-    cudaRecognizer = null;
     final TextDetector? detector = this.detector;
     final MangaOcrRecognizer? mangaOcr = this.mangaOcr;
+    final MangaOcrKvRecognizer? mangaOcrKv = this.mangaOcrKv;
     final OcrSession? encoder = this.encoder;
     final OcrSession? decoder = this.decoder;
+    final OcrSession? kvCross = this.kvCross;
+    final OcrSession? kvDecoder = this.kvDecoder;
     final PpOcrLineDetector? lineDetector = this.lineDetector;
     final PpOcrLineRecognizer? lineRecognizer = this.lineRecognizer;
+    final PpOcrLineRecognizer? columnRecognizer = this.columnRecognizer;
     this.detector = null;
     this.mangaOcr = null;
+    this.mangaOcrKv = null;
     this.encoder = null;
     this.decoder = null;
+    this.kvCross = null;
+    this.kvDecoder = null;
     this.lineDetector = null;
     this.lineRecognizer = null;
+    this.columnRecognizer = null;
     recognizer = null;
+    sweeper = null;
     for (final OcrSession session in baberuSessions) {
       try {
         await session.close();
@@ -425,14 +455,23 @@ class _IsolateOcrEngine {
       try {
         await mangaOcr.close();
       } catch (_) {}
+    } else if (mangaOcrKv != null) {
+      // KV 识别器持有 encoder / cross / decoder_kv 三个会话。
+      try {
+        await mangaOcrKv.close();
+      } catch (_) {}
     } else {
-      // 识别器还没建成：encoder/decoder 裸会话各自关。
-      try {
-        await encoder?.close();
-      } catch (_) {}
-      try {
-        await decoder?.close();
-      } catch (_) {}
+      // 识别器还没建成：各裸会话各自关。
+      for (final OcrSession? session in <OcrSession?>[
+        encoder,
+        decoder,
+        kvCross,
+        kvDecoder,
+      ]) {
+        try {
+          await session?.close();
+        } catch (_) {}
+      }
     }
     try {
       await lineDetector?.close();
@@ -440,6 +479,11 @@ class _IsolateOcrEngine {
     try {
       await lineRecognizer?.close();
     } catch (_) {}
+    if (!identical(columnRecognizer, lineRecognizer)) {
+      try {
+        await columnRecognizer?.close();
+      } catch (_) {}
+    }
   }
 }
 
@@ -454,7 +498,6 @@ Future<void> _openIsolateOcrEngine(
   required Object? bootstrapArg,
   required MangaOcrModelPaths modelPaths,
   required void Function(MangaOcrAcceleration acceleration) onAcceleration,
-  required OcrCancelToken cancelToken,
 }) async {
   // 宿主引导（app：BackgroundIsolateBinaryMessenger.ensureInitialized(token)；
   // 服务端：null）。没装引导而宿主又需要它时，第一次 ORT 调用会以
@@ -512,43 +555,48 @@ Future<void> _openIsolateOcrEngine(
     ),
   );
   final BaberuOcrModelPaths? baberu = modelPaths.baberu;
-  final MangaOcrCudaModelPaths? cuda = modelPaths.cuda;
-  bool engineReady = false;
-  String? cudaDegradeReason;
-  void reportAcceleration() {
-    onAcceleration(
-      plan.toAcceleration(
-        detection: detectionEffective,
-        recognition: recognitionEffective,
-        recognitionDecoder: baberu == null ? null : OcrExecutionProvider.cpu,
-        runtimeDegradeReasons: <String>[
-          ...runtimeDegradeReasons,
-          if (cudaDegradeReason != null) cudaDegradeReason!,
-        ],
-      ),
-    );
-  }
+
+  // PP-OCRv6 det 与字典：横排行路径要用，逐列 CTC 的列检测也用同一个会话，所以
+  // 按需建一次、两处共用。
+  PpOcrLineDetector? sharedLineDetector;
+  Future<PpOcrLineDetector> openLineDetector() async =>
+      sharedLineDetector ??= engine.lineDetector = PpOcrLineDetector(
+        await plan.createSession(
+          factory,
+          modelPaths.ppDetPath,
+          providers: recognitionProviders,
+          onProviderResolved: (OcrProviderResolution resolution) =>
+              record('line detector', resolution),
+        ),
+      );
+  List<String>? sharedVocab;
+  Future<List<String>> ppVocab() async => sharedVocab ??= buildPpOcrCtcVocab(
+    parsePpOcrCharacterDict(
+      await File(modelPaths.ppRecDictPath).readAsString(),
+    ),
+  );
 
   late final OcrRecognizer primary;
-  if (cuda != null) {
-    cancelToken.throwIfCancelled();
-    primary = await MangaOcrCudaRecognizer.start(
-      pythonExecutable: cuda.pythonExecutable,
-      modelDirectory: cuda.modelDirectory,
-      workerPath: cuda.workerPath,
-      onStarted: (MangaOcrCudaRecognizer recognizer) {
-        engine.cudaRecognizer = recognizer;
-        if (cancelToken.isCancelled) unawaited(recognizer.close());
-      },
-      onDeviceChanged: (String device, String? reason) {
-        recognitionEffective = device == 'cuda'
-            ? OcrExecutionProvider.cuda
-            : OcrExecutionProvider.cpu;
-        cudaDegradeReason = reason;
-        if (engineReady) reportAcceleration();
-      },
+  if (modelPaths.ctcRecPath.isNotEmpty) {
+    // 逐列 CTC：整块交它的块逐列读（漫画微调的 PP-OCRv6 rec），每列的文本与列框
+    // 直接交回，不再按字格估算切分。
+    final PpOcrLineRecognizer columns = engine.columnRecognizer =
+        PpOcrLineRecognizer(
+          await plan.createSession(
+            factory,
+            modelPaths.ctcRecPath,
+            providers: recognitionProviders,
+            onProviderResolved: (OcrProviderResolution resolution) {
+              recognitionEffective = resolution.effective;
+              record('recognition ctc columns', resolution);
+            },
+          ),
+          vocab: await ppVocab(),
+        );
+    primary = CtcColumnOcrRecognizer(
+      lineDetector: await openLineDetector(),
+      lineRecognizer: columns,
     );
-    cancelToken.throwIfCancelled();
   } else if (baberu != null) {
     // The fixed FP16 vision graph is verified on Windows DirectML. Decoder KV
     // transfers made full-DML slower, so both decoder sessions stay on CPU.
@@ -607,65 +655,88 @@ Future<void> _openIsolateOcrEngine(
         record('recognition encoder', resolution);
       },
     );
-    final OcrSession decoder = engine.decoder = await plan.createSession(
-      factory,
-      modelPaths.decoderPath,
-      providers: recognitionProviders,
-      onProviderResolved: (OcrProviderResolution resolution) {
-        recognitionEffective = resolution.effective;
-        record('recognition decoder', resolution);
-      },
-    );
     final MangaOcrTokenizer tokenizer = MangaOcrTokenizer.fromVocabText(
       await File(modelPaths.vocabPath).readAsString(),
     );
-    primary = engine.mangaOcr = MangaOcrRecognizer(
-      encoderSession: encoder,
-      decoderSession: decoder,
-      tokenizer: tokenizer,
-    );
+    final MangaOcrKvModelPaths? kv = modelPaths.kv;
+    if (kv != null) {
+      // 提速组件齐全：KV cache decoder，识别结果与经典 decoder 逐 token 相同，
+      // 经典 decoder 那 117 MB 连会话都不建。
+      final OcrSession cross = engine.kvCross = await plan.createSession(
+        factory,
+        kv.crossPath,
+        providers: recognitionProviders,
+        onProviderResolved: (OcrProviderResolution resolution) =>
+            record('recognition cross kv', resolution),
+      );
+      final OcrSession kvDecoder = engine.kvDecoder = await plan.createSession(
+        factory,
+        kv.decoderPath,
+        providers: recognitionProviders,
+        onProviderResolved: (OcrProviderResolution resolution) {
+          recognitionEffective = resolution.effective;
+          record('recognition decoder kv', resolution);
+        },
+      );
+      primary = engine.mangaOcrKv = MangaOcrKvRecognizer(
+        encoderSession: encoder,
+        crossSession: cross,
+        decoderSession: kvDecoder,
+        tokenizer: tokenizer,
+      );
+    } else {
+      final OcrSession decoder = engine.decoder = await plan.createSession(
+        factory,
+        modelPaths.decoderPath,
+        providers: recognitionProviders,
+        onProviderResolved: (OcrProviderResolution resolution) {
+          recognitionEffective = resolution.effective;
+          record('recognition decoder', resolution);
+        },
+      );
+      primary = engine.mangaOcr = MangaOcrRecognizer(
+        encoderSession: encoder,
+        decoderSession: decoder,
+        tokenizer: tokenizer,
+      );
+    }
   }
   // 横排行路径：PP-OCRv6 small det/rec 与 manga-ocr 同一组 provider（都是识别侧、
   // 都是纯 CPU 档）；建会话时的降级同样经 record 留痕。
-  final PpOcrLineDetector lineDetector = engine.lineDetector =
-      PpOcrLineDetector(
-        await plan.createSession(
-          factory,
-          modelPaths.ppDetPath,
-          providers: recognitionProviders,
-          onProviderResolved: (OcrProviderResolution resolution) =>
-              record('line detector', resolution),
-        ),
-      );
+  final PpOcrLineDetector lineDetector = await openLineDetector();
+  final PpOcrLineRecognizer? columns = engine.columnRecognizer;
+  // 横排行：逐列 CTC 的漫画 rec 与横排行共用同一个模型文件时直接复用那个会话。
   final PpOcrLineRecognizer lineRecognizer = engine.lineRecognizer =
-      PpOcrLineRecognizer(
-        await plan.createSession(
-          factory,
-          modelPaths.ppRecPath,
-          providers: recognitionProviders,
-          onProviderResolved: (OcrProviderResolution resolution) =>
-              record('line recognizer', resolution),
-        ),
-        vocab: buildPpOcrCtcVocab(
-          parsePpOcrCharacterDict(
-            await File(modelPaths.ppRecDictPath).readAsString(),
+      columns != null && modelPaths.ppRecPath == modelPaths.ctcRecPath
+      ? columns
+      : PpOcrLineRecognizer(
+          await plan.createSession(
+            factory,
+            modelPaths.ppRecPath,
+            providers: recognitionProviders,
+            onProviderResolved: (OcrProviderResolution resolution) =>
+                record('line recognizer', resolution),
           ),
-        ),
-      );
+          vocab: await ppVocab(),
+        );
   engine.recognizer = RoutingOcrRecognizer(
     mangaOcr: primary,
     lineDetector: lineDetector,
     lineRecognizer: lineRecognizer,
   );
-  engineReady = true;
+  // 补检只在逐列 CTC 下开：补回的块靠识别置信度把关，只有漫画 CTC 权重对装饰字
+  // 读得可靠（用户真实页的「オキテ」，通用 PP rec 以高置信度读成「才半元」）。
+  if (columns != null) {
+    engine.sweeper = PpOcrPageTextSweeper(
+      lineDetector: lineDetector,
+      lineRecognizer: columns,
+    );
+  }
   final MangaOcrAcceleration acceleration = plan.toAcceleration(
     detection: detectionEffective,
     recognition: recognitionEffective,
     recognitionDecoder: baberu == null ? null : OcrExecutionProvider.cpu,
-    runtimeDegradeReasons: <String>[
-      ...runtimeDegradeReasons,
-      if (cudaDegradeReason != null) cudaDegradeReason!,
-    ],
+    runtimeDegradeReasons: runtimeDegradeReasons,
   );
   developer.log('manga OCR acceleration: $acceleration', name: kOcrLogName);
   onAcceleration(acceleration);
@@ -676,10 +747,12 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
   final OcrCancelToken cancelToken = OcrCancelToken();
   final _IsolateOcrEngine engine = _IsolateOcrEngine();
+  int? pendingFocus;
   control.listen((Object? message) {
     if (message == _kJobCancelMessage) {
       cancelToken.cancel();
-      unawaited(engine.cudaRecognizer?.close());
+    } else if (message is _JobFocusMessage) {
+      pendingFocus = message.pageIndex;
     }
   });
   args.events.send(_JobControlPortMessage(control.sendPort));
@@ -691,7 +764,6 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       bootstrap: args.bootstrap,
       bootstrapArg: args.bootstrapArg,
       modelPaths: args.modelPaths,
-      cancelToken: cancelToken,
       onAcceleration: (MangaOcrAcceleration acceleration) =>
           args.events.send(_JobAccelerationMessage(acceleration)),
     );
@@ -708,11 +780,17 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       imageDirPath: args.imageDirPath,
       detector: engine.detector!,
       recognizer: engine.recognizer!,
+      sweeper: engine.sweeper,
       engineSignature: engineSignature,
       startPage: args.startPage,
       cancelToken: cancelToken,
       onProgress: (int done, int total, int pageIndex) {
         args.events.send(_JobProgressMessage(done, total, pageIndex));
+      },
+      takeFocus: () {
+        final int? focus = pendingFocus;
+        pendingFocus = null;
+        return focus;
       },
     );
     args.events.send(_JobDoneMessage(mangaJsonPath));
@@ -799,7 +877,6 @@ Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
       closing = true;
       // 在跑页在页/块边界停下；已完成页的缓存保留。
       cancelToken.cancel();
-      unawaited(engine.cudaRecognizer?.close());
     }
     final Completer<void>? pending = wake;
     wake = null;
@@ -814,7 +891,6 @@ Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
       bootstrap: args.bootstrap,
       bootstrapArg: args.bootstrapArg,
       modelPaths: args.modelPaths,
-      cancelToken: cancelToken,
       onAcceleration: (MangaOcrAcceleration acceleration) =>
           args.events.send(_JobAccelerationMessage(acceleration)),
     );
@@ -832,6 +908,7 @@ Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
           relativeUrls: <String>[request.relativeUrl],
           detector: engine.detector!,
           recognizer: engine.recognizer!,
+          sweeper: engine.sweeper,
           engineSignature: args.engineSignature,
           cancelToken: cancelToken,
         );
@@ -1074,6 +1151,9 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
   SendPort? _control;
   bool _cancelRequested = false;
 
+  /// 控制端口到手前收到的焦点页（isolate 还在起），到手后补发。
+  int? _pendingFocus;
+
   @override
   Future<String> get result => _completer.future;
 
@@ -1111,6 +1191,9 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
       if (_cancelRequested) {
         message.controlPort.send(_kJobCancelMessage);
       }
+      final int? focus = _pendingFocus;
+      _pendingFocus = null;
+      if (focus != null) message.controlPort.send(_JobFocusMessage(focus));
       return;
     }
     if (message is _JobAccelerationMessage) {
@@ -1164,18 +1247,26 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
     _cancelRequested = true;
     _control?.send(_kJobCancelMessage);
   }
+
+  @override
+  void focus(int pageIndex) {
+    final SendPort? control = _control;
+    if (control == null) {
+      _pendingFocus = pageIndex;
+    } else {
+      control.send(_JobFocusMessage(pageIndex));
+    }
+  }
 }
 
 /// [MangaOcrService] 真实实现。
 class MangaOcrServiceImpl
-    implements
-        MangaOcrService,
-        MangaOcrPageService,
-        MangaOcrModelPreparationService {
+    implements MangaOcrService, MangaOcrFocusableService, MangaOcrPageService {
   MangaOcrServiceImpl({
     Future<Directory> Function()? modelsDirProvider,
     MangaOcrModelDownloader? downloader,
     List<MangaOcrModelFile>? manifest,
+    List<MangaOcrModelFile>? accelerator,
     MangaOcrVolumeJobRunner? jobRunner,
     MangaOcrPageSessionRunner? pageSessionRunner,
     bool Function()? platformSupport,
@@ -1183,6 +1274,13 @@ class MangaOcrServiceImpl
   }) : _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
        _downloader = downloader ?? MangaOcrModelDownloader(),
        _manifest = manifest ?? localModel.manifest,
+       // 提速组件是从默认清单那份权重导出的：调用方换了清单（测试、自定义模型），
+       // 默认组件就不再对得上，除非显式给出。
+       _accelerator =
+           accelerator ??
+           (manifest == null
+               ? localModel.accelerator
+               : const <MangaOcrModelFile>[]),
        _jobRunner = jobRunner ?? const IsolateMangaOcrVolumeJobRunner(),
        _pageSessionRunner =
            pageSessionRunner ?? const IsolateMangaOcrPageSessionRunner(),
@@ -1191,6 +1289,10 @@ class MangaOcrServiceImpl
   final Future<Directory> Function() _modelsDirProvider;
   final MangaOcrModelDownloader _downloader;
   final List<MangaOcrModelFile> _manifest;
+
+  /// 可选的提速组件（经典 manga-ocr 的 KV cache decoder）：不参与就绪判定与模型
+  /// 指纹，齐全时装配走快路径（[kMangaOcrKvAcceleratorManifest]）。
+  final List<MangaOcrModelFile> _accelerator;
   final MangaOcrVolumeJobRunner _jobRunner;
   final MangaOcrPageSessionRunner _pageSessionRunner;
   final bool Function() _platformSupport;
@@ -1251,9 +1353,6 @@ class MangaOcrServiceImpl
   /// 整个模型目录——把两者绑在一起等于让每次开跑都白扫一遍磁盘。
   Future<bool> _manifestComplete() async {
     final Directory dir = await _modelsDirProvider();
-    if (localModel == MangaOcrLocalModel.mangaOcrCuda &&
-        !await MangaOcrCudaRuntime(dir).isReady())
-      return false;
     return _manifest.every(
       (MangaOcrModelFile model) =>
           isMangaOcrModelFileReady(File(p.join(dir.path, model.fileName))),
@@ -1267,7 +1366,13 @@ class MangaOcrServiceImpl
     bool recognizerReady = true;
     int totalBytes = 0;
     int obtainedBytes = 0;
-    for (final MangaOcrModelFile model in _manifest) {
+    int acceleratorMissingBytes = 0;
+    // 提速组件与必需文件一起下载，所以「共要下多少 / 已下多少」把它算进去；
+    // 就绪判定只看必需文件（缺提速组件照样能识别，只是慢）。
+    for (final MangaOcrModelFile model in <MangaOcrModelFile>[
+      ..._manifest,
+      ..._accelerator,
+    ]) {
       totalBytes += model.expectedBytes;
       final File file = File(p.join(dir.path, model.fileName));
       if (isMangaOcrModelFileReady(file)) {
@@ -1280,15 +1385,13 @@ class MangaOcrServiceImpl
       if (part.existsSync()) {
         obtainedBytes += part.lengthSync();
       }
-      if (model.role == MangaOcrModelRole.detector) {
+      if (_accelerator.contains(model)) {
+        acceleratorMissingBytes += model.expectedBytes;
+      } else if (model.role == MangaOcrModelRole.detector) {
         detectorReady = false;
       } else {
         recognizerReady = false;
       }
-    }
-    if (localModel == MangaOcrLocalModel.mangaOcrCuda) {
-      recognizerReady =
-          recognizerReady && await MangaOcrCudaRuntime(dir).isReady();
     }
     return MangaOcrModelStatus(
       detectorReady: detectorReady,
@@ -1298,20 +1401,42 @@ class MangaOcrServiceImpl
       diskBytes: await measureDirectoryBytes(dir),
       totalBytes: totalBytes,
       obtainedBytes: obtainedBytes,
+      acceleratorMissingBytes: acceleratorMissingBytes,
     );
   }
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() async* {
     final Directory dir = await _modelsDirProvider();
+    // 已就绪的文件下载器会跳过（仍发一条满额进度）：模型齐了再点一次只补提速组件。
     yield* _downloader.downloadAll(files: _manifest, targetDir: dir);
-    yield* prepareModels();
+    if (_accelerator.isEmpty) return;
+    // 提速组件排在必需文件之后：它下不下来（如 GitHub 不通）不拖累已经可用的模型。
+    // 失败照常报给界面——模型已就绪，设置页会继续给「下载识别提速组件」。
+    yield* _downloader.downloadAll(files: _accelerator, targetDir: dir);
+    await _verifyPinnedDigests(dir, _accelerator);
   }
 
-  @override
-  Stream<MangaOcrDownloadEvent> prepareModels() async* {
-    if (localModel == MangaOcrLocalModel.mangaOcrCuda) {
-      yield* MangaOcrCudaRuntime(await _modelsDirProvider()).prepare();
+  /// 按清单钉住的 sha256 校验已下好的文件；不符就删掉并报错。
+  ///
+  /// release asset 可以被覆盖上传，长度对得上不代表就是导出时校验过的那份权重
+  /// （分镜模型 `verifyMangaPanelModelFile` 同一口径）。留着对不上的文件，下次
+  /// 装配就会把一份来路不明的图当成快路径。
+  static Future<void> _verifyPinnedDigests(
+    Directory dir,
+    List<MangaOcrModelFile> files,
+  ) async {
+    for (final MangaOcrModelFile model in files) {
+      final String? expected = model.sha256;
+      if (expected == null) continue;
+      final File file = File(p.join(dir.path, model.fileName));
+      final String actual = (await crypto.sha256.bind(file.openRead()).first)
+          .toString();
+      if (actual == expected) continue;
+      await file.delete();
+      throw StateError(
+        '${model.fileName} sha256 mismatch: got $actual, expected $expected',
+      );
     }
   }
 
@@ -1338,21 +1463,20 @@ class MangaOcrServiceImpl
       return p.join(dir.path, model.fileName);
     }
 
-    if (localModel == MangaOcrLocalModel.mangaOcrCuda) {
-      final MangaOcrCudaRuntime runtime = MangaOcrCudaRuntime(dir);
+    if (localModel == MangaOcrLocalModel.mangaCtc) {
+      final String ctcRecPath = pathOf(
+        MangaOcrModelRole.recognizer,
+        kMangaCtcRecFileName,
+      );
       return MangaOcrModelPaths(
         detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
         ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
-        ppRecPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrRecFileName),
+        ppRecPath: ctcRecPath,
         ppRecDictPath: pathOf(
           MangaOcrModelRole.recognizer,
           kPpOcrRecDictFileName,
         ),
-        cuda: MangaOcrCudaModelPaths(
-          pythonExecutable: runtime.pythonExecutable,
-          modelDirectory: dir.path,
-          workerPath: runtime.workerPath,
-        ),
+        ctcRecPath: ctcRecPath,
       );
     }
     if (localModel == MangaOcrLocalModel.baberu) {
@@ -1378,11 +1502,24 @@ class MangaOcrServiceImpl
         ),
       );
     }
+    // 提速组件齐全才走 KV：缺任一文件就照旧用经典 decoder（结果相同，只是慢）。
+    final bool kvReady =
+        _accelerator.isNotEmpty &&
+        _accelerator.every(
+          (MangaOcrModelFile model) =>
+              isMangaOcrModelFileReady(File(p.join(dir.path, model.fileName))),
+        );
     return MangaOcrModelPaths(
       detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
       encoderPath: pathOf(MangaOcrModelRole.recognizer, 'encoder_model.onnx'),
       decoderPath: pathOf(MangaOcrModelRole.recognizer, 'decoder_model.onnx'),
       vocabPath: pathOf(MangaOcrModelRole.recognizer, 'vocab.txt'),
+      kv: kvReady
+          ? MangaOcrKvModelPaths(
+              crossPath: p.join(dir.path, kMangaOcrKvCrossFileName),
+              decoderPath: p.join(dir.path, kMangaOcrKvDecoderFileName),
+            )
+          : null,
       ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
       ppRecPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrRecFileName),
       ppRecDictPath: pathOf(
@@ -1414,12 +1551,7 @@ class MangaOcrServiceImpl
   Future<String> _pageEngineSignature() async =>
       model_fp.resolveLocalMangaOcrEngineSignature(
         await _modelsDirProvider(),
-        manifest: _manifest
-            .where(
-              (MangaOcrModelFile file) =>
-                  file.role != MangaOcrModelRole.runtime,
-            )
-            .toList(),
+        manifest: _manifest,
         baseSignature: localModel.cacheSignature,
       );
 
@@ -1458,6 +1590,7 @@ class MangaOcrServiceImpl
     required String imageDirPath,
     String? volumeTitle,
     int startPage = 0,
+    MangaOcrPageFocus? focus,
   }) {
     final StreamController<MangaOcrVolumeEvent> controller =
         StreamController<MangaOcrVolumeEvent>();
@@ -1465,6 +1598,7 @@ class MangaOcrServiceImpl
     bool cancelled = false;
     int lastTotal = 0;
     MangaOcrAcceleration? acceleration;
+    void forwardFocus(int pageIndex) => job?.focus(pageIndex);
 
     controller.onListen = () {
       unawaited(() async {
@@ -1500,6 +1634,12 @@ class MangaOcrServiceImpl
               acceleration = resolved;
             },
           );
+          if (focus != null) {
+            // 模型检查期间读者已翻过页：先补一次，之后每次翻页实时转发。
+            final int? pending = focus.take();
+            if (pending != null) job!.focus(pending);
+            focus.addListener(forwardFocus);
+          }
           final String mangaJsonPath = await job!.result;
           if (!controller.isClosed) {
             controller.add(
@@ -1517,6 +1657,7 @@ class MangaOcrServiceImpl
             controller.addError(e, stack);
           }
         } finally {
+          focus?.removeListener(forwardFocus);
           if (!controller.isClosed) {
             await controller.close();
           }
@@ -1525,6 +1666,7 @@ class MangaOcrServiceImpl
     };
     controller.onCancel = () {
       cancelled = true;
+      focus?.removeListener(forwardFocus);
       job?.cancel();
     };
     return controller.stream;

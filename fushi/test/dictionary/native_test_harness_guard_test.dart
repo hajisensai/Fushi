@@ -65,25 +65,35 @@ void main() {
   });
 
   test('CI builds + runs the native ctest suite on Linux', () {
+    // 2026-09-30：Linux app 不再在 CI 构建；gcc-14 ctest 从 build-multiplatform.yml
+    // 的 linux job 搬到 native-fushidicts-gate.yml 的 ctest-gcc job。
     final String workflow =
-        read('../.github/workflows/build-multiplatform.yml');
+        read('../.github/workflows/native-fushidicts-gate.yml');
 
     expect(workflow, contains('Run fushidicts native tests (ctest)'));
     expect(workflow, contains('cmake -S native/fushidicts/tests'));
     expect(workflow, contains(r'ctest --test-dir "$RUNNER_TEMP/fushi-tests"'));
+    expect(workflow, contains('--no-tests=error'));
 
-    // The native ctest step must live inside the Linux job (which installs
-    // g++-14 + cmake + ninja) and run before the Flutter Linux build so a
-    // native break fails fast.
+    // The native ctest step must live inside the gcc-14 job (which installs
+    // g++-14 + cmake + ninja), after the C++23 toolchain check.
+    final int jobIdx = workflow.indexOf('\n  ctest-gcc:\n');
+    final int verifyIdx = workflow.indexOf('Verify Linux C++23 compiler');
     final int ctestIdx =
         workflow.indexOf('Run fushidicts native tests (ctest)');
-    final int verifyIdx = workflow.indexOf('Verify Linux C++23 compiler');
-    final int flutterBuildIdx = workflow.indexOf('Build Linux (debug)');
-    expect(verifyIdx, greaterThan(0));
+    expect(jobIdx, greaterThan(0), reason: 'ctest-gcc job missing');
+    expect(verifyIdx, greaterThan(jobIdx));
     expect(ctestIdx, greaterThan(verifyIdx),
-        reason: 'native ctest belongs in the Linux job after the C++23 check.');
-    expect(ctestIdx, lessThan(flutterBuildIdx),
-        reason: 'run native ctest before the Flutter Linux build (fail fast).');
+        reason: 'native ctest belongs in ctest-gcc after the C++23 check.');
+
+    // 触发面必须覆盖 ctest 真正读到的输入：fushidicts 源码 + 它当 fixture 读的
+    // fushi/assets/transforms/（tests/CMakeLists.txt）。
+    expect(workflow, contains("- 'native/fushidicts/**'"));
+    expect(workflow, contains("- 'fushi/assets/transforms/**'"));
+
+    // 不许有人以为 Linux app 构建还在跑这套 ctest。
+    expect(read('../.github/workflows/build-multiplatform.yml'),
+        isNot(contains('Run fushidicts native tests (ctest)')));
   });
 
   test('the existing macOS ctypes dylib smoke stays intact (not regressed)',

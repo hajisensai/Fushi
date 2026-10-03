@@ -113,8 +113,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'first_time_setup',
   // 悬浮球（docs/specs/2026-09-28-floating-ball.md）。`.actions` / `.mode` 是
   // 旧版单份全局按钮 / 三态模式，只作迁移读取；新值是 `.in_app` / `.system`
-  // 两个 bool 开关与每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）。
+  // 两个 bool 开关、每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）与关闭后
+  // 自动恢复的三态 `.auto_restore`。
   'floating_ball.actions',
+  'floating_ball.auto_restore',
   'floating_ball.buttons.general',
   'floating_ball.buttons.manga',
   'floating_ball.buttons.reader',
@@ -124,6 +126,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.in_app',
   'floating_ball.mode',
   'floating_ball.system',
+  // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
+  // `.dock` / `.y` 分开存：两颗球可以同时在。
+  'floating_ball.system_dock',
+  'floating_ball.system_y',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   'floating_lyric_button_bg_opacity',
@@ -187,6 +193,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'lookup.ime_language',
+  // bool（默认 false）：查词后自动让 AI 按句意把符合用法的词头挪到最前
+  // （「设置 › AI」指派了查词用的提供商才生效；悬停查词与嵌套查词不触发）。
+  'lookup_ai_context_auto',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
@@ -203,9 +212,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
   'manga_download_auto_ocr',
   'manga_external_mokuro_path',
+  'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
   'manga_ocr_local_model',
+  'manga_ocr_paired_host_model',
   'manga_ocr_parallel_tasks',
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
@@ -235,7 +246,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
   'mining_audio_tail_pad_ms',
-  // 封面模式没显式设过时的本安装默认（全新安装 video_clip，存量升级 gif），见
+  // 封面模式迁到片段默认的一次性标记（历史键名），见
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
   'mining_image_quality',
@@ -329,6 +340,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'updates_notify_manga_extension',
   'updates_notify_video_episode',
   'updates_system_notifications',
+  // String（`VideoSeriesFilter.name`，默认 `standalone`）：「全部视频」系列归属
+  // 筛选的上次选择（BUG-2835，用户拍板默认只看散片、并记住选择）。
+  'video_all_series_filter',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
   'video_auto_play_next',
@@ -443,6 +457,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'gal_capture_memory::',
   'gal_lookup_surface_v1::',
   'media_source_secret_',
+  // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid）。
+  // 目前只有无头服务端扫描写它（引擎 book_library_prune.dart，BUG-2816）。
+  'media_source_scan_index_',
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。

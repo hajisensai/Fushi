@@ -1,0 +1,16 @@
+## BUG-2795 · 发现详情合并不看资料语言：MAL 英文简介、中日英类型混排、声优重复
+- **报告**：2026-09-30（用户：浏览 › 发现 › 视频打开「FX戦士くるみちゃん」详情，界面简体中文）
+- **真实性**：✅ 真 bug。三个现象同一个根：发现详情 `loadDetails` 没有走刮削协调器那套「按资料语言选文本」的引擎合并，而是一半走不带语言的兼容别名、一半走私有平行副本。
+  - `fushi/lib/src/media/video/discovery/video_discovery_service.dart:289-293`（修前）：TMDB 补充走 `supplementVideoMetadataWithTmdb`，它不传 `preferredLanguage`（`packages/fushi_engine/lib/media/video/metadata/video_metadata_merge.dart:134-138`），`_preferSupplementText` 恒为 false，所以简介永远是 MAL 的英文 synopsis（带「(Source: Crunchyroll)」）。service 本身也不持有资料语言。
+  - 同文件 `_supplementDetails`（修前 `:803-876`）：AniList 等其它补充源走引擎合并的一份私有平行副本，不看语言，genres 直接取并集，人物用 `person.id ?? name` 作键。
+  - `video_metadata_merge.dart:77`（修前）：`genres: _unionStrings(...)` 跨语言取并集，`TitleNormalizer` 只折叠全半角 / 繁简，把 `Drama` / `Slice of Life`（MAL）与 `アニメーション` / `コメディ`（TMDB）混排。
+  - `video_metadata_merge.dart:1031-1056`（修前 `_creditKey` / `_personNameKey`）：键只看 `person.name`，不看 `originalName`；MAL `Suzuki, Aina` / `Fukuga, Kurumi` 与 TMDB `鈴木愛奈` / `福賀くるみ` 永远对不上，于是 TMDB 那批被当成新人整组追加，同一批声优出现两遍。
+  - `video_metadata_merge.dart:145-156`（修前 `_providerTextLanguage`）：没有 AniList，AniList 文本语言被当成未知。
+- **[x] ① 已修复** —
+  - `loadDetails` 删掉私有 `_supplementDetails`，所有补充源统一 `supplementVideoMetadata(..., preferredLanguage: _metadataLocale)`，与刮削协调器同一判据；资料语言经构造参数 `metadataLocale` 注入，`VideoDiscoveryService.production` 传 `config.locale`（与 TMDB 发现 / 刮削 provider 请求用的是同一个 locale，没有新硬编码）。补充源标题照旧收进别名池（`_withSourceTitlesAsAliases`），下载搜索不丢译名。
+  - 引擎 `_providerTextLanguage` 补 AniList → `en`。
+  - 类型改为 `_mergeLanguageTaggedStrings`：两边语言已知且不同就不跨语言取并集，取资料语言那一边、那边为空才退回另一边；语言相同或未知（含不传 `preferredLanguage` 的旧调用方）照旧并集。
+  - 人物合并改为 `_CreditIdentity`：人名比较 `name` 与 `originalName` 全部写法（拉丁名按词集合、汉字 / 假名名去空白与间隔号后经 `TitleNormalizer` 折叠），角色比较 roleName / 角色名 / 角色原名；角色写法可比却不同 → 另一个角色，写法不可比 → 由人名决定。**身份不可判定时不追加**：没匹配上的补充条目与主表同组人名没有共同书写系统（MAL 只有罗马字、TMDB 只有汉字）时只保留主表（Jellyfin `MergePeople` 同样只补已匹配的人），主表该组为空才整组补进来。
+  - 局限：MAL（Jikan）人物只给罗马字，TMDB credits 常只给汉字名（`original_name` 同为汉字），两者之间没有任何已有字段能互证，这种情况下 TMDB 的照片 / id 补不到 MAL 条目上（不重复，但也不补）。不新增外部请求就无法根治。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_metadata_merge_test.dart` 组「BUG-2795 语言感知合并与跨写法人物」（zh 简介取 TMDB、类型不跨语言并集及空时退回、旧调用方仍并集、AniList 计为英文、original_name 罗马字认同一人、汉字名去空白、写法不可比不追加、可比不同照旧追加）；`fushi/test/media/video/discovery/video_discovery_service_test.dart`「BUG-2795 details follow the metadata language」（MAL 英文 + TMDB 中文 → 中文简介、类型只剩中文、声优不重复、MAL 标题留在别名池）。变异实测：把「不可比不追加」改成恒追加，两处测试均变红。
+- **备注**：刮削协调器共用同一套合并函数，库内新刮的作品同样受益（类型单语言、声优不重复）。

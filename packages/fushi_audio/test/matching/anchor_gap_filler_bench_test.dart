@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// [AnchorGapFiller] 区间搜索的基准：复现上游审查 A1 的表（region × needle），

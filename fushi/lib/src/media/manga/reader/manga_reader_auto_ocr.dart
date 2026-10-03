@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart'
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
@@ -48,6 +49,13 @@ final class MangaReaderVolumeOcrLensDeclined
   const MangaReaderVolumeOcrLensDeclined();
 }
 
+/// 调用方限定了引擎（[startMangaReaderVolumeOcr] 的 `requiredEngine`），而当前
+/// 偏好解析出的不是它：什么都没排，也不算「没有引擎」。
+final class MangaReaderVolumeOcrNotApplicable
+    extends MangaReaderVolumeOcrOutcome {
+  const MangaReaderVolumeOcrNotApplicable();
+}
+
 /// 这个目录是否已有整卷任务在跑或在排队（按规范化路径比较）。
 bool isMangaVolumeOcrScheduled({
   required MangaOcrJobRegistry registry,
@@ -68,6 +76,10 @@ bool isMangaVolumeOcrScheduled({
 /// [imageDirPath] 与作品页、下载钩子同一约定：本地卷是 `extractDir`，在线章是章
 /// 目录（含 `manga.json` + `images/`）。[startPage] 是当前页：执行器从它开始、
 /// 再绕回开头补齐，读者眼前这页最先出结果。
+///
+/// [requiredEngine] 非 null 时只在偏好解析到它时才排（否则
+/// [MangaReaderVolumeOcrNotApplicable]，不弹任何同意框）——已识别本地卷的行几何
+/// 升级只能交给本地引擎（BUG-2813）。
 Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   required String bookKey,
   required String imageDirPath,
@@ -79,6 +91,7 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   required MangaOcrEnginePreference preference,
   required String lensLanguage,
   required Future<bool> Function() confirmLensUpload,
+  MangaOcrEngineId? requiredEngine,
   MangaOcrEventsBuilder buildEvents = mangaOcrBackgroundEvents,
 }) async {
   bool scheduled() => isMangaVolumeOcrScheduled(
@@ -95,6 +108,9 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
     hasExistingMetadata: false,
     capabilities: availability.capabilities,
   );
+  if (requiredEngine != null && engine != requiredEngine) {
+    return const MangaReaderVolumeOcrNotApplicable();
+  }
   if (engine == null || !availability.isUsable(engine)) {
     return const MangaReaderVolumeOcrNoEngine();
   }
@@ -103,6 +119,9 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   }
   // 探测 / 同意框期间别处（作品页、下载钩子、另一个阅读器实例）可能已排上。
   if (scheduled()) return const MangaReaderVolumeOcrAlreadyScheduled();
+  // 起点只定一次不够：手机上一页识别几十秒，读者翻得比它快。阅读器每翻一页
+  // 经 MangaOcrRunningJob.focusPage 改道，翻到的页下一个就识别。
+  final MangaOcrPageFocus focus = MangaOcrPageFocus();
   final MangaOcrJobSpec spec = MangaOcrJobSpec(
     engine: engine,
     engines: engines,
@@ -111,6 +130,7 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
     startPage: startPage,
     volumeTitle: volumeTitle,
     remoteTarget: availability.remoteTarget,
+    focus: focus,
   );
   return MangaReaderVolumeOcrQueued(
     registry.enqueue(
@@ -119,6 +139,8 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
         managedDirectory: imageDirPath,
         engine: engine,
         events: buildEvents(spec),
+        focus: focus,
+        follower: mangaOcrJobFollower(spec),
       ),
       mangaJsonPath: mangaJsonPath,
     ),

@@ -138,6 +138,8 @@ void main() {
       String tmdbApiKey = 'k',
       String anidbClientName = 'fushiplayer',
       int? anidbClientVersion = 1,
+      String anidbHttpClientName = '',
+      int? anidbHttpClientVersion,
       bool hashEnabled = false,
       String anidbUsername = '',
       String anidbPassword = '',
@@ -153,6 +155,8 @@ void main() {
           tmdbApiKey: tmdbApiKey,
           anidbClientName: anidbClientName,
           anidbClientVersion: anidbClientVersion,
+          anidbHttpClientName: anidbHttpClientName,
+          anidbHttpClientVersion: anidbHttpClientVersion,
           hashEnabled: hashEnabled,
           anidbUsername: anidbUsername,
           anidbPassword: anidbPassword,
@@ -176,6 +180,9 @@ void main() {
         'anidbPassword': make(anidbPassword: 'secret'),
         'anidbClientName': make(anidbClientName: 'custom'),
         'anidbClientVersion': make(anidbClientVersion: 2),
+        // BUG-2623：HTTP 身份与 UDP 身份分开，各自烘进 provider。
+        'anidbHttpClientName': make(anidbHttpClientName: 'custom'),
+        'anidbHttpClientVersion': make(anidbHttpClientVersion: 2),
         'tmdbApiKey': make(tmdbApiKey: 'other'),
         'locale': make(locale: 'ja'),
         'primaryProvider': make(

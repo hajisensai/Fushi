@@ -74,6 +74,14 @@ class VideoScrapeSweepLedger {
     }
   }
 
+  /// 撤掉「已尝试」：这些作品只因资料源临时不可用而失败，不是「查无 / 歧义」，
+  /// 下次触发就该再试，不必等 [retryAttemptAfter]。
+  void forgetAttempts(Iterable<String> workKeys) {
+    for (final String key in workKeys) {
+      if (_attemptedAt.remove(key) != null) _dirty = true;
+    }
+  }
+
   DateTime? refreshedAt(String workKey) {
     final int? at = _refreshedAt[workKey];
     return at == null ? null : DateTime.fromMillisecondsSinceEpoch(at);

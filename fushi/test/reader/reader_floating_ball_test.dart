@@ -489,6 +489,48 @@ void main() {
     expect(ballRect.top, greaterThanOrEqualTo(_viewport.top));
   });
 
+  testWidgets('视口变了（进视频沉浸式 / 旋转）：球直接落到新位置，不从旧位置动画过去', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester);
+    final Rect before = tester.getRect(_ball());
+    // 系统栏被隐藏：视口顶边从 40 变成 0、底边变长。
+    const Rect immersive = Rect.fromLTWH(0, 0, 400, 800);
+    await _pump(tester, viewport: immersive);
+    await tester.pump(const Duration(milliseconds: 16));
+    final ReaderFloatingBallLayout target = ReaderFloatingBallLayout(
+      viewport: immersive,
+      dock: ReaderFloatingBallDock.right,
+      verticalFraction: 0.5,
+      actionCount: 3,
+    );
+    final Rect after = tester.getRect(_ball());
+    expect(after.top, isNot(before.top));
+    expect(after.top, closeTo(target.ballTop, 1e-6), reason: '一帧内就在终点，没有补间');
+    expect(after.left, closeTo(target.collapsedBallLeft, 1e-6));
+  });
+
+  testWidgets('松手吸附仍是动画：中途在路上，结束落到边上', (WidgetTester tester) async {
+    await _pump(tester);
+    final Offset from = tester.getCenter(_ball());
+    // 往中间拖但不过半：松手吸回右边。
+    final TestGesture g = await tester.startGesture(from);
+    await g.moveBy(const Offset(-120, 0));
+    await tester.pump();
+    await g.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    final double dropped = tester.getRect(_ball()).left;
+    await g.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    final double mid = tester.getRect(_ball()).left;
+    await tester.pumpAndSettle();
+    final double settled = tester.getRect(_ball()).left;
+    expect(settled, greaterThan(dropped));
+    expect(mid, greaterThan(dropped), reason: '已经开始往回走');
+    expect(mid, lessThan(settled), reason: '还在路上：确实有吸附动画');
+  });
+
   testWidgets('墨水屏模式（animate=false）：一帧完成展开', (WidgetTester tester) async {
     await _pump(tester, animate: false);
     await tester.tap(_ball());

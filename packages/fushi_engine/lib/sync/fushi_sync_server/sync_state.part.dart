@@ -227,7 +227,13 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
       return shelf.Response.forbidden('Profile transfer disabled on host');
     }
     if (method == 'GET') {
-      final String json = await host.exportInterconnectProfile();
+      final String json;
+      try {
+        json = await host.exportInterconnectProfile();
+      } on InterconnectProfileUnavailableException catch (e) {
+        // 懂端点、开关开着、只是眼下没东西可给：409 带原因，client 如实报给用户。
+        return shelf.Response(409, body: e.message);
+      }
       return shelf.Response.ok(
         json,
         headers: const <String, String>{

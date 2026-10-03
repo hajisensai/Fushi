@@ -1,21 +1,31 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
+    show AiMediaAcquisitionDomain;
+import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
+import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
-/// 顶层漫画库页：**书架 + 导入**两视图（外加设置）。
+/// 顶层漫画库页：书架 / 发现 / 来源 / 扩展 / 导入 / 设置。
 ///
 /// - **书架**：数据、卡片、搜索、排序、合集、进度和删除全部复用小说书架；唯一差异
 ///   是只展示 `EpubBooks.format == 'manga'` 的条目。普通书架由同一页面反向排除漫画。
+/// - **发现**（AniList 榜单 / 来源热门行 / mokuro.moe、Aidoku、OPDS 的「浏览来源」节）、
+///   **来源**（Mihon 已装源 + mokuro.moe）、**扩展**（扩展目录，仓库在页头动作）：
+///   与顶层「浏览」模块同一组组件（2026-10-01 用户拍板加回库页子标签）。各自过
+///   iOS 合规门；没有 Mihon 宿主的平台由漫画来源面自己换成「不可用」说明，视图
+///   列表不按宿主分叉。
 /// - **导入**：本地漫画扫描根 + 快速导入 + 互联对端的漫画库。
-///
-/// 发现页（AniList 榜单 / 来源热门行）与在线来源、扩展仓库、扩展目录
-/// 2026-09-27 起只住在顶层「浏览」模块（`browse_page.dart`，Mihon 的 Browse 形态），
-/// 库页不再挂在线入口；iOS 的合规边界因此也只需要在「浏览」一处判。
 ///
 /// Mihon 在线漫画复用 EpubBooks 的漫画身份进入同一书架，当前章节/页码可跨重启
 /// 继续；页面仍由来源运行时按需流式获取，不把鉴权 URL 暴露给 WebView。
@@ -37,6 +47,47 @@ class MangaLibraryPage extends StatelessWidget {
           builder: (BuildContext context, Widget navigation) =>
               ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
         ),
+        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.discover,
+            label: t.library_view_discover,
+            // 「浏览来源」节经库页壳的 [MediaLibraryShellScope] 切到本页「来源」。
+            builder: (BuildContext context, Widget navigation) => Consumer(
+              builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+                  MangaDiscoveryPage(
+                    navigation: navigation,
+                    onAiAcquire: discoveryAiAcquireAction(
+                      context: context,
+                      readAppModel: () => ref.read(appProvider),
+                      domain: AiMediaAcquisitionDomain.manga,
+                      domainLabel: t.manga_library,
+                      onlineDomain: OnlineSourcesDomain.manga,
+                    ),
+                  ),
+            ),
+          ),
+        if (isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.onlineSources,
+            label: t.library_view_sources,
+            builder: (BuildContext context, Widget navigation) =>
+                LibraryOnlineSourcesView(
+                  domain: OnlineSourcesDomain.manga,
+                  section: OnlineSourcesSection.sources,
+                  navigation: navigation,
+                ),
+          ),
+        if (isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.extensions,
+            label: t.media_import_segment_extensions,
+            builder: (BuildContext context, Widget navigation) =>
+                LibraryOnlineSourcesView(
+                  domain: OnlineSourcesDomain.manga,
+                  section: OnlineSourcesSection.extensions,
+                  navigation: navigation,
+                ),
+          ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
           label: t.library_view_import,

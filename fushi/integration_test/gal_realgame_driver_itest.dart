@@ -33,6 +33,12 @@
 //                               ⑦ 已执行 fakeanki 时在查词卡上触发「制卡」（手柄 A 同一路径），
 //                                  卡里有台词、语音、图片。
 //                               每条一行 PASS/FAIL + 证据，末行 verdict=full|partial。
+//   dlsources                   列出发现源（id / 展示名 / 是否自配），供 dlsearch 选源
+//   dlsearch <源id|*> <关键词…>  走发现页同一条 mediaDiscoveryService.load 搜游戏，
+//                               结果编号暂存（只留可下载的资源条目）
+//   dl <序号> <目标目录>         把 dlsearch 的第 n 条交给 app 的 discoveryDownloadQueue
+//                               （发现页「下载」同一路径：下完自动解压 + 登记进游戏库），立即返回
+//   dlstat                      下载队列每个任务的状态 / 字节 / 落盘路径 / 错误 / 入库结果
 //   lines [n]                   最近 n 条台词
 //   shot game|card|hwnd:<n>     WGC 抓窗口像素（与制卡截图同一通道）
 //   windows                     枚举 FushiGlobalLookupWindow 类窗口的可见性/矩形
@@ -60,10 +66,20 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/media/discovery/media_discovery_service.dart';
+import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:integration_test/integration_test.dart';
@@ -78,27 +94,35 @@ import 'test_helpers.dart';
 
 final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
 
-final int Function(int, int) _setCursorPos = _user32.lookupFunction<
-    Int32 Function(Int32, Int32), int Function(int, int)>('SetCursorPos');
-final int Function(int, Pointer<Uint8>, int) _sendInput =
-    _user32.lookupFunction<Uint32 Function(Uint32, Pointer<Uint8>, Int32),
-        int Function(int, Pointer<Uint8>, int)>('SendInput');
+final int Function(int, int) _setCursorPos = _user32
+    .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>(
+      'SetCursorPos',
+    );
+final int Function(int, Pointer<Uint8>, int) _sendInput = _user32
+    .lookupFunction<
+      Uint32 Function(Uint32, Pointer<Uint8>, Int32),
+      int Function(int, Pointer<Uint8>, int)
+    >('SendInput');
 final int Function(int, int, Pointer<Utf16>, Pointer<Utf16>) _findWindowEx =
     _user32.lookupFunction<
-        IntPtr Function(IntPtr, IntPtr, Pointer<Utf16>, Pointer<Utf16>),
-        int Function(
-            int, int, Pointer<Utf16>, Pointer<Utf16>)>('FindWindowExW');
-final int Function(int) _isWindowVisible =
-    _user32.lookupFunction<Int32 Function(IntPtr), int Function(int)>(
-        'IsWindowVisible');
-final int Function(int, Pointer<Int32>) _getWindowRect = _user32.lookupFunction<
-    Int32 Function(IntPtr, Pointer<Int32>),
-    int Function(int, Pointer<Int32>)>('GetWindowRect');
+      IntPtr Function(IntPtr, IntPtr, Pointer<Utf16>, Pointer<Utf16>),
+      int Function(int, int, Pointer<Utf16>, Pointer<Utf16>)
+    >('FindWindowExW');
+final int Function(int) _isWindowVisible = _user32
+    .lookupFunction<Int32 Function(IntPtr), int Function(int)>(
+      'IsWindowVisible',
+    );
+final int Function(int, Pointer<Int32>) _getWindowRect = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Int32>),
+      int Function(int, Pointer<Int32>)
+    >('GetWindowRect');
 final int Function() _getForegroundWindow = _user32
     .lookupFunction<IntPtr Function(), int Function()>('GetForegroundWindow');
-final int Function(int) _getSystemMetrics =
-    _user32.lookupFunction<Int32 Function(Int32), int Function(int)>(
-        'GetSystemMetrics');
+final int Function(int) _getSystemMetrics = _user32
+    .lookupFunction<Int32 Function(Int32), int Function(int)>(
+      'GetSystemMetrics',
+    );
 
 /// 查词窗是否**在桌面上可见**：预热 / 离屏渲染的查词窗同样 IsWindowVisible，
 /// 只是停在虚拟桌面之外，必须再比一次虚拟屏矩形。
@@ -113,6 +137,43 @@ bool _onVirtualScreen(List<int> rect) {
 
 bool _lookupCardOnScreen() =>
     _lookupWindows().any((w) => w.visible && _onVirtualScreen(w.rect));
+
+/// Media names behind `<audio class="fushi-inline-audio" src=…>` in a field.
+Iterable<String> _inlineClipAudioNames(String field) => RegExp(
+  r'<audio class="fushi-inline-audio" src="([^"]+)"',
+).allMatches(field).map((RegExpMatch m) => m.group(1)!).toList();
+
+/// Media names behind `<video class="fushi-inline-video" src=…>` in a field —
+/// the default clip cover (WebM) is written this way instead of `<img>`.
+Iterable<String> _inlineClipVideoNames(String field) => RegExp(
+  r'<video class="fushi-inline-video" src="([^"]+)"',
+).allMatches(field).map((RegExpMatch m) => m.group(1)!).toList();
+
+/// Whether the stored Matroska/WebM clip [name] declares a track whose
+/// CodecID element (EBML id 0x86, one-byte size) value starts with [kind]
+/// followed by `_` (`A` = audio, `V` = video).
+bool _storedMatroskaHasTrack(String mediaDir, String name, String kind) {
+  final File file = File(p.join(mediaDir, name));
+  if (!file.existsSync()) return false;
+  final Uint8List bytes = file.readAsBytesSync();
+  final int k = kind.codeUnitAt(0);
+  for (int i = 0; i + 3 < bytes.length; i++) {
+    if (bytes[i] == 0x86 &&
+        (bytes[i + 1] & 0x80) != 0 &&
+        bytes[i + 2] == k &&
+        bytes[i + 3] == 0x5F) {
+      // '_'
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _storedMatroskaHasAudioTrack(String mediaDir, String name) =>
+    _storedMatroskaHasTrack(mediaDir, name, 'A');
+
+bool _storedMatroskaHasVideoTrack(String mediaDir, String name) =>
+    _storedMatroskaHasTrack(mediaDir, name, 'V');
 
 const int _inputSize = 40; // x64: DWORD type + 4 pad + 32-byte union
 const int _inputMouse = 0;
@@ -235,26 +296,36 @@ void main() {
         ..write('pid=${s.gamePid} audio=${s.audioBackend.name} ')
         ..write('fallback=${s.fallbackReason} err=${s.lastError} ')
         ..write(
-            'attached=${GalHookTextOverlayController.instance.attachedText.status.name}'
-            '/${GalHookTextOverlayController.instance.attachedText.statusReason} ')
+          'attached=${GalHookTextOverlayController.instance.attachedText.status.name}'
+          '/${GalHookTextOverlayController.instance.attachedText.statusReason} ',
+        )
         ..write('lines=${text.entries.length}');
       return sb.toString();
     }
 
     String describeLines(int n) {
       final List<TexthookerLineEntry> entries = text.entries;
-      final Iterable<TexthookerLineEntry> tail =
-          entries.length > n ? entries.sublist(entries.length - n) : entries;
+      final Iterable<TexthookerLineEntry> tail = entries.length > n
+          ? entries.sublist(entries.length - n)
+          : entries;
       return tail
-          .map((TexthookerLineEntry e) =>
-              '${e.id} audio=${e.audioStatus.name}/${e.audioBackend}/'
-              '${e.audioDurationMs}ms reason=${e.fallbackReason} '
-              'ruby=${e.rubySpans.length} '
-              'text=${e.text.replaceAll('\n', '⏎')}')
+          .map(
+            (TexthookerLineEntry e) =>
+                '${e.id} audio=${e.audioStatus.name}/${e.audioBackend}/'
+                '${e.audioDurationMs}ms reason=${e.fallbackReason} '
+                'ev=${e.sourceSequence} res=${e.audioResourceId} '
+                'ruby=${e.rubySpans.length} '
+                'text=${e.text.replaceAll('\n', '⏎')}',
+          )
           .join('\n    ');
     }
 
     FakeAnkiConnect? fakeAnki;
+    List<DiscoveryResourceItem> lastFound = <DiscoveryResourceItem>[];
+
+    AppModel readAppModel() => ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp).first),
+    ).read(appProvider);
 
     Future<(TexthookerLineEntry, GalHookMiningResult)?> mineLatest() async {
       final ProviderContainer container = ProviderScope.containerOf(
@@ -264,23 +335,23 @@ void main() {
       final List<TexthookerLineEntry> lines = session.selectedSessionLines;
       if (lines.isEmpty) return null;
       final TexthookerLineEntry entry = lines.last;
-      final BaseAnkiRepository repo =
-          appModel.platformServices.createAnkiRepository();
-      final GalHookMiningResult result =
-          await GalHookMiningCoordinator().mineLine(
-        lineId: entry.id,
-        fields: <String, String>{'Sentence': entry.text},
-        sentenceOverride: entry.text,
-        compression: MiningMediaCompression.resolve(
-          imageTier: appModel.miningImageQuality,
-          audioTier: appModel.miningAudioQuality,
-          format: appModel.galMiningAnimatedFormat,
-        ),
-        repo: repo,
-        imageMode: appModel.galMiningImageMode,
-        animatedFormat: appModel.galMiningAnimatedFormat,
-        stillFormat: appModel.galMiningStillFormat,
-      );
+      final BaseAnkiRepository repo = appModel.platformServices
+          .createAnkiRepository();
+      final GalHookMiningResult result = await GalHookMiningCoordinator()
+          .mineLine(
+            lineId: entry.id,
+            fields: <String, String>{'Sentence': entry.text},
+            sentenceOverride: entry.text,
+            compression: MiningMediaCompression.resolve(
+              imageTier: appModel.miningImageQuality,
+              audioTier: appModel.miningAudioQuality,
+              format: appModel.galMiningAnimatedFormat,
+            ),
+            repo: repo,
+            imageMode: appModel.galMiningImageMode,
+            animatedFormat: appModel.galMiningAnimatedFormat,
+            stillFormat: appModel.galMiningStillFormat,
+          );
       return (entry, result);
     }
 
@@ -328,9 +399,15 @@ void main() {
           switch (op) {
             case 'launch':
             case 'launchoff':
-              // launch <exe> 走 auto 转区档；launchoff <exe> 走 off（用户库里除 9-nine
-              // 外都是 off，复现原始路径必须按库里的档位来）。
-              final bool localeOff = op == 'launchoff';
+            case 'launchon':
+              // launch <exe> 走缺省档（kGalDefaultJapaneseLocaleMode，现为 off）；
+              // launchoff <exe> 显式 off；launchon <exe> 显式 on = 用户在游戏右键菜单
+              // 打开「日文转区」（BGI 等在非日语系统上按 GetSystemDefaultLangID 静默退出）。
+              final GalJapaneseLocaleMode localeMode = switch (op) {
+                'launchoff' => GalJapaneseLocaleMode.off,
+                'launchon' => GalJapaneseLocaleMode.on,
+                _ => kGalDefaultJapaneseLocaleMode,
+              };
               final String exe = cmd.substring(op.length).trim();
               final bool is32 =
                   await EngineHookGalAudioSource.exeIs32Bit(exe) ?? false;
@@ -340,9 +417,7 @@ void main() {
                 exe,
                 workdir: p.dirname(exe),
                 gameTitle: p.basenameWithoutExtension(exe),
-                japaneseLocaleMode: localeOff
-                    ? GalJapaneseLocaleMode.off
-                    : kGalDefaultJapaneseLocaleMode,
+                japaneseLocaleMode: localeMode,
               );
               out('#$seq launch launched=${result.launched} result=$result');
               out('#$seq ${describeState()}');
@@ -350,8 +425,9 @@ void main() {
               // attach <hwnd> <pid> [title]: 对已在运行的游戏附着捕获（同游戏页「捕获窗口」）。
               final int hwnd = int.parse(parts[1]);
               final int pid = int.parse(parts[2]);
-              final String title =
-                  parts.length > 3 ? parts.sublist(3).join(' ') : 'attached';
+              final String title = parts.length > 3
+                  ? parts.sublist(3).join(' ')
+                  : 'attached';
               await session.startAttachedCapture(
                 ExternalWindowInfo(hwnd: hwnd, pid: pid, title: title),
               );
@@ -363,19 +439,23 @@ void main() {
                   ? events.sublist(events.length - n)
                   : events;
               final String rendered = tail
-                  .map((GalHookEvent e) =>
-                      '${e.severity.name} ${e.stage}/${e.code} '
-                      '${e.summary} ${e.details}')
+                  .map(
+                    (GalHookEvent e) =>
+                        '${e.severity.name} ${e.stage}/${e.code} '
+                        '${e.summary} ${e.details}',
+                  )
                   .join('\n    ');
               out('#$seq events:\n    $rendered');
             case 'profile':
               final GalAttachedTextController attached =
                   GalHookTextOverlayController.instance.attachedText;
-              out('#$seq profile status=${attached.status.name} '
-                  'reason=${attached.statusReason} '
-                  'profile=${attached.profile?.toJson()} '
-                  'request=${attached.unsafeRiskAcceptanceRequest?.exePath}/'
-                  '${attached.unsafeRiskAcceptanceRequest?.exeSha256}');
+              out(
+                '#$seq profile status=${attached.status.name} '
+                'reason=${attached.statusReason} '
+                'profile=${attached.profile?.toJson()} '
+                'request=${attached.unsafeRiskAcceptanceRequest?.exePath}/'
+                '${attached.unsafeRiskAcceptanceRequest?.exeSha256}',
+              );
             case 'accept':
               final GalAttachedTextController attached =
                   GalHookTextOverlayController.instance.attachedText;
@@ -385,8 +465,9 @@ void main() {
                 out('#$seq accept: no pending request');
                 break;
               }
-              final bool accepted =
-                  await attached.acceptUnsafeRiskAndRetry(request);
+              final bool accepted = await attached.acceptUnsafeRiskAndRetry(
+                request,
+              );
               out('#$seq accept=$accepted ${describeState()}');
             case 'calibrate':
               // calibrate <l> <t> <w> <h> [fontPerH] [lineHeight] [align] [valign]
@@ -396,8 +477,10 @@ void main() {
               final GalAttachedSurfaceTarget? target = attached.target;
               final GalLookupReferenceClientV1? client = attached.currentClient;
               if (target == null || client == null) {
-                out('#$seq calibrate: no target/client '
-                    '(status=${attached.status.name})');
+                out(
+                  '#$seq calibrate: no target/client '
+                  '(status=${attached.status.name})',
+                );
                 break;
               }
               double at(int i, double fallback) => parts.length > i
@@ -407,11 +490,11 @@ void main() {
                   parts.length > i ? parts[i] : fallback;
               final GalLookupNormalizedRectV1 bodyRect =
                   GalLookupNormalizedRectV1(
-                left: at(1, 0.08),
-                top: at(2, 0.68),
-                width: at(3, 0.84),
-                height: at(4, 0.24),
-              );
+                    left: at(1, 0.08),
+                    top: at(2, 0.68),
+                    width: at(3, 0.84),
+                    height: at(4, 0.24),
+                  );
               final GalLookupTextLayoutV1 layout = GalLookupTextLayoutV1(
                 fontFamily: 'Yu Gothic',
                 fontSizePerClientHeight: at(5, 0.045),
@@ -431,9 +514,11 @@ void main() {
                 ),
               );
               await tester.pump(const Duration(milliseconds: 300));
-              out('#$seq calibrate committed rect=$bodyRect '
-                  'font=${layout.fontSizePerClientHeight} '
-                  'lh=${layout.lineHeight} -> ${describeState()}');
+              out(
+                '#$seq calibrate committed rect=$bodyRect '
+                'font=${layout.fontSizePerClientHeight} '
+                'lh=${layout.lineHeight} -> ${describeState()}',
+              );
               out('#$seq profile=${attached.profile?.toJson()}');
             case 'mine':
               final (TexthookerLineEntry, GalHookMiningResult)? mined =
@@ -444,19 +529,21 @@ void main() {
               }
               final (TexthookerLineEntry entry, GalHookMiningResult result) =
                   mined;
-              out('#$seq mine lineId=${entry.id} '
-                  'result=${result.outcome?.result.name} '
-                  'noteId=${result.outcome?.noteId} '
-                  'aborted=${result.aborted} success=${result.success} '
-                  'audioMissing=${result.sentenceAudioMissing} '
-                  'audioWarning=${result.outcome?.audioWarning} '
-                  'audioFallbackDisabled=${result.audioFallbackDisabled} '
-                  'degradedToStill=${result.degradedToStill} '
-                  'failureReason=${result.failureReason} '
-                  'errorCode=${result.outcome?.errorCode} '
-                  'errorDetail=${result.outcome?.errorDetail} '
-                  'error=${result.outcome?.error} '
-                  'text=${entry.text.replaceAll('\n', '⏎')}');
+              out(
+                '#$seq mine lineId=${entry.id} '
+                'result=${result.outcome?.result.name} '
+                'noteId=${result.outcome?.noteId} '
+                'aborted=${result.aborted} success=${result.success} '
+                'audioMissing=${result.sentenceAudioMissing} '
+                'audioWarning=${result.outcome?.audioWarning} '
+                'audioFallbackDisabled=${result.audioFallbackDisabled} '
+                'degradedToStill=${result.degradedToStill} '
+                'failureReason=${result.failureReason} '
+                'errorCode=${result.outcome?.errorCode} '
+                'errorDetail=${result.outcome?.errorDetail} '
+                'error=${result.outcome?.error} '
+                'text=${entry.text.replaceAll('\n', '⏎')}',
+              );
             case 'fakeanki':
               fakeAnki ??= await FakeAnkiConnect.start();
               await configureFakeAnkiConnect(tester, fakeAnki);
@@ -474,21 +561,26 @@ void main() {
 
               final List<TexthookerLineEntry> lines =
                   session.selectedSessionLines;
-              final TexthookerLineEntry? last =
-                  lines.isEmpty ? null : lines.last;
+              final TexthookerLineEntry? last = lines.isEmpty
+                  ? null
+                  : lines.last;
               verdict(
                 'text',
                 last != null && last.text.trim().isNotEmpty,
                 last == null
                     ? 'no selected-thread lines (pick one with threads/thread)'
                     : 'thread=${last.textThreadKey} '
-                        'text=${last.text.replaceAll('\n', '⏎')}',
+                          'text=${last.text.replaceAll('\n', '⏎')}',
               );
               final String backend = last?.audioBackend ?? '';
               verdict(
                 'audio',
+                // 制过卡的句子从 matched 前进到 encoded（同一份引擎资源已编码），
+                // 对同一句再跑一次 accept4 时它仍是有效的引擎语音。
                 last != null &&
-                    last.audioStatus == TexthookerLineAudioStatus.matched &&
+                    (last.audioStatus == TexthookerLineAudioStatus.matched ||
+                        last.audioStatus ==
+                            TexthookerLineAudioStatus.encoded) &&
                     backend.isNotEmpty &&
                     !backend.toLowerCase().contains('loopback'),
                 'status=${last?.audioStatus.name} backend=$backend '
@@ -496,33 +588,51 @@ void main() {
                     'durationMs=${last?.audioDurationMs}',
               );
               if (_lookupCardOnScreen()) {
-                verdict('precondition', false,
-                    'a lookup card is already on screen; dismiss it first');
+                verdict(
+                  'precondition',
+                  false,
+                  'a lookup card is already on screen; dismiss it first',
+                );
                 out('#$seq ACCEPT4 verdict=aborted');
                 break;
               }
               final String before = lineSnapshot();
               await clickAndSettle(gx, gy);
               final bool shown = await pollUntil(
-                  _lookupCardOnScreen, const Duration(seconds: 5));
+                _lookupCardOnScreen,
+                const Duration(seconds: 5),
+              );
               verdict('lookup', shown, 'click=$gx,$gy card=$shown');
               // 推进判据要等过引擎推进一句的时间，而不是一出卡就判。
               await pollUntil(() => false, const Duration(milliseconds: 1500));
               final String afterLookup = lineSnapshot();
-              verdict('no_advance', afterLookup == before,
-                  'lines $before -> $afterLookup');
+              verdict(
+                'no_advance',
+                afterLookup == before,
+                'lines $before -> $afterLookup',
+              );
               await clickAndSettle(ox, oy);
               final bool hidden = await pollUntil(
-                  () => !_lookupCardOnScreen(), const Duration(seconds: 4));
+                () => !_lookupCardOnScreen(),
+                const Duration(seconds: 4),
+              );
               await pollUntil(() => false, const Duration(milliseconds: 1500));
               final String afterDismiss = lineSnapshot();
-              verdict('dismiss_no_advance', hidden && afterDismiss == before,
-                  'click=$ox,$oy hidden=$hidden lines $before -> $afterDismiss');
+              verdict(
+                'dismiss_no_advance',
+                hidden && afterDismiss == before,
+                'click=$ox,$oy hidden=$hidden lines $before -> $afterDismiss',
+              );
               await clickAndSettle(gx, gy);
               final bool reshown = await pollUntil(
-                  _lookupCardOnScreen, const Duration(seconds: 5));
-              verdict('relookup_after_dismiss', reshown,
-                  'click=$gx,$gy card=$reshown (BUG-2710)');
+                _lookupCardOnScreen,
+                const Duration(seconds: 5),
+              );
+              verdict(
+                'relookup_after_dismiss',
+                reshown,
+                'click=$gx,$gy card=$reshown (BUG-2710)',
+              );
               // ⑦ 真卡：在还开着的查词卡上触发「制卡」。走手柄 A 键同一条生产路径
               // （DictionaryPopupGamepadRegistry → fushiPopupMineFirstEntry，等于点卡上的
               // 「+」），字段由查词卡按词条给出——驱动自拼字段会漏掉首字段（Lapis 的
@@ -536,26 +646,70 @@ void main() {
                 verdict('card', false, 'no lookup card to mine from');
               } else {
                 final int notesBefore = anki.notes.length;
+                // 卡片有两种承载：位图路由画进游戏 Layer（独占手柄路由
+                // GalIngameLookupGamepadRoute 持有钩子），直连路由是独立的桌面查词窗口
+                // （BUG-1882，用户用鼠标点窗里的「+」）。直连时按同一个 popup.js 入口
+                // fushiPopupMineFirstEntry 向桌面查词窗下发「mine」，等价于点「+」。
                 final DictionaryPopupGamepadHooks? popup =
+                    GalIngameLookupGamepadRoute.current ??
                     DictionaryPopupGamepadRegistry.current;
-                if (popup != null) await popup.mineFirstEntry();
-                await pollUntil(() => anki.notes.length > notesBefore,
-                    const Duration(seconds: 30));
+                final String mineVia = popup != null
+                    ? (GalIngameLookupGamepadRoute.current != null
+                          ? 'ingameRoute'
+                          : 'appPopup')
+                    : 'desktopLookupWindow';
+                if (popup != null) {
+                  await popup.mineFirstEntry();
+                } else {
+                  await GlobalLookupChannel.gamepadAction('mine');
+                }
+                await pollUntil(
+                  () => anki.notes.length > notesBefore,
+                  const Duration(seconds: 30),
+                );
                 final Map<String, Object?>? note =
                     anki.notes.length > notesBefore ? anki.notes.last : null;
                 final Map<String, String> fields = note == null
                     ? const <String, String>{}
                     : Map<String, String>.from(note['fields']! as Map);
-                final bool hasSentence = lineText.isNotEmpty &&
-                    fields.values.any((String v) => v.contains(lineText));
-                final bool hasAudio =
-                    fields.values.any((String v) => v.contains('[sound:'));
-                final bool hasImage =
-                    fields.values.any((String v) => v.contains('<img'));
+                // 句子字段会把查到的词加粗（「そろそろ<b>着きます</b>けど…」），先去标签再比。
+                final bool hasSentence =
+                    lineText.isNotEmpty &&
+                    fields.values.any(
+                      (String v) => v
+                          .replaceAll(RegExp(r'<[^>]*>'), '')
+                          .contains(lineText),
+                    );
+                // 片段封面是默认模式（PR #1717）：WebM 内嵌片段时句子音频字段只放
+                // 重播按钮 + `<audio class="fushi-inline-audio" src=片段>`，不再有
+                // `[sound:]`（anki_note_composer.dart）。认它时必须核实落进媒体库的
+                // 那个片段真有音轨，否则无声片段也会被当成「有句子音频」。
+                final bool hasAudio = fields.values.any(
+                  (String v) =>
+                      v.contains('[sound:') ||
+                      _inlineClipAudioNames(v).any(
+                        (String name) => _storedMatroskaHasAudioTrack(
+                          anki.mediaDirPath,
+                          name,
+                        ),
+                      ),
+                );
+                // 片段封面（默认模式）写的是 `<video class="fushi-inline-video">`
+                // 而不是 `<img>`；同样要核实落进媒体库的片段真有视频轨。
+                final bool hasImage = fields.values.any(
+                  (String v) =>
+                      v.contains('<img') ||
+                      _inlineClipVideoNames(v).any(
+                        (String name) => _storedMatroskaHasVideoTrack(
+                          anki.mediaDirPath,
+                          name,
+                        ),
+                      ),
+                );
                 verdict(
                   'card',
                   note != null && hasSentence && hasAudio && hasImage,
-                  'popup=${popup != null} noteId=${note?['noteId']} '
+                  'via=$mineVia noteId=${note?['noteId']} '
                       'sentence=$hasSentence audio=$hasAudio image=$hasImage '
                       'media=${anki.mediaFileNames.length} '
                       'ankiActions=${anki.requests.map((Map<String, Object?> r) => r['action']).toSet().join('/')}',
@@ -564,10 +718,136 @@ void main() {
               if (reshown) {
                 await clickAndSettle(ox, oy);
                 await pollUntil(
-                    () => !_lookupCardOnScreen(), const Duration(seconds: 4));
+                  () => !_lookupCardOnScreen(),
+                  const Duration(seconds: 4),
+                );
               }
-              out('#$seq ACCEPT4 verdict='
-                  '${failed.isEmpty ? 'full' : 'partial missing=${failed.join(',')}'}');
+              out(
+                '#$seq ACCEPT4 verdict='
+                '${failed.isEmpty ? 'full' : 'partial missing=${failed.join(',')}'}',
+              );
+            case 'ankilast':
+              final FakeAnkiConnect? ankiNow = fakeAnki;
+              if (ankiNow == null || ankiNow.notes.isEmpty) {
+                out('#$seq ankilast none');
+              } else {
+                final Map<String, Object?> note = ankiNow.notes.last;
+                final Map<Object?, Object?> fields =
+                    note['fields']! as Map<Object?, Object?>;
+                out(
+                  '#$seq ankilast noteId=${note['noteId']}\n    ${fields.entries.map((MapEntry<Object?, Object?> e) => '${e.key}=${e.value.toString().replaceAll('\n', '⏎')}').join('\n    ')}',
+                );
+              }
+            case 'dlsources':
+              final List<MediaDiscoverySource> sources =
+                  readAppModel().mediaDiscoveryService.sources;
+              out(
+                '#$seq dlsources n=${sources.length}\n    ${sources.map((MediaDiscoverySource s) => '${s.id} name=${s.displayName} '
+                    'userConfigured=${s.isUserConfigured}').join('\n    ')}',
+              );
+            case 'dlsearch':
+              // dlsearch <源id|*> <关键词…>
+              final String sourceArg = parts.length > 1 ? parts[1] : '*';
+              final String query = parts.length > 2
+                  ? cmd.substring(cmd.indexOf(parts[2], op.length + 1)).trim()
+                  : '';
+              final DiscoveryAggregateResult found = await readAppModel()
+                  .mediaDiscoveryService
+                  .load(
+                    DiscoveryRequest(
+                      kind: DiscoveryMediaKind.game,
+                      query: query,
+                    ),
+                    sourceId: sourceArg == '*' ? null : sourceArg,
+                  );
+              lastFound = found.entries
+                  .whereType<DiscoveryResourceItem>()
+                  .toList(growable: false);
+              final StringBuffer sb = StringBuffer(
+                '#$seq dlsearch source=$sourceArg query=$query '
+                'n=${lastFound.length} failures=${found.failures.length}',
+              );
+              for (int i = 0; i < lastFound.length && i < 60; i++) {
+                final DiscoveryResourceItem item = lastFound[i];
+                final int? size = item.sizeBytes;
+                sb.write(
+                  '\n    [$i] ${item.sourceId} '
+                  '${size == null ? '?' : (size / (1 << 30)).toStringAsFixed(2)}G '
+                  '${item.title}',
+                );
+              }
+              for (final ExternalProviderFailure f in found.failures) {
+                sb.write('\n    failure ${f.providerId}: ${f.message}');
+              }
+              out(sb.toString());
+            case 'dl':
+              // dl <序号> <目标目录>
+              final int index = int.parse(parts[1]);
+              final String dest = cmd.substring(cmd.indexOf(parts[2])).trim();
+              Directory(dest).createSync(recursive: true);
+              final bool queued = readAppModel().discoveryDownloadQueue.enqueue(
+                lastFound[index],
+                destinationDir: dest,
+              );
+              out(
+                '#$seq dl queued=$queued title=${lastFound[index].title} '
+                'dest=$dest',
+              );
+            case 'dlt':
+              // dlt <序号>：torrent 结果走与发现页同一条 pushGenericMagnet（本机后端、
+              // 游戏域计划）。隔离根里预置「已看过上传说明」，否则首用弹窗会卡住驱动。
+              final int tIndex = int.parse(parts[1]);
+              final DiscoveryResourceItem tItem = lastFound[tIndex];
+              final AppModel tModel = readAppModel();
+              final MediaDiscoverySource? tSource = tModel.mediaDiscoveryService
+                  .sourceById(tItem.sourceId);
+              if (tSource == null) {
+                out('#$seq dlt no source ${tItem.sourceId}');
+                break;
+              }
+              final DiscoveryPayload tPayload =
+                  tItem.payload ?? await tSource.resolvePayload(tItem);
+              if (tPayload is! DiscoveryTorrentPayload) {
+                out('#$seq dlt unsupported payload ${tPayload.runtimeType}');
+                break;
+              }
+              if (!tModel.torrentUploadIntroShown) {
+                await tModel.setTorrentUploadIntroShown();
+              }
+              final GenericPushOutcome tOutcome = await pushGenericMagnet(
+                context: tester.element(find.byType(Navigator).first),
+                appModel: tModel,
+                magnet: tPayload.magnetUri,
+                contentKind: AnimeDownloadPlan.kindGame,
+                discoveryKind: DiscoveryMediaKind.game,
+              );
+              out('#$seq dlt outcome=${tOutcome.name} title=${tItem.title}');
+            case 'tstat':
+              final AppModel sModel = readAppModel();
+              final TorrentBackend sBackend = sModel.createTorrentBackend(
+                effectiveTorrentConfig(sModel.qbConnectionConfig),
+              );
+              try {
+                final List<TorrentSnapshot> list = await sBackend
+                    .listTorrents();
+                out(
+                  '#$seq tstat n=${list.length}\n    ${list.map((TorrentSnapshot t) => '${t.state} ${(t.progress * 100).toStringAsFixed(1)}% '
+                      'down=${t.downRateBps} left=${t.amountLeft} '
+                      'path=${t.contentPath} name=${t.name}').join('\n    ')}',
+                );
+              } finally {
+                sBackend.close();
+              }
+            case 'dlstat':
+              final List<DiscoveryDownloadTask> tasks =
+                  readAppModel().discoveryDownloadQueue.tasks;
+              out(
+                '#$seq dlstat n=${tasks.length}\n    ${tasks.map((DiscoveryDownloadTask t) => '${t.status.name} ${t.receivedBytes}/${t.totalBytes} '
+                    'file=${t.filePath} error=${t.error} '
+                    'imported=${t.importOutcome?.importedCount} '
+                    'summary=${t.importOutcome?.summary} '
+                    'title=${t.item.title}').join('\n    ')}',
+              );
             case 'thread':
               // 只传 native threadId 会让 Dart 侧 `_selectedTextThreadKey` 留空，
               // 而 `selectedSessionLines` 在 key 为空时**恒返回空表**——工作台看得见
@@ -590,9 +870,13 @@ void main() {
             case 'threads':
               final StringBuffer sb = StringBuffer('#$seq threads:');
               for (final TexthookerTextThread thread in session.textThreads) {
-                sb.write('\n    key=${thread.key} '
-                    'native=${thread.nativeThreadId} '
-                    'lines=${thread.lineCount} label=${thread.label}');
+                sb.write(
+                  '\n    key=${thread.key} '
+                  'native=${thread.nativeThreadId} '
+                  'lines=${thread.lineCount} '
+                  'observed=${thread.observedLineCount} '
+                  'code=${thread.hookCode} label=${thread.label}',
+                );
               }
               out(sb.toString());
             case 'state':
@@ -601,36 +885,43 @@ void main() {
               final GalAttachedTextController attached =
                   GalHookTextOverlayController.instance.attachedText;
               final GalAttachedShieldStatus sh = attached.shieldStatus;
-              out('#$seq shield available=${sh.available} '
-                  'conclusion=${sh.conclusion.name} '
-                  'request=${sh.requestSeq} applied=${sh.appliedSeq} '
-                  'requiredMask=0x${sh.requiredMask.toRadixString(16)} '
-                  'readyMask=0x${sh.readyMask.toRadixString(16)} '
-                  'observedMask=0x${sh.observedMask.toRadixString(16)} '
-                  'faultMask=0x${sh.faultMask.toRadixString(16)} '
-                  'statusFlags=0x${sh.statusFlags.toRadixString(16)} '
-                  'status=${attached.status.name}/${attached.statusReason}');
+              out(
+                '#$seq shield available=${sh.available} '
+                'conclusion=${sh.conclusion.name} '
+                'request=${sh.requestSeq} applied=${sh.appliedSeq} '
+                'requiredMask=0x${sh.requiredMask.toRadixString(16)} '
+                'readyMask=0x${sh.readyMask.toRadixString(16)} '
+                'observedMask=0x${sh.observedMask.toRadixString(16)} '
+                'faultMask=0x${sh.faultMask.toRadixString(16)} '
+                'statusFlags=0x${sh.statusFlags.toRadixString(16)} '
+                'status=${attached.status.name}/${attached.statusReason}',
+              );
             case 'srctext':
               final GalAttachedTextController attached =
                   GalHookTextOverlayController.instance.attachedText;
               final List<TexthookerLineEntry> selected =
                   session.selectedSessionLines;
-              final TexthookerLineEntry? last =
-                  selected.isEmpty ? null : selected.last;
-              out('#$seq srctext attachedLatest='
-                  '"${attached.latestSourceText}" '
-                  'selectedCount=${selected.length} '
-                  'lastRuby=${last?.rubySpans.length} '
-                  'lastText="${last?.text}"');
+              final TexthookerLineEntry? last = selected.isEmpty
+                  ? null
+                  : selected.last;
+              out(
+                '#$seq srctext attachedLatest='
+                '"${attached.latestSourceText}" '
+                'selectedCount=${selected.length} '
+                'lastRuby=${last?.rubySpans.length} '
+                'lastText="${last?.text}"',
+              );
             case 'lines':
               final int n = parts.length > 1 ? int.parse(parts[1]) : 5;
               out('#$seq lines:\n    ${describeLines(n)}');
             case 'windows':
-              final StringBuffer sb =
-                  StringBuffer('#$seq windows fg=${_getForegroundWindow()}');
+              final StringBuffer sb = StringBuffer(
+                '#$seq windows fg=${_getForegroundWindow()}',
+              );
               for (final w in _lookupWindows()) {
                 sb.write(
-                    '\n    hwnd=${w.hwnd} visible=${w.visible} rect=${w.rect}');
+                  '\n    hwnd=${w.hwnd} visible=${w.visible} rect=${w.rect}',
+                );
               }
               out(sb.toString());
             case 'shot':
@@ -660,7 +951,9 @@ void main() {
               shotSeq++;
               final File png = File(p.join(dir.path, 'shot_$shotSeq.png'));
               png.writeAsBytesSync(cap.pngBytes!, flush: true);
-              out('#$seq shot $target hwnd=$hwnd rect=${_rectOf(hwnd)} -> ${png.path}');
+              out(
+                '#$seq shot $target hwnd=$hwnd rect=${_rectOf(hwnd)} -> ${png.path}',
+              );
             case 'click':
               await _clickAt(int.parse(parts[1]), int.parse(parts[2]));
               out('#$seq click ${parts[1]},${parts[2]}');
@@ -713,5 +1006,5 @@ void main() {
     } catch (_) {}
     await fakeAnki?.close();
     out('exit');
-  }, timeout: const Timeout(Duration(minutes: 45)));
+  }, timeout: const Timeout(Duration(hours: 6)));
 }

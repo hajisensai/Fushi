@@ -6,6 +6,7 @@
 // `isUsable(systemOcr)` 恒真，显式选了它的阅读器 / 作品页 / 下载钩子任务不经可用
 // 性校验，没有原生侧的平台（Windows / Linux）会直接排一个必失败的任务。
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
 class _FakeOcrService implements MangaOcrService {
@@ -75,8 +77,17 @@ class _FakeSystemOcr implements SystemOcrMangaRunner {
     int startPage = 0,
     bool onlyMissing = true,
     required String language,
+    MangaOcrPageFocus? focus,
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
+
+  @override
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
+    required String language,
+  }) =>
+      throw UnimplementedError();
 }
 
 MangaOcrWizardEngines _engines({

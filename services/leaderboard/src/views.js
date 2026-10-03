@@ -255,7 +255,7 @@ async function readerWalls(env, workIds, viewerId, excludeId, perWork, rel) {
       `SELECT s.work_id, a.id, a.nickname, a.discriminator, a.avatar_key
        FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
        WHERE s.account_id IN (SELECT value FROM json_each(?1))
-         AND s.work_id IN (SELECT value FROM json_each(?2)) AND s.finished_at IS NOT NULL
+         AND s.work_id IN (SELECT value FROM json_each(?2)) AND s.finished_at IS NOT NULL AND s.counted = 1
        ORDER BY s.finished_at DESC`,
     ).bind(JSON.stringify(friendIds), JSON.stringify(workIds)).all();
     fr.results.forEach(push);
@@ -270,7 +270,7 @@ async function readerWalls(env, workIds, viewerId, excludeId, perWork, rel) {
                  'discriminator', discriminator, 'avatar_key', avatar_key))
         FROM (SELECT a.id, a.nickname, a.discriminator, a.avatar_key
               FROM shelf s JOIN accounts a ON a.id = s.account_id
-              WHERE s.work_id = j.value AND s.finished_at IS NOT NULL AND a.id != ?2
+              WHERE s.work_id = j.value AND s.finished_at IS NOT NULL AND s.counted = 1 AND a.id != ?2
                 AND ${visibleReaderSql('a', '?3')}
               ORDER BY s.finished_at DESC LIMIT ?4)) AS wall
      FROM json_each(?1) j`,
@@ -360,7 +360,7 @@ export async function workPage(env, id, url, viewer) {
   const rows = (await env.DB.prepare(
     `SELECT a.id, a.nickname, a.discriminator, a.avatar_key, s.finished_at, s.finished_date
      FROM shelf s JOIN accounts a ON a.id = s.account_id
-     WHERE s.work_id = ${q.p(id)} AND s.finished_at IS NOT NULL ${after} AND ${visibleReaderSql('a', pv)}
+     WHERE s.work_id = ${q.p(id)} AND s.finished_at IS NOT NULL AND s.counted = 1 ${after} AND ${visibleReaderSql('a', pv)}
      ORDER BY s.finished_at DESC, s.account_id DESC
      LIMIT ${q.p(limit + 1)}`,
   ).bind(...q.values).all()).results;

@@ -75,7 +75,7 @@ void main() {
     test('其它 provider 的构造默认语言同样不写死中文', () {
       for (final String path in <String>[
         '$_engineMetadata/anidb_video_metadata_provider.dart',
-        'lib/src/media/video/discovery/video_discovery_adapters.dart',
+        '../packages/fushi_engine/lib/media/video/discovery/video_discovery_adapters.dart',
       ]) {
         expect(_codeOnly(path), isNot(contains("language = 'zh-CN'")),
             reason: '$path 的默认语言必须是 kFallbackVideoMetadataLocale');

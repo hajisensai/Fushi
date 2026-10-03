@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/ai/web_knowledge.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';

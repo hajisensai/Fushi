@@ -1,0 +1,153 @@
+name: Native artifact store
+description: >-
+  Durable, input-addressed store for native build outputs (libtorrent / fushi_p2p DLLs,
+  galgame helper archives, Mihon runtime, fushi-anki-sync). `mode: restore` looks for a
+  non-expired workflow artifact whose name is exactly `name` and that a trusted run
+  produced, verifies it, and unpacks it into `path` (output `hit`). `mode: save` uploads
+  `path` (file or directory) under `name`. A miss never fails: the caller builds.
+
+# Why artifacts and not actions/cache (measured 2026-09-29 on hajisensai/hibiki):
+# the repo sits at 10.8 GB of the 10 GB Actions cache quota and the whole cache store
+# turns over in about an hour (oldest entry 16:16, listing at 17:24; a Windows vcpkg
+# binary entry saved at 15:27 was already gone at 15:52). Linux-gradle entries of
+# 1.7 GB per PR ref dominate the churn. So the small, expensive Windows entries were
+# evicted before the next run could read them: libtorrent (vcpkg cold build, 20-27 min)
+# missed in 22 of 37 release-desktop windows jobs and 15 of 18 PR windows jobs; the
+# galgame helper (~7 min) and Mihon runtime (~3.3 min) missed in most of them too.
+# Workflow artifacts are not part of that quota, have fixed retention, and are free on
+# a public repo, so an entry stays readable until it expires instead of until the next
+# burst of Gradle saves.
+#
+# Trust model (actions/cache gives this for free via ref scoping; here it is explicit):
+#   * develop / main runs of THIS repository are trusted by every consumer, including
+#     the signed release build;
+#   * inside a pull_request run, artifacts produced by the same PR head (same head
+#     repository id + same head branch) are also accepted, so PR re-pushes reuse their
+#     own outputs. A fork can therefore only ever feed its own PR runs.
+# The name must encode every input of the build (source-tree hash, runner image,
+# toolchain pin); callers compute it once before anything is built. The payload ships
+# with a SHA256SUMS manifest that is verified before anything is copied into `path`.
+#
+# Not a TODO-416 repeat (ffmpeg fetched from another workflow's artifact, silently
+# missing once it expired): here an expired or absent artifact is just a miss and the
+# job rebuilds from source exactly as it did before the store existed.
+inputs:
+  mode:
+    description: restore | save
+    required: true
+  name:
+    description: Artifact name; must encode all build inputs.
+    required: true
+  path:
+    description: restore = destination directory; save = file or directory to upload.
+    required: true
+outputs:
+  hit:
+    description: "'true' when restore found, verified and unpacked a trusted artifact."
+    value: ${{ steps.restore.outputs.hit }}
+runs:
+  using: composite
+  steps:
+    - name: Restore native artifact (${{ inputs.name }})
+      id: restore
+      if: inputs.mode == 'restore'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        REPO_ID: ${{ github.repository_id }}
+        PR_HEAD_REPO_ID: ${{ github.event.pull_request.head.repo.id }}
+        PR_HEAD_REF: ${{ github.event_name == 'pull_request' && github.head_ref || '' }}
+        STORE_NAME: ${{ inputs.name }}
+        STORE_PATH: ${{ inputs.path }}
+      run: |
+        set -uo pipefail
+        hit=false
+        finish() { echo "hit=$hit" >> "$GITHUB_OUTPUT"; exit 0; }
+        to_posix() { if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+        sha_check() { if command -v sha256sum >/dev/null 2>&1; then sha256sum -c --quiet "$@"; else shasum -a 256 -c --quiet "$@"; fi; }
+
+        # Filtering happens in bash, not in the jq expression: branch names are
+        # attacker-controlled on fork PRs and must never be spliced into a filter.
+        if ! rows="$(gh api -X GET "repos/$REPO/actions/artifacts" -f name="$STORE_NAME" -f per_page=100 \
+            --jq '.artifacts[] | select(.expired == false) | [.id, .workflow_run.repository_id, .workflow_run.head_repository_id, .workflow_run.head_branch, .workflow_run.id] | @tsv')"; then
+          echo "::warning title=Native artifact store::artifact lookup failed for $STORE_NAME; building from source"
+          finish
+        fi
+        pick=""
+        while IFS=$'\t' read -r art_id repo_id head_repo_id head_branch run_id; do
+          [ -n "${art_id:-}" ] || continue
+          [ "$repo_id" = "$REPO_ID" ] || continue
+          if [ "$head_repo_id" = "$REPO_ID" ] && { [ "$head_branch" = "develop" ] || [ "$head_branch" = "main" ]; }; then
+            pick="$art_id"; src_run="$run_id"; break
+          fi
+          if [ -n "$PR_HEAD_REF" ] && [ "$head_repo_id" = "$PR_HEAD_REPO_ID" ] && [ "$head_branch" = "$PR_HEAD_REF" ]; then
+            pick="$art_id"; src_run="$run_id"; break
+          fi
+        done <<< "$rows"
+        if [ -z "$pick" ]; then
+          echo "No trusted artifact named $STORE_NAME; building from source."
+          finish
+        fi
+
+        work="$(to_posix "$RUNNER_TEMP")/native-store-restore/$STORE_NAME"
+        rm -rf "$work"; mkdir -p "$work/x"
+        if ! gh api "repos/$REPO/actions/artifacts/$pick/zip" > "$work/a.zip" \
+            || ! unzip -q "$work/a.zip" -d "$work/x"; then
+          echo "::warning title=Native artifact store::download of artifact $pick (run $src_run) failed; building from source"
+          rm -rf "$work"; finish
+        fi
+        if [ ! -f "$work/x/SHA256SUMS" ] || [ ! -d "$work/x/payload" ] \
+            || ! (cd "$work/x/payload" && sha_check ../SHA256SUMS); then
+          echo "::warning title=Native artifact store::artifact $pick (run $src_run) failed SHA256SUMS verification; building from source"
+          rm -rf "$work"; finish
+        fi
+        dest="$(to_posix "$STORE_PATH")"
+        rm -rf "$dest"; mkdir -p "$dest"
+        cp -a "$work/x/payload/." "$dest/"
+        rm -rf "$work"
+        echo "Restored $STORE_NAME from artifact $pick (run https://github.com/$REPO/actions/runs/$src_run)."
+        hit=true
+        finish
+
+    - name: Stage native artifact (${{ inputs.name }})
+      id: stage
+      if: inputs.mode == 'save'
+      shell: bash
+      env:
+        STORE_NAME: ${{ inputs.name }}
+        STORE_PATH: ${{ inputs.path }}
+        IS_TRUSTED_REF: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') }}
+      run: |
+        set -euo pipefail
+        to_posix() { if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+        to_native() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+        src="$(to_posix "$STORE_PATH")"
+        stage="$(to_posix "$RUNNER_TEMP")/native-store-save/$STORE_NAME"
+        rm -rf "$stage"; mkdir -p "$stage/payload"
+        if [ -d "$src" ]; then
+          cp -a "$src/." "$stage/payload/"
+        elif [ -f "$src" ]; then
+          cp -a "$src" "$stage/payload/"
+        else
+          echo "::error title=Native artifact store::nothing to save at $STORE_PATH"
+          exit 1
+        fi
+        if command -v sha256sum >/dev/null 2>&1; then sum=(sha256sum); else sum=(shasum -a 256); fi
+        (cd "$stage/payload" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 "${sum[@]}") > "$stage/SHA256SUMS"
+        # develop/main entries feed every later run for a month; PR entries only feed
+        # re-pushes of the same PR, a week is plenty.
+        if [ "$IS_TRUSTED_REF" = "true" ]; then retention=30; else retention=7; fi
+        echo "dir=$(to_native "$stage")" >> "$GITHUB_OUTPUT"
+        echo "retention=$retention" >> "$GITHUB_OUTPUT"
+
+    - name: Upload native artifact (${{ inputs.name }})
+      if: inputs.mode == 'save'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ steps.stage.outputs.dir }}
+        retention-days: ${{ steps.stage.outputs.retention }}
+        include-hidden-files: true
+        if-no-files-found: error
+        overwrite: true

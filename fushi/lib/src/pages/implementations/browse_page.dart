@@ -1,5 +1,3 @@
-import 'dart:async' show unawaited;
-
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
@@ -23,13 +21,11 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
-import 'package:fushi/src/pages/implementations/ai_media_acquisition_page.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
@@ -155,7 +151,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       gamesForm: initialAppModel.gamesModuleForm,
     );
     if (domains.isNotEmpty) _resourceDomain = domains.first;
-    final List<OnlineSourcesDomain> onlineDomains = _visibleOnlineDomains(
+    final List<OnlineSourcesDomain> onlineDomains = visibleOnlineSourcesDomains(
       initialAppModel.moduleVisibility,
     );
     if (onlineDomains.isNotEmpty) _onlineDomain = onlineDomains.first;
@@ -217,7 +213,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 不依赖扩展宿主；三个库模块全关时就只剩发现与下载）；发现页签跟四个库模块
   /// 走；下载恒在。
   List<BrowseTab> _visibleTabs(AppModel appModel) {
-    final bool online = _visibleOnlineDomains(
+    final bool online = visibleOnlineSourcesDomains(
       appModel.moduleVisibility,
     ).isNotEmpty;
     // 发现页签自己再问一次合规门，不只靠整个模块委托的 downloads 能力：两种能力
@@ -245,39 +241,15 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     BrowseTab.downloads => t.nav_downloads,
   };
 
-  String _onlineDomainLabel(OnlineSourcesDomain domain) => switch (domain) {
-    OnlineSourcesDomain.novel => t.discovery_kind_novel,
-    OnlineSourcesDomain.manga => t.manga_library,
-    OnlineSourcesDomain.video => t.nav_video,
-  };
-
   void _selectOnlineDomain(OnlineSourcesDomain domain) {
     if (domain == _onlineDomain) return;
     setState(() => _onlineDomain = domain);
   }
 
-  /// 「扩展」页签的「仓库」动作：push 同一域的扩展仓库管理（与扩展目录同一组
-  /// 组件的仓库形态）。
-  void _openStores(OnlineSourcesDomain domain) {
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) => _BrowseSubPage(
-          title: '${t.media_import_segment_stores} · '
-              '${_onlineDomainLabel(domain)}',
-          child: BrowseOnlineSourcesView(
-            domain: domain,
-            section: OnlineSourcesSection.stores,
-          ),
-        ),
-      ),
-    );
-  }
-
   /// 来源 / 扩展页签：内容域选择条 + 各域可横滑、保活的在线来源面。
   Widget _buildOnlineTab(BrowseTab tab) {
     final AppModel appModel = ref.watch(appProvider);
-    final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
+    final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
       appModel.moduleVisibility,
     );
     if (domains.isEmpty) return const SizedBox.shrink();
@@ -293,7 +265,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         for (final OnlineSourcesDomain domain in domains)
           LibrarySectionTab<OnlineSourcesDomain>(
             value: domain,
-            label: _onlineDomainLabel(domain),
+            label: onlineSourcesDomainLabel(domain),
           ),
       ],
       selected: selected,
@@ -306,7 +278,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
               icon: Icons.hub_outlined,
               tooltip: t.media_import_segment_stores,
               label: t.media_import_segment_stores,
-              onTap: () => _openStores(selected),
+              onTap: () => openOnlineSourceStores(context, selected),
             )
           : null,
       pageBuilder: (OnlineSourcesDomain domain) => BrowseOnlineSourcesView(
@@ -339,7 +311,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     setState(() {
       switch (_controllerTabs[target]) {
         case BrowseTab.sources || BrowseTab.extensions:
-          final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
+          final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
             appModel.moduleVisibility,
           );
           if (domains.isNotEmpty) {
@@ -451,7 +423,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 以本页自己的路由为界弹掉上面压着的路由（全源搜索页、详情页），与压了几层
   /// 无关——与库页壳 `MediaLibraryShell` 的「回到壳」同一口径。
   VoidCallback? _mangaSourcesAction() {
-    final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
+    final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
       ref.read(appProvider).moduleVisibility,
     );
     if (!domains.contains(OnlineSourcesDomain.manga)) return null;
@@ -490,19 +462,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   /// 「AI 下载」入口（小说 / 漫画 / 游戏发现页；视频域是首页注入的「AI 下视频」）。
   ///
-  /// 与「AI 下视频」同一组门：偏好就绪 + 下载 / 外部发现两项合规能力 + 「设置 ›
-  /// AI」未被模块开关藏起（点击时要能引导去配置提供商）；本页存在即浏览模块开着。
-  /// 不满足时回 null，按钮整颗不渲染。在线来源是否参与搜索与「来源」页签同一门。
+  /// 门与点击行为在 [discoveryAiAcquireAction]（库页「发现」子标签共用）。
   ValueChanged<String>? _aiAcquireAction(_DownloadsResourceDomain domain) {
-    final AppModel appModel = ref.read(appProvider);
-    final bool gates = appModel.isPreferencesReady &&
-        StoreRestrictedCapability.downloads.isAvailable &&
-        StoreRestrictedCapability.externalDiscovery.isAvailable &&
-        isSettingsDestinationVisible(
-          SettingsDestinationId.ai,
-          appModel.moduleVisibility,
-        );
-    if (!gates) return null;
     final (AiMediaAcquisitionDomain, OnlineSourcesDomain?)? target =
         switch (domain) {
       _DownloadsResourceDomain.books => (
@@ -519,20 +480,13 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     if (target == null) return null;
     final (AiMediaAcquisitionDomain aiDomain, OnlineSourcesDomain? online) =
         target;
-    return (String query) {
-      final AppModel current = ref.read(appProvider);
-      unawaited(
-        openAiMediaAcquisition(
-          context,
-          appModel: current,
-          domain: aiDomain,
-          domainLabel: _resourceDomainLabel(domain),
-          includeOnlineSources: online != null &&
-              _visibleOnlineDomains(current.moduleVisibility).contains(online),
-          initialQuery: query,
-        ),
-      );
-    };
+    return discoveryAiAcquireAction(
+      context: context,
+      readAppModel: () => ref.read(appProvider),
+      domain: aiDomain,
+      domainLabel: _resourceDomainLabel(domain),
+      onlineDomain: online,
+    );
   }
 
   /// 二级标签页只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
@@ -1142,7 +1096,7 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return _BrowseSubPage(
+    return BrowseSubPage(
       title: t.download_settings,
       child: ListView(
                         children: <Widget>[
@@ -1184,36 +1138,6 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
   }
 }
 
-/// 浏览页 push 出来的二级页外壳：带返回键的统一门头 + 正文。
-class _BrowseSubPage extends StatelessWidget {
-  const _BrowseSubPage({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: <Widget>[
-            FushiPageHeader(
-              title: title,
-              leading: FushiIconButton(
-                icon: Icons.arrow_back,
-                tooltip: t.back,
-                onTap: () => Navigator.of(context).maybePop(),
-              ),
-            ),
-            Expanded(child: child),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 enum _DownloadsResourceDomain { books, manga, games, video }
 
 /// 资源域 → 所属功能模块（穷尽 switch：加域时编译器强制补齐这张表）。
@@ -1242,19 +1166,3 @@ List<_DownloadsResourceDomain> _visibleResourceDomains(
             gamesForm == GamesModuleForm.localLibrary))
       domain,
 ];
-
-/// 在线域 → 所属功能模块（穷尽 switch）：关掉某个库模块，它的在线来源一并不出。
-ModuleId _moduleOfOnlineDomain(OnlineSourcesDomain domain) => switch (domain) {
-  OnlineSourcesDomain.novel => ModuleId.books,
-  OnlineSourcesDomain.manga => ModuleId.manga,
-  OnlineSourcesDomain.video => ModuleId.video,
-};
-
-/// 此刻可见的在线域：模块开着、且本平台有该域的在线来源宿主。
-List<OnlineSourcesDomain> _visibleOnlineDomains(ModuleVisibility visibility) =>
-    <OnlineSourcesDomain>[
-      for (final OnlineSourcesDomain domain in OnlineSourcesDomain.values)
-        if (visibility.isEnabled(_moduleOfOnlineDomain(domain)) &&
-            isOnlineSourcesDomainAvailable(domain))
-          domain,
-    ];

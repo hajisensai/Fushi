@@ -1,6 +1,6 @@
 /// 手机经互联把「AI 下视频」交给电脑（`/api/assistant`）。
 ///
-/// 对真实 [FushiSyncServer] 挂 [AppAssistantHost]（会话里是真的
+/// 对真实 [FushiSyncServer] 挂 [VideoAcquisitionAssistantHost]（会话里是真的
 /// [VideoAcquisitionService]，外部端口是假的），用真实 [InterconnectAssistantClient]
 /// 与 [RemoteVideoAcquisitionSession] 走一遍：能力位 → 开会话 → 手机说一句话 →
 /// 电脑的状态机搜作品 / 搜资源 → 手机收到摘要问句 → 手机点「就这个」→ 入队发生在
@@ -11,12 +11,12 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/media/video/acquisition/remote_video_acquisition_session.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
-import 'package:fushi/src/sync/app_assistant_host.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_view.dart';
+import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -45,7 +45,7 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  Future<(FushiSyncServer, String)> startHost(AppAssistantHost? host) async {
+  Future<(FushiSyncServer, String)> startHost(VideoAcquisitionAssistantHost? host) async {
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: p.join(tmp.path, 'sync'),
       port: 0,
@@ -88,10 +88,10 @@ void main() {
     expect(ready.supports(kHostAssistantFeatureVideoAcquire), isTrue);
     expect(ready.reason, isNull);
 
-    blocker = kAppAssistantReasonNoProvider;
+    blocker = kHostAssistantReasonNoProvider;
     final HostAssistantTarget? blocked = await client().probeUrl(url);
     expect(blocked!.supports(kHostAssistantFeatureVideoAcquire), isFalse);
-    expect(blocked.reason, kAppAssistantReasonNoProvider);
+    expect(blocked.reason, kHostAssistantReasonNoProvider);
     await server.stop();
 
     final (_, String oldUrl) = await startHost(null);
@@ -108,7 +108,7 @@ void main() {
   test('开会话时 host 缺前置 → 409 带 reason 短码，入口据此给出具体引导', () async {
     final _HostPorts ports = _HostPorts();
     final (_, String url) = await startHost(
-      ports.host(blocker: () => kAppAssistantReasonNotReady),
+      ports.host(blocker: () => kHostAssistantReasonNotReady),
     );
     final InterconnectAssistantClient c = client();
     final HostAssistantTarget target = HostAssistantTarget(
@@ -128,7 +128,7 @@ void main() {
             .having(
               (HostAssistantException e) => e.detail,
               'detail',
-              kAppAssistantReasonNotReady,
+              kHostAssistantReasonNotReady,
             ),
       ),
     );
@@ -348,7 +348,7 @@ class _HostPorts {
   final List<String> calls = <String>[];
   int released = 0;
 
-  AppAssistantHost host({String? Function()? blocker}) => AppAssistantHost(
+  VideoAcquisitionAssistantHost host({String? Function()? blocker}) => VideoAcquisitionAssistantHost(
         videoAcquireBlocker: () async => blocker?.call(),
         openVideoAcquisition: (String locale) async {
           opened.add(locale);

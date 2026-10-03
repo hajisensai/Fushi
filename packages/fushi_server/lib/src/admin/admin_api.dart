@@ -8,23 +8,33 @@ import 'dart:io';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/anki_sync/anki_box_landing.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
+import 'package:fushi_engine/media/source_library/book_library_prune.dart';
+import 'package:fushi_engine/media/source_library/library_prune_guard.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/native_libs.dart';
+import 'package:fushi_server/src/profile_hub.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -90,9 +100,12 @@ class AdminApi {
       case ('POST', '/api/admin/libraries'):
         return _addLibrary(await _body(request));
       case ('DELETE', _) when path.startsWith('/api/admin/libraries/'):
-        return _removeLibrary(Uri.decodeComponent(path.substring('/api/admin/libraries/'.length)));
+        return _removeLibrary(
+          Uri.decodeComponent(path.substring('/api/admin/libraries/'.length)),
+          purge: request.url.queryParameters['purge'] == 'true',
+        );
       case ('POST', '/api/admin/scan'):
-        return _scan();
+        return _scan(await _body(request));
       case ('GET', '/api/admin/jobs'):
         return _jobs();
       case ('DELETE', _) when path.startsWith('/api/admin/jobs/'):
@@ -131,6 +144,10 @@ class AdminApi {
       case ('DELETE', _) when path.startsWith('/api/admin/subscriptions/'):
         await _subscriptionsHost().delete(Uri.decodeComponent(path.substring('/api/admin/subscriptions/'.length)));
         return _json(const <String, Object?>{'ok': true});
+      case ('GET', '/api/admin/resource-indexers'):
+        return _resourceIndexers();
+      case ('PUT', '/api/admin/resource-indexers'):
+        return _putResourceIndexers(await _body(request));
       case ('GET', '/api/admin/models'):
         return _models();
       case ('POST', '/api/admin/models/pull'):
@@ -167,6 +184,12 @@ class AdminApi {
         return _json(const <String, Object?>{'ok': true});
       case ('POST', '/api/admin/anki/retry'):
         return _json(<String, Object?>{'retried': await _ankiLanding().retryFailed()});
+      case ('GET', '/api/admin/profiles'):
+        return _profiles();
+      case ('POST', _) when path.startsWith('/api/admin/profiles/') && path.endsWith('/share'):
+        return _profileAction(_segment(path, '/api/admin/profiles/', '/share'), ctx.host.profiles.pin);
+      case ('DELETE', _) when path.startsWith('/api/admin/profiles/'):
+        return _profileAction(Uri.decodeComponent(path.substring('/api/admin/profiles/'.length)), ctx.host.profiles.delete);
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
       case ('GET', '/api/admin/upload'):
@@ -208,7 +231,9 @@ class AdminApi {
       'libraries': ctx.config.libraries.length,
       'scanning': ctx.scanning,
       'lastScan': ctx.lastScan?.toString(),
+      'lastScanNotes': ctx.lastScan?.pruneNotes ?? const <String>[],
       'lastScanAt': ctx.lastScanAt?.toIso8601String(),
+      'scrape': ctx.host.videoScrape?.status(),
       'downloads': await ctx.host.downloads?.capability(),
       'subscriptions': await ctx.host.subscriptions?.capability(),
       'subscriptionCount': (await ctx.host.subscriptions?.list())?.length,
@@ -259,7 +284,9 @@ class AdminApi {
 
   // ── 库 ─────────────────────────────────────────────────────────────
 
-  shelf.Response _libraries() => _json(<String, Object?>{
+  shelf.Response _libraries() => _json(_librariesJson());
+
+  Map<String, Object?> _librariesJson() => <String, Object?>{
         'libraries': <Object?>[
           for (final LibraryRootConfig lib in ctx.config.libraries)
             <String, Object?>{
@@ -267,7 +294,7 @@ class AdminApi {
               'exists': Directory(lib.path).existsSync(),
             },
         ],
-      });
+      };
 
   Future<shelf.Response> _addLibrary(Map<String, dynamic> body) async {
     final String path = (body['path'] ?? '').toString().trim();
@@ -288,17 +315,87 @@ class AdminApi {
     return _libraries();
   }
 
-  Future<shelf.Response> _removeLibrary(String id) async {
+  /// 移除一个库根。
+  ///
+  /// [purge] 为真时，**在移除配置前**对该根跑一次对账（视频根 `pruneMissingVideoRows`、
+  /// 书 / 漫画根 `pruneMissingBookRows`），回收「行还在、源文件已消失」的条目及其刮削
+  /// 资料 / 正文副本。不删任何用户文件。
+  ///
+  /// 这是显式的用户意图，所以用 `force`：扫描时的推测性护栏（库根不存在 / 空挂载点 /
+  /// 失效占比）在这里不拦——最常见的用法恰恰是「整个目录已经删了，把它连库一起清掉」。
+  /// 判据仍只有「文件确实不存在」。对账没做成（租约被占 / 删除出错）就**不移除**
+  /// 配置、回 409：移除后这些行不在任何库根下，再也没有机会被清理。
+  ///
+  /// 书 / 漫画根只认本服务端扫描时记进来源索引的书（`BookSourceIndex`）；该根从没被
+  /// 扫描过（没有来源行）就没有可清理的条目。
+  Future<shelf.Response> _removeLibrary(String id, {bool purge = false}) async {
+    final LibraryRootConfig? library = ctx.config.libraries
+        .cast<LibraryRootConfig?>()
+        .firstWhere((LibraryRootConfig? l) => l!.id == id, orElse: () => null);
+    if (library == null) return _err(404, 'unknown library $id');
+    Map<String, Object?>? purgeResult;
+    if (purge) {
+      final LibraryPruneReport report = await _purgeRoot(library);
+      purgeResult = <String, Object?>{
+        'considered': report.considered,
+        'missing': report.missing,
+        'deleted': report.deleted,
+        'skipped': report.skipped,
+        if (report.skipReason != null) 'reason': report.skipReason,
+        if (report.errors.isNotEmpty) 'errors': report.errors,
+      };
+      if (report.skipped || report.errors.isNotEmpty) {
+        final String why = report.skipReason ?? report.errors.join('; ');
+        return _json(<String, Object?>{
+          'error': 'purge incomplete ($why); library root kept',
+          ..._librariesJson(),
+          'purge': purgeResult,
+        }, status: 409);
+      }
+    }
     await ctx.updateConfig(ctx.config.copyWith(
       libraries: ctx.config.libraries.where((LibraryRootConfig l) => l.id != id).toList(),
     ));
-    return _libraries();
+    return _json(<String, Object?>{
+      ..._librariesJson(),
+      if (purgeResult != null) 'purge': purgeResult,
+    });
   }
 
-  shelf.Response _scan() {
+  /// 按库根 kind 分派的 force 对账（见 [_removeLibrary]）。
+  Future<LibraryPruneReport> _purgeRoot(LibraryRootConfig library) async {
+    final SourceLibraryKind? kind = SourceLibraryKind.tryParse(library.kind);
+    switch (kind) {
+      case SourceLibraryKind.video:
+        return pruneMissingVideoRows(
+          repository: VideoBookRepository(ctx.db),
+          root: Directory(library.path),
+          force: true,
+        );
+      case SourceLibraryKind.book:
+      case SourceLibraryKind.manga:
+        final SourceLibraryRow? source = await LibraryScanner.findLocalSource(ctx.db, library.path, kind!);
+        if (source == null) return const LibraryPruneReport(considered: 0, missing: 0, deleted: 0);
+        return pruneMissingBookRows(
+          db: ctx.db,
+          sourceId: source.id,
+          root: Directory(library.path),
+          kind: kind,
+          force: true,
+        );
+      case null:
+        throw FormatException('library "${library.id}" has unsupported kind=${library.kind}');
+    }
+  }
+
+  shelf.Response _scan(Map<String, dynamic> body) {
+    final Object? raw = body['prune'];
+    if (raw != null && raw is! bool) {
+      throw const FormatException('prune must be a boolean');
+    }
     if (ctx.scanning) return _json(const <String, Object?>{'started': false, 'scanning': true});
     // 不 await：扫描可能很久，WebUI 轮询 status 看结果。
-    ctx.scanLibraries().catchError((Object e, StackTrace st) {
+    ctx.scanLibraries(prune: raw as bool?).catchError((Object e, StackTrace st) {
       ctx.log.log('AdminApi.scan', e, st);
       return ScanSummary();
     });
@@ -361,6 +458,30 @@ class AdminApi {
     return _json(<String, Object?>{'subscription': videoDownloadSubscriptionToWire(row)});
   }
 
+  // ── 资源索引器（内置源启停 + Torznab）─────────────────────────────────
+
+  /// `providers` = 运行中 registry 实际可用的 provider id（与订阅能力位同源）；
+  /// 互联 host 没起来时为 null。`applied`：保存会不会立刻作用到正在跑的 host。
+  shelf.Response _resourceIndexers() {
+    final ServerDownloadHost? downloads = ctx.host.downloads;
+    return _json(<String, Object?>{
+      ...resourceIndexerSettingsToJson(ctx.host.prefs),
+      'providers': downloads?.availableResourceProviderIds,
+      'applied': downloads != null,
+    });
+  }
+
+  Future<shelf.Response> _putResourceIndexers(Map<String, dynamic> body) async {
+    // 先整份校验（非法 → FormatException → 400），通过了才落库：不落半截。
+    final ResourceIndexerUpdate update = parseResourceIndexerUpdate(ctx.host.prefs, body);
+    if (!update.isEmpty) {
+      await writeResourceIndexerUpdate(ctx.host.prefs, update);
+      // 对正在跑的 host 立即生效（registry 整套换新；没起来则下次 serve 启动时读到）。
+      await ctx.host.downloads?.reloadResourceIndexers();
+    }
+    return _resourceIndexers();
+  }
+
   // ── 模型 ─────────────────────────────────────────────────────────────
 
   Map<String, Object?>? _modelsCache;
@@ -391,6 +512,24 @@ class AdminApi {
       }
     }
     final MangaOcrModelStatus? ocr = await ctx.host.ocrService?.modelStatus();
+    // 每个可点名的模型一行（对端在引擎下拉里选「服务端 · <模型>」，没下好的那个
+    // 会被服务端拒绝，所以这里要能逐个下载）。
+    final List<Map<String, Object?>> ocrModels = <Map<String, Object?>>[];
+    for (final MapEntry<String, MangaOcrService> entry in ctx.host.ocrModelServices.entries) {
+      try {
+        final MangaOcrModelStatus status = await entry.value.modelStatus();
+        ocrModels.add(<String, Object?>{
+          'key': entry.key,
+          'name': _ocrModelName(entry.key),
+          'ready': status.allReady,
+          'obtainedBytes': status.obtainedBytes,
+          'totalBytes': status.totalBytes,
+          'pulling': _pulling.contains('ocr:${entry.key}'),
+        });
+      } catch (e) {
+        ocrModels.add(<String, Object?>{'key': entry.key, 'name': _ocrModelName(entry.key), 'error': '$e'});
+      }
+    }
     _modelsCacheAt = DateTime.now();
     return _json(_modelsCache = <String, Object?>{
       'asr': asrModels,
@@ -403,8 +542,16 @@ class AdminApi {
               'totalBytes': ocr.totalBytes,
               'pulling': _pulling.contains('ocr'),
             },
+      'ocrModels': ocrModels,
     });
   }
+
+  static String _ocrModelName(String key) => switch (key) {
+        'manga_ocr' => 'manga-ocr（经典）',
+        'manga_ctc' => '漫画 CTC（快速）',
+        'baberu' => 'Baberu',
+        _ => key,
+      };
 
   final Set<String> _pulling = <String>{};
 
@@ -415,9 +562,12 @@ class AdminApi {
     _pulling.add(which);
     Future<void> run() async {
       try {
-        if (which == 'ocr') {
-          final MangaOcrService? ocr = ctx.host.ocrService;
-          if (ocr == null) throw StateError('ocr service unavailable');
+        if (which == 'ocr' || which.startsWith('ocr:')) {
+          // `ocr` = 服务端默认模型（老 WebUI）；`ocr:<key>` = 点名的模型。
+          final MangaOcrService? ocr = which == 'ocr'
+              ? ctx.host.ocrService
+              : ctx.host.ocrModelServices[which.substring(4)];
+          if (ocr == null) throw StateError('ocr service unavailable: $which');
           await for (final MangaOcrDownloadEvent _ in ocr.downloadModels()) {}
         } else {
           final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(which);
@@ -441,6 +591,26 @@ class AdminApi {
     return _json(const <String, Object?>{'started': true, 'pulling': true});
   }
 
+  // ── 互联配置文件寄存 ─────────────────────────────────────────────────
+
+  /// 寄存的配置方案 + 开关状态。`reachable` = 对端此刻能不能用这条端点（开关开着
+  /// 且 host 跑在 TLS 上；端点在明文下一律 403）。
+  Future<shelf.Response> _profiles() async => _json(<String, Object?>{
+        'enabled': ctx.config.profileTransfer,
+        'tls': ctx.config.tls,
+        'reachable': ctx.config.profileTransfer && ctx.config.tls,
+        'profiles': <Map<String, Object?>>[
+          for (final ServerProfileSummary s in await ctx.host.profiles.list()) s.toJson(),
+        ],
+      });
+
+  Future<shelf.Response> _profileAction(String rawId, Future<bool> Function(int id) action) async {
+    final int? id = int.tryParse(rawId);
+    if (id == null) throw FormatException('invalid profile id "$rawId"');
+    if (!await action(id)) return _err(404, 'profile $id not found');
+    return _profiles();
+  }
+
   // ── 设置 ─────────────────────────────────────────────────────────────
 
   shelf.Response _settings() => _json(<String, Object?>{
@@ -451,6 +621,11 @@ class AdminApi {
         'lanRequiresPin': ctx.config.lanRequiresPin,
         'subtitleLanguage': ctx.config.subtitleLanguage,
         'metadataLocale': ctx.config.metadataLocale,
+        'scanPrune': ctx.config.scanPrune,
+        'scanScrape': ctx.config.scanScrape,
+        'profileTransfer': ctx.config.profileTransfer,
+        // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
+        'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
         'ffmpeg': ctx.config.ffmpegPath,
         'ffprobe': ctx.config.ffprobePath,
         'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -472,7 +647,12 @@ class AdminApi {
         'p2p': ctx.config.p2p,
         'p2pRelays': ctx.config.p2pRelays,
         'p2pStatus': ctx.host.p2pStatus(),
-        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe'],
+        // AI 提供商（「AI 下视频」助手会话用）：API key 只报「设过没有」；保存即生效。
+        // null = 没配（能力位报 no_provider，不发任何 AI 请求）。
+        'ai': ctx.config.ai?.toAdminJson(),
+        'aiPresets': <String>[for (final AiProviderPreset preset in kAiProviderPresets) preset.id, kAiCustomPresetId],
+        // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
+        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe', 'metadataLocale', 'tmdbApiKey'],
       });
 
   Future<shelf.Response> _putSettings(Map<String, dynamic> body) async {
@@ -490,6 +670,9 @@ class AdminApi {
     final Object? p2pRaw = body['p2p'];
     if (p2pRaw != null && p2pRaw is! bool) throw const FormatException('p2p must be a boolean');
     final bool? p2p = p2pRaw as bool?;
+    for (final String key in const <String>['scanPrune', 'scanScrape', 'profileTransfer']) {
+      if (body[key] != null && body[key] is! bool) throw FormatException('$key must be a boolean');
+    }
     // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
     if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
       return _json(<String, Object?>{
@@ -497,6 +680,7 @@ class AdminApi {
         'reason': 'p2p_unavailable',
       }, status: 409);
     }
+    final ({ServerAiConfig? ai, bool clear})? ai = _aiFromBody(body['ai'], ctx.config.ai);
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -519,9 +703,70 @@ class AdminApi {
       publicUrls: publicUrls,
       p2p: p2p,
       p2pRelays: p2pRelays,
+      scanPrune: body['scanPrune'] as bool?,
+      scanScrape: body['scanScrape'] as bool?,
+      profileTransfer: body['profileTransfer'] as bool?,
+      // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
+      tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty ? null : body['tmdbApiKey'].toString().trim(),
+      ai: ai?.ai,
+      clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
     return _settings();
+  }
+
+  /// `ai`：缺省 = 不改。`preset` 为空 / null = 关掉（删掉 `ai:` 段）；缺 `preset` 键 =
+  /// 沿用当前预设。`protocol` / `baseUrl` / `model` 空 = 跟随预设；`apiKey` 空 = 不改
+  /// （与 qBittorrent 密码同口径：表单不回显旧值）。配出来不能用（未知预设、地址
+  /// 非法、非 HTTPS 又没放行明文…）整个请求 400，不落半截；只缺 key / 模型的「没配全」
+  /// 照存（能力位报 no_provider），用户可以分两次填。
+  static ({ServerAiConfig? ai, bool clear})? _aiFromBody(Object? raw, ServerAiConfig? current) {
+    if (raw == null) return null;
+    if (raw is! Map) throw const FormatException('ai must be an object');
+    final Map<String, Object?> m = <String, Object?>{for (final MapEntry<Object?, Object?> e in raw.entries) '${e.key}': e.value};
+    String? text(String key) {
+      final Object? v = m[key];
+      if (v != null && v is! String) throw FormatException('ai.$key must be a string');
+      final String t = (v as String? ?? '').trim();
+      return t.isEmpty ? null : t;
+    }
+
+    bool? flag(String key) {
+      final Object? v = m[key];
+      if (v != null && v is! bool) throw FormatException('ai.$key must be a boolean');
+      return v as bool?;
+    }
+
+    final String? preset = m.containsKey('preset') ? text('preset') : current?.preset;
+    if (preset == null) return (ai: null, clear: true);
+    final String? protocolKey = text('protocol');
+    AiWireProtocol? protocol;
+    if (protocolKey != null) {
+      protocol = AiWireProtocol.values.where((AiWireProtocol p) => p.storageKey == protocolKey).firstOrNull;
+      if (protocol == null) throw FormatException('ai.protocol "$protocolKey" is not a known protocol');
+    }
+    final String? effort = text('reasoningEffort');
+    if (effort != null && !AiReasoningEffort.values.any((AiReasoningEffort e) => e.storageKey == effort)) {
+      throw FormatException('ai.reasoningEffort "$effort" is not one of none / low / medium / high');
+    }
+    final ServerAiConfig base = current ?? ServerAiConfig(preset: preset);
+    final ServerAiConfig next = base.copyWith(
+      preset: preset,
+      protocol: protocol,
+      clearProtocol: protocol == null && m.containsKey('protocol'),
+      baseUrl: text('baseUrl'),
+      clearBaseUrl: text('baseUrl') == null && m.containsKey('baseUrl'),
+      model: text('model'),
+      clearModel: text('model') == null && m.containsKey('model'),
+      apiKey: text('apiKey'),
+      reasoningEffort: effort == null ? null : AiReasoningEffort.fromStorageKey(effort),
+      allowInsecureHttp: flag('allowInsecureHttp'),
+      webKnowledge: flag('webKnowledge'),
+    );
+    // 只缺 key / 模型算「没配全」，照存；地址 / 预设层面的错误直接拒。
+    final String? invalid = next.invalidReason();
+    if (invalid != null) throw FormatException('ai: $invalid');
+    return (ai: next, clear: false);
   }
 
   /// `publicUrls` / `p2pRelays`：缺省 = 不改；否则必须是字符串数组，逐条去空白、

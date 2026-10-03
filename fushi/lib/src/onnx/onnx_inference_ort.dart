@@ -17,6 +17,8 @@ import 'package:flutter/services.dart';
 // `kOnnxLogName` 两边都有：本仓这份是 'hibiki.onnx' 日志通道，明确 hide 掉
 // 包里那份，别靠「本地声明遮蔽 import」这条隐式规则。
 import 'package:fushi_asr_core/asr_core.dart' hide kOnnxLogName;
+import 'package:fushi_engine/ocr/ocr_tensor_handles.dart'
+    show OcrHandleRunResult, OcrHandleSession, OcrTensorHandle;
 /// 共享层默认的 `dart:developer` 日志通道名。子系统可经 [logName] 参数换成自己
 /// 的通道（OCR 用 `hibiki.ocr`），日志读者按通道过滤即可分清是谁在建会话。
 ///
@@ -169,7 +171,7 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
   }
 }
 
-class _OrtOnnxSession implements OnnxSession {
+class _OrtOnnxSession implements OnnxSession, OcrHandleSession {
   _OrtOnnxSession(this._session, this._resolveInputs);
 
   final OrtSession _session;
@@ -200,24 +202,7 @@ class _OrtOnnxSession implements OnnxSession {
       final Map<String, OnnxTensor> resolvedInputs =
           resolve == null ? inputs : resolve(inputs, _session.inputNames);
       for (final MapEntry<String, OnnxTensor> entry in resolvedInputs.entries) {
-        final OnnxTensor tensor = entry.value;
-        switch (tensor.type) {
-          case OnnxTensorType.float32:
-            ortInputs[entry.key] = await OrtValue.fromList(
-              tensor.floatData!,
-              tensor.shape,
-            );
-          case OnnxTensorType.int64:
-            ortInputs[entry.key] = await OrtValue.fromList(
-              tensor.intData!,
-              tensor.shape,
-            );
-          case OnnxTensorType.int32:
-            ortInputs[entry.key] = await OrtValue.fromList(
-              tensor.int32Data!,
-              tensor.shape,
-            );
-        }
+        ortInputs[entry.key] = await _toOrtValue(entry.value);
       }
 
       if (trace != null) tIn = trace.elapsedMilliseconds;
@@ -248,6 +233,79 @@ class _OrtOnnxSession implements OnnxSession {
           'dispose=${total - tIn - tRun - tOut}ms total=${total}ms '
           'outElems=$elems inputs=${ortInputs.keys.join(',')}',
         );
+      }
+    }
+  }
+
+  static Future<OrtValue> _toOrtValue(OnnxTensor tensor) {
+    switch (tensor.type) {
+      case OnnxTensorType.float32:
+        return OrtValue.fromList(tensor.floatData!, tensor.shape);
+      case OnnxTensorType.int64:
+        return OrtValue.fromList(tensor.intData!, tensor.shape);
+      case OnnxTensorType.int32:
+        return OrtValue.fromList(tensor.int32Data!, tensor.shape);
+    }
+  }
+
+  /// 句柄式运行（[OcrHandleSession]）：插件的 [OrtValue] 本就只是原生侧 id，
+  /// 输出留在原生侧、下一步原样当输入，只有 [fetch] 里的输出读回 Dart。
+  /// manga-ocr KV cache 解码靠它把每步过通道的数据从几 MB 降到一行 logits。
+  @override
+  Future<OcrTensorHandle> upload(OnnxTensor tensor) async =>
+      _OrtTensorHandle(await _toOrtValue(tensor));
+
+  @override
+  Future<OcrHandleRunResult> runWithHandles({
+    Map<String, OnnxTensor> tensors = const <String, OnnxTensor>{},
+    Map<String, OcrTensorHandle> handles = const <String, OcrTensorHandle>{},
+    required Set<String> fetch,
+  }) async {
+    final Map<String, OrtValue> uploaded = <String, OrtValue>{};
+    try {
+      final OnnxSessionInputResolver? resolve = _resolveInputs;
+      final Map<String, OnnxTensor> resolvedTensors =
+          resolve == null || tensors.isEmpty || handles.isNotEmpty
+              ? tensors
+              : resolve(tensors, _session.inputNames);
+      for (final MapEntry<String, OnnxTensor> entry
+          in resolvedTensors.entries) {
+        uploaded[entry.key] = await _toOrtValue(entry.value);
+      }
+      final Map<String, OrtValue> inputs = <String, OrtValue>{...uploaded};
+      for (final MapEntry<String, OcrTensorHandle> entry in handles.entries) {
+        final OcrTensorHandle handle = entry.value;
+        if (handle is! _OrtTensorHandle) {
+          throw ArgumentError.value(
+            handle,
+            entry.key,
+            'handle belongs to a different inference backend',
+          );
+        }
+        inputs[entry.key] = handle.value;
+      }
+      final Map<String, OrtValue> outputs = await _session.run(inputs);
+      final Map<String, OnnxTensor> fetched = <String, OnnxTensor>{};
+      final Map<String, OcrTensorHandle> kept = <String, OcrTensorHandle>{};
+      try {
+        for (final MapEntry<String, OrtValue> entry in outputs.entries) {
+          if (fetch.contains(entry.key)) {
+            fetched[entry.key] = await _readAsFloat32(entry.key, entry.value);
+            await entry.value.dispose();
+          } else {
+            kept[entry.key] = _OrtTensorHandle(entry.value);
+          }
+        }
+      } catch (_) {
+        for (final OrtValue value in outputs.values) {
+          await value.dispose();
+        }
+        rethrow;
+      }
+      return OcrHandleRunResult(fetched: fetched, kept: kept);
+    } finally {
+      for (final OrtValue value in uploaded.values) {
+        await value.dispose();
       }
     }
   }
@@ -293,4 +351,22 @@ class _OrtOnnxSession implements OnnxSession {
 
   @override
   Future<void> close() => _session.close();
+}
+
+/// 插件原生侧的一份张量（[OrtValue] 只是原生 id）。
+class _OrtTensorHandle implements OcrTensorHandle {
+  _OrtTensorHandle(this.value);
+
+  final OrtValue value;
+  bool _disposed = false;
+
+  @override
+  List<int> get shape => List<int>.from(value.shape);
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await value.dispose();
+  }
 }

@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
@@ -54,6 +55,8 @@ Future<MangaOcrRunningJob?> runAutoMangaOcrForDownloadedChapter({
     );
     return null;
   }
+  // 读者正读着这章时阅读器会接回任务，经它让识别跟着读者翻页走。
+  final MangaOcrPageFocus focus = MangaOcrPageFocus();
   final MangaOcrJobSpec spec = MangaOcrJobSpec(
     engine: engine,
     engines: engines,
@@ -63,12 +66,15 @@ Future<MangaOcrRunningJob?> runAutoMangaOcrForDownloadedChapter({
         ? chapter.title
         : '${chapter.title} ${chapter.chapterTitle}',
     remoteTarget: availability.remoteTarget,
+    focus: focus,
   );
   final MangaOcrBackgroundJob job = MangaOcrBackgroundJob(
     bookKey: chapter.bookKey,
     managedDirectory: chapter.chapterDirectory.path,
     engine: engine,
     events: buildEvents(spec),
+    focus: focus,
+    follower: mangaOcrJobFollower(spec),
   );
   return registry.enqueue(job: job, mangaJsonPath: chapter.mangaJsonPath);
 }

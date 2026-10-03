@@ -51,9 +51,11 @@ DELETE  /api/assistant/sessions/<id>
 |---|---|---|
 | 引擎 | `sync/assistant/host_assistant.dart` | `HostAssistantProvider` / `HostAssistantSession` 接口 + `HostAssistantSessions` 会话表 |
 | 引擎 | `sync/assistant/host_assistant_routes.dart` | shelf 路由 |
-| app 视图 | `media/video/acquisition/video_acquisition_view.dart` | `VideoAcquisitionView`（与语言无关、JSON 往返）+ `VideoAcquisitionSession` 接口 + `projectVideoAcquisitionView` |
-| app 装配 | `media/video/acquisition/app_video_acquisition_assembly.dart` | 从首页抽出的端口装配，首页入口与 host 共用一份；`createAppAssistantHost(AppModel)` |
-| host | `sync/app_assistant_host.dart` | 能力 / 前置短码 + 把 `VideoAcquisitionService` 包成引擎会话 |
+| 引擎视图 | `fushi_engine/lib/media/video/acquisition/video_acquisition_view.dart` | `VideoAcquisitionView`（与语言无关、JSON 往返）+ `VideoAcquisitionSession` 接口 + `projectVideoAcquisitionView` |
+| 引擎装配 | `fushi_engine/lib/media/video/acquisition/host_video_acquisition_assembly.dart` | 与宿主无关的端口装配（`createHostVideoAcquisitionService`），app 与无头服务端共用 |
+| app 装配 | `media/video/acquisition/app_video_acquisition_assembly.dart` | 接本机偏好 / 后端；首页入口与 host 共用；`createVideoAcquisitionAssistantHost(AppModel)` |
+| host | `fushi_engine/lib/sync/assistant/video_acquisition_assistant_host.dart` | 能力 / 前置短码 + 把 `VideoAcquisitionService` 包成引擎会话（app 与服务端共用） |
+| 服务端 | `fushi_server/lib/src/assistant_host.dart` | 服务端装配：AI 读 yaml `ai:` 段，发现 / 资源 / 管线用服务端自己的（2026-09-30） |
 | 手机 | `sync/interconnect_assistant_client.dart` | 探能力、开会话、长轮询、发动作（https 钉扎同下载客户端） |
 | 手机 | `media/video/acquisition/remote_video_acquisition_session.dart` | 长轮询循环；断线时在记录里**固定位置**插一条「连接中断」并放开输入 |
 
@@ -71,7 +73,9 @@ DELETE  /api/assistant/sessions/<id>
 
 ## 验证
 
-- `test/sync/app_assistant_host_test.dart`：真 `FushiSyncServer` + `AppAssistantHost`（真
+- `fushi_server/test/assistant_host_test.dart`：服务端没配 AI → `no_provider` 且假 AI 端点零请求；
+  配了 → 一句话打到服务端配置的假 AI 端点 → 确认 → `video_download_jobs` 真有行。
+- `test/sync/app_assistant_host_test.dart`：真 `FushiSyncServer` + `VideoAcquisitionAssistantHost`（真
   状态机、假外部端口）+ 真 `InterconnectAssistantClient` / `RemoteVideoAcquisitionSession`：
   能力位三态、409 短码、一句话 → 电脑端搜索 → 手机收到摘要问句 → 点「就这个」→ 入队发生在
   电脑的端口上、退出页面 host 释放发现服务；电脑停机 → 连接中断提示只插一次；会话表的非法

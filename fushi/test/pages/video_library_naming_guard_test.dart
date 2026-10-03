@@ -15,7 +15,7 @@ void main() {
     // 的生产路径是来源库扫描后的归组协调器。断言随之重指，而不是删掉——不变式
     // 「多集合集名必须是系列名而不是某一集的文件名」依然要守。
     final String src =
-        read('lib/src/media/video/video_folder_group_coordinator.dart');
+        read('../packages/fushi_engine/lib/media/video/video_folder_group_coordinator.dart');
     // 断言标的（跨行，故用正则）：
     //   createMediaCollection(
     //     group.series,

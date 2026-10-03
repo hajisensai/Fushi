@@ -309,6 +309,46 @@ void main() {
       }
     });
 
+    test(
+        'BUG-2799：页顶注音预留的正负两半都必须 !important，书样式压不掉其中一半',
+        () async {
+      // 阅读器样式表注在书之后，但书里更高权重的 `.main p { padding: 0 }` 会压掉
+      // 不带 !important 的块首预留，负的 p::after 却照常生效 → 每个段落边界净少 R
+      // （用户 iOS 竖排截图：段间列距只剩段内的 0.80）。两半必须同进同退。
+      final RegExp reserveBlock =
+          RegExp(r'(?:^|[\s,}])p\s*\{([^}]*padding-block-start[^}]*)\}',
+              multiLine: true);
+      final RegExp cancelBlock = RegExp(r'p::after\s*\{([^}]*)\}');
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          debugDefaultTargetPlatformOverride = p;
+          try {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: wm, viewMode: 'paginated'));
+            final String reserve = reserveBlock.firstMatch(css)!.group(1)!;
+            final String cancel = cancelBlock.firstMatch(css)!.group(1)!;
+            expect(reserve, matches(r'padding-block-start:[^;]*!important'),
+                reason: '$p/$wm：块首预留可被书的高权重 reset 压掉，'
+                    '负边距留下来就让每个段落边界少 R');
+            for (final String prop in <String>[
+              'content',
+              'display',
+              'margin-block-end',
+            ]) {
+              expect(cancel, matches('$prop:[^;]*!important'),
+                  reason: '$p/$wm：p::after 的 $prop 被书改掉会让抵消失效，'
+                      '段落多出 R');
+            }
+          } finally {
+            debugDefaultTargetPlatformOverride = null;
+          }
+        }
+      }
+    });
+
     test('文档注释里仍可提及属性名(仅剥注释后才断言，避免误判)', () async {
       // 完整 CSS(含注释)里允许出现属性名(记录决策的注释)；只有剥掉注释后才不能有声明。
       final String rawCss =

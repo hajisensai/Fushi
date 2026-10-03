@@ -1,0 +1,15 @@
+## BUG-2824 · 大库 Anki 媒体去重扫描阶段超时（每个副本一次全库 findNotes + 统一 10 秒超时）
+- **报告**：2026-10-01（用户：约 8400 张笔记、释义字段十万字级的库，「Anki 媒体存储优化」点「立即去重」约 10 秒报 `TimeoutException after 0:00:10.000000: Future not completed`，干跑扫描都完成不了）
+- **真实性**：✅ 真 bug。三处叠加：
+  - `packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart` `_planDedupChunk`：每个副本发一次 `findNotes "<文件名>"`——Anki 全库文本检索（LIKE 扫描全部字段正文），用户实测单次约 4.4 秒；删除前复核（`runMediaDedup` 内 `findNotesByQueries`）又对每个副本扫一遍。
+  - 每 `kAnkiMediaDedupBatchSize = 50` 个副本打成一个 `multi`，一次请求 ≈ 50~100 次全库扫描（实测 10 次一包约 26 秒）。
+  - `ankiconnect_service.dart` `_post` 对所有请求统一 `.timeout(_timeout)`，默认 10 秒，集合级长任务必超时；超时后那批检索仍在 Anki 主线程上跑几分钟。1.8 万个副本 = 3.6 万次全库扫描，就算不超时也要跑一整天。
+  - 扫描阶段只读，失败时没有改动任何笔记或文件。
+- **[x] ① 已修复** — 本分支 `worktree-fix-anki-dedup-local-ref-index`：
+  - 规划改查**本地对照表**：一次 `findNotes deck:*` + 按 `kAnkiMediaDedupIndexBatchSize = 100` 分批 `notesInfo` 读回字段，用 `MediaNameMatcher`（`anki_media_dedup.dart`，大小写不敏感朴素子串 = 与 Anki 文本检索同口径；按扩展名锚定 + 长度集合回切查表，代价与文件名个数无关）建「副本 → 引用它的笔记」，只留 note id 不留正文。读不到字段却仍存在的笔记（`nid:` 复查）让整轮在写任何东西之前中止。
+  - 复核每批只发**一条**检索 `(edited:N OR nid:<本批改写的笔记>) ("a" OR "b" …)`（`mediaDedupRecheckQuery`）：对照表是本轮快照，之后能变的只有本轮期间改过的笔记与本批写过的笔记；命中的少量笔记再拉字段本地判定是哪个副本。Anki 拒绝该检索 → 整批不删。
+  - 去重整条链路改用 `_getLongTaskService()`（单请求预算 `AnkiConnectService.kLongTaskTimeout` = 5 分钟）；制卡 / 查重等交互请求仍是 10 秒。
+  - 命中笔记的 `notesInfo` 也分批（一个被几千条笔记引用的外字图标不再塞进单次响应）。
+  - 新进度阶段 `AnkiMediaDedupStage.indexing` + 文案 `anki_dedup_progress_indexing`。
+- **[x] ② 已加自动化测试** — `packages/fushi_anki/test/anki_media_dedup_test.dart`（`MediaNameMatcher` 语义 / 与朴素逐个 contains 的随机对拍 / 2 万文件名 × 大字段线性代价 / 复核检索式与 edited 天数）、`anki_media_dedup_batching_test.dart`（BUG-2824 组：全库检索只允许一条 `deck:*`、其余必须带 `edited:` 范围；大小写口径；建表后新出现的引用被复核挡下；复核被拒整批不删；读不出字段的在库笔记整轮中止零写入；检索后被删的笔记照常进行；去重走长任务超时的源码守卫）、`anki_media_dedup_orchestration_test.dart`（进度含 indexing 阶段）；假 Anki 检索求值器 `test/support/fake_anki_search.dart`。
+- **备注**：仍未解决的规模风险——一个副本被几千条十万字级笔记引用时，计划里为 journal 保存的「改写前原值」会在内存里放下这些字段正文（存量设计，本次未改）。真机大库复测未做（本机无该用户的库）。

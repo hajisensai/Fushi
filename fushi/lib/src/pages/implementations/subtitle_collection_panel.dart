@@ -257,7 +257,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   Future<void> _loadCanonicalIdentity() async {
     try {
       final VideoMetadataWorkRow? work = await widget.database
-          .getVideoMetadataWorkByCollection(widget.collection.id);
+          .resolveVideoMetadataWorkForCollection(widget.collection.id);
       if (!mounted) return;
       if (work != null) {
         final List<VideoMetadataProviderIdentityRow> identities = await widget

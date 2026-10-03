@@ -1,4 +1,5 @@
-// 统计中心「排行」tab（设计 docs/specs/2026-09-28-leaderboard-accounts.md 第 5 节）。
+// 排行榜页（设计 docs/specs/2026-09-28-leaderboard-accounts.md 第 5 节）。首页统计中心
+// 入口旁单独一颗按钮进来（2026-10-01 从统计中心的第 5 个 tab 抽出）。
 //
 // 未开启：同意说明卡（会公开什么 / 不会上传什么）+ 注册 / 登录 / 恢复码导入入口；
 // 未开启时本页不发任何网络请求。
@@ -26,7 +27,19 @@ import 'package:fushi/utils.dart';
 /// 榜单每页行数。
 const int kLeaderboardRankPageSize = 50;
 
-/// 「排行」tab 的根：按账户状态在说明卡与榜单之间切换。
+/// 排行榜独立页：页头 + [LeaderboardTab]。排行榜自带周 / 月 / 总窗口，与统计中心
+/// 的时间范围选择无关，所以不再挂在统计中心里当 tab。
+class LeaderboardPage extends StatelessWidget {
+  const LeaderboardPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => FushiPageScaffold(
+    title: t.leaderboard_title,
+    body: const LeaderboardTab(),
+  );
+}
+
+/// 排行榜页的主体：按账户状态在说明卡与榜单之间切换。
 class LeaderboardTab extends ConsumerStatefulWidget {
   const LeaderboardTab({super.key});
 
@@ -476,7 +489,12 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                   key: const ValueKey<String>('leaderboard-header-share'),
                   onPressed: self == null
                       ? null
-                      : () => unawaited(showLeaderboardShareSheet(context)),
+                      : () => unawaited(
+                          showLeaderboardShareSheet(
+                            context,
+                            initialWindow: _window,
+                          ),
+                        ),
                   icon: const Icon(Icons.ios_share),
                   label: Text(t.leaderboard_header_share),
                 ),

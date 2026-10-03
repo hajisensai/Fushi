@@ -48,6 +48,18 @@ abstract class EnginePaths {
   /// 有声书音频持久根 `<documents>/audiobooks`。
   Future<Directory> audiobooksDirectory() =>
       documentsSubdirectory('audiobooks');
+
+  /// 系统文件选择器把用户选中的文件**拷进** app 沙盒时落盘的目录（BUG-2863）。
+  ///
+  /// 这些目录里的媒体文件不是用户的原件，而是 app 为了能读到它才复制出来的整份
+  /// 副本：iOS 的 file_picker 以 `UIDocumentPickerModeImport` 打开，选中的视频被
+  /// 搬进容器 `tmp/`（`NSTemporaryDirectory()`），库里 `videoPath` 存的就是这份
+  /// 副本。删库条目时它们与封面、字幕副本一样属于 app 自有资产，必须回收——否则
+  /// 「删了视频还占储存」。
+  ///
+  /// 默认空：桌面 / Android 的选择器给的是用户真实路径，无头服务端不经选择器。
+  Future<List<Directory>> pickerImportCopyDirectories() async =>
+      const <Directory>[];
 }
 
 /// 固定根目录实现（服务端 / 测试用）。

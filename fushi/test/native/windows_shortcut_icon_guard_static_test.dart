@@ -78,6 +78,20 @@ void main() {
     // 改完通知 shell 重读图标。
     expect(src.contains('SHChangeNotify('), isTrue,
         reason: '改完 .lnk 必须 SHChangeNotify 让 shell 重读图标');
+
+    // 冷启动每次都会重放同步：图标已是目标值时不 Save、不通知；全局
+    // SHCNE_ASSOCCHANGED 广播只在真改写过才发（否则每次启动都让 Explorer 重建图标）。
+    final int getIconIdx = src.indexOf('shell_link->GetIconLocation(');
+    final int setIconIdx = src.indexOf('shell_link->SetIconLocation(');
+    expect(getIconIdx >= 0 && setIconIdx > getIconIdx, isTrue,
+        reason: '改写前必须先读当前 IconLocation，已是目标值就跳过 Save');
+    expect(src.contains('return ShortcutIconResult::kUnchanged;'), isTrue,
+        reason: '图标未变必须走 kUnchanged 分支（不 Save、不通知）');
+    expect(
+        RegExp(r'if \(rewritten\) \{\s*SHChangeNotify\(SHCNE_ASSOCCHANGED')
+            .hasMatch(src),
+        isTrue,
+        reason: '全局 SHCNE_ASSOCCHANGED 只能在确实改写了 .lnk 时发');
   });
 
   test('CMakeLists 链接 ole32 + shell32（IShellLink/KnownFolder 依赖）', () {
@@ -129,10 +143,13 @@ void main() {
     final RegExp restoreAndSync = RegExp(
       r'final bool applied\s*=\s*await WindowCaptionChannel\.setWindowIcon\(iconPath\);'
       r'[\s\S]*?if \(applied\) \{'
-      r'[\s\S]*?final Uint8List iconBytes = await File\(iconPath\)\.readAsBytes\(\);'
+      r'\s*(?://[^\n]*\n\s*)*unawaited\(\(\) async \{'
+      r'[\s\S]*?final Uint8List iconBytes\s*=\s*await File\(iconPath\)\.readAsBytes\(\);'
       r'[\s\S]*?await syncWindowsShortcutIcons\(iconBytes\);',
     );
     expect(restoreAndSync.hasMatch(src), isTrue,
-        reason: '冷启动 setWindowIcon 成功后必须用同一图标文件字节同步 .lnk');
+        reason: '冷启动 setWindowIcon 成功后必须用同一图标文件字节同步 .lnk，'
+            '且以 unawaited 后台执行——它在 runApp 之前，await 会让每次启动'
+            '（含更新后重启）都多等一轮编码 + 原生改写 + shell 通知');
   });
 }

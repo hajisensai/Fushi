@@ -150,6 +150,9 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
       inner.readNoteTypeDefinition(modelName);
 
   @override
+  Future<bool?> rendersSynchronizedClip() => inner.rendersSynchronizedClip();
+
+  @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) =>
       inner.updateNoteTypeStyling(modelName, css);
 

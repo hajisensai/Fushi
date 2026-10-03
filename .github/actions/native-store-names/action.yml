@@ -1,0 +1,47 @@
+name: Native artifact store names
+description: >-
+  Computes the `.github/actions/native-artifact-store` names for one platform's native
+  build outputs (names.sh next to this file holds the whole recipe). Every producer and
+  every consumer of the store calls this action, so a PR gate and the develop-side
+  producer cannot compute a name two different ways. Outputs that do not apply to the
+  requested platform are empty.
+inputs:
+  platform:
+    description: windows | macos | ios | linux | android
+    required: true
+outputs:
+  torrent:
+    description: libtorrent bridge (windows DLLs / macOS universal static dylib / linux static .so)
+    value: ${{ steps.names.outputs.torrent }}
+  p2p:
+    description: fushi_p2p (windows DLL / macOS universal dylib / iOS device staticlib / linux .so)
+    value: ${{ steps.names.outputs.p2p }}
+  mihon:
+    description: Mihon desktop runtime (windows)
+    value: ${{ steps.names.outputs.mihon }}
+  galgame:
+    description: galgame helper archives (windows)
+    value: ${{ steps.names.outputs.galgame }}
+  anki_sync_release:
+    description: fushi-anki-sync release binary (windows exe / macOS universal)
+    value: ${{ steps.names.outputs.anki_sync_release }}
+  anki_sync_debug:
+    description: fushi-anki-sync debug binary (PR gates)
+    value: ${{ steps.names.outputs.anki_sync_debug }}
+  p2p_rust:
+    description: Rust toolchain pin for fushi_p2p; the `Set up Rust (fushi_p2p...)` steps read it from here.
+    value: ${{ steps.names.outputs.p2p_rust }}
+  cargo_ndk:
+    description: cargo-ndk pin for the Android fushi_p2p build (release.yml reads it from here).
+    value: ${{ steps.names.outputs.cargo_ndk }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve native artifact store names (${{ inputs.platform }})
+      id: names
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+      # Workspace-relative on purpose (the default working directory): $GITHUB_ACTION_PATH
+      # is a Windows path on windows runners, and this is a local action anyway.
+      run: bash .github/actions/native-store-names/names.sh "$PLATFORM"

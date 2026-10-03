@@ -81,12 +81,13 @@ void main() {
 
   group('source guards: AppModel wires audio params into host service (T3.4)',
       () {
-    test('AppModel 传 localAudioEntries: 到 LocalLibraryHostService', () {
+    test('AppModel 传 localAudioEntriesProvider: 到 LocalLibraryHostService', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src.contains('localAudioEntries:'), isTrue,
-          reason:
-              'AppModel 必须把 localAudioEntries 传给 LocalLibraryHostService');
+      // BUG-2815：必须是现读的 provider，不是互联启动时的快照。
+      expect(src.contains('localAudioEntriesProvider: () => localAudioDbs'),
+          isTrue,
+          reason: 'AppModel 必须把现读的本地音频清单传给 LocalLibraryHostService');
     });
 
     test('AppModel 传 audioDatabaseRoot: 到 LocalLibraryHostService', () {

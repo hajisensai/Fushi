@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart' show t;

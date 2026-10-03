@@ -3,7 +3,7 @@
 - **真实性**：✅ 真 bug。匹配当前 Flutter engine 的私有 PDB 与源码行表后，异常线程定位到 `flutter::FlutterPlatformNodeDelegate::ChildAtIndex+0x3f`，`shell/platform/common/flutter_platform_node_delegate.cc:90`：直接解引用 `GetUnignoredChildAtIndex(index)` 的空返回值。现场 `rax=0`，`mov edx,[rax+48h]` 读取 `0x48` 触发访问冲突。空解引用已确认，导致子节点枚举与 count 不一致的上游生命周期机制尚未确认。
 - **[ ] ① 未修复** — 只完成只读诊断与缺陷登记；未升级 SDK、重建或替换 Flutter DLL、修改应用/游戏代码、关闭无障碍或用 SEH 吞异常。需要先完成下述 engine 契约回归，再验证有界空返回处理及真实树更新顺序。
 - **[ ] ② 未加自动化测试** — 原始转储可重复符号化，但尚无确定性 UI 操作复现或 engine 回归测试。文档索引校验不等于崩溃回归通过。
-- **备注**：本问题与 [BUG-2231](BUG-2231-windows-uia-flutter-host-crash.md) 属于同一 Windows 可访问性域，但崩点与失效对象不同，不能合并为同一已知根因。
+- **备注**：本问题与 [BUG-2231](BUG-2231-windows-uia-flutter-host-crash.md) 属于同一 Windows 可访问性域，但崩点与失效对象不同，不能合并为同一已知根因。2026-10-01 补：[BUG-2839](BUG-2839-windows-a11y-orphan-semantics-crash.md) 确认了「子节点枚举与 count 不一致」的一个上游机制——孤儿语义节点使 `AXTree::Unserialize` 半应用失败、bridge 不被通知而失步——并以 SDK 框架补丁修复；本条崩点符合该模型，但未单独复现，暂不勾选。
 
 ### 事件与二进制身份
 

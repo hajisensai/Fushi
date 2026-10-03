@@ -31,8 +31,11 @@ const String kMangaPanelModelTrainingDataNotice =
     'of the dataset to be clearly indicated.';
 
 /// 由 [verify_onnx_contract.py] 对不可变 release asset 校验后回填。
+// 可空是契约：模型重发布、校验脚本回填前为 null，消费方据此降级（进度条不定长等）。
+// ignore: unnecessary_nullable_for_final_variable_declarations
 const String? kMangaPanelModelSha256 =
     '6a2143c6130c358e390a8d425c51b22589fd43d4647485e2c011a553b73aaaed';
+// ignore: unnecessary_nullable_for_final_variable_declarations
 const int? kMangaPanelModelBytes = 9779394;
 
 class MangaPanelModelManifest {

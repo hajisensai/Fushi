@@ -24,15 +24,15 @@
 // 是这一段瞬间 EOF、画面出不来。
 //
 // CLPI 的零点仍然要读，但只用在一个地方：判断这条 PlayItem 是不是把整段从头用到尾
-// （是就走形态 1）。读不到时退化成「整段照播」——多播一点是可接受的降级，播到别处不是。
+// （是就走形态 1）。读不到时仍按 MPLS 的 IN/OUT 走 EDL，保持播放、字幕和制卡同轴。
 
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-import 'bluray_clip_info.dart';
-import 'bluray_playlist.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_clip_info.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 
 /// 一条 MPLS 解析出的可播放源。
 class BluraySource {
@@ -42,6 +42,7 @@ class BluraySource {
     required this.primaryStreamPath,
     required this.duration,
     required this.chapters,
+    this.streamPaths = const <String>[],
   });
 
   /// 交给播放内核的东西：`isPlainFile` 时是本地文件绝对路径，否则是 `edl://…`。
@@ -61,6 +62,9 @@ class BluraySource {
 
   /// 章节起点，相对播放列表时间轴。
   final List<Duration> chapters;
+
+  /// Physical clips used by this title, for command-scoped input resolution.
+  final List<String> streamPaths;
 }
 
 /// [path] 是不是一条蓝光播放列表。
@@ -130,7 +134,7 @@ Future<Map<String, BlurayClipTimebase>> _readTimebases(
 
 /// 纯函数版：给定播放列表与各段零点，算出该交给内核什么。
 ///
-/// [timebases] 缺项表示该段零点未知，这一段按整段照播处理。
+/// [timebases] 缺项表示不能证明整段覆盖，仍按播放列表的绝对 IN/OUT 截取。
 BluraySource? buildBluraySource(
   BlurayPlaylist playlist, {
   required String discRootPath,
@@ -150,13 +154,14 @@ BluraySource? buildBluraySource(
   if (playlist.clips.length == 1) {
     final BlurayClipRef clip = playlist.clips.first;
     final BlurayClipTimebase? timebase = timebases[clip.clipId];
-    if (timebase == null || _coversWholeClip(clip, timebase)) {
+    if (timebase != null && _coversWholeClip(clip, timebase)) {
       return BluraySource(
         uri: primary,
         isPlainFile: true,
         primaryStreamPath: primary,
         duration: playlist.duration,
         chapters: chapters,
+        streamPaths: <String>[primary],
       );
     }
   }
@@ -184,6 +189,10 @@ BluraySource? buildBluraySource(
     primaryStreamPath: primary,
     duration: playlist.duration,
     chapters: chapters,
+    streamPaths: playlist.clips
+        .map((BlurayClipRef clip) => streamPath(clip.clipId))
+        .toSet()
+        .toList(growable: false),
   );
 }
 

@@ -20,6 +20,8 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart'
     show GoogleLensPageCache;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
+    show MangaOcrPageScheduler;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_page_tiling.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -37,11 +39,20 @@ String systemOcrEngineSignature(String language) => 'system_ocr_v2_$language';
 /// 系统 OCR 的整卷 runner。接口与 Lens 那条对齐，因此能直接接进
 /// `manga_ocr_job_stream.dart` 的引擎分发。
 abstract interface class SystemOcrMangaRunner {
+  /// [focus]：运行中跟着读者当前页改道（[MangaOcrPageScheduler]）。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
     int startPage,
     bool onlyMissing,
+    required String language,
+    MangaOcrPageFocus? focus,
+  });
+
+  /// 识别一张已取到的页图（在线直读章的逐页识别用；不读写任何缓存）。
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
     required String language,
   });
 
@@ -65,6 +76,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     int startPage = 0,
     bool onlyMissing = true,
     required String language,
+    MangaOcrPageFocus? focus,
   }) {
     late final StreamController<MangaOcrVolumeEvent> controller;
     bool cancelled = false;
@@ -77,12 +89,14 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
               startPage: startPage,
               onlyMissing: onlyMissing,
               language: language,
+              focus: focus,
               isCancelled: () => cancelled || controller.isClosed,
-              onProgress: (int done, int total) {
+              onProgress: (int done, int total, int pageIndex) {
                 if (!controller.isClosed) {
                   controller.add(MangaOcrVolumeEvent.page(
                     pagesDone: done,
                     pagesTotal: total,
+                    pageIndex: pageIndex,
                   ));
                 }
               },
@@ -116,8 +130,9 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     required int startPage,
     required bool onlyMissing,
     required String language,
+    required MangaOcrPageFocus? focus,
     required bool Function() isCancelled,
-    required void Function(int done, int total) onProgress,
+    required void Function(int done, int total, int pageIndex) onProgress,
   }) async {
     final List<MangaOcrPageFile> pages =
         enumerateMangaPages(Directory(imageDirPath));
@@ -135,16 +150,17 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     await cache.writeManifest(pages);
 
     // 当前页优先，扫到末页后绕回开头补齐。用户点的那一页最先出结果——这条
-    // 顺序正是「点一下就查词」能成立的前提。
-    final int start = startPage.clamp(0, pages.length - 1);
-    final List<int> order = <int>[
-      for (int index = start; index < pages.length; index++) index,
-      for (int index = 0; index < start; index++) index,
-    ];
+    // 顺序正是「点一下就查词」能成立的前提；读者翻页后跟着读者改道（[focus]）。
+    final MangaOcrPageScheduler scheduler =
+        MangaOcrPageScheduler(pages.length, startPage);
 
     final Map<int, MokuroImage> results = <int, MokuroImage>{};
     int done = 0;
-    for (final int pageIndex in order) {
+    while (true) {
+      final int? focused = focus?.take();
+      if (focused != null) scheduler.focus(focused);
+      final int? pageIndex = scheduler.next();
+      if (pageIndex == null) break;
       if (isCancelled()) {
         break;
       }
@@ -164,7 +180,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       // 累计写入能到 GB 级。Lens 那条链同样只在最后写一次。
       await cache.write(pageIndex, page, image);
       done++;
-      onProgress(done, pages.length);
+      onProgress(done, pages.length, pageIndex);
     }
 
     return _writePayload(imageDirPath, pages, results, language);
@@ -173,8 +189,19 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
   Future<MokuroImage> _recognizePage(
     MangaOcrPageFile page,
     String language,
-  ) async {
-    final Uint8List bytes = await page.file.readAsBytes();
+  ) async =>
+      recognizePageBytes(
+        await page.file.readAsBytes(),
+        relativeUrl: page.relativeUrl,
+        language: language,
+      );
+
+  @override
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
+    required String language,
+  }) async {
     final List<OcrRect> tiles = planSystemOcrTiles(bytes);
     // 单页超时放在这里而不是各平台原生侧：一处约束胜过四份各写一遍的实现，
     // 而且原生侧加超时要处理「回调已经发过一次」的双重回复风险。卡住的那一页
@@ -188,7 +215,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       ],
     ).timeout(kSystemOcrPageTimeout);
     return buildSystemOcrPage(
-      page.relativeUrl,
+      relativeUrl,
       mergeSystemOcrTiles(result, tiles),
     );
   }

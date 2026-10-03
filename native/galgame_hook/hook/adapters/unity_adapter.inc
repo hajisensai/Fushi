@@ -101,8 +101,8 @@ using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
 NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
 fushi_voice_hook::UnityTextMeshReassembler<501>
     g_unity_text_mesh_reassembler;
-bool g_unity_sasasa_text_mesh_profile = false;
-bool g_unity_text_profile_initialized = false;
+// 旧 KEMCO 式逐字形 TextMesh 约定的行为判据（见 unity_text_profile.h）。读写都在 g_cs 内。
+fushi_voice_hook::UnityLegacyGlyphBatchDetector g_unity_glyph_batch_detector;
 alignas(8) volatile uint64_t g_unity_preview_generation = 0;
 
 int InvokeUnityInt(const void* method, void* instance) {
@@ -279,16 +279,15 @@ void PublishUnityText(uint64_t thread_id, void* text_component,
                       hook_code, fushi_voice_hook::kTextEventLine);
 }
 
-void RecordUnityTmpText(void* text_component, void* string_object,
-                        const char* hook_name, const wchar_t* hook_code,
-                        bool stable_across_components = false) {
-  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
-      g_il2cpp_string_length == nullptr) {
-    return;
-  }
-  const wchar_t* chars = g_il2cpp_string_chars(string_object);
-  const int source_length = g_il2cpp_string_length(string_object);
-  if (chars == nullptr || source_length <= 0) return;
+// 与脚本运行时无关的发布入口：IL2CPP（il2cpp_string_*）与 Mono（mono_string_*，
+// unity_mono_adapter.inc）各自把托管字符串解成 UTF-16 指针 + 长度后都走这里，所以两条
+// 路径的富文本剥离、UI 伪影门和线程身份口径完全一致。返回是否真的发布了一行。
+bool RecordUnityTextChars(void* text_component, const wchar_t* chars,
+                          int source_length, const char* hook_name,
+                          const wchar_t* hook_code,
+                          bool stable_across_components = false,
+                          uint64_t stable_identity_key = 0) {
+  if (chars == nullptr || source_length <= 0) return false;
 
   // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
   // 由 component 指针充当线程 id，让 UI 像 Luna 一样选择“正文 TextMeshPro 组件”。
@@ -314,21 +313,39 @@ void RecordUnityTmpText(void* text_component, void* string_object,
       if (c >= 0x3000) has_cjk = true;
     }
   }
-  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
+  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) {
+    return false;
+  }
   // Most Unity text components are independent UI fields, so their object
   // identity must remain part of the selectable thread. Naninovel recreates
   // its main RevealableText component when loading/switching scenes, though:
   // using that transient pointer as the thread id silently strands the user's
   // selection on the old scene. Keep the real component in event metadata,
   // but give known scene-stable dialogue sources an engine-level identity.
+  // A stable source may still carry a role key (Unity Mono per-glyph message
+  // framework: the body and the name plate are two objects of one class and
+  // must not share a lane) that survives the component being recreated.
   const uint64_t component_identity =
       stable_across_components
-          ? 0
+          ? stable_identity_key
           : reinterpret_cast<uint64_t>(text_component);
   const uint64_t thread_id = fushi_voice_hook::NativeTextThreadIdFrom(
       component_identity, hook_code, hook_name);
   PublishUnityText(thread_id, text_component, clean, length, true, hook_name,
                    hook_code);
+  return true;
+}
+
+void RecordUnityTmpText(void* text_component, void* string_object,
+                        const char* hook_name, const wchar_t* hook_code,
+                        bool stable_across_components = false) {
+  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  RecordUnityTextChars(text_component, g_il2cpp_string_chars(string_object),
+                       g_il2cpp_string_length(string_object), hook_name,
+                       hook_code, stable_across_components);
 }
 
 void FlushUnityTextMeshLine() {
@@ -344,14 +361,29 @@ void FlushUnityTextMeshLine() {
   g_unity_text_mesh_reassembler.Reset();
 }
 
+// 已锁存的逐字形调用：逐字追加到逐字形行并发布进行中的半句，U+3000 终止当前行。
+// 调用方持有 g_cs。
+void AppendUnityTextMeshGlyphs(const wchar_t* chars, int length) {
+  constexpr char kHookName[] = "Unity TextMesh line";
+  constexpr wchar_t kHookCode[] = L"UnityEngine.TextMesh.set_text(glyphs)";
+  const uint64_t thread_id =
+      fushi_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
+  for (int i = 0; chars != nullptr && i < length; ++i) {
+    const wchar_t c = chars[i];
+    if (g_unity_text_mesh_reassembler.ShouldTerminate(c, true)) {
+      FlushUnityTextMeshLine();
+      continue;
+    }
+    if (!g_unity_text_mesh_reassembler.Append(c)) continue;
+    PublishUnityText(thread_id, nullptr, g_unity_text_mesh_reassembler.text(),
+                     g_unity_text_mesh_reassembler.length(), false, kHookName,
+                     kHookCode);
+  }
+}
+
 void RecordUnityTextMesh(void* text_component, void* string_object) {
   if (!g_capture_enabled || g_il2cpp_string_chars == nullptr ||
       g_il2cpp_string_length == nullptr) {
-    return;
-  }
-  if (!g_unity_sasasa_text_mesh_profile) {
-    RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
-                       L"UnityEngine.TextMesh.set_text");
     return;
   }
   const wchar_t* chars =
@@ -363,39 +395,58 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
     if (g_cs_ready) LeaveCriticalSection(&g_cs);
     return;
   }
-  for (int i = 0; chars != nullptr && i < source_length; ++i) {
-    const wchar_t c = chars[i];
-    if (g_unity_text_mesh_reassembler.ShouldTerminate(c, true)) {
+  // 路由规则（判据、撤销、判定期不发布单字形）见 unity_text_profile.h。
+  using Route = fushi_voice_hook::UnityLegacyGlyphBatchDetector::Route;
+  const Route route =
+      g_unity_glyph_batch_detector.Observe(chars, source_length);
+  bool publish_component_text = false;
+  switch (route) {
+    case Route::kHoldGlyph:
+      // 判定期的单字形只进影子缓冲：签名补全时整句发布，断开时丢弃。
+      g_unity_text_mesh_reassembler.Append(chars[0]);
+      break;
+    case Route::kLatchedFlushLine:
+    case Route::kFlushLine:
       FlushUnityTextMeshLine();
-      continue;
-    }
-    if (!g_unity_text_mesh_reassembler.Append(c)) continue;
-    constexpr char kHookName[] = "Unity TextMesh line";
-    constexpr wchar_t kHookCode[] =
-        L"UnityEngine.TextMesh.set_text(glyphs)";
-    const uint64_t thread_id =
-        fushi_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
-    PublishUnityText(thread_id, nullptr,
-                     g_unity_text_mesh_reassembler.text(),
-                     g_unity_text_mesh_reassembler.length(), false, kHookName,
-                     kHookCode);
+      break;
+    case Route::kGlyphLine:
+      AppendUnityTextMeshGlyphs(chars, source_length);
+      break;
+    case Route::kRevokedComponentText:
+      FlushUnityTextMeshLine();
+      publish_component_text = true;
+      break;
+    case Route::kComponentText:
+      // 未锁存时签名已断开：影子作废。锁存后多字符整串不进逐字形行，影子即逐字形行，
+      // 不能清。
+      if (!g_unity_glyph_batch_detector.latched()) {
+        g_unity_text_mesh_reassembler.Reset();
+      }
+      publish_component_text = true;
+      break;
   }
-  if (source_length == 0) FlushUnityTextMeshLine();
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
+  if (publish_component_text) {
+    RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
+                       L"UnityEngine.TextMesh.set_text");
+  }
 }
 
-void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
-  if (g_header == nullptr || clip == nullptr) return;
-  wchar_t clip_name[kUnityClipNameChars] = {0};
-  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+// 最近一次打开的 `*voice*.bundle` 路径（CreateFile 钩子记下）；空串 = 本会话还没见过。
+void CopyLastUnityVoiceBundle(wchar_t* out, size_t out_chars) {
+  if (out == nullptr || out_chars == 0) return;
+  out[0] = 0;
+  if (!g_cs_ready) return;
+  EnterCriticalSection(&g_cs);
+  wcsncpy_s(out, out_chars, g_last_unity_voice_bundle, _TRUNCATE);
+  LeaveCriticalSection(&g_cs);
+}
 
-  wchar_t bundle_path[kUnityBundlePathChars] = {0};
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    wcsncpy_s(bundle_path, g_last_unity_voice_bundle, _TRUNCATE);
-    LeaveCriticalSection(&g_cs);
-  }
-
+// Unity 资源语音事件（clip 名 + voice bundle）写共享环；IL2CPP 与 Mono
+// （unity_mono_adapter.inc）两条运行时共用，injector 侧据此抽取解码。HookWorker 调用。
+void PublishUnityVoiceEvent(const wchar_t* clip_name, const wchar_t* bundle_path,
+                            uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip_name == nullptr || clip_name[0] == 0) return;
   const uint64_t index = static_cast<uint64_t>(InterlockedExchangeAdd64(
       reinterpret_cast<volatile LONGLONG*>(
           &g_header->unity_voice_write_count),
@@ -405,9 +456,20 @@ void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
   event->seq = 0;
   event->timestamp_ms = timestamp_ms;
   wcsncpy_s(event->clip_name, clip_name, _TRUNCATE);
-  wcsncpy_s(event->bundle_path, bundle_path, _TRUNCATE);
+  wcsncpy_s(event->bundle_path, bundle_path == nullptr ? L"" : bundle_path,
+            _TRUNCATE);
   MemoryBarrier();
   event->seq = index + 1;
+}
+
+void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip == nullptr) return;
+  wchar_t clip_name[kUnityClipNameChars] = {0};
+  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+
+  wchar_t bundle_path[kUnityBundlePathChars] = {0};
+  CopyLastUnityVoiceBundle(bundle_path, kUnityBundlePathChars);
+  PublishUnityVoiceEvent(clip_name, bundle_path, timestamp_ms);
 }
 
 void EnqueueUnityAudioClip(void* source, void* clip) {
@@ -755,16 +817,6 @@ bool HasCurrentProcessTopLevelWindow() {
 }
 
 bool TryHookUnityIl2CppAudio() {
-  if (!g_unity_text_profile_initialized) {
-    wchar_t executable_path[MAX_PATH] = {0};
-    const DWORD path_length =
-        GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
-    g_unity_sasasa_text_mesh_profile =
-        path_length != 0 && path_length < MAX_PATH &&
-        fushi_voice_hook::UsesSasasaLegacyTextMeshTerminator(
-            executable_path);
-    g_unity_text_profile_initialized = true;
-  }
   const bool audio_ready =
       g_orig_UnityAudioSourcePlay != nullptr ||
       g_orig_UnityAudioSourcePlayOneShot1 != nullptr ||

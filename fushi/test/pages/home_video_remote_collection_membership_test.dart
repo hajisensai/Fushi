@@ -286,6 +286,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    // BUG-2835：本用例钉的是散卡布局而不是系列筛选——远端目录会在本地落
+    // 'Ghost' 合集，「非系列」默认档会把它当系列成员滤掉。
+    await prefs.setVideoAllSeriesFilterName('all');
     // 本地无 'Ghost' 合集，只有一本散视频占位判定基线。
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value('video/local-1'),

@@ -155,6 +155,57 @@ inline size_t TrimmedNameLength(const EntryView& entry) {
   return length;
 }
 
+// Artemis splits a game's data into one archive set: `<name>.pfs` plus
+// numbered continuations `<name>.pfs.000`, `.001`, ... (each a complete
+// PF6/PF8 archive with its own index and key; measured: アマカノ3 keeps 158
+// system voices in .pfs and all 20057 dialogue voices in .pfs.000).  True for
+// a file leaf that belongs to such a set.
+inline bool IsArchiveSetLeaf(const wchar_t* leaf) {
+  if (leaf == nullptr) return false;
+  const wchar_t* dot = nullptr;
+  for (const wchar_t* at = leaf; *at != 0; ++at) {
+    if ((at[0] == L'.') && (at[1] == L'p' || at[1] == L'P') &&
+        (at[2] == L'f' || at[2] == L'F') && (at[3] == L's' || at[3] == L'S') &&
+        (at[4] == 0 || at[4] == L'.')) {
+      dot = at;
+    }
+  }
+  if (dot == nullptr || dot == leaf) return false;
+  const wchar_t* suffix = dot + 4;
+  if (*suffix == 0) return true;
+  size_t digits = 0;
+  for (++suffix; *suffix != 0; ++suffix, ++digits) {
+    if (*suffix < L'0' || *suffix > L'9' || digits == 3) return false;
+  }
+  return digits != 0;
+}
+
+// Index of the voice range a read starting at archive byte `at` begins, or
+// -1.  `ranges` is sorted by offset (`Range` has `offset`).  Artemis starts a
+// voice by seeking to its entry, so only a read whose first byte is the
+// entry's first byte is a playback start.  Two other reads land on voices and
+// must not count (measured アマカノ3):
+//  - the small sidecars laid out between voices (`X.ogg`, `X.vol.csv`,
+//    `X+1.ogg`) are read through a buffer that runs on into X+1, which
+//    captured X+1 alongside every X so neither paired;
+//  - a voice over one read buffer is streamed: its next chunk arrives seconds
+//    into playback and re-published the same voice too late to own a line.
+template <typename Range>
+long FindRangeStartingAt(const Range* ranges, long count, uint64_t at) {
+  if (ranges == nullptr || count <= 0) return -1;
+  long low = 0;
+  long high = count;
+  while (low < high) {
+    const long middle = low + (high - low) / 2;
+    if (ranges[middle].offset < at) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low < count && ranges[low].offset == at ? low : -1;
+}
+
 inline bool IsVoiceOgg(const EntryView& entry) {
   const size_t length = TrimmedNameLength(entry);
   const bool voice_directory =

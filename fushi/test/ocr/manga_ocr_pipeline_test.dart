@@ -171,6 +171,58 @@ DetectedTextRegion _region(OcrRect rect, double score) => DetectedTextRegion(
     );
 
 void main() {
+  group('补检（检测器弱候选）', () {
+    test('弱候选与已有块交给补检器，补回的块按阅读序并入', () async {
+      final _SweepDetector detector = _SweepDetector();
+      final _RecordingSweeper sweeper = _RecordingSweeper(<OcrBlock>[
+        const OcrBlock(
+          box: OcrRect(left: 30, top: 300, right: 300, bottom: 360),
+          vertical: false,
+          lines: <String>['モテる女子の', 'オキテ'],
+          lineBoxes: <OcrRect>[
+            OcrRect(left: 30, top: 300, right: 300, bottom: 330),
+            OcrRect(left: 60, top: 335, right: 200, bottom: 360),
+          ],
+          score: 0.97,
+        ),
+      ]);
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: detector,
+        recognizer: FakeRecognizer(),
+        sweeper: sweeper,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+
+      expect(sweeper.calls, 1);
+      expect(sweeper.candidates, detector.weak);
+      expect(sweeper.covered, <OcrRect>[_SweepDetector.top]);
+      // 上面的正式块在前，下面补回的标题在后；补回块的行几何原样保留。
+      expect(result.blocks.map((OcrBlock b) => b.text), <String>[
+        'p0@400',
+        'モテる女子のオキテ',
+      ]);
+      expect(result.blocks.last.lineBoxes, hasLength(2));
+    });
+
+    test('没有弱候选时不调补检器', () async {
+      final _RecordingSweeper sweeper = _RecordingSweeper(const <OcrBlock>[]);
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _SweepDetector(weak: const <DetectedTextRegion>[]),
+        recognizer: FakeRecognizer(),
+        sweeper: sweeper,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(sweeper.calls, 0);
+      expect(result.blocks, hasLength(1));
+    });
+
+    test('没有补检器时弱候选被忽略，结果与原来一致', () async {
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _SweepDetector(),
+        recognizer: FakeRecognizer(),
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(result.blocks.map((OcrBlock b) => b.text), <String>['p0@400']);
+    });
+  });
+
   group('识别后包含去重', () {
     const OcrRect parent = OcrRect(left: 0, top: 0, right: 400, bottom: 200);
     const OcrRect child = OcrRect(left: 20, top: 120, right: 220, bottom: 130);
@@ -794,6 +846,146 @@ void main() {
     });
   });
 
+  group('BUG-2813 行几何', () {
+    const OcrRect tall = OcrRect(left: 400, top: 10, right: 480, bottom: 130);
+    final _FixedDetector oneTallBlock = _FixedDetector(<DetectedTextRegion>[
+      const DetectedTextRegion(
+        rect: tall,
+        score: 0.9,
+        classId: 1,
+        insideBubble: true,
+      ),
+    ]);
+
+    test('识别器给的行与行框原样落进 OcrBlock，并随缓存 JSON 往返', () async {
+      final _LayoutRecognizer recognizer = _LayoutRecognizer();
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: oneTallBlock,
+        recognizer: recognizer,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      final OcrBlock block = result.blocks.single;
+      expect(block.lines, <String>['あいう', 'えお']);
+      expect(block.text, 'あいうえお');
+      expect(block.lineBoxes!.map((OcrRect r) => r.left), <double>[440, 400]);
+      final OcrBlock roundTrip = OcrPageResult.fromJson(
+        result.toJson(),
+      ).blocks.single;
+      expect(roundTrip.lines, block.lines);
+      expect(roundTrip.lineBoxes!.map((OcrRect r) => r.right), <double>[
+        480,
+        440,
+      ]);
+    });
+
+    test('行拼不回原文时退回整块单行，不让覆盖层的字与句子错位', () async {
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: oneTallBlock,
+        recognizer: _LayoutRecognizer()..corrupt = true,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(result.blocks.single.lines, <String>['あいうえお']);
+      expect(result.blocks.single.lineBoxes, isNull);
+    });
+
+    test('行框个数与行对不上的缓存 JSON 当作没有行几何', () {
+      final OcrBlock block = OcrBlock.fromJson(<String, dynamic>{
+        'box': tall.toJson(),
+        'vertical': true,
+        'lines': <String>['あい', 'う'],
+        'lineBoxes': <Map<String, dynamic>>[tall.toJson()],
+      });
+      expect(block.lines, <String>['あい', 'う']);
+      expect(block.lineBoxes, isNull);
+    });
+
+    test('旧版缓存只补行几何：不检测、不重新识别，文字原样，写成当前版本缓存', () async {
+      final MemoryCache current = MemoryCache();
+      final MemoryCache legacy = MemoryCache();
+      final OcrPageResult old = OcrPageResult(
+        pageIndex: 0,
+        imageWidth: 500,
+        imageHeight: 1000,
+        blocks: const <OcrBlock>[
+          OcrBlock(
+            box: tall,
+            vertical: true,
+            lines: <String>['あいうえお'],
+            score: 0.9,
+            insideBubble: true,
+          ),
+        ],
+      );
+      await legacy.write('b', old);
+      final _FixedDetector detector =
+          _FixedDetector(const <DetectedTextRegion>[]);
+      final _LayoutRecognizer recognizer = _LayoutRecognizer();
+      final List<OcrPageResult> results = await MangaOcrPipeline(
+        detector: detector,
+        recognizer: recognizer,
+        cache: current,
+      ).processBook(
+        bookId: 'b',
+        pageCount: 1,
+        loadPage: (int page) async => pageImage(page),
+        legacyCaches: <OcrPageCache>[legacy],
+      );
+      expect(detector.calls, 0);
+      expect(recognizer.recognizeCalls, 0);
+      expect(recognizer.layoutCalls, 1);
+      final OcrBlock block = results.single.blocks.single;
+      expect(block.lines, <String>['あいう', 'えお']);
+      expect(block.score, 0.9);
+      expect(block.insideBubble, isTrue);
+      expect(current.writes, <int>[0]);
+      expect(current.store['b/0']!.blocks.single.lineBoxes, isNotNull);
+    });
+
+    test('旧版缓存的页尺寸与当前页图不符：不补几何，整页重新识别', () async {
+      final MemoryCache legacy = MemoryCache();
+      await legacy.write(
+        'b',
+        const OcrPageResult(
+          pageIndex: 0,
+          imageWidth: 499,
+          imageHeight: 1000,
+          blocks: <OcrBlock>[],
+        ),
+      );
+      final _LayoutRecognizer recognizer = _LayoutRecognizer();
+      await MangaOcrPipeline(
+        detector: oneTallBlock,
+        recognizer: recognizer,
+      ).processBook(
+        bookId: 'b',
+        pageCount: 1,
+        loadPage: (int page) async => pageImage(page),
+        legacyCaches: <OcrPageCache>[legacy],
+      );
+      expect(recognizer.layoutCalls, 0);
+      expect(recognizer.recognizeCalls, 1);
+    });
+
+    test('多行块也参与识别后包含去重（按整块文本判断）', () async {
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _FixedDetector(const <DetectedTextRegion>[
+          DetectedTextRegion(
+            rect: OcrRect(left: 0, top: 0, right: 300, bottom: 100),
+            score: 0.9,
+            classId: 2,
+            insideBubble: false,
+          ),
+          DetectedTextRegion(
+            rect: OcrRect(left: 10, top: 50, right: 200, bottom: 90),
+            score: 0.5,
+            classId: 2,
+            insideBubble: false,
+          ),
+        ]),
+        recognizer: _TwoLineParentRecognizer(),
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(result.blocks.map((OcrBlock b) => b.text), <String>['題名本文']);
+    });
+  });
+
   group('isVerticalBlock', () {
     test('长宽比阈值', () {
       expect(
@@ -839,5 +1031,160 @@ class _CancellingRecognizer implements OcrRecognizer {
     calls++;
     token.cancel();
     return 'x';
+  }
+}
+
+/// 竖排块识别出「あいうえお」并按两列（右列 3 字、左列 2 字）给回行几何。
+class _LayoutRecognizer
+    implements OrientedOcrRecognizer, LineLayoutOcrRecognizer {
+  int recognizeCalls = 0;
+  int layoutCalls = 0;
+
+  /// 让行拼接与文本不一致（识别器 bug 的形状）。
+  bool corrupt = false;
+
+  OcrRecognition _laidOut(OcrRect box, String text) => OcrRecognition(
+        text: text,
+        vertical: true,
+        lines: corrupt ? <String>['あいう', 'えX'] : <String>['あいう', 'えお'],
+        lineBoxes: <OcrRect>[
+          OcrRect(
+              left: box.left + 40,
+              top: box.top,
+              right: box.right,
+              bottom: box.bottom),
+          OcrRect(
+              left: box.left,
+              top: box.top,
+              right: box.left + 40,
+              bottom: box.bottom),
+        ],
+      );
+
+  @override
+  Future<String> recognize(img.Image page, OcrRect box) async {
+    recognizeCalls++;
+    return 'あいうえお';
+  }
+
+  @override
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
+  ) async {
+    recognizeCalls += boxes.length;
+    return <OcrRecognition>[
+      for (final OcrRect box in boxes) _laidOut(box, 'あいうえお'),
+    ];
+  }
+
+  @override
+  Future<OcrRecognition> layoutRecognized(
+    img.Image page,
+    OcrRect box,
+    String text, {
+    required bool vertical,
+  }) async {
+    layoutCalls++;
+    return _laidOut(box, text);
+  }
+}
+
+/// 父块（宽）按两行给回「題名」「本文」，子块识别出「本文」。
+class _TwoLineParentRecognizer implements OrientedOcrRecognizer {
+  @override
+  Future<String> recognize(img.Image page, OcrRect box) async =>
+      throw StateError('pipeline uses recognizeOriented');
+
+  @override
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
+  ) async =>
+      <OcrRecognition>[
+        for (final OcrRect box in boxes)
+          box.width >= 300
+              ? OcrRecognition(
+                  text: '題名本文',
+                  vertical: false,
+                  lines: const <String>['題名', '本文'],
+                  lineBoxes: <OcrRect>[
+                    OcrRect(
+                        left: box.left,
+                        top: box.top,
+                        right: box.right,
+                        bottom: 40),
+                    OcrRect(
+                        left: box.left,
+                        top: 50,
+                        right: box.right,
+                        bottom: box.bottom),
+                  ],
+                )
+              : const OcrRecognition(text: '本文', vertical: false),
+      ];
+}
+
+/// 一个正式块（右上竖排）+ 两个弱候选（下方的标题两行）。
+class _SweepDetector implements OcrDetector {
+  _SweepDetector({List<DetectedTextRegion>? weak}) : weak = weak ?? _title;
+
+  static const OcrRect top = OcrRect(
+    left: 400,
+    top: 10,
+    right: 440,
+    bottom: 130,
+  );
+
+  static const List<DetectedTextRegion> _title = <DetectedTextRegion>[
+    DetectedTextRegion(
+      rect: OcrRect(left: 30, top: 300, right: 250, bottom: 330),
+      score: 0.125,
+      classId: 2,
+      insideBubble: false,
+    ),
+    DetectedTextRegion(
+      rect: OcrRect(left: 80, top: 335, right: 200, bottom: 360),
+      score: 0.021,
+      classId: 2,
+      insideBubble: false,
+    ),
+  ];
+
+  final List<DetectedTextRegion> weak;
+
+  @override
+  Future<PageDetections> detect(img.Image page) async => PageDetections(
+        textRegions: const <DetectedTextRegion>[
+          DetectedTextRegion(
+            rect: top,
+            score: 0.9,
+            classId: 1,
+            insideBubble: true,
+          ),
+        ],
+        bubbles: const <OcrRect>[],
+        weakTextRegions: weak,
+      );
+}
+
+class _RecordingSweeper implements OcrPageTextSweeper {
+  _RecordingSweeper(this.result);
+
+  final List<OcrBlock> result;
+  int calls = 0;
+  List<DetectedTextRegion>? candidates;
+  List<OcrRect>? covered;
+
+  @override
+  Future<List<OcrBlock>> sweep(
+    img.Image page, {
+    required List<DetectedTextRegion> candidates,
+    required List<OcrRect> covered,
+  }) async {
+    calls++;
+    this.candidates = candidates;
+    this.covered = covered;
+    return result;
   }
 }

@@ -22,8 +22,10 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ai_ocr_stream.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
@@ -48,6 +50,7 @@ class MangaOcrJobSpec {
     this.onlyMissing = true,
     this.volumeTitle,
     this.remoteTarget,
+    this.focus,
   });
 
   final MangaOcrEngineId engine;
@@ -76,6 +79,10 @@ class MangaOcrJobSpec {
 
   /// 已配对主机目标；`pairedHost` 引擎必填（由 `remoteRunner.probe()` 得到）。
   final MangaOcrRemoteTarget? remoteTarget;
+
+  /// 读者当前页：运行中跟着读者改道（本地 / Lens / 系统 OCR；远端与外部 CLI
+  /// 不按页序处理，忽略）。阅读器经 `MangaOcrRunningJob.focusPage` 写入。
+  final MangaOcrPageFocus? focus;
 }
 
 /// 重新识别前丢掉某个引擎签名下的逐页缓存目录（不存在则无事）。
@@ -101,6 +108,22 @@ Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(MangaOcrJobSpec spec) {
     case MangaOcrEngineId.pairedHost:
       return mangaOcrRemoteEvents(spec);
   }
+}
+
+/// 设置里开了大模型识别时，给这个任务配一个跟随步骤（[MangaAiOcrJobFollower]，
+/// 与引擎无关：框是谁检测的都行）；没开 / 没指派提供商时 null。
+///
+/// 和 [mangaOcrBackgroundEvents] 用同一个 [spec] 构造、一起交给
+/// [MangaOcrBackgroundJob]——由注册表驱动，任务结束（释放名额）后它仍可收尾。
+/// [MangaOcrJobSpec.onlyMissing] 为 false（重新识别）时先清掉本卷大模型缓存。
+MangaOcrJobFollower? mangaOcrJobFollower(MangaOcrJobSpec spec) {
+  final MangaAiOcrRefiner? refiner = spec.engines.aiRefinerFactory?.call();
+  if (refiner == null) return null;
+  return MangaAiOcrJobFollower(
+    imageDirPath: spec.imageDirPath,
+    refiner: refiner,
+    discardCache: !spec.onlyMissing,
+  );
 }
 
 Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
@@ -130,6 +153,15 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
   );
   if (!spec.onlyMissing) {
     await discardMangaOcrPageCache(cacheDir);
+    // 用户要的是整卷重新识别：同模型「只缺行几何」的旧版缓存也作废，否则任务会
+    // 拿它们只补几何、文字一个不重认（BUG-2813）。
+    for (final String legacy in relayoutableMangaOcrEngineSignatures(
+      engineSignature,
+    )) {
+      await discardMangaOcrPageCache(
+        Directory(p.join(p.dirname(cacheDir.path), legacy)),
+      );
+    }
   }
   final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
     cacheDir: cacheDir,
@@ -178,11 +210,21 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
     );
     return;
   }
-  await for (final MangaOcrVolumeEvent event in spec.engines.service.ocrFolder(
-    imageDirPath: dir,
-    volumeTitle: spec.volumeTitle,
-    startPage: spec.startPage,
-  )) {
+  final MangaOcrPageFocus? focus = spec.focus;
+  final Stream<MangaOcrVolumeEvent> events =
+      focus != null && service is MangaOcrFocusableService
+      ? (service as MangaOcrFocusableService).ocrFolder(
+          imageDirPath: dir,
+          volumeTitle: spec.volumeTitle,
+          startPage: spec.startPage,
+          focus: focus,
+        )
+      : service.ocrFolder(
+          imageDirPath: dir,
+          volumeTitle: spec.volumeTitle,
+          startPage: spec.startPage,
+        );
+  await for (final MangaOcrVolumeEvent event in events) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
         pagesTotal: event.pagesTotal,
@@ -275,6 +317,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
         startPage: spec.startPage,
         onlyMissing: spec.onlyMissing,
         language: spec.lensLanguage,
+        focus: spec.focus,
       )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
@@ -284,11 +327,16 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
       );
       continue;
     }
+    // 执行器如实报页号（跟着读者改道后完成序不再是固定顺序）；不报页号的实现
+    // 才退回「第 N 个完成的就是处理顺序里第 N 页」。
     final int orderIndex = event.pagesDone - 1;
-    final int? pageIndex = orderIndex >= 0 && orderIndex < order.length
-        ? order[orderIndex]
-        : null;
-    final MokuroImage? page = pageIndex == null
+    final int? pageIndex =
+        event.pageIndex ??
+        (orderIndex >= 0 && orderIndex < order.length
+            ? order[orderIndex]
+            : null);
+    final MokuroImage? page =
+        pageIndex == null || pageIndex < 0 || pageIndex >= pages.length
         ? null
         : await cache.read(pageIndex, pages[pageIndex]);
     yield MangaOcrBackgroundEvent.progress(
@@ -325,6 +373,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
         startPage: spec.startPage,
         onlyMissing: spec.onlyMissing,
         language: spec.lensLanguage,
+        focus: spec.focus,
       )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
@@ -334,11 +383,16 @@ Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
       );
       continue;
     }
+    // 执行器如实报页号（跟着读者改道后完成序不再是固定顺序）；不报页号的实现
+    // 才退回「第 N 个完成的就是处理顺序里第 N 页」。
     final int orderIndex = event.pagesDone - 1;
-    final int? pageIndex = orderIndex >= 0 && orderIndex < order.length
-        ? order[orderIndex]
-        : null;
-    final MokuroImage? page = pageIndex == null
+    final int? pageIndex =
+        event.pageIndex ??
+        (orderIndex >= 0 && orderIndex < order.length
+            ? order[orderIndex]
+            : null);
+    final MokuroImage? page =
+        pageIndex == null || pageIndex < 0 || pageIndex >= pages.length
         ? null
         : await cache.read(pageIndex, pages[pageIndex]);
     yield MangaOcrBackgroundEvent.progress(

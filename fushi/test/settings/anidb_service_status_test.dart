@@ -116,6 +116,43 @@ void main() {
     expect(row.resolveSubtitle(settingsContext), t.settings_service_configured);
   });
 
+  // BUG-2623：AniDB HTTP 资料接口与 UDP 是两条登记。随包身份只登记了 UDP，
+  // 设置页要让用户看出 anime XML 资料链此时不会请求；自定义客户端则同时用于两边。
+  testWidgets('HTTP 资料接口行：随包 → 未登记；自定义客户端 → 可用（显示客户端）', (
+    WidgetTester tester,
+  ) async {
+    final SettingsContext settingsContext = await pumpContext(tester);
+    final SettingsStatusItem httpRow =
+        aniDbRow().child!().sections
+                .expand((SettingsSection s) => s.items)
+                .firstWhere(
+                  (SettingsItem i) => i.id == 'services.metadata.anidb_http_api',
+                )
+            as SettingsStatusItem;
+
+    await prefs.setPref(kVideoAniDbHashEnabledPref, true);
+    await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
+    await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    expect(
+      httpRow.resolveSubtitle(settingsContext),
+      t.video_anidb_http_api_unregistered,
+      reason: '随包 fushiplayer 只登记了 UDP，哪怕哈希识别已配齐',
+    );
+
+    await prefs.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
+    expect(
+      httpRow.resolveSubtitle(settingsContext),
+      t.video_anidb_http_api_unregistered,
+      reason: '自定义客户端没版本号也发不出请求',
+    );
+
+    await prefs.setPref(kVideoMetadataAniDbClientVersionPref, '2');
+    expect(
+      httpRow.resolveSubtitle(settingsContext),
+      t.video_anidb_http_api_available(client: 'customapp', version: '2'),
+    );
+  });
+
   test('status row must not re-derive readiness from individual pref keys', () {
     final String source = File(
       'lib/src/settings/settings_schema_services.dart',

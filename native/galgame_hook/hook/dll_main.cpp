@@ -44,6 +44,9 @@
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
+#include "adapters/unity_mono_text.h"
+#include "adapters/unity_mono_lookup_core.h"
+#include "adapters/unity_mono_audio.h"
 #include "adapter.h"
 #include "module_settle.h"
 #include "host_executable_digest.h"
@@ -52,20 +55,31 @@
 #include "adapters/cmvs_sprite_geometry_reader.h"
 #include "lookup_overlay_geometry.h"
 #include "game_main_window.h"
+#include "overlay_cursor_guard.h"
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
 // 包进本文件匿名命名空间里的，从那里 include 会把 std:: 解析成匿名命名空间下的名字。
 #include "adapters/kirikiri_exporter_scan.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
+#include "adapters/artemis_lookup_core.h"
+#include "adapters/reallive_lookup_core.h"
+#include "adapters/catsystem2_lookup_core.h"
+#include "adapters/bgi_lookup_core.h"
+#include "adapters/yuris_lookup_core.h"
+#include "adapters/yuris_voice_core.h"
+#include "adapters/fvp_lookup_core.h"
+#include "adapters/catsystem2_voice_core.h"
 #include "lookup_selected_text.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
+#include "yuris_ypf.h"
+#include "fvp_format.h"
 #include "directsound_format_registry.h"
 #include "catsystem2_int.h"
-#include "malie_lib.h"
 #include "ffmpeg_runtime.h"
 #include "lookup_v19_runtime.h"
+#include "lookup_wheel_source.h"
 #include "hook_original_registry.h"
 #include "tracked_handle_table.h"
 #include "hunex_hfa.h"
@@ -113,11 +127,15 @@
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
+#include "reallive_nwk.h"
 #include "voice_hook_ipc.h"
 #include "siglus_text_owner.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
 #include "kirikiri_voice_storage_name.h"
+#include "kirikiri_tcwf.h"
+#include "x86_insn_len.h"
+#include "pcm_wav_silence.h"
 #include "lookup_line_text_match.h"
 #include "xaudio_resource_dispatch.h"
 #include "xaudio_source_format.h"
@@ -271,6 +289,7 @@ std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
 }
 
 #include "voice_resource_writer.inc"
+#include "selected_lane_candidates.inc"
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
 volatile LONG g_format_set = 0;
@@ -614,6 +633,7 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "generated/adapter_includes.inc"
 
 #include "generic_input_shield.inc"
+#include "overlay_cursor_guard.inc"
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
@@ -720,6 +740,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
     registry.InstallStartupAdapters();
     TryInstallGenericLookupInputShield();
+    TryInstallOverlayCursorGuard();
   } else {
     registry.FailSiglusTextStartup();
   }
@@ -728,6 +749,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   while (!g_stop) {
     registry.Poll();
     TryInstallGenericLookupInputShield();
+    TryInstallOverlayCursorGuard();
     ProcessGenericLookupInputShield();
     fushi_voice_hook::g_geometry_provider_registry.Reconcile(g_header);
     // 通用位图呈现器：host 打开查词后才起，且只在没有引擎适配器认领呈现时起。

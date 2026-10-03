@@ -35,7 +35,7 @@ import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
-import 'package:fushi/src/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -94,6 +94,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
+    show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -120,7 +122,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
@@ -150,7 +152,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -224,6 +226,7 @@ import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
@@ -625,6 +628,8 @@ class AppModel with ChangeNotifier {
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
     mangaOcrServiceFactory: () =>
         createSelectedMangaOcrService(() => mangaOcrLocalModel),
+    // 对端（手机）可在引擎下拉里点名本机的某个模型跑，不必跟着本机当前选择走。
+    mangaOcrModelServicesFactory: createMangaOcrHostModelServices,
     // 通用任务（ASR 转录）/ 代下载 / 内容订阅：此前只有无头 fushi_server 接线，
     // app 当 host 时这三条端点 404，对端「下载到 <电脑>」的选项因此不出现。
     // 全部挂在本机既有的服务上（ASR 服务工厂与转录弹层同一份；下载管线 / 订阅
@@ -646,7 +651,7 @@ class AppModel with ChangeNotifier {
     subscriptionsFactory: () => appDownloadHost.subscriptions,
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
-    assistantFactory: () => createAppAssistantHost(this),
+    assistantFactory: () => createVideoAcquisitionAssistantHost(this),
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
@@ -694,7 +699,9 @@ class AppModel with ChangeNotifier {
           fileName: path.basename(bookFile.path),
         );
       },
-      localAudioEntries: localAudioDbs,
+      // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
+      // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
+      localAudioEntriesProvider: () => localAudioDbs,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
@@ -3013,11 +3020,8 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
-      // 音画同步片段成为封面模式默认（PR #1717）只给全新安装：升级上来、从没显式
-      // 选过的存量用户在这里落一次显式 GIF（原行为）。必须赶在首页首帧改写
-      // first_time_setup 之前——它是「全新安装」的唯一判据。
-      await prefsRepo.settleMiningImageModeInstallDefault(
-          freshInstall: prefsRepo.isFirstTimeSetup);
+      // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
+      await prefsRepo.settleMiningImageModeInstallDefault();
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
@@ -3219,6 +3223,9 @@ class AppModel with ChangeNotifier {
       debugPrint(
           '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
+      // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
+      // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
+      unawaited(deleteRemovedMangaOcrModelDirs());
 
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
@@ -4663,6 +4670,7 @@ class AppModel with ChangeNotifier {
       httpClientFactory: createAppHttpClient,
       // 只有真实 app 进页即刷新内置官方仓库（单测构造的 manager 不碰外网）。
       refreshOnInitialise: true,
+      fetchDownloadCounts: true,
     );
     unawaited(manager.initialise());
     return manager;
@@ -5244,19 +5252,23 @@ class AppModel with ChangeNotifier {
 
   Future<void> _startVideoDownloadPipeline() async {
     if (_videoDownloadPipelineService != null) return;
-    final http.Client torznabHttpClient = await createDownloadHttpClient();
+    final List<TorznabIndexerConfig> torznabIndexers =
+        prefsRepo.videoResourceTorznabConfigs;
     // 内置索引器一律按 kBuiltinVideoResourceSources 全表注册；「用不用」由 registry
     // 的停用清单决定，而不是靠这里少建一个对象——否则设置页开关就得重启 app 才生效。
+    // Torznab 不同：没有启用的索引器它就不是一个源（保存索引器配置会重建整条
+    // 运行时），判据见 [torznabHasEnabledIndexer]（BUG-2818）。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
       for (final BuiltinVideoResourceSource source
           in kBuiltinVideoResourceSources)
         source.create(await createDownloadHttpClient()),
-      TorznabClient(
-        indexers: prefsRepo.videoResourceTorznabConfigs,
-        client: torznabHttpClient,
-        closesClient: true,
-      ),
+      if (torznabHasEnabledIndexer(torznabIndexers))
+        TorznabClient(
+          indexers: torznabIndexers,
+          client: await createDownloadHttpClient(),
+          closesClient: true,
+        ),
     ];
     // 字幕来源的装配判据在 [createConfiguredVideoSubtitleProviders] 一处（浏览器
     // 扩展的查字幕桥用的是同一份工厂，不再自己判「哪家算配好了」）。
@@ -5301,8 +5313,9 @@ class AppModel with ChangeNotifier {
       ),
       // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
       enableOfflineTitleIndex: true,
-      // 歧义候选交 AI 消解；未指派提供商时 decider 每次回 null，行为与无 AI 一致。
-      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(prefsRepo),
+      // 歧义 / 查无交 AI 协助；顾问每次现取指派，未指派时完全不问 AI。判定缓存
+      // 按能力键分，这个协调器终身持有也不会沿用换提供商之前的结论。
+      aiIdentityAdvisor: PreferencesAiVideoIdentityAdvisor(prefsRepo),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
       // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
@@ -8772,9 +8785,20 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaOcrParallelTasks(int value) =>
       prefsRepo.setMangaOcrParallelTasks(value);
 
+  /// 查词热路径每次都读：偏好仓库未就绪（弹窗词典入口启动早期）时按关处理。
+  bool get lookupAiContextAuto => _prefsRepo?.lookupAiContextAuto ?? false;
+  Future<void> setLookupAiContextAuto(bool value) =>
+      prefsRepo.setLookupAiContextAuto(value);
+  String get mangaOcrAiMode => prefsRepo.mangaOcrAiMode;
+  Future<void> setMangaOcrAiMode(String value) =>
+      prefsRepo.setMangaOcrAiMode(value);
   String get mangaOcrLocalModel => prefsRepo.mangaOcrLocalModel;
   Future<void> setMangaOcrLocalModel(String value) =>
       prefsRepo.setMangaOcrLocalModel(value);
+
+  String get mangaOcrPairedHostModel => prefsRepo.mangaOcrPairedHostModel;
+  Future<void> setMangaOcrPairedHostModel(String value) =>
+      prefsRepo.setMangaOcrPairedHostModel(value);
 
   String get mangaOcrEnginePreference => prefsRepo.mangaOcrEnginePreference;
   Future<void> setMangaOcrEnginePreference(String value) =>
@@ -9400,6 +9424,15 @@ class _AppModelRemoteLookupService
     // 捕获来源优先级（Netflix GIF）：① 扩展在播放中录到的字幕片段 webm → ffmpeg 转 GIF+音频
     // （唯一不回放的 Netflix GIF 路径，需用户关硬件加速才非黑）；② 后台软解 native 实例（未建
     // 时返 error）；③ 都没有 → 用 2A 截图字节组卡（buildImmersionRequest 内降级）。
+    // 录片段还是录动图由**目标模板**决定（[resolveTargetMiningImageMode]）：模板不原样
+    // 渲染图片字段时同步片段卡什么都显示不出来。必须在下面的转码之前求值；没录到
+    // 片段的来源出不了同步片段，不必问模板。
+    final VideoMiningImageMode imageMode = payload.clipBytes == null
+        ? _appModel.videoMiningImageMode
+        : await resolveTargetMiningImageMode(
+            _appModel.videoMiningImageMode,
+            repo: repo,
+          );
     ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
     if (payload.clipBytes != null) {
       // Netflix 批量录制的片段边界即句子边界（seek 到句首 → 录到字幕变化停），整段转码 [0,时长]。
@@ -9409,7 +9442,7 @@ class _AppModelRemoteLookupService
       // 恒给 providedCoverBytes，引擎的 imageMode 阶梯（immersion_mining_engine.dart 的
       // `if (coverPath == null)`）根本不会被求值。故必须在**产字节这一层**就按偏好分流。
       final ClipStillTarget? stillTarget = resolveClipStillTarget(
-        imageMode: _appModel.videoMiningImageMode,
+        imageMode: imageMode,
         clipAnchorMs: payload.clipAnchorMs,
         cueStartMs: payload.cueStartMs,
         mineAtMs: payload.mineAtMs,
@@ -9419,7 +9452,7 @@ class _AppModelRemoteLookupService
         // 偏移误差在真机上可观测，而不是靠猜：锚点不确定度由扩展在 beginClip 前后实测下发。
         ErrorLogService.instance.logDiagnostic(
           'Anki.mineImmersion.netflix.still',
-          'imageMode=${_appModel.videoMiningImageMode.wireName} '
+          'imageMode=${imageMode.wireName} '
               'offsetMs=${stillTarget.offsetMs} exact=${stillTarget.exact} '
               'anchorMs=${payload.clipAnchorMs} '
               'anchorUncertaintyMs=${payload.clipAnchorUncertaintyMs} '
@@ -9428,7 +9461,7 @@ class _AppModelRemoteLookupService
       }
       cap = await transcodeClipToCapture(
         payload.clipBytes!,
-        imageMode: _appModel.videoMiningImageMode,
+        imageMode: imageMode,
         durationMs: clipDurationMs,
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -9458,7 +9491,7 @@ class _AppModelRemoteLookupService
     // 报错而不是悄悄降级成动图。没录到片段的来源（后台软解动图 / 2A 截图）没有视频可
     // 同步，由 buildImmersionRequest 照常用手上的封面出卡——片段模式是默认值，不能让
     // 这些来源整体报错。
-    if (_appModel.videoMiningImageMode == VideoMiningImageMode.videoClip &&
+    if (imageMode == VideoMiningImageMode.videoClip &&
         payload.clipBytes != null &&
         (!cap.ok || !cap.coverIsVideo || cap.gifBytes == null)) {
       return remoteMineError(
@@ -9476,7 +9509,7 @@ class _AppModelRemoteLookupService
         payload,
         cap,
         audioExpected: audioExpected,
-        imageMode: _appModel.videoMiningImageMode,
+        imageMode: imageMode,
       ),
       compression: compression,
       tempDir: Directory.systemTemp.path,

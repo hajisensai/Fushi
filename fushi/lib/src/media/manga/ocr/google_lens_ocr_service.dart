@@ -105,11 +105,20 @@ class HttpGoogleLensTransport implements GoogleLensTransport {
 }
 
 abstract interface class GoogleLensMangaOcrRunner {
+  /// [focus]：运行中跟着读者当前页改道（[MangaOcrPageScheduler]）。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
     int startPage,
     bool onlyMissing,
+    required String language,
+    MangaOcrPageFocus? focus,
+  });
+
+  /// 识别一张已取到的页图（在线直读章的逐页识别用；不读写任何缓存）。
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List source, {
+    required String relativeUrl,
     required String language,
   });
 
@@ -129,6 +138,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     int startPage = 0,
     bool onlyMissing = true,
     required String language,
+    MangaOcrPageFocus? focus,
   }) {
     late final StreamController<MangaOcrVolumeEvent> controller;
     final OcrCancelToken cancelToken = OcrCancelToken();
@@ -142,12 +152,14 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
               onlyMissing: onlyMissing,
               language: language,
               cancelToken: cancelToken,
-              onProgress: (int done, int total) {
+              focus: focus,
+              onProgress: (int done, int total, int pageIndex) {
                 if (!controller.isClosed) {
                   controller.add(
                     MangaOcrVolumeEvent.page(
                       pagesDone: done,
                       pagesTotal: total,
+                      pageIndex: pageIndex,
                     ),
                   );
                 }
@@ -185,7 +197,8 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     required bool onlyMissing,
     required String language,
     required OcrCancelToken cancelToken,
-    required void Function(int done, int total) onProgress,
+    required MangaOcrPageFocus? focus,
+    required void Function(int done, int total, int pageIndex) onProgress,
   }) async {
     final Directory root = Directory(imageDirPath);
     final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
@@ -210,14 +223,14 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         : <String, MokuroImage>{};
     final List<MokuroImage?> results =
         List<MokuroImage?>.filled(pages.length, null);
-    final int normalizedStart =
-        pages.isEmpty ? 0 : startPage.clamp(0, pages.length - 1);
-    final List<int> order = <int>[
-      for (int i = normalizedStart; i < pages.length; i++) i,
-      for (int i = 0; i < normalizedStart; i++) i,
-    ];
+    final MangaOcrPageScheduler scheduler =
+        MangaOcrPageScheduler(pages.length, startPage);
     int done = 0;
-    for (final int pageIndex in order) {
+    while (true) {
+      final int? focused = focus?.take();
+      if (focused != null) scheduler.focus(focused);
+      final int? pageIndex = scheduler.next();
+      if (pageIndex == null) break;
       cancelToken.throwIfCancelled();
       final MangaOcrPageFile page = pages[pageIndex];
       final MokuroImage? existingPage = existing[page.relativeUrl];
@@ -232,7 +245,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         }
       }
       done += 1;
-      onProgress(done, pages.length);
+      onProgress(done, pages.length, pageIndex);
     }
     cancelToken.throwIfCancelled();
     final MokuroPayload payload = MokuroPayload(
@@ -266,6 +279,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   /// and per-page cache publication remain one serial current-page-first job.
   /// Image decoding/resizing stays off the Flutter UI isolate, matching
   /// Niratan's detached preparation task.
+  @override
   Future<MokuroImage> recognizePageBytes(
     Uint8List source, {
     required String relativeUrl,

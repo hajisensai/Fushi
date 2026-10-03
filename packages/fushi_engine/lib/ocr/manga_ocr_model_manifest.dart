@@ -25,7 +25,7 @@ import 'dart:io';
 import 'package:fushi_asr_core/asr_core.dart';
 
 /// 模型文件归属：检测 / 识别（[MangaOcrModelStatus] 的两个就绪位分别聚合）。
-enum MangaOcrModelRole { detector, recognizer, runtime }
+enum MangaOcrModelRole { detector, recognizer }
 
 /// 清单里的一个模型文件（实现共享下载器的 [DownloadableModelFile]）。
 class MangaOcrModelFile implements DownloadableModelFile {
@@ -51,7 +51,7 @@ class MangaOcrModelFile implements DownloadableModelFile {
 
   final MangaOcrModelRole role;
 
-  /// Pinned digest checked before installing executable runtime artifacts.
+  /// 钉住的 sha256（release asset 可被覆盖上传，下载后按它校验）；null = 不校验。
   final String? sha256;
 }
 
@@ -91,6 +91,41 @@ const List<MangaOcrModelFile> kMangaOcrModelManifest = <MangaOcrModelFile>[
   ),
   ...kPpOcrLineModelManifest,
 ];
+
+/// 经典 manga-ocr 的**提速组件**：KV cache 版 decoder（`cross_kv.onnx` 每块算一次
+/// cross-attention K/V，`decoder_kv.onnx` 每步只喂一个新 token）。encoder 沿用
+/// [kMangaOcrModelManifest] 里的那份。
+///
+/// 刻意不并进 [kMangaOcrModelManifest]：两者识别结果逐 token 相同（240 块实测
+/// 240/240），并进去会改变模型指纹、让已识别的卷被当成「换了模型」整卷重认，
+/// 还会让已装好经典模型的用户突然变成「模型不完整」。所以它只决定走不走快路径，
+/// 不参与就绪判定与缓存签名。导出脚本、契约与校验见 `tool/manga_ocr_kv/`。
+const List<MangaOcrModelFile>
+kMangaOcrKvAcceleratorManifest = <MangaOcrModelFile>[
+  MangaOcrModelFile(
+    fileName: kMangaOcrKvCrossFileName,
+    url: '$kMangaOcrKvReleaseBase/$kMangaOcrKvCrossFileName',
+    expectedBytes: 9456696,
+    role: MangaOcrModelRole.recognizer,
+    sha256: '3355a58b0e05f874d7fbb332df6824c0e6634d0b99c756322ba119a9d3f35722',
+  ),
+  MangaOcrModelFile(
+    fileName: kMangaOcrKvDecoderFileName,
+    url: '$kMangaOcrKvReleaseBase/$kMangaOcrKvDecoderFileName',
+    expectedBytes: 89050460,
+    role: MangaOcrModelRole.recognizer,
+    sha256: 'db4907131dc96308c3d9e4910db2238cf2dee5cfcb1cd3ae7c7b52d630cd8de5',
+  ),
+];
+
+/// 提速组件的不可变 release（与 `manga-panel-detector-onnx-v1` 同一形态：
+/// prerelease、非 Latest、正文写来源 revision / 契约 / sha256）。
+const String kMangaOcrKvReleaseBase =
+    'https://github.com/hajisensai/Fushi/releases/download/'
+    'manga-ocr-kv-onnx-v1';
+
+const String kMangaOcrKvCrossFileName = 'cross_kv.onnx';
+const String kMangaOcrKvDecoderFileName = 'decoder_kv.onnx';
 
 /// Shared original-resolution horizontal-line path for every crop recognizer.
 const List<MangaOcrModelFile> kPpOcrLineModelManifest = <MangaOcrModelFile>[

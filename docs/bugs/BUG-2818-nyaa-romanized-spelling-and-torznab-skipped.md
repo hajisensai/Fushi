@@ -1,0 +1,8 @@
+## BUG-2818 · 资源搜索只查第一个罗马字拼写致 Nyaa 0 条；Torznab 未配索引器误报为无法搜索查询词
+- **报告**：2026-10-01（用户：截图）资源搜索页搜「FX戦士くるみちゃん」：Nyaa「0 条（FX Senshi KURUMICHAN 0 · FX戦士くるみちゃん 0）」，Torznab「未参与（该来源无法搜索这个查询词）」。
+- **真实性**：✅ 真 bug，两处。
+  - Nyaa：实测 nyaa.si 对 `FX Senshi KURUMICHAN` 0 条、对 `FX Senshi Kurumi-chan` 有 Bizmillah / ToonsHub 第 01 集。`KURUMICHAN` 是 TMDB tv/311842 的 JP 区别名原文（官方风格化写法），由 `tmdb_video_metadata_provider.dart` `_romajiTitle` 取作罗马字、`video_discovery_provider.dart` `withLeadingAliases` 排到别名最前；`nyaa_resource_provider.dart` `preferredNyaaSearchQueries` 只取 `romanized.take(1)`，而 `nyaaSearchQueries` 的补查也复用这份「各取一个」的首选词——英文名 `FX Fighter Kurumi-chan` 永远不被查。押宝在元数据排序上。
+  - Torznab：`app_model.dart` `_startVideoDownloadPipeline` 与 `fushi_server/lib/src/download_host.dart` `_buildRegistry` 无条件注册 `TorznabClient`；零启用索引器时 `torznab_client.dart` `search` 对空列表 `Future.wait`，得「成功 0、失败 0」，`video_resource_provider.dart` `VideoResourceSourceReport.skipped` 为真，资源页渲染成「无法搜索这个查询词」（这句原是给 apibay 遇纯 CJK 词写的）。违反 registry「注册 = 本设备已配好」的既有约定（订阅在场校验据此报 `not configured`，host 据此公布 provider）。同一约定下 `pipeline_subscription_host.dart` `availableProviderIds` 还把停用的索引器报成可用。
+- **[x] ① 已修复** — `4b46ae1b7c`：`nyaaSearchQueries`（实际发出的查询集合，资源页 chip 同源）补查至多 `kNyaaMaxRomanizedQueries = 3` 个不同拉丁拼写 + 日文原名，首选词契约（预填 / 订阅默认词）不变；新增唯一判据 `torznabHasEnabledIndexer`，app 与服务端都只在其为真时注册 Torznab（保存索引器配置会重建整条下载运行时）；host 不再公布停用索引器。
+- **[x] ② 已加自动化测试** — `fushi/test/torrent/resource_search_spelling_and_torznab_presence_test.dart`（查询集合 / 上限 / 首选词不变 / 以实测形状 mock 的端到端 provider / 零索引器即 skipped 形状 / 两处装配点接线守卫；变异实测：上限改回 1 + 去掉 app 侧门 → 5 条红）；`packages/fushi_server/test/subscription_host_test.dart`（停用索引器不公布且其它 provider 照报——实现时 collection-if 吃掉 else 把 `nyaa` 挤出列表，被既有用例抓到）。
+- **备注**：修前绕行：搜索框手输 `FX Senshi Kurumi-chan`。

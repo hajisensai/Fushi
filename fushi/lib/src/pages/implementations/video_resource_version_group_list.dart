@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/src/media/video/episode_span_format.dart';

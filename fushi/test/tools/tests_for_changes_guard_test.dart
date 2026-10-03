@@ -128,9 +128,12 @@ void main() {
         contains('packages/flutter_inappwebview_windows'),
         reason: '最近祖先回退死了：注释里的 `.../` 省略写法退不到那棵树',
       );
+      // 语料不能用真实构建产物名（如 dist/）：做 galgame 开发的 worktree 都会先构建
+      // helper，那时 dist/ 就在磁盘上，提取会如实返回它，这条断言随机器状态变红。
       expect(
         extractRepoPathReferences(
-          "expect(cmake.contains(r'native/galgame_hook/dist'), isTrue);",
+          "expect(cmake.contains(r'native/galgame_hook/never_built_output'), "
+          'isTrue);',
           fs,
         ),
         contains('native/galgame_hook'),
@@ -310,6 +313,39 @@ void main() {
       expect(dead, isEmpty,
           reason: '这些声明的 glob 在仓库里匹配不到任何文件，已经是死规则：\n'
               '${dead.join('\n')}');
+    });
+
+    test('声明的 tests-for-changes-ignore 必须对得上本文件真被提取到的引用', () {
+      // 忽略声明同样是人写的：提取器改了口径、或 fixture 路径改名之后，一条对不上
+      // 任何引用的忽略就是哑的，而它哑掉的方向是「以后谁往这个路径加真依赖也被
+      // 静默吞掉」。
+      final List<String> declared = <String>[];
+      final List<String> dead = <String>[];
+      index.forEach((RepoPath test, TestTriggerFace face) {
+        for (final RepoPath p in face.ignoredPaths) {
+          declared.add('$test: $p');
+          if (!face.referencedPaths.contains(p)) dead.add('$test: $p');
+        }
+      });
+      expect(declared, isNotEmpty,
+          reason: '一条 `// tests-for-changes-ignore:` 声明都没有——机制被删了或'
+              '正则不认了，bug_tool_* 又会被每个 BUG 流程 PR 的 docs/BUGS.md 拉进来');
+      expect(dead, isEmpty,
+          reason: '这些忽略声明在本文件里提取不到对应引用，已经是死声明：\n'
+              '${dead.join('\n')}');
+    });
+
+    test('fixture 忽略只剔除声明者：改 docs/BUGS.md 仍触发索引守卫', () {
+      const String pool = 'fushi/test/tools/bug_tool_number_pool_test.dart';
+      const String scope = 'fushi/test/tools/bug_tool_renumber_scope_test.dart';
+      final Set<RepoPath> byIndex = derive('docs/BUGS.md');
+      expect(
+          byIndex, contains('fushi/test/tools/bugs_per_file_guard_test.dart'),
+          reason: '真正校验索引的守卫必须照旧被 docs/BUGS.md 触发');
+      expect(byIndex, isNot(contains(pool)));
+      expect(byIndex, isNot(contains(scope)));
+      // 它们真正守的对象照旧触发。
+      expect(derive('tool/bug.dart'), containsAll(<String>[pool, scope]));
     });
 
     test('Dart 源码树的改动不由本工具输出（默认整批 35 条兜底）', () {

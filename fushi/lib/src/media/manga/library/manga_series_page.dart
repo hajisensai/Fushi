@@ -20,6 +20,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart'
+    show MangaOcrPageFocus;
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -802,6 +804,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     int queued = 0;
     for (final OnlineMangaChapter chapter in chapters) {
       final Directory chapterDir = mangaChapterDirectory(bookDir, chapter.key);
+      final MangaOcrPageFocus focus = MangaOcrPageFocus();
       final MangaOcrJobSpec spec = MangaOcrJobSpec(
         engine: engine,
         engines: engines,
@@ -811,6 +814,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         volumeTitle:
             '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
         remoteTarget: availability.remoteTarget,
+        focus: focus,
       );
       // 刻意不 await 启动：同书上一章还在识别时 enqueue 要等它结束。
       unawaited(
@@ -820,6 +824,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             managedDirectory: chapterDir.path,
             engine: engine,
             events: mangaOcrBackgroundEvents(spec),
+            focus: focus,
+            follower: mangaOcrJobFollower(spec),
           ),
           mangaJsonPath: mangaChapterJsonFile(chapterDir).path,
         ),

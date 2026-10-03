@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -18,6 +19,14 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
   final List<int> sourceIds = <int>[];
   final List<List<String>> plannedTitles = <List<String>>[];
   final List<String> runScopes = <String>[];
+
+  /// true = 每部作品都因资料源临时不可用（504）而失败。
+  bool transientFailure = false;
+
+  /// 非 null = 每部作品都留在待确认，并在 warnings 里带一条 [aiWarning]
+  /// 消息（`ai:failed …`）；[aiWarningTransient] 决定它是否标成临时不可用。
+  String? aiWarning;
+  bool aiWarningTransient = true;
 
   @override
   Future<SourceScrapeReport> scrapeSource(
@@ -36,6 +45,43 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
         work.title,
     ]);
     runScopes.add(runScope);
+    if (transientFailure) {
+      final List<VideoSourceScrapeWork> works =
+          plannedWorks ?? const <VideoSourceScrapeWork>[];
+      return SourceScrapeReport(
+        sourceIds: <int>[source.id],
+        totalWorks: works.length,
+        failedWorks: works.length,
+        errors: <SourceScrapeIssue>[
+          for (final VideoSourceScrapeWork work in works)
+            SourceScrapeIssue(
+              workTitle: work.title,
+              message: 'MAL anime/1/full HTTP 504',
+              providerUnavailable: true,
+              workKey: work.stableKey,
+            ),
+        ],
+      );
+    }
+    final String? warning = aiWarning;
+    if (warning != null) {
+      final List<VideoSourceScrapeWork> works =
+          plannedWorks ?? const <VideoSourceScrapeWork>[];
+      return SourceScrapeReport(
+        sourceIds: <int>[source.id],
+        totalWorks: works.length,
+        pendingConfirmations: works.length,
+        warnings: <SourceScrapeIssue>[
+          for (final VideoSourceScrapeWork work in works)
+            SourceScrapeIssue(
+              workTitle: work.title,
+              message: warning,
+              providerUnavailable: aiWarningTransient,
+              workKey: work.stableKey,
+            ),
+        ],
+      );
+    }
     return SourceScrapeReport(
       sourceIds: <int>[source.id],
       totalWorks: plannedWorks?.length ?? 0,
@@ -139,13 +185,17 @@ void main() {
     }
   }
 
-  VideoLibraryScrapeSweep sweep(
-          {bool Function()? isEnabled, bool Function()? isHashReady}) =>
+  VideoLibraryScrapeSweep sweep({
+    bool Function()? isEnabled,
+    bool Function()? isHashReady,
+    String? Function()? aiCapabilityKey,
+  }) =>
       VideoLibraryScrapeSweep(
         database: db,
         controller: controller,
         isEnabled: isEnabled,
         isHashReady: isHashReady,
+        aiCapabilityKey: aiCapabilityKey,
       );
 
   test('只补刮无规范身份的作品，批次 scope 记 sweep', () async {
@@ -161,6 +211,85 @@ void main() {
     expect(runner.sourceIds, <int>[sourceId]);
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
     expect(runner.runScopes.single, 'sweep');
+  });
+
+  // BUG-2828：待确认清单要能说出「为什么还没认出来」——取最近一次运行记录里
+  // 这部作品的挂起原因；没刮过的作品不编造原因。
+  test('待确认作品带上最近一次运行记录里的挂起原因', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    await addVideo('movie-b', 'D:/A/Other Movie (2021).mkv', sourceId,
+        title: 'Other Movie');
+    final VideoLibraryScrapeSweep service = sweep();
+    final List<VideoPendingScrapeWork> planned = await service.pendingWorks();
+    final String keyA = planned
+        .singleWhere(
+            (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')
+        .work
+        .stableKey;
+    String note(VideoScrapePendingCause cause, VideoScrapeAiOutcome ai) =>
+        encodeVideoScrapePendingNote(VideoScrapePendingNote(
+          cause: cause,
+          aiOutcome: ai,
+          candidateCount: 3,
+          workKeys: <String>[keyA],
+          reason: 'r',
+        ));
+    Future<void> addRun(int startedAt, String message) =>
+        db.into(db.videoSourceScrapeRuns).insert(
+              VideoSourceScrapeRunsCompanion.insert(
+                sourceId: Value<int?>(sourceId),
+                scope: 'sweep',
+                status: 'completed',
+                startedAt: startedAt,
+                updatedAt: startedAt,
+                pendingConfirmations: const Value<int>(1),
+                summaryJson: Value<String?>(encodeSourceScrapeReport(
+                  SourceScrapeReport(
+                    sourceIds: <int>[sourceId],
+                    warnings: <SourceScrapeIssue>[
+                      SourceScrapeIssue(
+                          workTitle: 'Unscraped Movie', message: message),
+                    ],
+                  ),
+                )),
+              ),
+            );
+    await addRun(1, note(VideoScrapePendingCause.notFound,
+        VideoScrapeAiOutcome.notAsked));
+    await addRun(2, note(VideoScrapePendingCause.awaitingConfirmation,
+        VideoScrapeAiOutcome.unassigned));
+    // 之后逐个导入的单作品刮削都成功了：它们不带挂起标记，也不能把上面那条
+    // 原因挤出回看窗口。
+    for (int i = 0; i < 25; i++) {
+      await db.into(db.videoSourceScrapeRuns).insert(
+            VideoSourceScrapeRunsCompanion.insert(
+              sourceId: Value<int?>(sourceId),
+              scope: 'single',
+              status: 'completed',
+              startedAt: 100 + i,
+              updatedAt: 100 + i,
+            ),
+          );
+    }
+
+    final List<VideoPendingScrapeWork> pending =
+        await service.pendingWorksWithReasons();
+    final VideoScrapePendingNote? a = pending
+        .singleWhere(
+            (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')
+        .pendingNote;
+    expect(a?.cause, VideoScrapePendingCause.awaitingConfirmation,
+        reason: '取最近一次运行的原因');
+    expect(a?.aiOutcome, VideoScrapeAiOutcome.unassigned);
+    expect(
+      pending
+          .singleWhere(
+              (VideoPendingScrapeWork e) => e.work.title == 'Other Movie')
+          .pendingNote,
+      isNull,
+    );
   });
 
   test('集号标签型标题进待确认队列但不自动补刮', () async {
@@ -355,6 +484,124 @@ void main() {
     // 每一轮 sweep 重新塞进批次，白占 AniDB 的进程级限流队列。
     expect(runner.sourceIds, hasLength(1));
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
+  });
+
+  test('只因资料源临时不可用（504）失败的作品不记「已尝试」，下次触发就重试（BUG-2796）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    runner.transientFailure = true;
+
+    final VideoLibraryScrapeSweep service = sweep();
+    await service.sweepOnce();
+    await service.sweepOnce();
+
+    expect(runner.sourceIds, hasLength(2),
+        reason: '临时故障不是「查无」，不能被记账挡 7 天');
+  });
+
+  group('AI 能力进账本指纹（2026-10-01）', () {
+    test('配上 / 换掉 AI 后「试过没中」的作品下一轮立刻重试；能力键不变不重试',
+        () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      String? aiKey;
+      // 同一个实例：能力键必须每轮现取，而不是构造时快照。
+      final VideoLibraryScrapeSweep service =
+          sweep(aiCapabilityKey: () => aiKey);
+
+      await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1), reason: '没配 AI：试过没中进 7 天退避');
+
+      aiKey = 'p1|openai|https://api.example|gpt-x';
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(2),
+          reason: '配上 AI 后旧的「没中」不作数，不能再等 7 天');
+      expect(runner.plannedTitles.last, <String>['Unscraped Movie']);
+
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(2), reason: '能力键不变：照常退避');
+
+      aiKey = 'p2|anthropic|https://api.example|claude-x';
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(3), reason: '换了提供商 / 模型同样作废');
+
+      aiKey = null;
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(4), reason: '撤掉 AI 也是换了一套配置');
+    });
+
+    test('warnings 里标了临时不可用的 AI 失败不进退避，下一轮再试', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      runner.aiWarning = 'ai:failed reason=timeout';
+
+      final VideoLibraryScrapeSweep service =
+          sweep(aiCapabilityKey: () => 'p1|m');
+      await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(2),
+          reason: 'AI 请求失败记在 warnings（作品是待确认），仍是临时失败');
+    });
+
+    test('warnings 里没标临时不可用的作品照常进退避（对照组）', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      runner
+        ..aiWarning = 'ai:declined confidence=0.40 reason=two seasons'
+        ..aiWarningTransient = false;
+
+      final VideoLibraryScrapeSweep service =
+          sweep(aiCapabilityKey: () => 'p1|m');
+      await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1),
+          reason: 'AI 给了结论但不采用 = 真「没中」，不能每轮重问');
+    });
+  });
+
+  test('下载任务确认过身份的作品即使标题只是集号标签也自动补刮（BUG-2796）', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('ep-1', 'D:/A/S01E01.mkv', sourceId, title: 'S01E01');
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await db.upsertVideoDownloadJob(
+      VideoDownloadJobsCompanion.insert(
+        jobId: 'job-1',
+        resourceProvider: 'nyaa',
+        selectedResourceId: 'release',
+        metadataProvider: const Value<String?>('mal'),
+        externalId: const Value<String?>('63337'),
+        mediaKind: 'tv',
+        title: 'FX戦士くるみちゃん',
+        backendKind: 'embedded',
+        fingerprint: 'fp',
+        lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await db.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: 'job-1',
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'S01E01.mkv',
+        currentRelativePath: 'S01E01.mkv',
+        finalAbsolutePath: const Value<String?>('D:/A/S01E01.mkv'),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    await sweep().sweepOnce();
+
+    expect(runner.plannedTitles.single, <String>['S01E01']);
   });
 
   test('同一进程内新入库的作品会被后续 sweep 认领（BUG-2199）', () async {
@@ -835,6 +1082,8 @@ void main() {
       );
       await addVideo('movie', 'D:/series/Liz (2018).mkv', series);
       await addVideo('ncop', 'D:/series/Liz NCOP.mkv', series);
+      // 原声专辑曲目：拿曲名去动画资料源搜只会失败或误绑，不进刮削计划。
+      await addVideo('ost', 'D:/series/OST/01 - One more tea.flac', series);
       await addVideo('in-folder', 'D:/folder/Movie.mkv', folder);
       await addVideo('remote', 'remote://lib/Movie.mkv', remote);
       await db.upsertVideoBook(const VideoBooksCompanion(
@@ -846,6 +1095,7 @@ void main() {
       final Map<String, bool> expected = <String, bool>{
         'movie': true,
         'ncop': false,
+        'ost': false,
         'in-folder': false,
         'remote': false,
         'manual': false,

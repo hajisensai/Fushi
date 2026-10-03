@@ -61,6 +61,20 @@ void main() {
       expect(
           VideoPlayerController.readyForFirstPaint(null, null, true), isFalse);
     });
+
+    test('纯音频已打开且未缓冲 -> 就绪（没有首帧可等）', () {
+      expect(
+        VideoPlayerController.readyForFirstPaint(null, null, false,
+            audioOnlyOpened: true),
+        isTrue,
+      );
+      expect(
+        VideoPlayerController.readyForFirstPaint(null, null, true,
+            audioOnlyOpened: true),
+        isFalse,
+        reason: '纯音频仍须等缓冲结束',
+      );
+    });
   });
 
   group('控制器缓冲就绪链路 (TODO-1297)', () {
@@ -69,11 +83,14 @@ void main() {
     test('isReadyForFirstPaint 组合首帧 + 非缓冲', () {
       expect(src.contains('bool get isReadyForFirstPaint'), isTrue);
       expect(
-        src.contains(
-            'readyForFirstPaint(videoWidth, videoHeight, isBuffering)'),
+        RegExp(r'readyForFirstPaint\(\s*videoWidth,\s*videoHeight,\s*isBuffering,')
+            .hasMatch(src),
         isTrue,
         reason: '就绪 = 首帧已出画 && 未缓冲，读同一 player.state.buffering 真值',
       );
+      expect(src.contains('audioOnlyOpened: isAudioOnly && _mediaOpened'),
+          isTrue,
+          reason: '纯音频没有首帧：必须以「媒体已打开」代替，否则每首都白等兜底定时器');
       expect(src.contains('bool get isBuffering'), isTrue);
     });
 

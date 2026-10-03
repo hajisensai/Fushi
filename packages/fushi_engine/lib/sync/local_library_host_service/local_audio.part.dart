@@ -67,7 +67,13 @@ mixin _LocalLibraryHostLocalAudio
         packageFile: packageFile,
         stagingDir: stagingDir,
       );
-      await callback(contents);
+      try {
+        await callback(contents);
+      } finally {
+        // 登记回调已把 DB 拷进库目录（或按重名跳过）；解包副本动辄几百 MB，
+        // 不删会在 staging 目录里每推一次攒一份（BUG-2815）。
+        if (await contents.dbFile.exists()) await contents.dbFile.delete();
+      }
     });
   }
 

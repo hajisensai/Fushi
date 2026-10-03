@@ -10,16 +10,25 @@ void main() {
     final String releaseWorkflow =
         File('../.github/workflows/release.yml').readAsStringSync();
 
+    // Both full-suite runs are file-sharded matrices (the shard count lives in
+    // the matrix and the --file-shard denominator; see main.yml unit-tests).
     expect(
       mainWorkflow,
       contains('dart run tool/flutter_test_failures.dart '
-          '--coverage --exclude-tags golden'),
+          r'--file-shard=${{ matrix.shard }}/4 --exclude-tags golden'),
     );
     expect(
       releaseWorkflow,
-      contains(
-          'dart run tool/flutter_test_failures.dart --exclude-tags golden'),
+      contains('dart run tool/flutter_test_failures.dart '
+          r'--file-shard=${{ matrix.part }}/4 --exclude-tags golden'),
     );
+    expect(mainWorkflow, contains('shard: [0, 1, 2, 3]'));
+    expect(releaseWorkflow, contains("part: ['0', '1', '2', '3', checks]"));
+    // Coverage was never uploaded or read by anything and roughly doubled the
+    // PR suite (130-175 min vs 73 min without it). Re-adding it needs a
+    // consumer first.
+    expect(mainWorkflow, isNot(contains('--coverage')));
+    expect(releaseWorkflow, isNot(contains('--coverage')));
     expect(
       mainWorkflow,
       isNot(contains('run: flutter test --coverage --exclude-tags golden')),

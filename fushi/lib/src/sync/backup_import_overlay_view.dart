@@ -98,18 +98,20 @@ class BackupImportOverlayView extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: cs.onSurface,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(color: cs.onSurface),
                 textAlign: TextAlign.center,
               ),
               if (subtitle != null) ...<Widget>[
                 const SizedBox(height: 12),
                 Text(
                   subtitle,
-                  style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
               ],

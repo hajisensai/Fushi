@@ -1,4 +1,6 @@
+import 'dart:convert' show utf8;
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha1;
@@ -90,23 +92,35 @@ Uint8List? buildMultiSizeIco(Uint8List sourceBytes) {
   return body.toBytes();
 }
 
-/// .ico 内容哈希派生的稳定文件名（前 16 位十六进制即可避撞，足够区分换图）。
+/// 由**源图字节**派生的稳定 .ico 文件名（前 16 位十六进制即可避撞，足够区分换图）。
 ///
-/// 文件名带内容哈希是为了让 IconLocation 指向「新路径」从而绕过 explorer 对同名
-/// 文件的图标缓存（见 plan §5）。纯函数，便于单测。
-String shortcutIcoFileName(Uint8List icoBytes) {
-  final String digest = sha1.convert(icoBytes).toString();
+/// 文件名带哈希是为了让 IconLocation 指向「新路径」从而绕过 explorer 对同名
+/// 文件的图标缓存（见 plan §5）。按源图而不是按编码产物取名：编码是源图的确定性
+/// 函数，同一源图 ⇒ 同一产物，所以「文件已在」就等于「产物已是最新」，冷启动
+/// 不必再解码 + 4 次缩放 + 4 次 PNG 编码才能知道名字（那一步曾在 runApp 之前
+/// 同步占 UI isolate ~0.2 s，每次启动都付）。尺寸表折进哈希，改 [kShortcutIcoSizes]
+/// 后旧文件自然失效。纯函数，便于单测。
+String shortcutIcoFileName(Uint8List sourceBytes) {
+  final List<int> salt = utf8.encode('ico:${kShortcutIcoSizes.join(',')}:');
+  final String digest = sha1.convert(<int>[...salt, ...sourceBytes]).toString();
   return 'shortcut_icon_${digest.substring(0, 16)}.ico';
 }
 
-/// 把 [icoBytes] 写到 app support 目录下「带内容哈希」的 .ico 文件，返回绝对路径。
+/// 确保 app support 目录下有 [sourceBytes] 对应的多尺寸 .ico，返回绝对路径；
+/// 源图解码失败返回 null。
 ///
+/// 文件已在就直接复用（见 [shortcutIcoFileName]），否则在后台 isolate 编码后写入，
 /// 写新文件前清理目录里其它 `shortcut_icon_*.ico` 旧版（哈希命名会留旧文件，避免
-/// app support 目录膨胀；当前内容对应的同名文件保留，幂等不重复写）。
-Future<String> writeShortcutIcoFile(Uint8List icoBytes) async {
+/// app support 目录膨胀）。
+Future<String?> ensureShortcutIcoFile(Uint8List sourceBytes) async {
   final Directory dir = await getApplicationSupportDirectory();
-  final String name = shortcutIcoFileName(icoBytes);
+  final String name = shortcutIcoFileName(sourceBytes);
   final File dest = File('${dir.path}${Platform.pathSeparator}$name');
+  if (await dest.exists() && await dest.length() > 0) return dest.path;
+  final Uint8List? icoBytes = await Isolate.run(
+    () => buildMultiSizeIco(sourceBytes),
+  );
+  if (icoBytes == null) return null;
   // 清理旧 shortcut_icon_*.ico（保留当前要写的这个）。
   try {
     await for (final FileSystemEntity entity in dir.list()) {
@@ -138,7 +152,8 @@ const MethodChannel _windowChannel = MethodChannel('app.fushi/window');
 /// 换图标后同步桌面 / 开始菜单快捷方式图标（仅 Windows，其它平台 no-op）。
 ///
 /// [sourceBytes] 是用户当前图标的原始图片字节（preset 走 `rootBundle.load`，custom
-/// 走文件读字节）。流程：编码多尺寸 .ico → 写带哈希文件 → 经 channel 让原生改 .lnk。
+/// 走文件读字节）。流程：确保多尺寸 .ico 已落盘（按源图哈希复用）→ 经 channel
+/// 让原生改 .lnk（原生侧 IconLocation 已是目标时不重写、不通知 shell）。
 ///
 /// 任一步失败只 debugPrint 降级，不抛错（与现有「换图标」体感一致，不弹错误 toast）。
 Future<void> syncWindowsShortcutIcons(Uint8List sourceBytes) async {
@@ -146,12 +161,11 @@ Future<void> syncWindowsShortcutIcons(Uint8List sourceBytes) async {
     return;
   }
   try {
-    final Uint8List? ico = buildMultiSizeIco(sourceBytes);
-    if (ico == null) {
+    final String? icoPath = await ensureShortcutIcoFile(sourceBytes);
+    if (icoPath == null) {
       debugPrint('syncWindowsShortcutIcons: 源图解码失败，跳过 .lnk 同步');
       return;
     }
-    final String icoPath = await writeShortcutIcoFile(ico);
     // 注意：入参 key 是 'iconPath'（与 setWindowIcon 的 'path' 不同，别混）。
     await _windowChannel.invokeMethod<dynamic>(
       'setShortcutIcon',

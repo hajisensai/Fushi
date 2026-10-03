@@ -123,9 +123,14 @@ void main() {
   test('书架漫画进度按页计（与 PDF 共用 1-based 页序分支）', () {
     final String src = read('lib/src/media/sources/reader_fushi_source.dart');
     expect(
-      src.contains('(pos?.sectionIndex ?? 0) + 1'),
+      src.contains('(pos.sectionIndex + 1)'),
       isTrue,
       reason: '页码型书进度用 1-based 页序，停在第 1 页也要计入在读',
+    );
+    expect(
+      src.contains('position: pos == null'),
+      isTrue,
+      reason: '没有阅读记录的卷 position 必须是 0（未读），不能算停在第 1 页',
     );
     expect(src.contains('pageBased'), isTrue, reason: 'PDF/漫画共用页码型进度分支');
   });

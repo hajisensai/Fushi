@@ -138,6 +138,15 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
 
   /// 把连接阶段的异常翻成用户能行动的话：主机名解析失败追加「改用 IP」提示。
   String _describeConnectFailure(String serverUrl, Object error) {
+    // 401/403 是服务器拒绝（如按 Client 白名单的公益服，BUG-2848），不是连不上：
+    // 报「无法连接」会让用户去查网络 / 代理，而该做的是找服务器管理员。
+    if (error is JellyfinApiException && error.isAccessDenied) {
+      return t.jellyfin_server_rejected_client(
+        url: serverUrl,
+        code: error.statusCode,
+        reason: error.serverMessage ?? error.endpoint,
+      );
+    }
     final String reason = JellyfinApi.isHostLookupFailure(error)
         ? '$error\n\n${t.jellyfin_host_lookup_hint}'
         : '$error';

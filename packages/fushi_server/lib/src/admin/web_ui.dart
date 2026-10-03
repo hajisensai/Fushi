@@ -79,6 +79,10 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <section id="s-pairing">
 <div class="card"><h2>配对请求</h2><div id="pairing-pending"><p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p></div></div>
 <div class="card"><h2>已配对设备</h2><table><thead><tr><th>设备</th><th>peer id</th><th>最近地址</th><th>配对时间</th><th></th></tr></thead><tbody id="peers"></tbody></table></div>
+<div class="card"><h2>配置文件寄存</h2>
+<div class="row"><span id="prof-state" class="small"></span><span class="sp"></span><button class="b sec" id="btn-prof-toggle"></button></div>
+<p class="small muted">已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。</p>
+<table><thead><tr><th>名称</th><th>设置项</th><th>收到时间</th><th>状态</th><th></th></tr></thead><tbody id="profiles"></tbody></table></div>
 </section>
 
 <section id="s-libraries">
@@ -122,6 +126,13 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <p class="small muted" id="sub-cap">从 Fushi 客户端的发现页订阅会带完整作品身份（原名/别名/交叉 ID）；这里只按搜索词匹配。</p></div>
 <div class="card"><h2>订阅</h2><div class="row"><button class="b sec" id="btn-sub-check-all">全部立即检查</button></div>
 <table><thead><tr><th>标题</th><th>搜索词</th><th>源</th><th>状态</th><th>集数</th><th>最近</th><th></th></tr></thead><tbody id="subs"></tbody></table></div>
+<div class="card"><h2>资源索引器</h2>
+<p class="small muted">订阅与代下载在这些源里搜资源。与 Fushi app「视频资源」设置是同一份配置；保存后对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
+<div class="row" id="ri-builtin"></div>
+<h2 style="margin-top:16px">Torznab（Jackett / Prowlarr）</h2>
+<div id="ri-torznab"></div>
+<div class="row"><button class="b sec" id="btn-ri-add">添加 indexer</button><button class="b" id="btn-ri-save">保存</button><button class="b sec" id="btn-ri-reset">放弃修改</button></div>
+<p class="small muted" id="ri-state"></p></div>
 </section>
 
 <section id="s-models">
@@ -185,6 +196,14 @@ let current='status';
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{ current=b.dataset.s; document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b)); document.querySelectorAll('main section').forEach(s=>s.classList.toggle('on',s.id==='s-'+current)); refresh(); });
 
 // ── 状态 ──
+function scrapeSummary(sc){
+  if(!sc) return '—';
+  const tail = sc.tmdbAvailable ? '' : ' · 未配置 TMDB key';
+  if(sc.busy) return `进行中 ${sc.current}/${sc.total}` + (sc.work ? ' ' + sc.work : '') + tail;
+  const r = sc.lastReport;
+  const last = r ? ` · 上次 ${r.succeeded}/${r.totalWorks} 部成功` + (r.pendingConfirmations ? `，${r.pendingConfirmations} 部待指定` : '') : '';
+  return (sc.enabled ? '空闲' : '自动补刮已关闭') + last + tail;
+}
 async function loadStatus(){
   const s = await api('status');
   $('#devname').textContent = s.deviceName + ' · ' + s.listen;
@@ -197,9 +216,11 @@ async function loadStatus(){
     ['订阅', s.subscriptionCount==null ? '—' : s.subscriptionCount],
     ['上传配额', fmtBytes(s.uploadUsedBytes)+' / '+fmtBytes(s.uploadQuotaBytes)],
     ['P2P 隧道', p2pSummary(s.p2p)],
+    ['刮削', scrapeSummary(s.scrape)],
   ];
   $('#status-grid').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
-  $('#scan-state').textContent = s.scanning ? '扫描中…' : (s.lastScan ? `上次 ${fmtTime(s.lastScanAt)}: ${s.lastScan}` : '尚未扫描');
+  const notes = (s.lastScanNotes && s.lastScanNotes.length) ? ' — ' + s.lastScanNotes.join('; ') : '';
+  $('#scan-state').textContent = s.scanning ? '扫描中…' : (s.lastScan ? `上次 ${fmtTime(s.lastScanAt)}: ${s.lastScan}${notes}` : '尚未扫描');
   $('#btn-scan').disabled = !!s.scanning;
 }
 $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast('已开始扫描'); loadStatus(); });
@@ -212,13 +233,27 @@ async function loadPairing(){
     : '<p class="muted">没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。</p>';
   $('#peers').innerHTML = p.peers.map(x=>`<tr><td>${esc(x.deviceName||'—')}</td><td class="small muted">${esc(x.peerId)}</td><td>${esc(x.lastSeenIp||'')}</td><td>${fmtTime(x.pairedAtMs)}</td><td><button class="b danger" data-revoke="${esc(x.peerId)}">吊销</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">无</td></tr>';
   $('#peers').querySelectorAll('[data-revoke]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('吊销该设备？')) return; await del('pairing/peers/'+encodeURIComponent(b.dataset.revoke)); loadPairing(); }));
+  await loadProfiles();
 }
+async function loadProfiles(){
+  const r = await api('profiles');
+  $('#prof-state').innerHTML = r.enabled ? (r.tls ? '<span class="tag ok">已允许</span>' : '<span class="tag">已允许，但 TLS 关着——端点在明文下拒绝访问</span>') : '<span class="tag">未允许（默认）</span>';
+  $('#btn-prof-toggle').textContent = r.enabled ? '禁止设备推送 / 拉取' : '允许设备推送 / 拉取';
+  $('#btn-prof-toggle').dataset.enabled = r.enabled ? '1' : '0';
+  $('#profiles').innerHTML = (r.profiles||[]).map(x=>`<tr><td>${esc(x.name)}</td><td>${x.settingCount}</td><td>${fmtTime(x.receivedAt)}</td><td>${x.shared?'<span class="tag ok">分发中</span>':''}</td><td class="row">${x.shared?'':`<button class="b sec" data-prof="share" data-id="${x.id}">设为分发</button>`}<button class="b danger" data-prof="delete" data-id="${x.id}">删除</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有设备推送过配置</td></tr>';
+  $('#profiles').querySelectorAll('[data-prof]').forEach(b=>b.onclick=guard(async()=>{ const id=b.dataset.id;
+    if(b.dataset.prof==='delete'){ if(!confirm('删除这份寄存的配置？')) return; await del('profiles/'+id); }
+    else { await post('profiles/'+id+'/share'); }
+    loadProfiles(); }));
+}
+$('#btn-prof-toggle').onclick = guard(async()=>{ const on = $('#btn-prof-toggle').dataset.enabled!=='1'; if(on && !confirm('允许已配对设备把配置推到本机寄存、并从本机拉走？')) return; await put('settings',{profileTransfer:on}); settingsCache=null; toast(on?'已允许':'已禁止'); loadProfiles(); });
 
 // ── 库 ──
 async function loadLibraries(){
   const r = await api('libraries');
-  $('#libs').innerHTML = r.libraries.map(l=>`<tr><td>${esc(l.id)}</td><td>${esc(l.path)}</td><td>${esc(l.kind)}</td><td>${l.exists?'<span class="tag ok">存在</span>':'<span class="tag err">目录不存在</span>'}${l.enabled?'':' <span class="tag">禁用</span>'}</td><td><button class="b danger" data-rm="${esc(l.id)}">移除</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有扫描根</td></tr>';
+  $('#libs').innerHTML = r.libraries.map(l=>`<tr><td>${esc(l.id)}</td><td>${esc(l.path)}</td><td>${esc(l.kind)}</td><td>${l.exists?'<span class="tag ok">存在</span>':'<span class="tag err">目录不存在</span>'}${l.enabled?'':' <span class="tag">禁用</span>'}</td><td><button class="b danger" data-rm="${esc(l.id)}">移除</button> <button class="b danger" data-purge="${esc(l.id)}">移除并清理</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">还没有扫描根</td></tr>';
   $('#libs').querySelectorAll('[data-rm]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('从配置移除该库根？（不删文件、不删已入库条目）')) return; await del('libraries/'+encodeURIComponent(b.dataset.rm)); loadLibraries(); }));
+  $('#libs').querySelectorAll('[data-purge]').forEach(b=>b.onclick=guard(async()=>{ if(!confirm('移除该库根，并清理「文件已消失」的条目？\n只回收条目与其刮削资料 / 正文副本，不删任何源文件。\n注意：目录若只是没挂载，其下条目也会被当成已删除。')) return; const r=await del('libraries/'+encodeURIComponent(b.dataset.purge)+'?purge=true'); const p=r&&r.purge; toast(p?(p.skipped?('未清理：'+(p.reason||'被护栏拦下')):('已清理 '+p.deleted+' 条')):'已移除'); loadLibraries(); loadStatus(); }));
   $('#up-lib').innerHTML = r.libraries.map(l=>`<option value="${esc(l.id)}">${esc(l.id)} — ${esc(l.path)}</option>`).join('');
 }
 $('#btn-lib-add').onclick = guard(async()=>{ await post('libraries',{path:$('#lib-path').value, kind:$('#lib-kind').value, id:$('#lib-id').value}); $('#lib-path').value=''; $('#lib-id').value=''; toast('已添加'); loadLibraries(); });
@@ -289,11 +324,48 @@ async function loadSubscriptions(){
 $('#btn-sub-add').onclick = guard(async()=>{ const after=$('#sub-after').value.trim(); await post('subscriptions',{title:$('#sub-title').value, searchQuery:$('#sub-query').value, mediaKind:$('#sub-kind').value, resourceProvider:$('#sub-provider').value, startAfterEpisode: after?Number(after):undefined}); $('#sub-title').value=''; $('#sub-query').value=''; toast('已创建'); loadSubscriptions(); });
 $('#btn-sub-check-all').onclick = guard(async()=>{ await post('subscriptions/check'); toast('已触发检查'); loadSubscriptions(); });
 
+// ── 资源索引器（内置源启停 + Torznab；表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
+let riLoaded=false;
+function riRow(x){
+  return `<div class="ri-row" data-id="${esc(x.id||'')}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0"><div class="grid">
+    <label class="f">名称<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
+    <label class="f">地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）<input type="text" data-k="endpoint" value="${esc(x.endpoint||'')}"></label>
+    <label class="f">API key ${x.apiKeySet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
+    <label class="f">优先级（小的先搜）<input type="number" data-k="priority" value="${esc(x.priority??100)}"></label>
+    <label class="f">分类（逗号分隔，可空）<input type="text" data-k="categories" value="${esc((x.categories||[]).join(','))}"></label></div>
+    <div class="row"><label><input type="checkbox" data-k="enabled" ${x.enabled!==false?'checked':''}> 启用</label><label><input type="checkbox" data-k="allowInsecureHttp" ${x.allowInsecureHttp?'checked':''}> 允许明文 HTTP（仅受信任局域网）</label>${x.apiKeySet?'<label><input type="checkbox" data-k="clearApiKey"> 清除已存的 key</label>':''}<button class="b danger" data-ri-rm>移除</button></div></div>`;
+}
+function bindRiRemove(){ $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove()); }
+function renderIndexers(r){
+  $('#ri-builtin').innerHTML = (r.builtin||[]).map(b=>`<label><input type="checkbox" data-builtin="${esc(b.id)}" ${b.enabled?'checked':''}> ${esc(b.name)}</label>`).join('');
+  $('#ri-torznab').innerHTML = (r.torznab||[]).map(riRow).join('') || '<p class="muted small" id="ri-empty">还没有 Torznab indexer。</p>';
+  bindRiRemove();
+  $('#ri-state').textContent = r.applied ? `当前可用：${(r.providers||[]).join(', ')||'无'}` : '互联 host 未运行：保存后下次启动 serve 生效。';
+}
+async function loadIndexers(force){ if(riLoaded && !force) return; const r = await api('resource-indexers'); riLoaded=true; renderIndexers(r); }
+$('#btn-ri-add').onclick = ()=>{ const e=$('#ri-empty'); if(e) e.remove(); $('#ri-torznab').insertAdjacentHTML('beforeend', riRow({})); bindRiRemove(); };
+$('#btn-ri-reset').onclick = guard(()=>loadIndexers(true));
+$('#btn-ri-save').onclick = guard(async()=>{
+  const builtin = {};
+  document.querySelectorAll('#ri-builtin [data-builtin]').forEach(el=>{ builtin[el.dataset.builtin] = el.checked; });
+  const torznab = Array.from(document.querySelectorAll('#ri-torznab .ri-row')).map((row,i)=>{
+    const v = (k)=>row.querySelector(`[data-k="${k}"]`);
+    const pr = v('priority').value.trim();
+    if (pr!=='' && !/^-?\d+$/.test(pr)) throw new Error(`第 ${i+1} 个 indexer 的优先级必须是整数`);
+    const clear = v('clearApiKey');
+    return {id: row.dataset.id || undefined, name: v('name').value, endpoint: v('endpoint').value, apiKey: v('apiKey').value, clearApiKey: clear ? clear.checked : false,
+      priority: pr==='' ? undefined : Number(pr), categories: v('categories').value, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
+  });
+  $('#btn-ri-save').disabled=true;
+  try { const r = await put('resource-indexers', {builtin, torznab}); renderIndexers(r); toast(r.applied ? '已保存并生效' : '已保存'); loadSubscriptions(); }
+  finally { $('#btn-ri-save').disabled=false; }
+});
+
 // ── 模型 ──
 async function loadModels(){
   const r = await api('models');
   $('#asr-models').innerHTML = r.asr.map(m=>`<tr><td>${esc(m.name||m.tag)} <span class="small muted">${esc(m.tag)}</span></td><td>${m.error?`<span class="tag err">${esc(m.error)}</span>`:(m.ready?'<span class="tag ok">就绪</span>':'<span class="tag">缺失</span>')}</td><td class="small">${esc(m.variant||'')} / ${esc(m.provider||'')}</td><td class="small">${m.totalBytes?fmtBytes(m.obtainedBytes)+' / '+fmtBytes(m.totalBytes):''}</td><td>${m.ready?'':`<button class="b" data-pull="${esc(m.tag)}" ${m.pulling?'disabled':''}>${m.pulling?'下载中…':'下载'}</button>`}</td></tr>`).join('');
-  $('#ocr-model').innerHTML = r.ocr ? `<div class="row">${r.ocr.ready?'<span class="tag ok">就绪</span>':'<span class="tag">缺失</span>'} <span class="small muted">${fmtBytes(r.ocr.obtainedBytes)} / ${fmtBytes(r.ocr.totalBytes)}</span> ${r.ocr.ready?'':`<button class="b" data-pull="ocr" ${r.ocr.pulling?'disabled':''}>${r.ocr.pulling?'下载中…':'下载'}</button>`}</div>` : '<p class="muted">OCR 服务不可用</p>';
+  $('#ocr-model').innerHTML = (r.ocrModels && r.ocrModels.length) ? `<table>${r.ocrModels.map(m=>`<tr><td>${esc(m.name||m.key)}</td><td>${m.error?`<span class="tag err">${esc(m.error)}</span>`:(m.ready?'<span class="tag ok">就绪</span>':'<span class="tag">缺失</span>')}</td><td class="small">${m.totalBytes?fmtBytes(m.obtainedBytes)+' / '+fmtBytes(m.totalBytes):''}</td><td>${m.ready||m.error?'':`<button class="b" data-pull="ocr:${esc(m.key)}" ${m.pulling?'disabled':''}>${m.pulling?'下载中…':'下载'}</button>`}</td></tr>`).join('')}</table>` : r.ocr ? `<div class="row">${r.ocr.ready?'<span class="tag ok">就绪</span>':'<span class="tag">缺失</span>'} <span class="small muted">${fmtBytes(r.ocr.obtainedBytes)} / ${fmtBytes(r.ocr.totalBytes)}</span> ${r.ocr.ready?'':`<button class="b" data-pull="ocr" ${r.ocr.pulling?'disabled':''}>${r.ocr.pulling?'下载中…':'下载'}</button>`}</div>` : '<p class="muted">OCR 服务不可用</p>';
   document.querySelectorAll('[data-pull]').forEach(b=>b.onclick=guard(async()=>{ await post('models/pull',{model:b.dataset.pull}); toast('开始下载'); loadModels(); }));
 }
 
@@ -390,9 +462,13 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 // ── 设置 ──
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
-  ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['subtitleLanguage','字幕语言','text'],['metadataLocale','刮削资料语言（BCP-47，如 ja / zh-CN）','text'],
+  ['scanScrape','扫描后自动补刮视频资料','bool'],['tmdbApiKey','TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）','secret:tmdbApiKeySet'],['scanPrune','扫描后清理文件已消失的视频条目','bool'],['profileTransfer','允许已配对设备推送 / 拉取配置文件（Profile）','bool'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
+  ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],
+  ['ai.model','AI 模型（空 = 预设起点模型）','text'],['ai.baseUrl','AI 接口地址（空 = 预设地址）','text'],['ai.protocol','AI 协议（空 = 跟随预设）','select:,openAiCompatible,anthropicMessages,geminiGenerateContent'],
+  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],
 ];
 let settingsCache=null;
 async function loadSettings(){
@@ -400,14 +476,17 @@ async function loadSettings(){
   // 远程访问卡片有自己的保存键：主表单保存后只刷新 P2P 状态，不冲掉它未保存的编辑。
   if(first) renderRemoteReach(s); else renderP2pState(s.p2pStatus);
   const found = s.torrent && s.torrent.embeddedLibraryFound;
-  $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ const v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-'); if(k==='torrent.library'&&!v) label += found ? `（已找到 ${found}）` : '（未找到随包库）';
+  $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ let v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-'); if(k==='torrent.library'&&!v) label += found ? `（已找到 ${found}）` : '（未找到随包库）';
+    if(k==='ai.webKnowledge'&&!s.ai) v=true; if(k==='ai.preset'&&s.ai) label += s.ai.status==='ready' ? '（可用）' : `（未配全：${s.ai.problem||''}）`;
+    if(type.startsWith('dyn:')) return `<label class="f">${esc(label)}<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(o)}</option>`).join('')}</select></label>`;
     if(type==='bool') return `<label class="f">${esc(label)}<select id="${id}"><option value="true" ${v?'selected':''}>开</option><option value="false" ${!v?'selected':''}>关</option></select></label>`;
     if(type.startsWith('select:')) return `<label class="f">${esc(label)}<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></label>`;
     if(type==='password') return `<label class="f">${esc(label)} ${s.qbittorrent.passwordSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`;
+    if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; return `<label class="f">${esc(label)} ${isSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`; }
     return `<label class="f">${esc(label)}<input type="${type}" id="${id}" value="${esc(v??'')}"></label>`; }).join('');
 }
 $('#btn-settings-save').onclick = guard(async()=>{
-  const body={qbittorrent:{},torrent:{}};
+  const body={qbittorrent:{},torrent:{},ai:{}};
   for(const [k,,type] of FIELDS){ const el=$('#f-'+k.replace('.','-')); let v=el.value; if(type==='bool') v=(v==='true'); else if(type==='number') v=Number(v); if(type!=='bool'&&type!=='number'&&v==='') v=null;
     if(k.includes('.')) body[k.split('.')[0]][k.split('.')[1]]=v; else body[k]=v; }
   // 路径类字段：空串代表「清掉」——但 copyWith 的 null 是「不改」，所以传空串让服务端按空处理
@@ -455,7 +534,7 @@ async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); co
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:async()=>{ await loadSubscriptions(); await loadIndexers(false); }, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

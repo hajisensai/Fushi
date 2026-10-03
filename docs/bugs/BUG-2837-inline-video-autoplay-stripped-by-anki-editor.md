@@ -1,0 +1,6 @@
+## BUG-2837 · 制卡视频（WebM 内嵌片段）翻面不自动播放，须手动点击
+- **报告**：2026-10-01（用户：制卡出来的视频缺少自动播放，现在需要手动点击播放才行）
+- **真实性**：✅ 真 bug。本机 Anki 25.9.2 实查：唯一一张 Fushi 真实产出的 WebM 片段卡（Lapis，nid 1790848107631）Picture 字段只剩 `<video …></video>`，翻面播放用的 `<script>` 已消失，属性被序列化成 `playsinline="" controls=""`；该笔记 mod 比创建晚 54 秒（被 Anki 编辑器改写过）。Anki 编辑器 `_aqt/data/web/js/editor.js` 回写字段时经 `DOMParser` 删掉所有 `script` / `link` 标签（`Q9e=["script","link"]`），而同卡 SentenceAudio 字段里的 `onclick` / `oncanplay` 内联属性完好。根因：`packages/fushi_anki/lib/src/anki_note_composer.dart` 的 `inlineVideoCoverHtml` 把自动播放放在字段内 `<script>` 里（`<video>` 又刻意不带 `autoplay`，Lapis 渲染三份会叠音），卡片在编辑器里被改过一次自动播放就永久丢失。Fushi 侧无任何 HTML 解析回写路径；AnkiConnect `addNote` 原样保存 `<script>`（临时探针笔记实测，测后已删）。
+- **[x] ① 已修复** — `inlineVideoCoverHtml` 去掉 `<script>`，改由 `<video oncanplay="…">` 内联事件属性触发「只播可见那份」：首次 `canplay` 给所有副本打 `data-fushi-started`，其余副本与重播 seek 后的再次 `canplay` 直接返回；`play()` 被拒照旧静默吞掉。与句子音频隐藏 `<audio>` 的既有做法同构。已存量的被剥卡片不会自动恢复（需重制或覆盖制卡）。
+- **[x] ② 已加自动化测试** — `packages/fushi_anki/test/inline_video_cover_test.dart`：新增「画面字段没有 `<script>` / `<link>`，自动播放挂在 oncanplay」守卫；node 实跑用例改为对三份副本各触发两轮 `canplay`，断言只播可见那份且只播一次。
+- **备注**：Anki 编辑器只删 `script` / `link` 标签、不动 `on*` 属性；以后往字段里塞行为一律用内联事件属性。

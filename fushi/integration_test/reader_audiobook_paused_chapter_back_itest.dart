@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
@@ -16,7 +17,6 @@ import 'package:fushi_audio/fushi_audio.dart'
     show
         AudioCue,
         AudioTextNormalizer,
-        AudiobookPlayerController,
         AudiobookRepository,
         SubtitleRematchCodec;
 import 'package:fushi_core/fushi_core.dart' show EpubBookRow;

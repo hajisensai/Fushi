@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v70 -> v71 sasayaki 族存量值改写迁移（Fushi 终局清算 W2-2）的正确性证明：

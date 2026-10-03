@@ -1,8 +1,8 @@
 /// 「悬浮球」一级分类：悬浮球唯一的设置入口（`docs/specs/2026-09-28-floating-ball.md`）。
 ///
-/// 两个独立开关——应用内（默认开）/ 应用外（仅 Android，默认关）——加每个场景一组
-/// 按钮勾选：阅读器 / 漫画 / 视频按当前页面的语料分，「其它页面」是没有登记场景的
-/// 页面，「应用外」是 Android 系统球。各场景的按钮目录见 [FloatingBallScope]。
+/// 两个独立开关——应用内（默认开）/ 应用外（Android / Windows / macOS，默认关）——、
+/// 关闭后自动恢复的三态（[FloatingBallAutoRestore]），加每个场景一组按钮勾选：阅读器 / 漫画 / 视频按当前页面的语料分，「其它页面」是
+/// 没有登记场景的页面，「应用外」是原生系统球。各场景的按钮目录见 [FloatingBallScope]。
 library;
 
 import 'dart:io';
@@ -42,17 +42,22 @@ SettingsDestination buildFloatingBallDestination() {
           SettingsSwitchItem(
             id: 'floating_ball.system',
             title: t.floating_ball_system,
-            subtitle: t.floating_ball_system_hint,
+            // 只有 Android 要「显示在其他应用上层」权限。
+            subtitle: Platform.isAndroid
+                ? t.floating_ball_system_hint
+                : t.floating_ball_system_hint_desktop,
             icon: Icons.open_in_new,
-            // iOS 不允许应用外悬浮，桌面没有这个概念。
-            visible: (SettingsContext c) => Platform.isAndroid,
+            // iOS 不允许应用外悬浮，Linux 没有实现。
+            visible: (SettingsContext c) => _systemBallSupported,
             value: (SettingsContext c) => _prefs(c).floatingBallSystem,
             onChanged: (SettingsContext c, bool value) async {
               await _prefs(c).setFloatingBallSystem(value);
               c.refresh();
               // 要「显示在其他应用上层」权限：没有就说明原因并跳授权页，回到前台时
               // 悬浮球宿主会再试一次起服务。
-              if (value && !await FloatingBallChannel.canDrawOverlays()) {
+              if (value &&
+                  Platform.isAndroid &&
+                  !await FloatingBallChannel.canDrawOverlays()) {
                 final BuildContext ctx = c.context;
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
@@ -65,6 +70,37 @@ SettingsDestination buildFloatingBallDestination() {
               }
             },
           ),
+          SettingsSegmentedItem<FloatingBallAutoRestore>(
+            id: 'floating_ball.auto_restore',
+            title: t.floating_ball_auto_restore,
+            subtitle: t.floating_ball_auto_restore_hint,
+            icon: Icons.restore,
+            visible: (SettingsContext c) =>
+                _prefs(c).floatingBallInApp ||
+                (_systemBallSupported && _prefs(c).floatingBallSystem),
+            options: <SettingsSegmentOption<FloatingBallAutoRestore>>[
+              // 没有应用外球的平台（iOS / Linux）只剩「恢复 / 不恢复」两档。
+              if (_systemBallSupported)
+                SettingsSegmentOption<FloatingBallAutoRestore>(
+                  value: FloatingBallAutoRestore.both,
+                  label: t.floating_ball_auto_restore_both,
+                ),
+              SettingsSegmentOption<FloatingBallAutoRestore>(
+                value: FloatingBallAutoRestore.inApp,
+                label: t.floating_ball_auto_restore_in_app,
+              ),
+              SettingsSegmentOption<FloatingBallAutoRestore>(
+                value: FloatingBallAutoRestore.off,
+                label: t.floating_ball_auto_restore_off,
+              ),
+            ],
+            selected: (SettingsContext c) => _autoRestoreShown(c),
+            onChanged:
+                (SettingsContext c, FloatingBallAutoRestore value) async {
+                  await _prefs(c).setFloatingBallAutoRestore(value);
+                  c.refresh();
+                },
+          ),
         ],
       ),
       for (final FloatingBallScope scope in FloatingBallScope.values)
@@ -74,6 +110,19 @@ SettingsDestination buildFloatingBallDestination() {
 }
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
+
+bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
+  isAndroid: Platform.isAndroid,
+  isDesktop: isDesktopSystemBallPlatform,
+);
+
+/// 没有应用外球的平台上，「应用内外」与「仅应用内」行为相同，按后者显示。
+FloatingBallAutoRestore _autoRestoreShown(SettingsContext c) {
+  final FloatingBallAutoRestore value = _prefs(c).floatingBallAutoRestore;
+  return !_systemBallSupported && value == FloatingBallAutoRestore.both
+      ? FloatingBallAutoRestore.inApp
+      : value;
+}
 
 SettingsSection _buttonsSection(FloatingBallScope scope) {
   return SettingsSection(
@@ -90,7 +139,7 @@ SettingsSection _buttonsSection(FloatingBallScope scope) {
           id: 'floating_ball.${scope.storageValue}.$id',
           title: _buttonLabel(scope, id),
           icon: _buttonIcon(scope, id),
-          visible: (SettingsContext c) => _buttonAvailable(id),
+          visible: (SettingsContext c) => _buttonAvailable(c, scope, id),
           value: (SettingsContext c) =>
               _prefs(c).floatingBallButtons(scope).contains(id),
           onChanged: (SettingsContext c, bool value) async {
@@ -114,7 +163,8 @@ SettingsSection _buttonsSection(FloatingBallScope scope) {
 bool _scopeVisible(SettingsContext c, FloatingBallScope scope) {
   final PreferencesRepository prefs = _prefs(c);
   return switch (scope) {
-    FloatingBallScope.system => Platform.isAndroid && prefs.floatingBallSystem,
+    FloatingBallScope.system =>
+      _systemBallSupported && prefs.floatingBallSystem,
     FloatingBallScope.manga =>
       prefs.floatingBallInApp &&
           c.appModel.moduleVisibility.isEnabled(ModuleId.manga),
@@ -128,13 +178,23 @@ bool _scopeVisible(SettingsContext c, FloatingBallScope scope) {
   };
 }
 
-/// 全局按钮按平台能力出现（截屏识字只有 Android / iOS）；专属按钮恒可配。
-bool _buttonAvailable(String id) {
+/// 全局按钮按平台与场景能力出现（截屏识字 / 拍照查词只有 Android / iOS；桌面
+/// 应用外球另有一套、并受查词模块开关约束，见
+/// [FloatingBallGlobalAction.availableIn]）；专属按钮恒可配。
+bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
   final FloatingBallGlobalAction? global = FloatingBallGlobalAction.fromStorage(
     id,
   );
   return global == null ||
-      global.availableOn(isAndroid: Platform.isAndroid, isIOS: Platform.isIOS);
+      global.availableIn(
+        scope,
+        isAndroid: Platform.isAndroid,
+        isIOS: Platform.isIOS,
+        isDesktop: isDesktopSystemBallPlatform,
+        lookupModuleEnabled: c.appModel.moduleVisibility.isEnabled(
+          ModuleId.lookup,
+        ),
+      );
 }
 
 String _scopeTitle(FloatingBallScope scope) => switch (scope) {
@@ -156,6 +216,8 @@ String _buttonLabel(FloatingBallScope scope, String id) {
         t.floating_ball_action_popup_lookup,
       FloatingBallGlobalAction.clipboard => t.floating_ball_action_clipboard,
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
+      FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
+      FloatingBallGlobalAction.sync => t.sync_now,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -191,6 +253,8 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
         Icons.picture_in_picture_alt_outlined,
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
+      FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
+      FloatingBallGlobalAction.sync => Icons.sync,
     };
   }
   if (scope == FloatingBallScope.reader) {

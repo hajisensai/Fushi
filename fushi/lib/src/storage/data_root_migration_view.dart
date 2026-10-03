@@ -51,17 +51,19 @@ class DataRootMigrationView extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 t.data_storage_migrate_overlay_title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: cs.onSurface,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(color: cs.onSurface),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
               Text(
                 t.data_storage_migrate_overlay_warning,
-                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -76,7 +78,10 @@ class DataRootMigrationView extends StatelessWidget {
                     copied: p.copied,
                     total: p.total,
                   ),
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -103,23 +108,28 @@ class DataRootMigrationView extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text(
                   t.data_storage_migrate_failed_title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: cs.onSurface,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(color: cs.onSurface),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
                 Text(
                   reason,
-                  style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
                 Text(
                   t.data_storage_migrate_failed_suggestions,
-                  style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: cs.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),

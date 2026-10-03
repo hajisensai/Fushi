@@ -6,9 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/ai/ai_chat_client.dart';
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -317,5 +318,57 @@ void main() {
         'sub-1.ass',
       ]);
     });
+
+    test('AI 失败回退原序时记一条带 tag 的诊断日志（key 填错不再无痕）', () async {
+      final EngineLogSink previous = engineLog;
+      final _RecordingLogSink sink = _RecordingLogSink();
+      engineLog = sink;
+      addTearDown(() => engineLog = previous);
+      final List<VideoSubtitleCandidate> input = List<_Sub>.generate(
+        3,
+        _Sub.new,
+      );
+      final SubtitleBackfillReorder failing = aiSubtitleBackfillReorder(
+        resolveProvider: _provider,
+        clientFactory: () => AiChatClient(
+          client: MockClient((_) async => http.Response('denied', 401)),
+        ),
+      );
+      expect(await failing(input, target), same(input));
+      expect(sink.diagnostics, hasLength(1));
+      expect(sink.diagnostics.single.key, kAiSubtitleBackfillReorderLogSource);
+      expect(sink.diagnostics.single.value, contains('unauthorized'));
+      expect(sink.diagnostics.single.value, contains('Show - 01.mkv'));
+    });
+
+    test('AI 成功重排不记失败日志', () async {
+      final EngineLogSink previous = engineLog;
+      final _RecordingLogSink sink = _RecordingLogSink();
+      engineLog = sink;
+      addTearDown(() => engineLog = previous);
+      final SubtitleBackfillReorder ok = aiSubtitleBackfillReorder(
+        resolveProvider: _provider,
+        clientFactory: () => _client('{"order":[1,0]}'),
+      );
+      await ok(List<_Sub>.generate(2, _Sub.new), target);
+      expect(sink.diagnostics, isEmpty);
+    });
   });
+}
+
+/// 只记录不输出的日志 sink，用来断言诊断日志确实写了。
+class _RecordingLogSink implements EngineLogSink {
+  final List<MapEntry<String, String>> diagnostics =
+      <MapEntry<String, String>>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) {}
+
+  @override
+  void logDiagnostic(String source, Object info) {
+    diagnostics.add(MapEntry<String, String>(source, '$info'));
+  }
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) {}
 }

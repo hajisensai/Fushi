@@ -80,7 +80,7 @@ class LeaderboardService extends ChangeNotifier {
        _clockMs = clockMs ?? _systemClockMs,
        _coverThumb = coverThumb ?? leaderboardCoverThumb,
        _avatarEncoder = avatarEncoder ?? encodeLeaderboardAvatar,
-       _shelfBuilder = shelfBuilder ?? _defaultShelfBuilder,
+       _injectedShelfBuilder = shelfBuilder,
        _isbnBackfill = isbnBackfill ?? backfillEpubIsbns,
        _requestTimeout = requestTimeout,
        _uploadTimeout = uploadTimeout;
@@ -91,14 +91,17 @@ class LeaderboardService extends ChangeNotifier {
   final Future<http.Client> Function() _httpClientFactory;
   final Uri _defaultBaseUrl;
   final int Function() _clockMs;
+
+  /// 当前时刻（毫秒）：与同步 / 同意记录同一个可注入时钟，界面按周期取数时用它。
+  int nowMs() => _clockMs();
   final Future<Uint8List?> Function(LocalShelfEntry entry) _coverThumb;
   final Future<Uint8List> Function(String path) _avatarEncoder;
   final Future<LocalShelf> Function(
     FushiDatabase db,
     int profileId,
     DateTime now,
-  )
-  _shelfBuilder;
+  )?
+  _injectedShelfBuilder;
   final Future<int> Function(FushiDatabase db) _isbnBackfill;
   final Duration _requestTimeout;
   final Duration _uploadTimeout;
@@ -108,11 +111,40 @@ class LeaderboardService extends ChangeNotifier {
 
   static int _systemClockMs() => DateTime.now().millisecondsSinceEpoch;
 
-  static Future<LocalShelf> _defaultShelfBuilder(
+  Future<LocalShelf> _shelfBuilder(
     FushiDatabase db,
     int profileId,
     DateTime now,
-  ) => buildLocalShelf(db, profileId: profileId, now: now);
+  ) {
+    final Future<LocalShelf> Function(FushiDatabase, int, DateTime)? injected =
+        _injectedShelfBuilder;
+    if (injected != null) return injected(db, profileId, now);
+    return _defaultShelfBuilder(db, profileId, now);
+  }
+
+  /// 同机多个 Profile 共享同一个库：哪个 Profile 都没有学习记录的作品只让同机代表
+  /// Profile 计入作品读者数（BUG-2870）。
+  Future<LocalShelf> _defaultShelfBuilder(
+    FushiDatabase db,
+    int profileId,
+    DateTime now,
+  ) async {
+    final Set<int> uploading = await LeaderboardStore.uploadingProfileIds(
+      await _supportRoot(),
+    );
+    final int? owner = leaderboardUnattributedOwner(
+      uploading: uploading,
+      existing: <int>[
+        for (final ProfileRow p in await db.select(db.profiles).get()) p.id,
+      ],
+    );
+    return buildLocalShelf(
+      db,
+      profileId: profileId,
+      now: now,
+      countsUnattributed: owner == null || owner == profileId,
+    );
+  }
 
   Future<void>? _loading;
   Future<void>? _syncing;
@@ -558,14 +590,16 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   /// 客户端收到 401 `unknown_account`：只有发请求的仍是**当前**客户端才退出本机账户
-  /// （导入恢复码时的临时客户端、已被换掉的旧客户端都不牵连当前账户）。
-  void _onAccountGone(LeaderboardClient client) {
+  /// （导入恢复码时的临时客户端、已被换掉的旧客户端都不牵连当前账户）。返回的 Future
+  /// 由客户端等完再把异常抛给调用方：任何路径（同步 / UI 读榜 / 好友）一接到异常，本机
+  /// 退出已经落定（BUG-2801：曾是 fire-and-forget，读榜调用方看到的状态取决于落盘快慢）。
+  Future<void> _onAccountGone(LeaderboardClient client) async {
     if (_disposed || !identical(client, _client)) return;
-    unawaited(
-      _clearLocal(accountGone: true).catchError((Object e, StackTrace st) {
-        ErrorLogService.instance.log('LeaderboardService.accountGone', e, st);
-      }),
-    );
+    try {
+      await _clearLocal(accountGone: true);
+    } catch (e, st) {
+      ErrorLogService.instance.log('LeaderboardService.accountGone', e, st);
+    }
   }
 
   // ---- 内部 ----

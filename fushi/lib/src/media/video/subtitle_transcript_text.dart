@@ -3,6 +3,7 @@ import 'dart:ui' show BoxHeightStyle;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 字幕列表行的**固定几何**（BUG-1034）。行高由 `itemExtentBuilder` 事先给出，若与真实
@@ -554,20 +555,6 @@ class SubtitleTranscriptAction extends StatelessWidget {
   }
 }
 
-/// 判定一个**字位簇**（grapheme cluster）是否属于「拉丁单词字符」：拉丁字母
-/// （含 café 的 é、连字号外的重音字母）或 ASCII 数字。用字位簇的首个码点的
-/// Unicode `Script=Latin` 属性判定，故 NFC/NFD 的重音字母都按基字母（拉丁）归类。
-/// CJK（汉字 / 假名 / 谚文）不是拉丁脚本，恒返回 false → 逐字查词行为不变。
-bool _isLatinWordGrapheme(String grapheme) {
-  if (grapheme.isEmpty) return false;
-  return _kLatinWordCharRegExp.hasMatch(grapheme);
-}
-
-final RegExp _kLatinWordCharRegExp = RegExp(
-  r'^[\p{Script=Latin}0-9]',
-  unicode: true,
-);
-
 /// 点字幕第 [graphemeIndex] 个字位起的查询串。
 ///
 /// 查询串只由**起点**决定，终点恒为句尾——引擎按查询串做最长匹配并回报
@@ -605,8 +592,8 @@ String subtitleTranscriptLookupTerm(String sentence, int graphemeIndex) =>
   }
   int start = graphemeIndex;
   // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
-  if (_isLatinWordGrapheme(graphemes[graphemeIndex])) {
-    while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
+  if (isLatinWordGrapheme(graphemes[graphemeIndex])) {
+    while (start > 0 && isLatinWordGrapheme(graphemes[start - 1])) {
       start--;
     }
   }
@@ -616,7 +603,7 @@ String subtitleTranscriptLookupTerm(String sentence, int graphemeIndex) =>
   // 整体左移一格、尾部少一个字符。
   //
   // 点中空格是常态而非边角：英文字幕逐字命中、`hoverAutoLookup` 扫过词间空隙都会
-  // 落在空格上（`_isLatinWordGrapheme(' ')` 为假，起点不回退）。日文同理，
+  // 落在空格上（`isLatinWordGrapheme(' ')` 为假，起点不回退）。日文同理，
   // `String.trim()` 连 U+3000 全角空格一起吃。
   //
   // 弹窗查的词一字不变（引擎拿到的本来就是 trim 后的串），变的只有高亮锚点。

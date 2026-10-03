@@ -201,6 +201,49 @@ void main() {
       );
     });
 
+    test('正文读完、尾部后记 / 奥付没翻也算读完（BUG-2870）', () {
+      // 用户库里《無職転生》13 的形状：正文 15 章读到末尾，后面挂着 180 字后记 +
+      // 312 字奥付 + 0 字纯图页。书签停在正文最后一章 100%（全书 99.6%）。
+      final List<FushiChapterRef> chapters = <FushiChapterRef>[
+        for (int i = 0; i < 15; i++)
+          FushiChapterRef(href: 'item/xhtml/p$i.xhtml', characters: 8500),
+        const FushiChapterRef(href: 'item/xhtml/after.xhtml', characters: 180),
+        const FushiChapterRef(
+          href: 'item/xhtml/okuduke.xhtml',
+          characters: 312,
+        ),
+        const FushiChapterRef(href: 'item/xhtml/ad.xhtml', characters: 0),
+      ];
+      const int body = 15 * 8500;
+      const int total = body + 180 + 312;
+      ExternalReaderMappedPosition at(int characterCount) =>
+          mapExternalReaderBookmark(
+            bookmark: _bookmark(characterCount: characterCount),
+            bookInfo: const ExternalReaderBookInfo(
+              characterCount: total,
+              chapters: <ExternalReaderChapterSpan>[],
+            ),
+            chapters: chapters,
+          )!;
+      final ExternalReaderMappedPosition end = at(body);
+      expect(end.sectionIndex, lessThan(chapters.length - 1));
+      expect(end.completed, isTrue);
+      // 差一整章（全书 ~93%）不算读完。
+      expect(at(body - 8500).completed, isFalse);
+      // 全书 0 字（纯图）没有比例可言：只认末章末尾。
+      expect(
+        mapExternalReaderBookmark(
+          bookmark: _bookmark(chapterIndex: 0, progress: 1),
+          bookInfo: null,
+          chapters: const <FushiChapterRef>[
+            FushiChapterRef(href: 'a.xhtml', characters: 0),
+            FushiChapterRef(href: 'b.xhtml', characters: 0),
+          ],
+        )!.completed,
+        isFalse,
+      );
+    });
+
     test('books without chapters (manga) get no position', () {
       expect(
         mapExternalReaderBookmark(

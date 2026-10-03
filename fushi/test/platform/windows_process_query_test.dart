@@ -35,6 +35,7 @@ void main() {
       expect(windowsProcessesByNames(<String>{'x.exe'}), isEmpty);
       expect(windowsProcessesByIds(<int>[1]), isEmpty);
       expect(windowsProcessesHoldingFile('/tmp/x'), isEmpty);
+      expect(windowsProcessesHoldingFiles(<String>['/tmp/x']), isEmpty);
       expect(
         readWindowsRegistryString(
             WindowsRegistryRoot.localMachine, 'SOFTWARE', 'X'),
@@ -192,6 +193,36 @@ void main() {
         isEmpty,
       );
       expect(windowsProcessesHoldingFile(''), isEmpty);
+    });
+
+    test('多文件一次会话：并集命中、同一占用者只报一次、空路径被滤掉', () {
+      // 更新退出前对 galgame helper 整目录查占用者走这一条（单会话），曾逐文件
+      // 开会话实测 ~1 s。这里拿「自己 exe 重复两次 + 无人占用文件 + 空串」
+      // 验证：RM 注册数组拼对了（否则报不出自己）、按 PID 去重生效。
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'fushi_rm_batch_',
+      );
+      try {
+        final File idle = File('${tmp.path}\\idle.bin')
+          ..writeAsBytesSync(<int>[1, 2, 3]);
+        final List<WindowsProcessEntry> holders = windowsProcessesHoldingFiles(
+          <String>[
+            Platform.resolvedExecutable,
+            '',
+            idle.path,
+            Platform.resolvedExecutable,
+          ],
+        );
+        expect(
+          holders.where((WindowsProcessEntry e) => e.pid == pid),
+          hasLength(1),
+          reason: '批量查询必须报出当前进程且只报一次，实际 $holders',
+        );
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+      expect(windowsProcessesHoldingFiles(<String>[]), isEmpty);
+      expect(windowsProcessesHoldingFiles(<String>['', '']), isEmpty);
     });
   }, skip: _skipOffRealWindows);
 

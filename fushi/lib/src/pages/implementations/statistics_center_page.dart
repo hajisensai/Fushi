@@ -5,12 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
@@ -23,13 +23,15 @@ import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// 统计中心的 tab（阶段 2：三个独立统计页收进一个入口；排行榜 2026-09-28 追加为第 5 个）。
-enum StatsCenterTab { overview, reading, video, game, leaderboard }
+/// 统计中心的 tab（阶段 2：三个独立统计页收进一个入口）。排行榜 2026-09-28 曾是第 5 个
+/// tab，2026-10-01 抽成首页统计中心入口旁的独立页（[LeaderboardPage]）。
+enum StatsCenterTab { overview, reading, video, game }
 
 /// 统计中心（阶段 2，统计中心大改造）：总览 + 阅读/观看/游戏三域 tab。
 ///
@@ -99,7 +101,6 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
                 Tab(text: t.home_filter_read),
                 Tab(text: t.home_filter_watch),
                 Tab(text: t.home_filter_game),
-                Tab(text: t.leaderboard_tab),
               ],
             ),
             Expanded(
@@ -118,8 +119,6 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
                     embedded: true,
                     rangeSelection: _rangeSelection,
                   ),
-                  // 排行榜自带周/月/总窗口，不吃统计中心的时间范围选择。
-                  const LeaderboardTab(),
                 ],
               ),
             ),
@@ -156,6 +155,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<int, String> _collectionNamesById = <int, String>{};
   List<GalgameEntry> _games = <GalgameEntry>[];
+
+  /// 会话行封面的两张表：书条目（键 = 段 mediaKey，bookKey / 有声书 srt uid
+  /// 两种书身份都收，与 [_openEntry] 同一判据）与视频封面路径（键 = bookUid）。
+  /// 游戏封面直接从 [_games] 取。
+  Map<String, MediaItem> _bookItemsByKey = <String, MediaItem>{};
+  Map<String, String> _videoCoverPathByUid = <String, String>{};
 
   /// 跨域计数面分桶（阅读 + 视频 + 游戏三个来源之和）。时段卡之前只有时长 / 字数，
   /// 制卡与查词这两个每天都在动的数字在总览上一个都看不到，只能逐个 tab 翻——
@@ -238,6 +243,22 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       _games = await appModel.galgameRepo.load();
+      _videoCoverPathByUid = <String, String>{
+        for (final VideoBookRow b in await VideoBookRepository(db).listAll())
+          if (b.coverPath case final String path when path.isNotEmpty)
+            b.bookUid: path,
+      };
+      _bookItemsByKey = <String, MediaItem>{
+        for (final MediaItem item
+            in ref
+                    .read(fushiBooksProvider(JapaneseLanguage.instance))
+                    .valueOrNull ??
+                const <MediaItem>[])
+          if (ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+                  ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier)
+              case final String key)
+            key: item,
+      };
       _error = null;
     } catch (error, stack) {
       ErrorLogService.instance.log('StatsOverviewTab.load', error, stack);
@@ -343,6 +364,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             sessions: _sessions,
             titleOf: _sessionTitle,
             collectionOf: _sessionCollectionName,
+            coverOf: _sessionCover,
             onDelete: _deleteSession,
             onEdit: _editSession,
             onClearAll: _clearSessions,
@@ -382,6 +404,38 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           s.title;
     }
     return s.title;
+  }
+
+  /// 会话行封面（三域混排时最快的辨认线索）：与三个域 tab 的会话行 / 「按媒体」
+  /// 行同一条 [resolveMediaCoverImage] 解析链，只是按会话所属域分派。
+  ImageProvider? _sessionCover(StudySession s) {
+    if (s.isGame) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: findGalgameForActivity(
+          _games,
+          mediaKey: s.mediaKey,
+          title: s.title,
+        )?.coverPath,
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      );
+    }
+    if (s.isVideo) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.video,
+        localPath: _videoCoverPathByUid[s.mediaKey],
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      );
+    }
+    final MediaItem? item = _bookItemsByKey[s.mediaKey];
+    return item == null
+        ? null
+        : resolveMediaCoverImage(
+            kind: MediaKind.epub,
+            book: item,
+            appModel: ref.read(appProvider),
+            decodeWidth: kActivityCoverDecodePixelWidth,
+          );
   }
 
   /// 会话行的所属合集名（BUG-2417：会话流混排三域，段 title 是条目名——合集里

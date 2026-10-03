@@ -12,11 +12,11 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_dict_style_assistant.dart'
     show parseAiDictColor;
-import 'package:fushi/src/ai/ai_provider_config.dart';
-import 'package:fushi/src/ai/ai_reply_json.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_reply_json.dart';
 import 'package:fushi/src/models/theme_notifier.dart' show CustomThemeEntry;
 
 /// 编辑页里可改的颜色角色。与 `custom_theme_page.dart` 的私有 `_ThemeRole`

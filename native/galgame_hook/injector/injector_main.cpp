@@ -38,7 +38,9 @@
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
+#include "sgre_family.h"
 #include "text_thread_identity.h"
+#include "unity_voice_bundles.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
 // 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
@@ -299,7 +301,14 @@ struct LunaCtx {
   PFN_Luna_InsertHookCode insert_hook = nullptr;
   PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
+  // 注入前已确定的 MAGES 控制符归一化：用户 profile 显式打开（TSV option
+  // `normalize-mages-controls`），或注入器在注入前用与 SGRE adapter 同一结构判据
+  // （sgre_family.h：exe 旁的 wind3d11 语音归档）认出了引擎——见 ApplyLunaProfiles。
   bool normalize_mages_controls = false;
+  // 注入后才能确定的同一归一化：没有语音归档、只靠进程内文本锚点认出 SGRE 时，游戏内
+  // adapter 的 probe() 成立后锁存为 1，本会话不再回落（身份不会撤销）。不按 exe 哈希 /
+  // 文件名判，见 LunaMagesNormalizationActive。
+  volatile LONG mages_engine_claimed = 0;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
   std::vector<std::wstring> blocked_hook_names;
@@ -612,6 +621,59 @@ bool CommitUnityWavePcm(SharedHeader* header, const UnityVoiceEvent& event,
   return true;
 }
 
+// One extractor run: `input_flag` is `--bundle` or `--data-dir`.
+bool RunUnityExtractor(const UnityExtractorRuntime& runtime,
+                       const wchar_t* input_flag, const std::wstring& input,
+                       const wchar_t* clip_name, const std::wstring& output) {
+  std::wstring command = QuoteWindowsArgument(runtime.executable) + L" " +
+      input_flag + L" " + QuoteWindowsArgument(input) +
+      L" --clip " + QuoteWindowsArgument(clip_name) +
+      L" --output " + QuoteWindowsArgument(output) +
+      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
+      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
+  std::vector<wchar_t> command_buffer(command.begin(), command.end());
+  command_buffer.push_back(0);
+  STARTUPINFOW startup = {0};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {0};
+  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
+                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                      InjectorDir().c_str(), &startup, &process)) {
+    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
+            GetLastError(), clip_name);
+    return false;
+  }
+  CloseHandle(process.hThread);
+  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
+  DWORD exit_code = 2;
+  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
+  if (wait != WAIT_OBJECT_0) TerminateProcess(process.hProcess, 2);
+  CloseHandle(process.hProcess);
+  return wait == WAIT_OBJECT_0 && exit_code == 0 && RegularFileExists(output);
+}
+
+// File names (no directory) of the `*.bundle` entries next to a bundle the
+// game opened; the voice-bundle filter is applied by the candidate ordering.
+std::vector<std::wstring> ListUnityBundleSiblings(const std::wstring& directory) {
+  std::vector<std::wstring> names;
+  if (directory.empty()) return names;
+  WIN32_FIND_DATAW data = {};
+  HANDLE find = FindFirstFileW((directory + L"\\*.bundle").c_str(), &data);
+  if (find == INVALID_HANDLE_VALUE) return names;
+  do {
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+      names.emplace_back(data.cFileName);
+    }
+  } while (names.size() < 256 && FindNextFileW(find, &data));
+  FindClose(find);
+  return names;
+}
+
+// Per injector session: the voice bundle the last clip was found in (tried
+// first), and clip names found in none of them (BGM / SE / typing sounds).
+std::wstring g_unity_voice_last_bundle;
+fushi_voice_injector::UnityVoiceNegativeCache g_unity_voice_negative;
+
 bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
                        const std::wstring& data_directory,
                        const UnityVoiceEvent& event, SharedHeader* header) {
@@ -628,40 +690,46 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
       dir + L"\\" + std::to_wstring(event.timestamp_ms) + L"_" +
       SafeVoiceFileName(event.clip_name) + L".wav";
 
-  std::wstring command = QuoteWindowsArgument(runtime.executable) +
-      (event.bundle_path[0] == 0
-           ? L" --data-dir " + QuoteWindowsArgument(data_directory)
-           : L" --bundle " + QuoteWindowsArgument(event.bundle_path)) +
-      L" --clip " + QuoteWindowsArgument(event.clip_name) +
-      L" --output " + QuoteWindowsArgument(output) +
-      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
-      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
-  std::vector<wchar_t> command_buffer(command.begin(), command.end());
-  command_buffer.push_back(0);
-  STARTUPINFOW startup = {0};
-  startup.cb = sizeof(startup);
-  PROCESS_INFORMATION process = {0};
-  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
-                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
-                      InjectorDir().c_str(), &startup, &process)) {
-    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
-            GetLastError(), event.clip_name);
-    return false;
+  if (event.bundle_path[0] == 0) {
+    const bool extracted = RunUnityExtractor(runtime, L"--data-dir",
+                                             data_directory, event.clip_name,
+                                             output);
+    const bool ok = extracted && CommitUnityWavePcm(header, event, output);
+    fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+            ok ? "extracted-and-committed" : "failed", event.clip_name,
+            data_directory.c_str(), output.c_str());
+    return ok;
   }
-  CloseHandle(process.hThread);
-  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
-  DWORD exit_code = 2;
-  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
-  CloseHandle(process.hProcess);
-  const bool extracted = wait == WAIT_OBJECT_0 && exit_code == 0 &&
-                         RegularFileExists(output);
-  const bool ok = extracted && CommitUnityWavePcm(header, event, output);
-  fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
-          ok ? "extracted-and-committed" : "failed", event.clip_name,
-          event.bundle_path[0] == 0 ? data_directory.c_str()
-                                    : event.bundle_path,
-          output.c_str());
-  return ok;
+
+  const std::wstring opened(event.bundle_path);
+  const std::wstring bundle_directory =
+      fushi_voice_injector::UnityBundleDirectory(opened);
+  if (g_unity_voice_negative.Contains(bundle_directory, event.clip_name)) {
+    return false;  // already proven not to be in any voice bundle
+  }
+  std::vector<std::wstring> candidates =
+      fushi_voice_injector::OrderUnityVoiceBundleCandidates(
+          opened, ListUnityBundleSiblings(bundle_directory),
+          g_unity_voice_last_bundle);
+  if (candidates.empty()) candidates.push_back(opened);
+  for (const std::wstring& bundle : candidates) {
+    if (!RunUnityExtractor(runtime, L"--bundle", bundle, event.clip_name,
+                           output)) {
+      continue;
+    }
+    g_unity_voice_last_bundle = bundle;
+    const bool ok = CommitUnityWavePcm(header, event, output);
+    fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+            ok ? "extracted-and-committed" : "failed", event.clip_name,
+            bundle.c_str(), output.c_str());
+    return ok;
+  }
+  g_unity_voice_negative.Add(bundle_directory, event.clip_name);
+  fprintf(stderr,
+          "[unity-audio] clip=%ls not in any of %zu voice bundle(s) under %ls; "
+          "not a voice (cached)\n",
+          event.clip_name, candidates.size(), bundle_directory.c_str());
+  return false;
 }
 
 void ProcessUnityVoiceEvents(SharedHeader* header,
@@ -750,6 +818,9 @@ uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
 fushi_voice_hook::LunaTextSelector g_lunaTextSelector;
 // 成对折叠 hook 面的粘性尾巴（BUG-2705），与选择器共用 g_lunaSelectCs。
 fushi_voice_hook::LunaPairedTailTracker g_lunaPairedTails;
+// EmbedCS2 re-emits every message once more when the window starts showing it
+// (luna_text_selector.h LunaImmediateRepeatFilter); guarded by g_lunaSelectCs.
+fushi_voice_hook::LunaImmediateRepeatFilter g_lunaRepeats;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
 alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
@@ -921,6 +992,27 @@ int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
   return written;
 }
 
+// MAGES 控制符归一化是否生效：注入前已确定（用户 profile，或 exe 旁的 wind3d11 语音
+// 归档——与 adapter probe() 同一判据，从第一行起生效），或游戏内引擎 adapter 已确认本进程
+// 是 MAGES/SGRE（wind3d11）引擎。后者只覆盖「无语音归档、靠文本锚点认出」的构建：读共享头
+// 里的 adapter 报告（有界栈拷贝），确认后锁存，之后每行只看一个原子量。hook 尚未上报时
+// 保持原样输出——那是「还不知道」，不猜。
+bool LunaMagesNormalizationActive() {
+  if (g_luna.normalize_mages_controls) return true;
+  if (InterlockedCompareExchange(&g_luna.mages_engine_claimed, 0, 0) != 0) {
+    return true;
+  }
+  if (!fushi_voice_hook::AdapterReportsClaimEngine(
+          g_luna.header, fushi_voice_hook::kLunaMagesControlEngineAdapterId)) {
+    return false;
+  }
+  if (InterlockedExchange(&g_luna.mages_engine_claimed, 1) == 0) {
+    fprintf(stderr, "[luna] engine %s claimed: MAGES control normalization on\n",
+            fushi_voice_hook::kLunaMagesControlEngineAdapterId);
+  }
+  return true;
+}
+
 // ── Luna_Start 的 8 个回调实现（__cdecl 默认约定）─────────────────────────────
 // Output：全引擎精确台词入口。过滤 + 写文本环。返回值在本 vendored 版恒 true（不作门控）。
 void LunaOutput(const wchar_t* hookcode, const char* hookname,
@@ -930,7 +1022,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
     const int raw_len = static_cast<int>(wcslen(text));
     const std::wstring normalized_storage =
         fushi_voice_hook::LunaNormalizeMagesControls(
-            text, raw_len, g_luna.normalize_mages_controls);
+            text, raw_len, LunaMagesNormalizationActive());
     const wchar_t* normalized_text = normalized_storage.c_str();
     const int escaped_len = static_cast<int>(normalized_storage.size());
     // thread_id 只依赖 hook 身份与 ThreadParam，不依赖文本；折叠要按线程记状态，所以先算。
@@ -982,7 +1074,15 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       if (!artifact) {
         g_luna.header->luna_active = 1;
       }
-      if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
+      // The preview above still shows the repeat; only the lane skips it.
+      bool repeat = false;
+      if (!artifact && g_lunaSelectCsInit) {
+        EnterCriticalSection(&g_lunaSelectCs);
+        repeat = g_lunaRepeats.IsRepeat(thread_id, hookname, normalized_text,
+                                        normalized_len, GetTickCount64());
+        LeaveCriticalSection(&g_lunaSelectCs);
+      }
+      if (!repeat && LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id,
                           face_id, normalized_text, normalized_len);
       }
@@ -1166,6 +1266,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   g_luna.remove_hook = bridge.remove_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
   g_luna.normalize_mages_controls = normalize_mages_controls;
+  InterlockedExchange(&g_luna.mages_engine_claimed, 0);
   g_luna.hook_codes = hook_codes;
   g_luna.blocked_hook_codes = blocked_hook_codes;
   g_luna.blocked_hook_names = blocked_hook_names;
@@ -1189,6 +1290,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   }
   g_lunaTextSelector.Reset();
   g_lunaPairedTails.Reset();
+  g_lunaRepeats.Reset();
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,
   // Output, HostInfo, HookInsert, Embed, I18NQuery, EmuGameInfo。后两项本组件不用，传空让
@@ -1243,6 +1345,7 @@ void ShutdownLunaHook() {
     g_luna.confirmed_blocked_hook_names.clear();
     g_luna.preferred_hook_codes.clear();
     g_luna.normalize_mages_controls = false;
+    InterlockedExchange(&g_luna.mages_engine_claimed, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
     g_luna.pid = 0;
@@ -1272,6 +1375,17 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
                        const std::wstring& user_profile,
                        LunaOptions* options) {
   if (options == nullptr || executable.empty()) return;
+  // 引擎身份（结构判据，不是哈希 / 文件名）：SGRE adapter 的语音归档判据在注入前就能在
+  // 磁盘上判定，这里用同一个函数（sgre_family.h）先判，MAGES 控制符归一化从 Luna 的
+  // 第一行起就生效，不必等 hook DLL 的 adapter 报告（每秒最多一次、DLL 未注入时永不到）。
+  if (!options->normalize_mages_controls &&
+      fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(executable)) {
+    options->normalize_mages_controls = true;
+    fprintf(stderr,
+            "[luna] engine %s identified before injection (wind3d11 voice "
+            "archive): MAGES control normalization on\n",
+            fushi_voice_hook::kLunaMagesControlEngineAdapterId);
+  }
   const auto identity = BuildTargetIdentity(executable, pid);
   auto apply = [&](const std::string& tsv, const char* source) {
     const auto match = fushi_voice_hook::MatchLunaHookProfiles(tsv, identity);
@@ -2916,8 +3030,9 @@ bool IsSiglusGame(const std::wstring& exe) {
 
 bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
   const std::wstring base = ExecutableBaseName(exe);
-  if (_wcsicmp(base.c_str(), L"manosaba.exe") == 0 ||
-      _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
+  // SiglusEngine.exe 是引擎本体的发行名，不是某一款游戏；Unity 只认 LooksLikeUnityRuntime
+  // 的目录结构（UnityPlayer.dll + IL2CPP/Mono 布局），不按单个游戏 exe 名开。
+  if (_wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
   return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe) ||

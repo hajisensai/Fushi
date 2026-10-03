@@ -399,6 +399,16 @@ List<TorznabSearchItem> _parseTorznabSearchResponse(String body) {
   return output;
 }
 
+/// Torznab 这个资源源是否「配好了」：至少有一个启用的索引器（BUG-2818）。
+///
+/// 资源 registry 的约定是「注册了 = 这台设备上配好了」——订阅在场校验据此报
+/// `not configured`、host 据此公布可用 provider。零索引器的 [TorznabClient] 若照样
+/// 注册，每次搜索都「成功 0 次、失败 0 次」，被资源页读成「未参与（该来源无法搜索
+/// 这个查询词）」，把「没配索引器」误报成查询词的问题。所以 app 与服务端装配
+/// registry 时都只在这里为真时才注册它；索引器配置变更会重建整条下载运行时。
+bool torznabHasEnabledIndexer(Iterable<TorznabIndexerConfig> indexers) =>
+    indexers.any((TorznabIndexerConfig config) => config.enabled);
+
 /// A multi-indexer Torznab/Newznab provider.
 class TorznabClient implements VideoResourceProvider {
   TorznabClient({

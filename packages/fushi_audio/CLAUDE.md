@@ -4,13 +4,12 @@
 
 ## 模块职责
 
-音频播放与有声书匹配模块：提供字幕解析器（SRT/VTT/LRC/ASS/SMIL/JSON alignment）、有声书播放控制器、音频-文本对齐匹配算法、阅读位置管理和统计追踪。
+有声书匹配模块（**纯 Dart，零 Flutter**，2026-09-30 起）：提供字幕解析器（SRT/VTT/LRC/ASS/SMIL/JSON alignment）、有声书仓储、音频-文本对齐匹配算法、阅读位置管理和统计追踪。被 app 与无头服务端共同消费；pubspec 不得声明 `sdk: flutter` / method-channel 插件（守卫 `fushi/test/build/fushi_engine_purity_guard_test.dart`）。
 
 ## 入口与启动
 
-- 库入口：`lib/fushi_audio.dart`
-- 播放控制器：`lib/src/audiobook/audiobook_controller.dart` -- `AudiobookPlayerController` (ChangeNotifier)，管理 `just_audio` 播放器。
-- 无独立启动，由主应用页面按需实例化控制器。
+- 库入口：`lib/fushi_audio.dart`（与 `lib/fushi_audio_core.dart` 等价）。
+- 平台实现住在 app 的 `fushi/lib/src/media/audiobook/`：播放控制器 `audiobook_controller.dart`（`AudiobookPlayerController`，ChangeNotifier + just_audio / audio_session）、`audiobook_storage_platform.dart`（path_provider documents 根 + just_audio 时长探测，经 `AudiobookStorage.documentsRootResolver` / `audioDurationProbeMs` 注入）、`platform_charset_detector.dart`（flutter_charset_detector，经 `platformCharsetDecoder` 注入）。装配在 `fushi/lib/src/engine_bindings.dart`。
 
 ## 对外接口
 
@@ -20,7 +19,7 @@
 
 ### 有声书核心
 - `Audiobook` / `AudiobookModel` -- 有声书数据模型。
-- `AudiobookPlayerController` -- 播放控制器（play/pause/seek/skipToCue/setSpeed），每 200ms 轮询定位当前句。
+- （`AudiobookPlayerController` 播放控制器已搬到 app，见上。）
 - `AudiobookRepository` / `AudiobookStorage` -- 有声书持久化。
 - `SrtBook` / `SrtBookRepository` -- 字幕书管理。
 - `ReaderPositionModel` / `ReaderPositionRepository` -- 阅读位置。
@@ -37,10 +36,9 @@
 
 ## 关键依赖与配置
 
-- `just_audio: ^0.9.31` -- 音频播放引擎。
-- `audio_session: ^0.1.13` -- 音频会话管理。
 - `fushi_core` -- 数据库（AudioCues/SrtBooks/ReaderPositions 等表）。
-- `xml / flutter_charset_detector` -- 字幕格式解析。
+- `xml` -- 字幕格式解析（平台字符集探测由 app 注入）。
+- 包测试用 `package:test`（不是 flutter_test）。
 - `drift` -- 直接使用数据库类型。
 
 ## 数据模型
@@ -55,7 +53,7 @@
 
 测试覆盖良好，位于：
 - `fushi/test/media/audiobook/` -- srt/vtt/lrc/ass/smil parser tests, audiobook_controller_seek_test, audiobook_health_test, epub_srt_matcher_test, sasayaki_match_codec_test, collection_audio_matcher_test, cues_to_epub_test, 等。
-- `packages/fushi_audio/test/audiobook/` -- audiobook_model_test, audio_file_sort_test。
+- `packages/fushi_audio/test/` -- 纯 Dart 包测试（`package:test`）；依赖播放控制器 / 平台装配的测试在 `fushi/test/media/audiobook/`。
 
 ## 相关文件清单
 

@@ -1271,9 +1271,21 @@ class AnkiHandlebarOptions {
   /// 改名前建的、Picture 仍映射到旧别名 `{book-cover}` 的老配置误报成未映射（与
   /// [AnkiHandlebarRenderer.render] 同一套别名语义：三者都渲染 context.coverPath）。
   static bool anyFieldConsumesCardImage(Map<String, String> fieldMappings) =>
-      anyFieldConsumesToken(fieldMappings, '{card-image}') ||
-      anyFieldConsumesToken(fieldMappings, '{book-cover}') ||
-      anyFieldConsumesToken(fieldMappings, '{video-clip}');
+      cardImageFieldNames(fieldMappings).isNotEmpty;
+
+  /// 卡片图片 token 及其旧别名（见 [anyFieldConsumesCardImage]）。
+  static const List<String> cardImageTokens = <String>[
+    '{card-image}',
+    '{book-cover}',
+    '{video-clip}',
+  ];
+
+  /// 映射里消费卡片图片的**字段名**（按 [fieldMappings] 原有顺序）。
+  static List<String> cardImageFieldNames(Map<String, String> fieldMappings) =>
+      <String>[
+        for (final MapEntry<String, String> e in fieldMappings.entries)
+          if (cardImageTokens.any(e.value.contains)) e.key,
+      ];
 }
 
 /// 扩展名（小写、不含点）→ MIME（**镜像副本**，命名统一轮 G8）。
@@ -1507,6 +1519,13 @@ String ankiInlineMediaReference(String addMediaResult) {
   return addMediaResult;
 }
 
+/// 旧格式释义 HTML 的外字中和兜底（BUG-2825 起只剩兼容职责）。
+///
+/// 现行 popup.js 导出已按 Yomitan 形态内联 structured-content 样式并剥掉
+/// `structured-content` / `gloss-*` class，新导出不含 `gloss-image`，门控不会命中，
+/// 字段原样返回。保留它只为旧版对端（互联制卡里尚未升级的 popup.js）发来的
+/// 仍带 `gloss-*` class 的 HTML：那种 HTML 会让词典自带 CSS 在卡片上生效，
+/// 需要这层中和样式压住外字框。旧版对端全部升级后可删。
 String normalizeAnkiDictionaryHtml(String value) {
   if (!value.contains('data-sc-img') || !value.contains('gloss-image')) {
     return value;

@@ -118,8 +118,10 @@ void main() {
   test('书架 PDF 进度按页计，且用 1-based 页序（第 1 页也算在读）', () {
     final String src = read('lib/src/media/sources/reader_fushi_source.dart');
     // 0-based 会让停在第 1 页的书 position==0 → 不进「继续阅读」。
-    expect(src.contains('(pos?.sectionIndex ?? 0) + 1'), isTrue,
+    expect(src.contains('(pos.sectionIndex + 1)'), isTrue,
         reason: 'PDF 进度用 1-based 页序，停在第 1 页也要计入在读');
+    expect(src.contains('position: pos == null'), isTrue,
+        reason: '没打开过的 PDF position 必须是 0（未读），不能算停在第 1 页');
     expect(src.contains('book.chapterCount'), isTrue,
         reason: 'PDF 总页数存在 chapterCount');
   });

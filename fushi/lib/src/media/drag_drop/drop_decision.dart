@@ -56,8 +56,8 @@ enum DropIntent {
 ///   列表/视频文件→**自动切到视频导入**（带上拖入文件，不再只提示让用户手动切，TODO-558）；
 ///   否则有字幕/音频（必非命中卡）→提示需要目标卡；其余忽略。
 /// - video 表面：有 m3u8 播放列表→新建播放列表（比单视频更具体，优先）；否则有视频文件→
-///   新建视频；否则有字幕→命中卡则附加、否则提示；其余忽略（视频卡不接受音频，故 video
-///   表面下只看 subtitles）。
+///   新建视频（纯音频按无画面的视频同样新建）；否则有字幕→命中卡则附加、否则提示；
+///   其余忽略。
 DropIntent decideDropIntent({
   required DropSurface surface,
   required DroppedFiles files,
@@ -115,12 +115,17 @@ DropIntent decideDropIntent({
       );
     case DropSurface.video:
       // 文件夹优先于其中的单个文件：用户拖一整个剧集目录进来，要的是「把这个目录
-      // 加成来源」，不是「导入我恰好也选中的那一个 mp4」。
-      if (files.directories.isNotEmpty) return DropIntent.addFolderAsSource;
+      // 加成来源」，不是「导入我恰好也选中的那一个 mp4」。蓝光盘同理且更强：拖进来
+      // 的无论是盘根、`BDMV` 目录还是盘里的 `index.bdmv` / `.mpls` / `.m2ts`，要的
+      // 都是「这张盘」，一律把盘根登记成来源，由扫描按播放列表认出标题。
+      if (files.videoSourceFolders.isNotEmpty) {
+        return DropIntent.addFolderAsSource;
+      }
       if (files.torrents.isNotEmpty) return DropIntent.importTorrent;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
-      if (files.videos.isNotEmpty) return DropIntent.importNewVideo;
+      // 纯音频 = 无画面的视频，同样新建视频条目（[DroppedFiles.videoLibraryMedia]）。
+      if (files.videoLibraryMedia.isNotEmpty) return DropIntent.importNewVideo;
       if (files.subtitles.isNotEmpty) {
         return cardHit
             ? DropIntent.attachToVideoCard

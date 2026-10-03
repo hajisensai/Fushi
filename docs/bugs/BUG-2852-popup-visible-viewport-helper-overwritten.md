@@ -1,0 +1,6 @@
+## BUG-2852 · 查词弹窗悬停按钮报 __fushiVisibleViewportHeight is not a function
+- **报告**：2026-10-01（用户：错误日志 `PopupJs.window.onerror Uncaught TypeError: __fushiVisibleViewportHeight is not a function at __fushiShowButtonTip`）
+- **真实性**：✅ 真 bug。`fushi/assets/popup/popup.js:26` 的顶层 `function __fushiVisibleViewportHeight()` 本身就是 `window.__fushiVisibleViewportHeight`；BUG-2734 加的宿主注入 `window.__fushiSetVisibleViewportHeight`（同文件约 5418 行）把可见高度写进**同名**属性，函数被覆盖成数字 / null。此后 app 内查词框（视频 / 首页 / texthooker，宿主会注入可见高度）里悬停 / 聚焦任一带提示的按钮、打开图片灯箱、grammar tooltip 定位都会抛错。node 替身把 `window` 做成与全局对象分离的普通对象，所以既有用例测不出同名覆盖。
+- **[x] ① 已修复** — 注入值改存 `window.__fushiVisibleViewportHeightPx`，与 helper 不再同名；三份 popup.js（`fushi/assets/popup/`、`fushi/assets/browser_extension/vendor/`、`tools/browser-extension/vendor/`）同步。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/popup-visible-viewport.test.js`、`grammar-tooltip-single-surface.test.js` 的替身改为 `window === 全局对象`（浏览器真实语义）；新增用例「宿主经 __fushiSetVisibleViewportHeight 注入后，helper 仍是函数、按钮提示照常翻到上方」。变异实测：换回修复前 popup.js，该用例红在 `typeof helper === 'number'`。
+- **备注**：同一段日志里另两条不是本 bug：`BlurayEncryptedStreamException` 是 AACS 加密原盘的预期拒播（`video_player_controller.dart` 抛、页面映射为加密提示）；`词典「大辞林　第四版」取不到媒体字节: daijirin2/一-fill.svg` 是词典资源包里缺该资源的诊断日志（`dictionary_webview_media.dart:251`）。

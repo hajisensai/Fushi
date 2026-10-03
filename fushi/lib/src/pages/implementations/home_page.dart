@@ -43,18 +43,18 @@ import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/app_assistant_host.dart';
+import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/media/torrent/magnet_utils.dart'
     show magnetUriFromInfoHash;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
 import 'package:fushi/src/media/video/acquisition/remote_video_acquisition_session.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
-import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
+import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
@@ -75,12 +75,12 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
-import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
-import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
@@ -335,9 +335,10 @@ class _ProductionVideoDiscoveryController implements VideoDiscoveryController {
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> load(
-    VideoDiscoveryRequest request,
-  ) =>
-      service.load(request);
+    VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<VideoDiscoveryPage> partial)? onProgress,
+  }) =>
+      service.load(request, onProgress: onProgress);
 
   @override
   String displayNameFor(String providerId) =>
@@ -1600,8 +1601,11 @@ class _HomePageState extends BasePageState<HomePage>
       return existing;
     }
     _videoDiscoveryService?.close();
-    final VideoDiscoveryService service =
-        VideoDiscoveryService.production(config);
+    final VideoDiscoveryService service = VideoDiscoveryService.production(
+      config,
+      discoveryAvailable:
+          StoreRestrictedCapability.externalDiscovery.isAvailable,
+    );
     final VideoDiscoveryController controller =
         _ProductionVideoDiscoveryController(service);
     _videoDiscoveryService = service;
@@ -1846,6 +1850,19 @@ class _HomePageState extends BasePageState<HomePage>
     return retried;
   }
 
+  /// 资源搜索 / 订阅页的别名补齐端口（BUG-2794）：发现卡片没有拉丁标题时，用
+  /// 作品详情（按卡片已有的 MAL / AniList / TMDB 身份取，TMDB 的罗马字来自
+  /// alternative_titles）把罗马字 / 英文名前置进别名。与详情页同一条
+  /// [VideoDiscoveryService.loadDetails]，不另起 provider；失败返回原条目。
+  Future<VideoDiscoveryItem> _videoDiscoveryItemWithSearchAliases(
+    VideoDiscoveryItem item,
+  ) async {
+    final VideoMetadataWork? work = await _videoDiscoveryService?.loadDetails(
+      item,
+    );
+    return item.withReference(item.reference.withWorkLatinTitles(work));
+  }
+
   Future<void> _openVideoDiscoveryResourceSearch(
     BuildContext context,
     VideoDiscoveryItem item,
@@ -1891,6 +1908,7 @@ class _HomePageState extends BasePageState<HomePage>
           // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
           // 失败态那句话才有一颗能真正解决它的按钮。
           onConfigureBackend: _promptDownloadBackendSetup,
+          resolveAliases: _videoDiscoveryItemWithSearchAliases,
           remoteTargets: remoteTargets,
           defaultRemoteTargetUrl:
               appModelNoUpdate.prefsRepo.downloadExecutionHostUrl,
@@ -1998,6 +2016,7 @@ class _HomePageState extends BasePageState<HomePage>
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
           onConfigureBackend: _promptDownloadBackendSetup,
+          resolveAliases: _videoDiscoveryItemWithSearchAliases,
           remoteTargets: remoteTargets,
           onRemoteSubmit:
               (VideoDiscoveryRemoteSubscriptionSelection selection) async {
@@ -2036,7 +2055,11 @@ class _HomePageState extends BasePageState<HomePage>
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await createLocalVideoDownloadSubscription(
               database: appModelNoUpdate.database,
-              reference: item.reference,
+              // 身份仍取发现条目；页面补齐的罗马字 / 英文别名（BUG-2794）并进来，
+              // 订阅快照与默认检索词才不会退回只有原名的状态。
+              reference: item.reference.withLeadingAliases(
+                selection.download.media.aliases,
+              ),
               coverUrl: item.posterUrl,
               selection: selection,
               target: target,
@@ -2191,7 +2214,7 @@ class _HomePageState extends BasePageState<HomePage>
         _showRemoteAiAcquisitionBlocked(
           context,
           target,
-          error.detail ?? kAppAssistantReasonNotReady,
+          error.detail ?? kHostAssistantReasonNotReady,
         );
       } else {
         _showVideoDiscoveryMessage(
@@ -2237,9 +2260,9 @@ class _HomePageState extends BasePageState<HomePage>
     _showVideoDiscoveryMessage(
       context,
       switch (reason) {
-        kAppAssistantReasonNoProvider =>
+        kHostAssistantReasonNoProvider =>
           t.ai_video_acquire_remote_no_provider(device: target.label),
-        kAppAssistantReasonNotReady =>
+        kHostAssistantReasonNotReady =>
           t.ai_video_acquire_remote_not_ready(device: target.label),
         _ => t.ai_video_acquire_remote_unsupported(device: target.label),
       },
@@ -2643,6 +2666,10 @@ class _HomePageState extends BasePageState<HomePage>
     existing?.removeListener(_onVideoSourceScrapeTaskChanged);
     existing?.dispose();
     _videoSourceScrapeCoordinator?.close();
+    // 顾问每次现取偏好里的指派，所以 AI 指派不进上面的配置指纹：用户改了指派
+    // 立即生效，不需要重建协调器；判定缓存与补刮账本按它现算的能力键作废。
+    final PreferencesAiVideoIdentityAdvisor aiIdentityAdvisor =
+        PreferencesAiVideoIdentityAdvisor(appModelNoUpdate.prefsRepo);
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
       database: appModel.database,
@@ -2650,11 +2677,7 @@ class _HomePageState extends BasePageState<HomePage>
       // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
       // 为了单测不联网。
       enableOfflineTitleIndex: true,
-      // 歧义候选交 AI 消解。decider 每次调用现取偏好里的指派，所以 AI 指派不进
-      // 上面的配置指纹：用户改了指派立即生效，不需要重建协调器。
-      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(
-        appModelNoUpdate.prefsRepo,
-      ),
+      aiIdentityAdvisor: aiIdentityAdvisor,
     );
     _videoSourceScrapeCoordinator = coordinator;
     _videoSourceScrapeConfigFingerprint = fingerprint;
@@ -2673,6 +2696,8 @@ class _HomePageState extends BasePageState<HomePage>
       // 把哈希查询失败的文件整份重读（用户感知为「每次打开都在重新加载资料」）。
       ledger: VideoScrapeSweepLedger.inSupportDirectory(),
       configFingerprint: fingerprint,
+      // 配上 / 换掉 AI 后，之前「试过没认出」的作品立即重新进补刮。
+      aiCapabilityKey: () => aiIdentityAdvisor.capabilityKey,
       // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
       tmdbChangedTvIds: ({required DateTime since}) {
         final VideoMetadataProvider? tmdb =
@@ -2718,7 +2743,8 @@ class _HomePageState extends BasePageState<HomePage>
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
         loadSource: (int sourceId) =>
             appModel.database.getMediaSourceById(sourceId),
-        loadPendingWorks: () => _videoLibraryScrapeSweep.pendingWorks(),
+        loadPendingWorks: () =>
+            _videoLibraryScrapeSweep.pendingWorksWithReasons(),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;
@@ -3018,6 +3044,9 @@ class _HomePageState extends BasePageState<HomePage>
           loadPendingScrapeWorks: () =>
               _videoLibraryScrapeSweep.sweepAndListPending(),
           mediaServerServersLoader: _loadMediaServerEntries,
+          // 视频库「发现」分区与浏览页签共用同一个生产端口（同一实例）。
+          discoveryController: _productionVideoDiscoveryController,
+          discoveryActions: _productionVideoDiscoveryActions,
           systemBackActive: _visibleTab == HomeTab.video,
         ),
       HomeTab.browse => BrowsePage(
@@ -3045,7 +3074,7 @@ class _HomePageState extends BasePageState<HomePage>
     return PrimaryScrollController(
       controller: _tabScrollControllers.putIfAbsent(
         tab,
-        FushiScrollController.new,
+        ScrollController.new,
       ),
       automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
       child: content,

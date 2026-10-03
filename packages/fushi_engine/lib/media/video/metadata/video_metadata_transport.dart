@@ -7,6 +7,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 // develop 后加的 externalFailureFromVideoMetadataError 用 ExternalProviderFailure，
@@ -58,6 +59,23 @@ ExternalProviderFailure externalFailureFromVideoMetadataError({
     retryAfter: error.retryAfter,
     retryable: status == null || status == 429 || status >= 500,
   );
+}
+
+/// 资料源暂时不可用、原样重试可能成功：连不上 / 超时 / TLS 握手失败、限流
+/// （429）、服务端错误（5xx）。与上面的 `retryable` 判据同源。
+///
+/// 「没配置」（`VideoMetadataProviderUnavailable`，如 TMDB 没填 key）和 4xx
+/// 不算：重试多少次都一样，得人去处理。
+bool isTransientVideoMetadataFailure(Object error) {
+  if (error is VideoMetadataNetworkException) {
+    final int? status = error.statusCode;
+    return status == null || status == 429 || status >= 500;
+  }
+  return error is TimeoutException ||
+      error is SocketException ||
+      error is HttpException ||
+      error is TlsException ||
+      error is http.ClientException;
 }
 
 class VideoMetadataNetworkException implements Exception {

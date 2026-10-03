@@ -1,12 +1,61 @@
-## BUG-2023 · PR#1129 windows job FFI 测试 13 条红：全部 listen_port=0（未复现）
+## BUG-2023 · Windows 上 torrent session 偶发 listen_port=0 且连不出去：libtorrent 在 UDP bind 回 WSAEACCES 时丢掉整条 listen socket
 
-- **报告**：2026-09-02（用户：PR #1129 `worktree-p2p-proxy-mixed-mode` head `2071813d26` 在 `build-multiplatform.yml` 的 `windows` job → `Run fushi_torrent FFI tests against the freshly built DLL` 步骤 `22 tests passed, 13 failed`，判为本 PR 引入的真回归）
-- **真实性**：❌ **未复现 —— 不是本 PR 引入的回归**，是 GitHub Windows runner 上「回环临时端口 bind 不上」的环境性偶发（同一 commit 重跑即绿）。
-- **[ ] ① 未修复** —— 无代码可修（下有排除依据）。
-- **[ ] ② 未加自动化测试** —— 同上。
-- **复现次数**：2 次（2026-09-02 早 PR#1129；2026-09-02 PR#1147）。二次出现把它从
-  「偶发、可忽略」升级成「**会持续拦住不相干的 PR**」——见「第二次出现」。
+- **报告**：2026-09-02（用户：PR #1129 `worktree-p2p-proxy-mixed-mode` head `2071813d26` 在 `build-multiplatform.yml` 的 `windows` job → `Run fushi_torrent FFI tests against the freshly built DLL` 步骤 `22 tests passed, 13 failed`，判为本 PR 引入的真回归）；2026-09-30 用户：「查一下 Windows 那个 ip_filter 偶发失败」。
+- **真实性**：✅ **真 bug（2026-09-30 定位）**。当初判的「runner 环境性、无代码可修」是错的，见下「2026-09-30 根因」。
+  根因在 libtorrent v2.0.11 `src/session_impl.cpp:1873-1920`（`setup_listener`）：TCP bind 拿到端口 P 后，
+  uTP 的 UDP socket bind **同一个 P**，只有 `address_in_use` 会重试 / 走 `listen_system_port_fallback`，
+  其它错误一律 `listen_failed_alert` + 丢掉整条 listen socket（连同已经 bind 好的 TCP，
+  `:1916-1920`）。TCP 段 `:1735-1776` 同样只认 `address_in_use`。
+- **[x] ① 已修复** —— overlay 补丁
+  `native/fushi_torrent/vcpkg-ports/libtorrent/listen-bind-access-denied-fallback.patch`：TCP / UDP 两段的
+  重试与回退判据都改成 `address_in_use || access_denied`（上游 RC_2_0 / master 至今没修，只能自己打）。
+- **[x] ② 已加自动化测试** —— `packages/fushi_torrent/test/listen_bind_fallback_test.dart`：Windows 上从本机
+  UDP 排除段 + 5353 里找「TCP 能 bind、UDP 普通 bind 回 10013」的端口，session 监听它必须拿到端口**且能连出去
+  拿到元数据**；POSIX 非 root 用特权端口 80（TCP 回 EACCES）验 TCP 段回退。旧 DLL 上 Windows 用例确定性红
+  （本机选到 5353），机器上造不出被拒端口时 skip 并写明原因。另外
+  `embedded_pipeline_test.dart` 两个下载端先断言在监听，同类问题再出现时直接报真原因。
+- **复现次数**：2026-08-31..09-30 窗口内 windows job 实际执行 1014 次，ip_filter 用例红 17 次：16 次是
+  `timeout waiting for seeder listen port`（本条，做种端中招，常伴 13 条连红），1 次是
+  `timeout waiting for metadata after clearing ip_filter`（本条，下载端中招，run 36536747534）。
 - **备注**：见下。
+
+### 2026-09-30 根因
+
+**判据自己早就指向了 bridge。** 09-02 加的 `_describeLoopbackBindHealth` 约定「探针成功 = 真得去查
+bridge」，而此后每一次红（例：09-22 run 35782437387、09-29 run 36540150877）打出来的都是
+`dart loopback bind probe OK (got port …): the machine can bind 127.0.0.1:0, suspect the bridge`。
+探针只 bind **TCP**，libtorrent 却是先 TCP 再把**同一个端口**拿去 bind UDP。
+
+**TCP 可用、UDP 被拒的端口在 Windows 上很常见**，而且拒绝码是 WSAEACCES(10013) 不是 address_in_use：
+
+- Hyper-V / WinNAT 按 100 口一段预留的 UDP 排除段（`netsh int ipv4 show excludedportrange protocol=udp`）。
+  TCP 与 UDP 的排除段互不相同；runner 上两者的动态端口段都是 49152–65535，TCP 分给 `127.0.0.1:0` 的端口
+  可以正好落进 UDP 排除段。
+- 被系统服务独占的 UDP 端口：mDNS 独占 5353。
+
+Windows 的临时端口大体顺序分配，一旦走进一段 UDP 排除段，接下来连续几十个 session 都中招——这就是
+「一个 job 里 13 条连红、换台机器就好」，以及 09-29「前几个 rig 正常、跑到一半才开始红」。
+
+**没有 listen socket 也连不出去**：libtorrent 出站连接要绑在 listen socket 上，`connect_peer` 直接
+`[sock_bind] not supported` 断开并进 60 s 重连退避。下载端中招时 ip_filter 用例「封锁期拿不到元数据」
+平白成立，清空过滤器后又干等 30 s——正是那唯一一次 metadata 超时的形状。
+
+**本地确定性复现**（本机 TCP 动态段被改成 2000–18382、UDP 排除段全在 49152 以上，所以 `:0` 平时碰不上，
+这也是当初「本机复现失败」的原因）。用本机 vcpkg 的 2.0.11 直编探针、开 `listen_failed_alert`：
+
+| 监听 | 结果 |
+|---|---|
+| `127.0.0.1:49152`（UDP 排除段内、TCP 可用） | `listen_port=0`，`listen_failed err=10013 [sock_bind] [uTP]` |
+| `127.0.0.1:61700`（同上） | 同上 |
+| `127.0.0.1:49560`（UDP 可用） | TCP + uTP 都在监听 |
+
+下载端指到 49152 时，逐步复刻 ip_filter 用例的探针给出与 CI 一字不差的
+`TIMEOUT waiting for metadata after clearing ip_filter`；10 进程并发跑 `127.0.0.1:0` 时也自然撞上过一次：
+OS 把 TCP 5353 分给了下载端，UDP 5353 被 mDNS 独占 → 10013 → 同一个超时。
+
+**影响不止测试**：生产默认监听 `0.0.0.0:6881,[::]:6881`，用户配置的端口若落进 UDP 排除段或被独占，
+内置引擎整个连不出去；补丁后 uTP 退到别的端口、TCP 照常。`listen_system_port_fallback` 的文档本来就写着
+「绑定指定端口失败就让 OS 挑」，补丁只是让实现对齐文档。
 
 ### 现场
 
@@ -92,6 +141,9 @@ job 也是 `22 tests passed, 13 failed`，伴随重复的
 `gh run rerun --failed`，不要去查本 PR 的 diff。**
 
 ### 结论与后续
+
+> **2026-09-30 作废**：下面「环境性、不改代码」的结论是错的，根因与修复见上「2026-09-30 根因」。
+> 保留原文作排查记录。
 
 红是 runner VM 侧的 `bind(127.0.0.1, 0)` 失败（Windows 上 Hyper-V/WinNAT 预留掉
 动态端口段是已知的机器级偶发），一个 job 内所有进程一起中招，所以看起来「稳定

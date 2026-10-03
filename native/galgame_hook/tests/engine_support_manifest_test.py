@@ -45,6 +45,11 @@ def _prove_engine_claim(document: dict, claim: str, value: object) -> None:
     )
 
 
+def _audio(engine: dict, kind: str) -> dict:
+    """按 kind 取音频能力，不依赖 priority 下标（引擎可在前面插入更优先的资源层）。"""
+    return next(item for item in engine["audio"]["priority"] if item["kind"] == kind)
+
+
 class EngineSupportManifestTest(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = GENERATOR.load_manifest(ROOT / "engine-support.yaml")
@@ -120,6 +125,43 @@ class EngineSupportManifestTest(unittest.TestCase):
         self.assertTrue(
             any("Unity Mono" in item for item in unity["known_limitations"])
         )
+
+    def test_retired_malie_cfi_lane_left_no_verified_claim_behind(self) -> None:
+        # PR #1917 removed the title-keyed CFI archive lane that the Amantes
+        # record proved. The record and the claims that only described that
+        # lane must go with it, and the legacy allowlists must not let the
+        # engine climb back to "partial" without a fresh evidence ledger.
+        malie = self.engines["malie_libp"]
+        self.assertEqual("implemented_unverified", malie["current_status"])
+        self.assertEqual([], malie["verified_games"])
+        kinds = [item["kind"] for item in malie["audio"]["priority"]]
+        self.assertNotIn("malie_libp_cfi_voice_resource", kinds)
+        limitations = "\n".join(malie["known_limitations"])
+        self.assertNotIn("Audio is verified", limitations)
+        self.assertNotIn("Only data2.dat is classified as voice", limitations)
+        self.assertIn("Amantes audio is back to unverified", limitations)
+        self.assertNotIn("malie_libp", GENERATOR.LEGACY_ENGINE_STATUSES)
+        self.assertNotIn("malie_libp", GENERATOR.LEGACY_VERIFIED_GAMES_PREFIX)
+        self.assertNotIn("malie_libp", GENERATOR.LEGACY_LIMITATIONS_PREFIX)
+        self.assertNotIn(
+            "malie_libp_cfi_voice_resource", GENERATOR.AUDIO_PROOF_BOUNDARIES
+        )
+        for kind in (
+            "malie_ogg_decoder_input_voice_resource",
+            "yuris_decoder_input_voice_resource",
+            "fvp_decoder_input_ogg_resource",
+        ):
+            self.assertEqual(
+                "resource_observed", GENERATOR.AUDIO_PROOF_BOUNDARIES[kind]
+            )
+
+        promoted = copy.deepcopy(self.manifest)
+        engine = next(
+            item for item in promoted["engines"] if item["id"] == "malie_libp"
+        )
+        engine["current_status"] = "partial"
+        with self.assertRaisesRegex(GENERATOR.ManifestError, "support_evidence"):
+            GENERATOR.validate_manifest(promoted)
 
     def test_nonempty_recognition_signatures_have_sample_evidence(self) -> None:
         for engine in self.engines.values():
@@ -281,7 +323,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         reallive = next(
             item for item in self.manifest["engines"] if item["id"] == "reallive"
         )
-        reallive["audio"]["priority"][0]["status"] = "verified"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "verified"
         with self.assertRaisesRegex(
             GENERATOR.ManifestError, "support_evidence"
         ):
@@ -295,7 +337,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_structured_release_evidence_allows_a_scoped_promotion(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence()
         document["task"]["engine_id"] = "reallive"
         document["task"]["support_status"] = "partial"
@@ -327,7 +369,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_support_evidence_is_engine_bound_and_hash_pinned(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence()
         document["task"]["support_status"] = "partial"
         document["stages"]["release"]["proved_capabilities"][0][
@@ -355,7 +397,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_pcm_e2e_cannot_prove_a_resource_capability(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence("pcm_observed")
         document["task"]["engine_id"] = "reallive"
         document["task"]["support_status"] = "partial"
@@ -386,8 +428,8 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_multiple_evidence_files_accumulate_distinct_audio_layers(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
-        reallive["audio"]["priority"][1]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
+        _audio(reallive, "xaudio2_or_directsound_pcm")["status"] = "partial"
         resource_document = _complete_evidence("resource_observed")
         pcm_document = _complete_evidence("pcm_observed")
         records = []
@@ -437,7 +479,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_new_verified_game_must_match_hash_pinned_runtime_identity(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence("resource_observed")
         document["task"]["engine_id"] = "reallive"
         document["task"]["support_status"] = "partial"
@@ -567,7 +609,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         new_engine["current_status"] = "partial"
         new_engine["family"] = {"id": "fabricated", "relation": "unproved"}
         new_engine["process_strategy"]["attach"] = "works_everywhere"
-        new_engine["audio"]["priority"][0]["status"] = "partial"
+        _audio(new_engine, "visual_arts_ovk_resource")["status"] = "partial"
         self.manifest["engines"].append(new_engine)
         document = _complete_evidence("resource_observed")
         document["task"]["engine_id"] = "new_engine"
@@ -658,10 +700,13 @@ class EngineSupportManifestTest(unittest.TestCase):
             GENERATOR.validate_manifest(self.manifest, ROOT)
 
     def test_smash_fzmedia_exact_provider_is_bound_to_lookup_matrix(self) -> None:
-        # 16-engine lookup matrix: smash/fzmedia joins with the exact provider
+        # 18-engine lookup matrix: smash/fzmedia joins with the exact provider
         # id 15 bound to engine_exact_layout, and nothing else may claim it.
-        self.assertEqual(17, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
+        self.assertEqual(20, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
         self.assertIn("cmvs", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        self.assertIn("yuris", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        self.assertIn("fvp", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        self.assertIn("unity_mono", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("smash_fzmedia", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         smash_pair = (
             "kLookupGeometryProviderEngineExactLayout",

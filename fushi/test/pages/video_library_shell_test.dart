@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
@@ -150,9 +151,10 @@ void main() {
   }
 
   // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。媒体服务器（用户
-  // 自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图之后。在线发现
-  // 2026-09-27 起只住在顶层「浏览」模块，视频库页不再有「发现」分区。
-  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、来源、设置',
+  // 自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图之后；随后是
+  // 「往库里加东西」的发现 / 来源 / 扩展（与「浏览」模块同一组组件，2026-10-01
+  // 加回库页），最后是导入与设置。测试宿主不是 iOS，合规门与视频源宿主门都开。
+  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、发现、来源、扩展、导入、设置',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
@@ -169,6 +171,9 @@ void main() {
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
         VideoLibrarySection.mediaServers,
+        VideoLibrarySection.discover,
+        if (isVideoOnlineSourcesAvailable) VideoLibrarySection.onlineSources,
+        if (isVideoOnlineSourcesAvailable) VideoLibrarySection.extensions,
         VideoLibrarySection.sources,
         VideoLibrarySection.settings,
       ],

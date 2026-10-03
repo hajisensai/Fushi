@@ -1,3 +1,6 @@
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -104,9 +107,13 @@ void main() {
     late String invariantSource;
 
     setUpAll(() {
+      // 真源在 tool/reader_pitch_headless/：harness 正文 + 它 import 的 CDP 客户端。
+      // test/reader/ 下那份只是一行 import 的薄入口（见下面的「不得再内联副本」）。
       harnessSource = File(
-        'test/reader/reader_horizontal_pitch_harness.mjs',
-      ).readAsStringSync();
+            '../tool/reader_pitch_headless/horizontal_pitch_harness.mjs',
+          ).readAsStringSync() +
+          File('../tool/reader_pitch_headless/cdp_client.mjs')
+              .readAsStringSync();
       invariantSource = File(
         'test/reader/reader_horizontal_pitch_invariant_test.dart',
       ).readAsStringSync();
@@ -128,10 +135,48 @@ void main() {
       expect(harnessSource.contains('CDP command timed out: '), isTrue,
           reason: 'CdpSocket.send 必须对每条命令设超时，防响应帧丢失导致 node 永挂');
       expect(
-          harnessSource
-              .contains('send(method, params = {}, timeoutMs = 10000)'),
+          harnessSource.contains(
+              'send(method, params = {}, timeoutMs = CDP_COMMAND_HANG_GUARD_MS)'),
           isTrue,
           reason: 'send 必须带 timeoutMs 形参并默认有限值');
+      // BUG-2803：挂死护栏按外层 90s 预算定尺，不按「正常延迟」猜；仍须有限。
+      expect(harnessSource.contains('const CDP_COMMAND_HANG_GUARD_MS = 30000;'),
+          isTrue,
+          reason: 'CDP 单命令挂死护栏必须是有限常量');
+    });
+
+    test('BUG-2803 Chrome 冷启动等真实就绪信号，崩溃立刻带 stderr 失败', () {
+      // 旧实现轮询 DevToolsActivePort 且固定 8s 截止、stdio 全丢：满载 CI 上 Chrome
+      // 只是慢就被判失败；被信号杀掉时 exitCode 恒 null，也只会等满 8s 报「没写文件」。
+      for (final String source in <String>[
+        File('../tool/reader_pitch_headless/cdp_client.mjs').readAsStringSync(),
+      ]) {
+        expect(source.contains('DevTools listening on ws:'), isTrue,
+            reason: '就绪信号必须是 Chrome stderr 的 DevTools listening 行');
+        expect(source.contains("stdio: ['ignore', 'ignore', 'pipe']"), isTrue,
+            reason: 'Chrome stderr 必须接管（信号 + 失败诊断）');
+        expect(source.contains("proc.once('exit', onExit)"), isTrue,
+            reason: '进程提前退出（含被信号杀）必须立刻失败');
+        expect(source.contains('readDevToolsPort'), isFalse,
+            reason: '不得回退到固定截止的 DevToolsActivePort 轮询');
+        expect(source.contains('const CHROME_ATTACH_HANG_GUARD_MS = 60000;'),
+            isTrue,
+            reason: '冷启动整段一个挂死护栏，按外层预算定尺');
+      }
+    });
+
+    test('test/reader 下的 harness 只 import 真源，不得再内联副本', () {
+      // 旧的「AUTO-COMBINED」内联副本让 BUG-2803 得改两遍，SonarCloud 报新代码重复
+      // 95.9%。ESM 相对 import 按文件位置解析、与工作目录无关，所以不需要副本。
+      final String entry = File(
+        'test/reader/reader_horizontal_pitch_harness.mjs',
+      ).readAsStringSync();
+      expect(
+          entry.contains("import '../../../tool/reader_pitch_headless/"
+              "horizontal_pitch_harness.mjs';"),
+          isTrue);
+      expect(entry.contains('class CdpSocket'), isFalse,
+          reason: '薄入口里不得再出现 CDP 客户端实现（又内联回去了）');
     });
 
     test('Dart 侧 headless 测试显式放宽超时到 > harness 看门狗', () {

@@ -475,7 +475,13 @@ void main() {
       final String src = read(
         'lib/src/pages/implementations/home_video_page.dart',
       );
-      expect(src, contains('color: active && eink ? colors.onSurface : null'));
+      // 筛选 chip 视觉已收进库页共用的 LibraryFilterChip（书架 / 游戏库同用）；
+      // 视频页必须仍走它，否则换回私有 chip 时这里不会报。
+      expect(src, contains('LibraryFilterChip('));
+      expect(
+        read('lib/src/pages/implementations/library_filter_dropdown.dart'),
+        contains('color: active && eink ? colors.onSurface : null'),
+      );
       expect(
         RegExp(
           r'backgroundColor: isEinkTheme\(context\)\s*\?\s*Theme\.of\(context\)\.colorScheme\.surface',

@@ -116,6 +116,32 @@ class GalTextProcessStep {
     this.isRegex = true,
   });
 
+  /// 不可信输入（AI 回复、可能被手改坏的存档）的入口：任一已知字段**存在但类型不对**
+  /// （`"isRegex": "true"`、`"kind": 3`……）就整条判无效返回 null，而不是让
+  /// [GalTextProcessStep.fromJson] 的强转抛 TypeError 把整条调用链打断。
+  ///
+  /// 字段缺失或为 null 仍走默认值，与 [GalTextProcessStep.fromJson] 一致——合法存档
+  /// 读出来的结果逐字段不变。`repeatCount` / `lineCount` 本来就按 `is int` 宽容读取，
+  /// 不在这里加严。
+  static GalTextProcessStep? tryFromJson(Map<Object?, Object?> json) {
+    final bool typesOk =
+        _fieldIs<String>(json, 'id') &&
+        _fieldIs<String>(json, 'kind') &&
+        _fieldIs<bool>(json, 'enabled') &&
+        _fieldIs<bool>(json, 'fromEnd') &&
+        _fieldIs<String>(json, 'pattern') &&
+        _fieldIs<String>(json, 'replacement') &&
+        _fieldIs<bool>(json, 'isRegex');
+    return typesOk ? GalTextProcessStep.fromJson(json) : null;
+  }
+
+  /// 字段缺失 / null，或类型恰为 [T]。
+  static bool _fieldIs<T>(Map<Object?, Object?> json, String key) {
+    final Object? value = json[key];
+    return value == null || value is T;
+  }
+
+  /// 可信输入入口（字段类型已知正确）。不可信输入走 [tryFromJson]。
   factory GalTextProcessStep.fromJson(Map<Object?, Object?> json) {
     final GalTextProcessKind kind =
         GalTextProcessKind.fromStorageKey(json['kind'] as String?) ??
@@ -279,9 +305,14 @@ class GalTextProcessPipeline {
       if (raw is! Map) {
         continue;
       }
-      final GalTextProcessStep step = GalTextProcessStep.fromJson(
+      // 字段类型不对的那一步丢掉，其余照常读：一步坏数据不该让整条管线（乃至整个
+      // hook 会话设置）读不出来。
+      final GalTextProcessStep? step = GalTextProcessStep.tryFromJson(
         raw.cast<Object?, Object?>(),
       );
+      if (step == null) {
+        continue;
+      }
       // 存档被手改坏时 id 可能撞——重排要靠 id 唯一，这里兜住而不是让 UI 崩。
       if (!seenIds.add(step.id)) {
         continue;

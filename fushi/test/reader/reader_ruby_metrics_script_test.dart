@@ -13,10 +13,15 @@ import 'package:flutter_test/flutter_test.dart';
 ///    变量（Klee 竖排 0.813、Hiragino 0.106、无开关/无 ruby 不写）。
 /// ② 接线级：脚本必须装进阅读器引擎（三种 view-mode 共用的 `__fushiEngine.install`），
 ///    否则变量永远不写、CSS 永远落回旧的 `-0.2em`。
+///
+/// BUG-2810：分页多列里页顶那行的注音会被切进上一栏，`<rt>` 的外接矩形是两页的并集，
+/// 量它会把拉力顶到 1.5、整章注音压进基字。行为测试里首颗注音给两段 client rect，
+/// 断言脚本跳过它、量下一颗（0.770），全部跨栏则不写。
 void main() {
   test(
-      'BUG-2779: ruby metrics script writes --fushi-ruby-pull from measured '
-      'font geometry (executes script via node)', () async {
+      'BUG-2779 / BUG-2810: ruby metrics script writes --fushi-ruby-pull from '
+      'measured font geometry, skipping column-split annotations '
+      '(executes script via node)', () async {
     final String? nodeExe = _resolveNode();
     if (nodeExe == null) {
       markTestSkipped('node not found on PATH; skipping JS behavior execution');

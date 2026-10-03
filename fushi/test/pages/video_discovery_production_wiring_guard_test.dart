@@ -9,8 +9,9 @@ void main() {
     ).readAsStringSync();
 
     expect(source, contains('VideoDiscoveryService.production('));
-    // 2026-09-27 起视频发现只住在「浏览」模块的「发现」页签：生产发现端口只注入
-    // BrowsePage，视频库页（VideoLibraryShell）不再接发现端口。
+    // 视频发现同时住在「浏览 › 发现」与视频库的「发现」分区（2026-10-01 加回）：
+    // 两处都必须接同一个生产端口，任一处漏接就会落到 EmptyVideoDiscoveryController，
+    // 搜什么都是空。
     expect(
       source,
       contains('videoDiscoveryController: _productionVideoDiscoveryController'),
@@ -21,8 +22,13 @@ void main() {
     );
     expect(
       source,
-      isNot(contains(' discoveryController: _productionVideoDiscoveryController')),
-      reason: '视频库页不再有发现分区，不得再把发现端口接给它',
+      contains(' discoveryController: _productionVideoDiscoveryController'),
+      reason: '视频库「发现」分区必须接生产发现端口',
+    );
+    expect(
+      source,
+      contains(' discoveryActions: _productionVideoDiscoveryActions'),
+      reason: '视频库「发现」分区必须接生产详情 / 下载 / 订阅回调',
     );
     expect(source, contains('loadDetails: _loadVideoDiscoveryDetails'));
     expect(
@@ -84,7 +90,7 @@ void main() {
     expect(source, contains('enqueueLocalVideoDownload('));
     expect(source, contains('createLocalVideoDownloadSubscription('));
     final String submitSource = File(
-      'lib/src/media/video/download/video_discovery_submit.dart',
+      '../packages/fushi_engine/lib/media/video/download/video_discovery_submit.dart',
     ).readAsStringSync();
     expect(
       submitSource,

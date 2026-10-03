@@ -2,9 +2,10 @@
 #
 # ── 补的是哪个缺口（与 native-torrent-gate.yml 同一形态）──────────────────────────
 #   build_windows_dll.ps1 / build_linux_so.sh / build_macos_dylib.sh / build_ios_staticlib.sh
-#       -> build-multiplatform.yml 的 windows / linux / macos / ios job（有 `pull_request`
-#          触发、paths 含 `native/**`、`packages/**`），Windows / Linux 还顺带跑
-#          packages/fushi_p2p 的真隧道 FFI 测试。⇒ 这四端 PR 上本来就有真编译门。
+#       -> build-multiplatform.yml 的 windows / linux-server / macos / ios job（有
+#          `pull_request` 触发；路径门把 `native/fushi_p2p/**` 与 `packages/fushi_p2p/**`
+#          路由给这四个 job），Windows / Linux 还顺带跑 packages/fushi_p2p 的真隧道 FFI
+#          测试。⇒ 这四端 PR 上本来就有真编译门。
 #   build_android_so.sh
 #       -> **只**被 release.yml 消费，而 release.yml 没有 `pull_request` 触发。一个只改
 #          `native/fushi_p2p/**` 的 PR，Android 交叉编译（cargo-ndk + NDK clang，三个 ABI）

@@ -7,6 +7,7 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -77,6 +78,11 @@ class ServerConfig {
     this.publicUrls = const <String>[],
     this.p2p = false,
     this.p2pRelays = const <String>[],
+    this.scanPrune = true,
+    this.scanScrape = true,
+    this.profileTransfer = false,
+    this.tmdbApiKey,
+    this.ai,
   });
 
   static const int defaultPort = 38765;
@@ -169,11 +175,35 @@ class ServerConfig {
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
 
+  /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
+  ///
+  /// 库行不记源文件路径的书 / 漫画根不受影响；关闭只停清理，导入行为不变。
+  final bool scanPrune;
+
+  /// 扫描后是否对「从未识别过」的视频作品自动补刮（默认开；与 app「视频 → 媒体库
+  /// → 自动补刮」同一个 `VideoLibraryScrapeSweep`）。关掉只停自动刮削，客户端经互联
+  /// 发起的重刮 / 手动指定照常可用。
+  final bool scanScrape;
+
+  /// 允许已配对设备经互联「配置文件」端点把配置方案（Profile）推给本机寄存、或从本机
+  /// 拉走（`/api/interconnect/profile`，只在 TLS 下可达）。默认关：与 app 的
+  /// 「允许已配对设备读写本机配置」同一条安全默认——没开关的入站写就是隐形写入通道
+  /// （BUG-988）。运行期现读，WebUI 改完即生效。
+  final bool profileTransfer;
+
+  /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
+  /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
+  final String? tmdbApiKey;
+
   /// 允许经 P2P 隧道远程连接（iroh；默认关：会连 iroh 公共中继与发现服务）。
   final bool p2p;
 
   /// 自建 iroh-relay 地址；空 = iroh 公共中继。
   final List<String> p2pRelays;
+
+  /// AI 提供商（`ai:` 段，见 server_ai_config.dart）；null = 没指派，「AI 下视频」
+  /// 助手能力位报 `no_provider`、不发任何 AI 请求。保存即生效。
+  final ServerAiConfig? ai;
 
   ServerConfig copyWith({
     int? port,
@@ -200,6 +230,12 @@ class ServerConfig {
     List<String>? publicUrls,
     bool? p2p,
     List<String>? p2pRelays,
+    bool? scanPrune,
+    bool? scanScrape,
+    bool? profileTransfer,
+    String? tmdbApiKey,
+    ServerAiConfig? ai,
+    bool clearAi = false,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -227,6 +263,11 @@ class ServerConfig {
         publicUrls: publicUrls ?? this.publicUrls,
         p2p: p2p ?? this.p2p,
         p2pRelays: p2pRelays ?? this.p2pRelays,
+        scanPrune: scanPrune ?? this.scanPrune,
+        scanScrape: scanScrape ?? this.scanScrape,
+        profileTransfer: profileTransfer ?? this.profileTransfer,
+        tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
+        ai: clearAi ? null : ai ?? this.ai,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -282,6 +323,11 @@ class ServerConfig {
       publicUrls: _strings(map['public_urls']),
       p2p: _bool(map['p2p']) ?? base.p2p,
       p2pRelays: _strings(map['p2p_relays']),
+      scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
+      scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
+      profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
+      tmdbApiKey: map['tmdb_api_key']?.toString(),
+      ai: ServerAiConfig.fromYaml(map['ai']),
     );
   }
 
@@ -324,6 +370,10 @@ class ServerConfig {
     b.writeln('admin_bind: ${_q(adminBind)}');
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
     b.writeln('metadata_locale: ${_q(metadataLocale)}');
+    b.writeln('scan_prune: $scanPrune');
+    b.writeln('scan_scrape: $scanScrape');
+    b.writeln('profile_transfer: $profileTransfer');
+    if ((tmdbApiKey ?? '').isNotEmpty) b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {
@@ -340,6 +390,7 @@ class ServerConfig {
       b.writeln('  - ${_q(u)}');
     }
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
+    ai?.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
     if (torrentLibraryPath != null) b.writeln('  library: ${_q(torrentLibraryPath!)}');

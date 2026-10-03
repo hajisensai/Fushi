@@ -146,6 +146,52 @@ int main(int argc, char** argv) {
       return 76;
     }
   }
+  // CatSystem2 EmbedCS2: every message arrives twice on the same thread
+  // 0.2–0.4 s apart (measured); only the immediate repeat is dropped.
+  {
+    using fushi_voice_hook::LunaImmediateRepeatFilter;
+    const std::wstring line = L"「性的なトラブルですね？」";
+    const std::wstring name = L"幸";
+    const std::wstring next = L"「う。挨拶すればいいってものじゃないのよ？」";
+    auto repeat = [](LunaImmediateRepeatFilter& f, uint64_t thread,
+                     const char* hook, const std::wstring& text,
+                     uint64_t at) {
+      return f.IsRepeat(thread, hook, text.c_str(),
+                        static_cast<int>(text.size()), at);
+    };
+    LunaImmediateRepeatFilter filter;
+    // dialogue thread (ctx2=1) and name thread (ctx2=2), measured timing.
+    if (repeat(filter, 1, "EmbedCS2", line, 200950) ||
+        repeat(filter, 2, "EmbedCS2", name, 200950) ||
+        !repeat(filter, 1, "EmbedCS2", line, 201220) ||
+        !repeat(filter, 2, "EmbedCS2", name, 201220) ||
+        repeat(filter, 1, "EmbedCS2", next, 204550) ||
+        !repeat(filter, 1, "EmbedCS2", next, 204810)) {
+      return 77;
+    }
+    // The same line shown again after a click (> window) is kept.
+    if (repeat(filter, 1, "EmbedCS2", next, 206000)) return 78;
+    // Another thread with the same text is not a repeat.
+    if (repeat(filter, 3, "EmbedCS2", next, 206010)) return 79;
+    // Cross-engine negative: other hooks keep every event.
+    LunaImmediateRepeatFilter other;
+    if (repeat(other, 1, "CatSystem2", line, 1000) ||
+        repeat(other, 1, "CatSystem2", line, 1100) ||
+        repeat(other, 1, "EmbedKrkrZ", line, 1200) ||
+        repeat(other, 1, "EmbedKrkrZ", line, 1300) ||
+        repeat(other, 1, nullptr, line, 1400) ||
+        repeat(other, 1, nullptr, line, 1500)) {
+      return 80;
+    }
+    // A clock that went backwards never counts as a repeat; Reset forgets.
+    LunaImmediateRepeatFilter clock;
+    if (repeat(clock, 1, "EmbedCS2", line, 5000) ||
+        repeat(clock, 1, "EmbedCS2", line, 4000)) {
+      return 81;
+    }
+    clock.Reset();
+    if (repeat(clock, 1, "EmbedCS2", line, 4100)) return 82;
+  }
   if (argc != 2) return 1;
   const std::wstring single_line =
       L"\u300c\u6c17\u3092\u4ed8\u3051\u307e\u3059\u3063\u3002"

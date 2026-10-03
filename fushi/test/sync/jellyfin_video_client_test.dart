@@ -129,6 +129,43 @@ void main() {
   });
 
   group('JellyfinApi HTTP（MockClient）', () {
+    test('非 2xx 带出服务器纯文本说明；HTML 错误页不带（BUG-2848）', () async {
+      Future<JellyfinApiException> failWith(http.Response res) async {
+        final JellyfinApi api = JellyfinApi(
+          serverUrl: 'https://emby.example.com',
+          client: MockClient((http.Request req) async => res),
+        );
+        try {
+          await api.publicSystemInfo();
+        } on JellyfinApiException catch (e) {
+          return e;
+        }
+        fail('expected JellyfinApiException');
+      }
+
+      final JellyfinApiException denied = await failWith(http.Response.bytes(
+          utf8.encode('请使用群公告中允许的客户端进行访问'), 403));
+      expect(denied.statusCode, 403);
+      expect(denied.isAccessDenied, isTrue);
+      expect(denied.serverMessage, '请使用群公告中允许的客户端进行访问');
+      expect(denied.toString(), contains('请使用群公告中允许的客户端进行访问'));
+
+      final JellyfinApiException json = await failWith(http.Response(
+          jsonEncode(<String, Object?>{'message': 'Forbidden client'}), 403));
+      expect(json.serverMessage, 'Forbidden client');
+
+      final JellyfinApiException html = await failWith(
+          http.Response('<html><body>Cloudflare</body></html>', 403));
+      expect(html.serverMessage, isNull);
+      expect(html.toString(), 'JellyfinApiException(403, /System/Info/Public)');
+
+      final JellyfinApiException long =
+          await failWith(http.Response('x' * 500, 500));
+      expect(long.isAccessDenied, isFalse);
+      expect(long.serverMessage!.length,
+          JellyfinApiException.kMaxServerMessageLength + 1);
+    });
+
     test('authenticateByName 带 MediaBrowser 头并回填令牌', () async {
       late http.Request seen;
       final JellyfinApi api = JellyfinApi(

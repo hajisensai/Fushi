@@ -424,8 +424,9 @@ int _parseStreamEntries(
       case BlurayStreamKind.subtitle:
         // PGS/IGS 的语言码紧跟编码类型；textST 前面多一个 character_code 字节。
         final int langOffset = coding == 0x92 ? p + 3 : p + 2;
-        if (langOffset + 3 <= attrEnd)
+        if (langOffset + 3 <= attrEnd) {
           language = _languageAt(bytes, langOffset);
+        }
     }
 
     out.add(

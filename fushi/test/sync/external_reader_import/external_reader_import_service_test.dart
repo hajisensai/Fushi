@@ -48,7 +48,7 @@ void main() {
 
   /// iOS 形态的书（会话统计 + 书签）、Android 形态的书（日记录）、一本
   /// `statistics_archive/` 里的已删书。
-  String writeBackup() {
+  String writeBackup({int bookmarkChars = 150}) {
     final String path = p.join(tempRoot.path, 'Books_2026-09-20.hoshi');
     writeHoshiBackup(path, <String, Object>{
       '$_iosTitle/metadata.json': <String, Object?>{
@@ -63,7 +63,7 @@ void main() {
       '$_iosTitle/bookmark.json': <String, Object?>{
         'chapterIndex': 2,
         'progress': 0.9,
-        'characterCount': 150,
+        'characterCount': bookmarkChars,
         'lastModified': appleSeconds(bookmarkAt),
       },
       '$_iosTitle/statistics.json': <String, Object?>{
@@ -323,6 +323,35 @@ void main() {
       expect(sumChars(await segmentsFor(_iosTitle)), 800);
     },
   );
+
+  test('a finished Hoshi bookmark marks the book completed even when the Fushi '
+      'position is kept (BUG-2870)', () async {
+    final File epub = File(p.join(tempRoot.path, 'mine.epub'))
+      ..writeAsBytesSync(fixtureEpub(_iosTitle));
+    final String key = await EpubImporter.importFromPath(
+      db: db,
+      filePath: epub.path,
+      fileName: 'mine.epub',
+    );
+    final String uid = (await db.resolveEpubBookUid(key))!;
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookUid: uid,
+        sectionIndex: 0,
+        normCharOffset: 1234,
+        updatedAt: bookmarkAt + 60000,
+      ),
+    );
+
+    // Hoshi 书签在全书末尾：Fushi 的位置更新、保留不写，但这本书读完了。
+    final ExternalReaderImportReport report = await runImport(
+      writeBackup(bookmarkChars: 300),
+    );
+    expect(report.positionsKept, 1);
+    expect(report.booksMarkedCompleted, 1);
+    expect((await db.getEpubBook(key))!.completedAt, isNotNull);
+    expect((await db.getReaderPosition(uid))!.normCharOffset, 1234);
+  });
 
   test(
     'an older Fushi position is replaced and its exact anchor cleared',

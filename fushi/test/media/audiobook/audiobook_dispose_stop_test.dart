@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -272,7 +273,7 @@ void main() {
 
     test('disposeAndRelease awaits the underlying _player.dispose()', () {
       final File controllerFile = File(
-        '${Directory.current.path}/../packages/fushi_audio/lib/src/audiobook/'
+        '${Directory.current.path}/lib/src/media/audiobook/'
         'audiobook_controller.dart',
       );
       expect(controllerFile.existsSync(), isTrue,

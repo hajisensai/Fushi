@@ -1,0 +1,17 @@
+## BUG-2813 · 漫画本地 OCR 点字命中错列：整块文本沿整块均铺
+- **报告**：2026-09-30（用户：「优化漫画的 OCR 效果，现在选词不准确速度慢」；用户当天刚用本地 ONNX 整卷识别《君が一等星に光るまで 01》183 页）
+- **真实性**：✅ 真 bug。本地 ONNX 管线每块只产出**一整串文本、没有行坐标**：`manga_ocr_pipeline.dart` 建 `OcrBlock(lines: <String>[text])`，`manga_ocr_folder_job.dart` 的 `buildMangaPayloadFromResults` 不写 `lines_coords`；阅读器覆盖层 `mangaEffectiveTextRegions`（`manga_overlay_html.dart`）拿不到行几何，只能把整串字沿**整块高度**均铺——多列竖排气泡里点第二列顶部，命中的是第一列第一个字。用户这本书 64% 的文字块是多列/多行。
+  - 量化（2026-09-30，80 页有 Google Lens 逐字框的页作真值，5267 次模拟点击、对齐后判「点到的位置是不是那个字」、振假名除外）：修复前 **14.2%** 正确。
+- **[x] ① 已修复**（提交见 PR）— 识别文本一个字都不改，只补行几何：
+  - `packages/fushi_engine/lib/ocr/ocr_line_layout.dart`（新）：① 块方向按检出行**长度加权**投票（宽扁的多列竖排气泡常被外形或 PP 碎片带成横排）；② 去振假名：比块内行厚 p75 的 0.6 还细，或贴在更粗行注音侧且不到 0.82 倍厚（只按 0.6 过滤会漏掉 0.6~0.8 那截注音，正文字被分到注音列上）；③ 合并被 PP 切碎的同列片段 → 阅读序（竖排右→左）→ 按每列「长 ÷ 厚」估字格数，连续点号合占一格、`!?` 两个一组占一格，按字格中点落列，切点只落在字素簇边界，`lines.join()` 恒等于原文。
+  - `routing_ocr_recognizer.dart`：整块交 manga-ocr 的块识别后用 PP det 检出的列排版（宽块复用路由时已检出的行，只有竖长块多跑一次 PP det）；横排路径把逐行文本与行框原样交回。
+  - `ocr_types.dart` / `manga_ocr_pipeline.dart`：`OcrRecognition` / `OcrBlock` 带 `lines` + `lineBoxes`（拼不回原文时退回单行）；包含去重改按整块文本判断（原 `lines.single` 遇多行会抛）。
+  - `manga_ocr_folder_job.dart`：`lineBoxes` 写成 mokuro `lines_coords`，覆盖层既有的逐行路径直接消费；管线版本 v4 → `v5-line-geometry`。
+  - 旧卷升级：同一模型指纹的 v4 逐页缓存只补几何、不重新识别（`MangaOcrPipeline.processBook(legacyCaches:)` + `LineLayoutOcrRecognizer`）；阅读器对「本地 v4 结果」的卷开书时自动排一次，**只交给本地引擎**（`startMangaReaderVolumeOcr(requiredEngine:)`，偏好是 Lens 时什么都不排、不弹上传同意框）；「重新识别本卷」会连同 v4 缓存一起作废，保证真的重认。自动升级排之前先确认**当前选的本地模型**推得出本卷记录的旧签名（`isMangaOcrRelayoutPending(ocr, localEngineSignature:)`，签名取整卷任务同一个缓存目录解析入口）：选的是 Baberu / CUDA 等别的本地模型、或模型文件换过（指纹后缀不同）时，排下去的任务找不到可复用的逐页缓存，就成了一次用户没要求的整卷重认——这种情况不排。
+  - 实测（真实 Dart 实现 + 真 PP-OCRv6 det，FFI，用户安装版同一份 onnxruntime.dll；Lens 逐字框为真值、振假名逐字剔除、参考方向跟 Lens 块）：用户这本书 80 页 **14.0% → 87.3%**；另两章注音密集、气泡宽扁的在线漫画（转生史莱姆 / 海贼王，21 页）**8.2% → 69.7%**。用户这本 1215 块中 1184 块拿到行几何；补几何每页约 85 ms + 解码约 135 ms（JIT），整卷一次性升级约 40 秒。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/ocr_line_layout_test.dart`（合并/阅读序/切分/字素簇/丢空列）、`fushi/test/ocr/routing_ocr_recognizer_test.dart`（竖长块按列切开带页面坐标、横排逐行交回、批路由排版复用）、`fushi/test/ocr/manga_ocr_pipeline_test.dart`（行几何落块与 JSON 往返、拼不回退单行、旧缓存只补几何不检测不识别、页尺寸不符整页重认、多行块包含去重）、`fushi/test/ocr/manga_ocr_folder_job_test.dart`（签名推导、待升级判据、`lines_coords` 往返、只有 v4 缓存的卷端到端升级）、`fushi/test/media/manga/manga_local_ocr_tap_geometry_test.dart`（引擎产物 → manga.json → 覆盖层命中框整链：点左列第一格命中第二列首字）、`fushi/test/media/manga/manga_reader_auto_ocr_relayout_test.dart`（限定本地引擎：偏好 Lens 不排不问）、`fushi/test/ocr/manga_ocr_folder_job_test.dart` 的 `isMangaOcrRelayoutPending`（换本地模型 / 换模型指纹 / 解析不到签名都不算可升级）。
+- **备注**：
+  - 试过按墨迹投影切字格，实测反而更差（76%），没有采用；换 Kellenok 的漫画检测器切列效果相当（快 5 倍但不是瓶颈），没有换。
+  - 注音密集页的剩余误差主要是 PP 小检测器把间距很小的几列并成一团（方向无法投票、只能整块均铺），以及 manga-ocr 文本与图面字数不一致（漏字 / 幻觉）。
+  - 同日对比：Chimahon 按行/列框均分，Mangatan 的本地（Hayai）路径把整块当一行——与修复前的我们同构，同样会点错列。
+  - 选型与提速（CTC 漫画识别器、manga-ocr KV cache）另见本 PR 说明 / `docs/reviews/2026-09-30-manga-ocr-select-speed.md`。

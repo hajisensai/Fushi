@@ -61,6 +61,16 @@ void main() {
       expect(html, isNot(contains('autoplay')));
     });
 
+    // BUG-2837：Anki 编辑器回写字段时删掉所有 <script> / <link>，翻面自动播放必须
+    // 只靠内联事件属性（编辑器原样保留）。
+    test('画面字段没有 <script> / <link>（Anki 编辑器会删），自动播放挂在 oncanplay', () {
+      final String html = inlineVideoCoverHtml('fushi_cover_abc.webm');
+      expect(html.toLowerCase(), isNot(contains('<script')));
+      expect(html.toLowerCase(), isNot(contains('<link')));
+      expect(html, contains('oncanplay="'));
+      expect(html, endsWith('></video>'));
+    });
+
     test('重播按钮能被 Lapis 的「点例句重播」找到', () {
       final String html = inlineVideoSentenceAudioHtml('clip.webm');
       expect(html, contains('class="replay-button '));
@@ -76,8 +86,8 @@ void main() {
       () async {
         final String cover = inlineVideoCoverHtml('clip.webm');
         final String sentence = inlineVideoSentenceAudioHtml('clip.webm');
-        final String script = RegExp(
-          r'<script>(.*)</script>',
+        final String videoCanplay = RegExp(
+          r'oncanplay="([^"]*)"',
         ).firstMatch(cover)!.group(1)!;
         final String onclick = RegExp(
           r'onclick="([^"]*)"',
@@ -88,8 +98,6 @@ void main() {
         final String harness =
             '''
 const assert = require('node:assert/strict');
-const timers = [];
-global.setTimeout = (fn) => timers.push(fn);
 process.on('unhandledRejection', () => { process.exitCode = 3; });
 function media(visible) {
   return {
@@ -118,7 +126,7 @@ function page(videos, audios) {
     },
   };
 }
-const body = ${jsonEncode(script)};
+const body = new Function(${jsonEncode(videoCanplay)});
 const click = new Function('event', ${jsonEncode(onclick)});
 const canplay = new Function(${jsonEncode(oncanplay)});
 const ev = { stopPropagation() {} };
@@ -127,8 +135,9 @@ const ev = { stopPropagation() {} };
 const vs = [media(false), media(true), media(false)];
 const as = [media(false), media(false)];
 page(vs, as);
-for (let i = 0; i < 3; i++) new Function(body)();
-timers.forEach((t) => t());
+// 每份副本都会触发 canplay（隐藏的先就绪也一样），重播 seek 后还会再触发一轮。
+[vs[2], vs[0], vs[1]].forEach((v) => body.call(v));
+vs.forEach((v) => body.call(v));
 as.forEach((a) => canplay.call(a));
 assert.deepEqual(vs.map((v) => v.plays), [0, 1, 0], 'only the visible copy autoplays');
 assert.deepEqual(as.map((a) => a.plays), [0, 0], 'audio must stay silent when a video is on the page');
@@ -150,9 +159,7 @@ assert.equal(front[0].plays, 2, 'replay falls back to the audio element');
 const denied = [media(true)];
 denied[0].play = () => Promise.reject(new Error('NotAllowedError'));
 page(denied, []);
-timers.length = 0;
-new Function(body)();
-timers.forEach((t) => t());
+body.call(denied[0]);
 const deniedAudio = [media(false)];
 deniedAudio[0].play = () => Promise.reject(new Error('NotAllowedError'));
 page([], deniedAudio);

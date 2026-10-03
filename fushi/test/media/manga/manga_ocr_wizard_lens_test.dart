@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -54,11 +56,20 @@ class _FakeLensRunner implements GoogleLensMangaOcrRunner {
     int startPage = 0,
     bool onlyMissing = true,
     String language = 'ja',
+    MangaOcrPageFocus? focus,
   }) {
     requests += 1;
     lastLanguage = language;
     return const Stream<MangaOcrVolumeEvent>.empty();
   }
+
+  @override
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List bytes, {
+    required String relativeUrl,
+    required String language,
+  }) =>
+      throw UnimplementedError();
 }
 
 void main() {

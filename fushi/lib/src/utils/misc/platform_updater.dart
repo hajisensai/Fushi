@@ -1390,24 +1390,24 @@ Future<List<WindowsProcessInfo>> queryWindowsGalHookModuleHolders(
       '$kGalgameHelperInstallDirectoryName',
     );
     if (!root.existsSync()) return const <WindowsProcessInfo>[];
-    // 按 pid 去重：一个游戏进程通常同时持有 hook DLL 和它加载的 LunaHook DLL，
-    // 逐文件查会把同一个占用者报好几遍。
-    final Map<int, WindowsProcessInfo> holders = <int, WindowsProcessInfo>{};
-    for (final FileSystemEntity entity
-        in root.listSync(recursive: true, followLinks: false)) {
-      if (entity is! File) continue;
-      final String lower = entity.path.toLowerCase();
-      if (!lower.endsWith('.dll') && !lower.endsWith('.exe')) continue;
-      for (final WindowsProcessEntry entry
-          in windowsProcessesHoldingFile(entity.path)) {
-        holders[entry.pid] = WindowsProcessInfo(
-          pid: entry.pid,
-          name: entry.name,
-          path: entry.path,
-        );
-      }
-    }
-    return holders.values.toList(growable: false);
+    final List<String> binaries = <String>[
+      for (final FileSystemEntity entity
+          in root.listSync(recursive: true, followLinks: false))
+        if (entity is File &&
+            (entity.path.toLowerCase().endsWith('.dll') ||
+                entity.path.toLowerCase().endsWith('.exe')))
+          entity.path,
+    ];
+    // 全部文件登记进同一个 Restart Manager 会话：要的只是占用者集合（一个游戏进程
+    // 通常同时持有 hook DLL 和它加载的 LunaHook DLL，结果已按 pid 去重）。逐文件开
+    // 会话在这 28 个文件上实测 ~1 s 同步 FFI，正卡在下载完成→退出交给安装器之间。
+    return windowsProcessesHoldingFiles(binaries)
+        .map((WindowsProcessEntry entry) => WindowsProcessInfo(
+              pid: entry.pid,
+              name: entry.name,
+              path: entry.path,
+            ))
+        .toList(growable: false);
   } catch (_) {
     return const <WindowsProcessInfo>[];
   }

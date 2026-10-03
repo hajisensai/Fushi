@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Windows HDR 直通宿主窗（`docs/plans/2026-08-30-video-hdr-passthrough.md` §4.1）
 /// 的源码守卫。Phase 0 实测（`.codex-test/hdr-passthrough/RESULTS.md`）证明只有
 /// 「独立顶层窗口钉在主窗正后方 + 主窗 blur-behind 空区域」这一条路能让 Flutter
@@ -43,7 +45,9 @@ void main() {
   test('宿主窗 = 非激活工具窗 popup，不被主窗拥有（owned 窗永远在 owner 之上）', () {
     expect(host, contains('WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW'));
     expect(host, contains('WS_POPUP'));
-    expect(host, contains('return MA_NOACTIVATE'));
+    // 鼠标与触摸激活请求统一交给共用策略（MA_NOACTIVATE / PA_NOACTIVATE 在
+    // window_activation_policy.h 里，BUG-2889）。
+    expect(host, contains('return OverlayNoActivateReply(message);'));
     final RegExp create = RegExp(r'CreateWindowExW\([^;]*?\);', dotAll: true);
     final String call = create.firstMatch(host)!.group(0)!;
     // hWndParent 参数必须是 nullptr（第 8 个实参）。
@@ -79,10 +83,29 @@ void main() {
     );
     expect(bar, contains('valueListenable: hdrHostActiveGlobal'));
     expect(bar, contains('hdrHost ? Colors.transparent : colors.surface'));
-    final int caption = bar.indexOf('height: FushiDesktopTitleBar.height,');
-    expect(caption, greaterThan(0));
-    final String captionBlock = bar.substring(caption, caption + 400);
-    expect(captionBlock, contains('color: colors.surface,'));
+    // 标题行底色可以跟页面上报色（BUG-2833 阅读器纸色），但必须①与 HDR 无关、
+    // ②恒不透明（叠到 surface 上）。行为侧见
+    // test/desktop/fushi_title_bar_page_colors_test.dart 的 HDR 用例。
+    final int rowStart = bar.indexOf('Widget _buildCaptionRow(');
+    expect(rowStart, greaterThan(0), reason: '标题行必须是独立的 _buildCaptionRow');
+    final int caption = bar.indexOf(
+      'height: FushiDesktopTitleBar.height,',
+      rowStart,
+    );
+    expect(caption, greaterThan(rowStart));
+    // 掩掉注释：注释里写「不听 hdrHostActiveGlobal」不能被当成依赖它。
+    final String rowHead = maskComments(bar).substring(rowStart, caption + 120);
+    expect(
+      rowHead,
+      isNot(contains('hdrHost')),
+      reason: '标题行底色不得听 hdrHostActiveGlobal（透明会露出后面的窗口）',
+    );
+    expect(
+      rowHead,
+      contains('Color.alphaBlend(page.background, colors.surface)'),
+      reason: '页面上报色必须先叠到 surface 上，标题行恒不透明',
+    );
+    expect(rowHead, contains('color: captionFill,'));
   });
 
   test('通道名与 Dart 侧一致', () {

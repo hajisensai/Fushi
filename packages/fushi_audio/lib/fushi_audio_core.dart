@@ -1,11 +1,9 @@
 /// fushi_audio 的**零 Flutter** 子集：字幕解析、有声书仓储、匹配对齐。
 ///
-/// 无头服务端（`packages/fushi_server`，`dart compile exe`）只能 import 这个
-/// barrel——闭包里任何 `package:flutter/*` 都会传递拖进 `dart:ui` 编不过。
-/// 重文件（`audiobook_controller.dart` 的 just_audio / audio_session、
-/// `audiobook_storage_platform.dart` 的 path_provider / just_audio、
-/// `platform_charset_detector.dart`
-/// 的 method-channel 插件）只由全 barrel `fushi_audio.dart` 导出。
+/// 无头服务端（`packages/fushi_server`）import 这个 barrel。本包 pubspec 已不
+/// 声明 Flutter SDK，全 barrel `fushi_audio.dart` 与本 barrel 等价；原来的重文件
+/// （just_audio 播放控制器 / 存储平台装配 / 字符集插件实现）已搬到 app 的
+/// `fushi/lib/src/media/audiobook/`，经本包的装配点注入。
 ///
 /// 守卫：`fushi/test/build/fushi_engine_purity_guard_test.dart`。
 library fushi_audio_core;

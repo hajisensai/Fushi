@@ -319,7 +319,12 @@ bool transcodeAvailable() {
   // 一次时，移动端照样拿到 CliFfmpegBackend，于是能力位报 true、HLS URL 照发、
   // 每一段都失败。这里兜一条硬的。
   if (Platform.isAndroid || Platform.isIOS) return false;
-  return resolveFfmpegBackend() is CliFfmpegBackend;
+  // 进程单例外面恒套一层蓝光输入适配器；判的是它代理的真实后端能不能 exec 子进程。
+  final FfmpegBackend backend = resolveFfmpegBackend();
+  final FfmpegBackend runner = backend is BlurayFfmpegBackend
+      ? backend.delegate
+      : backend;
+  return runner is CliFfmpegBackend;
 }
 
 /// 在并发闸门内跑一段任意工作（**仅测试用**）：`_runSegment` 的 runner override 在

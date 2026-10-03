@@ -61,7 +61,9 @@ foreach ($relativePath in $workflowPaths) {
   # 且同组第二个 pending 会取消第一个 pending；正式版 release:published 同时点燃两条时桌面/Apple 要等
   # Android 整条跑完。带上 workflow 名后两条并行、同一条内仍按 tag/sha 串行。
   # Dart 侧同一不变式：fushi/test/build/release_workflow_concurrency_guard_test.dart。
-  Require-Text $relativePath $content 'group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize within a workflow while Android and desktop publishers run in parallel'
+  # 2026-09-30：push 事件改按分支（github.ref）分组——同分支的 debug 发布串行、排队中的旧 pending
+  # 被后来者顶掉；release / workflow_dispatch 仍按 tag/sha。cancel-in-progress 仍必须是 false。
+  Require-Text $relativePath $content 'group: fushi-release-${{ github.workflow }}-${{ github.event_name == ''push'' && github.ref || github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'push publishes serialize per branch (newest pending supersedes older pending); same tag/commit dispatches serialize within a workflow while Android and desktop publishers run in parallel'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
   # 2026-09-25：桌面/Apple 的 testflight_only run 只传 TestFlight、不碰 Release，单独成组与同 sha 的
   # 完整构建并行，不再排队等它跑完。

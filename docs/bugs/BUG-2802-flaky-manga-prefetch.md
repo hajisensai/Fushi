@@ -1,0 +1,6 @@
+## BUG-2802 · 在线漫画直读预取测试靠 80ms 墙钟等待，CI 高负载下间歇红
+- **报告**：2026-09-30（上游 CI Linux 全量套件，develop 本身也红：`取页顺带预取前后各两页；并发不超过上限，前台请求排在预取前面`，`Expected: Set:[3, 4, 5, 6, 7]  Actual: Set:[5, 6, 4]  Which: does not contain <3>`）
+- **真实性**：✅ 真 bug，但在测试而不在生产代码。生产路径 `fushi/lib/src/media/manga/mihon/online_manga_reader_session.dart` 的 `page()`（`_prefetchAround`，约 :310）在同一同步段里把 6/4/7/3 全部登记进 `_pending` 并排队到 `_PagePermitPool`，限流（上限 2）+ 前台插队 + 预取顺序都正确，不存在丢预取的竞态。问题在 `fushi/test/media/manga/online_manga_reader_session_test.dart`（原 :41 的 `_settle()` = `Future.delayed(80ms)`，:120/:129/:154 调用）：预取是 fire-and-forget（`unawaited`），会话没有任何完成信号，测试只能睡 80ms 墙钟赌五页（每页假取 5ms + `writeAsBytes(flush: true)` + `rename`，并发 2 分三批）全部跑完；CI 高负载下 fsync/调度变慢，80ms 内只起了 5、6、4 三页，断言就读到中间态。本机用 24 个 CPU 占满进程并发跑，第 1 轮即复现（`Actual: Set:[5, 6, 4, 7]`）。
+- **[x] ① 已修复** — 会话加 `@visibleForTesting debugWaitForIdle()`：循环等 `_pending` 里所有排队 / 在飞的取页（含预取）落定（成败都算，`_download` 的 finally 在 future 完成前摘 `_pending`，所以循环必然收敛）；测试三处 `_settle()` 换成它并删掉墙钟 helper。没有加延迟、重试或放宽超时。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/online_manga_reader_session_test.dart` 同一条用例现在等确定的完成信号再断言；验证：24 路 CPU 占满下 10 轮、空载 30 轮全绿（见提交说明）。
+- **备注**：`debugWaitForIdle` 只在所有在飞请求结束后返回；若源端某页永不返回，它也不返回——这是想要的（测试会以超时暴露真卡死，而不是读中间态）。

@@ -264,6 +264,13 @@ ruby > rt, ruby > rtc {
   /// 取 `max(0, 0.65 − (lineHeight − 1) / 2)` em（行高 1.65 → 0.325em、1.0 → 0.65em、
   /// ≥ 2.3 → 0），比实测伸出量多留约 0.1em 给注音字号大一点的书。只在分页模式发：
   /// 连续滚动与 VN 不经多列分页，没有跨列问题。
+  ///
+  /// BUG-2799：一正一负两半必须**同进同退**。本样式表注在书的样式表之后，但书里更高
+  /// 权重的规则（`.main p { padding: 0 }`、`p.x`、inline style 等 reset 很常见）会压掉
+  /// 不带 `!important` 的 `padding-block-start`，而 `p::after` 的负边距书几乎不碰——于是
+  /// 每个段落边界都净少 R（行高 1.65 时段间列距只剩段内的 0.80，用户 iOS 竖排截图即
+  /// 此比例）。所以两半都 `!important`：阅读器接管 `p` 块首 padding 与 `p::after`，
+  /// 书里给 `p` 的块首 padding（极少见）在 Apple 分页下被 R 取代。
   static String _webKitPaginatedRubyReserveCss(double lineHeight) {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
@@ -276,16 +283,53 @@ ruby > rt, ruby > rtc {
     if (reserveEm <= 0) return '';
     final String r = '${(reserveEm * 1000).round() / 1000}em';
     return '''
-/* BUG-2761: WebKit paginated only — see _webKitPaginatedRubyReserveCss. */
+/* BUG-2761 / BUG-2799: WebKit paginated only — see _webKitPaginatedRubyReserveCss. */
 p {
-  padding-block-start: $r;
+  padding-block-start: $r !important;
 }
 p::after {
-  content: "";
-  display: block;
-  margin-block-end: -$r;
+  content: "" !important;
+  display: block !important;
+  margin-block-end: -$r !important;
 }
 ''';
+  }
+
+  /// BUG-2819：Mac / iOS 分页每章**最后一页**整体错开一个页边距、满行末字被切掉。
+  ///
+  /// 分页把整章排成一根多列 body、按页步长（列宽 + 列间距）滚动，第 k 页落在
+  /// `k × 页步长`。能滚到哪儿由 `scrollWidth − clientWidth`（竖排 `scrollHeight −
+  /// clientHeight`）决定。Blink 的滚动范围包含多列容器行内方向末端的 padding（横排右
+  /// 边距、竖排下边距 + 底部 chrome inset），恰好够到末页；**WebKit 不含这截 padding**，
+  /// 物理终点比末页对齐位置少一个末端边距。末页只能停在物理终点（`buildPaginationMetrics`
+  /// 的「部分末页」分支），整页往前错开这个边距：横排右移、行尾被 clip-path 切掉，
+  /// 竖排下移、列尾被切掉。
+  /// macOS 27 WKWebView 实测（生产 macOS 横排分页 CSS、真书章节、1145 宽、左右边距 55px）：
+  /// scrollWidth 25401，按 Blink 口径应为 25456；末页对齐位置 24311，物理终点 24256，
+  /// 差 55 = 右边距。竖排（上下边距 30 + chrome inset 40 / 30）差 60 = 下边距 + 底部 inset。
+  ///
+  /// 修法：正文末尾补一个强制另起一栏的 1px 空块，把滚动范围撑出一整栏，末页对齐位置
+  /// 就在物理范围之内了。它不含文字和媒体，`buildPaginationMetrics` 的末页由内容边界
+  /// （`lastContentScroll`）决定，这一栏不会变成可翻到的空白页。高度为 0 的块 WebKit
+  /// 不为它另开一栏（实测无效），所以是 1px；用逻辑属性 `block-size`，一条规则通吃
+  /// 横竖两种书写方向。只在 Apple 端的分页模式发：连续滚动与 VN 不经多列分页，Blink
+  /// 的滚动范围本就够到末页。
+  static String _webKitPaginatedScrollEndCss() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return '''
+/* BUG-2819: WebKit paginated only — see _webKitPaginatedScrollEndCss. */
+body::after {
+  content: "" !important;
+  display: block !important;
+  block-size: 1px !important;
+  break-before: column !important;
+}
+''';
+      default:
+        return '';
+    }
   }
 
   /// 触屏「压掉原生长按选区」的规则（TODO-1279），按渲染引擎分流。
@@ -597,6 +641,11 @@ svg.block-img.blurred {
         settings.isVnMode || settings.isContinuousMode
             ? ''
             : _webKitPaginatedRubyReserveCss(settings.lineHeight);
+    // BUG-2819：末页够不着也只发生在多列分页。
+    final String paginatedScrollEndCss =
+        settings.isVnMode || settings.isContinuousMode
+            ? ''
+            : _webKitPaginatedScrollEndCss();
 
     return '''
 $resolvedFontFaces
@@ -668,7 +717,7 @@ html {
   background: transparent;
 }
 $layoutCss
-$paragraphSpacingCss
+$paginatedScrollEndCss$paragraphSpacingCss
 img.block-img {
   /* max-width / max-height = 页面容纳约束，恒 !important（见文件内说明）。 */
   max-width: var(--fushi-image-max-width, $imageMaxWidth) !important;
@@ -920,6 +969,13 @@ ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   color: var(--fushi-sentence-audio-text-color) !important;
   background-color: var(--fushi-sentence-audio-background-color) !important;
 }
+/* BUG-2806 起基字 wrapper 在 <ruby> 里面：子元素背景画在 ruby 的查词背景之上，
+   BUG-125 的「查词优先」要由 wrapper 让位（连同内联的补缝 box-shadow）。 */
+ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
+  color: inherit !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
 /* 链接色**恒** !important，不跟随「优先书籍样式」。这是阅读器唯一强制链接色的地方：
    撤掉后书自带的 `a{color:#000}`（EPUB 里极常见）在深色主题（背景 #0A0A0A）下就是
    黑底黑字，脚注/注释跳转链接直接不可见。开关的正当理由是「出版商 CSS 是为它自带的
@@ -1015,6 +1071,11 @@ ruby.fushi-sentence-audio-ruby-active {
 ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   text-decoration-style: solid !important;
   text-decoration-thickness: 0.14em !important;
+}
+/* 基字 wrapper 在查词 ruby 里（BUG-2806）：只留查词的粗实线。 */
+ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
+  text-decoration-line: none !important;
+  box-shadow: none !important;
 }
 ::highlight(fushi-search) {
   background-color: transparent;
@@ -1244,6 +1305,15 @@ body {
      正确捕获并拆屏（盒尺寸测量语义不变）。 */
   max-width: 100% !important;
   max-height: 100% !important;
+}
+/* BUG-2905: no hanging punctuation in VN. The body's `hanging-punctuation:
+   allow-end` (WebKit only) hangs a line-final 、。 past the inline-end edge,
+   but the VN screen clips at that edge (overflow hidden, no inline-end slack)
+   and fitScreensToViewport rightly measures the hung glyph as overflow — so
+   a paragraph that fits gets cut right before its 、 onto a second screen.
+   With hanging off WebKit pushes the preceding char down like Blink does. */
+.fushi-vn-content, .fushi-vn-content * {
+  hanging-punctuation: none !important;
 }
 /* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
 [data-fushi-visual-novel-unrevealed] {

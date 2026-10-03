@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import '../../helpers/source_guard.dart';
@@ -119,7 +120,7 @@ void main() {
 
     test('解除用 abortChapterTransition 而非裸 cancelChapterTransition', () {
       final String controllerSrc = File(
-        '../packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart',
+        'lib/src/media/audiobook/audiobook_controller.dart',
       ).readAsStringSync();
       final String body =
           methodBody(controllerSrc, 'void abortChapterTransition() {');

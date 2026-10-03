@@ -1,0 +1,43 @@
+# 新 push 到 develop / main 时，把同分支上「正在跑、但还很年轻」的旧发布 run 取消掉，
+# 让这次 push 在发布 concurrency 组里排着的新 run 立刻开跑。
+#
+# 为什么是独立 workflow：release.yml / release-desktop.yml 自 #1798 起把 push run
+# 按分支分组（cancel-in-progress: false），新 run 连同它里面的任何 job 都会 pending
+# 到旧 run 跑完——放在里面的取消 job 永远等不到该出手的时刻（2026-09-30 实测失效）。
+# 本 workflow 不在那个组里，push 一来就跑。
+#
+# 判据（2026-09 全月 542 次触发发布的 develop push + 分片后实测耗时模拟出的最优）：
+# 旧 run 第一个 job 开始得比新 run 创建早不足 8 分钟、且此刻不足 10 分钟就取消；
+# 普通 cancel 停不下 always() job 的，等 90 秒后 force-cancel。原理、数值与推导见
+# tool/cancel_superseded_runs.sh。守卫：fushi/test/build/release_workflow_supersede_guard_test.dart。
+#
+# 本 workflow 不发布任何东西，只调 Actions API 取消 run。
+name: Supersede develop releases
+
+on:
+  push:
+    branches: ['main', 'develop']
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  supersede:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: tool/cancel_superseded_runs.sh
+          sparse-checkout-cone-mode: false
+      - name: Cancel young release runs superseded by this push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          WORKFLOWS: release.yml release-desktop.yml
+          SUPERSEDE_WINDOW_MINUTES: '8'
+          SUPERSEDE_MAX_ELAPSED_MINUTES: '10'
+        run: bash tool/cancel_superseded_runs.sh

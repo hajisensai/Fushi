@@ -80,6 +80,7 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
+    Map<String, MangaOcrService> Function()? mangaOcrModelServicesFactory,
     Future<HostJobManager> Function()? hostJobsFactory,
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
@@ -94,6 +95,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
         _mangaOcrServiceFactory = mangaOcrServiceFactory,
+        _mangaOcrModelServicesFactory = mangaOcrModelServicesFactory,
         _hostJobsFactory = hostJobsFactory,
         _downloadsFactory = downloadsFactory,
         _subscriptionsFactory = subscriptionsFactory,
@@ -116,6 +118,9 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
+
+  /// 对端可点名的模型（key → 服务）。null = 只跑 host 当前选择的模型。
+  final Map<String, MangaOcrService> Function()? _mangaOcrModelServicesFactory;
 
   /// 通用任务（`/api/jobs`，目前 ASR）/ 代下载（`/api/downloads`）/ 内容订阅
   /// （`/api/subscriptions`）三面的装配工厂。三者此前只在无头 `fushi_server` 接线，
@@ -712,6 +717,8 @@ class FushiSyncServerController extends ChangeNotifier {
     if (factory == null) return null;
     return MangaOcrHostJobManager(
       service: factory(),
+      modelServices: _mangaOcrModelServicesFactory?.call() ??
+          const <String, MangaOcrService>{},
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
       ),

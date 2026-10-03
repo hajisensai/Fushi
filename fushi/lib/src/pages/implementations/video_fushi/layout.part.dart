@@ -209,10 +209,53 @@ extension _VideoLayout on _VideoFushiPageState {
               playerSize: constraints.biggest,
               surface: _miniSurface.value,
             );
-            return _buildVideoControlsInner(state, controller);
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _buildAudioOnlyBackdrop(controller),
+                _buildVideoControlsInner(state, controller),
+              ],
+            );
           },
         ),
       ),
+    );
+  }
+
+  /// 纯音频（专辑曲目等）没有画面：在 controls 最底层垫一张封面（无封面时一个
+  /// 音符图标），代替一整片黑。
+  ///
+  /// 放在 controls builder 里而不是 [Video] 外面：controls 由 media_kit 铺在纹理
+  /// 之上、字幕 / 控制条之下，窗口与全屏路由复用同一 builder，一处覆盖两种场景。
+  /// libmpv 若自己把音频内嵌封面当画面解码出来（[hasFirstFrame]），就让位给它。
+  Widget _buildAudioOnlyBackdrop(VideoPlayerController controller) {
+    if (!controller.isAudioOnly) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (BuildContext context, Widget? _) {
+        if (controller.hasFirstFrame) return const SizedBox.shrink();
+        final String? cover = _bookRow?.coverPath;
+        final Widget placeholder = Icon(
+          Icons.music_note_rounded,
+          size: 96,
+          // 压在固定深色底上，前景走 chrome 固定亮色体系（不随主题）。
+          color: videoChromeNeutralForeground.withValues(alpha: 0.24),
+        );
+        return IgnorePointer(
+          child: ColoredBox(
+            color: Colors.black,
+            child: Center(
+              child: cover == null || cover.isEmpty
+                  ? placeholder
+                  : Image.file(
+                      File(cover),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => placeholder,
+                    ),
+            ),
+          ),
+        );
+      },
     );
   }
 

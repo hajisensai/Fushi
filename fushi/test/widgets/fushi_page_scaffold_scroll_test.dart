@@ -7,6 +7,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 import 'widget_test_helpers.dart';
 
@@ -221,9 +222,15 @@ void main() {
 
   testWidgets('BUG-1959/2004：粗鼠标滚轮分帧到达，距离仍是完整原始 delta',
       (WidgetTester tester) async {
+    // 粗细判据按物理像素（BUG-2867）；测试视图默认 DPR 3.0 会把下面「12 逻辑 px
+    // 的细 delta」放大成 36 物理 px 而判成粗滚轮。DPR 设成 1，让它就是高精度
+    // 滚轮 1/8 档的 12 物理 px；120 逻辑 px 仍是 120 物理 px 的粗滚轮。
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetDevicePixelRatio);
     PageScrollRegistry.debugClear();
-    await tester.pumpWidget(buildTestApp(
-      FushiPageScaffold(
+    // 与生产同形：滚轮补间由根部 SmoothWheelScrollScope 给（BUG-2834）。
+    await tester.pumpWidget(buildTestApp(SmoothWheelScrollScope(
+      child: FushiPageScaffold(
         title: 'Wheel',
         body: ListView.builder(
           itemCount: 60,
@@ -231,7 +238,7 @@ void main() {
               SizedBox(height: 100, child: Text('wheel row $index')),
         ),
       ),
-    ));
+    )));
     await tester.pump();
 
     final ScrollController controller = PageScrollRegistry.current!;
@@ -246,24 +253,22 @@ void main() {
     // Ticker 的记时约定，不是滚动行为。起完之后再推进 40ms 才是真的动画中途。
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
-    if (Platform.isWindows || Platform.isLinux) {
-      expect(
-        controller.offset,
-        allOf(
-          greaterThan(0),
-          lessThan(120.0),
-        ),
-        reason: '粗滚轮应在多帧内逐步到达目标，而不是第一帧瞬移',
-      );
-    } else {
-      expect(controller.offset, 120, reason: 'macOS 保持平台原生 pointer delta');
-    }
+    expect(
+      controller.offset,
+      allOf(
+        greaterThan(0),
+        lessThan(120.0),
+      ),
+      reason: '粗滚轮应在多帧内逐步到达目标，而不是第一帧瞬移（全平台）',
+    );
     await tester.pumpAndSettle();
     // BUG-2009：距离 1:1，补间只改「怎么到」不改「到哪」。
     expect(controller.offset, 120);
 
     await tester.sendEventToBinding(wheel.scroll(const Offset(0, 12)));
     await tester.pump();
+    // macOS / 移动端到这里的只有物理滚轮，小 delta 也补间；只断言终点。
+    if (!(Platform.isWindows || Platform.isLinux)) await tester.pumpAndSettle();
     expect(
       controller.offset,
       132,

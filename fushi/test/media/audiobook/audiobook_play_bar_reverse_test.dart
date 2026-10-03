@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
 /// BUG-021 守卫：反转有声书播放底栏只镜像整体布局，**不能**反转

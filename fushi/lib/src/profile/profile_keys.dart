@@ -4,6 +4,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
 
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/profile/profile_document.dart'
+    show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
@@ -15,14 +17,14 @@ class ProfileKeys {
   ProfileKeys._();
 
   static const String categoryAnki = 'anki';
-  static const String categoryPref = 'pref';
+  static const String categoryPref = kProfileSettingCategoryPref;
 
   /// v63 已从 live preferences 与 Profile 副本中删除的旧全局超分键。
   ///
   /// 每游戏真值是 `galgames.upscaling_mode`；此键只保留为输入拒绝标识，防止
   /// 旧快照或旧分享 JSON 在升级后把废弃数据重新写回。
   static const String obsoleteGalgameUpscalingModePrefKey =
-      'galgame_magpie_upscaling_mode';
+      kObsoleteGalgameUpscalingModePrefKey;
 
   /// TODO-1077: per-profile snapshot of the `dictionary_metadata` Drift table
   /// (enable list / order / formatKey / type / hidden+collapsed languages /
@@ -59,8 +61,8 @@ class ProfileKeys {
     // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
     // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
     'browse_moved_notice_handled',
-    // 封面模式的本安装默认（全新安装片段 / 存量升级 GIF）：同族。进快照的话，切到
-    // 一个迁移前建的老 Profile 会删掉它，存量用户随即回落到全局默认被翻成片段。
+    // 封面模式迁到片段默认的一次性标记：同族。进快照的话，切 Profile 会把旧值 gif
+    // 带回来，下次启动迁移重跑，把用户此后自己选的 GIF 又改成片段。
     'mining_image_mode_install_default',
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',

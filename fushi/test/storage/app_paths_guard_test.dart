@@ -138,7 +138,7 @@ void main() {
         reason: '_documentsRoot 应经 resolver 门控、未装配时抛 StateError',
       );
       final String platformSrc = read(
-          '../packages/fushi_audio/lib/src/audiobook/audiobook_storage_platform.dart');
+          'lib/src/media/audiobook/audiobook_storage_platform.dart');
       expect(
         RegExp(r'documentsRootResolver \?\?= getApplicationDocumentsDirectory')
             .hasMatch(platformSrc),

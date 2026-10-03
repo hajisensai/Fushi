@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 图片防剧透遮罩揭开状态持久化（BUG-898）：建表迁移 revealed_images（v45 -> v47）守护。

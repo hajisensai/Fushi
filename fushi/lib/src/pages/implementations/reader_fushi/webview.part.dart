@@ -688,7 +688,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // [hostOwnsWebViewHoverLookup]，只有 macOS；其余平台 JS 腿不动）。
       hostHoverLookup: hostOwnsWebViewHoverLookup,
       highlightOnTap: ReaderFushiSource.instance.highlightOnTap,
-      showChrome: _showChrome,
+      showChrome: _tapGateChrome,
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
@@ -1456,28 +1456,7 @@ $kPagedWheelGestureHelperJs
   window.__fushiArmWheelGesture = function() {
     _continuousWheelLastTickAt = Date.now();
   };
-  // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
-  // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
-  var _wheelLastScrollPos = -1;
-  // TODO-629 ②: 竖排连续滚动 rAF 缓动状态——wheel 事件只累积目标 scrollLeft，由
-  // requestAnimationFrame 每帧指数逼近，消除逐事件 scrollBy 的离散颗粒感。
-  var _vScrollTarget = null;   // 累积目标 scrollLeft（null = 无进行中的缓动）
-  var _vScrollRaf = 0;         // 进行中的 rAF 句柄（0 = 无）
-  function _vScrollEaseStep() {
-    var root = document.scrollingElement || document.documentElement;
-    if (_vScrollTarget === null) { _vScrollRaf = 0; return; }
-    var current = root.scrollLeft;
-    var remaining = _vScrollTarget - current;
-    // 与纯函数 ReaderPaginationScripts.smoothScrollStep 同款常量（factor/snap）。
-    if (Math.abs(remaining) <= 0.5) {
-      root.scrollLeft = _vScrollTarget;
-      _vScrollTarget = null;
-      _vScrollRaf = 0;
-      return;
-    }
-    root.scrollLeft = current + remaining * 0.18;
-    _vScrollRaf = requestAnimationFrame(_vScrollEaseStep);
-  }
+$kContinuousWheelScrollJs
   document.addEventListener('wheel', function(e) {
     // BUG-239 / TODO-345 同源门控：连续模式靠浏览器原生滚动（滚动轴 = 书写轴）。
     // 此处一旦在连续模式回传 onSwipe（90% 整屏跳页），就与原生滚动产生轴向冲突。
@@ -1504,6 +1483,22 @@ $kPagedWheelGestureHelperJs
       // delta>0 一律归一化为「沿书写轴前进」：横排向下(deltaY>0)、竖排投影向前都为
       // forward（见纯函数注释）。
       var wheelDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel';
+      var sign = vertical
+        ? ((window.getComputedStyle(document.body).writingMode === 'vertical-rl') ? -1 : 1)
+        : 1;
+      // 触控板 = 手机上的手指滑动：只沿内容轴、按原生方向跟手。横排只认纵向分量（横向
+      // 划动在手机上本就不滚）；竖排的横向划动不能再走「主 delta 投影」——那会把
+      // vertical-rl 的 deltaX 乘上 sign=-1，内容反着手指走。乘回 sign 后
+      // `wheelDelta * sign` 恰是原生 deltaX。竖排的纵向双指滑在手机上没有对应手势，保留投影。
+      if (pointerKind === 'trackpad') {
+        if (!vertical) wheelDelta = e.deltaY;
+        else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) wheelDelta = e.deltaX * sign;
+        if (_swallowInheritedTrackpadFling(wheelTickAt, wheelQuietMs)) {
+          e.preventDefault();
+          return;
+        }
+      }
       // TODO-656 真试滚：不再推算「到没到边界」，而是真的朝书写轴 scrollBy 一步、读实际
       // 位移——滚动了就是没到边界（不跨章），真的滚不动了才跨章。横排 scrollBy 纵向
       // (scrollTop)，竖排把 deltaY 投影到横向 scrollLeft（浏览器不会把垂直滚轮自动映射到
@@ -1512,10 +1507,10 @@ $kPagedWheelGestureHelperJs
       if (wheelDelta === 0) return;
       e.preventDefault();
       var wheelDir = wheelDelta > 0 ? 'forward' : 'backward';
-      var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel';
-      var sign = vertical
-        ? ((window.getComputedStyle(document.body).writingMode === 'vertical-rl') ? -1 : 1)
-        : 1;
+      // 无极滚动：鼠标滚轮这一步交给 rAF 缓动（CONTINUOUS_WHEEL_SCROLL）。试滚
+      // 仍是下面同步的真 scrollBy，只是从缓动终点起算（连拨累加），量完立刻还原到可见
+      // 位置——同一任务内不绘制，看不到这一跳。触控板本身是连续输入，照旧直接落地。
+      var shownPos = _smoothWheelPrepare(vertical, pointerKind === 'wheel');
       // 用与键盘翻页 paginate 同款的已验证原语：window.scrollBy 滚动 + 沿书写轴测量实际
       // 位移（横排 root.scrollTop、竖排 window.scrollX）。此前用 root.scrollBy / root.scrollLeft
       // 在本 WebView 不生效/读不到 → moved 恒 false → 滚轮不滚动、直接翻章。
@@ -1524,6 +1519,8 @@ $kPagedWheelGestureHelperJs
       else { window.scrollBy({left: 0, top: wheelDelta, behavior: 'auto'}); }
       var after = vertical ? window.scrollX : root.scrollTop;
       var moved = Math.abs(after - before) > 1;
+      // 缓动还没走到终点（终点就是边界）时，这一拍不算「到边界」：内容得先看得见地滚到头。
+      if (_smoothWheelCommit(vertical, shownPos, after)) return;
       // 诊断：仅在「滚不动」时打印，供真机定位为何不动（同时打 window.scrollX 与
       // root.scrollLeft，看哪个真的跟随滚动）。
       if (!moved) {
@@ -1595,6 +1592,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 同口径，这里直接用它，walker 只留给真没有章级计数的 shell。
     if (total <= 0 && typeof r.totalChapterChars === 'number' && r.totalChapterChars > 0) {
       total = r.totalChapterChars;
+    }
+    // BUG-2903：连续 shell 的章总字数来自缓存的章内文本索引，滚动中逐帧回报不再全章 walk。
+    if (total <= 0 && typeof r.chapterCharTotal === 'function') {
+      total = r.chapterCharTotal();
     }
     if (total <= 0 && r.createWalker) {
       var walker = r.createWalker();
@@ -2149,7 +2150,7 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
-            if (!_showChrome && !shiftKey) {
+            if (!_tapGateChrome && !shiftKey) {
               _toggleChrome();
               // Tap handed OS focus to the WebView; reclaim it so ESC still
               // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
@@ -2208,6 +2209,7 @@ updateLive: function(patch) {
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
+            // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
             if (_anyChromeFloating) {
               _handleFloatingChromeReveal();
             } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
@@ -3209,3 +3211,101 @@ const String kPagedWheelGestureHelperJs = r'''
       _isTrackpadWheel(e) ? 'trackpad' : 'mouse');
   }
   // END PAGED_WHEEL_GESTURE_HELPER''';
+
+/// 滚动（连续）模式鼠标滚轮的「无极滚动」：把每格滚轮的位移交给 rAF 指数缓动。
+///
+/// 连续模式的 wheel 监听必须 `preventDefault` 自己滚（竖排要把 deltaY 投影到横轴、
+/// 边界要靠同步真试滚判定，TODO-656），于是丢了浏览器原生的平滑滚动：每格一次
+/// `scrollBy(behavior:'auto')`，画面一格一格硬跳。这里只接管「提交」那一步：
+///
+/// 1. [_smoothWheelPrepare]：缓动进行中就先把位置挪到缓动终点，让本拍试滚从终点
+///    起算（连拨累加），返回试滚前用户看到的位置；
+/// 2. 调用方照旧同步 `scrollBy` 试滚、读出 after（浏览器已按内容尽头 clamp）；
+/// 3. [_smoothWheelCommit]：把位置还原到可见位置，以 after 为终点逐帧逼近。整段在
+///    同一个任务里完成，不会绘制中间态。
+///
+/// 每帧走剩余距离的 0.18、剩 0.5px 内吸附——与 [ReaderPaginationScripts.smoothScrollStep]
+/// 同一套常量。位置记在浮点 `_smoothWheelPos` 而不是每帧读回：滚动坐标会被取整，
+/// 读回再乘系数在尾段会原地踏步。读回与上一帧写入差出 2px 以上说明有别人（键盘翻页、
+/// 恢复定位、拖滚动条）动过位置，缓动立刻让位，不抢回去。
+///
+/// 只服务鼠标滚轮；触控板（`prepare(…, false)`）本身就是连续输入，按原样跟手。
+///
+/// 同一份常量还管触控板的跨章惯性（`_swallowInheritedTrackpadFling`，BUG-2831）：
+/// 每个章节文档装载后，先吞掉上一章滑动带过来的惯性，直到出现新手势。
+const String kContinuousWheelScrollJs = r'''
+  // BEGIN CONTINUOUS_WHEEL_SCROLL
+  var _smoothWheelTarget = null;  // 缓动终点（沿书写轴的 window 滚动坐标）；null = 空闲
+  var _smoothWheelPos = 0;        // 上一帧写入的浮点位置
+  var _smoothWheelVertical = false;
+  var _smoothWheelRaf = 0;
+  function _smoothWheelRead(vertical) {
+    return vertical ? window.scrollX : window.scrollY;
+  }
+  function _smoothWheelWrite(vertical, pos) {
+    if (vertical) window.scrollTo(pos, window.scrollY);
+    else window.scrollTo(window.scrollX, pos);
+  }
+  function _smoothWheelStop() {
+    if (_smoothWheelRaf) cancelAnimationFrame(_smoothWheelRaf);
+    _smoothWheelRaf = 0;
+    _smoothWheelTarget = null;
+  }
+  function _smoothWheelFrame() {
+    _smoothWheelRaf = 0;
+    if (_smoothWheelTarget === null) return;
+    var vertical = _smoothWheelVertical;
+    if (Math.abs(_smoothWheelRead(vertical) - _smoothWheelPos) > 2) {
+      _smoothWheelTarget = null;
+      return;
+    }
+    var remaining = _smoothWheelTarget - _smoothWheelPos;
+    if (Math.abs(remaining) <= 0.5) {
+      _smoothWheelWrite(vertical, _smoothWheelTarget);
+      _smoothWheelTarget = null;
+      return;
+    }
+    _smoothWheelPos += remaining * 0.18;
+    _smoothWheelWrite(vertical, _smoothWheelPos);
+    _smoothWheelRaf = requestAnimationFrame(_smoothWheelFrame);
+  }
+  // smooth=false（触控板）：停掉残余缓动，返回 null 让本拍直接落地。
+  function _smoothWheelPrepare(vertical, smooth) {
+    vertical = !!vertical;
+    var easing = _smoothWheelTarget !== null && _smoothWheelVertical === vertical;
+    if (!smooth || !easing) _smoothWheelStop();
+    if (!smooth) return null;
+    var shown = _smoothWheelRead(vertical);
+    if (easing) _smoothWheelWrite(vertical, _smoothWheelTarget);
+    return shown;
+  }
+  // 返回 true = 缓动仍在走向 after，本拍不得按「到边界」处理。
+  function _smoothWheelCommit(vertical, shown, after) {
+    if (shown === null) return false;
+    vertical = !!vertical;
+    _smoothWheelWrite(vertical, shown);
+    if (Math.abs(after - shown) <= 0.5) {
+      _smoothWheelStop();
+      return false;
+    }
+    if (_smoothWheelTarget === null) _smoothWheelPos = shown;
+    _smoothWheelTarget = after;
+    _smoothWheelVertical = vertical;
+    if (!_smoothWheelRaf) _smoothWheelRaf = requestAnimationFrame(_smoothWheelFrame);
+    return true;
+  }
+  // BUG-2831：跨章 = 换 document，上一章那次触控板滑动的系统惯性却还在继续喷 tick，
+  // 新章一装好就被它接着往下推（Mac 实测：落到第三章开头又被推下去一屏多，再滑一下
+  // 就又跨章，表现为乱跳章节）。手机跨章后新页面没有惯性，要重新划。所以本文档装载起
+  // 触控板 tick 一律吞掉（不滚、不判边界），直到出现一次静默间隔 = 新手势。
+  var _trackpadInheritedFlingAt = Date.now();  // 非 0 = 仍在吞
+  function _swallowInheritedTrackpadFling(tickAt, quietMs) {
+    if (!_trackpadInheritedFlingAt) return false;
+    if (tickAt - _trackpadInheritedFlingAt < quietMs) {
+      _trackpadInheritedFlingAt = tickAt;
+      return true;
+    }
+    _trackpadInheritedFlingAt = 0;
+    return false;
+  }
+  // END CONTINUOUS_WHEEL_SCROLL''';

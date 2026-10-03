@@ -1,0 +1,7 @@
+## BUG-2807 · 排行榜分享只能分享本月且无法只分享链接
+- **报告**：2026-09-30（用户：统计中心 › 排行 › 分享，弹窗写死「分享本月」，选了「周」也只能分享本月；且希望能直接用链接分享）
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/leaderboard/leaderboard_share_card.dart` 的 `loadLeaderboardShareCardData` 把周期硬编码成本月（本地时区月初 + `LeaderboardWindow.month` 字数榜），卡片文案也只有「本月读完」；`showLeaderboardShareSheet` 不接收排行页当前选中的周期。对话框唯一的出口是「图片 + 主页链接」系统分享面板，没有不带图片的链接入口。另：月初按本地时区算，而服务端周期按 UTC 日期起算（`services/leaderboard/src/snapshots.js` `windowStartKey`），跨时区边界时读完数与字数榜口径不一致。
+- **[x] ① 已修复** — 分享周期改成与榜单同一套周 / 月 / 总：`leaderboardShareWindowStart` 按 UTC 日期对齐服务端（周 = 本周一、月 = 1 日）；周 / 月数书架并取同周期字数榜 `me`，「总」取用户卡累计（不受 200 部翻页上限影响）；对话框加周期切换（默认跟随排行页当前周期、按周期缓存）、「复制链接」按钮（`/u/<id>` 主页链接，不依赖卡片加载）；取数用服务注入时钟 `LeaderboardService.nowMs()`。
+- **[x] ② 已加自动化测试** — `fushi/test/leaderboard_ui/leaderboard_ui_test.dart`：周期起点 UTC 口径、周 / 总取数、对话框默认周期 → 切「总」→ 复制链接写剪贴板。
+- **备注**：链接仍是用户主页 `/u/<id>`，服务端只读网页不按周期展示；如需带周期的分享页要改 `services/leaderboard/src/pages.js`。
+- **2026-09-30 合并后审查修复**（`debdc23873`）：① 「总」的「截至」日期改为本地日期（新纯函数 `leaderboardSharePeriodLabel`，周 / 月仍按 UTC 对齐服务端 `windowStartKey`）——原先 `at.toUtc()` 让东八区早上 8 点前分享写成前一天；② 分享对话框的错误原是全周期共用一个 `_error`：A 加载中 → 切 B → 切回 A 会再发一次 A，第一个失败、第二个成功时仍一直显示错误，且分享按钮可点却因卡片不在树上抛 `StateError`。改为数据 / 错误 / 在途请求都按周期存（`_cache` / `_errors` / `_inflight`），同周期在途时复用不重发，显示以当前周期为准（有数据即显示卡片），分享按钮只在当前周期卡片在屏时可点；③ 主页链接为 null 时「复制链接」「分享」按钮禁用（原先点了静默无反应）；④ 补测试（`fushi/test/leaderboard_ui/leaderboard_ui_test.dart`）：「总」本地日期标签、假服务端用 Completer 控制周榜请求先后复现竞态、无链接时按钮禁用、排行页切到「总」点页头分享对话框初始即「总」（`initialWindow: _window` 接线）。四条均经变异实测：去掉对应修复后各自变红。

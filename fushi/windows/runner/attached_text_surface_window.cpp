@@ -19,6 +19,7 @@
 #include "attached_bitmap_bounds.h"
 #include "attached_overlayability.h"
 #include "attached_shield_status_policy.h"
+#include "window_activation_policy.h"
 #include "lookup_hit_validation.h"
 #include "low_level_mouse_hook.h"
 #include "native_glog.h"
@@ -57,9 +58,6 @@ constexpr uint32_t kAllProbeMask =
     kProbeStartMask | kProbeMiddleMask | kProbeEndMask;
 // Stable v19 wire values from voice_hook_ipc.h. This runner deliberately keeps
 // the surface header independent from the injected-hook ABI header.
-constexpr uint32_t kGeometryProviderRuntimeLayout = 1u;
-constexpr uint32_t kGeometryProviderEngineExactLayout = 2u;
-constexpr uint32_t kGeometryProviderPositionedTextApi = 3u;
 constexpr uint32_t kGeometryProviderAttachedCalibrated = 4u;
 constexpr uint32_t kGeometryProviderIdAttachedCalibrated = 11u;
 constexpr uint32_t kShieldStatusVerified = 0x00000001u;
@@ -2832,25 +2830,11 @@ bool AttachedTextSurfaceWindow::NativeProviderPreferred() const {
           provider_status_.text_generation)) {
     return false;
   }
-  switch (provider_status_.provider_kind) {
-  case kGeometryProviderRuntimeLayout:
-    return provider_status_.provider_id == 1u ||
-           provider_status_.provider_id == 2u ||
-           provider_status_.provider_id == 6u ||
-           provider_status_.provider_id == 7u ||
-           provider_status_.provider_id == 8u;
-  case kGeometryProviderEngineExactLayout:
-    return provider_status_.provider_id == 3u ||
-           provider_status_.provider_id == 4u ||
-           provider_status_.provider_id == 5u ||
-           provider_status_.provider_id == 14u ||
-           provider_status_.provider_id == 15u;
-  case kGeometryProviderPositionedTextApi:
-    return provider_status_.provider_id == 9u ||
-           provider_status_.provider_id == 10u;
-  default:
-    return false;
-  }
+  // Native providers are exactly the host's production allow-list (runtime,
+  // exact and positioned-text kinds; attached_calibrated is not native). A
+  // second hand-copied list here drifted once and dropped CMVS (BUG-2718).
+  return fushi::lookup_hit_validation::IsProductionProviderPair(
+      provider_status_.provider_kind, provider_status_.provider_id);
 }
 
 bool AttachedTextSurfaceWindow::AttachedProviderOwned() const {
@@ -3262,8 +3246,10 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     return DefWindowProcW(hwnd_, message, wparam, lparam);
+  // BUG-2889 — 触摸 / 触控笔按下另走 WM_POINTERACTIVATE，与鼠标同一条不激活策略。
+  case WM_POINTERACTIVATE:
   case WM_MOUSEACTIVATE:
-    return MA_NOACTIVATE;
+    return OverlayNoActivateReply(message);
   case WM_NCHITTEST:
     return HTTRANSPARENT;
   case WM_SETCURSOR:
