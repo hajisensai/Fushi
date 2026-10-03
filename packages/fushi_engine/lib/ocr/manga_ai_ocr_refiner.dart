@@ -16,6 +16,7 @@
 /// 保留本地文字；鉴权 / 配置类失败后整卷不再发请求。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -97,11 +98,39 @@ Rules:
 Reply with JSON only, no prose:
 {"blocks":[{"id":1,"text":"..."}]}''';
 
+/// 进程内按缓存文件规范化路径分桶的写锁（链尾 Future），形状同
+/// `manga_json_writeback.dart` 的 `runExclusiveOnMangaJson`。
+final Map<String, Future<void>> _mangaAiOcrCacheWriteChains =
+    <String, Future<void>>{};
+
+/// 同一缓存文件的写操作串行执行 [action]；失败不毒化链。
+Future<T> _runExclusiveOnCacheFile<T>(File file, Future<T> Function() action) {
+  final String key = p.canonicalize(file.path);
+  final Future<void> previous =
+      _mangaAiOcrCacheWriteChains[key] ?? Future<void>.value();
+  final Completer<void> gate = Completer<void>();
+  _mangaAiOcrCacheWriteChains[key] = gate.future;
+  return previous.then((_) => action()).whenComplete(() {
+    gate.complete();
+    if (identical(_mangaAiOcrCacheWriteChains[key], gate.future)) {
+      _mangaAiOcrCacheWriteChains.remove(key);
+    }
+  });
+}
+
+/// 临时文件名的进程内序号（与时间戳一起保证同进程内唯一）。
+int _mangaAiOcrCacheTempSequence = 0;
+
 /// 已读过的裁图 → 文字的磁盘缓存（按裁图字节的 SHA-1 键）。
 ///
 /// 存在的理由：本地任务中断后续跑、整卷缓存快路径回放时，页面会再次经过本层；
 /// 没有缓存就是同一张图重复付费。键是**裁图内容**而不是页号 / 块号，所以换了
 /// 检测结果、换了页序都不会读到别人的字。
+///
+/// 同一文件可能有多个实例同时在写（直读识别器与整卷任务、整卷任务结束后仍在
+/// 收尾的大模型步骤与同目录新起的任务）：写入一律在按路径的进程内锁里**先重读
+/// 盘上内容再合并**，临时文件名带唯一后缀——后写者不会吞掉先写者的条目，两个
+/// 写者也不会踩同一个 `.tmp`。
 class MangaAiOcrCache {
   MangaAiOcrCache(this.file);
 
@@ -126,6 +155,10 @@ class MangaAiOcrCache {
   Future<Map<String, String>> _load() async {
     final Map<String, String>? loaded = _entries;
     if (loaded != null) return loaded;
+    return _entries = await _readDisk();
+  }
+
+  Future<Map<String, String>> _readDisk() async {
     final Map<String, String> entries = <String, String>{};
     try {
       if (await file.exists()) {
@@ -141,20 +174,41 @@ class MangaAiOcrCache {
     } on FileSystemException {
       // 同上。
     }
-    return _entries = entries;
+    return entries;
   }
 
   Future<String?> lookup(String key) async => (await _load())[key];
 
+  /// 并入 [values]：锁内重读盘上现状再合并写回，别的实例刚写进去的条目不丢。
   Future<void> storeAll(Map<String, String> values) async {
     if (values.isEmpty) return;
-    final Map<String, String> entries = await _load();
-    entries.addAll(values);
-    await file.parent.create(recursive: true);
-    final File temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(jsonEncode(entries), flush: true);
-    if (await file.exists()) await file.delete();
-    await temporary.rename(file.path);
+    await _runExclusiveOnCacheFile<void>(file, () async {
+      final Map<String, String> entries = await _readDisk()
+        ..addAll(values);
+      await file.parent.create(recursive: true);
+      final File temporary = File(
+        '${file.path}.${pid}_${DateTime.now().microsecondsSinceEpoch}_'
+        '${_mangaAiOcrCacheTempSequence++}.tmp',
+      );
+      try {
+        await temporary.writeAsString(jsonEncode(entries), flush: true);
+        // rename 直接覆盖目标（Windows 上 Dart 的 rename 也能覆盖），不先删：
+        // 删与 rename 之间目标不存在，别的读者会当成「没有缓存」多付一次钱。
+        await temporary.rename(file.path);
+      } on FileSystemException {
+        if (await temporary.exists()) await temporary.delete();
+        rethrow;
+      }
+      _entries = entries;
+    });
+  }
+
+  /// 清空本缓存（整卷「重新识别」时调用：用户要的是让大模型重读，不是回放）。
+  Future<void> clear() async {
+    await _runExclusiveOnCacheFile<void>(file, () async {
+      _entries = <String, String>{};
+      if (await file.exists()) await file.delete();
+    });
   }
 }
 
@@ -187,6 +241,9 @@ class MangaAiOcrPageStats {
 }
 
 /// 大模型重读器。一卷一个实例（[cache] 绑卷目录）；不是线程安全的，按页顺序调用。
+///
+/// [cancel] 之后本实例作废：在途请求被中止（关掉它的 HTTP 客户端），之后的
+/// [refinePage] 一律原样交回本地结果、不再发请求。
 class MangaAiOcrRefiner {
   MangaAiOcrRefiner({
     required this.provider,
@@ -204,10 +261,26 @@ class MangaAiOcrRefiner {
   final AiChatClient Function() _clientFactory;
 
   String? _fatalFailure;
+  bool _cancelled = false;
+  final Set<AiChatClient> _activeClients = <AiChatClient>{};
 
   /// 遇到过「重试也没用」的失败（鉴权 / 配置 / 4xx）：此后不再发请求，整卷保留
   /// 本地结果。null = 仍可用。
   String? get fatalFailure => _fatalFailure;
+
+  /// 已被 [cancel]。
+  bool get isCancelled => _cancelled;
+
+  /// 调用方不再要结果（阅读会话关了 / 任务取消了 / 书删了）：中止在途请求，此后
+  /// 不再发任何请求。幂等。
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    for (final AiChatClient client in _activeClients) {
+      client.close();
+    }
+    _activeClients.clear();
+  }
 
   /// 这个块要不要送大模型。
   bool wants(MokuroBlock block) {
@@ -234,7 +307,7 @@ class MangaAiOcrRefiner {
       for (int i = 0; i < page.blocks.length; i++)
         if (wants(page.blocks[i])) i,
     ];
-    if (wanted.isEmpty) {
+    if (wanted.isEmpty || _cancelled) {
       return (page: page, stats: const MangaAiOcrPageStats());
     }
     if (_fatalFailure != null) {
@@ -278,9 +351,14 @@ class MangaAiOcrRefiner {
 
     String? failure;
     final Map<String, String> fresh = <String, String>{};
+    if (_cancelled) {
+      return (page: page, stats: const MangaAiOcrPageStats());
+    }
     final AiChatClient client = _clientFactory();
+    _activeClients.add(client);
     try {
       for (int start = 0; start < pending.length; start += blocksPerRequest) {
+        if (_cancelled) break;
         final List<int> batch = pending.sublist(
           start,
           math.min(start + blocksPerRequest, pending.length),
@@ -291,6 +369,7 @@ class MangaAiOcrRefiner {
             for (final int k in batch) crops[k]!,
           ]);
         } on AiChatFailure catch (error) {
+          if (_cancelled) break;
           failure = error.message;
           if (!error.isTransient) {
             _fatalFailure = error.message;
@@ -306,14 +385,25 @@ class MangaAiOcrRefiner {
           final int k = batch[j];
           final String? text = read[j + 1];
           if (text == null) continue;
-          final String local = page.blocks[wanted[k]].lines.join();
-          if (!isPlausibleMangaAiOcrText(text, local: local)) continue;
+          final MokuroBlock source = page.blocks[wanted[k]];
+          if (!isPlausibleMangaAiOcrText(
+            text,
+            local: source.lines.join(),
+            block: source,
+          )) {
+            continue;
+          }
           texts[k] = text;
           fresh[keys[k]!] = text;
         }
       }
     } finally {
+      _activeClients.remove(client);
       client.close();
+    }
+    if (_cancelled) {
+      // 调用方已不要结果：不落缓存（它可能是因为删书而取消），也不交改写。
+      return (page: page, stats: const MangaAiOcrPageStats());
     }
     if (cache != null && fresh.isNotEmpty) {
       try {
@@ -387,26 +477,109 @@ Map<int, String>? parseMangaAiOcrReply(String reply, {required int count}) {
 /// 本地校验：模型回的是不是「这个框里的字」而不是解释、翻译或幻觉。
 ///
 /// 判据保守：去掉空白后非空（模型说「没字」时保留本地结果——本地检测器认定那里
-/// 有字）；长度不超过本地结果的 3 倍加 8（模型补出漏字是正常的，凭空写出一段
-/// 说明或翻译不是）。不按措辞判「是不是说明文字」：英文漫画里的台词本身就会有
-/// 「sorry」「cannot」，按词黑名单只会误杀。
-bool isPlausibleMangaAiOcrText(String text, {required String local}) {
+/// 有字）；长度不超过「这个框装得下的字数」加 8（模型补出漏字是正常的，凭空写出
+/// 一段说明或翻译不是）。
+///
+/// 上限按**框的几何**定（[mangaAiOcrBlockCapacity]），不按本地文字长度：「只读
+/// 低置信度」档最该救的正是本地漏读了大半的块——本地只认出 2 个字而框里其实有
+/// 十几个时，按「本地长度 × 3」的旧上限会把正确的重读当成幻觉拒掉。几何给不出
+/// 容量（没有块信息）时退回旧的本地长度上限；两者取大，旧上限永远是下限。
+///
+/// 不按措辞判「是不是说明文字」：英文漫画里的台词本身就会有「sorry」「cannot」，
+/// 按词黑名单只会误杀。
+bool isPlausibleMangaAiOcrText(
+  String text, {
+  required String local,
+  MokuroBlock? block,
+}) {
   final String compact = text.replaceAll(RegExp(r'\s'), '');
   if (compact.isEmpty) return false;
   final int localLength = local.replaceAll(RegExp(r'\s'), '').length;
-  return compact.length <= localLength * 3 + 8;
+  final int byLocal = localLength * 3 + 8;
+  final int? capacity = block == null ? null : mangaAiOcrBlockCapacity(block);
+  final int byGeometry = capacity == null ? 0 : capacity + 8;
+  return compact.length <= math.max(byLocal, byGeometry);
 }
+
+/// 这个块的框按字号算最多装得下几个字；给不出（没有尺寸可用）返回 null。
+///
+/// 单字边长取行框「粗细」（竖排列宽 / 横排行高）的中位数——行框来自检测器，与
+/// 识别出几个字无关；没有行几何时退回块字号。框面积 ÷ 单字面积本身就偏宽（列间距、
+/// 气泡留白都被算成了「能放字」），所以不再额外乘系数。
+int? mangaAiOcrBlockCapacity(MokuroBlock block) {
+  final double width = block.rectangle.width;
+  final double height = block.rectangle.height;
+  if (width <= 0 || height <= 0) return null;
+  final List<double> thicknesses = <double>[
+    for (final List<List<double>> polygon
+        in block.linesCoords ?? const <List<List<double>>>[])
+      ocrLineThickness(_polygonBounds(polygon), vertical: block.isVertical),
+  ]..removeWhere((double t) => !(t > 0));
+  final double glyph;
+  if (thicknesses.isNotEmpty) {
+    thicknesses.sort();
+    glyph = thicknesses[thicknesses.length ~/ 2];
+  } else if (block.fontSize > 0) {
+    glyph = block.fontSize;
+  } else {
+    return null;
+  }
+  return (width * height / (glyph * glyph)).ceil();
+}
+
+/// 竖排日文 / 中文里，字与字之间的空白不是词界：模型偶尔在假名之间插空格，
+/// 原样落盘会让点词断在空格上。拉丁字母、韩文（谚文按词分写）之间的空白则是
+/// 正文的一部分，删掉就是把 `sorry I cannot` 落成 `sorryIcannot`。
+///
+/// 判据只看空白两侧的字：任一侧是汉字 / 假名 / 中日文标点与全角字符时去掉，否则
+/// 折叠成一个空格。不按「本地原文有没有空白」判：单词块（本地 `HEY`、模型
+/// `HEY YOU`）与单个韩文语节的块本地都没有空白，按那条判据会把它们粘在一起。
+bool _isSpaceFreeScript(int rune) =>
+    (rune >= 0x2E80 && rune <= 0x2FDF) || // 部首
+    (rune >= 0x3000 && rune <= 0x303F) || // 中日文标点
+    (rune >= 0x3040 && rune <= 0x30FF) || // 平假名 / 片假名
+    (rune >= 0x31F0 && rune <= 0x31FF) || // 片假名扩展
+    (rune >= 0x3400 && rune <= 0x4DBF) || // 汉字扩展 A
+    (rune >= 0x4E00 && rune <= 0x9FFF) || // 汉字
+    (rune >= 0xF900 && rune <= 0xFAFF) || // 兼容汉字
+    (rune >= 0xFF00 && rune <= 0xFFEF) || // 全角 / 半角形式
+    (rune >= 0x20000 && rune <= 0x3FFFF); // 汉字扩展 B 及以后
+
+/// 把若干段文字按 [_isSpaceFreeScript] 的规则接起来：接缝两侧任一为中日文时
+/// 直接相连，否则用一个空格。
+String _joinMangaAiOcrSegments(Iterable<String> segments) {
+  final StringBuffer out = StringBuffer();
+  String previous = '';
+  for (final String segment in segments) {
+    if (segment.isEmpty) continue;
+    if (previous.isNotEmpty &&
+        !_isSpaceFreeScript(previous.runes.last) &&
+        !_isSpaceFreeScript(segment.runes.first)) {
+      out.write(' ');
+    }
+    out.write(segment);
+    previous = segment;
+  }
+  return out.toString();
+}
+
+/// 一行模型输出：去首尾空白，行内空白按 [_joinMangaAiOcrSegments] 处理。
+String normalizeMangaAiOcrLine(String line) =>
+    _joinMangaAiOcrSegments(line.trim().split(RegExp(r'\s+')));
 
 /// 把大模型的文字落进块：能按原行几何对上就逐行替换，对不上就按行框重新排版，
 /// 都不行就退成整块单行（覆盖层退回整块均铺）。字符级命中区（Lens 的
 /// `regions`）的偏移量对新文字无效，一律丢掉。
+///
+/// 空白处理见 [normalizeMangaAiOcrLine]：中日文去掉、拉丁 / 韩文保留单个空格；
+/// 多行拼成一行时接缝也按同一规则（英文行尾与下一行行首之间补空格）。
 MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
   final List<String> modelLines = <String>[
     for (final String line in text.split('\n'))
-      if (line.replaceAll(RegExp(r'\s'), '').isNotEmpty)
-        line.replaceAll(RegExp(r'\s'), ''),
+      if (normalizeMangaAiOcrLine(line).isNotEmpty)
+        normalizeMangaAiOcrLine(line),
   ];
-  final String joined = modelLines.join();
+  final String joined = _joinMangaAiOcrSegments(modelLines);
   final List<List<List<double>>>? coords = block.linesCoords;
   List<String> lines = <String>[joined];
   List<List<List<double>>>? linesCoords;
@@ -420,7 +593,8 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
           _polygonBounds(polygon),
       ], vertical: block.isVertical);
       if (layout != null) {
-        lines = layout.lines;
+        // 拉丁文按字格切开时，接缝上的空格会落在行首 / 行尾。
+        lines = <String>[for (final String line in layout.lines) line.trim()];
         linesCoords = <List<List<double>>>[
           for (final OcrRect r in layout.boxes)
             <List<double>>[
