@@ -83,7 +83,6 @@ const List<_ScanRoot> _scriptRoots = <_ScanRoot>[
   _ScanRoot('../ci', extensions: <String>{'.sh'}),
   _ScanRoot('../tool', extensions: <String>{'.sh', '.ps1', '.py'}),
   _ScanRoot('../tools', extensions: <String>{'.sh', '.ps1'}),
-  _ScanRoot('../scripts', extensions: <String>{'.py'}),
   _ScanRoot('../.codex-test/tools', extensions: <String>{'.ps1'}),
   _ScanRoot('tool', extensions: <String>{'.ps1', '.sh'}),
   // workspace 根 pubspec：melos 段带仓库身份（A/B 要扫），overrides 的 vendor
