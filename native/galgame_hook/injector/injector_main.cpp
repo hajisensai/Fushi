@@ -38,6 +38,7 @@
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
+#include "sgre_family.h"
 #include "text_thread_identity.h"
 #include "unity_voice_bundles.h"
 
@@ -300,10 +301,13 @@ struct LunaCtx {
   PFN_Luna_InsertHookCode insert_hook = nullptr;
   PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
-  // 用户 profile 显式打开的 MAGES 控制符归一化（TSV option `normalize-mages-controls`）。
+  // 注入前已确定的 MAGES 控制符归一化：用户 profile 显式打开（TSV option
+  // `normalize-mages-controls`），或注入器在注入前用与 SGRE adapter 同一结构判据
+  // （sgre_family.h：exe 旁的 wind3d11 语音归档）认出了引擎——见 ApplyLunaProfiles。
   bool normalize_mages_controls = false;
-  // 引擎身份打开的同一归一化：游戏内 SGRE adapter 的 probe() 成立后锁存为 1，本会话
-  // 不再回落（身份不会撤销）。不按 exe 哈希 / 文件名判，见 LunaMagesNormalizationActive。
+  // 注入后才能确定的同一归一化：没有语音归档、只靠进程内文本锚点认出 SGRE 时，游戏内
+  // adapter 的 probe() 成立后锁存为 1，本会话不再回落（身份不会撤销）。不按 exe 哈希 /
+  // 文件名判，见 LunaMagesNormalizationActive。
   volatile LONG mages_engine_claimed = 0;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
@@ -988,9 +992,11 @@ int LunaWideToUtf8(const wchar_t* text, int wlen, char* out, int out_cap) {
   return written;
 }
 
-// MAGES 控制符归一化是否生效：用户 profile 显式打开，或游戏内引擎 adapter 已确认本进程
-// 是 MAGES/SGRE（wind3d11）引擎。后者读共享头里的 adapter 报告（有界栈拷贝），确认后锁存，
-// 之后每行只看一个原子量。hook 尚未上报时保持原样输出——那是「还不知道」，不猜。
+// MAGES 控制符归一化是否生效：注入前已确定（用户 profile，或 exe 旁的 wind3d11 语音
+// 归档——与 adapter probe() 同一判据，从第一行起生效），或游戏内引擎 adapter 已确认本进程
+// 是 MAGES/SGRE（wind3d11）引擎。后者只覆盖「无语音归档、靠文本锚点认出」的构建：读共享头
+// 里的 adapter 报告（有界栈拷贝），确认后锁存，之后每行只看一个原子量。hook 尚未上报时
+// 保持原样输出——那是「还不知道」，不猜。
 bool LunaMagesNormalizationActive() {
   if (g_luna.normalize_mages_controls) return true;
   if (InterlockedCompareExchange(&g_luna.mages_engine_claimed, 0, 0) != 0) {
@@ -1369,6 +1375,17 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
                        const std::wstring& user_profile,
                        LunaOptions* options) {
   if (options == nullptr || executable.empty()) return;
+  // 引擎身份（结构判据，不是哈希 / 文件名）：SGRE adapter 的语音归档判据在注入前就能在
+  // 磁盘上判定，这里用同一个函数（sgre_family.h）先判，MAGES 控制符归一化从 Luna 的
+  // 第一行起就生效，不必等 hook DLL 的 adapter 报告（每秒最多一次、DLL 未注入时永不到）。
+  if (!options->normalize_mages_controls &&
+      fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(executable)) {
+    options->normalize_mages_controls = true;
+    fprintf(stderr,
+            "[luna] engine %s identified before injection (wind3d11 voice "
+            "archive): MAGES control normalization on\n",
+            fushi_voice_hook::kLunaMagesControlEngineAdapterId);
+  }
   const auto identity = BuildTargetIdentity(executable, pid);
   auto apply = [&](const std::string& tsv, const char* source) {
     const auto match = fushi_voice_hook::MatchLunaHookProfiles(tsv, identity);

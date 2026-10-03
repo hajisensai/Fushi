@@ -1083,6 +1083,40 @@ void main() {
       expect(line.textThreadLabel, 'Siglus exact · 0x25c880');
     });
 
+    test('engine exact text sources map to their own thread namespace', () {
+      // native voice_hook_ipc.h: kTextSourceYuris = 9, kTextSourceFvp = 10,
+      // kTextSourceMalie = 15. An unmapped kind falls back to 'hook:' /
+      // 'Text hook', which hides the engine lane from thread selection.
+      const Map<int, (String, String)> expected = <int, (String, String)>{
+        9: ('yuris', 'YU-RIS exact'),
+        10: ('fvp', 'FVP exact'),
+        15: ('malie', 'Malie exact'),
+      };
+      for (final MapEntry<int, (String, String)> entry in expected.entries) {
+        final GalHookedLine line = GalHookedLine(
+          seq: 1,
+          timestampMs: 2,
+          text: '「テスト」',
+          threadId: 0x2a,
+          threadAddress: 0x1000,
+          sourceKind: entry.key,
+        );
+        expect(line.textThreadKey, '${entry.value.$1}:2a');
+        expect(line.textThreadLabel, '${entry.value.$2} · 0x1000');
+      }
+      // 11–14 are registered in voice_hook_ipc.h as reserved / unassigned.
+      for (int kind = 11; kind <= 14; kind++) {
+        final GalHookedLine line = GalHookedLine(
+          seq: 1,
+          timestampMs: 2,
+          text: '「テスト」',
+          threadId: 0x2a,
+          sourceKind: kind,
+        );
+        expect(line.textThreadKey, 'hook:2a', reason: '$kind');
+      }
+    });
+
     test(
       'selectTextThread forwards the native thread id and can reset to auto',
       () async {

@@ -343,10 +343,15 @@ void main() {
       expect(isGalLookupProductionProviderPair(1, 16), isFalse);
       expect(isGalLookupProductionProviderPair(3, 11), isFalse);
       // native 的 engine_exact provider 注册表登记到 22（Yuris）、23（Fvp）、
-      // 28（Malie）（voice_hook_ipc.h）；24–27 未登记，Dart 单方面放行不存在的
-      // id 会让两端契约错位。
-      expect(isGalLookupProductionProviderPair(2, 24), isFalse);
-      expect(isGalLookupProductionProviderPair(2, 27), isFalse);
+      // 28（Malie）（voice_hook_ipc.h）；24–27 在那里登记为「保留、未分配」，
+      // Dart 单方面放行不存在的 id 会让两端契约错位。
+      for (int id = 24; id <= 27; id++) {
+        expect(
+          isGalLookupProductionProviderPair(2, id),
+          isFalse,
+          reason: '$id',
+        );
+      }
     });
 
     test('client/primaryLayer 坐标可用，design/layout-local fail-closed', () {

@@ -10,6 +10,7 @@
 
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
+#include "sgre_family.h"
 
 int main() {
   fushi_voice_hook::LunaTargetIdentity wa2;
@@ -108,6 +109,57 @@ int main() {
              .normalize_mages_controls) {
       std::fprintf(stderr, "user normalize-mages-controls option was ignored\n");
       return 8;
+    }
+  }
+
+  // 注入器在注入前用与 SGRE adapter probe() 同一判据（exe 旁 wind3d11 语音归档）打开
+  // MAGES 控制符归一化，Luna 第一行起就生效。判据看目录结构，不看 exe 名 / 哈希。
+  {
+    if (fushi_voice_hook::SgreVoiceArchivePathForExecutable(
+            L"C:\\Games\\SGRE\\any_name.exe") !=
+        L"C:\\Games\\SGRE\\wind3d11data\\voice_body.bin") {
+      std::fprintf(stderr, "SGRE archive path composition drifted\n");
+      return 9;
+    }
+    if (!fushi_voice_hook::SgreVoiceArchivePathForExecutable(L"bare.exe")
+             .empty()) {
+      std::fprintf(stderr, "directory-less path must not resolve an archive\n");
+      return 9;
+    }
+    wchar_t temp[MAX_PATH] = {};
+    const DWORD temp_chars = GetTempPathW(MAX_PATH, temp);
+    if (temp_chars == 0 || temp_chars >= MAX_PATH) return 9;
+    const std::wstring root = std::wstring(temp) + L"fushi_sgre_family_" +
+                              std::to_wstring(GetCurrentProcessId());
+    const std::wstring data = root + L"\\wind3d11data";
+    const std::wstring archive = data + L"\\voice_body.bin";
+    const std::wstring exe = root + L"\\renamed_game.exe";
+    CreateDirectoryW(root.c_str(), nullptr);
+    if (fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(exe)) {
+      std::fprintf(stderr, "SGRE identity claimed without the voice archive\n");
+      return 9;
+    }
+    CreateDirectoryW(data.c_str(), nullptr);
+    CreateDirectoryW(archive.c_str(), nullptr);
+    const bool directory_accepted =
+        fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(exe);
+    RemoveDirectoryW(archive.c_str());
+    if (directory_accepted) {
+      std::fprintf(stderr, "a directory named voice_body.bin is not an archive\n");
+      return 9;
+    }
+    HANDLE file = CreateFileW(archive.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return 9;
+    CloseHandle(file);
+    const bool matched =
+        fushi_voice_hook::SgreVoiceArchiveExistsBesideExecutable(exe);
+    DeleteFileW(archive.c_str());
+    RemoveDirectoryW(data.c_str());
+    RemoveDirectoryW(root.c_str());
+    if (!matched) {
+      std::fprintf(stderr, "SGRE voice archive was not recognized\n");
+      return 9;
     }
   }
 
