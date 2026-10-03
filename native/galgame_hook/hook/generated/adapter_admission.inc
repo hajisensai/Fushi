@@ -15,3 +15,4 @@
     consider(unity_mono_);
     consider(smash_fzmedia_);
     consider(yuris_);
+    consider(fvp_);

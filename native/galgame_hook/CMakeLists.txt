@@ -54,6 +54,7 @@ add_library(fushi_voice_hook SHARED
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/yuris_ypf.h"
+  "hook/fvp_format.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
   "hook/qlie_pack.h"
@@ -99,6 +100,10 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/yuris_profile.h"
   "hook/adapters/yuris_voice.inc"
   "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/fvp_adapter.inc"
+  "hook/adapters/fvp_profile.h"
+  "hook/adapters/fvp_lookup.inc"
+  "hook/adapters/fvp_lookup_core.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
   "hook/adapters/artemis_lookup.inc"
@@ -1057,6 +1062,27 @@ target_compile_definitions(fushi_bgi_lookup_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_bgi_lookup_test
   COMMAND fushi_bgi_lookup_test)
+
+# FVP (Favorite View Point) HCB trailer identity and the mono-Ogg Vorbis
+# voice check on synthetic bytes.
+add_executable(fushi_fvp_format_test "tests/fvp_format_test.cpp")
+target_include_directories(fushi_fvp_format_test PRIVATE "hook")
+add_test(NAME fushi_fvp_format_test COMMAND fushi_fvp_format_test)
+
+# FVP text lane + in-game lookup core: structural site resolution on a
+# synthetic x86 image (syscall registration, TextPrint handler, Print /
+# PutGlyph, PrimSetText field, render text case, DrawSprite transform proofs)
+# with fail-closed branches, CP932 ruby parsing, glyph pairing, draw-origin
+# admission, projection, hit testing and the message-level click claim.
+add_executable(fushi_fvp_lookup_test
+  "tests/fvp_lookup_test.cpp"
+)
+target_include_directories(fushi_fvp_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_fvp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_fvp_lookup_test
+  COMMAND fushi_fvp_lookup_test)
 
 add_executable(fushi_catsystem2_lookup_test
   "tests/catsystem2_lookup_test.cpp"

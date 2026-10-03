@@ -30,6 +30,7 @@
 | `aos_sfa` | AOS / SFA (Princess Sugar, Atelier Kaguya family) | `implemented_unverified` | — | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `unity_mono` | Unity (Mono runtime) | `implemented_unverified` | luna_hook (implemented_unverified)；unity_mono_managed_text_events (implemented_unverified)；unity_mono_fungus_say_events (implemented_unverified) | unity_audioclip_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `yuris` | YU-RIS | `implemented_unverified` | yuris_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | yuris_decoder_input_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `fvp` | FVP (Favorite View Point) | `implemented_unverified` | fvp_text_print_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | fvp_decoder_input_ogg_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -56,6 +57,7 @@
 | `cmvs` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `unavailable` |
 | `unity_mono` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `yuris` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `fvp` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 
 证据边界：
 
@@ -116,6 +118,9 @@
 - `yuris` geometry：Engine-exact message-layer provider (kLookupGeometryProviderIdYuris, 22). Every site resolves from the executable's own code as laid out on disk (other in-process hookers such as LunaHook's YU-RIS hooks patch the rasteriser's TextOutA call in the live image; the two hook targets must still be byte-identical live): DRAW is the call target shared by the engine's typing sites `call DRAW; mov edx,[S]; add [edx+X],eax` whose first bytes call a rasteriser holding `call [TextOutA]`; the message state global S, the pen field X, the message text pointer T and text index TI, the per-op font size array and op index come from those sites' own argument setup and pen/text-index updates (every site must agree); DRAW's stack-argument ABI (font size, pen x/y, target layer) from the stores that follow the size and pen loads. Every DRAW call (the engine typewriter and the script-level string command alike) records layer, pen, font size and character; a change of the engine message text S+T opens a page and is the text lane. A layer's design position is the sum of its sprite positions up the parent chain, exactly as the engine's own sprite hit test walks it (`mov S,[N+sprite]; [S+x] .. [S+y]; mov N,[N+parent]; test; je; cmp [N+live],0; jne`, unique); the design screen and the main HWND come from the window record the cursor mapping reads (`mov r,[table..]; push [r+hwnd]; call [ScreenToClient]` followed by the design bounds check). A draw of the same character within 2 px of an earlier one on the same layer (shadow pass, then face) replaces it. The selected line must be the render-order suffix of exactly one layer's glyphs; a client with another aspect than the design screen is refused. The click claim masks VK_LBUTTON's high bit in the engine's GetKeyboardState table (`push K; call [GetKeyboardState]`) at the head of its per-frame mouse-button loop (`mov ebx,1; movzx edx,byte[ebx+K]; sar edx,7; ... cmp ebx,7`, unique, over the same K) from press to release; the press is refused when a newer glyph was drawn, the layer moved, the host's native-input admission is missing or a card shields the game. Offline: x86/x64 build and fushi_yuris_adapter_test; the resolvers accept the 2011 euphoria (v500) and 2016 アイカギ (v481) executables and reject 39 x86 executables of seven other engines. 2026-10-03 Fushi host (gal_realgame_driver_itest, provider ids 22-28 admitted, dictionaries installed) on both original launch paths, DPI-unaware windows stretched 2x: euphoria (euphoria.exe SHA-256 d30b992f...184d, 800x600 design on a 1600x1200 physical client) accept4 #16 on 「恵ちゃん、大丈夫？」 (大, char 6 at physical 332,968 42x40) recorded text=PASS (YU-RIS exact lane), audio=PASS (game_resource 356654437_fushi_textseq239_kan_m01_0073.ogg, paired by text event id), lookup, no_advance, dismiss_no_advance, relookup and a real card (fake AnkiConnect noteId 1791002595603 with sentence, audio and image): verdict=full; アイカギ (アイカギ.exe SHA-256 907cecc1...a851, loose Chinese-patch directories moved aside, 1024x768 design on 2048x1536) accept4 #34 on 「ぁあっ……中でまた大きくっ……」 (中, char 6 at physical 658,1360 50x48) recorded the same seven PASS (game_resource 358129265_fushi_textseq37_shi_01_comn_04_0003.ogg, noteId 1791002595605): verdict=full. Touch (InjectTouchInput PT_TOUCH, euphoria): a tap is promoted to a sub-frame DOWN/UP the engine's key table never shows (an unclaimed tap neither advances nor opens anything), so promoted touch presses (extra info 0xFF5157xx) are claimed at the main window procedure: tap on a glyph opened the card without advancing; tap and vertical swipe inside the card, then tap outside, closed it without advancing; horizontal swipe on the card closed it without advancing; long press (0.9 s) with no card changed nothing; a swipe on the game with no card advanced, as a mouse drag does; the game stayed foreground throughout. On アイカギ a touch tap on a glyph opened the card without advancing; a later touch outside the game left the host's FushiFloatingLyricWindow in the foreground (host-side). The host's FushiFloatingLyricWindow (topmost) swallows game clicks under it; the アイカギ window was moved clear of it for the runs.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：The left-click claim masks VK_LBUTTON in the engine's own GetKeyboardState table before its per-frame mouse-button loop and is gated on the host's NativeInputAllowed admission; no measured real-build click-leak rate is recorded.
+- `fvp` geometry：Engine-exact text-buffer provider (kLookupGeometryProviderIdFvp). Sites resolve only from structure (fvp_lookup_core.h ResolveSites): the syscall registration blocks of `TextPrint` (argc 2) and `PrimSetText` (argc 4) calling one registration function give their handlers; the TextPrint handler's bounded buffer load (`cmp eax,0x1f` + `mov edx,[G]; mov ebp,[edx+eax*4+A]`), length bound (`cmp eax,0x200`) and `push esi; mov ecx,ebp; call` give the VM global, the text-buffer array and the text object's Print; Print's `push 1/0/0; call` gives the layout whose repeated callee with the PutGlyph prologue gives the pen x/y and glyph-advance fields and the base-glyph ruby rule (format+2 size, +4 ruby size, +0x14 == 2, +0x24 gap); PrimSetText's `mov [eax+K],dx` gives the prim's buffer-index field, and the render walk's text case using that same field, VM global and array gives DrawSprite and the drawn surface offset; DrawSprite's own translation, scale-identity (1000), rotation, UV/WH/3D flag and alpha code, and its 3D-centre load of the design size, are all required. At Print return the detour has the glyph records PutGlyph saw (pen before each glyph); a print is mapped only when the records pair one-to-one with its displayed units (`[ruby|base]` ruby glyphs flagged), and a glyph is offered only while the text object is still the buffer's object with an unmoved pen and its surface was drawn within 400 ms as a plain visible translation (no rotation/scale/UV/WH/3D, alpha > 0, zero surface origin); design pixels = draw origin (ox + prim.x, oy + prim.y) + glyph cell, projected to physical client pixels under the design aspect. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the main window procedure (the only visible ANSI top-level window whose procedure lies in the game image); refused when a newer print was captured, the text object or draw origin changed, the host's native-input admission is missing or a card shields the game. Offline: resolver on the 2011 World.exe and the 2019 HoshimemoEH_HD.exe (原版备份) both resolve the same field offsets; nine other-engine executables (CMVS, Malie, YU-RIS x2, Softpal, QLIE, the FVP disc launcher and a Chinese-patch launcher) refuse at the registration step; fushi_fvp_lookup_test. No Fushi-host accept4 run is recorded.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 
 ## 识别与能力明细
 
@@ -1088,6 +1093,49 @@ Tests：`tests/unity_mono_adapter_test.cpp`、`tests/unity_mono_text_test.cpp`�
 Fixtures：`tests/fixtures/yuris_replay.json`
 
 Tests：`tests/yuris_adapter_test.cpp`
+
+### FVP (Favorite View Point) (`fvp`)
+
+- 状态：`implemented_unverified`
+- 别名：FAVORITE、Favorite View Point、FVP
+- 家族：`fvp`（FAVORITE in-house HCB bytecode engine; no verified sibling）
+- 当前 adapter：`hook/adapters/fvp_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported_before_voice_archive_open`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：World.exe、HoshimemoEH_HD.exe；证据：real_sample — Catalogue only: 2011 いろとりどりのセカイ (World.exe) and 2019 星空のメモリア Eternal Heart HD (原版备份 HoshimemoEH_HD.exe). The adapter never matches on names; identity is the self-consistent HCB script.
+- `pe_architectures`：x86；证据：real_sample — Both sample executables are PE32 machine 0x14c
+- `directory_files_all`：*.hcb；证据：real_sample — HCB script next to the exe (trailer: entry, globals, screen mode, title, syscall table with TextPrint/2) and the FVP .bin archives (count, names_bytes, 12-byte entries, name table, members back to back)
+- `pe_imports`：DSOUND.dll、WINMM.dll、d3d9.dll、GDI32.dll；证据：real_sample — World.exe import table (GetGlyphOutlineA glyph rasterisation, mmio* archive reads, DirectSound playback); no GetAsyncKeyState / DirectInput import
+- `resource_extensions`：.hcb、.bin；证据：real_sample — voice.bin: 18612 mono Ogg Vorbis members; bgm.bin stereo Ogg; se*.bin RIFF; graph*.bin hzc1 images
+- `hashes`：World.exe sha256:e7749bfb633b1d536a53ef2dea07b289cb2bdc264e506d87cb2e7b9bda41d947、World.hcb sha256:8a7cdbf7345ad0e97cffdebb9d9d2456f68bc0bc61ac3eff84f4ad00b395132e、HoshimemoEH_HD.exe (原版备份) sha256:981393e8710c96d9f304bf951481d4736105db0c75b37ced06ee5fffe86c3995、HoshimemoEH_HD.hcb sha256:6d45ef890d99e72ae9af156d34f9e571eb3cf7d1db9ec01ca290c1533d867884；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `fvp_text_print_hook`：`implemented_unverified` — Native exact text lane (source kind 10, hook 'FVP exact', ENGINE:FVP:text_print): the text object's Print, reached structurally from the TextPrint syscall handler (see lookup_acceptance.geometry), is detoured; the detour copies the CP932 string (bounded, < 512 bytes as the handler enforces) and the worker strips `[ruby|base]` ruby readings, converts to UTF-16 and publishes one lane per text buffer index. No Fushi-host text_ready run is recorded yet.
+- `ingame_lookup_geometry`：`implemented_unverified` — Engine-exact text-buffer provider kLookupGeometryProviderIdFvp (23), see lookup_acceptance.geometry.
+- codepage：932
+- 线程提示：Select the 'FVP exact' lane of the dialogue text buffer (one lane per TextPrint buffer index).
+
+音频优先级：
+
+1. `fvp_decoder_input_ogg_resource` — `implemented_unverified`；格式：complete mono Ogg Vorbis stream the engine hands to its sound decoder (SoundLoad) from AudioPlay, named by the channel's resource name；clean voice：not_verified
+2. `directsound_pcm` — `implemented_unverified`；格式：generic DirectSound fallback；clean voice：engine_dependent
+3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Single runtime sample family: the resolver is proven offline on two FAVORITE builds (2011, 2019 HD); other FVP generations may refuse and then install nothing.
+- Geometry is offered only for a text prim drawn as a plain translation; rotated, scaled, UV-clipped or 3D text prims and non-zero surface origins fail closed.
+- Voice is the bytes AudioPlay hands to the sound decoder (SoundLoad), kept only when they are a complete mono Ogg Vorbis stream of at most 2 MiB; mono Ogg sound effects played through AudioPlay would be taken for voice, and streams longer than 2 MiB are skipped.
+
+Fixtures：尚无（P5 补齐）
+
+Tests：`tests/fvp_format_test.cpp`、`tests/fvp_lookup_test.cpp`
 
 ## 状态定义
 

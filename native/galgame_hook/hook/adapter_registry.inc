@@ -570,6 +570,10 @@ class AdapterRegistry {
     // first KOE read cannot race ahead; a transient measurement failure is
     // retried from Poll via ProcessPendingEvents.
     reallive_.install();
+    // FVP identity is structural (a self-consistent HCB script with the
+    // TextPrint syscall next to the exe); its text-object and audio-decoder
+    // input detours go in before the first print / first voice line.
+    fvp_.install();
     // SGRE RawImageEx labels can be rasterized once on the very first frame
     // and then live only as cached textures. Install its optional UI trace
     // while the injector still owns the startup suspension; the generated
@@ -626,6 +630,7 @@ class AdapterRegistry {
     cmvs_.ProcessPendingEvents();
     reallive_.ProcessPendingEvents();
     unity_mono_.ProcessPendingEvents();
+    fvp_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

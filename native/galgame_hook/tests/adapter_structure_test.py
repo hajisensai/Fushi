@@ -445,10 +445,11 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(15, len(publishers), publishers)
+        self.assertEqual(16, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
         self.assertIn("malie_lookup.inc", publishers)
+        self.assertIn("fvp_lookup.inc", publishers)
         self.assertIn("bgi_lookup.inc", publishers)
         self.assertIn("unity_mono_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
@@ -508,7 +509,10 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(15, len(seen), seen)
+        self.assertEqual(16, len(seen), seen)
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
+        )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["bgi_lookup.inc"]
         )
@@ -2290,6 +2294,97 @@ class AdapterStructureTest(unittest.TestCase):
         ]
         gated = gated[: gated.index("};")]
         self.assertIn("kLookupGeometryProviderIdMalie", gated)
+
+    def test_fvp_lookup_is_structural_and_callbacks_stay_bounded(self) -> None:
+        """FVP 文本道 + 查词 + 语音：站点只来自结构；游戏线程 / 消息线程回调不做 IO / 转码 / 分配。"""
+        core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_lookup_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "fvp_profile.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        # The adapter reports the host digest only on an identity rejection.
+        for source in (core, runtime, profile):
+            for forbidden in ("sha256", "bcrypt", "world.exe", "hoshimemo",
+                              "irotori", "getmodulefilename", "voice.bin"):
+                self.assertNotIn(forbidden, source.lower())
+        # Every site is proven from the syscall registration and cross-checked
+        # between the TextPrint handler, PrimSetText and the render case.
+        resolve = self._function_body(core, "inline SiteResult ResolveSites(")
+        for proof in ('FindRegistration(image, "TextPrint", 2u',
+                      'FindRegistration(image, "PrimSetText", 4u',
+                      "kBufferLoad", "kLengthBound", "kPrintCall", "kLayoutCall",
+                      "kPutGlyph", "kPrimField", "kTranslate", "kScale",
+                      "kDesign"):
+            self.assertIn(proof, resolve)
+        # Game-thread capture and message-thread claim: bounded copies only.
+        for name in ("int __fastcall FvpPrintDetour(",
+                     "int __fastcall FvpPutGlyphDetour(",
+                     "int __fastcall FvpDrawDetour(",
+                     "void PublishFvpTextEvent(",
+                     "LRESULT CALLBACK FvpWndProcDetour(",
+                     "bool FvpPressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("FvpLookupLog(", "CreateFile", "WriteFile",
+                              "malloc(", "std::wstring", "PublishHit(",
+                              "MultiByteToWideChar", "WriteTextLaneEvent",
+                              "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        # Voice comes from the decoder input only: no archive is opened or
+        # read, and the game-thread detours only copy bounded bytes.
+        for forbidden in ("ReadFile", "CreateFile", "Remember", "mmio"):
+            self.assertNotIn(forbidden, adapter)
+        for name in ("int __fastcall FvpChannelPlayDetour(",
+                     "int __fastcall FvpSoundLoadDetour("):
+            body = self._function_body(adapter, name)
+            for forbidden in ("FvpLookupLog(", "malloc(", "WriteVoiceOggAt",
+                              "VirtualAlloc", "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        audio = self._function_body(core, "inline AudioSiteResult ResolveAudioSites(")
+        for proof in ('FindRegistration(image, "AudioPlay", 2u',
+                      "kAudioChannelLoad", "kChannelPlay", "kSoundLoad",
+                      "kSoundLoadOgg"):
+            self.assertIn(proof, audio)
+        # Conversion, lane publication and voice output stay on the worker.
+        worker = self._function_body(runtime, "void ProcessFvpTextEvent(")
+        self.assertIn("MultiByteToWideChar", worker)
+        self.assertIn("PublishFvpTextLine(", worker)
+        self.assertIn("PairLineGlyphs(", worker)
+        voice = self._function_body(adapter, "void ProcessFvpVoiceSlots(")
+        self.assertIn("VorbisChannels(", voice)
+        self.assertIn("BindVoiceToFollowingText(", voice)
+        write = self._function_body(adapter, "void WriteFvpVoiceSlot(")
+        self.assertIn("WriteVoiceOggAt(", write)
+        # The claim never skips the host's native-input admission.
+        eligible = self._function_body(runtime, "bool FvpPressEligible(")
+        for gate in ("NativeInputAllowed(", "FvpShieldActive(",
+                     "GetForegroundWindow()", "FvpTextObjectUnchanged(",
+                     "FvpDrawnOrigin("):
+            self.assertIn(gate, eligible)
+        tick = self._function_body(runtime, "void ProcessFvpLookupTick(")
+        self.assertLess(tick.index("ReadLatestFvpSubmit("),
+                        tick.index("TryHookFvpWindow("))
+        publish = self._function_body(runtime, "bool PublishFvpLookupHit(")
+        self.assertIn("published_lines.Find(submit.generation)", publish)
+        self.assertNotIn("rt.model.", publish)
+        # Identity is structural and installs nothing when it fails.
+        install = self._function_body(adapter, "  bool install() override {")
+        self.assertIn("if (!probe()) return false;", install)
+        self.assertIn("ParseHcbTrailer(", profile)
 
     def test_unity_mono_lookup_is_structural_and_callbacks_stay_bounded(
         self,

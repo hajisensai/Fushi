@@ -363,6 +363,9 @@ constexpr uint32_t kTextSourceYuris = 9;
 // Malie exact text: the click unit the message window's segment parser hands
 // to the RICHTEXT3D reveal (voice tag and ruby removed).
 constexpr uint32_t kTextSourceMalie = 15;
+// FVP (Favorite View Point) exact text published by the native TextPrint
+// (text object Print) hook.
+constexpr uint32_t kTextSourceFvp = 10;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -908,6 +911,9 @@ constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
 constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
 // Malie RICHTEXT3D message exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
+// FVP (Favorite View Point) text-buffer print exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

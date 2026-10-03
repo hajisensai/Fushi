@@ -665,9 +665,10 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_smash_fzmedia_exact_provider_is_bound_to_lookup_matrix(self) -> None:
         # 18-engine lookup matrix: smash/fzmedia joins with the exact provider
         # id 15 bound to engine_exact_layout, and nothing else may claim it.
-        self.assertEqual(19, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
+        self.assertEqual(20, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
         self.assertIn("cmvs", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("yuris", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        self.assertIn("fvp", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("unity_mono", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("smash_fzmedia", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         smash_pair = (

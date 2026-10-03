@@ -52,6 +52,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "cmvs",
     "unity_mono",
     "yuris",
+    "fvp",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -136,6 +137,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdMalie",
     ): ("malie_libp", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdFvp",
+    ): ("fvp", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",
@@ -296,6 +301,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "artemis_pf8_voice_resource": "resource_observed",
     "bgi_arc20_voice_resource": "resource_observed",
     "catsystem2_unencrypted_kif_voice_resource": "resource_observed",
+    "fvp_decoder_input_ogg_resource": "resource_observed",
     "directsound_buffer_pcm": "pcm_observed",
     "directsound_pcm": "pcm_observed",
     "ffmpeg54_decoder_pcm": "pcm_observed",

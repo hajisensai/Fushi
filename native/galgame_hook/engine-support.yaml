@@ -331,6 +331,25 @@
           "status": "implemented_unverified",
           "evidence": "The left-click claim masks VK_LBUTTON in the engine's own GetKeyboardState table before its per-frame mouse-button loop and is gated on the host's NativeInputAllowed admission; no measured real-build click-leak rate is recorded."
         }
+      },
+      {
+        "engine_id": "fvp",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout",
+            "attached_calibrated"
+          ],
+          "evidence": "Engine-exact text-buffer provider (kLookupGeometryProviderIdFvp). Sites resolve only from structure (fvp_lookup_core.h ResolveSites): the syscall registration blocks of `TextPrint` (argc 2) and `PrimSetText` (argc 4) calling one registration function give their handlers; the TextPrint handler's bounded buffer load (`cmp eax,0x1f` + `mov edx,[G]; mov ebp,[edx+eax*4+A]`), length bound (`cmp eax,0x200`) and `push esi; mov ecx,ebp; call` give the VM global, the text-buffer array and the text object's Print; Print's `push 1/0/0; call` gives the layout whose repeated callee with the PutGlyph prologue gives the pen x/y and glyph-advance fields and the base-glyph ruby rule (format+2 size, +4 ruby size, +0x14 == 2, +0x24 gap); PrimSetText's `mov [eax+K],dx` gives the prim's buffer-index field, and the render walk's text case using that same field, VM global and array gives DrawSprite and the drawn surface offset; DrawSprite's own translation, scale-identity (1000), rotation, UV/WH/3D flag and alpha code, and its 3D-centre load of the design size, are all required. At Print return the detour has the glyph records PutGlyph saw (pen before each glyph); a print is mapped only when the records pair one-to-one with its displayed units (`[ruby|base]` ruby glyphs flagged), and a glyph is offered only while the text object is still the buffer's object with an unmoved pen and its surface was drawn within 400 ms as a plain visible translation (no rotation/scale/UV/WH/3D, alpha > 0, zero surface origin); design pixels = draw origin (ox + prim.x, oy + prim.y) + glyph cell, projected to physical client pixels under the design aspect. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the main window procedure (the only visible ANSI top-level window whose procedure lies in the game image); refused when a newer print was captured, the text object or draw origin changed, the host's native-input admission is missing or a card shields the game. Offline: resolver on the 2011 World.exe and the 2019 HoshimemoEH_HD.exe (原版备份) both resolve the same field offsets; nine other-engine executables (CMVS, Malie, YU-RIS x2, Softpal, QLIE, the FVP disc launcher and a Chinese-patch launcher) refuse at the registration step; fushi_fvp_lookup_test. No Fushi-host accept4 run is recorded."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
+        }
       }
     ]
   },
@@ -3351,6 +3370,147 @@
       ],
       "test_paths": [
         "tests/yuris_adapter_test.cpp"
+      ]
+    },
+    {
+      "id": "fvp",
+      "display_name": "FVP (Favorite View Point)",
+      "aliases": [
+        "FAVORITE",
+        "Favorite View Point",
+        "FVP"
+      ],
+      "family": {
+        "id": "fvp",
+        "relation": "FAVORITE in-house HCB bytecode engine; no verified sibling"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "World.exe",
+            "HoshimemoEH_HD.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: 2011 いろとりどりのセカイ (World.exe) and 2019 星空のメモリア Eternal Heart HD (原版备份 HoshimemoEH_HD.exe). The adapter never matches on names; identity is the self-consistent HCB script."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Both sample executables are PE32 machine 0x14c"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "*.hcb"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "HCB script next to the exe (trailer: entry, globals, screen mode, title, syscall table with TextPrint/2) and the FVP .bin archives (count, names_bytes, 12-byte entries, name table, members back to back)"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "DSOUND.dll",
+            "WINMM.dll",
+            "d3d9.dll",
+            "GDI32.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "World.exe import table (GetGlyphOutlineA glyph rasterisation, mmio* archive reads, DirectSound playback); no GetAsyncKeyState / DirectInput import"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".hcb",
+            ".bin"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "voice.bin: 18612 mono Ogg Vorbis members; bgm.bin stereo Ogg; se*.bin RIFF; graph*.bin hzc1 images"
+          }
+        },
+        "hashes": {
+          "values": [
+            "World.exe sha256:e7749bfb633b1d536a53ef2dea07b289cb2bdc264e506d87cb2e7b9bda41d947",
+            "World.hcb sha256:8a7cdbf7345ad0e97cffdebb9d9d2456f68bc0bc61ac3eff84f4ad00b395132e",
+            "HoshimemoEH_HD.exe (原版备份) sha256:981393e8710c96d9f304bf951481d4736105db0c75b37ced06ee5fffe86c3995",
+            "HoshimemoEH_HD.hcb sha256:6d45ef890d99e72ae9af156d34f9e571eb3cf7d1db9ec01ca290c1533d867884"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported_before_voice_archive_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is the installed World.exe started directly (launch.exe is the disc autorun launcher of setup/dxsetup/World.exe; a cdrom.bin disc check only runs when that file exists next to the exe).",
+          "The text-object and audio-decoder-input detours are installed before the game resumes; no file API is hooked for this engine."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "fvp_text_print_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 10, hook 'FVP exact', ENGINE:FVP:text_print): the text object's Print, reached structurally from the TextPrint syscall handler (see lookup_acceptance.geometry), is detoured; the detour copies the CP932 string (bounded, < 512 bytes as the handler enforces) and the worker strips `[ruby|base]` ruby readings, converts to UTF-16 and publishes one lane per text buffer index. No Fushi-host text_ready run is recorded yet."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact text-buffer provider kLookupGeometryProviderIdFvp (23), see lookup_acceptance.geometry."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Select the 'FVP exact' lane of the dialogue text buffer (one lane per TextPrint buffer index)."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "fvp_decoder_input_ogg_resource",
+            "format": "complete mono Ogg Vorbis stream the engine hands to its sound decoder (SoundLoad) from AudioPlay, named by the channel's resource name",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Single runtime sample family: the resolver is proven offline on two FAVORITE builds (2011, 2019 HD); other FVP generations may refuse and then install nothing.",
+        "Geometry is offered only for a text prim drawn as a plain translation; rotated, scaled, UV-clipped or 3D text prims and non-zero surface origins fail closed.",
+        "Voice is the bytes AudioPlay hands to the sound decoder (SoundLoad), kept only when they are a complete mono Ogg Vorbis stream of at most 2 MiB; mono Ogg sound effects played through AudioPlay would be taken for voice, and streams longer than 2 MiB are skipped."
+      ],
+      "adapter_path": "hook/adapters/fvp_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/fvp_format_test.cpp",
+        "tests/fvp_lookup_test.cpp"
       ]
     }
   ]

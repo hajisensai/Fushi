@@ -3008,6 +3008,7 @@ class GalHookedLine {
       6 => 'smash',
       7 => 'bgi',
       8 => 'artemis',
+      10 => 'fvp',
       15 => 'malie',
       _ => 'hook',
     };
@@ -3027,6 +3028,7 @@ class GalHookedLine {
             6 => 'smash exact',
             7 => 'BGI exact',
             8 => 'Artemis exact',
+            10 => 'FVP exact',
             15 => 'Malie exact',
             _ => 'Text hook',
           };

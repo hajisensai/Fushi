@@ -335,15 +335,18 @@ void main() {
       expect(isGalLookupProductionProviderPair(2, 28), isTrue);
       expect(isGalLookupProductionProviderPair(1, 28), isFalse);
       expect(isGalLookupProductionProviderPair(2, 29), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 23), isTrue);
       expect(isGalLookupProductionProviderPair(3, 10), isTrue);
       expect(isGalLookupProductionProviderPair(1, 3), isFalse);
       expect(isGalLookupProductionProviderPair(2, 1), isFalse);
       expect(isGalLookupProductionProviderPair(1, 15), isFalse);
       expect(isGalLookupProductionProviderPair(1, 16), isFalse);
       expect(isGalLookupProductionProviderPair(3, 11), isFalse);
-      // native 的 provider 注册表最大到 22（voice_hook_ipc.h
-      // kLookupGeometryProviderIdYuris）；Dart 单方面放行不存在的 id 会让两端契约错位。
-      expect(isGalLookupProductionProviderPair(2, 23), isFalse);
+      // native 的 engine_exact provider 注册表登记到 22（Yuris）、23（Fvp）、
+      // 28（Malie）（voice_hook_ipc.h）；24–27 未登记，Dart 单方面放行不存在的
+      // id 会让两端契约错位。
+      expect(isGalLookupProductionProviderPair(2, 24), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 27), isFalse);
     });
 
     test('client/primaryLayer 坐标可用，design/layout-local fail-closed', () {

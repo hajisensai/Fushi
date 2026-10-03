@@ -15,3 +15,4 @@
     unity_mono_.shutdown();
     smash_fzmedia_.shutdown();
     yuris_.shutdown();
+    fvp_.shutdown();

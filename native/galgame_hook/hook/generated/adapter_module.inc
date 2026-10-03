@@ -15,3 +15,4 @@
         unity_mono_.onModuleLoaded(entry.szModule);
         smash_fzmedia_.onModuleLoaded(entry.szModule);
         yuris_.onModuleLoaded(entry.szModule);
+        fvp_.onModuleLoaded(entry.szModule);

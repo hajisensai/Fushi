@@ -39,10 +39,11 @@ int main() {
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 20u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 21u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 22u));
-  assert(!fushi::lookup_hit_validation::IsProductionProviderPair(2u, 23u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 28u));
   assert(!fushi::lookup_hit_validation::IsProductionProviderPair(1u, 28u));
   assert(!fushi::lookup_hit_validation::IsProductionProviderPair(2u, 29u));
+  assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 23u));
+  assert(!fushi::lookup_hit_validation::IsProductionProviderPair(2u, 24u));
   assert(!fushi::lookup_hit_validation::IsProductionProviderPair(1u, 15u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(3u, 10u));
   assert(!fushi::lookup_hit_validation::IsProductionProviderPair(1u, 100u));
