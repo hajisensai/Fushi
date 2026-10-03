@@ -2223,6 +2223,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           themeMode: themeMode,
           theme: appModel.theme,
           darkTheme: appModel.darkTheme,
+          // 换主题 / 明暗时整套颜色走一次短交叉过渡（默认是 200ms 线性）；墨水屏
+          // 下关掉——渐变就是一串中间灰帧，每帧一次局部刷新。
+          themeAnimationStyle: appModel.themeNotifier.einkMode
+              ? AnimationStyle.noAnimation
+              : fushiThemeAnimationStyle,
           // This is responsible for the initialising the global spacing across
           // the entire project, making use of the [spaces] package.
           builder: (context, child) {

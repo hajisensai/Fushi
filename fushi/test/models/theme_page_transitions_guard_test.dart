@@ -16,6 +16,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -63,5 +64,21 @@ void main() {
       builders[TargetPlatform.macOS],
       isA<CupertinoPageTransitionsBuilder>(),
     );
+  });
+
+  test('桌面三平台走 Fushi 共享轴转场（2026-10 动效重做，取代 Zoom）', () {
+    final Map<TargetPlatform, PageTransitionsBuilder> builders =
+        notifier.theme.pageTransitionsTheme.builders;
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+      TargetPlatform.fuchsia,
+    ]) {
+      expect(
+        builders[platform],
+        isA<FushiSharedAxisPageTransitionsBuilder>(),
+        reason: '$platform',
+      );
+    }
   });
 }
