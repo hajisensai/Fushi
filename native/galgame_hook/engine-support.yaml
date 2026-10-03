@@ -1995,23 +1995,14 @@
           }
         ]
       },
-      "verified_games": [
-        {
-          "name": "Dies irae ~Amantes amentes~ — free common route",
-          "engine_version": "Malie System 1.0.0.5; Steam build 21665074",
-          "architecture": "x86",
-          "executable_sha256": "CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926",
-          "verified_on": "2026-07-23",
-          "evidence": "Official free Steam release. Suspended direct launch captured v_ma2056.ogg (62,028 bytes, 44.1 kHz mono Vorbis, SHA-256 4FEFD3841D465BE76DBC41566E0BC26EDBA09F189EC533C213A450FA8A777FAD), exactly matching the corresponding GARbro-decrypted data\\voice\\ma\\v_ma2056.ogg member at offset 737,280."
-        }
-      ],
+      "verified_games": [],
       "current_status": "implemented_unverified",
       "known_limitations": [
-        "CFI keys and rotation words are title/version specific. This implementation is deliberately limited to the measured non-HD Dies irae ~Amantes amentes~ scheme; HD, 4:3 patch, and other Malie titles require separate evidence.",
-        "Only data2.dat is classified as voice for the verified title. data1.dat BGM and data3.dat environment Ogg files are deliberately excluded.",
-        "Default Steam protocol attach can miss startup-prefetched resource reads. Clean capture is verified with explicit --force-direct-launch; titles that reject inherited AppID direct launch retain DirectSound/loopback fallback.",
-        "Audio is verified, but stable automatic Malie text-thread selection remains unverified.",
-        "2026-10-03: the title-keyed CFI lane (malie_libp_cfi_voice_resource, verified 2026-07-23 on Amantes) was retired together with its CFI key constants and the worker-side archive decryption: the same engine's 2016 Kaziklu Bey build encrypts its archive (data.dat, not data2.dat) with Camellia and another key, so the key could never be an engine-level property. Identity now comes from the executable's structure (the CFI I/O scheme table) and voice from the Ogg decoder input; the Amantes verification above predates this and the decoder-input lane has not been run on Amantes yet.",
+        "No Malie title is verified. The former verified_games record (Dies irae ~Amantes amentes~ free common route, Steam build 21665074, malie.exe sha256 CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926, 2026-07-23: v_ma2056.ogg byte-identical to the GARbro-decrypted data2.dat member) proved only the title-keyed CFI archive lane, and that lane was removed on 2026-10-03 (see below). The record was withdrawn with it: Amantes audio is back to unverified and must be re-run on the decoder-input lane from the original launch path before any verified claim returns.",
+        "detection (directory_files_all data2.dat, CFI-encrypted data2.dat resource evidence, sample hashes) and the process_strategy notes (CFI decryption on HookWorker, hookio range bits, the --force-direct-launch run) are historical records of the retired Amantes CFI run, not the current mechanism: identity is the executable's CFI I/O scheme table, voice is the Ogg decoder input, and no archive is classified by file name.",
+        "Whether the decoder-input lane still needs explicit --force-direct-launch under Steam (the retired archive lane did, because Steam protocol attach missed startup-prefetched reads) is unmeasured; titles that reject inherited AppID direct launch keep the DirectSound/loopback fallback.",
+        "Malie audio is not verified on any title, and automatic text-thread selection is measured on one build only (Kaziklu Bey 2016, see text.capabilities); neither is a support claim.",
+        "2026-10-03: the title-keyed CFI lane (malie_libp_cfi_voice_resource, verified 2026-07-23 on Amantes) was retired together with its CFI key constants and the worker-side archive decryption: the same engine's 2016 Kaziklu Bey build encrypts its archive (data.dat, not data2.dat) with Camellia and another key, so the key could never be an engine-level property. Identity now comes from the executable's structure (the CFI I/O scheme table) and voice from the Ogg decoder input; the withdrawn Amantes verification predates this and the decoder-input lane has not been run on Amantes yet.",
         "The decoder-input lane copies the bytes the engine feeds its Ogg decoder while the voice plays (4 KiB refills): a voice the next click stops before its tail was decoded is published as its whole-page prefix (<name>.partial.ogg); a voice with fewer than four whole pages is dropped.",
         "Second sample pending: identity, decoder-input voice, text lane and RICHTEXT3D geometry were measured on one build (Kaziklu Bey 2016). The structural resolvers were also refused on five other-engine x86 executables; another Malie title (e.g. a Steam Amantes or a .lib-generation release) is still required."
       ],
