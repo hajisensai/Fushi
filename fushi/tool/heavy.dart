@@ -1,6 +1,6 @@
 // Runs one heavy command under the machine-wide lease (test_flow/heavy_lease.dart):
 //
-//   dart run tool/heavy.dart [--wait-max-min=120] [--max-minutes=120]
+//   dart run tool/heavy.dart [--wait-max-min=0] [--max-minutes=120]
 //                            [--cap-mb=N] -- <command...>
 //   dart run tool/heavy.dart --status
 //
@@ -8,11 +8,12 @@
 //        dart run tool/heavy.dart -- flutter analyze --no-pub
 //        dart run tool/heavy.dart -- .\gradlew.bat :app:assembleRelease
 //
-// It waits for a free slot (it never "runs anyway"; there is no memory
-// admission), keeps one build/-writing run per worktree, and on Windows runs the command
+// It queues first come, first served for a free slot (it never "runs anyway",
+// there is no memory admission, and unless --wait-max-min=N is given it never
+// gives up waiting), keeps one build/-writing run per worktree, and on Windows runs the command
 // tree at below-normal priority under a memory ceiling, killing whatever the
-// command leaves behind when it ends. Exit code: the command's; 75 when it
-// was never admitted; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
+// command leaves behind when it ends. Exit code: the command's; 75 when an
+// explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
 // run the command directly.
 import 'dart:async';
 import 'dart:io';
@@ -38,7 +39,7 @@ Future<void> main(List<String> args) async {
     capMb: _intArg(own, '--cap-mb=') ?? classified.capMb,
     worktreeExclusive: classified.worktreeExclusive,
   );
-  final int waitMax = _intArg(own, '--wait-max-min=') ?? 120;
+  final int waitMax = _intArg(own, '--wait-max-min=') ?? 0;
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
 
@@ -128,6 +129,11 @@ void _status() {
     );
   }
   final int now = DateTime.now().millisecondsSinceEpoch;
+  final List<HeavyQueued> queue = readHeavyQueue(dir);
+  stdout.writeln('  queue: ${queue.length} waiting');
+  for (int i = 0; i < queue.length; i++) {
+    stdout.writeln('    ${i + 1}. pid ${queue[i].pid}, ${queue[i].label}');
+  }
   for (final HeavyHolder h in holders) {
     stdout.writeln(
       '  slot ${h.slot}: pid ${h.pid}, ${h.label}, '
