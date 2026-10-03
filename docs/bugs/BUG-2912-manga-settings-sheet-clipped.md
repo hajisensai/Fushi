@@ -1,4 +1,4 @@
-## BUG-2895 · 漫画阅读设置侧栏显示不全
+## BUG-2912 · 漫画阅读设置侧栏显示不全
 - **报告**：2026-10-03（用户：漫画模块的设置显示不全，每个标签都要看）
 - **真实性**：✅ 真 bug。阅读器设置是 400px 右侧栏（`reader_desktop_chrome.dart` `kReaderSideSheetWidth`，窄窗更窄），四个标签逐个用真字体渲染（中/英 × 400/320 宽）后定位到（行号为基线 `3a3109708d`）：
   - 「阅读模式」「常规」标签的下拉行：`fushi/lib/src/media/manga/reader/manga_reader_settings_sheet.dart:462`（`_choice`，432 起）里 `AdaptiveSettingsPickerRow` 走默认并排布局，下拉只分到一百来像素，值被硬裁（英文 320 宽下「Right to」「Fit scree」）。
@@ -9,7 +9,7 @@
   - 审查返工（dense 范围修正）：`isDense: false` 后闭合态是 `IndexedStack`，高度取**所有**子项最大值；该 section 还用于全局设置页（`manga_ocr_settings_page.dart`、`settings_schema_manga_ocr.dart`），任一未选中项标签折两行就会让闭合态恒两行高。改为 `selectedItemBuilder` 只让**选中项**完整换行、其余项单行省略，闭合态高度只跟随选中项，宽面板与 dense 时同高。
   - 审查返工（页脚）：`Wrap(spaceBetween)` 折行后按钮独占一个 run 被摆到左边；改 `OverflowBar(alignment: spaceBetween, overflowAlignment: end)`——一行时状态贴左、按钮贴右，折行时上下叠放、都贴右。
 - **[x] ② 已加自动化测试** —
-  - `fushi/test/media/manga/manga_reader_settings_sheet_test.dart`「BUG-2895: choice dropdowns span the narrow sheet」：逐个点四个标签，每页逐行断言 `controlBelow` 与下拉宽 ≥ 260，并断言查到的行标题集合 == 全部下拉型描述符（防空循环、防只测首页）；「BUG-2895: footer keeps the reset button on the right」：一行态与折行态按钮右缘都贴右。
-  - `fushi/test/media/manga/manga_ocr_settings_section_ui_test.dart`「BUG-2895: narrow reader sheet shows engine and helper in full」：先断言选中标签在 320 宽下确实折行（≥ 两行，防空壳），再断言 `RenderParagraph.size.height >= textSize.height`（dense 时 size 被钳成一行而 textSize 仍多行）且段落落在输入框内；「closed engine dropdown is only as tall as the selected label」：选中单行项时 `IndexedStack` 高度 == 选中标签高度、未选中的长标签只排一行。
+  - `fushi/test/media/manga/manga_reader_settings_sheet_test.dart`「BUG-2912: choice dropdowns span the narrow sheet」：逐个点四个标签，每页逐行断言 `controlBelow` 与下拉宽 ≥ 260，并断言查到的行标题集合 == 全部下拉型描述符（防空循环、防只测首页）；「BUG-2912: footer keeps the reset button on the right」：一行态与折行态按钮右缘都贴右。
+  - `fushi/test/media/manga/manga_ocr_settings_section_ui_test.dart`「BUG-2912: narrow reader sheet shows engine and helper in full」：先断言选中标签在 320 宽下确实折行（≥ 两行，防空壳），再断言 `RenderParagraph.size.height >= textSize.height`（dense 时 size 被钳成一行而 textSize 仍多行）且段落落在输入框内；「closed engine dropdown is only as tall as the selected label」：选中单行项时 `IndexedStack` 高度 == 选中标签高度、未选中的长标签只排一行。
   - 审查返工前的旧断言（`didExceedMaxLines` / `label.bottom <= field.bottom`）对无 `maxLines` 的标签恒真、挡不住改回 dense，已替换。
 - **备注**：未上真机 / 模拟器复测，验证依据是 widget test 真字体（等线）像素预览逐标签前后对比。

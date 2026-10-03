@@ -28,7 +28,7 @@ String _swiftCode(String path) => File(path)
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('BUG-2894 appFloatingBallViewport', () {
+  group('BUG-2911 appFloatingBallViewport', () {
     test('iOS 横屏：灵动岛在左时，右停靠的收起球外缩贴住屏幕右缘', () {
       final Rect viewport = appFloatingBallViewport(
         _iosLandscape,
@@ -81,7 +81,7 @@ void main() {
     });
   });
 
-  group('BUG-2894 FloatingBallChannel 外壳边', () {
+  group('BUG-2911 FloatingBallChannel 外壳边', () {
     final List<MethodCall> calls = <MethodCall>[];
     Object? reply;
 

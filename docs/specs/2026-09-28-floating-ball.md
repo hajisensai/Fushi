@@ -151,7 +151,7 @@ Dart → 原生：
 | `openCameraOcr` | — | Android | 系统球「拍照查词」，Fushi 随后被拉到前台；Dart 就绪后开相机。主引擎不在时改为排队，由 `takePendingCameraOcr` 取 |
 | `openSync` | — | Android | 系统球「立即同步」，Fushi 随后被拉到前台；Dart 就绪后跑一轮手动同步。主引擎不在时改为排队，由 `takePendingSync` 取 |
 | `systemBallClosedByUser` | — | Android | 系统球 / 常驻通知上点了关闭；Dart 把「应用外」开关关掉 |
-| `sensorHousingEdgeChanged` | String?（同 `sensorHousingEdge` 的回话） | iOS | 界面方向变化（SceneDelegate 的 `windowScene(_:didUpdate:interfaceOrientation:traitCollection:)`）时主动推。横屏左 ↔ 右翻转窗口尺寸与对称安全区都不变，Dart 没有可靠的重查时机，必须由原生推（BUG-2894） |
+| `sensorHousingEdgeChanged` | String?（同 `sensorHousingEdge` 的回话） | iOS | 界面方向变化（SceneDelegate 的 `windowScene(_:didUpdate:interfaceOrientation:traitCollection:)`）时主动推。横屏左 ↔ 右翻转窗口尺寸与对称安全区都不变，Dart 没有可靠的重查时机，必须由原生推（BUG-2911） |
 
 Android 系统球的按钮：
 

@@ -1139,9 +1139,9 @@ void main() {
     });
   });
 
-  // BUG-2894：iOS 横屏左右安全区对称，只避让灵动岛那一侧。平台门走测试缝，
+  // BUG-2911：iOS 横屏左右安全区对称，只避让灵动岛那一侧。平台门走测试缝，
   // 任何平台都跑这组。
-  group('BUG-2894 iOS 横屏外壳边', () {
+  group('BUG-2911 iOS 横屏外壳边', () {
     const Size window = Size(869, 399.7);
     const double inset = 61.6;
     late Object? nativeEdge;

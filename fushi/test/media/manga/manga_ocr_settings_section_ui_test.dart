@@ -1192,7 +1192,7 @@ void main() {
           matching: find.text(label, skipOffstage: false),
           skipOffstage: false));
 
-  testWidgets('BUG-2895: narrow reader sheet shows engine and helper in full',
+  testWidgets('BUG-2912: narrow reader sheet shows engine and helper in full',
       (WidgetTester tester) async {
     // 引擎下拉闭合态曾被 dense 的一行高 SizedBox 裁掉第二行；并行任务说明被
     // 限死 3 行吞掉结尾。
@@ -1228,7 +1228,7 @@ void main() {
   });
 
   testWidgets(
-      'BUG-2895: closed engine dropdown is only as tall as the selected label',
+      'BUG-2912: closed engine dropdown is only as tall as the selected label',
       (WidgetTester tester) async {
     // 非 dense 的闭合态是 IndexedStack，高度取所有子项的最大值：未选中项也允许
     // 折行的话，只要「自动（不会上传到 Lens）」折两行，选了单行 Google Lens 的

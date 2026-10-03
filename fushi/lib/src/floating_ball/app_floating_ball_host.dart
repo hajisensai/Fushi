@@ -282,7 +282,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   ///
   /// 主路径是原生推送（`sensorHousingEdgeChanged`，iOS 界面方向一变就推）：
   /// 横屏左 ↔ 右翻转 180° 时窗口尺寸与左右对称的安全区都不变，[didChangeMetrics]
-  /// 不一定触发，只靠它重查会让球停在灵动岛底下（BUG-2894）。查询只做首次取值
+  /// 不一定触发，只靠它重查会让球停在灵动岛底下（BUG-2911）。查询只做首次取值
   /// 与尺寸变化时的兜底；两条路的回话按原生发出顺序到达、都是当时的真值，谁后到
   /// 谁准。
   AxisDirection? _sensorHousingEdge;

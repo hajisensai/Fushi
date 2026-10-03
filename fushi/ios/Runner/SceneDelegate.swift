@@ -34,7 +34,7 @@ class SceneDelegate: FlutterSceneDelegate {
   }
 
   // 界面方向变了（含横屏左 ↔ 右翻转）：告诉应用内悬浮球灵动岛换到了哪条边
-  // （BUG-2894，见 FushiFloatingBall.interfaceOrientationDidChange）。
+  // （BUG-2911，见 FushiFloatingBall.interfaceOrientationDidChange）。
   // FlutterSceneDelegate 自己实现了这条回调（转发给插件的 scene 生命周期），所以
   // 这里是 override，且必须先交回 super，否则插件收不到。
   override func windowScene(

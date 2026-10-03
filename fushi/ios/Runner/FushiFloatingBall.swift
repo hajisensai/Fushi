@@ -115,7 +115,7 @@ enum FushiFloatingBall {
   }
 
   /// 界面方向变了（SceneDelegate 的 `windowScene(_:didUpdate:interfaceOrientation:…)`
-  /// 转进来，主线程）：主动把新的外壳边推给 Dart（BUG-2894）。
+  /// 转进来，主线程）：主动把新的外壳边推给 Dart（BUG-2911）。
   ///
   /// 必须推而不是等 Dart 重查：横屏左 ↔ 右翻转 180° 时窗口尺寸不变、左右安全区
   /// 又对称，Flutter 的 metrics 不一定变，Dart 的 didChangeMetrics 不一定触发。

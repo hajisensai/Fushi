@@ -240,7 +240,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('BUG-2895: choice dropdowns span the narrow sheet, not a sliver', (
+  testWidgets('BUG-2912: choice dropdowns span the narrow sheet, not a sliver', (
     WidgetTester tester,
   ) async {
     // 侧栏 400px、窄屏更窄：下拉跟标题并排时只分到一百来像素，「Right to left」
@@ -303,7 +303,7 @@ void main() {
     expect(checked, expected);
   });
 
-  testWidgets('BUG-2895: footer keeps the reset button on the right', (
+  testWidgets('BUG-2912: footer keeps the reset button on the right', (
     WidgetTester tester,
   ) async {
     // 一行放得下：状态贴左、按钮贴右；放不下：上下叠放，按钮仍贴右——旧的
