@@ -129,7 +129,7 @@ void _status() {
     );
   }
   final int now = DateTime.now().millisecondsSinceEpoch;
-  final List<HeavyQueued> queue = readHeavyQueue(dir);
+  final List<HeavyQueued> queue = readHeavyQueue(dir, sweep: false);
   stdout.writeln('  queue: ${queue.length} waiting');
   for (int i = 0; i < queue.length; i++) {
     stdout.writeln('    ${i + 1}. pid ${queue[i].pid}, ${queue[i].label}');

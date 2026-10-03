@@ -519,9 +519,10 @@ class HeavyQueued {
 }
 
 /// The live queue, oldest first. Tickets whose lock nobody holds belong to
-/// dead waiters and are deleted on the way. Call it under the admission gate
-/// (or read-only for --status, where a sweep race only delays a deletion).
-List<HeavyQueued> readHeavyQueue(Directory state) {
+/// dead waiters: skipped, and deleted when [sweep] is set. Sweep only under
+/// the admission gate -- outside it a ticket created but not yet locked would
+/// look dead and be deleted under its owner (--status reads without sweeping).
+List<HeavyQueued> readHeavyQueue(Directory state, {bool sweep = true}) {
   final Directory dir = Directory('${state.path}/queue');
   if (!dir.existsSync()) return <HeavyQueued>[];
   final List<String> names = <String>[
@@ -537,7 +538,7 @@ List<HeavyQueued> readHeavyQueue(Directory state) {
       );
       if (probe != null) {
         probe.closeSync();
-        _deleteTicketFiles(dir, name);
+        if (sweep) _deleteTicketFiles(dir, name);
         continue;
       }
     }
