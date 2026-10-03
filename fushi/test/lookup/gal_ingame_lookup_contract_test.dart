@@ -331,6 +331,10 @@ void main() {
       expect(isGalLookupProductionProviderPair(2, 20), isTrue);
       expect(isGalLookupProductionProviderPair(2, 21), isTrue);
       expect(isGalLookupProductionProviderPair(2, 22), isTrue);
+      // Malie RICHTEXT3D（kLookupGeometryProviderIdMalie = 28）。
+      expect(isGalLookupProductionProviderPair(2, 28), isTrue);
+      expect(isGalLookupProductionProviderPair(1, 28), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 29), isFalse);
       expect(isGalLookupProductionProviderPair(3, 10), isTrue);
       expect(isGalLookupProductionProviderPair(1, 3), isFalse);
       expect(isGalLookupProductionProviderPair(2, 1), isFalse);

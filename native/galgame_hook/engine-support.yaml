@@ -154,12 +154,12 @@
         "engine_id": "malie_libp",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact RICHTEXT3D message provider (kLookupGeometryProviderIdMalie = 28). Sites resolve only from structure: the RICHTEXT3D class table (UTF-16 class name -> unique word copy -> the method stores of that frame function) and, among its methods, the one draw pass decoded from its own bytes (node+0x1c page data; glyph records +0x84 with stride 0x34 pinned by the U+2015 run compare; count +0x88; texture array +0x8c; reveal range +0xa4/+0xa8; translation floats +0x90..+0x98); the reveal setter must write exactly those data/reveal fields, and the click-unit parser (one caller) must be followed by that reveal setter. The draw detour copies (bounded, render thread, only for the node the latest unit revealed into) the glyph code units and node-local boxes, the translation and the parent world matrix; world = Translate * parent must be an axis-aligned unflipped 2D transform. Design size comes from the engine's ScreenWidth/ScreenHeight globals (the store after the profile read's call). The engine stretches the design back buffer over the whole client (measured 1024x600 design in a 1280x720 window, 1.25 x 1.2); a windowed client of any size is admitted with independent axis scales, a monitor-covering client only with the design aspect. A glyph is offered only when the selected line is exactly the current click unit, every non-space unit character maps to a glyph of the unit's own reveal range (ruby glyphs are skipped), the node was drawn within the last 256 node draws of the engine and the unit is fully revealed. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the window procedure of the child window that covers the main window's client (found at runtime, procedure in the game image; the APP frame only forwards); the press is refused when a newer unit was parsed, the draw is stale, the host's native-input admission is missing, a card shields the game or the window is not foreground. Offline: x86/x64 build and fushi_malie_lookup_test; resolver run offline on the real image and refused on five other-engine x86 executables (CMVS x2, NeXAS x2, FVP). 2026-10-03 Fushi host (gal_realgame_driver_itest) on the original launch path, Dies irae ~Interview with Kaziklu Bey~ (2016, malie.exe SHA-256 7F7506F4D9085B5BF1579F73F913437F0133E85EDFBE403662C08615375BA12E, x86, windowed 1280x720): sites resolved (draw +0x34bad0, parser +0x3872d0, reveal +0x34bf50, click window child procedure +0x1365a0 at client origin 0,0); models of 16/41/60/31/39/20/18 units were built (first glyph 「 at physical 202,75 26x25), the 18-unit ruby line mapped 18 of 29 glyphs. Before the host admitted provider id 28 every claimed press was refused with reason 6 (native input not admitted) and the click advanced the game. 2026-10-03 rerun after the host admitted id 28 (same exe, hook DLL SHA-256 951C3B17...894F1D): accept4 on 「場」 of the voiced line 「つっても場所がら…」 (physical 1618,1025; unit 5 at 327,251 25x25) recorded text=PASS (Malie exact), audio=PASS (matched game_resource 349672484_fushi_textseq10_vir_v_vir0002.ogg), lookup=PASS, no_advance=PASS, dismiss_no_advance=PASS, relookup_after_dismiss=PASS; card=FAIL because the rebuilt host's isolated data root had no dictionary (the card read 未找到搜索結果, mine added no note). The freshness gate was changed from a 400 ms clock to a draw-count window: the engine redraws only on change and slowly while a card is foreground, which had retired the model between presses."
         },
         "verified_shield": {
           "status": "implemented_unverified",
-          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+          "evidence": "Engine input path: the click is consumed in the game's client window procedure (the engine's input dispatcher receives WM_LBUTTONDOWN/UP there; mouse buttons are not polled for advance, DirectInput is joystick-only). No real-build transaction corpus for the generic shield."
         },
         "risky_left_click": {
           "status": "implemented_unverified",
@@ -1936,9 +1936,19 @@
       "text": {
         "capabilities": [
           {
+            "kind": "malie_message_segment_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 15, hook 'Malie exact', ENGINE:MALIE:message_segment): the message window's click-unit parser (unique, one caller) and the RICHTEXT3D reveal setter are resolved from structure (see lookup_acceptance.geometry); the parser detour copies the unit's formatted text (bounded) and the reveal detour on the same thread pairs it with the text node and its glyph range. The worker removes control codes (0x07 0x08 voice tag, 0x07 0x09, 0x07 0x06 click wait, 0x07 0x04, line breaks) and keeps ruby bases only. 2026-10-03 Fushi host on Dies irae ~Interview with Kaziklu Bey~ (2016): the host auto-selected this lane and recorded clean whole lines, e.g. 「まあ何か飲めよ。どれがいい？」; LunaHook offered malie_6/Malie4/Malie5 threads on the same build."
+          },
+          {
             "kind": "luna_auto_or_pc_hooks",
             "status": "implemented_unverified",
             "verification": "The resource-audio run disabled Luna; no stable Malie dialogue thread is claimed."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact RICHTEXT3D provider kLookupGeometryProviderIdMalie (28), see lookup_acceptance.geometry."
           }
         ],
         "codepage": "CP932 / localized build dependent",
@@ -1947,10 +1957,10 @@
       "audio": {
         "priority": [
           {
-            "kind": "malie_libp_cfi_voice_resource",
-            "format": "complete decrypted Ogg member from title-scoped data2.dat",
-            "status": "verified",
-            "clean_voice": true
+            "kind": "malie_ogg_decoder_input_voice_resource",
+            "format": "whole Ogg Vorbis file the engine's Ogg decoder consumes, copied at libogg ogg_sync_wrote from the decoder's own refill call sites (return-address checked) for decoders whose path field lies below a voice directory, published once its EOS page arrives (or as <name>.partial.ogg, the whole-page prefix, when the next line stops it) and bound to the message unit that carries the same voice tag",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
           },
           {
             "kind": "directsound_pcm",
@@ -1976,16 +1986,22 @@
           "evidence": "Official free Steam release. Suspended direct launch captured v_ma2056.ogg (62,028 bytes, 44.1 kHz mono Vorbis, SHA-256 4FEFD3841D465BE76DBC41566E0BC26EDBA09F189EC533C213A450FA8A777FAD), exactly matching the corresponding GARbro-decrypted data\\voice\\ma\\v_ma2056.ogg member at offset 737,280."
         }
       ],
-      "current_status": "partial",
+      "current_status": "implemented_unverified",
       "known_limitations": [
         "CFI keys and rotation words are title/version specific. This implementation is deliberately limited to the measured non-HD Dies irae ~Amantes amentes~ scheme; HD, 4:3 patch, and other Malie titles require separate evidence.",
         "Only data2.dat is classified as voice for the verified title. data1.dat BGM and data3.dat environment Ogg files are deliberately excluded.",
         "Default Steam protocol attach can miss startup-prefetched resource reads. Clean capture is verified with explicit --force-direct-launch; titles that reject inherited AppID direct launch retain DirectSound/loopback fallback.",
-        "Audio is verified, but stable automatic Malie text-thread selection remains unverified."
+        "Audio is verified, but stable automatic Malie text-thread selection remains unverified.",
+        "2026-10-03: the title-keyed CFI lane (malie_libp_cfi_voice_resource, verified 2026-07-23 on Amantes) was retired together with its CFI key constants and the worker-side archive decryption: the same engine's 2016 Kaziklu Bey build encrypts its archive (data.dat, not data2.dat) with Camellia and another key, so the key could never be an engine-level property. Identity now comes from the executable's structure (the CFI I/O scheme table) and voice from the Ogg decoder input; the Amantes verification above predates this and the decoder-input lane has not been run on Amantes yet.",
+        "The decoder-input lane copies the bytes the engine feeds its Ogg decoder while the voice plays (4 KiB refills): a voice the next click stops before its tail was decoded is published as its whole-page prefix (<name>.partial.ogg); a voice with fewer than four whole pages is dropped.",
+        "Second sample pending: identity, decoder-input voice, text lane and RICHTEXT3D geometry were measured on one build (Kaziklu Bey 2016). The structural resolvers were also refused on five other-engine x86 executables; another Malie title (e.g. a Steam Amantes or a .lib-generation release) is still required."
       ],
       "adapter_path": "hook/adapters/malie_adapter.inc",
       "fixture_paths": [],
-      "test_paths": []
+      "test_paths": [
+        "tests/malie_engine_io_test.cpp",
+        "tests/malie_lookup_test.cpp"
+      ]
     },
     {
       "id": "qlie_filepack",

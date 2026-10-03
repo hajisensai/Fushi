@@ -56,8 +56,6 @@ add_library(fushi_voice_hook SHARED
   "hook/yuris_ypf.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
-  "hook/malie_cfi.h"
-  "hook/malie_lib.h"
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
   "hook/voice_resource_writer.inc"
@@ -113,6 +111,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
+  "hook/adapters/malie_engine_io_core.h"
+  "hook/adapters/malie_lookup.inc"
+  "hook/adapters/malie_lookup_core.h"
   "hook/adapters/malie_profile.h"
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
@@ -1081,6 +1082,37 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
+
+# Malie engine structure: the "CFI" I/O scheme table that is the engine
+# identity (name literal -> unique copy -> table hand-off -> six frame-function
+# slots, tell shape, getc->read, shared registrar) and the Ogg decoder input
+# (libogg ogg_sync_wrote / ogg_sync_buffer, the refill call sites and their
+# decoder stream field, the decoder path field) on a synthetic x86 image with
+# every fail-closed branch, plus the voice-path classification and naming.
+add_executable(fushi_malie_engine_io_test
+  "tests/malie_engine_io_test.cpp"
+)
+target_include_directories(fushi_malie_engine_io_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_engine_io_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_engine_io_test
+  COMMAND fushi_malie_engine_io_test)
+
+# Malie message lane + in-game lookup core: RICHTEXT3D draw-method decoding
+# from the class table (glyph records, count, stride, reveal, translation),
+# the segment parser / reveal setter pair, segment cleaning (voice tag, ruby,
+# codes), line-to-glyph mapping, world/design/client projection, hit testing
+# and the click claim, with every fail-closed branch.
+add_executable(fushi_malie_lookup_test
+  "tests/malie_lookup_test.cpp"
+)
+target_include_directories(fushi_malie_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_lookup_test
+  COMMAND fushi_malie_lookup_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")

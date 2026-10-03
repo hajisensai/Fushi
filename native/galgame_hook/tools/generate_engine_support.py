@@ -132,6 +132,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdYuris",
     ): ("yuris", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdMalie",
+    ): ("malie_libp", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

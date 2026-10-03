@@ -445,9 +445,10 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(14, len(publishers), publishers)
+        self.assertEqual(15, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
+        self.assertIn("malie_lookup.inc", publishers)
         self.assertIn("bgi_lookup.inc", publishers)
         self.assertIn("unity_mono_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
@@ -507,9 +508,12 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(14, len(seen), seen)
+        self.assertEqual(15, len(seen), seen)
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["bgi_lookup.inc"]
+        )
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["malie_lookup.inc"]
         )
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
         self.assertEqual(
@@ -2216,6 +2220,76 @@ class AdapterStructureTest(unittest.TestCase):
         # The adapter installs the lane only when its structural identity holds.
         install = self._function_body(adapter, "  bool install() override {")
         self.assertIn("if (probe()) text_installed_ = InstallBgiLookup()", install)
+
+    def test_malie_is_structural_keyless_and_callbacks_stay_bounded(self) -> None:
+        """Malie：身份 / 语音 / 文本 / 查词站点只来自结构；不含归档密钥与解密；回调只做有界拷贝。"""
+        adapters = ROOT / "hook" / "adapters"
+        io_core = self._strip_comments(
+            (adapters / "malie_engine_io_core.h").read_text(encoding="utf-8")
+        )
+        lookup_core = self._strip_comments(
+            (adapters / "malie_lookup_core.h").read_text(encoding="utf-8")
+        )
+        adapter = self._strip_comments(
+            (adapters / "malie_adapter.inc").read_text(encoding="utf-8")
+        )
+        runtime = self._strip_comments(
+            (adapters / "malie_lookup.inc").read_text(encoding="utf-8")
+        )
+        profile = self._strip_comments(
+            (adapters / "malie_profile.h").read_text(encoding="utf-8")
+        )
+        # The title CFI key and the archive decryption are gone for good.
+        self.assertFalse((ROOT / "hook" / "malie_cfi.h").exists())
+        self.assertFalse((ROOT / "hook" / "malie_lib.h").exists())
+        everything = io_core + lookup_core + adapter + runtime + profile
+        for forbidden in ("DiesAmantes", "CfiKey", "DecryptCfi", "Camellia",
+                          "data2.dat", "data.dat", "malie.exe", "sha256",
+                          "GetModuleFileName", "Kaziklu", "Amantes"):
+            self.assertNotIn(forbidden.lower(), everything.lower(), forbidden)
+        # Identity is the scheme table only; none of its slots is hooked.
+        self.assertIn("ResolveScheme(", profile)
+        self.assertNotIn("SchemeSites", everything)
+        # Voice comes from the decoder input refill sites (return-address
+        # checked), never from the archive read.
+        detour = self._function_body(adapter, "int32_t __cdecl MalieSyncWroteDetour(")
+        self.assertIn("IsMalieFeedReturn(caller)", detour)
+        for name in ("int32_t __cdecl MalieSyncWroteDetour(",
+                     "bool CopyMalieFeed("):
+            body = self._function_body(adapter, name)
+            for forbidden in ("MalieLog(", "CreateFile", "WriteFile", "malloc(",
+                              "std::wstring", "std::vector", "WriteVoiceOggAt",
+                              "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        # Game / render / message thread callbacks: bounded copies only.
+        for name in ("int32_t __cdecl MalieParserDetour(",
+                     "void __cdecl MalieRevealDetour(",
+                     "int __cdecl MalieDrawDetour(",
+                     "bool ReadMalieGlyphs(",
+                     "LRESULT CALLBACK MalieWndProcDetour(",
+                     "bool MaliePressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("MalieLog(", "MalieLookupLog(", "CreateFile",
+                              "WriteFile", "malloc(", "std::wstring",
+                              "PublishHit(", "WriteTextLaneEvent", "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        eligible = self._function_body(runtime, "bool MaliePressEligible(")
+        for required in ("NativeInputAllowed(", "kLookupGeometryProviderIdMalie",
+                         "MalieShieldActive(hwnd)", "GetForegroundWindow()",
+                         "HitTest("):
+            self.assertIn(required, eligible)
+        # A swallowed press is published before any gate of the tick.
+        tick = self._function_body(runtime, "void ProcessMalieLookupTick(")
+        self.assertLess(tick.index("ReadLatestMalieSubmit("),
+                        tick.index("TryHookMalieWindow("))
+        registry = (ROOT / "hook" / "geometry_provider_registry.h").read_text(
+            encoding="utf-8"
+        )
+        gated = registry[
+            registry.index("kLookupGeometryNativeInputGatedProviders[]") :
+        ]
+        gated = gated[: gated.index("};")]
+        self.assertIn("kLookupGeometryProviderIdMalie", gated)
 
     def test_unity_mono_lookup_is_structural_and_callbacks_stay_bounded(
         self,
