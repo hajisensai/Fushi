@@ -171,9 +171,14 @@ final class AacsStreamRelay {
       response.persistentConnection = false;
       final socket = await response.detachSocket();
       bodies.add(socket);
-      // Shutdown may have swept `bodies` while the headers were being written.
-      if (isClosing()) socket.destroy();
       try {
+        // Shutdown may have swept `bodies` while the headers were being
+        // written: nobody else will destroy this socket, and there is no body
+        // left to serve.
+        if (isClosing()) {
+          socket.destroy();
+          return;
+        }
         await _writeBody(
           socket,
           decryptedRange(file, decoder, start, end, isClosing: isClosing),
