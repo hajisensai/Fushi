@@ -1,4 +1,4 @@
-// BUG-2886: runs the production continuous-mode engine shell in real headless
+// BUG-2903: runs the production continuous-mode engine shell in real headless
 // Chrome and checks the chapter text index that backs per-frame progress
 // reports: same numbers as the old whole-chapter walk, O(log n) geometry per
 // report, and synchronous invalidation when the chapter DOM changes.
@@ -33,7 +33,7 @@ function page(writingMode) {
     + `<script>window.__fushiInstallShell(${JSON.stringify(CONFIG)});</script></body></html>`;
 }
 
-// Executed in the page. The reference is the pre-BUG-2886 algorithm: walk every
+// Executed in the page. The reference is the pre-BUG-2903 algorithm: walk every
 // text node and sum countCharsBeforeViewport.
 const check = (vertical) => `(async () => {
   const vertical = ${vertical};

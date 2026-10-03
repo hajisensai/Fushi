@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
-/// BUG-2888：VN 模式同一段落被切成两屏。
+/// BUG-2905：VN 模式同一段落被切成两屏。
 ///
 /// ① WebKit（iOS / macOS）下正文 `hanging-punctuation: allow-end` 让行尾「、」悬挂出
 /// 列底，而 VN 屏盒在那条边上 `overflow: hidden` 且没有余量，切屏量尺如实判溢出——

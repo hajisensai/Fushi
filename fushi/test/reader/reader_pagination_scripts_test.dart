@@ -380,7 +380,7 @@ void main() {
       final int end = continuous.indexOf('\n  },', idx);
       final String body =
           continuous.substring(idx, end < 0 ? continuous.length : end);
-      // BUG-2886：分子经章内文本索引 + 二分（_charsBeforeEdge）求，跨边节点仍逐字
+      // BUG-2903：分子经章内文本索引 + 二分（_charsBeforeEdge）求，跨边节点仍逐字
       // countCharsBeforeViewport。
       expect(body, contains('this._charsBeforeEdge('));
       final int edgeIdx =

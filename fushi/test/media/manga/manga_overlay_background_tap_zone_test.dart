@@ -187,7 +187,7 @@ void main() {
       expect(dblAt, greaterThan(zoneAt), reason: '双击判定必须排在选词与热区之后，否则会抢走查词/翻页');
     });
 
-    test('不在 100% 就回到正常比例，正好 100% 才放大到 2×（BUG-2891）', () {
+    test('不在 100% 就回到正常比例，正好 100% 才放大到 2×（BUG-2908）', () {
       expect(
         _doc().contains('_animateZoomTo(Math.abs(ZOOM-1)>0.01 ? 1 : 2,x,y);'),
         isTrue,

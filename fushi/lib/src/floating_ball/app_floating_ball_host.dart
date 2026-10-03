@@ -59,7 +59,7 @@ final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 /// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
 final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
 
-/// 截屏 / 拍照识字报「系统 OCR 模型未就绪」：等 app 就绪后弹出模型配置（BUG-2889）。
+/// 截屏 / 拍照识字报「系统 OCR 模型未就绪」：等 app 就绪后弹出模型配置（BUG-2906）。
 /// Android 截屏 OCR 在原生服务里识别，报错时原生把 Fushi 拉到前台再经通道置位。
 final ValueNotifier<bool> pendingSystemOcrSetup = ValueNotifier<bool>(false);
 
@@ -765,7 +765,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       );
     } on SystemOcrUnavailableException catch (error) {
       if (error.reason == kSystemOcrModelUnavailableReason) {
-        // 不只提示「没就绪」：直接带用户去把模型配好（BUG-2889）。
+        // 不只提示「没就绪」：直接带用户去把模型配好（BUG-2906）。
         pendingSystemOcrSetup.value = true;
       } else {
         _toast(t.floating_ball_ocr_failed);

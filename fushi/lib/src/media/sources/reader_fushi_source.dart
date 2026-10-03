@@ -93,7 +93,7 @@ final epubBookUidByKeyProvider =
 
 /// 按 bookKey 查 [bookLastReadAtProvider] 映射：先经 [epubBookUidByKeyProvider]
 /// 换算成 uid 再查，换算不上（非 epub 遗留行 / 空键）退回原键。书架 hero 与
-/// 「最近阅读」排序共用这一跳——BUG-2887：hero 曾直接拿 bookKey 查 uid 键表，
+/// 「最近阅读」排序共用这一跳——BUG-2904：hero 曾直接拿 bookKey 查 uid 键表，
 /// 恒查空、退化成列表序（= 最近导入的在读书），读了新书「继续阅读」也不换。
 int? lastReadAtForBookKey(
   Map<String, int> lastReadAtByUid,

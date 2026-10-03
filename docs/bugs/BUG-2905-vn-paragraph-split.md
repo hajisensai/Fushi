@@ -1,4 +1,4 @@
-## BUG-2888 · VN 模式同一段落被切成两屏（悬挂标点 / 切点禁则）
+## BUG-2905 · VN 模式同一段落被切成两屏（悬挂标点 / 切点禁则）
 - **报告**：2026-10-03（用户：iOS 竖排 VN 读『やはり俺の青春ラブコメはまちがっている。』，「そう思ったのは俺だけではないらしく」独占一屏，下一屏以「、庇護欲をそそる姿に…」开头；要求 Windows 与 Mac 都验证）
 - **真实性**：✅ 真 bug，两个根因：
   1. **WebKit 悬挂标点（iOS / macOS）**：正文 CSS `fushi/lib/src/reader/reader_content_styles.dart:532` 的 `hanging-punctuation: allow-end`（仅 WebKit 实现）让行尾「、」悬出列底；VN 屏盒 `.fushi-vn-screen` 在行内方向末端 `overflow: hidden`、没有余量，切屏量尺 `renderedTextFitsBounds`（`fushi/lib/src/reader/reader_visual_novel_scripts.dart:1583`）如实判「、」溢出 → 二分 `splitScreenToViewport`（同文件 `:1610`）退到「、」之前。于是一屏本装得下的段落被切成「…らしく」+「、庇護欲…」。真书（part0035，393×852、40px 竖排）在 Playwright WebKit 上复现：全章 281 屏里 24 屏以「、」「。」开头；Chromium 同条件 262 屏。

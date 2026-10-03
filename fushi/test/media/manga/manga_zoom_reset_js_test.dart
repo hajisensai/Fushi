@@ -5,7 +5,7 @@ import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-/// BUG-2891：缩小到贴合以下后回不到正常比例。双击在任何非 100% 倍率下都要一击
+/// BUG-2908：缩小到贴合以下后回不到正常比例。双击在任何非 100% 倍率下都要一击
 /// 回到正好 100%（旧判据 ZOOM>1.01 让缩小态先跳 2×）；捏合松手落在 100% ±10%
 /// 内要吸附回正好 100%（无级捏合人手凑不准）——但只在这次捏合真的改变了缩放时；
 /// 两指只是搭上屏幕不能把设置里定的 105% 拉回 100%。

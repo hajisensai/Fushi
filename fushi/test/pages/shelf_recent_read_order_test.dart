@@ -44,7 +44,7 @@ void main() {
     });
   });
 
-  group('lastReadAtForBookKey（bookKey → uid 换算一跳，BUG-2887）', () {
+  group('lastReadAtForBookKey（bookKey → uid 换算一跳，BUG-2904）', () {
     const Map<String, int> lastReadAtByUid = <String, int>{
       'uid-imouto': 100,
       'uid-new': 200,

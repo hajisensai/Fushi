@@ -192,7 +192,7 @@ void main() {
       );
     });
 
-    // BUG-2886：两者改走章内文本索引 + 二分（_charsBeforeEdge），边语义原样透传给
+    // BUG-2903：两者改走章内文本索引 + 二分（_charsBeforeEdge），边语义原样透传给
     // countCharsBeforeViewport；数值与旧全章累加逐点一致由
     // continuous_progress_text_index_test.dart 在真 Chrome 里断言。
     test('getLastVisibleCharOffset 传视口末边', () {

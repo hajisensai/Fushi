@@ -1291,7 +1291,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
     final MediaItem? hero = mostRecentlyReadCandidate(
       tally.inProgress,
-      // BUG-2887：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
+      // BUG-2904：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
       (MediaItem item) =>
           lastReadAtForBookKey(_lastReadAtByBookKey, _epubUidByKey,
               _parseBookKey(item.mediaIdentifier)) ??

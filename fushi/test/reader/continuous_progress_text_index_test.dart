@@ -9,7 +9,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show readerFushiEngineSourceUncompacted;
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
-/// BUG-2886：滚动模式往下滚会卡在某处停一会。
+/// BUG-2903：滚动模式往下滚会卡在某处停一会。
 ///
 /// 滚动中每帧的进度回报（onReaderScroll → fushiProgressDetails）在连续 shell 里
 /// 对整章做三遍 walk，后两遍逐节点 getClientRects——6000 个文本节点的长章一次

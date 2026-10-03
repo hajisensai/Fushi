@@ -67,7 +67,7 @@ class SystemOcrPageResult {
 }
 
 /// [SystemOcrUnavailableException.reason]：模型没就绪（Android 的 ML Kit 模型还没由
-/// Play 服务取下）。只有这一种该带用户去下载模型（BUG-2889）。
+/// Play 服务取下）。只有这一种该带用户去下载模型（BUG-2906）。
 const String kSystemOcrModelUnavailableReason = 'model_unavailable';
 
 /// 系统 OCR 不可用时的原因（直接抛给上层做人话提示）。
@@ -101,7 +101,7 @@ abstract interface class SystemOcrPlatform {
   });
 }
 
-/// 系统 OCR 模型的就绪状态（BUG-2889）。
+/// 系统 OCR 模型的就绪状态（BUG-2906）。
 ///
 /// 只有 Android 会出现「未就绪」：ML Kit 模型由 Google Play 服务保管，安装时的
 /// 顺手下载不保证真取到。其它平台的系统 OCR 是系统组件，恒 [ready]。
@@ -129,7 +129,7 @@ enum SystemOcrModelStatus {
 }
 
 /// 系统 OCR 模型的查询与下载——识别报 [SystemOcrUnavailableException] 后，带用户
-/// 去把模型配好，而不是只丢一句「没就绪」（BUG-2889）。测试注 fake。
+/// 去把模型配好，而不是只丢一句「没就绪」（BUG-2906）。测试注 fake。
 abstract interface class SystemOcrModelSetup {
   /// 查 [language] 的模型是否在本机。只查询，不触发下载。
   Future<SystemOcrModelStatus> modelStatus(String language);

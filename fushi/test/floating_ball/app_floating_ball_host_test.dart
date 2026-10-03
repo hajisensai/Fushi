@@ -272,7 +272,7 @@ void main() {
     expect(ball(), findsNothing);
   });
 
-  testWidgets('BUG-2889：原生报系统 OCR 模型未就绪 → 就绪后弹出模型配置，而不是只提示', (
+  testWidgets('BUG-2906：原生报系统 OCR 模型未就绪 → 就绪后弹出模型配置，而不是只提示', (
     WidgetTester tester,
   ) async {
     // 通道回调只在有系统球 / 截屏识字的平台装；测试机按桌面装上。

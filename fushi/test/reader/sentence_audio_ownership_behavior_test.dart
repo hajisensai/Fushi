@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 
-/// BUG-2890：有声书当前句高亮不含句末「。」与句首「「」。
+/// BUG-2907：有声书当前句高亮不含句末「。」与句首「「」。
 ///
 /// cue 坐标只数可匹配字，两条高亮路径都把首个到末个可匹配字映射回 DOM。现在三种
 /// view mode 共用 [kSentenceAudioOwnershipJs]（标点归属对齐 Hoshi Reader Android）放宽

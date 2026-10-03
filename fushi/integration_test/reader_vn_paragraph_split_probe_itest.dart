@@ -21,7 +21,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-2888 真书探针：VN 模式同一段落被切成两屏。
+/// BUG-2905 真书探针：VN 模式同一段落被切成两屏。
 ///
 /// 用户报 iOS 竖排 VN 下「そう思ったのは俺だけではないらしく」独占一屏、下一屏以
 /// 「、庇護欲を…」开头。根因是 WebKit 的悬挂标点：行尾「、」悬出列底，VN 屏盒在那条
@@ -288,7 +288,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'BUG-2888 real-book probe: VN never splits a paragraph before a '
+    'BUG-2905 real-book probe: VN never splits a paragraph before a '
     'line-start-prohibited char and keeps a fitting paragraph on one screen',
     timeout: const Timeout(Duration(minutes: 20)),
     (WidgetTester tester) async {

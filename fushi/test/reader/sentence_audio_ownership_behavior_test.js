@@ -1,4 +1,4 @@
-// BUG-2890：有声书当前句高亮的标点归属行为级跑手（由
+// BUG-2907：有声书当前句高亮的标点归属行为级跑手（由
 // sentence_audio_ownership_behavior_test.dart 用 node 执行，argv[2] = payload.json）。
 //
 // payload.script 是生产常量 kSentenceAudioOwnershipJs 原文；这里只补一个最小 DOM

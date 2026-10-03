@@ -1483,7 +1483,7 @@ window.__fushiInstallShell = function(C) {
   // 的字符坐标系同口径，逆运算），无 caret 几何依赖。仅连续模式调用（分页有 snap/lock）。
   firstVisibleCharOffsetByScan: function() {
     var vertical = this.isVertical();
-    // BUG-2886：连续 shell 有章内文本索引，同一个数走二分，不再全章 walk。
+    // BUG-2903：连续 shell 有章内文本索引，同一个数走二分，不再全章 walk。
     if (typeof this._charsBeforeEdge === 'function') return this._charsBeforeEdge(vertical);
     var walker = this.createWalker();
     var explored = 0;
@@ -1794,7 +1794,7 @@ window.__fushiInstallShell = function(C) {
       }
       spans.push({ id: cue.id, start: spanStart, len: spanLen });
     }
-    // BUG-2890：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
+    // BUG-2907：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
     var isMatchable = this.isMatchableChar.bind(this);
     for (var si = 0; si < spans.length; si++) {
       out.push({ id: spans[si].id, ranges: window.fushiSentenceAudioOwnership.extendSegments(
@@ -3701,7 +3701,7 @@ $_sharedJs
   revealElement: function(element) {
     return this.scrollToTarget(element);
   },
-  // BUG-2886：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
+  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
   // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
   // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
   // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
@@ -3804,7 +3804,7 @@ $_sharedJs
     // TODO-736 A-1：字符级进度（对齐安卓 reader-continuous.js calculateProgress:529-541）。
     // 分子是「已滚出视口首边的可匹配字符数」（跨视口的长节点按字计，不整节点跳变），
     // 分母是 countChars 总可匹配字符；createWalker 排除 rt/rp，分子分母同套。
-    // BUG-2886：两者都走章内文本索引 + 二分，不再逐帧全章 walk。
+    // BUG-2903：两者都走章内文本索引 + 二分，不再逐帧全章 walk。
     var total = this._textIndex().total;
     if (total <= 0) return 0;
     return this._charsBeforeEdge(this.isVertical()) / total;
@@ -3824,7 +3824,7 @@ $_sharedJs
   // 连续模式当前视口可见字符区间的终点（半开 end，章内学习单位偏移；口径与
   // calculateProgress 分子同源）。一次 walk 用 countCharsBeforeViewport 传视口**末边**
   // （横排 window.innerHeight / 竖排 0）求「末边之前的字数」；物理到底（isAtEnd）时
-  // end = 章总字数。BUG-2886：同走章内文本索引 + 二分。
+  // end = 章总字数。BUG-2903：同走章内文本索引 + 二分。
   getLastVisibleCharOffset: function() {
     var total = this._textIndex().total;
     if (total <= 0) return -1;

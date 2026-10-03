@@ -1,4 +1,4 @@
-// BUG-2888：VN 切屏切点禁则的行为级跑手（由 vn_split_kinsoku_behavior_test.dart 用
+// BUG-2905：VN 切屏切点禁则的行为级跑手（由 vn_split_kinsoku_behavior_test.dart 用
 // node 执行，argv[2] = payload.json）。
 //
 // 从生成的 VN shell 原文里切出 `splitScreenToViewport` 起到 `textItemsForScreen` 前的

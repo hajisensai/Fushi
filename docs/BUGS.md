@@ -33,21 +33,21 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2908](bugs/BUG-2908-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
+| [BUG-2907](bugs/BUG-2907-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
+| [BUG-2906](bugs/BUG-2906-system-ocr-model-setup.md) | ✅ | ✅ | 系统 OCR 模型未就绪时只弹提示、没有配置入口 |
+| [BUG-2905](bugs/BUG-2905-vn-paragraph-split.md) | ✅ | ✅ | VN 模式同一段落被切成两屏（悬挂标点 / 切点禁则） |
+| [BUG-2904](bugs/BUG-2904-library-continue-hero-uid.md) | ✅ | ✅ | 书架「继续阅读」不随最近阅读更新 |
+| [BUG-2903](bugs/BUG-2903-continuous-scroll-progress-stall.md) | ✅ | ✅ | 滚动模式往下滚会卡在某处停一会 |
+| [BUG-2902](bugs/BUG-2902-manga-ocr-missed-text.md) | ✅ | ✅ | 漫画本地 OCR 漏识别：稀疏装饰标题整块没检出、斜体并排两列丢一列 |
 | [BUG-2893](bugs/BUG-2893-kirikiri-kag-page-swap-anchor.md) | ✅ | ✅ | KiriKiri KAG 换页 backlay+trans 后查词锚点失效 |
 | [BUG-2892](bugs/BUG-2892-sgre-typewriter-prefix-lines.md) | ✅ | ✅ | SGRE 打字机逐字显示的半句被当成独立台词 |
 | [BUG-2891](bugs/BUG-2891-x64-locale-claimed-applied.md) | ✅ | ✅ | 64位游戏转区落空仍报已转日文区 |
-| [BUG-2891](bugs/BUG-2891-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
-| [BUG-2890](bugs/BUG-2890-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
 | [BUG-2890](bugs/BUG-2890-launch-window-binding-dead-dialog.md) | ✅ | ✅ | 启动会话绑定启动设置对话框后永不改绑主窗口 |
-| [BUG-2889](bugs/BUG-2889-system-ocr-model-setup.md) | ✅ | ✅ | 系统 OCR 模型未就绪时只弹提示、没有配置入口 |
 | [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
-| [BUG-2888](bugs/BUG-2888-vn-paragraph-split.md) | ✅ | ✅ | VN 模式同一段落被切成两屏（悬挂标点 / 切点禁则） |
 | [BUG-2888](bugs/BUG-2888-kirikiri-silent-stop-voice-paired.md) | ✅ | ✅ | KiriKiri 掐断用的静音语音被配给下一句旁白 |
-| [BUG-2887](bugs/BUG-2887-library-continue-hero-uid.md) | ✅ | ✅ | 书架「继续阅读」不随最近阅读更新 |
 | [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |
 | [BUG-2886](bugs/BUG-2886-lookup-parked-window-on-screen.md) | ✅ | ✅ | 显示拓扑变化后，离屏停放的查词覆盖窗落进屏幕右上角吞点击 |
-| [BUG-2886](bugs/BUG-2886-continuous-scroll-progress-stall.md) | ✅ | ✅ | 滚动模式往下滚会卡在某处停一会 |
-| [BUG-2885](bugs/BUG-2885-manga-ocr-missed-text.md) | ✅ | ✅ | 漫画本地 OCR 漏识别：稀疏装饰标题整块没检出、斜体并排两列丢一列 |
 | [BUG-2885](bugs/BUG-2885-kirikiri-nvl-page-lookup.md) | ✅ | ✅ | KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝 |
 | [BUG-2884](bugs/BUG-2884-manga-cross-chapter-stale-doc.md) | ✅ | ✅ | 漫画跨章翻页后正文仍是旧章 |
 | [BUG-2878](bugs/BUG-2878-manga-lens-char-offset.md) | ✅ | ✅ | 漫画 Lens OCR 逐字命中区相对原图字形漂移（竖排高亮压前字、切后字） |

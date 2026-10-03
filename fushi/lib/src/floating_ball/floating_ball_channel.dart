@@ -114,7 +114,7 @@ class FloatingBallChannel {
       await _invoke<bool>('takePendingSync') ?? false;
 
   /// 取走（并清掉）截屏 OCR 报「模型未就绪」后排队的「打开系统 OCR 配置」请求
-  /// （同 [takePendingOpenLookupPage]，BUG-2889）。
+  /// （同 [takePendingOpenLookupPage]，BUG-2906）。
   static Future<bool> takePendingSystemOcrSetup() async =>
       await _invoke<bool>('takePendingSystemOcrSetup') ?? false;
 

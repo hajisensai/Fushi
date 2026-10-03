@@ -753,7 +753,7 @@ $imageRevealSemantics
         if (!cue || !cue.id) continue;
         var start = Math.max(0, Number(cue.start) || 0);
         var length = Math.max(0, Number(cue.length) || 0);
-        // BUG-2890：与翻页 / 滚动同一份标点归属，句末「。」、句首「「」进当前句。
+        // BUG-2907：与翻页 / 滚动同一份标点归属，句末「。」、句首「「」进当前句。
         result.push({
           id: cue.id,
           ranges: window.fushiSentenceAudioOwnership.extendSegments(
@@ -1641,7 +1641,7 @@ $sharedInitViewport
     }
     return result;
   },
-  // BUG-2888：二分只认「装得下」，切点落在哪个字上全凭运气——段落恰好多出一个「。」
+  // BUG-2905：二分只认「装得下」，切点落在哪个字上全凭运气——段落恰好多出一个「。」
   // 就切出一屏孤零零的「。」，「…しょうな！」」切成「…しょうな！」+「」」。同一段被切
   // 开时，下一屏不得以行首禁则字开头、本屏不得以开括号收尾（与正文 `line-break:
   // strict` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、

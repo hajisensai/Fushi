@@ -98,7 +98,7 @@ public final class SystemOcrChannel {
                     case METHOD_IS_AVAILABLE:
                         // 能力探测只答「这个平台有没有系统 OCR」：恒 true。模型是否已由
                         // Play 服务取下是另一件事，由 modelStatus 回答；缺模型时 recognize
-                        // 报 MODEL_UNAVAILABLE，调用方据此带用户去下载（BUG-2889），而不是
+                        // 报 MODEL_UNAVAILABLE，调用方据此带用户去下载（BUG-2906），而不是
                         // 在这里把整个引擎置灰——置灰了用户就再也走不到下载入口。
                         result.success(Boolean.TRUE);
                         return;
@@ -176,7 +176,7 @@ public final class SystemOcrChannel {
     }
 
     /**
-     * 该语言的文字模型是否已由 Play 服务取下。只查询、不触发下载（BUG-2889）。
+     * 该语言的文字模型是否已由 Play 服务取下。只查询、不触发下载（BUG-2906）。
      *
      * <p>manifest 的 DEPENDENCIES 只是请 Play 服务在安装时**顺手**取模型，不保证真取到
      * （没联网、Play 服务排队、侧载安装都会落空）；这里如实回答「现在有没有」。

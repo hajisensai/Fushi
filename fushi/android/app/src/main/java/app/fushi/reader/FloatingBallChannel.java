@@ -182,7 +182,7 @@ final class FloatingBallChannel {
     }
 
     /**
-     * 截屏 OCR 报模型未就绪（BUG-2889）：主引擎在就直接推 {@code openSystemOcrSetup}
+     * 截屏 OCR 报模型未就绪（BUG-2906）：主引擎在就直接推 {@code openSystemOcrSetup}
      * （Fushi 随后被拉到前台，Dart 弹配置）；不在就排队，由冷启动的 Dart 经
      * {@code takePendingSystemOcrSetup} 来取。主线程调用。
      */

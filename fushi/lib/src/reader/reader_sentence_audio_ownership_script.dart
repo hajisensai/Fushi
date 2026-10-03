@@ -1,4 +1,4 @@
-/// 有声书当前句高亮的「标点归属」——**唯一** JS 源（BUG-2890）。
+/// 有声书当前句高亮的「标点归属」——**唯一** JS 源（BUG-2907）。
 ///
 /// cue 的 `{start, length}` 按可匹配字（假名 / 汉字 / 字母数字）计数，两条高亮路径
 /// （翻页 / 滚动的 `collectSentenceAudioCueRanges`、VN 的 `collectMatchableSegments`）
