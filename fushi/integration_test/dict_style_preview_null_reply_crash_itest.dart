@@ -72,8 +72,16 @@ void main() {
       ),
     );
 
+    // 边 pump 边等：integration binding 只在 pump 时出帧，而 Linux（WPE）的
+    // 平台视图尺寸靠帧回调上报——不出帧它就停在 0×0、页面载不完。WebView2 不依赖
+    // Flutter 帧，所以 Windows 上裸 await 也能过；真 app 里引擎照常调度帧。
+    final DateTime readyDeadline =
+        DateTime.now().add(const Duration(seconds: 60));
+    while (!ready.isCompleted && DateTime.now().isBefore(readyDeadline)) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     final InAppWebViewController controller =
-        await ready.future.timeout(const Duration(seconds: 60));
+        await ready.future.timeout(const Duration(seconds: 1));
     for (int i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 250));
     }

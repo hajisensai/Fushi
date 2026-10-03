@@ -27,7 +27,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
@@ -1767,7 +1767,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 没有本书覆盖时不碰 wakelock：openMedia 已按全局「保持屏幕常亮」设好，漫画
       // 默认值（true）不能把用户全局关掉的常亮再打开。
       if (hasKeepScreenOnOverride) {
-        await WakelockPlus.toggle(enable: readerPreferences.keepScreenOn);
+        // 永不抛错：wakelock 失败（Linux 无 ScreenSaver D-Bus 服务）不能连带跳过下面的全屏恢复。
+        await setScreenWakelock(
+          enable: readerPreferences.keepScreenOn,
+          source: 'manga restore',
+        );
       }
       if (hasFullscreenOverride && desktopWindowFullscreenSupported) {
         await _setMangaFullscreen(readerPreferences.fullscreen);
@@ -2597,7 +2601,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       imgSrcs.add(
         MangaFushiPage.mangaImageUrl(
           image.url,
-          useCustomScheme: Platform.isMacOS || Platform.isIOS,
+          useCustomScheme: webViewUsesCustomSchemeTransport,
           version: _pageSessionGeneration,
         ),
       );
@@ -5075,10 +5079,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _applyVolumeKeyPaging(prefs.volumeKeys, invertDirection: _invertVolumeKeys);
     try {
       // 保持亮屏同理：没有本书覆盖时回到全局「保持屏幕常亮」（openMedia 的口径）。
-      await WakelockPlus.toggle(
+      await setScreenWakelock(
         enable: hasKeepScreenOnOverride
             ? prefs.keepScreenOn
             : ReaderFushiSource.instance.keepScreenAwake,
+        source: 'manga settings',
       );
       if (fullscreenChanged) {
         if (desktopWindowFullscreenSupported) {
@@ -6131,20 +6136,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 只在有 WebView 后端的平台构造原生 WebView（Linux 无 flutter_inappwebview
-  /// 后端；widget 测试宿主的加载早退路径也永不触达这里）。
+  /// 构造原生 WebView（widget 测试宿主的加载早退路径永不触达这里）。
   Widget _buildWebView() {
-    if (Platform.isLinux) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.book_file_not_found,
-            style: const TextStyle(color: Colors.white70),
-          ),
-        ),
-      );
-    }
     // 重建 key 挂在 WebView **之上**：`manga_webview` 这个 ValueKey 是集成测试
     // finder 的锚点，不能随代次变化。
     return KeyedSubtree(

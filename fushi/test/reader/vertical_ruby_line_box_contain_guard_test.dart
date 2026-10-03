@@ -88,10 +88,11 @@ void main() {
     test(
         'BUG-2472 / BUG-2482：任何平台都不再发出 -webkit-line-box-contain；'
         'Apple 端（WebKit）改发 ruby 注音盒的负 margin-block-start，'
-        'Android / Windows / Linux 不发', () async {
+        'Android / Windows 不发（Linux 走 WPE WebKit，同 Apple 端）', () async {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
+        TargetPlatform.linux, // WPE WebKit
       ]) {
         debugDefaultTargetPlatformOverride = p;
         try {
@@ -115,7 +116,6 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.android,
         TargetPlatform.windows,
-        TargetPlatform.linux,
       ]) {
         debugDefaultTargetPlatformOverride = p;
         try {
@@ -135,10 +135,11 @@ void main() {
 
     test(
         'BUG-2724：Apple 端（WebKit）给注音盒负 margin-block-end，把注音贴回本行'
-        '（横排）/本列（竖排）；Android / Windows / Linux 不发', () async {
+        '（横排）/本列（竖排）；Android / Windows 不发（Linux 走 WPE WebKit，同 Apple 端）', () async {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
+        TargetPlatform.linux, // WPE WebKit
       ]) {
         for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
           debugDefaultTargetPlatformOverride = p;
@@ -161,7 +162,6 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.android,
         TargetPlatform.windows,
-        TargetPlatform.linux,
       ]) {
         debugDefaultTargetPlatformOverride = p;
         try {
@@ -187,6 +187,7 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
+        TargetPlatform.linux, // WPE WebKit
       ]) {
         for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
           for (final String vm in <String>['paginated', 'continuous', 'vn']) {
@@ -214,7 +215,6 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.android,
         TargetPlatform.windows,
-        TargetPlatform.linux,
       ]) {
         debugDefaultTargetPlatformOverride = p;
         try {
@@ -243,6 +243,7 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
+        TargetPlatform.linux, // WPE WebKit
       ]) {
         for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
           debugDefaultTargetPlatformOverride = p;
@@ -295,7 +296,6 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.android,
         TargetPlatform.windows,
-        TargetPlatform.linux,
       ]) {
         debugDefaultTargetPlatformOverride = p;
         try {
@@ -322,6 +322,7 @@ void main() {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
+        TargetPlatform.linux, // WPE WebKit
       ]) {
         for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
           debugDefaultTargetPlatformOverride = p;

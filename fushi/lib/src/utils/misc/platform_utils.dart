@@ -30,6 +30,16 @@ bool get isWindowsPlatform => Platform.isWindows;
 
 bool get isMacOSPlatform => Platform.isMacOS;
 
+/// WebView 本地资源（EPUB / 漫画页 / 字体）走自定义 scheme 投递的平台。
+///
+/// WKWebView（iOS / macOS）与 WPE WebKit（Linux，`flutter_inappwebview_linux`）
+/// 都没有能拦截 `https://` 的 `shouldInterceptRequest`，只能注册自定义 scheme
+/// （`WKURLSchemeHandler` / `webkit_web_context_register_uri_scheme`）；Android 与
+/// Windows 则拦截 `https://fushi.local/...`。资源 URL 的构造与 WebView 的
+/// `resourceCustomSchemes` 必须问同一个判据，否则页面请求的 scheme 没人接。
+bool get webViewUsesCustomSchemeTransport =>
+    Platform.isMacOS || Platform.isIOS || Platform.isLinux;
+
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///

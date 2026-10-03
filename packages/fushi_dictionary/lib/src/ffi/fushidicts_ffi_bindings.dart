@@ -7,10 +7,22 @@ DynamicLibrary _openNativeLib() {
   if (Platform.isAndroid) return DynamicLibrary.open('libfushidicts_ffi.so');
   if (Platform.isWindows) return DynamicLibrary.open('fushidicts_ffi.dll');
   if (Platform.isMacOS) return DynamicLibrary.open('libfushidicts_ffi.dylib');
-  if (Platform.isLinux) return DynamicLibrary.open('libfushidicts_ffi.so');
+  if (Platform.isLinux) return _openLinuxBundled('libfushidicts_ffi.so');
   if (Platform.isIOS) return DynamicLibrary.process();
   throw UnsupportedError(
       'fushidicts: unsupported platform ${Platform.operatingSystem}');
+}
+
+/// Linux bundle 把随包 .so 装在 `<exe 目录>/lib/`。runner 的 RUNPATH
+/// (`$ORIGIN/lib`) 只作用于 exe 自己的直接依赖，**不**作用于 Dart VM（在
+/// libflutter_linux_gtk.so 里）发起的 `dlopen`，所以裸名加载找不到它——
+/// pdfium_dart 在 Linux 上同样按这个绝对路径加载。exe 旁没有（flutter test /
+/// 纯 Dart 宿主）时退回裸名，交给 LD_LIBRARY_PATH / 系统路径。
+DynamicLibrary _openLinuxBundled(String name) {
+  final String bundled =
+      '${File(Platform.resolvedExecutable).parent.path}/lib/$name';
+  if (File(bundled).existsSync()) return DynamicLibrary.open(bundled);
+  return DynamicLibrary.open(name);
 }
 
 // ── C struct mirrors ────────────────────────────────────────────────

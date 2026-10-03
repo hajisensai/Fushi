@@ -245,8 +245,34 @@ endif()
 # List of absolute paths to libraries that should be bundled with the plugin. This list could contain prebuilt
 # libraries, or libraries created by an external build triggered from this build file.
 if(NOT USE_SYSTEM_ONNXRUNTIME AND ONNXRUNTIME_LIBRARY)
-  # When using the downloaded version, we need to bundle the library
-  set(bundled_libs ${ONNXRUNTIME_LIBRARY})
+  # When using the downloaded version, we need to bundle the library.
+  # Hibiki: the ORT tarball ships lib/libonnxruntime.so -> libonnxruntime.so.1
+  # -> libonnxruntime.so.1.22.0. Bundling ONNXRUNTIME_LIBRARY (the unversioned
+  # symlink) made the app's install(FILES) copy a *dangling symlink* into
+  # bundle/lib, while both the runner and this plugin carry
+  # DT_NEEDED libonnxruntime.so.1 (the SONAME). On any machine without the
+  # build tree the dynamic loader then refused to start the whole app. Bundle
+  # the real file content under its SONAME instead.
+  get_filename_component(_ort_lib_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
+  file(GLOB _ort_soname_candidates "${_ort_lib_dir}/libonnxruntime.so.[0-9]")
+  if(_ort_soname_candidates)
+    list(GET _ort_soname_candidates 0 _ort_soname_path)
+    get_filename_component(_ort_soname "${_ort_soname_path}" NAME)
+  else()
+    set(_ort_soname "libonnxruntime.so.1")
+  endif()
+  get_filename_component(_ort_real "${ONNXRUNTIME_LIBRARY}" REALPATH)
+  set(_ort_bundle_copy "${CMAKE_CURRENT_BINARY_DIR}/ort_bundle/${_ort_soname}")
+  # configure_file COPYONLY reads through symlinks, so this is the real ELF.
+  configure_file("${_ort_real}" "${_ort_bundle_copy}" COPYONLY)
+  set(bundled_libs "${_ort_bundle_copy}")
+  # The plugin itself needs libonnxruntime.so.1, and a shared library's
+  # DT_NEEDED is resolved through *its own* RUNPATH -- the runner's
+  # $ORIGIN/lib does not apply to transitive dependencies. Without $ORIGIN the
+  # plugin only ever found ORT through the absolute build-tree path CMake
+  # embeds. Both end up side by side in bundle/lib (flutter_webrtc does the
+  # same for libwebrtc.so).
+  set_property(TARGET ${PLUGIN_NAME} APPEND PROPERTY BUILD_RPATH "$ORIGIN")
 else()
   # When using system library, don't bundle it
   set(bundled_libs "")
