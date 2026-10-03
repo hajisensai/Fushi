@@ -99,6 +99,15 @@ void main() {
       endsWith('\r\n\r\n'),
       reason: r'hyper-util tunnel.rs 的 recvd.ends_with(b"\r\n\r\n") 判据',
     );
+    // BUG-2915: RFC 9110 §9.3.6 forbids Transfer-Encoding / Content-Length on
+    // a 2xx CONNECT. dart:io's default headers said `transfer-encoding:
+    // chunked`; FFmpeg's httpproxy then read the TLS ServerHello as chunk
+    // sizes, closed its socket and mbedtls dereferenced NULL (iOS SIGSEGV).
+    expect(
+      latin1.decode(head),
+      'HTTP/1.1 200 Connection established\r\n\r\n',
+      reason: 'CONNECT 成功回复只能是状态行 + 空行',
+    );
 
     socket.add(utf8.encode('ping'));
     await socket.flush();
