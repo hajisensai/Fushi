@@ -113,8 +113,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'first_time_setup',
   // 悬浮球（docs/specs/2026-09-28-floating-ball.md）。`.actions` / `.mode` 是
   // 旧版单份全局按钮 / 三态模式，只作迁移读取；新值是 `.in_app` / `.system`
-  // 两个 bool 开关与每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）。
+  // 两个 bool 开关、每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）与关闭后
+  // 自动恢复的三态 `.auto_restore`。
   'floating_ball.actions',
+  'floating_ball.auto_restore',
   'floating_ball.buttons.general',
   'floating_ball.buttons.manga',
   'floating_ball.buttons.reader',

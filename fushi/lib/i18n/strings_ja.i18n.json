@@ -6231,5 +6231,20 @@
   "lookup_ai_pick_nothing": "見出し語が一つだけなので選ぶ必要はありません",
   "lookup_ai_pick_kept": "AI は先頭の見出し語で合っていると判断しました",
   "lookup_ai_context_auto": "AI で文脈に合う語を選ぶ",
-  "lookup_ai_context_auto_desc": "文のある辞書引きのたびに「設定 › AI」で割り当てたプロバイダーへ問い合わせ、その料金が発生します。オフのときもポップアップ上部の ✨ で手動で使えます。"
+  "lookup_ai_context_auto_desc": "文のある辞書引きのたびに「設定 › AI」で割り当てたプロバイダーへ問い合わせ、その料金が発生します。オフのときもポップアップ上部の ✨ で手動で使えます。",
+  "floating_ball_auto_restore": "フローティングボールの自動復元",
+  "floating_ball_auto_restore_hint": "閉じたフローティングボールを Fushi に戻ったときに再表示します。「復元しない」では閉じたあとここで再度オンにする必要があります",
+  "floating_ball_auto_restore_both": "アプリ内外",
+  "floating_ball_auto_restore_in_app": "アプリ内のみ",
+  "floating_ball_auto_restore_off": "復元しない",
+  "ocr_system_model_title": "システム OCR モデル",
+  "ocr_system_model_checking": "文字認識モデルを確認しています…",
+  "ocr_system_model_missing": "Google Play 開発者サービスがまだ文字認識モデルをダウンロードしていません。今すぐダウンロード（数 MB）すると画面 OCR を使えます。",
+  "ocr_system_model_download": "ダウンロード",
+  "ocr_system_model_downloading": "Google Play 開発者サービス経由でダウンロード中…このダイアログを閉じてもバックグラウンドで続行します。",
+  "ocr_system_model_ready": "文字認識モデルの準備ができました。もう一度認識してください。",
+  "ocr_system_model_failed": "モデルをダウンロードできませんでした：$error",
+  "ocr_system_model_play_services_resolvable": "システム OCR には Google Play 開発者サービスが必要ですが、この端末では見つからないか、無効、または古いバージョンです。",
+  "ocr_system_model_play_services_fix": "Google Play 開発者サービスを修復",
+  "ocr_system_model_play_services_unavailable": "この端末には利用できる Google Play 開発者サービスがないため、システム OCR は使えません。"
 }

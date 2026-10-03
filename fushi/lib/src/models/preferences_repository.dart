@@ -738,6 +738,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 关掉的悬浮球回到 Fushi 时自动恢复哪些（见 [FloatingBallAutoRestore]）。
+  /// 默认「仅应用内」：与引入本设置前的行为一致。
+  FloatingBallAutoRestore get floatingBallAutoRestore =>
+      FloatingBallAutoRestore.fromStorage(
+        getPref('floating_ball.auto_restore', defaultValue: null),
+      );
+
+  Future<void> setFloatingBallAutoRestore(FloatingBallAutoRestore value) async {
+    await setPref('floating_ball.auto_restore', value.storageValue);
+    notifyListeners();
+  }
+
   /// 某个场景的悬浮球按钮 id（目录顺序）；从没设过 =
   /// [FloatingBallScope.defaultButtons]。旧版只有一份全局按钮勾选
   /// （`floating_ball.actions`）：没单独设过的场景沿用它对全局按钮的取舍。
