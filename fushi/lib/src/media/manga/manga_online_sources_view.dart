@@ -572,7 +572,7 @@ class _MangaOnlineSourcesViewState
   Widget _sectionTitle(String title) =>
       Text(title, style: Theme.of(context).textTheme.titleLarge);
 
-  /// 扩展宿主不可用时统一的占位（iOS / Linux）。结构不变，只是这一节没内容。
+  /// 扩展宿主不可用时统一的占位（iOS）。结构不变，只是这一节没内容。
   Widget _unavailableNote() => Padding(
     padding: const EdgeInsets.all(24),
     child: Text(t.mihon_runtime_unavailable, textAlign: TextAlign.center),

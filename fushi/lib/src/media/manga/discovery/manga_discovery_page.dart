@@ -528,7 +528,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   }
 
   /// 一个来源都没有：整页引导空态。有扩展宿主时补一句「先装扩展」，没有宿主
-  /// 的平台（Linux 等）这句只会误导，那里本来就装不了扩展；「管理来源」按钮只在
+  /// 的平台（iOS 等）这句只会误导，那里本来就装不了扩展；「管理来源」按钮只在
   /// 真有去处时出现（宿主给了 [MangaDiscoveryPage.onOpenSources]，或库页壳真有
   /// 「来源」视图）。
   Widget _buildEmpty() {

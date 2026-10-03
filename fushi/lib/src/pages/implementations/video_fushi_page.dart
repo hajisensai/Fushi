@@ -2941,7 +2941,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (isAnimeSourceVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
         try {
-          // 合规门 + 运行时平台门（iOS 不带在线源宿主、Linux 没有 Mihon 宿主）：
+          // 合规门 + 运行时平台门（iOS 不带在线源宿主、没有 Mihon 宿主的平台）：
           // 取 animeMihonManager 之前先问门——门外取用会在不该有宿主的平台上起宿主
           // （或直接抛 UnsupportedError）。不可用走下面「扩展不可用」的失败提示。
           if (!isVideoOnlineSourcesAvailable) {

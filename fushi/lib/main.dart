@@ -192,7 +192,7 @@ void popupMain() {
 /// video path here. We stash the first supported video path for the widget tree
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
-  // 桌面端：从 args 里挑出外部打开的视频路径（仅 Windows runner 会传 argv）。
+  // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     final String? videoArg = firstExternalVideoArg(args);
     if (videoArg != null && File(videoArg).existsSync()) {
@@ -776,7 +776,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// `hibiki.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
   /// （见 `windows/runner/external_video_handoff.*` + `flutter_window.cpp`）。首实例
   /// 经此 MethodChannel 收到 `openExternalVideo`，复用现有 [_openExternalVideo]
-  /// 打开链路。仅 Windows 注册（其它桌面平台暂无单实例守卫，走首启 argv 路径）。
+  /// 打开链路。Linux 同一条通道：GTK runner 以 GApplication 单实例注册到会话
+  /// D-Bus，第二次启动的 argv 经 `command-line` 信号落到首实例再推过来（见
+  /// `linux/runner/my_application.cc`）。macOS 走 `source_urls` 事件流与系统
+  /// open-file 事件，不注册本通道。
   static const MethodChannel _externalVideoChannel =
       MethodChannel('app.fushi/external_video');
 
@@ -896,8 +899,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         onExitRequested: _handleExitRequested,
       );
     }
-    if (Platform.isWindows) {
+    if (Platform.isWindows || Platform.isLinux) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
+    }
+    if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
@@ -1512,8 +1517,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
   }
 
-  /// TODO-904 P0 回归：首实例收到第二实例经 WM_COPYDATA 转交的外部视频路径
-  /// （`windows/runner` → `app.fushi/external_video` channel）。这里做与首启 argv
+  /// TODO-904 P0 回归：首实例收到第二实例转交的外部视频路径（Windows 经
+  /// WM_COPYDATA、Linux 经 GApplication `command-line`，两端都落到
+  /// `app.fushi/external_video` channel）。这里做与首启 argv
   /// 路径（[main]）等价的校验：扩展名白名单（[isSupportedVideoFile]）+ 存在性
   /// （`File.existsSync`），通过后复用 [_openExternalVideo] 打开。
   ///

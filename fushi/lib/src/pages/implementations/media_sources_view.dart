@@ -21,7 +21,7 @@
 // host/port（见 NetworkSourceFileSystem）。
 
 import 'dart:async' show unawaited;
-import 'dart:io' show Directory, File, Platform, Process;
+import 'dart:io' show Directory, File, Platform;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
@@ -49,6 +49,7 @@ import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -507,8 +508,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 icon: Icons.folder_open,
                 size: 18,
                 tooltip: t.media_source_open_folder,
-                // 打开文件夹只在 Windows + 本地来源可用；网络来源无本地目录可开。
-                enabled: isLocal && Platform.isWindows,
+                // 打开文件夹只在桌面（有文件管理器契约）+ 本地来源可用；网络来源
+                // 无本地目录可开。
+                enabled: isLocal && currentRevealHost() != null,
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _openFolder(row),
               ),
@@ -1145,18 +1147,14 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
   }
 
-  /// 打开来源根目录（仅 Windows 本地来源，复用仓库唯一现成的 explorer 调用）。
+  /// 打开来源根目录（桌面三端本地来源）。走仓库唯一的文件管理器原语
+  /// [revealInFileManager]：rootPath 由 normalizeSourceRootPath 归一化为正斜杠，
+  /// 而 Windows explorer.exe 只认反斜杠（传正斜杠会改开「文档」，BUG-920）——
+  /// 这层方向转换收在原语的 Windows 分支里，这里不再自己拼 explorer 调用。
   Future<void> _openFolder(SourceLibraryRow row) async {
-    if (!Platform.isWindows || row.transport != 'local') return;
-    try {
-      // rootPath 由 normalizeSourceRootPath 归一化为正斜杠（跨平台一致 + dedup），
-      // 但 Windows explorer.exe 只认反斜杠路径参数：传正斜杠会被忽略、改开默认
-      // 「文档」目录（BUG-920）。仅在 explorer 这个平台边界把 `/` 转回 `\`。
-      final String windowsPath = row.rootPath.replaceAll('/', r'\');
-      await Process.run('explorer', <String>[windowsPath]);
-    } catch (_) {
-      // 打开失败不致命（路径可能已不存在）；静默即可。
-    }
+    if (row.transport != 'local') return;
+    // 打开失败不致命（路径可能已不存在）；静默即可。
+    await revealInFileManager(row.rootPath);
   }
 
   /// 导出当前本地视频来源的 AI 可读刮削诊断包。
