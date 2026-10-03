@@ -10,7 +10,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/sync/external_reader_import/external_reader_import_service.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
 import 'package:fushi/utils.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 
 /// 「从 Hoshi Reader 导入」页：选 `.hoshi` 书库备份 → 扫描并预览 → 逐本导入书、
 /// 阅读位置与统计 → 结果报告。落库逻辑全在 [ExternalReaderImportService]，
@@ -107,7 +107,7 @@ class _ExternalReaderImportPageState
       _progressValue = 0;
       _progressLabel = null;
     });
-    await WakelockPlus.enable();
+    await setScreenWakelock(enable: true, source: 'external reader import');
     try {
       final ExternalReaderImportReport report = await _service.run(
         backup,
@@ -137,7 +137,7 @@ class _ExternalReaderImportPageState
       if (!mounted) return;
       setState(() => _error = '$e');
     } finally {
-      await WakelockPlus.disable();
+      await setScreenWakelock(enable: false, source: 'external reader import');
       // 移动端系统选择器把整份备份拷进了缓存：用完即清，免得几个 GB 常驻。
       if (Platform.isAndroid || Platform.isIOS) {
         await FilePicker.platform.clearTemporaryFiles();

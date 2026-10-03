@@ -185,10 +185,24 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#11.
+Copy the new upstream version over this folder, then re-apply deltas #1–#12.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
+
+12. `linux/CMakeLists.txt`: the downloaded ORT library is bundled as its real
+    ELF under the SONAME (`libonnxruntime.so.1`) instead of the unversioned
+    `lib/libonnxruntime.so` path. In the ORT tarball that path is a symlink
+    chain (`.so` -> `.so.1` -> `.so.1.22.0`); `install(FILES)` copied the first
+    link verbatim, so `bundle/lib` held a dangling `libonnxruntime.so` while the
+    runner and the plugin both carry `DT_NEEDED libonnxruntime.so.1`. The build
+    machine never noticed (the plugin's build RUNPATH points back into the
+    build tree), but on any other machine the loader refused to start the whole
+    app. The plugin target also gets `$ORIGIN` in its RUNPATH: its own
+    `DT_NEEDED libonnxruntime.so.1` is resolved through the plugin's RUNPATH
+    (the runner's `$ORIGIN/lib` does not cover transitive dependencies), which
+    upstream left as the absolute build-tree path only. Verified with `ldd` on
+    a bundle copied into a clean container.
 
 Before bumping the Windows ORT pin, update both NuGet package versions and
 SHA-256 values together, verify the DirectML package's declared

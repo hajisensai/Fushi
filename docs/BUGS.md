@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2683 条。点号进各自文件。
+> 共 2684 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
+| [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
 | [BUG-2920](bugs/BUG-2920-shelf-read-status-filter-reset.md) | ✅ | ✅ | 书架阅读状态筛选每次打开软件都重置 |
 | [BUG-2919](bugs/BUG-2919-reader-longpress-steals-swipe.md) | ✅ | ✅ | 阅读器长按选择太容易触发，慢滑翻页被抢成选区 |
 | [BUG-2918](bugs/BUG-2918-dashboard-continue-shows-completed-book.md) | ✅ | ✅ | 首页继续面板仍显示已读完的书 |
