@@ -166,7 +166,12 @@ class _MaterialNavCluster extends StatelessWidget {
     // 填充 + 背景模糊）；贴屏幕边，不画描边。off 时结构与像素都不变。
     final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
     Widget glassWrap(Color base, Widget material) => glass
-        ? FushiGlassSurface(baseColor: base, showBorder: false, child: material)
+        ? FushiGlassSurface(
+            baseColor: base,
+            showBorder: false,
+            grouped: true,
+            child: material,
+          )
         : material;
     if (horizontal) {
       return glassWrap(colors.surfaceContainer, Material(

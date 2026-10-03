@@ -12,6 +12,7 @@ import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// Compact, always-present controls for the Windows no-OCR lookup surface.
 ///
@@ -221,7 +222,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
   }
 
   Future<bool> _confirmRisk(BuildContext context) async {
-    final bool? accepted = await showDialog<bool>(
+    final bool? accepted = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Row(
@@ -276,7 +277,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
       final GalLookupSurfaceVariantV1? seed = controller.profile
           ?.nearestVariantForClient(client, slot: activeSlot);
       GalLookupCalibrationSlotV1? requestedSlot;
-      draft = await showDialog<GalLookupCalibrationDraft>(
+      draft = await showAppDialog<GalLookupCalibrationDraft>(
         context: hostContext,
         barrierDismissible: false,
         builder: (BuildContext dialogContext) => GalLookupSamplesDialog(
@@ -416,7 +417,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
 
     bool? committed;
     try {
-      committed = await showDialog<bool>(
+      committed = await showAppDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) => GalAttachedCalibrationDialog(
@@ -438,7 +439,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
   }
 
   Future<void> _clearProfile(BuildContext context) async {
-    final bool? clear = await showDialog<bool>(
+    final bool? clear = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(t.game_lookup_attached_profile_clear_title),

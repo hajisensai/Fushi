@@ -11,13 +11,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 弹出系统 OCR 模型配置。弹窗打开时自己查一次状态。
 Future<void> showSystemOcrSetupDialog(
   BuildContext context, {
   required String language,
   SystemOcrModelSetup setup = const MethodChannelSystemOcr(),
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (BuildContext context) =>
       SystemOcrSetupDialog(language: language, setup: setup),

@@ -18,6 +18,8 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -732,7 +734,16 @@ class ThemeNotifier extends ChangeNotifier {
     this._textThemeBuilder, {
     String Function()? customThemeIdGenerator,
   }) : _customThemeIdGenerator =
-            customThemeIdGenerator ?? _defaultCustomThemeIdGenerator;
+            customThemeIdGenerator ?? _defaultCustomThemeIdGenerator {
+    // 系统「降低透明度」切换时玻璃要立刻回退 / 恢复：重建主题即可。
+    SystemTransparency.reduceTransparency.addListener(notifyListeners);
+  }
+
+  @override
+  void dispose() {
+    SystemTransparency.reduceTransparency.removeListener(notifyListeners);
+    super.dispose();
+  }
 
   // Stable, testable id source. Defaults to epoch-millis + a monotonic counter
   // so two entries created in the same millisecond never collide. Tests can
@@ -1097,10 +1108,27 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
   /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
-  FushiGlassMaterial get glassMaterial => FushiGlassMaterial.fromPrefValue(
-        _get('glass_material', defaultValue: FushiGlassMaterial.off.name)
-            as String?,
-      );
+  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；`glass_material` 偏好
+  /// 只在 frosted / liquid 两档间选，缺省 liquid（引擎不支持时
+  /// [glassMaterialOf] 再降级为 frosted）。
+  FushiGlassMaterial get glassMaterial {
+    if (designSystem != 'glass') return FushiGlassMaterial.off;
+    // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
+    // 色阶与 BackdropFilter 一起关），窗口材质也随之关闭。
+    if (SystemTransparency.reduceTransparency.value) {
+      return FushiGlassMaterial.off;
+    }
+    return glassMaterialTier;
+  }
+
+  /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
+  FushiGlassMaterial get glassMaterialTier =>
+      FushiGlassMaterial.fromPrefValue(
+                _get('glass_material', defaultValue: 'liquid') as String?,
+              ) ==
+              FushiGlassMaterial.frosted
+          ? FushiGlassMaterial.frosted
+          : FushiGlassMaterial.liquid;
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
     await _set('glass_material', value.name);
@@ -1122,8 +1150,11 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Design system override ────────────────────────────────────────
 
+  /// 对外开放的设计系统值：auto / material（MD3）/ glass（玻璃）。玻璃是 MD3
+  /// 组件之上的一层材质皮肤，渲染器仍走 Material（见 [designSystemTheme]）。
   static String normalizeDesignSystemPreference(Object? value) {
-    return value == 'material' ? 'material' : 'auto';
+    if (value == 'material' || value == 'glass') return value! as String;
+    return 'auto';
   }
 
   _DesignSystemPreferenceMigration? _normalizeHiddenDesignSystemInMemory() {
@@ -1149,6 +1180,7 @@ class ThemeNotifier extends ChangeNotifier {
   FushiDesignSystem get designSystemTheme {
     switch (designSystem) {
       case 'material':
+      case 'glass':
         return FushiDesignSystem.material;
       case 'cupertino':
         return FushiDesignSystem.cupertino;
@@ -1779,6 +1811,26 @@ ThemeData buildFushiThemeData({
 }) {
   final ColorScheme cs = scheme;
   final TextTheme tt = textTheme;
+  // 玻璃设计系统：Flutter 自己构建 Material 的那些表面（对话框、菜单、下拉、
+  // 提示条、tooltip、卡片、抽屉、裸 showModalBottomSheet、AppBar）在主题层统一
+  // 染成半透明，全平台、全调用点一次生效。能挂 BackdropFilter 的表面（导航、
+  // adaptiveModalSheet、FushiDialogFrame、悬浮按钮）由 FushiGlassSurface 另外加
+  // 模糊；对话框背后的模糊由 showAppDialog 统一铺。墨水屏下恒实心。
+  final bool glassy = glass != FushiGlassMaterial.off && !eink;
+  Color? glassTint(Color color, double Function(Brightness) opacity) =>
+      glassy ? color.withValues(alpha: opacity(cs.brightness)) : null;
+  final Color? glassMenuColor = glassTint(
+    cs.surfaceContainer,
+    fushiGlassOverlayOpacity,
+  );
+  final MenuStyle? glassMenuStyle = glassMenuColor == null
+      ? null
+      : MenuStyle(
+          backgroundColor: WidgetStatePropertyAll<Color>(glassMenuColor),
+          surfaceTintColor: const WidgetStatePropertyAll<Color>(
+            Colors.transparent,
+          ),
+        );
   return ThemeData(
     useMaterial3: true,
     colorScheme: cs,
@@ -1832,11 +1884,27 @@ ThemeData buildFushiThemeData({
       FushiEinkTheme(eink),
       FushiGlassTheme(glass),
     ],
-    appBarTheme: const AppBarTheme(
+    // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
+    // vibrancy）或页面底色，不再自带一条实心色带。
+    appBarTheme: AppBarTheme(
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
+      backgroundColor: glassy ? Colors.transparent : null,
+      surfaceTintColor: glassy ? Colors.transparent : null,
     ),
+    drawerTheme: DrawerThemeData(
+      backgroundColor: glassTint(
+        cs.surfaceContainerLow,
+        fushiGlassOverlayOpacity,
+      ),
+    ),
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: glassTint(cs.surface, fushiGlassFillOpacity),
+    ),
+    menuTheme: MenuThemeData(style: glassMenuStyle),
+    menuBarTheme: MenuBarThemeData(style: glassMenuStyle),
+    dropdownMenuTheme: DropdownMenuThemeData(menuStyle: glassMenuStyle),
     // 滑块 / 轨道配色交回 M3 默认（选中：轨道 primary、滑块 onPrimary、勾
     // onPrimaryContainer；未选中：轨道 surfaceContainerHighest、滑块 outline）。
     // 以前覆写成「轨道 primaryContainer + 滑块 primary」是 M2 的配法，而 M3 的
@@ -1867,16 +1935,25 @@ ThemeData buildFushiThemeData({
         borderRadius: FushiBorderRadius.control,
       ),
       labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
+      backgroundColor: glassTint(cs.surfaceContainer, fushiGlassFillOpacity),
     ),
     popupMenuTheme: PopupMenuThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.menu,
       ),
+      color: glassMenuColor,
+      surfaceTintColor: glassy ? Colors.transparent : null,
     ),
+    // 玻璃下对话框本体半透明，背后由 showAppDialog 铺整屏模糊。
     dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.dialog,
       ),
+      backgroundColor: glassTint(
+        cs.surfaceContainerHigh,
+        fushiGlassFillOpacity,
+      ),
+      surfaceTintColor: glassy ? Colors.transparent : null,
     ),
     listTileTheme: const ListTileThemeData(),
     inputDecorationTheme: InputDecorationTheme(
@@ -1913,6 +1990,7 @@ ThemeData buildFushiThemeData({
       ),
       insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
+      backgroundColor: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
     // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
     // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路
@@ -1922,7 +2000,8 @@ ThemeData buildFushiThemeData({
       exitDuration: const Duration(milliseconds: 100),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: cs.inverseSurface,
+        color: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity) ??
+            cs.inverseSurface,
         borderRadius: FushiBorderRadius.chip,
       ),
       textStyle: (tt.labelMedium ?? const TextStyle()).copyWith(
@@ -1942,7 +2021,8 @@ ThemeData buildFushiThemeData({
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      color: cs.surfaceContainerLow,
+      color: glassTint(cs.surfaceContainerLow, fushiGlassContainerOpacity) ??
+          cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.card,
         // E-ink: surfaceContainerLow == the page background, so cards need a
@@ -1950,17 +2030,28 @@ ThemeData buildFushiThemeData({
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
     ),
-    bottomSheetTheme: const BottomSheetThemeData(
+    // 裸 showModalBottomSheet 的底色；adaptiveModalSheet 自己挂玻璃表面、底色
+    // 透明，不吃这里。没有模糊，所以用浮层档的不透明度。
+    bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.sheet,
       ),
       surfaceTintColor: Colors.transparent,
+      backgroundColor: glassTint(
+        cs.surfaceContainerLow,
+        fushiGlassOverlayOpacity,
+      ),
+      modalBackgroundColor: glassTint(
+        cs.surfaceContainerLow,
+        fushiGlassOverlayOpacity,
+      ),
     ),
+    // 玻璃下悬浮按钮底色让位给外包的 FushiGlassFab（液态档折射、毛玻璃档模糊）。
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       elevation: 0,
       highlightElevation: 0,
-      backgroundColor: cs.primaryContainer,
+      backgroundColor: glassy ? Colors.transparent : cs.primaryContainer,
       foregroundColor: cs.onPrimaryContainer,
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.control,

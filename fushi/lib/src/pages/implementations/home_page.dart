@@ -1351,11 +1351,13 @@ class _HomePageState extends BasePageState<HomePage>
                   ),
                 ))));
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
-    // Windows 11 Mica 生效时首页外壳 scaffold 半透明让系统背景透出；push 出去
-    // 的页面不受影响，仍是实心底。
+    // 系统窗口材质（Windows 11 Mica / macOS vibrancy）生效时首页外壳 scaffold
+    // 半透明让系统背景透出；push 出去的页面不受影响，仍是实心底。
+    // BackdropGroup：外壳里并排的玻璃导航（侧栏 / 底栏）用
+    // BackdropFilter.grouped 共用一次背景采样，不再各自抓一遍屏。
     return ValueListenableBuilder<bool>(
       valueListenable: WindowCaptionChannel.systemBackdropActive,
-      child: home,
+      child: BackdropGroup(child: home),
       builder: (BuildContext context, bool mica, Widget? child) {
         if (!mica) return child!;
         final ThemeData theme = Theme.of(context);
@@ -2994,16 +2996,18 @@ class _HomePageState extends BasePageState<HomePage>
               right: 20,
               bottom: 20,
               child: SafeArea(
-                child: FloatingActionButton.small(
-                  key: const ValueKey<String>(
-                    'video-source-background-task-panel',
-                  ),
-                  tooltip: t.video_source_scrape_tasks_open,
-                  onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-                  child: Icon(
-                    controller.pendingConfirmation == null
-                        ? Icons.sync
-                        : Icons.rule_folder_outlined,
+                child: FushiGlassFab(
+                  child: FloatingActionButton.small(
+                    key: const ValueKey<String>(
+                      'video-source-background-task-panel',
+                    ),
+                    tooltip: t.video_source_scrape_tasks_open,
+                    onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+                    child: Icon(
+                      controller.pendingConfirmation == null
+                          ? Icons.sync
+                          : Icons.rule_folder_outlined,
+                    ),
                   ),
                 ),
               ),

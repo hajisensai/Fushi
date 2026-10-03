@@ -145,10 +145,12 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
     return FushiPageScaffold(
       title: t.tag_label,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _quickCreateTag,
-        icon: const Icon(Icons.add),
-        label: Text(t.tag_new),
+      floatingActionButton: FushiGlassFab(
+        child: FloatingActionButton.extended(
+          onPressed: _quickCreateTag,
+          icon: const Icon(Icons.add),
+          label: Text(t.tag_new),
+        ),
       ),
       body: _allTags.isEmpty
           ? Center(

@@ -706,10 +706,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       appBar: AppBar(
         title: Text(t.games),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addGame,
-        icon: const Icon(Icons.add),
-        label: Text(t.game_add),
+      floatingActionButton: FushiGlassFab(
+        child: FloatingActionButton.extended(
+          onPressed: _addGame,
+          icon: const Icon(Icons.add),
+          label: Text(t.game_add),
+        ),
       ),
       body: body,
     );

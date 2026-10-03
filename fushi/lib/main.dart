@@ -117,6 +117,7 @@ import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
 
 Color? _savedSplashColor;
 
@@ -245,6 +246,8 @@ void main([List<String> args = const <String>[]]) {
     // 词典），写在 main 里哪个入口都不会漏。
     installEngineHostBindings();
     installAsrHostBindings();
+    // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
+    unawaited(SystemTransparency.initialize());
     // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
     // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
     await loadAsrModelCatalog();
@@ -2262,9 +2265,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               caption: cs.surface,
               text: cs.onSurface,
             );
-            // Glass material on Windows 11: ask the runner for the Mica system
-            // backdrop. The home shell only turns translucent once the runner
-            // reports success (`systemBackdropActive`), so Win10 stays solid.
+            // Glass design system: ask for the system window material (Windows
+            // 11 Mica via the runner, macOS NSVisualEffectView vibrancy). The
+            // home shell only turns translucent once the platform reports
+            // success (`systemBackdropActive`), so Win10 / others stay solid.
             WindowCaptionChannel.setSystemBackdrop(
               mica: glassMaterialOf(context) != FushiGlassMaterial.off,
               dark: Theme.of(context).brightness == Brightness.dark,

@@ -1257,7 +1257,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
   Future<void> _showErrorDetail(BuildContext context) async {
     final String raw = job.lastError?.trim() ?? '';
     if (raw.isEmpty) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
         final ThemeData theme = Theme.of(dialogContext);

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 诊断类错误的呈现通道（BUG-1703）。
 ///
@@ -18,7 +19,7 @@ Future<void> showErrorDetails(
   required Object error,
 }) {
   final String details = error.toString();
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       final ThemeData theme = Theme.of(dialogContext);

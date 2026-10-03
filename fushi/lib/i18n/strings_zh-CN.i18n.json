@@ -6247,9 +6247,9 @@
   "ocr_system_model_play_services_fix": "修复 Google Play 服务",
   "ocr_system_model_play_services_unavailable": "本机没有可用的 Google Play 服务，无法使用系统 OCR。",
   "manga_ocr_ai_mode_low_confidence_legacy": "启用本选项之前识别的卷没有置信度记录，此档位不会动它们。想让大模型重读这类卷里没把握的字，请用本机模型对该卷重新识别。",
-  "glass_material": "玻璃材质",
-  "glass_material_hint": "导航栏、底部弹层与对话框变为半透明并透出背后内容。液态玻璃在图形引擎支持时额外加折射效果，不支持时按毛玻璃显示。墨水屏模式与系统增强对比度下自动关闭。",
-  "glass_material_off": "关闭",
   "glass_material_frosted": "毛玻璃",
-  "glass_material_liquid": "液态玻璃"
+  "glass_material_liquid": "液态玻璃",
+  "design_system_glass": "玻璃",
+  "glass_material": "玻璃材质",
+  "glass_material_hint": "毛玻璃模糊表面背后的内容；液态玻璃在图形引擎支持时额外加折射与高光，不支持时按毛玻璃显示。Windows 11 与 macOS 上窗口背景会透出桌面。墨水屏模式与系统增强对比度下回退为实心表面。"
 }

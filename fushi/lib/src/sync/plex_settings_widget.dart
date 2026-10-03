@@ -109,7 +109,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
 
   Future<void> _showError(String message) async {
     if (!mounted) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(t.plex_sign_in_failed),

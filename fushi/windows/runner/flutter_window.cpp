@@ -37,6 +37,7 @@
 #include "ime_space_dispatch.h"
 #include "low_level_mouse_hook.h"
 #include "system_font_list.h"
+#include "system_transparency_channel.h"
 #include "utils.h"
 #include "window_capture.h"
 #include "window_recorder.h"
@@ -737,6 +738,7 @@ bool FlutterWindow::OnCreate() {
   RegisterMagpieChannel();
   RegisterGameStreamInputChannel();
   RegisterSystemFontListChannel(flutter_controller_->engine()->messenger());
+  RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -4632,6 +4634,8 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       const auto* area = reinterpret_cast<const wchar_t*>(lparam);
       if (area != nullptr && wcscmp(area, L"ImmersiveColorSet") == 0) {
         NotifySystemColorChanged();
+        // 「透明效果」开关同样以 ImmersiveColorSet 广播；内部按值去重。
+        NotifySystemTransparencySettingChanged();
       }
       break;
     }

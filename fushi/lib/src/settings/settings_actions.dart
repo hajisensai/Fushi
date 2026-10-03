@@ -183,7 +183,7 @@ Future<void> setUpdateChannel(
 Widget buildDesignSystemSelector(SettingsContext settingsContext) {
   // Apple 设计系统选项和历史值不对外开放；Cupertino / macOS renderer 仅作为
   // 内部能力保留。ThemeNotifier 会在加载、刷新和写入边界把这些隐藏值归一化为 auto。
-  const List<String> visibleValues = <String>['auto', 'material'];
+  const List<String> visibleValues = <String>['auto', 'material', 'glass'];
   final String persisted = settingsContext.appModel.themeNotifier.designSystem;
   // 分段控件要求 selected 必须落在 segments 内；这里保留防御性钳制，持久层的
   // Apple / 未知旧值已由 ThemeNotifier 迁移为 auto。
@@ -203,6 +203,11 @@ Widget buildDesignSystemSelector(SettingsContext settingsContext) {
         value: 'material',
         label: Text('MD3'),
         tooltip: 'Material Design 3',
+      ),
+      ButtonSegment<String>(
+        value: 'glass',
+        label: Text(t.design_system_glass),
+        tooltip: t.design_system_glass,
       ),
     ],
     selected: selected,

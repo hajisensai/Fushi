@@ -729,7 +729,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   Future<void> _manualLookup() async {
     final BuildContext? ctx = _navigatorContext;
     if (ctx == null) return;
-    final String? word = await showDialog<String>(
+    final String? word = await showAppDialog<String>(
       context: ctx,
       builder: (BuildContext context) => const _ManualLookupDialog(),
     );

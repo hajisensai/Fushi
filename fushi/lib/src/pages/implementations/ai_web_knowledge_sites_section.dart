@@ -149,7 +149,7 @@ class _AiWebKnowledgeCustomSitesSectionState
   }
 
   Future<void> _add(PreferencesRepository prefs) async {
-    final WebKnowledgeSite? site = await showDialog<WebKnowledgeSite>(
+    final WebKnowledgeSite? site = await showAppDialog<WebKnowledgeSite>(
       context: context,
       builder: (BuildContext dialogContext) => const _AddSiteDialog(),
     );

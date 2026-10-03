@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:macos_ui/macos_ui.dart'
+    show NSVisualEffectViewMaterial, WindowManipulator;
 
 /// 把标题栏配色推给 Windows 原生 runner（DWM caption / text color）。
 ///
@@ -41,22 +43,25 @@ class WindowCaptionChannel {
     }
   }
 
-  /// 原生 Windows 11 Mica 系统背景是否已在窗口上生效。只有它为 true 时，
-  /// 首页外壳才把 scaffold 底色调成半透明让 Mica 透出来；Win10 / 旧 runner /
-  /// 非 Windows 恒 false，外壳保持实心。
+  /// 系统窗口材质（Windows 11 Mica / macOS NSVisualEffectView vibrancy）是否
+  /// 已在窗口上生效。只有它为 true 时，首页外壳才把 scaffold 底色调成半透明让
+  /// 系统材质透出来；Win10 / 旧 runner / 其它平台恒 false，外壳保持实心。
   static final ValueNotifier<bool> systemBackdropActive =
       ValueNotifier<bool>(false);
 
   static bool? _lastMica;
   static bool? _lastDark;
 
-  /// 玻璃材质开启时请求 runner 打开 Mica（[mica]），[dark] 决定 Mica 的明暗。
+  /// 玻璃材质开启时请求系统窗口材质（[mica]），[dark] 决定材质的明暗。
+  /// Windows 走 runner 的 DWM Mica；macOS 走 macos_window_utils 的
+  /// NSVisualEffectView（`underWindowBackground` 是 Apple 给整窗背景的
+  /// vibrancy 材质，关闭时回到不透明的 `windowBackground`）。
   /// 同值不重复下发；结果写进 [systemBackdropActive]。
   static Future<void> setSystemBackdrop({
     required bool mica,
     required bool dark,
   }) async {
-    if (!Platform.isWindows) {
+    if (!Platform.isWindows && !Platform.isMacOS) {
       return;
     }
     if (mica == _lastMica && dark == _lastDark) {
@@ -64,6 +69,13 @@ class WindowCaptionChannel {
     }
     _lastMica = mica;
     _lastDark = dark;
+    if (Platform.isMacOS) {
+      systemBackdropActive.value = await _setMacOSBackdrop(
+        vibrancy: mica,
+        dark: dark,
+      );
+      return;
+    }
     bool active = false;
     try {
       active = await _channel.invokeMethod<bool>(
@@ -77,6 +89,27 @@ class WindowCaptionChannel {
       active = false;
     }
     systemBackdropActive.value = active;
+  }
+
+  static Future<bool> _setMacOSBackdrop({
+    required bool vibrancy,
+    required bool dark,
+  }) async {
+    try {
+      // vibrancy 材质跟随窗口外观而不是 app 主题；app 钉了深 / 浅色时把窗口
+      // 外观对齐，否则深色 app 底下会透出浅色材质。
+      await WindowManipulator.overrideMacOSBrightness(dark: dark);
+      await WindowManipulator.setMaterial(
+        vibrancy
+            ? NSVisualEffectViewMaterial.underWindowBackground
+            : NSVisualEffectViewMaterial.windowBackground,
+      );
+      return vibrancy;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 
   /// TODO-615：主动熄灭 Windows 任务栏的「请求注意」高亮（FlashWindowEx +

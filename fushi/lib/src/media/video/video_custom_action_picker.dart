@@ -33,7 +33,7 @@ Future<VideoCustomActionPick?> showVideoCustomActionPicker({
   required int slotNumber,
   required ShortcutAction? current,
 }) {
-  return showDialog<VideoCustomActionPick>(
+  return showAppDialog<VideoCustomActionPick>(
     context: context,
     builder: (BuildContext dialogContext) => SimpleDialog(
       title: Text(t.video_control_custom_action(index: slotNumber)),

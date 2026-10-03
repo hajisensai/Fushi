@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 
 /// 预留文字块高度时统一加的余量（行高取整、字体 metrics 与理论值的零头）。
 const double kTextBlockSlack = 4.0;
@@ -59,27 +61,32 @@ class FushiDesignTokens {
   // theme actually changes, and repeat calls within a frame return the cache.
   static ColorScheme? _cachedScheme;
   static TextTheme? _cachedTextTheme;
+  static bool? _cachedGlass;
   static FushiDesignTokens? _cached;
 
   static FushiDesignTokens of(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final TextTheme textTheme = theme.textTheme;
+    // 玻璃生效（已扣除墨水屏 / 高对比度 / 降低透明度）时面板色阶半透明。
+    final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
     final FushiDesignTokens? cached = _cached;
     if (cached != null &&
         identical(_cachedScheme, scheme) &&
-        identical(_cachedTextTheme, textTheme)) {
+        identical(_cachedTextTheme, textTheme) &&
+        _cachedGlass == glass) {
       return cached;
     }
     final FushiDesignTokens tokens = FushiDesignTokens(
       radii: const FushiRadii(),
-      surfaces: FushiSurfaceColors.fromScheme(scheme),
+      surfaces: FushiSurfaceColors.fromScheme(scheme, glass: glass),
       type: FushiTypeRoles.fromTheme(theme),
       spacing: const FushiSpacingTokens(),
       density: const FushiDensityTokens(),
     );
     _cachedScheme = scheme;
     _cachedTextTheme = textTheme;
+    _cachedGlass = glass;
     _cached = tokens;
     return tokens;
   }
@@ -182,16 +189,28 @@ class FushiSurfaceColors {
   final Color onSurface;
   final Color onVariant;
 
-  factory FushiSurfaceColors.fromScheme(ColorScheme scheme) {
+  /// [glass] 为 true（玻璃设计系统生效）时，分组 / 卡片 / 搜索 / 浮层这些
+  /// 叠在页面之上的面板色阶改为半透明，透出外壳背后的系统窗口材质
+  /// （Windows 11 Mica / macOS vibrancy）与下层内容；[page] 是页面底色本身，
+  /// 恒实心（透明了窗口就直接透黑）。
+  factory FushiSurfaceColors.fromScheme(
+    ColorScheme scheme, {
+    bool glass = false,
+  }) {
+    Color panel(Color color) => glass
+        ? color.withValues(
+            alpha: fushiGlassContainerOpacity(scheme.brightness),
+          )
+        : color;
     return FushiSurfaceColors(
       primary: scheme.primary,
       primaryContainer: scheme.primaryContainer,
       page: scheme.surface,
-      group: scheme.surfaceContainerLow,
-      card: scheme.surfaceContainer,
+      group: panel(scheme.surfaceContainerLow),
+      card: panel(scheme.surfaceContainer),
       selected: scheme.secondaryContainer,
-      search: scheme.surfaceContainerHigh,
-      overlay: scheme.surfaceContainerHighest,
+      search: panel(scheme.surfaceContainerHigh),
+      overlay: panel(scheme.surfaceContainerHighest),
       outline: scheme.outlineVariant,
       onSurface: scheme.onSurface,
       onVariant: scheme.onSurfaceVariant,

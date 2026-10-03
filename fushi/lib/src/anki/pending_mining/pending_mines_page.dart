@@ -251,10 +251,12 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
             ),
       floatingActionButton: _rows.isEmpty
           ? null
-          : FloatingActionButton.extended(
-              onPressed: _sending ? null : _sendAll,
-              icon: const Icon(Icons.send),
-              label: Text(t.anki_pending_mines_send_all),
+          : FushiGlassFab(
+              child: FloatingActionButton.extended(
+                onPressed: _sending ? null : _sendAll,
+                icon: const Icon(Icons.send),
+                label: Text(t.anki_pending_mines_send_all),
+              ),
             ),
     );
   }

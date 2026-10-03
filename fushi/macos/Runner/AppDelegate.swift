@@ -15,6 +15,10 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   /// Dart 最后一次表达的查词输入法语言。app 重新回到前台时按它再切回去——否则
   /// 用户 Cmd-Tab 出去一趟回来，查词页面还开着但输入法已经不是他选的那个了。
   private var desiredLookupImeTag: String?
+  /// 系统「降低透明度」订阅（`app.fushi/system_transparency`）。强引用 channel 与
+  /// observer token，进程内只装一次。
+  private var systemTransparencyChannel: FlutterMethodChannel?
+  private var systemTransparencyObserver: NSObjectProtocol?
 
   override func applicationDidResignActive(_ notification: Notification) {
     // 离开前台就把用户的输入法放回去：切的是系统全局输入源，留着会漏到别的 app。
@@ -134,10 +138,43 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
           result(FlutterMethodNotImplemented)
         }
       }
+
+      installSystemTransparencyChannel(binaryMessenger: controller.engine.binaryMessenger)
     } else {
       NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
     super.applicationDidFinishLaunching(notification)
+  }
+
+  /// 系统设置「辅助功能 → 显示 → 降低透明度」：Dart 侧 `SystemTransparency`
+  /// 经 `getReduceTransparency` 读一次，之后由这里在辅助显示选项变化时推
+  /// `reduceTransparencyChanged`（与 Windows / iOS 同一契约）。
+  private func installSystemTransparencyChannel(binaryMessenger: FlutterBinaryMessenger) {
+    guard systemTransparencyChannel == nil else { return }
+    let channel = FlutterMethodChannel(
+      name: "app.fushi/system_transparency",
+      binaryMessenger: binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getReduceTransparency":
+        result(NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    systemTransparencyChannel = channel
+    var lastValue = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    systemTransparencyObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      // 该通知覆盖对比度 / 减少动态效果等全部辅助显示选项，按值去重只推透明度变化。
+      let value = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+      guard value != lastValue else { return }
+      lastValue = value
+      self?.systemTransparencyChannel?.invokeMethod("reduceTransparencyChanged", arguments: value)
+    }
   }
 
   // BUG-2508 真机取证钩子（FUSHI_TEST_INPUT 门控）。坐标口径：Flutter 逻辑坐标

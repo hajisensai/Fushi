@@ -869,7 +869,7 @@ Future<bool> showStatGoalEditDialog(
         : appModel.readingGoalWeeklyChars.toString(),
   );
 
-  final bool? saved = await showDialog<bool>(
+  final bool? saved = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
@@ -1185,7 +1185,7 @@ Future<void> showStatDetailSurface(
           statSheetHeightCap(sheetContext, child: builder(sheetContext)),
     );
   }
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);

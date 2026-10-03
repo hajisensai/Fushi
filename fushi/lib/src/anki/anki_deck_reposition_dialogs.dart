@@ -23,7 +23,7 @@ Future<void> showAnkiDeckRepositionDialog(
   required AnkiViewModel viewModel,
   required List<String> loadedFrequencyDictionaries,
 }) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext ctx) => _RepositionDialog(
       viewModel: viewModel,
@@ -420,7 +420,7 @@ Future<T?> runAnkiRepositionWithProgress<T>(
   final ValueNotifier<bool> cancelRequested = ValueNotifier<bool>(false);
   BuildContext? dialogContext;
   bool dialogClosed = false;
-  unawaited(showDialog<void>(
+  unawaited(showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext ctx) {
@@ -523,7 +523,7 @@ Future<bool> showAnkiRepositionPreviewDialog(
   AnkiRepositionPlan plan, {
   int maxRows = 40,
 }) async {
-  final bool? confirmed = await showDialog<bool>(
+  final bool? confirmed = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext ctx) {
       final ThemeData theme = Theme.of(ctx);

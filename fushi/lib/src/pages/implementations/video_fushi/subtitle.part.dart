@@ -3159,7 +3159,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // （Esc / 点外部 / 抛异常）都必须归还——此前这里漏了归还，关掉弹窗后视频快捷键
     // 直到下次点画面才恢复，与同文件 Jimaku 对话框 / FilePicker 的既有范式不一致。
     await _focusOwnership.guardOverlay(
-      () => showDialog<void>(
+      () => showAppDialog<void>(
         context: context,
         useRootNavigator: true,
         builder: (BuildContext _) => SubtitleWaveformZoomView(

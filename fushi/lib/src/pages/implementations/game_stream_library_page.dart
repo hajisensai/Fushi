@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 一台已配对主机上一个可用的串流客户端（已绑定到能连通的那个地址）。
 class GameStreamHostConnection {
@@ -385,7 +386,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     });
     GameStreamSession? session;
     try {
-      session = await showDialog<GameStreamSession>(
+      session = await showAppDialog<GameStreamSession>(
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) => _GameStreamLaunchDialog(

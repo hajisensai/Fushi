@@ -9119,7 +9119,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_buildVideoQuickSettingsSheet] 判定本次跑 Impeller + channel 已接线时才接线此动作。
   Future<void> _switchToSkiaAndRestart() async {
     final bool confirmed =
-        await showDialog<bool>(
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext ctx) => AlertDialog(
             title: Text(t.video_render_skia_fix_confirm_title),

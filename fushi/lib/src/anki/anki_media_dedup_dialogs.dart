@@ -33,7 +33,7 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
   final ValueNotifier<bool> cancelRequested = ValueNotifier<bool>(false);
   BuildContext? dialogContext;
   bool dialogClosed = false;
-  unawaited(showDialog<void>(
+  unawaited(showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext ctx) {
@@ -171,7 +171,7 @@ Future<bool> showAnkiMediaDedupPlanDialog(
   required bool offerDelete,
 }) async {
   if (plan.deletions.isEmpty) {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(t.anki_dedup_plan_title),
@@ -186,7 +186,7 @@ Future<bool> showAnkiMediaDedupPlanDialog(
     );
     return false;
   }
-  final bool? ok = await showDialog<bool>(
+  final bool? ok = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext context) => AlertDialog(
       title: Text(t.anki_dedup_plan_title),
@@ -265,7 +265,7 @@ Future<void> showAnkiMediaDedupReportDialog(
   final String full = result.cancelled
       ? '${t.anki_dedup_report_cancelled_note}\n\n$body'
       : body;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (BuildContext context) => AlertDialog(
       title: Text(t.anki_dedup_report_title),

@@ -2247,7 +2247,7 @@ String videoScrapeIdentifierWordsSubtitle(SettingsContext settingsContext) {
 Future<void> showVideoScrapeIdentifierWordsDialog(
   SettingsContext settingsContext,
 ) async {
-  final String? saved = await showDialog<String>(
+  final String? saved = await showAppDialog<String>(
     context: settingsContext.context,
     builder: (BuildContext dialogContext) => _IdentifierWordsDialog(
       initialText:

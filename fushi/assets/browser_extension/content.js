@@ -2874,6 +2874,31 @@ function fushiMirrorPopupSize(width, height) {
 
 // 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
 // 尺寸盒**（width/maxWidth/maxHeight/zoom），保留当前落点计算出来的 maxHeight。
+// 玻璃材质开关（样式在 content-css-overlay.css 的 @supports 段，取不到 backdrop-filter 的内核
+// 整段不生效、卡片保持不透明）。弹窗根 c 挂 .fushi-glass = 半透明填充；c 所在 shadow root 的
+// 宿主（#hibiki-popup-host，固定尺寸、内部滚动的那只卡）挂 data-fushi-glass="light|dark" =
+// 背景模糊 + 圆角 + 细描边。圆角变量 --fushi-radius-card 原本只 setProperty 在 c 上，宿主是 c 的
+// 父级读不到，这里同值补到宿主。关时两个钩子一并摘掉（同一宿主上 app 切回非玻璃即时复原）。
+function fushiApplyGlass(c, enabled, radius) {
+  if (!c) return;
+  const root = typeof c.getRootNode === 'function' ? c.getRootNode() : null;
+  const host = (root && root.host) || null;
+  if (c.classList) {
+    if (enabled) c.classList.add('fushi-glass');
+    else c.classList.remove('fushi-glass');
+  }
+  if (!host) return;
+  if (enabled) {
+    const dark = c.getAttribute && c.getAttribute('data-theme') === 'dark';
+    host.setAttribute('data-fushi-glass', dark ? 'dark' : 'light');
+    if (typeof radius === 'string' && radius) {
+      host.style.setProperty('--fushi-radius-card', radius);
+    }
+  } else {
+    host.removeAttribute('data-fushi-glass');
+  }
+}
+
 function fushiApplyTheme(c, theme, applyBox) {
   if (!theme || typeof theme !== 'object') return;
   for (const k in theme) {
@@ -2932,6 +2957,8 @@ function fushiApplyTheme(c, theme, applyBox) {
   // 浏览器弹窗的音调去重永远是关的（同一个词的同一个调型被每本词典各画一行）。
   // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
   window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
+  // 玻璃材质：app 设计系统选「玻璃」（且非墨水屏）时随 theme 下发 '1'；缺该 key = 旧 app，保持不透明。
+  fushiApplyGlass(c, theme['--fushi-glass'] === '1', theme['--fushi-radius-card']);
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经

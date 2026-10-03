@@ -2231,7 +2231,7 @@ class _HomeDashboardPageState
   /// setState 刷新目标行（与统计页读同一偏好，两处天然同步）。取消返回 null 不写。
   Future<void> _editDailyGoal() async {
     final AppModel appModel = ref.read(appProvider);
-    final int? saved = await showDialog<int>(
+    final int? saved = await showAppDialog<int>(
       context: context,
       builder: (BuildContext _) => _DailyGoalDialog(
         initialChars: appModel.readingGoalDailyChars,
@@ -3131,7 +3131,7 @@ class _HomeDashboardPageState
   }
 
   Future<void> _showBangumiWatched() async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => _BangumiWatchedDialog(
         service: ref.read(appProvider).mediaTrackingService,

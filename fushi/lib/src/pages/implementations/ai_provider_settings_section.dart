@@ -658,7 +658,7 @@ class _AiProviderSettingsSectionState
 
   /// 「添加提供商」：先选一个内置预设（含「自定义」），再按预设建条目。
   Future<void> _pickPresetAndAdd() async {
-    final AiProviderPreset? preset = await showDialog<AiProviderPreset>(
+    final AiProviderPreset? preset = await showAppDialog<AiProviderPreset>(
       context: context,
       builder: (BuildContext dialogContext) => FushiDialogFrame(
         padding: const EdgeInsets.symmetric(vertical: 12),

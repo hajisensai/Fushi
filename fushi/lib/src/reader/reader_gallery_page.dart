@@ -846,7 +846,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   }
 
   Future<void> _showLockedDialog(EpubImageRef ref) async {
-    final _LockedAction? action = await showDialog<_LockedAction>(
+    final _LockedAction? action = await showAppDialog<_LockedAction>(
       context: context,
       builder: (BuildContext dialogContext) =>
           _LockedIllustrationDialog(hint: _lockedHint(ref)),

@@ -160,7 +160,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// 把发现到的着色器列出多选 → 导入选中的到 mpv_shaders → 刷新 + 提示。
   Future<void> _pickAndImportFrom(List<String> found) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    final List<String>? picked = await showDialog<List<String>>(
+    final List<String>? picked = await showAppDialog<List<String>>(
       context: context,
       builder: (_) => _MpvShaderPickerDialog(
         discovered: found,
@@ -197,7 +197,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// 内容校验防 404/HTML 占位。
   Future<void> _downloadFromUrl() async {
     final TextEditingController urlController = TextEditingController();
-    final String? url = await showDialog<String>(
+    final String? url = await showAppDialog<String>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(t.video_shader_download_url),
@@ -258,7 +258,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
 
     // 进度对话框：取消只置 cancelToken（不自己 pop），关闭统一由本方法在下载收尾时
     // 做一次 pop——保证「关进度框」只有一条路径，不会与取消路径重复 pop 误伤视频页路由。
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext ctx) => PopScope(

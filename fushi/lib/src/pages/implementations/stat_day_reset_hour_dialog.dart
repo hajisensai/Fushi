@@ -79,7 +79,7 @@ Future<void> showStatDayResetHourDialog(
   BuildContext context,
   AppModel appModel,
 ) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) =>
         StatDayResetHourDialog(appModel: appModel),

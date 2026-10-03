@@ -163,7 +163,7 @@ class _SubtitleWaveformAlignPanelState
       setState(() => _probeUnavailable = true);
       return;
     }
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (BuildContext _) => SubtitleWaveformZoomView(

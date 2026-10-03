@@ -115,7 +115,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
 
   /// 逐批问题的弹窗。列表仍留在页面上供反复查看。
   Future<void> _showProblemsDialog(MigrationScanResult scan) async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(t.migration_import_entry),

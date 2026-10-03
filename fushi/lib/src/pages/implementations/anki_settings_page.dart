@@ -1404,7 +1404,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           SnackBar(content: Text(t.anki_lapis_up_to_date)),
         );
       case LapisApplyResult.needsConfirm:
-        final bool? ok = await showDialog<bool>(
+        final bool? ok = await showAppDialog<bool>(
           context: context,
           builder: (BuildContext context) => AlertDialog(
             title: Text(t.anki_lapis_foreign_edit_title),
@@ -1595,7 +1595,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
       return;
     }
-    final File? chosen = await showDialog<File>(
+    final File? chosen = await showAppDialog<File>(
       context: context,
       builder: (BuildContext context) => SimpleDialog(
         title: Text(t.anki_lapis_restore),
@@ -1609,7 +1609,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (chosen == null || !mounted) return;
-    final bool? ok = await showDialog<bool>(
+    final bool? ok = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(t.anki_lapis_restore),

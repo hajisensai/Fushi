@@ -294,7 +294,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   /// 展示某一层词形变化的语法说明（来自 `assets/transforms/<lang>.json`）。
   Future<void> _showGrammarDescription(DeinflectionTag tag) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => FushiDialogFrame(
         padding: EdgeInsets.all(tokens.spacing.card),

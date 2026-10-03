@@ -8,7 +8,9 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 毛玻璃材质（偏好 `glass_material`）第一阶段契约：
@@ -288,5 +290,139 @@ void main() {
     ).readAsStringSync();
     expect(source, contains('buildFushiThemeData('));
     expect(source.contains('glass:'), isFalse);
+  });
+  group('component-wide glass theme', () {
+    double alphaOf(Color? c) => c!.a;
+
+    test('glass tints every Flutter-built surface translucent', () {
+      final ThemeData t = theme(glass: FushiGlassMaterial.frosted);
+      expect(alphaOf(t.dialogTheme.backgroundColor), lessThan(1));
+      expect(alphaOf(t.popupMenuTheme.color), lessThan(1));
+      expect(
+        alphaOf(t.menuTheme.style!.backgroundColor!.resolve(<WidgetState>{})),
+        lessThan(1),
+      );
+      expect(
+        alphaOf(
+          t.dropdownMenuTheme.menuStyle!.backgroundColor!
+              .resolve(<WidgetState>{}),
+        ),
+        lessThan(1),
+      );
+      expect(alphaOf(t.bottomSheetTheme.backgroundColor), lessThan(1));
+      expect(alphaOf(t.snackBarTheme.backgroundColor), lessThan(1));
+      expect(alphaOf(t.cardTheme.color), lessThan(1));
+      expect(alphaOf(t.drawerTheme.backgroundColor), lessThan(1));
+      expect(alphaOf(t.navigationBarTheme.backgroundColor), lessThan(1));
+      expect(
+        alphaOf((t.tooltipTheme.decoration! as BoxDecoration).color),
+        lessThan(1),
+      );
+      expect(t.appBarTheme.backgroundColor, Colors.transparent);
+      expect(t.floatingActionButtonTheme.backgroundColor, Colors.transparent);
+    });
+
+    test('glass off keeps the stock solid component theme', () {
+      final ThemeData t = theme();
+      expect(t.dialogTheme.backgroundColor, isNull);
+      expect(t.popupMenuTheme.color, isNull);
+      expect(t.menuTheme.style, isNull);
+      expect(t.bottomSheetTheme.backgroundColor, isNull);
+      expect(t.snackBarTheme.backgroundColor, isNull);
+      expect(t.appBarTheme.backgroundColor, isNull);
+      expect(alphaOf(t.cardTheme.color), 1);
+      expect(t.floatingActionButtonTheme.backgroundColor,
+          t.colorScheme.primaryContainer);
+    });
+
+    test('e-ink never tints component surfaces', () {
+      final ThemeData t = theme(glass: FushiGlassMaterial.frosted, eink: true);
+      expect(t.dialogTheme.backgroundColor, isNull);
+      expect(t.appBarTheme.backgroundColor, isNull);
+      expect(alphaOf(t.cardTheme.color), 1);
+    });
+
+    test('glass panels are translucent but the page stays solid', () {
+      final ColorScheme cs = ColorScheme.fromSeed(seedColor: Colors.teal);
+      final FushiSurfaceColors glass =
+          FushiSurfaceColors.fromScheme(cs, glass: true);
+      final FushiSurfaceColors solid = FushiSurfaceColors.fromScheme(cs);
+      expect(glass.page.a, 1);
+      for (final Color c in <Color>[
+        glass.group,
+        glass.card,
+        glass.search,
+        glass.overlay,
+      ]) {
+        expect(c.a, lessThan(1));
+      }
+      for (final Color c in <Color>[
+        solid.group,
+        solid.card,
+        solid.search,
+        solid.overlay,
+      ]) {
+        expect(c.a, 1);
+      }
+    });
+
+    Future<void> openDialog(WidgetTester tester, ThemeData data) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: data,
+          home: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () => showAppDialog<void>(
+                context: context,
+                builder: (_) => const AlertDialog(content: Text('hi')),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('hi'), findsOneWidget);
+    }
+
+    testWidgets('showAppDialog blurs behind the dialog only under glass', (
+      WidgetTester tester,
+    ) async {
+      await openDialog(tester, theme(glass: FushiGlassMaterial.frosted));
+      expect(find.byType(FushiGlassDialogBackdrop), findsOneWidget);
+      expect(hasBlur(tester), isTrue);
+      final Rect glassRect = tester.getRect(find.byType(AlertDialog));
+
+      await openDialog(tester, theme());
+      expect(hasBlur(tester), isFalse);
+      // passthrough：包装不改变对话框本身的布局。
+      expect(tester.getRect(find.byType(AlertDialog).last), glassRect);
+    });
+
+    testWidgets('FushiGlassFab paints glass only when the theme clears the FAB',
+        (WidgetTester tester) async {
+      Future<void> pump(ThemeData data) => tester.pumpWidget(
+            MaterialApp(
+              theme: data,
+              home: Scaffold(
+                floatingActionButton: FushiGlassFab(
+                  child: FloatingActionButton(
+                    onPressed: () {},
+                    child: const Icon(Icons.add),
+                  ),
+                ),
+              ),
+            ),
+          );
+      await pump(theme());
+      expect(find.byType(FushiGlassSurface), findsNothing);
+
+      await pump(theme(glass: FushiGlassMaterial.frosted));
+      // MaterialApp 换主题走 AnimatedTheme 插值，等它落定。
+      await tester.pumpAndSettle();
+      expect(find.byType(FushiGlassSurface), findsOneWidget);
+      expect(hasBlur(tester), isTrue);
+    });
   });
 }

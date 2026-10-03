@@ -526,7 +526,7 @@ Future<void> _pickSubtitleColor(
   required void Function(Color color) onCommit,
 }) async {
   Color picked = initial;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       return AlertDialog(

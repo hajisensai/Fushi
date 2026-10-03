@@ -1221,7 +1221,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       return;
     }
 
-    final _RelocateChoice? choice = await showDialog<_RelocateChoice>(
+    final _RelocateChoice? choice = await showAppDialog<_RelocateChoice>(
       context: context,
       builder: (BuildContext context) =>
           _RelocateDialog(snapshot: snapshot!, files: files),
@@ -2840,7 +2840,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   /// TODO-2482：打开任务详情对话框（入口 = 任务行点击）。
   void _openTaskDetail(AnimeDownloadPlan plan) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (BuildContext context) => TorrentTaskDetailDialog(plan: plan),
     );

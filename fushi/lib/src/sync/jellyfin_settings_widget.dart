@@ -121,7 +121,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
 
   Future<void> _showErrorDialog(String title, String message) async {
     if (!mounted) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(title),

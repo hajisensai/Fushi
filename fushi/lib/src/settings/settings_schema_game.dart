@@ -619,7 +619,7 @@ Future<Color?> _pickGalHookColor(
 }) async {
   Color picked = initial;
   bool confirmed = false;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) => AlertDialog(
       title: Text(title),

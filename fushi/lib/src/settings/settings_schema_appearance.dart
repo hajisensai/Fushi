@@ -146,19 +146,18 @@ SettingsDestination buildAppearanceDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-          // 玻璃材质：只作用于导航 / 底部弹层 / 对话框这些功能层表面，正文、
-          // 视频与查词弹窗不变；墨水屏与系统增强对比度下自动回退实心，liquid
-          // 在引擎不支持着色器 ImageFilter 时降级为 frosted。随 Profile 走。
+          // 玻璃材质档位：只在设计系统选「玻璃」时出现（设计系统行负责开关玻璃，
+          // 这里只在毛玻璃 / 液态之间选）。正文、视频画面不变；墨水屏、系统增强
+          // 对比度 / 降低透明度下自动回退实心，liquid 在引擎不支持着色器
+          // ImageFilter 时降级为 frosted。随 Profile 走。
           SettingsSegmentedItem<FushiGlassMaterial>(
             id: 'appearance.glass_material',
             title: t.glass_material,
             subtitle: t.glass_material_hint,
             icon: Icons.blur_on_outlined,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.themeNotifier.designSystem == 'glass',
             options: <SettingsSegmentOption<FushiGlassMaterial>>[
-              SettingsSegmentOption<FushiGlassMaterial>(
-                value: FushiGlassMaterial.off,
-                label: t.glass_material_off,
-              ),
               SettingsSegmentOption<FushiGlassMaterial>(
                 value: FushiGlassMaterial.frosted,
                 label: t.glass_material_frosted,
@@ -169,7 +168,7 @@ SettingsDestination buildAppearanceDestination() {
               ),
             ],
             selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.glassMaterial,
+                settingsContext.appModel.themeNotifier.glassMaterialTier,
             onChanged:
                 (SettingsContext settingsContext, FushiGlassMaterial value) =>
                     settingsContext.appModel.setGlassMaterial(value),

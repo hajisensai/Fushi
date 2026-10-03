@@ -3808,6 +3808,12 @@ class AppModel with ChangeNotifier {
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
       // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
       '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
+      // 玻璃材质：设计系统选「玻璃」时下发 '1'（非 CSS 变量、仅 content.js 消费），content.js
+      // 据此给浮动弹窗挂半透明填充 + backdrop-filter 模糊（扩展弹窗在网页文档里，背后的网页
+      // 能真模糊；app 内弹窗是独立 WebView，采样不到 Flutter 画面，不接这条）。墨水屏下恒 '0'，
+      // 与 glassMaterialOf 的墨水屏回退同律。
+      '--fushi-glass':
+          glassMaterial != FushiGlassMaterial.off && !einkMode ? '1' : '0',
     };
   }
 

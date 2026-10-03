@@ -14,9 +14,79 @@ const double kFushiGlassBlurSigma = 20;
 double fushiGlassFillOpacity(Brightness brightness) =>
     brightness == Brightness.dark ? 0.62 : 0.72;
 
+/// 主题层「无模糊」玻璃表面的不透明度：菜单、下拉、提示条、tooltip 这些浮层
+/// 由 Flutter 自己构建 Material、拿不到 BackdropFilter 挂点，只能半透明着色；
+/// 没有模糊压背景，所以比 [fushiGlassFillOpacity] 实得多，保证文字可读。
+double fushiGlassOverlayOpacity(Brightness brightness) =>
+    brightness == Brightness.dark ? 0.86 : 0.9;
+
+/// 卡片 / 分组面板这类常驻内容容器在玻璃下的不透明度：背后多是页面底色或
+/// （Windows 11 / macOS）系统窗口材质，比浮层透、比弹层实。
+double fushiGlassContainerOpacity(Brightness brightness) =>
+    brightness == Brightness.dark ? 0.7 : 0.78;
+
+/// 对话框背后整屏的模糊半径。对话框的 Material 由主题染成半透明，模糊放在
+/// 路由层（[FushiGlassDialogBackdrop]）而不是对话框形状里：对话框尺寸与位置
+/// 由 AlertDialog 自己决定，路由层拿不到它的形状。
+const double kFushiGlassDialogBackdropSigma = 10;
+
+/// 对话框路由内容的玻璃包装：玻璃开启时在对话框背后铺一层整屏模糊（随路由
+/// 转场一起淡入淡出），关闭时原样返回 [child]。[showAppDialog] 统一套用。
+class FushiGlassDialogBackdrop extends StatelessWidget {
+  const FushiGlassDialogBackdrop({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) return child;
+    // passthrough：对话框内容拿到的约束与不包时一字不差（路由给的是整屏紧约束）。
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(
+          child: IgnorePointer(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: kFushiGlassDialogBackdropSigma,
+                sigmaY: kFushiGlassDialogBackdropSigma,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
 /// 液态玻璃档的背景模糊。着色器本身还叠折射与高光，模糊比 frosted 轻一些
 /// 才看得出折射，但仍要压住背后的文字。
 const double kFushiLiquidGlassBlur = 12;
+
+/// 悬浮按钮的玻璃包装：主题在玻璃下把 FAB 底色设为透明，这里补上
+/// primaryContainer 色阶的玻璃（液态档折射、毛玻璃档模糊）。玻璃关闭或
+/// [glassMaterialOf] 判 off（高对比度 / 降低透明度）时是一块同形状的实心底，
+/// 与 FAB 原本的底色一致。所有 FloatingActionButton 都必须包这一层。
+class FushiGlassFab extends StatelessWidget {
+  const FushiGlassFab({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool themedTransparent =
+        theme.floatingActionButtonTheme.backgroundColor == Colors.transparent;
+    if (!themedTransparent) return child;
+    return FushiGlassSurface(
+      baseColor: theme.colorScheme.primaryContainer,
+      borderRadius: FushiBorderRadius.control,
+      child: child,
+    );
+  }
+}
 
 /// 功能层表面的统一材质包装：[glassMaterialOf] 为 off 时就是一块 [baseColor]
 /// 实心底（与改造前像素一致），frosted 时是 ClipRRect + BackdropFilter 模糊 +
@@ -35,6 +105,7 @@ class FushiGlassSurface extends StatelessWidget {
     this.borderRadius = BorderRadius.zero,
     this.baseColor,
     this.showBorder = true,
+    this.grouped = false,
   });
 
   final Widget child;
@@ -47,6 +118,12 @@ class FushiGlassSurface extends StatelessWidget {
 
   /// frosted 下是否画细描边（贴屏幕边的底栏 / 侧栏不需要整圈描边）。
   final bool showBorder;
+
+  /// frosted 下是否走 [BackdropFilter.grouped]：同一页面里并排的导航栏 / 侧栏
+  /// / 顶栏挂在同一个 [BackdropGroup] 下共用一次背景采样。叠在别的玻璃之上的
+  /// 弹层 / 对话框必须为 false，否则采样不到下面那层玻璃。没有 [BackdropGroup]
+  /// 祖先时等同普通 BackdropFilter。
+  final bool grouped;
 
   @override
   Widget build(BuildContext context) {
@@ -65,29 +142,30 @@ class FushiGlassSurface extends StatelessWidget {
     if (glassMaterialOf(context) == FushiGlassMaterial.liquid) {
       return _buildLiquid(fill);
     }
+    final ImageFilter blur = ImageFilter.blur(
+      sigmaX: kFushiGlassBlurSigma,
+      sigmaY: kFushiGlassBlurSigma,
+    );
+    final Widget surface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: borderRadius,
+        border: showBorder
+            ? Border.all(
+                color: (brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.black)
+                    .withValues(alpha: 0.08),
+              )
+            : null,
+      ),
+      child: child,
+    );
     return ClipRRect(
       borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: kFushiGlassBlurSigma,
-          sigmaY: kFushiGlassBlurSigma,
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: borderRadius,
-            border: showBorder
-                ? Border.all(
-                    color: (brightness == Brightness.dark
-                            ? Colors.white
-                            : Colors.black)
-                        .withValues(alpha: 0.08),
-                  )
-                : null,
-          ),
-          child: child,
-        ),
-      ),
+      child: grouped
+          ? BackdropFilter.grouped(filter: blur, child: surface)
+          : BackdropFilter(filter: blur, child: surface),
     );
   }
 

@@ -6247,9 +6247,9 @@
   "ocr_system_model_play_services_fix": "修復 Google Play 服務",
   "ocr_system_model_play_services_unavailable": "本機沒有可用的 Google Play 服務，無法使用系統 OCR。",
   "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
-  "glass_material": "Glass material",
-  "glass_material_hint": "Navigation, sheets and dialogs become translucent and show the content behind them. Liquid glass adds refraction where the graphics engine supports it and falls back to frosted elsewhere. Turns off automatically in e-ink mode and with increased contrast.",
-  "glass_material_off": "Off",
   "glass_material_frosted": "Frosted",
-  "glass_material_liquid": "Liquid"
+  "glass_material_liquid": "Liquid",
+  "design_system_glass": "Glass",
+  "glass_material": "Glass material",
+  "glass_material_hint": "Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast."
 }

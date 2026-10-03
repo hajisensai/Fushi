@@ -44,6 +44,7 @@ add_executable(${BINARY_NAME} WIN32
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "system_font_list.cpp"
+  "system_transparency_channel.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"

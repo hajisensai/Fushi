@@ -1035,7 +1035,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 「相关作品 → 去下载」：预填关系边标题打开番剧下载对话框（搜番段）。
   void _downloadRelation(CollectionRelationRow relation) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => AnimeDownloadDialog(
         showTasks: false,
@@ -1092,7 +1092,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   void _openDownloadDialog({required int? episodeNumber}) {
     final MediaCollectionRow collection = _collectionRow ?? widget.collection;
     final int? anilistId = collection.anilistId;
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => AnimeDownloadDialog(
         showTasks: false,
@@ -1992,7 +1992,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _showEpisodeMediaInfo(CollectionEpisodeSlot episode) async {
     final String? path = episode.local?.videoPath;
     if (path == null || path.isEmpty) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(_episodeDisplayTitle(episode)),
