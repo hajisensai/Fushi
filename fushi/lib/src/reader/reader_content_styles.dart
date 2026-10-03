@@ -1306,6 +1306,15 @@ body {
   max-width: 100% !important;
   max-height: 100% !important;
 }
+/* BUG-2905: no hanging punctuation in VN. The body's `hanging-punctuation:
+   allow-end` (WebKit only) hangs a line-final 、。 past the inline-end edge,
+   but the VN screen clips at that edge (overflow hidden, no inline-end slack)
+   and fitScreensToViewport rightly measures the hung glyph as overflow — so
+   a paragraph that fits gets cut right before its 、 onto a second screen.
+   With hanging off WebKit pushes the preceding char down like Blink does. */
+.fushi-vn-content, .fushi-vn-content * {
+  hanging-punctuation: none !important;
+}
 /* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
 [data-fushi-visual-novel-unrevealed] {
   visibility: hidden !important;

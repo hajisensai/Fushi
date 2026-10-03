@@ -45,6 +45,7 @@ import 'package:fushi_engine/ocr/manga_ocr_tokenizer.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/ocr/page_text_sweep.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
 import 'package:fushi_engine/ocr/routing_ocr_recognizer.dart';
@@ -409,6 +410,10 @@ class _IsolateOcrEngine {
   /// 逐列 CTC 的列识别 rec（与 [lineRecognizer] 是同一个对象时只关一次）。
   PpOcrLineRecognizer? columnRecognizer;
   OcrRecognizer? recognizer;
+
+  /// 补检（检测器弱候选复核，仅逐列 CTC 模式）：只引用 [lineDetector] /
+  /// [columnRecognizer] 的会话，不另持有会话，关闭时置空即可。
+  OcrPageTextSweeper? sweeper;
   final List<OcrSession> baberuSessions = <OcrSession>[];
 
   /// 逐个关闭（幂等、吞单个关闭错误）：建到一半时 [recognizer] 还是 null，只关
@@ -435,6 +440,7 @@ class _IsolateOcrEngine {
     this.lineRecognizer = null;
     this.columnRecognizer = null;
     recognizer = null;
+    sweeper = null;
     for (final OcrSession session in baberuSessions) {
       try {
         await session.close();
@@ -718,6 +724,14 @@ Future<void> _openIsolateOcrEngine(
     lineDetector: lineDetector,
     lineRecognizer: lineRecognizer,
   );
+  // 补检只在逐列 CTC 下开：补回的块靠识别置信度把关，只有漫画 CTC 权重对装饰字
+  // 读得可靠（用户真实页的「オキテ」，通用 PP rec 以高置信度读成「才半元」）。
+  if (columns != null) {
+    engine.sweeper = PpOcrPageTextSweeper(
+      lineDetector: lineDetector,
+      lineRecognizer: columns,
+    );
+  }
   final MangaOcrAcceleration acceleration = plan.toAcceleration(
     detection: detectionEffective,
     recognition: recognitionEffective,
@@ -766,6 +780,7 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       imageDirPath: args.imageDirPath,
       detector: engine.detector!,
       recognizer: engine.recognizer!,
+      sweeper: engine.sweeper,
       engineSignature: engineSignature,
       startPage: args.startPage,
       cancelToken: cancelToken,
@@ -893,6 +908,7 @@ Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
           relativeUrls: <String>[request.relativeUrl],
           detector: engine.detector!,
           recognizer: engine.recognizer!,
+          sweeper: engine.sweeper,
           engineSignature: args.engineSignature,
           cancelToken: cancelToken,
         );

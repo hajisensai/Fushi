@@ -46,6 +46,10 @@ final class FloatingBallChannel {
     static final String METHOD_OPEN_LOOKUP_PAGE = "openLookupPage";
     /** 原生 → Dart：系统球「拍照查词」，Fushi 已被拉到前台，请开相机。 */
     static final String METHOD_OPEN_CAMERA_OCR = "openCameraOcr";
+    /** 原生 → Dart：系统球「立即同步」，Fushi 已被拉到前台，请跑一轮同步。 */
+    static final String METHOD_OPEN_SYNC = "openSync";
+    /** 原生 → Dart：截屏 OCR 报模型未就绪，Fushi 已被拉到前台，请打开系统 OCR 配置。 */
+    static final String METHOD_OPEN_SYSTEM_OCR_SETUP = "openSystemOcrSetup";
     /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
     static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
 
@@ -70,6 +74,11 @@ final class FloatingBallChannel {
 
     /** 同 {@link #pendingOpenLookupPage}，排的是系统球「拍照查词」。只在主线程读写。 */
     private static boolean pendingCameraOcr = false;
+
+    /** 同 {@link #pendingOpenLookupPage}，排的是系统球「立即同步」。只在主线程读写。 */
+    private static boolean pendingSync = false;
+    /** 同 {@link #pendingOpenLookupPage}，排的是「打开系统 OCR 配置」。只在主线程读写。 */
+    private static boolean pendingSystemOcrSetup = false;
 
     private FloatingBallChannel() {}
 
@@ -150,6 +159,44 @@ final class FloatingBallChannel {
         } catch (RuntimeException e) {
             Log.w(TAG, "openCameraOcr could not be delivered; queued", e);
             pendingCameraOcr = true;
+        }
+    }
+
+    /**
+     * 系统球「立即同步」：主引擎在就直接推 {@code openSync}（Fushi 随后被拉到前台，
+     * Dart 跑同步）；不在就排队，由冷启动的 Dart 经 {@code takePendingSync} 来取。
+     * 主线程调用。
+     */
+    static void requestSync() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingSync = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_SYNC, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openSync could not be delivered; queued", e);
+            pendingSync = true;
+        }
+    }
+
+    /**
+     * 截屏 OCR 报模型未就绪（BUG-2906）：主引擎在就直接推 {@code openSystemOcrSetup}
+     * （Fushi 随后被拉到前台，Dart 弹配置）；不在就排队，由冷启动的 Dart 经
+     * {@code takePendingSystemOcrSetup} 来取。主线程调用。
+     */
+    static void requestSystemOcrSetup() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingSystemOcrSetup = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_SYSTEM_OCR_SETUP, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openSystemOcrSetup could not be delivered; queued", e);
+            pendingSystemOcrSetup = true;
         }
     }
 
@@ -236,6 +283,18 @@ final class FloatingBallChannel {
             case "takePendingCameraOcr": {
                 boolean pending = pendingCameraOcr;
                 pendingCameraOcr = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingSync": {
+                boolean pending = pendingSync;
+                pendingSync = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingSystemOcrSetup": {
+                boolean pending = pendingSystemOcrSetup;
+                pendingSystemOcrSetup = false;
                 result.success(pending);
                 return;
             }

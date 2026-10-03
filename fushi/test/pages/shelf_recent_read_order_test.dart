@@ -44,6 +44,37 @@ void main() {
     });
   });
 
+  group('lastReadAtForBookKey（bookKey → uid 换算一跳，BUG-2904）', () {
+    const Map<String, int> lastReadAtByUid = <String, int>{
+      'uid-imouto': 100,
+      'uid-new': 200,
+      'legacy-key': 50,
+    };
+    const Map<String, String> uidByKey = <String, String>{
+      'imouto-life': 'uid-imouto',
+      'new-book': 'uid-new',
+    };
+
+    test('bookKey 经换算表查 uid 键（裸 bookKey 直查恒为空即原症状）', () {
+      expect(lastReadAtForBookKey(lastReadAtByUid, uidByKey, 'new-book'), 200);
+      expect(lastReadAtByUid['new-book'], isNull);
+    });
+
+    test('hero 选刚读的新书，而非列表首位（= 最近导入的在读书）', () {
+      final String? hero = mostRecentlyReadCandidate(
+        <String>['imouto-life', 'new-book'],
+        (String key) =>
+            lastReadAtForBookKey(lastReadAtByUid, uidByKey, key) ?? 0,
+      );
+      expect(hero, 'new-book');
+    });
+
+    test('换算不上退回原键；null 键返回 null', () {
+      expect(lastReadAtForBookKey(lastReadAtByUid, uidByKey, 'legacy-key'), 50);
+      expect(lastReadAtForBookKey(lastReadAtByUid, uidByKey, null), isNull);
+    });
+  });
+
   group('bookLastReadAtProvider（真 DB 读 reader_positions.updatedAt）', () {
     late FushiDatabase db;
     late ProviderContainer container;

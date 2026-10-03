@@ -109,6 +109,16 @@ class FloatingBallChannel {
   static Future<bool> takePendingCameraOcr() async =>
       await _invoke<bool>('takePendingCameraOcr') ?? false;
 
+  /// 取走（并清掉）原生系统球「立即同步」排队的请求（同
+  /// [takePendingOpenLookupPage]：主引擎不在时原生先把 Fushi 拉起来再排队）。
+  static Future<bool> takePendingSync() async =>
+      await _invoke<bool>('takePendingSync') ?? false;
+
+  /// 取走（并清掉）截屏 OCR 报「模型未就绪」后排队的「打开系统 OCR 配置」请求
+  /// （同 [takePendingOpenLookupPage]，BUG-2906）。
+  static Future<bool> takePendingSystemOcrSetup() async =>
+      await _invoke<bool>('takePendingSystemOcrSetup') ?? false;
+
   /// 取走（并清掉）「用户在系统球上点了关闭」标记。它落在原生偏好里：关闭时主
   /// 引擎可能不在，Dart 下次起来还要据此把「应用外」开关关掉，而不是把球又拉起来。
   static Future<bool> takeSystemBallClosedByUser() async =>
@@ -142,6 +152,9 @@ class FloatingBallChannel {
   ///  - `screenOcrFinished`（Android 截屏 OCR 已截到帧或已放弃）→ [onScreenOcrFinished]；
   ///  - `openLookupPage`（Android 系统球「查词」，Fushi 已被拉到前台）→ [onOpenLookupPage]；
   ///  - `openCameraOcr`（Android 系统球「拍照查词」，Fushi 已被拉到前台）→ [onOpenCameraOcr]；
+  ///  - `openSync`（Android 系统球「立即同步」，Fushi 已被拉到前台）→ [onOpenSync]；
+  ///  - `openSystemOcrSetup`（Android 截屏 OCR 报模型未就绪，Fushi 已被拉到前台）→
+  ///    [onOpenSystemOcrSetup]；
   ///  - `systemBallClosedByUser`（系统球 / 常驻通知上点了关闭）→
   ///    [onSystemBallClosedByUser]；
   ///  - `systemBallAction {id, anchor}`（桌面系统球上点了某个动作；anchor 是球在
@@ -151,12 +164,14 @@ class FloatingBallChannel {
   ///
   /// 必须先装 handler、再取冷启动时排队的那个词：iOS 原生侧把这次 take 当作
   /// 「Dart 已就绪」的信号，之后才会直接推送。Android 同理：主引擎不在时原生只
-  /// 能排队，装好 handler 后再把排着的「打开查词页」「开相机」取走。
+  /// 能排队，装好 handler 后再把排着的「打开查词页」「开相机」「同步」取走。
   static Future<void> installHandler({
     required void Function(String word) onLookup,
     required void Function() onScreenOcrFinished,
     void Function()? onOpenLookupPage,
     void Function()? onOpenCameraOcr,
+    void Function()? onOpenSync,
+    void Function()? onOpenSystemOcrSetup,
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
     void Function(String dock, double fraction)? onSystemBallPositionChanged,
@@ -175,6 +190,10 @@ class FloatingBallChannel {
           onOpenLookupPage?.call();
         case 'openCameraOcr':
           onOpenCameraOcr?.call();
+        case 'openSync':
+          onOpenSync?.call();
+        case 'openSystemOcrSetup':
+          onOpenSystemOcrSetup?.call();
         case 'systemBallClosedByUser':
           onSystemBallClosedByUser?.call();
         case 'systemBallAction':
@@ -196,6 +215,8 @@ class FloatingBallChannel {
     if (Platform.isAndroid) {
       if (await takePendingOpenLookupPage()) onOpenLookupPage?.call();
       if (await takePendingCameraOcr()) onOpenCameraOcr?.call();
+      if (await takePendingSync()) onOpenSync?.call();
+      if (await takePendingSystemOcrSetup()) onOpenSystemOcrSetup?.call();
       return;
     }
     if (!Platform.isIOS) return;

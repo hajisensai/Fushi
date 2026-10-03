@@ -91,6 +91,19 @@ final epubBookUidByKeyProvider =
   };
 });
 
+/// 按 bookKey 查 [bookLastReadAtProvider] 映射：先经 [epubBookUidByKeyProvider]
+/// 换算成 uid 再查，换算不上（非 epub 遗留行 / 空键）退回原键。书架 hero 与
+/// 「最近阅读」排序共用这一跳——BUG-2904：hero 曾直接拿 bookKey 查 uid 键表，
+/// 恒查空、退化成列表序（= 最近导入的在读书），读了新书「继续阅读」也不换。
+int? lastReadAtForBookKey(
+  Map<String, int> lastReadAtByUid,
+  Map<String, String> epubUidByKey,
+  String? bookKey,
+) {
+  if (bookKey == null) return null;
+  return lastReadAtByUid[epubUidByKey[bookKey] ?? bookKey];
+}
+
 /// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
 /// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
 /// （charOffset 再大也不计）时书架显示极低%，让用户以为「进度没了」。
