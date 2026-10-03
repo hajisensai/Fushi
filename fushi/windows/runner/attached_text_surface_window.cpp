@@ -19,6 +19,7 @@
 #include "attached_bitmap_bounds.h"
 #include "attached_overlayability.h"
 #include "attached_shield_status_policy.h"
+#include "window_activation_policy.h"
 #include "lookup_hit_validation.h"
 #include "low_level_mouse_hook.h"
 #include "native_glog.h"
@@ -3245,8 +3246,10 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     return DefWindowProcW(hwnd_, message, wparam, lparam);
+  // BUG-2889 — 触摸 / 触控笔按下另走 WM_POINTERACTIVATE，与鼠标同一条不激活策略。
+  case WM_POINTERACTIVATE:
   case WM_MOUSEACTIVATE:
-    return MA_NOACTIVATE;
+    return OverlayNoActivateReply(message);
   case WM_NCHITTEST:
     return HTTRANSPARENT;
   case WM_SETCURSOR:

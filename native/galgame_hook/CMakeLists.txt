@@ -477,6 +477,27 @@ target_include_directories(fushi_kirikiri_voice_storage_name_test PRIVATE "hook"
 add_test(NAME fushi_kirikiri_voice_storage_name_test
   COMMAND fushi_kirikiri_voice_storage_name_test)
 
+# KiriKiri2 TCWF（.tcw，wutcwf 解码）→ WAV。纯函数头，双架构同跑。
+add_executable(fushi_kirikiri_tcwf_test
+  "tests/kirikiri_tcwf_test.cpp"
+)
+target_include_directories(fushi_kirikiri_tcwf_test PRIVATE "include")
+add_test(NAME fushi_kirikiri_tcwf_test COMMAND fushi_kirikiri_tcwf_test)
+
+# x86 指令长度解码 + 函数体内首个 call 定位（KiriKiri 内部 TVPCreateStream，BUG-2887）。双架构同跑。
+add_executable(fushi_x86_insn_len_test
+  "tests/x86_insn_len_test.cpp"
+)
+target_include_directories(fushi_x86_insn_len_test PRIVATE "hook")
+add_test(NAME fushi_x86_insn_len_test COMMAND fushi_x86_insn_len_test)
+
+# RIFF/WAVE PCM 静音判据（掐断语音用的静音文件不得配给旁白，BUG-2888）。双架构同跑。
+add_executable(fushi_pcm_wav_silence_test
+  "tests/pcm_wav_silence_test.cpp"
+)
+target_include_directories(fushi_pcm_wav_silence_test PRIVATE "include")
+add_test(NAME fushi_pcm_wav_silence_test COMMAND fushi_pcm_wav_silence_test)
+
 # 查词整句 ↔ 文本道行的同句判据（点击载荷 text_generation 反查，BUG-2130 家族）。
 add_executable(fushi_lookup_line_text_match_test
   "tests/lookup_line_text_match_test.cpp"

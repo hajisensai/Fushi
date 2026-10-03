@@ -29,13 +29,22 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2654 条。点号进各自文件。
+> 共 2663 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2901](bugs/BUG-2901-screen-ocr-one-shot-selection.md) | ✅ | ✅ | 截屏识字选取层一次性：查一个词就销毁，下个词要重新截屏重新授权 |
 | [BUG-2900](bugs/BUG-2900-external-lookup-mine-empty-sentence.md) | ✅ | ✅ | 外部查词窗制卡句子字段为空 |
 | [BUG-2899](bugs/BUG-2899-external-lookup-loses-source-line.md) | ✅ | ✅ | 外部查词窗（截屏识字/悬浮字幕点字）原句条只剩切出的词，整行上下文丢失 |
+| [BUG-2893](bugs/BUG-2893-kirikiri-kag-page-swap-anchor.md) | ✅ | ✅ | KiriKiri KAG 换页 backlay+trans 后查词锚点失效 |
+| [BUG-2892](bugs/BUG-2892-sgre-typewriter-prefix-lines.md) | ✅ | ✅ | SGRE 打字机逐字显示的半句被当成独立台词 |
+| [BUG-2891](bugs/BUG-2891-x64-locale-claimed-applied.md) | ✅ | ✅ | 64位游戏转区落空仍报已转日文区 |
+| [BUG-2890](bugs/BUG-2890-launch-window-binding-dead-dialog.md) | ✅ | ✅ | 启动会话绑定启动设置对话框后永不改绑主窗口 |
+| [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
+| [BUG-2888](bugs/BUG-2888-kirikiri-silent-stop-voice-paired.md) | ✅ | ✅ | KiriKiri 掐断用的静音语音被配给下一句旁白 |
+| [BUG-2887](bugs/BUG-2887-kirikiri2-tcwf-voice.md) | ✅ | ✅ | KiriKiri2 TCWF 语音（TSS 解码插件取流）整局抓不到，全部降级 loopback |
+| [BUG-2886](bugs/BUG-2886-lookup-parked-window-on-screen.md) | ✅ | ✅ | 显示拓扑变化后，离屏停放的查词覆盖窗落进屏幕右上角吞点击 |
+| [BUG-2885](bugs/BUG-2885-kirikiri-nvl-page-lookup.md) | ✅ | ✅ | KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝 |
 | [BUG-2884](bugs/BUG-2884-manga-cross-chapter-stale-doc.md) | ✅ | ✅ | 漫画跨章翻页后正文仍是旧章 |
 | [BUG-2878](bugs/BUG-2878-manga-lens-char-offset.md) | ✅ | ✅ | 漫画 Lens OCR 逐字命中区相对原图字形漂移（竖排高亮压前字、切后字） |
 | [BUG-2877](bugs/BUG-2877-popup-touchmove-blocks-scroll.md) | ✅ | ✅ | 查词弹窗常驻非 passive touchmove 让词典滑动卡顿 |

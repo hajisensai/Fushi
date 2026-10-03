@@ -1,0 +1,13 @@
+## BUG-2885 · KiriKiri NVL 版式整页累积，游戏内点字查词恒被注册表拒绝
+- **报告**：2026-10-03（agent 在 ceshi 样本 Fate/stay night[Realta Nua]（KiriKiri KAG3，NVL 版式）游戏内查词真机验收中发现）
+- **真实性**：✅ 真 bug。根因 `native/galgame_hook/hook/adapters/kirikiri_adapter.inc` 的 `ResolveKirikiriLookupTextGeneration`（修复前只按整句相等反查文本道）。
+  - NVL / KAG 消息层逐句累积：TJS 传感器读出的渲染「行」是整页（例：「それは、稲妻のような切っ先だった。心臓を串刺しにせんと繰り出される槍の穂先。」），而 Luna 文本道里是一句一条。
+  - 整句相等永远不命中 → `text_generation` 填 0 → `GeometryProviderRegistry::IsPublicationSane`（`hook/geometry_provider_registry.h`）拒绝 0 → 注入侧日志 `lookup.submit ... published=0 reject=1`。点任何字都没有卡，ADV 版式（一句一页）的 KiriKiri 不受影响，所以 ATRI / 恋爱成双 / tenshi 都没暴露。
+  - 不能简单放宽成「包含」：`lookup_line_text_match.h` 头注释记录过多语言 KiriKiri Z（译文行紧跟原文）放宽后会绑错行（BUG-2113）。
+- **[x] ① 已修复** — 本提交 `fix(galgame): resolve KiriKiri NVL page clicks to the covering lane sentence`：
+  - `lookup_line_text_match.h` 新增 `LookupPageSentenceCovering`：在整页里找文本道这一句的一次出现，必须**覆盖被点的字**、起止都**落在句界**上（页首 / 空白 / 句末标点或右括号之后开始；页尾 / 空白 / 句末标点 / 下一句左括号处结束），页里碰巧出现的短句（「はい」嵌在「はいはい」里）因此不会被认作这一句。
+  - `ResolveKirikiriLookupTextGeneration` 整句相等仍优先（任何深度）；都不命中时取覆盖点击的最长句段（同长取最新），返回 seq + 句段范围。只有字形与 UTF-16 单元一一对应（`char_count == 行长`）时才启用句段定位。
+  - `PublishKirikiriLookupHit` 把发布的行 / 点击下标 / 字数收窄成这一句——host 拿到的就是文本道里那一行，制卡句子也是这一句而不是整页；偏移记在 `g_lookup_submit_line_offset`，回投的卡片 / 高亮帧只对当前 submit 的 hit 加回偏移（`KirikiriLookupLineHighlightStart`）。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/lookup_line_text_match_test.cpp`：Fate 真机整页两句分别定位、点第一句时第二句不算、句间换行/全角空格、嵌入短句与半个词不绑、渐进渲染半页不命中、越界/全空白。
+- **补丁（读点句界）** — 后续提交 `fix(galgame): treat reading commas as NVL sentence boundaries`：真机复测时发现 KAG 会在「、」处 `[r]` 换行，把一句拆成两条文本事件（「この身を貫こうとする稲妻は、」+「この身を救おうとする月光に弾かれた。」），渲染行两段字形之间没有任何空白，读点不算句界时后半句起点恒被拒。`IsLookupSentenceCloser` 补「、」「，」「,」；测试加两段各自定位的用例。
+- **备注**：真机复测见同分支提交后的 Fate 验收记录；Fate 序章旁白无语音，② 语音需在有配音的句子上验。

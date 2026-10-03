@@ -1,6 +1,7 @@
 #include "floating_lyric_window.h"
 
 #include "low_level_mouse_hook.h"
+#include "window_activation_policy.h"
 
 #include <d2d1helper.h>
 #include <dwrite_3.h>
@@ -1265,6 +1266,12 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
                                            WPARAM wparam,
                                            LPARAM lparam) noexcept {
   switch (message) {
+    // BUG-2889 — 划词条盖在游戏上方。WS_EX_NOACTIVATE 只挡鼠标点击；触摸 / 触控笔
+    // 按下还会发 WM_POINTERACTIVATE（DefWindowProc 回 PA_ACTIVATE），点一下条子就把
+    // 前台从游戏抢走，宿主「前台必须是游戏」的点击吞咽随之失效（BUG-2788 同一个坑）。
+    case WM_POINTERACTIVATE:
+    case WM_MOUSEACTIVATE:
+      return OverlayNoActivateReply(message);
     case WM_NCDESTROY: {
       // Clear ownership at the actual HWND lifetime boundary. Show() can then
       // rebuild the body on the next automatic line or manual-open request.

@@ -6213,5 +6213,6 @@
   "video_bluray_config_invalid": "蓝光播放配置无效，请更换有效的 KEYDB.cfg 后重试。",
   "video_bluray_config_missing": "播放这张蓝光盘需要匹配的 KEYDB.cfg 配置。",
   "manga_ocr_engine_paired_host_model": "互联服务端 · $model",
-  "manga_ocr_engine_paired_host_model_missing": "服务端还没下载这个模型，请先在服务端下载。"
+  "manga_ocr_engine_paired_host_model_missing": "服务端还没下载这个模型，请先在服务端下载。",
+  "game_session_japanese_locale_skipped_hint_runtime_unavailable": "本局未转区：已请求日文区域，但 Locale Emulator 无法启动该游戏（只支持 32 位游戏），已按普通方式启动。"
 }
