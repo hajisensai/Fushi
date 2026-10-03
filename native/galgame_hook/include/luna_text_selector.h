@@ -47,9 +47,17 @@ constexpr int kLunaMaxFoldScanChars = 4096;
 // arrive as `\\n`, `¥n`, `￥n`, or the MAGES-native `%r`. Inline font colors use
 // `#RRGGBB;` (for example `#ff8A00;コスプレ`). Glyph-spacing controls use `%p;`
 // or `%p<signed integer>;` (for example `%p-1;─%p;─`). Strip only the control
-// prefix and preserve the styled/positioned text. This transformation is
-// profile-gated by executable SHA-256; keeping it out of the global path avoids
-// changing legitimate prose/code in unrelated games.
+// prefix and preserve the styled/positioned text. This transformation is gated
+// by engine identity (kLunaMagesControlEngineAdapterId) or an explicit user profile
+// option, never by executable hash/name; keeping it out of the global path
+// avoids changing legitimate prose/code in unrelated games.
+//
+// Engine adapter id whose Luna text carries these MAGES script controls. The
+// adapter's probe() is the structural identity (SGRE: wind3d11 voice archive or
+// the corroborated scenario renderer anchors), so every build/edition of the
+// engine is covered without pinning one executable.
+constexpr const char kLunaMagesControlEngineAdapterId[] = "sgre";
+
 inline std::wstring LunaNormalizeMagesControls(const wchar_t* text, int len,
                                                bool enabled) {
   if (text == nullptr || len <= 0) return std::wstring();

@@ -4,7 +4,33 @@
 
 ## 平台与 SDK
 
-5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染靠 fork 的 `flutter_inappwebview_windows`，Linux 阅读器能力受限）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
+5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（社区维护）」）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
+
+## Linux 桌面（社区维护）
+
+**定位**：Linux App 由社区维护——CI 不构建 Linux App（`build-multiplatform.yml` 只有 `linux-server`，所有者 2026-09-30 决定），也没有 Linux 发布产物。下面是让社区能自己编、自己验的全部前提；改动 Linux 相关代码时按「验证」一节在 Docker 里自证。
+
+bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge/}`。runner 的 RUNPATH 是 `$ORIGIN/lib`，但它**只管 exe 的直接依赖**——插件 `.so` 的 `DT_NEEDED` 走插件自己的 RUNPATH，Dart VM 发起的 `DynamicLibrary.open` 也不吃 exe 的 RUNPATH。所以：
+
+- 随包库被插件依赖时，插件 RUNPATH 必须带 `$ORIGIN`（`flutter_onnxruntime` 曾因此在任何非构建机上让整个 app 起不来，见 `third_party/flutter_onnxruntime/PATCHES.md` 第 12 条）。
+- Dart 侧 FFI 库在 Linux 上按 `<exe 目录>/lib/<名>` 绝对路径优先加载（fushidicts / fushi_torrent / pdfium 一致；pdfium_dart 上游本来就这么做）。
+- 验证一律在**脱离构建树**的环境里做（bundle 拷进干净容器再 `ldd ./fushi`），在构建机上 ldd 永远是绿的——插件的构建期 RUNPATH 指回构建目录。检查命令：`find bundle/lib -xtype l`（不得有悬空链接）与 `ldd bundle/fushi | grep "not found"`（只允许发行版运行时依赖缺失）。
+
+随包原生库：`libfushidicts_ffi.so`（CMake 同构建）、`libonnxruntime.so.1`（插件下载 1.22.0）、`libpdfium.so` / `libsqlite3.so`（native assets）、`libfushi_torrent_ffi.so`（`native/fushi_torrent/build_linux_so.sh` 静态链，copy-if-present；缺失时下载后端回退外接 qBittorrent）、`mihon_bridge/`（`tool/mihon/build_desktop_runtime.sh` 的 Linux 分支：Corretto 21 linux jlink 出 `runtime/` + M-Extension-Server JAR）。
+
+**WebView = WPE WebKit，运行时可选**：
+
+- runner 只链接薄注册层 `fushi_wpe_loader.cc`（不依赖 WPE），注册时 dlopen 同目录的 `libflutter_inappwebview_linux_wpe.so`。实现库只在构建机有 WPE 开发包时产出；Ubuntu 24.04 官方源**没有** WPE；Debian trixie（WPE 2.48，FDO 后端）/ Fedora / Arch 有。
+- 目标机缺 WPE、或不允许非特权 user namespace（WPE 的 bubblewrap 沙箱必需；Docker 默认、Ubuntu 24.04+ 的 AppArmor userns 限制都会触发）时，app 照常启动，WebView 位置显示原因（`LinuxWebViewRuntime` / `LinuxWebViewUnavailablePlaceholder`），headless 抛 `LinuxWebViewUnavailableException`。不做这层时 WebKit 会在第一次建 WebView（启动预热）时 `g_error` 中止整个进程。
+- 资源投递走自定义 scheme（与 WKWebView 同路径，判据 `webViewUsesCustomSchemeTransport`）：WPE 没有能拦截 `https://` 的 `shouldInterceptRequest`。
+
+运行时依赖（发行版包，打包时声明）：GTK 3、`libmpv2`（media_kit）、`libkeybinder-3.0`（全局快捷键）、`ffmpeg` / `ffprobe` 在 PATH（Linux 不随包精简 ffmpeg：`ffmpeg-min.yml` 编出的 Linux 版动态链发行版的 x264 / gnutls / dav1d，跨发行版不可移植）、`parecord`（录音，PulseAudio / PipeWire-pulse）、可选 WPE WebKit 2.x（Debian / Ubuntu 25.04+：`libwpewebkit-2.0-1 libwpebackend-fdo-1.0-1`；Fedora / Arch：`wpewebkit`；没装时阅读器 / 弹窗 / LNReader 小说源显示安装提示）、可选 Open JTalk（制卡词音频的最后兜底 TTS，能读汉字；Debian / Ubuntu：`open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001`，非标准路径用 `FUSHI_OPEN_JTALK_DIC` / `FUSHI_OPEN_JTALK_VOICE` 指定）或 `espeak-ng`（只读纯假名）。
+
+**单实例**：runner 以 `G_APPLICATION_HANDLES_COMMAND_LINE` 注册到会话 D-Bus（id `app.fushi.reader`），第二次启动（文件关联 / `fushi://` 深链 / 终端 `fushi <路径>`）把第一条非 flag 参数经 `app.fushi/external_video` 交给已开着的实例并前置窗口（`linux/runner/my_application.cc` + `external_open_handoff.cc`）；`--fushi-restarted` 先等旧实例让出名字；设了 `FUSHI_TEST_HIDDEN` / `FUSHI_TEST_ROOT` 的测试实例不参与单实例；没有会话总线时 GLib 自动退化成多实例。系统关联本身靠打包时装的 `.desktop`（`Exec=fushi %u` + `MimeType=x-scheme-handler/fushi;…`），本仓不随带。
+
+构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`。Flutter 3.44 用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
+
+本机没有 Linux：用 Docker Desktop（`debian:trixie` + 拷进 `/opt/flutter` 的 3.44 SDK）构建；源码以 `git ls-files -co --exclude-standard` 打包进 docker 卷再编，别直接 bind mount 工作区（`.dart_tool/package_config.json` 会被写成 Linux 路径）。跑 app / 集成测试用 `Xvfb :99` + `dbus-run-session`；容器里没有 user namespace，WebView 相关测试要设 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`（**只限容器测试**）。
 
 ## Melos
 

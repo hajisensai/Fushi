@@ -76,6 +76,17 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   };
 });
 
+/// 「读完」的书的 bookKey 集合（`EpubBooks.completedAt` 非 null：手动标记或读到
+/// 末尾由阅读器自动写入），口径与书架 `_completedBookKeys` 同源。BUG-2918：首页
+/// 「继续」区判在读必须经 [classifyShelfReadStatus] 查它——阅读器落库的位置是
+/// 末页**首个可见字符**，读到最后一页 position 也永远 < duration，只看进度会把
+/// 读完的书当「在读」并显示四舍五入出的 100%。与 [bookLastReadAtProvider] 同点失效。
+final completedEpubBookKeysProvider =
+    FutureProvider<Set<String>>((ref) async {
+  final FushiDatabase db = ref.watch(appProvider).database;
+  return db.getCompletedEpubBookKeys();
+});
+
 /// bookKey → `EpubBooks.uid` 换算表（v82）。书架/首页的通货是 MediaItem
 /// （身份 = mediaIdentifier 里的 bookKey），查 [bookLastReadAtProvider] 前经此
 /// 换算；空 uid 行不进表（查不到 = 无阅读记录，与 resolveEpubBookUid 契约一致）。
@@ -90,6 +101,19 @@ final epubBookUidByKeyProvider =
       if (r.uid.isNotEmpty) r.bookKey: r.uid,
   };
 });
+
+/// 按 bookKey 查 [bookLastReadAtProvider] 映射：先经 [epubBookUidByKeyProvider]
+/// 换算成 uid 再查，换算不上（非 epub 遗留行 / 空键）退回原键。书架 hero 与
+/// 「最近阅读」排序共用这一跳——BUG-2904：hero 曾直接拿 bookKey 查 uid 键表，
+/// 恒查空、退化成列表序（= 最近导入的在读书），读了新书「继续阅读」也不换。
+int? lastReadAtForBookKey(
+  Map<String, int> lastReadAtByUid,
+  Map<String, String> epubUidByKey,
+  String? bookKey,
+) {
+  if (bookKey == null) return null;
+  return lastReadAtByUid[epubUidByKey[bookKey] ?? bookKey];
+}
 
 /// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
 /// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
@@ -243,7 +267,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
   static String epubUrl(String href) {
     final String encoded = href.split('/').map(Uri.encodeComponent).join('/');
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/epub/$encoded';
     }
     return 'https://$kHost/epub/$encoded';
@@ -251,7 +275,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   static String fontUrl(String path) {
     final String encoded = Uri.encodeComponent(path);
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/fonts/$encoded';
     }
     return 'https://$kHost/fonts/$encoded';
@@ -428,6 +452,8 @@ class ReaderFushiSource extends ReaderMediaSource {
     // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
+    // BUG-2918：读到末尾时阅读器写 completedAt，关书回首页「继续」区立即剔除。
+    ref.invalidate(completedEpubBookKeysProvider);
   }
 
   @override

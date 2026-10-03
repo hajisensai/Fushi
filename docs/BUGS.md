@@ -29,10 +29,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2665 条。点号进各自文件。
+> 共 2692 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |
+| [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
+| [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
+| [BUG-2922](bugs/BUG-2922-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
+| [BUG-2921](bugs/BUG-2921-gal-nested-card-root-jump.md) | ✅ | ✅ | 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁 |
+| [BUG-2920](bugs/BUG-2920-shelf-read-status-filter-reset.md) | ✅ | ✅ | 书架阅读状态筛选每次打开软件都重置 |
+| [BUG-2919](bugs/BUG-2919-reader-longpress-steals-swipe.md) | ✅ | ✅ | 阅读器长按选择太容易触发，慢滑翻页被抢成选区 |
+| [BUG-2918](bugs/BUG-2918-dashboard-continue-shows-completed-book.md) | ✅ | ✅ | 首页继续面板仍显示已读完的书 |
+| [BUG-2917](bugs/BUG-2917-vn-audio-highlight-ruby-gap.md) | ✅ | ✅ | 视觉小说模式有声书逐句高亮在注音字处断开 |
+| [BUG-2916](bugs/BUG-2916-ios-reader-open-codec-oom-crash.md) | ✅ | ✅ | iOS 打开/阅读书时主线程 CFAutorelease(NULL) 崩溃（解码超大方法调用字符串失败） |
+| [BUG-2915](bugs/BUG-2915-ios-video-connect-chunked-crash.md) | ✅ | ✅ | iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked |
+| [BUG-2914](bugs/BUG-2914-ios-scene-super-crash.md) | ✅ | ✅ | iOS 2.9.0 crashes on launch: SceneDelegate calls super for a scene callback FlutterSceneDelegate does not implement |
+| [BUG-2913](bugs/BUG-2913-fullscreen-episode-list-switch-exit.md) | ✅ | ✅ | 全屏下从剧集列表换集会退出原生全屏 |
+| [BUG-2912](bugs/BUG-2912-manga-settings-sheet-clipped.md) | ✅ | ✅ | 漫画阅读设置侧栏显示不全 |
+| [BUG-2911](bugs/BUG-2911-ios-landscape-ball-edge.md) | ✅ | ✅ | iOS 横屏应用内悬浮球不吸附屏幕侧边 |
+| [BUG-2910](bugs/BUG-2910-aacs-relay-orphan-readers.md) | ✅ | ✅ | AACS 解密中继：客户端放弃的 Range 请求继续读盘到文件尾，光驱被抢读导致只能播开头 |
+| [BUG-2909](bugs/BUG-2909-game-stream-wgc-lock-order.md) | ✅ | ✅ | 游戏串流停止时主线程 join 捕获线程死锁（WGC 设备锁与 frame_mutex_ 锁序反转） |
+| [BUG-2908](bugs/BUG-2908-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
+| [BUG-2907](bugs/BUG-2907-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
+| [BUG-2906](bugs/BUG-2906-system-ocr-model-setup.md) | ✅ | ✅ | 系统 OCR 模型未就绪时只弹提示、没有配置入口 |
+| [BUG-2905](bugs/BUG-2905-vn-paragraph-split.md) | ✅ | ✅ | VN 模式同一段落被切成两屏（悬挂标点 / 切点禁则） |
+| [BUG-2904](bugs/BUG-2904-library-continue-hero-uid.md) | ✅ | ✅ | 书架「继续阅读」不随最近阅读更新 |
+| [BUG-2903](bugs/BUG-2903-continuous-scroll-progress-stall.md) | ✅ | ✅ | 滚动模式往下滚会卡在某处停一会 |
+| [BUG-2902](bugs/BUG-2902-manga-ocr-missed-text.md) | ✅ | ✅ | 漫画本地 OCR 漏识别：稀疏装饰标题整块没检出、斜体并排两列丢一列 |
+| [BUG-2901](bugs/BUG-2901-screen-ocr-one-shot-selection.md) | ✅ | ✅ | 截屏识字选取层一次性：查一个词就销毁，下个词要重新截屏重新授权 |
+| [BUG-2900](bugs/BUG-2900-external-lookup-mine-empty-sentence.md) | ✅ | ✅ | 外部查词窗制卡句子字段为空 |
+| [BUG-2899](bugs/BUG-2899-external-lookup-loses-source-line.md) | ✅ | ✅ | 外部查词窗（截屏识字/悬浮字幕点字）原句条只剩切出的词，整行上下文丢失 |
 | [BUG-2898](bugs/BUG-2898-catsystem2-2016-lookup-layout.md) | ✅ | ✅ | CatSystem2 2016 版内嵌查词从不安装（result=3，「定向渲染」代码布局未识别） |
 | [BUG-2897](bugs/BUG-2897-luna-ellipsis-line-artifact.md) | ✅ | ✅ | 省略号台词被 Luna 伪影过滤器当逐字双写丢弃 |
 | [BUG-2896](bugs/BUG-2896-catsystem2-voice-reread-republished.md) | ✅ | ✅ | CatSystem2 2016 版同一次播放的二次读取被当成新语音重复发布 |

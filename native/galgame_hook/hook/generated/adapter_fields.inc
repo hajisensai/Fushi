@@ -14,3 +14,5 @@
   AosSfaAdapter aos_sfa_;
   UnityMonoAdapter unity_mono_;
   SmashFzmediaAdapter smash_fzmedia_;
+  YurisAdapter yuris_;
+  FvpAdapter fvp_;

@@ -101,8 +101,8 @@ using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
 NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
 fushi_voice_hook::UnityTextMeshReassembler<501>
     g_unity_text_mesh_reassembler;
-bool g_unity_sasasa_text_mesh_profile = false;
-bool g_unity_text_profile_initialized = false;
+// 旧 KEMCO 式逐字形 TextMesh 约定的行为判据（见 unity_text_profile.h）。读写都在 g_cs 内。
+fushi_voice_hook::UnityLegacyGlyphBatchDetector g_unity_glyph_batch_detector;
 alignas(8) volatile uint64_t g_unity_preview_generation = 0;
 
 int InvokeUnityInt(const void* method, void* instance) {
@@ -361,14 +361,29 @@ void FlushUnityTextMeshLine() {
   g_unity_text_mesh_reassembler.Reset();
 }
 
+// 已锁存的逐字形调用：逐字追加到逐字形行并发布进行中的半句，U+3000 终止当前行。
+// 调用方持有 g_cs。
+void AppendUnityTextMeshGlyphs(const wchar_t* chars, int length) {
+  constexpr char kHookName[] = "Unity TextMesh line";
+  constexpr wchar_t kHookCode[] = L"UnityEngine.TextMesh.set_text(glyphs)";
+  const uint64_t thread_id =
+      fushi_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
+  for (int i = 0; chars != nullptr && i < length; ++i) {
+    const wchar_t c = chars[i];
+    if (g_unity_text_mesh_reassembler.ShouldTerminate(c, true)) {
+      FlushUnityTextMeshLine();
+      continue;
+    }
+    if (!g_unity_text_mesh_reassembler.Append(c)) continue;
+    PublishUnityText(thread_id, nullptr, g_unity_text_mesh_reassembler.text(),
+                     g_unity_text_mesh_reassembler.length(), false, kHookName,
+                     kHookCode);
+  }
+}
+
 void RecordUnityTextMesh(void* text_component, void* string_object) {
   if (!g_capture_enabled || g_il2cpp_string_chars == nullptr ||
       g_il2cpp_string_length == nullptr) {
-    return;
-  }
-  if (!g_unity_sasasa_text_mesh_profile) {
-    RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
-                       L"UnityEngine.TextMesh.set_text");
     return;
   }
   const wchar_t* chars =
@@ -380,25 +395,41 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
     if (g_cs_ready) LeaveCriticalSection(&g_cs);
     return;
   }
-  for (int i = 0; chars != nullptr && i < source_length; ++i) {
-    const wchar_t c = chars[i];
-    if (g_unity_text_mesh_reassembler.ShouldTerminate(c, true)) {
+  // 路由规则（判据、撤销、判定期不发布单字形）见 unity_text_profile.h。
+  using Route = fushi_voice_hook::UnityLegacyGlyphBatchDetector::Route;
+  const Route route =
+      g_unity_glyph_batch_detector.Observe(chars, source_length);
+  bool publish_component_text = false;
+  switch (route) {
+    case Route::kHoldGlyph:
+      // 判定期的单字形只进影子缓冲：签名补全时整句发布，断开时丢弃。
+      g_unity_text_mesh_reassembler.Append(chars[0]);
+      break;
+    case Route::kLatchedFlushLine:
+    case Route::kFlushLine:
       FlushUnityTextMeshLine();
-      continue;
-    }
-    if (!g_unity_text_mesh_reassembler.Append(c)) continue;
-    constexpr char kHookName[] = "Unity TextMesh line";
-    constexpr wchar_t kHookCode[] =
-        L"UnityEngine.TextMesh.set_text(glyphs)";
-    const uint64_t thread_id =
-        fushi_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
-    PublishUnityText(thread_id, nullptr,
-                     g_unity_text_mesh_reassembler.text(),
-                     g_unity_text_mesh_reassembler.length(), false, kHookName,
-                     kHookCode);
+      break;
+    case Route::kGlyphLine:
+      AppendUnityTextMeshGlyphs(chars, source_length);
+      break;
+    case Route::kRevokedComponentText:
+      FlushUnityTextMeshLine();
+      publish_component_text = true;
+      break;
+    case Route::kComponentText:
+      // 未锁存时签名已断开：影子作废。锁存后多字符整串不进逐字形行，影子即逐字形行，
+      // 不能清。
+      if (!g_unity_glyph_batch_detector.latched()) {
+        g_unity_text_mesh_reassembler.Reset();
+      }
+      publish_component_text = true;
+      break;
   }
-  if (source_length == 0) FlushUnityTextMeshLine();
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
+  if (publish_component_text) {
+    RecordUnityTmpText(text_component, string_object, "Unity TextMesh",
+                       L"UnityEngine.TextMesh.set_text");
+  }
 }
 
 // 最近一次打开的 `*voice*.bundle` 路径（CreateFile 钩子记下）；空串 = 本会话还没见过。
@@ -786,16 +817,6 @@ bool HasCurrentProcessTopLevelWindow() {
 }
 
 bool TryHookUnityIl2CppAudio() {
-  if (!g_unity_text_profile_initialized) {
-    wchar_t executable_path[MAX_PATH] = {0};
-    const DWORD path_length =
-        GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
-    g_unity_sasasa_text_mesh_profile =
-        path_length != 0 && path_length < MAX_PATH &&
-        fushi_voice_hook::UsesSasasaLegacyTextMeshTerminator(
-            executable_path);
-    g_unity_text_profile_initialized = true;
-  }
   const bool audio_ready =
       g_orig_UnityAudioSourcePlay != nullptr ||
       g_orig_UnityAudioSourcePlayOneShot1 != nullptr ||

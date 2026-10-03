@@ -1112,7 +1112,15 @@ class ReaderCustomFontCss {
     return canonicalPath;
   }
 
-  static String fontUrl(String path) =>
-      '${defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS ? kReaderResourceScheme : 'https'}'
+  // WKWebView 与 Linux 的 WPE WebKit 只能注册自定义 scheme、拦不到 https，
+  // 与 `webViewUsesCustomSchemeTransport` 同一判据（这里用 defaultTargetPlatform
+  // 以便测试覆写平台）。
+  static String fontUrl(String path) => '${switch (defaultTargetPlatform) {
+        TargetPlatform.macOS ||
+        TargetPlatform.iOS ||
+        TargetPlatform.linux =>
+          kReaderResourceScheme,
+        _ => 'https',
+      }}'
       '://$kReaderResourceHost/fonts/${Uri.encodeComponent(path)}';
 }

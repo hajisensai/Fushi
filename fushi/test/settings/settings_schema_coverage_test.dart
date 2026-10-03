@@ -436,9 +436,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 只显示为当前场景勾选的按钮 / 各场景的勾选互不影响',
   'floatingBall/Look up clipboard':
       'test/floating_ball/app_floating_ball_host_test.dart: 剪贴板查词把剪贴板文字交给应用内查词弹窗 + 场景勾选',
+  'floatingBall/Sync now':
+      'test/floating_ball/app_floating_ball_host_test.dart: 立即同步走与设置页同一个手动同步入口 / 唤起主窗再走手动同步入口 / Android openSync',
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
+  // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
+  'floatingBall/Auto-restore floating ball':
+      'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案
@@ -474,6 +479,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
+  // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
+  'lookup/Pick meaning from context with AI':
+      'test/pages/base_source_page_ai_pick_test.dart: 自动判断开着：查词后 AI 回来即换到最前 / 没指派提供商：自动开着也不发请求',
   // 持久化/焦点/写穿由 settings_flatten_anki_profile_test 覆盖；真正加标签的消费点在
   // 制卡路径 reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart 的
   // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test

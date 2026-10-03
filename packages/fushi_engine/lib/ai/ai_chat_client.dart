@@ -47,14 +47,39 @@ class AiChatFailure implements Exception {
   String toString() => 'AiChatFailure: $message';
 }
 
+/// 随消息一起发的一张图（视觉模型用）。
+///
+/// 只收已编码的位图字节——三家协议都按 base64 内联，不走 URL：本仓的图都在本机
+/// （漫画页 / 截图），给外链等于先把图传到别处。
+class AiChatImage {
+  const AiChatImage({required this.bytes, this.mimeType = 'image/png'});
+
+  final List<int> bytes;
+
+  /// `image/png` / `image/jpeg` / `image/webp`（三家共同支持的集合）。
+  final String mimeType;
+
+  String get base64Data => base64Encode(bytes);
+}
+
 /// 一条对话消息。
 class AiChatMessage {
-  const AiChatMessage.system(this.content) : role = 'system';
-  const AiChatMessage.user(this.content) : role = 'user';
-  const AiChatMessage.assistant(this.content) : role = 'assistant';
+  const AiChatMessage.system(this.content)
+    : role = 'system',
+      images = const <AiChatImage>[];
+
+  /// [images] 只对 user 消息有意义：三家协议都只在用户回合收图。
+  const AiChatMessage.user(this.content, {this.images = const <AiChatImage>[]})
+    : role = 'user';
+  const AiChatMessage.assistant(this.content)
+    : role = 'assistant',
+      images = const <AiChatImage>[];
 
   final String role;
   final String content;
+
+  /// 附图；非空时按各协议的多模态形状发（文字段在图之后）。
+  final List<AiChatImage> images;
 
   bool get isSystem => role == 'system';
 }
@@ -225,7 +250,23 @@ class AiChatClient {
     'model': provider.model,
     'messages': <Map<String, Object?>>[
       for (final AiChatMessage m in messages)
-        <String, Object?>{'role': m.role, 'content': m.content},
+        <String, Object?>{
+          'role': m.role,
+          // 无图时仍发纯字符串：大量兼容端点（含部分本地服务）不认 content 数组。
+          'content': m.images.isEmpty
+              ? m.content
+              : <Map<String, Object?>>[
+                  for (final AiChatImage image in m.images)
+                    <String, Object?>{
+                      'type': 'image_url',
+                      'image_url': <String, String>{
+                        'url':
+                            'data:${image.mimeType};base64,${image.base64Data}',
+                      },
+                    },
+                  <String, Object?>{'type': 'text', 'text': m.content},
+                ],
+        },
     ],
     // OpenAI 官方的推理模型（o 系列 / gpt-5 系列）拒收 `max_tokens`、只认
     // `max_completion_tokens`（官方其余模型两者都认）；大量兼容端点却只认前者。
@@ -259,7 +300,23 @@ class AiChatClient {
       'messages': <Map<String, Object?>>[
         for (final AiChatMessage m in messages)
           if (!m.isSystem)
-            <String, Object?>{'role': m.role, 'content': m.content},
+            <String, Object?>{
+              'role': m.role,
+              'content': m.images.isEmpty
+                  ? m.content
+                  : <Map<String, Object?>>[
+                      for (final AiChatImage image in m.images)
+                        <String, Object?>{
+                          'type': 'image',
+                          'source': <String, String>{
+                            'type': 'base64',
+                            'media_type': image.mimeType,
+                            'data': image.base64Data,
+                          },
+                        },
+                      <String, Object?>{'type': 'text', 'text': m.content},
+                    ],
+            },
       ],
     };
   }
@@ -282,8 +339,15 @@ class AiChatClient {
             <String, Object?>{
               // Gemini 管 assistant 叫 model。
               'role': m.role == 'assistant' ? 'model' : 'user',
-              'parts': <Map<String, String>>[
-                <String, String>{'text': m.content},
+              'parts': <Map<String, Object?>>[
+                for (final AiChatImage image in m.images)
+                  <String, Object?>{
+                    'inline_data': <String, String>{
+                      'mime_type': image.mimeType,
+                      'data': image.base64Data,
+                    },
+                  },
+                <String, Object?>{'text': m.content},
               ],
             },
       ],

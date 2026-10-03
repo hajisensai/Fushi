@@ -1470,12 +1470,20 @@ void main() {
     },
   );
 
-  test('launchGame passes Luna PC hooks for manosaba Unity target', () async {
+  test('launchGame passes Luna PC hooks for Unity IL2CPP layout', () async {
     final Directory dir = await Directory.systemTemp.createTemp(
       'gal_manosaba_',
     );
     final File exe = File('${dir.path}${Platform.pathSeparator}manosaba.exe');
     await exe.writeAsBytes(<int>[0], flush: true);
+    // 判据是 Unity 目录结构，不是 exe 名：manosaba 的真实布局是
+    // UnityPlayer.dll + GameAssembly.dll。
+    await File(
+      '${dir.path}${Platform.pathSeparator}UnityPlayer.dll',
+    ).writeAsBytes(<int>[1], flush: true);
+    await File(
+      '${dir.path}${Platform.pathSeparator}GameAssembly.dll',
+    ).writeAsBytes(<int>[1], flush: true);
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeEngineSource engine = _FakeEngineSource(

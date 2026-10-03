@@ -369,7 +369,8 @@ class TtsChannel {
       {String locale = 'ja-JP'}) async {
     if (!_isSupported) {
       // No native TextToSpeech off Android: use the OS speech engine
-      // (macOS `say` / Windows SAPI). Returns null on Linux / failure.
+      // (macOS `say` / Windows SAPI / Linux Open JTalk or espeak-ng). Returns
+      // null when no engine is installed or on failure.
       return ttsToFileDesktop(text: text, outputPath: outputPath);
     }
     try {

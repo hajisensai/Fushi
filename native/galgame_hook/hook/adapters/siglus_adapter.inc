@@ -74,14 +74,6 @@ void RememberCatSystem2Pcm(HANDLE handle, const wchar_t* path);
 void ObserveCatSystem2PcmRead(HANDLE file, DWORD done,
                              LPOVERLAPPED overlapped);
 void ForgetCatSystem2Pcm(HANDLE handle);
-void RememberMalieArchive(HANDLE handle, const wchar_t* path);
-void ObserveMalieArchiveReadRequest(HANDLE file, DWORD requested,
-                                    LPOVERLAPPED overlapped);
-void ObserveMalieArchiveRead(HANDLE file, DWORD done, LPOVERLAPPED overlapped);
-void RememberMalieMapping(HANDLE mapping, HANDLE file);
-void ObserveMalieMappedRange(HANDLE mapping, uint64_t offset, SIZE_T bytes);
-void ForgetMalieMapping(HANDLE handle);
-void ForgetMalieArchive(HANDLE handle);
 void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path);
 void ObserveElfAi6VoiceArcRead(HANDLE file, const void* buffer, DWORD done,
                                LPOVERLAPPED overlapped);
@@ -187,7 +179,6 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE) RememberBgiVoiceArc(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberArtemisPfs(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberCatSystem2Pcm(result, file_name);
-  if (result != INVALID_HANDLE_VALUE) RememberMalieArchive(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberElfAi6VoiceArc(result, file_name);
   if (result != INVALID_HANDLE_VALUE) {
     RememberLeafAquaplusVoicePak(result, file_name);
@@ -222,7 +213,6 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberBgiVoiceArc(result, wide);
       RememberArtemisPfs(result, wide);
       RememberCatSystem2Pcm(result, wide);
-      RememberMalieArchive(result, wide);
       RememberElfAi6VoiceArc(result, wide);
       RememberLeafAquaplusVoicePak(result, wide);
       RememberHunexVoiceHfa(result, wide);
@@ -238,7 +228,6 @@ HANDLE WINAPI Detour_CreateFileMappingW(
     DWORD maximum_size_high, DWORD maximum_size_low, LPCWSTR name) {
   HANDLE result = g_orig_CreateFileMappingW(
       file, attributes, protect, maximum_size_high, maximum_size_low, name);
-  if (result != nullptr) RememberMalieMapping(result, file);
   return result;
 }
 
@@ -247,7 +236,6 @@ HANDLE WINAPI Detour_CreateFileMappingA(
     DWORD maximum_size_high, DWORD maximum_size_low, LPCSTR name) {
   HANDLE result = g_orig_CreateFileMappingA(
       file, attributes, protect, maximum_size_high, maximum_size_low, name);
-  if (result != nullptr) RememberMalieMapping(result, file);
   return result;
 }
 
@@ -256,11 +244,6 @@ LPVOID WINAPI Detour_MapViewOfFile(HANDLE mapping, DWORD desired_access,
                                    SIZE_T bytes) {
   LPVOID result = g_orig_MapViewOfFile(mapping, desired_access, offset_high,
                                        offset_low, bytes);
-  if (result != nullptr && bytes != 0) {
-    const uint64_t offset = (static_cast<uint64_t>(offset_high) << 32) |
-                            static_cast<uint64_t>(offset_low);
-    ObserveMalieMappedRange(mapping, offset, bytes);
-  }
   return result;
 }
 
@@ -291,7 +274,6 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   const void* caller = _ReturnAddress();
   if (g_capture_enabled && overlapped != nullptr && requested > 0) {
     ObserveTyranoAsarReadRequest(file, requested, overlapped);
-    ObserveMalieArchiveReadRequest(file, requested, overlapped);
   }
   const BOOL ok =
       g_orig_ReadFile(file, buffer, requested, bytes_read, overlapped);
@@ -301,7 +283,6 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveBgiVoiceArcRead(file, buffer, done, overlapped);
   ObserveArtemisPfsRead(file, done, overlapped);
   ObserveCatSystem2PcmRead(file, done, overlapped);
-  ObserveMalieArchiveRead(file, done, overlapped);
   ObserveElfAi6VoiceArcRead(file, buffer, done, overlapped);
   ObserveLeafAquaplusVoicePakRead(file, buffer, done, overlapped, caller);
   ObserveHunexVoiceHfaRead(file, buffer, done, overlapped);
@@ -343,12 +324,10 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetBgiVoiceArc(handle);
   ForgetArtemisPfs(handle);
   ForgetCatSystem2Pcm(handle);
-  ForgetMalieArchive(handle);
   ForgetElfAi6VoiceArc(handle);
   ForgetLeafAquaplusVoicePak(handle);
   ForgetHunexVoiceHfa(handle);
   ForgetRealliveNwk(handle);
-  ForgetMalieMapping(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);
   }
@@ -434,9 +413,10 @@ bool TryHookSiglusOvk() {
       reinterpret_cast<void*>(GetProcAddress(kernel, "CloseHandle")),
       reinterpret_cast<void*>(&Detour_CloseHandle),
       reinterpret_cast<void**>(&g_orig_CloseHandle));
-  // ReadFile is the verified Malie path. Mapping hooks are best-effort for
-  // variants that map bounded archive windows; they must not make the shared
-  // file-hook boundary unavailable on systems without the ANSI wrapper.
+  // The mapping detours are pass-through (no engine consumes mapping events
+  // any more); they stay installed so readers of g_orig_CreateFileMapping* /
+  // g_orig_MapViewOfFile keep one stable chain, and they must not make the
+  // shared file-hook boundary unavailable without the ANSI wrapper.
   const bool ready = create_w && create_a && read && close;
   (void)mapping_w;
   (void)mapping_a;

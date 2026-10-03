@@ -11,6 +11,7 @@ class MangaOcrBackgroundJob {
     required this.engine,
     required this.events,
     this.focus,
+    this.follower,
   });
 
   final String bookKey;
@@ -21,6 +22,38 @@ class MangaOcrBackgroundJob {
   /// 读者当前页的改道通道（与构造 [events] 的 `MangaOcrJobSpec.focus` 是同一个
   /// 实例）；null = 这个任务不跟读者走（远端 / 外部 CLI / 旧入口）。
   final MangaOcrPageFocus? focus;
+
+  /// 任务之外的收尾步骤（目前只有大模型识别）；null = 没有。由注册表驱动，见
+  /// [MangaOcrJobFollower]。
+  final MangaOcrJobFollower? follower;
+}
+
+/// 跟随步骤改好的一页：[pageIndex] 是该页在整卷结果里的序号。
+typedef MangaOcrPageUpdate = ({int pageIndex, MokuroImage page});
+
+/// 跟着整卷任务走、但**不占任务寿命**的后处理步骤（大模型重读）。
+///
+/// 为什么不做成事件流包装：包装在流里，任务的 finished 就得等它清空、全局 OCR
+/// 名额也被它一直占着；而外部 mokuro / 配对主机的进度事件不带页内容，所有工作
+/// 都被推到 finished 之后串行。拆出来以后由注册表按这个契约驱动：
+/// - 任务进行中每个带页的进度交给 [onProgress]，改好的页从 [updates] 回来；
+/// - finished 落盘前 [mergeInto] 把已改好的页同步并进整卷结果（不等任何请求）；
+/// - 落盘后 [onPersisted] 交出书根 manga.json：剩下的页在任务**结束之后**继续
+///   处理，每改好一页经 manga.json 写锁读改写落盘，再从 [updates] 发出；
+/// - [cancel] 中止一切（任务取消、删书、同目录起了新任务），之后不再写盘。
+abstract interface class MangaOcrJobFollower {
+  void onProgress(MangaOcrBackgroundEvent event);
+
+  MokuroPayload mergeInto(MokuroPayload payload);
+
+  void onPersisted(String mangaJsonPath, MokuroPayload payload);
+
+  Stream<MangaOcrPageUpdate> get updates;
+
+  /// 所有工作做完（或被取消）时完成，不带错误。
+  Future<void> get done;
+
+  Future<void> cancel();
 }
 
 /// 后台 OCR 的统一事件。支持增量引擎时 [pageIndex]/[page] 随进度事件返回，
@@ -32,19 +65,19 @@ class MangaOcrBackgroundEvent {
     this.pageIndex,
     this.page,
     this.acceleration,
-  })  : resultPath = null,
-        external = false,
-        finished = false;
+  }) : resultPath = null,
+       external = false,
+       finished = false;
 
   const MangaOcrBackgroundEvent.finished({
     required this.pagesTotal,
     required String this.resultPath,
     required this.external,
     this.acceleration,
-  })  : pagesDone = pagesTotal,
-        pageIndex = null,
-        page = null,
-        finished = true;
+  }) : pagesDone = pagesTotal,
+       pageIndex = null,
+       page = null,
+       finished = true;
 
   final int pagesDone;
   final int pagesTotal;

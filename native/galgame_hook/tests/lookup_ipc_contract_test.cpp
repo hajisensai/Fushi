@@ -1080,6 +1080,8 @@ void TestAdapterReportRoundTrip() {
             h, out, fushi_voice_hook::kAdapterReportSlots, &seq) == 0,
         "未上报时必须读到 0 槽");
   Check(seq == 0, "未上报时 seq 必须是 0");
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "sgre"),
+        "未上报时引擎身份必须是「还不知道」=false，不能猜成已认领");
 
   // (b) 正常往返：id / applicable / installed / flags 都要原样回来，且**按槽对号**。
   fushi_voice_hook::AdapterReportSlot in[3] = {
@@ -1101,6 +1103,32 @@ void TestAdapterReportRoundTrip() {
         "横切能力那行也要原样回来——它自带 id，不会被误读成引擎判定");
   Check(strcmp(out[2].id, "sgre") == 0 && out[2].applicable == 0,
         "probe 为假的行同样要如实回来");
+  // 引擎身份查询只认 applicable 的同名槽：sgre 那行 probe 为假 → 不算认领；
+  // 别的引擎 applicable 也不能被当成 sgre；前缀相同的 id 不得误配。
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "sgre"),
+        "probe 为假的 sgre 槽不得被当成引擎已认领");
+  Check(fushi_voice_hook::AdapterReportsClaimEngine(h, "cmvs"),
+        "probe 为真的 cmvs 槽必须被认出");
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "cmv"),
+        "id 必须整串相等，前缀不算");
+  Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "") &&
+            !fushi_voice_hook::AdapterReportsClaimEngine(h, nullptr) &&
+            !fushi_voice_hook::AdapterReportsClaimEngine(nullptr, "sgre"),
+        "空 id / 空 header 必须是 false");
+  {
+    fushi_voice_hook::AdapterReportSlot claimed[2] = {
+        make("siglus", false, false, 0u),
+        make("sgre", true, true, 0u),
+    };
+    Check(fushi_voice_hook::PublishAdapterReports(h, claimed, 2) == 2,
+          "发布 sgre 认领必须成功");
+    Check(fushi_voice_hook::AdapterReportsClaimEngine(h, "sgre"),
+          "probe 为真的 sgre 槽必须被认出（不看 exe 哈希/文件名）");
+    Check(!fushi_voice_hook::AdapterReportsClaimEngine(h, "siglus"),
+          "同一份报告里 probe 为假的引擎仍是 false");
+    Check(fushi_voice_hook::PublishAdapterReports(h, in, 3) == 3,
+          "还原为原 3 槽");
+  }
 
   // (c) adapter 数变少（换了个构建）时，尾部旧槽必须被清掉。不清就会读到上一次的
   //     probe/installed，而那一行看着完全正常——这正是最难发现的错。

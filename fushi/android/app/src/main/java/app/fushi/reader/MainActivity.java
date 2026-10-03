@@ -118,28 +118,8 @@ public class MainActivity extends AudioServiceActivity {
             new GamepadTriggerKeySynthesizer(this::dispatchKeyEvent);
 
     @Override
-    protected void attachBaseContext(Context newBase) {
-        SharedPreferences prefs = newBase.getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
-        if (prefs.contains(PreferenceKeys.SPLASH_IS_DARK)) {
-            boolean isDark = prefs.getBoolean(PreferenceKeys.SPLASH_IS_DARK, false);
-            int currentNight = newBase.getResources().getConfiguration().uiMode
-                    & Configuration.UI_MODE_NIGHT_MASK;
-            boolean systemDark = currentNight == Configuration.UI_MODE_NIGHT_YES;
-            if (isDark != systemDark) {
-                Configuration config = new Configuration(
-                        newBase.getResources().getConfiguration());
-                config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
-                        | (isDark ? Configuration.UI_MODE_NIGHT_YES
-                                  : Configuration.UI_MODE_NIGHT_NO);
-                super.attachBaseContext(newBase.createConfigurationContext(config));
-                return;
-            }
-        }
-        super.attachBaseContext(newBase);
-    }
-
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Splash 缓存只设置窗口背景；保留系统 uiMode，让 Flutter 正确跟随系统明暗。
         SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
         int bgColor = splashPrefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
         if (bgColor != 0) {
@@ -612,7 +592,7 @@ public class MainActivity extends AudioServiceActivity {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
-        SystemOcrChannel.registerWith(flutterEngine);
+        SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());

@@ -245,6 +245,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
     this.restoreScrollTop,
+    this.reorderOf,
   });
 
   final DictionarySearchResult result;
@@ -256,6 +257,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 应用（尾批渲染完兜底应用一次）——Dart 侧渲染后直接 scrollTo 不可靠：内容分批
   /// 进 DOM，首发 popupRendered 时文档往往还不够高，滚不到目标位。
   final double? restoreScrollTop;
+
+  /// 查词「按句意挑词条」：[result] 只是 [reorderOf] 这份已渲染结果的**换序**
+  /// （同一批词头，只是顺序变了）时由宿主传入（[DictionaryPopupEntry.reorderBase]）。
+  /// 此时 [didUpdateWidget] 不走全量重渲染（那会滚回顶、清已选释义、把句子上下文
+  /// 镜像归 0，而宿主制卡草稿没清——BUG-297 型错位），只让 popup.js 的
+  /// `fushiReorderPopupEntries` 挪已渲染的卡片。null = 常态，结果一变就全量推。
+  final DictionarySearchResult? reorderOf;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -1383,7 +1391,8 @@ JSON.stringify((function(){
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.result != widget.result) {
-      _pushResults();
+      // 只是同一批词条换了顺序（AI 挑词）就只挪 DOM，否则全量重推。
+      if (!_tryPushReorder(oldWidget.result)) _pushResults();
     }
     // TODO-869：独立比较，不搭 result 便车——子弹窗增减时 result 可能没变（卡片内容
     // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。
@@ -1449,9 +1458,12 @@ JSON.stringify((function(){
       appModel: ref.read(appProvider),
       theme: Theme.of(context),
       // 导入字体以 URL 引用下发，字节由本 WebView 的 shouldInterceptRequest 供
-      // （见 dictionaryFontWebResourceResponse）。仅在宿主真有能带 CORS 头的拦截器
-      // 时启用——否则字体会被静默拒绝，那比慢更糟。见 kInAppPopupFontUrlSupported。
-      fontUrlBuilder: kInAppPopupFontUrlSupported ? dictionaryFontUrl : null,
+      // （Android/Windows，见 dictionaryFontWebResourceResponse），或由与文档同源的
+      // fushi-popup:// scheme handler 供（iOS/macOS，BUG-2916）。仅在字体真能被合法
+      // 取到时启用——否则字体会被静默拒绝，那比慢更糟。见 kInAppPopupFontUrlSupported。
+      fontUrlBuilder: kInAppPopupFontUrlSupported
+          ? inAppDictionaryFontUrl
+          : null,
       options: PopupSettingsOptions(
         // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
         mobileExternal: widget.transparentDocumentBackground,
@@ -1467,6 +1479,47 @@ JSON.stringify((function(){
     await _controller!.evaluateJavascript(
       source: ReaderCaretScripts.instantScrollInvocation(enabled),
     );
+  }
+
+  /// [DictionaryPopupWebView.reorderOf] 的只换序路径：新结果是上一份**已推送**结果
+  /// 的换序时，只把新顺序的词头键交给 popup.js 挪卡片，返回 true。任一条件不满足
+  /// （宿主没声明换序 / 上一份不是页面上那份 / 页面未就绪）返回 false，由调用方照常
+  /// 全量推送——宁可多一次全量渲染，也不把不同内容当换序吞掉。
+  bool _tryPushReorder(DictionarySearchResult previous) {
+    final DictionarySearchResult? base = widget.reorderOf;
+    final InAppWebViewController? controller = _controller;
+    if (base == null || !identical(base, previous)) return false;
+    if (!identical(_lastPushedResult, previous)) return false;
+    if (controller == null || !_ready) return false;
+    final List<String>? keys = _entryOrderKeys(widget.result);
+    if (keys == null) return false;
+    _lastPushedResult = widget.result;
+    if (identical(_lastRenderedResult, previous)) {
+      _lastRenderedResult = widget.result;
+    }
+    controller.evaluateJavascript(
+      source: 'window.fushiReorderPopupEntries && '
+          'window.fushiReorderPopupEntries(${jsonEncode(keys)});',
+    );
+    return true;
+  }
+
+  /// 弹窗词头分组的顺序键（与 popup.js `popupEntryOrderKey` 同形：
+  /// `expression + U+0001 + reading`）；解码不了返回 null。
+  static List<String>? _entryOrderKeys(DictionarySearchResult result) {
+    final String json = result.popupJson ?? buildLookupEntriesJson(result);
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(json);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! List) return null;
+    return <String>[
+      for (final Object? group in decoded)
+        if (group is Map)
+          '${group['expression'] ?? ''}\u0001${group['reading'] ?? ''}',
+    ];
   }
 
   void _pushResults() {
@@ -1663,6 +1716,11 @@ JSON.stringify((function(){
   static bool get _shouldInlinePopupAssets =>
       isWindowsPlatform || defaultTargetPlatform == TargetPlatform.iOS;
 
+  /// 本平台的 in-app 弹窗是否要用内联 popup HTML：除 [_shouldInlinePopupAssets]
+  /// 外，iOS / macOS 的弹窗文档经 [kPopupDocumentScheme] 供的也是这份 HTML。
+  static bool get _needsInlinePopupHtml =>
+      _shouldInlinePopupAssets || kPopupDocumentServedViaCustomScheme;
+
   static void _ensureInlinePopupAssetsLoaded() {
     // BUG-912 #2：成功后 _inlineCss 非空即可防重复读盘；不再用进程级
     // 永久失败闩——一次瞬时读盘异常（文件锁 / 磁盘抖动）不该把内联资产
@@ -1702,7 +1760,7 @@ JSON.stringify((function(){
   static Future<void>? _inlineAssetsPreload;
 
   static Future<void> preloadInlinePopupAssets() {
-    if (!_shouldInlinePopupAssets || _inlineCss != null) {
+    if (!_needsInlinePopupHtml || _inlineCss != null) {
       return Future<void>.value();
     }
     return _inlineAssetsPreload ??= _preloadInlinePopupAssets();
@@ -1895,8 +1953,12 @@ JSON.stringify((function(){
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';
 
+    // iOS / macOS：文档从 fushi-popup:// 加载，取得与字体 URL 同源的 origin
+    // （见 kPopupDocumentServedViaCustomScheme）；其余平台保持原加载方式。
+    final bool servedViaScheme = kPopupDocumentServedViaCustomScheme;
     InAppWebViewInitialData? popupInitialData;
-    final bool shouldInlinePopupAssets = _shouldInlinePopupAssets;
+    final bool shouldInlinePopupAssets =
+        _shouldInlinePopupAssets && !servedViaScheme;
     if (shouldInlinePopupAssets) {
       final String? inlineHtml = buildInlinePopupHtmlIfReady(
         themeAttr: themeAttr,
@@ -1916,7 +1978,9 @@ JSON.stringify((function(){
       initialUrlRequest: popupInitialData != null
           ? null
           : URLRequest(
-              url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
+              url: WebUri(servedViaScheme
+                  ? popupDocumentUrl(themeAttr: themeAttr, bgHex: bgHex)
+                  : webViewAssetUrl('assets/popup/popup.html')),
             ),
       contextMenu: ContextMenu(
         settings: ContextMenuSettings(
@@ -2024,7 +2088,10 @@ JSON.stringify((function(){
         allowFileAccessFromFileURLs: true,
         allowUniversalAccessFromFileURLs: true,
         useShouldInterceptRequest: true,
-        resourceCustomSchemes: dictionaryMediaCustomSchemes,
+        resourceCustomSchemes: <String>[
+          ...dictionaryMediaCustomSchemes,
+          if (servedViaScheme) kPopupDocumentScheme,
+        ],
         // 单词发音统一走弹窗自己的 HTML5 <audio>（见 resolveWordAudioWebViewUrl）。
         // 自动发音（打开词条自动读）没有用户手势，默认的 autoplay 策略
         // （mediaPlaybackRequiresUserGesture=true）会静默拦截 audio.play() —— 手动 ♪
@@ -2876,7 +2943,37 @@ JSON.stringify((function(){
         }
       },
       onLoadResourceWithCustomScheme: (controller, request) async {
-        return dictionaryMediaCustomSchemeResponse(request.url);
+        final Uri url = request.url;
+        final CustomSchemeResponse? document =
+            popupDocumentCustomSchemeResponse(
+              url,
+              buildHtml: (String theme, String bg) {
+                final String? html =
+                    buildInlinePopupHtmlIfReady(themeAttr: theme, bgHex: bg);
+                // 空文档能「加载成功」，onReceivedError 不会触发，popupRendered 也
+                // 永不到来——必须在这里显式报渲染失败，否则冷层永久不可见（TODO-058）。
+                if (html == null && mounted) widget.onRenderError?.call();
+                return html;
+              },
+            );
+        if (document != null) return document;
+        // 前缀判定在前，白名单只在真是字体请求时求值（理由同 shouldInterceptRequest）。
+        if (isDictionaryFontUrl(url)) {
+          final List<String>? roots = _resolveDictionaryFontRoots();
+          if (roots == null) {
+            return CustomSchemeResponse(
+              data: Uint8List(0),
+              contentType: 'text/plain',
+              contentEncoding: '',
+            );
+          }
+          return dictionaryFontCustomSchemeResponse(
+            url,
+            allowedRoots: roots,
+            whitelistedPaths: _configuredDictionaryFontPaths(),
+          );
+        }
+        return dictionaryMediaCustomSchemeResponse(url);
       },
       // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
       onWebContentProcessDidTerminate: (InAppWebViewController _) =>

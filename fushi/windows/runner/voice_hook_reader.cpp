@@ -1029,12 +1029,15 @@ void HandleLookupPresent(
   const uint32_t glyph_h = ReadLookupDimension(call, "glyphH");
   uint32_t client_width = 0;
   uint32_t client_height = 0;
+  int32_t root_client_x = 0;
+  int32_t root_client_y = 0;
   if (pump.direct_presenter && card_width > 0 && card_height > 0 &&
       view_width > 0 && view_height > 0) {
     if (pump.direct_presenter(meta.anchor_x, meta.anchor_y, card_width,
                               card_height, view_width, view_height, glyph_x,
                               glyph_y, glyph_w, glyph_h, &client_width,
-                              &client_height)) {
+                              &client_height, &root_client_x,
+                              &root_client_y)) {
       // Only retire the old bitmap AFTER the live composition surface is in
       // place. Dismissing first created a guaranteed blank interval whenever
       // direct presentation failed and CapturePreview had to recover.
@@ -1060,6 +1063,12 @@ void HandleLookupPresent(
            flutter::EncodableValue(static_cast<int64_t>(client_width))},
           {flutter::EncodableValue("clientHeight"),
            flutter::EncodableValue(static_cast<int64_t>(client_height))},
+          // BUG-2921 — 根卡在客户区里的真实左上角（物理 px）。嵌套子卡要以它为原点、
+          // 以客户区为视口排版；画布域的视口与原点在放大/缩小运行的游戏里对不上真实画面。
+          {flutter::EncodableValue("rootClientX"),
+           flutter::EncodableValue(static_cast<int64_t>(root_client_x))},
+          {flutter::EncodableValue("rootClientY"),
+           flutter::EncodableValue(static_cast<int64_t>(root_client_y))},
       }));
       return;
     }

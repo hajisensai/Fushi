@@ -191,7 +191,15 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 悬浮球场景也要在全屏路由里重新登记：窗口侧那份所在的本页路由此刻被压在
         // 下面、不是当前路由，宿主只认当前路由上的场景，不重挂就退回「其它页面」
         // 的按钮。
-        pageBuilder: (_, __, ___) => _wrapVideoGamepadControls(
+        //
+        // 全屏路由同样是**窗口全屏的合法宿主**（[WindowFullscreenHost]）：它压在本页
+        // 路由之上，本页那份登记此刻不是 current。全屏路由自己不登记，注册表里就
+        // 没有一个可见宿主——这期间任何一个宿主卸载（典型：剧集列表换集时被
+        // removeRoute 摘掉的旧集页，它要等新页入场过渡结束才真正 dispose，而新页
+        // 往往已经压上了自己的全屏路由）都会在帧末判「无宿主」并
+        // [exitWindowFullscreenIfActive]，把用户正在看的全屏退掉（BUG-2913）。
+        pageBuilder: (_, __, ___) => WindowFullscreenHost(
+            child: _wrapVideoGamepadControls(
           _buildVideoFloatingBallScene(
           playerController,
           child: ValueListenableBuilder<bool>(
@@ -307,7 +315,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
               ),
             ),
           ),
-        )),
+        ))),
         ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
@@ -431,10 +439,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await defaultEnterNativeFullscreen();
       return;
     }
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: <SystemUiOverlay>[],
-    );
+    if (!VideoDisplayClaim.owns(this)) return;
+    await _applyVideoImmersiveMode();
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -473,10 +480,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await setMacOSTrafficLightsHidden(true);
       return;
     }
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: <SystemUiOverlay>[],
-    );
+    if (!VideoDisplayClaim.owns(this)) return;
+    await _applyVideoImmersiveMode();
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,

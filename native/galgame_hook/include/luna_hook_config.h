@@ -95,7 +95,9 @@ inline bool LunaHostLogConfirmsHookRemoval(const wchar_t* log,
 
 // TSV schema: exe_sha256, module_name, module_sha256, codepage, hook_code,
 // label, options. Options are semicolon-separated: `pc-hooks` enables generic
-// candidates; `normalize-mages-controls` converts MAGES line-break controls
+// candidates; `normalize-mages-controls` (user profiles; the built-in SGRE
+// engine gets it from engine identity, see kLunaMagesControlEngineAdapterId)
+// converts MAGES line-break controls
 // (`\\n`/`¥n`/`%r`) into line feeds and strips inline `#RRGGBB;` font-color
 // prefixes before publication; `block=<hook-code-without-module>` removes a known-crashing
 // auto-detected hook; `block-name=<Luna-hook-name>` confirms that asynchronous

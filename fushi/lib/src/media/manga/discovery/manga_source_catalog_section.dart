@@ -11,7 +11,7 @@
 /// 扩展宿主，也不用碰 `AppModel`。
 ///
 /// 平台差异只体现在**内容**上，不体现在结构上：Mihon 仅桌面/安卓有宿主，Aidoku
-/// 只在 macOS / iOS 有宿主，Linux 两者皆无时这一节仍在原位，只列内置来源。
+/// 当前没有任何平台带宿主，两者皆无的平台（iOS）这一节仍在原位，只列内置来源。
 library;
 
 import 'package:flutter/material.dart';

@@ -376,6 +376,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
               sessions: _sessions,
               titleOf: (StudySession s) => s.title,
               collectionOf: _sessionCollectionName,
+              coverOf: _sessionCover,
               onDelete: _deleteSession,
               onEdit: _editSession,
               onClearAll: _clearSessions,
@@ -629,6 +630,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
       titleOf: (StudySession s) => s.title,
       collectionOf: _sessionCollectionName,
+      coverOf: _sessionCover,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
       onEdit: (StudySession s, StudySessionEdit edit) =>
@@ -691,6 +693,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           _primaryCollectionByEntry,
           _collectionNamesById,
         );
+
+  /// 会话行封面：段 mediaKey 即 bookUid，与「按视频」行同一张封面表。
+  ImageProvider? _sessionCover(StudySession s) => resolveMediaCoverImage(
+    kind: MediaKind.video,
+    localPath: _coverPathByUid[s.mediaKey],
+    decodeWidth: kActivityCoverDecodePixelWidth,
+  );
 
   /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
   /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删

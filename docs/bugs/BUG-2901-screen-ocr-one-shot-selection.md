@@ -1,0 +1,44 @@
+## BUG-2901 · 截屏识字选取层一次性：查一个词就销毁，下个词要重新截屏重新授权
+- **报告**：2026-10-03（随 BUG-2899 一并处理：外部 OCR 查词窗打磨）
+- **真实性**：✅ 真 bug（沿代码路径确认）。
+  - 选取层是 `TYPE_APPLICATION_OVERLAY`，压在一切 Activity 之上。为了不盖住查词窗，`onSelectionTap` 拉起查词窗后立刻 `finishFlow()`，拆掉选取层并停掉服务（`fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrService.java` 旧 :476-477）。
+  - 结果是点一个字就整条流程结束：想查同一屏的下一个词，得重新点悬浮球、重新过 MediaProjection 授权框、重新截屏识别。
+  - 同一个文件里的选取层画法（旧 :541-548）是整屏压暗 `0x33000000`，每行再画 2dp 实线蓝框加填充。满屏蓝框盖住要读的字，也就是用户看到的「popup ui could use some work」。
+- **[x] ① 已修复**
+  - **选取层可复用**：点字后选取层不拆。查词窗和选取层之间建一次会话（`EXTRA_SCREEN_OCR_SESSION`），由 `PopupDictFlutterActivity` 经定向广播回报（`setPackage`，接收端 `RECEIVER_NOT_EXPORTED`，会话号对不上的一律忽略）：
+    - `onResume` 发 SHOWN，选取层这时才隐藏，并带上 `NOT_TOUCHABLE | NOT_FOCUSABLE`。拉起失败的话选取层留在原处，不会藏起来再也回不来。启动那一刻选取层仍然可见，Android 15 的后台启动豁免照样成立。
+    - `onPause` 时如果 `isFinishing`，发 CLOSED，选取层恢复并重新拿焦点，同一张截图可以接着点。
+    - `onStop` 时如果没关窗（回桌面、切 app、锁屏），发 LEFT，整条流程收尾。
+    - 别的入口复用这个窗口（`onNewIntent` 换了会话）时，同样发 LEFT。
+    - 查词窗先被别的透明窗压到 paused 再关掉时，finish 不会再走一次 `onPause`。这种情况在 `onStop` 里按 `isFinishing` 补报 CLOSED，不按 LEFT 收尾。
+    - **对端死亡**：`:popup` 进程意外死亡（例如 WebView 渲染进程崩溃把宿主一起带走）时，onPause / onStop 都不会执行，靠回报的协议就漏了。为此 SHOWN 回报里带上查词窗的 Binder 令牌（`EXTRA_LOOKUP_TOKEN`），服务端先 `linkToDeath` 盯住它，盯住了才隐藏选取层；进程一死就 `finishFlow` 收尾。没有这一步，选取层会一直隐藏、流程锁不解、悬浮球回不来。
+    - 识别回调到达时流程可能已经收尾（例如系统重投空 intent）。这时直接回收位图，不再挂一个没人管的选取层。
+    - **有意的行为变化**：选取层存在期间（包括查词窗开着的时候），流程锁一直持有，原生悬浮球保持隐藏；选取层关闭后悬浮球才回来。原因是同一张截图还在用，这期间再点悬浮球就会叠出第二轮截屏。
+  - **降噪**：选取层背景画定格的那一帧，也就是识别所用的那一帧。这样框与画面始终对齐，与底下的 app 此刻在播什么无关；这一帧在流程收尾时回收。去掉整屏压暗；静息时每行只铺 `0x1A3D8BFF` 淡底，手指按下的那一行才加深并描边，移动超出 touchSlop、抬起或取消时清除。
+- **[x] ② 已加自动化测试** — 原生 Service 与 Activity 的生命周期在 Dart 测试宿主上跑不了，按「最强可落地层」做了源码守卫，放在 `fushi/test/build/screen_ocr_reusable_selection_guard_test.dart`，钉住四件事：
+  - `onSelectionTap` 不再 `finishFlow`，并带上会话号；
+  - 隐藏只发生在 SHOWN 之后；
+  - Activity 在 resume / finishing pause / stop 三处各回报一次；
+  - 选取层不再整屏压暗、静息时不描边。
+  - 后来又加了两条：隐藏选取层前必须先 `linkToDeath` 盯住查词窗的令牌；识别回调先判断 `finished`，再决定是否挂选取层。
+  - 另外 `:app:assembleRelease` 编译通过。
+- **备注**：未做真机复测（需要 MediaProjection 授权框和 ML Kit 模型）。
+- **审查返工（2026-10-03，提交 `322a3123bc`）**
+  - **选取层随屏幕几何失效**：原实现没有任何失效条件。用户点字后在查词窗里转屏（`PopupDictFlutterActivity` 的 configChanges 含 `orientation|screenSize`，不重建也不走 LEFT），关窗后 CLOSED 会恢复一层竖屏几何的旧定格帧，横屏被裁、行点不到，还盖住真实画面。现在 `startCapture` 把截屏时的屏幕物理尺寸 + display rotation 记为这张截图的身份（`ScreenOcrSelectionSession.ScreenIdentity`），`Service.onConfigurationChanged` 和 CLOSED 恢复之前都按 `realScreenBounds()` + `DisplayManager` 默认屏 `getRotation()` 比对，不一致就 `finishFlow()`，不尝试映射旧框。rotation 也纳入身份，因为 0° 和 180° 尺寸相同，但定格帧是倒的。
+  - **会话协议抽成纯状态机**：新文件 `fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrSession.kt`，不依赖 android.*。
+    - `ScreenOcrLookupReporter` 是查词窗侧，负责把生命周期翻译成 SHOWN / CLOSED / LEFT。
+    - `ScreenOcrSelectionSession` 是选取层侧，负责过期会话忽略、先盯令牌再隐藏、CLOSED 恢复前核对几何、LEFT / 进程死亡 / 几何变化时收尾。
+    - `ScreenOcrService` 与 `PopupDictFlutterActivity` 只负责接线，除新增的几何失效外行为不变。
+  - **测试**：
+    - JVM 表驱动单测 `fushi/android/app/src/test/kotlin/app/fushi/reader/ScreenOcrSessionTest.kt`，覆盖以下场景：
+      - onPause 已报 CLOSED 后 onStop 不重复报；
+      - 被透明窗压到 paused 后再 finish，补报 CLOSED；
+      - 不可见了报 LEFT；
+      - onNewIntent 换会话；
+      - 过期 / 0 号会话忽略；
+      - 没有活令牌就不隐藏；
+      - 进程死亡收尾；
+      - 几何变化下 CLOSED 收尾与 onConfigurationChanged 收尾。
+    - 源码守卫 `fushi/test/build/screen_ocr_reusable_selection_guard_test.dart` 改为钉住结构：接线层只经状态机做决定、状态机不 import android.*、JVM 单测文件存在。
+    - **注意**：本仓 CI 不跑 Android JVM 单测，那份测试只在本地 `gradlew :app:testDebugUnitTest` 时运行。
+  - **验证状态**：本机内存租约（`tool/heavy.dart`）连续排队 20 分钟未获准入（退出码 75），以上测试与 `flutter analyze` 本地均**未运行**，待 PR CI；JVM 单测 CI 不跑，需本地补跑。

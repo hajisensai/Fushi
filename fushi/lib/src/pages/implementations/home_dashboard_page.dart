@@ -43,6 +43,7 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -59,6 +60,27 @@ import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+
+/// 首页「继续」区是否收这本书：与书架读完筛选 / hero 计数同一判据
+/// [classifyShelfReadStatus]（`EpubBooks.completedAt` 优先于进度）。
+///
+/// BUG-2918：阅读器落库的位置是末页**首个可见字符**，读到最后一页 position 也
+/// 永远 < duration；旧判据只看 `0 < position < duration`，读完（含阅读器自动
+/// 写入的 completedAt）的书仍以四舍五入出的 100% 留在「继续」区。
+/// [completedBookKeys] 的键是 bookKey（standalone SRT 等无 bookKey 的条目回退
+/// mediaIdentifier，查不到即按进度判，与旧行为一致）。
+@visibleForTesting
+bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
+  final String bookKey =
+      ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+          item.mediaIdentifier;
+  return classifyShelfReadStatus(
+        completed: completedBookKeys.contains(bookKey),
+        position: item.position,
+        duration: item.duration,
+      ) ==
+      ShelfReadStatus.reading;
+}
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
@@ -628,6 +650,8 @@ class _HomeDashboardPageState
       // 新进度。频度由写入端自身的 debounce + 本 400ms 防抖兜住。
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       ref.invalidate(bookLastReadAtProvider);
+      // BUG-2918：读完标记（EpubBooks.completedAt）变更同样经表级信号到达。
+      ref.invalidate(completedEpubBookKeysProvider);
       unawaited(_loadDashboardData());
     });
   }
@@ -1005,8 +1029,11 @@ class _HomeDashboardPageState
       for (final VideoBookRow v in _videos) v.bookUid: v,
     };
 
-    final Widget continueCard = _buildContinueSection(
-        tokens, appModel, books, lastReadByKey, epubUidByKey);
+    final Set<String> completedBookKeys =
+        ref.watch(completedEpubBookKeysProvider).valueOrNull ??
+            const <String>{};
+    final Widget continueCard = _buildContinueSection(tokens, appModel, books,
+        lastReadByKey, epubUidByKey, completedBookKeys);
     final Widget heatmapCard = _buildHeatmapCard(tokens);
     final Widget activityCard =
         _buildActivitySection(tokens, now, appModel, booksByKey, videosByUid);
@@ -1127,7 +1154,7 @@ class _HomeDashboardPageState
 
   // ── 区块 2：继续（书 + 视频统一列表） ─────────────────────────────────────
 
-  /// 「继续」区块：把在读的书（0<position<duration）与在看的视频
+  /// 「继续」区块：把在读的书（[isDashboardContinueBook]）与在看的视频
   /// （lastPositionMs>0 且未完成）合并、按最近活动时刻倒序，分段筛选后取前 10 条。
   Widget _buildContinueSection(
     FushiDesignTokens tokens,
@@ -1135,10 +1162,11 @@ class _HomeDashboardPageState
     List<MediaItem> books,
     Map<String, int> lastReadByKey,
     Map<String, String> epubUidByKey,
+    Set<String> completedBookKeys,
   ) {
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
     for (final MediaItem item in books) {
-      if (item.position > 0 && item.position < item.duration) {
+      if (isDashboardContinueBook(item, completedBookKeys)) {
         final String bookKey =
             ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
                 item.mediaIdentifier;

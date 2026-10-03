@@ -25,7 +25,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -4597,7 +4597,7 @@ class AppModel with ChangeNotifier {
       Directory(path.join(databaseDirectory.path, 'mihon')),
     );
     _mihonRuntime = runtime;
-    if (Platform.isWindows || Platform.isMacOS) {
+    if (MihonRuntimeFactory.usesDesktopSidecar) {
       _mihonRuntimeExitShutdown = ExitFlushRegistry.instance.register(
         _shutdownMihonRuntime,
       );
@@ -4682,7 +4682,7 @@ class AppModel with ChangeNotifier {
   /// 运行时；这里是唯一的分派点。
   ///
   /// **Aidoku 分支刻意不碰 [mihonManager]**：平台矩阵不重合——Mihon 是
-  /// Android/Windows/macOS，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
+  /// Android/Windows/macOS/Linux，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
   /// 条目时去取 mihonManager 会直接抛 `UnsupportedError`，把「打开这本书」变成
   /// 崩溃。两个分支各自独立到底。
   OnlineMangaLibraryService onlineMangaLibraryService(
@@ -4705,7 +4705,7 @@ class AppModel with ChangeNotifier {
           updateFeed: updateFeedService,
         );
       // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
-      // iOS/Linux 上直接抛 UnsupportedError。
+      // 没有 Mihon 宿主的平台（iOS）上直接抛 UnsupportedError。
       case OnlineMangaRuntimeKind.interconnect:
         return OnlineMangaLibraryService(
           database: database,
@@ -6672,11 +6672,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryTheme = null;
 
     if (ReaderFushiSource.instance.keepScreenAwake) {
-      try {
-        await WakelockPlus.enable();
-      } catch (e) {
-        debugPrint('[Fushi] wakelock enable failed: $e');
-      }
+      await setScreenWakelock(enable: true, source: 'openMedia');
     }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -6740,13 +6736,8 @@ class AppModel with ChangeNotifier {
     mediaOpenNotifier.value = false;
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
-    try {
-      await WakelockPlus.disable();
-    } catch (e) {
-      debugPrint('[Fushi] wakelock disable failed: $e');
-    }
-    // Returning to the home/menu shell: hide the Android status bar again
-    // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
+    await setScreenWakelock(enable: false, source: 'closeMedia');
+    // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
     // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
     // Windows OS drop registration in case an opened reader/video/lookup
@@ -8785,6 +8776,13 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaOcrParallelTasks(int value) =>
       prefsRepo.setMangaOcrParallelTasks(value);
 
+  /// 查词热路径每次都读：偏好仓库未就绪（弹窗词典入口启动早期）时按关处理。
+  bool get lookupAiContextAuto => _prefsRepo?.lookupAiContextAuto ?? false;
+  Future<void> setLookupAiContextAuto(bool value) =>
+      prefsRepo.setLookupAiContextAuto(value);
+  String get mangaOcrAiMode => prefsRepo.mangaOcrAiMode;
+  Future<void> setMangaOcrAiMode(String value) =>
+      prefsRepo.setMangaOcrAiMode(value);
   String get mangaOcrLocalModel => prefsRepo.mangaOcrLocalModel;
   Future<void> setMangaOcrLocalModel(String value) =>
       prefsRepo.setMangaOcrLocalModel(value);

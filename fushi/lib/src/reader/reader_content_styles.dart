@@ -231,7 +231,10 @@ class ReaderContentStyles {
   /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS || TargetPlatform.macOS => '''
+        TargetPlatform.iOS ||
+        TargetPlatform.macOS ||
+        TargetPlatform.linux =>
+          '''
 /* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2779: WebKit only — see _webKitRubyAnnotationCss. */
 :root {
   --fushi-ruby-snap: 1;
@@ -275,6 +278,8 @@ ruby > rt, ruby > rtc {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
+      // Linux 走 WPE WebKit（flutter_inappwebview_linux），与 Apple 同一引擎族。
+      case TargetPlatform.linux:
         break;
       default:
         return '';
@@ -318,6 +323,8 @@ p::after {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
+      // Linux 走 WPE WebKit（flutter_inappwebview_linux），与 Apple 同一引擎族。
+      case TargetPlatform.linux:
         return '''
 /* BUG-2819: WebKit paginated only — see _webKitPaginatedScrollEndCss. */
 body::after {
@@ -1305,6 +1312,15 @@ body {
      正确捕获并拆屏（盒尺寸测量语义不变）。 */
   max-width: 100% !important;
   max-height: 100% !important;
+}
+/* BUG-2905: no hanging punctuation in VN. The body's `hanging-punctuation:
+   allow-end` (WebKit only) hangs a line-final 、。 past the inline-end edge,
+   but the VN screen clips at that edge (overflow hidden, no inline-end slack)
+   and fitScreensToViewport rightly measures the hung glyph as overflow — so
+   a paragraph that fits gets cut right before its 、 onto a second screen.
+   With hanging off WebKit pushes the preceding char down like Blink does. */
+.fushi-vn-content, .fushi-vn-content * {
+  hanging-punctuation: none !important;
 }
 /* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
 [data-fushi-visual-novel-unrevealed] {

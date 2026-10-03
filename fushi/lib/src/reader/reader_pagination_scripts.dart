@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -968,6 +970,7 @@ class ReaderPaginationScripts {
         : (continuousMode ? continuousShellSource() : paginatedShellSource());
     return '''<script>
 $kStudyUnitJs
+$kSentenceAudioOwnershipJs
 window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
 window.__fushiInstallShell = function(C) {
@@ -1481,6 +1484,8 @@ window.__fushiInstallShell = function(C) {
   // 的字符坐标系同口径，逆运算），无 caret 几何依赖。仅连续模式调用（分页有 snap/lock）。
   firstVisibleCharOffsetByScan: function() {
     var vertical = this.isVertical();
+    // BUG-2903：连续 shell 有章内文本索引，同一个数走二分，不再全章 walk。
+    if (typeof this._charsBeforeEdge === 'function') return this._charsBeforeEdge(vertical);
     var walker = this.createWalker();
     var explored = 0;
     var node;
@@ -1790,8 +1795,11 @@ window.__fushiInstallShell = function(C) {
       }
       spans.push({ id: cue.id, start: spanStart, len: spanLen });
     }
+    // BUG-2907：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
+    var isMatchable = this.isMatchableChar.bind(this);
     for (var si = 0; si < spans.length; si++) {
-      out.push({ id: spans[si].id, ranges: this.rangesForNormSpan(map, spans[si].start, spans[si].len) });
+      out.push({ id: spans[si].id, ranges: window.fushiSentenceAudioOwnership.extendSegments(
+        this.rangesForNormSpan(map, spans[si].start, spans[si].len), isMatchable) });
     }
     // TODO-630/BUG-366 observability：full 长度 + 多少 cue 算出空 range（全空=路径/折叠未命中）。
     var emptyRanges = 0;
@@ -1869,129 +1877,6 @@ window.__fushiInstallShell = function(C) {
       if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
     }
     this.buildNodeOffsets();
-  },
-  // BUG-2780 / BUG-2806：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：相邻两项
-  // 父节点相同就并进同一组，组内首尾之间的兄弟节点全部被完整包含（range 两端落在同一父节点
-  // 的子节点上），extractContents 不会拆开书的元素。ruby 内的基字片段各自单独成组（wrapper
-  // 落在 ruby / rb 里、不跨 rt），ruby 本身永远不被移动（见 applySentenceAudioCues）。
-  sentenceAudioWrapItems: function(segments) {
-    var groups = [];
-    var current = null;
-    for (var j = 0; j < segments.length; j++) {
-      var node = segments[j].node;
-      var item = { node: node, start: segments[j].start, end: segments[j].end, parent: node.parentNode };
-      if (!item.parent) continue;
-      if (this.rubyForNode(node)) {
-        groups.push([item]);
-        current = null;
-        continue;
-      }
-      if (current && current[0].parent === item.parent &&
-          this.sentenceAudioInlineGap(current[current.length - 1], item)) {
-        current.push(item);
-      } else {
-        current = [item];
-        groups.push(current);
-      }
-    }
-    return groups;
-  },
-  // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）；
-  // 夹着 <ruby>（或含 ruby 的行内元素）也断开——ruby 一进 wrapper，WebKit 就取消注音悬挂、
-  // 改排版（BUG-2806）。
-  sentenceAudioInlineGap: function(prev, next) {
-    var a = prev.node;
-    var b = next.node;
-    if (a === b) return true;
-    for (var n = a.nextSibling; n; n = n.nextSibling) {
-      if (n === b) return true;
-      if (n.nodeType !== 1) continue;
-      if (n.tagName === 'RUBY' || (n.querySelector && n.querySelector('ruby'))) return false;
-      var display = getComputedStyle(n).display;
-      if (display.indexOf('inline') !== 0 && display !== 'contents' && display !== 'none') return false;
-    }
-    return false;
-  },
-  // BUG-2806：ruby 留在原位后，注音比基字长、又不能悬挂到邻字上（邻字是汉字、注音超出
-  // 悬挂上限）时，基字 wrapper 与相邻 wrapper 之间会露出 ruby 自己撑出的间距（iOS 模拟器：
-  // 「大喝采」3.9px、6 假名注音单字 13.8px），整句高亮在那里断开（BUG-2780 的原始症状）。
-  // 高亮时量出同一行相邻两个 wrapper 之间的缝，由 ruby 内那个 wrapper 用 box-shadow 伸过去
-  // 补色：外阴影只画在元素边框盒外、不参与排版，量多少补多少，不会与邻 wrapper 叠色。
-  // 只处理当前高亮句，取消高亮时 clearSentenceAudioRubyGaps 撤掉。
-  fillSentenceAudioRubyGaps: function(wrappers) {
-    this.clearSentenceAudioRubyGaps();
-    this.sentenceAudioGapWrappers = wrappers;
-    this.paintSentenceAudioRubyGaps();
-    this.watchSentenceAudioRubyGapLayout();
-  },
-  // 缝的宽度随注音与字号变：暂停时切振假名模式、改字号 / 字体、字体晚到、改页面尺寸都不会
-  // 有下一个 cue 来重量，按旧偏移画的阴影会伸到邻字上叠色或留缺口。在真正的重排信号上
-  // 重量：正文样式表被换（两条换 CSS 路径都写 #fushi-reader-style）、字体加载完成，以及
-  // 一切重锚序列的落定（_setReanchorPending，改页面尺寸 / chrome 边距 / 界面缩放走这条）。
-  // 不用 ResizeObserver：wrapper 是 span、ruby 是 display: ruby，都是非替换行内元素，
-  // 观察它们只在开始时回调一次，之后排版怎么变都不会再回调。
-  // 只装一次；无当前句时 paint 只是空擦除。
-  watchSentenceAudioRubyGapLayout: function() {
-    if (this.sentenceAudioGapLayoutWatched) return;
-    this.sentenceAudioGapLayoutWatched = true;
-    var self = this;
-    var repaint = function() { self.paintSentenceAudioRubyGaps(); };
-    if (window.MutationObserver && document.head) {
-      new MutationObserver(repaint).observe(document.head,
-          { childList: true, characterData: true, subtree: true });
-    }
-    if (document.fonts && document.fonts.addEventListener) {
-      document.fonts.addEventListener('loadingdone', repaint);
-    }
-  },
-  paintSentenceAudioRubyGaps: function() {
-    this.eraseSentenceAudioRubyGaps();
-    var wrappers = this.sentenceAudioGapWrappers || [];
-    var fills = [];
-    for (var i = 1; i < wrappers.length; i++) {
-      var prev = wrappers[i - 1];
-      var next = wrappers[i];
-      var prevInRuby = !!this.rubyForNode(prev);
-      var nextInRuby = !!this.rubyForNode(next);
-      if (!prevInRuby && !nextInRuby) continue;
-      var pr = prev.getClientRects();
-      var nr = next.getClientRects();
-      if (!pr.length || !nr.length) continue;
-      var a = pr[pr.length - 1];
-      var b = nr[0];
-      var vertical = getComputedStyle(next).writingMode.indexOf('vertical') === 0;
-      var sameLine = vertical ? (a.left < b.right && b.left < a.right) : (a.top < b.bottom && b.top < a.bottom);
-      if (!sameLine) continue;
-      var gap = vertical ? b.top - a.bottom : b.left - a.right;
-      if (!(gap > 0.5) || gap > parseFloat(getComputedStyle(next).fontSize) * 3) continue;
-      if (nextInRuby) fills.push({ el: next, dx: vertical ? 0 : -gap, dy: vertical ? -gap : 0 });
-      else fills.push({ el: prev, dx: vertical ? 0 : gap, dy: vertical ? gap : 0 });
-    }
-    var shadows = new Map();
-    fills.forEach(function(f) {
-      var list = shadows.get(f.el) || [];
-      list.push(f.dx + 'px ' + f.dy + 'px 0 0 var(--fushi-sentence-audio-background-color)');
-      shadows.set(f.el, list);
-    });
-    var filled = [];
-    shadows.forEach(function(list, el) {
-      el.style.boxShadow = list.join(', ');
-      filled.push(el);
-    });
-    this.sentenceAudioGapFilled = filled;
-  },
-  eraseSentenceAudioRubyGaps: function() {
-    var filled = this.sentenceAudioGapFilled || [];
-    filled.forEach(function(el) { el.style.boxShadow = ''; });
-    this.sentenceAudioGapFilled = [];
-  },
-  clearSentenceAudioRubyGaps: function() {
-    this.sentenceAudioGapWrappers = [];
-    this.eraseSentenceAudioRubyGaps();
-  },
-  rubyForNode: function(node) {
-    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return el && el.closest ? el.closest('ruby') : null;
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
     this.clearSentenceAudioCue();
@@ -2514,6 +2399,7 @@ window.fushiReader = {
   viewportHeight: 0,
   paginationMetrics: null,
 $_sharedJs
+$kSentenceAudioRubyGapJs
   revealElement: function(element) {
     var range = document.createRange();
     range.selectNodeContents(element);
@@ -3593,6 +3479,7 @@ window.fushiReader = {
         '--fushi-continuous-height', this._visibleViewportHeight(fallback) + 'px');
   },
 $_sharedJs
+$kSentenceAudioRubyGapJs
   scrollToChapterStart: function() {
     var root = document.scrollingElement || document.documentElement;
     window.scrollTo(0, 0);
@@ -3694,25 +3581,113 @@ $_sharedJs
   revealElement: function(element) {
     return this.scrollToTarget(element);
   },
-  calculateProgress: function() {
-    // TODO-736 A-1：字符级进度（对齐安卓 reader-continuous.js calculateProgress:529-541）。
-    // 分子改用 countCharsBeforeViewport 逐节点累加「已滚出视口首边的可匹配字符数」，
-    // 替代旧的「整节点 in/out」段落级粗粒度——后者把跨视口的长节点整块算未读，长节点滚
-    // 动期进度按整节点跳变、滚一大段都不动（滚动模式「进度像没保存」的根因之一）。分母
-    // 仍是 countChars 总可匹配字符；createWalker 排除 rt/rp，分子分母同套。
-    var vertical = this.isVertical();
+  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
+  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
+  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
+  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
+  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
+  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
+  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
+  // 同步 takeRecords 判脏，不吃异步回调的时序。
+  _textIndexCache: null,
+  _textIndexObserver: null,
+  _textIndex: function() {
+    var obs = this._textIndexObserver;
+    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
+    var cache = this._textIndexCache;
+    if (cache && cache.body === document.body) return cache;
+    if (!obs) {
+      var self = this;
+      obs = new MutationObserver(function() { self._textIndexCache = null; });
+      this._textIndexObserver = obs;
+    }
+    obs.disconnect();
+    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
+    var nodes = [];
+    var starts = [];
+    var total = 0;
     var walker = this.createWalker();
-    var totalChars = 0;
-    var exploredChars = 0;
     var node;
     while (node = walker.nextNode()) {
-      var nodeLen = this.countChars(node.textContent);
-      totalChars += nodeLen;
-      if (nodeLen > 0) {
-        exploredChars += this.countCharsBeforeViewport(node, vertical);
-      }
+      var len = this.countChars(node.textContent);
+      if (len <= 0) continue;
+      nodes.push(node);
+      starts.push(total);
+      total += len;
     }
-    return totalChars > 0 ? exploredChars / totalChars : 0;
+    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
+    this._textIndexCache = cache;
+    return cache;
+  },
+  chapterCharTotal: function() {
+    return this._textIndex().total;
+  },
+  // 文本节点相对视口边的位置：-1 整段在边之前 / 0 跨边 / 1 整段在边之后 / null 无几何。
+  // 判据与 countCharsBeforeViewport 的两个早返回逐条同口径（横排沿 top/bottom、竖排
+  // vertical-rl 沿 left/right，「之前」在右侧）。
+  _textNodeEdgeSide: function(node, vertical, edge) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var start = vertical ? rect.left : rect.top;
+      var end = vertical ? rect.right : rect.bottom;
+      if (start < minStart) minStart = start;
+      if (end > maxEnd) maxEnd = end;
+    }
+    if (minStart === Infinity) return null;
+    if (vertical) {
+      if (minStart >= edge) return -1;
+      if (maxEnd <= edge) return 1;
+    } else {
+      if (maxEnd <= edge) return -1;
+      if (minStart >= edge) return 1;
+    }
+    return 0;
+  },
+  // 视口边（edge 缺省 = 首边，与 countCharsBeforeViewport 同语义）之前的可匹配字符数。
+  // 连续模式单栏顺排，文本节点沿书写轴单调：二分出第一个不整段在边之前的节点 k，
+  // 结果 = starts[k] + 从 k 起逐个跨边节点的局部计数，遇到整段在边之后即止。每次只
+  // 量 O(log n) 个节点的几何，取代逐节点全章累加。无几何的节点（display:none 等）
+  // 借其后最近一个有几何的节点判边。
+  _charsBeforeEdge: function(vertical, edge) {
+    var index = this._textIndex();
+    var nodes = index.nodes;
+    var n = nodes.length;
+    if (n === 0) return 0;
+    var probeEdge = edge === undefined ? (vertical ? window.innerWidth : 0) : edge;
+    var lo = 0;
+    var hi = n;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var j = mid;
+      var side = null;
+      while (j < hi && (side = this._textNodeEdgeSide(nodes[j], vertical, probeEdge)) === null) j++;
+      if (side === null || side >= 0) hi = mid;
+      else lo = j + 1;
+    }
+    if (lo >= n) return index.total;
+    var explored = index.starts[lo];
+    for (var k = lo; k < n; k++) {
+      var kSide = this._textNodeEdgeSide(nodes[k], vertical, probeEdge);
+      if (kSide === null) continue;
+      if (kSide > 0) break;
+      explored += this.countCharsBeforeViewport(nodes[k], vertical, edge);
+    }
+    return explored;
+  },
+  calculateProgress: function() {
+    // TODO-736 A-1：字符级进度（对齐安卓 reader-continuous.js calculateProgress:529-541）。
+    // 分子是「已滚出视口首边的可匹配字符数」（跨视口的长节点按字计，不整节点跳变），
+    // 分母是 countChars 总可匹配字符；createWalker 排除 rt/rp，分子分母同套。
+    // BUG-2903：两者都走章内文本索引 + 二分，不再逐帧全章 walk。
+    var total = this._textIndex().total;
+    if (total <= 0) return 0;
+    return this._charsBeforeEdge(this.isVertical()) / total;
   },
   // BUG-1241：连续模式同样以视口首字符算 progress，物理滚到底时分数仍可能小于 1。
   // 横排读 scrollTop；竖排 WebView 在 vertical-rl 下 scrollX 为负，因此用绝对位移
@@ -3728,24 +3703,14 @@ $_sharedJs
   },
   // 连续模式当前视口可见字符区间的终点（半开 end，章内学习单位偏移；口径与
   // calculateProgress 分子同源）。一次 walk 用 countCharsBeforeViewport 传视口**末边**
-  // （横排 window.innerHeight / 竖排 0）累加「末边之前的字数」；物理到底（isAtEnd）时
-  // end = 章总字数。calculateProgress 行为不变。
+  // （横排 window.innerHeight / 竖排 0）求「末边之前的字数」；物理到底（isAtEnd）时
+  // end = 章总字数。BUG-2903：同走章内文本索引 + 二分。
   getLastVisibleCharOffset: function() {
+    var total = this._textIndex().total;
+    if (total <= 0) return -1;
+    if (this.isAtEnd()) return total;
     var vertical = this.isVertical();
-    var edge = vertical ? 0 : window.innerHeight;
-    var walker = this.createWalker();
-    var totalChars = 0;
-    var exploredChars = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      var nodeLen = this.countChars(node.textContent);
-      totalChars += nodeLen;
-      if (nodeLen > 0) {
-        exploredChars += this.countCharsBeforeViewport(node, vertical, edge);
-      }
-    }
-    if (totalChars <= 0) return -1;
-    return this.isAtEnd() ? totalChars : exploredChars;
+    return this._charsBeforeEdge(vertical, vertical ? 0 : window.innerHeight);
   },
   // 连续模式恢复落点 settle：等一帧让恢复滚动落定后通知 Dart。
   //

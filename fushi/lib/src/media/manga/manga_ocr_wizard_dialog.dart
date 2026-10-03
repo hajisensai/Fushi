@@ -366,14 +366,16 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       }
       // 后台任务可能被阅读器接回：给它一条改道通道，读者翻页时跟着读者走。
       final MangaOcrPageFocus focus = MangaOcrPageFocus();
+      final MangaOcrJobSpec spec = _jobSpec(dir, focus: focus);
       Navigator.pop(
         context,
         MangaOcrBackgroundJob(
           bookKey: bookKey,
           managedDirectory: dir,
           engine: _engine,
-          events: mangaOcrBackgroundEvents(_jobSpec(dir, focus: focus)),
+          events: mangaOcrBackgroundEvents(spec),
           focus: focus,
+          follower: mangaOcrJobFollower(spec),
         ),
       );
       return;

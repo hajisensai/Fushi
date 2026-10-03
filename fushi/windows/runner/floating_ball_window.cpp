@@ -181,6 +181,7 @@ std::wstring FloatingBallWindow::LabelFor(const std::string& id) const {
   if (id == "lookup") return L"Look up";
   if (id == "popup_lookup") return L"App-external lookup";
   if (id == "clipboard") return L"Clipboard";
+  if (id == "sync") return L"Sync now";
   if (id == kActionOpenApp) return L"Open Fushi";
   if (id == kActionClose) return L"Close";
   if (id == "ball") return L"Floating ball";
