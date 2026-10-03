@@ -616,6 +616,7 @@ class AdapterRegistry {
     catsystem2_.ProcessPendingEvents();
     malie_libp_.ProcessPendingEvents();
     elf_ai6_.ProcessPendingEvents();
+    yuris_.ProcessPendingEvents();
     kirikiri_.ProcessPendingEvents();
     renpy_.ProcessPendingEvents();
     sgre_.ProcessPendingEvents();

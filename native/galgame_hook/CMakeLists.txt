@@ -53,6 +53,7 @@ add_library(fushi_voice_hook SHARED
   "include/lookup_wheel_source.h"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
+  "hook/yuris_ypf.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
   "hook/malie_cfi.h"
@@ -94,6 +95,12 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/bgi_lookup.inc"
   "hook/adapters/bgi_lookup_core.h"
+  "hook/adapters/yuris_adapter.inc"
+  "hook/adapters/yuris_lookup.inc"
+  "hook/adapters/yuris_lookup_core.h"
+  "hook/adapters/yuris_profile.h"
+  "hook/adapters/yuris_voice.inc"
+  "hook/adapters/yuris_voice_core.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
   "hook/adapters/artemis_lookup.inc"
@@ -1111,3 +1118,6 @@ add_test(NAME fushi_locale_emulator_version_hooks_test
 
 include(tests/generic_input_shield_install_test.cmake)
 include(tests/siglus_legacy_owner_publication_test.cmake)
+add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
+target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
+add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)

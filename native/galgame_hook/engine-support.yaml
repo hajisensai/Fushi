@@ -313,6 +313,24 @@
           "status": "implemented_unverified",
           "evidence": "The left-click claim is gated on the host's NativeInputAllowed admission; no measured real-build click-leak rate is recorded."
         }
+      },
+      {
+        "engine_id": "yuris",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "Engine-exact message-layer provider (kLookupGeometryProviderIdYuris, 22). Every site resolves from the executable's own code as laid out on disk (other in-process hookers such as LunaHook's YU-RIS hooks patch the rasteriser's TextOutA call in the live image; the two hook targets must still be byte-identical live): DRAW is the call target shared by the engine's typing sites `call DRAW; mov edx,[S]; add [edx+X],eax` whose first bytes call a rasteriser holding `call [TextOutA]`; the message state global S, the pen field X, the message text pointer T and text index TI, the per-op font size array and op index come from those sites' own argument setup and pen/text-index updates (every site must agree); DRAW's stack-argument ABI (font size, pen x/y, target layer) from the stores that follow the size and pen loads. Every DRAW call (the engine typewriter and the script-level string command alike) records layer, pen, font size and character; a change of the engine message text S+T opens a page and is the text lane. A layer's design position is the sum of its sprite positions up the parent chain, exactly as the engine's own sprite hit test walks it (`mov S,[N+sprite]; [S+x] .. [S+y]; mov N,[N+parent]; test; je; cmp [N+live],0; jne`, unique); the design screen and the main HWND come from the window record the cursor mapping reads (`mov r,[table..]; push [r+hwnd]; call [ScreenToClient]` followed by the design bounds check). A draw of the same character within 2 px of an earlier one on the same layer (shadow pass, then face) replaces it. The selected line must be the render-order suffix of exactly one layer's glyphs; a client with another aspect than the design screen is refused. The click claim masks VK_LBUTTON's high bit in the engine's GetKeyboardState table (`push K; call [GetKeyboardState]`) at the head of its per-frame mouse-button loop (`mov ebx,1; movzx edx,byte[ebx+K]; sar edx,7; ... cmp ebx,7`, unique, over the same K) from press to release; the press is refused when a newer glyph was drawn, the layer moved, the host's native-input admission is missing or a card shields the game. Offline: x86/x64 build and fushi_yuris_adapter_test; the resolvers accept the 2011 euphoria (v500) and 2016 アイカギ (v481) executables and reject 39 x86 executables of seven other engines. 2026-10-03 Fushi host (gal_realgame_driver_itest, provider ids 22-28 admitted, dictionaries installed) on both original launch paths, DPI-unaware windows stretched 2x: euphoria (euphoria.exe SHA-256 d30b992f...184d, 800x600 design on a 1600x1200 physical client) accept4 #16 on 「恵ちゃん、大丈夫？」 (大, char 6 at physical 332,968 42x40) recorded text=PASS (YU-RIS exact lane), audio=PASS (game_resource 356654437_fushi_textseq239_kan_m01_0073.ogg, paired by text event id), lookup, no_advance, dismiss_no_advance, relookup and a real card (fake AnkiConnect noteId 1791002595603 with sentence, audio and image): verdict=full; アイカギ (アイカギ.exe SHA-256 907cecc1...a851, loose Chinese-patch directories moved aside, 1024x768 design on 2048x1536) accept4 #34 on 「ぁあっ……中でまた大きくっ……」 (中, char 6 at physical 658,1360 50x48) recorded the same seven PASS (game_resource 358129265_fushi_textseq37_shi_01_comn_04_0003.ogg, noteId 1791002595605): verdict=full. Touch (InjectTouchInput PT_TOUCH, euphoria): a tap is promoted to a sub-frame DOWN/UP the engine's key table never shows (an unclaimed tap neither advances nor opens anything), so promoted touch presses (extra info 0xFF5157xx) are claimed at the main window procedure: tap on a glyph opened the card without advancing; tap and vertical swipe inside the card, then tap outside, closed it without advancing; horizontal swipe on the card closed it without advancing; long press (0.9 s) with no card changed nothing; a swipe on the game with no card advanced, as a mouse drag does; the game stayed foreground throughout. On アイカギ a touch tap on a glyph opened the card without advancing; a later touch outside the game left the host's FushiFloatingLyricWindow in the foreground (host-side). The host's FushiFloatingLyricWindow (topmost) swallows game clicks under it; the アイカギ window was moved clear of it for the runs."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "The left-click claim masks VK_LBUTTON in the engine's own GetKeyboardState table before its per-frame mouse-button loop and is gated on the host's NativeInputAllowed admission; no measured real-build click-leak rate is recorded."
+        }
       }
     ]
   },
@@ -3178,6 +3196,145 @@
         "tests/unity_mono_text_test.cpp",
         "tests/unity_mono_lookup_test.cpp",
         "../../fushi/test/mining/unity_mono_pairing_test.dart"
+      ]
+    },
+    {
+      "id": "yuris",
+      "display_name": "YU-RIS",
+      "aliases": [
+        "YU-RIS",
+        "Yu-ris",
+        "ERIS"
+      ],
+      "family": {
+        "id": "yuris",
+        "relation": "YU-RIS script engine (YPF archives, YSTB scripts); CLOCKUP, あざらしそふと and other ERIS-based titles"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "euphoria (CLOCKUP 2011, update 1.02 executable) and アイカギ (あざらしそふと 2016) executables are machine 0x14c; static probe 2026-10-03"
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [
+            "GDI32.dll",
+            "USER32.dll",
+            "DSOUND.dll",
+            "d3d9.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Import tables of both sample executables: TextOutA is the only text API, GetKeyboardState feeds input, DirectSound plays the statically linked libvorbisfile output"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".ypf",
+            ".ybn",
+            ".ogg"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "YPF members are YSTB scripts, PNG and Ogg Vorbis (zlib-packed or stored); per-line voice is the mono Ogg the script plays"
+          }
+        },
+        "hashes": {
+          "values": [
+            "d30b992fc56a9e7ae8c3235664e929cd47eeaaa12ad74f8ddf8b7e15dec3184d",
+            "907cecc1b1024a8af1da691892388ab0373096bef47b140ffa6c24413259a851"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "euphoria.exe (update 1.02) and アイカギ.exe, catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "Identity is a self-consistent YPF archive next to the executable or in its pac subdirectory (header + first entries under one of the engine's index layouts): euphoria ships pac\\*.ypf (v500, 32-bit offsets), アイカギ a single ysbin.ypf (v481, 64-bit offsets); measured 2026-10-03",
+          "Both samples are launched directly with the Japanese locale (fushi_voice_injector --japanese-locale); no launcher process.",
+          "Site resolution reads the executable from disk: LunaHook's YU-RIS engine hooks patch the rasteriser's TextOutA call and other spots in the live image after start-up."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "yuris_message_text",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 9, hook 'YU-RIS exact', ENGINE:YURIS:message_draw): the engine message text S+T (CP932, display characters only, NUL-terminated) is copied at the first DRAW call after it changed and published once per message; a `NAME「…」` message publishes the quoted line (the name plate is its own layer). Lane identity is the message state global, stable across runs. See lookup_support geometry for the site resolution."
+          },
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "LunaHook's YU-RIS engine hooks attach on euphoria (YU-RIS, YU-RIS2, YU-RIS5, YU-RIS6 threads); not used as the selected lane."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact message-layer provider kLookupGeometryProviderIdYuris (22), see lookup_support geometry."
+          }
+        ],
+        "codepage": "CP932",
+        "thread_selection_hint": "Select the 'YU-RIS exact' lane."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "yuris_decoder_input_voice_resource",
+            "format": "mono Ogg Vorbis the engine hands to its statically linked ov_open_callbacks (the sound object's memory stream), named after the resource the script played",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Voice is taken only at the decoder input (the engine's ov_open_callbacks with its own memory-stream callbacks); no archive is read for audio. Stereo streams and streams over 1 MiB are not published; which mono clip is a voice line is left to the resource name the script played (the host's existing basename rules drop se_/bgm_ clips).",
+        "The click claim masks the engine's GetKeyboardState table only; a build whose script advances on WM_LBUTTONDOWN directly is not covered.",
+        "Only two titles were measured (euphoria 2011, アイカギ 2016); アイカギ was run with its loose Chinese-patch directories moved aside.",
+        "The text lane drops the engine line-break code 0xEFF0; any other code outside CP932 fails that message closed (not published).",
+        "Voice pairing binds a clip to the first message published within 1.5 s after the clip opened (the script plays the voice, then shows the line); a voice played without a following message is published without an owner and only time-paired.",
+        "Inline ruby `≪base／reading≫` is published as its base; on such pages only glyphs of the line's largest font size are mapped (readings are drawn smaller)."
+      ],
+      "adapter_path": "hook/adapters/yuris_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/yuris_replay.json"
+      ],
+      "test_paths": [
+        "tests/yuris_adapter_test.cpp"
       ]
     }
   ]

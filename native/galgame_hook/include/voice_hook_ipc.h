@@ -357,6 +357,9 @@ constexpr uint32_t kTextSourceSmashFzmedia = 6;
 constexpr uint32_t kTextSourceBgi = 7;
 // Artemis exact text: the fully revealed newest Layer::CreateGlyph run.
 constexpr uint32_t kTextSourceArtemis = 8;
+// YU-RIS exact text: the message line the engine's per-character text step
+// draws, read from its message state at the line's first character.
+constexpr uint32_t kTextSourceYuris = 9;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -898,6 +901,8 @@ constexpr uint32_t kLookupGeometryProviderIdCatSystem2 = 19u;
 constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
 // BGI/Ethornell message-page exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
+// YU-RIS message-layer exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

@@ -51,6 +51,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "smash_fzmedia",
     "cmvs",
     "unity_mono",
+    "yuris",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -127,6 +128,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdBgi",
     ): ("bgi_ethornell", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdYuris",
+    ): ("yuris", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",
