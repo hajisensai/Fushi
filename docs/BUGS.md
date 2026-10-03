@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2666 条。点号进各自文件。
+> 共 2667 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-2892](bugs/BUG-2892-sgre-typewriter-prefix-lines.md) | ✅ | ✅ | SGRE 打字机逐字显示的半句被当成独立台词 |
 | [BUG-2891](bugs/BUG-2891-x64-locale-claimed-applied.md) | ✅ | ✅ | 64位游戏转区落空仍报已转日文区 |
 | [BUG-2891](bugs/BUG-2891-manga-zoom-reset.md) | ✅ | ✅ | 漫画缩小后无法回到正常比例 |
+| [BUG-2890](bugs/BUG-2890-sentence-audio-punct-ownership.md) | ✅ | ✅ | 有声书当前句高亮不含句末标点与句首括号 |
 | [BUG-2890](bugs/BUG-2890-launch-window-binding-dead-dialog.md) | ✅ | ✅ | 启动会话绑定启动设置对话框后永不改绑主窗口 |
 | [BUG-2889](bugs/BUG-2889-system-ocr-model-setup.md) | ✅ | ✅ | 系统 OCR 模型未就绪时只弹提示、没有配置入口 |
 | [BUG-2889](bugs/BUG-2889-overlay-touch-activation.md) | ✅ | ✅ | 悬浮划词条与工具条被触摸点按抢走游戏前台 |
