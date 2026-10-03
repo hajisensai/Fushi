@@ -431,10 +431,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await defaultEnterNativeFullscreen();
       return;
     }
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: <SystemUiOverlay>[],
-    );
+    if (!VideoDisplayClaim.owns(this)) return;
+    await _applyVideoImmersiveMode();
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -473,10 +472,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await setMacOSTrafficLightsHidden(true);
       return;
     }
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: <SystemUiOverlay>[],
-    );
+    if (!VideoDisplayClaim.owns(this)) return;
+    await _applyVideoImmersiveMode();
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,

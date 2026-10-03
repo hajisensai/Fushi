@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,80 +8,48 @@ import 'package:fushi/utils.dart' show t;
 /// TODO-1260：启动加载逃生口渲染契约。裸 loading 分支此前只有无超时的转圈；看门狗超时
 /// 后必须给出可点的「重试」出口，消除「无 escape」结构缺陷（Layer 3）。
 void main() {
-  final ColorScheme cs =
-      ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959));
+  final ColorScheme cs = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF1F4959),
+  );
 
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  testWidgets('未超时 → 延续系统 splash 图标，不裸转圈，无重试按钮', (WidgetTester tester) async {
-    await tester.pumpWidget(wrap(LoadingWatchdogView(
-      timedOut: false,
-      colorScheme: cs,
-      onRetry: () {},
-    )));
+  testWidgets('未超时不绘制启动图案或进度条，慢启动仍保持空白', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        LoadingWatchdogView(timedOut: false, colorScheme: cs, onRetry: () {}),
+      ),
+    );
 
-    expect(find.byType(StartupSplashMark), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing,
-        reason: '启动加载态不得再首帧就画大转圈');
-    expect(find.byType(LinearProgressIndicator), findsNothing,
-        reason: '快速启动（多数情况）不应闪出任何进度指示');
+    expect(find.byType(StartupSplashMark), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(find.text(t.retry), findsNothing);
     expect(find.text(t.loading_slow_title), findsNothing);
 
-    // 慢启动：超过揭示延迟才淡入细进度条。
     await tester.pump(kStartupProgressRevealDelay);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(StartupSplashMark), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
   });
-
-  testWidgets('品牌标与 Android 12+ 系统 splash 同尺寸且居中，进度条出现不挪动图标',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(wrap(LoadingWatchdogView(
-      timedOut: false,
-      colorScheme: cs,
-      onRetry: () {},
-    )));
-    final Finder circle = find.byType(ClipOval);
-    final Rect before = tester.getRect(circle);
-    expect(before.size, const Size.square(kStartupSplashIconDiameter));
-    expect(before.center, tester.getCenter(find.byType(Scaffold)));
-
-    await tester.pump(kStartupProgressRevealDelay);
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(tester.getRect(circle), before);
-    expect(
-      tester.getRect(find.byType(LinearProgressIndicator)).top,
-      greaterThan(before.bottom),
-    );
-  });
-
-  test('splash 前景图已登记为 Flutter 资源，且与原生 splash 同源同配色', () {
-    expect(
-        File('assets/meta/splash_foreground.png').readAsBytesSync(),
-        File('android/app/src/main/res/drawable-xxxhdpi/ic_splash_minimal_foreground.png')
-            .readAsBytesSync());
-    final String styles = File('android/app/src/main/res/values-v31/styles.xml')
-        .readAsStringSync();
-    expect(
-      styles.contains(
-          '<item name="android:windowSplashScreenIconBackgroundColor">#E6E2F6</item>'),
-      isTrue,
-      reason: '原生 splash 圆底色变了就要同步 kStartupSplashIconBackground',
-    );
-    expect(kStartupSplashIconBackground, const Color(0xFFE6E2F6));
-  });
-
   testWidgets('超时(桌面) → 显示掉线盘说明 + 重试按钮（逃生口出现）', (WidgetTester tester) async {
     bool retried = false;
-    await tester.pumpWidget(wrap(LoadingWatchdogView(
-      timedOut: true,
-      colorScheme: cs,
-      onRetry: () => retried = true,
-      isMobile: false,
-    )));
+    await tester.pumpWidget(
+      wrap(
+        LoadingWatchdogView(
+          timedOut: true,
+          colorScheme: cs,
+          onRetry: () => retried = true,
+          isMobile: false,
+        ),
+      ),
+    );
 
-    expect(find.byType(CircularProgressIndicator), findsNothing,
-        reason: '超时后不再无限转圈');
+    expect(
+      find.byType(CircularProgressIndicator),
+      findsNothing,
+      reason: '超时后不再无限转圈',
+    );
     expect(find.text(t.loading_slow_title), findsOneWidget);
     expect(find.text(t.loading_slow_message), findsOneWidget);
     expect(find.text(t.retry), findsOneWidget);
@@ -96,20 +62,31 @@ void main() {
   // BUG-815：移动端没有自定义数据根（AppPaths._resolveDataRoot 非桌面恒 null），
   // 桌面那套「数据存储位置设在未连接网络盘 / 用默认位置启动」文案在手机上既不适用
   // 又吓人（重试根本不换位置）。移动端必须改显不提「默认位置」的安心文案。
-  testWidgets('超时(移动端) → 显示移动端安心文案，不含桌面『默认位置』说明 (BUG-815)',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(wrap(LoadingWatchdogView(
-      timedOut: true,
-      colorScheme: cs,
-      onRetry: () {},
-      isMobile: true,
-    )));
+  testWidgets('超时(移动端) → 显示移动端安心文案，不含桌面『默认位置』说明 (BUG-815)', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        LoadingWatchdogView(
+          timedOut: true,
+          colorScheme: cs,
+          onRetry: () {},
+          isMobile: true,
+        ),
+      ),
+    );
 
     expect(find.text(t.loading_slow_title), findsOneWidget);
-    expect(find.text(t.loading_slow_message_mobile), findsOneWidget,
-        reason: '移动端须显示 loading_slow_message_mobile');
-    expect(find.text(t.loading_slow_message), findsNothing,
-        reason: '移动端不得再显示桌面掉线盘 / 默认位置文案');
+    expect(
+      find.text(t.loading_slow_message_mobile),
+      findsOneWidget,
+      reason: '移动端须显示 loading_slow_message_mobile',
+    );
+    expect(
+      find.text(t.loading_slow_message),
+      findsNothing,
+      reason: '移动端不得再显示桌面掉线盘 / 默认位置文案',
+    );
     expect(find.text(t.retry), findsOneWidget);
   });
 }

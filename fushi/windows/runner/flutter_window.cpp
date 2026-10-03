@@ -518,6 +518,13 @@ bool FlutterWindow::OnCreate() {
                                static_cast<uint32_t>(text_argb));
           }
           result->Success();
+        } else if (call.method_name() == "beginStartupWindowPreparation") {
+          // Visible integration-test windows retain normal resize delivery.
+          BeginStartupWindowPreparation();
+          result->Success();
+        } else if (call.method_name() == "endStartupWindowPreparation") {
+          EndStartupWindowPreparation();
+          result->Success();
         } else if (call.method_name() == "clearTaskbarFlash") {
           // TODO-615: actively stop any taskbar "flash / request attention"
           // state on the main window. SetForegroundWindow (window_manager's
