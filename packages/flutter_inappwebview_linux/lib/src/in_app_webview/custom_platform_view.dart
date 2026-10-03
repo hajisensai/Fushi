@@ -406,7 +406,12 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   @override
   Widget build(BuildContext context) {
     return Focus(
-      autofocus: true,
+      // Fushi：上游 autofocus: true，WebView 一挂载就抢走 Flutter 焦点，且下面
+      // _handleKeyEvent 对每个键都返回 handled——宿主页的快捷键（阅读器 Esc 关
+      // 弹窗、翻页、返回）全被吞进 WPE。与 Windows WebView2 的语义对齐：键盘归
+      // Flutter，只有用户点进 WebView（onPointerDown 里 requestFocus）后按键才进
+      // DOM，再由宿主注入的键盘桥（lib/src/focus/webview_key_bridge.dart）交回 Dart。
+      autofocus: false,
       focusNode: _focusNode,
       canRequestFocus: true,
       debugLabel: "flutter_inappwebview_linux_custom_platform_view",

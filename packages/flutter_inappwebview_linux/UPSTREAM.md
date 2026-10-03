@@ -74,6 +74,14 @@
   随 context 销毁），回调不带 user_data，按 `webkit_uri_scheme_request_get_web_view`
   在 `WebKitWebView* → InAppWebView*` 登记表里找归属；析构时注销。
 
+### Dart：平台视图不再 autofocus
+
+- 上游 `CustomPlatformView` 的 `Focus(autofocus: true)` 让每个 WebView 一挂载就抢走 Flutter
+  焦点，而它的 `onKeyEvent` 对所有键返回 `handled`、全部转给 WPE——宿主页快捷键（阅读器里
+  Esc 关查词弹窗等）被整个吞掉。改为 `autofocus: false`：与 Windows WebView2 一致，键盘
+  默认归 Flutter，用户点进 WebView（`onPointerDown` 里 `requestFocus`）后才进 DOM，由宿主的
+  键盘桥交回 Dart。
+
 ## 升级
 
 上游发正式版且本仓整体升到 `flutter_inappwebview` 6.2+ / 接口 1.4 时，删掉本目录，改回

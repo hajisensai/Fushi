@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,12 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
-import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show DictionaryPopupWebView;
+import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
 import 'package:integration_test/integration_test.dart';
 
+import 'helpers/focus_driver.dart' show enableFocusNavigation;
 import 'helpers/library_fixture.dart'
     show
         openBookViaProductionPath,
@@ -185,7 +184,13 @@ const String _imagesJs = r'''
     .writingMode.indexOf('vertical') === 0;
   var imgs = Array.prototype.slice.call(document.querySelectorAll('img, svg'));
   var pending = 0, broken = 0, oversize = 0;
+  var visible = 0;
   imgs.forEach(function (img) {
+    var vr = img.getBoundingClientRect();
+    // 视口外的图按设计懒加载（loading=lazy，BUG-1140），只判视口内的。
+    if (vr.right <= 0 || vr.bottom <= 0 || vr.left >= vw || vr.top >= vh) return;
+    if (vr.width === 0 && vr.height === 0 && img.complete) return;
+    visible++;
     if (img.tagName.toLowerCase() === 'img') {
       if (!img.complete) { pending++; return; }
       if (!img.naturalWidth) { broken++; return; }
@@ -195,7 +200,7 @@ const String _imagesJs = r'''
     var overW = r.width > vw + 1, overH = r.height > vh + 1;
     if (continuous ? (vertical ? overH : overW) : (overW || overH)) oversize++;
   });
-  return JSON.stringify({ count: imgs.length, pending: pending, broken: broken, oversize: oversize });
+  return JSON.stringify({ count: imgs.length, visible: visible, pending: pending, broken: broken, oversize: oversize });
 })(__CONTINUOUS__)
 ''';
 
@@ -332,7 +337,16 @@ Future<void> _runCombo(
   final bool onRuby = await _jump(tester, _kRubyChapter, 'chapter_04_ruby');
   r.check(onRuby, 'jump to ruby chapter did not land');
   if (onRuby) {
-    final Map<String, dynamic> ruby = await _js(_rubyJs);
+    Map<String, dynamic> ruby = await _js(_rubyJs);
+    // VN 把源节点按屏克隆，章首屏可能只有标题：往后翻到第一块带注音的屏。
+    for (
+      int i = 0;
+      i < 8 && _int(ruby['checked']) == 0 && r.viewMode == 'vn';
+      i++
+    ) {
+      await _pageDown(tester, 1);
+      ruby = await _js(_rubyJs);
+    }
     r.evidence['ruby'] = ruby;
     r.check(_int(ruby['checked']) > 0, 'no visible ruby to check');
     r.check(_int(ruby['zeroLine']) == 0, 'ruby line box collapsed: $ruby');
@@ -373,7 +387,10 @@ Future<void> _runCombo(
       await _pumpFor(tester, const Duration(milliseconds: 500));
     }
     r.evidence['images'] = imgs;
-    r.check(_int(imgs['count']) > 0, 'image chapter has no images');
+    r.check(
+      _int(imgs['visible']) > 0,
+      'no image visible on the image chapter: $imgs',
+    );
     r.check(_int(imgs['pending']) == 0, 'images never finished loading');
     r.check(_int(imgs['broken']) == 0, 'broken images: $imgs');
     r.check(_int(imgs['oversize']) == 0, 'image exceeds page box: $imgs');
@@ -473,15 +490,53 @@ Future<void> _runCombo(
       () => ReaderFushiPage.debugCaretSurface?.call() == 'reader',
       polls: 40,
     );
+    if (!caret) {
+      final Map<String, dynamic> direct = await _js(
+        "JSON.stringify(window.fushiCaret ? window.fushiCaret.enter() : {missing: true})",
+      );
+      r.evidence['caretDiag'] = <String, Object?>{
+        'surface': ReaderFushiPage.debugCaretSurface?.call(),
+        'primaryFocus': FocusManager.instance.primaryFocus?.toString(),
+        'directEnter': direct,
+      };
+    }
     r.check(caret, 'Enter did not enter the text caret');
     if (caret) {
+      // 判「真查到了」不能看 DictionaryPopupWebView 在不在树里：阅读器开书时会预热
+      // 一个离屏热槽弹窗，它恒在、Esc 也不会移除它。与 reader_vn_lookup_jump_itest
+      // 同一判据：光标所在面切到 popup（真词典结果渲染后才交出光标）。
+      // 光标从首个可见字起步，翻页 / VN 下那常是「【」之类的标点——标点查不到词、
+      // 本就不弹窗。先按 Tab 走到假名 / 汉字上再查。
+      Map<String, dynamic> caretAt = <String, dynamic>{};
+      for (int i = 0; i < 20; i++) {
+        caretAt = await _js(
+          "JSON.stringify((function () { var c = window.fushiCaret; "
+          "return { active: !!(c && c.isActive && c.isActive()), "
+          "ch: c && c.node ? c.node.textContent.substr(c.offset, 1) : '' }; })())",
+        );
+        if (RegExp(r'[ぁ-ヿ一-鿿]')
+            .hasMatch(caretAt['ch'] as String? ?? '')) {
+          break;
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await _pumpFor(tester, const Duration(milliseconds: 150));
+      }
+      final Map<String, dynamic> caretProbe = await _js(
+        "JSON.stringify((function () { var c = window.fushiCaret; "
+        "return { active: !!(c && c.isActive && c.isActive()), "
+        "ch: c && c.node ? c.node.textContent.substr(c.offset, 1) : '' }; })())",
+      );
+      r.evidence['caretAt'] = caretAt;
+      r.evidence['caretProbe'] = caretProbe;
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       final bool popup = await _waitFor(
         tester,
-        () => find.byType(DictionaryPopupWebView).evaluate().isNotEmpty,
+        () => ReaderFushiPage.debugCaretSurface?.call() == 'popup',
         polls: 80,
       );
-      r.check(popup, 'caret lookup did not open the dictionary popup');
+      r.evidence['surfaceAfterLookup'] =
+          ReaderFushiPage.debugCaretSurface?.call();
+      r.check(popup, 'caret lookup never handed the caret to a dictionary popup');
       if (popup) {
         String popupText = '';
         for (int i = 0; i < 40 && popupText.isEmpty; i++) {
@@ -497,9 +552,10 @@ Future<void> _runCombo(
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         final bool closed = await _waitFor(
           tester,
-          () => find.byType(DictionaryPopupWebView).evaluate().isEmpty,
+          () => ReaderFushiPage.debugCaretSurface?.call() != 'popup',
           polls: 40,
         );
+        r.evidence['surfaceAfterEsc'] = ReaderFushiPage.debugCaretSurface?.call();
         r.check(closed, 'Esc did not close the dictionary popup');
       }
       // 退出正文光标，别把焦点状态带进下一组合。
@@ -532,7 +588,12 @@ void main() {
           await launchFushiTestApp();
           expect(await waitForHome(tester), isTrue);
           await _pumpFor(tester, const Duration(seconds: 2));
-          await readyAppModel(tester);
+          final AppModel appModel = await readyAppModel(tester);
+          // 第 9 项「Enter 进正文光标查词」属于焦点导航（实验开关），与
+          // reader_vn_lookup_jump_itest 一样先打开、finally 里还原。
+          final bool baseFocusNavigation =
+              appModel.experimentalFocusNavigationEnabled;
+          await enableFocusNavigation(tester);
           expect(await seedDictionary(tester), isTrue);
           final ReaderFushiSource source = ReaderFushiSource.instance;
           final String baseViewMode = source.readerViewMode;
@@ -568,6 +629,9 @@ void main() {
             await _close(tester);
             await source.setReaderViewMode(baseViewMode);
             await source.setReaderWritingMode(baseWritingMode);
+            await appModel.setExperimentalFocusNavigationEnabled(
+              baseFocusNavigation,
+            );
           }
           final List<String> all = <String>[
             for (final _ComboResult r in results) ...r.failures,
