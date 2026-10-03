@@ -248,8 +248,10 @@ void main() {
       // （`reader_selection_scripts.dart:1036`）。选词入口换了函数，但
       // **maxLength 仍是必传参数、漏传仍然会哑火**，危险一点没变，所以这里换靶
       // 不放宽：仍然要求全文件恰好一处选词调用，且 maxLength 显式写成 40。
+      // 末参 fromHover 随 payload 回传：宿主只对点击（不是 Shift 悬停）自动做
+      // AI 挑词条，漏传就把悬停当点击、每次悬停都发请求。
       final RegExp selectRe = RegExp(
-        r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*\)',
+        r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*,\s*fromHover\s*\)',
       );
       expect(selectRe.allMatches(src).length, 1,
           reason: '选词必须是唯一调用点，且显式传 maxLength=40');

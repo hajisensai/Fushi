@@ -40,11 +40,14 @@ class _ColorReadingRecognizer extends PpOcrLineRecognizer {
   final Map<int, String> replies;
   final List<img.Image> lines = <img.Image>[];
 
+  // 生产路径调的是 recognizeLineScored（recognizeLine 转调它），假件重写这一个。
   @override
-  Future<String> recognizeLine(img.Image line) async {
+  Future<({String text, double? confidence})> recognizeLineScored(
+    img.Image line,
+  ) async {
     lines.add(line);
     final int red = line.getPixel(line.width ~/ 2, line.height ~/ 2).r.toInt();
-    return replies[red] ?? '?';
+    return (text: replies[red] ?? '?', confidence: null);
   }
 }
 
@@ -55,7 +58,9 @@ class _ConstLineRecognizer extends PpOcrLineRecognizer {
   final String reply;
 
   @override
-  Future<String> recognizeLine(img.Image line) async => reply;
+  Future<({String text, double? confidence})> recognizeLineScored(
+    img.Image line,
+  ) async => (text: reply, confidence: null);
 }
 
 typedef _LineCall = ({OcrRect box, bool vertical, List<OcrRect>? lineHints});

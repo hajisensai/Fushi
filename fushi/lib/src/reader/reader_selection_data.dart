@@ -15,6 +15,7 @@ class ReaderSelectionData {
     this.verticalWriting = false,
     this.mangaPageIndex,
     this.audioCuePayload,
+    this.fromHover = false,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -48,6 +49,7 @@ class ReaderSelectionData {
       verticalWriting: json['verticalWriting'] as bool? ?? false,
       mangaPageIndex: (json['mangaPageIndex'] as num?)?.toInt(),
       audioCuePayload: json['audioCuePayload'] as String?,
+      fromHover: json['fromHover'] as bool? ?? false,
     );
   }
 
@@ -85,4 +87,10 @@ class ReaderSelectionData {
   /// reader must use this page, rather than the spread's first page, as the
   /// image attached to a mined card.
   final int? mangaPageIndex;
+
+  /// 这次选词来自指针扫过（Shift 悬停 / 悬停查词），而不是一次明确的点击 / 按键。
+  ///
+  /// 悬停一行就会连查十几个词，宿主据此跳过「每查一次就付费一次」的旁路工作
+  /// （查词按句意自动挑词条，见 `LookupOrigin.hover`）。旧 payload 没有该字段 = false。
+  final bool fromHover;
 }

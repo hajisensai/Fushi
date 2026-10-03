@@ -1593,6 +1593,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     if (total <= 0 && typeof r.totalChapterChars === 'number' && r.totalChapterChars > 0) {
       total = r.totalChapterChars;
     }
+    // BUG-2903：连续 shell 的章总字数来自缓存的章内文本索引，滚动中逐帧回报不再全章 walk。
+    if (total <= 0 && typeof r.chapterCharTotal === 'function') {
+      total = r.chapterCharTotal();
+    }
     if (total <= 0 && r.createWalker) {
       var walker = r.createWalker();
       var node;

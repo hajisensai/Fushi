@@ -53,10 +53,10 @@ add_library(fushi_voice_hook SHARED
   "include/lookup_wheel_source.h"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
+  "hook/yuris_ypf.h"
+  "hook/fvp_format.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
-  "hook/malie_cfi.h"
-  "hook/malie_lib.h"
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
   "hook/voice_resource_writer.inc"
@@ -94,6 +94,16 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/bgi_lookup.inc"
   "hook/adapters/bgi_lookup_core.h"
+  "hook/adapters/yuris_adapter.inc"
+  "hook/adapters/yuris_lookup.inc"
+  "hook/adapters/yuris_lookup_core.h"
+  "hook/adapters/yuris_profile.h"
+  "hook/adapters/yuris_voice.inc"
+  "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/fvp_adapter.inc"
+  "hook/adapters/fvp_profile.h"
+  "hook/adapters/fvp_lookup.inc"
+  "hook/adapters/fvp_lookup_core.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
   "hook/adapters/artemis_lookup.inc"
@@ -106,6 +116,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
+  "hook/adapters/malie_engine_io_core.h"
+  "hook/adapters/malie_lookup.inc"
+  "hook/adapters/malie_lookup_core.h"
   "hook/adapters/malie_profile.h"
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
@@ -118,6 +131,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_lookup.h"
   "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"
+  "include/sgre_family.h"
   "hook/adapters/sgre_voice_archive.h"
   "hook/adapters/leaf_aquaplus_profile.h"
   "hook/adapters/leaf_aquaplus_lookup.h"
@@ -1050,6 +1064,27 @@ target_compile_definitions(fushi_bgi_lookup_test PRIVATE
 add_test(NAME fushi_bgi_lookup_test
   COMMAND fushi_bgi_lookup_test)
 
+# FVP (Favorite View Point) HCB trailer identity and the mono-Ogg Vorbis
+# voice check on synthetic bytes.
+add_executable(fushi_fvp_format_test "tests/fvp_format_test.cpp")
+target_include_directories(fushi_fvp_format_test PRIVATE "hook")
+add_test(NAME fushi_fvp_format_test COMMAND fushi_fvp_format_test)
+
+# FVP text lane + in-game lookup core: structural site resolution on a
+# synthetic x86 image (syscall registration, TextPrint handler, Print /
+# PutGlyph, PrimSetText field, render text case, DrawSprite transform proofs)
+# with fail-closed branches, CP932 ruby parsing, glyph pairing, draw-origin
+# admission, projection, hit testing and the message-level click claim.
+add_executable(fushi_fvp_lookup_test
+  "tests/fvp_lookup_test.cpp"
+)
+target_include_directories(fushi_fvp_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_fvp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_fvp_lookup_test
+  COMMAND fushi_fvp_lookup_test)
+
 add_executable(fushi_catsystem2_lookup_test
   "tests/catsystem2_lookup_test.cpp"
 )
@@ -1074,6 +1109,37 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
+
+# Malie engine structure: the "CFI" I/O scheme table that is the engine
+# identity (name literal -> unique copy -> table hand-off -> six frame-function
+# slots, tell shape, getc->read, shared registrar) and the Ogg decoder input
+# (libogg ogg_sync_wrote / ogg_sync_buffer, the refill call sites and their
+# decoder stream field, the decoder path field) on a synthetic x86 image with
+# every fail-closed branch, plus the voice-path classification and naming.
+add_executable(fushi_malie_engine_io_test
+  "tests/malie_engine_io_test.cpp"
+)
+target_include_directories(fushi_malie_engine_io_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_engine_io_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_engine_io_test
+  COMMAND fushi_malie_engine_io_test)
+
+# Malie message lane + in-game lookup core: RICHTEXT3D draw-method decoding
+# from the class table (glyph records, count, stride, reveal, translation),
+# the segment parser / reveal setter pair, segment cleaning (voice tag, ruby,
+# codes), line-to-glyph mapping, world/design/client projection, hit testing
+# and the click claim, with every fail-closed branch.
+add_executable(fushi_malie_lookup_test
+  "tests/malie_lookup_test.cpp"
+)
+target_include_directories(fushi_malie_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_lookup_test
+  COMMAND fushi_malie_lookup_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
@@ -1111,3 +1177,6 @@ add_test(NAME fushi_locale_emulator_version_hooks_test
 
 include(tests/generic_input_shield_install_test.cmake)
 include(tests/siglus_legacy_owner_publication_test.cmake)
+add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
+target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
+add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)

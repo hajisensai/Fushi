@@ -738,6 +738,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 关掉的悬浮球回到 Fushi 时自动恢复哪些（见 [FloatingBallAutoRestore]）。
+  /// 默认「仅应用内」：与引入本设置前的行为一致。
+  FloatingBallAutoRestore get floatingBallAutoRestore =>
+      FloatingBallAutoRestore.fromStorage(
+        getPref('floating_ball.auto_restore', defaultValue: null),
+      );
+
+  Future<void> setFloatingBallAutoRestore(FloatingBallAutoRestore value) async {
+    await setPref('floating_ball.auto_restore', value.storageValue);
+    notifyListeners();
+  }
+
   /// 某个场景的悬浮球按钮 id（目录顺序）；从没设过 =
   /// [FloatingBallScope.defaultButtons]。旧版只有一份全局按钮勾选
   /// （`floating_ball.actions`）：没单独设过的场景沿用它对全局按钮的取舍。
@@ -1617,6 +1629,38 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setAiFeatureAssignments(AiFeatureAssignments value) async {
     await setPref('ai_feature_providers', value.toJson());
     notifyListeners();
+  }
+
+  /// [resolveAiFeatureProvider] 的解码缓存，键是两份**原始**偏好串。
+  ({
+    String? providersRaw,
+    String? assignmentsRaw,
+    List<AiProviderConfig> providers,
+    AiFeatureAssignments assignments,
+  })? _aiResolveCache;
+
+  /// 「[feature] 当前该用哪家 AI」，与
+  /// `aiFeatureAssignments.resolve(feature, aiProviders)` 同义。
+  ///
+  /// 查词弹窗每次构建都要问一遍（决定画不画 ✨），而 [aiProviders] 每读一次都要
+  /// 解 JSON + base64。这里以 `ai_providers` / `ai_feature_providers` 的原始串为
+  /// 缓存键：任何写入（[setPref]、[loadFromDb] 换整份缓存、跨进程刷新）都会换串，
+  /// 串一变就重新解码——判据就是数据本身，不存在漏掉失效通知而读到陈旧值的路径。
+  AiProviderConfig? resolveAiFeatureProvider(AiFeature feature) {
+    final String? providersRaw = _prefCache['ai_providers'];
+    final String? assignmentsRaw = _prefCache['ai_feature_providers'];
+    var cache = _aiResolveCache;
+    if (cache == null ||
+        cache.providersRaw != providersRaw ||
+        cache.assignmentsRaw != assignmentsRaw) {
+      cache = _aiResolveCache = (
+        providersRaw: providersRaw,
+        assignmentsRaw: assignmentsRaw,
+        providers: aiProviders,
+        assignments: aiFeatureAssignments,
+      );
+    }
+    return cache.assignments.resolve(feature, cache.providers);
   }
 
   /// OpenSubtitles 的设备本地配置。登录 token 只存在 client 内存中，绝不写入本键。
@@ -3438,6 +3482,29 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaOcrLocalModel(String value) async {
     await setPref('manga_ocr_local_model', value);
+    notifyListeners();
+  }
+
+  /// 查词时自动让 AI 按句意挑词条（`ai_lookup_context_assistant.dart`）。默认关：
+  /// 每次查词一个请求、按量计费；关着时弹窗顶栏的 ✨ 按钮照样可以手动点。设备
+  /// 本地，理由同 [mangaOcrAiMode]。
+  bool get lookupAiContextAuto =>
+      getPref('lookup_ai_context_auto', defaultValue: false) as bool;
+
+  Future<void> setLookupAiContextAuto(bool value) async {
+    await setPref('lookup_ai_context_auto', value);
+    notifyListeners();
+  }
+
+  /// 漫画 OCR 的大模型识别档位（`MangaAiOcrMode.storageKey`）：`off`（默认）/
+  /// `low_confidence`（只重读本地低置信度块）/ `all`（全部块）。用哪家模型走
+  /// 「设置 › AI」的功能指派 `AiFeature.mangaOcr`。设备本地：这是「上传漫画页并
+  /// 按量计费」的开关，不能随同步漂到别的设备上自动生效。
+  String get mangaOcrAiMode =>
+      getPref('manga_ocr_ai_mode', defaultValue: 'off') as String;
+
+  Future<void> setMangaOcrAiMode(String value) async {
+    await setPref('manga_ocr_ai_mode', value);
     notifyListeners();
   }
 

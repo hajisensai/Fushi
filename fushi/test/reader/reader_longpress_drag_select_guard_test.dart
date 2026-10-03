@@ -58,7 +58,7 @@ void main() {
       expect(js, contains('fireTextSelected: function'));
       expect(
         js,
-        contains('return this.fireTextSelected(x, y);'),
+        contains('return this.fireTextSelected(x, y, fromHover);'),
         reason: 'selectFromPosition（tap 路径）必须复用 fireTextSelected',
       );
     });

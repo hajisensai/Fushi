@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -1166,5 +1167,83 @@ void main() {
     await tester.pumpAndSettle();
     // 闭合态显示的就是点名的那项（下拉找不到当前值会直接断言崩溃）。
     expect(find.text(hostLabel(MangaOcrLocalModel.mangaCtc)), findsOneWidget);
+  });
+
+  // 阅读器侧栏的 OCR 标签只有 ~320px。
+  Widget narrowSection(String enginePreference) => wrap(SizedBox(
+        width: 320,
+        child: MangaOcrSettingsSection(
+          service: _FakeOcrService(),
+          mokuroPathGetter: () => '',
+          mokuroPathSetter: (String _) async {},
+          probeExternal: (String _) async => null,
+          enginePreferenceGetter: () => enginePreference,
+          parallelTasksGetter: () => 0,
+          parallelTasksSetter: (int _) async {},
+        ),
+      ));
+  Finder engineField() =>
+      find.byKey(const ValueKey<String>('manga_ocr_default_engine'));
+  // 闭合态是 IndexedStack：它只把选中项报成 onstage，未选中项的标签默认被
+  // finder 跳过，必须 skipOffstage: false 才查得到。
+  RenderParagraph closedLabel(WidgetTester tester, String label) =>
+      tester.renderObject<RenderParagraph>(find.descendant(
+          of: engineField(),
+          matching: find.text(label, skipOffstage: false),
+          skipOffstage: false));
+
+  testWidgets('BUG-2912: narrow reader sheet shows engine and helper in full',
+      (WidgetTester tester) async {
+    // 引擎下拉闭合态曾被 dense 的一行高 SizedBox 裁掉第二行；并行任务说明被
+    // 限死 3 行吞掉结尾。
+    await tester.pumpWidget(narrowSection('auto'));
+    await tester.pumpAndSettle();
+
+    final RenderParagraph selected =
+        closedLabel(tester, t.manga_ocr_engine_auto);
+    final RenderParagraph oneLine =
+        closedLabel(tester, t.manga_ocr_engine_google_lens);
+    // 前提：这个宽度下选中项的标签确实要折行，否则下面的断言是空壳。
+    expect(selected.textSize.height,
+        greaterThanOrEqualTo(oneLine.textSize.height * 2));
+    // 段落拿到的高度装得下它排出来的全部行。dense 时父级把高度钳在一行：
+    // size 被 constrain 成一行而 textSize 仍是多行——视觉上第二行被裁掉。
+    expect(
+        selected.size.height, greaterThanOrEqualTo(selected.textSize.height));
+    // 段落整个落在输入框里，没有被挤出闭合态。
+    final Rect field = tester.getRect(find
+        .descendant(of: engineField(), matching: find.byType(InputDecorator))
+        .first);
+    final Rect label = tester.getRect(find.descendant(
+        of: engineField(), matching: find.text(t.manga_ocr_engine_auto)));
+    expect(label.top, greaterThanOrEqualTo(field.top));
+    expect(label.bottom, lessThanOrEqualTo(field.bottom));
+    expect(
+      tester
+          .renderObject<RenderParagraph>(
+              find.text(t.manga_ocr_parallel_tasks_desc))
+          .didExceedMaxLines,
+      isFalse,
+    );
+  });
+
+  testWidgets(
+      'BUG-2912: closed engine dropdown is only as tall as the selected label',
+      (WidgetTester tester) async {
+    // 非 dense 的闭合态是 IndexedStack，高度取所有子项的最大值：未选中项也允许
+    // 折行的话，只要「自动（不会上传到 Lens）」折两行，选了单行 Google Lens 的
+    // 按钮也恒为两行高——全局 OCR 设置页同样受影响。
+    await tester.pumpWidget(narrowSection('google_lens'));
+    await tester.pumpAndSettle();
+
+    final RenderParagraph selected =
+        closedLabel(tester, t.manga_ocr_engine_google_lens);
+    final Size stack = tester.getSize(find
+        .descendant(of: engineField(), matching: find.byType(IndexedStack))
+        .first);
+    expect(stack.height, selected.textSize.height);
+    // 未选中项只排一行，不撑高闭合态。
+    expect(closedLabel(tester, t.manga_ocr_engine_auto).textSize.height,
+        selected.textSize.height);
   });
 }

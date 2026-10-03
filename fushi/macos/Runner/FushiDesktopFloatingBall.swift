@@ -1071,6 +1071,7 @@ final class DesktopFloatingBallController: NSObject {
     case "lookup": return "Look up"
     case "popup_lookup": return "App-external lookup"
     case "clipboard": return "Clipboard"
+    case "sync": return "Sync now"
     default: return id
     }
   }
