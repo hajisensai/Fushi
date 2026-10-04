@@ -45,6 +45,8 @@
 | [BUG-2932](bugs/BUG-2932-cmvs-voice-sfx-paired-as-voice.md) | ✅ | ✅ | CMVS 语音只走通用 PCM：点击音效被配成台词语音、真实语音丢失 |
 | [BUG-2931](bugs/BUG-2931-catsystem2-2016-voice-sites.md) | ✅ | ✅ | CatSystem2 2016 版语音站点因编译形态不同而全部未解析 |
 | [BUG-2930](bugs/BUG-2930-catsystem2-bootmenu-launcher-handoff.md) | ✅ | ✅ | CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随 |
+| [BUG-2929](bugs/BUG-2929-linebreak-strict-pushes-char.md) | ✅ | ✅ | 正文 line-break strict 让「たった」「コート」把前一个字推到下一列 |
+| [BUG-2928](bugs/BUG-2928-vn-ruby-small-kana-skip.md) | ✅ | ✅ | 有声书 VN 模式跳过三段正文：ruby 並字读音让 cue 匹配越过中间句子 |
 | [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
 | [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
