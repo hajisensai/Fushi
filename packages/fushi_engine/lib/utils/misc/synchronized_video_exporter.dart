@@ -362,6 +362,12 @@ String? _missingSynchronizedOutput(File output, String log) {
   if (!output.existsSync() || output.lengthSync() == 0) {
     return 'output file is empty';
   }
+  return missingMuxedVideoAndAudio(log);
+}
+
+/// 一次「画面 + 声音都必选」的 ffmpeg 合成，按它自己的收尾统计行判还缺哪一路；
+/// 两路都写进了数据返回 null。统计行缺失也算缺——没有证据不当成功。
+String? missingMuxedVideoAndAudio(String log) {
   final FfmpegMuxedBytes? muxed = parseFfmpegMuxedBytes(log);
   if (muxed == null) return 'ffmpeg final stats missing';
   if (muxed.videoKiB <= 0) return 'no video data muxed';
