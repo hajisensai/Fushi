@@ -185,9 +185,116 @@ VideoAcquisitionReduction _onAiIntent(
       return _onAiChoose(idle, intent.patch, defaults);
     case VideoAcquisitionIntentKind.provide:
       return _onAiProvide(idle, intent.patch, defaults);
+    case VideoAcquisitionIntentKind.recommend:
+      return _recommend(idle, intent.patch);
     case VideoAcquisitionIntentKind.unclear:
       return _unclear(idle);
   }
+}
+
+/// `recommend` = 问「哪个最好」。只在挑版本时有意义：AI 按用户说的条件给了
+/// `choiceIndex`（指向「就这个」或某个 `alt:N`）就推荐那张；没说条件就推荐资源
+/// 排序第一张能落地的卡（[rankResourceGroups] 已按偏好排好）。推荐的不是当前这
+/// 张就切过去展示，但**不提交**——下载 / 订阅仍要用户点「就这个」。
+VideoAcquisitionReduction _recommend(
+  VideoAcquisitionState state,
+  VideoAcquisitionIntentPatch patch,
+) {
+  if (state.stage != VideoAcquisitionStage.awaitingResourceConfirm) {
+    return _unclear(state);
+  }
+  final int? byCriteria = _recommendedByCriteria(state, patch.choiceIndex);
+  final ({int index, VideoAcquisitionResourcePlan plan})? target =
+      byCriteria != null
+      ? _indexedPlan(state, byCriteria)
+      : _findPlan(state, 0);
+  if (target == null) return _unclear(state);
+  final bool current = target.index == state.groupCursor;
+  final VideoAcquisitionSay say = VideoAcquisitionSay(
+    VideoAcquisitionSayKind.recommendation,
+    args: <String, Object?>{
+      'index': target.index + 1,
+      'current': current,
+      'byCriteria': byCriteria != null,
+    },
+  );
+  if (current) return (_sayThenReask(state, say), _noEffects);
+  return (_presentPlan(state.say(say), target.index, target.plan), _noEffects);
+}
+
+/// `choiceIndex` → 卡下标：「就这个」= 当前卡，`alt:N` = 第 N 张；其余选项
+/// （换一个 / 取消 / 只下最新一集…）不是版本，不算推荐。
+int? _recommendedByCriteria(VideoAcquisitionState state, int? choiceIndex) {
+  final VideoAcquisitionQuestion? question = state.question;
+  if (question == null ||
+      question.slot != VideoAcquisitionSlot.resource ||
+      choiceIndex == null ||
+      choiceIndex < 0 ||
+      choiceIndex >= question.options.length) {
+    return null;
+  }
+  final String id = question.options[choiceIndex].id;
+  if (id == kVideoAcquisitionOptionConfirm) return state.groupCursor;
+  if (!id.startsWith(kVideoAcquisitionOptionAltPrefix)) return null;
+  return int.tryParse(id.substring(kVideoAcquisitionOptionAltPrefix.length));
+}
+
+({int index, VideoAcquisitionResourcePlan plan})? _indexedPlan(
+  VideoAcquisitionState state,
+  int index,
+) {
+  final VideoAcquisitionResourcePlan? plan = _planAt(state, index);
+  return plan == null ? null : (index: index, plan: plan);
+}
+
+/// 给意图解析看的候选版本：正在挑版本时，问题里每个代表版本的选项（「就这个」=
+/// 当前卡、`alt:N`）各一条，带上让 AI 能比较「哪个更小 / 做种更多」的事实。
+/// 选项本身没有 label（页面按 i18n 渲染），不给这份 AI 只能看见 `confirm` /
+/// `alt:3` 这种 id，回答不了「哪个最好」（BUG-2933）。不在挑版本时为空。
+List<Map<String, Object?>> videoAcquisitionCandidateContext(
+  VideoAcquisitionState state,
+) {
+  final VideoAcquisitionQuestion? question = state.question;
+  if (state.stage != VideoAcquisitionStage.awaitingResourceConfirm ||
+      question == null ||
+      question.slot != VideoAcquisitionSlot.resource) {
+    return const <Map<String, Object?>>[];
+  }
+  return <Map<String, Object?>>[
+    for (int i = 0; i < question.options.length; i++)
+      ?_candidateOf(state, i, question.options[i].id),
+  ];
+}
+
+Map<String, Object?>? _candidateOf(
+  VideoAcquisitionState state,
+  int optionIndex,
+  String optionId,
+) {
+  final int? index = optionId == kVideoAcquisitionOptionConfirm
+      ? state.groupCursor
+      : optionId.startsWith(kVideoAcquisitionOptionAltPrefix)
+      ? int.tryParse(
+          optionId.substring(kVideoAcquisitionOptionAltPrefix.length),
+        )
+      : null;
+  if (index == null) return null;
+  final VideoAcquisitionResourcePlan? plan = _planAt(state, index);
+  if (plan == null) return null;
+  final VideoResourceVersionGroup group = plan.group;
+  return <String, Object?>{
+    'optionIndex': optionIndex,
+    'rank': index + 1,
+    'current': index == state.groupCursor,
+    'releaseGroup': group.releaseGroup,
+    'resolution': group.resolution,
+    'source': videoResourceSourceTag(group),
+    'provider': group.providerId,
+    'seeders': group.bestSeeders,
+    'bytesPerEpisode': estimatedBytesPerEpisode(group),
+    'episodes': plan.picks.length,
+    'batch': plan.usesBatch,
+  };
 }
 
 /// `choose` = 在回答当前问题：等价于点了 `question.options[choiceIndex]`。
