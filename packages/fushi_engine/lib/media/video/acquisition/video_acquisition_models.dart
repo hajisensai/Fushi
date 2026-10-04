@@ -417,6 +417,9 @@ enum VideoAcquisitionSayKind {
   /// 找到系列（args: name, series, movies）——之后逐部找资源
   franchiseFound,
 
+  /// 系列解析没走完（[VideoFranchise.truncated]）：清单可能不全（args: name）
+  franchiseTruncated,
+
   /// 这部作品没有找到同系列的其它作品，按单部继续（args: title）
   franchiseNotFound,
 

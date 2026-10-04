@@ -54,12 +54,17 @@ class VideoFranchise {
     required this.name,
     required this.series,
     required this.movies,
+    this.truncated = false,
   });
 
   /// 显示名：有 collection 用它去掉「系列」后缀的名字，否则用锚点作品名。
   final String name;
   final List<VideoDiscoveryItem> series;
   final List<VideoDiscoveryItem> movies;
+
+  /// 解析没走完就停了（MAL 关联链撞上 [kVideoFranchiseMaxMalWorks] 或中途请求
+  /// 失败）：[series] / [movies] 只是已经收到的那部分，不能当「全部」交给用户。
+  final bool truncated;
 
   int get length => series.length + movies.length;
 }
@@ -160,8 +165,14 @@ abstract interface class VideoFranchiseRelationSource {
   Future<List<VideoMetadataWork>> searchAnime(String title);
 }
 
-/// 沿 MAL 关联最多走几部（Jikan 闸门约 1.1 秒一个请求：60 部 ≈ 1 分钟）。
-const int kVideoFranchiseMaxMalWorks = 60;
+/// 沿 MAL 关联最多请求几部（Jikan 闸门约 1.1 秒一个请求：150 部 ≈ 2.8 分钟）。
+///
+/// 计的是请求数而不是收进清单的部数：OVA / Special 不收，但要请求一次才知道它是
+/// OVA。按 MAL 页面计数，哆啦A梦从 2005 版出发共 67 个节点（2005 版 27 条外传、1979 版 37 条外传、
+/// 1973 版；2005 版没有指回 1979 版的前传，要经剧场版重制的「Alternative version」
+/// 绕回去）——旧上限 60 会截掉最后 7 个节点且不留标记（BUG-2935）。撞上限
+/// 仍可能发生，结果带 [VideoFranchise.truncated]，由调用方告诉用户清单不全。
+const int kVideoFranchiseMaxMalWorks = 150;
 
 /// 沿着走的 MAL 关系（小写）。「Other」「Spin-off」「Character」「Summary」不走：
 /// 长寿作品在这几类上挂满联动、客串与总集篇；「Alternative setting」也不走——
@@ -197,6 +208,7 @@ Future<VideoFranchise?> resolveMalFranchise(
   final Set<int> visited = <int>{};
   final List<int> queue = <int>[int.parse(start)];
   String? name;
+  bool failed = false;
   while (queue.isNotEmpty && visited.length < maxWorks) {
     final int id = queue.removeAt(0);
     if (!visited.add(id)) continue;
@@ -210,6 +222,7 @@ Future<VideoFranchise?> resolveMalFranchise(
         'VideoFranchise.malTraversal',
         'stopped at mal:$id after ${visited.length - 1} works: $error\n$stack',
       );
+      failed = true;
       break;
     }
     if (related == null) continue;
@@ -234,10 +247,18 @@ Future<VideoFranchise?> resolveMalFranchise(
       }
     }
   }
+  final int unvisited = queue.toSet().difference(visited).length;
+  if (unvisited > 0) {
+    engineLog.logDiagnostic(
+      'VideoFranchise.malTraversal',
+      'budget $maxWorks exhausted, $unvisited related works unvisited',
+    );
+  }
   return VideoFranchise(
     name: name ?? anchor.reference.title,
     series: series.sortedByYear(),
     movies: movies.sortedByYear(),
+    truncated: failed || unvisited > 0,
   );
 }
 
@@ -284,7 +305,8 @@ Future<String?> _anchorMalId(
 }
 
 /// 合并几份系列清单：按标题 + 年份去重，剧集 / 剧场版各自按年份排；名字取第一份
-/// 非空的（TMDB collection 名比 MAL 的首部标题更像系列名）。
+/// 非空的（TMDB collection 名比 MAL 的首部标题更像系列名）。任一份没走完，合并
+/// 结果也算没走完：别的来源补上了多少无从核对。
 VideoFranchise? mergeVideoFranchises(Iterable<VideoFranchise?> parts) {
   final List<VideoFranchise> present = <VideoFranchise>[
     for (final VideoFranchise? part in parts)
@@ -301,6 +323,7 @@ VideoFranchise? mergeVideoFranchises(Iterable<VideoFranchise?> parts) {
     name: present.first.name,
     series: series.sortedByYear(),
     movies: movies.sortedByYear(),
+    truncated: present.any((VideoFranchise part) => part.truncated),
   );
 }
 
