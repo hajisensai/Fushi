@@ -171,20 +171,20 @@ class _ExternalReaderImportPageState
         if (!didPop && _running) setState(() => _cancelRequested = true);
       },
       child: Scaffold(
-        appBar: AppBar(title: Text(t.hoshi_import_entry)),
+        appBar: FushiAppBar(title: Text(t.hoshi_import_entry)),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             Text(t.hoshi_import_how_to),
             const SizedBox(height: 16),
-            FilledButton.tonalIcon(
+            FushiFilledButton.tonalIcon(
               onPressed: _scanning || _running ? null : _pickBackup,
               icon: const Icon(Icons.folder_open_outlined),
               label: Text(t.hoshi_import_file_pick),
             ),
             const SizedBox(height: 16),
             if (_scanning) ...<Widget>[
-              const Center(child: CircularProgressIndicator()),
+              const Center(child: FushiCircularProgressIndicator()),
               const SizedBox(height: 12),
               Text(t.hoshi_import_scan_running, textAlign: TextAlign.center),
             ],
@@ -227,7 +227,7 @@ class _ExternalReaderImportPageState
           ],
           const SizedBox(height: 16),
           if (_running) ...<Widget>[
-            LinearProgressIndicator(value: _progressValue),
+            FushiLinearProgressIndicator(value: _progressValue),
             if (_progressLabel != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(
@@ -239,7 +239,7 @@ class _ExternalReaderImportPageState
             const SizedBox(height: 8),
             Align(
               alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: _cancelRequested
                     ? null
                     : () => setState(() => _cancelRequested = true),
@@ -247,7 +247,7 @@ class _ExternalReaderImportPageState
               ),
             ),
           ] else
-            FilledButton(
+            FushiFilledButton(
               onPressed: _runImport,
               child: Text(t.hoshi_import_run_start),
             ),

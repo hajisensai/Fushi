@@ -159,7 +159,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
             SizedBox(
               width: 28,
               height: 28,
-              child: IconButton(
+              child: FushiIconButtonControl(
                 icon: Icon(
                   Icons.close,
                   size: 16,

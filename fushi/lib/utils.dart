@@ -27,6 +27,7 @@ export 'src/utils/components/galgame_poster_card.dart';
 export 'src/utils/components/fushi_design_tokens.dart';
 export 'src/utils/components/fushi_motion_tokens.dart';
 export 'src/utils/components/fushi_glass_surface.dart';
+export 'src/utils/components/glass/fushi_glass_controls.dart';
 export 'src/utils/components/fushi_material_components.dart';
 export 'src/utils/components/library_section_tabs.dart';
 export 'src/utils/components/section_swipe_navigator.dart';

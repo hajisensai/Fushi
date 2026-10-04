@@ -321,7 +321,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         child: Row(
           children: <Widget>[
             Expanded(
-              child: TextField(
+              child: FushiTextFieldControl(
                 key: ValueKey<String>('${prefix}_search_field'),
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
@@ -334,7 +334,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
             ),
             if (_prepared && _catalog.hasFilters) ...<Widget>[
               const SizedBox(width: 8),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('${prefix}_filters'),
                 tooltip: _catalog.filtersTooltip,
                 onPressed: _showFilters,
@@ -401,7 +401,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
             children: <Widget>[
               Text('$error', textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 onPressed: () => unawaited(_retry()),
                 icon: const Icon(Icons.refresh),
                 label: Text(t.refresh),
@@ -458,7 +458,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                 return Center(
                   child: _loading
                       ? adaptiveIndicator(context: context)
-                      : IconButton(
+                      : FushiIconButtonControl(
                           key: ValueKey<String>('${prefix}_more'),
                           onPressed: () => unawaited(_load(reset: false)),
                           icon: const Icon(Icons.add_circle_outline),

@@ -276,7 +276,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.ai_media_acquire_title(domain: widget.domainLabel)),
       ),
       body: SafeArea(
@@ -288,7 +288,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: TextField(
+                    child: FushiTextFieldControl(
                       key: const ValueKey<String>('ai-media-acquire-input'),
                       controller: _input,
                       autofocus: widget.initialQuery?.trim().isEmpty ?? true,
@@ -302,7 +302,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton.icon(
+                  FushiFilledButton.icon(
                     key: const ValueKey<String>('ai-media-acquire-send'),
                     onPressed: _busy ? null : () => unawaited(_submit()),
                     icon: const Icon(Icons.auto_awesome_outlined),
@@ -334,7 +334,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
               ),
             if (_busy) ...<Widget>[
               const SizedBox(height: 8),
-              const LinearProgressIndicator(),
+              const FushiLinearProgressIndicator(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 child: Text(switch (_phase) {
@@ -411,20 +411,20 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     if (acquiring) {
       action = const SizedBox.square(
         dimension: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     } else if (acquired) {
-      action = Tooltip(
+      action = FushiTooltip(
         message: t.ai_media_acquire_started,
         child: Icon(Icons.check_circle, color: theme.colorScheme.primary),
       );
     } else if (recommended) {
-      action = FilledButton(
+      action = FushiFilledButton(
         onPressed: () => unawaited(_acquire(c)),
         child: Text(t.ai_media_acquire_download),
       );
     } else {
-      action = OutlinedButton(
+      action = FushiOutlinedButton(
         onPressed: () => unawaited(_acquire(c)),
         child: Text(t.ai_media_acquire_download),
       );

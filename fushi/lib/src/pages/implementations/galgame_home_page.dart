@@ -456,7 +456,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
             actions: <Widget>[
               if (Platform.isWindows)
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: _gameStreamBusy ? null : _toggleGameStream,
                   icon: Icon(
                     _gameStreamStarted
@@ -503,7 +503,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             ).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
-          FilledButton.icon(
+          FushiFilledButton.icon(
             onPressed: widget.onShowLibrary,
             icon: const Icon(Icons.add),
             label: Text(t.game_add),
@@ -715,13 +715,13 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 const SizedBox(height: 16),
                 Row(
                   children: <Widget>[
-                    FilledButton.icon(
+                    FushiFilledButton.icon(
                       onPressed: () => unawaited(_launchGame(game)),
                       icon: const Icon(Icons.play_arrow),
                       label: Text(t.game_launch),
                     ),
                     const SizedBox(width: 12),
-                    OutlinedButton.icon(
+                    FushiOutlinedButton.icon(
                       onPressed: () => unawaited(_openDetail(game)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,

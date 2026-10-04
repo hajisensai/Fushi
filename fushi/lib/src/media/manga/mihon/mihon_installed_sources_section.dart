@@ -78,7 +78,7 @@ class _MihonInstalledSourcesSectionState
   Future<void> _clearSourceData(MangaOnlineSourceRow source) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(t.mihon_source_clear_data),
         content: Text(t.mihon_source_clear_data_hint),
         actions: <Widget>[
@@ -186,7 +186,7 @@ class _MihonInstalledSourcesSectionState
         ],
       );
 
-  Widget _buildSearchField() => TextField(
+  Widget _buildSearchField() => FushiTextFieldControl(
     key: const ValueKey<String>('mihon_sources_search_field'),
     controller: _searchController,
     decoration: InputDecoration(
@@ -195,7 +195,7 @@ class _MihonInstalledSourcesSectionState
       border: const OutlineInputBorder(),
       suffixIcon: _searchQuery.isEmpty
           ? null
-          : IconButton(
+          : FushiIconButtonControl(
               icon: const Icon(Icons.close),
               onPressed: () {
                 _searchController.clear();
@@ -222,7 +222,7 @@ class _MihonInstalledSourcesSectionState
                 children: <Widget>[
                   Expanded(child: _buildSearchField()),
                   const SizedBox(width: 8),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>(
                       'mihon_sources_sort_by_downloads',
                     ),
@@ -332,7 +332,7 @@ class _MihonInstalledSourcesSectionState
             key: ValueKey<String>(
               'mihon_source_row_${source.extensionPackage}_${source.sourceId}',
             ),
-            leading: Switch.adaptive(
+            leading: FushiSwitch.adaptive(
               value: source.enabled,
               onChanged: (bool value) => unawaited(
                 manager.updateSourceSettings(source, enabled: value),
@@ -344,7 +344,7 @@ class _MihonInstalledSourcesSectionState
             ),
             onTap: open != null && source.enabled ? () => open(source) : null,
             trailing: compact
-                ? PopupMenuButton<_SourceAction>(
+                ? FushiPopupMenuButton<_SourceAction>(
                     key: ValueKey<String>(
                       'mihon_source_menu_${source.extensionPackage}_${source.sourceId}',
                     ),
@@ -373,7 +373,7 @@ class _MihonInstalledSourcesSectionState
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       for (final _SourceAction action in actions)
-                        IconButton(
+                        FushiIconButtonControl(
                           key: action.key,
                           tooltip: action.label,
                           onPressed: action.onTap,

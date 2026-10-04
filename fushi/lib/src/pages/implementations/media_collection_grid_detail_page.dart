@@ -260,7 +260,7 @@ class _MediaCollectionGridDetailPageState
       Rect.fromPoints(anchor, anchor),
       Offset.zero & overlay.size,
     );
-    final _MemberMenuAction? action = await showMenu<_MemberMenuAction>(
+    final _MemberMenuAction? action = await showFushiMenu<_MemberMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_MemberMenuAction>>[
@@ -297,7 +297,7 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
-  AppBar _buildAppBar(double availableWidth) => AppBar(
+  PreferredSizeWidget _buildAppBar(double availableWidth) => FushiAppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
         // BUG-1184：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
         actions: narrowAwareAppBarActions(

@@ -126,7 +126,7 @@ class OnlineServicesOnboardingView extends StatelessWidget {
         SizedBox(height: tokens.spacing.card),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: FilledButton.icon(
+          child: FushiFilledButton.icon(
             onPressed: onConfigure,
             icon: const Icon(Icons.settings_outlined),
             label: Text(t.onboarding_online_services_configure),
@@ -154,7 +154,7 @@ class OnlineServicesOnboardingView extends StatelessWidget {
                     Text(item.description),
                     if (item.link != null) ...<Widget>[
                       SizedBox(height: tokens.spacing.gap),
-                      TextButton.icon(
+                      FushiTextButton.icon(
                         onPressed: () => onOpenLink(item.link!),
                         icon: const Icon(Icons.open_in_new_outlined),
                         label: Text(t.onboarding_online_services_link),

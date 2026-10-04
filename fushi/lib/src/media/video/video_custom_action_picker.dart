@@ -35,7 +35,7 @@ Future<VideoCustomActionPick?> showVideoCustomActionPicker({
 }) {
   return showAppDialog<VideoCustomActionPick>(
     context: context,
-    builder: (BuildContext dialogContext) => SimpleDialog(
+    builder: (BuildContext dialogContext) => FushiSimpleDialog(
       title: Text(t.video_control_custom_action(index: slotNumber)),
       children: <Widget>[
         // 「不绑定」置顶：解绑是唯一「把按钮变回空槽」的路径，排在几十条动作末尾会找不到。

@@ -303,7 +303,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               onChanged: (bool value) {
                 setState(() => _visualMode = value);
               },
-              child: SegmentedButton<bool>(
+              child: FushiSegmentedButton<bool>(
                 key: const Key('shortcut_view_toggle'),
                 showSelectedIcon: false,
                 segments: <ButtonSegment<bool>>[
@@ -407,7 +407,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               values: GamepadBrand.values,
               selected: _gamepadBrand,
               onChanged: _onGamepadBrandChanged,
-              child: SegmentedButton<GamepadBrand>(
+              child: FushiSegmentedButton<GamepadBrand>(
                 key: const Key('gamepad_brand_select'),
                 showSelectedIcon: false,
                 segments: <ButtonSegment<GamepadBrand>>[

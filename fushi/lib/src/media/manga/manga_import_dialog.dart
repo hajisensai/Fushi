@@ -403,15 +403,15 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.book_import_duplicate_title),
         content: Text(t.book_import_duplicate_message(name: proposedTitle)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.book_import_duplicate_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.book_import_duplicate_keep),
           ),

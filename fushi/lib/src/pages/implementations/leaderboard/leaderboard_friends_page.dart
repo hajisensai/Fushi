@@ -153,7 +153,7 @@ class _LeaderboardFriendsPageState
       trailing: busy
           ? const SizedBox.square(
               dimension: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
           : Row(mainAxisSize: MainAxisSize.min, children: actions),
       onTap: () => _openUser(a.id),
@@ -200,14 +200,14 @@ class _LeaderboardFriendsPageState
                   spacing: tokens.spacing.gap,
                   runSpacing: tokens.spacing.gap,
                   children: <Widget>[
-                    OutlinedButton.icon(
+                    FushiOutlinedButton.icon(
                       onPressed: myCode.isEmpty
                           ? null
                           : () => unawaited(leaderboardCopy(myCode)),
                       icon: const Icon(Icons.copy),
                       label: Text(t.leaderboard_copy),
                     ),
-                    OutlinedButton.icon(
+                    FushiOutlinedButton.icon(
                       onPressed: myCode.isEmpty
                           ? null
                           : () => unawaited(
@@ -237,7 +237,7 @@ class _LeaderboardFriendsPageState
                 SizedBox(height: tokens.spacing.gap),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: FilledButton.icon(
+                  child: FushiFilledButton.icon(
                     onPressed: _adding ? null : () => unawaited(_add()),
                     icon: const Icon(Icons.person_add_alt_1_outlined),
                     label: Text(t.leaderboard_friends_add),
@@ -258,7 +258,7 @@ class _LeaderboardFriendsPageState
           else if (list == null)
             Padding(
               padding: EdgeInsets.all(tokens.spacing.section),
-              child: const Center(child: CircularProgressIndicator()),
+              child: const Center(child: FushiCircularProgressIndicator()),
             )
           else if (client != null) ...<Widget>[
             LeaderboardSectionTitle(
@@ -266,7 +266,7 @@ class _LeaderboardFriendsPageState
             ),
             for (final FriendRequest r in list.incoming)
               _row(r.account, leaderboardDate(r.at), <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => unawaited(
                     _act(r.account.id, () async {
                       await client.addFriend(r.account.id);
@@ -274,7 +274,7 @@ class _LeaderboardFriendsPageState
                   ),
                   child: Text(t.leaderboard_user_accept),
                 ),
-                TextButton(
+                FushiTextButton(
                   onPressed: () => unawaited(
                     _act(r.account.id, () => client.removeFriend(r.account.id)),
                   ),
@@ -286,7 +286,7 @@ class _LeaderboardFriendsPageState
             ),
             for (final FriendRequest r in list.outgoing)
               _row(r.account, leaderboardDate(r.at), <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => unawaited(
                     _act(r.account.id, () => client.removeFriend(r.account.id)),
                   ),
@@ -303,7 +303,7 @@ class _LeaderboardFriendsPageState
                 f.account,
                 t.leaderboard_friends_since(date: leaderboardDate(f.since)),
                 <Widget>[
-                  TextButton(
+                  FushiTextButton(
                     onPressed: () => unawaited(_removeFriend(f.account)),
                     style: TextButton.styleFrom(foregroundColor: colors.error),
                     child: Text(t.leaderboard_friends_remove),
@@ -315,7 +315,7 @@ class _LeaderboardFriendsPageState
             ),
             for (final LeaderboardAccount a in _blocked)
               _row(a, null, <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () =>
                       unawaited(_act(a.id, () => client.unblock(a.id))),
                   child: Text(t.leaderboard_friends_unblock),

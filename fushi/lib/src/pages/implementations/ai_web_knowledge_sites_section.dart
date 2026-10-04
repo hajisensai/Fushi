@@ -86,7 +86,7 @@ class _AiWebKnowledgeCustomSitesSectionState
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   ExcludeFocus(
-                    child: Switch.adaptive(
+                    child: FushiSwitch.adaptive(
                       key: ValueKey<String>(
                         'ai-web-knowledge-site-${site.id}-enabled',
                       ),
@@ -95,7 +95,7 @@ class _AiWebKnowledgeCustomSitesSectionState
                           _setEnabled(prefs, site, enabled: value),
                     ),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: ValueKey<String>(
                       'ai-web-knowledge-site-${site.id}-remove',
                     ),
@@ -108,7 +108,7 @@ class _AiWebKnowledgeCustomSitesSectionState
             ),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('ai-web-knowledge-custom-add'),
               onPressed: () => unawaited(_add(prefs)),
               icon: const Icon(Icons.add),
@@ -232,13 +232,13 @@ class _AddSiteDialogState extends State<_AddSiteDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              TextButton(
+              FushiTextButton(
                 key: const ValueKey<String>('ai-web-knowledge-custom-cancel'),
                 onPressed: () => Navigator.of(context).pop(),
                 child: Text(t.dialog_cancel),
               ),
               const SizedBox(width: 8),
-              FilledButton(
+              FushiFilledButton(
                 key: const ValueKey<String>('ai-web-knowledge-custom-confirm'),
                 onPressed: _submit,
                 child: Text(t.dialog_add),

@@ -175,7 +175,7 @@ class LeaderboardConsentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return FushiListItem(
       leading: ExcludeFocus(
-        child: Checkbox(
+        child: FushiCheckbox(
           value: value,
           onChanged: (bool? v) => onChanged(v ?? false),
         ),
@@ -360,7 +360,7 @@ class LeaderboardAvatar extends ConsumerWidget {
               ),
       ),
     );
-    final Widget labelled = Tooltip(message: account.tag, child: circle);
+    final Widget labelled = FushiTooltip(message: account.tag, child: circle);
     if (onTap == null) return labelled;
     return FushiFocusable(
       onTap: onTap,
@@ -439,7 +439,7 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
       child: ClipRRect(borderRadius: tokens.radii.chipRadius, child: image),
     );
     if (!hidden) return box;
-    return Tooltip(
+    return FushiTooltip(
       message: t.leaderboard_cover_reveal,
       child: FushiFocusable(
         onTap: () => setState(() => _revealed = true),
@@ -471,8 +471,8 @@ class LeaderboardLoadMore extends StatelessWidget {
       padding: EdgeInsets.all(tokens.spacing.card),
       child: Center(
         child: loading
-            ? const CircularProgressIndicator()
-            : OutlinedButton.icon(
+            ? const FushiCircularProgressIndicator()
+            : FushiOutlinedButton.icon(
                 onPressed: onLoadMore,
                 icon: const Icon(Icons.expand_more),
                 label: Text(t.leaderboard_load_more),
@@ -498,7 +498,7 @@ class LeaderboardErrorView extends StatelessWidget {
     return FushiPlaceholderMessage(
       icon: Icons.cloud_off_outlined,
       message: leaderboardErrorText(error),
-      action: FilledButton.tonal(
+      action: FushiFilledButton.tonal(
         onPressed: onRetry,
         child: Text(t.leaderboard_retry),
       ),

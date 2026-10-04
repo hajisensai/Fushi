@@ -65,7 +65,7 @@ class _LnReaderInstalledSourcesSectionState
   Future<void> _clearData(LnReaderInstalledPlugin plugin) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(t.mihon_source_clear_data),
         content: Text(t.novel_source_clear_data_hint),
         actions: <Widget>[
@@ -93,7 +93,7 @@ class _LnReaderInstalledSourcesSectionState
     }
   }
 
-  Widget _buildSearchField() => TextField(
+  Widget _buildSearchField() => FushiTextFieldControl(
     key: const ValueKey<String>('novel_sources_search_field'),
     controller: _searchController,
     decoration: InputDecoration(
@@ -102,7 +102,7 @@ class _LnReaderInstalledSourcesSectionState
       border: const OutlineInputBorder(),
       suffixIcon: _searchQuery.isEmpty
           ? null
-          : IconButton(
+          : FushiIconButtonControl(
               icon: const Icon(Icons.close),
               onPressed: () {
                 _searchController.clear();
@@ -205,7 +205,7 @@ class _LnReaderInstalledSourcesSectionState
           final bool compact = constraints.maxWidth < _kInlineActionsMinWidth;
           return FushiListItem(
             key: ValueKey<String>('novel_source_row_${plugin.id}'),
-            leading: Switch.adaptive(
+            leading: FushiSwitch.adaptive(
               value: plugin.enabled,
               onChanged: (bool value) =>
                   unawaited(manager.setEnabled(plugin, value)),
@@ -219,7 +219,7 @@ class _LnReaderInstalledSourcesSectionState
             ),
             onTap: plugin.enabled ? () => widget.onOpenSource(plugin) : null,
             trailing: compact
-                ? PopupMenuButton<_SourceAction>(
+                ? FushiPopupMenuButton<_SourceAction>(
                     key: ValueKey<String>('novel_source_menu_${plugin.id}'),
                     tooltip: t.common_more_actions,
                     icon: const Icon(Icons.more_vert),
@@ -245,7 +245,7 @@ class _LnReaderInstalledSourcesSectionState
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       for (final _SourceAction action in actions)
-                        IconButton(
+                        FushiIconButtonControl(
                           tooltip: action.label,
                           onPressed: action.onTap,
                           icon: Icon(action.icon),

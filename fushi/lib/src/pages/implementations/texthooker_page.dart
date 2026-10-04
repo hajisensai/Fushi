@@ -225,7 +225,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         context: context,
         builder: (BuildContext dialogContext) => StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) =>
-              SimpleDialog(
+              FushiSimpleDialog(
                 title: Text(t.game_line_track_dialog_title),
                 children: <Widget>[
                   Padding(
@@ -273,7 +273,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       context: context,
       builder: (BuildContext dialogContext) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setDialogState) =>
-            SimpleDialog(
+            FushiSimpleDialog(
               title: Text(t.game_line_track_dialog_title),
               children: <Widget>[
                 for (final GalAudioTrack track in tracks)
@@ -441,7 +441,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               );
             }
 
-            return AlertDialog(
+            return FushiAlertDialog(
               title: Text(t.game_audio_tracks),
               content: SizedBox(
                 width: 520,
@@ -462,7 +462,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 ),
               ),
               actions: <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
                   child: Text(t.dialog_close),
                 ),
@@ -895,7 +895,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // minWidth 280 + intrinsic 宽度——窗口标题（往往是「游戏名 - 章节 - 存档」这类
       // 长串）一律被挤成一行省略号。同文件的音轨弹窗早就用 SizedBox(width: 520)，
       // 这里照同一规格给出可用宽度。
-      builder: (BuildContext ctx) => SimpleDialog(
+      builder: (BuildContext ctx) => FushiSimpleDialog(
         title: Text(t.external_window_select),
         children: <Widget>[
           for (final ExternalWindowInfo window in ordered)
@@ -1167,7 +1167,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               children: <Widget>[
                 Text(t.game_hook_code_paste_body),
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   controller: codeController,
                   autofocus: true,
                   maxLines: 2,
@@ -1179,7 +1179,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   controller: labelController,
                   decoration: InputDecoration(
                     labelText: t.game_hook_code_label,
@@ -1191,7 +1191,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           footer: Align(
             alignment: Alignment.centerRight,
-            child: FilledButton(
+            child: FushiFilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(t.dialog_save),
             ),
@@ -1615,7 +1615,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.texthooker),
         actions: _buildToolbarActions(context, embedded: false),
       ),
@@ -1739,7 +1739,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _showAudioFallbackPolicyDialog() async {
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.game_audio_fallback_policy),
         content: SizedBox(
           width: 460,
@@ -1754,7 +1754,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   children: <Widget>[
                     for (final GalAudioFallbackPolicy policy
                         in GalAudioFallbackPolicy.values)
-                      RadioListTile<GalAudioFallbackPolicy>(
+                      FushiRadioListTile<GalAudioFallbackPolicy>(
                         value: policy,
                         groupValue: current,
                         title: Text(_audioFallbackPolicyLabel(policy)),
@@ -1772,7 +1772,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_close),
           ),
@@ -1801,7 +1801,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _showHealthDialog() async {
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.game_health),
         content: SizedBox(
           width: 460,
@@ -1824,7 +1824,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_close),
           ),
@@ -1930,7 +1930,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ),
                     const SizedBox(height: 12),
                     Expanded(child: live),
-                    ExpansionTile(
+                    FushiExpansionTile(
                       title: Text(t.game_line_tracks),
                       tilePadding: EdgeInsets.zero,
                       children: <Widget>[
@@ -2020,7 +2020,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   ),
                 const SizedBox(width: 8),
                 Text(t.game_follow_live),
-                Switch(
+                FushiSwitch(
                   value: _followLive,
                   onChanged: (bool value) {
                     setState(() {
@@ -2059,7 +2059,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           // 粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
                           // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须
                           // 是游戏 exe 的 SHA-256——用户拿到的只是一串字符。
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: t.game_hook_code_paste_title,
                             icon: const Icon(
                               Icons.content_paste_go_outlined,
@@ -2067,7 +2067,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             ),
                             onPressed: _pasteLunaHookCode,
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_save}',
                             icon: const Icon(
                               Icons.bookmark_add_outlined,
@@ -2075,7 +2075,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             ),
                             onPressed: _saveSelectedLunaHookCode,
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_import}',
                             icon: const Icon(
                               Icons.file_download_outlined,
@@ -2083,7 +2083,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             ),
                             onPressed: _importLunaHookProfiles,
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_export}',
                             icon: const Icon(
                               Icons.file_upload_outlined,
@@ -2237,7 +2237,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 selectedTextThreadKey,
               ),
             ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: lines.isEmpty
                 ? Center(
@@ -2344,7 +2344,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final String stepCountLabel = t.game_text_process_step_count(
       count: activeSteps,
     );
-    final Widget button = IconButton(
+    final Widget button = FushiIconButtonControl(
       key: const ValueKey<String>('game-text-process-entry'),
       tooltip: activeSteps > 0
           ? '${t.game_text_process_title} · $stepCountLabel'
@@ -2355,7 +2355,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           : null,
     );
     if (activeSteps == 0) return button;
-    return Badge(label: Text('$activeSteps'), child: button);
+    return FushiBadgeControl(label: Text('$activeSteps'), child: button);
   }
 
   Future<void> _openTextProcessEditor(String selectedTextThreadKey) async {
@@ -2972,7 +2972,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                         label: t.game_line_audio_fallback,
                         value: line.fallbackReason!,
                       ),
-                    const Divider(height: 24),
+                    const FushiDividerControl(height: 24),
                     Text(
                       t.game_line_tracks_hint,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3562,7 +3562,7 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
           style: widget.style,
         ),
         if (collapsible)
-          TextButton.icon(
+          FushiTextButton.icon(
             key: ValueKey<String>('game-line-expand-${widget.line.id}'),
             onPressed: () => setState(() => _expanded = !_expanded),
             icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
@@ -3640,7 +3640,7 @@ class _LineAudioChip extends StatelessWidget {
     // 「有证据判定没配音」。混成一句会让用户以为游戏这句本来就没语音。
     if (status == TexthookerLineAudioStatus.missing &&
         fallbackReason == kGalCleanSourceSuppressedReason) {
-      return Tooltip(
+      return FushiTooltip(
         message: t.game_line_audio_suppressed_hint,
         child: _chip(
           context,
@@ -3651,7 +3651,7 @@ class _LineAudioChip extends StatelessWidget {
       );
     }
     if (fallbackReason == kGalOverlongSliceSuspectReason) {
-      return Tooltip(
+      return FushiTooltip(
         message: t.game_line_audio_overlong_hint,
         child: _chip(
           context,
@@ -3701,7 +3701,7 @@ class _LineAudioChip extends StatelessWidget {
     );
     // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
     if (backend == 'system_loopback') {
-      return Tooltip(message: t.game_line_audio_loopback_hint, child: chip);
+      return FushiTooltip(message: t.game_line_audio_loopback_hint, child: chip);
     }
     return chip;
   }

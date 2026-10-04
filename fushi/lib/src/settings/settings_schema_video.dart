@@ -2029,7 +2029,7 @@ void _showVideoSettingsSnackBar(
 ) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
-  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
 }
 
 /// BUG-2032：Lua 脚本开关的**唯一**写穿点（开关行 / 导入按钮共用）。host 在场走
@@ -2296,7 +2296,7 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
     final ScrapeIdentifierWordParseResult parsed = ScrapeIdentifierWords.parse(
       _controller.text,
     );
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_metadata_identifier_words),
       content: SizedBox(
         width: 520,
@@ -2310,7 +2310,7 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>(
                   'video.library.metadata_identifier_words.field',
                 ),
@@ -2340,14 +2340,14 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>(
             'video.library.metadata_identifier_words.cancel',
           ),
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>(
             'video.library.metadata_identifier_words.save',
           ),

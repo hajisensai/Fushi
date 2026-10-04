@@ -158,11 +158,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     FushiClientUrl? host = hosts.length == 1 ? hosts.single : null;
     host ??= await showAppDialog<FushiClientUrl>(
       context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
+      builder: (BuildContext ctx) => FushiSimpleDialog(
         title: Text(t.sync_pair_nfc_write),
         children: <Widget>[
           for (final FushiClientUrl h in hosts)
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, h),
               child: Text(h.deviceName ?? h.url),
             ),
@@ -659,7 +659,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             spacing: 8,
             runSpacing: 4,
             children: <Widget>[
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: (lockedByServer || _pairingManual)
                     ? null
                     : () => _addOrEditUrl(),
@@ -677,14 +677,14 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               // 扫码 / 粘贴链接：地址 + 证书指纹 + 一次性票据一次到手，不必同网段、
               // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
               if (interconnectPairQrScanSupported)
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: (lockedByServer || _pairingManual)
                       ? null
                       : () => _pairFromLink(scan: true),
                   icon: const Icon(Icons.qr_code_scanner, size: 18),
                   label: Text(t.sync_pair_scan),
                 ),
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: (lockedByServer || _pairingManual)
                     ? null
                     : () => _pairFromLink(scan: false),
@@ -693,7 +693,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               ),
               if (interconnectPairNfcWriteSupported &&
                   _urls.any((FushiClientUrl u) => u.hostId != null))
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: _writeNfcSticker,
                   icon: const Icon(Icons.nfc, size: 18),
                   label: Text(t.sync_pair_nfc_write),
@@ -723,7 +723,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                 ],
               ),
             ),
-          ExpansionTile(
+          FushiExpansionTile(
             tilePadding: EdgeInsets.zero,
             // 唯一的展开子项是带浮动标签的轮廓边框输入框：浮动后的标签骑在
             // 字段顶边、上半部分会溢出到字段上方（14sp 标签约 7px）。ExpansionTile 的
@@ -760,7 +760,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                       child:
                           adaptiveIndicator(context: context, strokeWidth: 2),
                     )
-                  : FilledButton.tonal(
+                  : FushiFilledButton.tonal(
                       onPressed: _testAll,
                       child: Text(t.sync_test_connection),
                     ),
@@ -1367,7 +1367,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             if (running)
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton.icon(
+                child: FushiTextButton.icon(
                   onPressed: () =>
                       showInterconnectPairQrDialog(context, _serverController),
                   icon: const Icon(Icons.qr_code_2, size: 18),
@@ -1409,7 +1409,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 // 地址上反复断连。
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
+                  child: FushiTextButton(
                     onPressed: () => _serverController.setP2pRelayUrls(
                       _p2pRelayController.text.split(RegExp(r'[\r\n]+')),
                     ),
@@ -1438,7 +1438,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               spacing: 8,
               runSpacing: 4,
               children: <Widget>[
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: () {
                     if (_token != null) {
                       FlutterClipboard.copy(_token!);
@@ -1448,7 +1448,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                   icon: const Icon(Icons.copy, size: 18),
                   label: Text(t.sync_server_copy_token),
                 ),
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: _regenerateToken,
                   icon: const Icon(Icons.refresh, size: 18),
                   label: Text(t.sync_server_regenerate_token),
@@ -1960,9 +1960,9 @@ class _InterconnectProfileTransferWidgetState
           ? const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: _run,
               child: Text(
                 _isUpload
@@ -2075,7 +2075,7 @@ class _InterconnectBackupBackendWidgetState
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
-                FilledButton.tonal(
+                FushiFilledButton.tonal(
                   onPressed:
                       (paired && !_busy) ? _useInterconnectAsBackend : null,
                   child: Text(t.interconnect_backup_backend_apply),

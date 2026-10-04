@@ -193,18 +193,18 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     final GalgameEntry? game = _game;
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: FushiAppBar(),
         body: buildLoading(),
       );
     }
     if (game == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: FushiAppBar(),
         body: Center(child: Text(t.game_detail_missing)),
       );
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(
           game.displayName,
           maxLines: 1,
@@ -213,7 +213,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         actions: <Widget>[
           // 「加入合集」：与库页卡片菜单同一入口语义（mediaType='game'，entryKey=
           // galgames.id），落库同走 addToCollection DAO；库页返回后 _reload 刷新分组。
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.add_to_collection,
             icon: const Icon(Icons.collections_bookmark_outlined),
             onPressed: () => unawaited(_addToCollection(game)),
@@ -223,7 +223,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       body: Column(
         children: <Widget>[
           _buildHeader(context, game),
-          TabBar(
+          FushiTabBar(
             controller: _tabs,
             tabs: <Widget>[
               Tab(text: t.game_detail_tab_stats),
@@ -335,7 +335,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
+            child: FushiFilledButton.icon(
               onPressed: widget.onLaunch,
               icon: const Icon(Icons.play_arrow),
               label: Text(t.game_launch),
@@ -539,7 +539,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           if (overflowing)
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: FushiTextButton.icon(
                 onPressed: () => setState(() => _tagsExpanded = !_tagsExpanded),
                 icon:
                     Icon(_tagsExpanded ? Icons.expand_less : Icons.expand_more),
@@ -617,7 +617,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
                 style: theme.textTheme.titleMedium,
               ),
             ),
-            SegmentedButton<int>(
+            FushiSegmentedButton<int>(
               showSelectedIcon: false,
               segments: const <ButtonSegment<int>>[
                 ButtonSegment<int>(value: 7, label: Text('7D')),
@@ -646,7 +646,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               padding: EdgeInsets.zero,
               title: Text(formatGalgameSessionRange(row)),
               subtitle: Text(formatStatTime(row.durationSeconds * 1000)),
-              trailing: IconButton(
+              trailing: FushiIconButtonControl(
                 tooltip: t.game_stat_delete_session,
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () => unawaited(_deleteSession(row)),
@@ -934,7 +934,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
         Row(
           children: <Widget>[
             Expanded(
-              child: OutlinedButton.icon(
+              child: FushiOutlinedButton.icon(
                 // 再入守卫在统一弹窗内（每行「使用」行内转圈），按钮无需禁用态。
                 onPressed: () => unawaited(_scrape()),
                 icon: const Icon(Icons.cloud_download_outlined),
@@ -943,7 +943,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: FilledButton.icon(
+              child: FushiFilledButton.icon(
                 onPressed: () => unawaited(_save()),
                 icon: const Icon(Icons.save_outlined),
                 label: Text(t.game_edit_save),
@@ -988,7 +988,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     return Padding(
       key: ValueKey<String>('galgame-edit-$fieldKey'),
       padding: const EdgeInsets.only(top: 12),
-      child: TextField(
+      child: FushiTextFieldControl(
         controller: controller,
         maxLines: maxLines,
         decoration: InputDecoration(

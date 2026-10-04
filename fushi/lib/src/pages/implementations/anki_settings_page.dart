@@ -1230,7 +1230,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     await _applyMobileAnkiBackend(vm, useAnkiConnect: false, apiKey: '');
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.anki_connect_mobile_disabled_key_cleared)),
+      FushiSnackBar(content: Text(t.anki_connect_mobile_disabled_key_cleared)),
     );
   }
 
@@ -1242,7 +1242,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (_ankiBackendBusy) return;
     if (useAnkiConnect && settings.ankiConnectApiKey.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.anki_connect_mobile_api_key_required)),
+        FushiSnackBar(content: Text(t.anki_connect_mobile_api_key_required)),
       );
       return;
     }
@@ -1283,7 +1283,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(
               t.anki_connect_backend_switch_failed(error: '$error'),
             ),
@@ -1385,7 +1385,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       result = await vm.lapisTemplateService.applyCustomization(force: force);
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_lapis_apply_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_lapis_apply_failed(error: '$e'))),
       );
       return;
     } finally {
@@ -1396,25 +1396,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       case LapisApplyResult.applied:
         await vm.refreshSettingsFromStore();
         messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_lapis_apply_done)),
+          FushiSnackBar(content: Text(t.anki_lapis_apply_done)),
         );
       case LapisApplyResult.upToDate:
         await vm.refreshSettingsFromStore();
         messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_lapis_up_to_date)),
+          FushiSnackBar(content: Text(t.anki_lapis_up_to_date)),
         );
       case LapisApplyResult.needsConfirm:
         final bool? ok = await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext context) => AlertDialog(
+          builder: (BuildContext context) => FushiAlertDialog(
             title: Text(t.anki_lapis_foreign_edit_title),
             content: Text(t.anki_lapis_foreign_edit_body),
             actions: [
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(context, false),
                 child: Text(t.dialog_cancel),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(context, true),
                 child: Text(t.dialog_ok),
               ),
@@ -1423,7 +1423,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         );
         if (ok == true && mounted) await _applyLapisStyling(vm, force: true);
       case LapisApplyResult.notFound:
-        messenger.showSnackBar(SnackBar(content: Text(t.anki_lapis_not_found)));
+        messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_lapis_not_found)));
       case LapisApplyResult.unsupported:
         // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
         break;
@@ -1435,15 +1435,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.anki_lapis_restore_factory),
         content: Text(t.anki_lapis_restore_factory_confirm),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_ok),
           ),
@@ -1464,10 +1464,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
         LapisRestoreFactoryResult.unsupported => t.anki_lapis_not_found,
       };
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      messenger.showSnackBar(FushiSnackBar(content: Text(message)));
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(t.anki_lapis_restore_factory_failed(error: '$e')),
         ),
       );
@@ -1503,7 +1503,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
       if (port == null) {
         messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
+          FushiSnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
         );
         return;
       }
@@ -1512,7 +1512,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
       await vm.updateAnkiConnectPort(port.toString());
       messenger.showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(switch (result.status) {
             AnkiConnectPortWriteStatus.updated =>
               t.anki_connect_port_auto_fix_done(port: port),
@@ -1533,7 +1533,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       final AnkiAddonInstallResult result =
           await AnkiConnectInstaller.install();
       messenger.showSnackBar(
-        SnackBar(content: Text(_addonInstallMessage(result))),
+        FushiSnackBar(content: Text(_addonInstallMessage(result))),
       );
     } finally {
       if (mounted) setState(() => _addonInstallBusy = false);
@@ -1562,11 +1562,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       final LapisBackupOutcome? outcome = await vm.lapisTemplateService
           .backupNow();
       messenger.showSnackBar(
-        SnackBar(content: Text(_lapisBackupMessage(outcome))),
+        FushiSnackBar(content: Text(_lapisBackupMessage(outcome))),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_lapis_backup_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_lapis_backup_failed(error: '$e'))),
       );
     } finally {
       if (mounted) setState(() => _lapisBusy = false);
@@ -1591,17 +1591,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (!mounted) return;
     if (backups.isEmpty) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_lapis_restore_empty)),
+        FushiSnackBar(content: Text(t.anki_lapis_restore_empty)),
       );
       return;
     }
     final File? chosen = await showAppDialog<File>(
       context: context,
-      builder: (BuildContext context) => SimpleDialog(
+      builder: (BuildContext context) => FushiSimpleDialog(
         title: Text(t.anki_lapis_restore),
         children: [
           for (final File f in backups.take(30))
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.pop(context, f),
               child: Text(_lapisBackupLabel(f)),
             ),
@@ -1611,15 +1611,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (chosen == null || !mounted) return;
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.anki_lapis_restore),
         content: Text(t.anki_lapis_restore_confirm),
         actions: [
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(t.dialog_ok),
           ),
@@ -1645,7 +1645,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       failure ??= e; // 恢复本身的错更接近根因，优先呈现它。
     }
     messenger.showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(
           failure == null
               ? t.anki_lapis_restore_done
@@ -1697,19 +1697,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_dedup_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_dedup_failed(error: '$e'))),
       );
       return null;
     } finally {
       if (mounted) setState(() => _dedupBusy = false);
     }
     if (report == null) {
-      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_unavailable)));
+      messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_dedup_unavailable)));
       return null;
     }
     if (report.cancelled && dryRun) {
       // 干跑被取消：清单不完整，摊出来只会误导用户。
-      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_cancelled)));
+      messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_dedup_cancelled)));
       return null;
     }
     return report;
@@ -2151,7 +2151,7 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
                     itemCount: widget.options.length,
                     itemBuilder: (_, i) {
                       final opt = widget.options[i];
-                      if (opt == '-') return const Divider(height: 1);
+                      if (opt == '-') return const FushiDividerControl(height: 1);
                       final bool isSelected = value.text == opt;
                       return AdaptiveSettingsRow(
                         title: widget.labelFor(opt),

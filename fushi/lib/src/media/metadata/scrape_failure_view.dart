@@ -71,7 +71,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
             ),
             const SizedBox(height: 4),
             // 展开开关：默认折叠，一键看全。图标随状态翻转，文案两态各自 i18n。
-            TextButton.icon(
+            FushiTextButton.icon(
               key: const ValueKey<String>('scrape_failure_detail_toggle'),
               icon: Icon(
                 _detailShown ? Icons.expand_less : Icons.expand_more,
@@ -106,7 +106,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextButton.icon(
+              FushiTextButton.icon(
                 icon: const Icon(Icons.copy, size: 18),
                 label: Text(t.copy_error),
                 onPressed: () {

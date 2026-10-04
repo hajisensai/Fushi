@@ -141,7 +141,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     if (dir == null || !mounted) {
       if (autoFallback) {
         messenger.showSnackBar(
-            SnackBar(content: Text(t.video_shader_mpv_not_found)));
+            FushiSnackBar(content: Text(t.video_shader_mpv_not_found)));
       }
       return;
     }
@@ -151,7 +151,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     if (!mounted) return;
     if (found.isEmpty) {
       messenger
-          .showSnackBar(SnackBar(content: Text(t.video_shader_mpv_dir_empty)));
+          .showSnackBar(FushiSnackBar(content: Text(t.video_shader_mpv_dir_empty)));
       return;
     }
     await _pickAndImportFrom(found);
@@ -174,7 +174,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     await _refresh();
     if (!mounted) return;
     messenger.showSnackBar(
-      SnackBar(content: Text(t.video_shader_import_done(count: picked.length))),
+      FushiSnackBar(content: Text(t.video_shader_import_done(count: picked.length))),
     );
   }
 
@@ -199,9 +199,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     final TextEditingController urlController = TextEditingController();
     final String? url = await showAppDialog<String>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.video_shader_download_url),
-        content: TextField(
+        content: FushiTextFieldControl(
           controller: urlController,
           autofocus: true,
           keyboardType: TextInputType.url,
@@ -209,11 +209,11 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
           onSubmitted: (String v) => Navigator.pop(ctx, v),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, urlController.text),
             child: Text(t.dialog_save),
           ),
@@ -225,7 +225,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     if (trimmed == null || trimmed.isEmpty || !mounted) return;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
-      SnackBar(content: Text(t.video_shader_downloading)),
+      FushiSnackBar(content: Text(t.video_shader_downloading)),
     );
     String? name;
     try {
@@ -236,7 +236,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     if (!mounted) return;
     await _refresh();
     if (!mounted) return;
-    messenger.showSnackBar(SnackBar(
+    messenger.showSnackBar(FushiSnackBar(
       content: Text(name != null
           ? t.video_shader_download_done(count: 1)
           : t.video_shader_download_failed),
@@ -315,7 +315,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
 
     if (error != null) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.video_shader_download_failed)),
+        FushiSnackBar(content: Text(t.video_shader_download_failed)),
       );
       return false;
     }
@@ -331,7 +331,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     } else {
       message = t.video_shader_download_failed;
     }
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    messenger.showSnackBar(FushiSnackBar(content: Text(message)));
     return result.allOk;
   }
 
@@ -383,7 +383,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
           ]
         : <Widget>[
             for (final String name in _files)
-              CheckboxListTile(
+              FushiCheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 dense: true,
                 title: Text(name, overflow: TextOverflow.ellipsis),
@@ -516,14 +516,14 @@ class _EmbeddedShaderSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (showTopDivider)
-          Divider(height: 1, thickness: 0.5, color: dividerColor),
+          FushiDividerControl(height: 1, thickness: 0.5, color: dividerColor),
         SettingsSectionHeader(
           title,
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
         ),
         for (int index = 0; index < children.length; index++) ...<Widget>[
           if (index > 0)
-            Divider(
+            FushiDividerControl(
               height: 1,
               thickness: 0.5,
               indent: 16,
@@ -564,7 +564,7 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_shader_mpv_pick_title),
       content: SizedBox(
         width: 380,
@@ -581,7 +581,7 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
                       final String name = p.basename(path);
                       final bool imported =
                           widget.alreadyImported.contains(name);
-                      return CheckboxListTile(
+                      return FushiCheckboxListTile(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         title: Text(name, overflow: TextOverflow.ellipsis),
@@ -607,11 +607,11 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _selected.isEmpty
               ? null
               : () => Navigator.pop(context, _selected.toList()),
@@ -657,7 +657,7 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_shader_anime4k_title),
       content: SizedBox(
         width: 380,
@@ -704,7 +704,7 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
         ),
       ),
       actions: <Widget>[
-        FilledButton(
+        FushiFilledButton(
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_close),
         ),
@@ -728,7 +728,7 @@ class _Anime4kProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_shader_downloading),
       content: SizedBox(
         width: 320,
@@ -742,7 +742,7 @@ class _Anime4kProgressDialog extends StatelessWidget {
               children: <Widget>[
                 Text(presetName, style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
-                LinearProgressIndicator(value: v.progress),
+                FushiLinearProgressIndicator(value: v.progress),
                 const SizedBox(height: 8),
                 Text(
                   '${v.index + 1} / ${v.total}',
@@ -755,7 +755,7 @@ class _Anime4kProgressDialog extends StatelessWidget {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: onCancel,
           child: Text(t.dialog_cancel),
         ),
@@ -840,7 +840,7 @@ class VideoShaderTierSelector extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: SegmentedButton<VideoShaderTier>(
+        child: FushiSegmentedButton<VideoShaderTier>(
           segments: <ButtonSegment<VideoShaderTier>>[
             for (final VideoShaderTierSpec spec in shaderTiersFor())
               ButtonSegment<VideoShaderTier>(

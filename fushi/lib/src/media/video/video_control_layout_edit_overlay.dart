@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 class VideoControlLayoutEditOverlay extends StatefulWidget {
   const VideoControlLayoutEditOverlay({
@@ -271,16 +272,16 @@ class _VideoControlLayoutEditOverlayState
                             color: cs.primary,
                           ),
                           const SizedBox(width: 4),
-                          TextButton(
+                          FushiTextButton(
                             onPressed: _cancelDraft,
                             child: Text(t.dialog_cancel),
                           ),
                           const SizedBox(width: 2),
-                          FilledButton(
+                          FushiFilledButton(
                             onPressed: _saveDraft,
                             child: Text(t.dialog_save),
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: MaterialLocalizations.of(context)
                                 .closeButtonTooltip,
                             icon: const Icon(Icons.close),
@@ -359,7 +360,7 @@ class _VideoControlLayoutEditOverlayState
                     ),
                   ),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   icon: const Icon(Icons.close),
                   onPressed: _cancelDraft,
@@ -388,11 +389,11 @@ class _VideoControlLayoutEditOverlayState
                 spacing: 8,
                 runSpacing: 4,
                 children: <Widget>[
-                  TextButton(
+                  FushiTextButton(
                     onPressed: _cancelDraft,
                     child: Text(t.dialog_cancel),
                   ),
-                  FilledButton(
+                  FushiFilledButton(
                     onPressed: _saveDraft,
                     child: Text(t.dialog_save),
                   ),
@@ -596,7 +597,7 @@ class _VideoControlLayoutEditOverlayState
                   data: theme.copyWith(
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: IconButton(
+                  child: FushiIconButtonControl(
                     tooltip: t.video_control_remove_from_slot,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints.tightFor(

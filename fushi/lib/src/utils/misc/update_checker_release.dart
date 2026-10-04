@@ -68,7 +68,7 @@ class UpdateChecker {
     if (!_activeUpdateFlows.containsKey(_updateFlowKey(version))) return false;
     if (!_openUpdateDialogVersions.contains(version) && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.update_downloading)),
+        FushiSnackBar(content: Text(t.update_downloading)),
       );
     }
     return true;
@@ -851,7 +851,7 @@ class UpdateChecker {
       onAlreadyActive: () {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(t.update_downloading)),
+            FushiSnackBar(content: Text(t.update_downloading)),
           );
         }
       },
@@ -1146,7 +1146,7 @@ class UpdateChecker {
       debugPrint('[Fushi] update download cancelled by user');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.update_cancelled)),
+          FushiSnackBar(content: Text(t.update_cancelled)),
         );
       }
     } catch (e, stack) {
@@ -1154,7 +1154,7 @@ class UpdateChecker {
           .log('UpdateChecker.downloadAndInstall', e, stack);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${t.update_download_failed}: $e')),
+          FushiSnackBar(content: Text('${t.update_download_failed}: $e')),
         );
       }
     } finally {
@@ -1410,7 +1410,7 @@ class UpdateChecker {
         barrierDismissible: installed,
         builder: (BuildContext ctx) {
           if (installed) {
-            return AlertDialog(
+            return FushiAlertDialog(
               title: Text(t.update_install_success_title),
               content: Text(
                 t.update_install_success_message(
@@ -1418,7 +1418,7 @@ class UpdateChecker {
                 ),
               ),
               actions: <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
                   child: Text(t.update_hide),
                 ),
@@ -1426,7 +1426,7 @@ class UpdateChecker {
             );
           }
           final String detail = (result.message ?? '').trim();
-          return AlertDialog(
+          return FushiAlertDialog(
             title: Text(t.update_install_incomplete_title),
             content: Text(
               detail.isEmpty
@@ -1434,7 +1434,7 @@ class UpdateChecker {
                   : '${t.update_mac_install_incomplete_message}\n\n$detail',
             ),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: () {
                   Navigator.of(ctx).pop();
                   launchUrl(
@@ -1445,7 +1445,7 @@ class UpdateChecker {
                 },
                 child: Text(t.update_download),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: Text(t.update_hide),
               ),

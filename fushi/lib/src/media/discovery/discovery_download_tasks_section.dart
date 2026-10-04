@@ -86,7 +86,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                     ),
                   ),
                   if (hasRetryable)
-                    TextButton(
+                    FushiTextButton(
                       key: const ValueKey<String>(
                         'discovery-download-retry-all',
                       ),
@@ -94,7 +94,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                       child: Text(t.retry),
                     ),
                   if (hasFinished)
-                    TextButton(
+                    FushiTextButton(
                       key: const ValueKey<String>(
                         'discovery-download-clear-finished',
                       ),
@@ -123,7 +123,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                 );
               },
             ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
           ],
         );
       },
@@ -221,7 +221,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                 height: 20,
                 child: Padding(
                   padding: const EdgeInsets.all(2),
-                  child: CircularProgressIndicator(
+                  child: FushiCircularProgressIndicator(
                     strokeWidth: 2,
                     value: discoveryDownloadProgress(task),
                   ),
@@ -307,7 +307,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     final bool revealed = await (pathRevealer ?? revealInFileManager)(path);
     if (revealed || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.download_task_location_open_failed)),
+      FushiSnackBar(content: Text(t.download_task_location_open_failed)),
     );
   }
 

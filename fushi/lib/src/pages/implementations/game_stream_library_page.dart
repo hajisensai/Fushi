@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 一台已配对主机上一个可用的串流客户端（已绑定到能连通的那个地址）。
 class GameStreamHostConnection {
@@ -438,7 +439,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
           ),
           Expanded(
             child: loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: FushiCircularProgressIndicator())
                 : _buildBody(context),
           ),
         ],
@@ -510,7 +511,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
             Text(t.game_stream_no_hosts, textAlign: TextAlign.center),
             if (_services.openInterconnectSettings != null) ...<Widget>[
               const SizedBox(height: 16),
-              FilledButton.icon(
+              FushiFilledButton.icon(
                 key: GameStreamLibraryPage.interconnectButtonKey,
                 autofocus: true,
                 onPressed: () => unawaited(_openInterconnect()),
@@ -614,10 +615,10 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
                 const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               else if (host.phase != _HostPhase.ready)
-                TextButton(
+                FushiTextButton(
                   onPressed: _busy ? null : () => unawaited(_refreshHost(host)),
                   child: Text(t.retry),
                 ),
@@ -671,7 +672,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
             leading: const Icon(Icons.cast),
             title: Text(session.gameTitle ?? t.game_stream_available),
             subtitle: Text(host.name),
-            trailing: FilledButton(
+            trailing: FushiFilledButton(
               onPressed: _busy ? null : () => unawaited(_join(host, session)),
               child: Text(t.game_stream_join_action),
             ),
@@ -944,7 +945,7 @@ class _GameStreamLaunchDialogState extends State<_GameStreamLaunchDialog> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String? failure = _failure;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(widget.game.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -963,7 +964,7 @@ class _GameStreamLaunchDialogState extends State<_GameStreamLaunchDialog> {
                 const SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2.5),
                 ),
                 const SizedBox(width: 16),
                 Expanded(child: Text(_stepLabel)),
@@ -979,7 +980,7 @@ class _GameStreamLaunchDialogState extends State<_GameStreamLaunchDialog> {
         ],
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           autofocus: true,
           onPressed: () => Navigator.of(context).pop(),
           child: Text(failure == null ? t.cancel : t.dialog_ok),

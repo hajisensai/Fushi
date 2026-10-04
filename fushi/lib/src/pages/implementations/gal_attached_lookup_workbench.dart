@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Compact, always-present controls for the Windows no-OCR lookup surface.
 ///
@@ -61,7 +62,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
             child: Row(
               children: <Widget>[
                 const SizedBox(width: 10),
-                Tooltip(
+                FushiTooltip(
                   message: t.game_lookup_attached_no_ocr,
                   child: const Icon(Icons.touch_app_outlined, size: 18),
                 ),
@@ -72,7 +73,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                 ),
                 if (riskRequest != null) ...<Widget>[
                   const SizedBox(width: 6),
-                  TextButton.icon(
+                  FushiTextButton.icon(
                     key: const ValueKey<String>(
                       'game-attached-lookup-accept-risk',
                     ),
@@ -106,7 +107,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                                       '(${profile.variants.length})',
                           ),
                           const SizedBox(width: 6),
-                          Tooltip(
+                          FushiTooltip(
                             message: <String>[
                               '${t.game_lookup_attached_native_status}: '
                                   '${controller.nativeStatus ?? '—'}',
@@ -143,7 +144,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                   ),
                 ),
                 if (calibrationExposed) ...<Widget>[
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>(
                       'game-attached-lookup-dialogue-samples',
                     ),
@@ -160,7 +161,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                     icon: const Icon(Icons.format_quote_outlined, size: 20),
                   ),
                 ],
-                PopupMenuButton<String>(
+                FushiPopupMenuButton<String>(
                   key: const ValueKey<String>('game-attached-lookup-mode'),
                   tooltip: t.game_lookup_attached_mode,
                   icon: const Icon(Icons.tune_outlined, size: 20),
@@ -224,7 +225,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
   Future<bool> _confirmRisk(BuildContext context) async {
     final bool? accepted = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Row(
           children: <Widget>[
             const Icon(Icons.warning_amber_rounded),
@@ -234,11 +235,11 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         ),
         content: Text(t.game_lookup_attached_risk_body),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             key: const ValueKey<String>('game-attached-lookup-risk-confirm'),
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(t.game_lookup_attached_risk_accept),
@@ -441,15 +442,15 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
   Future<void> _clearProfile(BuildContext context) async {
     final bool? clear = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.game_lookup_attached_profile_clear_title),
         content: Text(t.game_lookup_attached_profile_clear_body),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             key: const ValueKey<String>('game-attached-lookup-clear-confirm'),
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(t.dialog_clear),
@@ -463,7 +464,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
   void _showFailure(BuildContext context, String message) {
     ScaffoldMessenger.maybeOf(
       context,
-    )?.showSnackBar(SnackBar(content: Text(message)));
+    )?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   String _modeLabel(GalLookupSurfaceMode mode) => switch (mode) {
@@ -831,7 +832,7 @@ class _GalAttachedCalibrationDialogState
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.game_lookup_attached_calibration_title),
       content: SizedBox(
         width: 620,
@@ -937,7 +938,7 @@ class _GalAttachedCalibrationDialogState
                   onChangeEnd: (_) => _queueDraftPush(),
                 ),
                 const SizedBox(height: 8),
-                TextFormField(
+                FushiTextFormFieldControl(
                   key: const ValueKey<String>(
                     'game-attached-calibration-font-family',
                   ),
@@ -992,7 +993,7 @@ class _GalAttachedCalibrationDialogState
                   children: <Widget>[
                     SizedBox(
                       width: 250,
-                      child: DropdownButtonFormField<String>(
+                      child: FushiDropdownButtonFormField<String>(
                         initialValue: _layout.textAlign,
                         decoration: InputDecoration(
                           labelText: t.game_lookup_attached_text_align,
@@ -1021,7 +1022,7 @@ class _GalAttachedCalibrationDialogState
                     ),
                     SizedBox(
                       width: 250,
-                      child: DropdownButtonFormField<String>(
+                      child: FushiDropdownButtonFormField<String>(
                         initialValue: _layout.verticalAlign,
                         decoration: InputDecoration(
                           labelText: t.game_lookup_attached_vertical_align,
@@ -1062,7 +1063,7 @@ class _GalAttachedCalibrationDialogState
                 ),
                 density: FushiListDensity.compact,
                 padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                leading: Checkbox(
+                leading: FushiCheckbox(
                   value: _startConfirmed,
                   onChanged: _startObserved ? _setStartConfirmed : null,
                 ),
@@ -1081,7 +1082,7 @@ class _GalAttachedCalibrationDialogState
                 ),
                 density: FushiListDensity.compact,
                 padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                leading: Checkbox(
+                leading: FushiCheckbox(
                   value: _middleConfirmed,
                   onChanged: _middleObserved ? _setMiddleConfirmed : null,
                 ),
@@ -1100,7 +1101,7 @@ class _GalAttachedCalibrationDialogState
                 ),
                 density: FushiListDensity.compact,
                 padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                leading: Checkbox(
+                leading: FushiCheckbox(
                   value: _endConfirmed,
                   onChanged: _endObserved ? _setEndConfirmed : null,
                 ),
@@ -1123,20 +1124,20 @@ class _GalAttachedCalibrationDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>('game-attached-calibration-cancel'),
           onPressed: _committing
               ? null
               : () => Navigator.of(context).pop(false),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           key: const ValueKey<String>('game-attached-calibration-commit'),
           onPressed: _allConfirmed && !_committing ? _commit : null,
           child: _committing
               ? const SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(t.game_lookup_attached_calibration_commit),
         ),
@@ -1190,7 +1191,7 @@ class _RatioSlider extends StatelessWidget {
       children: <Widget>[
         SizedBox(width: 150, child: Text(label)),
         Expanded(
-          child: Slider(
+          child: FushiSlider(
             value: safeValue,
             min: min,
             max: safeMax,

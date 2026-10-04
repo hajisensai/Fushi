@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Moonlight-style stream settings. Returns the edited settings, or null when
 /// dismissed without saving.
@@ -95,7 +96,7 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
                       style: theme.textTheme.titleLarge,
                     ),
                   ),
-                  TextButton(
+                  FushiTextButton(
                     onPressed: () => setState(() {
                       _bitrateTouched = false;
                       _settings = const GameStreamVideoSettings().copyWith(
@@ -108,7 +109,7 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
                     }),
                     child: Text(t.game_stream_settings_reset),
                   ),
-                  FilledButton(
+                  FushiFilledButton(
                     key: GameStreamSettingsSheet.saveKey,
                     onPressed: () => Navigator.of(context).pop(_settings),
                     child: Text(t.game_stream_settings_save),

@@ -130,7 +130,7 @@ class _DownloadBackendSetupDialogState
       message = t.download_test_connection_failed;
     }
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _finish() async {
@@ -162,7 +162,7 @@ class _DownloadBackendSetupDialogState
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
+      child: FushiTextFieldControl(
         controller: controller,
         obscureText: obscure,
         keyboardType: keyboard,
@@ -262,7 +262,7 @@ class _DownloadBackendSetupDialogState
               ),
               Align(
                 alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
+                child: FushiOutlinedButton.icon(
                   onPressed: _probing || _urlCtrl.text.trim().isEmpty
                       ? null
                       : _probeConnection,
@@ -270,7 +270,7 @@ class _DownloadBackendSetupDialogState
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.network_check, size: 18),
                   label: Text(t.download_test_connection),
@@ -282,13 +282,13 @@ class _DownloadBackendSetupDialogState
         footer: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed:
                   _saving ? null : () => Navigator.of(context).pop(false),
               child: Text(t.dialog_cancel),
             ),
             SizedBox(width: tokens.spacing.gap),
-            FilledButton(
+            FushiFilledButton(
               onPressed: _canFinish ? _finish : null,
               child: Text(t.dialog_done),
             ),

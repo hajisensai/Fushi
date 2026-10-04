@@ -1055,7 +1055,7 @@ mixin DictionaryPageMixin {
           color: fill,
           child: Column(
             children: <Widget>[
-              LinearProgressIndicator(
+              FushiLinearProgressIndicator(
                 backgroundColor: Colors.transparent,
                 color: cs.primary,
                 minHeight: 2.75,

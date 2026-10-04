@@ -387,7 +387,7 @@ class _EndpointCard extends StatelessWidget {
     return FushiCard(
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
+        child: FushiExpansionTile(
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
           initiallyExpanded: false,
@@ -435,7 +435,7 @@ class _EndpointRow extends StatelessWidget {
           Expanded(child: Text(endpoint.url)),
           const SizedBox(width: 12),
           Flexible(
-            child: Tooltip(
+            child: FushiTooltip(
               message: endpoint.lastError ??
                   texthookerEndpointPhaseLabel(endpoint.phase),
               child: Text(
@@ -568,7 +568,7 @@ class _EventTile extends StatelessWidget {
             size: 18,
           )
         : Icon(Icons.circle, size: 10, color: color);
-    return ListTile(
+    return FushiListTileControl(
       dense: true,
       contentPadding: EdgeInsets.zero,
       leading: leading,
@@ -650,7 +650,7 @@ class _DiagnosticRow extends StatelessWidget {
           Expanded(child: Text(label)),
           const SizedBox(width: 12),
           Flexible(
-            child: Tooltip(
+            child: FushiTooltip(
               message: value,
               child: Text(
                 value,

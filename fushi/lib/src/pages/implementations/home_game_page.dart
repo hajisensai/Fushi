@@ -416,7 +416,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                     );
                   },
                 ),
-                const Divider(height: 1),
+                const FushiDividerControl(height: 1),
                 Expanded(
                   child: widget.libraryBuilder?.call(
                         context,

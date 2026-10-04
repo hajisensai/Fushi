@@ -308,7 +308,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               SizedBox(height: tokens.spacing.rowVertical),
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton.icon(
+                child: FushiTextButton.icon(
                   onPressed: importing ? null : () => _openReMatchSheet(ab),
                   icon: const Icon(Icons.tune_outlined, size: 18),
                   label: Text(t.rematch_adjust_window),

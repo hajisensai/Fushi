@@ -30,7 +30,7 @@ class JimakuApiKeyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    return FushiTextFieldControl(
       controller: controller,
       onChanged: onChanged,
       obscureText: true,

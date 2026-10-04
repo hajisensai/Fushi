@@ -237,7 +237,7 @@ class DiscoveryShelf extends StatelessWidget {
                     child: const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
                 if (trailingWidget != null) trailingWidget,
@@ -283,7 +283,7 @@ class DiscoveryAiAcquireButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) => IconButton.filledTonal(
+  Widget build(BuildContext context) => FushiIconButtonControl.filledTonal(
     constraints: const BoxConstraints(
       minWidth: kFushiSearchFieldHeight,
       minHeight: kFushiSearchFieldHeight,

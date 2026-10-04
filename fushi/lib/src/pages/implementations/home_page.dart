@@ -656,7 +656,7 @@ class _HomePageState extends BasePageState<HomePage>
     final AnkiMediaDedupReport? applied = outcome.applied;
     if (applied != null) {
       // 用户显式选了「自动直接删除」：只报结果。
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(
         content: Text(t.anki_dedup_auto_done(
           count: '${applied.duplicatesRemoved}',
           size: formatAnkiMediaDedupBytes(applied.bytesSaved),
@@ -666,7 +666,7 @@ class _HomePageState extends BasePageState<HomePage>
     }
     if (!outcome.needsConfirmation) return;
     // 保守路径（默认）：只提示。用户点「查看」才摊开逐条清单，再点删除才真删。
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(
       content: Text(t.anki_dedup_auto_found(
         count: '${outcome.plan.duplicatesRemoved}',
         size: formatAnkiMediaDedupBytes(outcome.plan.bytesSaved),
@@ -1358,14 +1358,18 @@ class _HomePageState extends BasePageState<HomePage>
     return ValueListenableBuilder<bool>(
       valueListenable: WindowCaptionChannel.systemBackdropActive,
       child: BackdropGroup(child: home),
+      // 结构恒定：恒套一层 Theme、只换 data。按 mica 增删这层会让整棵首页
+      // （满是 GlobalKey）在 LayoutBuilder 重建里重挂，触发 framework
+      // `_elements.contains(element)` 断言（Mac 调试版红屏）。
       builder: (BuildContext context, bool mica, Widget? child) {
-        if (!mica) return child!;
         final ThemeData theme = Theme.of(context);
         return Theme(
-          data: theme.copyWith(
-            scaffoldBackgroundColor:
-                theme.colorScheme.surface.withValues(alpha: 0.6),
-          ),
+          data: mica
+              ? theme.copyWith(
+                  scaffoldBackgroundColor:
+                      theme.colorScheme.surface.withValues(alpha: 0.6),
+                )
+              : theme,
           child: child!,
         );
       },
@@ -2381,7 +2385,7 @@ class _HomePageState extends BasePageState<HomePage>
   void _showVideoDiscoveryMessage(BuildContext context, String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      FushiSnackBar(content: Text(message)),
     );
   }
 
@@ -2820,7 +2824,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return;
     if (localSources.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.media_source_no_sources)),
+        FushiSnackBar(content: Text(t.media_source_no_sources)),
       );
       return;
     }
@@ -2866,7 +2870,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return (proceed: false, grant: false);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(
           t.video_source_scrape_external_overwrite_confirm_title,
         ),

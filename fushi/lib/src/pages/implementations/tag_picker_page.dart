@@ -133,7 +133,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.tag_name_duplicate)),
+          FushiSnackBar(content: Text(t.tag_name_duplicate)),
         );
       }
     }
@@ -188,7 +188,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
                       radius: 14,
                     ),
                     title: Text(tag.name),
-                    trailing: Checkbox(
+                    trailing: FushiCheckbox(
                       value: selected,
                       onChanged: (bool? value) =>
                           _toggle(tag.id, value ?? false),

@@ -132,7 +132,7 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
     final List<String> ruleParts = videoDownloadSubscriptionFilterSummary(
       widget.subscription.filterJson,
     );
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.subscription_edit_title),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
@@ -169,7 +169,7 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
                 ),
               ),
               SizedBox(height: tokens.spacing.card),
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>('subscription-edit-query'),
                 controller: _queryController,
                 decoration: InputDecoration(
@@ -179,7 +179,7 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
                 onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: tokens.spacing.gap),
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>('subscription-edit-start-after'),
                 controller: _startAfterController,
                 keyboardType: TextInputType.number,
@@ -198,7 +198,7 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
                 onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: tokens.spacing.gap),
-              DropdownButtonFormField<VideoDownloadSubtitlePolicy>(
+              FushiDropdownButtonFormField<VideoDownloadSubtitlePolicy>(
                 key: const ValueKey<String>('subscription-edit-subtitle'),
                 initialValue: _subtitlePolicy,
                 // 与来源下拉同样必须 isExpanded：不给的话 DropdownButton 按**最宽那条
@@ -232,7 +232,7 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
                 },
               ),
               SizedBox(height: tokens.spacing.gap),
-              DropdownButtonFormField<int>(
+              FushiDropdownButtonFormField<int>(
                 key: const ValueKey<String>('subscription-edit-source'),
                 initialValue: _sourceId,
                 isExpanded: true,
@@ -272,11 +272,11 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           key: const ValueKey<String>('subscription-edit-save'),
           onPressed: _canSave ? _save : null,
           child: Text(t.dialog_done),

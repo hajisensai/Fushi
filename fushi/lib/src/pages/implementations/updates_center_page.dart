@@ -92,7 +92,7 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     await _load();
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(t.updates_history_cleared(count: removed))),
+      FushiSnackBar(content: Text(t.updates_history_cleared(count: removed))),
     );
   }
 
@@ -161,7 +161,7 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   Widget _filterChip({required String label, required UpdateFeedKind? kind}) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
+      child: FushiChoiceChip(
         label: Text(label),
         selected: _filter == kind,
         onSelected: (bool selected) {

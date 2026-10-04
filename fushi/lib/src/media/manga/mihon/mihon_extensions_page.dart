@@ -116,7 +116,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     final TextEditingController controller = TextEditingController();
     final String? url = await showAppDialog<String>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.mihon_store_add),
         content: FushiTextField(
           controller: controller,
@@ -179,7 +179,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     final String? url = await showAppDialog<String>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.mihon_store_edit),
         content: FushiTextField(
           controller: controller,
@@ -235,7 +235,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   Future<bool> _confirmInsecureUrl(String url) async =>
       await showAppDialog<bool>(
         context: context,
-        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
           title: Text(t.mihon_store_add),
           content: Text('${t.mihon_extension_warning}\n\n$url'),
           actions: <Widget>[
@@ -374,7 +374,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     if (!mounted) return null;
     return showAppDialog<MihonSource>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.mihon_extension_preview_source_select),
         content: SizedBox(
           width: 420,
@@ -439,7 +439,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(t.mihon_signer_trust_title),
         content: SelectableText(
           '${t.mihon_extension_warning}\n\n'
@@ -493,7 +493,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   Future<void> _removeStore(MangaExtensionStoreRow store) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(t.mihon_store_remove),
         content: Text('${store.name}\n${store.indexUrl}'),
         actions: <Widget>[
@@ -519,7 +519,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   Future<void> _uninstall(MangaExtensionRow extension) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(t.mihon_extension_uninstall),
         content: Text(extension.name),
         actions: <Widget>[
@@ -601,7 +601,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: LinearProgressIndicator(),
+                child: FushiLinearProgressIndicator(),
               ),
             ),
           ..._buildContentSlivers(
@@ -642,7 +642,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                   const Positioned.fill(
                     child: ColoredBox(
                       color: Color(0x22000000),
-                      child: Center(child: CircularProgressIndicator()),
+                      child: Center(child: FushiCircularProgressIndicator()),
                     ),
                   ),
               ],
@@ -676,12 +676,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             Wrap(
               spacing: 12,
               children: <Widget>[
-                FilledButton.icon(
+                FushiFilledButton.icon(
                   onPressed: _addStore,
                   icon: const Icon(Icons.add_link),
                   label: Text(t.mihon_store_add),
                 ),
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: _importApk,
                   icon: const Icon(Icons.file_open_outlined),
                   label: Text(t.mihon_extension_import),
@@ -784,12 +784,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.mihon_store_edit,
                   onPressed: () => unawaited(_editStore(store)),
                   icon: const Icon(Icons.edit_outlined),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.mihon_store_remove,
                   onPressed: () => unawaited(_removeStore(store)),
                   icon: const Icon(Icons.delete_outline),
@@ -1331,7 +1331,7 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
                 style: theme.textTheme.bodySmall,
               ),
             if (hiddenSources > 0 || _showAllSources)
-              TextButton(
+              FushiTextButton(
                 key: ValueKey<String>(
                   'mihon-sources-toggle-${extension.packageName}',
                 ),
@@ -1395,12 +1395,12 @@ class _PreviewFooter extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
-                  TextButton(
+                  FushiTextButton(
                     onPressed: onDiscard,
                     child: Text(t.mihon_extension_preview_discard),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton(
+                  FushiFilledButton(
                     onPressed: onInstall,
                     child: Text(t.mihon_extension_install),
                   ),

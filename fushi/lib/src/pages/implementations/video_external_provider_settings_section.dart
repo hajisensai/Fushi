@@ -555,7 +555,7 @@ class _VideoExternalProviderSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('video-torznab-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -565,7 +565,7 @@ class _VideoExternalProviderSettingsSectionState
                       _updateTorznab(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('video-torznab-$index-remove'),
                 tooltip: t.video_external_remove,
                 onPressed: () {
@@ -639,7 +639,7 @@ class _VideoExternalProviderSettingsSectionState
               ),
             ],
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('video-torznab-$index-insecure-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -659,7 +659,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-opensubtitles-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -732,7 +732,7 @@ class _VideoExternalProviderSettingsSectionState
           onChanged: (String value) =>
               _updateOpenSubtitles(draft.copyWith(userAgent: value)),
         ),
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-opensubtitles-insecure-http'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -757,7 +757,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-jimaku-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -789,7 +789,7 @@ class _VideoExternalProviderSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('video-subdl-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -825,7 +825,7 @@ class _VideoExternalProviderSettingsSectionState
       padding: const EdgeInsets.only(bottom: 8),
       child: SizedBox(
         width: double.infinity,
-        child: DropdownButtonFormField<String>(
+        child: FushiDropdownButtonFormField<String>(
           key: const ValueKey<String>('video-subtitle-default-language'),
           initialValue: _preferredLanguage,
           // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
@@ -916,7 +916,7 @@ class _VideoExternalProviderSettingsSectionState
 
   /// AJATT 只有一个开关：零配置、无 key、无配额（见 `ajatt_catalog.dart` 文件头）。
   Widget _ajattFields() {
-    return SwitchListTile.adaptive(
+    return FushiSwitchListTile.adaptive(
       key: const ValueKey<String>('video-ajatt-enabled'),
       contentPadding: EdgeInsets.zero,
       dense: true,
@@ -994,7 +994,7 @@ class _VideoExternalProviderSettingsSectionState
         children: <Widget>[
           Align(
             alignment: Alignment.centerRight,
-            child: IconButton(
+            child: FushiIconButtonControl(
               key: ValueKey<String>('video-path-mapping-$index-remove'),
               tooltip: t.video_external_remove,
               onPressed: () {
@@ -1080,7 +1080,7 @@ class _VideoExternalProviderSettingsSectionState
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: FushiCircularProgressIndicator()),
       );
     }
     if (_store == null) return const SizedBox.shrink();
@@ -1128,7 +1128,7 @@ class _VideoExternalProviderSettingsSectionState
   List<Widget> _resourceSourceBlocks(ThemeData theme) {
     return <Widget>[
       _builtinSourcesBlock(theme),
-      const Divider(height: 32),
+      const FushiDividerControl(height: 32),
       ..._torznabBlocks(theme),
     ];
   }
@@ -1145,7 +1145,7 @@ class _VideoExternalProviderSettingsSectionState
         _torznabCard(theme, index),
       Align(
         alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
+        child: FushiOutlinedButton.icon(
           key: const ValueKey<String>('video-torznab-add'),
           onPressed: () => setState(
             () => _torznab.add(_TorznabDraft.empty(_newDraftId('torznab'))),
@@ -1173,7 +1173,7 @@ class _VideoExternalProviderSettingsSectionState
         _mappingCard(index),
       Align(
         alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
+        child: FushiOutlinedButton.icon(
           key: const ValueKey<String>('video-path-mapping-add'),
           onPressed: () => setState(
             () => _mappings.add(
@@ -1187,7 +1187,7 @@ class _VideoExternalProviderSettingsSectionState
           label: Text(t.video_download_path_mapping_add),
         ),
       ),
-      const Divider(height: 32),
+      const FushiDividerControl(height: 32),
       _sectionHeading(
         theme,
         t.video_download_target_source_title,
@@ -1210,7 +1210,7 @@ class _VideoExternalProviderSettingsSectionState
         ),
       );
     }
-    return DropdownButtonFormField<int>(
+    return FushiDropdownButtonFormField<int>(
       key: ValueKey<String>('video-target-source-${_targetSourceId ?? 'none'}'),
       initialValue: _targetSourceId ?? 0,
       decoration: InputDecoration(

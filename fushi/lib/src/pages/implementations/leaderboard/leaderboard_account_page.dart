@@ -280,7 +280,7 @@ class _LeaderboardAccountPageState
           ),
         ];
       }
-      return <Widget>[if (_devicesLoading) const LinearProgressIndicator()];
+      return <Widget>[if (_devicesLoading) const FushiLinearProgressIndicator()];
     }
     return <Widget>[
       for (final LeaderboardDevice d in devices)
@@ -305,7 +305,7 @@ class _LeaderboardAccountPageState
           trailing: d.current
               ? null
               : ExcludeFocus(
-                  child: TextButton(
+                  child: FushiTextButton(
                     onPressed: _busy ? null : () => unawaited(_removeDevice(d)),
                     child: Text(t.leaderboard_account_device_remove),
                   ),
@@ -340,7 +340,7 @@ class _LeaderboardAccountPageState
                 style: tokens.type.listSubtitle.copyWith(color: colors.error),
               ),
             ),
-          if (_busy) const LinearProgressIndicator(),
+          if (_busy) const FushiLinearProgressIndicator(),
           FushiCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -356,7 +356,7 @@ class _LeaderboardAccountPageState
                         style: tokens.type.listTitle,
                       ),
                     ),
-                    OutlinedButton.icon(
+                    FushiOutlinedButton.icon(
                       onPressed: _busy ? null : () => unawaited(_pickAvatar()),
                       icon: const Icon(Icons.image_outlined),
                       label: Text(t.leaderboard_account_avatar),
@@ -372,7 +372,7 @@ class _LeaderboardAccountPageState
                 SizedBox(height: tokens.spacing.gap),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: FilledButton.tonal(
+                  child: FushiFilledButton.tonal(
                     onPressed: _busy ? null : () => unawaited(_saveNickname()),
                     child: Text(t.leaderboard_account_save_nickname),
                   ),
@@ -422,7 +422,7 @@ class _LeaderboardAccountPageState
             subtitle: Text(t.leaderboard_account_upload_hint),
             subtitleMaxLines: 3,
             trailing: ExcludeFocus(
-              child: Switch(
+              child: FushiSwitch(
                 value: account?.uploadEnabled ?? false,
                 onChanged: _busy || account == null
                     ? null

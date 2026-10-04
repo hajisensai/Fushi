@@ -193,7 +193,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
         icon: Icons.cloud_off_outlined,
         message: t.jellyfin_libraries_load_failed,
         detail: '$error',
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           key: const ValueKey<String>('media-server-home-retry'),
           onPressed: () => unawaited(_load()),
           icon: const Icon(Icons.refresh_rounded),

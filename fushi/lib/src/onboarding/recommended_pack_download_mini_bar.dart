@@ -9,6 +9,7 @@ import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 推荐包下载的**全局**常驻迷你条，挂在首页 shell 的内容区底部
 /// （`home_page.dart` 的 `_bodyWithMiniBar`，移动底栏 / 桌面 rail / macOS 三套布局
@@ -99,7 +100,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
               // （eink 下钉成 0：不定态动画在墨水屏上是整条带子持续刷新；默认轨道色
               // surfaceContainerHighest 也塌成底色，给实色轨道才看得见）。
               if (controller.isDownloading)
-                LinearProgressIndicator(
+                FushiLinearProgressIndicator(
                   minHeight: 2,
                   value: einkSafeProgressValue(
                     context,
@@ -145,7 +146,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
                     const SizedBox(width: 8),
                     ..._actions,
                     // 收起**从不**动下载本身：这是「不想看」，不是「不想下」。
-                    IconButton(
+                    FushiIconButtonControl(
                       icon: const Icon(Icons.close),
                       tooltip: t.onboarding_pack_mini_bar_hide,
                       onPressed: controller.dismissMiniBar,
@@ -210,7 +211,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
     switch (controller.stage.value) {
       case RecommendedPackDownloadStage.downloading:
         return <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: controller.requestCancel,
             child: Text(t.dialog_cancel),
           ),
@@ -219,11 +220,11 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         // 「放弃」排在「继续」前面：右手边那颗是主动作，误触代价（重下几 GB）落在
         // 放弃这颗上，所以它不能是主按钮、也不能挨着 ×。
         return <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: controller.isDeleting.value ? null : onDiscard,
             child: Text(t.onboarding_pack_download_discard),
           ),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed: controller.isDeleting.value
                 ? null
                 : () => unawaited(controller.start()),
@@ -232,7 +233,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         ];
       case RecommendedPackDownloadStage.downloaded:
         return <Widget>[
-          FilledButton(
+          FushiFilledButton(
             onPressed: controller.isDeleting.value ? null : onImport,
             child: Text(t.onboarding_pack_import_now),
           ),

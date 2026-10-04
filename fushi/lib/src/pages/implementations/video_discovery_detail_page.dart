@@ -261,7 +261,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               else ...<Widget>[
                 if (snapshot.connectionState != ConnectionState.done)
                   const SliverToBoxAdapter(
-                    child: LinearProgressIndicator(minHeight: 2),
+                    child: FushiLinearProgressIndicator(minHeight: 2),
                   ),
                 SliverToBoxAdapter(child: _buildOverview(details)),
                 if (details.people.isNotEmpty)
@@ -288,7 +288,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     final bool compact = width < kVideoDiscoveryCompactWidth;
     final double expandedHeight =
         videoDiscoveryHeroHeightForViewport(width, viewport.height);
-    return SliverAppBar(
+    return FushiSliverAppBar(
       pinned: true,
       expandedHeight: expandedHeight,
       backgroundColor: tokens.surfaces.page,
@@ -442,7 +442,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap,
       children: <Widget>[
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           key: const ValueKey<String>(
             'video-discovery-search-resource',
           ),
@@ -459,7 +459,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           icon: const Icon(Icons.search_rounded),
           label: Text(t.video_discovery_resource_search),
         ),
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           key: const ValueKey<String>(
             'video-discovery-search-subtitle',
           ),
@@ -473,7 +473,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           icon: const Icon(Icons.subtitles_outlined),
           label: Text(t.video_discovery_subtitle_search),
         ),
-        FilledButton.tonalIcon(
+        FushiFilledButton.tonalIcon(
           key: const ValueKey<String>('video-discovery-subscribe'),
           onPressed: state.isBusy
               ? null
@@ -496,7 +496,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           ),
         ),
         if (state.isInLibrary && widget.actions.onPlay != null)
-          FilledButton.icon(
+          FushiFilledButton.icon(
             key: const ValueKey<String>('video-discovery-play'),
             onPressed: state.isBusy
                 ? null
@@ -515,7 +515,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
         if (state.isBusy) ...<Widget>[
           const SizedBox.square(
             dimension: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 8),
         ] else
@@ -555,7 +555,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
         runSpacing: tokens.spacing.gap / 2,
         children: <Widget>[
           if (widget.actions.onCancelDownloads != null)
-            TextButton.icon(
+            FushiTextButton.icon(
               key: const ValueKey<String>('video-discovery-cancel-download'),
               onPressed: () => unawaited(
                 widget.actions.onCancelDownloads!(state.activeJobIds),
@@ -564,7 +564,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               label: Text(t.cancel),
             ),
           if (widget.actions.onOpenDownloads != null)
-            TextButton.icon(
+            FushiTextButton.icon(
               key: const ValueKey<String>('video-discovery-detail-downloads'),
               onPressed: widget.actions.onOpenDownloads,
               icon: const Icon(Icons.download_outlined, size: 16),
@@ -585,7 +585,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             const Icon(Icons.cloud_off_outlined),
             SizedBox(width: tokens.spacing.gap),
             Expanded(child: Text(t.video_discovery_details_load_failed)),
-            TextButton(onPressed: _retryDetails, child: Text(t.retry)),
+            FushiTextButton(onPressed: _retryDetails, child: Text(t.retry)),
           ],
         ),
       ),

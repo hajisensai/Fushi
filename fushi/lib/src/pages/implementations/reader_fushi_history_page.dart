@@ -979,7 +979,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildSearchBar() {
     final Widget search = SizedBox(
       height: _compactLibraryToolbar ? 44 : 40,
-      child: TextField(
+      child: FushiTextFieldControl(
         key: const ValueKey<String>('shelf_search_field'),
         controller: _searchController,
         decoration: InputDecoration(
@@ -993,7 +993,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
           suffixIcon: _searchQuery.isEmpty
               ? null
-              : IconButton(
+              : FushiIconButtonControl(
                   icon: const Icon(Icons.close, size: 18),
                   onPressed: () {
                     _searchController.clear();
@@ -1021,7 +1021,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
           if (_compactLibraryToolbar) ...<Widget>[
             const SizedBox(width: 8),
-            IconButton(
+            FushiIconButtonControl(
               key: const ValueKey<String>('library_tag_settings'),
               tooltip: t.tag_manage,
               constraints: const BoxConstraints(
@@ -2308,13 +2308,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           if (shell != null)
-            FilledButton.icon(
+            FushiFilledButton.icon(
               icon: const Icon(Icons.library_add_outlined, size: 18),
               label: Text(t.library_empty_go_import),
               onPressed: () => shell.select(MediaLibraryViewKind.sources),
             )
           else
-            FilledButton.icon(
+            FushiFilledButton.icon(
               icon: const Icon(Icons.library_add_outlined, size: 18),
               label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
               onPressed: () async {

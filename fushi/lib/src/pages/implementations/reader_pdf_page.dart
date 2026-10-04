@@ -724,21 +724,21 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         );
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: FushiAppBar(
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: <Widget>[
             _buildPageIndicator(),
-            IconButton(
+            FushiIconButtonControl(
               tooltip: t.pdf_bookmarks,
               icon: const Icon(Icons.bookmark_add_outlined),
               onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
             ),
-            IconButton(
+            FushiIconButtonControl(
               tooltip: t.pdf_bookmarks,
               icon: const Icon(Icons.bookmarks_outlined),
               onPressed: () => unawaited(_showBookmarks()),
             ),
-            IconButton(
+            FushiIconButtonControl(
               tooltip: t.pdf_outline,
               icon: const Icon(Icons.list_alt_outlined),
               onPressed: () => unawaited(_showOutline()),
@@ -862,7 +862,7 @@ class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
                   return FushiListItem(
                     leading: const Icon(Icons.bookmark_outline),
                     title: Text(bookmark.label),
-                    trailing: IconButton(
+                    trailing: FushiIconButtonControl(
                       tooltip: t.dialog_delete,
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () async {

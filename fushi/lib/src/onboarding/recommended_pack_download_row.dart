@@ -61,14 +61,14 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               trailing: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  LinearProgressIndicator(
+                  FushiLinearProgressIndicator(
                     value: controller.progress.value > 0
                         ? controller.progress.value
                         : null,
                   ),
                   Align(
                     alignment: AlignmentDirectional.centerEnd,
-                    child: TextButton(
+                    child: FushiTextButton(
                       onPressed: controller.requestCancel,
                       child: Text(t.dialog_cancel),
                     ),
@@ -95,12 +95,12 @@ class RecommendedPackDownloadRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
-                  TextButton(
+                  FushiTextButton(
                     onPressed: controller.isDeleting.value ? null : onDiscard,
                     child: Text(t.onboarding_pack_download_discard),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton.tonal(
+                  FushiFilledButton.tonal(
                     onPressed: controller.isDeleting.value
                         ? null
                         : () => unawaited(controller.start()),
@@ -115,7 +115,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               subtitle: t.onboarding_pack_action_import_existing_desc,
               icon: Icons.inventory_2_outlined,
               showIcon: true,
-              trailing: FilledButton(
+              trailing: FushiFilledButton(
                 onPressed: controller.isDeleting.value ? null : onImport,
                 child: Text(t.onboarding_pack_import_now),
               ),

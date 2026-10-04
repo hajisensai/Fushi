@@ -217,7 +217,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (widget.pinActions) {
-      return IconButton(
+      return FushiIconButtonControl(
         tooltip: tooltip,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         icon: Icon(icon, size: 20),
@@ -242,7 +242,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   Widget _sortMenuAction(FushiDesignTokens tokens) {
     final t = Translations.of(context);
     final ShelfSortMode selectedMode = widget.sortMode!;
-    return MenuAnchor(
+    return FushiMenuAnchor(
       controller: _sortMenu,
       style: MenuStyle(
         backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.overlay),

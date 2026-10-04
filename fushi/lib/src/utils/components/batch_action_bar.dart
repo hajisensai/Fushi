@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 批量操作栏：多选态下钉在页面底部的那条「已选 N · 全选 · 反选 · 若干动作」。
 ///
@@ -73,11 +74,11 @@ class BatchActionBar extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    TextButton(
+                    FushiTextButton(
                       onPressed: onSelectAll,
                       child: Text(t.batch_select_all),
                     ),
-                    TextButton(
+                    FushiTextButton(
                       onPressed: onInvertSelection,
                       child: Text(t.batch_invert_selection),
                     ),

@@ -162,7 +162,7 @@ class _VideoSourceScrapeTaskPanelState
         widget.controller.pendingConfirmation;
     return DefaultTabController(
       length: 3,
-      child: AlertDialog(
+      child: FushiAlertDialog(
         title: Text(t.video_source_scrape_tasks_open),
         content: SizedBox(
           width: 880,
@@ -172,7 +172,7 @@ class _VideoSourceScrapeTaskPanelState
             children: <Widget>[
               Text(t.video_source_scrape_background_hint),
               const SizedBox(height: 12),
-              TabBar(
+              FushiTabBar(
                 isScrollable: false,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                 tabs: <Widget>[
@@ -215,17 +215,17 @@ class _VideoSourceScrapeTaskPanelState
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
           if (running)
-            TextButton(
+            FushiTextButton(
               onPressed: widget.controller.cancel,
               child: Text(t.video_source_scrape_queue_cancel_all),
             ),
           if (confirmation != null)
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('video-source-confirmation-skip'),
               onPressed: widget.controller.skipPendingConfirmation,
               child: Text(t.video_source_scrape_confirmation_skip),
@@ -263,7 +263,7 @@ class _VideoSourceScrapeTaskPanelState
       ] else
         _buildProgress(progress),
       if (queued.isNotEmpty) ...<Widget>[
-        const Divider(height: 32),
+        const FushiDividerControl(height: 32),
         Text(
           '${t.video_source_scrape_queue_waiting} (${queued.length})',
           style: Theme.of(context).textTheme.titleMedium,
@@ -274,7 +274,7 @@ class _VideoSourceScrapeTaskPanelState
             leading: Text('${index + 1}'),
             title: Text(queued[index].workTitle),
             subtitle: Text(_queuedSubtitle(queued[index])),
-            trailing: IconButton(
+            trailing: FushiIconButtonControl(
               tooltip: t.video_source_scrape_queue_remove,
               onPressed: () =>
                   widget.controller.cancelQueuedManualRequest(queued[index]),
@@ -298,7 +298,7 @@ class _VideoSourceScrapeTaskPanelState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (progress.isRunning) LinearProgressIndicator(value: value),
+        if (progress.isRunning) FushiLinearProgressIndicator(value: value),
         if (progress.isRunning) const SizedBox(height: 12),
         Text(
           t.video_source_scrape_progress(
@@ -331,7 +331,7 @@ class _VideoSourceScrapeTaskPanelState
   /// 对应的真实作品执行——绑定入口永远不会指向已消失的作品。
   Widget _buildPendingWorks() {
     if (_loadingPending) {
-      return const Center(child: CircularProgressIndicator.adaptive());
+      return const Center(child: FushiCircularProgressIndicator.adaptive());
     }
     if (_pendingError case final Object error) {
       return _buildLoadError(error, _reloadPendingWorks);
@@ -374,7 +374,7 @@ class _VideoSourceScrapeTaskPanelState
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     if (widget.controller.supportsAiIdentify)
-                      IconButton(
+                      FushiIconButtonControl(
                         key: ValueKey<String>(
                           'video-source-pending-ai-${entry.work.stableKey}',
                         ),
@@ -382,7 +382,7 @@ class _VideoSourceScrapeTaskPanelState
                         onPressed: () => unawaited(_identifyPendingWork(entry)),
                         icon: const Icon(Icons.auto_awesome),
                       ),
-                    IconButton(
+                    FushiIconButtonControl(
                       tooltip: t.video_source_scrape_manual_search_title,
                       onPressed: () => unawaited(_bindPendingWork(entry)),
                       icon: const Icon(Icons.search),
@@ -496,7 +496,7 @@ class _VideoSourceScrapeTaskPanelState
 
   Widget _buildHistory() {
     if (_loadingHistory) {
-      return const Center(child: CircularProgressIndicator.adaptive());
+      return const Center(child: FushiCircularProgressIndicator.adaptive());
     }
     if (_historyError case final Object error) {
       return _buildLoadError(error, _reloadHistory);
@@ -522,7 +522,7 @@ class _VideoSourceScrapeTaskPanelState
           trailing: widget.onRetry != null &&
                   run.sourceId != null &&
                   scrapeRunHasUnresolvedWorks(run)
-              ? IconButton(
+              ? FushiIconButtonControl(
                   tooltip: t.video_source_scrape_rescrape_source,
                   onPressed:
                       _retrying.contains(run.id) || widget.controller.isBusy
@@ -531,7 +531,7 @@ class _VideoSourceScrapeTaskPanelState
                   icon: _retrying.contains(run.id)
                       ? const SizedBox.square(
                           dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.replay_outlined),
                 )
@@ -549,7 +549,7 @@ class _VideoSourceScrapeTaskPanelState
           SelectableText(error.toString()),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
+            child: FushiTextButton.icon(
               onPressed: () => unawaited(reload()),
               icon: const Icon(Icons.refresh),
               label: Text(t.video_source_scrape_list_reload),
@@ -657,7 +657,7 @@ class _VideoSourceScrapeTaskPanelState
       Text(t.video_source_scrape_confirmation_hint),
       const SizedBox(height: 12),
       for (int index = 0; index < confirmation.candidates.length; index++) ...[
-        if (index > 0) const Divider(height: 1),
+        if (index > 0) const FushiDividerControl(height: 1),
         VideoSourceScrapeCandidateTile(
           candidate: confirmation.candidates[index],
           onSelected: widget.controller.confirmPending,

@@ -68,7 +68,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     final Widget volumeButton = ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
-        return Tooltip(
+        return FushiTooltip(
           message: t.shortcut_action_video_toggle_mute,
           child: desktop
               ? MaterialDesktopCustomButton(
@@ -548,13 +548,13 @@ extension _VideoControlsPopover on _VideoFushiPageState {
                   ),
                 ),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => unawaited(_setSpeed(1.0)),
                 child: const Text('1.0x'),
               ),
             ],
           ),
-          Slider(
+          FushiSlider(
             value: sliderValue,
             min: 0.5,
             max: 2.0,

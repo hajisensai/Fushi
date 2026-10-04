@@ -529,7 +529,7 @@ extension _VideoQuality on _VideoFushiPageState {
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: <Widget>[
           for (int i = 0; i < streamVariants.length; i++)
-            ListTile(
+            FushiListTileControl(
               key: ValueKey<String>('video-quality-stream-variant-$i'),
               dense: true,
               leading: const Icon(Icons.alt_route),
@@ -541,7 +541,7 @@ extension _VideoQuality on _VideoFushiPageState {
               onTap: () => unawaited(_switchStreamVariant(i)),
             ),
           if (hls.isNotEmpty) ...<Widget>[
-            const Divider(),
+            const FushiDividerControl(),
             _buildQualityTile(
               cs,
               icon: Icons.auto_awesome,
@@ -568,7 +568,7 @@ extension _VideoQuality on _VideoFushiPageState {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                const CircularProgressIndicator(),
+                const FushiCircularProgressIndicator(),
                 const SizedBox(height: 16),
                 Text(
                   t.video_quality_loading,
@@ -653,7 +653,7 @@ extension _VideoQuality on _VideoFushiPageState {
     required int index,
   }) {
     final bool selected = _selectedHlsVariantIndex == index;
-    return ListTile(
+    return FushiListTileControl(
       dense: true,
       leading: Icon(icon),
       title: Text(label),
@@ -671,7 +671,7 @@ extension _VideoQuality on _VideoFushiPageState {
     required int index,
     required bool selected,
   }) {
-    return ListTile(
+    return FushiListTileControl(
       key: ValueKey<String>('video-quality-media-server-$index'),
       dense: true,
       leading: Icon(icon),
@@ -690,7 +690,7 @@ extension _VideoQuality on _VideoFushiPageState {
     required int index,
   }) {
     final bool selected = _selectedYoutubeVariantIndex == index;
-    return ListTile(
+    return FushiListTileControl(
       dense: true,
       leading: Icon(icon),
       title: Text(label),

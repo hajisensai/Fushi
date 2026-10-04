@@ -173,6 +173,7 @@ import 'package:fushi/src/shortcuts/global_navigation.dart'
         exitWindowFullscreenIfActive,
         readDesktopWindowFullscreen,
         setDesktopWindowFullscreen;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 part 'reader_fushi/lyrics.part.dart';
 part 'reader_fushi/mining.part.dart';
@@ -3654,7 +3655,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                                   color: Theme.of(
                                     context,
                                   ).colorScheme.surface.withValues(alpha: 0.7),
-                                  child: IconButton(
+                                  child: FushiIconButtonControl(
                                     key: const ValueKey<String>(
                                       'reader_unloaded_back',
                                     ),

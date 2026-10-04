@@ -1212,11 +1212,11 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               alignment: MainAxisAlignment.end,
               spacing: 8,
               children: <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => Navigator.pop(ctx, false),
                   child: Text(t.dialog_cancel),
                 ),
-                FilledButton(
+                FushiFilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
                   child: Text(t.dialog_delete),
                 ),
@@ -1303,7 +1303,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       body = const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator.adaptive(),
+          child: FushiCircularProgressIndicator.adaptive(),
         ),
       );
     } else if (_showOnlyConflicts
@@ -1405,7 +1405,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           ),
           SizedBox(height: tokens.spacing.card),
           if (_applying) ...[
-            LinearProgressIndicator(value: _progress),
+            FushiLinearProgressIndicator(value: _progress),
             const SizedBox(height: 6),
             Text(
               _progressLabel ?? t.sync_compare_apply(count: _actionableCount),
@@ -1422,7 +1422,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             spacing: tokens.spacing.gap,
             overflowSpacing: tokens.spacing.gap,
             children: [
-              TextButton(
+              FushiTextButton(
                 // 应用期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既
                 // 没有系统返回键、对话框路由也没有侧滑返回，而 `_applyChoices` 先
                 // 抢全局同步互斥锁（后台自动云同步在跑就一直等）、拿到锁后逐本做
@@ -1436,13 +1436,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ),
               ),
               if (_entries != null && _entries!.isNotEmpty)
-                FilledButton(
+                FushiFilledButton(
                   onPressed: canApply ? _applyChoices : null,
                   child: _applying
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(t.sync_compare_apply(count: applyCount)),
                 ),
@@ -1456,7 +1456,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// 「只看冲突」筛选 chip。与 [FushiOverflowMenu] 同款接线：在焦点根下注册成方向
   /// 导航目标，Activate（Enter / 手柄 A）即切换；否则裸 chip 对手柄不可达。
   Widget _conflictFilterChip(ThemeData theme) {
-    final Widget chip = FilterChip(
+    final Widget chip = FushiFilterChip(
       label: Text('${t.sync_compare_only_conflicts} · $_conflictCount'),
       selected: _filterConflicts,
       onSelected: (bool value) => setState(() => _filterConflicts = value),
@@ -1662,7 +1662,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             child: Row(
               children: [
                 Expanded(child: _dataColumn(entry, isLocal: true)),
-                const SizedBox(height: 32, child: VerticalDivider(width: 16)),
+                const SizedBox(height: 32, child: FushiVerticalDivider(width: 16)),
                 Expanded(child: _dataColumn(entry, isLocal: false)),
               ],
             ),
@@ -1694,7 +1694,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Widget _downloadRow(SyncCompareEntry entry, ThemeData theme) {
     return Align(
       alignment: AlignmentDirectional.centerStart,
-      child: TextButton.icon(
+      child: FushiTextButton.icon(
         onPressed: _applying ? null : () => _downloadRemoteOnlyFromRow(entry),
         icon: const Icon(Icons.cloud_download_outlined, size: 16),
         label: Text(t.sync_compare_download),

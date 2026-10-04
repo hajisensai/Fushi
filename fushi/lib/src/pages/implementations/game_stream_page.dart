@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Receiver-side wording for a host mine result. The host only sends stable
 /// detail codes (its raw failure text stays on the host), so every outcome a
@@ -489,7 +490,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                     if (button != GameStreamVirtualButton.menu)
                       FushiListItem(
                         title: Text(_buttonLabel(button)),
-                        trailing: DropdownButton<String>(
+                        trailing: FushiDropdownButton<String>(
                           key: ValueKey<String>(
                             'game-stream-binding-${button.name}',
                           ),
@@ -652,12 +653,12 @@ class _GameStreamPageState extends State<GameStreamPage>
       if (applied.maxHeight < next.maxHeight || applied.maxFps < next.maxFps) {
         ScaffoldMessenger.maybeOf(
           context,
-        )?.showSnackBar(SnackBar(content: Text(t.game_stream_settings_capped)));
+        )?.showSnackBar(FushiSnackBar(content: Text(t.game_stream_settings_capped)));
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text('${t.game_stream_settings_apply_failed}: $error'),
           ),
         );
@@ -755,7 +756,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   height: 1,
                   child: Opacity(
                     opacity: 0,
-                    child: TextField(
+                    child: FushiTextFieldControl(
                       key: GameStreamPage.keyboardKey,
                       focusNode: _keyboardFocus,
                       controller: _keyboardText,
@@ -775,7 +776,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      IconButton(
+                      FushiIconButtonControl(
                         tooltip: t.game_stream_settings_title,
                         color: Colors.white,
                         icon: const Icon(Icons.settings_outlined),
@@ -821,13 +822,13 @@ class _GameStreamPageState extends State<GameStreamPage>
                           ),
                         ],
                       ),
-                      IconButton(
+                      FushiIconButtonControl(
                         tooltip: t.game_stream_keys,
                         color: Colors.white,
                         icon: const Icon(Icons.tune),
                         onPressed: _configureKeys,
                       ),
-                      IconButton(
+                      FushiIconButtonControl(
                         tooltip: t.game_stream_lookup_toggle,
                         color: Colors.white,
                         icon: Icon(
@@ -838,7 +839,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                         onPressed: () =>
                             setState(() => _lookupVisible = !_lookupVisible),
                       ),
-                      IconButton(
+                      FushiIconButtonControl(
                         tooltip: t.game_stream_controls_toggle,
                         color: Colors.white,
                         icon: Icon(
@@ -1108,13 +1109,13 @@ class _GameStreamPageState extends State<GameStreamPage>
                 ),
               ),
             ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Expanded(
               key: GameStreamPage.dictionaryKey,
               child: controller == null || result == null
                   ? Center(
                       child: controller?.searching == true
-                          ? const CircularProgressIndicator()
+                          ? const FushiCircularProgressIndicator()
                           : Text(
                               controller?.error ?? t.game_stream_lookup_hint,
                             ),

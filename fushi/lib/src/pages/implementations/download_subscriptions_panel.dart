@@ -89,7 +89,7 @@ class _DownloadSubscriptionsPanelState
   Future<void> _delete(AnimeDownloadSubscription subscription) async {
     final bool confirmed = await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog(
+          builder: (BuildContext dialogContext) => FushiAlertDialog(
             title: Text(t.download_subscription_delete),
             content: Text(
               t.download_subscription_delete_confirm(
@@ -97,11 +97,11 @@ class _DownloadSubscriptionsPanelState
               ),
             ),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
                 child: Text(t.dialog_cancel),
               ),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
                 child: Text(t.dialog_delete),
               ),
@@ -186,13 +186,13 @@ class _DownloadSubscriptionsPanelState
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   onPressed: checking ? null : _checkAll,
                   icon: checking
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.refresh, size: 18),
                   label: Text(t.download_subscription_check_all),
@@ -306,7 +306,7 @@ class _DownloadSubscriptionsPanelState
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Switch.adaptive(
+                FushiSwitch.adaptive(
                   value: subscription.enabled,
                   onChanged: checking
                       ? null

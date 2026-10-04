@@ -446,7 +446,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       foreground: foreground,
     );
     if (tooltip == null) return badge;
-    return Tooltip(message: tooltip, child: badge);
+    return FushiTooltip(message: tooltip, child: badge);
   }
 
   /// [completed] = 该书已被显式标记「读完」（EpubBooks.completedAt 非 null）。命中时
@@ -462,7 +462,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
         value = v > 0.97 ? 1 : v;
       }
     }
-    return LinearProgressIndicator(
+    return FushiLinearProgressIndicator(
       value: value,
       backgroundColor: theme.colorScheme.surfaceContainerHighest,
       color: completed ? theme.colorScheme.tertiary : theme.colorScheme.primary,

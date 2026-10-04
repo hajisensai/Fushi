@@ -542,7 +542,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               ),
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
         ],
       ),
       child: TabBarView(
@@ -1024,7 +1024,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               SizedBox(height: tokens.spacing.gap / 2),
               ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 3,
                 ),
@@ -1267,7 +1267,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap / 2),
           itemCount: volumes.labels.length,
           separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap),
-          itemBuilder: (BuildContext context, int i) => ChoiceChip(
+          itemBuilder: (BuildContext context, int i) => FushiChoiceChip(
             key: ValueKey<String>('reader-toc-volume-chip-$i'),
             label: Text(
               volumes.labels[i],
@@ -1334,7 +1334,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             ),
@@ -2132,7 +2132,7 @@ class _InBookTocRow extends StatelessWidget {
                 color: selectedColor,
               ),
             if (foldable)
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('fushi_toc_fold_${entry.label}'),
                 visualDensity: VisualDensity.compact,
                 iconSize: 20,

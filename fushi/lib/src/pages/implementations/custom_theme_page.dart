@@ -737,14 +737,14 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 ),
               ),
               SizedBox(width: tokens.spacing.gap),
-              FilledButton.icon(
+              FushiFilledButton.icon(
                 key: const ValueKey<String>('custom-theme-ai-generate'),
                 onPressed: _aiBusy ? null : () => unawaited(_runAi()),
                 icon: _aiBusy
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome_outlined),
                 label: Text(
@@ -773,7 +773,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             SizedBox(height: tokens.spacing.gap / 2),
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: FushiTextButton.icon(
                 key: const ValueKey<String>('custom-theme-ai-undo'),
                 onPressed: _aiBusy ? null : _undoAi,
                 icon: const Icon(Icons.undo),
@@ -944,7 +944,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ],
       ),
       SizedBox(height: tokens.spacing.card),
-      FilledButton.icon(
+      FushiFilledButton.icon(
         onPressed: _applyAndClose,
         icon: const Icon(Icons.check),
         label: Text(t.apply_theme),
@@ -955,7 +955,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       // 直接不渲染删除按钮，返回即丢弃草稿。
       if (!_isDraft) ...<Widget>[
         SizedBox(height: tokens.spacing.gap),
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           onPressed: _confirmDelete,
           style: OutlinedButton.styleFrom(
             foregroundColor: Theme.of(context).colorScheme.error,
@@ -1115,7 +1115,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 color: appCs.onSurfaceVariant,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
-              Tooltip(
+              FushiTooltip(
                 message: t.theme_role_actual_color,
                 child: _swatchDot(shown),
               ),
@@ -1326,7 +1326,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           Row(
             children: <Widget>[
               Expanded(child: Text(t.preview, style: titleStyle)),
-              SegmentedButton<Brightness>(
+              FushiSegmentedButton<Brightness>(
                 showSelectedIcon: false,
                 style: const ButtonStyle(
                   visualDensity: VisualDensity.compact,
@@ -1755,7 +1755,7 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton.icon(
+            child: FushiTextButton.icon(
               onPressed: widget.onReset,
               icon: const Icon(Icons.restart_alt, size: 18),
               label: Text(widget.resetLabel),

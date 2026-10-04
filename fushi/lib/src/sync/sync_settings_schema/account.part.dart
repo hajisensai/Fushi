@@ -107,7 +107,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
         child: _isLoading ? progress : Text(t.sync_sign_in),
       );
     }
-    return FilledButton.icon(
+    return FushiFilledButton.icon(
       style: FilledButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
@@ -128,7 +128,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
         child: Text(t.sync_sign_out),
       );
     }
-    return TextButton(
+    return FushiTextButton(
       style: TextButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),

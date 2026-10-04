@@ -295,7 +295,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
               ),
               Semantics(
                 identifier: 'hibiki.reader.side_sheet.close',
-                child: IconButton(
+                child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_reader_stats_close'),
                   icon: const Icon(Icons.close),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
@@ -382,7 +382,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
                 SizedBox(height: tokens.spacing.gap * 2),
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: TextButton.icon(
+                  child: FushiTextButton.icon(
                     key: const ValueKey<String>('fushi_reader_stats_full'),
                     onPressed: widget.onOpenFullRecords,
                     icon: const Icon(Icons.chevron_right, size: 18),
@@ -459,7 +459,7 @@ class _SessionClock extends StatelessWidget {
         ),
         Semantics(
           identifier: 'hibiki.reader.stats.toggle_pause',
-          child: IconButton.outlined(
+          child: FushiIconButtonControl.outlined(
             key: const ValueKey<String>('fushi_reader_stats_pause'),
             icon: Icon(
               session.active ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -565,7 +565,7 @@ class _PositionRow extends StatelessWidget {
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_bar'),
                   value: ratio ?? 0,
                   minHeight: 6,
@@ -642,7 +642,7 @@ class _Rule extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Divider(
+      child: FushiDividerControl(
         height: 1,
         thickness: 1,
         color: Theme.of(context).colorScheme.outlineVariant,

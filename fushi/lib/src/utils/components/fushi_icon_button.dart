@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 页头动作按钮「展开文字标签」的作用域开关。
 ///
@@ -267,7 +268,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
       final Semantics button = Semantics(
         label: widget.tooltip,
         button: true,
-        child: IconButton(
+        child: FushiIconButtonControl(
           constraints: BoxConstraints(
             maxWidth: tokens.spacing.gap * 6,
             maxHeight: tokens.spacing.gap * 6,
@@ -321,7 +322,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
   /// 故不走此路径。空 [tooltip] 不包裹，避免弹出空浮层。
   Widget _withTooltip(Widget child) {
     if (widget.tooltip.isEmpty) return child;
-    return Tooltip(
+    return FushiTooltip(
       message: widget.tooltip,
       waitDuration: kIconButtonTooltipHoverDelay,
       child: child,

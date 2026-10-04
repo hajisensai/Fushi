@@ -466,7 +466,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
           onPanUpdate: _onPanUpdate,
           onPanEnd: (_) => _onPanEnd(layout),
           onPanCancel: () => _onPanEnd(layout),
-          child: Tooltip(
+          child: FushiTooltip(
             message: t.reader_floating_ball,
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -536,7 +536,7 @@ class _ColumnButton extends StatelessWidget {
       elevation: 2,
       shadowColor: Colors.black.withValues(alpha: 0.4),
       clipBehavior: Clip.antiAlias,
-      child: Tooltip(
+      child: FushiTooltip(
         message: action.label,
         child: Semantics(
           identifier: action.semanticsId,

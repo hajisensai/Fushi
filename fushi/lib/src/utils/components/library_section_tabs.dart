@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// MD3 tab 的左右内边距（逻辑像素，单侧）。
 ///
@@ -537,7 +538,7 @@ class _FushiSectionTabBarState<T extends Object>
     // TabBar，而这里 TabBar 旁边还有动作区——画出来是条半截线，故去掉。
     if (fillWidth) {
       return widget.secondary
-          ? TabBar.secondary(
+          ? FushiTabBar.secondary(
               controller: _controller,
               isScrollable: false,
               tabAlignment: TabAlignment.fill,
@@ -545,7 +546,7 @@ class _FushiSectionTabBarState<T extends Object>
               onTap: onTap,
               tabs: tabs,
             )
-          : TabBar(
+          : FushiTabBar(
               controller: _controller,
               isScrollable: false,
               tabAlignment: TabAlignment.fill,
@@ -555,7 +556,7 @@ class _FushiSectionTabBarState<T extends Object>
             );
     }
     if (widget.secondary) {
-      return TabBar.secondary(
+      return FushiTabBar.secondary(
         controller: _controller,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
@@ -564,7 +565,7 @@ class _FushiSectionTabBarState<T extends Object>
         tabs: tabs,
       );
     }
-    return TabBar(
+    return FushiTabBar(
       controller: _controller,
       isScrollable: true,
       tabAlignment: TabAlignment.start,

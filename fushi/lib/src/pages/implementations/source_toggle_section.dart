@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 一行「来源开关」的数据。
 ///
@@ -98,7 +99,7 @@ class SourceToggleList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         for (final SourceToggleRow row in rows)
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('$keyPrefix-${row.id}'),
             contentPadding: EdgeInsets.zero,
             dense: true,

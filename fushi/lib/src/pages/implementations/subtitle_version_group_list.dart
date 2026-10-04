@@ -180,7 +180,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
                   padding: EdgeInsets.all(8),
                   child: SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   ),
                 )
               else
@@ -255,7 +255,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       key: ValueKey<String>('subtitle-file-${candidate.identityKey}'),
       leading: widget.onToggleCandidate == null
           ? null
-          : Checkbox(
+          : FushiCheckbox(
               value: widget.selectedIdentityKeys.contains(
                 candidate.identityKey,
               ),
@@ -278,7 +278,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       trailing: busyThis
           ? const SizedBox.square(
               dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.download, size: 18),
     );

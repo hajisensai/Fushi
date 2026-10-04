@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 由 [ControlLayoutEditor] 交给宿主的「造一个槽位放置区」入口：宿主在舞台预览里
 /// 按自己的几何排布槽位，每个槽位调它一次拿到可投放区域。
@@ -425,7 +426,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
         child: Icon(widget.iconOf(item), size: 18, color: foreground),
       ),
     );
-    return Tooltip(
+    return FushiTooltip(
       message: label,
       child: Semantics(
         key: dragging

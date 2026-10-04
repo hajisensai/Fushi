@@ -150,12 +150,12 @@ class _ChangelogEmptyState extends StatelessWidget {
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: <Widget>[
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: onRetry,
                   icon: const Icon(Icons.refresh),
                   label: Text(t.retry),
                 ),
-                FilledButton.icon(
+                FushiFilledButton.icon(
                   onPressed: onOpenReleases,
                   icon: const Icon(Icons.open_in_new_outlined),
                   label: Text(t.changelog_open_releases),

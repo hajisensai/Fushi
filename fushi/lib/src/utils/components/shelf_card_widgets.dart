@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:transparent_image/transparent_image.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 书架卡片 footer / 勾选圈 / 选中罩的共享实现。
 ///
@@ -266,7 +267,7 @@ class ShelfTitleOverflowTooltip extends StatelessWidget {
         final bool overflowed = painter.didExceedMaxLines;
         painter.dispose();
         if (!overflowed) return child;
-        return Tooltip(
+        return FushiTooltip(
           message: title,
           triggerMode: TooltipTriggerMode.manual,
           excludeFromSemantics: true,

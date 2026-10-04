@@ -1316,7 +1316,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             _buildHeader(cs, cues),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Expanded(
               // BUG-878：Ctrl / ⌘ + 滚轮缩字号（浏览器式）。Listener 不消费滚轮信号，
               // 裸滚轮照常下探给 ListView 滚动；Ctrl 按住时 ListView 已切禁滚物理，故只缩
@@ -1415,7 +1415,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
               // BUG-1907：搜索开关。放第一行是因为它是**列表模式**开关，与字号/自动
               // 滚动/关闭同族；导出则放第二行「收藏 N 句」旁边（它导的就是那批句子）。
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_search,
                 icon: Icon(
                   _searchOpen ? Icons.search_off : Icons.search,
@@ -1425,14 +1425,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 onPressed: () => _toggleSearch(),
                 visualDensity: VisualDensity.compact,
               ),
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_font_smaller,
                 icon: Icon(Icons.text_decrease, size: iconSize),
                 color: _fontScaleIndex > 0 ? cs.onSurfaceVariant : cs.outline,
                 onPressed: _fontScaleIndex > 0 ? () => _stepFont(-1) : null,
                 visualDensity: VisualDensity.compact,
               ),
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_font_larger,
                 icon: Icon(Icons.text_increase, size: iconSize),
                 color: _fontScaleIndex < _kFontScaleSteps.length - 1
@@ -1443,7 +1443,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     : null,
                 visualDensity: VisualDensity.compact,
               ),
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_auto_scroll,
                 icon: Icon(
                   _autoScroll
@@ -1460,7 +1460,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
               // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
               // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                 icon: Icon(Icons.close, size: iconSize),
                 color: cs.onSurfaceVariant,
@@ -1475,7 +1475,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 child: HorizontalDragScrollable(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: SegmentedButton<VideoSubtitleListFilter>(
+                    child: FushiSegmentedButton<VideoSubtitleListFilter>(
                       showSelectedIcon: false,
                       segments: VideoSubtitleListFilter.values
                           .map(
@@ -1502,7 +1502,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
               if (_filter == VideoSubtitleListFilter.favorites &&
                   widget.onExportFavorites != null)
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.video_subtitle_list_export_favorites,
                   // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
                   // 收藏夹页的导出按钮同此约定）。
@@ -1539,7 +1539,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           if (_searchOpen)
             Padding(
               padding: const EdgeInsets.only(top: 6, right: 12),
-              child: TextField(
+              child: FushiTextFieldControl(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 onChanged: _onSearchChanged,
@@ -1556,7 +1556,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                   suffixIcon: _searchQuery.isEmpty
                       ? null
-                      : IconButton(
+                      : FushiIconButtonControl(
                           tooltip: MaterialLocalizations.of(context)
                               .cancelButtonLabel,
                           icon: Icon(Icons.close, size: widget.fontSize + 2),
@@ -1622,7 +1622,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const CircularProgressIndicator(),
+            const FushiCircularProgressIndicator(),
             const SizedBox(height: 16),
             Text(
               widget.loadingHint ?? widget.emptyHint,

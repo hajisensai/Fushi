@@ -108,7 +108,7 @@ extension _VideoAudioTrack on _VideoFushiPageState {
         final ColorScheme cs = Theme.of(context).colorScheme;
         final List<AudioTrack> tracks = controller.audioTracks;
         if (tracks.isEmpty) {
-          return ListTile(
+          return FushiListTileControl(
             dense: true,
             leading: const Icon(Icons.audiotrack),
             title: Text(t.video_audio_track_empty),
@@ -119,7 +119,7 @@ extension _VideoAudioTrack on _VideoFushiPageState {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             for (final AudioTrack track in tracks)
-              ListTile(
+              FushiListTileControl(
                 dense: true,
                 leading: const Icon(Icons.audiotrack),
                 title: Text(_trackLabel(track.title, track.language, track.id)),

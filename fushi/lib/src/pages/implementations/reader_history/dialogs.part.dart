@@ -333,7 +333,7 @@ class BookProfileDialogFrame extends StatelessWidget {
               ),
         footer: Align(
           alignment: Alignment.centerRight,
-          child: TextButton(onPressed: onClose, child: Text(t.dialog_close)),
+          child: FushiTextButton(onPressed: onClose, child: Text(t.dialog_close)),
         ),
       ),
     );

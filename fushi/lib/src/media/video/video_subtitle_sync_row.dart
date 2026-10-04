@@ -229,7 +229,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
                   child: SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(
+                    child: FushiCircularProgressIndicator(
                       strokeWidth: 2,
                       color: theme.colorScheme.primary,
                     ),
@@ -379,7 +379,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             ),
             // 显式设置过才给「跟随主字幕」重置入口（跟随态本身无可重置）。
             if (_secondaryDelayMs != null)
-              TextButton(
+              FushiTextButton(
                 onPressed: () => _commitSecondaryDelay(null),
                 child: Text(t.video_setting_secondary_delay_follow),
               ),

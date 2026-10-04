@@ -360,7 +360,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   /// 句子卡右上角的「编辑」按钮。收到最小尺寸（28）+ compact 密度：它挂在 labelSmall
   /// 那一行上，默认 48 的命中框会把每张卡都顶高一截，矮窗里几张卡就把句子挤出屏。
   Widget _editButton(SentenceContextSlot slot, int index, String text) =>
-      IconButton(
+      FushiIconButtonControl(
         tooltip: t.popup_ctx_edit_start,
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
@@ -378,7 +378,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          TextField(
+          FushiTextFieldControl(
             controller: _editController,
             autofocus: true,
             minLines: 2,
@@ -398,11 +398,11 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: _busy ? null : _cancelEdit,
                 child: Text(t.popup_ctx_edit_cancel),
               ),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: _busy ? null : () => unawaited(_commitEdit()),
                 child: Text(t.popup_ctx_edit_confirm),
               ),
@@ -520,7 +520,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     required String label,
     required VoidCallback? onPressed,
   }) =>
-      OutlinedButton.icon(
+      FushiOutlinedButton.icon(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           visualDensity: VisualDensity.compact,
@@ -570,7 +570,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     // 一 pop 保护就撤、回点结果也没人接（不弹提示），又是一条静默路。
     return PopScope(
       canPop: !_busy,
-      child: AlertDialog(
+      child: FushiAlertDialog(
         // BUG-922：横屏矮窗里正文竖向空间不足时，旧的 `Flexible(SingleChildScrollView)`
         // 会把整块滚动区让给固定的计数/按钮区、塌成 0 高——句子预览整段消失，只剩选项
         // （用户报「手机上看不见句子，只有选项」）。改为让整个对话框正文可滚动
@@ -599,7 +599,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                 ],
               ),
             ),
-            IconButton(
+            FushiIconButtonControl(
               tooltip: t.popup_ctx_cancel,
               onPressed: _locked ? null : _cancel,
               icon: const Icon(Icons.close, size: 20),
@@ -688,7 +688,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
           // BUG-2196 ②：试听放最左，与「取消 / 确认制卡」同一行。只有宿主真的能出声
           // 的表面才有这个按钮（previewAudio == null 时整颗不渲染）。
           if (widget.previewAudio != null)
-            TextButton.icon(
+            FushiTextButton.icon(
               onPressed: _locked ? null : _togglePreview,
               icon: Icon(
                 _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
@@ -697,11 +697,11 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                 _previewing ? t.popup_ctx_preview_stop : t.popup_ctx_preview_audio,
               ),
             ),
-          TextButton(
+          FushiTextButton(
             onPressed: _locked ? null : _cancel,
             child: Text(t.popup_ctx_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             autofocus: true,
             onPressed: _locked ? null : _confirm,
             child: Text(t.popup_ctx_confirm),

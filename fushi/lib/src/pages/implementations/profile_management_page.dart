@@ -405,7 +405,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   void _notify(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 文件名安全化：去掉路径分隔符与控制字符，保证可落盘。

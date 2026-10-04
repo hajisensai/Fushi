@@ -468,7 +468,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                     SizedBox(
                       width: 32 * scale,
                       height: 32 * scale,
-                      child: CircularProgressIndicator(color: textColor),
+                      child: FushiCircularProgressIndicator(color: textColor),
                     ),
                     SizedBox(height: 12 * scale),
                     Text(
@@ -551,7 +551,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      TextButton(
+                      FushiTextButton(
                         onPressed: _cancelAutoAdvanceCountdown,
                         style: TextButton.styleFrom(
                           foregroundColor: _osdTextColor(cs),

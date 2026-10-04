@@ -92,7 +92,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
               // 强制重建，否则下拉会一直停在旧值上骗用户。
               KeyedSubtree(
                 key: ValueKey<String>('discovery_source_$selectedSourceId'),
-                child: DropdownMenu<String>(
+                child: FushiDropdownMenu<String>(
                   key: const ValueKey<String>('discovery_source_menu'),
                   initialSelection: selectedSourceId,
                   requestFocusOnTap: false,

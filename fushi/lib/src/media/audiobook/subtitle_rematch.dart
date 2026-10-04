@@ -145,12 +145,12 @@ class SubtitleRematch {
         footer: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            TextButton(
+            FushiTextButton(
               onPressed: autoBusy ? null : () => Navigator.pop(sheetCtx),
               child: Text(t.cancel),
             ),
             SizedBox(width: tokens.spacing.gap),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               icon: const Icon(Icons.play_arrow_outlined, size: 18),
               label: Text(t.rematch_run),
               onPressed: autoBusy
@@ -375,7 +375,7 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
               ),
             ),
             if (onAutoTap != null)
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: autoBusy ? null : onAutoTap,
                 icon: autoBusy
                     ? SizedBox(

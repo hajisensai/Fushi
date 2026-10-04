@@ -244,7 +244,7 @@ class _SubtitleWaveformAlignPanelState
                   ? SizedBox(
                       width: 22,
                       height: 22,
-                      child: CircularProgressIndicator(
+                      child: FushiCircularProgressIndicator(
                         strokeWidth: 2,
                         color: cs.primary,
                       ),
@@ -764,7 +764,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             _buildCueList(theme, cs),
           ],
           if (widget.onCommitDelay != null) ...<Widget>[
-            Divider(height: gap * 2, color: cs.outlineVariant),
+            FushiDividerControl(height: gap * 2, color: cs.outlineVariant),
             _buildDelayControls(theme, cs, tokens),
           ],
         ],
@@ -805,7 +805,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           ),
         ),
         const SizedBox(width: 4),
-        IconButton(
+        FushiIconButtonControl(
           icon: const Icon(Icons.close),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
           onPressed: () => Navigator.of(context).maybePop(),
@@ -1156,7 +1156,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             animation: widget.positionListenable ?? _livePositionMs,
             builder: (BuildContext _, __) {
               final bool playing = widget.isPlaying!.call();
-              return IconButton.filledTonal(
+              return FushiIconButtonControl.filledTonal(
                 icon: Icon(playing ? Icons.pause : Icons.play_arrow),
                 tooltip: playing
                     ? t.shortcut_action_video_pause
@@ -1176,7 +1176,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           Expanded(
             child: Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
+              child: FushiTextButton.icon(
                 onPressed: _jumpToPlayhead,
                 icon: const Icon(Icons.my_location, size: 18),
                 label: Text(
@@ -1189,12 +1189,12 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           )
         else
           const Spacer(),
-        IconButton(
+        FushiIconButtonControl(
           icon: const Icon(Icons.zoom_out),
           tooltip: t.video_subtitle_waveform_zoom_out,
           onPressed: _zoom <= _minZoom ? null : () => _zoomBy(1 / 1.5),
         ),
-        IconButton(
+        FushiIconButtonControl(
           icon: const Icon(Icons.zoom_in),
           tooltip: t.video_subtitle_waveform_zoom_in,
           onPressed: _zoom >= _maxZoom ? null : () => _zoomBy(1.5),
@@ -1342,13 +1342,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         : Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 onPressed: _autoAligning ? null : _runAutoAlign,
                 icon: _autoAligning
                     ? SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(
+                        child: FushiCircularProgressIndicator(
                           strokeWidth: 2,
                           color: cs.onSecondaryContainer,
                         ),

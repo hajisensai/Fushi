@@ -197,7 +197,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       title: t.manga_global_search_title,
       headerBottom: Padding(
         padding: const EdgeInsets.only(top: 8),
-        child: TextField(
+        child: FushiTextFieldControl(
           key: const ValueKey<String>('manga_global_search_field'),
           controller: _searchController,
           textInputAction: TextInputAction.search,
@@ -227,7 +227,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
               ),
               if (onOpenSources != null) ...<Widget>[
                 const SizedBox(height: 16),
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>(
                     'manga_global_search_open_sources',
                   ),
@@ -304,7 +304,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     MangaSearchRunStatus.loading => const SizedBox(
       width: 16,
       height: 16,
-      child: CircularProgressIndicator(strokeWidth: 2),
+      child: FushiCircularProgressIndicator(strokeWidth: 2),
     ),
     _ => const SizedBox.shrink(),
   };

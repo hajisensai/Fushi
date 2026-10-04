@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 final selectedTagIdsProvider = StateProvider<Set<int>>((_) => {});
 
@@ -153,7 +154,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       body: _buildBody(context, selectedIds),
       footer: Row(
         children: [
-          TextButton(
+          FushiTextButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.push(
@@ -168,7 +169,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
           ),
           const Spacer(),
           if (selectedIds.isNotEmpty)
-            TextButton(
+            FushiTextButton(
               onPressed: () {
                 ref.read(selectedTagIdsProvider.notifier).state = {};
               },

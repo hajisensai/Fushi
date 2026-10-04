@@ -200,7 +200,7 @@ class MediaServerItemCard extends StatelessWidget {
                     right: 0,
                     bottom: 0,
                     child: IgnorePointer(
-                      child: LinearProgressIndicator(
+                      child: FushiLinearProgressIndicator(
                         value: progress,
                         minHeight: 3,
                         backgroundColor: Colors.black.withValues(alpha: 0.35),
@@ -425,7 +425,7 @@ class MediaServerContinueCard extends StatelessWidget {
                     right: 0,
                     bottom: 0,
                     child: IgnorePointer(
-                      child: LinearProgressIndicator(
+                      child: FushiLinearProgressIndicator(
                         key: const ValueKey<String>(
                           'media-server-continue-progress',
                         ),

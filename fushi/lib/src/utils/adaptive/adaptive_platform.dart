@@ -89,13 +89,23 @@ enum FushiGlassMaterial {
 /// `buildFushiThemeData` 的 extensions 里，随主题重建自动更新。
 @immutable
 class FushiGlassTheme extends ThemeExtension<FushiGlassTheme> {
-  const FushiGlassTheme(this.material);
+  const FushiGlassTheme(this.material, {this.glassDesign = false});
 
+  /// 表面材质（off / frosted / liquid），已扣除系统降低透明度。
   final FushiGlassMaterial material;
 
+  /// 是否「玻璃」设计系统：为 true 时共享组件与控件包装渲染
+  /// `liquid_glass_widgets` 组件族（与 MD3 并列的另一套组件），即使
+  /// [material] 因降低透明度 / 高对比度回退为 off，组件族也不变——只是
+  /// 玻璃变成实心。见 [isGlassDesign]。
+  final bool glassDesign;
+
   @override
-  FushiGlassTheme copyWith({FushiGlassMaterial? material}) {
-    return FushiGlassTheme(material ?? this.material);
+  FushiGlassTheme copyWith({FushiGlassMaterial? material, bool? glassDesign}) {
+    return FushiGlassTheme(
+      material ?? this.material,
+      glassDesign: glassDesign ?? this.glassDesign,
+    );
   }
 
   @override
@@ -129,6 +139,15 @@ FushiGlassMaterial glassMaterialOf(BuildContext context) {
     return FushiGlassMaterial.frosted;
   }
   return material;
+}
+
+/// 当前上下文是否走「玻璃」设计系统的组件族（`liquid_glass_widgets`）。
+/// 与 [glassMaterialOf] 正交：后者决定表面透不透明，这里决定渲染 MD3 还是
+/// 玻璃组件。墨水屏下恒 false（墨水屏的可读性调校全建在 MD3 组件上）；
+/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样 false。
+bool isGlassDesign(BuildContext context) {
+  if (isEinkTheme(context)) return false;
+  return Theme.of(context).extension<FushiGlassTheme>()?.glassDesign ?? false;
 }
 
 /// eink 下把动画时长归零（墨水屏连续重绘=残影），否则原样返回。

@@ -55,7 +55,7 @@ mixin FushiPagePlaceholders<T extends StatefulWidget> on State<T> {
         message: t.error_load_failed,
         detail: error != null ? '$error' : null,
         action: refresh != null
-            ? FilledButton.tonalIcon(
+            ? FushiFilledButton.tonalIcon(
                 onPressed: () => refresh(),
                 icon: const Icon(Icons.refresh),
                 label: Text(t.retry),

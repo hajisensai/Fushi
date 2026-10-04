@@ -122,7 +122,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                         icon: Icons.cloud_off_outlined,
                         message: t.media_server_items_load_failed,
                         detail: '${snapshot.error}',
-                        action: FilledButton.icon(
+                        action: FushiFilledButton.icon(
                           onPressed: _reload,
                           icon: const Icon(Icons.refresh_rounded),
                           label: Text(t.retry),
@@ -146,7 +146,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     return FushiPlaceholderMessage(
       icon: Icons.dns_outlined,
       message: t.media_server_servers_empty_hint,
-      action: FilledButton.tonalIcon(
+      action: FushiFilledButton.tonalIcon(
         key: const ValueKey<String>('media-server-list-go-settings'),
         onPressed: widget.onOpenSettings,
         icon: const Icon(Icons.settings_outlined),
@@ -241,7 +241,7 @@ class _ServerCard extends StatelessWidget {
           // 多线路时卡片右侧一个「切换线路」菜单：出门在外从局域网地址切到公网地址
           // 不用进设置；只有一条线路时不出这个入口。
           if (entry.canSwitchRoute)
-            PopupMenuButton<String>(
+            FushiPopupMenuButton<String>(
               key: ValueKey<String>(
                 'media-server-route-switch-${browser.serverId}',
               ),

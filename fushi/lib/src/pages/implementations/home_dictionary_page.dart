@@ -722,7 +722,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         ),
         if (noDictionaries) ...[
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          FilledButton.icon(
+          FushiFilledButton.icon(
             icon: const Icon(Icons.auto_stories_outlined, size: 18),
             label: Text(t.dialog_import_dictionary),
             onPressed: appModel.showDictionaryMenu,

@@ -182,7 +182,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
               style: theme.textTheme.titleMedium,
             ),
           ),
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('fushi_audiobook_panel_close'),
             icon: const Icon(Icons.close),
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
@@ -264,7 +264,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
             ),
           ),
         );
-    return TabBar(
+    return FushiTabBar(
       controller: _tabController,
       labelPadding: const EdgeInsets.symmetric(horizontal: 4),
       onTap: (int index) {
@@ -323,7 +323,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
         : widget.onAudioImport != null
             ? Align(
                 alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
+                child: FushiFilledButton.tonalIcon(
                   icon: const Icon(Icons.headphones_outlined),
                   label: Text(t.audio_import),
                   onPressed: () {
@@ -437,7 +437,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               ),
-              child: Slider(
+              child: FushiSlider(
                 key: const ValueKey<String>('fushi_audiobook_panel_slider'),
                 value: value,
                 // 拖动期间只更新本地目标（不发 seek），松手一次性 seek；落定前拇指
@@ -477,17 +477,17 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
               alignment: WrapAlignment.center,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: '-10s',
                   icon: const Icon(Icons.replay_10_outlined),
                   onPressed: () => unawaited(ctrl.seekRelative(-10)),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.prev_sentence,
                   icon: const Icon(Icons.skip_previous_outlined),
                   onPressed: () => unawaited(ctrl.skipToPrevCue()),
                 ),
-                IconButton.filledTonal(
+                FushiIconButtonControl.filledTonal(
                   key: const ValueKey<String>('fushi_audiobook_panel_play'),
                   iconSize: 28,
                   tooltip: ctrl.isPlaying ? t.pause : t.play,
@@ -498,12 +498,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                   ),
                   onPressed: () => unawaited(ctrl.togglePlayPause()),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.next_sentence,
                   icon: const Icon(Icons.skip_next_outlined),
                   onPressed: () => unawaited(ctrl.skipToNextCue()),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: '+10s',
                   icon: const Icon(Icons.forward_10_outlined),
                   onPressed: () => unawaited(ctrl.seekRelative(10)),

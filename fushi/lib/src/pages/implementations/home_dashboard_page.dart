@@ -259,14 +259,14 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.stat_goal_set),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            TextField(
+            FushiTextFieldControl(
               controller: _controller,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
@@ -290,7 +290,7 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
               runSpacing: tokens.spacing.gap / 2,
               children: <Widget>[
                 for (final int preset in _DailyGoalDialog.presets)
-                  ActionChip(
+                  FushiActionChipControl(
                     label: Text(preset.toString()),
                     onPressed: () => _applyPreset(preset),
                   ),
@@ -300,11 +300,11 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.cancel),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context)
               .pop(int.tryParse(_controller.text.trim()) ?? 0),
           child: Text(t.dialog_save),
@@ -333,7 +333,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Row(
         children: <Widget>[
           const Icon(Icons.visibility_outlined),
@@ -351,7 +351,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
             AsyncSnapshot<List<BangumiWatchedItem>> snapshot,
           ) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: FushiCircularProgressIndicator());
             }
             if (snapshot.hasError) {
               return Center(
@@ -370,7 +370,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
             }
             return ListView.separated(
               itemCount: watched.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
               itemBuilder: (BuildContext context, int index) {
                 final BangumiWatchedItem item = watched[index];
                 final String? coverUrl = item.subject.coverUrl;
@@ -402,7 +402,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                       n: item.episodeProgress,
                     ),
                   ),
-                  trailing: Tooltip(
+                  trailing: FushiTooltip(
                     message: t.media_tracking_open_subject,
                     child: const Icon(Icons.open_in_new, size: 18),
                   ),
@@ -414,7 +414,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
@@ -1705,7 +1705,7 @@ class _HomeDashboardPageState
                         child: IgnorePointer(
                           // eink：半透明黑轨道压在封面上是抖动灰，改实心页面底色
                           // 轨道 + 前景色进度，黑白各自一段、无灰阶。
-                          child: LinearProgressIndicator(
+                          child: FushiLinearProgressIndicator(
                             value: progress,
                             minHeight: 3,
                             backgroundColor: eink
@@ -1968,7 +1968,7 @@ class _HomeDashboardPageState
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+      ..showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
   }
 
   /// 本地书条目所属模块：漫画行（[MangaFushiSource]）归 manga，其余（EPUB / PDF /
@@ -2173,7 +2173,7 @@ class _HomeDashboardPageState
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
-            TextButton(
+            FushiTextButton(
               onPressed: () => unawaited(_editDailyGoal()),
               child: Text(t.stat_goal_set),
             ),
@@ -2206,7 +2206,7 @@ class _HomeDashboardPageState
                 ),
                 child: ClipRRect(
                   borderRadius: tokens.radii.chipRadius,
-                  child: LinearProgressIndicator(
+                  child: FushiLinearProgressIndicator(
                     value: fraction,
                     minHeight: 6,
                     backgroundColor: tokens.surfaces.card,
@@ -2483,7 +2483,7 @@ class _HomeDashboardPageState
                     _visibleActivityEntryCount)
                   Align(
                     alignment: AlignmentDirectional.center,
-                    child: TextButton.icon(
+                    child: FushiTextButton.icon(
                       onPressed: () => setState(() {
                         _visibleActivityEntryCount += _kActivityPageSize;
                       }),
@@ -2846,7 +2846,7 @@ class _HomeDashboardPageState
             SizedBox(height: tokens.spacing.gap),
             Align(
               alignment: AlignmentDirectional.centerStart,
-              child: FilledButton.tonalIcon(
+              child: FushiFilledButton.tonalIcon(
                 onPressed: _openTrackingSettings,
                 icon: const Icon(Icons.link),
                 label: Text(t.media_tracking_connect),
@@ -2873,7 +2873,7 @@ class _HomeDashboardPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Tooltip(
+          FushiTooltip(
             message: t.media_tracking_watched_show,
             child: InkWell(
               onTap: () => unawaited(_showBangumiWatched()),
@@ -2957,7 +2957,7 @@ class _HomeDashboardPageState
                 in status.unlinked.take(_kTrackingUnlinkedLimit))
               _buildTrackingUnlinkedRow(tokens, item),
             if (status.unlinked.length > _kTrackingUnlinkedLimit)
-              TextButton(
+              FushiTextButton(
                 onPressed: _openTrackingSettings,
                 child: Text(
                   t.media_tracking_more_manual_required(
@@ -2992,23 +2992,23 @@ class _HomeDashboardPageState
             spacing: tokens.spacing.gap,
             runSpacing: tokens.spacing.gap / 2,
             children: <Widget>[
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 onPressed: _trackingSyncBusy ? null : _syncTrackingNow,
                 icon: _trackingSyncBusy
                     ? const SizedBox.square(
                         dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
               if (status.automaticMappingMissCount > 0)
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   onPressed: _trackingSyncBusy ? null : _retryTrackingMappings,
                   icon: const Icon(Icons.refresh),
                   label: Text(t.media_tracking_retry_mapping),
                 ),
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: _openTrackingSettings,
                 icon: const Icon(Icons.tune),
                 label: Text(t.media_tracking_manage_links),
@@ -3113,7 +3113,7 @@ class _HomeDashboardPageState
               ),
             ),
             SizedBox(width: tokens.spacing.gap / 2),
-            Tooltip(
+            FushiTooltip(
               message: t.media_tracking_open_subject,
               child: const Icon(Icons.open_in_new, size: 16),
             ),
@@ -3160,7 +3160,7 @@ class _HomeDashboardPageState
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(result.isSuccess
                 ? t.media_tracking_sync_success
                 : t.media_tracking_sync_failed),
@@ -3186,7 +3186,7 @@ class _HomeDashboardPageState
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(
               !result.matchedAny
                   ? t.media_tracking_retry_no_match
@@ -3206,7 +3206,7 @@ class _HomeDashboardPageState
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(content: Text(t.media_tracking_sync_failed)),
+            FushiSnackBar(content: Text(t.media_tracking_sync_failed)),
           );
       }
     } finally {
@@ -3315,7 +3315,7 @@ class _HomeDashboardPageState
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
         for (final (T value, String label) in options)
-          ChoiceChip(
+          FushiChoiceChip(
             label: Text(label),
             selected: selected == value,
             onSelected: (bool isSelected) {
@@ -3348,12 +3348,12 @@ class _MigrationReadonlyBanner extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
-                FilledButton.tonal(
+                FushiFilledButton.tonal(
                   onPressed: () => _channel.launchFushi(),
                   child: Text(t.migration_open_fushi),
                 ),
                 const SizedBox(width: 8),
-                TextButton(
+                FushiTextButton(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => MigrationPage(appModel: appModel),
@@ -3456,7 +3456,7 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
         children: <Widget>[
           Text(t.migration_import_detected),
           const SizedBox(height: 8),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => MigrationImportPage(appModel: widget.appModel),
@@ -3472,7 +3472,7 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
         children: <Widget>[
           Text(t.migration_uninstall_prompt),
           const SizedBox(height: 8),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed: () async {
               await _channel.requestUninstall(kHibikiPackageName);
               // resumed 回调会复查；这里再主动刷一次兜底。

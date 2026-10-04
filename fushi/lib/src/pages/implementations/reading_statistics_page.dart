@@ -1098,7 +1098,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             Expanded(
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 8,
                   backgroundColor: colorScheme.surfaceContainerHighest,

@@ -170,7 +170,7 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
             style: tokens.type.metadata,
           ),
           SizedBox(height: tokens.spacing.rowVertical),
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('asr-local-model-pick'),
             icon: const Icon(Icons.folder_open_outlined, size: 18),
             label: Text(t.audiobook_transcribe_model_custom_pick),
@@ -267,11 +267,11 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: tokens.spacing.gap,
         children: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(t.cancel),
           ),
-          FilledButton.icon(
+          FushiFilledButton.icon(
             key: const ValueKey<String>('asr-local-model-confirm'),
             icon: const Icon(Icons.check_outlined, size: 18),
             label: Text(t.dialog_done),

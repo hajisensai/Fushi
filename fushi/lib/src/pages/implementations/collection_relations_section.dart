@@ -115,7 +115,7 @@ class _CollectionRelationsSectionState
         Overlay.of(context).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
-    final _RelationMenuAction? action = await showMenu<_RelationMenuAction>(
+    final _RelationMenuAction? action = await showFushiMenu<_RelationMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromPoints(anchor, anchor),
@@ -168,11 +168,11 @@ class _CollectionRelationsSectionState
     if (!mounted) return;
     final MediaCollectionRow? chosen = await showAppDialog<MediaCollectionRow>(
       context: context,
-      builder: (BuildContext context) => SimpleDialog(
+      builder: (BuildContext context) => FushiSimpleDialog(
         title: Text(t.collection_relation_bind),
         children: <Widget>[
           for (final MediaCollectionRow c in candidates)
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.of(context).pop(c),
               child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),

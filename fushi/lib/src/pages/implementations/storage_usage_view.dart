@@ -198,15 +198,15 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   Future<bool> _confirmDelete(String name, String body) async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.storage_entry_delete_confirm_title(name: name)),
         content: Text(body),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.dialog_delete),
           ),
@@ -417,12 +417,12 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                 const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               else
                 Text(formatStorageBytes(total)),
               const SizedBox(width: 4),
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.storage_overview_refresh,
                 icon: const Icon(Icons.refresh_outlined),
                 onPressed: _scanning ? null : _rescan,
@@ -461,10 +461,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                       child: SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       ),
                     )
-                  : IconButton(
+                  : FushiIconButtonControl(
                       tooltip: t.storage_shaders_delete_anime4k,
                       icon: const Icon(Icons.auto_fix_off_outlined, size: 18),
                       onPressed: _anime4kDeleteAction,
@@ -517,9 +517,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : IconButton(
+                  : FushiIconButtonControl(
                       tooltip: t.dialog_delete,
                       icon: const Icon(Icons.delete_outline, size: 18),
                       onPressed: _busyEntryId != null

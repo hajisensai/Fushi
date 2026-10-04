@@ -891,7 +891,7 @@ extension _VideoLayout on _VideoFushiPageState {
       // 用户嫌左 / 右浮条按钮的圆底碍眼，要求只留裸图标浮在画面上。IconButton 自带
       // InkWell 仍提供点击涟漪，故去掉 Material 容器不丢点击反馈。图标仍走主题强调色
       // cs.primary + iconSize 走 _videoControlIconSize（吃 appUiScale，TODO-388/604 不变）。
-      final Widget button = IconButton(
+      final Widget button = FushiIconButtonControl(
         tooltip: _videoControlItemTooltip(item),
         iconSize: _videoControlIconSize,
         icon: Icon(_videoControlItemIcon(item)),
@@ -1097,7 +1097,7 @@ extension _VideoLayout on _VideoFushiPageState {
                               .withValues(alpha: kVideoOverlayTranslucentAlpha),
                           shape: const CircleBorder(),
                           clipBehavior: Clip.antiAlias,
-                          child: IconButton(
+                          child: FushiIconButtonControl(
                             tooltip: locked
                                 ? t.video_immersive_unlock
                                 : t.video_menu_lock,
@@ -1183,7 +1183,7 @@ extension _VideoLayout on _VideoFushiPageState {
                   const SizedBox(width: 8),
                   Text(t.video_subtitle_drag_adjust_hint, style: labelStyle),
                   const SizedBox(width: 12),
-                  FilledButton(
+                  FushiFilledButton(
                     key: const Key('video-subtitle-drag-adjust-done'),
                     onPressed: () =>
                         _rebuild(() => _subtitleDragAdjustActive = false),

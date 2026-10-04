@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart'
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Android receiver entry point. The page intentionally accepts a repository
 /// instead of discovering hosts globally, so only already-paired candidates
@@ -136,10 +137,10 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.game_stream_join),
         actions: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.refresh,
             onPressed: _loading || _joining ? null : _loadHosts,
             icon: const Icon(Icons.refresh),
@@ -147,7 +148,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: FushiCircularProgressIndicator())
           : _buildBody(context),
     );
   }
@@ -184,7 +185,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
                 leading: const Icon(Icons.cast),
                 title: Text(host.peer.deviceName ?? host.peer.url),
                 subtitle: Text(t.game_stream_available),
-                trailing: FilledButton(
+                trailing: FushiFilledButton(
                   onPressed: _joining
                       ? null
                       : () => unawaited(_join(host, session)),

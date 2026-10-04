@@ -180,14 +180,14 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   Future<void> _delete(PendingMineRow row) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         content: Text(t.anki_pending_mines_delete_confirm),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(t.anki_pending_mines_delete),
           ),
@@ -212,7 +212,7 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   Widget build(BuildContext context) {
     final bool switchesApp = _repo?.switchesAppPerNote ?? false;
     return Scaffold(
-      appBar: AppBar(title: Text(t.anki_pending_mines_title)),
+      appBar: FushiAppBar(title: Text(t.anki_pending_mines_title)),
       body: _rows.isEmpty
           ? Center(child: Text(t.anki_pending_mines_empty))
           : ListView(
@@ -234,12 +234,12 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         if (row.status == PendingMineStatus.failed)
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: t.retry,
                             icon: const Icon(Icons.refresh),
                             onPressed: () => store.retry(row.id),
                           ),
-                        IconButton(
+                        FushiIconButtonControl(
                           tooltip: t.anki_pending_mines_delete,
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => _delete(row),

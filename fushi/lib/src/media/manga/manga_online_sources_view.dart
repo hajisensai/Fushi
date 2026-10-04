@@ -164,7 +164,7 @@ class _MangaOnlineSourcesViewState
     final bool acceptedRisk =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text(t.aidoku_extension_import),
             content: Text(t.aidoku_extension_warning),
             actions: <Widget>[
@@ -209,7 +209,7 @@ class _MangaOnlineSourcesViewState
       final bool confirmed =
           await showAppDialog<bool>(
             context: context,
-            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
               title: Text(t.aidoku_extension_confirm_title),
               content: Text(
                 '${info['name']}\n${info['id']}\n'
@@ -391,7 +391,7 @@ class _MangaOnlineSourcesViewState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text(t.aidoku_repository_remove),
             content: Text('${repository.name}\n${repository.indexUrl}'),
             actions: <Widget>[
@@ -436,7 +436,7 @@ class _MangaOnlineSourcesViewState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text(t.aidoku_extension_remove),
             content: Text(package.name),
             actions: <Widget>[
@@ -490,7 +490,7 @@ class _MangaOnlineSourcesViewState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text('${t.aidoku_repository_install}: ${source.name}'),
             content: Text(t.aidoku_extension_warning),
             actions: <Widget>[
@@ -621,14 +621,14 @@ class _MangaOnlineSourcesViewState
               subtitle: Text(mangaSourceHostLabel(repository.indexUrl)),
               trailing: Wrap(
                 children: <Widget>[
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.aidoku_repository_browse,
                     onPressed: _aidokuBusy
                         ? null
                         : () => unawaited(_browseAidokuRepository(repository)),
                     icon: const Icon(Icons.view_list_outlined),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.aidoku_repository_remove,
                     onPressed: _aidokuBusy
                         ? null
@@ -648,7 +648,7 @@ class _MangaOnlineSourcesViewState
     if (_aidokuBusy || (_aidokuPackages == null && _aidokuError == null))
       const Padding(
         padding: EdgeInsets.only(top: 8),
-        child: LinearProgressIndicator(),
+        child: FushiLinearProgressIndicator(),
       ),
     if (_aidokuError != null)
       Padding(
@@ -935,7 +935,7 @@ class _AidokuRepositoryUrlDialogState
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => FushiAlertDialog(
     title: Text(t.aidoku_repository_add),
     content: SizedBox(
       width: 560,
@@ -945,7 +945,7 @@ class _AidokuRepositoryUrlDialogState
         children: <Widget>[
           Text(t.aidoku_repository_hint),
           const SizedBox(height: 12),
-          TextField(
+          FushiTextFieldControl(
             key: const ValueKey<String>('aidoku_repository_url'),
             controller: _controller,
             autofocus: true,
@@ -1026,7 +1026,7 @@ class _AidokuRepositorySourcesDialogState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text('${t.aidoku_repository_install}: ${source.name}'),
             content: Text(t.aidoku_extension_warning),
             actions: <Widget>[
@@ -1121,7 +1121,7 @@ class _AidokuRepositorySourcesDialogState
   @override
   Widget build(BuildContext context) {
     final List<AidokuRepositorySource> sources = _visibleSources;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text('${widget.index.name} · ${t.aidoku_repository_sources}'),
       content: SizedBox(
         width: 760,
@@ -1129,7 +1129,7 @@ class _AidokuRepositorySourcesDialogState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            TextField(
+            FushiTextFieldControl(
               key: const ValueKey<String>('aidoku_repository_search'),
               decoration: InputDecoration(
                 labelText: t.aidoku_repository_search,
@@ -1199,7 +1199,7 @@ class _AidokuRepositorySourcesDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _installingSourceId == null
               ? () => Navigator.pop(context)
               : null,

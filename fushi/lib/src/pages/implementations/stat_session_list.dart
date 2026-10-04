@@ -110,7 +110,7 @@ Widget buildStatSessionSection(
               ),
             ),
             if (sessions.length > shown.length)
-              TextButton(
+              FushiTextButton(
                 onPressed: () => unawaited(
                   showStatSessionsSheet(
                     context,
@@ -176,7 +176,7 @@ class _StatSessionsClearAllButton extends StatelessWidget {
   // 同屏两颗一样的扫帚、清的范围却差着一个数量级（会话事实 vs 整个域的全部统计），
   // 是最典型的误点来源。`playlist_remove` 读作「把这张列表清空」，范围一眼就对。
   @override
-  Widget build(BuildContext context) => IconButton(
+  Widget build(BuildContext context) => FushiIconButtonControl(
         key: const ValueKey<String>('stat-sessions-clear-all'),
         tooltip: t.stat_sessions_clear_all,
         icon: const Icon(Icons.playlist_remove, size: 20),
@@ -258,7 +258,7 @@ class _StatSessionListState extends State<StatSessionList> {
             ),
             // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
             onTap: () => unawaited(_edit(s)),
-            trailing: IconButton(
+            trailing: FushiIconButtonControl(
               tooltip: t.stat_session_delete,
               icon: const Icon(Icons.delete_outline),
               onPressed: () => unawaited(_confirmAndDelete(s)),

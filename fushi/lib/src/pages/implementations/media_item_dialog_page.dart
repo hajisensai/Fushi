@@ -323,7 +323,7 @@ class MediaItemDialogFrame extends StatelessWidget {
                     onLaunch != null) ...<Widget>[
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton(
+                    child: FushiFilledButton(
                       onPressed: onLaunch,
                       child: Text(
                         launchLabel!,
@@ -358,7 +358,7 @@ class MediaItemDialogFrame extends StatelessWidget {
                   SizedBox(height: tokens.spacing.gap / 2),
                   for (final DialogDangerAction action in dangerActions)
                     Center(
-                      child: TextButton(
+                      child: FushiTextButton(
                         onPressed: action.onPressed,
                         style: TextButton.styleFrom(
                           foregroundColor: action.muted

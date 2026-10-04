@@ -482,7 +482,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   widget.actions.onAiAcquire;
               final Widget? aiEntry = onAiAcquire == null
                   ? null
-                  : IconButton.filledTonal(
+                  : FushiIconButtonControl.filledTonal(
                       constraints: const BoxConstraints(
                         minWidth: kFushiSearchFieldHeight,
                         minHeight: kFushiSearchFieldHeight,
@@ -496,7 +496,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               // 按钮看不见，同一个 key 挪到搜索行，三种宽度下都可达。
               final Widget? calendarEntry = _headerVisible
                   ? null
-                  : IconButton.filledTonal(
+                  : FushiIconButtonControl.filledTonal(
                       constraints: const BoxConstraints(
                         minWidth: kFushiSearchFieldHeight,
                         minHeight: kFushiSearchFieldHeight,
@@ -523,7 +523,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                     Expanded(child: search),
                     ...trailing,
                     SizedBox(width: tokens.spacing.gap),
-                    IconButton.filledTonal(
+                    FushiIconButtonControl.filledTonal(
                       // 与同一行的搜索框等高：搜索框已统一为
                       // kFushiSearchFieldHeight（40），原来的 44 会高出一截。
                       constraints: const BoxConstraints(
@@ -535,7 +535,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       ),
                       tooltip: t.game_filter,
                       onPressed: _openFilterSheet,
-                      icon: Badge.count(
+                      icon: FushiBadgeControl.count(
                         count: (_year != 0 ? 1 : 0) +
                             (_region.isNotEmpty ? 1 : 0) +
                             (_genre.isNotEmpty ? 1 : 0),
@@ -689,7 +689,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                     alignment: WrapAlignment.end,
                     spacing: tokens.spacing.gap,
                     children: <Widget>[
-                      TextButton(
+                      FushiTextButton(
                         key: const ValueKey<String>(
                           'video-discovery-reset-filters',
                         ),
@@ -700,11 +700,11 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                         }),
                         child: Text(t.reset),
                       ),
-                      TextButton(
+                      FushiTextButton(
                         onPressed: () => Navigator.pop(sheetContext, false),
                         child: Text(t.dialog_cancel),
                       ),
-                      FilledButton(
+                      FushiFilledButton(
                         key: const ValueKey<String>(
                           'video-discovery-apply-filters',
                         ),
@@ -736,7 +736,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   Widget _buildYearField({int? value, ValueChanged<int>? onChanged}) {
     final int selected = value ?? _year;
     final int newestYear = DateTime.now().year + 2;
-    return PopupMenuButton<int>(
+    return FushiPopupMenuButton<int>(
       key: const ValueKey<String>('video-discovery-filter-year'),
       tooltip: t.video_filter_year,
       initialValue: selected,
@@ -756,7 +756,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   Widget _buildRegionMenu({String? value, ValueChanged<String>? onChanged}) {
     final String selected = value ?? _region;
     const List<String> regions = <String>['CN', 'JP', 'KR', 'US', 'GB', 'FR'];
-    return PopupMenuButton<String>(
+    return FushiPopupMenuButton<String>(
       key: const ValueKey<String>('video-discovery-filter-region'),
       tooltip: t.video_work_countries,
       initialValue: selected,
@@ -779,7 +779,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
   Widget _buildGenreMenu({String? value, ValueChanged<String>? onChanged}) {
     final String selected = value ?? _genre;
-    return PopupMenuButton<String>(
+    return FushiPopupMenuButton<String>(
       key: const ValueKey<String>('video-discovery-filter-genre'),
       tooltip: t.video_work_genres,
       initialValue: selected,
@@ -801,7 +801,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   }
 
   Widget _buildSortMenu({bool compact = false}) {
-    return PopupMenuButton<discovery.VideoDiscoverySort>(
+    return FushiPopupMenuButton<discovery.VideoDiscoverySort>(
       key: const ValueKey<String>('video-discovery-filter-sort'),
       tooltip: '${t.sort_by}: ${_sortLabel(_sort)}',
       initialValue: _sort,
@@ -866,7 +866,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       return FushiPlaceholderMessage(
         icon: Icons.cloud_off_outlined,
         message: t.video_discovery_load_failed,
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           key: const ValueKey<String>('video-discovery-retry'),
           onPressed: () => unawaited(_reload()),
           icon: const Icon(Icons.refresh_rounded),
@@ -929,7 +929,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: const LinearProgressIndicator(
+              child: const FushiLinearProgressIndicator(
                 key: ValueKey<String>('video-discovery-partial-loading'),
               ),
             ),

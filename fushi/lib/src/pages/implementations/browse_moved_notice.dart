@@ -74,7 +74,7 @@ Future<void> showBrowseMovedNoticeDialog(BuildContext context) {
   final String browse = t.nav_browse;
   return showAppDialog<void>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       key: const ValueKey<String>('browse_moved_notice'),
       icon: const Icon(Icons.explore_outlined),
       title: Text(t.browse_moved_notice_title(browse: browse)),
@@ -87,7 +87,7 @@ Future<void> showBrowseMovedNoticeDialog(BuildContext context) {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>('browse_moved_notice_ok'),
           onPressed: () => Navigator.of(dialogContext).pop(),
           child: Text(t.dialog_ok),

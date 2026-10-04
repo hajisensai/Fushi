@@ -418,7 +418,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                           const SizedBox(height: 6),
                           SizedBox(
                             width: 112,
-                            child: LinearProgressIndicator(
+                            child: FushiLinearProgressIndicator(
                               value: osd.progress,
                               minHeight: 3,
                               backgroundColor:

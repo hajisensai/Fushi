@@ -143,7 +143,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         vertical: tokens.spacing.gap / 2,
       ),
       itemCount: _grouped.length,
-      separatorBuilder: (_, __) => Divider(
+      separatorBuilder: (_, __) => FushiDividerControl(
         height: 1,
         color: tokens.surfaces.outline,
       ),
@@ -317,7 +317,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
             SizedBox(height: tokens.spacing.gap),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
                 child: Text(t.dialog_close),
               ),

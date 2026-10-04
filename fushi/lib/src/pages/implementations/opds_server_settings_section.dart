@@ -95,7 +95,7 @@ class _OpdsServerSettingsSectionState
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('opds-server-add'),
               onPressed: () => setState(
                 () => _drafts.add(
@@ -126,7 +126,7 @@ class _OpdsServerSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('opds-server-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -136,7 +136,7 @@ class _OpdsServerSettingsSectionState
                       _update(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('opds-server-$index-remove'),
                 tooltip: t.discovery_opds_remove,
                 onPressed: () {
@@ -184,7 +184,7 @@ class _OpdsServerSettingsSectionState
             onChanged: (String value) =>
                 _update(index, draft.copyWith(password: value)),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('opds-server-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -196,7 +196,7 @@ class _OpdsServerSettingsSectionState
           ),
           Row(
             children: <Widget>[
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('opds-server-$index-test'),
                 // 配置无效时按钮直接不可用，而不是点了再报一个通用错误。
                 onPressed: draft.toConfig() == null || probe?.running == true
@@ -206,7 +206,7 @@ class _OpdsServerSettingsSectionState
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.network_check_outlined),
                 label: Text(t.discovery_opds_test),

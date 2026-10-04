@@ -61,7 +61,7 @@ class _LegacyAssetSyncNoticeState extends State<_LegacyAssetSyncNotice> {
       controlBelow: true,
       // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 能到达（BUG-016）。
       onTap: _dismiss,
-      trailing: FilledButton.tonal(
+      trailing: FushiFilledButton.tonal(
         onPressed: _dismiss,
         child: Text(t.sync_asset_legacy_notice_dismiss),
       ),
@@ -171,7 +171,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
                   : _menu(context),
             );
@@ -183,7 +183,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
                 row,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: LinearProgressIndicator(value: p?.fraction),
+                  child: FushiLinearProgressIndicator(value: p?.fraction),
                 ),
               ],
             );
@@ -281,9 +281,9 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : FilledButton(
+                  : FushiFilledButton(
                       onPressed: _syncNow,
                       child: Text(t.sync_now),
                     ),
@@ -299,7 +299,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
                 row,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: LinearProgressIndicator(value: p?.fraction),
+                  child: FushiLinearProgressIndicator(value: p?.fraction),
                 ),
               ],
             );

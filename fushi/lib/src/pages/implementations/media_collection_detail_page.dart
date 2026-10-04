@@ -1864,7 +1864,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         Overlay.of(context).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
-    final _EpisodeMenuAction? action = await showMenu<_EpisodeMenuAction>(
+    final _EpisodeMenuAction? action = await showFushiMenu<_EpisodeMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromPoints(anchor, anchor),
@@ -1994,7 +1994,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (path == null || path.isEmpty) return;
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(_episodeDisplayTitle(episode)),
         content: SingleChildScrollView(
           child: VideoSpecsPanel(
@@ -2004,7 +2004,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -2111,8 +2111,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  AppBar _buildAppBar() {
-    return AppBar(
+  PreferredSizeWidget _buildAppBar() {
+    return FushiAppBar(
       title: Text(
         t.video_work_details,
         maxLines: 1,
@@ -2122,7 +2122,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       elevation: 0,
       actions: <Widget>[
         _buildSortMenu(),
-        PopupMenuButton<_CollectionManageAction>(
+        FushiPopupMenuButton<_CollectionManageAction>(
           icon: const Icon(Icons.more_horiz),
           onSelected: (_CollectionManageAction action) =>
               unawaited(_handleManageAction(action)),

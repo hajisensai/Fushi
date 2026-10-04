@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 失败态重试按钮的 key（测试与焦点驱动定位用）。
 const ValueKey<String> kMangaCoverRetryKey = ValueKey<String>(
@@ -42,7 +43,7 @@ class MangaCoverFailure extends StatelessWidget {
             compact: true,
             onVerified: () async => onRetry(),
           )
-        : IconButton(
+        : FushiIconButtonControl(
             key: kMangaCoverRetryKey,
             tooltip: t.retry,
             onPressed: onRetry,

@@ -144,7 +144,7 @@ Future<void> showImageCopyContextMenu(
   // `fontSize: 14 * menuScale`，chrome 渲染成 40 而菜单 80（scale=2）。所以这里
   // 写常量，让菜单与 app 其它右键菜单（视频 / 合集 / 标签管理）口径一致。
   final Offset anchor = overlay.globalToLocal(globalPosition);
-  final String? action = await showMenu<String>(
+  final String? action = await showFushiMenu<String>(
     context: context,
     position: RelativeRect.fromRect(
       Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),

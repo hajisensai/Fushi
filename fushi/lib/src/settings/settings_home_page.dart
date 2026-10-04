@@ -172,14 +172,14 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       // 只提供 ink/装饰上下文，不改观感。
       child: Material(
         type: MaterialType.transparency,
-        child: TextField(
+        child: FushiTextFieldControl(
           controller: _searchController,
           decoration: InputDecoration(
             hintText: t.settings_search_hint,
             prefixIcon: const Icon(Icons.search),
             suffixIcon: _searchQuery.isEmpty
                 ? null
-                : IconButton(
+                : FushiIconButtonControl(
                     icon: const Icon(Icons.clear),
                     tooltip: t.clear,
                     onPressed: () {
@@ -325,7 +325,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         FushiPageHeader(
           title: t.settings,
           leading: widget.onBack != null
-              ? IconButton(
+              ? FushiIconButtonControl(
                   icon: const Icon(Icons.arrow_back),
                   tooltip: t.back,
                   onPressed: widget.onBack,

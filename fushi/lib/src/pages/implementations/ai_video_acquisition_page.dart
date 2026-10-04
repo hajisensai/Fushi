@@ -128,7 +128,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         break;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(message),
         duration: const Duration(seconds: 10),
         action: action,
@@ -468,7 +468,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     return PopScope(
       canPop: !submitting,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: FushiAppBar(
           title: widget.executorLabel == null
               ? Text(t.ai_video_acquire_title)
               : Column(
@@ -534,7 +534,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                         padding: const EdgeInsets.only(top: 8),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: ActionChip(
+                          child: FushiActionChipControl(
                             key: const ValueKey<String>(
                               'ai-video-acquire-restart',
                             ),
@@ -548,14 +548,14 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                     if (_state.busy)
                       Padding(
                         padding: EdgeInsets.only(top: tokens.spacing.gap),
-                        child: const LinearProgressIndicator(
+                        child: const FushiLinearProgressIndicator(
                           key: ValueKey<String>('ai-video-acquire-busy'),
                         ),
                       ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
+              const FushiDividerControl(height: 1),
               // 结束后照样能打字：直接说下一部就是「再下一部」。
               _composer(context, enabled: !_state.busy),
             ],
@@ -595,7 +595,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       // hint 已经拼进 label，不再另套 Tooltip：hint 为空时那是一个悬停出空气泡的
       // 提示框，有 hint 时又是同一句话说两遍。
       for (int i = 0; i < q.options.length; i++)
-        ActionChip(
+        FushiActionChipControl(
           key: ValueKey<String>(
             'ai-video-acquire-option-${q.slot.name}-${q.options[i].id}',
           ),
@@ -626,7 +626,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Checkbox(
+                  FushiCheckbox(
                     key: const ValueKey<String>('ai-video-acquire-remember'),
                     value: _remember,
                     onChanged: (bool? value) =>
@@ -650,7 +650,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         runSpacing: 8,
         children: <Widget>[
           for (final String id in _state.workActions)
-            ActionChip(
+            FushiActionChipControl(
               key: ValueKey<String>('ai-video-acquire-action-$id'),
               avatar: Icon(
                 id == kVideoAcquisitionOptionNone
@@ -705,7 +705,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     return FushiListItem(
       key: ValueKey<String>('ai-video-acquire-franchise-$index'),
       density: FushiListDensity.compact,
-      leading: Checkbox(
+      leading: FushiCheckbox(
         value: entry.selected,
         onChanged: toggle == null ? null : (_) => toggle(),
       ),
@@ -752,7 +752,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: TextField(
+            child: FushiTextFieldControl(
               key: const ValueKey<String>('ai-video-acquire-input'),
               controller: _input,
               focusNode: _inputFocus,
@@ -768,14 +768,14 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
             ),
           ),
           SizedBox(width: tokens.spacing.gap),
-          IconButton.filled(
+          FushiIconButtonControl.filled(
             key: const ValueKey<String>('ai-video-acquire-send'),
             tooltip: t.ai_video_acquire_send,
             onPressed: enabled ? () => unawaited(_send()) : null,
             icon: const Icon(Icons.send_rounded),
           ),
           SizedBox(width: tokens.spacing.gap),
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('ai-video-acquire-cancel'),
             tooltip: t.cancel,
             onPressed: switch (_state.stage) {

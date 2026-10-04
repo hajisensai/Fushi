@@ -19,6 +19,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 顶部工具栏视觉高度 == 挤压态预留高（chrome 铁律：同一真相源，见
 /// reader_chrome_floating.dart 文件头）。
@@ -314,7 +315,7 @@ class ReaderDesktopHeader extends StatelessWidget {
                         for (final ReaderHeaderAction a in trailing)
                           if (!compact || a.pinned) _button(a),
                         if (overflow.isNotEmpty)
-                          PopupMenuButton<ReaderHeaderAction>(
+                          FushiPopupMenuButton<ReaderHeaderAction>(
                             key: const ValueKey<String>(
                               'fushi_desktop_header_overflow',
                             ),
@@ -375,7 +376,7 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget button = IconButton(
+    final Widget button = FushiIconButtonControl(
       icon: Icon(icon, color: color),
       iconSize: 22,
       tooltip: tooltip,
@@ -437,7 +438,7 @@ class ReaderSideSheet extends StatelessWidget {
               ...headerActions,
               Semantics(
                 identifier: 'hibiki.reader.side_sheet.close',
-                child: IconButton(
+                child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_side_sheet_close'),
                   icon: const Icon(Icons.close),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,

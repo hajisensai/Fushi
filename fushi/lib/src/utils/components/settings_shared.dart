@@ -16,6 +16,16 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show
+        GlassDivider,
+        GlassMenu,
+        GlassMenuController,
+        GlassMenuItem,
+        GlassPicker,
+        GlassStepper,
+        GlassTextField;
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
@@ -261,11 +271,13 @@ class AdaptiveSettingsSurface extends StatelessWidget {
       ],
     );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
-    final Widget tappable = cupertino
+    final Widget tappable = cupertino || isGlassDesign(context)
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onTitleTap,
-            child: header,
+            child: isGlassDesign(context)
+                ? FushiGlassPressHighlight(child: header)
+                : header,
           )
         : InkWell(onTap: onTitleTap, child: header);
     if (!hasFocusRoot) {
@@ -454,8 +466,20 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         ? CupertinoColors.separator.resolveFrom(context)
         : Theme.of(context).colorScheme.outlineVariant;
     final List<Widget> result = <Widget>[];
+    final bool glassDesign = isGlassDesign(context);
     for (int i = 0; i < rows.length; i++) {
-      if (i > 0) {
+      if (i > 0 && glassDesign) {
+        // 「玻璃」设计系统：分组卡（GlassCard）里的行分隔是玻璃分隔线。
+        result.add(
+          GlassDivider(
+            height: 1,
+            thickness: 0.5,
+            indent: tokens.spacing.rowHorizontal,
+            endIndent: tokens.spacing.rowHorizontal,
+            color: dividerColor.withValues(alpha: 0.6),
+          ),
+        );
+      } else if (i > 0) {
         result.add(
           Divider(
             height: 1,
@@ -661,12 +685,22 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // - 有焦点根：目标可聚焦 + ExcludeFocus 生效 → 单停靠点（PR-0 契约）；
     // - 无焦点根：目标 skipTraversal + ExcludeFocus 直通 → InkWell/Switch 照旧
     //   参与原生 Tab 遍历，与旧「裸 InkWell」分支逐字节同语义。
+    // 「玻璃」设计系统：行的点击面换成 GestureDetector + 玻璃按压高亮
+    // （GlassListTile 的观感）；焦点目标、ExcludeFocus 与 MD3 同一结构，Enter /
+    // 手柄 A 仍经 _SettingsRowFocusTarget 的 ActivateIntent 激活。
+    final Widget tapSurface = isGlassDesign(context)
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: FushiGlassPressHighlight(child: content),
+          )
+        : InkWell(onTap: onTap, child: content);
     return _SettingsRowFocusTarget(
       onTap: onTap!,
       focusEnabled: hasFocusRoot,
       child: ExcludeFocus(
         excluding: hasFocusRoot,
-        child: InkWell(onTap: onTap, child: content),
+        child: tapSurface,
       ),
     );
   }
@@ -1583,7 +1617,22 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
       trailingFlexible: !cupertino && !controlBelow,
       trailing: cupertino
           ? _buildCupertinoTrailing(context)
-          : _buildMaterialDropdown(context),
+          : isGlassDesign(context)
+              ? _GlassSettingsPicker(
+                  title: title,
+                  labels: <String>[
+                    for (final AdaptiveSettingsPickerOption<T> option
+                        in options)
+                      option.label,
+                  ],
+                  selectedIndex: _selectedIndex,
+                  placeholder: placeholder,
+                  width: controlBelow || materialWidth == double.infinity
+                      ? null
+                      : (materialWidth ?? kSettingsPickerDefaultWidth),
+                  onChanged: (int index) => onChanged(options[index].value),
+                )
+              : _buildMaterialDropdown(context),
       onTap: cupertino ? () => _showCupertinoPicker(context) : null,
     );
   }
@@ -1732,6 +1781,110 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 }
 
+/// 「玻璃」设计系统的行内选择器：[GlassPicker]（显示当前项 + 上下箭头）点开
+/// 一枚锚定的 [GlassMenu]，与 MD3 的下拉同为「就地弹出、不换页」。
+///
+/// 焦点：有焦点根时是一个 FushiFocusTarget（Enter / 手柄 A → 打开菜单），菜单
+/// 打开后焦点交给菜单项自己的键盘遍历。
+class _GlassSettingsPicker extends StatefulWidget {
+  const _GlassSettingsPicker({
+    required this.title,
+    required this.labels,
+    required this.selectedIndex,
+    required this.onChanged,
+    this.placeholder,
+    this.width,
+  });
+
+  final String title;
+  final List<String> labels;
+  final int? selectedIndex;
+  final String? placeholder;
+
+  /// null = 撑满可用宽（controlBelow / 显式 infinity 的调用点）。
+  final double? width;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_GlassSettingsPicker> createState() => _GlassSettingsPickerState();
+}
+
+class _GlassSettingsPickerState extends State<_GlassSettingsPicker> {
+  final GlassMenuController _controller = GlassMenuController();
+  late final FushiFocusId _focusId = FushiFocusId(
+    'settings-glass-picker-${identityHashCode(this)}',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int? selected = widget.selectedIndex;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxWidth = constraints.maxWidth;
+        final double? requested = widget.width;
+        final double width;
+        if (requested == null) {
+          width = maxWidth.isFinite ? maxWidth : kSettingsPickerDefaultWidth;
+        } else if (!maxWidth.isFinite) {
+          width = requested;
+        } else {
+          final double minWidth = maxWidth < kSettingsPickerMinInlineWidth
+              ? maxWidth
+              : kSettingsPickerMinInlineWidth;
+          width = requested.clamp(minWidth, maxWidth).toDouble();
+        }
+        final Widget menu = GlassMenu(
+          controller: _controller,
+          quality: fushiGlassQuality(context, prominent: true),
+          menuWidth: width < 200 ? 200 : width,
+          autoAdjustToScreen: true,
+          items: <Widget>[
+            for (int i = 0; i < widget.labels.length; i++)
+              GlassMenuItem(
+                title: widget.labels[i],
+                isSelected: i == selected,
+                trailing:
+                    i == selected ? const Icon(Icons.check, size: 18) : null,
+                onTap: () {
+                  if (i != selected) widget.onChanged(i);
+                },
+              ),
+          ],
+          triggerBuilder: (BuildContext context, VoidCallback toggle) =>
+              Semantics(
+            button: true,
+            label: widget.title,
+            child: GlassPicker(
+              value: selected == null ? null : widget.labels[selected],
+              placeholder: widget.placeholder ?? '',
+              width: width,
+              height: 40,
+              textStyle: tokens.type.listTitle,
+              placeholderStyle: tokens.type.listSubtitle,
+              shape: fushiGlassShapeOf(tokens.radii.controlRadius),
+              quality: fushiGlassQuality(context),
+              onTap: toggle,
+            ),
+          ),
+        );
+        if (FushiFocusRoot.maybeControllerOf(context) == null) return menu;
+        return Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                _controller.open();
+                return null;
+              },
+            ),
+          },
+          child: FushiFocusTarget(id: _focusId, child: menu),
+        );
+      },
+    );
+  }
+}
+
 class AdaptiveSettingsTextField extends StatefulWidget {
   const AdaptiveSettingsTextField({
     super.key,
@@ -1870,6 +2023,7 @@ class SettingsFormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildGlass(context);
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSpacing),
       child: SizedBox(
@@ -1895,6 +2049,118 @@ class SettingsFormField extends StatelessWidget {
           onChanged: onChanged,
         ),
       ),
+    );
+  }
+
+  /// 「玻璃」设计系统：[GlassTextField]（玻璃输入框）。它没有浮动标签 /
+  /// helper / error，标签放在框上方、说明与错误放在框下方（iOS 表单写法），
+  /// 宽度契约（恒撑满）与间距不变。只给初值时交给有状态的宿主持有控制器。
+  Widget _buildGlass(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String? error = errorText;
+    final String? helper = helperText;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomSpacing),
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Text(
+                label,
+                style: tokens.type.metadata.copyWith(
+                  color: error != null ? colors.error : null,
+                ),
+              ),
+            ),
+            _GlassFormInput(
+              initialValue: initialValue,
+              controller: controller,
+              focusNode: focusNode,
+              hintText: hintText,
+              obscureText: obscureText,
+              keyboardType: keyboardType,
+              suffixIcon: suffixIcon,
+              onChanged: onChanged,
+            ),
+            if (error != null || helper != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 4),
+                child: Text(
+                  error ?? helper!,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata.copyWith(
+                    color:
+                        error != null ? colors.error : colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [SettingsFormField] 玻璃分支的输入框宿主：[GlassTextField] 没有
+/// `initialValue`，只给初值时由这里持有控制器。
+class _GlassFormInput extends StatefulWidget {
+  const _GlassFormInput({
+    required this.onChanged,
+    this.initialValue,
+    this.controller,
+    this.focusNode,
+    this.hintText,
+    this.obscureText = false,
+    this.keyboardType,
+    this.suffixIcon,
+  });
+
+  final String? initialValue;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+  final String? hintText;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  final Widget? suffixIcon;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_GlassFormInput> createState() => _GlassFormInputState();
+}
+
+class _GlassFormInputState extends State<_GlassFormInput> {
+  TextEditingController? _owned;
+
+  @override
+  void dispose() {
+    _owned?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextEditingController controller = widget.controller ??
+        (_owned ??= TextEditingController(text: widget.initialValue ?? ''));
+    return GlassTextField(
+      controller: controller,
+      focusNode: widget.focusNode,
+      placeholder: widget.hintText,
+      obscureText: widget.obscureText,
+      keyboardType: widget.keyboardType,
+      suffixIcon: widget.suffixIcon,
+      textStyle: tokens.type.listTitle,
+      placeholderStyle: tokens.type.listSubtitle,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      shape: fushiGlassShapeOf(tokens.radii.controlRadius),
+      quality: fushiGlassQuality(context),
+      onChanged: widget.onChanged,
     );
   }
 }
@@ -2086,6 +2352,57 @@ class _KeyboardStepper extends StatelessWidget {
   Widget build(BuildContext context) {
     final double clampedUp = (value + step).clamp(min, max);
     final double clampedDown = (value - step).clamp(min, max);
+    if (isGlassDesign(context)) {
+      // 「玻璃」设计系统：读数 + [GlassStepper]（胶囊玻璃 −/+）。总宽与 MD3
+      // 版同为 [kSettingsStepperTrailingWidth]，行的堆叠判据不变；单焦点停靠点、
+      // 左右调值与读屏语义仍由同一个 _GamepadAdjustableValue + Semantics 提供。
+      return _GamepadAdjustableValue(
+        focusIdPrefix: 'settings-stepper',
+        onIncrement: _increment,
+        onDecrement: _decrement,
+        child: Semantics(
+          container: true,
+          slider: true,
+          value: format(value),
+          increasedValue: format(clampedUp),
+          decreasedValue: format(clampedDown),
+          onIncrease: value < max ? _increment : null,
+          onDecrease: value > min ? _decrement : null,
+          excludeSemantics: true,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SizedBox(
+                width: kSettingsStepperValueWidth,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.center,
+                  child: Text(
+                    format(value),
+                    textAlign: TextAlign.center,
+                    softWrap: false,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              GlassStepper(
+                value: value,
+                min: min,
+                max: max,
+                step: step,
+                width: kSettingsStepperTrailingWidth -
+                    kSettingsStepperValueWidth -
+                    4,
+                quality: fushiGlassQuality(context),
+                onChanged: (double next) => onChanged(next.clamp(min, max)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     // Expose a single "adjustable" node so screen readers (TalkBack / VoiceOver
     // / Narrator) can raise and lower the value via the platform increment /
     // decrement actions — the keyboard arrow shortcuts below are invisible to

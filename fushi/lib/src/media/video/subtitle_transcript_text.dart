@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 字幕列表行的**固定几何**（BUG-1034）。行高由 `itemExtentBuilder` 事先给出，若与真实
 /// 渲染几何有一丝偏差，`SliverVariedExtentList` 就按给定 extent 裁掉超出的文本（用户报的
@@ -538,7 +539,7 @@ class SubtitleTranscriptAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: InkResponse(
         onTap: onPressed,

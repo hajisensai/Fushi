@@ -853,7 +853,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 只给用户一句本地化、可执行的友好提示；原始异常（TimeoutException /
       // SocketException 等开发者文本）绝不进 UI，只留在下方 debugPrint 供排查。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_video_list_failed)),
+        FushiSnackBar(content: Text(t.remote_video_list_failed)),
       );
     }
   }
@@ -1838,15 +1838,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     } else {
       decision = await showAppDialog<DeleteDecision>(
         context: context,
-        builder: (BuildContext ctx) => AlertDialog(
+        builder: (BuildContext ctx) => FushiAlertDialog(
           title: Text(t.dialog_delete),
           content: Text(message),
           actions: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed: () => Navigator.pop(ctx, null),
               child: Text(t.dialog_cancel),
             ),
-            TextButton(
+            FushiTextButton(
               onPressed: () => Navigator.pop(
                 ctx,
                 const DeleteDecision(scope: DeleteScope.keepLocalOnly),
@@ -2049,7 +2049,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 关掉时给可见提示（与书架同一形态），不静默。
         if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(t.module_disabled_hint)),
+            FushiSnackBar(content: Text(t.module_disabled_hint)),
           );
           return;
         }
@@ -2072,12 +2072,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       case DropIntent.needCardTarget:
         debugPrint('[fushi-drop] [home-video] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_need_card_target)),
+          FushiSnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.unsupportedSurface:
         debugPrint('[fushi-drop] [home-video] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_unsupported_on_video)),
+          FushiSnackBar(content: Text(t.drag_drop_unsupported_on_video)),
         );
       case DropIntent.importNewBook:
       case DropIntent.attachToBookCard:
@@ -2222,7 +2222,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (result.outcome == SubtitleAttachOutcome.attached) _refresh();
     messenger.showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(subtitleAttachMessage(result, title: book.title)),
       ),
     );
@@ -2476,15 +2476,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 点它即下载推荐画质着色器（「中」档 = Anime4K Fast）并启用，不必自己摸进设置。
     final bool? download = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.video_shader_first_use_title),
         content: Text(t.video_shader_first_use_body),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_close),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.video_shader_first_use_download),
           ),
@@ -2503,7 +2503,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<void> _downloadAndEnableDefaultShaderTier() async {
     final AppModel appModel = ref.read(appProvider);
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(content: Text(t.video_shader_downloading)));
+    messenger.showSnackBar(FushiSnackBar(content: Text(t.video_shader_downloading)));
     const VideoShaderTier tier = VideoShaderTier.medium;
     final Anime4kPreset? preset = shaderTierSpec(tier).preset;
     if (preset == null) return;
@@ -2516,7 +2516,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     if (result == null || result.downloaded.isEmpty) {
       messenger.showSnackBar(
-          SnackBar(content: Text(t.video_shader_download_failed)));
+          FushiSnackBar(content: Text(t.video_shader_download_failed)));
       return;
     }
     // 从目录现有文件按该档叠加顺序过滤出有序启用集。
@@ -2529,7 +2529,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
     await appModel.setVideoShadersEnabled(encodeEnabledShaders(enabled));
     if (!mounted) return;
-    messenger.showSnackBar(SnackBar(
+    messenger.showSnackBar(FushiSnackBar(
       content: Text(result.allOk
           ? t.video_shader_download_done(count: result.downloaded.length)
           : t.video_shader_download_partial(
@@ -2543,7 +2543,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (source == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_video_unavailable)),
+        FushiSnackBar(content: Text(t.remote_video_unavailable)),
       );
       return;
     }
@@ -2568,7 +2568,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_video_download_failed)),
+        FushiSnackBar(content: Text(t.remote_video_download_failed)),
       );
       return;
     }
@@ -2576,7 +2576,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 刷新列表让新建的 VideoBooks 行立即出现（并把已下载视频从「配对设备」区去重隐藏）。
     _refresh();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.remote_video_downloaded)),
+      FushiSnackBar(content: Text(t.remote_video_downloaded)),
     );
   }
 
@@ -2596,7 +2596,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (state == null) return;
     if (_remoteVideoSource == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_video_unavailable)),
+        FushiSnackBar(content: Text(t.remote_video_unavailable)),
       );
       return;
     }
@@ -2737,7 +2737,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (source == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_video_unavailable)),
+        FushiSnackBar(content: Text(t.remote_video_unavailable)),
       );
       return;
     }
@@ -2753,7 +2753,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (pending.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_collection_download_nothing)),
+        FushiSnackBar(content: Text(t.remote_collection_download_nothing)),
       );
       return;
     }
@@ -2764,7 +2764,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ];
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(
             t.remote_collection_download_started(count: pending.length),
           ),
@@ -2779,7 +2779,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _refresh();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(t.remote_collection_download_done(
           ok: batch.completed,
           failed: batch.failed,
@@ -3522,7 +3522,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               ),
               if (open != null) ...<Widget>[
                 const SizedBox(width: 8),
-                FilledButton.tonal(
+                FushiFilledButton.tonal(
                   onPressed: open,
                   child: Text(t.video_library_scrape_pending_banner_action),
                 ),
@@ -4266,7 +4266,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               const SizedBox(height: 12),
               Row(
                 children: <Widget>[
-                  FilledButton.icon(
+                  FushiFilledButton.icon(
                     // 合集页 key 沿用 '<id>'（既有 widget 测试锁它）；散装页
                     // 走 pageKey（'b<uid>'），两个 key 空间不撞。
                     key: ValueKey<String>(collection != null
@@ -4282,7 +4282,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   ),
                   if (collection != null) ...<Widget>[
                     const SizedBox(width: 12),
-                    OutlinedButton.icon(
+                    FushiOutlinedButton.icon(
                       key: ValueKey<String>(
                           'home_video_hero_detail_${collection.id}'),
                       onPressed: _selectionMode
@@ -4987,7 +4987,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         child: IgnorePointer(
                           // eink：半透明黑轨道压在封面上是抖动灰，改实心页面
                           // 底色轨道（进度色 primary 已是前景色）。
-                          child: LinearProgressIndicator(
+                          child: FushiLinearProgressIndicator(
                             value: progressFraction,
                             minHeight: 3,
                             backgroundColor: isEinkTheme(context)
@@ -5372,7 +5372,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return _emptyStateSlivers(
         const Center(
           key: ValueKey<String>('home_video_all_videos_maps_pending'),
-          child: CircularProgressIndicator(),
+          child: FushiCircularProgressIndicator(),
         ),
       );
     }
@@ -5512,7 +5512,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               ),
             ),
             if (!_selectionMode)
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.common_more_actions,
                 onPressed: () => _showVideoMenu(book),
                 icon: const Icon(Icons.more_horiz),
@@ -6393,7 +6393,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           }),
         ),
       if (widget.onOpenScrapeTasks != null)
-        Badge(
+        FushiBadgeControl(
           isLabelVisible: widget.scrapeTaskController?.isBusy == true,
           child: FushiIconButton(
             tooltip: t.video_source_scrape_tasks_open,
@@ -6535,15 +6535,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(video.title),
         content: Text(t.sync_peer_video_delete_confirm(name: video.title)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_delete),
           ),
@@ -6562,11 +6562,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     if (failed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_failed)),
+        FushiSnackBar(content: Text(t.remote_delete_failed)),
       );
     } else if (!supported) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_unsupported)),
+        FushiSnackBar(content: Text(t.remote_delete_unsupported)),
       );
     }
     // 删成功才需要重取清单；失败时列表本就没变。forceRefresh 绕过远端库缓存 TTL，
@@ -6605,7 +6605,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : null;
     showAppDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(video.title),
         content: FutureBuilder<RemoteVideoInfo>(
           future: detail,
@@ -6636,7 +6636,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           },
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: Text(t.dialog_close),
           ),
@@ -6664,7 +6664,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           Expanded(
             child: SizedBox(
               height: 40,
-              child: TextField(
+              child: FushiTextFieldControl(
                 key: const ValueKey<String>('video_search_field'),
                 controller: _searchController,
                 decoration: InputDecoration(
@@ -6676,7 +6676,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   suffixIcon: _searchQuery.isEmpty
                       ? null
-                      : IconButton(
+                      : FushiIconButtonControl(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: () {
                             _searchController.clear();
@@ -6735,7 +6735,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         : (_yearFilter.unknownOnly
             ? t.video_filter_year_unknown
             : '${_yearFilter.year}');
-    return PopupMenuButton<VideoYearFilter>(
+    return FushiPopupMenuButton<VideoYearFilter>(
       key: const ValueKey<String>('home_video_filter_year'),
       tooltip: t.video_filter_year,
       initialValue: _yearFilter,
@@ -6765,7 +6765,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String label = _watchStatusFilter == VideoWatchStatusFilter.all
         ? t.video_filter_watch_status
         : _watchStatusFilterLabel(_watchStatusFilter);
-    return PopupMenuButton<VideoWatchStatusFilter>(
+    return FushiPopupMenuButton<VideoWatchStatusFilter>(
       key: const ValueKey<String>('home_video_filter_watch_status'),
       tooltip: t.video_filter_watch_status,
       initialValue: _watchStatusFilter,
@@ -6874,7 +6874,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     required String Function(T value) labelOf,
     required ValueChanged<T> onSelected,
   }) {
-    return PopupMenuButton<T>(
+    return FushiPopupMenuButton<T>(
       key: ValueKey<String>(key),
       tooltip: tooltip,
       initialValue: value,
@@ -6967,7 +6967,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       message: t.video_library_empty_source_hint,
       action: widget.onOpenSources == null
           ? null
-          : FilledButton.icon(
+          : FushiFilledButton.icon(
               onPressed: widget.onOpenSources,
               icon: const Icon(Icons.library_add_outlined),
               label: Text(t.library_empty_go_import),
@@ -7459,11 +7459,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ) =>
       showAppDialog<VideoPendingScrapeWork>(
         context: context,
-        builder: (BuildContext context) => SimpleDialog(
+        builder: (BuildContext context) => FushiSimpleDialog(
           title: Text(t.collection_rescrape_pick_work),
           children: <Widget>[
             for (final VideoPendingScrapeWork entry in works)
-              SimpleDialogOption(
+              FushiSimpleDialogOption(
                 onPressed: () => Navigator.of(context).pop(entry),
                 child: Text(entry.work.title),
               ),
@@ -7490,7 +7490,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     if (members.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.video_collection_no_local_member)),
+        FushiSnackBar(content: Text(t.video_collection_no_local_member)),
       );
       return;
     }
@@ -7716,18 +7716,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (!mounted) return;
         final bool? replace = await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog(
+          builder: (BuildContext dialogContext) => FushiAlertDialog(
             title: Text(collection.name),
             content: Text(t.remote_collection_scrape_identity_conflict(
               provider: current?.provider.name.toUpperCase() ?? '?',
               id: current?.externalId ?? '?',
             )),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
                 child: Text(t.dialog_cancel),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
                 child: Text(t.dialog_replace),
               ),
@@ -7814,11 +7814,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return null;
     return showAppDialog<VideoMetadataWorkKey>(
       context: context,
-      builder: (BuildContext context) => SimpleDialog(
+      builder: (BuildContext context) => FushiSimpleDialog(
         title: Text(t.remote_collection_scrape_pick_work),
         children: <Widget>[
           for (final VideoMetadataWorkKey k in works)
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.pop(context, k),
               child: Text(titles[k.bookUid] ?? k.bookUid ?? k.toString()),
             ),
@@ -8012,7 +8012,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     bottom: 0,
                     child: IgnorePointer(
                       // eink：同横排卡——半透明轨道换实心页面底色。
-                      child: LinearProgressIndicator(
+                      child: FushiLinearProgressIndicator(
                         value: watchFrac,
                         minHeight: 3,
                         backgroundColor: isEinkTheme(context)

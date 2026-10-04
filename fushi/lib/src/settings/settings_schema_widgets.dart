@@ -7,6 +7,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 把一个父级 [WidgetBuilder] 包成平台对应的页面路由（Material/Cupertino）。
 /// 两个渲染器各自提供工厂，是它们之间唯一的导航差异。
@@ -175,7 +176,7 @@ class SettingsSchemaItem extends StatelessWidget {
       onTap: onAction == null ? null : runAction,
       trailing: onAction == null
           ? null
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: runAction,
               child: Text(status.actionLabel!),
             ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 「上传/做种」首用提示对话框。首次下载时弹一次：提醒上传默认关闭、询问是否
 /// 开启，并允许当场配置上传限速 / 做种时长 / 分享率上限。
@@ -80,7 +81,7 @@ class _TorrentUploadConsentDialogState
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       icon: const Icon(Icons.upload_outlined),
       title: Text(t.torrent_upload_intro_title),
       content: SingleChildScrollView(
@@ -104,7 +105,7 @@ class _TorrentUploadConsentDialogState
             ),
             if (_uploadEnabled) ...<Widget>[
               const SizedBox(height: 4),
-              TextField(
+              FushiTextFieldControl(
                 controller: _uploadLimitCtrl,
                 enabled: !_applying,
                 keyboardType: TextInputType.number,
@@ -114,7 +115,7 @@ class _TorrentUploadConsentDialogState
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
+              FushiTextFieldControl(
                 controller: _seedTimeCtrl,
                 enabled: !_applying,
                 keyboardType: TextInputType.number,
@@ -124,7 +125,7 @@ class _TorrentUploadConsentDialogState
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
+              FushiTextFieldControl(
                 controller: _seedRatioCtrl,
                 enabled: !_applying,
                 keyboardType:
@@ -139,11 +140,11 @@ class _TorrentUploadConsentDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _applying ? null : () => _apply(enable: false),
           child: Text(t.torrent_upload_intro_keep_off),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _applying ? null : () => _apply(enable: _uploadEnabled),
           child: Text(t.torrent_upload_intro_confirm),
         ),

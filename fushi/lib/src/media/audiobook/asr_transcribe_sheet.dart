@@ -1145,7 +1145,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                     ),
                   ),
                   SizedBox(width: tokens.spacing.gap),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>('asr-transcribe-model-add'),
                     tooltip: t.audiobook_transcribe_model_custom_add,
                     icon: const Icon(Icons.create_new_folder_outlined),
@@ -1225,7 +1225,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           ),
           if (showProgressBar) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            LinearProgressIndicator(value: _progressValue()),
+            FushiLinearProgressIndicator(value: _progressValue()),
           ],
         ],
       ),
@@ -1245,7 +1245,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     void add(Widget w) => buttons.add(w);
 
     add(
-      TextButton(
+      FushiTextButton(
         onPressed: () => Navigator.pop(context),
         child: Text(t.cancel),
       ),
@@ -1255,12 +1255,12 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         // 选了远端 host 就不需要本机模型：直接给「开始」。
         add(
           _runRemote && _remoteTarget != null
-              ? FilledButton.icon(
+              ? FushiFilledButton.icon(
                   icon: const Icon(Icons.play_arrow_outlined, size: 18),
                   label: Text(t.audiobook_transcribe_start),
                   onPressed: _startTranscription,
                 )
-              : FilledButton.icon(
+              : FushiFilledButton.icon(
                   icon: const Icon(Icons.download_outlined, size: 18),
                   label: Text(t.audiobook_transcribe_model_download),
                   onPressed: _startDownload,
@@ -1268,7 +1268,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
       case _Phase.ready:
         add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             icon: const Icon(Icons.play_arrow_outlined, size: 18),
             label: Text(t.audiobook_transcribe_start),
             onPressed: _startTranscription,
@@ -1276,13 +1276,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
       case _Phase.paused:
         add(
-          TextButton(
+          FushiTextButton(
             onPressed: _discard,
             child: Text(t.audiobook_transcribe_discard),
           ),
         );
         add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             icon: const Icon(Icons.play_arrow_outlined, size: 18),
             label: Text(t.audiobook_transcribe_resume),
             onPressed: _startTranscription,
@@ -1290,7 +1290,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
       case _Phase.running:
         add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             icon: const Icon(Icons.pause_outlined, size: 18),
             label: Text(t.audiobook_transcribe_pause),
             onPressed: _pause,
@@ -1298,20 +1298,20 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
       case _Phase.finished:
         add(
-          TextButton(
+          FushiTextButton(
             onPressed: _discard,
             child: Text(t.audiobook_transcribe_discard),
           ),
         );
         add(
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             icon: const Icon(Icons.save_alt_outlined, size: 18),
             label: Text(t.audiobook_transcribe_export),
             onPressed: _finishedSrt == null ? null : _export,
           ),
         );
         add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             icon: const Icon(Icons.check_outlined, size: 18),
             label: Text(t.audiobook_transcribe_use_result),
             onPressed: _finishedSrt == null
@@ -1321,7 +1321,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
       case _Phase.error:
         add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             icon: const Icon(Icons.refresh_outlined, size: 18),
             label: Text(t.audiobook_transcribe_resume),
             onPressed: _refreshPlan,
@@ -1339,7 +1339,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         const SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: FushiCircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }

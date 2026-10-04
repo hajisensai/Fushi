@@ -95,7 +95,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
         initialIndex: widget.initialTab.index,
         child: Column(
           children: <Widget>[
-            TabBar(
+            FushiTabBar(
               tabs: <Widget>[
                 Tab(text: t.stat_center_tab_overview),
                 Tab(text: t.home_filter_read),
@@ -301,7 +301,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Widget _buildBody(FushiDesignTokens tokens) {
     if (_loading) {
       return Center(
-        child: CircularProgressIndicator(
+        child: FushiCircularProgressIndicator(
           color: Theme.of(context).colorScheme.primary,
         ),
       );
@@ -517,7 +517,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             Expanded(
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 6,
                   backgroundColor: tokens.surfaces.card,

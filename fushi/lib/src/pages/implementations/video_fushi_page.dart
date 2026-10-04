@@ -255,6 +255,7 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 part 'video_fushi/danmaku.part.dart';
 part 'video_fushi/clip_export.part.dart';
@@ -4795,25 +4796,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final _MissingResourceChoice? choice =
         await showAppDialog<_MissingResourceChoice>(
           context: context,
-          builder: (BuildContext ctx) => AlertDialog(
+          builder: (BuildContext ctx) => FushiAlertDialog(
             title: Text(t.video_resource_missing_title),
             content: Text(t.video_resource_missing_message(title: title)),
             actions: <Widget>[
               // 取消 = 默认 / 主动作：不删任何东西，停在缺失态。
-              TextButton(
+              FushiTextButton(
                 onPressed: () =>
                     Navigator.pop(ctx, _MissingResourceChoice.cancel),
                 child: Text(t.dialog_cancel),
               ),
               // 重新导入 = 主修复动作（真动作，见 [_reimportMissingResource]）。
-              TextButton(
+              FushiTextButton(
                 onPressed: () =>
                     Navigator.pop(ctx, _MissingResourceChoice.reimport),
                 child: Text(t.video_resource_missing_reimport),
               ),
               // 删除是次要动作（非默认、不染红强调），且后接二次确认。
               if (canDelete)
-                TextButton(
+                FushiTextButton(
                   onPressed: () =>
                       Navigator.pop(ctx, _MissingResourceChoice.delete),
                   child: Text(t.dialog_delete),
@@ -4897,15 +4898,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final NavigatorState nav = Navigator.of(context);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.video_delete_title),
         content: Text(t.video_delete_confirm(title: row.title)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
               t.dialog_delete,
@@ -7173,7 +7174,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
 
     final Widget icon = Icon(Icons.more_horiz, size: _videoControlIconSize);
-    return Tooltip(
+    return FushiTooltip(
       message: MaterialLocalizations.of(context).showMenuTooltip,
       child: desktop
           ? MaterialDesktopCustomButton(icon: icon, onPressed: onPressed)
@@ -7271,7 +7272,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     switch (item) {
       case VideoControlItem.playPause:
-        return Tooltip(
+        return FushiTooltip(
           message: t.video_bottom_play_pause,
           child: desktop
               ? MaterialDesktopPlayOrPauseButton(
@@ -7288,7 +7289,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
         );
       case VideoControlItem.previousCue:
-        return Tooltip(
+        return FushiTooltip(
           message: t.video_bottom_prev_cue,
           child: desktop
               ? MaterialDesktopCustomButton(
@@ -7301,7 +7302,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
         );
       case VideoControlItem.nextCue:
-        return Tooltip(
+        return FushiTooltip(
           message: t.video_bottom_next_cue,
           child: desktop
               ? MaterialDesktopCustomButton(
@@ -7380,7 +7381,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoControlItemIcon(item),
       size: _videoControlIconSize,
     );
-    return Tooltip(
+    return FushiTooltip(
       message: _videoControlItemTooltip(item),
       child: desktop
           ? MaterialDesktopCustomButton(
@@ -7525,7 +7526,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final LayerLink? popoverLink = item == VideoControlItem.speed
           ? _controlPopoverLinkFor(slot, item)
           : null;
-      final Widget button = Tooltip(
+      final Widget button = FushiTooltip(
         message: _videoControlItemTooltip(item),
         child: desktop
             ? MaterialDesktopCustomButton(
@@ -7984,7 +7985,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: InkWell(
         onTap: onTap,
@@ -8034,7 +8035,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
     return _VideoRepeatGestureButton(
       onTrigger: trigger,
-      child: Tooltip(
+      child: FushiTooltip(
         message: tooltip,
         child: InkWell(
           onTap: trigger,
@@ -8912,7 +8913,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       itemBuilder: (BuildContext ctx, int i) {
         final double speed = speedPresets[i];
         final bool selected = (speed - _playbackSpeed).abs() < 0.001;
-        return ListTile(
+        return FushiListTileControl(
           dense: true,
           title: Text('${speed}x'),
           trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
@@ -9121,15 +9122,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext ctx) => AlertDialog(
+          builder: (BuildContext ctx) => FushiAlertDialog(
             title: Text(t.video_render_skia_fix_confirm_title),
             content: Text(t.video_render_skia_fix_confirm_body),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
                 child: Text(t.dialog_cancel),
               ),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: () => Navigator.of(ctx).pop(true),
                 child: Text(t.video_render_skia_fix_confirm_action),
               ),
@@ -9406,18 +9407,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               alignment: WrapAlignment.center,
               children: <Widget>[
                 // 重新导入 = 主修复动作（真动作：单视频重链选文件 / 播放列表打开导入对话框）。
-                FilledButton.tonal(
+                FushiFilledButton.tonal(
                   onPressed: () => unawaited(_reimportMissingResource(row)),
                   child: Text(t.video_resource_missing_reimport),
                 ),
                 if (canDelete)
-                  TextButton(
+                  FushiTextButton(
                     onPressed: () =>
                         unawaited(_confirmMissingResourceDelete(row)),
                     child: Text(t.dialog_delete),
                   ),
                 // BUG-2229：退出入口。缺失态没有视频内顶栏，这是唯一的出口。
-                TextButton(
+                FushiTextButton(
                   onPressed: () => unawaited(_handleBackOrExit()),
                   child: Text(t.back),
                 ),
@@ -9592,12 +9593,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   onPressed: _retryLoad,
                   icon: const Icon(Icons.refresh),
                   label: Text(t.video_load_failed_retry),
                 ),
-                TextButton(
+                FushiTextButton(
                   onPressed: () => unawaited(_handleBackOrExit()),
                   child: Text(t.video_load_failed_back),
                 ),
@@ -9914,7 +9915,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       overlaySize.height - anchor.dy,
     );
     unawaited(
-      showMenu<VoidCallback>(
+      showFushiMenu<VoidCallback>(
         context: ctx,
         position: position,
         items: _buildVideoContextMenuItems(controller),

@@ -186,7 +186,7 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
                     height: 24,
                     child: adaptiveIndicator(context: context, strokeWidth: 2),
                   )
-                : FilledButton.tonal(
+                : FushiFilledButton.tonal(
                     onPressed: _testConnection,
                     child:
                         widget.testButtonChild ?? Text(t.sync_test_connection),

@@ -63,7 +63,7 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
       future: _loaded,
       builder: (BuildContext context, AsyncSnapshot<void> snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: FushiCircularProgressIndicator());
         }
         if (snap.hasError) {
           return LeaderboardErrorView(
@@ -130,7 +130,7 @@ class LeaderboardIntroView extends ConsumerWidget {
           spacing: tokens.spacing.gap,
           runSpacing: tokens.spacing.gap,
           children: <Widget>[
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('leaderboard-intro-register'),
               onPressed: () => unawaited(
                 _openSignIn(context, LeaderboardSignInMode.register),
@@ -138,14 +138,14 @@ class LeaderboardIntroView extends ConsumerWidget {
               icon: const Icon(Icons.person_add_alt_1_outlined),
               label: Text(t.leaderboard_intro_register),
             ),
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               key: const ValueKey<String>('leaderboard-intro-login'),
               onPressed: () =>
                   unawaited(_openSignIn(context, LeaderboardSignInMode.login)),
               icon: const Icon(Icons.login),
               label: Text(t.leaderboard_intro_login),
             ),
-            TextButton.icon(
+            FushiTextButton.icon(
               key: const ValueKey<String>('leaderboard-intro-recovery'),
               onPressed: () =>
                   unawaited(showLeaderboardRecoveryImportDialog(context)),
@@ -475,17 +475,17 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: <Widget>[
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
                   icon: const Icon(Icons.person_outline),
                   label: Text(t.leaderboard_header_profile),
                 ),
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: () => _push(const LeaderboardFriendsPage()),
                   icon: const Icon(Icons.group_outlined),
                   label: Text(t.leaderboard_header_friends),
                 ),
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   key: const ValueKey<String>('leaderboard-header-share'),
                   onPressed: self == null
                       ? null
@@ -498,7 +498,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                   icon: const Icon(Icons.ios_share),
                   label: Text(t.leaderboard_header_share),
                 ),
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: () => _push(const LeaderboardAccountPage()),
                   icon: const Icon(Icons.manage_accounts_outlined),
                   label: Text(t.leaderboard_header_account),
@@ -543,7 +543,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                     style: tokens.type.listSubtitle,
                   ),
                 ),
-                TextButton(
+                FushiTextButton(
                   key: const ValueKey<String>('leaderboard-sync-now'),
                   onPressed:
                       _syncing ||
@@ -554,7 +554,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                   child: _syncing
                       ? const SizedBox.square(
                           dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(t.leaderboard_sync_now),
                 ),
@@ -568,7 +568,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                 style: tokens.type.listSubtitle,
               ),
               SizedBox(height: tokens.spacing.gap),
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('leaderboard-sync-claim'),
                 onPressed: _syncing ? null : () => unawaited(_claim()),
                 icon: const Icon(Icons.sync_alt),
@@ -699,7 +699,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
       return <Widget>[
         Padding(
           padding: EdgeInsets.all(tokens.spacing.section),
-          child: const Center(child: CircularProgressIndicator()),
+          child: const Center(child: FushiCircularProgressIndicator()),
         ),
       ];
     }

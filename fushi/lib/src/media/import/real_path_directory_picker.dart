@@ -68,7 +68,7 @@ Future<String?> pickRealDirectoryPath({
   if (!granted) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.folder_picker_permission_required)),
+        FushiSnackBar(content: Text(t.folder_picker_permission_required)),
       );
     }
     return null;

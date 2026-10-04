@@ -1210,7 +1210,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         ),
       ],
     );
-    final Widget filter = SegmentedButton<bool>(
+    final Widget filter = FushiSegmentedButton<bool>(
       key: const ValueKey<String>('fushi_gallery_filter'),
       showSelectedIcon: false,
       segments: <ButtonSegment<bool>>[
@@ -1231,7 +1231,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final List<Widget> actions = <Widget>[
       // 没有阅读位置（书架端打开没读过的书）就没有可定位的地方。
       if (showControls && _hasReadingPosition)
-        IconButton(
+        FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_position'),
           tooltip: t.reader_gallery_position_jump,
           icon: const Icon(Icons.my_location_outlined),
@@ -1239,7 +1239,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         ),
       Semantics(
         identifier: 'hibiki.reader.gallery.close',
-        child: IconButton(
+        child: FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_close'),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
           icon: const Icon(Icons.close),
@@ -1293,7 +1293,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
           itemCount: volumes.labels.length,
           separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (BuildContext context, int i) => ChoiceChip(
+          itemBuilder: (BuildContext context, int i) => FushiChoiceChip(
             key: ValueKey<String>('reader-gallery-volume-chip-$i'),
             label: Text(
               volumes.labels[i],
@@ -1327,7 +1327,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     }
     if (_peekingSibling && _sibling == null) {
       _layout = null;
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FushiCircularProgressIndicator());
     }
     if (_images.isEmpty) {
       _layout = null;
@@ -1393,7 +1393,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               Flexible(child: _PositionBadge(tokens: tokens)),
               const SizedBox(width: 8),
               Expanded(
-                child: Divider(color: tokens.surfaces.primary, thickness: 1),
+                child: FushiDividerControl(color: tokens.surfaces.primary, thickness: 1),
               ),
             ],
           ),
@@ -1436,7 +1436,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Divider(
+                child: FushiDividerControl(
                   color: current
                       ? tokens.surfaces.primary
                       : tokens.surfaces.outline,
@@ -1575,13 +1575,13 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                     ),
                   ),
                   const Spacer(),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>('fushi_gallery_jump'),
                     tooltip: t.reader_gallery_jump,
                     icon: const Icon(Icons.my_location_outlined),
                     onPressed: () => _jumpTo(current),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>('fushi_gallery_viewer_close'),
                     tooltip: MaterialLocalizations.of(
                       context,
@@ -1654,7 +1654,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     return Material(
       color: tokens.surfaces.overlay.withValues(alpha: 0.8),
       shape: const CircleBorder(),
-      child: IconButton(
+      child: FushiIconButtonControl(
         icon: Icon(icon),
         iconSize: 24,
         color: tokens.surfaces.onSurface,
@@ -1786,13 +1786,13 @@ class _LockedIllustrationDialog extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              TextButton(
+              FushiTextButton(
                 key: const ValueKey<String>('fushi_gallery_locked_reveal'),
                 onPressed: () =>
                     Navigator.of(context).pop(_LockedAction.revealAnyway),
                 child: Text(t.reader_gallery_locked_reveal),
               ),
-              FilledButton.tonal(
+              FushiFilledButton.tonal(
                 key: const ValueKey<String>('fushi_gallery_locked_back'),
                 onPressed: () =>
                     Navigator.of(context).pop(_LockedAction.backToLastSeen),

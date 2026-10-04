@@ -86,7 +86,7 @@ class _RemoteSubscriptionsSectionState
     } on HostSubscriptionException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.detail ?? error.code)),
+        FushiSnackBar(content: Text(error.detail ?? error.code)),
       );
     } finally {
       if (mounted) setState(() => _busy.remove(sub.subscriptionId));
@@ -176,7 +176,7 @@ class _RemoteSubscriptionsSectionState
               ],
             ),
           ),
-          IconButton(
+          FushiIconButtonControl(
             key: ValueKey<String>(
                 'remote-subscription-check-${sub.subscriptionId}'),
             tooltip: t.download_subscription_check_all,
@@ -190,7 +190,7 @@ class _RemoteSubscriptionsSectionState
                     ),
             icon: const Icon(Icons.refresh, size: 18),
           ),
-          IconButton(
+          FushiIconButtonControl(
             key: ValueKey<String>(
                 'remote-subscription-delete-${sub.subscriptionId}'),
             tooltip: t.download_subscription_delete,
@@ -204,7 +204,7 @@ class _RemoteSubscriptionsSectionState
                     ),
             icon: const Icon(Icons.delete_outline, size: 18),
           ),
-          Switch.adaptive(
+          FushiSwitch.adaptive(
             key: ValueKey<String>(
                 'remote-subscription-toggle-${sub.subscriptionId}'),
             value: sub.enabled,

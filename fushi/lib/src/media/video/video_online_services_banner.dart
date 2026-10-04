@@ -88,16 +88,16 @@ class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner> {
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: <Widget>[
-                  TextButton.icon(
+                  FushiTextButton.icon(
                     onPressed: _openOverview,
                     icon: const Icon(Icons.info_outline),
                     label: Text(t.video_online_services_setup_register),
                   ),
-                  FilledButton.tonal(
+                  FushiFilledButton.tonal(
                     onPressed: _openSettings,
                     child: Text(t.video_online_services_setup_settings),
                   ),
-                  TextButton(
+                  FushiTextButton(
                     onPressed: _dismiss,
                     child: Text(t.video_online_services_setup_dismiss),
                   ),

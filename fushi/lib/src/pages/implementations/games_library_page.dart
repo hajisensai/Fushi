@@ -703,7 +703,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       return body;
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.games),
       ),
       floatingActionButton: FushiGlassFab(
@@ -727,7 +727,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           Expanded(
             child: SizedBox(
               height: 40,
-              child: TextField(
+              child: FushiTextFieldControl(
                 controller: _searchController,
                 decoration: InputDecoration(
                   isDense: true,
@@ -738,7 +738,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   suffixIcon: _view.search.isEmpty
                       ? null
-                      : IconButton(
+                      : FushiIconButtonControl(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: () {
                             _searchController.clear();
@@ -779,7 +779,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             onTap: _scrapeAllGames,
           ),
           const SizedBox(width: 4),
-          PopupMenuButton<GalgameSortField>(
+          FushiPopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
             icon: const Icon(Icons.sort),
             onSelected: (GalgameSortField field) => _setView(
@@ -808,7 +808,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 ),
             ],
           ),
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.game_filter,
             onPressed: () => unawaited(_showFilterSheet()),
             icon: Icon(
@@ -1044,7 +1044,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
               footer: Row(
                 children: <Widget>[
                   const Spacer(),
-                  TextButton(
+                  FushiTextButton(
                     onPressed: () => apply(_view.clearFilters()),
                     child: Text(t.game_filter_reset),
                   ),
@@ -1079,14 +1079,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           const SizedBox(height: 16),
           // 嵌壳时空态引导去「导入」分段（唯一入库位置）；独立使用时直接选 exe。
           if (widget.embedded)
-            FilledButton.icon(
+            FushiFilledButton.icon(
               onPressed: () =>
                   gameSectionNotifier.value = GameSection.importGames,
               icon: const Icon(Icons.library_add_outlined),
               label: Text(t.library_empty_go_import),
             )
           else
-            FilledButton.icon(
+            FushiFilledButton.icon(
               onPressed: _addGame,
               icon: const Icon(Icons.add),
               label: Text(t.game_add),
@@ -1472,7 +1472,7 @@ Widget buildPendingGameDownloadCard(DiscoveryDownloadTask task) {
           ),
         Align(
           alignment: Alignment.bottomCenter,
-          child: LinearProgressIndicator(value: progress, minHeight: 4),
+          child: FushiLinearProgressIndicator(value: progress, minHeight: 4),
         ),
       ],
     ),
@@ -1963,7 +1963,7 @@ class _GameCard extends StatelessWidget {
     ColorScheme colors,
     FushiDesignTokens tokens,
   ) {
-    return PopupMenuButton<String>(
+    return FushiPopupMenuButton<String>(
       icon: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(

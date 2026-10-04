@@ -219,7 +219,7 @@ class _MangaDownloadTaskRow extends StatelessWidget {
               height: 20,
               child: Padding(
                 padding: const EdgeInsets.all(2),
-                child: CircularProgressIndicator(
+                child: FushiCircularProgressIndicator(
                   strokeWidth: 2,
                   value: job.pagesTotal > 0
                       ? (job.pagesDone / job.pagesTotal).clamp(0.0, 1.0)

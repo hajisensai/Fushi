@@ -133,7 +133,7 @@ class _AiProviderSettingsSectionState
             _providerCard(index),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('ai-provider-add'),
               onPressed: () => unawaited(_pickPresetAndAdd()),
               icon: const Icon(Icons.add),
@@ -184,7 +184,7 @@ class _AiProviderSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('ai-provider-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -201,7 +201,7 @@ class _AiProviderSettingsSectionState
                       _update(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('ai-provider-$index-delete'),
                 tooltip: t.ai_provider_delete,
                 onPressed: () => _delete(index),
@@ -245,7 +245,7 @@ class _AiProviderSettingsSectionState
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: DropdownButtonFormField<AiWireProtocol>(
+            child: FushiDropdownButtonFormField<AiWireProtocol>(
               key: ValueKey<String>('ai-provider-$index-protocol'),
               isExpanded: true,
               initialValue: draft.protocol,
@@ -278,7 +278,7 @@ class _AiProviderSettingsSectionState
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: DropdownButtonFormField<AiReasoningEffort>(
+            child: FushiDropdownButtonFormField<AiReasoningEffort>(
               key: ValueKey<String>('ai-provider-$index-reasoning'),
               isExpanded: true,
               initialValue: draft.reasoningEffort,
@@ -300,7 +300,7 @@ class _AiProviderSettingsSectionState
               },
             ),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('ai-provider-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -315,7 +315,7 @@ class _AiProviderSettingsSectionState
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('ai-provider-$index-fetch-models'),
                 // 地址还没填成合法 URL 时按钮直接不可用，而不是点了再报通用错误。
                 onPressed: config == null || probe?.running == true
@@ -324,7 +324,7 @@ class _AiProviderSettingsSectionState
                 icon: const Icon(Icons.download_outlined),
                 label: Text(t.ai_provider_models_fetch),
               ),
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('ai-provider-$index-test'),
                 // 「测试连接」对所配模型发一次最小问答（见 [_testConnection]）：
                 // listModels 验不出模型名拼错 / 未开通 / 端点不支持 chat。
@@ -335,7 +335,7 @@ class _AiProviderSettingsSectionState
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.network_check_outlined),
                 label: Text(t.ai_provider_test),
@@ -376,14 +376,14 @@ class _AiProviderSettingsSectionState
     // 地址还没填成合法 URL 时拉不了候选，直接置灰，而不是点了再报通用错误。
     final bool ready = draft.toConfig() != null;
     return Builder(
-      builder: (BuildContext anchor) => IconButton(
+      builder: (BuildContext anchor) => FushiIconButtonControl(
         key: ValueKey<String>('ai-provider-$index-model-picker'),
         tooltip: t.ai_provider_model_pick,
         icon: busy
             ? const SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
               )
             : const Icon(Icons.arrow_drop_down),
         onPressed: ready && !busy
@@ -414,7 +414,7 @@ class _AiProviderSettingsSectionState
     at = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
     if (at < 0) return;
     final String current = _drafts[at].model;
-    final String? picked = await showMenu<String>(
+    final String? picked = await showFushiMenu<String>(
       context: anchor,
       position: RelativeRect.fromRect(
         Rect.fromPoints(
@@ -561,7 +561,7 @@ class _AiProviderSettingsSectionState
           const SizedBox(height: 2),
           Text(summary, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 10),
-          DropdownButtonFormField<String?>(
+          FushiDropdownButtonFormField<String?>(
             key: dropdownKey,
             isExpanded: true,
             initialValue: current,

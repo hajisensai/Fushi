@@ -615,7 +615,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
                 Text(t.data_storage_migrating),
               ],
             )
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: _changeLocation,
               child: Row(
                 mainAxisSize: MainAxisSize.min,

@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
 /// 在 app 根 navigator 就绪后调用一次；runtime 遇到 `CLOUDFLARE_CHALLENGE` 时
@@ -276,9 +277,9 @@ class _AidokuCloudflareChallengePageState
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.manga_source_cloudflare_verify_title),
-        leading: IconButton(
+        leading: FushiIconButtonControl(
           icon: const Icon(Icons.close),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
           onPressed: () => Navigator.of(context).pop(false),
@@ -298,7 +299,7 @@ class _AidokuCloudflareChallengePageState
             child:
                 widget.webViewBuilder?.call(context) ??
                 (!_environmentReady
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: FushiCircularProgressIndicator())
                     : KeyedSubtree(
                         // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正
                         // 重建出新的 platform view，而不动 WebView 自己的锚点。

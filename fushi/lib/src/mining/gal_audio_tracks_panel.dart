@@ -57,7 +57,7 @@ class GalAudioTracksPanel extends StatelessWidget {
           _PanelHintBox(icon: Icons.info_outline, text: backendHint),
         // 「自动选择」只对引擎 PCM 有意义；其余后端不渲染它，免得暗示能选。
         if (selectionEffective)
-          RadioListTile<int>(
+          FushiRadioListTile<int>(
             contentPadding: EdgeInsets.zero,
             value: 0,
             groupValue: state.selectedAudioSourcePtr,

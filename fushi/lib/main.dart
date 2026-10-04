@@ -1981,12 +1981,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       runSpacing: 8,
                       alignment: WrapAlignment.center,
                       children: [
-                        FilledButton.icon(
+                        FushiFilledButton.icon(
                           icon: const Icon(Icons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
-                        OutlinedButton.icon(
+                        FushiOutlinedButton.icon(
                           icon: const Icon(Icons.folder_open, size: 18),
                           label: Text(t.data_root_use_default_button),
                           onPressed: () =>
@@ -2048,12 +2048,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       runSpacing: 8,
                       alignment: WrapAlignment.center,
                       children: [
-                        FilledButton.icon(
+                        FushiFilledButton.icon(
                           icon: const Icon(Icons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
-                        OutlinedButton.icon(
+                        FushiOutlinedButton.icon(
                           icon: const Icon(Icons.copy, size: 18),
                           label: Text(t.copy_error),
                           onPressed: () {
@@ -2287,6 +2287,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: CupertinoTheme(
                   data: fushiCupertinoTheme(cs,
                       fontFamily: appModel.appFontFamily),
+                  // 玻璃设计系统的组件配色 / 渲染档位作用域（结构恒定，
+                  // 见 FushiGlassScope 类注释）。
+                  child: FushiGlassScope(
                   child: LayoutBuilder(
                     builder:
                         (BuildContext context, BoxConstraints constraints) {
@@ -2421,6 +2424,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       }
                       return navigation;
                     },
+                  ),
                   ),
                 ),
               ),

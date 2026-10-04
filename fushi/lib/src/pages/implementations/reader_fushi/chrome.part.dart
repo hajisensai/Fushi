@@ -316,7 +316,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
       ];
 
-      final String? action = await showMenu<String>(
+      final String? action = await showFushiMenu<String>(
         context: context,
         position: RelativeRect.fromRect(
           Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),

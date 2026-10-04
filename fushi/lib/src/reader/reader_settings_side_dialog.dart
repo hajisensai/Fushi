@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Which edge the novel reader's settings panel docks to, independently of page
 /// reading direction (the manga reader's panel is pinned to the right).
@@ -45,7 +46,7 @@ class ReaderSettingsSideButton extends StatelessWidget {
     final bool isLeft = scope.notifier!.value == ReaderSideSheetSide.left;
     return Semantics(
       identifier: 'hibiki.reader.settings.move_side',
-      child: IconButton(
+      child: FushiIconButtonControl(
         key: const ValueKey<String>('reader_settings_side_toggle'),
         tooltip: isLeft
             ? t.reader_settings_panel_move_right

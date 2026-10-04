@@ -1227,7 +1227,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<void> _emptyExportToast() async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.collection_export_no_items)),
+      FushiSnackBar(content: Text(t.collection_export_no_items)),
     );
   }
 
@@ -1328,7 +1328,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (!mounted) return;
     if (rows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.collection_export_no_items)),
+        FushiSnackBar(content: Text(t.collection_export_no_items)),
       );
       return;
     }
@@ -1508,7 +1508,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             : null,
         actions: [
           if (hasAudio)
-            TextButton.icon(
+            FushiTextButton.icon(
               icon: Icon(
                 _playingItemKey == _itemKey(item)
                     ? Icons.hourglass_top
@@ -1525,7 +1525,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                     },
             ),
           if (item.text != null)
-            TextButton.icon(
+            FushiTextButton.icon(
               icon: const Icon(Icons.copy_outlined, size: 18),
               label: Text(t.copy),
               onPressed: () {
@@ -1534,7 +1534,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               },
             ),
           if (canMine)
-            TextButton.icon(
+            FushiTextButton.icon(
               icon: const Icon(Icons.style_outlined, size: 18),
               label: Text(t.collection_mine_card),
               onPressed: () {
@@ -1544,7 +1544,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 ]);
               },
             ),
-          TextButton.icon(
+          FushiTextButton.icon(
             icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
             label: Text(t.dialog_delete, style: TextStyle(color: cs.error)),
             onPressed: () {
@@ -1553,7 +1553,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             },
           ),
           if (canNavigate)
-            FilledButton.icon(
+            FushiFilledButton.icon(
               icon: Icon(
                 switch (kind) {
                   SentenceSourceKind.video => Icons.movie_outlined,
@@ -1847,7 +1847,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget chip(_CollectionType? type, String label) => Padding(
           padding: EdgeInsets.only(right: tokens.spacing.gap / 2),
-          child: ChoiceChip(
+          child: FushiChoiceChip(
             label: Text(label),
             selected: _typeFilter == type,
             onSelected: (_) => setState(() => _typeFilter = type),
@@ -2058,7 +2058,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                             child: const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: FushiCircularProgressIndicator(strokeWidth: 2),
                             ),
                           )
                         : FushiIconButton(
@@ -2385,7 +2385,7 @@ class _ExportDialogState extends State<_ExportDialog> {
     return FushiListItem(
       selected: selected,
       onTap: () => setState(() => _targetSource = option),
-      leading: Radio<String?>(
+      leading: FushiRadio<String?>(
         value: option?.id,
         groupValue: _targetSource?.id,
         onChanged: (_) => setState(() => _targetSource = option),
@@ -2406,7 +2406,7 @@ class _ExportDialogState extends State<_ExportDialog> {
     return FushiListItem(
       selected: checked,
       onTap: () => onChanged(!checked),
-      leading: Checkbox(
+      leading: FushiCheckbox(
         value: checked,
         onChanged: (bool? v) => onChanged(v ?? false),
       ),
@@ -2425,7 +2425,7 @@ class _ExportDialogState extends State<_ExportDialog> {
       selected: value,
       onTap: () => onChanged(!value),
       title: Text(label),
-      trailing: Switch(
+      trailing: FushiSwitch(
         value: value,
         onChanged: onChanged,
       ),
@@ -2530,7 +2530,7 @@ class _ExportDialogState extends State<_ExportDialog> {
               value: _dedupe,
               onChanged: (bool v) => setState(() => _dedupe = v),
             ),
-            Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+            FushiDividerControl(height: 1, thickness: 1, color: tokens.surfaces.outline),
             SizedBox(height: tokens.spacing.gap),
             // ── 格式 ──
             Padding(
@@ -2554,7 +2554,7 @@ class _ExportDialogState extends State<_ExportDialog> {
                 runSpacing: tokens.spacing.gap,
                 children: <Widget>[
                   for (final ExportFormat f in ExportFormat.values)
-                    ChoiceChip(
+                    FushiChoiceChip(
                       label: Text(_formatLabels[f]!),
                       selected: _format == f,
                       onSelected: (_) => setState(() => _format = f),
@@ -2566,7 +2566,7 @@ class _ExportDialogState extends State<_ExportDialog> {
         ),
         footer: Align(
           alignment: Alignment.centerRight,
-          child: FilledButton.icon(
+          child: FushiFilledButton.icon(
             icon: const Icon(Icons.share_outlined, size: 18),
             label: Text(t.dialog_export),
             onPressed: _canExport ? _confirm : null,
@@ -2656,7 +2656,7 @@ class _ClearSheetState extends State<_ClearSheet> {
             FushiListItem(
               selected: _selected.contains(type),
               onTap: () => _toggle(type, !_selected.contains(type)),
-              leading: Checkbox(
+              leading: FushiCheckbox(
                 value: _selected.contains(type),
                 onChanged: (bool? v) => _toggle(type, v ?? false),
               ),
@@ -2666,7 +2666,7 @@ class _ClearSheetState extends State<_ClearSheet> {
       ),
       footer: Align(
         alignment: Alignment.centerRight,
-        child: FilledButton.icon(
+        child: FushiFilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: colors.error,
             foregroundColor: colors.onError,
@@ -2749,7 +2749,7 @@ class _BatchMineSheetState extends State<_BatchMineSheet> {
         children: <Widget>[
           FushiListItem(
             onTap: _toggleAll,
-            leading: Checkbox(
+            leading: FushiCheckbox(
               value: _allSelected,
               onChanged: (_) => _toggleAll(),
             ),
@@ -2759,7 +2759,7 @@ class _BatchMineSheetState extends State<_BatchMineSheet> {
             FushiListItem(
               selected: _selected.contains(item),
               onTap: () => _toggle(item, !_selected.contains(item)),
-              leading: Checkbox(
+              leading: FushiCheckbox(
                 value: _selected.contains(item),
                 onChanged: (bool? v) => _toggle(item, v ?? false),
               ),
@@ -2774,7 +2774,7 @@ class _BatchMineSheetState extends State<_BatchMineSheet> {
       ),
       footer: Align(
         alignment: Alignment.centerRight,
-        child: FilledButton.icon(
+        child: FushiFilledButton.icon(
           icon: const Icon(Icons.style_outlined, size: 18),
           label: Text(t.collection_batch_mine_start(n: _selected.length)),
           onPressed: _selected.isEmpty

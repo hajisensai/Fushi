@@ -174,7 +174,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
                 padding: wideCategoryPadding,
                 child: _buildTopCategoryBar(selectedId),
               ),
-              Divider(height: 1, thickness: 1, color: dividerColor),
+              FushiDividerControl(height: 1, thickness: 1, color: dividerColor),
               Expanded(
                 child: KeyedSubtree(
                   key: ValueKey<String>(selectedId),

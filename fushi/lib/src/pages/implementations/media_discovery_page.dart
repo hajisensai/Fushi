@@ -734,7 +734,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           if (i > 0)
             const SizedBox(
               height: 24,
-              child: VerticalDivider(width: 1),
+              child: FushiVerticalDivider(width: 1),
             ),
           ...groups[i],
         ],
@@ -1084,7 +1084,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
-                                    child: CircularProgressIndicator(
+                                    child: FushiCircularProgressIndicator(
                                         strokeWidth: 2),
                                   )
                                 : entry.isDownloadable
@@ -1108,7 +1108,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Center(
-                        child: TextButton.icon(
+                        child: FushiTextButton.icon(
                           key: const ValueKey<String>(
                               'discovery_load_more_retry'),
                           onPressed: _retryLoadMore,
@@ -1125,7 +1125,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                         // 没有滚动事件可等时，仍能手动拉下一页。
                         child: _loading
                             ? adaptiveIndicator(context: context)
-                            : TextButton(
+                            : FushiTextButton(
                                 key: const ValueKey<String>(
                                     'discovery_load_more'),
                                 onPressed: _loadMore,
@@ -1145,7 +1145,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   String _sourceDisplayName(MediaDiscoveryService service, String sourceId) =>
       service.sourceById(sourceId)?.displayName ?? sourceId;
 
-  Widget _retryButton() => FilledButton.icon(
+  Widget _retryButton() => FushiFilledButton.icon(
         key: const ValueKey<String>('discovery_retry'),
         onPressed: () => unawaited(_load()),
         icon: const Icon(Icons.refresh_rounded),

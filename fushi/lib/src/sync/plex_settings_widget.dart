@@ -111,11 +111,11 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
     if (!mounted) return;
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.plex_sign_in_failed),
         content: SingleChildScrollView(child: SelectableText(message)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -326,7 +326,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Padding(
                 padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                child: Center(child: FushiCircularProgressIndicator(strokeWidth: 2)),
               );
             }
             final List<PlexServerConfig> servers =
@@ -395,7 +395,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
     if (pending == null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: FilledButton.tonalIcon(
+        child: FushiFilledButton.tonalIcon(
           onPressed: _busy ? null : _signInWithAccount,
           icon: const Icon(Icons.login),
           label: Text(t.plex_account_sign_in),
@@ -411,11 +411,11 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
             const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 12),
             Expanded(child: Text(t.plex_pin_waiting)),
-            TextButton(onPressed: _cancelPin, child: Text(t.dialog_cancel)),
+            FushiTextButton(onPressed: _cancelPin, child: Text(t.dialog_cancel)),
           ],
         ),
         const SizedBox(height: 4),
@@ -449,9 +449,9 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
               ? const SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : FilledButton.tonal(
+              : FushiFilledButton.tonal(
                   onPressed: _busy ? null : _connectManually,
                   child: Text(t.plex_manual_connect),
                 ),

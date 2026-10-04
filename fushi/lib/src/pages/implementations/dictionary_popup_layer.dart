@@ -1045,7 +1045,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         children: <Widget>[
           topRegion,
           if (showHeaderDivider)
-            Divider(
+            FushiDividerControl(
               height: 0.5,
               thickness: 0.5,
               color: Theme.of(context).dividerColor,
@@ -1367,7 +1367,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         child: const Center(
           child: SizedBox.square(
             dimension: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
         ),
       );
@@ -1488,7 +1488,7 @@ class DictionaryPopupLayer extends StatelessWidget {
                 color: fillColor,
                 child: Column(
                   children: [
-                    LinearProgressIndicator(
+                    FushiLinearProgressIndicator(
                       backgroundColor: Colors.transparent,
                       color: Theme.of(context).colorScheme.primary,
                       minHeight: 2.75,

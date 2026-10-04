@@ -634,7 +634,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     ],
                   ),
                 )
-              : FilledButton.tonal(
+              : FushiFilledButton.tonal(
                   onPressed: _export,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -839,7 +839,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
               height: 24,
               child: adaptiveIndicator(context: context, strokeWidth: 2),
             )
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: _import,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1207,7 +1207,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                   t.backup_import_mode_label,
                   style: Theme.of(ctx).textTheme.labelLarge,
                 ),
-                RadioListTile<_BackupImportMode>(
+                FushiRadioListTile<_BackupImportMode>(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   title: Text(t.backup_import_mode_overwrite),
@@ -1216,7 +1216,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                   onChanged: (_BackupImportMode? v) =>
                       setLocal(() => mode = v ?? _BackupImportMode.overwrite),
                 ),
-                RadioListTile<_BackupImportMode>(
+                FushiRadioListTile<_BackupImportMode>(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   title: Text(t.backup_import_mode_merge),

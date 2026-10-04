@@ -352,9 +352,9 @@ Future<int?> showMangaPageJumpDialog(
   String input = '$currentPage';
   return showAppDialog<int>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(t.manga_jump_to_page),
-      content: TextFormField(
+      content: FushiTextFormFieldControl(
         initialValue: input,
         autofocus: true,
         keyboardType: TextInputType.number,
@@ -369,11 +369,11 @@ Future<int?> showMangaPageJumpDialog(
         onChanged: (String value) => input = value,
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(dialogContext),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: () => Navigator.pop(dialogContext, int.tryParse(input)),
           child: Text(t.dialog_ok),
         ),
@@ -4726,7 +4726,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+        ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
       }
       return false;
     }
@@ -4813,7 +4813,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     style: Theme.of(sheetContext).textTheme.titleMedium,
                   ),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(
                     sheetContext,
                   ).closeButtonTooltip,
@@ -4823,7 +4823,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               ],
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: SingleChildScrollView(
               child: MangaChapterList(
@@ -5105,7 +5105,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+        ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
       }
     }
 
@@ -5223,7 +5223,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final Offset anchor = overlay.globalToLocal(Offset(x, y));
-    final _MangaContextAction? action = await showMenu<_MangaContextAction>(
+    final _MangaContextAction? action = await showFushiMenu<_MangaContextAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
@@ -5529,7 +5529,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       child: SafeArea(
                         child: Opacity(
                           opacity: 0.35,
-                          child: IconButton(
+                          child: FushiIconButtonControl(
                             key: const ValueKey<String>(
                               'manga_chrome_show_button',
                             ),
@@ -5976,7 +5976,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (_chapterNotDownloaded) return _buildChapterNotDownloaded();
     if (_bookRow == null || _imagesDir == null || _payload == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FushiCircularProgressIndicator());
     }
     // 平台无关的「内容已加载」标记：非 Linux 是原生 WebView，Linux 是无后端占位
     // （`manga_webview` key 仅存在于前者，随宿主平台变化）。加载成功的普适可观察
@@ -6114,13 +6114,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
-                FilledButton.icon(
+                FushiFilledButton.icon(
                   key: const ValueKey<String>('manga_reader_enqueue_download'),
                   onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
                   icon: const Icon(Icons.download),
                   label: Text(t.manga_chapter_download_action),
                 ),
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   key: const ValueKey<String>('manga_reader_pick_chapter'),
                   onPressed: _switchingChapter
                       ? null

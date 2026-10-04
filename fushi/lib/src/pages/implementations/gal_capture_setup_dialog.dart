@@ -154,7 +154,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     // 窗口宽 < 980 时那个 900 会被父约束挤压，两栏跟着变窄、线程标题被吃掉。
     // 按可用宽度收口：想要 900，但绝不超过实际能给的宽度。
     final double dialogWidth = (screen.width - 80).clamp(320.0, 900.0);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.game_capture_setup_title),
       content: SizedBox(
         width: dialogWidth,
@@ -216,7 +216,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => _dismissOnce(yieldingToRiskConsent: false),
           child: Text(t.dialog_close),
         ),
@@ -239,7 +239,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: threads.isEmpty
                 ? Center(child: Text(t.game_waiting_for_text))
@@ -281,7 +281,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                         trailing: selecting
                             ? const SizedBox.square(
                                 dimension: 20,
-                                child: CircularProgressIndicator(
+                                child: FushiCircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
                               )
@@ -318,7 +318,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(14),

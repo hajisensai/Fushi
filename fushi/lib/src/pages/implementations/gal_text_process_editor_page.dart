@@ -195,15 +195,15 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     }
     final bool? discard = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.book_css_editor_unsaved_changes),
         content: Text(t.book_css_editor_unsaved_changes_message),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.book_css_editor_discard),
           ),
@@ -331,13 +331,13 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
-                TextButton(
+                FushiTextButton(
                   key: const ValueKey<String>('gtp-cancel'),
                   onPressed: _attemptClose,
                   child: Text(t.dialog_cancel),
                 ),
                 SizedBox(width: tokens.spacing.gap),
-                FilledButton.icon(
+                FushiFilledButton.icon(
                   key: const ValueKey<String>('gtp-save'),
                   onPressed: _isDirty ? _save : null,
                   icon: const Icon(Icons.save_outlined),
@@ -374,7 +374,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           ),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
+            child: FushiTextButton.icon(
               key: const ValueKey<String>('gtp-use-latest'),
               onPressed: hasLatest ? _useLatestSample : null,
               icon: const Icon(Icons.history, size: 18),
@@ -577,7 +577,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: FilledButton.tonalIcon(
+            child: FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('gtp-add-step'),
               onPressed: _promptAddStep,
               icon: const Icon(Icons.add),
@@ -659,7 +659,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                   ],
                 ),
               ),
-              Switch(
+              FushiSwitch(
                 key: ValueKey<String>('gtp-step-enabled-${step.id}'),
                 value: step.enabled,
                 onChanged: (bool value) => _updateStep(
@@ -667,7 +667,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                   (GalTextProcessStep s) => s.copyWith(enabled: value),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('gtp-step-delete-${step.id}'),
                 tooltip: t.dialog_delete,
                 icon: const Icon(Icons.delete_outline, size: 20),
@@ -843,7 +843,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
   }) => Row(
     children: <Widget>[
       Expanded(child: Text(label, style: tokens.type.listSubtitle)),
-      Switch(key: key, value: value, onChanged: onChanged),
+      FushiSwitch(key: key, value: value, onChanged: onChanged),
     ],
   );
 
@@ -853,7 +853,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         .toSet();
     final GalTextProcessKind? picked = await showAppDialog<GalTextProcessKind>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.game_text_process_add_step),
         content: SizedBox(
           width: 420,
@@ -878,7 +878,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_cancel),
           ),
@@ -907,14 +907,14 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: FilledButton.icon(
+            child: FushiFilledButton.icon(
               key: const ValueKey<String>('gtp-ai-generate'),
               onPressed: _aiBusy ? null : () => unawaited(_runAi()),
               icon: _aiBusy
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.auto_awesome_outlined),
               label: Text(t.game_text_process_ai_generate),

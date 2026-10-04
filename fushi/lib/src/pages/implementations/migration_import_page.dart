@@ -117,7 +117,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
   Future<void> _showProblemsDialog(MigrationScanResult scan) async {
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.migration_import_entry),
         content: SingleChildScrollView(
           child: Column(
@@ -134,7 +134,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(t.dialog_close),
           ),
@@ -288,7 +288,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
   Widget build(BuildContext context) {
     final MigrationScanResult? scan = _scan;
     return Scaffold(
-      appBar: AppBar(title: Text(t.migration_import_entry)),
+      appBar: FushiAppBar(title: Text(t.migration_import_entry)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
@@ -297,7 +297,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           if (scan == null)
             Column(
               children: <Widget>[
-                const Center(child: CircularProgressIndicator()),
+                const Center(child: FushiCircularProgressIndicator()),
                 const SizedBox(height: 12),
                 // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
                 Text(_scanningLabel ?? t.migration_import_verifying_hint,
@@ -327,7 +327,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
                     const SizedBox(height: 8),
                     Text(t.migration_import_permission_body),
                     const SizedBox(height: 12),
-                    FilledButton(
+                    FushiFilledButton(
                       onPressed: _requestPermission,
                       child: Text(t.migration_import_permission_grant),
                     ),
@@ -360,11 +360,11 @@ class _MigrationImportPageState extends State<MigrationImportPage>
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (_status != null) Text(_status!),
             const SizedBox(height: 8),
-            FilledButton(
+            FushiFilledButton(
               onPressed: _running || scan.ready.isEmpty ? null : _runImport,
               child: Text(t.migration_import_start),
             ),
-            TextButton(
+            FushiTextButton(
               onPressed: _running ? null : _rescan,
               child: Text(t.retry),
             ),

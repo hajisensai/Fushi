@@ -13,7 +13,6 @@ Future<T?> showAppDialog<T>({
   bool barrierDismissible = true,
   Color? barrierColor,
   bool useRootNavigator = true,
-  AnimationStyle? animationStyle,
 }) {
   Widget glassBuilder(BuildContext dialogContext) =>
       FushiGlassDialogBackdrop(child: builder(dialogContext));
@@ -31,6 +30,6 @@ Future<T?> showAppDialog<T>({
     barrierDismissible: barrierDismissible,
     barrierColor: barrierColor,
     useRootNavigator: useRootNavigator,
-    animationStyle: animationStyle ?? fushiMd3DialogAnimationStyle,
+    animationStyle: fushiMd3DialogAnimationStyle,
   );
 }

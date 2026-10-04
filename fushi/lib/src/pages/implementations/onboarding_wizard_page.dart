@@ -573,7 +573,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ? const SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
               )
             : null,
         onPressed:
@@ -635,7 +635,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           const SizedBox(
             width: 16,
             height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: FushiDesignTokens.of(context).spacing.gap),
           Text(t.anki_fetch, style: textTheme.bodySmall),
@@ -845,7 +845,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               child: Row(
                 children: <Widget>[
                   if (!isLast)
-                    TextButton(
+                    FushiTextButton(
                       onPressed: () => unawaited(_complete()),
                       child: Text(t.onboarding_action_skip),
                     ),
@@ -858,9 +858,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                   ),
                   SizedBox(width: tokens.spacing.gap),
                   if (_stepIndex > 0)
-                    OutlinedButton(onPressed: _goBack, child: Text(t.back)),
+                    FushiOutlinedButton(onPressed: _goBack, child: Text(t.back)),
                   if (_stepIndex > 0) SizedBox(width: tokens.spacing.gap),
-                  FilledButton(
+                  FushiFilledButton(
                     onPressed: _goNext,
                     child: Text(
                       isLast
@@ -1374,7 +1374,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    LinearProgressIndicator(
+                    FushiLinearProgressIndicator(
                       value: _packController.progress.value > 0
                           ? _packController.progress.value
                           : null,
@@ -1396,7 +1396,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                     SizedBox(height: tokens.spacing.gap),
                     Align(
                       alignment: AlignmentDirectional.centerEnd,
-                      child: OutlinedButton(
+                      child: FushiOutlinedButton(
                         onPressed: _packController.requestCancel,
                         child: Text(t.dialog_cancel),
                       ),

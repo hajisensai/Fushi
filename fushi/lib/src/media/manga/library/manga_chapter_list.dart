@@ -152,7 +152,7 @@ class MangaChapterList extends StatelessWidget {
           ),
         ),
         if (onSortToggled != null)
-          TextButton.icon(
+          FushiTextButton.icon(
             key: const ValueKey<String>('manga_chapter_sort'),
             onPressed: onSortToggled,
             icon: Icon(newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
@@ -201,7 +201,7 @@ class MangaChapterList extends StatelessWidget {
               alignment: WrapAlignment.center,
               children: <Widget>[
                 for (final OnlineMangaSiblingSource sibling in scope.siblings)
-                  ActionChip(
+                  FushiActionChipControl(
                     key: ValueKey<String>(
                       'manga_series_sibling_${sibling.sourceId}',
                     ),
@@ -439,7 +439,7 @@ class MangaChapterList extends StatelessWidget {
       _ChapterDownloadState.downloading => const SizedBox(
         width: 16,
         height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       ),
       _ChapterDownloadState.failed => Icon(
         Icons.error_outline,

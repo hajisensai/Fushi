@@ -282,16 +282,16 @@ class _FavoriteBatchMiningPageState
         if (!didPop) _requestStop();
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: FushiAppBar(
           title: Text(t.favorites_batch_mine_title),
           actions: <Widget>[
             if (_running)
-              TextButton(
+              FushiTextButton(
                 onPressed: _stopRequested ? null : _requestStop,
                 child: Text(t.stop),
               ),
             if (_finished)
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.maybePop(context),
                 child: Text(t.dialog_done),
               ),
@@ -300,7 +300,7 @@ class _FavoriteBatchMiningPageState
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            LinearProgressIndicator(value: total == 0 ? 1 : _done / total),
+            FushiLinearProgressIndicator(value: total == 0 ? 1 : _done / total),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Text(
@@ -329,7 +329,7 @@ class _FavoriteBatchMiningPageState
                   ),
                 ),
               ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Expanded(
               child: ListView.builder(
                 itemCount: total,
@@ -400,7 +400,7 @@ class _FavoriteBatchItemTile extends StatelessWidget {
       dimension: 24,
       child: Padding(
         padding: EdgeInsets.all(2),
-        child: CircularProgressIndicator(strokeWidth: 2.5),
+        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
       ),
     ),
     FavoriteBatchItemStatus.added => Icon(

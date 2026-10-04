@@ -11,6 +11,9 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassAppBar, GlassContainer, LiquidRoundedRectangle;
 
 class AdaptiveNavItem {
   final IconData icon;
@@ -162,104 +165,151 @@ class _MaterialNavCluster extends StatelessWidget {
     // eink：surfaceContainer / surface 都塌成页面底色，底栏 / 侧栏与内容面连成
     // 一整块白（黑）；靠一条前景色边线把导航区切出来。
     final bool eink = isEinkTheme(context);
-    // 毛玻璃：Material 底色让位给外包的 FushiGlassSurface（同一色阶的半透明
-    // 填充 + 背景模糊）；贴屏幕边，不画描边。off 时结构与像素都不变。
-    final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
-    Widget glassWrap(Color base, Widget material) => glass
-        ? FushiGlassSurface(
-            baseColor: base,
-            showBorder: false,
-            grouped: true,
-            child: material,
-          )
-        : material;
+    // 毛玻璃 / 玻璃设计系统：Material 底色让位给背后的玻璃层（见
+    // [_NavSurfaceBackdrop]）；贴屏幕边，不画描边。
+    //
+    // 结构恒定：无论 MD3 / 毛玻璃 / 液态 / 玻璃设计系统，外层永远是同一个
+    // [_NavSurfaceBackdrop]，带 [fushiMaterialNavKey] 的 Material 永远在它的
+    // 同一个槽位里，切换时只换背景槽。旧实现按「是否玻璃」把 Material 包进 /
+    // 拆出 FushiGlassSurface，设计系统一切换整条导航（含各目的地的焦点目标）就
+    // 在同一帧里被重挂，Mac 调试版触发 `_elements.contains(element)` 断言。
+    final bool glassDesign = isGlassDesign(context);
+    final bool glass =
+        glassDesign || glassMaterialOf(context) != FushiGlassMaterial.off;
     if (horizontal) {
-      return glassWrap(colors.surfaceContainer, Material(
-        key: fushiMaterialNavKey,
-        color: glass ? Colors.transparent : colors.surfaceContainer,
-        shape: eink ? Border(top: BorderSide(color: colors.outline)) : null,
-        // Clamp text scaling exactly like the stock NavigationBar: at the
-        // system's largest font sizes an unclamped label would push the bar to
-        // a third of the screen.
-        child: MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.3,
-          child: SafeArea(
-            top: false,
-            // minHeight, not a fixed height: even clamped, a scaled label can
-            // outgrow the content box, and a fixed box would overflow instead
-            // of growing (the old 80 only hid this behind spare room).
-            // IntrinsicHeight is what makes that "grow" well defined — each
-            // destination centers itself inside the row, so under a loose
-            // constraint the row would otherwise stretch to the whole screen.
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minHeight: kAdaptiveNavBarContentHeight,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: kAdaptiveNavBarContentPadding,
+      return _NavSurfaceBackdrop(
+        baseColor: colors.surfaceContainer,
+        child: Material(
+          key: fushiMaterialNavKey,
+          color: glass ? Colors.transparent : colors.surfaceContainer,
+          shape: eink ? Border(top: BorderSide(color: colors.outline)) : null,
+          // Clamp text scaling exactly like the stock NavigationBar: at the
+          // system's largest font sizes an unclamped label would push the bar to
+          // a third of the screen.
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: SafeArea(
+              top: false,
+              // minHeight, not a fixed height: even clamped, a scaled label can
+              // outgrow the content box, and a fixed box would overflow instead
+              // of growing (the old 80 only hid this behind spare room).
+              // IntrinsicHeight is what makes that "grow" well defined — each
+              // destination centers itself inside the row, so under a loose
+              // constraint the row would otherwise stretch to the whole screen.
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: kAdaptiveNavBarContentHeight,
                 ),
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: <Widget>[
-                      for (final Widget tile in tiles) Expanded(child: tile),
-                    ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: kAdaptiveNavBarContentPadding,
+                  ),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      children: <Widget>[
+                        for (final Widget tile in tiles) Expanded(child: tile),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ));
+      );
     }
 
-    return glassWrap(colors.surface, Material(
-      key: fushiMaterialNavKey,
-      color: glass ? Colors.transparent : colors.surface,
-      shape: eink
-          ? BorderDirectional(end: BorderSide(color: colors.outline))
-          : null,
-      child: SizedBox(
-        width: kAdaptiveNavRailWidth,
-        child: SafeArea(
-          right: false,
-          child: Column(
-            children: <Widget>[
-              if (leading != null) leading!,
-              // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
-              // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
-              // 过矮时滚动；ConstrainedBox(minHeight: 视口高) + IntrinsicHeight 保证窗口
-              // 够高时内容仍按 center 垂直居中（撑满视口才能 center），只有真的放不下才滚。
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    return SingleChildScrollView(
-                      child: ConstrainedBox(
-                        constraints:
-                            BoxConstraints(minHeight: constraints.maxHeight),
-                        child: IntrinsicHeight(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              for (final Widget tile in tiles)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 6),
-                                  child: tile,
-                                ),
-                            ],
+    return _NavSurfaceBackdrop(
+      baseColor: colors.surface,
+      child: Material(
+        key: fushiMaterialNavKey,
+        color: glass ? Colors.transparent : colors.surface,
+        shape: eink
+            ? BorderDirectional(end: BorderSide(color: colors.outline))
+            : null,
+        child: SizedBox(
+          width: kAdaptiveNavRailWidth,
+          child: SafeArea(
+            right: false,
+            child: Column(
+              children: <Widget>[
+                if (leading != null) leading!,
+                // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
+                // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
+                // 过矮时滚动；ConstrainedBox(minHeight: 视口高) + IntrinsicHeight 保证窗口
+                // 够高时内容仍按 center 垂直居中（撑满视口才能 center），只有真的放不下才滚。
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints:
+                              BoxConstraints(minHeight: constraints.maxHeight),
+                          child: IntrinsicHeight(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: <Widget>[
+                                for (final Widget tile in tiles)
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.symmetric(vertical: 6),
+                                    child: tile,
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
+  }
+}
+
+/// 导航面的背衬：一个恒定的 passthrough [Stack]，背景槽按设计系统 / 材质换成
+/// 玻璃设计系统的 [GlassContainer]（液态 premium 档）、MD3 毛玻璃的
+/// [FushiGlassSurface]（同色阶半透明 + 背景模糊），或 MD3 实心时的空盒；
+/// [child]（带 [fushiMaterialNavKey] 的 Material）恒在第二个槽位，几何与
+/// 不包时一字不差。
+class _NavSurfaceBackdrop extends StatelessWidget {
+  const _NavSurfaceBackdrop({required this.baseColor, required this.child});
+
+  final Color baseColor;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget background;
+    if (isGlassDesign(context)) {
+      background = GlassContainer(
+        shape: const LiquidRoundedRectangle(borderRadius: 0),
+        quality: fushiGlassQuality(context, prominent: true),
+        settings: fushiGlassSettings(context, tint: baseColor),
+        child: const SizedBox.expand(),
+      );
+    } else if (glassMaterialOf(context) != FushiGlassMaterial.off) {
+      background = FushiGlassSurface(
+        baseColor: baseColor,
+        showBorder: false,
+        grouped: true,
+        child: const SizedBox.expand(),
+      );
+    } else {
+      background = const SizedBox.shrink();
+    }
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(child: IgnorePointer(child: background)),
+        child,
+      ],
+    );
   }
 }
 
@@ -285,6 +335,7 @@ class _NavFocusCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool glassDesign = isGlassDesign(context);
     final Widget tile = _FushiNavTile(item: item, selected: selected);
     // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
     // dispatches it at the primary-focus context and walks UP the Actions chain.
@@ -301,6 +352,12 @@ class _NavFocusCell extends StatelessWidget {
         onTap: onSelect,
         canRequestFocus: false,
         borderRadius: FushiDesignTokens.of(context).radii.controlRadius,
+        // 玻璃设计系统不画 MD 涟漪（按压反馈是玻璃药丸本身）；InkWell 本身保留，
+        // 焦点目标的父链不随设计系统变。
+        splashFactory: glassDesign ? NoSplash.splashFactory : null,
+        overlayColor: glassDesign
+            ? const WidgetStatePropertyAll<Color>(Colors.transparent)
+            : null,
         child: Padding(
           padding: EdgeInsets.symmetric(
             vertical: horizontal ? 0 : 4,
@@ -339,6 +396,7 @@ class _FushiNavTile extends StatelessWidget {
     // eink：选中药丸的 secondaryContainer == 页面底色，选中项只剩图标实心/线框
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
+    final bool glassDesign = isGlassDesign(context);
     final Color pillColor = eink ? colors.onSurface : colors.secondaryContainer;
     final Color pillIconColor =
         eink ? colors.surface : colors.onSecondaryContainer;
@@ -361,13 +419,46 @@ class _FushiNavTile extends StatelessWidget {
               builder: (BuildContext context, double t, Widget? child) {
                 // t 落到端点时直接用目标色：settle 后的药丸与改造前逐值相同
                 // （eink 守卫按 `decoration.color == onSurface` 断言）。
+                final double width =
+                    _pillHeight + (_pillWidth - _pillHeight) * t;
+                if (glassDesign) {
+                  // 玻璃设计系统：选中药丸是一枚着色玻璃（展开 + 渐显与 MD3 同一条
+                  // 时间线），图标浮在玻璃之上。
+                  return SizedBox(
+                    width: width,
+                    height: _pillHeight,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        if (t > 0)
+                          Positioned.fill(
+                            child: Opacity(
+                              opacity: t.clamp(0.0, 1.0),
+                              child: GlassContainer(
+                                shape: LiquidRoundedRectangle(
+                                  borderRadius: radius.topLeft.x,
+                                ),
+                                quality: fushiGlassQuality(context),
+                                settings: fushiGlassSettings(
+                                  context,
+                                  tint: colors.secondaryContainer,
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                          ),
+                        if (child != null) child,
+                      ],
+                    ),
+                  );
+                }
                 final Color fill = t >= 1
                     ? pillColor
                     : t <= 0
                         ? Colors.transparent
                         : pillColor.withValues(alpha: pillColor.a * t);
                 return Container(
-                  width: _pillHeight + (_pillWidth - _pillHeight) * t,
+                  width: width,
                   height: _pillHeight,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
@@ -579,6 +670,16 @@ PreferredSizeWidget adaptiveAppBar({
     );
     if (bottom == null) return navBar;
     return _CupertinoAppBarWithBottom(navBar: navBar, bottom: bottom);
+  }
+  if (isGlassDesign(context)) {
+    // 「玻璃」设计系统：透明玻璃导航栏（标题靠前、动作胶囊在尾）。
+    return GlassAppBar(
+      leading: leading,
+      title: title,
+      actions: actions,
+      bottom: bottom,
+      centerTitle: false,
+    );
   }
   return AppBar(
     leading: leading,

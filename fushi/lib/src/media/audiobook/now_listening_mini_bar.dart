@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 首页「正在听书」迷你条（TODO-291 阶段2）。
 ///
@@ -123,7 +124,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
               // 仅 Android/Windows 有 native 悬浮窗后端（floating_lyric_channel），其余桌面
               // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
               if (Platform.isAndroid || Platform.isWindows)
-                IconButton(
+                FushiIconButtonControl(
                   icon: Icon(
                     appModel.showFloatingLyric
                         ? Icons.subtitles
@@ -133,12 +134,12 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
                   tooltip: t.floating_lyric_toggle_action,
                   onPressed: () => _toggleFloatingLyric(appModel),
                 ),
-              IconButton(
+              FushiIconButtonControl(
                 icon: Icon(playing ? Icons.pause : Icons.play_arrow),
                 tooltip: t.floating_lyric_play_pause,
                 onPressed: () => controller.togglePlayPause(),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 icon: const Icon(Icons.stop),
                 tooltip: t.stop,
                 onPressed: () => appModel.stopBackgroundListening(),
@@ -168,7 +169,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         manufacturer: maker,
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(hint),
           duration: const Duration(seconds: 4),
         ),

@@ -294,7 +294,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         icon: Icons.cloud_off_outlined,
         message: t.media_server_items_load_failed,
         detail: '$_firstPageError',
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           key: const ValueKey<String>('media-server-grid-retry'),
           onPressed: () => unawaited(_reload()),
           icon: const Icon(Icons.refresh_rounded),
@@ -365,7 +365,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
             child: Padding(
               padding: EdgeInsets.all(tokens.spacing.card),
               child: Center(
-                child: TextButton.icon(
+                child: FushiTextButton.icon(
                   key: const ValueKey<String>('media-server-grid-retry-more'),
                   onPressed: _retryLoadMore,
                   icon: const Icon(Icons.refresh_rounded),

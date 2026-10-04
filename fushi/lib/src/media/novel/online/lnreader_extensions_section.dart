@@ -99,7 +99,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
         context: context,
         // 普通 AlertDialog：内含 TextField，`.adaptive` 在 iOS / macOS 主题下渲染成
         // CupertinoAlertDialog、没有 Material 祖先（与 Mihon 输入框同一做法）。
-        builder: (BuildContext dialogContext) => AlertDialog(
+        builder: (BuildContext dialogContext) => FushiAlertDialog(
           title: Text(title),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -109,7 +109,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                 Text(t.novel_store_add_warning),
                 const SizedBox(height: 12),
               ],
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>('novel_store_url_field'),
                 controller: controller,
                 autofocus: true,
@@ -170,7 +170,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
   Future<bool> _confirm(String title, String message, String action) async =>
       await showAppDialog<bool>(
         context: context,
-        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
           title: Text(title),
           content: Text(message),
           actions: <Widget>[
@@ -394,7 +394,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: LinearProgressIndicator(),
+              child: FushiLinearProgressIndicator(),
             ),
           ),
         if (stores) _buildStores(),
@@ -449,12 +449,12 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      IconButton(
+                      FushiIconButtonControl(
                         tooltip: t.mihon_store_edit,
                         onPressed: () => unawaited(_editStore(store)),
                         icon: const Icon(Icons.edit_outlined),
                       ),
-                      IconButton(
+                      FushiIconButtonControl(
                         tooltip: t.mihon_store_remove,
                         onPressed: () => unawaited(_removeStore(store)),
                         icon: const Icon(Icons.delete_outline),

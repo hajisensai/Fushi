@@ -154,7 +154,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          TextField(
+          FushiTextFieldControl(
             controller: _urlController,
             enabled: !importing,
             keyboardType: TextInputType.url,
@@ -171,7 +171,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
             },
           ),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             onPressed: importing ? null : _pickFile,
             icon: const Icon(Icons.playlist_play_outlined),
             label: Text(
@@ -189,7 +189,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         ],
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: importing ? null : () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),

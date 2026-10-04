@@ -103,7 +103,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                   ],
                                 ),
                               ),
-                              IconButton(
+                              FushiIconButtonControl(
                                 onPressed: _dismissBlackFlickerNotice,
                                 iconSize: 20,
                                 visualDensity: VisualDensity.compact,
@@ -116,7 +116,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: <Widget>[
-                              TextButton(
+                              FushiTextButton(
                                 onPressed: _suppressBlackFlickerNotice,
                                 style: TextButton.styleFrom(
                                   foregroundColor: cs.onErrorContainer,
@@ -127,7 +127,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              FilledButton.tonal(
+                              FushiFilledButton.tonal(
                                 onPressed: _openBlackFlickerSuggestions,
                                 style: FilledButton.styleFrom(
                                   visualDensity: VisualDensity.compact,

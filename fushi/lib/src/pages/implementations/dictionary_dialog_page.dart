@@ -178,14 +178,14 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('dict-download-select-all'),
               onPressed: selectable.isEmpty
                   ? null
                   : () => onCheckedChanged(Set<int>.of(selectable)),
               child: Text(t.batch_select_all),
             ),
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('dict-download-invert-selection'),
               onPressed: selectable.isEmpty
                   ? null
@@ -234,7 +234,7 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
           children: <Widget>[
             FushiListItem(
               minHeight: 52,
-              leading: Checkbox(
+              leading: FushiCheckbox(
                 key: ValueKey<String>(
                   'dict-download-category-check-${cat.name}',
                 ),
@@ -301,7 +301,7 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
       ),
       selected: selected,
       onTap: () => _toggleOne(idx, !selected),
-      leading: Checkbox(
+      leading: FushiCheckbox(
         value: selected,
         onChanged: (bool? value) => _toggleOne(idx, value ?? false),
       ),
@@ -424,7 +424,7 @@ class _DictionaryDialogPageState extends BasePageState {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SwitchListTile.adaptive(
+            FushiSwitchListTile.adaptive(
               secondary: const Icon(Icons.update_outlined),
               title: Text(t.dict_auto_update),
               subtitle: Text(t.dict_auto_update_hint),
@@ -557,7 +557,7 @@ class _DictionaryDialogPageState extends BasePageState {
     required VoidCallback onTap,
     ButtonStyle? style,
   }) {
-    final Widget button = FilledButton.tonalIcon(
+    final Widget button = FushiFilledButton.tonalIcon(
       onPressed: onTap,
       style: style,
       icon: Icon(icon, size: 18),
@@ -1388,7 +1388,7 @@ class _DictionaryDialogPageState extends BasePageState {
                   style: textTheme.bodySmall,
                 ),
                 titleMaxLines: 2,
-                trailing: TextButton(
+                trailing: FushiTextButton(
                   onPressed: _showDownloadProgressDialog,
                   child: Text(t.dict_download_progress_show),
                 ),
@@ -1883,13 +1883,13 @@ class _DictionaryDialogPageState extends BasePageState {
   ) {
     final ColorScheme scheme = theme.colorScheme;
     final String tooltip = enabled ? t.options_hide : t.options_show;
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: Semantics(
         button: true,
         toggled: enabled,
         label: tooltip,
-        child: Switch(
+        child: FushiSwitch(
           value: enabled,
           onChanged: (_) => _toggleDictionaryHidden(dictionary),
           activeThumbColor: scheme.onPrimaryContainer,
@@ -2520,7 +2520,7 @@ class DictionaryDownloadProgressDialog extends StatelessWidget {
           children: <Widget>[
             ValueListenableBuilder<double>(
               valueListenable: progressListenable,
-              builder: (_, double progress, __) => LinearProgressIndicator(
+              builder: (_, double progress, __) => FushiLinearProgressIndicator(
                 value: progress > 0 ? progress : null,
               ),
             ),

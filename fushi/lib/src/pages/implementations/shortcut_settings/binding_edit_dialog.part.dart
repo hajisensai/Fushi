@@ -748,7 +748,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: TextButton(
+                      child: FushiTextButton(
                         key: const Key('shortcut_stop_capture'),
                         onPressed: _cancelCapture,
                         child: Text(t.shortcut_stop_capture),
@@ -757,7 +757,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   ],
                 )
               else if (canAddKeyboard)
-                TextButton.icon(
+                FushiTextButton.icon(
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(t.shortcut_keyboard),
                   onPressed: _startCapture,
@@ -766,7 +766,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
 
             // Gamepad section
             if (showGamepad) ...<Widget>[
-              if (showKeyboard) const Divider(height: 24),
+              if (showKeyboard) const FushiDividerControl(height: 24),
               Text(
                 t.shortcut_gamepad,
                 style: themeData.textTheme.labelLarge,
@@ -831,7 +831,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: TextButton(
+                      child: FushiTextButton(
                         key: const Key('shortcut_stop_gamepad_capture'),
                         onPressed: _cancelGamepadCapture,
                         child: Text(t.shortcut_stop_capture),
@@ -844,7 +844,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   spacing: tokens.spacing.gap,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
-                    TextButton.icon(
+                    FushiTextButton.icon(
                       key: const Key('shortcut_add_gamepad_capture'),
                       icon: const Icon(Icons.add, size: 18),
                       label: Text(t.shortcut_gamepad),
@@ -899,7 +899,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             // hidden and only inherited bindings (if any) show read-only — Never
             // break userspace: nothing captured, nothing lost.
             if (_mouse.isNotEmpty || canAddMouse) ...<Widget>[
-              if (showKeyboard || showGamepad) const Divider(height: 24),
+              if (showKeyboard || showGamepad) const FushiDividerControl(height: 24),
               Text(
                 t.shortcut_mouse_button,
                 style: themeData.textTheme.labelLarge,
@@ -950,7 +950,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       ),
                       Align(
                         alignment: Alignment.centerRight,
-                        child: TextButton(
+                        child: FushiTextButton(
                           key: const Key('shortcut_stop_mouse_capture'),
                           onPressed: _cancelMouseCapture,
                           child: Text(t.shortcut_stop_capture),
@@ -959,7 +959,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ],
                   )
                 else
-                  TextButton.icon(
+                  FushiTextButton.icon(
                     key: const Key('shortcut_add_mouse'),
                     icon: const Icon(Icons.mouse_outlined, size: 18),
                     label: Text(t.shortcut_mouse_button),
@@ -977,7 +977,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   showGamepad ||
                   _mouse.isNotEmpty ||
                   channels.contains(ShortcutChannel.mouse))
-                const Divider(height: 24),
+                const FushiDividerControl(height: 24),
               Text(
                 t.shortcut_wheel,
                 style: themeData.textTheme.labelLarge,
@@ -1028,7 +1028,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: TextButton(
+                      child: FushiTextButton(
                         key: const Key('shortcut_stop_wheel_capture'),
                         onPressed: _cancelWheelCapture,
                         child: Text(t.shortcut_stop_capture),
@@ -1037,7 +1037,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   ],
                 )
               else if (canAddWheel)
-                TextButton.icon(
+                FushiTextButton.icon(
                   key: const Key('shortcut_add_wheel'),
                   icon: const Icon(Icons.mouse_outlined, size: 18),
                   label: Text(t.shortcut_wheel),
@@ -1062,7 +1062,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
           spacing: tokens.spacing.gap,
           runSpacing: tokens.spacing.gap,
           children: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed: _clearAll,
               child: Text(t.shortcut_clear),
             ),

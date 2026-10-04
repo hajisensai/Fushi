@@ -180,7 +180,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                           if (inFlight > 0)
                             SizedBox.square(
                               dimension: 14,
-                              child: CircularProgressIndicator(
+                              child: FushiCircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: textColor,
                               ),

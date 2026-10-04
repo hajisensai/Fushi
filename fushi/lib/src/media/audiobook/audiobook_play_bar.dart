@@ -302,7 +302,7 @@ class _FocusableBarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget button = filledTonal
-        ? IconButton.filledTonal(
+        ? FushiIconButtonControl.filledTonal(
             icon: icon,
             iconSize: iconSize,
             style: style,
@@ -310,7 +310,7 @@ class _FocusableBarButton extends StatelessWidget {
             tooltip: tooltip,
             onPressed: onPressed,
           )
-        : IconButton(
+        : FushiIconButtonControl(
             icon: icon,
             iconSize: iconSize,
             style: style,

@@ -289,7 +289,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     final List<String> genres = _detail.genres;
     // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(
           t.video_work_details,
           maxLines: 1,
@@ -398,7 +398,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             icon: Icons.cloud_off_outlined,
             message: t.media_server_items_load_failed,
             detail: '$_episodesError',
-            action: FilledButton.icon(
+            action: FushiFilledButton.icon(
               key: const ValueKey<String>('media-server-episodes-retry'),
               onPressed: () => unawaited(_reloadEpisodes()),
               icon: const Icon(Icons.refresh_rounded),

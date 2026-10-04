@@ -35,7 +35,136 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show
+        GlassCard,
+        GlassChip,
+        GlassContainer,
+        GlassDivider,
+        GlassListTile,
+        GlassMenu,
+        GlassMenuController,
+        GlassMenuDivider,
+        GlassMenuItem,
+        GlassSwitch,
+        GlassTextField,
+        LiquidRoundedSuperellipse;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+
+// ── 「玻璃」设计系统的共享原语 ────────────────────────────────────────────
+//
+// 共享组件在 [isGlassDesign] 为 true 时换成 `liquid_glass_widgets` 组件族，
+// MD3 分支一行不动。下面几个原语给本文件与 settings_shared / adaptive_* 共用。
+
+/// 玻璃组件的形状：按 Fushi 圆角令牌取左上角半径的连续曲率超椭圆。
+LiquidRoundedSuperellipse fushiGlassShapeOf(BorderRadius radius) =>
+    LiquidRoundedSuperellipse(borderRadius: radius.topLeft.x);
+
+/// 玻璃背衬：把一层玻璃画在 [child] **背后**（Stack 的兄弟层），而不是把
+/// [child] 包进玻璃。
+///
+/// 存在的理由是**结构恒定**：导航栏 / 工具条底下挂着带 GlobalKey 的子树，
+/// 若按「是否玻璃」把它们包进 / 拆出 GlassContainer，设计系统或材质一切换，
+/// 整棵子树就在同一帧里被重挂（LayoutBuilder 里还会触发 framework 的
+/// `_elements.contains(element)` 断言，Mac 调试版红屏）。这里外层永远是同一个
+/// Stack、[child] 永远在同一个槽位，切换时只换背景槽里的那一层。
+///
+/// [enabled] 为 false（MD3）时背景槽是空盒，布局与绘制都与不包时一致
+/// （passthrough：[child] 拿到的约束与不包时一字不差）。
+class FushiGlassBackdrop extends StatelessWidget {
+  const FushiGlassBackdrop({
+    required this.child,
+    required this.enabled,
+    super.key,
+    this.borderRadius = BorderRadius.zero,
+    this.tint,
+    this.prominent = false,
+  });
+
+  final Widget child;
+  final bool enabled;
+  final BorderRadius borderRadius;
+
+  /// 玻璃着色；null = 主题默认（surfaceContainerHigh 色阶）。
+  final Color? tint;
+
+  /// 静态主表面（导航栏、顶栏）在液态档用 premium 渲染。
+  final bool prominent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(
+          child: enabled
+              ? IgnorePointer(
+                  child: GlassContainer(
+                    shape: fushiGlassShapeOf(borderRadius),
+                    quality: fushiGlassQuality(context, prominent: prominent),
+                    settings: tint == null
+                        ? null
+                        : fushiGlassSettings(context, tint: tint),
+                    child: const SizedBox.expand(),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+/// 玻璃下的按压 / 焦点高亮层：给没有自带交互外观的玻璃行（设置行、列表行）
+/// 一个与 [GlassListTile] 同口径的按下变暗反馈（亮色压黑 8%，暗色提白 8%）。
+/// 只旁观指针，不进手势竞技场。
+class FushiGlassPressHighlight extends StatefulWidget {
+  const FushiGlassPressHighlight({
+    required this.child,
+    super.key,
+    this.borderRadius,
+  });
+
+  final Widget child;
+  final BorderRadius? borderRadius;
+
+  @override
+  State<FushiGlassPressHighlight> createState() =>
+      _FushiGlassPressHighlightState();
+}
+
+class _FushiGlassPressHighlightState extends State<FushiGlassPressHighlight> {
+  bool _pressed = false;
+
+  void _set(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return Listener(
+      onPointerDown: (_) => _set(true),
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: AnimatedContainer(
+        duration: _pressed ? Duration.zero : const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: _pressed
+              ? (dark ? Colors.white : Colors.black).withValues(alpha: 0.08)
+              : Colors.transparent,
+          borderRadius: widget.borderRadius,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
 
 class FushiCard extends StatefulWidget {
   const FushiCard({
@@ -100,44 +229,46 @@ class _FushiCardState extends State<FushiCard> {
       padding: widget.padding ?? EdgeInsets.all(tokens.spacing.card),
       child: widget.child,
     );
-    final Widget card = ContextMenuTrigger(
-      // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
-      // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
-      onInvoke: contextMenuInvoker(widget.onSecondaryTap),
-      child: Padding(
-        padding: widget.margin ?? EdgeInsets.zero,
-        // 可点的卡片按下即轻微下沉（2026-10 交互重做）：只旁观指针事件，不进
-        // 手势竞技场，InkWell 的点击 / 长按语义不变；eink / 减弱动态效果下不包。
-        child: FushiPressScale(
-          enabled: widget.onTap != null || widget.onLongPress != null,
-          child: AnimatedContainer(
-            duration: einkSafeDuration(context, fushiMd3StateDuration),
-            curve: fushiMd3StateCurve,
-            decoration: ShapeDecoration(
-              color: effectiveColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: radius,
-                side: side,
+    final Widget card = isGlassDesign(context)
+        ? _buildGlassCard(context, content, radius)
+        : ContextMenuTrigger(
+            // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
+            // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
+            onInvoke: contextMenuInvoker(widget.onSecondaryTap),
+            child: Padding(
+              padding: widget.margin ?? EdgeInsets.zero,
+              // 可点的卡片按下即轻微下沉（2026-10 交互重做）：只旁观指针事件，不进
+              // 手势竞技场，InkWell 的点击 / 长按语义不变；eink / 减弱动态效果下不包。
+              child: FushiPressScale(
+                enabled: widget.onTap != null || widget.onLongPress != null,
+                child: AnimatedContainer(
+                  duration: einkSafeDuration(context, fushiMd3StateDuration),
+                  curve: fushiMd3StateCurve,
+                  decoration: ShapeDecoration(
+                    color: effectiveColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: radius,
+                      side: side,
+                    ),
+                  ),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    shape: RoundedRectangleBorder(borderRadius: radius),
+                    clipBehavior: Clip.antiAlias,
+                    child: widget.onTap == null &&
+                            widget.onLongPress == null &&
+                            widget.onSecondaryTap == null
+                        ? content
+                        : InkWell(
+                            onTap: widget.onTap,
+                            onLongPress: widget.onLongPress,
+                            child: content,
+                          ),
+                  ),
+                ),
               ),
             ),
-            child: Material(
-              type: MaterialType.transparency,
-              shape: RoundedRectangleBorder(borderRadius: radius),
-              clipBehavior: Clip.antiAlias,
-              child: widget.onTap == null &&
-                      widget.onLongPress == null &&
-                      widget.onSecondaryTap == null
-                  ? content
-                  : InkWell(
-                      onTap: widget.onTap,
-                      onLongPress: widget.onLongPress,
-                      child: content,
-                    ),
-            ),
-          ),
-        ),
-      ),
-    );
+          );
     if (widget.onTap == null) return card;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
 
@@ -153,6 +284,63 @@ class _FushiCardState extends State<FushiCard> {
       child: FushiFocusTarget(
         id: widget.focusId ?? _fallbackFocusId,
         child: card,
+      ),
+    );
+  }
+
+  /// 玻璃设计系统：卡片面换成 [GlassCard]（选中 / 显式底色作玻璃着色），点击
+  /// 走 GestureDetector + 玻璃按压高亮。焦点（外层 Actions + FushiFocusTarget）、
+  /// 右键菜单、按压下沉与 margin 和 MD3 分支同一套，调用点的 key / focusId 不变。
+  Widget _buildGlassCard(
+    BuildContext context,
+    Widget content,
+    BorderRadius radius,
+  ) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color? tint =
+        widget.selected ? colors.primaryContainer : widget.color;
+    final bool interactive = widget.onTap != null ||
+        widget.onLongPress != null ||
+        widget.onSecondaryTap != null;
+    Widget body = content;
+    if (widget.borderColor != null || widget.selected) {
+      body = DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          border: Border.all(
+            color: widget.borderColor ?? colors.primary.withValues(alpha: 0.5),
+          ),
+        ),
+        child: body,
+      );
+    }
+    if (interactive) {
+      body = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: FushiGlassPressHighlight(borderRadius: radius, child: body),
+      );
+    }
+    return ContextMenuTrigger(
+      onInvoke: contextMenuInvoker(widget.onSecondaryTap),
+      child: Padding(
+        padding: widget.margin ?? EdgeInsets.zero,
+        child: FushiPressScale(
+          enabled: widget.onTap != null || widget.onLongPress != null,
+          child: GlassCard(
+            padding: EdgeInsets.zero,
+            shape: fushiGlassShapeOf(radius),
+            quality: fushiGlassQuality(context),
+            settings:
+                tint == null ? null : fushiGlassSettings(context, tint: tint),
+            clipBehavior: Clip.antiAlias,
+            // 卡片内的子组件（行内 InkWell 等）仍要一个画墨水的 Material 祖先，
+            // 否则涟漪画在玻璃之下的 Scaffold 上、看不见。
+            child: Material(type: MaterialType.transparency, child: body),
+          ),
+        ),
       ),
     );
   }
@@ -319,6 +507,9 @@ class _FushiListItemState extends State<FushiListItem> {
     final bool pill = widget.selectedShape == FushiListItemSelectedShape.pill;
     final BorderRadius? highlightRadius =
         pill ? tokens.radii.groupRadius : null;
+    if (isGlassDesign(context)) {
+      return _wrapFocus(context, _buildGlassTile(context, content, pill));
+    }
     // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
     // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
     // 列表里逐行错位）。几何恒定，颜色才是唯一的选中信号。
@@ -360,6 +551,12 @@ class _FushiListItemState extends State<FushiListItem> {
               ),
       ),
     );
+    return _wrapFocus(context, material);
+  }
+
+  /// 焦点包装：MD3 与玻璃两条分支共用同一套（Actions 在 FushiFocusTarget 之上，
+  /// Enter / 手柄 A → [ActivateIntent] → onTap），focusId 与 key 不随设计系统变。
+  Widget _wrapFocus(BuildContext context, Widget material) {
     if (widget.onTap == null) return material;
 
     final FushiFocusId effectiveFocusId = widget.focusId ?? _fallbackFocusId;
@@ -374,11 +571,47 @@ class _FushiListItemState extends State<FushiListItem> {
       },
       child: FushiFocusTarget(
         id: effectiveFocusId,
+        // MD3 下 autofocus 落在 InkWell 上；玻璃行没有 InkWell，由焦点目标
+        // 自己开屏取焦（Enter 同样经上面的 Actions 激活）。
+        autofocus: widget.autofocus && isGlassDesign(context),
         child: material,
       ),
     );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return material;
     return target;
+  }
+
+  /// 玻璃设计系统：行换成 [GlassListTile]（玻璃按压 / 焦点高亮 + 按钮语义），
+  /// 行内布局沿用 MD3 同一份 [content]（标题行数、leading 宽度、minHeight 等
+  /// 调用点契约不变），选中态是一层 primary 着色的半透明底。
+  Widget _buildGlassTile(BuildContext context, Widget content, bool pill) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final BorderRadius radius =
+        pill ? tokens.radii.groupRadius : BorderRadius.zero;
+    final Widget tile = GlassListTile(
+      title: content,
+      contentPadding: EdgeInsets.zero,
+      titleStyle: tokens.type.listTitle.copyWith(
+        color: tokens.surfaces.onSurface,
+      ),
+      onTap: widget.onTap,
+    );
+    return AnimatedContainer(
+      duration: fushiMd3StateDuration,
+      curve: fushiMd3StateCurve,
+      margin: pill
+          ? EdgeInsets.symmetric(horizontal: tokens.spacing.gap)
+          : EdgeInsets.zero,
+      decoration: BoxDecoration(
+        color: widget.selected
+            ? colors.primary.withValues(alpha: 0.14)
+            : Colors.transparent,
+        borderRadius: radius,
+      ),
+      clipBehavior: pill ? Clip.antiAlias : Clip.none,
+      child: tile,
+    );
   }
 }
 
@@ -438,7 +671,60 @@ class FushiSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget searchBar;
-    if (isMacosPlatform(context)) {
+    if (isGlassDesign(context)) {
+      // 玻璃设计系统：[GlassTextField.search]（胶囊玻璃搜索框）。fieldKey / 清除键
+      // key / 焦点节点与 MD3 分支同一套；物理回车的提交兜底在下面的 Focus 层，
+      // 两条分支共用。
+      searchBar = ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
+            context: context,
+            controller: controller,
+            onChanged: onChanged,
+            iconSize: kFushiSearchFieldIconSize,
+            padding: const EdgeInsets.all(4),
+          );
+          final List<Widget> trailing = <Widget>[
+            if (onClear != null && value.text.isNotEmpty)
+              FushiIconButton(
+                key: clearButtonKey,
+                icon: Icons.close,
+                tooltip: t.clear,
+                size: kFushiSearchFieldIconSize,
+                padding: const EdgeInsets.all(4),
+                onTap: () {
+                  onClear?.call();
+                  if (focusNode.canRequestFocus) {
+                    focusNode.requestFocus();
+                  }
+                },
+              ),
+            if (inputSuffix != null) inputSuffix,
+          ];
+          return GlassTextField.search(
+            key: fieldKey,
+            controller: controller,
+            focusNode: focusNode,
+            placeholder: hintText,
+            textStyle: tokens.type.listTitle,
+            placeholderStyle: tokens.type.listSubtitle,
+            height: kFushiSearchFieldHeight,
+            quality: fushiGlassQuality(context),
+            prefixIcon:
+                const Icon(Icons.search, size: kFushiSearchFieldIconSize),
+            suffixIcon: trailing.isEmpty
+                ? null
+                : Row(mainAxisSize: MainAxisSize.min, children: trailing),
+            onChanged: onChanged,
+            onSubmitted: (String text) {
+              onSubmitted(text);
+              _finishSubmit();
+            },
+          );
+        },
+      );
+    } else if (isMacosPlatform(context)) {
       // macOS-native: MacosTextField maps the search field faithfully —
       // search-icon prefix, native clear button (clearButtonMode), and it keeps
       // onSubmitted (MacosSearchField drops it, which would break enter-to-search).
@@ -648,15 +934,107 @@ class _FushiTextFieldState extends State<FushiTextField> {
 
   FocusNode get _effectiveFocusNode => widget.focusNode ?? _ownedFocusNode;
 
+  /// 玻璃分支专用：[GlassTextField] 没有 `initialValue`，调用点只给初值时
+  /// 由这里持有一个控制器（只在玻璃下首次需要时创建，MD3 永远不碰它）。
+  TextEditingController? _glassController;
+
   @override
   void dispose() {
     _ownedFocusNode.dispose();
+    _glassController?.dispose();
     super.dispose();
+  }
+
+  Widget _buildGlass(BuildContext context, FushiDesignTokens tokens) {
+    final TextEditingController controller = widget.controller ??
+        (_glassController ??=
+            TextEditingController(text: widget.initialValue ?? ''));
+    final Widget? inputSuffix = widget.suffixIcon ??
+        _hibikiTextFieldInputSuffix(
+          context: context,
+          controller: widget.readOnly ? null : controller,
+          onChanged: widget.onChanged,
+        );
+    final String? suffixText = widget.suffixText;
+    final Widget? suffix = suffixText == null
+        ? inputSuffix
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(suffixText, style: tokens.type.metadata),
+              if (inputSuffix != null) inputSuffix,
+            ],
+          );
+    final int maxLines =
+        widget.expands ? 1 << 20 : (widget.maxLines ?? 1 << 20);
+    Widget field(double? height) => GlassTextField(
+          controller: controller,
+          focusNode: _effectiveFocusNode,
+          autofocus: widget.autofocus,
+          readOnly: widget.readOnly,
+          obscureText: widget.obscureText,
+          keyboardType: widget.keyboardType,
+          textInputAction: widget.textInputAction,
+          maxLines: maxLines,
+          minLines: widget.minLines,
+          height: height,
+          placeholder: widget.hintText,
+          textStyle: widget.style ?? tokens.type.listTitle,
+          placeholderStyle: tokens.type.listSubtitle,
+          padding: widget.contentPadding ??
+              EdgeInsets.symmetric(
+                horizontal: tokens.spacing.rowHorizontal,
+                vertical: tokens.spacing.rowVertical,
+              ),
+          shape: fushiGlassShapeOf(tokens.radii.cardRadius),
+          quality: fushiGlassQuality(context),
+          prefixIcon: widget.prefixIcon,
+          suffixIcon: suffix,
+          onChanged: widget.onChanged,
+          onSubmitted: widget.onSubmitted,
+        );
+    final Widget input = widget.expands
+        ? LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) =>
+                field(
+              constraints.maxHeight.isFinite ? constraints.maxHeight : null,
+            ),
+          )
+        : field(null);
+    final String? label = widget.labelText;
+    if (label == null) return input;
+    // GlassTextField 没有浮动标签：标签放在输入框上方（iOS 表单的写法）。
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.only(
+            left: tokens.spacing.rowHorizontal / 2,
+            bottom: tokens.spacing.gap / 2,
+          ),
+          child: Text(label, style: tokens.type.metadata),
+        ),
+        if (widget.expands) Expanded(child: input) else input,
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (isGlassDesign(context)) {
+      final Widget glassField = _buildGlass(context, tokens);
+      if (widget.focusId == null) return glassField;
+      if (FushiFocusRoot.maybeControllerOf(context) == null) {
+        return glassField;
+      }
+      return FushiFocusRegistration(
+        id: widget.focusId!,
+        focusNode: _effectiveFocusNode,
+        child: glassField,
+      );
+    }
     final Widget? effectiveSuffix = widget.suffixIcon ??
         _hibikiTextFieldInputSuffix(
           context: context,
@@ -830,6 +1208,35 @@ class FushiSelectableChip extends StatelessWidget {
                 ? TextOverflow.visible
                 : TextOverflow.ellipsis,
           );
+    if (isGlassDesign(context)) {
+      // 玻璃设计系统：[GlassChip]（选中 = primaryContainer 着色玻璃）。焦点包装
+      // 与 tooltip 规则与 MD3 分支相同。
+      final Color glassForeground =
+          selected ? colors.onPrimaryContainer : tokens.surfaces.onSurface;
+      final Widget glassChip = GlassChip(
+        label: effectiveIconOnly ? '' : label,
+        icon: effectiveIconOnly
+            ? Icon(leadingIcon, size: 18, color: glassForeground)
+            : (avatar ??
+                (leadingIcon == null
+                    ? null
+                    : Icon(leadingIcon, size: 18, color: glassForeground))),
+        iconSize: 18,
+        spacing: effectiveIconOnly ? 0 : 6,
+        selected: selected,
+        selectedColor: colors.primaryContainer.withValues(alpha: 0.8),
+        labelStyle: tokens.type.controlLabel.copyWith(color: glassForeground),
+        quality: fushiGlassQuality(context),
+        semanticLabel: label,
+        onTap: onSelected == null ? null : () => onSelected!(!selected),
+      );
+      final String? glassTooltip =
+          tooltip ?? (effectiveIconOnly ? label : null);
+      final Widget glassWithTooltip = glassTooltip == null
+          ? glassChip
+          : Tooltip(message: glassTooltip, child: glassChip);
+      return _wrapChipFocus(context, glassWithTooltip);
+    }
     final ChoiceChip chip = ChoiceChip(
       avatar: effectiveAvatar,
       label: labelWidget,
@@ -857,6 +1264,10 @@ class FushiSelectableChip extends StatelessWidget {
     final Widget withTooltip = effectiveTooltip == null
         ? chip
         : Tooltip(message: effectiveTooltip, child: chip);
+    return _wrapChipFocus(context, withTooltip);
+  }
+
+  Widget _wrapChipFocus(BuildContext context, Widget withTooltip) {
     if (focusId == null) return withTooltip;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return withTooltip;
     return Actions(
@@ -895,6 +1306,20 @@ class FushiActionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    if (isGlassDesign(context)) {
+      return _wrapFocus(
+        context,
+        GlassChip(
+          label: label,
+          icon: Icon(icon, size: 18, color: colors.primary),
+          iconSize: 18,
+          labelStyle: tokens.type.controlLabel.copyWith(color: colors.primary),
+          quality: fushiGlassQuality(context),
+          semanticLabel: label,
+          onTap: onPressed,
+        ),
+      );
+    }
     final OutlinedButton button = OutlinedButton.icon(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
@@ -912,6 +1337,10 @@ class FushiActionChip extends StatelessWidget {
         style: tokens.type.controlLabel,
       ),
     );
+    return _wrapFocus(context, button);
+  }
+
+  Widget _wrapFocus(BuildContext context, Widget button) {
     if (focusId == null) return button;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
     return Actions(
@@ -976,6 +1405,10 @@ class _FushiTagChipState extends State<FushiTagChip> {
     // 只保留文字不加透明。
     final bool eink = isEinkTheme(context);
     final Color tagColor = widget.color ?? colors.primary;
+    if (isGlassDesign(context)) {
+      return _wrapFocus(
+          context, _buildGlass(context, tokens, colors, tagColor));
+    }
     final Color baseColor = widget.color ??
         (widget.selected ? colors.primaryContainer : tokens.surfaces.overlay);
     final Color background = switch (widget.tone) {
@@ -1072,6 +1505,85 @@ class _FushiTagChipState extends State<FushiTagChip> {
               child: chip,
             ),
           );
+    return _wrapFocus(context, surface);
+  }
+
+  /// 玻璃设计系统：可交互的标签是 [GlassChip]（选中 = 标签色着色、删除键同为
+  /// 玻璃 chip 自带的尾随 ×）；纯展示标签是一枚胶囊 [GlassContainer]——
+  /// GlassChip 不可交互时会按禁用态处理，展示标签不该看起来像禁用。
+  Widget _buildGlass(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    ColorScheme colors,
+    Color tagColor,
+  ) {
+    final Color foreground = widget.dimmed
+        ? colors.onSurface.withValues(alpha: 0.5)
+        : colors.onSurface;
+    final TextStyle labelStyle = tokens.type.metadata.copyWith(
+      color: foreground,
+      fontWeight: FontWeight.w600,
+    );
+    final Widget? dot = widget.color == null
+        ? null
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              color: widget.color,
+              shape: BoxShape.circle,
+            ),
+            child: const SizedBox(width: 10, height: 10),
+          );
+    final Color selectedFill = tagColor.withValues(alpha: 0.28);
+    if (widget.onTap == null && widget.onDeleted == null) {
+      return GlassContainer(
+        shape: fushiGlassShapeOf(tokens.radii.chipRadius),
+        quality: fushiGlassQuality(context),
+        settings: widget.selected || widget.color != null
+            ? fushiGlassSettings(
+                context,
+                tint: widget.selected ? selectedFill : widget.color,
+              )
+            : null,
+        padding:
+            EdgeInsets.symmetric(horizontal: tokens.spacing.gap, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (dot != null) ...<Widget>[
+              dot,
+              SizedBox(width: tokens.spacing.gap * 0.625),
+            ],
+            Flexible(
+              child: Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: labelStyle,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return GlassChip(
+      label: widget.label,
+      icon: dot,
+      iconSize: 10,
+      selected: widget.selected,
+      selectedColor: selectedFill,
+      labelStyle: labelStyle,
+      padding:
+          EdgeInsets.symmetric(horizontal: tokens.spacing.gap, vertical: 4),
+      deleteIcon: Icon(Icons.close, size: 14, color: foreground),
+      deleteIconSize: 14,
+      quality: fushiGlassQuality(context),
+      semanticLabel: widget.label,
+      onTap: widget.onTap,
+      onDeleted: widget.onDeleted,
+    );
+  }
+
+  Widget _wrapFocus(BuildContext context, Widget surface) {
     if (widget.onTap == null && widget.onDeleted == null) return surface;
     // Outside a FushiFocusRoot stay a bare tappable chip (zero overhead).
     if (FushiFocusRoot.maybeControllerOf(context) == null) return surface;
@@ -1127,6 +1639,23 @@ class FushiBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    if (isGlassDesign(context)) {
+      // 玻璃设计系统：一枚着色玻璃徽章（同尺寸、同圆角），底色作玻璃着色。
+      return GlassContainer(
+        shape: fushiGlassShapeOf(tokens.radii.chipRadius),
+        quality: fushiGlassQuality(context),
+        settings: fushiGlassSettings(
+          context,
+          tint: background ?? colors.primaryContainer,
+        ),
+        padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
+        child: Icon(
+          icon,
+          size: size,
+          color: foreground ?? colors.onPrimaryContainer,
+        ),
+      );
+    }
     return Container(
       padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
       decoration: BoxDecoration(
@@ -1170,11 +1699,19 @@ class FushiModalSheetFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool glassDesign = isGlassDesign(context);
     final List<Widget> children = <Widget>[
-      if (_hasHeader) _buildHeader(tokens, colors),
+      if (_hasHeader) _buildHeader(context, tokens, colors),
       _buildBody(tokens),
       if (footer != null) ...<Widget>[
-        Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+        if (glassDesign)
+          GlassDivider(
+            height: 1,
+            thickness: 1,
+            color: tokens.surfaces.outline.withValues(alpha: 0.4),
+          )
+        else
+          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
         Padding(
           padding: footerPadding ??
               EdgeInsets.fromLTRB(
@@ -1209,7 +1746,11 @@ class FushiModalSheetFrame extends StatelessWidget {
   bool get _hasHeader =>
       title != null || subtitle != null || leadingIcon != null;
 
-  Widget _buildHeader(FushiDesignTokens tokens, ColorScheme colors) {
+  Widget _buildHeader(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    ColorScheme colors,
+  ) {
     final Widget text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1244,18 +1785,34 @@ class FushiModalSheetFrame extends StatelessWidget {
       child: Row(
         children: <Widget>[
           if (leadingIcon != null) ...<Widget>[
-            Container(
-              padding: EdgeInsets.all(tokens.spacing.gap),
-              decoration: BoxDecoration(
-                color: colors.primaryContainer,
-                borderRadius: tokens.radii.controlRadius,
+            if (isGlassDesign(context))
+              GlassContainer(
+                shape: fushiGlassShapeOf(tokens.radii.controlRadius),
+                quality: fushiGlassQuality(context),
+                settings: fushiGlassSettings(
+                  context,
+                  tint: colors.primaryContainer,
+                ),
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                child: Icon(
+                  leadingIcon,
+                  color: colors.onPrimaryContainer,
+                  size: 20,
+                ),
+              )
+            else
+              Container(
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                decoration: BoxDecoration(
+                  color: colors.primaryContainer,
+                  borderRadius: tokens.radii.controlRadius,
+                ),
+                child: Icon(
+                  leadingIcon,
+                  color: colors.onPrimaryContainer,
+                  size: 20,
+                ),
               ),
-              child: Icon(
-                leadingIcon,
-                color: colors.onPrimaryContainer,
-                size: 20,
-              ),
-            ),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
           Expanded(child: text),
@@ -1417,6 +1974,30 @@ class FushiDialogFrame extends StatelessWidget {
       ),
       child: scrollable ? SingleChildScrollView(child: padded) : padded,
     );
+    if (isGlassDesign(context)) {
+      // 玻璃设计系统：Dialog 只剩布局职责（insetPadding、键盘避让、语义），
+      // 自身完全透明无阴影；表面是一块 premium 档的 [GlassContainer]（GlassDialog
+      // 的观感）。降低透明度时 [fushiGlassSettings] 给实心玻璃色、零模糊。
+      return Dialog(
+        clipBehavior: Clip.none,
+        insetPadding: _resolveInsetPadding(screenSize.width),
+        shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        child: GlassContainer(
+          shape: fushiGlassShapeOf(tokens.radii.dialogRadius),
+          quality: fushiGlassQuality(context, prominent: true),
+          settings: fushiGlassSettings(
+            context,
+            tint: Theme.of(context).colorScheme.surfaceContainerHigh,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: body,
+        ),
+      );
+    }
     // 毛玻璃：Dialog 自己的底色与 tint 让位，表面交给 FushiGlassSurface 画；
     // off 时保持原样（Dialog 默认 surfaceContainerHigh 实心底），像素零变化。
     final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
@@ -1919,6 +2500,21 @@ class FushiPreviewSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // 纯预览：玻璃开关恒为开、不可交互、不进焦点遍历。
+      return IgnorePointer(
+        child: ExcludeFocus(
+          child: GlassSwitch(
+            value: true,
+            onChanged: (_) {},
+            activeColor: trackColor,
+            thumbColor: thumbColor,
+            enableHaptics: false,
+            quality: fushiGlassQuality(context),
+          ),
+        ),
+      );
+    }
     return Switch(
       value: true,
       onChanged: null,
@@ -2017,7 +2613,13 @@ class FushiPageHeader extends StatelessWidget {
               title!,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: tokens.type.pageTitle,
+              // 玻璃设计系统：GlassLargeTitle 的大标题观感（更重、略收字距）。
+              style: isGlassDesign(context)
+                  ? tokens.type.pageTitle.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                    )
+                  : tokens.type.pageTitle,
             ),
             if (resolvedSubtitle != null)
               Padding(
@@ -2582,63 +3184,73 @@ class FushiToolScaffold extends StatelessWidget {
                 tokens.spacing.gap,
                 2,
               ),
-              child: SizedBox(
-                height: 44,
-                // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
-                // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
-                // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
-                // 与 [_FushiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
-                // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final double gapHalf = tokens.spacing.gap / 2;
-                    final double leadingWidth =
-                        effectiveLeading != null ? 40 + gapHalf : 0;
-                    final double titleFloor = constraints.maxWidth.isFinite
-                        ? math.min(
-                            96.0 * MediaQuery.textScalerOf(context).scale(1),
-                            constraints.maxWidth / 3,
-                          )
-                        : 0.0;
-                    final double maxActionsWidth = constraints.maxWidth.isFinite
-                        ? (constraints.maxWidth -
-                                leadingWidth -
-                                gapHalf -
-                                titleFloor)
-                            .clamp(0.0, double.infinity)
-                        : double.infinity;
-                    return Row(
-                      children: <Widget>[
-                        if (effectiveLeading != null) ...<Widget>[
-                          SizedBox.square(
-                            dimension: 40,
-                            child: effectiveLeading,
+              // 玻璃设计系统：工具条是一条胶囊玻璃（GlassAppBar 观感）。背衬恒在、
+              // 只换背景槽（见 [FushiGlassBackdrop]），切设计系统时工具条里带
+              // GlobalKey 的动作（溢出菜单等）不被重挂。
+              child: FushiGlassBackdrop(
+                enabled: isGlassDesign(context),
+                borderRadius: const BorderRadius.all(Radius.circular(22)),
+                prominent: true,
+                child: SizedBox(
+                  height: 44,
+                  // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
+                  // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
+                  // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
+                  // 与 [_FushiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
+                  // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
+                  child: LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) {
+                      final double gapHalf = tokens.spacing.gap / 2;
+                      final double leadingWidth =
+                          effectiveLeading != null ? 40 + gapHalf : 0;
+                      final double titleFloor = constraints.maxWidth.isFinite
+                          ? math.min(
+                              96.0 * MediaQuery.textScalerOf(context).scale(1),
+                              constraints.maxWidth / 3,
+                            )
+                          : 0.0;
+                      final double maxActionsWidth =
+                          constraints.maxWidth.isFinite
+                              ? (constraints.maxWidth -
+                                      leadingWidth -
+                                      gapHalf -
+                                      titleFloor)
+                                  .clamp(0.0, double.infinity)
+                              : double.infinity;
+                      return Row(
+                        children: <Widget>[
+                          if (effectiveLeading != null) ...<Widget>[
+                            SizedBox.square(
+                              dimension: 40,
+                              child: effectiveLeading,
+                            ),
+                            SizedBox(width: gapHalf),
+                          ],
+                          Expanded(
+                            child: _buildTitle(tokens),
                           ),
-                          SizedBox(width: gapHalf),
-                        ],
-                        Expanded(
-                          child: _buildTitle(tokens),
-                        ),
-                        if (actions.isNotEmpty) ...<Widget>[
-                          SizedBox(width: gapHalf),
-                          ConstrainedBox(
-                            constraints:
-                                BoxConstraints(maxWidth: maxActionsWidth),
-                            child: HorizontalDragScrollable(
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                reverse: true,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: actions,
+                          if (actions.isNotEmpty) ...<Widget>[
+                            SizedBox(width: gapHalf),
+                            ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxWidth: maxActionsWidth),
+                              child: HorizontalDragScrollable(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  reverse: true,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: actions,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -2808,9 +3420,106 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
   late final FushiFocusId _fallbackFocusId =
       FushiFocusId('hibiki-overflow-menu-${identityHashCode(this)}');
 
+  final GlassMenuController _glassMenuController = GlassMenuController();
+
+  /// 玻璃设计系统：把调用点给的 [PopupMenuEntry] 原样换算成玻璃菜单项。
+  /// [FushiPopupMenuItem] 带着自己的文案 / 图标 / 选中态；裸 [PopupMenuItem] 从
+  /// child 里抠第一段文字与图标；分隔线换 [GlassMenuDivider]。
+  List<Widget> _glassItems(BuildContext context) {
+    final List<Widget> result = <Widget>[];
+    for (final PopupMenuEntry<T> entry in widget.items) {
+      if (entry is PopupMenuDivider) {
+        result.add(const GlassMenuDivider());
+        continue;
+      }
+      if (entry is! PopupMenuItem<T>) continue;
+      final PopupMenuItem<T> item = entry;
+      final String label;
+      final IconData? icon;
+      final bool selected;
+      final Color? color;
+      if (item is FushiPopupMenuItem<T>) {
+        label = item.label;
+        icon = item.icon;
+        selected = item.selected;
+        color = item.color;
+      } else {
+        label = _fushiMenuLabelOf(item.child) ?? '';
+        icon = _fushiMenuIconOf(item.child);
+        selected = false;
+        color = null;
+      }
+      final T? value = item.value;
+      result.add(
+        GlassMenuItem(
+          title: label,
+          icon: icon == null ? null : Icon(icon, size: 20, color: color),
+          titleStyle: color == null ? null : TextStyle(color: color),
+          isSelected: selected,
+          enabled: item.enabled,
+          trailing: selected ? const Icon(Icons.check, size: 18) : null,
+          onTap: () {
+            item.onTap?.call();
+            if (value != null) widget.onSelected(value);
+          },
+        ),
+      );
+    }
+    return result;
+  }
+
+  Widget _buildGlass(BuildContext context) {
+    return GlassMenu(
+      controller: _glassMenuController,
+      quality: fushiGlassQuality(context, prominent: true),
+      menuWidth: 240,
+      autoAdjustToScreen: true,
+      items: _glassItems(context),
+      triggerBuilder: (BuildContext context, VoidCallback toggle) {
+        final Widget trigger = widget.child ??
+            Padding(
+              padding: widget.padding,
+              child: widget.iconWidget ??
+                  Icon(widget.icon, size: widget.iconSize ?? 24),
+            );
+        final Widget tappable = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: toggle,
+          child: trigger,
+        );
+        final String? tooltip = widget.tooltip;
+        return Semantics(
+          button: true,
+          label: tooltip,
+          child: tooltip == null
+              ? tappable
+              : Tooltip(message: tooltip, child: tappable),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (isGlassDesign(context)) {
+      final Widget glassMenu = _buildGlass(context);
+      if (FushiFocusRoot.maybeControllerOf(context) == null) return glassMenu;
+      return Actions(
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              _glassMenuController.open();
+              return null;
+            },
+          ),
+        },
+        child: FushiFocusTarget(
+          id: _fallbackFocusId,
+          child: glassMenu,
+        ),
+      );
+    }
     final PopupMenuButton<T> menu = PopupMenuButton<T>(
       key: _menuKey,
       tooltip: widget.tooltip,
@@ -2849,12 +3558,12 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
 
 class FushiPopupMenuItem<T> extends PopupMenuItem<T> {
   FushiPopupMenuItem({
-    required String label,
+    required this.label,
     required T value,
     super.key,
-    IconData? icon,
-    Color? color,
-    bool selected = false,
+    this.icon,
+    this.color,
+    this.selected = false,
     bool enabled = true,
   }) : super(
           value: value,
@@ -2867,6 +3576,54 @@ class FushiPopupMenuItem<T> extends PopupMenuItem<T> {
             selected: selected,
           ),
         );
+
+  /// 以下字段只读：玻璃设计系统下 [FushiOverflowMenu] 据此把本项换算成
+  /// [GlassMenuItem]，不必从 child 里倒推。
+  final String label;
+  final IconData? icon;
+  final Color? color;
+  final bool selected;
+}
+
+/// 从任意菜单项 child 里抠出第一段可读文字（玻璃菜单项只收 String 标题）。
+String? _fushiMenuLabelOf(Widget? widget) {
+  if (widget == null) return null;
+  if (widget is Text) return widget.data ?? widget.textSpan?.toPlainText();
+  if (widget is RichText) return widget.text.toPlainText();
+  if (widget is _FushiPopupMenuItemContent) return widget.label;
+  if (widget is ListTile) return _fushiMenuLabelOf(widget.title);
+  if (widget is MultiChildRenderObjectWidget) {
+    for (final Widget child in widget.children) {
+      final String? label = _fushiMenuLabelOf(child);
+      if (label != null) return label;
+    }
+    return null;
+  }
+  if (widget is SingleChildRenderObjectWidget) {
+    return _fushiMenuLabelOf(widget.child);
+  }
+  if (widget is ProxyWidget) return _fushiMenuLabelOf(widget.child);
+  return null;
+}
+
+/// 从任意菜单项 child 里抠出第一个图标。
+IconData? _fushiMenuIconOf(Widget? widget) {
+  if (widget == null) return null;
+  if (widget is Icon) return widget.icon;
+  if (widget is _FushiPopupMenuItemContent) return widget.icon;
+  if (widget is ListTile) return _fushiMenuIconOf(widget.leading);
+  if (widget is MultiChildRenderObjectWidget) {
+    for (final Widget child in widget.children) {
+      final IconData? icon = _fushiMenuIconOf(child);
+      if (icon != null) return icon;
+    }
+    return null;
+  }
+  if (widget is SingleChildRenderObjectWidget) {
+    return _fushiMenuIconOf(widget.child);
+  }
+  if (widget is ProxyWidget) return _fushiMenuIconOf(widget.child);
+  return null;
 }
 
 class _FushiPopupMenuItemContent extends StatelessWidget {
@@ -3572,6 +4329,36 @@ class FushiPopupSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 玻璃设计系统：浮层面换成 [GlassContainer]。装平台视图（查词 WebView）的
+    // surface（[borderOnForeground] = false，BUG-1692 / BUG-2166）维持原路径：
+    // 着色器层压在平台视图上会重新引出 macOS 命中测试被吞的老问题。
+    if (isGlassDesign(context) && borderOnForeground) {
+      final BorderRadius radius = _outerRadius(tokens);
+      Widget content = Padding(padding: padding, child: child);
+      if (showBorder) {
+        content = DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: Border.all(
+              color: tokens.surfaces.outline.withValues(alpha: 0.5),
+              width: _borderWidth,
+            ),
+          ),
+          child: content,
+        );
+      }
+      // 内部仍给一层透明 Material：浮层里常有依赖 Material 祖先的 MD3 子组件
+      // （InkWell 等），去掉祖先会在它们身上抛断言。
+      return GlassContainer(
+        shape: fushiGlassShapeOf(radius),
+        quality: fushiGlassQuality(context, prominent: true),
+        settings:
+            color == null ? null : fushiGlassSettings(context, tint: color),
+        clipBehavior: clipBehavior,
+        child: Material(type: MaterialType.transparency, child: content),
+      );
+    }
     return Material(
       color: color ?? tokens.surfaces.card,
       elevation: elevation,

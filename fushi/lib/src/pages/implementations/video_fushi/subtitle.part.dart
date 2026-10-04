@@ -192,14 +192,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final String? hostSub = _remoteSubtitlePath;
     final List<Widget> rows = <Widget>[
-      if (_subtitleMenuLoading) const LinearProgressIndicator(),
+      if (_subtitleMenuLoading) const FushiLinearProgressIndicator(),
       // TODO-573：「自动获取字幕(Jimaku)」对本地和远端视频都显示。Jimaku 只需要一个
       // 番名 query + 一个本地落盘目录；远端流没有本地视频文件（_currentVideoPath 恒
       // null），但有 host 下发的标题（_title / remoteInfo.title）可作 query，下载的
       // srt 文件经 _applyRemoteSubtitle 内存应用即可（与远端「本地导入字幕」同链路）。
       // 唯一前提是能算出非空 query，见 _jimakuQuery()。
       if (_jimakuQuery() != null)
-        ListTile(
+        FushiListTileControl(
           leading: const Icon(Icons.cloud_download_outlined),
           title: Text(t.video_subtitle_search_open),
           enabled: !_subtitleLoadingShown,
@@ -207,7 +207,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_openSubtitleWorkbench(controller)),
         ),
-      ListTile(
+      FushiListTileControl(
         leading: const Icon(Icons.file_open_outlined),
         title: Text(t.video_subtitle_import_file),
         enabled: !_subtitleLoadingShown,
@@ -224,7 +224,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 本地裁出整集音轨回传（[_resolveSubtitleTimingAudio]）；其它远端流拿不到音轨。
       // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
       if (_canResolveSubtitleTimingAudio && isAsrSupported)
-        ListTile(
+        FushiListTileControl(
           leading: const Icon(Icons.transcribe_outlined),
           title: Text(t.video_subtitle_asr_generate),
           subtitle: Text(t.video_subtitle_asr_generate_hint),
@@ -234,7 +234,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               : () => unawaited(_generateSubtitleWithSpeechModel(controller)),
         ),
       if (_canResolveSubtitleTimingAudio && isAsrSupported)
-        ListTile(
+        FushiListTileControl(
           leading: const Icon(Icons.model_training_outlined),
           title: Text(t.video_subtitle_retime_action),
           enabled: !_subtitleLoadingShown,
@@ -247,7 +247,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // （见 _applyLoad 的 TODO-1000），不另按 _isRemote 身份判。当前不是外挂
       // 字幕时点了会说明原因，不隐藏入口。
       if (_currentVideoPath != null)
-        ListTile(
+        FushiListTileControl(
           leading: const Icon(Icons.sync_alt_outlined),
           title: Text(t.video_subtitle_reference_sync_action),
           enabled: !_subtitleLoadingShown,
@@ -255,8 +255,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_alignSubtitleToEmbeddedTracks(controller)),
         ),
-      const Divider(height: 1),
-      ListTile(
+      const FushiDividerControl(height: 1),
+      FushiListTileControl(
         leading: const Icon(Icons.subtitles_off),
         title: Text(t.video_subtitle_off),
         // TODO-818：「关闭」项高亮判据。本地用显式关闭哨兵；远端模式不落库（关闭仅
@@ -280,7 +280,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 选中态由 [YoutubeCaptionTrack.trackKey] 判定；A3：人工>ASR 已在轨表排序，含母语对照变体。
       if (_isRemote)
         for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)
-          ListTile(
+          FushiListTileControl(
             leading: const Icon(Icons.closed_caption_outlined),
             title: Text(_youtubeCaptionTrackLabel(track)),
             selected: _currentSubtitleSource == track.trackKey,
@@ -291,7 +291,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 : () => unawaited(_applyYoutubeCaptionTrack(controller, track)),
           ),
       if (_isRemote && hostSub != null)
-        ListTile(
+        FushiListTileControl(
           leading: const Icon(Icons.cloud_done_outlined),
           title: Text(t.video_subtitle_remote_host),
           subtitle: Text(p.basename(hostSub)),
@@ -305,7 +305,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_isRemote)
         for (final RemoteVideoEmbeddedSubtitleTrack track
             in _remoteEmbeddedSubtitleTracks)
-          ListTile(
+          FushiListTileControl(
             leading: Icon(
               !track.isText
                   ? Icons.image_not_supported_outlined
@@ -341,7 +341,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               context,
               controller,
               source,
-              ListTile(
+              FushiListTileControl(
                 leading: const Icon(Icons.subtitles),
                 title: Text(source.label),
                 selected: subtitleSourceMatchesPersistedForMenu(
@@ -367,7 +367,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             context,
             controller,
             source,
-            ListTile(
+            FushiListTileControl(
               leading: Icon(
                 source.isGraphicEmbedded
                     ? Icons.image_outlined
@@ -393,8 +393,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 抽取 / 本地文件，见 [_buildSecondarySubtitleRows] 远端分支）。
       // TODO-1350：副字幕源改内联可展开区（ExpansionTile），在「字幕」分类里就地切换，
       // 不再点一下跳到另一个浮层窗口（用户报「副字幕打开会去到另一个窗口」）。
-      const Divider(height: 1),
-      ExpansionTile(
+      const FushiDividerControl(height: 1),
+      FushiExpansionTile(
         // TODO-1350：副字幕入口的 leading 图标要和上面字幕轨 ListTile 的图标同一
         // 缩进（ListTile 默认水平 16px）。此前 tilePadding: EdgeInsets.zero 把表头
         // 图标顶到最左边、比其它行图标偏左没对齐（用户报「副字幕图标位置不对」）；
@@ -431,7 +431,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (_isRemote) {
       final String? hostSub = _remoteSubtitlePath;
       return <Widget>[
-        ListTile(
+        FushiListTileControl(
           leading: const Icon(Icons.subtitles_off),
           title: Text(t.video_subtitle_off),
           selected:
@@ -443,8 +443,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_clearRemoteSecondarySubtitle(controller)),
         ),
-        const Divider(height: 1),
-        ListTile(
+        const FushiDividerControl(height: 1),
+        FushiListTileControl(
           leading: const Icon(Icons.file_open_outlined),
           title: Text(t.video_subtitle_import_file),
           enabled: !_subtitleLoadingShown,
@@ -455,7 +455,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 ),
         ),
         if (hostSub != null)
-          ListTile(
+          FushiListTileControl(
             leading: const Icon(Icons.cloud_done_outlined),
             title: Text(t.video_subtitle_remote_host),
             subtitle: Text(p.basename(hostSub)),
@@ -470,7 +470,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           ),
         for (final RemoteVideoEmbeddedSubtitleTrack track
             in _remoteEmbeddedSubtitleTracks)
-          ListTile(
+          FushiListTileControl(
             leading: Icon(
               track.isText
                   ? Icons.movie_filter_outlined
@@ -504,7 +504,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               context,
               controller,
               source,
-              ListTile(
+              FushiListTileControl(
                 leading: const Icon(Icons.subtitles),
                 title: Text(source.label),
                 selected: subtitleSourceMatchesPersistedForMenu(
@@ -527,8 +527,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       ];
     }
     return <Widget>[
-      if (_subtitleMenuLoading) const LinearProgressIndicator(),
-      ListTile(
+      if (_subtitleMenuLoading) const FushiLinearProgressIndicator(),
+      FushiListTileControl(
         leading: const Icon(Icons.subtitles_off),
         title: Text(t.video_subtitle_off),
         // 「关闭」高亮：显式关闭哨兵或无副字幕（null）。
@@ -541,7 +541,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             ? null
             : () => unawaited(_selectSecondarySubtitleOff(controller)),
       ),
-      const Divider(height: 1),
+      const FushiDividerControl(height: 1),
       // BUG-900：遍历完整可用列表（与主字幕轨行同一份，BUG-1861 起含本会话导入 /
       // 下载的档案），外挂字幕文件也能选为副字幕。图标与主字幕轨行一致：图形轨
       // image / 内嵌 movie / 外挂 subtitles。
@@ -550,7 +550,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           context,
           controller,
           source,
-          ListTile(
+          FushiListTileControl(
             leading: Icon(
               source.isGraphicEmbedded
                   ? Icons.image_outlined
@@ -624,7 +624,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final Offset anchor = overlay.globalToLocal(globalPosition);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool? delete = await _focusOwnership.guardOverlay(
-      () => showMenu<bool>(
+      () => showFushiMenu<bool>(
         context: context,
         position: RelativeRect.fromRect(
           Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
@@ -2369,15 +2369,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final bool? confirmed = await _focusOwnership.guardOverlay(
       () => showAppDialog<bool>(
         context: context,
-        builder: (BuildContext ctx) => AlertDialog(
+        builder: (BuildContext ctx) => FushiAlertDialog(
           title: Text(title),
           content: Text(body),
           actions: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: Text(t.dialog_cancel),
             ),
-            FilledButton(
+            FushiFilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               child: Text(action),
             ),

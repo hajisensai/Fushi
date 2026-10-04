@@ -193,7 +193,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     final String message = describeDownloadBatchOutcome(outcome);
     if (message.isEmpty) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      FushiSnackBar(content: Text(message)),
     );
   }
 
@@ -252,7 +252,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Checkbox(
+          FushiCheckbox(
             value: selected,
             onChanged: (_) => _toggleTask(task.id),
           ),
@@ -571,7 +571,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                 if (visible.any(
                   (DownloadTaskEntry task) => task.actions.retry != null,
                 ))
-                  TextButton(
+                  FushiTextButton(
                     key: const ValueKey<String>('download-task-retry-visible'),
                     onPressed: _batchRunning
                         ? null
@@ -586,7 +586,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                 if (visible.any(
                   (DownloadTaskEntry task) => task.actions.clear != null,
                 ))
-                  TextButton(
+                  FushiTextButton(
                     key: const ValueKey<String>('download-task-clear-visible'),
                     onPressed: _batchRunning
                         ? null
@@ -680,7 +680,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                             ),
                           ),
                           if (!expanded && groupProgress < 1)
-                            LinearProgressIndicator(
+                            FushiLinearProgressIndicator(
                               key: ValueKey<String>(
                                 'download-group-progress-$key',
                               ),

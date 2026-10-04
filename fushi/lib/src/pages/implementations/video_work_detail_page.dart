@@ -131,13 +131,13 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
             // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
             // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
             return Scaffold(
-              appBar: AppBar(),
+              appBar: FushiAppBar(),
               body: Center(child: adaptiveIndicator(context: context)),
             );
           }
           if (collection == null) {
             return Scaffold(
-              appBar: AppBar(),
+              appBar: FushiAppBar(),
               body: Center(
                 child: Text(t.video_load_failed_not_found),
               ),
@@ -290,14 +290,14 @@ class _StandaloneVideoWorkDetailState
       // 都带 AppBar（= 返回键）。桌面端没有系统返回键，`_load` 若久久不返回，
       // 无顶栏的转圈就是一个没有出口的页面。
       return Scaffold(
-        appBar: AppBar(),
+        appBar: FushiAppBar(),
         body: Center(child: adaptiveIndicator(context: context)),
       );
     }
     final VideoBookRow? book = _book;
     if (book == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: FushiAppBar(),
         body: Center(child: Text(t.video_load_failed_not_found)),
       );
     }
@@ -309,7 +309,7 @@ class _StandaloneVideoWorkDetailState
     final ImageProvider? backdrop = _image('backdrop') ?? poster;
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent),
+      appBar: FushiAppBar(backgroundColor: Colors.transparent),
       body: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
@@ -396,7 +396,7 @@ class _StandaloneVideoWorkDetailState
                               style: const TextStyle(color: Colors.white70),
                             ),
                             const SizedBox(height: 16),
-                            FilledButton.icon(
+                            FushiFilledButton.icon(
                               onPressed: () => _playBook(book),
                               icon: const Icon(Icons.play_arrow_rounded),
                               label: Text(book.lastPositionMs > 0
@@ -455,10 +455,10 @@ class _StandaloneVideoWorkDetailState
         runSpacing: 8,
         children: <Widget>[
           for (final MapEntry<String, List<String>> entry in grouped.entries)
-            Chip(label: Text('${entry.key}: ${entry.value.join(' · ')}')),
+            FushiChip(label: Text('${entry.key}: ${entry.value.join(' · ')}')),
           for (final VideoMetadataIdentitySummary id
               in _credits?.identities ?? const <VideoMetadataIdentitySummary>[])
-            Chip(label: Text('${id.provider.toUpperCase()}: ${id.externalId}')),
+            FushiChip(label: Text('${id.provider.toUpperCase()}: ${id.externalId}')),
         ],
       ),
     );

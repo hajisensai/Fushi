@@ -83,7 +83,7 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
             ),
           ),
           if (progress != null && progress < 1)
-            LinearProgressIndicator(value: progress, minHeight: 2),
+            FushiLinearProgressIndicator(value: progress, minHeight: 2),
           if (_expanded)
             Padding(
               padding: EdgeInsets.all(

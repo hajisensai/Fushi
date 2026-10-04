@@ -242,7 +242,7 @@ class _InterconnectPairScanPageState extends State<_InterconnectPairScanPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.sync_pair_scan)),
+      appBar: FushiAppBar(title: Text(t.sync_pair_scan)),
       body: MobileScanner(
         onDetect: _onDetect,
         errorBuilder: (BuildContext ctx, MobileScannerException error) =>

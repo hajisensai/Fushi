@@ -420,7 +420,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           manufacturer: maker,
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(hint),
             duration: const Duration(seconds: 4),
           ),

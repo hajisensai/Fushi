@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 底部半透明**抽屉**：与 [VideoTranslucentSidePanel] 同一套配色/圆角/焦点纪律，只是
 /// 贴底而不是贴边——视频全幅可见、继续播放，字幕在真实位置实时预览（字幕调整专用，
@@ -118,7 +119,7 @@ class _VideoTranslucentBottomDrawerState
                               ],
                             ),
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             key: const ValueKey<String>(
                               'video-subtitle-drawer-collapse',
                             ),
@@ -139,7 +140,7 @@ class _VideoTranslucentBottomDrawerState
                     ),
                   ),
                   if (!_collapsed) ...<Widget>[
-                    const Divider(height: 1),
+                    const FushiDividerControl(height: 1),
                     Expanded(child: widget.child),
                   ],
                 ],
@@ -216,7 +217,7 @@ class VideoTranslucentSidePanel extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                  const Divider(height: 1),
+                  const FushiDividerControl(height: 1),
                   Expanded(child: child),
                 ],
               ),

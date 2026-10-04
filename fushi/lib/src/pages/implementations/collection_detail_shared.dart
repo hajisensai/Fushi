@@ -112,7 +112,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
     required VoidCallback onSortByTitle,
     required VoidCallback onSortByImported,
   }) {
-    return MenuAnchor(
+    return FushiMenuAnchor(
       menuChildren: <Widget>[
         MenuItemButton(
           leadingIcon: const Icon(Icons.sort_by_alpha, size: 20),
@@ -126,7 +126,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         ),
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) =>
-          IconButton(
+          FushiIconButtonControl(
         tooltip: t.sort_by,
         icon: const Icon(Icons.sort),
         onPressed: () =>

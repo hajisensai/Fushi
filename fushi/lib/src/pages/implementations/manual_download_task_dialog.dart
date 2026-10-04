@@ -123,7 +123,7 @@ Future<void> showManualDownloadTaskDialog({
     if (!context.mounted) return;
     if (!resolved.usable) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(
             resolved.error?.toString() ?? t.download_backend_not_configured,
           ),
@@ -323,7 +323,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   void _applyTorrentBytes(Uint8List? bytes, String fileName) {
     if (bytes == null || bytes.isEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(t.download_task_add_invalid)),
+        FushiSnackBar(content: Text(t.download_task_add_invalid)),
       );
       return;
     }
@@ -332,7 +332,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       metainfo = inspectTorrentMetainfo(bytes);
     } on TorrentMetainfoException {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(t.download_task_add_invalid)),
+        FushiSnackBar(content: Text(t.download_task_add_invalid)),
       );
       return;
     }
@@ -379,12 +379,12 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(t.download_task_add_submitted)),
+        FushiSnackBar(content: Text(t.download_task_add_submitted)),
       );
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(t.download_task_action_failed(error: '$error')),
           ),
         );
@@ -410,12 +410,12 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(t.download_task_add_submitted)),
+        FushiSnackBar(content: Text(t.download_task_add_submitted)),
       );
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(t.download_task_action_failed(error: '$error')),
           ),
         );
@@ -439,7 +439,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   }
 
   Widget _buildDialog(BuildContext context, FushiDesignTokens tokens) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.download_task_add),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
@@ -449,7 +449,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               if (widget.remoteTarget != null) ...<Widget>[
-                DropdownButtonFormField<bool>(
+                FushiDropdownButtonFormField<bool>(
                   key: const ValueKey<String>('manual-task-download-target'),
                   initialValue: _useRemote,
                   decoration: InputDecoration(
@@ -476,7 +476,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                 ),
                 SizedBox(height: tokens.spacing.gap),
               ],
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>('manual-task-magnet'),
                 controller: _magnetController,
                 decoration: InputDecoration(
@@ -490,7 +490,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
               SizedBox(height: tokens.spacing.gap),
               Row(
                 children: <Widget>[
-                  OutlinedButton.icon(
+                  FushiOutlinedButton.icon(
                     key: const ValueKey<String>('manual-task-pick-torrent'),
                     onPressed: _submitting ? null : _pickTorrentFile,
                     icon: const Icon(Icons.file_open_outlined, size: 18),
@@ -508,7 +508,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                 ],
               ),
               SizedBox(height: tokens.spacing.gap),
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>('manual-task-title'),
                 controller: _titleController,
                 decoration: InputDecoration(
@@ -518,7 +518,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                 onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: tokens.spacing.gap),
-              DropdownButtonFormField<DiscoveryMediaKind?>(
+              FushiDropdownButtonFormField<DiscoveryMediaKind?>(
                 key: const ValueKey<String>('manual-task-content-kind'),
                 initialValue: _discoveryKind,
                 decoration: InputDecoration(
@@ -557,7 +557,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(
-                      child: DropdownButtonFormField<VideoMetadataMediaKind>(
+                      child: FushiDropdownButtonFormField<VideoMetadataMediaKind>(
                         key: const ValueKey<String>('manual-task-media-kind'),
                         initialValue: _mediaKind,
                         decoration: InputDecoration(
@@ -585,7 +585,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                     SizedBox(width: tokens.spacing.gap),
                     Expanded(
                       child:
-                          DropdownButtonFormField<VideoDownloadSubtitlePolicy>(
+                          FushiDropdownButtonFormField<VideoDownloadSubtitlePolicy>(
                         key: const ValueKey<String>(
                           'manual-task-subtitle-policy',
                         ),
@@ -623,7 +623,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                         ),
                   )
                 else
-                  DropdownButtonFormField<int>(
+                  FushiDropdownButtonFormField<int>(
                     key: const ValueKey<String>('manual-task-source'),
                     initialValue: _sourceId,
                     isExpanded: true,
@@ -652,17 +652,17 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _submitting ? null : () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: const ValueKey<String>('manual-task-submit'),
           onPressed: _canSubmit ? () => unawaited(_submit()) : null,
           icon: _submitting
               ? const SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.add),
           label: Text(t.download_task_add),

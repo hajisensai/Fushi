@@ -37,7 +37,7 @@ class ScrapeCoverPreview extends StatelessWidget {
       ),
     );
     if (normalized == null) return preview;
-    return Tooltip(
+    return FushiTooltip(
       message: t.preview,
       child: Semantics(
         button: true,
@@ -106,7 +106,7 @@ Future<void> _showLargePreview(BuildContext context, String url) async {
               Positioned(
                 top: 8,
                 right: 8,
-                child: IconButton.filledTonal(
+                child: FushiIconButtonControl.filledTonal(
                   key: const ValueKey<String>(
                     'scrape_cover_large_preview_close',
                   ),

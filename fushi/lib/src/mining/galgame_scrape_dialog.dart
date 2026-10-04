@@ -377,7 +377,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     return Row(
       children: <Widget>[
         Expanded(
-          child: TextField(
+          child: FushiTextFieldControl(
             controller: _queryCtrl,
             decoration: InputDecoration(
               isDense: true,
@@ -388,7 +388,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
           ),
         ),
         const SizedBox(width: 8),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _searching ? null : _search,
           child: Text(t.game_scrape_search),
         ),
@@ -398,7 +398,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
 
   Widget _buildResults(ThemeData theme, FushiDesignTokens tokens) {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FushiCircularProgressIndicator());
     }
     if (_searchFailed) {
       // 搜索失败错误行：可见反馈 + 重试指引（搜索按钮此时已恢复可点）。
@@ -425,7 +425,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     return ListView.separated(
       shrinkWrap: true,
       itemCount: _candidates.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
       itemBuilder: (BuildContext context, int index) =>
           _buildCandidateTile(theme, tokens, _candidates[index]),
     );
@@ -473,14 +473,14 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed:
                 _applyingCandidate != null ? null : () => _use(candidate),
             child: identical(_applyingCandidate, candidate)
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(t.game_scrape_use),
           ),

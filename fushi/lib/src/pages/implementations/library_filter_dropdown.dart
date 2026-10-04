@@ -32,7 +32,7 @@ class LibraryFilterDropdown<T extends Object> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final T? current = value;
-    return PopupMenuButton<_FilterChoice<T>>(
+    return FushiPopupMenuButton<_FilterChoice<T>>(
       tooltip: title,
       initialValue: _FilterChoice<T>(current),
       onSelected: (_FilterChoice<T> choice) => onSelected(choice.value),

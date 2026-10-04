@@ -193,7 +193,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // snackbar like _doResetCurrent/_doResetAll (HBK-AUDIT-108).
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.book_css_editor_saved)),
+        FushiSnackBar(content: Text(t.book_css_editor_saved)),
       );
     }
   }
@@ -236,7 +236,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     setState(() {});
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.book_css_editor_reset_done)),
+        FushiSnackBar(content: Text(t.book_css_editor_reset_done)),
       );
     }
   }
@@ -281,7 +281,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     _reload();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.book_css_editor_reset_done)),
+        FushiSnackBar(content: Text(t.book_css_editor_reset_done)),
       );
     }
   }
@@ -319,7 +319,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
       child: FushiToolScaffold(
         title: t.book_css_editor_title,
         actions: [
-          TextButton(
+          FushiTextButton(
             onPressed: _doResetAll,
             child: Text(t.book_css_editor_reset_all),
           ),
@@ -389,12 +389,12 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
                     spacing: tokens.spacing.gap,
                     runSpacing: tokens.spacing.gap / 2,
                     children: [
-                      OutlinedButton(
+                      FushiOutlinedButton(
                         onPressed:
                             _currentTabCanReset() ? _doResetCurrent : null,
                         child: Text(t.book_css_editor_reset_current),
                       ),
-                      FilledButton(
+                      FushiFilledButton(
                         onPressed: () => _doSave(_selectedIndex),
                         child: Text(t.book_css_editor_save),
                       ),

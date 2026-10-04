@@ -5,6 +5,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});
@@ -125,7 +126,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     // bound, so it must be set explicitly.
     final double menuHeight =
         MediaQuery.sizeOf(context).height * _kMenuMaxHeightFactor;
-    final Widget menu = DropdownMenu<T>(
+    final Widget menu = FushiDropdownMenu<T>(
       // Fill the bounding box (the parent, or the SizedBox below when a fixed
       // width is given) — matches the prior call sites' expandedInsets usage.
       expandedInsets: EdgeInsets.zero,
@@ -230,7 +231,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     // gamepad-focused entry is scrolled into view by FushiFocusRing.
     final double maxHeight =
         MediaQuery.sizeOf(context).height * _kMenuMaxHeightFactor;
-    return MenuAnchor(
+    return FushiMenuAnchor(
       controller: _menu,
       childFocusNode: _triggerFocus,
       style: MenuStyle(
@@ -259,7 +260,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       ],
       builder:
           (BuildContext context, MenuController controller, Widget? child) {
-        return OutlinedButton(
+        return FushiOutlinedButton(
           focusNode: _triggerFocus,
           onPressed: widget.enabled
               ? () => controller.isOpen ? controller.close() : controller.open()

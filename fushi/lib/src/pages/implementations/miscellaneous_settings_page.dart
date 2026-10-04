@@ -150,7 +150,7 @@ class _MiscellaneousSettingsBodyState
         // 选中态由 _currentIcon getter 从已发布的真值读；这里只需触发重建。
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.icon_switch_success)),
+          FushiSnackBar(content: Text(t.icon_switch_success)),
         );
       }
     } finally {
@@ -257,7 +257,7 @@ class _MiscellaneousSettingsBodyState
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(Platform.isAndroid
             ? (ok ? t.icon_shortcut_created : t.icon_shortcut_unsupported)
             : (ok ? t.icon_switch_success : t.icon_shortcut_unsupported)),

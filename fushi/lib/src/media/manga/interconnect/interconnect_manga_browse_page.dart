@@ -126,7 +126,7 @@ class _InterconnectMangaBrowsePageState
         ),
         headerBottom: Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: TextField(
+          child: FushiTextFieldControl(
             key: const ValueKey<String>('interconnect_manga_search'),
             controller: _searchController,
             textInputAction: TextInputAction.search,
@@ -153,7 +153,7 @@ class _InterconnectMangaBrowsePageState
             children: <Widget>[
               Text('$_error', textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              TextButton(
+              FushiTextButton(
                 key: const ValueKey<String>('interconnect_manga_retry'),
                 onPressed: () => unawaited(_load()),
                 child: Text(t.retry),

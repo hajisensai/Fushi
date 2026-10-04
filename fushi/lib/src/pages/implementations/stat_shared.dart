@@ -380,7 +380,7 @@ Widget buildStatAdaptiveScrollView(
               slivers: paneSlivers(StatPane.overview),
             ),
           ),
-          VerticalDivider(
+          FushiVerticalDivider(
             width: 1,
             thickness: 1,
             color: Theme.of(context).colorScheme.outlineVariant,
@@ -873,7 +873,7 @@ Future<bool> showStatGoalEditDialog(
     context: context,
     builder: (BuildContext dialogContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
-      return AlertDialog(
+      return FushiAlertDialog(
         title: Text(t.stat_goal_set),
         // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
         content: SingleChildScrollView(
@@ -883,7 +883,7 @@ Future<bool> showStatGoalEditDialog(
               // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
               // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
               // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
-              TextField(
+              FushiTextFieldControl(
                 controller: dailyController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
@@ -892,7 +892,7 @@ Future<bool> showStatGoalEditDialog(
                 ),
               ),
               SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-              TextField(
+              FushiTextFieldControl(
                 controller: weeklyController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
@@ -904,11 +904,11 @@ Future<bool> showStatGoalEditDialog(
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: Text(t.cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: Text(t.dialog_save),
           ),
@@ -1189,7 +1189,7 @@ Future<void> showStatDetailSurface(
     context: context,
     builder: (BuildContext dialogContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
-      return Dialog(
+      return FushiDialog(
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
           constraints: BoxConstraints(

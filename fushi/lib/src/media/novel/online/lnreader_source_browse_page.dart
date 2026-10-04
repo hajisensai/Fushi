@@ -304,7 +304,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
   Widget build(BuildContext context) {
     // 普通 AlertDialog：内含 Dropdown / FilterChip，`.adaptive` 在 iOS / macOS 主题
     // 下没有 Material 祖先。
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.novel_source_filters_title),
       content: SizedBox(
         width: 480,
@@ -340,7 +340,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
   Widget _buildFilter(int index) {
     final LnReaderFilter filter = _filters[index];
     final Widget control = switch (filter.type) {
-      LnReaderFilterType.picker => DropdownButtonFormField<String>(
+      LnReaderFilterType.picker => FushiDropdownButtonFormField<String>(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         value:
             filter.options.any(
@@ -359,13 +359,13 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         ],
         onChanged: (String? value) => _set(index, value ?? ''),
       ),
-      LnReaderFilterType.text => TextFormField(
+      LnReaderFilterType.text => FushiTextFormFieldControl(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         initialValue: filter.value as String,
         decoration: InputDecoration(labelText: filter.label),
         onChanged: (String value) => _set(index, value),
       ),
-      LnReaderFilterType.toggle => SwitchListTile.adaptive(
+      LnReaderFilterType.toggle => FushiSwitchListTile.adaptive(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         contentPadding: EdgeInsets.zero,
         title: Text(filter.label),
@@ -406,7 +406,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         runSpacing: 6,
         children: <Widget>[
           for (final LnReaderFilterOption option in filter.options)
-            FilterChip(
+            FushiFilterChip(
               label: Text(option.label),
               selected: selected(option.value),
               onSelected: (_) => onTap(option.value),
@@ -433,7 +433,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
           runSpacing: 6,
           children: <Widget>[
             for (final LnReaderFilterOption option in filter.options)
-              FilterChip(
+              FushiFilterChip(
                 label: Text(option.label),
                 selected:
                     include.contains(option.value) ||

@@ -715,7 +715,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           return const SizedBox(
             width: 18,
             height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           );
         case SubtitleBatchStatus.done:
           return const Icon(Icons.check_circle, size: 18, color: Colors.green);
@@ -731,7 +731,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       return const SizedBox(
         width: 18,
         height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     }
     final SubtitleCollectionSource? source = _selectedSource;
@@ -841,7 +841,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       for (final SubtitleCollectionSource source in _sources)
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320),
-          child: ChoiceChip(
+          child: FushiChoiceChip(
             key: ValueKey<String>('subtitle-source-${source.key}'),
             label: Text(
               '${source.label} · ${source.providerId} · '
@@ -891,7 +891,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           ),
         ),
         if (groups.isNotEmpty)
-          DropdownButtonFormField<String>(
+          FushiDropdownButtonFormField<String>(
             key: const ValueKey<String>('subtitle-collection-release-group'),
             // 缺 isExpanded 时按内容固有宽度排版，长标签在紧凑布局横向溢出。
             isExpanded: true,
@@ -1003,7 +1003,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                     Row(
                       children: <Widget>[
                         Expanded(
-                          child: TextField(
+                          child: FushiTextFieldControl(
                             controller: _queryCtrl,
                             decoration: InputDecoration(
                               labelText: t.video_jimaku_query,
@@ -1013,7 +1013,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        FilledButton.tonalIcon(
+                        FushiFilledButton.tonalIcon(
                           key: const ValueKey<String>(
                             'subtitle-collection-find',
                           ),
@@ -1030,7 +1030,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                         for (final AniListMedia media in _seriesMatches)
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 260),
-                            child: ChoiceChip(
+                            child: FushiChoiceChip(
                               label: Text(
                                 media.displayTitle,
                                 maxLines: 1,
@@ -1046,7 +1046,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       ]),
                     _buildSourcePicker(theme),
                     _buildCollectionSettings(theme),
-                    const Divider(height: 20),
+                    const FushiDividerControl(height: 20),
                   ],
                 ),
               ),
@@ -1054,7 +1054,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 itemCount: widget.members.length,
                 itemBuilder: (BuildContext context, int i) {
                   final VideoBookRow m = widget.members[i];
-                  return ListTile(
+                  return FushiListTileControl(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: _statusIcon(m.bookUid, i),
@@ -1078,18 +1078,18 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           overflowSpacing: 4,
           children: <Widget>[
             if (widget.onCancel != null)
-              TextButton(
+              FushiTextButton(
                 onPressed: _running ? null : widget.onCancel,
                 child: Text(t.dialog_close),
               ),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('subtitle-collection-download-all'),
               onPressed: canDownload ? _downloadAll : null,
               icon: _running
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.download),
               label: Text(t.video_jimaku_batch_download),

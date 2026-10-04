@@ -5,6 +5,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// An on-screen keyboard driven entirely by a game controller / keyboard: the
 /// D-pad moves focus between keys (geometric, via [FushiFocusController]) and A
@@ -195,7 +196,7 @@ class _KbKeyState extends State<_KbKey> {
     );
     final Widget tipped = widget.tooltip == null
         ? key
-        : Tooltip(message: widget.tooltip!, child: key);
+        : FushiTooltip(message: widget.tooltip!, child: key);
     // Outside a FushiFocusRoot (plain widget tests) the key stays a bare
     // tappable; under one it becomes a gamepad focus target. Expanded wraps the
     // WHOLE thing so it remains a direct child of the Row (Expanded must be a

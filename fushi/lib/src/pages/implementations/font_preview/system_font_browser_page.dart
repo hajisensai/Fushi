@@ -8,6 +8,7 @@ import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 按搜索词与日文筛选过滤系统字体。`supportsJapanese == null`（该平台判不出）
 /// 的字体不被日文筛选排除——判不出不等于不支持。
@@ -178,7 +179,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
     );
 
     final Widget list = _loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(child: FushiCircularProgressIndicator())
         : visible.isEmpty
         ? Center(
             child: Text(t.custom_fonts_empty, style: tokens.type.listSubtitle),
@@ -211,7 +212,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                     : null,
                 trailing: added
                     ? Icon(Icons.check, color: scheme.outline)
-                    : Checkbox(
+                    : FushiCheckbox(
                         value: selected,
                         onChanged: (_) => _toggle(font.family),
                       ),
@@ -242,7 +243,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  FilledButton.icon(
+                  FushiFilledButton.icon(
                     key: const ValueKey<String>('system-font-add'),
                     onPressed: _selected.isEmpty
                         ? null

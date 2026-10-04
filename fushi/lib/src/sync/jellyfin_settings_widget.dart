@@ -123,11 +123,11 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     if (!mounted) return;
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(title),
         content: SingleChildScrollView(child: SelectableText(message)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -427,7 +427,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiCircularProgressIndicator(strokeWidth: 2)),
           );
         }
         final List<JellyfinServerConfig> servers =
@@ -520,9 +520,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               ? const SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : FilledButton.tonal(
+              : FushiFilledButton.tonal(
                   onPressed: _signIn,
                   child: Text(t.jellyfin_sign_in),
                 ),
@@ -588,9 +588,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                       ? const SizedBox(
                           width: 24,
                           height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : TextButton(
+                      : FushiTextButton(
                           onPressed: () => _signOut(config),
                           child: Text(t.jellyfin_sign_out),
                         ),
@@ -614,7 +614,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         for (final String url in config.routeUrls)
           FushiListItem(
             key: ValueKey<String>('jellyfin-route-$id-$url'),
-            leading: Radio<String>(
+            leading: FushiRadio<String>(
               value: url,
               groupValue: activeUrl,
               onChanged: _busy
@@ -650,7 +650,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               ),
             ),
             const SizedBox(width: 8),
-            FilledButton.tonal(
+            FushiFilledButton.tonal(
               onPressed: _busy ? null : () => _addRoute(config),
               child: Text(t.jellyfin_route_add),
             ),
@@ -675,7 +675,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(12),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiCircularProgressIndicator(strokeWidth: 2)),
           );
         }
         if (snapshot.hasError) {
@@ -698,7 +698,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
             for (final JellyfinLibraryView view in views)
               FushiListItem(
                 title: Text(view.name),
-                trailing: Checkbox(
+                trailing: FushiCheckbox(
                   value: selected.contains(view.id),
                   onChanged: _busy
                       ? null

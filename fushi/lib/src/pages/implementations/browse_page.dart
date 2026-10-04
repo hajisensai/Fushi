@@ -545,7 +545,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final DroppedFiles files = classifyDroppedFiles(paths);
     if (files.torrents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
+        FushiSnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
       );
       return;
     }

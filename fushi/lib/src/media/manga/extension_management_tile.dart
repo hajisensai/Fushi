@@ -112,19 +112,19 @@ class MangaExtensionManagementTile extends StatelessWidget {
                 padding: EdgeInsets.symmetric(horizontal: 12),
                 child: SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             if (enabled != null)
-              Switch.adaptive(value: enabled!, onChanged: onEnabledChanged),
+              FushiSwitch.adaptive(value: enabled!, onChanged: onEnabledChanged),
             if (secondaryLabel != null)
-              TextButton(
+              FushiTextButton(
                 style: _actionStyle,
                 onPressed: onSecondary,
                 child: Text(secondaryLabel!),
               ),
             if (primaryLabel != null)
-              TextButton(
+              FushiTextButton(
                 style: _actionStyle,
                 onPressed: onPrimary,
                 child: Text(primaryLabel!),
@@ -231,7 +231,7 @@ class MangaExtensionFilters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget languageFilter = DropdownButtonFormField<String>(
+    final Widget languageFilter = FushiDropdownButtonFormField<String>(
       value: languages.contains(selectedLanguage) ? selectedLanguage : '*',
       decoration: InputDecoration(labelText: languageLabel),
       items: <DropdownMenuItem<String>>[
@@ -249,7 +249,7 @@ class MangaExtensionFilters extends StatelessWidget {
       ],
       onChanged: (String? value) => onLanguageChanged(value ?? '*'),
     );
-    final Widget searchField = TextField(
+    final Widget searchField = FushiTextFieldControl(
       key: ValueKey<String>('${keyPrefix}_search_field'),
       controller: searchController,
       decoration: InputDecoration(
@@ -258,7 +258,7 @@ class MangaExtensionFilters extends StatelessWidget {
         border: const OutlineInputBorder(),
         suffixIcon: searchQuery.isEmpty
             ? null
-            : IconButton(
+            : FushiIconButtonControl(
                 icon: const Icon(Icons.close),
                 onPressed: onSearchCleared,
               ),

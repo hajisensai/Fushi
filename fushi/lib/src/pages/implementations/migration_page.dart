@@ -155,7 +155,7 @@ class _MigrationPageState extends State<MigrationPage> {
       if (_includeLocalAudio) MigrationBatch.localAudio,
     ];
     return Scaffold(
-      appBar: AppBar(title: Text(t.migration_settings_entry)),
+      appBar: FushiAppBar(title: Text(t.migration_settings_entry)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
@@ -171,12 +171,12 @@ class _MigrationPageState extends State<MigrationPage> {
           if (_target == _TargetState.missing) ...<Widget>[
             Text(t.migration_target_missing),
             const SizedBox(height: 8),
-            FilledButton(
+            FushiFilledButton(
               onPressed: () => launchUrl(Uri.parse(kFushiReleasesUrl),
                   mode: LaunchMode.externalApplication),
               child: Text(t.migration_download_fushi),
             ),
-            TextButton(
+            FushiTextButton(
               onPressed: _refreshTarget,
               child: Text(t.retry),
             ),
@@ -199,7 +199,7 @@ class _MigrationPageState extends State<MigrationPage> {
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: FushiCircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.radio_button_unchecked)),
                 title: Text(_batchLabel(batch)),
@@ -216,16 +216,16 @@ class _MigrationPageState extends State<MigrationPage> {
             if (_allDone) ...<Widget>[
               Text(t.migration_export_done),
               const SizedBox(height: 8),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: _running ? null : () => _channel.launchFushi(),
                 child: Text(t.migration_open_fushi),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: _running ? null : () => _run(fresh: true),
                 child: Text(t.migration_reexport),
               ),
             ] else
-              FilledButton(
+              FushiFilledButton(
                 onPressed: _running ? null : () => _run(fresh: false),
                 child: _running
                     ? Text(

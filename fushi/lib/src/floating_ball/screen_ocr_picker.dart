@@ -235,7 +235,7 @@ class ScreenOcrPickerPage extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            IconButton(
+                            FushiIconButtonControl(
                               key: const ValueKey<String>(
                                 'screen_ocr_picker_close',
                               ),

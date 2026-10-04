@@ -222,7 +222,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 进 UI，只留在 [_loadRemoteBooks] 的 debugPrint 供排查。
     if (state != null && state.anyFailed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_list_failed)),
+        FushiSnackBar(content: Text(t.remote_book_list_failed)),
       );
     }
   }
@@ -268,7 +268,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               safeKey: safeKey,
               keyPrefix: 'remote_book',
             ) ??
-            IconButton.filledTonal(
+            FushiIconButtonControl.filledTonal(
               key: ValueKey<String>('remote_book_download_$safeKey'),
               tooltip: t.remote_book_download,
               iconSize: 18,
@@ -304,7 +304,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (state == null) return;
     if (_remoteBookClient == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_unavailable)),
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
       );
       return;
     }
@@ -417,7 +417,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   void _showRemoteBookInfo(RemoteBookInfo book) {
     showAppDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(book.displayName),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -427,7 +427,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           ],
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: Text(t.dialog_close),
           ),
@@ -472,13 +472,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (!bookDeleted) {
       // 书本身没删掉：书还在原处，提示与实情一致。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_failed)),
+        FushiSnackBar(content: Text(t.remote_delete_failed)),
       );
       return;
     }
     if (audiobookFailed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_audiobook_partial)),
+        FushiSnackBar(content: Text(t.remote_delete_audiobook_partial)),
       );
     }
   }
@@ -567,7 +567,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (client == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_unavailable)),
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
       );
       return;
     }
@@ -604,7 +604,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       _refreshSrtBooks();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_audiobook_download_failed)),
+        FushiSnackBar(content: Text(t.remote_book_audiobook_download_failed)),
       );
       return;
     } catch (e, stack) {
@@ -612,7 +612,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           .log('ReaderFushiHistoryPage.downloadRemoteBook', e, stack);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_download_failed)),
+        FushiSnackBar(content: Text(t.remote_book_download_failed)),
       );
       return;
     }
@@ -620,7 +620,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _refreshSrtBooks();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.remote_book_downloaded)),
+      FushiSnackBar(content: Text(t.remote_book_downloaded)),
     );
   }
 
@@ -640,7 +640,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (client is! InterconnectSyncBackend) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_unavailable)),
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
       );
       return;
     }
@@ -663,7 +663,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           .log('ReaderFushiHistoryPage.adoptRemoteChapteredManga', e, stack);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_download_failed)),
+        FushiSnackBar(content: Text(t.remote_book_download_failed)),
       );
       return;
     }
@@ -673,7 +673,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 落地的本地卡并排到切 tab 为止（正是上面注释说要避免的）。TTL 内不打网络。
     _refreshRemoteBooks();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.remote_manga_added_to_shelf)),
+      FushiSnackBar(content: Text(t.remote_manga_added_to_shelf)),
     );
   }
 
@@ -1024,7 +1024,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (client == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_unavailable)),
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
       );
       return;
     }
@@ -1053,7 +1053,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           'ReaderFushiHistoryPage.downloadRemoteAudiobookOnly', cause, stack);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_audiobook_download_failed)),
+        FushiSnackBar(content: Text(t.remote_book_audiobook_download_failed)),
       );
       return;
     } finally {
@@ -1082,7 +1082,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 一直留着「从对端下载有声书」到切 tab 为止。TTL 内不打网络。
     _refreshRemoteBooks();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.remote_book_downloaded)),
+      FushiSnackBar(content: Text(t.remote_book_downloaded)),
     );
   }
 
@@ -1201,7 +1201,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               safeKey: safeKey,
               keyPrefix: 'remote_srt',
             ) ??
-            IconButton.filledTonal(
+            FushiIconButtonControl.filledTonal(
               key: ValueKey<String>('remote_srt_download_$safeKey'),
               tooltip: t.remote_book_download,
               iconSize: 18,
@@ -1276,7 +1276,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (!mounted) return;
     if (failed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_failed)),
+        FushiSnackBar(content: Text(t.remote_delete_failed)),
       );
       return;
     }
@@ -1293,15 +1293,15 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   Future<bool?> _confirmRemoteDelete(String name) {
     return showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(name),
         content: Text(t.sync_peer_book_delete_confirm(name: name)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_delete),
           ),
@@ -1333,7 +1333,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (client is! InterconnectSyncBackend) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_unavailable)),
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
       );
       return;
     }
@@ -1377,7 +1377,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           .log('ReaderFushiHistoryPage.downloadRemoteSrtAudiobook', e, stack);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_book_download_failed)),
+        FushiSnackBar(content: Text(t.remote_book_download_failed)),
       );
       return;
     }
@@ -1403,7 +1403,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     if (!mounted) return;
     _refreshSrtBooks(); // 失效本地 SRT provider + 重拉远端（按 uid dedup 隐藏占位）
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.remote_book_downloaded)),
+      FushiSnackBar(content: Text(t.remote_book_downloaded)),
     );
   }
 

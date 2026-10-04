@@ -222,7 +222,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.tonalIcon(
+            child: FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('leaderboard-signin-send'),
               onPressed: _sending || _cooldown > 0
                   ? null
@@ -245,7 +245,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
                   t.leaderboard_signin_login_code_hint,
                   style: tokens.type.metadata,
                 ),
-                TextButton(
+                FushiTextButton(
                   key: const ValueKey<String>('leaderboard-signin-to-register'),
                   onPressed: () => _switchMode(LeaderboardSignInMode.register),
                   child: Text(t.leaderboard_signin_switch_register),
@@ -290,7 +290,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
             if (_register && _errorCode == 'email_taken')
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton(
+                child: FushiTextButton(
                   key: const ValueKey<String>('leaderboard-signin-to-login'),
                   onPressed: () => _switchMode(LeaderboardSignInMode.login),
                   child: Text(t.leaderboard_signin_switch_login),
@@ -298,13 +298,13 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
               ),
           ],
           SizedBox(height: tokens.spacing.card),
-          FilledButton(
+          FushiFilledButton(
             key: const ValueKey<String>('leaderboard-signin-submit'),
             onPressed: _canSubmit ? () => unawaited(_submit()) : null,
             child: _submitting
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(
                     _register

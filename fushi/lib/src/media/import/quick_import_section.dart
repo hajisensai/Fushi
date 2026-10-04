@@ -45,7 +45,7 @@ class QuickImportSection extends StatelessWidget {
           runSpacing: tokens.spacing.gap,
           children: <Widget>[
             for (final QuickImportAction action in actions)
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 onPressed:
                     action.enabled ? () => unawaited(action.onTap()) : null,
                 icon: Icon(action.icon, size: 18),

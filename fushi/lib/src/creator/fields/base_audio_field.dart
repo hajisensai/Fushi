@@ -196,7 +196,7 @@ abstract class BaseAudioField extends AudioExportField {
           iconData = Icons.play_arrow_outlined;
         }
 
-        return IconButton(
+        return FushiIconButtonControl(
           icon: Icon(iconData, size: 24),
           tooltip: playerState?.playing == true ? t.pause : t.play,
           onPressed: () async {

@@ -147,7 +147,7 @@ class _StatSessionEditDialogState extends State<StatSessionEditDialog> {
               hintText: 'YYYY-MM-DD',
               autofocus: true,
               onChanged: (_) => setState(() {}),
-              suffixIcon: IconButton(
+              suffixIcon: FushiIconButtonControl(
                 tooltip: t.stat_session_edit_date,
                 icon: const Icon(Icons.calendar_today_outlined, size: 18),
                 onPressed: _pickDate,

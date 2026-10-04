@@ -566,7 +566,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
                 _buildCloseButton(),
               ],
             ),
-          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+          FushiDividerControl(height: 1, thickness: 1, color: tokens.surfaces.outline),
           if (_sourceLookupText.trim().isNotEmpty)
             SourceLookupTextPanel(
               text: _sourceLookupText,

@@ -22,6 +22,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
         kReaderDesktopHeaderButtonWidth,
         kReaderDesktopHeaderHeight,
         readerHeaderCompact;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 顶栏内容行高（不含系统状态栏）。与 EPUB 顶栏同值，两个阅读器视觉对齐。
 const double kMangaChromeBarHeight = kReaderDesktopHeaderHeight;
@@ -307,7 +308,7 @@ class MangaReaderTopBar extends StatelessWidget {
                     ),
                     child: Row(
                       children: <Widget>[
-                        IconButton(
+                        FushiIconButtonControl(
                           key: const ValueKey<String>(
                             'manga_reader_back_button',
                           ),
@@ -447,10 +448,10 @@ class MangaReaderTopBar extends StatelessWidget {
     final Widget icon = a.busy
         ? const SizedBox.square(
             dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2, color: _fg),
+            child: FushiCircularProgressIndicator(strokeWidth: 2, color: _fg),
           )
         : Icon(a.icon, color: a.active ? _accent : _fg);
-    return IconButton(
+    return FushiIconButtonControl(
       key: a.key,
       tooltip: a.label,
       iconSize: 22,
@@ -460,7 +461,7 @@ class MangaReaderTopBar extends StatelessWidget {
   }
 
   Widget _overflowMenu(BuildContext context, List<MangaChromeAction> overflow) {
-    return PopupMenuButton<MangaChromeAction>(
+    return FushiPopupMenuButton<MangaChromeAction>(
       key: const ValueKey<String>('manga_chrome_overflow'),
       tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
       icon: const Icon(Icons.more_vert, color: _fg),
@@ -561,7 +562,7 @@ class MangaOcrProgressBadge extends StatelessWidget {
             if (busy) ...<Widget>[
               SizedBox.square(
                 dimension: 14,
-                child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+                child: FushiCircularProgressIndicator(strokeWidth: 2, color: fg),
               ),
               const SizedBox(width: 8),
             ],
@@ -714,7 +715,7 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
                     style: readout,
                   ),
                   Expanded(
-                    child: Slider(
+                    child: FushiSlider(
                       key: const ValueKey<String>('manga_page_slider'),
                       value: position.clamp(0, maxPosition),
                       max: maxPosition,

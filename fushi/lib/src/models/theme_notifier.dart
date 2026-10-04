@@ -1454,6 +1454,7 @@ class ThemeNotifier extends ChangeNotifier {
         eink: einkMode,
         designSystem: designSystemTheme,
         glass: glassMaterial,
+        glassDesign: designSystem == 'glass',
       );
 
   // ── Custom theme prefs ─────────────────────────────────────────────
@@ -1808,6 +1809,7 @@ ThemeData buildFushiThemeData({
   bool eink = false,
   FushiDesignSystem designSystem = FushiDesignSystem.auto,
   FushiGlassMaterial glass = FushiGlassMaterial.off,
+  bool glassDesign = false,
 }) {
   final ColorScheme cs = scheme;
   final TextTheme tt = textTheme;
@@ -1882,7 +1884,7 @@ ThemeData buildFushiThemeData({
     extensions: <ThemeExtension<dynamic>>[
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
-      FushiGlassTheme(glass),
+      FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
     ],
     // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
     // vibrancy）或页面底色，不再自带一条实心色带。
@@ -1990,7 +1992,12 @@ ThemeData buildFushiThemeData({
       ),
       insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
-      backgroundColor: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
+      // 玻璃设计系统：FushiSnackBar 自己把内容画进玻璃胶囊，SnackBar 本体
+      // 必须透明无阴影，否则胶囊外再多一层底。
+      backgroundColor: glassDesign && !eink
+          ? Colors.transparent
+          : glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
+      elevation: glassDesign && !eink ? 0 : null,
     ),
     // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
     // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路

@@ -239,7 +239,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
               // 折叠是鼠标/触屏轻交互，不进焦点遍历序。
               else if (widget.onToggleCollapsed != null)
                 ExcludeFocus(
-                  child: IconButton(
+                  child: FushiIconButtonControl(
                     onPressed: widget.onToggleCollapsed,
                     tooltip: widget.collapsed
                         ? t.collection_expand

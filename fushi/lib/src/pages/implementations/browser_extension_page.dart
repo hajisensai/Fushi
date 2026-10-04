@@ -66,7 +66,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   bool _isRecentlySeen(AppModel appModel) {
@@ -177,13 +177,13 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             connected: connected,
             port: appModel.yomitanApiPort),
         const SizedBox(height: 16),
-        FilledButton.icon(
+        FushiFilledButton.icon(
           onPressed: _preparing ? null : _prepare,
           icon: _preparing
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.extension_outlined, size: 18),
           label: Text(_extensionDir == null
@@ -197,7 +197,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         if (_extensionDir != null) ...<Widget>[
-          const Divider(height: 32),
+          const FushiDividerControl(height: 32),
           BrowserExtensionInstallSteps(
             path: _extensionDir!,
             serverEnabled: _serverEnabled,
@@ -210,7 +210,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           const SizedBox(height: 8),
           _tryItStep(theme, serverOn: serverOn),
         ],
-        const Divider(height: 32),
+        const FushiDividerControl(height: 32),
         _versionCard(theme, appModel, build),
       ],
     );
@@ -295,7 +295,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.tonalIcon(
+            child: FushiFilledButton.tonalIcon(
               onPressed: serverOn ? _openTestPage : null,
               icon: const Icon(Icons.open_in_new_outlined, size: 18),
               label: Text(t.browser_extension_test_page_action),
@@ -344,13 +344,13 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.tonalIcon(
+            child: FushiFilledButton.tonalIcon(
               onPressed: _verifying ? null : _verify,
               icon: _verifying
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.wifi_tethering, size: 18),
               label: Text(_verifying
@@ -542,7 +542,7 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
               await Clipboard.setData(ClipboardData(text: value));
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(t.copied)),
+                FushiSnackBar(content: Text(t.copied)),
               );
             },
           ),

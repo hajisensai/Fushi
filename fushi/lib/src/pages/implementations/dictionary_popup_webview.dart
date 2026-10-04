@@ -3089,7 +3089,7 @@ JSON.stringify((function(){
     );
     final t = Translations.of(context);
     final _PopupContextMenuAction? action =
-        await showMenu<_PopupContextMenuAction>(
+        await showFushiMenu<_PopupContextMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_PopupContextMenuAction>>[

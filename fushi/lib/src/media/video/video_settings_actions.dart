@@ -125,7 +125,7 @@ void _showVideoSettingsSnackBar(SettingsContext settingsContext, String text) {
   if (!ctx.mounted) return;
   ScaffoldMessenger.of(ctx)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(text)));
+    ..showSnackBar(FushiSnackBar(content: Text(text)));
 }
 
 // ── videoAsbplayerConfig（手势/播放行为 JSON pref）────────────────────────────
@@ -431,7 +431,7 @@ double snapVideoLongPressSpeed(double v) =>
 /// TODO-1158：HLS 多档画质入口（仅当前流是 HLS master 时显示）。点开画质侧栏。
 Widget buildVideoQualityEntryRow(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
-  return ListTile(
+  return FushiListTileControl(
     dense: true,
     leading: const Icon(Icons.high_quality_outlined),
     title: Text(t.video_quality),
@@ -448,7 +448,7 @@ Widget buildVideoQualityEntryRow(SettingsContext context) {
 /// Impeller 走 Skia + 重启。
 Widget buildVideoSkiaFallbackRow(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
-  return ListTile(
+  return FushiListTileControl(
     dense: true,
     leading: const Icon(Icons.animation_outlined),
     title: Text(t.video_render_skia_fix_title),
@@ -464,7 +464,7 @@ Widget buildVideoAudioTrackSection(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
   final Widget? section = host.audioTrackSection;
   if (section != null) return section;
-  return ListTile(
+  return FushiListTileControl(
     dense: true,
     leading: const Icon(Icons.audiotrack),
     title: Text(t.video_audio_track_empty),
@@ -529,7 +529,7 @@ Future<void> _pickSubtitleColor(
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
-      return AlertDialog(
+      return FushiAlertDialog(
         title: Text(title),
         content: SingleChildScrollView(
           child: ColorPicker(
@@ -547,7 +547,7 @@ Future<void> _pickSubtitleColor(
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_done),
           ),
@@ -828,7 +828,7 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           SizedBox(height: tokens.spacing.gap / 2),
-          TextField(
+          FushiTextFieldControl(
             controller: _controller,
             minLines: 3,
             maxLines: 8,
@@ -907,7 +907,7 @@ class _VideoDanmakuBlockRulesFieldState
                 ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
-          TextField(
+          FushiTextFieldControl(
             key: const Key('danmaku-block-rules-field'),
             controller: _controller,
             minLines: 3,

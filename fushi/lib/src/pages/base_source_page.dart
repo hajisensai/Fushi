@@ -1137,7 +1137,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         color: fillColor,
         child: Column(
           children: [
-            LinearProgressIndicator(
+            FushiLinearProgressIndicator(
               backgroundColor: Colors.transparent,
               color: effectiveCs.primary,
               minHeight: 2.75,
@@ -1710,7 +1710,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               borderRadius: BorderRadius.zero,
               child: Column(
                 children: [
-                  LinearProgressIndicator(
+                  FushiLinearProgressIndicator(
                     backgroundColor: Colors.transparent,
                     color: theme.colorScheme.primary,
                     minHeight: 2.75,

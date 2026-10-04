@@ -308,7 +308,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       );
     }
     if (card == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FushiCircularProgressIndicator());
     }
     String standing(LeaderboardMetric m) {
       final UserStanding s = card.standing(m);
@@ -384,7 +384,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         break;
       case LeaderboardRelation.none:
         buttons.add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             key: const ValueKey<String>('leaderboard-user-add-friend'),
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
             icon: const Icon(Icons.person_add_alt_1_outlined),
@@ -393,7 +393,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         );
       case LeaderboardRelation.incoming:
         buttons.add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
             icon: const Icon(Icons.how_to_reg_outlined),
             label: Text(t.leaderboard_user_accept),
@@ -401,14 +401,14 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         );
       case LeaderboardRelation.outgoing:
         buttons.add(
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed: null,
             child: Text(t.leaderboard_user_requested),
           ),
         );
       case LeaderboardRelation.friends:
         buttons.add(
-          FilledButton.tonalIcon(
+          FushiFilledButton.tonalIcon(
             onPressed: null,
             icon: const Icon(Icons.people_alt_outlined),
             label: Text(t.leaderboard_user_is_friend),
@@ -417,12 +417,12 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     }
     if (_relation != LeaderboardRelation.self) {
       buttons.addAll(<Widget>[
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           onPressed: () => unawaited(_block()),
           icon: const Icon(Icons.block),
           label: Text(t.leaderboard_user_block),
         ),
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           onPressed: () => unawaited(_report()),
           icon: const Icon(Icons.flag_outlined),
           label: Text(t.leaderboard_report),
@@ -430,7 +430,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       ]);
     }
     buttons.add(
-      OutlinedButton.icon(
+      FushiOutlinedButton.icon(
         onPressed: () => unawaited(_share()),
         icon: const Icon(Icons.ios_share),
         label: Text(t.leaderboard_share),

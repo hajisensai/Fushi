@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/startup/startup_splash_mark.dart';
 import 'package:fushi/utils.dart' show t;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// TODO-1260：启动「加载中」界面（含超时逃生态）。
 ///
@@ -79,7 +80,7 @@ class LoadingWatchdogView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               icon: const Icon(Icons.refresh, size: 18),
               label: Text(t.retry),
               onPressed: onRetry,

@@ -34,7 +34,7 @@ String _yomitanApiPortInUseMessage(int port) {
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
-  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
 }
 
 /// 端口冲突提示：说明占用者（默认端口时通常是浏览器拉起的 yomitan-api Python
@@ -45,7 +45,7 @@ void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
   if (!ctx.mounted) return;
   final int port = settingsContext.appModel.yomitanApiPort;
   ScaffoldMessenger.of(ctx).showSnackBar(
-    SnackBar(
+    FushiSnackBar(
       content: Text(_yomitanApiPortInUseMessage(port)),
       duration: const Duration(seconds: 10),
       action: PortProcessTerminator.isSupported
@@ -1138,7 +1138,7 @@ Future<void> showAudioSourcesManagerDialog({
     final bool canReference = picked.isRealPath;
     if (reference && !canReference && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.local_audio_reference_unavailable)),
+        FushiSnackBar(content: Text(t.local_audio_reference_unavailable)),
       );
     }
     final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(

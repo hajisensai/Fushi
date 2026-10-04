@@ -445,7 +445,7 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
         }
         return const ColoredBox(
           color: Color(0xff303030),
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(child: FushiCircularProgressIndicator()),
         );
       },
     );
@@ -572,19 +572,19 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
           style: Theme.of(context).textTheme.titleMedium,
         ),
       ),
-      MihonFilterKind.separator => const Divider(),
+      MihonFilterKind.separator => const FushiDividerControl(),
       MihonFilterKind.checkBox => _MihonCheckRow(
         label: filter.name,
         selected: filter.state == true,
         onChanged: (bool value) => onChanged(_withState(filter, value)),
       ),
-      MihonFilterKind.text => TextFormField(
+      MihonFilterKind.text => FushiTextFormFieldControl(
         initialValue: filter.state?.toString() ?? '',
         decoration: InputDecoration(labelText: filter.name),
         onChanged: (String value) => onChanged(_withState(filter, value)),
       ),
       MihonFilterKind.select when filter.values.isNotEmpty =>
-        DropdownButtonFormField<int>(
+        FushiDropdownButtonFormField<int>(
           value: (filter.state as int? ?? 0).clamp(0, filter.values.length - 1),
           decoration: InputDecoration(labelText: filter.name),
           items: <DropdownMenuItem<int>>[
@@ -596,7 +596,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
           ],
           onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
         ),
-      MihonFilterKind.triState => DropdownButtonFormField<int>(
+      MihonFilterKind.triState => FushiDropdownButtonFormField<int>(
         value: (filter.state as int? ?? 0).clamp(0, 2),
         decoration: InputDecoration(labelText: filter.name),
         items: <DropdownMenuItem<int>>[
@@ -606,7 +606,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
         ],
         onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
       ),
-      MihonFilterKind.group => ExpansionTile(
+      MihonFilterKind.group => FushiExpansionTile(
         title: Text(filter.name),
         children: <Widget>[
           for (int index = 0; index < filter.children.length; index++)
@@ -636,7 +636,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.mihon_source_preferences),
       content: SizedBox(
         width: 420,
@@ -653,11 +653,11 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: () => Navigator.pop(context, _filters),
           child: Text(t.dialog_ok),
         ),
@@ -691,7 +691,7 @@ class _MihonSortFilterField extends StatelessWidget {
 
     return Column(
       children: <Widget>[
-        DropdownButtonFormField<int>(
+        FushiDropdownButtonFormField<int>(
           value: index,
           decoration: InputDecoration(labelText: filter.name),
           items: <DropdownMenuItem<int>>[
@@ -707,7 +707,7 @@ class _MihonSortFilterField extends StatelessWidget {
           title: Text(
             ascending ? t.mihon_filter_ascending : t.mihon_filter_descending,
           ),
-          trailing: Switch.adaptive(
+          trailing: FushiSwitch.adaptive(
             value: ascending,
             onChanged: (bool value) => update(nextAscending: value),
           ),
@@ -737,7 +737,7 @@ class _MihonCheckRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => FushiListItem(
     title: Text(label),
-    leading: Checkbox(
+    leading: FushiCheckbox(
       value: selected,
       onChanged: (bool? value) => onChanged(value == true),
     ),

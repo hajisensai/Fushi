@@ -69,7 +69,7 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
         padding: EdgeInsets.zero,
         margin: EdgeInsets.zero,
         child: FushiListItem(
-          leading: Badge(
+          leading: FushiBadgeControl(
             label: Text('$total'),
             child: Icon(
               Icons.notifications_active_outlined,

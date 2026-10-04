@@ -252,7 +252,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 页头只在独立 / 库页壳里渲染；不渲染时（embedded、Cupertino）刷新挪进搜索行。
   bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
 
-  Widget _refreshButton() => IconButton(
+  Widget _refreshButton() => FushiIconButtonControl(
         key: const ValueKey<String>('manga_discovery_refresh'),
         tooltip: t.refresh,
         onPressed: _refresh,
@@ -314,7 +314,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => Scaffold(
-          appBar: AppBar(title: Text(server.displayName)),
+          appBar: FushiAppBar(title: Text(server.displayName)),
           body: MediaDiscoveryPage(
             kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.manga],
             initialSourceId: opdsSourceIdFor(server.id),
@@ -512,7 +512,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               detail: feeds
                   .map((MangaDiscoverySourceFeed feed) => feed.displayName)
                   .join(' · '),
-              action: FilledButton.icon(
+              action: FushiFilledButton.icon(
                 key: const ValueKey<String>('manga_discovery_retry_all'),
                 onPressed: _refresh,
                 icon: const Icon(Icons.refresh_rounded),
@@ -545,7 +545,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                 MihonRuntimeFactory.isSupported ? t.mihon_source_empty : null,
             action: openSources == null
                 ? null
-                : FilledButton.tonalIcon(
+                : FushiFilledButton.tonalIcon(
                     key: const ValueKey<String>('manga_discovery_open_sources'),
                     onPressed: openSources,
                     icon: const Icon(Icons.extension_outlined),
@@ -563,7 +563,7 @@ Widget? _viewAllButton(MangaDiscoverySourceFeed feed) {
   final void Function(BuildContext context)? openCatalog = feed.openCatalog;
   if (openCatalog == null) return null;
   return Builder(
-    builder: (BuildContext context) => TextButton(
+    builder: (BuildContext context) => FushiTextButton(
       key: ValueKey<String>('manga_discovery_view_all_${feed.id}'),
       onPressed: () => openCatalog(context),
       child: Text(t.manga_discovery_view_all),
@@ -601,7 +601,7 @@ class _FeedHeader extends StatelessWidget {
                 child: SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             if (viewAll != null) viewAll,
@@ -858,7 +858,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         child: FushiPlaceholderMessage(
           icon: Icons.cloud_off_outlined,
           message: t.manga_discovery_load_failed,
-          action: FilledButton.tonal(
+          action: FushiFilledButton.tonal(
             key: const ValueKey<String>('manga_discovery_retry'),
             onPressed: () => unawaited(_loadFirst()),
             child: Text(t.retry),
@@ -894,7 +894,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
     final Widget footer;
     if (_loadMoreFailed) {
       footer = Center(
-        child: TextButton.icon(
+        child: FushiTextButton.icon(
           key: const ValueKey<String>('manga_discovery_load_more_retry'),
           onPressed: _retryLoadMore,
           icon: const Icon(Icons.refresh_rounded),
@@ -904,7 +904,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
     } else if (_hasMore && !_loadingMore && loaded != null) {
       // 自动翻页的键盘 / 手柄兜底：焦点走到页尾也能手动拉下一页。
       footer = Center(
-        child: TextButton(
+        child: FushiTextButton(
           key: const ValueKey<String>('manga_discovery_load_more'),
           onPressed: () => unawaited(_loadMore()),
           child: Text(t.discovery_load_more),

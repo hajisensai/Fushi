@@ -250,7 +250,7 @@ class ReaderStudyClockButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ExcludeFocus(
-      child: IconButton(
+      child: FushiIconButtonControl(
         icon: Icon(
           active ? Icons.pause_rounded : Icons.play_arrow_rounded,
           key: ValueKey<bool>(active),

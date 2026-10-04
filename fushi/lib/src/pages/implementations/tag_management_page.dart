@@ -74,7 +74,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.tag_name_duplicate)),
+          FushiSnackBar(content: Text(t.tag_name_duplicate)),
         );
         return;
       }
@@ -95,7 +95,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.tag_name_duplicate)),
+          FushiSnackBar(content: Text(t.tag_name_duplicate)),
         );
         return;
       }
@@ -121,7 +121,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       Offset.zero & overlay.size,
     );
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final _TagMenuAction? action = await showMenu<_TagMenuAction>(
+    final _TagMenuAction? action = await showFushiMenu<_TagMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_TagMenuAction>>[
@@ -181,7 +181,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     final int added = await seedStarRatingTags(_db);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(
           added > 0 ? t.tag_seed_stars_added : t.tag_seed_stars_exists,
         ),
@@ -212,7 +212,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     return FushiPageScaffold(
       title: t.tag_manage_title,
       actions: <Widget>[
-        IconButton(
+        FushiIconButtonControl(
           icon: const Icon(Icons.star_outline),
           tooltip: t.tag_seed_stars,
           onPressed: _seedStarTags,
@@ -460,7 +460,7 @@ class TagEditDialogState extends State<TagEditDialog> {
                 final name = _nameController.text.trim();
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(t.tag_name_empty)),
+                    FushiSnackBar(content: Text(t.tag_name_empty)),
                   );
                   return;
                 }

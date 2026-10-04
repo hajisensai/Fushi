@@ -176,7 +176,7 @@ class _TorrentSettingsSectionState
     }
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _refreshTrackers() async {
@@ -228,7 +228,7 @@ class _TorrentSettingsSectionState
       if (issue != null) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_saveRootIssueMessage(issue))));
+        ).showSnackBar(FushiSnackBar(content: Text(_saveRootIssueMessage(issue))));
       }
     } finally {
       if (mounted) setState(() => _pickingFolder = false);
@@ -271,11 +271,11 @@ class _TorrentSettingsSectionState
           spacing: 8,
           runSpacing: 4,
           children: <Widget>[
-            FilledButton.tonal(
+            FushiFilledButton.tonal(
               onPressed: _pickingFolder ? null : _changeDownloadFolder,
               child: Text(t.download_save_root_change),
             ),
-            TextButton(
+            FushiTextButton(
               onPressed: _pickingFolder || appModel.downloadSaveRootIsDefault
                   ? null
                   : _resetDownloadFolder,
@@ -296,7 +296,7 @@ class _TorrentSettingsSectionState
             ),
           ),
         ),
-      const Divider(height: 24),
+      const FushiDividerControl(height: 24),
     ];
   }
 
@@ -482,7 +482,7 @@ class _TorrentSettingsSectionState
           if (_pairedHosts.isNotEmpty) ...<Widget>[
             SettingsSearchTarget(
               id: 'downloads.execution_host',
-              child: DropdownButtonFormField<String>(
+              child: FushiDropdownButtonFormField<String>(
                 key: const ValueKey<String>('downloads-execution-host'),
                 initialValue: _executionHostValue(appModel),
                 isExpanded: true,
@@ -550,13 +550,13 @@ class _TorrentSettingsSectionState
             padding: const EdgeInsets.only(bottom: 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
+              child: FushiOutlinedButton.icon(
                 onPressed: _probing ? null : _probeConnection,
                 icon: _probing
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.network_check, size: 18),
                 label: Text(t.download_test_connection),
@@ -606,13 +606,13 @@ class _TorrentSettingsSectionState
             padding: const EdgeInsets.only(bottom: 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
+              child: FushiOutlinedButton.icon(
                 onPressed: _fetchingTrackers ? null : _refreshTrackers,
                 icon: _fetchingTrackers
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh, size: 18),
                 label: Text(t.download_tracker_refresh),

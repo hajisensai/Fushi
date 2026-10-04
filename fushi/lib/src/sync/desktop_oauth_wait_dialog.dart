@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/desktop_oauth.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 桌面 loopback 授权的等待对话框（BUG-2120）。
 ///
@@ -132,7 +133,7 @@ class _DesktopOAuthWaitDialogState extends State<DesktopOAuthWaitDialog> {
             // 系统返回：等价于取消。流程随之以 cancelled 收场，对话框在那时关闭。
             if (!didPop) widget.launch.cancel();
           },
-          child: AlertDialog(
+          child: FushiAlertDialog(
             // **必须 scrollable**：AlertDialog 在 `scrollable == false` 时只把 content
             // 塞进 `Flexible`，没有任何滚动兜底，超高就是 Column 溢出 + 裁切。桌面最小
             // 窗口 360×480（`desktop_window_placement.dart`）下可用宽约 230px，一条
@@ -173,15 +174,15 @@ class _DesktopOAuthWaitDialogState extends State<DesktopOAuthWaitDialog> {
               ),
             ),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: widget.launch.cancel,
                 child: Text(t.cancel),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => unawaited(_reopenBrowser()),
                 child: Text(t.sync_desktop_oauth_browser_reopen),
               ),
-              FilledButton.tonal(
+              FushiFilledButton.tonal(
                 onPressed: () => unawaited(_copyLink()),
                 child: Text(t.sync_desktop_oauth_link_copy),
               ),

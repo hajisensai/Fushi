@@ -77,7 +77,7 @@ class _AudiobookMaterialLibraryDialogState
   Widget build(BuildContext context) {
     final AudiobookMaterialScan? scan = _scan;
     final Set<String> missing = <String>{...?scan?.missingDirs};
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.audiobook_material_library),
       content: SizedBox(
         width: 420,
@@ -112,7 +112,7 @@ class _AudiobookMaterialLibraryDialogState
                               ? Icons.folder_off_outlined
                               : Icons.folder_outlined,
                         ),
-                        trailing: IconButton(
+                        trailing: FushiIconButtonControl(
                           icon: const Icon(Icons.close),
                           onPressed: () => _removeDir(dir),
                         ),
@@ -122,7 +122,7 @@ class _AudiobookMaterialLibraryDialogState
               ),
             const SizedBox(height: 8),
             if (_scanning)
-              const LinearProgressIndicator()
+              const FushiLinearProgressIndicator()
             else if (scan != null && _dirs.isNotEmpty)
               Text(
                 t.audiobook_material_status(
@@ -135,13 +135,13 @@ class _AudiobookMaterialLibraryDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton.icon(
+        FushiTextButton.icon(
           key: const ValueKey<String>('audiobook-material-add-dir'),
           onPressed: _scanning ? null : _addDir,
           icon: const Icon(Icons.create_new_folder_outlined),
           label: Text(t.audiobook_material_add_dir),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),

@@ -345,14 +345,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               children: <Widget>[
                 Text(lines.join(' · '), style: theme.textTheme.bodyMedium),
                 const SizedBox(height: 8),
-                LinearProgressIndicator(
+                FushiLinearProgressIndicator(
                   value: job == null || total <= 0 ? null : done / total,
                 ),
               ],
             ),
           ),
           if (job != null)
-            IconButton(
+            FushiIconButtonControl(
               key: const ValueKey<String>('manga_series_ocr_cancel'),
               tooltip: t.dialog_cancel,
               onPressed: () => unawaited(_cancelOcr()),
@@ -518,7 +518,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final _LockedChapterChoice?
     choice = await showAppDialog<_LockedChapterChoice>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         key: const ValueKey<String>('manga_chapter_locked_dialog'),
         title: Text(t.manga_chapter_locked_title),
         content: Text(
@@ -1362,7 +1362,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       actions: <Widget>[
         // 源站网页入口：只有在线源（Mihon）有网页可去，本地卷 / 互联对端没有。
         if (entry != null && adapter is OnlineMangaWebUrlCapable)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_open_website'),
             tooltip: t.mihon_source_website_open,
             onPressed: () => unawaited(_openWebsite(adapter, entry)),
@@ -1371,7 +1371,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
         // 不必先点一条锁章再从弹窗里找。
         if (login != null)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_login'),
             tooltip: t.mihon_source_login,
             onPressed: _busy || _refreshing
@@ -1380,7 +1380,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             icon: const Icon(Icons.login),
           ),
         if (canSubscribe)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_subscribe'),
             tooltip: entry.subscribed
                 ? t.manga_series_unsubscribe
@@ -1391,7 +1391,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             ),
           ),
         if (entry != null)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_refresh'),
             tooltip: t.manga_series_refresh,
             onPressed: _refreshing
@@ -1401,7 +1401,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
           ),
@@ -1559,7 +1559,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               alignment: WrapAlignment.center,
               children: <Widget>[
                 if (retryable)
-                  FilledButton(
+                  FushiFilledButton(
                     key: const ValueKey<String>('manga_series_error_retry'),
                     onPressed: _refreshing
                         ? null
@@ -1567,7 +1567,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                     child: Text(t.retry),
                   ),
                 _challengeAction(error),
-                TextButton(
+                FushiTextButton(
                   key: const ValueKey<String>('manga_series_error_details'),
                   onPressed: () => unawaited(
                     showErrorDetails(
@@ -1651,14 +1651,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             ),
           ),
           if (retryable)
-            TextButton(
+            FushiTextButton(
               onPressed: _refreshing
                   ? null
                   : () => unawaited(_refreshFromSource()),
               child: Text(t.retry),
             ),
           _challengeAction(error),
-          TextButton(
+          FushiTextButton(
             key: const ValueKey<String>('manga_series_error_details'),
             onPressed: () => unawaited(
               showErrorDetails(
@@ -1737,7 +1737,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final bool inLibrary = _row != null;
     if (_isLocal) {
       return <Widget>[
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: const ValueKey<String>('manga_series_open_local'),
           onPressed: _busy ? null : () => unawaited(_openLocalBook()),
           icon: const Icon(Icons.play_arrow),
@@ -1753,7 +1753,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         ? entry.chapters[resumeIndex]
         : null;
     return <Widget>[
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: const ValueKey<String>('manga_series_continue'),
           onPressed: resumeChapter == null || _busy
               ? null
@@ -1768,14 +1768,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（用户诉求：加了
         // 要能取消）。移出走书架同一条 deleteBook 路径，连已下载章节一起删。
         if (inLibrary)
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_remove_from_bookshelf'),
             onPressed: _busy ? null : () => unawaited(_removeFromLibrary()),
             icon: const Icon(Icons.library_add_check),
             label: Text(t.manga_series_remove_from_bookshelf),
           )
         else
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_add_to_bookshelf'),
             onPressed: _busy ? null : () => unawaited(_addToLibrary()),
             icon: const Icon(Icons.library_add_outlined),
@@ -1783,7 +1783,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           ),
         // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
         if (inLibrary) ...<Widget>[
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_download_all'),
             onPressed: _busy ? null : () => unawaited(_downloadAll()),
             icon: const Icon(Icons.download_outlined),
@@ -1796,7 +1796,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             selected: _appModelOrNull?.mangaDownloadAutoOcr ?? false,
             onSelected: (bool value) => unawaited(_setAutoOcr(value)),
           ),
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_ocr_all_downloaded'),
             onPressed: _busy ? null : () => unawaited(_ocrAllDownloaded()),
             icon: const Icon(Icons.document_scanner_outlined),
@@ -1812,7 +1812,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 时用户只看到一条红 toast，不知道该去哪配。返回后重建：偏好是 AppModel 上的
   /// 状态，下一次「识别」按新偏好解析。
   Widget _ocrSettingsButton() {
-    return OutlinedButton.icon(
+    return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_series_ocr_settings'),
       onPressed: () => unawaited(_openOcrSettings()),
       icon: const Icon(Icons.tune_outlined),

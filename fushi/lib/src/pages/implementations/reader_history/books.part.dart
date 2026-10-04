@@ -1331,7 +1331,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+      ).showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
     }
 
     switch (intent) {
@@ -1362,7 +1362,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
+          FushiSnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
         );
       case DropIntent.attachToBookCard:
         // 往书卡上拖音频/字幕 = 给这本书挂有声书，属听书模块。
@@ -1379,7 +1379,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.needCardTarget:
         debugPrint('[fushi-drop] [reader-shelf] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_need_card_target)),
+          FushiSnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.importNewVideo:
         // 书架拖入视频 → 自动切到视频导入流程，带上文件（不再只提示让用户手动切，
@@ -1428,7 +1428,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.unsupportedSurface:
         debugPrint('[fushi-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
+          FushiSnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
       case DropIntent.attachToVideoCard:
       case DropIntent.ignore:
@@ -1533,7 +1533,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (!exists) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.book_css_editor_no_extract_dir)),
+          FushiSnackBar(content: Text(t.book_css_editor_no_extract_dir)),
         );
       }
       return;

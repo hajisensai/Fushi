@@ -10,6 +10,7 @@ import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// App-themed desktop frame used after the native caption is hidden.
 ///
@@ -456,7 +457,7 @@ class _FushiCaptionButton extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: IconButton(
+      child: FushiIconButtonControl(
         onPressed: onPressed,
         icon: Icon(icon, size: 16),
         style: ButtonStyle(

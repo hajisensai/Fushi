@@ -91,7 +91,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
           child: Row(
             children: <Widget>[
               Expanded(
-                child: TextField(
+                child: FushiTextFieldControl(
                   key: const Key('danmaku-manual-search-field'),
                   controller: _controller,
                   focusNode: _fieldFocus,
@@ -105,7 +105,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton(
+              FushiFilledButton(
                 key: const Key('danmaku-manual-search-button'),
                 onPressed: _searching ? null : () => unawaited(_runSearch()),
                 child: Text(t.video_danmaku_manual_search_action),
@@ -120,7 +120,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
 
   Widget _buildResults(ColorScheme cs) {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FushiCircularProgressIndicator());
     }
     final DandanplaySearchResult? result = _result;
     if (result == null) {
@@ -161,7 +161,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
     final String subtitle = anime.typeDescription ?? '';
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
+      child: FushiExpansionTile(
         key: ValueKey<int>(anime.animeId),
         initiallyExpanded: true,
         title: Text(anime.animeTitle),
@@ -169,7 +169,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
         childrenPadding: const EdgeInsets.only(left: 8),
         children: <Widget>[
           for (final DandanplaySearchEpisode ep in anime.episodes)
-            ListTile(
+            FushiListTileControl(
               dense: true,
               leading: const Icon(Icons.play_circle_outline),
               title: Text(

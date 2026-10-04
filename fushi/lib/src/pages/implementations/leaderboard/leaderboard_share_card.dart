@@ -461,7 +461,7 @@ class _LeaderboardShareDialogState
     } else {
       content = Padding(
         padding: EdgeInsets.all(tokens.spacing.section),
-        child: const Center(child: CircularProgressIndicator()),
+        child: const Center(child: FushiCircularProgressIndicator()),
       );
     }
     return FushiDialogFrame(

@@ -248,10 +248,10 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.download_airing_calendar_title),
         actions: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.refresh,
             icon: const Icon(Icons.refresh),
             onPressed: _loading ? null : () => unawaited(_load(force: true)),
@@ -277,7 +277,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.download_airing_calendar_week_prev,
             icon: const Icon(Icons.chevron_left),
             onPressed: _loading ? null : () => _shiftWeek(-7),
@@ -287,13 +287,13 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             '${FushiTimeFormat.dayKey(weekEnd)}',
             style: theme.textTheme.titleSmall,
           ),
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.download_airing_calendar_week_next,
             icon: const Icon(Icons.chevron_right),
             onPressed: _loading ? null : () => _shiftWeek(7),
           ),
           const Spacer(),
-          FilterChip(
+          FushiFilterChip(
             label: Text(t.download_airing_calendar_show_all),
             selected: _showAll,
             onSelected: _loading
@@ -310,7 +310,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
 
   Widget _buildBody(ThemeData theme) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FushiCircularProgressIndicator());
     }
     final String? errorDetail = _errorDetail;
     if (errorDetail != null) {
@@ -384,7 +384,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 icon: const Icon(Icons.refresh),
                 label: Text(t.anime_download_retry),
                 onPressed: () => unawaited(_load(force: true)),

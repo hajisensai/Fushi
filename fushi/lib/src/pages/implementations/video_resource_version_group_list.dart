@@ -210,7 +210,7 @@ class _VideoResourceVersionGroupListState
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: widget.selectedIdentityKeys.contains(member.identityKey),
       leading: widget.multiSelect && widget.onSelect != null
-          ? Checkbox(
+          ? FushiCheckbox(
               value: widget.selectedIdentityKeys.contains(member.identityKey),
               onChanged: (_) => widget.onSelect!(member),
             )

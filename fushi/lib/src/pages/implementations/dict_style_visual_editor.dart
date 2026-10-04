@@ -67,7 +67,7 @@ class DictStyleVisualEditor extends StatelessWidget {
             runSpacing: tokens.spacing.gap,
             children: <Widget>[
               for (final DictStylePart part in DictStylePart.values)
-                FilterChip(
+                FushiFilterChip(
                   selected: part == selectedPart,
                   onSelected: (_) => onSelectPart(part),
                   avatar: _hasRules(part)
@@ -162,7 +162,7 @@ class DictStyleVisualEditor extends StatelessWidget {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
+            child: FushiTextButton.icon(
               onPressed:
                   _props.isEmpty ? null : () => _update(const DictStyleProps()),
               icon: const Icon(Icons.restart_alt, size: 18),
@@ -189,7 +189,7 @@ class DictStyleVisualEditor extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(child: Text(label, style: tokens.type.listSubtitle)),
-          SegmentedButton<int>(
+          FushiSegmentedButton<int>(
             showSelectedIcon: false,
             segments: <ButtonSegment<int>>[
               ButtonSegment<int>(
@@ -232,14 +232,14 @@ class DictStyleVisualEditor extends StatelessWidget {
   }) {
     return Column(
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           title: Text(value == null ? label : '$label · ${format(value)}'),
           value: value != null,
           onChanged: (bool on) => onChanged(on ? enabledValue : null),
         ),
         if (value != null)
-          Slider(
+          FushiSlider(
             value: value.clamp(min, max),
             min: min,
             max: max,
@@ -324,7 +324,7 @@ class DictStyleVisualEditor extends StatelessWidget {
     Color picked = initial;
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         content: SingleChildScrollView(
           child: ColorPicker(
             pickerColor: initial,
@@ -337,11 +337,11 @@ class DictStyleVisualEditor extends StatelessWidget {
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_ok),
           ),
@@ -426,7 +426,7 @@ class _ColorChoice extends StatelessWidget {
     // 会把这两样当「绕开设计系统的本地决策」抓出来，而它是对的：这里没有任何
     // 需要偏离 token 的理由。
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: InkWell(
         onTap: onTap,

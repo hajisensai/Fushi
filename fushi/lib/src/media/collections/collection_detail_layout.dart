@@ -350,7 +350,7 @@ class CollectionDetailHero extends StatelessWidget {
           ),
         ],
         SizedBox(height: tokens.spacing.card),
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: playButtonKey,
           icon: const Icon(Icons.play_arrow_rounded),
           label: Text(playLabel ?? t.collection_play),
@@ -664,7 +664,7 @@ class CollectionSeasonTabBar extends StatelessWidget {
     return Padding(
       key: const ValueKey<String>('collection-season-tabs'),
       padding: EdgeInsets.only(top: tokens.spacing.gap),
-      child: TabBar(
+      child: FushiTabBar(
         controller: controller,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
@@ -898,7 +898,7 @@ class CollectionEpisodeCard extends StatelessWidget {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: 1,
                   minHeight: 3,
                   backgroundColor: Colors.transparent,
