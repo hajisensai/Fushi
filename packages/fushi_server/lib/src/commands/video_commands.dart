@@ -5,7 +5,7 @@
 /// video hash         <file>
 /// video identify     <file>
 /// video sidecar write <workId>|--all [--replace]
-/// video clip         <file> --from <t> --to <t> -o <out> [--subs x.srt] [--audio-track N] [--bitrate kbps]
+/// video clip         <file> --from <t> --to <t> -o <out> [--subs x.srt | --burn-subs x.ass] [--audio-track N] [--bitrate kbps]
 /// video probe-bluray <dir>
 /// ```
 ///
@@ -20,6 +20,7 @@
 /// `FUSHI_ANIDB_PASSWORD` 给（不进 argv），其次是与 app 同名的偏好键。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -34,8 +35,10 @@ import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.da
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart' show parseFfmpegFilterNames;
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/subs_commands.dart' show ffmpegUnavailableReason;
@@ -52,7 +55,8 @@ video（视频文件工具）:
   video hash          <file>                 （离线算 AniDB ED2K 哈希）
   video identify      <file>                 （ED2K + AniDB UDP FILE；账号见 video_commands.dart 文件头）
   video sidecar write <workId>|--all [--replace]   （按库内已刮资料重写 NFO + 封面，不重新识别）
-  video clip          <file> --from 1:23 --to 1:45 -o x.mkv [--subs x.srt] [--audio-track N] [--bitrate kbps]
+  video clip          <file> --from 1:23 --to 1:45 -o x.mkv [--subs x.srt | --burn-subs x.ass] [--audio-track N] [--bitrate kbps]
+                      （--burn-subs 用 ffmpeg 的 libass `subtitles` 滤镜硬烧，必然重编码视频）
   video probe-bluray  <dir>                  （读 BDMV 播放列表：可播标题、时长、音轨 / 字幕轨）
   每个子命令都支持 --json。''';
 
@@ -96,7 +100,10 @@ void buildVideoParser(ArgParser video) {
     ..addOption('to', help: '终点（同上）')
     ..addOption('out', abbr: 'o', help: '输出文件（扩展名决定容器）')
     ..addOption('subs', help: '把这份字幕裁到区间内软封进片段（mkv / webm；mp4 封不下文本字幕会自动跳过）')
-    ..addOption('burn-subs', help: '硬字幕烧录（无头端不可用，见说明）')
+    ..addOption(
+      'burn-subs',
+      help: '用 ffmpeg 的 libass（subtitles 滤镜）把这份 SRT / ASS / VTT 硬烧进画面（重编码视频；与 --subs 互斥）',
+    )
     ..addOption('audio-track', help: '音轨序号（0 起）')
     ..addOption('bitrate', help: '视频目标码率 kbps（缺省能 copy 就 copy）');
   addJsonFlag(video.addCommand('probe-bluray'));
@@ -110,6 +117,8 @@ class VideoDeps {
     this.identityServiceFactory,
     this.ffmpegProblem = ffmpegUnavailableReason,
     this.sidecarRewriter,
+    this.ffmpegBackend = resolveFfmpegBackend,
+    this.ffmpegFilters = probeFfmpegFilterNames,
   });
 
   final AnidbFileHasher hasher;
@@ -125,6 +134,13 @@ class VideoDeps {
 
   /// sidecar 重写（null = 生产：服务端刮削协调器）。返回 null = 作品不存在。
   final Future<SourceScrapeReport?> Function(ServerRuntime rt, int workId, {required bool replace})? sidecarRewriter;
+
+  /// `--burn-subs` 探滤镜与烧录用的 ffmpeg 后端（生产：引擎装配点 [resolveFfmpegBackend]，
+  /// 与片段导出 / 字幕对齐同一套查找与覆盖规则）。
+  final FfmpegBackend Function() ffmpegBackend;
+
+  /// 本机 ffmpeg 编进的滤镜名（`ffmpeg -hide_banner -filters`）。
+  final Future<Set<String>> Function() ffmpegFilters;
 
   Map<String, String> get env => environment ?? Platform.environment;
 }
@@ -458,15 +474,28 @@ Future<int> videoClip(ArgResults sub, {required CliIo io, required VideoDeps dep
     bitrate = int.tryParse(sub['bitrate'] as String);
     if (bitrate == null || bitrate <= 0) return io.fail(kExitUsage, '--bitrate 需要正整数（kbps）');
   }
-  if (sub['burn-subs'] != null) {
-    // 引擎的烧录走「每条 cue 先渲染成 PNG 再 overlay」，渲染器（ClipSubtitleFrameRenderer）
-    // 由 Flutter 侧提供；无头端没有字体排版引擎，不假装能烧。
-    return io.fail(kExitUnavailable, '无头端没有字幕帧渲染器，不能硬烧字幕；改用 --subs 软封（输出用 .mkv）');
+  final String? burnPath = sub['burn-subs'] as String?;
+  if (burnPath != null && sub['subs'] != null) {
+    return io.fail(kExitUsage, '--subs（软封）与 --burn-subs（硬烧）只能二选一');
   }
   final String input = p.absolute(sub.rest.single);
   if (!File(input).existsSync()) return io.fail(kExitNoInput, '找不到视频文件: $input');
   final String output = p.absolute(outRaw);
   if (p.equals(input, output)) return io.fail(kExitUsage, '输出不能覆盖输入文件');
+
+  if (burnPath != null) {
+    return _videoClipBurn(
+      input: input,
+      output: output,
+      subtitlePath: burnPath,
+      startMs: startMs,
+      endMs: endMs,
+      audioTrack: audioTrack,
+      bitrate: bitrate,
+      io: io,
+      deps: deps,
+    );
+  }
 
   final List<String> subtitleContents = <String>[];
   final String? subsPath = sub['subs'] as String?;
@@ -518,6 +547,112 @@ Future<int> videoClip(ArgResults sub, {required CliIo io, required VideoDeps dep
     });
   } else {
     io.out.writeln('已写入 ${result.outputPath}（字幕轨 ${result.subtitleTrackCount} 条）');
+  }
+  return kExitOk;
+}
+
+/// 烧录允许的字幕扩展名（libass 经 libavformat 读：SRT / ASS / SSA / WebVTT）。
+const Set<String> kBurnSubtitleExtensions = <String>{'.srt', '.ass', '.ssa', '.vtt'};
+
+/// 跑 `ffmpeg -hide_banner -filters` 取滤镜名；起不来 / 超时 / 解不出返回空集合
+/// （调用方按「不能烧」处理）。
+///
+/// 可执行文件走引擎的唯一解析点 [resolveFfmpegExecutable]（配置文件 `ffmpeg:` 覆盖 >
+/// `FUSHI_FFMPEG` > 随包 > PATH），不另造查找逻辑。不经 [FfmpegBackend.run] 是因为
+/// 它只收 stderr、把 stdout 丢掉（ffmpeg 的工作日志都写 stderr），而 `-filters` 的
+/// 滤镜表恰恰写在 stdout——经它探永远是空表。
+Future<Set<String>> probeFfmpegFilterNames() async {
+  Process? process;
+  try {
+    process = await Process.start(resolveFfmpegExecutable(), const <String>['-hide_banner', '-filters']);
+    final Future<String> stdoutText = process.stdout.transform(const Utf8Decoder(allowMalformed: true)).join();
+    final Future<String> stderrText = process.stderr.transform(const Utf8Decoder(allowMalformed: true)).join();
+    final int code = await process.exitCode.timeout(const Duration(seconds: 30));
+    if (code != 0) return const <String>{};
+    return parseFfmpegFilterNames('${await stdoutText}\n${await stderrText}');
+  } on Object {
+    process?.kill(ProcessSignal.sigkill);
+    return const <String>{};
+  }
+}
+
+/// ffmpeg 烧录一次的上限（重编码比 copy 慢得多，长片段给足时间）。
+const Duration _kBurnTimeout = Duration(minutes: 30);
+
+/// `video clip --burn-subs`：用 ffmpeg 自带 libass（`subtitles` 滤镜）硬烧。
+///
+/// 与 app 的烧录路径（引擎 `exportVideoClipViaFfmpeg` 的 PNG + overlay，渲染器由
+/// Flutter 提供）不同，无头端没有排版引擎，交给 libass 排版；滤镜 / 时间轴对齐 / 转义
+/// 的纯函数在引擎 `buildFfmpegVideoClipLibassBurnArgs`。与 app 的「烧不了就静默退成
+/// 无字幕导出」不同，命令行显式要了硬字幕，烧不了就报错，不交出一个没字幕的片段。
+Future<int> _videoClipBurn({
+  required String input,
+  required String output,
+  required String subtitlePath,
+  required int startMs,
+  required int endMs,
+  required int? audioTrack,
+  required int? bitrate,
+  required CliIo io,
+  required VideoDeps deps,
+}) async {
+  final String subs = p.absolute(subtitlePath);
+  if (!File(subs).existsSync()) return io.fail(kExitNoInput, '找不到字幕文件: $subtitlePath');
+  if (!kBurnSubtitleExtensions.contains(p.extension(subs).toLowerCase())) {
+    return io.fail(kExitUsage, '字幕格式不认识（--burn-subs 支持 .srt / .ass / .ssa / .vtt）: $subtitlePath');
+  }
+  final String? ffmpeg = await deps.ffmpegProblem(probe: false);
+  if (ffmpeg != null) return io.fail(kExitUnavailable, ffmpeg);
+  final Set<String> filters = await deps.ffmpegFilters();
+  if (!ffmpegHasLibassSubtitlesFilter(filters)) {
+    return io.fail(
+      kExitUnavailable,
+      filters.isEmpty
+          ? '探测 ffmpeg 滤镜失败（`ffmpeg -hide_banner -filters` 没给出滤镜表），无法确认能否硬烧字幕'
+          : '本机 ffmpeg 没有 libass 的 `$kLibassSubtitlesFilter` 滤镜（编译时没带 --enable-libass），'
+                '不能硬烧字幕；换一个带 libass 的 ffmpeg（配置文件 ffmpeg 路径），或改用 --subs 软封（输出用 .mkv）',
+    );
+  }
+  final FfmpegBackend backend = deps.ffmpegBackend();
+  final File out = File(output);
+  out.parent.createSync(recursive: true);
+  io.err.writeln('硬烧字幕导出 ${formatClockMs(startMs)} → ${formatClockMs(endMs)}（重编码）…');
+  final FfmpegRunResult result;
+  try {
+    result = await backend.run(
+      buildFfmpegVideoClipLibassBurnArgs(
+        inputPath: input,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: output,
+        subtitlePath: subs,
+        windows: Platform.isWindows,
+        audioStreamIndex: audioTrack,
+        videoBitrateKbps: bitrate,
+      ),
+      _kBurnTimeout,
+    );
+  } on ProcessException catch (e) {
+    return io.fail(kExitUnavailable, '找不到 ffmpeg（${describeFfmpegProcessException(e)}）');
+  }
+  if (!result.isSuccess || !out.existsSync() || out.lengthSync() == 0) {
+    if (out.existsSync()) out.deleteSync();
+    final String reason = extractFfmpegFailureReason(result.output);
+    return io.fail(kExitFailure, '硬烧字幕失败${reason.isEmpty ? '（${result.failureSummary}）' : ': $reason'}');
+  }
+  if (io.json) {
+    io.writeJson(<String, Object?>{
+      'ok': true,
+      'exitCode': kExitOk,
+      'output': output,
+      'startMs': startMs,
+      'endMs': endMs,
+      'burnedSubtitles': subs,
+      'subtitleTracks': 0,
+      'bytes': out.lengthSync(),
+    });
+  } else {
+    io.out.writeln('已写入 $output（字幕已硬烧进画面）');
   }
   return kExitOk;
 }
