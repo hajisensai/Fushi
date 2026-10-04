@@ -311,8 +311,22 @@ const APP_THEME_MIRROR_KEYS = [
 ];
 let appThemeMirror = null;
 let appThemeMirrorLoaded = null;
+// app 设计系统的玻璃开关（--fushi-glass '1'/'0'）同样镜像进 storage.appGlassMirror，供扩展
+// 材质「跟随 Fushi」（theme.js extensionMaterial = 'auto'）给设置页 / 工具栏菜单 / 侧边栏决定
+// 玻璃还是实心。缺该 key（旧 app）不写，同值不重复写。
+let appGlassMirror = null;
+function rememberAppGlass(theme) {
+  const v = theme['--fushi-glass'];
+  if (v !== '1' && v !== '0') return;
+  const glass = v === '1';
+  if (glass === appGlassMirror) return;
+  appGlassMirror = glass;
+  try { chrome.storage.local.set({ appGlassMirror: glass }); } catch (_) {}
+}
+
 function rememberAppTheme(theme) {
   if (!theme || typeof theme !== 'object') return;
+  rememberAppGlass(theme);
   const scheme = theme['--fushi-color-scheme'];
   if (scheme !== 'light' && scheme !== 'dark') return;
   const colors = {};

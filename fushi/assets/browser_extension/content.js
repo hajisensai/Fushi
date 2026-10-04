@@ -2899,6 +2899,13 @@ function fushiApplyGlass(c, enabled, radius) {
   }
 }
 
+// 弹窗是否用玻璃：扩展材质设置（theme.js）优先，「跟随 Fushi」时取 app 本次下发的开关。
+// theme.js 缺席（纯 vm 测试 / 旧注入顺序）时退回 app 开关，行为与加设置前一致。
+function fushiResolveGlass(appGlass) {
+  const t = window.fushiTheme;
+  return (t && typeof t.resolveGlass === 'function') ? t.resolveGlass(appGlass) : appGlass;
+}
+
 function fushiApplyTheme(c, theme, applyBox) {
   if (!theme || typeof theme !== 'object') return;
   for (const k in theme) {
@@ -2958,7 +2965,9 @@ function fushiApplyTheme(c, theme, applyBox) {
   // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
   window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
   // 玻璃材质：app 设计系统选「玻璃」（且非墨水屏）时随 theme 下发 '1'；缺该 key = 旧 app，保持不透明。
-  fushiApplyGlass(c, theme['--fushi-glass'] === '1', theme['--fushi-radius-card']);
+  // 扩展设置 extensionMaterial 显式选「液态玻璃 / 实心」时压过它（theme.js resolveGlass；
+  // 「跟随 Fushi」= 照旧用本次响应的值）。
+  fushiApplyGlass(c, fushiResolveGlass(theme['--fushi-glass'] === '1'), theme['--fushi-radius-card']);
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经

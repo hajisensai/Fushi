@@ -42,15 +42,49 @@ label { -webkit-tap-highlight-color: transparent; }
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
+a:focus-visible,
 summary:focus-visible {
   outline: 3px solid color-mix(in oklch, var(--focus) 54%, transparent);
   outline-offset: 3px;
 }
 
 .shell {
-  width: min(1080px, calc(100% - 40px));
+  width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
-  padding: clamp(32px, 7vw, 72px) 0 64px;
+  padding: clamp(20px, 4vw, 40px) 0 72px;
+}
+
+/* 页头：图标 + 扩展名 + 一句说明。只是让页面有个身份，不是宣传 hero。 */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 clamp(18px, 3vw, 28px);
+}
+
+.brand-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  box-shadow: 0 2px 10px color-mix(in oklch, var(--text) 16%, transparent);
+}
+
+.page-title { min-width: 0; }
+
+.page-title h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+}
+
+.page-title p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .section-kicker {
@@ -63,55 +97,69 @@ summary:focus-visible {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr);
-  gap: clamp(32px, 6vw, 72px);
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 36px);
   align-items: start;
 }
 
 .main-column { min-width: 0; }
 
+/* 每个分区一张卡：节标题在卡头，设置行在卡内以细分隔线分开。 */
 .section {
-  padding: 0 0 36px;
-  margin: 0 0 36px;
-  border-bottom: 1px solid var(--outline);
+  margin: 0 0 20px;
+  padding: 20px clamp(16px, 2.4vw, 28px) 8px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--text) 5%, transparent);
+  scroll-margin-top: 20px;
 }
 
 .section:last-child { margin-bottom: 0; }
 
 .section-heading {
   display: flex;
-  align-items: end;
+  align-items: start;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 14px;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
 }
-
-.section-heading.compact { align-items: start; }
 
 .section h2,
 .connection h2 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  letter-spacing: -.02em;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -.01em;
 }
 
+/* 「修改后立即生效」之类的节级提示：标题右侧的小胶囊，与标题顶对齐。 */
 .section-note {
   flex: 0 0 auto;
-  margin-bottom: 2px;
+  margin-top: 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
   color: var(--muted);
+  background: var(--surface-muted);
   font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .setting-list { display: grid; }
 
+/* 文案在左、控件在右；行宽放不下「文案最小宽 + 控件」时控件整体换到文案下方（左对齐），
+   开关这类窄控件在手机宽度下仍与文案同行。 */
 .setting-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
-  min-height: 76px;
-  padding: 14px 4px;
-  border-top: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  gap: 12px 24px;
+  min-height: 68px;
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in oklch, var(--outline) 45%, transparent);
   cursor: pointer;
 }
 
@@ -124,8 +172,8 @@ summary:focus-visible {
 
 .setting-copy {
   display: grid;
-  gap: 5px;
-  flex: 1 1 auto;
+  gap: 4px;
+  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -136,7 +184,7 @@ summary:focus-visible {
 }
 
 .setting-copy small {
-  max-width: 620px;
+  max-width: 64ch;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
@@ -145,7 +193,7 @@ summary:focus-visible {
 /* 「查词框大小」的数值输入：与开关同一列宽，右对齐，空值时显示「跟随应用」占位。 */
 .size-input {
   flex: 0 0 auto;
-  width: 118px;
+  width: 180px;
   padding: 9px 11px;
   border: 1px solid var(--outline);
   border-radius: 10px;
@@ -157,9 +205,11 @@ summary:focus-visible {
 
 .size-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
+/* 下拉与数值框统一 180px 宽：同一节里控件右缘、左缘都对齐，扫读时不跳。 */
 .select-input {
   flex: 0 0 auto;
-  max-width: 200px;
+  width: 180px;
+  max-width: 100%;
   padding: 9px 11px;
   border: 1px solid var(--outline);
   border-radius: 10px;
@@ -222,23 +272,53 @@ summary:focus-visible {
 
 .side-column {
   position: sticky;
-  top: 28px;
+  top: 20px;
   display: grid;
-  gap: 18px;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* 节导航：一列锚点链接，当前节（options.js bindSectionNav 写 aria-current）高亮。 */
+.section-nav {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface) 80%, transparent);
+}
+
+.section-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+.section-link:hover { color: var(--text); background: color-mix(in oklch, var(--primary-soft) 55%, transparent); }
+
+.section-link[aria-current="true"] {
+  color: var(--primary-strong);
+  background: var(--primary-soft);
 }
 
 .connection {
-  padding: 22px;
-  border: 1px solid var(--outline);
+  padding: 18px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
   border-radius: var(--radius);
-  background: color-mix(in oklch, var(--surface) 94%, transparent);
+  background: var(--surface);
 }
 
 .connection-top {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
 }
 
 .connection-label {
@@ -272,8 +352,10 @@ summary:focus-visible {
   box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
+.connection h2 { font-size: 17px; }
+
 .connection p {
-  margin: 10px 0 18px;
+  margin: 6px 0 12px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
@@ -307,16 +389,25 @@ summary:focus-visible {
 .icon-button:hover { background: var(--primary-soft); }
 .icon-button:active { transform: rotate(45deg); }
 
+/* 「连接与诊断」节：高级连接 / 性能日志是两张可展开的小卡，版本与提示在其下。 */
+.diagnostics-stack {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0 14px;
+}
+
 .advanced {
-  border-top: 1px solid var(--outline);
-  border-bottom: 1px solid var(--outline);
+  padding: 0 14px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--surface-muted) 45%, transparent);
 }
 
 .advanced summary {
   position: relative;
   display: grid;
   gap: 3px;
-  padding: 16px 28px 16px 2px;
+  padding: 14px 28px 14px 2px;
   cursor: pointer;
   list-style: none;
 }
@@ -326,7 +417,7 @@ summary:focus-visible {
 .advanced summary::after {
   content: "＋";
   position: absolute;
-  top: 19px;
+  top: 17px;
   right: 4px;
   color: var(--primary-strong);
   transition: transform 220ms var(--ease);
@@ -444,6 +535,7 @@ summary:focus-visible {
 }
 
 .text-button {
+  white-space: nowrap;
   border: 1px solid transparent;
   color: var(--primary-strong);
   background: transparent;
@@ -484,17 +576,35 @@ summary:focus-visible {
   transform: translate(-50%, 0);
 }
 
-@media (max-width: 760px) {
-  .shell { width: min(100% - 28px, 620px); padding-top: 28px; }
-  .layout { grid-template-columns: 1fr; gap: 36px; }
-  .side-column { position: static; grid-row: 1; }
-  .section { padding-bottom: 26px; margin-bottom: 28px; }
+/* 窄窗口：单列；连接卡在上，节导航变成吸顶的横向滚动条。 */
+@media (max-width: 900px) {
+  .shell { width: min(100% - 28px, 760px); }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .side-column { display: contents; }
+  .section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 6px;
+    background: color-mix(in oklch, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    scrollbar-width: none;
+  }
+  .section-nav::-webkit-scrollbar { display: none; }
+  .section-link { flex: 0 0 auto; white-space: nowrap; padding: 7px 12px; font-size: 13px; }
+  .section { scroll-margin-top: 64px; }
 }
 
 @media (max-width: 460px) {
-  .section-heading { align-items: start; }
+  .shell { width: calc(100% - 20px); }
+  .section { padding-inline: 14px; border-radius: 16px; }
   .section-note { display: none; }
-  .setting-row { gap: 16px; }
+  .setting-row { gap: 10px 16px; }
+  .setting-copy { flex-basis: 200px; }
   .setting-copy small { line-height: 1.45; }
 }
 

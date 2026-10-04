@@ -95,6 +95,8 @@ const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.
 // 下拉型设置：控件 id → 存储键 → 默认值。主题（theme.js 读）与语言（i18n.js 读）。
 const selectSettings = Object.freeze({
   extensionTheme: { key: 'extensionTheme', fallback: 'auto' },
+  // 材质（theme.js extensionMaterial）：auto = 跟随 Fushi 设计系统 / solid / glass。
+  extensionMaterial: { key: 'extensionMaterial', fallback: 'auto' },
   extensionLanguage: { key: 'extensionLanguage', fallback: 'app' },
   // 网页视频计入沉浸时间的条件（study-tracker.js 的字幕门）：
   // fushiSubtitle = 正在用 Fushi / 外挂字幕（默认）；anySubtitle = 这个视频有字幕轨即可；
@@ -910,3 +912,37 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadPalette();
 loadSubtitleStyle();
+
+// ── 节导航：左侧（窄屏为顶部横条）链接随滚动高亮当前节（aria-current="true"）。
+// 只是锚点 + 视觉提示，键盘 Tab 到链接回车即跳；没有 IntersectionObserver 的环境（vm 测试）跳过。
+function bindSectionNav() {
+  if (typeof IntersectionObserver !== 'function' || typeof document.querySelectorAll !== 'function') return;
+  const links = Array.from(document.querySelectorAll('#sectionNav .section-link'));
+  if (!links.length) return;
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  const visible = new Map();
+  const mark = (id) => {
+    for (const [key, a] of byId) {
+      if (key === id) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+    // 窄屏横条：把当前项滚进横条可视区（只滚横条自身，不动页面滚动）。
+    const active = byId.get(id);
+    const bar = active && active.parentElement;
+    if (bar && bar.scrollWidth > bar.clientWidth) {
+      bar.scrollLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+    }
+  };
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) visible.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+    for (const id of byId.keys()) {
+      if ((visible.get(id) || 0) > 0) { mark(id); return; }
+    }
+  }, { rootMargin: '-15% 0px -60% 0px', threshold: [0, 0.01] });
+  for (const id of byId.keys()) {
+    const sec = document.getElementById(id);
+    if (sec) io.observe(sec);
+  }
+  mark(links[0].getAttribute('href').slice(1));
+}
+bindSectionNav();
