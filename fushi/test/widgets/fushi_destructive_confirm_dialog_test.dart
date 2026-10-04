@@ -13,6 +13,7 @@ void main() {
     String? checkboxLabel,
     String? statisticsSubtitle,
     DeletionDisclosure? checkedDisclosure,
+    String? deleteSubscriptionsLabel,
   }) async {
     dialogResult = null;
     await tester.pumpWidget(MaterialApp(
@@ -28,6 +29,7 @@ void main() {
                   checkboxLabel: checkboxLabel,
                   statisticsSubtitle: statisticsSubtitle,
                   checkedDisclosure: checkedDisclosure,
+                  deleteSubscriptionsLabel: deleteSubscriptionsLabel,
                 ),
               );
             },
@@ -260,6 +262,42 @@ void main() {
       final FushiDestructiveConfirmResult value = (await dialogResult)!;
       expect(value.checked, isTrue);
       expect(value.deleteStatistics, isTrue);
+    });
+  });
+
+  group('删合集连带订阅', () {
+    testWidgets('没传文案就不摆这一行，结果恒为 false', (WidgetTester tester) async {
+      await openDialog(tester);
+      expect(
+        find.byKey(
+          const ValueKey<String>('destructive-confirm-delete-subscriptions'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+      expect((await dialogResult)!.deleteSubscriptions, isFalse);
+    });
+
+    testWidgets('默认勾上、与主勾选无关；点一下取消', (WidgetTester tester) async {
+      await openDialog(
+        tester,
+        checkboxLabel: '连同本体删除',
+        deleteSubscriptionsLabel: '同时删除 2 个下载订阅',
+      );
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+      FushiDestructiveConfirmResult value = (await dialogResult)!;
+      expect(value.checked, isFalse, reason: '主勾选没勾');
+      expect(value.deleteSubscriptions, isTrue, reason: '订阅勾选默认勾上且独立');
+
+      await openDialog(tester, deleteSubscriptionsLabel: '同时删除 2 个下载订阅');
+      await tester.tap(find.text('同时删除 2 个下载订阅'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+      value = (await dialogResult)!;
+      expect(value.deleteSubscriptions, isFalse);
     });
   });
 }
