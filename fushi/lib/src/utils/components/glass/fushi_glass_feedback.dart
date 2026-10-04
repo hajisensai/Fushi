@@ -1,12 +1,16 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 反馈族（进度条 / 转圈 / tooltip）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；
-// 「玻璃」设计系统下渲染 liquid_glass_widgets 的 [GlassProgressIndicator]，
-// tooltip 保留 [Tooltip] 的触发 / 定位 / 无障碍行为，只把气泡换成 [GlassContainer]。
+// 「玻璃」设计系统下按 iOS 26：进度条是 [GlassProgressIndicator] 细轨（已填段
+// 强调色、轨道 systemFill），不定态圆形进度是 iOS 的菊花
+// [CupertinoActivityIndicator]；tooltip 保留 [Tooltip] 的触发 / 定位 / 无障碍
+// 行为，只把气泡换成小号中性玻璃胶囊 [GlassContainer]。
 
 Color _indicatorColor(
   BuildContext context,
@@ -17,7 +21,7 @@ Color _indicatorColor(
   return valueColor?.value ??
       color ??
       theme.progressIndicatorTheme.color ??
-      theme.colorScheme.primary;
+      appleColorsOf(context).accent;
 }
 
 /// 有 [valueColor] 动画时随动画重建（Material 原控件同样跟随它）。
@@ -94,7 +98,7 @@ class FushiLinearProgressIndicator extends StatelessWidget {
         backgroundColor:
             backgroundColor ??
             indicatorTheme.linearTrackColor ??
-            theme.colorScheme.secondaryContainer,
+            appleColorsOf(context).fill,
         quality: fushiGlassQuality(context),
         semanticLabel: semanticsLabel,
       );
@@ -208,24 +212,43 @@ class FushiCircularProgressIndicator extends StatelessWidget {
       final double size = box != null && box.minWidth > 0
           ? box.minWidth
           : _kDefaultSize;
+      final EdgeInsetsGeometry? effectivePadding =
+          padding ?? indicatorTheme.circularTrackPadding;
+      if (value == null) {
+        // iOS 的不定态进度是菊花（UIActivityIndicatorView），不是转圈弧线。
+        // 颜色：调用方显式给的照用，否则 secondaryLabel 灰（系统默认）。
+        final Color? explicit =
+            valueColor?.value ?? color ?? indicatorTheme.color;
+        Widget spinner = SizedBox.square(
+          dimension: size,
+          child: Center(
+            child: CupertinoActivityIndicator(
+              radius: (size * 0.32).clamp(7.0, 20.0),
+              color: explicit ?? appleColorsOf(context).secondaryLabel,
+            ),
+          ),
+        );
+        if (semanticsLabel != null) {
+          spinner = Semantics(label: semanticsLabel, child: spinner);
+        }
+        if (effectivePadding != null) {
+          spinner = Padding(padding: effectivePadding, child: spinner);
+        }
+        return spinner;
+      }
       Widget indicator = GlassProgressIndicator.circular(
         value: value,
         size: size,
         strokeWidth: strokeWidth ?? indicatorTheme.strokeWidth ?? 4,
         color: _indicatorColor(context, color, valueColor),
-        // 不定态没有轨道（与 M3 一致）；确定态轨道用 colorScheme 容器色，
-        // 不用库默认的 15% 白（浅色主题上看不见）。
+        // 确定态轨道用 systemFill 中性灰，不用库默认的 15% 白（浅色上看不见）。
         backgroundColor:
             backgroundColor ??
             indicatorTheme.circularTrackColor ??
-            (value == null
-                ? Colors.transparent
-                : theme.colorScheme.secondaryContainer),
+            appleColorsOf(context).fill,
         quality: fushiGlassQuality(context),
         semanticLabel: semanticsLabel,
       );
-      final EdgeInsetsGeometry? effectivePadding =
-          padding ?? indicatorTheme.circularTrackPadding;
       if (effectivePadding != null) {
         indicator = Padding(padding: effectivePadding, child: indicator);
       }
@@ -237,7 +260,8 @@ class FushiCircularProgressIndicator extends StatelessWidget {
 /// [Tooltip] 的设计系统分派版。
 ///
 /// 玻璃形态仍是 [Tooltip]（悬停 / 长按触发、定位、自动消失、无障碍提示全部
-/// 照旧），只是气泡本体换成 [GlassContainer]：Tooltip 的 decoration 只能是
+/// 照旧），只是气泡本体换成小号中性玻璃胶囊 [GlassContainer]（iOS 26 的
+/// 浮层提示）：Tooltip 的 decoration 只能是
 /// [Decoration]（画不了着色器玻璃），所以把它置空透明，再把消息包进
 /// `WidgetSpan(GlassContainer(...))` 作为 richMessage。语义改由外层
 /// `Semantics(tooltip:)` 提供（WidgetSpan 的纯文本是占位符，不能直接读）。
@@ -324,25 +348,30 @@ class FushiTooltip extends StatelessWidget {
     }
 
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final TooltipThemeData tooltipTheme = TooltipTheme.of(context);
     final TextStyle bubbleStyle =
         (theme.textTheme.labelMedium ?? const TextStyle())
-            .copyWith(color: cs.onSurface)
+            .copyWith(
+              color: apple.label,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            )
             .merge(textStyle);
     final TextAlign align =
         textAlign ?? tooltipTheme.textAlign ?? TextAlign.start;
     final InlineSpan content = richMessage ?? TextSpan(text: message ?? '');
     final String plain = message ?? richMessage?.toPlainText() ?? '';
 
+    // 单行时是全胶囊（圆角 = 半高 15），多行退成圆角 15 的玻璃块。
     final Widget bubble = GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 8),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 15),
       quality: fushiGlassQuality(context),
-      settings: fushiGlassSettings(context, tint: cs.surfaceContainerHigh),
+      settings: fushiGlassSettings(context),
       padding:
           padding ??
           tooltipTheme.padding ??
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Text.rich(content, style: bubbleStyle, textAlign: align),
     );
 

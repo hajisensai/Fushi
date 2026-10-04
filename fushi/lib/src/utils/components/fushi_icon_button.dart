@@ -5,6 +5,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -251,7 +252,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(widget.icon, size: widget.size ?? 18, color: contentColor),
+                FushiIcon(widget.icon, size: widget.size ?? 18, color: contentColor),
                 SizedBox(width: tokens.spacing.gap - 2),
                 Text(
                   label,
@@ -273,7 +274,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
             maxWidth: tokens.spacing.gap * 6,
             maxHeight: tokens.spacing.gap * 6,
           ),
-          icon: Icon(
+          icon: FushiIcon(
             widget.icon,
             color: enabled ? enabledColor : disabledColor,
             size: widget.size,
@@ -288,7 +289,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
       color: widget.backgroundColor ?? Colors.transparent,
       child: Padding(
         padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
-        child: Icon(
+        child: FushiIcon(
           widget.icon,
           size: widget.size,
           color: enabled ? enabledColor : disabledColor,

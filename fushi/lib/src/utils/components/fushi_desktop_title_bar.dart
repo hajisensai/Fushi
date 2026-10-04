@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -459,7 +460,7 @@ class _FushiCaptionButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: FushiIconButtonControl(
         onPressed: onPressed,
-        icon: Icon(icon, size: 16),
+        icon: FushiIcon(icon, size: 16),
         style: ButtonStyle(
           minimumSize: const WidgetStatePropertyAll<Size>(Size(40, 28)),
           maximumSize: const WidgetStatePropertyAll<Size>(Size(40, 28)),

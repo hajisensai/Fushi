@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// A clickable MD3-style tag used in dictionary entries.
@@ -64,7 +65,7 @@ class FushiTag extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (icon != null) ...[
-                  Icon(
+                  FushiIcon(
                     icon,
                     color: effectiveForeground,
                     size: iconSize ??

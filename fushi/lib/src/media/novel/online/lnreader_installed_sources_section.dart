@@ -6,6 +6,7 @@ import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 小说在线源列表：书的「导入」视图「在线源」段正文。
@@ -97,13 +98,13 @@ class _LnReaderInstalledSourcesSectionState
     key: const ValueKey<String>('novel_sources_search_field'),
     controller: _searchController,
     decoration: InputDecoration(
-      prefixIcon: const Icon(Icons.search),
+      prefixIcon: const FushiIcon(Icons.search),
       hintText: t.mihon_sources_search_hint,
       border: const OutlineInputBorder(),
       suffixIcon: _searchQuery.isEmpty
           ? null
           : FushiIconButtonControl(
-              icon: const Icon(Icons.close),
+              icon: const FushiIcon(Icons.close),
               onPressed: () {
                 _searchController.clear();
                 setState(() => _searchQuery = '');
@@ -222,7 +223,7 @@ class _LnReaderInstalledSourcesSectionState
                 ? FushiPopupMenuButton<_SourceAction>(
                     key: ValueKey<String>('novel_source_menu_${plugin.id}'),
                     tooltip: t.common_more_actions,
-                    icon: const Icon(Icons.more_vert),
+                    icon: const FushiIcon(Icons.more_vert),
                     onSelected: (_SourceAction action) => action.onTap?.call(),
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<_SourceAction>>[
@@ -233,7 +234,7 @@ class _LnReaderInstalledSourcesSectionState
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
-                                  Icon(action.icon, size: 20),
+                                  FushiIcon(action.icon, size: 20),
                                   const SizedBox(width: 12),
                                   Flexible(child: Text(action.label)),
                                 ],
@@ -248,7 +249,7 @@ class _LnReaderInstalledSourcesSectionState
                         FushiIconButtonControl(
                           tooltip: action.label,
                           onPressed: action.onTap,
-                          icon: Icon(action.icon),
+                          icon: FushiIcon(action.icon),
                         ),
                     ],
                   ),

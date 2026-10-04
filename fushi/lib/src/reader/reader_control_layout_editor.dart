@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/controls/control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 阅读器按钮图标：与顶栏渲染同一张表（`chrome.part.dart` 的 `_readerControlIcon`
@@ -205,7 +206,7 @@ class ReaderControlLayoutEditor extends StatelessWidget {
             Padding(
               padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
               child: Center(
-                child: Icon(
+                child: FushiIcon(
                   Icons.menu_book_outlined,
                   size: 28,
                   color: theme.colorScheme.outline,

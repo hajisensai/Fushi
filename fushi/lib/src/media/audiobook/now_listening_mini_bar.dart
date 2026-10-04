@@ -8,6 +8,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -125,7 +126,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
               // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
               if (Platform.isAndroid || Platform.isWindows)
                 FushiIconButtonControl(
-                  icon: Icon(
+                  icon: FushiIcon(
                     appModel.showFloatingLyric
                         ? Icons.subtitles
                         : Icons.subtitles_outlined,
@@ -135,12 +136,12 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
                   onPressed: () => _toggleFloatingLyric(appModel),
                 ),
               FushiIconButtonControl(
-                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                icon: FushiIcon(playing ? Icons.pause : Icons.play_arrow),
                 tooltip: t.floating_lyric_play_pause,
                 onPressed: () => controller.togglePlayPause(),
               ),
               FushiIconButtonControl(
-                icon: const Icon(Icons.stop),
+                icon: const FushiIcon(Icons.stop),
                 tooltip: t.stop,
                 onPressed: () => appModel.stopBackgroundListening(),
               ),
@@ -212,7 +213,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
           border:
               isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
         ),
-        child: Icon(
+        child: FushiIcon(
           Icons.headphones,
           size: 20,
           color: scheme.onPrimaryContainer,

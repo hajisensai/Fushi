@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
@@ -433,12 +434,12 @@ Widget buildVideoQualityEntryRow(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
   return FushiListTileControl(
     dense: true,
-    leading: const Icon(Icons.high_quality_outlined),
+    leading: const FushiIcon(Icons.high_quality_outlined),
     title: Text(t.video_quality),
     subtitle: host.qualityCurrentLabel != null
         ? Text(host.qualityCurrentLabel!)
         : null,
-    trailing: const Icon(Icons.chevron_right),
+    trailing: const FushiIcon(Icons.chevron_right),
     onTap: host.onOpenQuality,
   );
 }
@@ -450,10 +451,10 @@ Widget buildVideoSkiaFallbackRow(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
   return FushiListTileControl(
     dense: true,
-    leading: const Icon(Icons.animation_outlined),
+    leading: const FushiIcon(Icons.animation_outlined),
     title: Text(t.video_render_skia_fix_title),
     subtitle: Text(t.video_render_skia_fix_hint),
-    trailing: const Icon(Icons.restart_alt),
+    trailing: const FushiIcon(Icons.restart_alt),
     onTap: host.onSwitchToSkiaRenderer,
   );
 }
@@ -466,7 +467,7 @@ Widget buildVideoAudioTrackSection(SettingsContext context) {
   if (section != null) return section;
   return FushiListTileControl(
     dense: true,
-    leading: const Icon(Icons.audiotrack),
+    leading: const FushiIcon(Icons.audiotrack),
     title: Text(t.video_audio_track_empty),
     enabled: false,
   );
@@ -757,7 +758,7 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
             : null;
     return FushiListItem(
       density: FushiListDensity.compact,
-      leading: Icon(icon, color: tint),
+      leading: FushiIcon(icon, color: tint),
       title: Text(p.basename(path)),
       subtitle: status == null
           ? null

@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -718,13 +719,13 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
             child: FushiCircularProgressIndicator(strokeWidth: 2),
           );
         case SubtitleBatchStatus.done:
-          return const Icon(Icons.check_circle, size: 18, color: Colors.green);
+          return const FushiIcon(Icons.check_circle, size: 18, color: Colors.green);
         case SubtitleBatchStatus.noMatch:
-          return const Icon(Icons.search_off, size: 18);
+          return const FushiIcon(Icons.search_off, size: 18);
         case SubtitleBatchStatus.failed:
-          return const Icon(Icons.error_outline, size: 18, color: Colors.red);
+          return const FushiIcon(Icons.error_outline, size: 18, color: Colors.red);
         case SubtitleBatchStatus.pending:
-          return const Icon(Icons.schedule, size: 18);
+          return const FushiIcon(Icons.schedule, size: 18);
       }
     }
     if (_searching) {
@@ -735,11 +736,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
     }
     final SubtitleCollectionSource? source = _selectedSource;
-    if (source == null) return const Icon(Icons.remove, size: 18);
+    if (source == null) return const FushiIcon(Icons.remove, size: 18);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
     return (source.index.byEpisode[episode]?.isEmpty ?? true)
-        ? const Icon(Icons.search_off, size: 18)
-        : const Icon(Icons.check_circle_outline, size: 18, color: Colors.green);
+        ? const FushiIcon(Icons.search_off, size: 18)
+        : const FushiIcon(Icons.check_circle_outline, size: 18, color: Colors.green);
   }
 
   Widget? _episodeSubtitle(VideoBookRow member, int memberIndex) {
@@ -948,7 +949,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 error ? Icons.error_outline : Icons.info_outline,
                 size: 18,
                 color: fg,
@@ -1020,7 +1021,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                           onPressed: _resolving || _searching || _running
                               ? null
                               : _resolveSeries,
-                          icon: const Icon(Icons.search, size: 18),
+                          icon: const FushiIcon(Icons.search, size: 18),
                           label: Text(t.video_jimaku_find_sources),
                         ),
                       ],
@@ -1091,7 +1092,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       height: 18,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.download),
+                  : const FushiIcon(Icons.download),
               label: Text(t.video_jimaku_batch_download),
             ),
           ],

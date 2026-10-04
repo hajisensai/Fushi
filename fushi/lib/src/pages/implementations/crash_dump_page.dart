@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 
@@ -101,7 +102,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Icon(Icons.privacy_tip_outlined,
+                  FushiIcon(Icons.privacy_tip_outlined,
                       size: 20, color: cs.onSurfaceVariant),
                   const Gap(4),
                   Expanded(

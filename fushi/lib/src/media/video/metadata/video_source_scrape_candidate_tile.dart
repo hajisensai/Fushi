@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
@@ -48,7 +49,7 @@ class VideoSourceScrapeCandidateTile extends StatelessWidget {
         padding: EdgeInsets.zero,
         leading: aiSuggestion == null
             ? null
-            : Icon(
+            : FushiIcon(
                 Icons.auto_awesome,
                 color: Theme.of(context).colorScheme.primary,
               ),
@@ -59,7 +60,7 @@ class VideoSourceScrapeCandidateTile extends StatelessWidget {
               : '${describe(candidate)}\n$aiSuggestion',
         ),
         subtitleMaxLines: aiSuggestion == null ? 2 : 5,
-        trailing: const Icon(Icons.chevron_right),
+        trailing: const FushiIcon(Icons.chevron_right),
         onTap: () => onSelected(candidate),
       );
 }

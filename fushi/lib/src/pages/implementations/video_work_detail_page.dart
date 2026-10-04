@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
@@ -398,7 +399,7 @@ class _StandaloneVideoWorkDetailState
                             const SizedBox(height: 16),
                             FushiFilledButton.icon(
                               onPressed: () => _playBook(book),
-                              icon: const Icon(Icons.play_arrow_rounded),
+                              icon: const FushiIcon(Icons.play_arrow_rounded),
                               label: Text(book.lastPositionMs > 0
                                   ? t.video_continue_watching
                                   : t.collection_play),
@@ -520,7 +521,7 @@ class _StandaloneVideoWorkDetailState
           for (final VideoMetadataExtraRow extra in _extras)
             FushiListItem(
               padding: EdgeInsets.zero,
-              leading: const Icon(Icons.play_circle_outline),
+              leading: const FushiIcon(Icons.play_circle_outline),
               title: Text(extra.title),
               subtitle: Text(extra.kind),
               onTap: () => unawaited(_playExtra(extra)),

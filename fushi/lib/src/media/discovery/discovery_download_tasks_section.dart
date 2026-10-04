@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -188,34 +189,34 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     final ColorScheme scheme = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final Widget statusIcon = switch (task.status) {
-      DiscoveryDownloadStatus.queued => Icon(
+      DiscoveryDownloadStatus.queued => FushiIcon(
         Icons.schedule_outlined,
         size: 20,
         color: scheme.outline,
       ),
-      DiscoveryDownloadStatus.done => Icon(
+      DiscoveryDownloadStatus.done => FushiIcon(
         Icons.check_circle_outline,
         size: 20,
         color: scheme.primary,
       ),
-      DiscoveryDownloadStatus.failed => Icon(
+      DiscoveryDownloadStatus.failed => FushiIcon(
         Icons.error_outline,
         size: 20,
         color: scheme.error,
       ),
-      DiscoveryDownloadStatus.waitingRetry => Icon(
+      DiscoveryDownloadStatus.waitingRetry => FushiIcon(
         Icons.autorenew,
         size: 20,
         color: scheme.error,
       ),
-      DiscoveryDownloadStatus.cancelled => Icon(
+      DiscoveryDownloadStatus.cancelled => FushiIcon(
         Icons.block_outlined,
         size: 20,
         color: scheme.outline,
       ),
       DiscoveryDownloadStatus.running =>
         eink
-            ? const Icon(Icons.downloading_outlined, size: 20)
+            ? const FushiIcon(Icons.downloading_outlined, size: 20)
             : SizedBox(
                 width: 20,
                 height: 20,

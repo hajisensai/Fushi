@@ -16,6 +16,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
@@ -156,7 +157,7 @@ class MangaSourceCatalogSection extends StatelessWidget {
       if (catalog.mokuroEnabled)
         _SourceTile(
           key: const ValueKey<String>('manga-source-mokuro'),
-          leading: const Icon(Icons.auto_stories_outlined),
+          leading: const FushiIcon(Icons.auto_stories_outlined),
           title: t.mihon_source_browse_mokuro,
           subtitle: 'mokuro.moe',
           onTap: onOpenMokuro,
@@ -187,7 +188,7 @@ class MangaSourceCatalogSection extends StatelessWidget {
       for (final OpdsServerConfig server in catalog.opdsServers)
         _SourceTile(
           key: ValueKey<String>('manga-opds-${server.id}'),
-          leading: const Icon(Icons.menu_book_outlined),
+          leading: const FushiIcon(Icons.menu_book_outlined),
           title: server.displayName,
           subtitle: server.catalogUrl.host,
           onTap: () => onOpenOpds(server),
@@ -290,7 +291,7 @@ class _SourceTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
+              FushiIcon(
                 pinned ? Icons.push_pin_outlined : Icons.chevron_right,
                 size: 18,
                 color: theme.colorScheme.onSurfaceVariant,

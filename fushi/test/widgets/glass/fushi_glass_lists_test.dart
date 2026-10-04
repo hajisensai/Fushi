@@ -3,13 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 列表与容器包装契约：MD3 下是原 ListTile / ExpansionTile / Divider / Card /
-// Badge；玻璃下是 GlassListTile / GlassDivider / GlassCard / GlassBadge，
-// 列表行可 Tab 聚焦、Enter 激活，选中态有可见高亮。
+// Badge；玻璃下按 Apple 26 内容层规则是实色——列表行是 [FushiAppleRow]、
+// 卡片是 [FushiAppleGroupSurface]（secondaryGroupedBackground）、分隔线是
+// separator 细线，都不是玻璃组件；只有 Badge 是 GlassBadge。列表行可 Tab
+// 聚焦、Enter 激活，选中态有可见高亮。
 
 Future<void> _pump(
   WidgetTester tester,
@@ -47,7 +50,7 @@ void main() {
       expect(find.byType(GlassListTile), findsNothing);
     });
 
-    testWidgets('glass renders GlassListTile with all slots', (
+    testWidgets('glass renders a solid Apple row with all slots', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -63,7 +66,8 @@ void main() {
       );
       expect(find.byType(ListTile), findsNothing);
       expect(find.byType(InkWell), findsNothing);
-      expect(find.byType(GlassListTile), findsOneWidget);
+      expect(find.byType(GlassListTile), findsNothing);
+      expect(find.byType(FushiAppleRow), findsOneWidget);
       expect(find.text('Title'), findsOneWidget);
       expect(find.text('Subtitle'), findsOneWidget);
       expect(find.byIcon(Icons.book), findsOneWidget);
@@ -136,15 +140,15 @@ void main() {
           ),
           glass: true,
         );
-        final DecoratedBox box = tester.widget<DecoratedBox>(
+        final AnimatedContainer box = tester.widget<AnimatedContainer>(
           find
-              .ancestor(
-                of: find.byType(GlassListTile),
-                matching: find.byType(DecoratedBox),
+              .descendant(
+                of: find.byType(FushiAppleRow),
+                matching: find.byType(AnimatedContainer),
               )
               .first,
         );
-        return (box.decoration as ShapeDecoration).color;
+        return (box.decoration! as BoxDecoration).color;
       }
 
       final Color? unselected = await fillOf(false);
@@ -162,7 +166,7 @@ void main() {
             .first,
       );
       final BuildContext ctx = tester.element(find.text('row'));
-      expect(style.style.color, Theme.of(ctx).colorScheme.primary);
+      expect(style.style.color, appleColorsOf(ctx).accent);
     });
   });
 
@@ -192,7 +196,7 @@ void main() {
         glass: true,
       );
       expect(find.byType(ExpansionTile), findsNothing);
-      expect(find.byType(GlassListTile), findsOneWidget);
+      expect(find.byType(FushiAppleRow), findsOneWidget);
       expect(find.text('child'), findsNothing);
 
       await tester.tap(find.text('head'));
@@ -252,7 +256,9 @@ void main() {
       expect(find.byType(GlassCard), findsNothing);
     });
 
-    testWidgets('glass builds the glass widgets', (WidgetTester tester) async {
+    testWidgets('glass builds solid Apple content widgets', (
+      WidgetTester tester,
+    ) async {
       await _pump(
         tester,
         const Column(
@@ -277,9 +283,21 @@ void main() {
       expect(find.byType(VerticalDivider), findsNothing);
       expect(find.byType(Card), findsNothing);
       expect(find.byType(Badge), findsNothing);
-      expect(find.byType(GlassDivider), findsNWidgets(2));
-      expect(find.byType(GlassCard), findsOneWidget);
+      // 内容层是实色：分隔线与卡片都不是玻璃组件。
+      expect(find.byType(GlassDivider), findsNothing);
+      expect(find.byType(GlassCard), findsNothing);
+      expect(find.byType(FushiAppleGroupSurface), findsOneWidget);
       expect(find.text('card'), findsOneWidget);
+      final BuildContext ctx = tester.element(find.text('card'));
+      final Material surface = tester.widget<Material>(
+        find
+            .descendant(
+              of: find.byType(FushiAppleGroupSurface),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(surface.color, appleColorsOf(ctx).secondaryGroupedBackground);
       // 圆点、count、纯数字 label → GlassBadge；isLabelVisible:false 不出徽标。
       expect(find.byType(GlassBadge), findsNWidgets(3));
       expect(find.text('3'), findsOneWidget);

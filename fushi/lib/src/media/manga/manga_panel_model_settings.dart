@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
 
@@ -103,7 +104,7 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
                 FushiIconButtonControl(
                   tooltip: t.manga_panel_model_delete,
                   onPressed: _busy ? null : _deleteModel,
-                  icon: const Icon(Icons.delete_outline),
+                  icon: const FushiIcon(Icons.delete_outline),
                 ),
               FushiFilledButton(
                 onPressed: _busy || verified ? null : _downloadModel,

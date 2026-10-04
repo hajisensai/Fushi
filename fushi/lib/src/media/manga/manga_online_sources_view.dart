@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -616,7 +617,7 @@ class _MangaOnlineSourcesViewState
             margin: EdgeInsets.only(bottom: tokens.spacing.gap),
             padding: EdgeInsets.zero,
             child: FushiListItem(
-              leading: const Icon(Icons.cloud_outlined),
+              leading: const FushiIcon(Icons.cloud_outlined),
               title: Text(repository.name),
               subtitle: Text(mangaSourceHostLabel(repository.indexUrl)),
               trailing: Wrap(
@@ -626,14 +627,14 @@ class _MangaOnlineSourcesViewState
                     onPressed: _aidokuBusy
                         ? null
                         : () => unawaited(_browseAidokuRepository(repository)),
-                    icon: const Icon(Icons.view_list_outlined),
+                    icon: const FushiIcon(Icons.view_list_outlined),
                   ),
                   FushiIconButtonControl(
                     tooltip: t.aidoku_repository_remove,
                     onPressed: _aidokuBusy
                         ? null
                         : () => unawaited(_removeAidokuRepository(repository)),
-                    icon: const Icon(Icons.delete_outline),
+                    icon: const FushiIcon(Icons.delete_outline),
                   ),
                 ],
               ),
@@ -952,7 +953,7 @@ class _AidokuRepositoryUrlDialogState
             keyboardType: TextInputType.url,
             decoration: InputDecoration(
               labelText: t.aidoku_repository_url,
-              prefixIcon: const Icon(Icons.link),
+              prefixIcon: const FushiIcon(Icons.link),
             ),
             onSubmitted: (_) => _submit(),
           ),
@@ -1133,7 +1134,7 @@ class _AidokuRepositorySourcesDialogState
               key: const ValueKey<String>('aidoku_repository_search'),
               decoration: InputDecoration(
                 labelText: t.aidoku_repository_search,
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const FushiIcon(Icons.search),
               ),
               onChanged: (String value) => setState(() => _query = value),
             ),

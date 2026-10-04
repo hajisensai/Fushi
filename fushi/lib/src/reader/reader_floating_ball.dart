@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 悬浮球停靠的屏幕边。
@@ -546,7 +547,7 @@ class _ColumnButton extends StatelessWidget {
             child: SizedBox(
               width: size,
               height: size,
-              child: Icon(action.icon, size: 22, color: fg),
+              child: FushiIcon(action.icon, size: 22, color: fg),
             ),
           ),
         ),

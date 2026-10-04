@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
@@ -984,7 +985,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         controller: _searchController,
         decoration: InputDecoration(
           isDense: true,
-          prefixIcon: const Icon(Icons.search, size: 18),
+          prefixIcon: const FushiIcon(Icons.search, size: 18),
           hintText: t.library_search,
           border: const OutlineInputBorder(),
           contentPadding: const EdgeInsets.symmetric(
@@ -994,7 +995,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           suffixIcon: _searchQuery.isEmpty
               ? null
               : FushiIconButtonControl(
-                  icon: const Icon(Icons.close, size: 18),
+                  icon: const FushiIcon(Icons.close, size: 18),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
@@ -1028,7 +1029,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 minWidth: 44,
                 minHeight: 44,
               ),
-              icon: const Icon(Icons.settings_outlined, size: 22),
+              icon: const FushiIcon(Icons.settings_outlined, size: 22),
               onPressed: _openTagManagement,
             ),
           ],
@@ -1390,7 +1391,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ),
           ),
           SizedBox(width: tokens.spacing.gap),
-          Icon(
+          FushiIcon(
             Icons.play_circle_filled,
             size: 36,
             color: tokens.surfaces.primary,
@@ -2309,13 +2310,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           if (shell != null)
             FushiFilledButton.icon(
-              icon: const Icon(Icons.library_add_outlined, size: 18),
+              icon: const FushiIcon(Icons.library_add_outlined, size: 18),
               label: Text(t.library_empty_go_import),
               onPressed: () => shell.select(MediaLibraryViewKind.sources),
             )
           else
             FushiFilledButton.icon(
-              icon: const Icon(Icons.library_add_outlined, size: 18),
+              icon: const FushiIcon(Icons.library_add_outlined, size: 18),
               label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
               onPressed: () async {
                 // 空态兜底与页头兜底指向同一个对话框：漫画库开漫画框，书架开书籍框。

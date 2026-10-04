@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/utils.dart';
@@ -67,7 +68,7 @@ class _BookDragTargetState extends State<BookDragTarget> {
                     ),
                   ),
                   child: Center(
-                    child: Icon(
+                    child: FushiIcon(
                       Icons.add_circle_outline,
                       color: hoverColor,
                       size: tokens.spacing.gap * 4,

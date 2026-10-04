@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
@@ -340,7 +341,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                 FushiFilledButton.icon(
                   key: const ValueKey<String>('gtp-save'),
                   onPressed: _isDirty ? _save : null,
-                  icon: const Icon(Icons.save_outlined),
+                  icon: const FushiIcon(Icons.save_outlined),
                   label: Text(t.dialog_save),
                 ),
               ],
@@ -377,7 +378,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             child: FushiTextButton.icon(
               key: const ValueKey<String>('gtp-use-latest'),
               onPressed: hasLatest ? _useLatestSample : null,
-              icon: const Icon(Icons.history, size: 18),
+              icon: const FushiIcon(Icons.history, size: 18),
               label: Text(t.game_text_process_preview_use_latest),
             ),
           ),
@@ -412,7 +413,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 skipped ? Icons.toggle_off_outlined : Icons.south,
                 size: 16,
                 color: tokens.surfaces.onVariant,
@@ -497,7 +498,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
   Widget _buildEmptiedNotice(FushiDesignTokens tokens, Color color) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: <Widget>[
-      Icon(Icons.report_problem_outlined, size: 16, color: color),
+      FushiIcon(Icons.report_problem_outlined, size: 16, color: color),
       SizedBox(width: tokens.spacing.gap),
       Expanded(
         child: Text(
@@ -580,7 +581,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             child: FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('gtp-add-step'),
               onPressed: _promptAddStep,
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.game_text_process_add_step),
             ),
           ),
@@ -615,7 +616,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.info_outline,
               size: 18,
               color: Theme.of(context).colorScheme.onSecondaryContainer,
@@ -641,7 +642,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.drag_handle,
                 size: 18,
                 color: tokens.surfaces.onVariant,
@@ -670,7 +671,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
               FushiIconButtonControl(
                 key: ValueKey<String>('gtp-step-delete-${step.id}'),
                 tooltip: t.dialog_delete,
-                icon: const Icon(Icons.delete_outline, size: 20),
+                icon: const FushiIcon(Icons.delete_outline, size: 20),
                 onPressed: () => _removeStep(step.id),
               ),
             ],
@@ -916,7 +917,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                       height: 16,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_outlined),
+                  : const FushiIcon(Icons.auto_awesome_outlined),
               label: Text(t.game_text_process_ai_generate),
             ),
           ),

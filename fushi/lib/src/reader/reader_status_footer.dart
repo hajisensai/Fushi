@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/reader/reader_chrome_floating.dart'
@@ -251,7 +252,7 @@ class ReaderStudyClockButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ExcludeFocus(
       child: FushiIconButtonControl(
-        icon: Icon(
+        icon: FushiIcon(
           active ? Icons.pause_rounded : Icons.play_arrow_rounded,
           key: ValueKey<bool>(active),
         ),

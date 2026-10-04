@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
@@ -87,7 +88,7 @@ class _AListSiteSettingsSectionState
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.discovery_alist_add),
             ),
           ),
@@ -129,7 +130,7 @@ class _AListSiteSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(Icons.remove_circle_outline),
               ),
             ],
           ),
@@ -229,7 +230,7 @@ class _AListSiteSettingsSectionState
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check_outlined),
+                    : const FushiIcon(Icons.network_check_outlined),
                 label: Text(t.discovery_alist_test),
               ),
               if (probe != null && !probe.running) ...<Widget>[

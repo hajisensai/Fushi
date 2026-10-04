@@ -620,7 +620,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  const Icon(Icons.drive_folder_upload_outlined, size: 18),
+                  const FushiIcon(Icons.drive_folder_upload_outlined, size: 18),
                   const SizedBox(width: 8),
                   Text(t.data_storage_change_button),
                 ],

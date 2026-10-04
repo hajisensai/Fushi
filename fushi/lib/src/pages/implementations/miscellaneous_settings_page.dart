@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -344,7 +345,7 @@ class _MiscellaneousSettingsBodyState
       label: t.icon_custom,
       enabled: !_switching,
       onTap: _pickCustomIcon,
-      child: Icon(
+      child: FushiIcon(
         Icons.add_photo_alternate_outlined,
         size: 32,
         color: theme.colorScheme.onSurfaceVariant,

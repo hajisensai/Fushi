@@ -5,6 +5,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/cover_image.dart'
     show kLocalCoverDecodePixelWidth;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 横滚行里一张竖卡的宽度（2:3 海报）。与视频首页横滚行同量级。
@@ -557,7 +558,7 @@ class MediaServerLibraryCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
             child: Row(
               children: <Widget>[
-                Icon(icon, size: 16),
+                FushiIcon(icon, size: 16),
                 SizedBox(width: tokens.spacing.gap / 2),
                 Expanded(
                   child: Text(

@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -1811,8 +1812,11 @@ ThemeData buildFushiThemeData({
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool glassDesign = false,
 }) {
-  final ColorScheme cs = scheme;
-  final TextTheme tt = textTheme;
+  // 玻璃设计系统 = Apple 26 设计语言：表面 / 文字 / 描边换成 Apple 系统色，
+  // 强调色取主题色相按 iOS 系统色重建（见 fushi_apple_palette.dart）。MD3 不受影响。
+  final bool appleDesign = glassDesign && !eink;
+  final ColorScheme cs = appleDesign ? appleColorScheme(scheme) : scheme;
+  final TextTheme tt = appleDesign ? appleTextTheme(textTheme) : textTheme;
   // 玻璃设计系统：Flutter 自己构建 Material 的那些表面（对话框、菜单、下拉、
   // 提示条、tooltip、卡片、抽屉、裸 showModalBottomSheet、AppBar）在主题层统一
   // 染成半透明，全平台、全调用点一次生效。能挂 BackdropFilter 的表面（导航、
@@ -1885,6 +1889,7 @@ ThemeData buildFushiThemeData({
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
       FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
+      if (appleDesign) FushiAppleColors.of(cs.brightness, cs.primary),
     ],
     // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
     // vibrancy）或页面底色，不再自带一条实心色带。

@@ -5,6 +5,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
@@ -280,7 +281,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
               dimension: 18,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.download, size: 18),
+          : const FushiIcon(Icons.download, size: 18),
     );
   }
 }

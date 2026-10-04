@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -1417,7 +1418,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               // 滚动/关闭同族；导出则放第二行「收藏 N 句」旁边（它导的就是那批句子）。
               FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_search,
-                icon: Icon(
+                icon: FushiIcon(
                   _searchOpen ? Icons.search_off : Icons.search,
                   size: iconSize,
                 ),
@@ -1427,14 +1428,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
               FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_font_smaller,
-                icon: Icon(Icons.text_decrease, size: iconSize),
+                icon: FushiIcon(Icons.text_decrease, size: iconSize),
                 color: _fontScaleIndex > 0 ? cs.onSurfaceVariant : cs.outline,
                 onPressed: _fontScaleIndex > 0 ? () => _stepFont(-1) : null,
                 visualDensity: VisualDensity.compact,
               ),
               FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_font_larger,
-                icon: Icon(Icons.text_increase, size: iconSize),
+                icon: FushiIcon(Icons.text_increase, size: iconSize),
                 color: _fontScaleIndex < _kFontScaleSteps.length - 1
                     ? cs.onSurfaceVariant
                     : cs.outline,
@@ -1445,7 +1446,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               ),
               FushiIconButtonControl(
                 tooltip: t.video_subtitle_list_auto_scroll,
-                icon: Icon(
+                icon: FushiIcon(
                   _autoScroll
                       ? Icons.vertical_align_center
                       : Icons.pause_circle_outline,
@@ -1462,7 +1463,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
               FushiIconButtonControl(
                 tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                icon: Icon(Icons.close, size: iconSize),
+                icon: FushiIcon(Icons.close, size: iconSize),
                 color: cs.onSurfaceVariant,
                 onPressed: widget.onClose,
                 visualDensity: VisualDensity.compact,
@@ -1506,7 +1507,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   tooltip: t.video_subtitle_list_export_favorites,
                   // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
                   // 收藏夹页的导出按钮同此约定）。
-                  icon: Icon(Icons.share_outlined, size: iconSize),
+                  icon: FushiIcon(Icons.share_outlined, size: iconSize),
                   color: cs.onSurfaceVariant,
                   visualDensity: VisualDensity.compact,
                   onPressed: _favoriteCueCount(cues) == 0
@@ -1549,7 +1550,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   isDense: true,
                   hintText: t.video_subtitle_list_search_hint,
                   hintStyle: TextStyle(fontSize: widget.fontSize - 1),
-                  prefixIcon: Icon(Icons.search, size: widget.fontSize + 2),
+                  prefixIcon: FushiIcon(Icons.search, size: widget.fontSize + 2),
                   prefixIconConstraints: BoxConstraints(
                     minWidth: widget.fontSize + 14,
                     minHeight: widget.fontSize + 2,
@@ -1559,7 +1560,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       : FushiIconButtonControl(
                           tooltip: MaterialLocalizations.of(context)
                               .cancelButtonLabel,
-                          icon: Icon(Icons.close, size: widget.fontSize + 2),
+                          icon: FushiIcon(Icons.close, size: widget.fontSize + 2),
                           visualDensity: VisualDensity.compact,
                           onPressed: () {
                             _searchController.clear();

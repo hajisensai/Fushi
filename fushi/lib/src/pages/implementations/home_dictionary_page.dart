@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
@@ -723,7 +724,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         if (noDictionaries) ...[
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           FushiFilledButton.icon(
-            icon: const Icon(Icons.auto_stories_outlined, size: 18),
+            icon: const FushiIcon(Icons.auto_stories_outlined, size: 18),
             label: Text(t.dialog_import_dictionary),
             onPressed: appModel.showDictionaryMenu,
           ),
@@ -801,7 +802,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               children: [
                 Text('$dictCount'),
                 SizedBox(width: tokens.spacing.gap / 2),
-                const Icon(Icons.chevron_right, size: 20),
+                const FushiIcon(Icons.chevron_right, size: 20),
               ],
             ),
           ),

@@ -12,6 +12,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
@@ -4818,7 +4819,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     sheetContext,
                   ).closeButtonTooltip,
                   onPressed: () => Navigator.of(sheetContext).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                 ),
               ],
             ),
@@ -5536,7 +5537,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                             tooltip: t.manga_interface_show,
                             iconSize: 20,
                             color: Colors.white,
-                            icon: const Icon(Icons.visibility_outlined),
+                            icon: const FushiIcon(Icons.visibility_outlined),
                             onPressed: _toggleMangaChrome,
                           ),
                         ),
@@ -6088,7 +6089,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(
+            const FushiIcon(
               Icons.cloud_download_outlined,
               size: 48,
               color: Colors.white70,
@@ -6117,7 +6118,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 FushiFilledButton.icon(
                   key: const ValueKey<String>('manga_reader_enqueue_download'),
                   onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
-                  icon: const Icon(Icons.download),
+                  icon: const FushiIcon(Icons.download),
                   label: Text(t.manga_chapter_download_action),
                 ),
                 FushiOutlinedButton.icon(
@@ -6125,7 +6126,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   onPressed: _switchingChapter
                       ? null
                       : () => unawaited(_showChapterPicker()),
-                  icon: const Icon(Icons.list_alt_outlined),
+                  icon: const FushiIcon(Icons.list_alt_outlined),
                   label: Text(t.manga_series_chapters_action),
                 ),
               ],

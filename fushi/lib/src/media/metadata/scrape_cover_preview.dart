@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
@@ -60,7 +61,7 @@ Widget _buildPlaceholder(
   return ColoredBox(
     color: tokens.surfaces.overlay,
     child: Center(
-      child: Icon(
+      child: FushiIcon(
         Icons.image_not_supported_outlined,
         size: iconSize,
         color: tokens.surfaces.onVariant,
@@ -112,7 +113,7 @@ Future<void> _showLargePreview(BuildContext context, String url) async {
                   ),
                   tooltip: t.dialog_close,
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                 ),
               ),
             ],

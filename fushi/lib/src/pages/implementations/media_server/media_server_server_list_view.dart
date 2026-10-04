@@ -5,6 +5,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一台已登录的媒体服务器（浏览器 + 展示用账号名 + 线路）。账号名与线路都不在
@@ -124,7 +125,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                         detail: '${snapshot.error}',
                         action: FushiFilledButton.icon(
                           onPressed: _reload,
-                          icon: const Icon(Icons.refresh_rounded),
+                          icon: const FushiIcon(Icons.refresh_rounded),
                           label: Text(t.retry),
                         ),
                       );
@@ -149,7 +150,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
       action: FushiFilledButton.tonalIcon(
         key: const ValueKey<String>('media-server-list-go-settings'),
         onPressed: widget.onOpenSettings,
-        icon: const Icon(Icons.settings_outlined),
+        icon: const FushiIcon(Icons.settings_outlined),
         label: Text(t.media_server_servers_go_settings),
       ),
     );
@@ -210,7 +211,7 @@ class _ServerCard extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          const Icon(Icons.dns_outlined, size: 32),
+          const FushiIcon(Icons.dns_outlined, size: 32),
           SizedBox(width: tokens.spacing.rowHorizontal),
           Expanded(
             child: Column(
@@ -246,7 +247,7 @@ class _ServerCard extends StatelessWidget {
                 'media-server-route-switch-${browser.serverId}',
               ),
               tooltip: t.media_server_route_switch,
-              icon: const Icon(Icons.alt_route_rounded),
+              icon: const FushiIcon(Icons.alt_route_rounded),
               initialValue: browser.serverUrl,
               onSelected: (String url) {
                 if (url != browser.serverUrl) unawaited(onSwitchRoute(url));
@@ -257,7 +258,7 @@ class _ServerCard extends StatelessWidget {
                     value: url,
                     child: Row(
                       children: <Widget>[
-                        Icon(
+                        FushiIcon(
                           url == browser.serverUrl
                               ? Icons.radio_button_checked
                               : Icons.radio_button_off,
@@ -272,7 +273,7 @@ class _ServerCard extends StatelessWidget {
                   ),
               ],
             ),
-          const Icon(Icons.chevron_right_rounded),
+          const FushiIcon(Icons.chevron_right_rounded),
         ],
       ),
     );

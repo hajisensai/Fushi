@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
@@ -730,17 +731,17 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             _buildPageIndicator(),
             FushiIconButtonControl(
               tooltip: t.pdf_bookmarks,
-              icon: const Icon(Icons.bookmark_add_outlined),
+              icon: const FushiIcon(Icons.bookmark_add_outlined),
               onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
             ),
             FushiIconButtonControl(
               tooltip: t.pdf_bookmarks,
-              icon: const Icon(Icons.bookmarks_outlined),
+              icon: const FushiIcon(Icons.bookmarks_outlined),
               onPressed: () => unawaited(_showBookmarks()),
             ),
             FushiIconButtonControl(
               tooltip: t.pdf_outline,
-              icon: const Icon(Icons.list_alt_outlined),
+              icon: const FushiIcon(Icons.list_alt_outlined),
               onPressed: () => unawaited(_showOutline()),
             ),
           ],
@@ -860,11 +861,11 @@ class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
                 itemBuilder: (BuildContext context, int index) {
                   final Bookmark bookmark = _items[index];
                   return FushiListItem(
-                    leading: const Icon(Icons.bookmark_outline),
+                    leading: const FushiIcon(Icons.bookmark_outline),
                     title: Text(bookmark.label),
                     trailing: FushiIconButtonControl(
                       tooltip: t.dialog_delete,
-                      icon: const Icon(Icons.delete_outline),
+                      icon: const FushiIcon(Icons.delete_outline),
                       onPressed: () async {
                         await widget.onDelete(bookmark);
                         if (!mounted) return;

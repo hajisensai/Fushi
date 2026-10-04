@@ -17,6 +17,7 @@ import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
@@ -1386,7 +1387,7 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
               icon: Icons.font_download_outlined,
               onTap: added ? null : () => _toggle(font),
               trailing: added
-                  ? Icon(Icons.check, color: scheme.outline)
+                  ? FushiIcon(Icons.check, color: scheme.outline)
                   : FushiCheckbox(
                       value: selected,
                       onChanged: (_) => _toggle(font),
@@ -1500,7 +1501,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
       message: t.custom_fonts_drag_hint,
       child: Padding(
         padding: EdgeInsets.only(right: tokens.spacing.gap),
-        child: Icon(
+        child: FushiIcon(
           Icons.drag_indicator,
           size: 20,
           color: scheme.onSurfaceVariant,
@@ -1544,7 +1545,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
           children: [
-            Icon(
+            FushiIcon(
               _rolesExpanded ? Icons.expand_less : Icons.expand_more,
               size: 20,
               color: scheme.onSurfaceVariant,

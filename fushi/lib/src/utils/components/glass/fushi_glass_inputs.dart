@@ -6,24 +6,22 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // 输入框族的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型，
 // 调用点只改类名。MD3 设计系统下原样构造 [TextField] / [TextFormField]（像素、
-// 焦点、语义一字不差）；「玻璃」设计系统下渲染玻璃输入框。
+// 焦点、语义一字不差）；「玻璃」设计系统下渲染 iOS 26 的实色输入框。
 //
 // 命名：仓库已有共享组件 `FushiTextField`（fushi_material_components.dart），
 // 所以这里的包装叫 [FushiTextFieldControl] / [FushiTextFormFieldControl]。
 //
-// 玻璃形态为什么不直接用库的 GlassTextField：它只暴露十几个参数（没有
-// onEditingComplete / onTap / textCapitalization / autocorrect / enableSuggestions /
-// expands / textAlignVertical / 多行 maxLines: null / undoController / 上下文菜单
-// 等），套上去等于静默丢行为。所以玻璃形态与 GlassTextField 同构自己拼：
-// [GlassContainer] 玻璃壳 + 无边框 [CupertinoTextField]（GlassTextField 内部也是
-// 它），文本编辑参数逐个转发；InputDecoration 的 label / hint / prefix / suffix /
-// helper / error / counter 映射到壳内外。焦点描边用 colorScheme（primary / error），
-// 不用库默认的 iOS 蓝焦点环。
+// 玻璃设计系统下输入框是**内容层控件，不是玻璃**（Apple 26：玻璃只给浮在
+// 内容上的导航与控件层）：tertiarySystemFill 实色底 + 圆角 10，搜索框（前缀是
+// 放大镜）是高 36 的全胶囊；无下划线、无描边，聚焦只有一圈极淡的强调色光圈。
+// 壳内是无边框 [CupertinoTextField]，文本编辑参数逐个转发（库的 GlassTextField
+// 只暴露十几个参数，套上去等于静默丢行为）；InputDecoration 的 label / hint /
+// prefix / suffix / helper / error / counter 映射到壳内外。
 //
 // 唯一的例外：`hintLocales`（查词输入框给 IME 的语言提示）、
 // `onAppPrivateCommand`、`onTapUpOutside` 只有 Material [TextField] 能转发给
@@ -48,6 +46,19 @@ Widget _cupertinoContextMenuBuilder(
   return CupertinoAdaptiveTextSelectionToolbar.editableText(
     editableTextState: editableTextState,
   );
+}
+
+/// 装饰是不是「搜索框」：前缀图标是放大镜。iOS 上搜索框是全胶囊
+/// （UISearchBar），普通输入框是圆角 10 的矩形——这是唯一能从调用点无侵入
+/// 读出的信号。
+bool _isSearchDecoration(InputDecoration decoration) {
+  final Widget? prefix = decoration.prefixIcon;
+  if (prefix is! Icon) return false;
+  final IconData? icon = prefix.icon;
+  return icon == Icons.search ||
+      icon == Icons.search_rounded ||
+      icon == Icons.search_outlined ||
+      icon == CupertinoIcons.search;
 }
 
 /// [TextField] 的设计系统分派版。
@@ -373,15 +384,15 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
   }
 
   Widget _buildEditable(BuildContext context, TextStyle style, bool hasError) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final InputDecoration? decoration = _c.decoration;
-    final TextStyle hintStyle =
-        (Theme.of(context).textTheme.bodyLarge ?? const TextStyle())
-            .copyWith(color: cs.onSurfaceVariant)
-            .merge(decoration?.hintStyle);
+    // 占位符与正文同字号、secondaryLabel 色（iOS placeholder）。
+    final TextStyle hintStyle = style
+        .copyWith(color: apple.secondaryLabel)
+        .merge(decoration?.hintStyle);
     final Color cursorColor = hasError
-        ? (_c.cursorErrorColor ?? cs.error)
-        : (_c.cursorColor ?? cs.primary);
+        ? (_c.cursorErrorColor ?? apple.destructive)
+        : (_c.cursorColor ?? apple.accent);
     final bool cursorAnimates =
         _c.cursorOpacityAnimates ??
         (defaultTargetPlatform == TargetPlatform.iOS ||
@@ -577,17 +588,15 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
     final TextTheme tt = theme.textTheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final InputDecoration? decoration = _c.decoration;
     final bool enabled = _enabled;
     final bool focused = _focusNode.hasFocus;
     final bool hasError = _hasError;
 
     final TextStyle style = (tt.bodyLarge ?? const TextStyle())
-        .copyWith(
-          color: enabled ? cs.onSurface : cs.onSurface.withValues(alpha: 0.38),
-        )
+        .copyWith(color: enabled ? apple.label : apple.tertiaryLabel)
         .merge(_c.style);
 
     final Widget editable = _buildEditable(context, style, hasError);
@@ -597,31 +606,39 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     if (decoration == null) return editable;
 
     final bool dense = decoration.isDense ?? false;
+    final bool search = _isSearchDecoration(decoration);
     final Color iconColor = enabled
-        ? cs.onSurfaceVariant
-        : cs.onSurface.withValues(alpha: 0.38);
+        ? apple.secondaryLabel
+        : apple.tertiaryLabel;
     final Color accent = hasError
-        ? cs.error
-        : (focused ? cs.primary : cs.onSurfaceVariant);
+        ? apple.destructive
+        : (focused ? apple.accent : apple.secondaryLabel);
 
     Widget? affix(Widget? widget, String? text, TextStyle? textStyle) {
       if (widget != null) return widget;
       if (text == null) return null;
       return Text(
         text,
-        style: style.copyWith(color: cs.onSurfaceVariant).merge(textStyle),
+        style: style.copyWith(color: apple.secondaryLabel).merge(textStyle),
       );
     }
 
     Widget? iconSlot(Widget? icon) {
       if (icon == null) return null;
       return IconTheme.merge(
-        data: IconThemeData(color: iconColor, size: dense ? 20 : 22),
+        data: IconThemeData(
+          color: iconColor,
+          size: search ? 17 : (dense ? 18 : 20),
+        ),
         child: icon,
       );
     }
 
-    final Widget? prefixIcon = iconSlot(decoration.prefixIcon);
+    // 搜索框的放大镜换成 SF 风格的 CupertinoIcons.search（iOS 搜索栏的
+    // magnifyingglass），其余前缀图标原样。
+    final Widget? prefixIcon = iconSlot(
+      search ? const FushiIcon(CupertinoIcons.search) : decoration.prefixIcon,
+    );
     final Widget? suffixIcon = iconSlot(decoration.suffixIcon);
     final Widget? prefix = affix(
       decoration.prefix,
@@ -642,7 +659,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       children: <Widget>[
         if (prefixIcon != null) ...<Widget>[
           prefixIcon,
-          SizedBox(width: dense ? 8 : 10),
+          SizedBox(width: search ? 6 : (dense ? 8 : 10)),
         ],
         if (prefix != null) prefix,
         Expanded(child: editable),
@@ -657,40 +674,57 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       row = Align(alignment: AlignmentDirectional.topStart, child: row);
     }
 
+    // iOS 输入框是内容层控件：实色 tertiarySystemFill 底、圆角 10、无下划线
+    // 无描边（iOS 26 的 roundedRect 文本框）；搜索框是高 36 的全胶囊
+    // （UISearchBar 的 searchTextField，systemFill 底）。**不是玻璃**——玻璃
+    // 只给浮在内容上的导航与控件层。调用方显式 filled + fillColor 时尊重它。
     final EdgeInsetsGeometry padding =
         decoration.contentPadding ??
-        EdgeInsets.symmetric(
-          horizontal: dense ? 12 : 14,
-          vertical: dense ? 8 : 12,
-        );
-    final Color? fill = (decoration.filled ?? false)
+        (search
+            ? const EdgeInsets.symmetric(horizontal: 10)
+            : EdgeInsets.symmetric(
+                horizontal: dense ? 10 : 12,
+                vertical: dense ? 7 : 11,
+              ));
+    final Color? customFill = (decoration.filled ?? false)
         ? decoration.fillColor
         : null;
-    const double radius = 12;
-    Widget shell = GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: radius),
-      quality: fushiGlassQuality(context),
-      settings: fill != null && fill.a > 0
-          ? fushiGlassSettings(context, tint: fill)
-          : null,
+    final Color fill = customFill != null && customFill.a > 0
+        ? customFill
+        : (search ? apple.fill : apple.tertiaryFill);
+    final bool capsule = search && !multiline;
+    // 聚焦本身在 iOS 上没有描边；这里只给一圈极淡的强调色光圈，作为键盘 /
+    // 手柄导航落到输入框时的焦点指示。错误态用 1px destructive 描边。
+    Widget shell = AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
       padding: padding,
-      child: row,
-    );
-    // 焦点 / 错误描边：Material 用边框颜色表达这两个状态，玻璃同样用
-    // colorScheme 的 primary / error 描边（库的焦点环固定是 iOS 蓝，且只在键盘
-    // 高亮模式出现）。手柄 / 键盘导航落到输入框时这条描边就是焦点指示。
-    final bool outlined = enabled && (focused || hasError);
-    shell = DecoratedBox(
-      position: DecorationPosition.foreground,
-      decoration: ShapeDecoration(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
-          side: outlined
-              ? BorderSide(color: accent, width: focused ? 2 : 1)
-              : BorderSide.none,
-        ),
+      // 搜索胶囊定高 36（文字更高时随文字长高），内容竖直居中。
+      constraints: capsule
+          ? const BoxConstraints(minHeight: 36)
+          : const BoxConstraints(),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(capsule ? 18 : 10),
+        border: enabled && hasError
+            ? Border.all(color: apple.destructive)
+            : null,
+        boxShadow: enabled && focused && !hasError
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: apple.accent.withValues(alpha: 0.28),
+                  spreadRadius: 3,
+                ),
+              ]
+            : const <BoxShadow>[],
       ),
-      child: shell,
+      child: capsule
+          ? Align(
+              alignment: AlignmentDirectional.centerStart,
+              heightFactor: 1,
+              child: row,
+            )
+          : row,
     );
     if (decoration.constraints != null) {
       shell = ConstrainedBox(
@@ -700,7 +734,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     }
 
     final TextStyle captionStyle = (tt.bodySmall ?? const TextStyle()).copyWith(
-      color: cs.onSurfaceVariant,
+      color: apple.secondaryLabel,
     );
     final Widget? label =
         decoration.label ??
@@ -714,7 +748,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
                     ? null
                     : TextOverflow.ellipsis,
                 style: captionStyle
-                    .copyWith(color: cs.error)
+                    .copyWith(color: apple.destructive)
                     .merge(decoration.errorStyle),
               ))
         : (decoration.helper ??
@@ -739,7 +773,10 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
             padding: const EdgeInsetsDirectional.only(start: 4, bottom: 6),
             child: DefaultTextStyle.merge(
               style: (tt.labelMedium ?? const TextStyle())
-                  .copyWith(color: enabled ? accent : iconColor)
+                  // iOS 的字段标题是小号灰字，聚焦不变色；只有错误态染红。
+                  .copyWith(
+                    color: enabled && hasError ? accent : apple.secondaryLabel,
+                  )
                   .merge(focused ? decoration.floatingLabelStyle : null)
                   .merge(decoration.labelStyle),
               child: label,

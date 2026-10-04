@@ -15,6 +15,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -379,7 +380,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         : activeUrl;
     return FushiListItem(
       key: ValueKey<String>('plex-server-${config.sourceId}'),
-      leading: const Icon(Icons.dns_outlined),
+      leading: const FushiIcon(Icons.dns_outlined),
       title: Text(label),
       subtitle: config.accountName.isEmpty ? null : Text(config.accountName),
       trailing: FushiIconButton(
@@ -397,7 +398,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         alignment: Alignment.centerLeft,
         child: FushiFilledButton.tonalIcon(
           onPressed: _busy ? null : _signInWithAccount,
-          icon: const Icon(Icons.login),
+          icon: const FushiIcon(Icons.login),
           label: Text(t.plex_account_sign_in),
         ),
       );

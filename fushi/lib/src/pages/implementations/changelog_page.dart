@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -133,7 +134,7 @@ class _ChangelogEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.cloud_off_outlined,
               size: 48,
               color: Theme.of(context).colorScheme.outline,
@@ -152,12 +153,12 @@ class _ChangelogEmptyState extends StatelessWidget {
               children: <Widget>[
                 FushiOutlinedButton.icon(
                   onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
+                  icon: const FushiIcon(Icons.refresh),
                   label: Text(t.retry),
                 ),
                 FushiFilledButton.icon(
                   onPressed: onOpenReleases,
-                  icon: const Icon(Icons.open_in_new_outlined),
+                  icon: const FushiIcon(Icons.open_in_new_outlined),
                   label: Text(t.changelog_open_releases),
                 ),
               ],

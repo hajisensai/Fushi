@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// TODO-1151：本地备份「导入/恢复」期间的全屏遮罩内容。
 ///
@@ -91,7 +92,7 @@ class BackupImportOverlayView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 statusIcon,
                 size: 48,
                 color: statusColor,
@@ -139,7 +140,7 @@ class BackupImportOverlayView extends StatelessWidget {
                 const SizedBox(height: 20),
                 FushiOutlinedButton.icon(
                   onPressed: onCancel,
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   label: Text(t.dialog_cancel),
                 ),
               ],
@@ -147,7 +148,7 @@ class BackupImportOverlayView extends StatelessWidget {
               if (!inProgress)
                 FushiFilledButton.icon(
                   onPressed: onRestart,
-                  icon: const Icon(Icons.restart_alt),
+                  icon: const FushiIcon(Icons.restart_alt),
                   label: Text(t.backup_import_restart_button),
                 ),
             ],

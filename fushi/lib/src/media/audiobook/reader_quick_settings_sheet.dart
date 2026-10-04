@@ -7,6 +7,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -1275,7 +1276,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               overflow: TextOverflow.ellipsis,
             ),
             avatar: i == volumes.currentIndex
-                ? const Icon(Icons.menu_book_outlined, size: 16)
+                ? const FushiIcon(Icons.menu_book_outlined, size: 16)
                 : null,
             selected: i == _viewedVolume,
             onSelected: (bool _) {
@@ -2035,7 +2036,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.onSurface),
+            FushiIcon(icon, size: 20, color: theme.colorScheme.onSurface),
             SizedBox(height: tokens.spacing.gap / 2),
             Text(
               label,
@@ -2126,7 +2127,7 @@ class _InBookTocRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (selected)
-              Icon(
+              FushiIcon(
                 cupertino ? CupertinoIcons.check_mark : Icons.check,
                 size: 18,
                 color: selectedColor,
@@ -2139,7 +2140,7 @@ class _InBookTocRow extends StatelessWidget {
                 tooltip: expanded
                     ? MaterialLocalizations.of(context).collapsedIconTapHint
                     : MaterialLocalizations.of(context).expandedIconTapHint,
-                icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                icon: FushiIcon(expanded ? Icons.expand_less : Icons.expand_more),
                 onPressed: onToggleExpanded,
               ),
           ],
@@ -2183,7 +2184,7 @@ class _InBookSearchResultRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
+          FushiIcon(
             cupertino ? CupertinoIcons.search : Icons.search,
             size: 18,
             color: primary,
@@ -2354,7 +2355,7 @@ class _InBookIconButton extends StatelessWidget {
         child: Semantics(
           button: true,
           label: tooltip,
-          child: Icon(cupertinoIcon, size: 18, color: color),
+          child: FushiIcon(cupertinoIcon, size: 18, color: color),
         ),
       );
     }

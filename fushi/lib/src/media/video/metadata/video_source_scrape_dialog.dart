@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -278,7 +279,7 @@ class _VideoSourceScrapeTaskPanelState
               tooltip: t.video_source_scrape_queue_remove,
               onPressed: () =>
                   widget.controller.cancelQueuedManualRequest(queued[index]),
-              icon: const Icon(Icons.close),
+              icon: const FushiIcon(Icons.close),
             ),
           ),
       ],
@@ -360,7 +361,7 @@ class _VideoSourceScrapeTaskPanelState
           ),
           density: FushiListDensity.compact,
           padding: EdgeInsets.zero,
-          leading: const Icon(Icons.rule_folder_outlined),
+          leading: const FushiIcon(Icons.rule_folder_outlined),
           title: Text(entry.work.title),
           subtitle: Text(
             '${entry.source.label}\n$reason',
@@ -380,12 +381,12 @@ class _VideoSourceScrapeTaskPanelState
                         ),
                         tooltip: t.video_source_scrape_ai_identify,
                         onPressed: () => unawaited(_identifyPendingWork(entry)),
-                        icon: const Icon(Icons.auto_awesome),
+                        icon: const FushiIcon(Icons.auto_awesome),
                       ),
                     FushiIconButtonControl(
                       tooltip: t.video_source_scrape_manual_search_title,
                       onPressed: () => unawaited(_bindPendingWork(entry)),
-                      icon: const Icon(Icons.search),
+                      icon: const FushiIcon(Icons.search),
                     ),
                   ],
                 ),
@@ -511,7 +512,7 @@ class _VideoSourceScrapeTaskPanelState
           key: ValueKey<String>('video-source-scrape-run-${run.id}'),
           density: FushiListDensity.compact,
           padding: EdgeInsets.zero,
-          leading: Icon(_runIcon(run.status)),
+          leading: FushiIcon(_runIcon(run.status)),
           title: Text(
             '${videoSourceScrapeRunStatusLabel(run.status)} · '
             '${run.provider?.toUpperCase() ?? t.nav_video}',
@@ -533,7 +534,7 @@ class _VideoSourceScrapeTaskPanelState
                           dimension: 18,
                           child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.replay_outlined),
+                      : const FushiIcon(Icons.replay_outlined),
                 )
               : null,
         );
@@ -551,7 +552,7 @@ class _VideoSourceScrapeTaskPanelState
             alignment: AlignmentDirectional.centerStart,
             child: FushiTextButton.icon(
               onPressed: () => unawaited(reload()),
-              icon: const Icon(Icons.refresh),
+              icon: const FushiIcon(Icons.refresh),
               label: Text(t.video_source_scrape_list_reload),
             ),
           ),
@@ -687,7 +688,7 @@ class _VideoSourceScrapeTaskPanelState
         FushiListItem(
           density: FushiListDensity.compact,
           padding: EdgeInsets.zero,
-          leading: Icon(
+          leading: FushiIcon(
             isError ? Icons.error_outline : Icons.info_outline,
             color: isError
                 ? Theme.of(context).colorScheme.error

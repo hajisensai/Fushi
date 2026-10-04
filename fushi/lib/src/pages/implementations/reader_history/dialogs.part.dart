@@ -417,7 +417,7 @@ class _BookProfileOptionRow extends StatelessWidget {
     return AdaptiveSettingsRow(
       title: title,
       onTap: onTap,
-      trailing: Icon(
+      trailing: FushiIcon(
         selected
             ? (cupertino
                   ? CupertinoIcons.check_mark
@@ -654,7 +654,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                     _BatchTagIntent.keep,
                     keepColor,
                   ),
-                  icon: Icon(
+                  icon: FushiIcon(
                     cupertino
                         ? CupertinoIcons.minus_circle
                         : Icons.remove_circle_outline,
@@ -670,7 +670,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                     _BatchTagIntent.add,
                     addColor,
                   ),
-                  icon: Icon(
+                  icon: FushiIcon(
                     cupertino ? CupertinoIcons.add_circled : Icons.add_circle,
                     size: 16,
                     color: selected == _BatchTagIntent.add ? addColor : null,
@@ -684,7 +684,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                     _BatchTagIntent.remove,
                     removeColor,
                   ),
-                  icon: Icon(
+                  icon: FushiIcon(
                     cupertino
                         ? CupertinoIcons.minus_circle_fill
                         : Icons.do_not_disturb_on,

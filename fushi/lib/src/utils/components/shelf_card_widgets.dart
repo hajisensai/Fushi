@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -109,7 +110,7 @@ class ShelfSelectionCheck extends StatelessWidget {
           ),
         ),
         padding: EdgeInsets.all(tokens.spacing.gap / 4),
-        child: Icon(
+        child: FushiIcon(
           Icons.check,
           size: tokens.spacing.gap * 1.75,
           color: selected ? theme.colorScheme.onPrimary : Colors.transparent,
@@ -176,7 +177,7 @@ class ShelfCoverPlaceholder extends StatelessWidget {
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: iconSize,
           color: tokens.surfaces.onVariant,

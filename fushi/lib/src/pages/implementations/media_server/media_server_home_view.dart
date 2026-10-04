@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一台服务器的首页：「媒体库」横滚行 → 「继续观看」（Resume ∪ NextUp 去重）→
@@ -196,7 +197,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
         action: FushiFilledButton.icon(
           key: const ValueKey<String>('media-server-home-retry'),
           onPressed: () => unawaited(_load()),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );

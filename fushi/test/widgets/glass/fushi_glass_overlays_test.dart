@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -108,6 +109,43 @@ void main() {
         findsWidgets,
       );
       expect(find.text('Title'), findsOneWidget);
+      // iOS 26 alert：两个动作并排、等宽、48 高胶囊；取消是中性玻璃胶囊
+      // （主操作在这里 onPressed 为空，是禁用的灰胶囊）。
+      final Rect cancel = tester.getRect(
+        find.ancestor(
+          of: find.text('Cancel'),
+          matching: find.byType(GlassButton),
+        ),
+      );
+      final Rect ok = tester.getRect(
+        find.ancestor(of: find.text('OK'), matching: find.byType(GlassButton)),
+      );
+      expect(cancel.top, ok.top);
+      expect(cancel.width, moreOrLessEquals(ok.width, epsilon: 0.5));
+      expect(ok.height, 48);
+      expect(
+        tester
+            .widget<GlassButton>(
+              find.ancestor(
+                of: find.text('Cancel'),
+                matching: find.byType(GlassButton),
+              ),
+            )
+            .style,
+        GlassButtonStyle.filled,
+      );
+      // 纯文字 alert 宽度收在 iOS 的 270–320。
+      final double width = tester
+          .getSize(
+            find
+                .ancestor(
+                  of: find.text('Body'),
+                  matching: find.byType(GlassContainer),
+                )
+                .first,
+          )
+          .width;
+      expect(width, inInclusiveRange(270, 320));
     });
 
     testWidgets('glass: initial focus + Enter activates, Esc dismisses', (
@@ -153,7 +191,7 @@ void main() {
       expect(find.byType(SimpleDialogOption), findsOneWidget);
     });
 
-    testWidgets('glass SimpleDialog option is a glass row and fires', (
+    testWidgets('glass SimpleDialog option is an iOS row and fires', (
       WidgetTester tester,
     ) async {
       int picked = 0;
@@ -175,7 +213,7 @@ void main() {
       );
       expect(find.byType(SimpleDialog), findsNothing);
       expect(find.byType(SimpleDialogOption), findsNothing);
-      expect(find.byType(GlassButton), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
       await tester.tap(find.text('A'));
       await tester.pump();
       expect(picked, 1);
@@ -274,7 +312,7 @@ void main() {
       expect(selected, 3);
     });
 
-    testWidgets('glass: glass trigger + glass menu surface', (
+    testWidgets('glass: plain ellipsis trigger + glass menu surface', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -286,8 +324,9 @@ void main() {
         ),
       );
       expect(find.byType(IconButton), findsNothing);
-      expect(find.byType(GlassButton), findsOneWidget);
-      await tester.tap(find.byType(GlassButton));
+      expect(find.byType(GlassButton), findsNothing);
+      expect(find.byIcon(CupertinoIcons.ellipsis), findsOneWidget);
+      await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
       await settle(tester);
       expect(
         find.ancestor(
@@ -295,6 +334,12 @@ void main() {
           matching: find.byType(GlassContainer),
         ),
         findsWidgets,
+      );
+      // 菜单行高 44（iOS），initialValue 对应项行尾打勾。
+      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
+      expect(
+        tester.getCenter(find.byIcon(CupertinoIcons.checkmark)).dy,
+        moreOrLessEquals(tester.getCenter(find.text('two')).dy, epsilon: 1),
       );
       // Material 自己的菜单面（_PopupMenu）不出现。
       expect(
@@ -319,7 +364,7 @@ void main() {
             ),
           ),
         );
-        await tester.tap(find.byType(GlassButton));
+        await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
         await settle(tester);
         final FocusNode? initial = FocusManager.instance.primaryFocus;
         expect(initial, isNotNull);
@@ -353,7 +398,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byType(GlassButton));
+      await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
       await settle(tester);
       expect(find.text('one'), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -492,7 +537,11 @@ void main() {
         dropdown(glass: true, onChanged: (int? v) => changed = v),
       );
       expect(find.byType(DropdownButton<int>), findsNothing);
-      expect(find.byType(GlassButton), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
+      expect(
+        find.byIcon(CupertinoIcons.chevron_up_chevron_down),
+        findsOneWidget,
+      );
       await tester.tap(find.text('first'));
       await settle(tester);
       expect(find.text('second'), findsOneWidget);
@@ -637,7 +686,7 @@ void main() {
       expect(find.byType(GlassContainer), findsNothing);
     });
 
-    testWidgets('glass: glass back button pops, glass backdrop', (
+    testWidgets('glass: round glass back button pops, bar is transparent', (
       WidgetTester tester,
     ) async {
       await pushSecond(tester, glass: true);
@@ -651,10 +700,87 @@ void main() {
         ),
         findsOneWidget,
       );
+      // 顶栏本身透明（不是一整块玻璃），玻璃只在那枚圆形返回钮上。
+      expect(
+        tester.widget<AppBar>(find.byType(AppBar).last).backgroundColor,
+        Colors.transparent,
+      );
+      final Size circle = tester.getSize(
+        find.descendant(
+          of: find.byType(AppBar).last,
+          matching: find.byType(GlassContainer),
+        ),
+      );
+      expect(circle.width, circle.height);
       await tester.tap(find.byType(FushiIconButtonControl));
       await settle(tester);
       expect(find.text('Second'), findsNothing);
       expect(find.text('Home'), findsOneWidget);
+    });
+
+    testWidgets('glass: actions share one glass capsule and still fire', (
+      WidgetTester tester,
+    ) async {
+      int a = 0;
+      int b = 0;
+      await tester.pumpWidget(
+        app(
+          glass: true,
+          home: Scaffold(
+            appBar: FushiAppBar(
+              title: const Text('Bar'),
+              actions: <Widget>[
+                FushiIconButtonControl(
+                  icon: const Icon(Icons.search),
+                  onPressed: () => a++,
+                ),
+                FushiIconButtonControl(
+                  icon: const Icon(Icons.more_horiz),
+                  onPressed: () => b++,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      final Finder capsule = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(GlassContainer),
+      );
+      expect(capsule, findsOneWidget);
+      expect(
+        find.descendant(
+          of: capsule,
+          matching: find.byType(FushiIconButtonControl),
+        ),
+        findsNWidgets(2),
+      );
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.tap(find.byIcon(Icons.more_horiz));
+      await settle(tester);
+      expect(a, 1);
+      expect(b, 1);
+    });
+
+    testWidgets('MD3 actions are not wrapped', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        app(
+          glass: false,
+          home: Scaffold(
+            appBar: FushiAppBar(
+              actions: <Widget>[
+                FushiIconButtonControl(
+                  icon: const Icon(Icons.search),
+                  onPressed: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(IconButton), findsOneWidget);
+      expect(find.byType(GlassContainer), findsNothing);
     });
 
     test('preferredSize matches AppBar', () {

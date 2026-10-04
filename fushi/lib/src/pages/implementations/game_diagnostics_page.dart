@@ -8,6 +8,7 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/utils.dart';
 
@@ -391,7 +392,7 @@ class _EndpointCard extends StatelessWidget {
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
           initiallyExpanded: false,
-          leading: const Icon(Icons.hub_outlined, size: 20),
+          leading: const FushiIcon(Icons.hub_outlined, size: 20),
           title: Text(
             t.game_text_endpoints,
             style: Theme.of(context).textTheme.titleMedium,
@@ -426,7 +427,7 @@ class _EndpointRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             connected ? Icons.check_circle_outline : Icons.sync_outlined,
             size: 18,
             color: connected ? colors.primary : colors.onSurfaceVariant,
@@ -558,7 +559,7 @@ class _EventTile extends StatelessWidget {
     };
     // eink 下彩色圆点塌缩成同一灰阶（巡检 G5）：改成形状可辨的语义图标区分严重度。
     final Widget leading = isEinkTheme(context)
-        ? Icon(
+        ? FushiIcon(
             switch (event.severity) {
               GalHookEventSeverity.info => Icons.info_outline,
               GalHookEventSeverity.success => Icons.check_circle_outline,
@@ -567,7 +568,7 @@ class _EventTile extends StatelessWidget {
             },
             size: 18,
           )
-        : Icon(Icons.circle, size: 10, color: color);
+        : FushiIcon(Icons.circle, size: 10, color: color);
     return FushiListTileControl(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -603,7 +604,7 @@ class _SectionCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(icon, size: 20),
+              FushiIcon(icon, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -641,7 +642,7 @@ class _DiagnosticRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             ok ? Icons.check_circle_outline : Icons.schedule_outlined,
             size: 18,
             color: ok ? colors.primary : colors.onSurfaceVariant,
@@ -691,7 +692,7 @@ class _DetailBox extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          Icon(icon, color: foreground, size: 18),
+          FushiIcon(icon, color: foreground, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: TextStyle(color: foreground))),
         ],

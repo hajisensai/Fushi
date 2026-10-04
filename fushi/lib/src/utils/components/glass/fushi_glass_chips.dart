@@ -1,29 +1,27 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // 标签族（Chip / ChoiceChip / FilterChip / ActionChip / InputChip）的「设计系统
 // 分派」包装：构造参数与 Material 原控件逐个同名同型（含 `.elevated`），调用点
-// 只改类名。MD3 下原样构造原控件；「玻璃」设计系统下渲染 liquid_glass_widgets
-// 的 [GlassChip]——它建在 GlassButton 上，自带 GlassFocusRegion（Tab 可达、
-// Enter / 手柄 A → ActivateIntent），与全局焦点导航同一条激活链路。
+// 只改类名。MD3 下原样构造原控件；「玻璃」设计系统下渲染 iOS 26 的胶囊标签。
 //
-// GlassChip 的 label 只收 String：Material 的 label 是 Widget。label 是带
-// 文本的 [Text] 时（仓库里的全部调用点）取出文字交给 GlassChip；其它 Widget
-// 退到同构的 GlassButton.custom 胶囊（GlassChip 的内部实现），行为一致。
+// iOS 26 的标签是**内容层控件，不是玻璃**（Apple 26：玻璃只给浮在内容上的
+// 导航与控件层）：未选中 = systemFill 中性填充 + label 色文字，选中 = 强调色
+// 实底 + 白字，高 32（桌面 28），全胶囊、无描边。可交互的标签自带焦点节点
+// （Tab 可达、Enter / 手柄 A → ActivateIntent），与全局焦点导航同一条激活链路。
 //
 // 命名：仓库已有共享组件 `FushiActionChip`（fushi_material_components.dart），
 // 所以 ActionChip 的包装叫 [FushiActionChipControl]。
 
-const LiquidShape _chipShape = LiquidRoundedRectangle(borderRadius: 100);
-
-/// 玻璃标签的共用渲染。
+/// 玻璃设计系统的标签渲染。
 ///
 /// [interactive] 为 false 的是纯展示标签（[Chip] 无删除按钮）：Material 下它
-/// 不可聚焦、也不显示禁用态，所以玻璃下用不可交互的 [GlassContainer] 胶囊，
-/// 而不是 enabled: false 的按钮（那会半透明成「禁用」）。
+/// 不可聚焦、也不显示禁用态，这里同样只画胶囊、不进焦点链。
 Widget _glassChip(
   BuildContext context, {
   required Widget label,
@@ -52,158 +50,210 @@ Widget _glassChip(
   String? tooltip,
 }) {
   final ThemeData theme = Theme.of(context);
-  final ColorScheme cs = theme.colorScheme;
+  final FushiAppleColors apple = appleColorsOf(context);
+  final bool compact =
+      fushiAppleCompact(context) ||
+      visualDensity == VisualDensity.compact ||
+      (visualDensity?.vertical ?? 0) < 0;
   final Set<WidgetState> states = <WidgetState>{
     if (selected) WidgetState.selected,
     if (!enabled) WidgetState.disabled,
   };
   final Color? stateFill = color?.resolve(states);
-  final Color? tint = selected
-      ? null
-      : (!enabled ? disabledColor : null) ?? stateFill ?? backgroundColor;
-  final Color selectedFill =
-      selectedColor ?? (selected ? stateFill : null) ?? cs.secondaryContainer;
-  final Color fg = selected ? cs.onSecondaryContainer : cs.onSurfaceVariant;
-  final double iconSize = iconTheme?.size ?? 18;
+  final Color fill = selected
+      ? (selectedColor ?? stateFill ?? apple.accent)
+      : ((!enabled ? disabledColor : null) ??
+            stateFill ??
+            backgroundColor ??
+            apple.fill);
+  // 选中的实底上文字按底色亮度取白 / 黑（默认强调色底恒为白字）；未选中是
+  // label 色。
+  final Color fg = selected
+      ? (fill.a > 0.5 &&
+                ThemeData.estimateBrightnessForColor(fill) == Brightness.light
+            ? Colors.black
+            : Colors.white)
+      : apple.label;
+  final double iconSize = iconTheme?.size ?? (compact ? 14 : 16);
   final Color iconColor = selected
-      ? (checkmarkColor ?? cs.onSecondaryContainer)
-      : (iconTheme?.color ?? cs.primary);
+      ? (checkmarkColor ?? fg)
+      : (iconTheme?.color ?? apple.secondaryLabel);
 
-  final bool compact =
-      visualDensity == VisualDensity.compact ||
-      (visualDensity?.vertical ?? 0) < 0;
+  final double height = compact ? 28 : 32;
   final EdgeInsetsGeometry effectivePadding =
-      padding ??
-      EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 5 : 8);
+      padding ?? EdgeInsets.symmetric(horizontal: compact ? 10 : 12);
 
   final Widget? leading = selected && showCheckmark
-      ? Icon(Icons.check, size: iconSize, color: iconColor)
+      ? FushiIcon(CupertinoIcons.checkmark, size: iconSize, color: iconColor)
       : avatar;
   final Widget effectiveDeleteIcon =
-      deleteIcon ?? Icon(Icons.close, size: iconSize);
+      deleteIcon ?? FushiIcon(CupertinoIcons.xmark_circle_fill, size: iconSize);
 
   TextStyle textStyle = (theme.textTheme.labelLarge ?? const TextStyle())
-      .copyWith(color: fg)
-      .merge(labelStyle);
+      .copyWith(
+        fontSize: compact ? 13 : 15,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      )
+      .merge(labelStyle)
+      .copyWith(color: fg);
   if (label is Text && label.style != null) {
     textStyle = textStyle.merge(label.style);
   }
 
-  Widget chip;
-  final String? text = label is Text ? label.data : null;
-  if (!interactive) {
-    chip = GlassContainer(
-      shape: _chipShape,
-      quality: fushiGlassQuality(context),
-      settings: tint == null ? null : fushiGlassSettings(context, tint: tint),
-      padding: effectivePadding,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (leading != null) ...<Widget>[
-            IconTheme.merge(
-              data: IconThemeData(color: iconColor, size: iconSize),
-              child: leading,
-            ),
-            const SizedBox(width: 6),
-          ],
-          Padding(
-            padding: labelPadding ?? EdgeInsets.zero,
-            child: DefaultTextStyle.merge(style: textStyle, child: label),
+  final Widget content = Padding(
+    padding: effectivePadding,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (leading != null) ...<Widget>[
+          IconTheme.merge(
+            data: IconThemeData(color: iconColor, size: iconSize),
+            child: leading,
           ),
+          const SizedBox(width: 5),
         ],
-      ),
-    );
-  } else if (text != null && labelPadding == null) {
-    chip = GlassChip(
-      label: text,
-      icon: leading,
-      onTap: enabled ? onTap : null,
-      onDeleted: enabled ? onDeleted : null,
-      deleteIcon: deleteIconColor == null
-          ? effectiveDeleteIcon
-          : IconTheme.merge(
-              data: IconThemeData(color: deleteIconColor),
-              child: effectiveDeleteIcon,
-            ),
-      deleteIconSize: iconSize,
-      iconSize: iconSize,
-      iconColor: iconColor,
-      labelStyle: textStyle,
-      selected: selected,
-      selectedColor: selectedFill,
-      padding: effectivePadding,
-      settings: tint == null ? null : fushiGlassSettings(context, tint: tint),
-      quality: fushiGlassQuality(context),
-      focusNode: focusNode,
-      autofocus: autofocus,
-      semanticLabel: text,
-    );
-  } else {
-    Widget content = Padding(
-      padding: effectivePadding,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (leading != null) ...<Widget>[
-            IconTheme.merge(
-              data: IconThemeData(color: iconColor, size: iconSize),
-              child: leading,
-            ),
-            const SizedBox(width: 6),
-          ],
-          Padding(
+        Flexible(
+          child: Padding(
             padding: labelPadding ?? EdgeInsets.zero,
-            child: DefaultTextStyle.merge(style: textStyle, child: label),
+            child: DefaultTextStyle.merge(
+              style: textStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              child: label,
+            ),
           ),
-          if (onDeleted != null) ...<Widget>[
-            const SizedBox(width: 6),
-            GestureDetector(
+        ),
+        if (onDeleted != null) ...<Widget>[
+          const SizedBox(width: 4),
+          Semantics(
+            button: true,
+            label: deleteButtonTooltipMessage,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: enabled ? onDeleted : null,
               child: IconTheme.merge(
                 data: IconThemeData(
-                  color: deleteIconColor ?? iconColor,
-                  size: iconSize,
+                  color:
+                      deleteIconColor ?? (selected ? fg : apple.tertiaryLabel),
+                  size: iconSize + 2,
                 ),
                 child: effectiveDeleteIcon,
               ),
             ),
-          ],
+          ),
         ],
-      ),
-    );
-    if (selected) {
-      content = DecoratedBox(
-        decoration: BoxDecoration(
-          color: selectedFill,
-          borderRadius: BorderRadius.circular(100),
-        ),
-        child: content,
-      );
-    }
-    chip = IntrinsicWidth(
-      child: IntrinsicHeight(
-        child: GlassButton.custom(
-          onTap: onTap ?? () {},
-          enabled: enabled && (onTap != null || onDeleted != null),
-          shape: _chipShape,
-          settings: tint == null
-              ? null
-              : fushiGlassSettings(context, tint: tint),
-          quality: fushiGlassQuality(context),
-          focusNode: focusNode,
-          autofocus: autofocus,
-          width: double.infinity,
-          height: double.infinity,
-          child: content,
-        ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
+
+  Widget chip = _AppleChip(
+    interactive: interactive,
+    enabled: enabled,
+    onTap: onTap,
+    focusNode: focusNode,
+    autofocus: autofocus,
+    fill: fill,
+    height: height,
+    child: content,
+  );
   if (tooltip != null && tooltip.isNotEmpty) {
     chip = FushiTooltip(message: tooltip, child: chip);
   }
   return chip;
+}
+
+/// iOS 26 胶囊标签本体：实色填充、全圆角、按下变淡；可交互时带焦点节点
+/// （键盘焦点画一圈强调色焦点环）并把 [ActivateIntent] 接到 [onTap]。
+class _AppleChip extends StatefulWidget {
+  const _AppleChip({
+    required this.interactive,
+    required this.enabled,
+    required this.onTap,
+    required this.focusNode,
+    required this.autofocus,
+    required this.fill,
+    required this.height,
+    required this.child,
+  });
+
+  final bool interactive;
+  final bool enabled;
+  final VoidCallback? onTap;
+  final FocusNode? focusNode;
+  final bool autofocus;
+  final Color fill;
+  final double height;
+  final Widget child;
+
+  @override
+  State<_AppleChip> createState() => _AppleChipState();
+}
+
+class _AppleChipState extends State<_AppleChip> {
+  bool _pressed = false;
+  bool _focusHighlight = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final BorderRadius radius = BorderRadius.circular(widget.height / 2);
+    Widget pill = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: widget.height),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: widget.fill,
+          borderRadius: radius,
+          border: _focusHighlight
+              ? Border.all(color: apple.accent, width: 2)
+              : null,
+        ),
+        child: Center(widthFactor: 1, heightFactor: 1, child: widget.child),
+      ),
+    );
+    pill = AnimatedOpacity(
+      duration: _pressed ? Duration.zero : const Duration(milliseconds: 160),
+      opacity: !widget.enabled && widget.interactive
+          ? 0.4
+          : (_pressed ? 0.6 : 1),
+      child: pill,
+    );
+    if (!widget.interactive) return pill;
+    final bool tappable = widget.enabled && widget.onTap != null;
+    return FocusableActionDetector(
+      enabled: widget.enabled,
+      focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
+      mouseCursor: tappable ? SystemMouseCursors.click : MouseCursor.defer,
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            if (tappable) widget.onTap!();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (bool value) {
+        setState(() => _focusHighlight = value);
+      },
+      child: Semantics(
+        button: true,
+        enabled: widget.enabled,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: tappable ? (_) => _setPressed(true) : null,
+          onTapUp: tappable ? (_) => _setPressed(false) : null,
+          onTapCancel: tappable ? () => _setPressed(false) : null,
+          onTap: tappable ? widget.onTap : null,
+          child: pill,
+        ),
+      ),
+    );
+  }
 }
 
 /// [Chip] 的设计系统分派版。
@@ -442,8 +492,8 @@ class FushiChoiceChip extends StatelessWidget {
         labelPadding: labelPadding,
         visualDensity: visualDensity,
         selected: selected,
-        // M3 的 ChoiceChip 默认选中时显示对勾。
-        showCheckmark: showCheckmark ?? true,
+        // iOS 的单选胶囊靠强调色实底表达选中，默认不画对勾（M3 默认画）。
+        showCheckmark: showCheckmark ?? false,
         checkmarkColor: checkmarkColor,
         selectedColor: selectedColor,
         backgroundColor: backgroundColor,

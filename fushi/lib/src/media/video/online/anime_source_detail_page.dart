@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -426,12 +427,12 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           key: const ValueKey<String>('anime_source_open_website'),
           tooltip: t.mihon_source_website_open,
           onPressed: () => unawaited(_openWebsite()),
-          icon: const Icon(Icons.open_in_new),
+          icon: const FushiIcon(Icons.open_in_new),
         ),
         FushiIconButtonControl(
           tooltip: t.refresh,
           onPressed: _loading ? null : () => unawaited(_load()),
-          icon: const Icon(Icons.refresh),
+          icon: const FushiIcon(Icons.refresh),
         ),
       ],
       body: _buildBody(context),
@@ -463,7 +464,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
               onPressed: canPlay
                   ? () => unawaited(_play(resume >= 0 ? resume : 0))
                   : null,
-              icon: const Icon(Icons.play_arrow),
+              icon: const FushiIcon(Icons.play_arrow),
               label: Text(
                 resume >= 0 && resume < _episodes.length
                     ? '${t.video_continue_watching} · '
@@ -479,7 +480,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                 onPressed: !canPlay || _libraryBusy
                     ? null
                     : () => unawaited(_addToLibrary()),
-                icon: const Icon(Icons.video_library_outlined),
+                icon: const FushiIcon(Icons.video_library_outlined),
                 label: Text(t.video_online_library_add),
               ),
             if (_canRemoveFromLibrary)
@@ -488,13 +489,13 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                 onPressed: _libraryBusy
                     ? null
                     : () => unawaited(_removeFromLibrary()),
-                icon: const Icon(Icons.video_library),
+                icon: const FushiIcon(Icons.video_library),
                 label: Text(t.video_online_library_remove),
               ),
             FushiOutlinedButton.icon(
               key: const ValueKey<String>('anime_source_download_all'),
               onPressed: canPlay ? () => unawaited(_downloadAll()) : null,
-              icon: const Icon(Icons.download_outlined),
+              icon: const FushiIcon(Icons.download_outlined),
               label: Text(t.video_online_download_all),
             ),
           ],
@@ -562,7 +563,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     if (_downloadedIds.contains(id)) {
       return FushiTooltip(
         message: t.video_online_downloaded,
-        child: const Icon(Icons.download_done),
+        child: const FushiIcon(Icons.download_done),
       );
     }
     final InterconnectDownloadTask? task = _appModelOrNull == null
@@ -578,7 +579,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       key: ValueKey<String>('anime_download_$id'),
       tooltip: t.video_online_download_episode,
       onPressed: () => unawaited(_download(<String>[id])),
-      icon: const Icon(Icons.download_outlined),
+      icon: const FushiIcon(Icons.download_outlined),
     );
   }
 }

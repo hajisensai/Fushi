@@ -265,7 +265,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.search_outlined, size: 18.0),
+              FushiIcon(Icons.search_outlined, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.search, style: TextStyle(fontSize: 14.0)),
             ],
@@ -278,7 +278,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.copy_outlined, size: 18.0),
+              FushiIcon(Icons.copy_outlined, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.copy, style: TextStyle(fontSize: 14.0)),
             ],
@@ -294,7 +294,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.star_border, size: 18.0),
+              FushiIcon(Icons.star_border, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.action_favorite, style: TextStyle(fontSize: 14.0)),
             ],
@@ -308,7 +308,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(Icons.movie_creation_outlined, size: 18.0),
+                FushiIcon(Icons.movie_creation_outlined, size: 18.0),
                 const SizedBox(width: 12.0),
                 Text(t.audiobook_export_clip, style: TextStyle(fontSize: 14.0)),
               ],
@@ -497,7 +497,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 18.0),
+              FushiIcon(icon, size: 18.0),
               const SizedBox(width: 8.0),
               Text(label, style: TextStyle(fontSize: 14.0)),
             ],

@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as path;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -261,7 +262,7 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              trailing: Icon(
+              trailing: FushiIcon(
                 expanded ? Icons.expand_less : Icons.expand_more,
                 color: tokens.surfaces.onVariant,
               ),
@@ -425,7 +426,7 @@ class _DictionaryDialogPageState extends BasePageState {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             FushiSwitchListTile.adaptive(
-              secondary: const Icon(Icons.update_outlined),
+              secondary: const FushiIcon(Icons.update_outlined),
               title: Text(t.dict_auto_update),
               subtitle: Text(t.dict_auto_update_hint),
               value: autoUpdate,
@@ -468,7 +469,7 @@ class _DictionaryDialogPageState extends BasePageState {
               ),
             FushiListItem(
               minHeight: 44,
-              leading: const Icon(Icons.schedule_outlined, size: 18),
+              leading: const FushiIcon(Icons.schedule_outlined, size: 18),
               title: Text(
                 t.dict_auto_update_last(time: lastUpdateText),
                 style: textTheme.bodySmall,
@@ -560,7 +561,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final Widget button = FushiFilledButton.tonalIcon(
       onPressed: onTap,
       style: style,
-      icon: Icon(icon, size: 18),
+      icon: FushiIcon(icon, size: 18),
       label: Text(label),
     );
     if (FushiFocusRoot.maybeControllerOf(context) == null) {
@@ -1382,7 +1383,7 @@ class _DictionaryDialogPageState extends BasePageState {
               valueListenable: controller.message,
               builder: (_, String msg, __) => FushiListItem(
                 minHeight: 44,
-                leading: const Icon(Icons.cloud_download_outlined, size: 18),
+                leading: const FushiIcon(Icons.cloud_download_outlined, size: 18),
                 title: Text(
                   msg.isEmpty ? t.dict_update_checking : msg,
                   style: textTheme.bodySmall,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 「玻璃」设计系统的根作用域：把 Fushi 的 [ColorScheme] 与材质档位映射成
@@ -40,10 +41,7 @@ class FushiGlassScope extends StatelessWidget {
 
 /// 当前上下文玻璃组件的渲染档位（见 [FushiGlassScope]）。[prominent] 为
 /// true 的静态主表面（导航栏、顶栏、对话框）在液态档用 [GlassQuality.premium]。
-GlassQuality fushiGlassQuality(
-  BuildContext context, {
-  bool prominent = false,
-}) {
+GlassQuality fushiGlassQuality(BuildContext context, {bool prominent = false}) {
   switch (glassMaterialOf(context)) {
     case FushiGlassMaterial.liquid:
       return prominent ? GlassQuality.premium : GlassQuality.standard;
@@ -53,38 +51,52 @@ GlassQuality fushiGlassQuality(
   }
 }
 
-/// 玻璃填充色：取 [ColorScheme] 的容器色阶按材质档位给不透明度。
-/// [tint] 覆盖默认色阶（例如主按钮用 primary）。
+/// 玻璃填充色。液态档用 iOS 26 系统玻璃的实测值（库自带 Messages /
+/// Music 演示对照真机调出：深色 #262626 @65%、浅色白 @15%）——中性灰，
+/// **不**拿 MD3 容器色阶去染，否则玻璃一眼就是「MD3 套了层半透明」。
+/// 磨砂档对应 UIKit systemMaterial（更厚的实底 + 大模糊）；off 档实心。
+/// [tint] 覆盖为有色玻璃（主按钮 / 选中态用强调色）。
 Color fushiGlassFill(BuildContext context, {Color? tint}) {
-  final ColorScheme cs = Theme.of(context).colorScheme;
-  final Color base = tint ?? cs.surfaceContainerHigh;
-  final bool dark = cs.brightness == Brightness.dark;
-  switch (glassMaterialOf(context)) {
-    case FushiGlassMaterial.liquid:
-      return base.withValues(alpha: tint != null ? 0.55 : (dark ? 0.16 : 0.22));
-    case FushiGlassMaterial.frosted:
-      return base.withValues(alpha: tint != null ? 0.7 : (dark ? 0.55 : 0.62));
-    case FushiGlassMaterial.off:
-      return base.withValues(alpha: 1);
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  final FushiGlassMaterial material = glassMaterialOf(context);
+  if (tint != null) {
+    return switch (material) {
+      FushiGlassMaterial.liquid => tint.withValues(alpha: 0.82),
+      FushiGlassMaterial.frosted => tint.withValues(alpha: 0.9),
+      FushiGlassMaterial.off => tint,
+    };
   }
+  return switch (material) {
+    FushiGlassMaterial.liquid =>
+      dark ? const Color(0xA6262626) : const Color(0x26FFFFFF),
+    FushiGlassMaterial.frosted =>
+      dark ? const Color(0xB81C1C1E) : const Color(0xB8F9F9F9),
+    FushiGlassMaterial.off =>
+      dark ? const Color(0xFF1C1C1E) : const Color(0xFFF9F9F9),
+  };
 }
 
 /// 单个玻璃组件的完整 settings（需要覆盖主题默认，例如有色主按钮）。
+/// 光照参数同 iOS 26 实测：深色下关掉 fresnel / 环境光、只留柔和高光
+/// （UIVisualEffectView 的平面材质），浅色下保留斜面高光与 fresnel。
 LiquidGlassSettings fushiGlassSettings(BuildContext context, {Color? tint}) {
   final FushiGlassMaterial material = glassMaterialOf(context);
-  final bool dark =
-      Theme.of(context).colorScheme.brightness == Brightness.dark;
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
   return LiquidGlassSettings(
     glassColor: fushiGlassFill(context, tint: tint),
     blur: switch (material) {
-      FushiGlassMaterial.liquid => dark ? 4 : 5,
-      FushiGlassMaterial.frosted => 12,
+      FushiGlassMaterial.liquid => dark ? 1.8 : 8,
+      FushiGlassMaterial.frosted => 20,
       FushiGlassMaterial.off => 0,
     },
-    thickness: dark ? 10 : 12,
-    lightIntensity: dark ? 0.7 : 0.85,
-    saturation: 1.2,
+    thickness: dark ? 22 : 18,
+    lightIntensity: dark ? 0.18 : 0.45,
+    ambientStrength: dark ? 0.0 : 0.12,
+    fresnelStrength: dark ? 0.0 : 1.0,
+    chromaticAberration: 0.01,
+    saturation: 1.0,
     refractiveIndex: 1.2,
+    shadowElevation: dark ? 0.0 : 1.0,
   );
 }
 
@@ -93,28 +105,35 @@ GlassThemeVariant fushiGlassVariant(BuildContext context) {
   final ColorScheme cs = Theme.of(context).colorScheme;
   final FushiGlassMaterial material = glassMaterialOf(context);
   final bool dark = cs.brightness == Brightness.dark;
+  final FushiAppleColors apple = appleColorsOf(context);
   final GlassThemeVariant base = switch (material) {
     FushiGlassMaterial.liquid =>
       dark ? GlassThemeVariant.dark : GlassThemeVariant.light,
     FushiGlassMaterial.frosted ||
-    FushiGlassMaterial.off =>
-      GlassThemeVariant.minimal,
+    FushiGlassMaterial.off => GlassThemeVariant.minimal,
   };
   return base.copyWith(
     settings: (base.settings ?? const GlassThemeSettings()).copyWith(
       glassColor: fushiGlassFill(context),
       blur: switch (material) {
-        FushiGlassMaterial.liquid => dark ? 4.0 : 5.0,
-        FushiGlassMaterial.frosted => 12.0,
+        FushiGlassMaterial.liquid => dark ? 1.8 : 8.0,
+        FushiGlassMaterial.frosted => 20.0,
         FushiGlassMaterial.off => 0.0,
       },
+      thickness: dark ? 22.0 : 18.0,
+      lightIntensity: dark ? 0.18 : 0.45,
+      ambientStrength: dark ? 0.0 : 0.12,
+      fresnelStrength: dark ? 0.0 : 1.0,
+      chromaticAberration: 0.01,
+      saturation: 1.0,
+      refractiveIndex: 1.2,
     ),
     quality: fushiGlassQuality(context),
     glowColors: GlassGlowColors(
-      secondary: cs.secondary,
-      success: cs.tertiary,
-      warning: cs.tertiary,
-      danger: cs.error,
+      secondary: cs.primary,
+      success: apple.success,
+      warning: apple.warning,
+      danger: apple.destructive,
       info: cs.primary,
     ),
   );

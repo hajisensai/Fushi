@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -129,7 +130,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
           value: _TagMenuAction.edit,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.edit_outlined, size: 20),
+              const FushiIcon(Icons.edit_outlined, size: 20),
               const SizedBox(width: 12),
               Text(t.dialog_edit),
             ],
@@ -139,7 +140,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
           value: _TagMenuAction.delete,
           child: Row(
             children: <Widget>[
-              Icon(Icons.delete_outline, size: 20, color: scheme.error),
+              FushiIcon(Icons.delete_outline, size: 20, color: scheme.error),
               const SizedBox(width: 12),
               Text(t.dialog_delete, style: TextStyle(color: scheme.error)),
             ],
@@ -213,7 +214,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       title: t.tag_manage_title,
       actions: <Widget>[
         FushiIconButtonControl(
-          icon: const Icon(Icons.star_outline),
+          icon: const FushiIcon(Icons.star_outline),
           tooltip: t.tag_seed_stars,
           onPressed: _seedStarTags,
         ),
@@ -222,7 +223,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
         child: FloatingActionButton(
           onPressed: _createTag,
           tooltip: t.tag_new,
-          child: const Icon(Icons.add),
+          child: const FushiIcon(Icons.add),
         ),
       ),
       body: _tags.isEmpty
@@ -244,7 +245,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                     alignment: Alignment.centerRight,
                     padding: EdgeInsets.only(right: tokens.spacing.card),
                     color: theme.colorScheme.errorContainer,
-                    child: Icon(
+                    child: FushiIcon(
                       Icons.delete_outline,
                       color: theme.colorScheme.onErrorContainer,
                     ),

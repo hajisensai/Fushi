@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show GalgameSourceRow;
 
 import 'package:fushi/src/mining/galgame_cover_download.dart';
@@ -406,7 +407,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.error_outline, color: theme.colorScheme.error),
+            FushiIcon(Icons.error_outline, color: theme.colorScheme.error),
             const SizedBox(height: 8),
             Text(
               t.game_scrape_search_failed,

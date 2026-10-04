@@ -3,6 +3,7 @@
 /// 页面代码只引这一个文件。
 library;
 
+export 'fushi_apple_palette.dart';
 export 'fushi_glass_bars.dart';
 export 'fushi_glass_buttons.dart';
 export 'fushi_glass_chips.dart';

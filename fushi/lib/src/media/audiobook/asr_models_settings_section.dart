@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
@@ -299,7 +300,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       return FushiOutlinedButton.icon(
         key: ValueKey<String>('asr-models-detach-${row.pack.id}'),
         onPressed: row.deleting ? null : () => unawaited(_detach(row)),
-        icon: const Icon(Icons.link_off_outlined, size: 18),
+        icon: const FushiIcon(Icons.link_off_outlined, size: 18),
         label: Text(t.audiobook_transcribe_model_custom_detach),
       );
     }
@@ -312,7 +313,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
               height: 16,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.delete_outline, size: 18),
+          : const FushiIcon(Icons.delete_outline, size: 18),
       label: Text(t.asr_models_delete),
     );
     if (status.ready) return delete;
@@ -324,7 +325,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
         FushiFilledButton.icon(
           key: ValueKey<String>('asr-models-download-${row.pack.id}'),
           onPressed: row.deleting ? null : () => _startDownload(row),
-          icon: const Icon(Icons.download_outlined, size: 18),
+          icon: const FushiIcon(Icons.download_outlined, size: 18),
           label: Text(t.asr_models_download),
         ),
         // 不全但磁盘上有残留（中断的 `.part`、另一变体的编码器）也得能清掉。

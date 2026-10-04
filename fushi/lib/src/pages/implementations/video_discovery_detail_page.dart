@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -382,7 +383,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
-                              Icon(
+                              FushiIcon(
                                 Icons.star_rounded,
                                 size: 20,
                                 color: colors.tertiary,
@@ -456,7 +457,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               : () => unawaited(
                     widget.actions.onSearchResource!(context, item),
                   ),
-          icon: const Icon(Icons.search_rounded),
+          icon: const FushiIcon(Icons.search_rounded),
           label: Text(t.video_discovery_resource_search),
         ),
         FushiOutlinedButton.icon(
@@ -470,7 +471,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               : () => unawaited(
                     widget.actions.onSearchSubtitle!(context, item),
                   ),
-          icon: const Icon(Icons.subtitles_outlined),
+          icon: const FushiIcon(Icons.subtitles_outlined),
           label: Text(t.video_discovery_subtitle_search),
         ),
         FushiFilledButton.tonalIcon(
@@ -484,7 +485,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                       : () => unawaited(
                             widget.actions.onSubscribe!(context, item),
                           ),
-          icon: Icon(
+          icon: FushiIcon(
             state.isSubscribed
                 ? Icons.favorite_rounded
                 : Icons.favorite_border_rounded,
@@ -501,7 +502,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             onPressed: state.isBusy
                 ? null
                 : () => unawaited(widget.actions.onPlay!(context, item)),
-            icon: const Icon(Icons.play_arrow_rounded),
+            icon: const FushiIcon(Icons.play_arrow_rounded),
             label: Text(t.video_discovery_play),
           ),
       ],
@@ -519,7 +520,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           ),
           const SizedBox(width: 8),
         ] else
-          Icon(
+          FushiIcon(
             state.isInLibrary
                 ? Icons.check_circle_outline_rounded
                 : Icons.route_outlined,
@@ -560,14 +561,14 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               onPressed: () => unawaited(
                 widget.actions.onCancelDownloads!(state.activeJobIds),
               ),
-              icon: const Icon(Icons.close, size: 16),
+              icon: const FushiIcon(Icons.close, size: 16),
               label: Text(t.cancel),
             ),
           if (widget.actions.onOpenDownloads != null)
             FushiTextButton.icon(
               key: const ValueKey<String>('video-discovery-detail-downloads'),
               onPressed: widget.actions.onOpenDownloads,
-              icon: const Icon(Icons.download_outlined, size: 16),
+              icon: const FushiIcon(Icons.download_outlined, size: 16),
               label: Text(t.download_tasks_tab),
             ),
         ],
@@ -582,7 +583,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
       child: FushiCard(
         child: Row(
           children: <Widget>[
-            const Icon(Icons.cloud_off_outlined),
+            const FushiIcon(Icons.cloud_off_outlined),
             SizedBox(width: tokens.spacing.gap),
             Expanded(child: Text(t.video_discovery_details_load_failed)),
             FushiTextButton(onPressed: _retryDetails, child: Text(t.retry)),
@@ -716,7 +717,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                             backgroundColor: tokens.surfaces.group,
                             backgroundImage: image,
                             child: image == null
-                                ? const Icon(Icons.person_outline_rounded)
+                                ? const FushiIcon(Icons.person_outline_rounded)
                                 : null,
                           ),
                           SizedBox(height: tokens.spacing.gap),
@@ -875,7 +876,7 @@ class _RelatedWorkCard extends StatelessWidget {
                 ? ColoredBox(
                     color: tokens.surfaces.group,
                     child: const Center(
-                      child: Icon(Icons.movie_outlined),
+                      child: FushiIcon(Icons.movie_outlined),
                     ),
                   )
                 : PortraitCoverImage(
@@ -883,7 +884,7 @@ class _RelatedWorkCard extends StatelessWidget {
                     errorBuilder: (_) => ColoredBox(
                       color: tokens.surfaces.group,
                       child: const Center(
-                        child: Icon(Icons.broken_image_outlined),
+                        child: FushiIcon(Icons.broken_image_outlined),
                       ),
                     ),
                   ),

@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -143,7 +144,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
           FushiIconButtonControl(
             tooltip: t.refresh,
             onPressed: _loading || _joining ? null : _loadHosts,
-            icon: const Icon(Icons.refresh),
+            icon: const FushiIcon(Icons.refresh),
           ),
         ],
       ),
@@ -182,7 +183,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
               margin: const EdgeInsets.only(bottom: 8),
               padding: EdgeInsets.zero,
               child: FushiListItem(
-                leading: const Icon(Icons.cast),
+                leading: const FushiIcon(Icons.cast),
                 title: Text(host.peer.deviceName ?? host.peer.url),
                 subtitle: Text(t.game_stream_available),
                 trailing: FushiFilledButton(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 封面角标：压在封面图上的半透明黑胶囊（图标 / 文字，或两者）。
 ///
@@ -42,7 +43,7 @@ class CoverBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (icon != null) Icon(icon, size: iconSize, color: Colors.white),
+          if (icon != null) FushiIcon(icon, size: iconSize, color: Colors.white),
           if (label != null) ...[
             if (icon != null) const SizedBox(width: 4),
             Text(

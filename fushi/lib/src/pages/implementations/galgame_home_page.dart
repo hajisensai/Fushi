@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
@@ -458,7 +459,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               if (Platform.isWindows)
                 FushiOutlinedButton.icon(
                   onPressed: _gameStreamBusy ? null : _toggleGameStream,
-                  icon: Icon(
+                  icon: FushiIcon(
                     _gameStreamStarted
                         ? Icons.stop_circle_outlined
                         : Icons.cast_connected,
@@ -490,7 +491,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.videogame_asset_outlined,
             size: 64,
             color: colors.onSurfaceVariant,
@@ -505,7 +506,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           const SizedBox(height: 16),
           FushiFilledButton.icon(
             onPressed: widget.onShowLibrary,
-            icon: const Icon(Icons.add),
+            icon: const FushiIcon(Icons.add),
             label: Text(t.game_add),
           ),
         ],
@@ -717,7 +718,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                   children: <Widget>[
                     FushiFilledButton.icon(
                       onPressed: () => unawaited(_launchGame(game)),
-                      icon: const Icon(Icons.play_arrow),
+                      icon: const FushiIcon(Icons.play_arrow),
                       label: Text(t.game_launch),
                     ),
                     const SizedBox(width: 12),
@@ -729,7 +730,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                           color: Colors.white.withValues(alpha: 0.5),
                         ),
                       ),
-                      icon: const Icon(Icons.info_outline),
+                      icon: const FushiIcon(Icons.info_outline),
                       label: Text(t.game_view_detail),
                     ),
                   ],
@@ -1117,7 +1118,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return ColoredBox(
       color: tokens.surfaces.overlay,
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           Icons.videogame_asset,
           color: tokens.surfaces.onVariant,
           size: 32,
@@ -1156,7 +1157,7 @@ class _KpiCell extends StatelessWidget {
                 color: colors.primary.withValues(alpha: 0.12),
                 borderRadius: FushiBorderRadius.control,
               ),
-              child: Icon(icon, color: colors.primary, size: 22),
+              child: FushiIcon(icon, color: colors.primary, size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1281,7 +1282,7 @@ class _TimelineAvatar extends StatelessWidget {
     final Widget child = cover ??
         ColoredBox(
           color: tokens.surfaces.overlay,
-          child: Icon(
+          child: FushiIcon(
             Icons.videogame_asset,
             size: 18,
             color: tokens.surfaces.onVariant,

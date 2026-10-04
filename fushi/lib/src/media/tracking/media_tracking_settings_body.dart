@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
@@ -160,7 +161,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                   border: const OutlineInputBorder(),
                   suffixIcon: FushiIconButtonControl(
                     tooltip: t.media_tracking_access_token_hint,
-                    icon: const Icon(Icons.open_in_new),
+                    icon: const FushiIcon(Icons.open_in_new),
                     onPressed: () => launchUrl(
                       Uri.parse(BangumiApiClient.accessTokenUrl),
                       mode: LaunchMode.externalApplication,
@@ -176,7 +177,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                   Uri.parse(BangumiApiClient.signupUrl),
                   mode: LaunchMode.externalApplication,
                 ),
-                icon: const Icon(Icons.person_add_alt),
+                icon: const FushiIcon(Icons.person_add_alt),
                 label: Text(t.media_tracking_signup),
               ),
             ),
@@ -194,7 +195,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                     )
                   : FushiFilledButton.tonalIcon(
                       onPressed: _connect,
-                      icon: const Icon(Icons.link),
+                      icon: const FushiIcon(Icons.link),
                       label: Text(t.media_tracking_connect),
                     ),
             ),
@@ -228,7 +229,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               title: t.media_tracking_sync_now,
               trailing: FushiFilledButton.tonalIcon(
                 onPressed: _busy ? null : _sync,
-                icon: const Icon(Icons.sync),
+                icon: const FushiIcon(Icons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
             ),
@@ -236,7 +237,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               title: t.media_tracking_add_mapping,
               trailing: FushiFilledButton.icon(
                 onPressed: _busy ? null : () => _addMapping(),
-                icon: const Icon(Icons.add_link),
+                icon: const FushiIcon(Icons.add_link),
                 label: Text(t.media_tracking_add_mapping),
               ),
             ),
@@ -260,7 +261,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                   subtitleMaxLines: 2,
                   trailing: FushiTextButton.icon(
                     onPressed: _busy ? null : () => _addMapping(initial: item),
-                    icon: const Icon(Icons.add_link),
+                    icon: const FushiIcon(Icons.add_link),
                     label: Text(t.media_tracking_add_mapping),
                   ),
                 ),
@@ -292,7 +293,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                     await _repository.deleteMapping(mapping.id);
                     await _reload();
                   },
-                  icon: const Icon(Icons.link_off),
+                  icon: const FushiIcon(Icons.link_off),
                 ),
               ),
           ],
@@ -620,7 +621,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                   labelText: t.media_tracking_search,
                   suffixIcon: FushiIconButtonControl(
                     onPressed: _busy ? null : _search,
-                    icon: const Icon(Icons.search),
+                    icon: const FushiIcon(Icons.search),
                   ),
                 ),
               ),
@@ -653,14 +654,14 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                     density: FushiListDensity.compact,
                     padding: EdgeInsets.zero,
                     leading: subject.coverUrl == null
-                        ? const Icon(Icons.auto_stories_outlined)
+                        ? const FushiIcon(Icons.auto_stories_outlined)
                         : Image(
                           image: AppHttpImage(subject.coverUrl!),
                             width: 42,
                             height: 56,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.broken_image_outlined),
+                                const FushiIcon(Icons.broken_image_outlined),
                           ),
                     title: Text(subject.displayName),
                     subtitle: Text(

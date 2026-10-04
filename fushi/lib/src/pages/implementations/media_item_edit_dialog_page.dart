@@ -6,6 +6,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -340,7 +341,7 @@ class MediaItemCoverOverrideField extends StatelessWidget {
                       return SizedBox(
                         height: tokens.spacing.gap * 6,
                         width: tokens.spacing.gap * 6,
-                        child: const Icon(Icons.broken_image_outlined),
+                        child: const FushiIcon(Icons.broken_image_outlined),
                       );
                     },
                   ),

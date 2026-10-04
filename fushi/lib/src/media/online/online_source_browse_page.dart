@@ -18,6 +18,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一个浏览列表（「热门」「最新」或源声明的 listing）。
@@ -327,7 +328,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: _catalog.searchHint,
-                  prefixIcon: const Icon(Icons.search),
+                  prefixIcon: const FushiIcon(Icons.search),
                 ),
                 onSubmitted: _search,
               ),
@@ -338,7 +339,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                 key: ValueKey<String>('${prefix}_filters'),
                 tooltip: _catalog.filtersTooltip,
                 onPressed: _showFilters,
-                icon: const Icon(Icons.tune),
+                icon: const FushiIcon(Icons.tune),
               ),
             ],
           ],
@@ -403,7 +404,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
               const SizedBox(height: 12),
               FushiOutlinedButton.icon(
                 onPressed: () => unawaited(_retry()),
-                icon: const Icon(Icons.refresh),
+                icon: const FushiIcon(Icons.refresh),
                 label: Text(t.refresh),
               ),
               const SizedBox(height: 8),
@@ -461,7 +462,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                       : FushiIconButtonControl(
                           key: ValueKey<String>('${prefix}_more'),
                           onPressed: () => unawaited(_load(reset: false)),
-                          icon: const Icon(Icons.add_circle_outline),
+                          icon: const FushiIcon(Icons.add_circle_outline),
                         ),
                 );
               }

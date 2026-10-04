@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 class SettingsHomePage extends BasePage {
@@ -176,11 +177,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           controller: _searchController,
           decoration: InputDecoration(
             hintText: t.settings_search_hint,
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const FushiIcon(Icons.search),
             suffixIcon: _searchQuery.isEmpty
                 ? null
                 : FushiIconButtonControl(
-                    icon: const Icon(Icons.clear),
+                    icon: const FushiIcon(Icons.clear),
                     tooltip: t.clear,
                     onPressed: () {
                       _searchController.clear();
@@ -251,7 +252,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           children: <Widget>[
             for (final SettingsSearchEntry entry in results)
               FushiListItem(
-                leading: Icon(entry.item.icon ?? entry.destination.icon),
+                leading: FushiIcon(entry.item.icon ?? entry.destination.icon),
                 // custom 项经 searchTitle 入索引时 item.title 为空，展示用
                 // entry.title（同打分口径）。
                 title: Text(entry.title),
@@ -259,7 +260,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                 // 面包屑「分类 › 分区」——框架级去重：分区名为空或与分类同名时
                 // 只显示分类（消灭「系统 › 系统」，见 settingsSearchBreadcrumb）。
                 subtitle: Text(settingsSearchBreadcrumb(entry)),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const FushiIcon(Icons.chevron_right),
                 onTap: () => _openSearchResult(entry, wide: wide),
               ),
           ],
@@ -326,7 +327,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           title: t.settings,
           leading: widget.onBack != null
               ? FushiIconButtonControl(
-                  icon: const Icon(Icons.arrow_back),
+                  icon: const FushiIcon(Icons.arrow_back),
                   tooltip: t.back,
                   onPressed: widget.onBack,
                 )

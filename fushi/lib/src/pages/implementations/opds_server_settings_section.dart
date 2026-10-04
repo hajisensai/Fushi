@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
@@ -104,7 +105,7 @@ class _OpdsServerSettingsSectionState
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.discovery_opds_add),
             ),
           ),
@@ -146,7 +147,7 @@ class _OpdsServerSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(Icons.remove_circle_outline),
               ),
             ],
           ),
@@ -208,7 +209,7 @@ class _OpdsServerSettingsSectionState
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check_outlined),
+                    : const FushiIcon(Icons.network_check_outlined),
                 label: Text(t.discovery_opds_test),
               ),
               if (probe != null && !probe.running) ...<Widget>[

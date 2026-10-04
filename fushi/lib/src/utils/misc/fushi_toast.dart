@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
@@ -313,7 +314,7 @@ class _SeverityToastWidgetState extends State<_SeverityToastWidget>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(palette.icon, color: palette.foreground, size: 20),
+                    FushiIcon(palette.icon, color: palette.foreground, size: 20),
                     const SizedBox(width: 10),
                     Flexible(
                       child: Text(

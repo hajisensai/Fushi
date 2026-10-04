@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -1509,7 +1510,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         actions: [
           if (hasAudio)
             FushiTextButton.icon(
-              icon: Icon(
+              icon: FushiIcon(
                 _playingItemKey == _itemKey(item)
                     ? Icons.hourglass_top
                     : Icons.volume_up_outlined,
@@ -1526,7 +1527,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             ),
           if (item.text != null)
             FushiTextButton.icon(
-              icon: const Icon(Icons.copy_outlined, size: 18),
+              icon: const FushiIcon(Icons.copy_outlined, size: 18),
               label: Text(t.copy),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: item.text!));
@@ -1535,7 +1536,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             ),
           if (canMine)
             FushiTextButton.icon(
-              icon: const Icon(Icons.style_outlined, size: 18),
+              icon: const FushiIcon(Icons.style_outlined, size: 18),
               label: Text(t.collection_mine_card),
               onPressed: () {
                 Navigator.pop(ctx);
@@ -1545,7 +1546,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               },
             ),
           FushiTextButton.icon(
-            icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
+            icon: FushiIcon(Icons.delete_outline, size: 18, color: cs.error),
             label: Text(t.dialog_delete, style: TextStyle(color: cs.error)),
             onPressed: () {
               Navigator.pop(ctx);
@@ -1554,7 +1555,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ),
           if (canNavigate)
             FushiFilledButton.icon(
-              icon: Icon(
+              icon: FushiIcon(
                 switch (kind) {
                   SentenceSourceKind.video => Icons.movie_outlined,
                   SentenceSourceKind.audiobook => Icons.headphones_outlined,
@@ -1692,7 +1693,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               ),
               child: Row(
                 children: <Widget>[
-                  Icon(Icons.folder_outlined, size: 18, color: scheme.primary),
+                  FushiIcon(Icons.folder_outlined, size: 18, color: scheme.primary),
                   SizedBox(width: tokens.spacing.gap / 2),
                   Expanded(
                     child: Text(
@@ -1991,7 +1992,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           right: tokens.spacing.card + tokens.spacing.gap / 2,
         ),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(
+        child: FushiIcon(
           Icons.delete_outline,
           color: Theme.of(context).colorScheme.onError,
         ),
@@ -2021,7 +2022,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               leading: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  Icon(
+                  FushiIcon(
                     icon,
                     size: 20,
                     color: Theme.of(context).colorScheme.tertiary,
@@ -2079,7 +2080,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                       },
                     ),
                   if (canNavigate)
-                    Icon(
+                    FushiIcon(
                       Icons.chevron_right,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -2215,7 +2216,7 @@ class CollectionDeleteDialog extends StatelessWidget {
                 color: colors.errorContainer,
                 borderRadius: tokens.radii.controlRadius,
               ),
-              child: Icon(
+              child: FushiIcon(
                 Icons.delete_outline,
                 color: colors.onErrorContainer,
                 size: 20,
@@ -2391,7 +2392,7 @@ class _ExportDialogState extends State<_ExportDialog> {
         onChanged: (_) => setState(() => _targetSource = option),
       ),
       title: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: Icon(icon, size: 18),
+      trailing: FushiIcon(icon, size: 18),
     );
   }
 
@@ -2567,7 +2568,7 @@ class _ExportDialogState extends State<_ExportDialog> {
         footer: Align(
           alignment: Alignment.centerRight,
           child: FushiFilledButton.icon(
-            icon: const Icon(Icons.share_outlined, size: 18),
+            icon: const FushiIcon(Icons.share_outlined, size: 18),
             label: Text(t.dialog_export),
             onPressed: _canExport ? _confirm : null,
           ),
@@ -2671,7 +2672,7 @@ class _ClearSheetState extends State<_ClearSheet> {
             backgroundColor: colors.error,
             foregroundColor: colors.onError,
           ),
-          icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+          icon: const FushiIcon(Icons.delete_sweep_outlined, size: 18),
           label: Text(t.dialog_clear),
           onPressed: _canClear
               ? () => Navigator.pop(context, Set<_CollectionType>.of(_selected))
@@ -2775,7 +2776,7 @@ class _BatchMineSheetState extends State<_BatchMineSheet> {
       footer: Align(
         alignment: Alignment.centerRight,
         child: FushiFilledButton.icon(
-          icon: const Icon(Icons.style_outlined, size: 18),
+          icon: const FushiIcon(Icons.style_outlined, size: 18),
           label: Text(t.collection_batch_mine_start(n: _selected.length)),
           onPressed: _selected.isEmpty
               ? null

@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_asr_core/asr_core.dart';
@@ -172,7 +173,7 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
           SizedBox(height: tokens.spacing.rowVertical),
           FushiOutlinedButton.icon(
             key: const ValueKey<String>('asr-local-model-pick'),
-            icon: const Icon(Icons.folder_open_outlined, size: 18),
+            icon: const FushiIcon(Icons.folder_open_outlined, size: 18),
             label: Text(t.audiobook_transcribe_model_custom_pick),
             onPressed: _pick,
           ),
@@ -191,7 +192,7 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
           SizedBox(height: tokens.spacing.rowVertical),
           FushiListItem(
             title: Text(t.audiobook_transcribe_model_custom_advanced),
-            trailing: Icon(
+            trailing: FushiIcon(
               _advanced ? Icons.expand_less : Icons.expand_more,
             ),
             onTap: () => setState(() => _advanced = !_advanced),
@@ -273,7 +274,7 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
           ),
           FushiFilledButton.icon(
             key: const ValueKey<String>('asr-local-model-confirm'),
-            icon: const Icon(Icons.check_outlined, size: 18),
+            icon: const FushiIcon(Icons.check_outlined, size: 18),
             label: Text(t.dialog_done),
             onPressed: pack == null
                 ? null

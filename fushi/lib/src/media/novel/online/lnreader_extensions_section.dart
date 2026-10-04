@@ -7,6 +7,7 @@ import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 小说插件（LNReader）的「仓库」段与「扩展」段正文，嵌在书的「导入」视图里。
@@ -437,7 +438,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           padding: EdgeInsets.zero,
           child: FushiListItem(
             key: ValueKey<String>('novel_store_${store.indexUrl}'),
-            leading: const Icon(Icons.hub_outlined),
+            leading: const FushiIcon(Icons.hub_outlined),
             title: Text(
               builtin
                   ? '${store.name} · ${t.novel_store_builtin_label}'
@@ -452,12 +453,12 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                       FushiIconButtonControl(
                         tooltip: t.mihon_store_edit,
                         onPressed: () => unawaited(_editStore(store)),
-                        icon: const Icon(Icons.edit_outlined),
+                        icon: const FushiIcon(Icons.edit_outlined),
                       ),
                       FushiIconButtonControl(
                         tooltip: t.mihon_store_remove,
                         onPressed: () => unawaited(_removeStore(store)),
-                        icon: const Icon(Icons.delete_outline),
+                        icon: const FushiIcon(Icons.delete_outline),
                       ),
                     ],
                   ),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -572,7 +573,7 @@ class _VideoExternalProviderSettingsSectionState
                   setState(() => _torznab.removeAt(index));
                   _saveTorznabIfValid();
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(Icons.remove_circle_outline),
               ),
             ],
           ),
@@ -1001,7 +1002,7 @@ class _VideoExternalProviderSettingsSectionState
                 setState(() => _mappings.removeAt(index));
                 _saveMappingsIfValid();
               },
-              icon: const Icon(Icons.remove_circle_outline),
+              icon: const FushiIcon(Icons.remove_circle_outline),
             ),
           ),
           _field(
@@ -1150,7 +1151,7 @@ class _VideoExternalProviderSettingsSectionState
           onPressed: () => setState(
             () => _torznab.add(_TorznabDraft.empty(_newDraftId('torznab'))),
           ),
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(Icons.add),
           label: Text(t.video_torznab_add),
         ),
       ),
@@ -1183,7 +1184,7 @@ class _VideoExternalProviderSettingsSectionState
               ),
             ),
           ),
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(Icons.add),
           label: Text(t.video_download_path_mapping_add),
         ),
       ),

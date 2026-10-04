@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -356,7 +357,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 ])
                   FushiListItem(
                     density: FushiListDensity.compact,
-                    leading: Icon(
+                    leading: FushiIcon(
                       game.playStatus == status
                           ? Icons.radio_button_checked
                           : Icons.radio_button_unchecked,
@@ -709,7 +710,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       floatingActionButton: FushiGlassFab(
         child: FloatingActionButton.extended(
           onPressed: _addGame,
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(Icons.add),
           label: Text(t.game_add),
         ),
       ),
@@ -731,7 +732,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
+                  prefixIcon: const FushiIcon(Icons.search, size: 18),
                   hintText: t.game_search,
                   border: const OutlineInputBorder(),
                   contentPadding:
@@ -739,7 +740,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   suffixIcon: _view.search.isEmpty
                       ? null
                       : FushiIconButtonControl(
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const FushiIcon(Icons.close, size: 18),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _view = _view.copyWith(search: ''));
@@ -781,7 +782,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           const SizedBox(width: 4),
           FushiPopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
-            icon: const Icon(Icons.sort),
+            icon: const FushiIcon(Icons.sort),
             onSelected: (GalgameSortField field) => _setView(
               field == _view.sortField
                   // 再点当前维度 = 翻转方向（少一个独立的升降序按钮）。
@@ -797,7 +798,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     children: <Widget>[
                       Expanded(child: Text(galgameSortFieldLabel(field))),
                       if (field == _view.sortField)
-                        Icon(
+                        FushiIcon(
                           _view.ascending
                               ? Icons.arrow_upward
                               : Icons.arrow_downward,
@@ -811,7 +812,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           FushiIconButtonControl(
             tooltip: t.game_filter,
             onPressed: () => unawaited(_showFilterSheet()),
-            icon: Icon(
+            icon: FushiIcon(
               _view.hasActiveFilter
                   ? Icons.filter_alt
                   : Icons.filter_alt_outlined,
@@ -1064,7 +1065,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.videogame_asset_outlined,
             size: 64,
             color: colors.onSurfaceVariant,
@@ -1082,13 +1083,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             FushiFilledButton.icon(
               onPressed: () =>
                   gameSectionNotifier.value = GameSection.importGames,
-              icon: const Icon(Icons.library_add_outlined),
+              icon: const FushiIcon(Icons.library_add_outlined),
               label: Text(t.library_empty_go_import),
             )
           else
             FushiFilledButton.icon(
               onPressed: _addGame,
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.game_add),
             ),
         ],
@@ -1103,7 +1104,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.search_off, size: 48, color: colors.onSurfaceVariant),
+          FushiIcon(Icons.search_off, size: 48, color: colors.onSurfaceVariant),
           const SizedBox(height: 12),
           Text(
             t.game_no_match,
@@ -1462,13 +1463,13 @@ Widget buildPendingGameDownloadCard(DiscoveryDownloadTask task) {
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const ColoredBox(
                       color: Colors.black26,
-                      child: Center(child: Icon(Icons.download_outlined)),
+                      child: Center(child: FushiIcon(Icons.download_outlined)),
                     )),
           )
         else
           const ColoredBox(
             color: Colors.black26,
-            child: Center(child: Icon(Icons.download_outlined)),
+            child: Center(child: FushiIcon(Icons.download_outlined)),
           ),
         Align(
           alignment: Alignment.bottomCenter,
@@ -1760,7 +1761,7 @@ class _GameCard extends StatelessWidget {
     return SizedBox(
       height: 120,
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           Icons.videogame_asset,
           size: 40,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1973,7 +1974,7 @@ class _GameCard extends StatelessWidget {
           ),
           border: Border.all(color: tokens.surfaces.outline),
         ),
-        child: Icon(Icons.more_vert, size: 18, color: colors.onSurface),
+        child: FushiIcon(Icons.more_vert, size: 18, color: colors.onSurface),
       ),
       onSelected: _dispatchAction,
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[

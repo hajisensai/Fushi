@@ -1,4 +1,5 @@
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_session.dart';
@@ -3660,7 +3661,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                                       'reader_unloaded_back',
                                     ),
                                     tooltip: t.back,
-                                    icon: const Icon(Icons.arrow_back),
+                                    icon: const FushiIcon(Icons.arrow_back),
                                     onPressed: () =>
                                         Navigator.of(context).maybePop(),
                                   ),

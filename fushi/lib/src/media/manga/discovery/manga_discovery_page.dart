@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -256,7 +257,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         key: const ValueKey<String>('manga_discovery_refresh'),
         tooltip: t.refresh,
         onPressed: _refresh,
-        icon: const Icon(Icons.refresh),
+        icon: const FushiIcon(Icons.refresh),
       );
 
   void _openMokuro() {
@@ -515,7 +516,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               action: FushiFilledButton.icon(
                 key: const ValueKey<String>('manga_discovery_retry_all'),
                 onPressed: _refresh,
-                icon: const Icon(Icons.refresh_rounded),
+                icon: const FushiIcon(Icons.refresh_rounded),
                 label: Text(t.retry),
               ),
             ),
@@ -548,7 +549,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                 : FushiFilledButton.tonalIcon(
                     key: const ValueKey<String>('manga_discovery_open_sources'),
                     onPressed: openSources,
-                    icon: const Icon(Icons.extension_outlined),
+                    icon: const FushiIcon(Icons.extension_outlined),
                     label: Text(t.manga_discovery_empty_action),
                   ),
           ),
@@ -897,7 +898,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         child: FushiTextButton.icon(
           key: const ValueKey<String>('manga_discovery_load_more_retry'),
           onPressed: _retryLoadMore,
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );

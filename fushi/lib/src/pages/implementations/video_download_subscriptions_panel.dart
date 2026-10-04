@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -453,7 +454,7 @@ class _VideoDownloadSubscriptionsViewState
             child: FushiOutlinedButton.icon(
               // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
               onPressed: null,
-              icon: const Icon(Icons.sort, size: 18),
+              icon: const FushiIcon(Icons.sort, size: 18),
               label: Text(_sortLabel(_sort)),
             ),
           ),
@@ -505,7 +506,7 @@ class _VideoDownloadSubscriptionsViewState
                           dimension: 16,
                           child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.refresh, size: 18),
+                      : const FushiIcon(Icons.refresh, size: 18),
                   label: Text(t.download_subscription_check_all),
                 ),
               ],
@@ -662,7 +663,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     final String url = subscription.coverUrl?.trim() ?? '';
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.group,
-      child: const Icon(Icons.subscriptions_outlined, size: 20),
+      child: const FushiIcon(Icons.subscriptions_outlined, size: 20),
     );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,
@@ -959,7 +960,7 @@ class _SubscriptionItemsSection extends StatelessWidget {
                 ),
                 density: FushiListDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: Icon(
+                leading: FushiIcon(
                   switch (item.status) {
                     VideoDownloadSubscriptionItemStatus.processed =>
                       Icons.check_circle_outline,
@@ -1028,7 +1029,7 @@ class _VideoDownloadSubscriptionMessage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 44, color: theme.colorScheme.outline),
+            FushiIcon(icon, size: 44, color: theme.colorScheme.outline),
             const SizedBox(height: 12),
             Text(
               title,

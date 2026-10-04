@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// TODO-959：桌面「数据存储位置」整目录迁移期间的全屏遮罩内容。
 ///
@@ -48,7 +49,7 @@ class DataRootMigrationView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.drive_file_move_outlined, size: 48, color: cs.primary),
+              FushiIcon(Icons.drive_file_move_outlined, size: 48, color: cs.primary),
               const SizedBox(height: 16),
               Text(
                 t.data_storage_migrate_overlay_title,
@@ -105,7 +106,7 @@ class DataRootMigrationView extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(Icons.error_outline, size: 48, color: cs.error),
+                FushiIcon(Icons.error_outline, size: 48, color: cs.error),
                 const SizedBox(height: 16),
                 Text(
                   t.data_storage_migrate_failed_title,
@@ -136,7 +137,7 @@ class DataRootMigrationView extends StatelessWidget {
                 const SizedBox(height: 24),
                 FushiFilledButton.icon(
                   onPressed: onRestart,
-                  icon: const Icon(Icons.restart_alt),
+                  icon: const FushiIcon(Icons.restart_alt),
                   label: Text(t.data_storage_migrate_failed_restart),
                 ),
               ],

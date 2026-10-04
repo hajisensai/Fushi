@@ -35,6 +35,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         buildSyncBackupDestination,
         buildInterconnectDestination,
         runBackupImportFlowForFile;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
@@ -651,7 +652,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     if (connected) {
       return Row(
         children: <Widget>[
-          Icon(Icons.check_circle_outline, size: 16, color: colors.primary),
+          FushiIcon(Icons.check_circle_outline, size: 16, color: colors.primary),
           SizedBox(width: FushiDesignTokens.of(context).spacing.gap / 2),
           Expanded(
             child: Text(
@@ -1673,7 +1674,7 @@ class OnboardingStepHero extends StatelessWidget {
             color: colors.primaryContainer,
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 28, color: colors.onPrimaryContainer),
+          child: FushiIcon(icon, size: 28, color: colors.onPrimaryContainer),
         ),
         SizedBox(width: tokens.spacing.card),
         Expanded(
@@ -1760,7 +1761,7 @@ class OnboardingFeatureTile extends StatelessWidget {
       onTap: onToggle,
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             icon,
             color: selected ? colors.primary : colors.onSurfaceVariant,
           ),
@@ -1783,7 +1784,7 @@ class OnboardingFeatureTile extends StatelessWidget {
             ),
           ),
           SizedBox(width: tokens.spacing.gap),
-          Icon(
+          FushiIcon(
             selected ? Icons.check_circle : Icons.radio_button_unchecked,
             color: selected ? colors.primary : colors.outline,
           ),
@@ -1944,14 +1945,14 @@ class OnboardingActionTile extends StatelessWidget {
     final bool enabled = action.onPressed != null;
     final Widget? trailing = action.trailing ??
         (enabled
-            ? Icon(Icons.chevron_right, color: colors.onSurfaceVariant)
+            ? FushiIcon(Icons.chevron_right, color: colors.onSurfaceVariant)
             : null);
     return FushiCard(
       margin: EdgeInsets.only(bottom: tokens.spacing.gap),
       onTap: action.onPressed,
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             action.icon,
             color: enabled ? colors.primary : theme.disabledColor,
           ),
@@ -2013,9 +2014,9 @@ class OnboardingDisclosureRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FushiListItem(
-      leading: Icon(icon),
+      leading: FushiIcon(icon),
       title: Text(title),
-      trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+      trailing: FushiIcon(expanded ? Icons.expand_less : Icons.expand_more),
       onTap: onToggle,
     );
   }
@@ -2234,7 +2235,7 @@ class OnboardingTutorialStep extends StatelessWidget {
                 children: <Widget>[
                   Row(
                     children: <Widget>[
-                      Icon(item.icon, size: 18, color: colors.onSurfaceVariant),
+                      FushiIcon(item.icon, size: 18, color: colors.onSurfaceVariant),
                       SizedBox(width: tokens.spacing.gap / 2),
                       Expanded(
                         child: Text(item.title, style: tokens.type.listTitle),
@@ -2330,7 +2331,7 @@ class OnboardingSampleSentenceCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.touch_app_outlined,
                 size: 18,
                 color: colors.onPrimaryContainer,

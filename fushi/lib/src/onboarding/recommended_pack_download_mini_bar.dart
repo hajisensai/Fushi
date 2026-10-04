@@ -10,6 +10,7 @@ import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 推荐包下载的**全局**常驻迷你条，挂在首页 shell 的内容区底部
 /// （`home_page.dart` 的 `_bodyWithMiniBar`，移动底栏 / 桌面 rail / macOS 三套布局
@@ -117,7 +118,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
                 ),
                 child: Row(
                   children: <Widget>[
-                    Icon(_icon, color: tokens.surfaces.onVariant),
+                    FushiIcon(_icon, color: tokens.surfaces.onVariant),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -147,7 +148,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
                     ..._actions,
                     // 收起**从不**动下载本身：这是「不想看」，不是「不想下」。
                     FushiIconButtonControl(
-                      icon: const Icon(Icons.close),
+                      icon: const FushiIcon(Icons.close),
                       tooltip: t.onboarding_pack_mini_bar_hide,
                       onPressed: controller.dismissMiniBar,
                     ),

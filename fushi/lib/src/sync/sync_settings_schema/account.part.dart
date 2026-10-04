@@ -114,7 +114,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       onPressed: _isLoading ? null : _signIn,
       icon: _isLoading
           ? SizedBox(width: 16, height: 16, child: progress)
-          : const Icon(Icons.login),
+          : const FushiIcon(Icons.login),
       label: Text(t.sync_sign_in),
     );
   }

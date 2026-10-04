@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:convert' show utf8;
@@ -7173,7 +7174,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       open();
     }
 
-    final Widget icon = Icon(Icons.more_horiz, size: _videoControlIconSize);
+    final Widget icon = FushiIcon(Icons.more_horiz, size: _videoControlIconSize);
     return FushiTooltip(
       message: MaterialLocalizations.of(context).showMenuTooltip,
       child: desktop
@@ -7293,11 +7294,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           message: t.video_bottom_prev_cue,
           child: desktop
               ? MaterialDesktopCustomButton(
-                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  icon: FushiIcon(Icons.skip_previous, size: _videoControlIconSize),
                   onPressed: () => _skipCueAndPokeControls(forward: false),
                 )
               : MaterialCustomButton(
-                  icon: Icon(Icons.skip_previous, size: _videoControlIconSize),
+                  icon: FushiIcon(Icons.skip_previous, size: _videoControlIconSize),
                   onPressed: () => _skipCueAndPokeControls(forward: false),
                 ),
         );
@@ -7306,11 +7307,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           message: t.video_bottom_next_cue,
           child: desktop
               ? MaterialDesktopCustomButton(
-                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  icon: FushiIcon(Icons.skip_next, size: _videoControlIconSize),
                   onPressed: () => _skipCueAndPokeControls(forward: true),
                 )
               : MaterialCustomButton(
-                  icon: Icon(Icons.skip_next, size: _videoControlIconSize),
+                  icon: FushiIcon(Icons.skip_next, size: _videoControlIconSize),
                   onPressed: () => _skipCueAndPokeControls(forward: true),
                 ),
         );
@@ -7377,7 +7378,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
     required VideoControlSlot slot,
   }) {
-    final Widget icon = Icon(
+    final Widget icon = FushiIcon(
       _videoControlItemIcon(item),
       size: _videoControlIconSize,
     );
@@ -7530,7 +7531,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         message: _videoControlItemTooltip(item),
         child: desktop
             ? MaterialDesktopCustomButton(
-                icon: Icon(
+                icon: FushiIcon(
                   _videoControlItemIcon(item),
                   size: _videoControlIconSize,
                 ),
@@ -7542,7 +7543,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
               )
             : MaterialCustomButton(
-                icon: Icon(
+                icon: FushiIcon(
                   _videoControlItemIcon(item),
                   size: _videoControlIconSize,
                 ),
@@ -7998,7 +7999,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: _videoControlIconSize * 0.82, color: color),
+              FushiIcon(icon, size: _videoControlIconSize * 0.82, color: color),
               SizedBox(width: 2 * _videoUiScale),
               Text(
                 label,
@@ -8042,7 +8043,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           customBorder: const CircleBorder(),
           child: Padding(
             padding: EdgeInsets.all(4 * _videoUiScale),
-            child: Icon(
+            child: FushiIcon(
               icon,
               size: _videoControlIconSize * 0.9,
               color: _videoChromeAccent(Theme.of(context).colorScheme),
@@ -8062,7 +8063,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final LayerLink? popoverLink = button == VideoControlButton.speed
         ? _controlPopoverLinkFor(slot, VideoControlItem.speed)
         : null;
-    final Widget icon = Icon(
+    final Widget icon = FushiIcon(
       _videoControlButtonIcon(button),
       size: _videoControlIconSize,
     );
@@ -8916,7 +8917,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return FushiListTileControl(
           dense: true,
           title: Text('${speed}x'),
-          trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
+          trailing: selected ? FushiIcon(Icons.check, color: cs.primary) : null,
           onTap: () => unawaited(_setSpeed(speed)),
         );
       },
@@ -9393,7 +9394,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.video_file_outlined, color: cs.error, size: 48),
+            FushiIcon(Icons.video_file_outlined, color: cs.error, size: 48),
             const SizedBox(height: 16),
             Text(
               t.video_resource_missing_message(title: title),
@@ -9562,7 +9563,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.error_outline, color: cs.error, size: 48),
+            FushiIcon(Icons.error_outline, color: cs.error, size: 48),
             const SizedBox(height: 16),
             Text(
               t.video_load_failed_title,
@@ -9595,7 +9596,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               children: <Widget>[
                 FushiFilledButton.tonalIcon(
                   onPressed: _retryLoad,
-                  icon: const Icon(Icons.refresh),
+                  icon: const FushiIcon(Icons.refresh),
                   label: Text(t.video_load_failed_retry),
                 ),
                 FushiTextButton(
@@ -9950,7 +9951,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         value: onSelected,
         child: Row(
           children: <Widget>[
-            Icon(icon, size: _videoControlIconSize),
+            FushiIcon(icon, size: _videoControlIconSize),
             const SizedBox(width: 12),
             Expanded(child: Text(label)),
           ],

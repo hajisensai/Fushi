@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 const Key videoVolumePopoverFrameKey =
     ValueKey<String>('video-volume-popover-frame');
@@ -77,7 +78,7 @@ class VideoVolumePopoverCard extends StatelessWidget {
                   FushiTooltip(
                     message: tooltip,
                     child: FushiIconButtonControl(
-                      icon: Icon(icon),
+                      icon: FushiIcon(icon),
                       iconSize: 20 * scale,
                       color: colorScheme.primary,
                       padding: EdgeInsets.zero,
@@ -200,7 +201,7 @@ class VideoLevelHudCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        Icon(
+                        FushiIcon(
                           icon,
                           color: textColor,
                           size: 20 * scale,

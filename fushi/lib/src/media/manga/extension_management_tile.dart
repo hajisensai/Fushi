@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -191,7 +192,7 @@ class ExtensionStoreGroupHeader extends StatelessWidget {
         leading: AnimatedRotation(
           turns: expanded ? 0.25 : 0,
           duration: const Duration(milliseconds: 150),
-          child: const Icon(Icons.chevron_right),
+          child: const FushiIcon(Icons.chevron_right),
         ),
         title: Text(label, style: theme.textTheme.titleSmall),
         subtitle: Text(t.mihon_store_extension_count(count: count)),
@@ -253,13 +254,13 @@ class MangaExtensionFilters extends StatelessWidget {
       key: ValueKey<String>('${keyPrefix}_search_field'),
       controller: searchController,
       decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.search),
+        prefixIcon: const FushiIcon(Icons.search),
         hintText: searchHint,
         border: const OutlineInputBorder(),
         suffixIcon: searchQuery.isEmpty
             ? null
             : FushiIconButtonControl(
-                icon: const Icon(Icons.close),
+                icon: const FushiIcon(Icons.close),
                 onPressed: onSearchCleared,
               ),
       ),
@@ -302,7 +303,7 @@ class _ExtensionIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     const Widget fallback = Center(
-      child: Icon(Icons.extension_outlined, size: 20),
+      child: FushiIcon(Icons.extension_outlined, size: 20),
     );
     return SizedBox.square(
       dimension: _size,

@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
@@ -416,7 +417,7 @@ class _MangaOcrSettingsSectionState
                   alignment: Alignment.centerLeft,
                   child: FushiTextButton.icon(
                     onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const Icon(Icons.link, size: 18),
+                    icon: const FushiIcon(Icons.link, size: 18),
                     label: Text(t.manga_ocr_import_copy_urls),
                   ),
                 ),
@@ -576,7 +577,7 @@ class _MangaOcrSettingsSectionState
               dimension: 16,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.drive_folder_upload_outlined, size: 18),
+          : const FushiIcon(Icons.drive_folder_upload_outlined, size: 18),
       label: Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import),
     );
   }
@@ -1122,7 +1123,7 @@ class _MangaOcrSettingsSectionState
               children: <Widget>[
                 FushiTextButton.icon(
                   onPressed: _importing ? null : _startDownload,
-                  icon: const Icon(Icons.download_outlined, size: 18),
+                  icon: const FushiIcon(Icons.download_outlined, size: 18),
                   label: Text(t.manga_ocr_download),
                 ),
                 _importButton(),
@@ -1235,7 +1236,7 @@ class _MangaOcrSettingsSectionState
                               'manga_ocr_accelerator_download',
                             ),
                             onPressed: _importing ? null : _startDownload,
-                            icon: const Icon(Icons.bolt_outlined, size: 18),
+                            icon: const FushiIcon(Icons.bolt_outlined, size: 18),
                             label: Text(
                               t.manga_ocr_accelerator_download(
                                 size: _formatBytes(
@@ -1253,7 +1254,7 @@ class _MangaOcrSettingsSectionState
                       children: <Widget>[
                         FushiFilledButton.icon(
                           onPressed: _importing ? null : _startDownload,
-                          icon: const Icon(Icons.download_outlined, size: 18),
+                          icon: const FushiIcon(Icons.download_outlined, size: 18),
                           // 「继续下载」不是新能力：下载器一直有 Range 续传。
                           // 文案分叉只是把已有能力说出来——用户取消或断网后看到
                           // 的若还是「下载模型」，就会以为那几百 MB 白下了。
@@ -1352,7 +1353,7 @@ class _MangaOcrSettingsSectionState
               height: 16,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.delete_outline, size: 18),
+          : const FushiIcon(Icons.delete_outline, size: 18),
       label: Text(t.manga_ocr_delete),
     );
   }
@@ -1383,7 +1384,7 @@ class _MangaOcrSettingsSectionState
                       height: 16,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.search_outlined, size: 18),
+                  : const FushiIcon(Icons.search_outlined, size: 18),
               label: Text(t.manga_ocr_external_detect),
             ),
             if (_probeResult != null) ...<Widget>[

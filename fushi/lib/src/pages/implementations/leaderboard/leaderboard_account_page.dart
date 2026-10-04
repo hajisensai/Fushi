@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -273,7 +274,7 @@ class _LeaderboardAccountPageState
       if (_devicesError != null) {
         return <Widget>[
           FushiListItem(
-            leading: const Icon(Icons.cloud_off_outlined),
+            leading: const FushiIcon(Icons.cloud_off_outlined),
             title: Text(leaderboardErrorText(_devicesError!)),
             subtitleMaxLines: 3,
             onTap: () => unawaited(_loadDevices()),
@@ -286,7 +287,7 @@ class _LeaderboardAccountPageState
       for (final LeaderboardDevice d in devices)
         FushiListItem(
           key: ValueKey<String>('leaderboard-device-${d.keyId}'),
-          leading: Icon(
+          leading: FushiIcon(
             d.current ? Icons.smartphone : Icons.devices_other_outlined,
           ),
           title: Text(
@@ -358,7 +359,7 @@ class _LeaderboardAccountPageState
                     ),
                     FushiOutlinedButton.icon(
                       onPressed: _busy ? null : () => unawaited(_pickAvatar()),
-                      icon: const Icon(Icons.image_outlined),
+                      icon: const FushiIcon(Icons.image_outlined),
                       label: Text(t.leaderboard_account_avatar),
                     ),
                   ],
@@ -437,13 +438,13 @@ class _LeaderboardAccountPageState
           ..._deviceRows(),
           LeaderboardSectionTitle(t.leaderboard_account_recovery),
           FushiListItem(
-            leading: const Icon(Icons.key_outlined),
+            leading: const FushiIcon(Icons.key_outlined),
             title: Text(t.leaderboard_recovery_export_title),
             subtitle: Text(t.leaderboard_recovery_export_hint),
             onTap: () => unawaited(_exportRecovery()),
           ),
           FushiListItem(
-            leading: const Icon(Icons.download_outlined),
+            leading: const FushiIcon(Icons.download_outlined),
             title: Text(t.leaderboard_recovery_import_title),
             subtitle: Text(t.leaderboard_recovery_import_message),
             onTap: () =>
@@ -451,14 +452,14 @@ class _LeaderboardAccountPageState
           ),
           LeaderboardSectionTitle(t.leaderboard_account_danger),
           FushiListItem(
-            leading: const Icon(Icons.logout),
+            leading: const FushiIcon(Icons.logout),
             title: Text(t.leaderboard_account_sign_out),
             subtitle: Text(t.leaderboard_account_sign_out_message),
             onTap: _busy ? null : () => unawaited(_signOut()),
           ),
           FushiListItem(
             key: const ValueKey<String>('leaderboard-account-delete'),
-            leading: Icon(Icons.delete_forever_outlined, color: colors.error),
+            leading: FushiIcon(Icons.delete_forever_outlined, color: colors.error),
             title: Text(
               t.leaderboard_account_delete,
               style: TextStyle(color: colors.error),

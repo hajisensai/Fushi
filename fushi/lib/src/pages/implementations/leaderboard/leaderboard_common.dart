@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
@@ -131,7 +132,7 @@ class LeaderboardPublicDataList extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(icon, size: 18),
+                FushiIcon(icon, size: 18),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(child: Text(item, style: tokens.type.listSubtitle)),
               ],
@@ -400,7 +401,7 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
     final Widget placeholder = ColoredBox(
       color: colors.secondaryContainer,
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           _kindIcon,
           size: width * 0.42,
           color: colors.onSecondaryContainer,
@@ -428,7 +429,7 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
             child: image,
           ),
           Center(
-            child: Icon(Icons.visibility_off_outlined, color: colors.onSurface),
+            child: FushiIcon(Icons.visibility_off_outlined, color: colors.onSurface),
           ),
         ],
       );
@@ -474,7 +475,7 @@ class LeaderboardLoadMore extends StatelessWidget {
             ? const FushiCircularProgressIndicator()
             : FushiOutlinedButton.icon(
                 onPressed: onLoadMore,
-                icon: const Icon(Icons.expand_more),
+                icon: const FushiIcon(Icons.expand_more),
                 label: Text(t.leaderboard_load_more),
               ),
       ),

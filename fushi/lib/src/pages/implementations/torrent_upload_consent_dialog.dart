@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -82,7 +83,7 @@ class _TorrentUploadConsentDialogState
   @override
   Widget build(BuildContext context) {
     return FushiAlertDialog(
-      icon: const Icon(Icons.upload_outlined),
+      icon: const FushiIcon(Icons.upload_outlined),
       title: Text(t.torrent_upload_intro_title),
       content: SingleChildScrollView(
         child: Column(

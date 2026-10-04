@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 按搜索词与日文筛选过滤系统字体。`supportsJapanese == null`（该平台判不出）
 /// 的字体不被日文筛选排除——判不出不等于不支持。
@@ -133,7 +134,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
             key: const ValueKey<String>('system-font-search'),
             controller: _searchController,
             hintText: t.custom_fonts_search_hint,
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const FushiIcon(Icons.search),
             contentPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
@@ -145,7 +146,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
             key: const ValueKey<String>('system-font-sample'),
             controller: _sampleController,
             hintText: t.font_preview_sample_text,
-            prefixIcon: const Icon(Icons.text_fields),
+            prefixIcon: const FushiIcon(Icons.text_fields),
             contentPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
@@ -211,7 +212,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                       )
                     : null,
                 trailing: added
-                    ? Icon(Icons.check, color: scheme.outline)
+                    ? FushiIcon(Icons.check, color: scheme.outline)
                     : FushiCheckbox(
                         value: selected,
                         onChanged: (_) => _toggle(font.family),
@@ -251,7 +252,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                             context,
                             List<String>.of(_selected),
                           ),
-                    icon: const Icon(Icons.add),
+                    icon: const FushiIcon(Icons.add),
                     label: Text(
                       t.custom_fonts_system_add_count(count: _selected.length),
                     ),

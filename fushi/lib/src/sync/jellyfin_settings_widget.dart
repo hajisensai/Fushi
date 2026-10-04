@@ -23,6 +23,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/settings/settings_context.dart';
@@ -546,10 +547,10 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         FushiListItem(
-          leading: const Icon(Icons.dns_outlined),
+          leading: const FushiIcon(Icons.dns_outlined),
           title: Text(serverLabel),
           subtitle: Text(config.username),
-          trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          trailing: FushiIcon(expanded ? Icons.expand_less : Icons.expand_more),
           onTap: () => setState(() {
             if (!_expanded.remove(id)) _expanded.add(id);
           }),

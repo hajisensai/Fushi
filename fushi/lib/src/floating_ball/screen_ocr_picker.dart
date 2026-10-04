@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一次点选的结果：哪一行、行内第几个 UTF-16 码元、被点字符的框（逻辑像素）。
@@ -242,7 +243,7 @@ class ScreenOcrPickerPage extends StatelessWidget {
                               tooltip: MaterialLocalizations.of(
                                 context,
                               ).closeButtonTooltip,
-                              icon: const Icon(Icons.close),
+                              icon: const FushiIcon(Icons.close),
                               onPressed: () => Navigator.of(context).maybePop(),
                             ),
                             Padding(

@@ -35,15 +35,12 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
-        GlassCard,
         GlassChip,
         GlassContainer,
-        GlassDivider,
-        GlassListTile,
         GlassMenu,
         GlassMenuController,
         GlassMenuDivider,
@@ -118,9 +115,9 @@ class FushiGlassBackdrop extends StatelessWidget {
   }
 }
 
-/// 玻璃下的按压 / 焦点高亮层：给没有自带交互外观的玻璃行（设置行、列表行）
-/// 一个与 [GlassListTile] 同口径的按下变暗反馈（亮色压黑 8%，暗色提白 8%）。
-/// 只旁观指针，不进手势竞技场。
+/// 玻璃设计系统下的按压高亮层：给没有自带交互外观的实色行（设置行、分组
+/// 折叠头、可点卡片）一个 iOS 单元格口径的按下反馈——systemFill 灰底（不是
+/// MD3 的墨水涟漪）。只旁观指针，不进手势竞技场。
 class FushiGlassPressHighlight extends StatefulWidget {
   const FushiGlassPressHighlight({
     required this.child,
@@ -146,7 +143,7 @@ class _FushiGlassPressHighlightState extends State<FushiGlassPressHighlight> {
 
   @override
   Widget build(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color pressedColor = appleColorsOf(context).fill;
     return Listener(
       onPointerDown: (_) => _set(true),
       onPointerUp: (_) => _set(false),
@@ -155,9 +152,7 @@ class _FushiGlassPressHighlightState extends State<FushiGlassPressHighlight> {
         duration: _pressed ? Duration.zero : const Duration(milliseconds: 150),
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
-          color: _pressed
-              ? (dark ? Colors.white : Colors.black).withValues(alpha: 0.08)
-              : Colors.transparent,
+          color: _pressed ? pressedColor : Colors.transparent,
           borderRadius: widget.borderRadius,
         ),
         child: widget.child,
@@ -230,7 +225,7 @@ class _FushiCardState extends State<FushiCard> {
       child: widget.child,
     );
     final Widget card = isGlassDesign(context)
-        ? _buildGlassCard(context, content, radius)
+        ? _buildGlassCard(context, content)
         : ContextMenuTrigger(
             // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
             // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
@@ -288,33 +283,20 @@ class _FushiCardState extends State<FushiCard> {
     );
   }
 
-  /// 玻璃设计系统：卡片面换成 [GlassCard]（选中 / 显式底色作玻璃着色），点击
-  /// 走 GestureDetector + 玻璃按压高亮。焦点（外层 Actions + FushiFocusTarget）、
-  /// 右键菜单、按压下沉与 margin 和 MD3 分支同一套，调用点的 key / focusId 不变。
-  Widget _buildGlassCard(
-    BuildContext context,
-    Widget content,
-    BorderRadius radius,
-  ) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color? tint =
-        widget.selected ? colors.primaryContainer : widget.color;
+  /// 玻璃设计系统：Apple 26 的内容层卡片是**实色**而不是玻璃——底色
+  /// secondarySystemGroupedBackground（调用点显式 color 优先）、连续曲率圆角
+  /// （iOS ≈ 24 / 桌面 12，调用点显式 borderRadius 优先）、无描边无阴影。选中态
+  /// 是强调色 1.5px 细描边（不是 MD3 的 tonal 色块）；按下是 systemFill 高亮。
+  /// 焦点（外层 Actions + FushiFocusTarget）、右键菜单、按压下沉与 margin 和
+  /// MD3 分支同一套，调用点的 key / focusId 不变。
+  Widget _buildGlassCard(BuildContext context, Widget content) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final BorderRadius radius = widget.borderRadius ??
+        FushiAppleMetrics.of(context).groupBorderRadius;
     final bool interactive = widget.onTap != null ||
         widget.onLongPress != null ||
         widget.onSecondaryTap != null;
     Widget body = content;
-    if (widget.borderColor != null || widget.selected) {
-      body = DecoratedBox(
-        position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          border: Border.all(
-            color: widget.borderColor ?? colors.primary.withValues(alpha: 0.5),
-          ),
-        ),
-        child: body,
-      );
-    }
     if (interactive) {
       body = GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -323,22 +305,29 @@ class _FushiCardState extends State<FushiCard> {
         child: FushiGlassPressHighlight(borderRadius: radius, child: body),
       );
     }
+    // 描边层恒在（只换颜色）：按选中态增删这一层会让卡片内容整棵重挂。
+    body = DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: widget.borderColor ??
+              (widget.selected ? apple.accent : Colors.transparent),
+          width: widget.borderColor == null ? 1.5 : 1,
+        ),
+      ),
+      child: body,
+    );
     return ContextMenuTrigger(
       onInvoke: contextMenuInvoker(widget.onSecondaryTap),
       child: Padding(
         padding: widget.margin ?? EdgeInsets.zero,
         child: FushiPressScale(
           enabled: widget.onTap != null || widget.onLongPress != null,
-          child: GlassCard(
-            padding: EdgeInsets.zero,
-            shape: fushiGlassShapeOf(radius),
-            quality: fushiGlassQuality(context),
-            settings:
-                tint == null ? null : fushiGlassSettings(context, tint: tint),
-            clipBehavior: Clip.antiAlias,
-            // 卡片内的子组件（行内 InkWell 等）仍要一个画墨水的 Material 祖先，
-            // 否则涟漪画在玻璃之下的 Scaffold 上、看不见。
-            child: Material(type: MaterialType.transparency, child: body),
+          child: FushiAppleGroupSurface(
+            color: widget.color,
+            borderRadius: radius,
+            child: body,
           ),
         ),
       ),
@@ -508,7 +497,7 @@ class _FushiListItemState extends State<FushiListItem> {
     final BorderRadius? highlightRadius =
         pill ? tokens.radii.groupRadius : null;
     if (isGlassDesign(context)) {
-      return _wrapFocus(context, _buildGlassTile(context, content, pill));
+      return _wrapFocus(context, _buildGlassTile(context, pill));
     }
     // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
     // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
@@ -581,36 +570,105 @@ class _FushiListItemState extends State<FushiListItem> {
     return target;
   }
 
-  /// 玻璃设计系统：行换成 [GlassListTile]（玻璃按压 / 焦点高亮 + 按钮语义），
-  /// 行内布局沿用 MD3 同一份 [content]（标题行数、leading 宽度、minHeight 等
-  /// 调用点契约不变），选中态是一层 primary 着色的半透明底。
-  Widget _buildGlassTile(BuildContext context, Widget content, bool pill) {
+  /// 玻璃设计系统：iOS inset grouped 的**实色行**（[FushiAppleRow]，不是玻璃）。
+  /// 最小高 44（桌面 38；compact 密度再收 4）、左右 16、标题 17 label /
+  /// 副标题 15 secondaryLabel（桌面 15 / 13）、行首图标强调色、行尾附件
+  /// secondaryLabel。选中 = secondaryFill 灰底 + 标题加粗（Apple 的中性选中，
+  /// 不是 MD3 tonal 色块），按下 = systemFill。标题行数、minHeight、padding
+  /// 等调用点契约与 MD3 同。
+  ///
+  /// 焦点：有 FushiFocusRoot 时由 [_wrapFocus] 的焦点目标负责 Tab / Enter，行
+  /// 自身不再是停靠点（一行一个停靠点）；没有焦点根时行自己可 Tab、Enter 激活。
+  Widget _buildGlassTile(BuildContext context, bool pill) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final BorderRadius radius =
-        pill ? tokens.radii.groupRadius : BorderRadius.zero;
-    final Widget tile = GlassListTile(
-      title: content,
-      contentPadding: EdgeInsets.zero,
-      titleStyle: tokens.type.listTitle.copyWith(
-        color: tokens.surfaces.onSurface,
+    final FushiAppleColors apple = appleColorsOf(context);
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final bool compact = widget.density == FushiListDensity.compact;
+    final TextStyle titleStyle = metrics.titleStyle(context).copyWith(
+          fontSize: compact ? metrics.titleSize - 2 : null,
+          fontWeight: widget.selected ? FontWeight.w600 : null,
+        );
+    final TextStyle subtitleStyle = metrics.subtitleStyle(context).copyWith(
+          fontSize: compact ? metrics.subtitleSize - 2 : null,
+        );
+    final double minHeight = widget.minHeight ??
+        (compact ? metrics.rowMinHeight - 4 : metrics.rowMinHeight);
+    final Widget content = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: Padding(
+        padding: widget.padding ??
+            EdgeInsets.symmetric(
+              horizontal: metrics.rowHorizontal,
+              vertical: compact ? metrics.rowVertical - 2 : metrics.rowVertical,
+            ),
+        child: Row(
+          children: <Widget>[
+            if (widget.leading != null) ...<Widget>[
+              IconTheme.merge(
+                data: IconThemeData(
+                  color: apple.accent,
+                  size: metrics.leadingIconSize,
+                ),
+                child: widget.leading!,
+              ),
+              SizedBox(width: metrics.leadingGap),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  DefaultTextStyle.merge(
+                    style: titleStyle,
+                    maxLines: widget.titleMaxLines,
+                    // 不限行时不能带 ellipsis（同 MD3 分支的说明）。
+                    overflow: widget.titleMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
+                    child: widget.title,
+                  ),
+                  if (widget.subtitle != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: DefaultTextStyle.merge(
+                        style: subtitleStyle,
+                        maxLines: widget.subtitleMaxLines,
+                        overflow: TextOverflow.ellipsis,
+                        child: widget.subtitle!,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (widget.trailing != null) ...<Widget>[
+              const SizedBox(width: 8),
+              DefaultTextStyle.merge(
+                style: subtitleStyle,
+                child: IconTheme.merge(
+                  data: IconThemeData(color: apple.secondaryLabel),
+                  child: widget.trailing!,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
-      onTap: widget.onTap,
     );
-    return AnimatedContainer(
-      duration: fushiMd3StateDuration,
-      curve: fushiMd3StateCurve,
-      margin: pill
+    final BorderRadius radius = pill
+        ? BorderRadius.circular(metrics.desktop ? 8 : 12)
+        : BorderRadius.zero;
+    return Padding(
+      padding: pill
           ? EdgeInsets.symmetric(horizontal: tokens.spacing.gap)
           : EdgeInsets.zero,
-      decoration: BoxDecoration(
-        color: widget.selected
-            ? colors.primary.withValues(alpha: 0.14)
-            : Colors.transparent,
+      child: FushiAppleRow(
+        onTap: widget.onTap,
+        selected: widget.selected,
+        focusable: FushiFocusRoot.maybeControllerOf(context) == null,
+        autofocus: widget.autofocus,
         borderRadius: radius,
+        child: content,
       ),
-      clipBehavior: pill ? Clip.antiAlias : Clip.none,
-      child: tile,
     );
   }
 }
@@ -712,7 +770,7 @@ class FushiSearchField extends StatelessWidget {
             height: kFushiSearchFieldHeight,
             quality: fushiGlassQuality(context),
             prefixIcon:
-                const Icon(Icons.search, size: kFushiSearchFieldIconSize),
+                const FushiIcon(Icons.search, size: kFushiSearchFieldIconSize),
             suffixIcon: trailing.isEmpty
                 ? null
                 : Row(mainAxisSize: MainAxisSize.min, children: trailing),
@@ -780,7 +838,7 @@ class FushiSearchField extends StatelessWidget {
                 isDense: true,
                 hintText: hintText,
                 hintStyle: tokens.type.listSubtitle,
-                prefixIcon: const Icon(
+                prefixIcon: const FushiIcon(
                   Icons.search,
                   size: kFushiSearchFieldIconSize,
                 ),
@@ -1197,9 +1255,9 @@ class FushiSelectableChip extends StatelessWidget {
         : (avatar ??
             (leadingIcon == null
                 ? null
-                : Icon(leadingIcon, size: 18, color: foreground)));
+                : FushiIcon(leadingIcon, size: 18, color: foreground)));
     final Widget labelWidget = effectiveIconOnly
-        ? Icon(leadingIcon, size: 18, color: foreground)
+        ? FushiIcon(leadingIcon, size: 18, color: foreground)
         : Text(
             label,
             maxLines: 1,
@@ -1216,11 +1274,11 @@ class FushiSelectableChip extends StatelessWidget {
       final Widget glassChip = GlassChip(
         label: effectiveIconOnly ? '' : label,
         icon: effectiveIconOnly
-            ? Icon(leadingIcon, size: 18, color: glassForeground)
+            ? FushiIcon(leadingIcon, size: 18, color: glassForeground)
             : (avatar ??
                 (leadingIcon == null
                     ? null
-                    : Icon(leadingIcon, size: 18, color: glassForeground))),
+                    : FushiIcon(leadingIcon, size: 18, color: glassForeground))),
         iconSize: 18,
         spacing: effectiveIconOnly ? 0 : 6,
         selected: selected,
@@ -1311,7 +1369,7 @@ class FushiActionChip extends StatelessWidget {
         context,
         GlassChip(
           label: label,
-          icon: Icon(icon, size: 18, color: colors.primary),
+          icon: FushiIcon(icon, size: 18, color: colors.primary),
           iconSize: 18,
           labelStyle: tokens.type.controlLabel.copyWith(color: colors.primary),
           quality: fushiGlassQuality(context),
@@ -1329,7 +1387,7 @@ class FushiActionChip extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      icon: Icon(icon, size: 18),
+      icon: FushiIcon(icon, size: 18),
       label: Text(
         label,
         maxLines: 1,
@@ -1468,7 +1526,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
         InkWell(
           borderRadius: tokens.radii.chipRadius,
           onTap: widget.onDeleted,
-          child: Icon(
+          child: FushiIcon(
             Icons.close,
             size: 14,
             color: foreground,
@@ -1574,7 +1632,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
       labelStyle: labelStyle,
       padding:
           EdgeInsets.symmetric(horizontal: tokens.spacing.gap, vertical: 4),
-      deleteIcon: Icon(Icons.close, size: 14, color: foreground),
+      deleteIcon: FushiIcon(Icons.close, size: 14, color: foreground),
       deleteIconSize: 14,
       quality: fushiGlassQuality(context),
       semanticLabel: widget.label,
@@ -1649,7 +1707,7 @@ class FushiBadge extends StatelessWidget {
           tint: background ?? colors.primaryContainer,
         ),
         padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: size,
           color: foreground ?? colors.onPrimaryContainer,
@@ -1662,7 +1720,7 @@ class FushiBadge extends StatelessWidget {
         color: background ?? colors.primaryContainer,
         borderRadius: tokens.radii.chipRadius,
       ),
-      child: Icon(
+      child: FushiIcon(
         icon,
         size: size,
         color: foreground ?? colors.onPrimaryContainer,
@@ -1705,11 +1763,7 @@ class FushiModalSheetFrame extends StatelessWidget {
       _buildBody(tokens),
       if (footer != null) ...<Widget>[
         if (glassDesign)
-          GlassDivider(
-            height: 1,
-            thickness: 1,
-            color: tokens.surfaces.outline.withValues(alpha: 0.4),
-          )
+          const FushiDividerControl(height: 1)
         else
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
         Padding(
@@ -1794,7 +1848,7 @@ class FushiModalSheetFrame extends StatelessWidget {
                   tint: colors.primaryContainer,
                 ),
                 padding: EdgeInsets.all(tokens.spacing.gap),
-                child: Icon(
+                child: FushiIcon(
                   leadingIcon,
                   color: colors.onPrimaryContainer,
                   size: 20,
@@ -1807,7 +1861,7 @@ class FushiModalSheetFrame extends StatelessWidget {
                   color: colors.primaryContainer,
                   borderRadius: tokens.radii.controlRadius,
                 ),
-                child: Icon(
+                child: FushiIcon(
                   leadingIcon,
                   color: colors.onPrimaryContainer,
                   size: 20,
@@ -1893,7 +1947,7 @@ List<Widget> narrowAwareAppBarActions({
       for (final FushiAppBarAction action in collapsible)
         IconButton(
           tooltip: action.label,
-          icon: Icon(action.icon),
+          icon: FushiIcon(action.icon),
           onPressed: action.onPressed,
         ),
     ];
@@ -1902,7 +1956,7 @@ List<Widget> narrowAwareAppBarActions({
     ...alwaysVisible,
     PopupMenuButton<int>(
       tooltip: t.common_more_actions,
-      icon: const Icon(Icons.more_vert),
+      icon: const FushiIcon(Icons.more_vert),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         for (int i = 0; i < collapsible.length; i++)
           PopupMenuItem<int>(
@@ -1910,7 +1964,7 @@ List<Widget> narrowAwareAppBarActions({
             enabled: collapsible[i].onPressed != null,
             child: Row(
               children: <Widget>[
-                Icon(collapsible[i].icon, size: 20),
+                FushiIcon(collapsible[i].icon, size: 20),
                 const SizedBox(width: 12),
                 Expanded(child: Text(collapsible[i].label)),
               ],
@@ -2063,7 +2117,7 @@ class FushiColorSwatch extends StatelessWidget {
     );
     final Color foreground = _swatchForegroundFor(color);
     final Widget? swatchOverlay =
-        selected ? Icon(Icons.check, color: foreground, size: 20) : overlay;
+        selected ? FushiIcon(Icons.check, color: foreground, size: 20) : overlay;
     final Widget swatch = SizedBox(
       width: resolvedWidth,
       height: resolvedHeight,
@@ -2300,7 +2354,7 @@ class FushiSchemeSwatch extends StatelessWidget {
       width: selected ? 3 : 1,
     );
     final Widget? badgeChild =
-        selected ? const Icon(Icons.check, size: 10) : overlay;
+        selected ? const FushiIcon(Icons.check, size: 10) : overlay;
     // TODO-138: every swatch — including system (= auto) and custom (= palette) —
     // now shows the FULL diagonal preview (「文」 glyph + accent dot). The badge is
     // no longer a centred disc that hid that preview; it is a small corner marker
@@ -2817,7 +2871,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
             enabled: action.enabled && action.onTap != null,
             child: Row(
               children: <Widget>[
-                Icon(action.icon, size: 20),
+                FushiIcon(action.icon, size: 20),
                 const SizedBox(width: 12),
                 Expanded(child: Text(action.label ?? action.tooltip)),
               ],
@@ -3373,7 +3427,7 @@ class FushiFilePickerRow extends StatelessWidget {
     return FushiListItem(
       onTap: enabled ? onTap : null,
       minHeight: 60,
-      leading: Icon(icon, size: 22, color: foreground),
+      leading: FushiIcon(icon, size: 22, color: foreground),
       title: Text(title),
       subtitle: subtitle == null || subtitle!.isEmpty ? null : Text(subtitle!),
       trailing: actions.isEmpty
@@ -3453,11 +3507,11 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
       result.add(
         GlassMenuItem(
           title: label,
-          icon: icon == null ? null : Icon(icon, size: 20, color: color),
+          icon: icon == null ? null : FushiIcon(icon, size: 20, color: color),
           titleStyle: color == null ? null : TextStyle(color: color),
           isSelected: selected,
           enabled: item.enabled,
-          trailing: selected ? const Icon(Icons.check, size: 18) : null,
+          trailing: selected ? const FushiIcon(Icons.check, size: 18) : null,
           onTap: () {
             item.onTap?.call();
             if (value != null) widget.onSelected(value);
@@ -3480,7 +3534,7 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
             Padding(
               padding: widget.padding,
               child: widget.iconWidget ??
-                  Icon(widget.icon, size: widget.iconSize ?? 24),
+                  FushiIcon(widget.icon, size: widget.iconSize ?? 24),
             );
         final Widget tappable = GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -3524,7 +3578,7 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
       key: _menuKey,
       tooltip: widget.tooltip,
       icon: widget.child == null
-          ? widget.iconWidget ?? Icon(widget.icon, size: widget.iconSize)
+          ? widget.iconWidget ?? FushiIcon(widget.icon, size: widget.iconSize)
           : null,
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
       color: tokens.surfaces.overlay,
@@ -3654,7 +3708,7 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
       child: Row(
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            Icon(icon, size: 20, color: foreground),
+            FushiIcon(icon, size: 20, color: foreground),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
           Expanded(
@@ -3667,7 +3721,7 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
           ),
           if (selected) ...<Widget>[
             SizedBox(width: tokens.spacing.gap + 4),
-            Icon(Icons.check, size: 20, color: foreground),
+            FushiIcon(Icons.check, size: 20, color: foreground),
           ],
         ],
       ),
@@ -4014,7 +4068,7 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
                       message: t.log_copy_all,
                       child: FilledButton.tonalIcon(
                         onPressed: _copyAllToClipboard,
-                        icon: const Icon(Icons.copy_all_outlined, size: 18),
+                        icon: const FushiIcon(Icons.copy_all_outlined, size: 18),
                         label: Text(t.log_copy_all),
                       ),
                     ),

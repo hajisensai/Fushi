@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
@@ -481,7 +482,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                 controller: _magnetController,
                 decoration: InputDecoration(
                   labelText: t.anime_download_generic_hint,
-                  prefixIcon: const Icon(Icons.link),
+                  prefixIcon: const FushiIcon(Icons.link),
                 ),
                 maxLines: 1,
                 keyboardType: TextInputType.url,
@@ -493,7 +494,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                   FushiOutlinedButton.icon(
                     key: const ValueKey<String>('manual-task-pick-torrent'),
                     onPressed: _submitting ? null : _pickTorrentFile,
-                    icon: const Icon(Icons.file_open_outlined, size: 18),
+                    icon: const FushiIcon(Icons.file_open_outlined, size: 18),
                     label: Text(t.download_task_add_pick_torrent),
                   ),
                   SizedBox(width: tokens.spacing.gap),
@@ -664,7 +665,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                   dimension: 16,
                   child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.add),
+              : const FushiIcon(Icons.add),
           label: Text(t.download_task_add),
         ),
       ],

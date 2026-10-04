@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -213,14 +214,14 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                       children: [
                         FushiIconButtonControl(
                           tooltip: t.anki_mined_action_overwrite,
-                          icon: const Icon(Icons.edit_outlined),
+                          icon: const FushiIcon(Icons.edit_outlined),
                           onPressed: _busy
                               ? null
                               : () => _runOverwrite(note.noteId),
                         ),
                         FushiIconButtonControl(
                           tooltip: t.anki_mined_action_view,
-                          icon: const Icon(Icons.open_in_new),
+                          icon: const FushiIcon(Icons.open_in_new),
                           onPressed: _busy
                               ? null
                               : () => _viewNote(note.noteId),
@@ -251,7 +252,7 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
         ),
         FushiFilledButton.tonalIcon(
           onPressed: _busy ? null : _runMineNew,
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(Icons.add),
           label: Text(t.anki_mined_action_add_duplicate),
         ),
       ],
@@ -374,7 +375,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
             FushiIconButtonControl(
               onPressed: _busy ? null : widget.onBack,
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              icon: const Icon(Icons.arrow_back),
+              icon: const FushiIcon(Icons.arrow_back),
             ),
           Expanded(child: Text(t.anki_note_viewer_title)),
         ],
@@ -685,14 +686,14 @@ class _UnverifiedMinedCardDialogState
             FushiListTileControl(
               key: const ValueKey<String>('anki-mined-unverified-add'),
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.add),
+              leading: const FushiIcon(Icons.add),
               title: Text(t.anki_mined_action_add_duplicate),
               onTap: _busy ? null : _runMineNew,
             ),
             FushiListTileControl(
               key: const ValueKey<String>('anki-mined-unverified-forget'),
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.delete_outline),
+              leading: const FushiIcon(Icons.delete_outline),
               title: Text(t.anki_mined_action_forget),
               onTap: _busy ? null : _runForget,
             ),

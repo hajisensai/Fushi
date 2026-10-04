@@ -670,7 +670,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                         child: adaptiveIndicator(
                             context: context, strokeWidth: 2),
                       )
-                    : const Icon(Icons.add, size: 18),
+                    : const FushiIcon(Icons.add, size: 18),
                 label:
                     Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
               ),
@@ -681,21 +681,21 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                   onPressed: (lockedByServer || _pairingManual)
                       ? null
                       : () => _pairFromLink(scan: true),
-                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  icon: const FushiIcon(Icons.qr_code_scanner, size: 18),
                   label: Text(t.sync_pair_scan),
                 ),
               FushiTextButton.icon(
                 onPressed: (lockedByServer || _pairingManual)
                     ? null
                     : () => _pairFromLink(scan: false),
-                icon: const Icon(Icons.link, size: 18),
+                icon: const FushiIcon(Icons.link, size: 18),
                 label: Text(t.sync_pair_link_paste),
               ),
               if (interconnectPairNfcWriteSupported &&
                   _urls.any((FushiClientUrl u) => u.hostId != null))
                 FushiTextButton.icon(
                   onPressed: _writeNfcSticker,
-                  icon: const Icon(Icons.nfc, size: 18),
+                  icon: const FushiIcon(Icons.nfc, size: 18),
                   label: Text(t.sync_pair_nfc_write),
                 ),
             ],
@@ -712,7 +712,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: <Widget>[
-                  Icon(Icons.check_circle_outline,
+                  FushiIcon(Icons.check_circle_outline,
                       size: 18, color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
                   Text(
@@ -1370,7 +1370,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 child: FushiTextButton.icon(
                   onPressed: () =>
                       showInterconnectPairQrDialog(context, _serverController),
-                  icon: const Icon(Icons.qr_code_2, size: 18),
+                  icon: const FushiIcon(Icons.qr_code_2, size: 18),
                   label: Text(t.sync_pair_qr_show),
                 ),
               ),
@@ -1445,12 +1445,12 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                       _showSnackBar(context, t.sync_server_copy_token);
                     }
                   },
-                  icon: const Icon(Icons.copy, size: 18),
+                  icon: const FushiIcon(Icons.copy, size: 18),
                   label: Text(t.sync_server_copy_token),
                 ),
                 FushiTextButton.icon(
                   onPressed: _regenerateToken,
-                  icon: const Icon(Icons.refresh, size: 18),
+                  icon: const FushiIcon(Icons.refresh, size: 18),
                   label: Text(t.sync_server_regenerate_token),
                 ),
               ],
@@ -1810,7 +1810,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
                 style: Theme.of(context).textTheme.bodySmall),
           for (final FushiDevice device in _devices)
             FushiListItem(
-              leading: const Icon(Icons.devices_outlined, size: 20),
+              leading: const FushiIcon(Icons.devices_outlined, size: 20),
               // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
               titleMaxLines: 2,
               title: Text(device.name),

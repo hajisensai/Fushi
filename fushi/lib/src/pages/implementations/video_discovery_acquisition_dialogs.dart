@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
@@ -1042,7 +1043,7 @@ class _VideoResourceSearchSurfaceState
                     controller: _queryController,
                     decoration: InputDecoration(
                       hintText: t.video_discovery_search_hint,
-                      prefixIcon: const Icon(Icons.search_rounded),
+                      prefixIcon: const FushiIcon(Icons.search_rounded),
                     ),
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => unawaited(_search()),
@@ -1052,7 +1053,7 @@ class _VideoResourceSearchSurfaceState
                 FushiIconButtonControl.filledTonal(
                   tooltip: t.dialog_search,
                   onPressed: _loading ? null : () => unawaited(_search()),
-                  icon: const Icon(Icons.search_rounded),
+                  icon: const FushiIcon(Icons.search_rounded),
                 ),
               ],
             ),
@@ -1092,7 +1093,7 @@ class _VideoResourceSearchSurfaceState
                   controller: _queryController,
                   decoration: InputDecoration(
                     hintText: t.video_discovery_search_hint,
-                    prefixIcon: const Icon(Icons.search_rounded),
+                    prefixIcon: const FushiIcon(Icons.search_rounded),
                   ),
                   textInputAction: TextInputAction.search,
                   onChanged: (_) => _invalidateManualSearch(),
@@ -1113,7 +1114,7 @@ class _VideoResourceSearchSurfaceState
                             onPressed: _loading || !_manualIdentityReady
                                 ? null
                                 : () => unawaited(_search()),
-                            icon: const Icon(Icons.search_rounded),
+                            icon: const FushiIcon(Icons.search_rounded),
                           ),
                         ],
                       ),
@@ -1131,7 +1132,7 @@ class _VideoResourceSearchSurfaceState
                       onPressed: _loading || !_manualIdentityReady
                           ? null
                           : () => unawaited(_search()),
-                      icon: const Icon(Icons.search_rounded),
+                      icon: const FushiIcon(Icons.search_rounded),
                     ),
                   ],
                 );
@@ -1280,7 +1281,7 @@ class _VideoResourceSearchSurfaceState
                         dimension: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(widget.subscription
+                    : FushiIcon(widget.subscription
                         ? Icons.favorite_border_rounded
                         : Icons.download_rounded),
                 label: Text(
@@ -1437,7 +1438,7 @@ class _VideoResourceSearchSurfaceState
           // 下载模式给勾选框（可多选整季分集）；订阅模式仍是单选，摆勾选框会
           // 让人以为能订阅一批。
           leading: widget.subscription
-              ? Icon(candidate.trusted
+              ? FushiIcon(candidate.trusted
                   ? Icons.verified_rounded
                   : Icons.cloud_download_outlined)
               : FushiCheckbox(
@@ -1887,7 +1888,7 @@ class _VideoDiscoverySubtitleSearchDialogState
             FushiOutlinedButton.icon(
               key: const ValueKey<String>('video-subtitle-pick-target'),
               onPressed: _installing ? null : () => unawaited(_pickTarget()),
-              icon: const Icon(Icons.folder_open_outlined),
+              icon: const FushiIcon(Icons.folder_open_outlined),
               label: Text(
                 _selectedPath == null
                     ? t.dialog_select
@@ -1922,7 +1923,7 @@ class _VideoDiscoverySubtitleSearchDialogState
                         dimension: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.subtitles_outlined),
+                    : const FushiIcon(Icons.subtitles_outlined),
                 label: Text(t.dialog_save),
               ),
             ],
@@ -2000,7 +2001,7 @@ class _VideoDiscoverySubtitleSearchDialogState
               ? FushiListDensity.standard
               : FushiListDensity.compact,
           selected: identical(_selected, candidate),
-          leading: const Icon(Icons.subtitles_outlined),
+          leading: const FushiIcon(Icons.subtitles_outlined),
           onTap: () => setState(() => _selected = candidate),
         );
       },
@@ -2078,7 +2079,7 @@ class VideoResourceSourceStatusList extends StatelessWidget {
                 'video-resource-source-status-${report.providerId}',
               ),
               children: <Widget>[
-                Icon(
+                FushiIcon(
                   report.failed
                       ? Icons.error_outline_rounded
                       : report.skipped
@@ -2118,7 +2119,7 @@ class _ProviderWarning extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             error ? Icons.error_outline_rounded : Icons.warning_amber_rounded,
             color: error ? colors.error : colors.tertiary,
           ),
@@ -2154,7 +2155,7 @@ class _NoProviderEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+            FushiIcon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
             SizedBox(height: tokens.spacing.gap),
             Text(title, style: theme.textTheme.titleSmall),
             SizedBox(height: tokens.spacing.gap / 2),

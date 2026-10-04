@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// TODO-1154：长按倍速跟随徽章。视频画面长按临时加速时，在指针（手指/光标）上方弹一枚
 /// 「Nx」圆角气泡并跟手移动（B 站/YouTube 长按倍速观感），取代旧的钉死左上角 OSD。
@@ -46,7 +47,7 @@ class VideoLongPressSpeedBadge extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(Icons.fast_forward, size: 18, color: textColor),
+                FushiIcon(Icons.fast_forward, size: 18, color: textColor),
                 const SizedBox(width: 6),
                 Text(
                   '${speed.toStringAsFixed(1)}x',

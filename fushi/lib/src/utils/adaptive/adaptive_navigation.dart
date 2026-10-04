@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,9 +13,12 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassAppBar, GlassContainer, LiquidRoundedRectangle;
+    show GlassContainer, LiquidRoundedSuperellipse;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 class AdaptiveNavItem {
   final IconData icon;
@@ -75,6 +80,38 @@ const double kAdaptiveNavBarContentHeight = 64;
 /// A 52dp destination plus twice this is [kAdaptiveNavBarContentHeight].
 const double kAdaptiveNavBarContentPadding = 6;
 
+/// 「玻璃」设计系统（iOS 26）悬浮标签栏胶囊的高度（apple_music 演示 64、
+/// 系统 UITabBar 实测 62）。
+const double kGlassNavBarCapsuleHeight = 62;
+
+/// 胶囊离屏幕左右边的距离。
+const double kGlassNavBarSideMargin = 16;
+
+/// 胶囊上沿与内容之间的缝。
+const double _kGlassNavBarTopGap = 4;
+
+/// 胶囊内沿到选中气泡的内边距。
+const double _kGlassNavBarInnerPadding = 4;
+
+/// 胶囊离屏幕底边的距离。iOS 26 的标签栏浮在 home indicator 之上、并不让出
+/// 整条手势区（演示同样忽略 safe area），所以只吃掉手势区的一部分，最少 16。
+double _glassNavBarBottomMargin(BuildContext context) =>
+    math.max(16, MediaQuery.paddingOf(context).bottom - 12);
+
+/// 「玻璃」设计系统（macOS 26）展开态悬浮侧栏占的总宽（含四周 8 的悬浮边距）。
+/// 窄窗口（medium 尺寸档）收成只有图标的窄条，总宽回到 [kAdaptiveNavRailWidth]。
+const double kGlassNavSidebarWidth = 224;
+
+/// 悬浮侧栏离窗口左 / 上 / 下边的距离。
+const double _kGlassSidebarMargin = 8;
+
+/// 悬浮侧栏面板的圆角（macOS 26 Finder / 设置侧栏实测 ≈ 20）。
+const double _kGlassSidebarRadius = 20;
+
+/// 侧栏行 / 选中填充的圆角与行高（macOS 26 源列表：行高 32–36、圆角 8–10）。
+const double _kGlassSidebarRowRadius = 9;
+const double _kGlassSidebarRowHeight = 34;
+
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -95,7 +132,7 @@ Widget adaptiveBottomBar({
         onTap: onTap,
         items: items
             .map((AdaptiveNavItem e) => BottomNavigationBarItem(
-                  icon: _maybeBadge(item: e, child: Icon(e.icon)),
+                  icon: _maybeBadge(item: e, child: FushiIcon(e.icon)),
                   label: e.label,
                 ))
             .toList(),
@@ -128,6 +165,7 @@ class _MaterialNavCluster extends StatelessWidget {
     required this.items,
     required this.idPrefix,
     this.leading,
+    this.extended = true,
   });
 
   /// [Axis.horizontal] = bottom bar; [Axis.vertical] = side rail.
@@ -143,10 +181,17 @@ class _MaterialNavCluster extends StatelessWidget {
   /// Rail-only leading widget (the app logo). Ignored for the bottom bar.
   final Widget? leading;
 
+  /// 仅玻璃设计系统的侧栏使用：true = 图标 + 文字横排的宽侧栏，false = 只有
+  /// 图标的窄条（窗口窄时）。MD3 rail 恒为 80 宽，不读它。
+  final bool extended;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool horizontal = axis == Axis.horizontal;
+    final bool glassDesign = isGlassDesign(context);
+    // 玻璃侧栏是否展开（图标 + 文字横排）；窄条与底栏都是「图标为主」。
+    final bool glassExtended = glassDesign && !horizontal && extended;
 
     final List<Widget> tiles = <Widget>[
       for (int i = 0; i < items.length; i++)
@@ -155,6 +200,7 @@ class _MaterialNavCluster extends StatelessWidget {
           item: items[i],
           selected: i == currentIndex,
           horizontal: horizontal,
+          extended: glassExtended,
           onSelect: () {
             if (i != currentIndex) fushiSelectionHaptic(context);
             onTap(i);
@@ -170,15 +216,29 @@ class _MaterialNavCluster extends StatelessWidget {
     //
     // 结构恒定：无论 MD3 / 毛玻璃 / 液态 / 玻璃设计系统，外层永远是同一个
     // [_NavSurfaceBackdrop]，带 [fushiMaterialNavKey] 的 Material 永远在它的
-    // 同一个槽位里，切换时只换背景槽。旧实现按「是否玻璃」把 Material 包进 /
-    // 拆出 FushiGlassSurface，设计系统一切换整条导航（含各目的地的焦点目标）就
-    // 在同一帧里被重挂，Mac 调试版触发 `_elements.contains(element)` 断言。
-    final bool glassDesign = isGlassDesign(context);
+    // 同一个槽位里，切换时只换背景槽与几何参数。旧实现按「是否玻璃」把 Material
+    // 包进 / 拆出 FushiGlassSurface，设计系统一切换整条导航（含各目的地的焦点
+    // 目标）就在同一帧里被重挂，Mac 调试版触发 `_elements.contains(element)`
+    // 断言。
     final bool glass =
         glassDesign || glassMaterialOf(context) != FushiGlassMaterial.off;
     if (horizontal) {
+      // 玻璃设计系统（iOS 26）：底栏是离左右 16、离底 ≥16 的悬浮玻璃胶囊，
+      // 胶囊本体画在 [_NavSurfaceBackdrop] 的背景槽里（同一组边距），这里只把
+      // 目的地排进胶囊内沿；手势区不再整条让出（SafeArea 不吃 bottom）。
+      final double glassBottom =
+          glassDesign ? _glassNavBarBottomMargin(context) : 0;
       return _NavSurfaceBackdrop(
         baseColor: colors.surfaceContainer,
+        glassMargin: glassDesign
+            ? EdgeInsets.fromLTRB(
+                kGlassNavBarSideMargin,
+                _kGlassNavBarTopGap,
+                kGlassNavBarSideMargin,
+                glassBottom,
+              )
+            : null,
+        glassRadius: kGlassNavBarCapsuleHeight / 2,
         child: Material(
           key: fushiMaterialNavKey,
           color: glass ? Colors.transparent : colors.surfaceContainer,
@@ -190,6 +250,7 @@ class _MaterialNavCluster extends StatelessWidget {
             maxScaleFactor: 1.3,
             child: SafeArea(
               top: false,
+              bottom: !glassDesign,
               // minHeight, not a fixed height: even clamped, a scaled label can
               // outgrow the content box, and a fixed box would overflow instead
               // of growing (the old 80 only hid this behind spare room).
@@ -197,13 +258,24 @@ class _MaterialNavCluster extends StatelessWidget {
               // destination centers itself inside the row, so under a loose
               // constraint the row would otherwise stretch to the whole screen.
               child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  minHeight: kAdaptiveNavBarContentHeight,
+                constraints: BoxConstraints(
+                  minHeight: glassDesign
+                      ? kGlassNavBarCapsuleHeight +
+                          _kGlassNavBarTopGap +
+                          glassBottom
+                      : kAdaptiveNavBarContentHeight,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: kAdaptiveNavBarContentPadding,
-                  ),
+                  padding: glassDesign
+                      ? EdgeInsets.fromLTRB(
+                          kGlassNavBarSideMargin + _kGlassNavBarInnerPadding,
+                          _kGlassNavBarTopGap + _kGlassNavBarInnerPadding,
+                          kGlassNavBarSideMargin + _kGlassNavBarInnerPadding,
+                          glassBottom + _kGlassNavBarInnerPadding,
+                        )
+                      : const EdgeInsets.symmetric(
+                          vertical: kAdaptiveNavBarContentPadding,
+                        ),
                   child: IntrinsicHeight(
                     child: Row(
                       children: <Widget>[
@@ -219,8 +291,18 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
 
+    // 玻璃设计系统（macOS 26）：侧栏是离窗口左 / 上 / 下 8、圆角 20 的悬浮
+    // 玻璃面板；行从上往下排（源列表），不再在剩余高度里居中。
+    final double railWidth = !glassDesign
+        ? kAdaptiveNavRailWidth
+        : (glassExtended ? kGlassNavSidebarWidth : kAdaptiveNavRailWidth);
+    const double glassInset = _kGlassSidebarMargin + 8;
     return _NavSurfaceBackdrop(
       baseColor: colors.surface,
+      glassMargin: glassDesign
+          ? const EdgeInsets.all(_kGlassSidebarMargin)
+          : null,
+      glassRadius: _kGlassSidebarRadius,
       child: Material(
         key: fushiMaterialNavKey,
         color: glass ? Colors.transparent : colors.surface,
@@ -228,42 +310,70 @@ class _MaterialNavCluster extends StatelessWidget {
             ? BorderDirectional(end: BorderSide(color: colors.outline))
             : null,
         child: SizedBox(
-          width: kAdaptiveNavRailWidth,
+          width: railWidth,
           child: SafeArea(
             right: false,
-            child: Column(
-              children: <Widget>[
-                if (leading != null) leading!,
-                // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
-                // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
-                // 过矮时滚动；ConstrainedBox(minHeight: 视口高) + IntrinsicHeight 保证窗口
-                // 够高时内容仍按 center 垂直居中（撑满视口才能 center），只有真的放不下才滚。
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints constraints) {
-                      return SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints:
-                              BoxConstraints(minHeight: constraints.maxHeight),
-                          child: IntrinsicHeight(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: <Widget>[
-                                for (final Widget tile in tiles)
-                                  Padding(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 6),
-                                    child: tile,
-                                  ),
-                              ],
+            child: Padding(
+              padding: glassDesign
+                  ? EdgeInsets.symmetric(
+                      horizontal: glassExtended ? glassInset : 10,
+                      vertical: glassInset,
+                    )
+                  : EdgeInsets.zero,
+              child: Column(
+                children: <Widget>[
+                  // 品牌位：MD3 居中 64；玻璃展开态靠起始边、缩到 40 的应用图标
+                  // （FittedBox 等比缩），窄条居中。Align 恒在，MD3 下
+                  // widthFactor/heightFactor = 1 + 居中，与 Column 直接放子组件
+                  // 的松约束一致，像素不变。
+                  if (leading != null)
+                    Align(
+                      alignment: glassExtended
+                          ? AlignmentDirectional.centerStart
+                          : Alignment.center,
+                      widthFactor: glassExtended ? null : 1,
+                      heightFactor: 1,
+                      child: SizedBox(
+                        width: glassDesign ? 56 : null,
+                        height: glassDesign ? 56 : null,
+                        child: leading,
+                      ),
+                    ),
+                  // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
+                  // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
+                  // 过矮时滚动；ConstrainedBox(minHeight: 视口高) + IntrinsicHeight 保证窗口
+                  // 够高时内容仍按 center 垂直居中（撑满视口才能 center），只有真的放不下才滚。
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder:
+                          (BuildContext context, BoxConstraints constraints) {
+                        return SingleChildScrollView(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                                minHeight: constraints.maxHeight),
+                            child: IntrinsicHeight(
+                              child: Column(
+                                mainAxisAlignment: glassDesign
+                                    ? MainAxisAlignment.start
+                                    : MainAxisAlignment.center,
+                                children: <Widget>[
+                                  if (glassDesign) const SizedBox(height: 8),
+                                  for (final Widget tile in tiles)
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          vertical: glassDesign ? 1 : 6),
+                                      child: tile,
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -273,25 +383,38 @@ class _MaterialNavCluster extends StatelessWidget {
 }
 
 /// 导航面的背衬：一个恒定的 passthrough [Stack]，背景槽按设计系统 / 材质换成
-/// 玻璃设计系统的 [GlassContainer]（液态 premium 档）、MD3 毛玻璃的
-/// [FushiGlassSurface]（同色阶半透明 + 背景模糊），或 MD3 实心时的空盒；
-/// [child]（带 [fushiMaterialNavKey] 的 Material）恒在第二个槽位，几何与
-/// 不包时一字不差。
+/// 玻璃设计系统的悬浮 [GlassContainer]（按 [glassMargin] 内缩、[glassRadius]
+/// 圆角：侧栏面板 / 底部胶囊）、MD3 毛玻璃的 [FushiGlassSurface]（同色阶半透明 +
+/// 背景模糊），或 MD3 实心时的空盒；[child]（带 [fushiMaterialNavKey] 的
+/// Material）恒在第二个槽位，几何与不包时一字不差。
 class _NavSurfaceBackdrop extends StatelessWidget {
-  const _NavSurfaceBackdrop({required this.baseColor, required this.child});
+  const _NavSurfaceBackdrop({
+    required this.baseColor,
+    required this.child,
+    this.glassMargin,
+    this.glassRadius = 0,
+  });
 
   final Color baseColor;
   final Widget child;
+
+  /// 玻璃面板相对导航区的内缩；null = 铺满。
+  final EdgeInsets? glassMargin;
+  final double glassRadius;
 
   @override
   Widget build(BuildContext context) {
     final Widget background;
     if (isGlassDesign(context)) {
-      background = GlassContainer(
-        shape: const LiquidRoundedRectangle(borderRadius: 0),
-        quality: fushiGlassQuality(context, prominent: true),
-        settings: fushiGlassSettings(context, tint: baseColor),
-        child: const SizedBox.expand(),
+      // 中性玻璃（iOS 26 实测填充色），不拿 MD3 表面色去染。
+      background = Padding(
+        padding: glassMargin ?? EdgeInsets.zero,
+        child: GlassContainer(
+          shape: LiquidRoundedSuperellipse(borderRadius: glassRadius),
+          quality: fushiGlassQuality(context, prominent: true),
+          settings: fushiGlassSettings(context),
+          child: const SizedBox.expand(),
+        ),
       );
     } else if (glassMaterialOf(context) != FushiGlassMaterial.off) {
       background = FushiGlassSurface(
@@ -325,6 +448,7 @@ class _NavFocusCell extends StatelessWidget {
     required this.selected,
     required this.horizontal,
     required this.onSelect,
+    this.extended = true,
   });
 
   final FushiFocusId id;
@@ -333,10 +457,21 @@ class _NavFocusCell extends StatelessWidget {
   final bool horizontal;
   final VoidCallback onSelect;
 
+  /// 玻璃侧栏是否展开（见 [_MaterialNavCluster.extended]）。
+  final bool extended;
+
   @override
   Widget build(BuildContext context) {
     final bool glassDesign = isGlassDesign(context);
-    final Widget tile = _FushiNavTile(item: item, selected: selected);
+    final Widget tile = _FushiNavTile(
+      item: item,
+      selected: selected,
+      horizontal: horizontal,
+      extended: extended,
+    );
+    // 玻璃：按压反馈与选中态都是中性灰填充，桌面侧栏行悬停给一层最浅的
+    // systemFill（macOS 源列表的 hover）；不画 MD 涟漪。
+    final Color glassHover = appleColorsOf(context).tertiaryFill;
     // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
     // dispatches it at the primary-focus context and walks UP the Actions chain.
     return Actions(
@@ -351,18 +486,32 @@ class _NavFocusCell extends StatelessWidget {
       child: InkWell(
         onTap: onSelect,
         canRequestFocus: false,
-        borderRadius: FushiDesignTokens.of(context).radii.controlRadius,
-        // 玻璃设计系统不画 MD 涟漪（按压反馈是玻璃药丸本身）；InkWell 本身保留，
+        borderRadius: glassDesign
+            ? BorderRadius.circular(
+                horizontal
+                    ? kGlassNavBarCapsuleHeight / 2
+                    : _kGlassSidebarRowRadius,
+              )
+            : FushiDesignTokens.of(context).radii.controlRadius,
+        // 玻璃设计系统不画 MD 涟漪（按压反馈是选中气泡本身）；InkWell 本身保留，
         // 焦点目标的父链不随设计系统变。
         splashFactory: glassDesign ? NoSplash.splashFactory : null,
         overlayColor: glassDesign
-            ? const WidgetStatePropertyAll<Color>(Colors.transparent)
+            ? WidgetStateProperty.resolveWith<Color>(
+                (Set<WidgetState> states) =>
+                    !horizontal && !selected &&
+                            states.contains(WidgetState.hovered)
+                        ? glassHover
+                        : Colors.transparent,
+              )
             : null,
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            vertical: horizontal ? 0 : 4,
-            horizontal: horizontal ? 4 : 0,
-          ),
+          padding: glassDesign
+              ? EdgeInsets.zero
+              : EdgeInsets.symmetric(
+                  vertical: horizontal ? 0 : 4,
+                  horizontal: horizontal ? 4 : 0,
+                ),
           child: Center(
             child: FushiFocusTarget(id: id, child: tile),
           ),
@@ -380,10 +529,117 @@ class _NavFocusCell extends StatelessWidget {
 /// 一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下
 /// [fushiMotionDuration] 归零，三处都瞬间到位，最终几何与配色不变。
 class _FushiNavTile extends StatelessWidget {
-  const _FushiNavTile({required this.item, required this.selected});
+  const _FushiNavTile({
+    required this.item,
+    required this.selected,
+    this.horizontal = true,
+    this.extended = true,
+  });
 
   final AdaptiveNavItem item;
   final bool selected;
+
+  /// 仅玻璃设计系统读：底栏（图标在上、小字在下）还是侧栏行。
+  final bool horizontal;
+
+  /// 仅玻璃侧栏读：展开行（图标 + 文字横排）还是只有图标的窄条。
+  final bool extended;
+
+  /// 玻璃设计系统（Apple 26）的目的地：中性灰填充的选中气泡 / 圆角行 +
+  /// 强调色图标与文字，未选中用 label 色；不是 MD3 的 tonal 药丸。
+  /// - 底栏（iOS 26 标签栏）：图标 24 在上、10.5 号字在下，选中气泡撑满胶囊内高；
+  /// - 侧栏展开（macOS 26 源列表）：行高 34、圆角 9，图标 19 + 14 号字横排；
+  /// - 侧栏窄条：44×36 的图标格，标签进 Tooltip。
+  Widget _buildGlass(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final Color fg = selected ? apple.accent : apple.label;
+    final Color fill = selected ? apple.fill : apple.fill.withValues(alpha: 0);
+    final IconData icon =
+        selected ? (item.selectedIcon ?? item.icon) : item.icon;
+    Widget glyph(double size) => _maybeBadge(
+          item: item,
+          child: FushiIcon(icon, size: size, color: fg),
+        );
+    if (horizontal) {
+      return AnimatedContainer(
+        duration: duration,
+        curve: FushiMotion.standard,
+        width: double.infinity,
+        height: kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding,
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(
+            kGlassNavBarCapsuleHeight / 2 - _kGlassNavBarInnerPadding,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            glyph(24),
+            const SizedBox(height: 2),
+            Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: (textTheme.labelSmall ?? const TextStyle()).copyWith(
+                fontSize: 10.5,
+                height: 1.2,
+                color: fg,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final BoxDecoration rowDecoration = BoxDecoration(
+      color: fill,
+      borderRadius: BorderRadius.circular(_kGlassSidebarRowRadius),
+    );
+    if (!extended) {
+      return Tooltip(
+        message: item.label,
+        child: AnimatedContainer(
+          duration: duration,
+          curve: FushiMotion.standard,
+          width: 44,
+          height: _kGlassSidebarRowHeight + 2,
+          alignment: Alignment.center,
+          decoration: rowDecoration,
+          child: glyph(20),
+        ),
+      );
+    }
+    return AnimatedContainer(
+      duration: duration,
+      curve: FushiMotion.standard,
+      width: double.infinity,
+      height: _kGlassSidebarRowHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: rowDecoration,
+      child: Row(
+        children: <Widget>[
+          glyph(19),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: (textTheme.bodyMedium ?? const TextStyle()).copyWith(
+                fontSize: 14,
+                color: fg,
+                fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// 药丸展开后的宽 / 高（与 MD3 NavigationBar 指示器同尺寸）。
   static const double _pillWidth = 64;
@@ -391,12 +647,12 @@ class _FushiNavTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildGlass(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
     // eink：选中药丸的 secondaryContainer == 页面底色，选中项只剩图标实心/线框
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
-    final bool glassDesign = isGlassDesign(context);
     final Color pillColor = eink ? colors.onSurface : colors.secondaryContainer;
     final Color pillIconColor =
         eink ? colors.surface : colors.onSecondaryContainer;
@@ -421,37 +677,6 @@ class _FushiNavTile extends StatelessWidget {
                 // （eink 守卫按 `decoration.color == onSurface` 断言）。
                 final double width =
                     _pillHeight + (_pillWidth - _pillHeight) * t;
-                if (glassDesign) {
-                  // 玻璃设计系统：选中药丸是一枚着色玻璃（展开 + 渐显与 MD3 同一条
-                  // 时间线），图标浮在玻璃之上。
-                  return SizedBox(
-                    width: width,
-                    height: _pillHeight,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: <Widget>[
-                        if (t > 0)
-                          Positioned.fill(
-                            child: Opacity(
-                              opacity: t.clamp(0.0, 1.0),
-                              child: GlassContainer(
-                                shape: LiquidRoundedRectangle(
-                                  borderRadius: radius.topLeft.x,
-                                ),
-                                quality: fushiGlassQuality(context),
-                                settings: fushiGlassSettings(
-                                  context,
-                                  tint: colors.secondaryContainer,
-                                ),
-                                child: const SizedBox.expand(),
-                              ),
-                            ),
-                          ),
-                        if (child != null) child,
-                      ],
-                    ),
-                  );
-                }
                 final Color fill = t >= 1
                     ? pillColor
                     : t <= 0
@@ -486,7 +711,7 @@ class _FushiNavTile extends StatelessWidget {
                 child: _maybeBadge(
                   key: ValueKey<(IconData, bool)>((icon, selected)),
                   item: item,
-                  child: Icon(
+                  child: FushiIcon(
                     icon,
                     size: 24,
                     color: selected ? pillIconColor : colors.onSurfaceVariant,
@@ -533,7 +758,10 @@ Widget adaptiveNavRail({
   required ValueChanged<int> onTap,
   required List<AdaptiveNavItem> items,
   Widget? leading,
+  bool extended = true,
 }) {
+  // [extended] 只影响玻璃设计系统：宽窗口是图标 + 文字的悬浮侧栏，窄窗口收成
+  // 只有图标的窄条。MD3 rail 恒为 80 宽的「图标在上、文字在下」。
   return _MaterialNavCluster(
     axis: Axis.vertical,
     currentIndex: currentIndex,
@@ -541,6 +769,7 @@ Widget adaptiveNavRail({
     items: items,
     idPrefix: 'nav-rail',
     leading: leading,
+    extended: extended,
   );
 }
 
@@ -672,13 +901,14 @@ PreferredSizeWidget adaptiveAppBar({
     return _CupertinoAppBarWithBottom(navBar: navBar, bottom: bottom);
   }
   if (isGlassDesign(context)) {
-    // 「玻璃」设计系统：透明玻璃导航栏（标题靠前、动作胶囊在尾）。
-    return GlassAppBar(
+    // 「玻璃」设计系统：与 [FushiAppBar] 同一套 Apple 26 顶栏（透明底、
+    // 圆形玻璃返回钮、actions 收进一枚玻璃胶囊）。
+    return FushiAppBar(
       leading: leading,
       title: title,
       actions: actions,
+      titleSpacing: titleSpacing,
       bottom: bottom,
-      centerTitle: false,
     );
   }
   return AppBar(

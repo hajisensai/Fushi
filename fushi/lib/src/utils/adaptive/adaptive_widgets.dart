@@ -19,6 +19,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         GlassSlider,
         GlassSwitch,
         LiquidVerticalRoundedSuperellipse;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 Widget adaptiveDialogAction({
   required BuildContext context,
@@ -252,7 +253,7 @@ Widget adaptiveIndicator({
       height: 36,
       child: FittedBox(
         fit: BoxFit.scaleDown,
-        child: Icon(
+        child: FushiIcon(
           Icons.hourglass_top,
           color: color ?? Theme.of(context).colorScheme.primary,
         ),

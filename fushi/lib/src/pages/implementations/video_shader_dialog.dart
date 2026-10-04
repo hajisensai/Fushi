@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
@@ -490,7 +491,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       subtitle: subtitle,
       icon: icon,
       showIcon: true,
-      trailing: const Icon(Icons.chevron_right),
+      trailing: const FushiIcon(Icons.chevron_right),
       onTap: onTap,
     );
   }
@@ -692,8 +693,8 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                         subtitleMaxLines: 3,
                         subtitle: Text(presetDescription(preset.id)),
                         trailing: added
-                            ? Icon(Icons.check, color: cs.primary)
-                            : const Icon(Icons.download_outlined),
+                            ? FushiIcon(Icons.check, color: cs.primary)
+                            : const FushiIcon(Icons.download_outlined),
                         onTap: () => Navigator.pop(context, preset),
                       );
                     }(),

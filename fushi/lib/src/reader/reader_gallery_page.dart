@@ -24,6 +24,7 @@ import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveTocEntryForImage;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
@@ -884,7 +885,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               key: const ValueKey<String>('fushi_gallery_menu_jump'),
               focusId: const FushiFocusId('fushi_gallery_menu_jump'),
               autofocus: true,
-              leading: const Icon(Icons.my_location_outlined),
+              leading: const FushiIcon(Icons.my_location_outlined),
               title: Text(t.reader_gallery_jump),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -895,7 +896,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               FushiListItem(
                 key: const ValueKey<String>('fushi_gallery_menu_reveal'),
                 focusId: const FushiFocusId('fushi_gallery_menu_reveal'),
-                leading: const Icon(Icons.visibility_outlined),
+                leading: const FushiIcon(Icons.visibility_outlined),
                 title: Text(t.reader_gallery_locked_reveal),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
@@ -906,7 +907,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               FushiListItem(
                 key: const ValueKey<String>('fushi_gallery_menu_relock'),
                 focusId: const FushiFocusId('fushi_gallery_menu_relock'),
-                leading: const Icon(Icons.visibility_off_outlined),
+                leading: const FushiIcon(Icons.visibility_off_outlined),
                 title: Text(t.reader_gallery_relock),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
@@ -1234,7 +1235,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_position'),
           tooltip: t.reader_gallery_position_jump,
-          icon: const Icon(Icons.my_location_outlined),
+          icon: const FushiIcon(Icons.my_location_outlined),
           onPressed: () => _scrollToCurrentPosition(animate: true),
         ),
       Semantics(
@@ -1242,7 +1243,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         child: FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_close'),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-          icon: const Icon(Icons.close),
+          icon: const FushiIcon(Icons.close),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -1301,7 +1302,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               overflow: TextOverflow.ellipsis,
             ),
             avatar: i == volumes.currentIndex
-                ? const Icon(Icons.menu_book_outlined, size: 16)
+                ? const FushiIcon(Icons.menu_book_outlined, size: 16)
                 : null,
             selected: i == _viewedVolume,
             onSelected: (bool _) => _selectVolume(i),
@@ -1498,7 +1499,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   Widget _thumbnail(FushiDesignTokens tokens, EpubImageRef ref) {
     final File? file = _fileFor(ref);
     final Widget missing = Center(
-      child: Icon(
+      child: FushiIcon(
         Icons.broken_image_outlined,
         size: 24,
         color: tokens.surfaces.onVariant,
@@ -1528,7 +1529,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final ThemeData theme = Theme.of(context);
     final int index = _viewerIndex ?? 0;
     final File? file = _fileFor(current);
-    final Widget missing = Icon(
+    final Widget missing = FushiIcon(
       Icons.broken_image_outlined,
       size: 64,
       color: tokens.surfaces.onVariant,
@@ -1578,7 +1579,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                   FushiIconButtonControl(
                     key: const ValueKey<String>('fushi_gallery_jump'),
                     tooltip: t.reader_gallery_jump,
-                    icon: const Icon(Icons.my_location_outlined),
+                    icon: const FushiIcon(Icons.my_location_outlined),
                     onPressed: () => _jumpTo(current),
                   ),
                   FushiIconButtonControl(
@@ -1586,7 +1587,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                     tooltip: MaterialLocalizations.of(
                       context,
                     ).closeButtonTooltip,
-                    icon: const Icon(Icons.close),
+                    icon: const FushiIcon(Icons.close),
                     onPressed: _closeViewer,
                   ),
                 ],
@@ -1655,7 +1656,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       color: tokens.surfaces.overlay.withValues(alpha: 0.8),
       shape: const CircleBorder(),
       child: FushiIconButtonControl(
-        icon: Icon(icon),
+        icon: FushiIcon(icon),
         iconSize: 24,
         color: tokens.surfaces.onSurface,
         onPressed: enabled ? onPressed : null,
@@ -1761,7 +1762,7 @@ class _LockedIllustrationDialog extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.auto_stories_outlined,
             size: 40,
             color: tokens.surfaces.onVariant,

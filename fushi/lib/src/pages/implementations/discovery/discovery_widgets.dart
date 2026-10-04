@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/utils.dart';
 
@@ -132,7 +133,7 @@ class DiscoveryProviderWarningBanner extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            const Icon(Icons.cloud_off_outlined),
+            const FushiIcon(Icons.cloud_off_outlined),
             SizedBox(width: tokens.spacing.gap),
             Expanded(child: Text(discoveryProviderWarningMessage(failures))),
             if (providerNames.isNotEmpty)
@@ -290,6 +291,6 @@ class DiscoveryAiAcquireButton extends StatelessWidget {
     ),
     tooltip: t.ai_media_acquire_entry,
     onPressed: onPressed,
-    icon: const Icon(Icons.auto_awesome_outlined),
+    icon: const FushiIcon(Icons.auto_awesome_outlined),
   );
 }

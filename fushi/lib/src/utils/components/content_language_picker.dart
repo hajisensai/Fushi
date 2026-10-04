@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
@@ -100,7 +101,7 @@ Future<void> showContentLanguagePicker({
                     : null,
                 selected: current == option.tag,
                 trailing:
-                    current == option.tag ? const Icon(Icons.check) : null,
+                    current == option.tag ? const FushiIcon(Icons.check) : null,
                 onTap: () {
                   onSelected(option.tag);
                   Navigator.pop(dialogContext);

@@ -409,7 +409,7 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     required VoidCallback onPressed,
   }) {
     return FushiIconButtonControl(
-      icon: Icon(icon),
+      icon: FushiIcon(icon),
       iconSize: 18 * _videoUiScale,
       color: videoChromeNeutralForeground,
       tooltip: tooltip,
@@ -438,7 +438,7 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           child: SizedBox(
             width: size,
             height: size,
-            child: Icon(
+            child: FushiIcon(
               icon,
               size: size * 0.5,
               color: videoChromeNeutralForeground,

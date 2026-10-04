@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SliverConstraints;
@@ -490,7 +491,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       key: const ValueKey<String>('video-discovery-ai-acquire'),
                       tooltip: t.ai_video_acquire_entry,
                       onPressed: () => onAiAcquire(_searchController.text),
-                      icon: const Icon(Icons.auto_awesome_outlined),
+                      icon: const FushiIcon(Icons.auto_awesome_outlined),
                     );
               // 放送日历：页头不渲染时（embedded 于浏览页 / Cupertino）页头那颗
               // 按钮看不见，同一个 key 挪到搜索行，三种宽度下都可达。
@@ -506,7 +507,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       ),
                       tooltip: t.download_airing_calendar_title,
                       onPressed: _openCalendar,
-                      icon: const Icon(Icons.calendar_month_outlined),
+                      icon: const FushiIcon(Icons.calendar_month_outlined),
                     );
               final List<Widget> trailing = <Widget>[
                 for (final Widget entry in <Widget?>[
@@ -542,7 +543,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                         isLabelVisible: _year != 0 ||
                             _region.isNotEmpty ||
                             _genre.isNotEmpty,
-                        child: const Icon(Icons.tune_rounded),
+                        child: const FushiIcon(Icons.tune_rounded),
                       ),
                     ),
                   ],
@@ -822,7 +823,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           ? SizedBox(
               width: 48,
               height: 48,
-              child: Icon(
+              child: FushiIcon(
                 Icons.sort_rounded,
                 color: _sort == _defaultSort
                     ? null
@@ -850,7 +851,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           children: <Widget>[
             Text(label, style: tokens.type.controlLabel),
             SizedBox(width: tokens.spacing.gap / 2),
-            const Icon(Icons.expand_more_rounded, size: 18),
+            const FushiIcon(Icons.expand_more_rounded, size: 18),
           ],
         ),
       ),
@@ -869,7 +870,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         action: FushiFilledButton.icon(
           key: const ValueKey<String>('video-discovery-retry'),
           onPressed: () => unawaited(_reload()),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );
@@ -1144,7 +1145,7 @@ class _DiscoveryMediaCard extends StatelessWidget {
             child: image == null
                 ? ColoredBox(
                     color: tokens.surfaces.group,
-                    child: const Center(child: Icon(Icons.movie_outlined)),
+                    child: const Center(child: FushiIcon(Icons.movie_outlined)),
                   )
                 : PortraitCoverImage(
                     image: image,
@@ -1152,7 +1153,7 @@ class _DiscoveryMediaCard extends StatelessWidget {
                     errorBuilder: (_) => ColoredBox(
                       color: tokens.surfaces.group,
                       child: const Center(
-                        child: Icon(Icons.broken_image_outlined),
+                        child: FushiIcon(Icons.broken_image_outlined),
                       ),
                     ),
                   ),

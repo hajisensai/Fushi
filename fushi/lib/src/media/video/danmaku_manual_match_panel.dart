@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 手动搜索 / 选集匹配面板（TODO-1376）。
@@ -171,7 +172,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
           for (final DandanplaySearchEpisode ep in anime.episodes)
             FushiListTileControl(
               dense: true,
-              leading: const Icon(Icons.play_circle_outline),
+              leading: const FushiIcon(Icons.play_circle_outline),
               title: Text(
                 ep.episodeTitle.isEmpty ? '#${ep.episodeId}' : ep.episodeTitle,
               ),

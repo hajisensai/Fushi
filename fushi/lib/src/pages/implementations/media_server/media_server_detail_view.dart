@@ -8,6 +8,7 @@ import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 剧 / 电影详情：与本地「系列」详情页**同一套布局**（`collection_detail_layout.dart`）
@@ -401,7 +402,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             action: FushiFilledButton.icon(
               key: const ValueKey<String>('media-server-episodes-retry'),
               onPressed: () => unawaited(_reloadEpisodes()),
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const FushiIcon(Icons.refresh_rounded),
               label: Text(t.retry),
             ),
           ),

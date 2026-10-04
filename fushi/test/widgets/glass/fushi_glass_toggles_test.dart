@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +10,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 选择类控件包装的契约：
 // ① MD3 设计系统下树里是原 Material 控件；
-// ② 玻璃设计系统下树里是 liquid_glass_widgets 组件、没有原 Material 控件；
+// ② 玻璃设计系统下是 iOS 26 形态、没有原 Material 控件（开关 / 滑块 / 分段用
+//    liquid_glass_widgets，复选 / 单选是实色内容层控件、不是玻璃）；
 // ③ 玻璃下点击与「焦点 + Enter」都能触发回调，滑块能用方向键调值。
 void main() {
   late bool Function() originalShaderSupport;
@@ -67,6 +69,11 @@ void main() {
   Future<void> settle(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 500));
   }
+
+  // 玻璃下复选 / 单选的可交互外壳（iOS 圆形勾选，不是玻璃按钮）。
+  Finder toggleHits() => find.byWidgetPredicate(
+    (Widget w) => w.runtimeType.toString() == '_AppleToggleHit',
+  );
 
   group('FushiSwitch', () {
     testWidgets('MD3 renders Material Switch / Switch.adaptive', (
@@ -237,7 +244,7 @@ void main() {
       expect(find.byType(RangeSlider), findsOneWidget);
     });
 
-    testWidgets('glass renders glass thumbs; keys and drag adjust', (
+    testWidgets('glass renders iOS white thumbs; keys and drag adjust', (
       WidgetTester tester,
     ) async {
       RangeValues values = const RangeValues(2, 8);
@@ -253,7 +260,15 @@ void main() {
         glass: true,
       );
       expect(find.byType(RangeSlider), findsNothing);
-      expect(find.byType(GlassContainer), findsNWidgets(2));
+      expect(find.byType(GlassContainer), findsNothing);
+      final Finder thumbs = find.byWidgetPredicate(
+        (Widget w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).shape == BoxShape.circle &&
+            (w.decoration as BoxDecoration).color == Colors.white,
+      );
+      expect(thumbs, findsNWidgets(2));
 
       // Tab 进第一个拇指（起点），→ 加一格。
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -269,7 +284,7 @@ void main() {
       expect(values, const RangeValues(3, 7));
 
       // 拖动终点拇指到最右。
-      final Rect endThumb = tester.getRect(find.byType(GlassContainer).last);
+      final Rect endThumb = tester.getRect(thumbs.last);
       await tester.dragFrom(endThumb.center, const Offset(400, 0));
       await tester.pump();
       expect(values.end, 10);
@@ -285,10 +300,10 @@ void main() {
         glass: false,
       );
       expect(find.byType(Checkbox), findsOneWidget);
-      expect(find.byType(GlassButton), findsNothing);
+      expect(toggleHits(), findsNothing);
     });
 
-    testWidgets('glass renders a glass box, cycles tristate on tap and Enter', (
+    testWidgets('glass renders an iOS round check, cycles tristate', (
       WidgetTester tester,
     ) async {
       final FocusNode node = FocusNode();
@@ -305,17 +320,19 @@ void main() {
         glass: true,
       );
       expect(find.byType(Checkbox), findsNothing);
-      expect(find.byType(GlassButton), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
+      expect(toggleHits(), findsOneWidget);
 
-      await tester.tap(find.byType(GlassButton));
+      await tester.tap(toggleHits());
       await settle(tester);
       expect(value, isTrue);
-      expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
 
       await pressEnter(tester, node);
       await settle(tester);
       expect(value, isNull);
-      expect(find.byIcon(Icons.remove_rounded), findsOneWidget);
+      // 部分选中画白色短横，不是对勾。
+      expect(find.byIcon(CupertinoIcons.checkmark), findsNothing);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await settle(tester);
@@ -341,7 +358,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byType(Radio<int>), findsNWidgets(2));
-      expect(find.byType(GlassButton), findsNothing);
+      expect(toggleHits(), findsNothing);
     });
 
     testWidgets('glass radios select via tap and Enter (RadioGroup API)', (
@@ -369,9 +386,9 @@ void main() {
       );
       await tester.pump();
       expect(find.byType(Radio<int>), findsNothing);
-      expect(find.byType(GlassButton), findsNWidgets(3));
+      expect(toggleHits(), findsNWidgets(3));
 
-      await tester.tap(find.byType(GlassButton).at(1));
+      await tester.tap(toggleHits().at(1));
       await settle(tester);
       expect(group, 2);
 
@@ -399,11 +416,11 @@ void main() {
         ),
         glass: true,
       );
-      await tester.tap(find.byType(GlassButton).at(1));
+      await tester.tap(toggleHits().at(1));
       await settle(tester);
       expect(group, 2);
       // toggleable：点已选项取消选择。
-      await tester.tap(find.byType(GlassButton).at(1));
+      await tester.tap(toggleHits().at(1));
       await settle(tester);
       expect(group, isNull);
     });
@@ -447,7 +464,8 @@ void main() {
       expect(find.byType(Checkbox), findsNothing);
       expect(find.byType(ListTile), findsNothing);
       expect(find.byType(GlassListTile), findsOneWidget);
-      expect(find.byType(GlassButton), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
+      expect(toggleHits(), findsNothing);
 
       await tester.tap(find.text('Row'));
       await settle(tester);
@@ -508,6 +526,12 @@ void main() {
       expect(find.byType(RadioListTile<int>), findsNothing);
       expect(find.byType(Radio<int>), findsNothing);
       expect(find.byType(GlassListTile), findsNWidgets(2));
+      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
+      // 对勾在行尾（标题右侧）。
+      expect(
+        tester.getCenter(find.byIcon(CupertinoIcons.checkmark)).dx,
+        greaterThan(tester.getCenter(find.text('One')).dx),
+      );
 
       await pressEnter(tester, node);
       await settle(tester);
@@ -649,7 +673,7 @@ void main() {
       expect(selected, <String>{'c'});
     });
 
-    testWidgets('glass multi select uses a row of glass buttons', (
+    testWidgets('glass multi select uses an iOS segmented row', (
       WidgetTester tester,
     ) async {
       Set<String> selected = <String>{'a'};
@@ -666,9 +690,9 @@ void main() {
       );
       expect(find.byType(SegmentedButton<String>), findsNothing);
       expect(find.byType(GlassSegmentedControl), findsNothing);
-      expect(find.byType(GlassButton), findsNWidgets(3));
-      // 选中段显示勾。
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
+      // 选中段显示 SF 对勾。
+      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
 
       await tester.tap(find.text('Gamma'));
       await settle(tester);

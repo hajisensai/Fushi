@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -64,7 +65,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                 const SizedBox(width: 10),
                 FushiTooltip(
                   message: t.game_lookup_attached_no_ocr,
-                  child: const Icon(Icons.touch_app_outlined, size: 18),
+                  child: const FushiIcon(Icons.touch_app_outlined, size: 18),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -78,7 +79,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                       'game-attached-lookup-accept-risk',
                     ),
                     onPressed: () => _acceptRisk(context, riskRequest),
-                    icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                    icon: const FushiIcon(Icons.warning_amber_rounded, size: 18),
                     label: Text(t.game_lookup_attached_risk_accept),
                   ),
                 ],
@@ -127,7 +128,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                                 'game-attached-lookup-details',
                               ),
                               padding: EdgeInsets.all(6),
-                              child: Icon(Icons.info_outline, size: 18),
+                              child: FushiIcon(Icons.info_outline, size: 18),
                             ),
                           ),
                           if (showThreadRequiredPill) ...<Widget>[
@@ -158,13 +159,13 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             slot: GalLookupCalibrationSlotV1.dialogue,
                           )
                         : null,
-                    icon: const Icon(Icons.format_quote_outlined, size: 20),
+                    icon: const FushiIcon(Icons.format_quote_outlined, size: 20),
                   ),
                 ],
                 FushiPopupMenuButton<String>(
                   key: const ValueKey<String>('game-attached-lookup-mode'),
                   tooltip: t.game_lookup_attached_mode,
-                  icon: const Icon(Icons.tune_outlined, size: 20),
+                  icon: const FushiIcon(Icons.tune_outlined, size: 20),
                   onSelected: (String action) {
                     if (action.startsWith('mode:')) {
                       final GalLookupSurfaceMode selected = GalLookupSurfaceMode
@@ -228,7 +229,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
       builder: (BuildContext context) => FushiAlertDialog(
         title: Row(
           children: <Widget>[
-            const Icon(Icons.warning_amber_rounded),
+            const FushiIcon(Icons.warning_amber_rounded),
             const SizedBox(width: 8),
             Expanded(child: Text(t.game_lookup_attached_risk_title)),
           ],

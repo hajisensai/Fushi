@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -795,14 +796,14 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (widget.existingBook != null) {
       return FushiListItem(
         padding: EdgeInsets.zero,
-        leading: const Icon(Icons.menu_book_outlined),
+        leading: const FushiIcon(Icons.menu_book_outlined),
         title: Text(widget.existingBook!.title),
         subtitle: Text(p.basename(widget.existingBook!.extractDir)),
       );
     }
     return FushiOutlinedButton.icon(
       onPressed: busy ? null : _pickFolder,
-      icon: const Icon(Icons.folder_open_outlined),
+      icon: const FushiIcon(Icons.folder_open_outlined),
       label: Text(
         _imageDir == null
             ? t.manga_ocr_wizard_pick_folder
@@ -959,7 +960,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('manga_ocr_wizard_model_download'),
                 onPressed: busy ? null : _downloadLocalModel,
-                icon: const Icon(Icons.download_outlined, size: 18),
+                icon: const FushiIcon(Icons.download_outlined, size: 18),
                 label: Text(t.manga_ocr_download),
               ),
             ],
@@ -1034,7 +1035,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       FushiTextButton.icon(
         key: const ValueKey<String>('manga_ocr_wizard_settings'),
         onPressed: busy ? null : () => unawaited(_openOcrSettings()),
-        icon: const Icon(Icons.tune_outlined, size: 18),
+        icon: const FushiIcon(Icons.tune_outlined, size: 18),
         label: Text(t.manga_ocr_settings_open),
       ),
       FushiTextButton(

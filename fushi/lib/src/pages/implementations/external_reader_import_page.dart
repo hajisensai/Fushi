@@ -9,6 +9,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/sync/external_reader_import/external_reader_import_service.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 
@@ -179,7 +180,7 @@ class _ExternalReaderImportPageState
             const SizedBox(height: 16),
             FushiFilledButton.tonalIcon(
               onPressed: _scanning || _running ? null : _pickBackup,
-              icon: const Icon(Icons.folder_open_outlined),
+              icon: const FushiIcon(Icons.folder_open_outlined),
               label: Text(t.hoshi_import_file_pick),
             ),
             const SizedBox(height: 16),
@@ -310,7 +311,7 @@ class _ExternalReaderImportPageState
             for (final ExternalReaderImportFailure failure in report.failures)
               FushiListItem(
                 density: FushiListDensity.compact,
-                leading: Icon(
+                leading: FushiIcon(
                   Icons.error_outline,
                   color: theme.colorScheme.error,
                 ),

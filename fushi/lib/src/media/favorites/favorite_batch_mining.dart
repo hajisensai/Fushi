@@ -9,6 +9,7 @@ import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -392,7 +393,7 @@ class _FavoriteBatchItemTile extends StatelessWidget {
   }
 
   Widget _statusIcon(ColorScheme scheme) => switch (result.status) {
-    FavoriteBatchItemStatus.pending => Icon(
+    FavoriteBatchItemStatus.pending => FushiIcon(
       Icons.radio_button_unchecked,
       color: scheme.outline,
     ),
@@ -403,21 +404,21 @@ class _FavoriteBatchItemTile extends StatelessWidget {
         child: FushiCircularProgressIndicator(strokeWidth: 2.5),
       ),
     ),
-    FavoriteBatchItemStatus.added => Icon(
+    FavoriteBatchItemStatus.added => FushiIcon(
       result.textOnlyReason == null
           ? Icons.check_circle
           : Icons.check_circle_outline,
       color: scheme.primary,
     ),
-    FavoriteBatchItemStatus.duplicate => Icon(
+    FavoriteBatchItemStatus.duplicate => FushiIcon(
       Icons.library_add_check_outlined,
       color: scheme.tertiary,
     ),
-    FavoriteBatchItemStatus.failed => Icon(
+    FavoriteBatchItemStatus.failed => FushiIcon(
       Icons.error_outline,
       color: scheme.error,
     ),
-    FavoriteBatchItemStatus.skipped => Icon(
+    FavoriteBatchItemStatus.skipped => FushiIcon(
       Icons.remove_circle_outline,
       color: scheme.outline,
     ),

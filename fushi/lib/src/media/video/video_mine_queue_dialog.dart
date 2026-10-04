@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart' show BaseAnkiRepository;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/utils.dart';
@@ -210,7 +211,7 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                             ),
                             trailing: FushiIconButtonControl(
                               tooltip: t.video_mine_queue_remove,
-                              icon: const Icon(Icons.delete_outline),
+                              icon: const FushiIcon(Icons.delete_outline),
                               onPressed: busy ? null : () => _remove(row),
                             ),
                           );

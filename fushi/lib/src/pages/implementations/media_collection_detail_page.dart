@@ -1,5 +1,6 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -1614,7 +1615,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                 const ColoredBox(color: Color(0x1FFFFFFF)),
                               const Center(
                                 child: CircleAvatar(
-                                  child: Icon(Icons.play_arrow_rounded),
+                                  child: FushiIcon(Icons.play_arrow_rounded),
                                 ),
                               ),
                             ],
@@ -1876,7 +1877,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             value: _EpisodeMenuAction.download,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.download_outlined, size: 20),
+                const FushiIcon(Icons.download_outlined, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_episode_download),
               ],
@@ -1889,7 +1890,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             value: _EpisodeMenuAction.mediaInfo,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.info_outline, size: 20),
+                const FushiIcon(Icons.info_outline, size: 20),
                 const SizedBox(width: 12),
                 Text(t.video_specs_title),
               ],
@@ -1904,7 +1905,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             value: _EpisodeMenuAction.clearWatchProgress,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.restart_alt_outlined, size: 20),
+                const FushiIcon(Icons.restart_alt_outlined, size: 20),
                 const SizedBox(width: 12),
                 Text(t.video_watch_progress_clear),
               ],
@@ -1917,7 +1918,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             value: _EpisodeMenuAction.pinEpisode,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.push_pin_outlined, size: 20),
+                const FushiIcon(Icons.push_pin_outlined, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_episode_link_manual),
               ],
@@ -1927,7 +1928,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.remove_circle_outline, size: 20),
+              const FushiIcon(Icons.remove_circle_outline, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_remove_member),
             ],
@@ -2103,7 +2104,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       enabled: enabled,
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 20),
+          FushiIcon(icon, size: 20),
           const SizedBox(width: 12),
           Text(label),
         ],
@@ -2123,7 +2124,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       actions: <Widget>[
         _buildSortMenu(),
         FushiPopupMenuButton<_CollectionManageAction>(
-          icon: const Icon(Icons.more_horiz),
+          icon: const FushiIcon(Icons.more_horiz),
           onSelected: (_CollectionManageAction action) =>
               unawaited(_handleManageAction(action)),
           itemBuilder: (BuildContext context) =>

@@ -16,6 +16,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart' show FushiBorderRadius;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show
@@ -315,7 +316,7 @@ class MangaReaderTopBar extends StatelessWidget {
                           tooltip: backTooltip,
                           color: _fg,
                           iconSize: 22,
-                          icon: const Icon(Icons.arrow_back),
+                          icon: const FushiIcon(Icons.arrow_back),
                           onPressed: onBack,
                         ),
                         for (final MangaChromeAction a in leading) _button(a),
@@ -450,7 +451,7 @@ class MangaReaderTopBar extends StatelessWidget {
             dimension: 20,
             child: FushiCircularProgressIndicator(strokeWidth: 2, color: _fg),
           )
-        : Icon(a.icon, color: a.active ? _accent : _fg);
+        : FushiIcon(a.icon, color: a.active ? _accent : _fg);
     return FushiIconButtonControl(
       key: a.key,
       tooltip: a.label,
@@ -464,7 +465,7 @@ class MangaReaderTopBar extends StatelessWidget {
     return FushiPopupMenuButton<MangaChromeAction>(
       key: const ValueKey<String>('manga_chrome_overflow'),
       tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
-      icon: const Icon(Icons.more_vert, color: _fg),
+      icon: const FushiIcon(Icons.more_vert, color: _fg),
       iconSize: 22,
       onSelected: (MangaChromeAction a) => a.onPressed?.call(),
       itemBuilder: (BuildContext context) =>
@@ -476,12 +477,12 @@ class MangaReaderTopBar extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(a.icon, size: 20),
+                    FushiIcon(a.icon, size: 20),
                     const SizedBox(width: 12),
                     Flexible(child: Text(a.label)),
                     if (a.active) ...<Widget>[
                       const SizedBox(width: 12),
-                      const Icon(Icons.check, size: 18),
+                      const FushiIcon(Icons.check, size: 18),
                     ],
                   ],
                 ),

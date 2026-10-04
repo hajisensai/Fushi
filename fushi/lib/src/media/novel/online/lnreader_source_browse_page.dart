@@ -10,6 +10,7 @@ import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -212,7 +213,7 @@ class LnReaderCover extends StatelessWidget {
     final Widget fallback = ColoredBox(
       // 与扩展行图标占位同一个设计 token（不在页面里另挑 colorScheme 色）。
       color: FushiDesignTokens.of(context).surfaces.group,
-      child: const Center(child: Icon(Icons.menu_book_outlined, size: 36)),
+      child: const Center(child: FushiIcon(Icons.menu_book_outlined, size: 36)),
     );
     final ImageProvider<Object>? image = lnReaderCoverImage(
       url,
@@ -442,7 +443,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
                     ? scheme.errorContainer
                     : null,
                 avatar: exclude.contains(option.value)
-                    ? const Icon(Icons.remove, size: 16)
+                    ? const FushiIcon(Icons.remove, size: 16)
                     : null,
                 onSelected: (_) {
                   final List<String> nextInclude = List<String>.of(include);

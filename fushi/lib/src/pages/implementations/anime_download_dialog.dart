@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
@@ -1321,7 +1322,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       ),
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.info_outline,
             size: 18,
             color: theme.colorScheme.onSurfaceVariant,
@@ -1388,7 +1389,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            Icon(icon, size: 12, color: fg),
+            FushiIcon(icon, size: 12, color: fg),
             const SizedBox(width: 2),
           ],
           Text(label, style: theme.textTheme.labelSmall?.copyWith(color: fg)),
@@ -1413,7 +1414,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 decoration: InputDecoration(
                   labelText: t.anime_download_search_hint,
                   isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
+                  prefixIcon: const FushiIcon(Icons.search, size: 18),
                 ),
                 onSubmitted: (_) => _searchAnime(),
               ),
@@ -1445,7 +1446,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         collapsedShape: const Border(),
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        leading: const Icon(Icons.link, size: 18),
+        leading: const FushiIcon(Icons.link, size: 18),
         title: Text(t.anime_download_generic_title),
         children: <Widget>[
           FushiTextFieldControl(
@@ -1500,7 +1501,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final Widget button = FushiFilledButton.icon(
       onPressed:
           (!_genericPushEnabled || _pushingGeneric) ? null : _pushGeneric,
-      icon: const Icon(Icons.download, size: 18),
+      icon: const FushiIcon(Icons.download, size: 18),
       label: Text(t.anime_download_generic_download),
     );
 
@@ -1585,7 +1586,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.cloud_off_outlined,
             size: 40,
             color: theme.colorScheme.error,
@@ -1633,7 +1634,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             children: <Widget>[
               FushiFilledButton.tonalIcon(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
+                icon: const FushiIcon(Icons.refresh, size: 18),
                 label: Text(t.anime_download_retry),
               ),
               if (offerSettings) ...<Widget>[
@@ -1664,7 +1665,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.search_off_outlined,
               size: 40,
               color: theme.colorScheme.outline,
@@ -1720,7 +1721,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.travel_explore,
               size: 48,
               color: theme.colorScheme.outlineVariant,
@@ -1748,7 +1749,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ];
         return FushiListTileControl(
           dense: true,
-          leading: const Icon(Icons.live_tv_outlined),
+          leading: const FushiIcon(Icons.live_tv_outlined),
           title: Text(
             media.displayTitle,
             maxLines: 2,
@@ -1772,7 +1773,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           children: <Widget>[
             FushiIconButtonControl(
               tooltip: t.anime_download_back,
-              icon: const Icon(Icons.arrow_back, size: 20),
+              icon: const FushiIcon(Icons.arrow_back, size: 20),
               onPressed: _clearSelectedMedia,
             ),
             Expanded(
@@ -1793,7 +1794,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             isDense: true,
             suffixIcon: FushiIconButtonControl(
               tooltip: t.anime_download_search,
-              icon: const Icon(Icons.search, size: 20),
+              icon: const FushiIcon(Icons.search, size: 20),
               onPressed: _fetchTorrents,
             ),
           ),
@@ -1837,7 +1838,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                   ),
               ],
               child: FushiChip(
-                avatar: const Icon(Icons.sort, size: 18),
+                avatar: const FushiIcon(Icons.sort, size: 18),
                 label: Text('${t.sort_by}: ${_torrentSortLabel(_torrentSort)}'),
                 visualDensity: VisualDensity.compact,
               ),
@@ -1990,7 +1991,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           children: <Widget>[
             FushiIconButtonControl(
               tooltip: t.anime_download_back,
-              icon: const Icon(Icons.arrow_back, size: 20),
+              icon: const FushiIcon(Icons.arrow_back, size: 20),
               onPressed: _pushing ? null : _clearSelectedTorrent,
             ),
             Expanded(
@@ -2069,7 +2070,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                     height: 16,
                     child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.download);
+                : const FushiIcon(Icons.download);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -2082,7 +2083,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                       onPressed: (_qbMissing || _pushing || !canSubscribe)
                           ? null
                           : () => _push(subscribe: true),
-                      icon: const Icon(Icons.subscriptions_outlined),
+                      icon: const FushiIcon(Icons.subscriptions_outlined),
                       label: Text(t.download_subscription_download_and_create),
                     ),
                     FushiFilledButton.icon(
@@ -2155,7 +2156,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                   ? null
                   : FushiPopupMenuButton<String>(
                       tooltip: t.video_jimaku_query,
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const FushiIcon(Icons.arrow_drop_down),
                       onSelected: (String value) {
                         _jimakuQueryCtrl.text = value;
                         unawaited(_searchJimakuManual());
@@ -2207,7 +2208,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 _currentJimakuSearchInput() != _appliedJimakuSearch;
             return FushiIconButtonControl(
               tooltip: t.anime_download_search,
-              icon: const Icon(Icons.search, size: 20),
+              icon: const FushiIcon(Icons.search, size: 20),
               color: dirty ? theme.colorScheme.primary : null,
               onPressed: _jimakuLoading ? null : _searchJimakuManual,
             );
@@ -2275,7 +2276,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                   const SizedBox(height: 8),
                   FushiTextButton.icon(
                     onPressed: _retryJimaku,
-                    icon: const Icon(Icons.refresh, size: 18),
+                    icon: const FushiIcon(Icons.refresh, size: 18),
                     label: Text(t.anime_download_retry),
                   ),
                 ],
@@ -2319,7 +2320,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          FushiIcon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -2408,7 +2409,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           alignment: Alignment.centerRight,
           child: FushiTextButton.icon(
             onPressed: _refreshPlans,
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const FushiIcon(Icons.refresh, size: 18),
             label: Text(t.anime_download_refresh),
           ),
         ),
@@ -2656,18 +2657,18 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final bool downloading = plan.status == AnimeDownloadPlan.statusDownloading;
     final bool failed = plan.status == AnimeDownloadPlan.statusFailed;
     final Widget statusIcon = switch (plan.status) {
-      AnimeDownloadPlan.statusImported => Icon(
+      AnimeDownloadPlan.statusImported => FushiIcon(
           Icons.check_circle_outline,
           size: 20,
           color: scheme.primary,
         ),
-      AnimeDownloadPlan.statusFailed => Icon(
+      AnimeDownloadPlan.statusFailed => FushiIcon(
           Icons.error_outline,
           size: 20,
           color: scheme.error,
         ),
       _ => eink
-          ? const Icon(Icons.downloading_outlined, size: 20)
+          ? const FushiIcon(Icons.downloading_outlined, size: 20)
           : SizedBox(
               width: 20,
               height: 20,
@@ -2917,7 +2918,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               padding: const EdgeInsets.all(24),
               children: <Widget>[
                 const SizedBox(height: 72),
-                Icon(
+                FushiIcon(
                   Icons.downloading_outlined,
                   size: 48,
                   color: theme.colorScheme.outline,
@@ -3124,7 +3125,7 @@ class _RelocateDialogState extends State<_RelocateDialog> {
                 alignment: Alignment.centerLeft,
                 child: FushiFilledButton.tonalIcon(
                   onPressed: _pickDestination,
-                  icon: const Icon(Icons.folder_open_outlined, size: 18),
+                  icon: const FushiIcon(Icons.folder_open_outlined, size: 18),
                   label: Text(t.anime_download_relocate_pick_folder),
                 ),
               ),

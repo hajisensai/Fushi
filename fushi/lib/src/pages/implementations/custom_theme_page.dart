@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -746,7 +747,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.auto_awesome_outlined),
+                    : const FushiIcon(Icons.auto_awesome_outlined),
                 label: Text(
                   _aiBusy ? t.ai_assist_working : t.ai_assist_generate,
                 ),
@@ -776,7 +777,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               child: FushiTextButton.icon(
                 key: const ValueKey<String>('custom-theme-ai-undo'),
                 onPressed: _aiBusy ? null : _undoAi,
-                icon: const Icon(Icons.undo),
+                icon: const FushiIcon(Icons.undo),
                 label: Text(t.theme_ai_undo),
               ),
             ),
@@ -946,7 +947,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       SizedBox(height: tokens.spacing.card),
       FushiFilledButton.icon(
         onPressed: _applyAndClose,
-        icon: const Icon(Icons.check),
+        icon: const FushiIcon(Icons.check),
         label: Text(t.apply_theme),
       ),
       // TODO-930 M2: 删除当前编辑的主题（确认后），回退由 deleteCustomTheme +
@@ -960,7 +961,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           style: OutlinedButton.styleFrom(
             foregroundColor: Theme.of(context).colorScheme.error,
           ),
-          icon: const Icon(Icons.delete_outline),
+          icon: const FushiIcon(Icons.delete_outline),
           label: Text(t.delete_custom_theme),
         ),
       ],
@@ -1109,7 +1110,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             // 用户不用猜为什么按钮不是自己选的那个颜色。
             if (differs) ...<Widget>[
               SizedBox(width: tokens.spacing.gap / 2),
-              Icon(
+              FushiIcon(
                 Icons.arrow_forward,
                 size: 14,
                 color: appCs.onSurfaceVariant,
@@ -1121,7 +1122,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               ),
             ],
             SizedBox(width: tokens.spacing.gap),
-            Icon(
+            FushiIcon(
               locked ? Icons.lock_outline : Icons.chevron_right,
               color: appCs.onSurfaceVariant,
             ),
@@ -1165,7 +1166,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 onTap: () => _resetRole(role),
               )
             else
-              Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+              FushiIcon(Icons.chevron_right, color: cs.onSurfaceVariant),
           ],
         ),
       ),
@@ -1224,7 +1225,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(_roleIcon(role), color: cs.onSurfaceVariant),
+              FushiIcon(_roleIcon(role), color: cs.onSurfaceVariant),
               SizedBox(width: tokens.spacing.gap),
               Expanded(
                 child: Text(_roleTitle(role), style: tokens.type.listTitle),
@@ -1242,7 +1243,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               _systemAccent != null)
             Row(
               children: <Widget>[
-                Icon(Icons.lock_outline, size: 18, color: cs.onSurfaceVariant),
+                FushiIcon(Icons.lock_outline, size: 18, color: cs.onSurfaceVariant),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(
                   child: Text(
@@ -1335,12 +1336,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 segments: <ButtonSegment<Brightness>>[
                   ButtonSegment<Brightness>(
                     value: Brightness.light,
-                    icon: const Icon(Icons.light_mode_outlined, size: 16),
+                    icon: const FushiIcon(Icons.light_mode_outlined, size: 16),
                     label: Text(t.theme_preview_light),
                   ),
                   ButtonSegment<Brightness>(
                     value: Brightness.dark,
-                    icon: const Icon(Icons.dark_mode_outlined, size: 16),
+                    icon: const FushiIcon(Icons.dark_mode_outlined, size: 16),
                     label: Text(t.theme_preview_dark),
                   ),
                 ],
@@ -1384,9 +1385,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(Icons.favorite, color: cs.primary, size: 20),
+                    FushiIcon(Icons.favorite, color: cs.primary, size: 20),
                     SizedBox(width: tokens.spacing.gap / 2),
-                    Icon(Icons.bookmark, color: cs.primary, size: 20),
+                    FushiIcon(Icons.bookmark, color: cs.primary, size: 20),
                   ],
                 ),
               ),
@@ -1500,11 +1501,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Icon(Icons.arrow_back, size: 16, color: reader.fg),
+                  FushiIcon(Icons.arrow_back, size: 16, color: reader.fg),
                   SizedBox(width: tokens.spacing.gap),
                   Text('第一章', style: bodyStyle),
                   SizedBox(width: tokens.spacing.gap),
-                  Icon(Icons.tune, size: 16, color: reader.fg),
+                  FushiIcon(Icons.tune, size: 16, color: reader.fg),
                 ],
               ),
             ),
@@ -1589,7 +1590,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.lightbulb_outline, size: 18, color: cs.primary),
+          FushiIcon(Icons.lightbulb_outline, size: 18, color: cs.primary),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
@@ -1616,7 +1617,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, size: 16, color: cs.onSurfaceVariant),
+          FushiIcon(Icons.info_outline, size: 16, color: cs.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
@@ -1757,7 +1758,7 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
             alignment: Alignment.centerRight,
             child: FushiTextButton.icon(
               onPressed: widget.onReset,
-              icon: const Icon(Icons.restart_alt, size: 18),
+              icon: const FushiIcon(Icons.restart_alt, size: 18),
               label: Text(widget.resetLabel),
             ),
           ),

@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobStage;
 
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -537,8 +538,8 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
           : '${t.download_task_kind_filter} · '
               '${videoDownloadJobKindFilterLabel(_kindFilter)}',
       iconWidget: _kindFilter == VideoDownloadJobKindFilter.all
-          ? const Icon(Icons.filter_list)
-          : Icon(
+          ? const FushiIcon(Icons.filter_list)
+          : FushiIcon(
               Icons.filter_alt,
               color: Theme.of(context).colorScheme.primary,
             ),
@@ -569,7 +570,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       child: FushiOutlinedButton.icon(
         // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
         onPressed: null,
-        icon: const Icon(Icons.sort, size: 18),
+        icon: const FushiIcon(Icons.sort, size: 18),
         label: Text(_sortLabel(_sort)),
       ),
     );
@@ -950,7 +951,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(_statusIcon(), color: statusColor, size: 20),
+            FushiIcon(_statusIcon(), color: statusColor, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -978,7 +979,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
             ),
             if (onOpenDetails != null) ...<Widget>[
               const SizedBox(width: 8),
-              Icon(
+              FushiIcon(
                 Icons.chevron_right,
                 color: colors.onSurfaceVariant,
                 size: 20,
@@ -1044,7 +1045,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: <Widget>[
-                  Icon(Icons.info_outline, size: 17, color: colors.error),
+                  FushiIcon(Icons.info_outline, size: 17, color: colors.error),
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
@@ -1063,7 +1064,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                       color: colors.error,
                     ),
                   ),
-                  Icon(Icons.chevron_right, size: 16, color: colors.error),
+                  FushiIcon(Icons.chevron_right, size: 16, color: colors.error),
                 ],
               ),
             ),
@@ -1074,7 +1075,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.playlist_add_check_circle_outlined,
                 size: 16,
                 color: colors.tertiary,
@@ -1112,7 +1113,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                       'video-download-job-pair-audiobook-${job.jobId}',
                     ),
                     onPressed: busy ? null : onPairAudiobook,
-                    icon: const Icon(Icons.library_add_outlined, size: 18),
+                    icon: const FushiIcon(Icons.library_add_outlined, size: 18),
                     label: Text(t.download_task_audiobook_pair),
                   ),
                 if (onOpenDetails != null)
@@ -1121,7 +1122,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                       'video-download-job-details-${job.jobId}',
                     ),
                     onPressed: busy ? null : onOpenDetails,
-                    icon: const Icon(Icons.info_outline, size: 18),
+                    icon: const FushiIcon(Icons.info_outline, size: 18),
                     label: Text(t.download_task_details),
                   ),
                 if (_canRetry && onRetry != null)
@@ -1135,7 +1136,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             dimension: 16,
                             child: FushiCircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.refresh, size: 18),
+                        : const FushiIcon(Icons.refresh, size: 18),
                     label: Text(t.retry),
                   ),
                 if (_canResume && onResume != null)
@@ -1149,7 +1150,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             dimension: 16,
                             child: FushiCircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.play_arrow, size: 18),
+                        : const FushiIcon(Icons.play_arrow, size: 18),
                     label: Text(t.download_task_resume),
                   ),
                 if (_canCancel && onCancel != null)
@@ -1163,7 +1164,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             dimension: 16,
                             child: FushiCircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.close, size: 18),
+                        : const FushiIcon(Icons.close, size: 18),
                     label: Text(t.cancel),
                   ),
                 // 优先级只对「还在排队/还没做完」的任务有意义：已完成或已取消
@@ -1204,7 +1205,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                       'video-download-job-location-${job.jobId}',
                     ),
                     onPressed: busy ? null : onOpenLocation,
-                    icon: const Icon(Icons.folder_open_outlined, size: 18),
+                    icon: const FushiIcon(Icons.folder_open_outlined, size: 18),
                     label: Text(t.download_task_open_location),
                   ),
                 if (onDelete != null)
@@ -1214,7 +1215,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                     ),
                     style: TextButton.styleFrom(foregroundColor: colors.error),
                     onPressed: busy ? null : onDelete,
-                    icon: const Icon(Icons.delete_outline, size: 18),
+                    icon: const FushiIcon(Icons.delete_outline, size: 18),
                     label: Text(t.download_task_delete),
                   ),
               ],
@@ -1232,7 +1233,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
             _defaultLifecycleLabel(job.lifecycle),
         subtitle: job.resourceTitle,
         progress: _progress,
-        leading: Icon(_statusIcon(), color: statusColor, size: 20),
+        leading: FushiIcon(_statusIcon(), color: statusColor, size: 20),
         details: content,
       );
     }
@@ -1247,7 +1248,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
   /// 直接单独渲染这张脸当禁用态）。
   Widget _priorityButtonFace() => FushiOutlinedButton.icon(
         onPressed: null,
-        icon: const Icon(Icons.low_priority, size: 18),
+        icon: const FushiIcon(Icons.low_priority, size: 18),
         label: Text(
           '${t.download_task_priority} · ${_priorityLabel(job.priority)}',
         ),
@@ -1296,7 +1297,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                   );
                 }
               },
-              icon: const Icon(Icons.copy, size: 18),
+              icon: const FushiIcon(Icons.copy, size: 18),
               label: Text(t.copy),
             ),
             FushiTextButton(
@@ -1495,7 +1496,7 @@ class _MessageState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 40, color: theme.colorScheme.outline),
+            FushiIcon(icon, size: 40, color: theme.colorScheme.outline),
             const SizedBox(height: 12),
             Text(
               message,

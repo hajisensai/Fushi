@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
 import 'package:path/path.dart' as p;
 
@@ -424,7 +425,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
               const SizedBox(width: 4),
               FushiIconButtonControl(
                 tooltip: t.storage_overview_refresh,
-                icon: const Icon(Icons.refresh_outlined),
+                icon: const FushiIcon(Icons.refresh_outlined),
                 onPressed: _scanning ? null : _rescan,
               ),
             ],
@@ -450,7 +451,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     return <Widget>[
       FushiListItem(
         title: Text(_categoryTitle(id)),
-        leading: Icon(_categoryIcons[id]),
+        leading: FushiIcon(_categoryIcons[id]),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -466,13 +467,13 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     )
                   : FushiIconButtonControl(
                       tooltip: t.storage_shaders_delete_anime4k,
-                      icon: const Icon(Icons.auto_fix_off_outlined, size: 18),
+                      icon: const FushiIcon(Icons.auto_fix_off_outlined, size: 18),
                       onPressed: _anime4kDeleteAction,
                     ),
             Text(usage == null ? '…' : formatStorageBytes(usage.bytes)),
             if (expandable) ...<Widget>[
               const SizedBox(width: 4),
-              Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 18),
+              FushiIcon(expanded ? Icons.expand_less : Icons.expand_more, size: 18),
             ],
           ],
         ),
@@ -521,7 +522,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     )
                   : FushiIconButtonControl(
                       tooltip: t.dialog_delete,
-                      icon: const Icon(Icons.delete_outline, size: 18),
+                      icon: const FushiIcon(Icons.delete_outline, size: 18),
                       onPressed: _busyEntryId != null
                           ? null
                           : () => _deleteEntry(entry),

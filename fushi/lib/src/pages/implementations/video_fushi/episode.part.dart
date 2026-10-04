@@ -536,7 +536,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(
+                      FushiIcon(
                         Icons.playlist_play_outlined,
                         size: 18,
                         color: _osdTextColor(cs),

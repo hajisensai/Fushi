@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -387,7 +388,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
           FushiFilledButton.icon(
             key: const ValueKey<String>('leaderboard-user-add-friend'),
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const Icon(Icons.person_add_alt_1_outlined),
+            icon: const FushiIcon(Icons.person_add_alt_1_outlined),
             label: Text(t.leaderboard_user_add_friend),
           ),
         );
@@ -395,7 +396,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         buttons.add(
           FushiFilledButton.icon(
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const Icon(Icons.how_to_reg_outlined),
+            icon: const FushiIcon(Icons.how_to_reg_outlined),
             label: Text(t.leaderboard_user_accept),
           ),
         );
@@ -410,7 +411,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         buttons.add(
           FushiFilledButton.tonalIcon(
             onPressed: null,
-            icon: const Icon(Icons.people_alt_outlined),
+            icon: const FushiIcon(Icons.people_alt_outlined),
             label: Text(t.leaderboard_user_is_friend),
           ),
         );
@@ -419,12 +420,12 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       buttons.addAll(<Widget>[
         FushiOutlinedButton.icon(
           onPressed: () => unawaited(_block()),
-          icon: const Icon(Icons.block),
+          icon: const FushiIcon(Icons.block),
           label: Text(t.leaderboard_user_block),
         ),
         FushiOutlinedButton.icon(
           onPressed: () => unawaited(_report()),
-          icon: const Icon(Icons.flag_outlined),
+          icon: const FushiIcon(Icons.flag_outlined),
           label: Text(t.leaderboard_report),
         ),
       ]);
@@ -432,7 +433,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     buttons.add(
       FushiOutlinedButton.icon(
         onPressed: () => unawaited(_share()),
-        icon: const Icon(Icons.ios_share),
+        icon: const FushiIcon(Icons.ios_share),
         label: Text(t.leaderboard_share),
       ),
     );

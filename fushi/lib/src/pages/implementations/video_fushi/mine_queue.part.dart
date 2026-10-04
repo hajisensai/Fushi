@@ -186,7 +186,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                               ),
                             )
                           else
-                            Icon(
+                            FushiIcon(
                               Icons.playlist_add_check,
                               size: 16,
                               color: textColor,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// One selectable (value, label) entry for [FushiOptionSelectionPage].
@@ -62,7 +63,7 @@ class FushiOptionSelectionPage<T> extends StatelessWidget {
       final bool isSelected = o.value == selected;
       return AdaptiveSettingsRow(
         title: o.label,
-        trailing: isSelected ? Icon(Icons.check, color: scheme.primary) : null,
+        trailing: isSelected ? FushiIcon(Icons.check, color: scheme.primary) : null,
         onTap: isSelected ? null : () => Navigator.pop(context, o.value),
       );
     }).toList();

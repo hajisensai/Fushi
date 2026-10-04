@@ -4,6 +4,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 失败态重试按钮的 key（测试与焦点驱动定位用）。
 const ValueKey<String> kMangaCoverRetryKey = ValueKey<String>(
@@ -47,14 +48,14 @@ class MangaCoverFailure extends StatelessWidget {
             key: kMangaCoverRetryKey,
             tooltip: t.retry,
             onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
+            icon: const FushiIcon(Icons.refresh),
           );
     return ColoredBox(
       color: backgroundColor,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: <Widget>[const Icon(Icons.broken_image_outlined), action],
+          children: <Widget>[const FushiIcon(Icons.broken_image_outlined), action],
         ),
       ),
     );

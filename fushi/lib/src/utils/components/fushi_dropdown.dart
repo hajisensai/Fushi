@@ -6,6 +6,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});
@@ -284,7 +285,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                   style: tokens.type.listTitle,
                 ),
               ),
-              Icon(
+              FushiIcon(
                 Icons.arrow_drop_down,
                 color: tokens.surfaces.onVariant,
               ),
@@ -347,14 +348,14 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
               if (selected)
                 Padding(
                   padding: EdgeInsets.only(left: tokens.spacing.gap),
-                  child: Icon(Icons.check, size: 20, color: foreground),
+                  child: FushiIcon(Icons.check, size: 20, color: foreground),
                 ),
             ],
           )
         : Row(
             children: <Widget>[
               Expanded(child: text),
-              if (selected) Icon(Icons.check, size: 20, color: foreground),
+              if (selected) FushiIcon(Icons.check, size: 20, color: foreground),
             ],
           );
     return Actions(

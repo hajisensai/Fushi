@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -279,12 +280,12 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
                   segments: <ButtonSegment<SubtitleWorkbenchScope>>[
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.episode,
-                      icon: const Icon(Icons.subtitles_outlined),
+                      icon: const FushiIcon(Icons.subtitles_outlined),
                       tooltip: t.video_subtitle_scope_episode,
                     ),
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.collection,
-                      icon: const Icon(Icons.video_library_outlined),
+                      icon: const FushiIcon(Icons.video_library_outlined),
                       tooltip: t.video_subtitle_scope_collection,
                     ),
                   ],

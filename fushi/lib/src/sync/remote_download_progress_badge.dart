@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 远端书/视频卡片下载进行中时，盖在下载按钮位置的进度徽章。
 ///
@@ -79,7 +80,7 @@ class RemoteDownloadFailedBadge extends StatelessWidget {
               isEinkTheme(context) ? Border.all(color: colors.outline) : null,
         ),
         alignment: Alignment.center,
-        child: Icon(
+        child: FushiIcon(
           Icons.error_outline,
           size: 18,
           color: colors.onErrorContainer,

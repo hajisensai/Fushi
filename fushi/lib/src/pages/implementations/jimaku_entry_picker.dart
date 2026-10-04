@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/utils.dart';
 
@@ -72,7 +73,7 @@ class JimakuEntryPicker extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Icon(
+            child: FushiIcon(
               selected
                   ? Icons.radio_button_checked
                   : Icons.radio_button_unchecked,

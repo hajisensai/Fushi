@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -159,12 +160,12 @@ class _RepositionDialogState extends State<_RepositionDialog> {
                   ButtonSegment<AnkiRepositionSource>(
                     value: AnkiRepositionSource.dictionaries,
                     label: Text(t.anki_reposition_source_dictionaries),
-                    icon: const Icon(Icons.menu_book_outlined),
+                    icon: const FushiIcon(Icons.menu_book_outlined),
                   ),
                   ButtonSegment<AnkiRepositionSource>(
                     value: AnkiRepositionSource.field,
                     label: Text(t.anki_reposition_source_field),
-                    icon: const Icon(Icons.text_fields),
+                    icon: const FushiIcon(Icons.text_fields),
                   ),
                 ],
                 selected: <AnkiRepositionSource>{_source},

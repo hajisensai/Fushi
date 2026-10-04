@@ -1,59 +1,114 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
-// Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下：
-// - AppBar / SliverAppBar：仍是框架 AppBar（标题、居中、bottom、系统状态栏样式、
-//   返回键行为全不变），本体透明无阴影，背后垫一整块玻璃（flexibleSpace 底层）；
-//   隐含的返回 / 关闭 / 抽屉键换成玻璃图标按钮，行为与框架同一判据；
-// - TabBar：玻璃胶囊轨道 + 每个页签一枚玻璃按钮（选中项着色），与
-//   TabController 双向同步，Enter / 手柄 A 选中，方向键在页签间移动焦点。
+// Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下
+// 是 Apple 26 的导航栏形态：
+// - AppBar / SliverAppBar：仍是框架 AppBar（标题、bottom、系统状态栏样式、
+//   返回键行为全不变），但背景透明、无阴影无底线——顶栏不是一整块玻璃，
+//   玻璃只给栏上的控件：返回 / 关闭 / 抽屉键是一枚圆形玻璃钮，actions 收进
+//   一枚玻璃胶囊（iOS 26 UIBarButtonItemGroup / messages 演示的 Edit 胶囊）。
+//   标题桌面 20 bold 靠前、移动 17 semibold 居中（UINavigationBar 内联标题）。
+// - TabBar：iOS 26 分段控件——中性填充的胶囊轨道，选中段是一枚白（深色下
+//   浅灰）玻璃滑块，与 TabController 双向同步，Enter / 手柄 A 选中，方向键在
+//   页签间移动焦点。
 
-/// 顶栏背后的玻璃面：铺满 AppBar（含状态栏区域），调用方的 flexibleSpace
-/// 叠在上面。
-class _FushiGlassBarBackground extends StatelessWidget {
-  const _FushiGlassBarBackground({this.tint, this.child});
+/// 圆形玻璃钮的直径（iOS 26 导航栏 bar button 实测 44）。
+const double _kGlassBarControlExtent = 44;
 
-  final Color? tint;
-  final Widget? child;
+/// 玻璃顶栏上的一枚圆形玻璃底（返回键 / 单个导航钮）：里面的
+/// [FushiIconButtonControl] 是透明玻璃按钮，焦点 / Enter / 语义都在它身上。
+Widget _glassCircle(BuildContext context, Widget child) {
+  return Center(
+    child: SizedBox.square(
+      dimension: _kGlassBarControlExtent,
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: fushiGlassQuality(context),
+        shape: const LiquidOval(),
+        child: Center(child: child),
+      ),
+    ),
+  );
+}
 
-  @override
-  Widget build(BuildContext context) {
-    final Color? explicitTint = tint != null && tint!.a > 0 ? tint : null;
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        GlassContainer(
-          useOwnLayer: true,
-          quality: fushiGlassQuality(context, prominent: true),
-          settings: explicitTint == null
-              ? null
-              : fushiGlassSettings(context, tint: explicitTint),
-          shape: const LiquidRoundedRectangle(borderRadius: 0),
+/// 把整组 actions 收进一枚玻璃胶囊（多个图标钮 = 一枚胶囊里并排，单个 =
+/// 胶囊收成圆）。子组件原样挂在 Row 里，GlobalKey / 焦点 / 菜单锚点都不变；
+/// 只是高度从 AppBar 的 stretch 改成胶囊内的 44 松约束。
+Widget _glassActionsCapsule(BuildContext context, List<Widget> actions) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsetsDirectional.only(end: 8),
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: fushiGlassQuality(context),
+        shape: const LiquidRoundedSuperellipse(
+          borderRadius: _kGlassBarControlExtent / 2,
         ),
-        if (child != null) child!,
-      ],
-    );
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minWidth: _kGlassBarControlExtent,
+            minHeight: _kGlassBarControlExtent,
+            maxHeight: _kGlassBarControlExtent,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 桌面（Windows / macOS / Linux）用 macOS 26 的窗口标题字阶，移动用 iOS 的
+/// 内联导航栏标题。
+bool _isDesktopBar(BuildContext context) {
+  switch (Theme.of(context).platform) {
+    case TargetPlatform.windows:
+    case TargetPlatform.macOS:
+    case TargetPlatform.linux:
+      return true;
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+    case TargetPlatform.fuchsia:
+      return false;
   }
 }
 
+/// 玻璃顶栏的默认标题字阶：桌面 20 bold、移动 17 semibold（label 色）。
+TextStyle _glassTitleStyle(BuildContext context) {
+  final bool desktop = _isDesktopBar(context);
+  return (Theme.of(context).textTheme.titleLarge ?? const TextStyle()).copyWith(
+    fontSize: desktop ? 20 : 17,
+    fontWeight: desktop ? FontWeight.w700 : FontWeight.w600,
+    color: appleColorsOf(context).label,
+  );
+}
+
 /// 与框架 AppBar 同一判据推出隐含 leading（抽屉键 / 关闭键 / 返回键），
-/// 但渲染成玻璃图标按钮。推不出时返回 null（交回 AppBar，它同样推不出）。
+/// 但渲染成圆形玻璃钮（SF 风格图标）。推不出时返回 null（交回 AppBar，它同样
+/// 推不出）。
 Widget? _impliedGlassLeading(BuildContext context) {
   final ScaffoldState? scaffold = Scaffold.maybeOf(context);
   final ModalRoute<dynamic>? parentRoute = ModalRoute.of(context);
   final MaterialLocalizations l10n = MaterialLocalizations.of(context);
+  final Color fg = appleColorsOf(context).label;
   if (scaffold?.hasDrawer ?? false) {
-    return Center(
-      child: FushiIconButtonControl(
-        icon: const DrawerButtonIcon(),
+    return _glassCircle(
+      context,
+      FushiIconButtonControl(
+        icon: FushiIcon(CupertinoIcons.line_horizontal_3, color: fg, size: 20),
         tooltip: l10n.openAppDrawerTooltip,
         onPressed: () => Scaffold.of(context).openDrawer(),
       ),
@@ -62,9 +117,14 @@ Widget? _impliedGlassLeading(BuildContext context) {
   if (parentRoute?.impliesAppBarDismissal ?? false) {
     final bool useCloseButton =
         parentRoute is PageRoute<dynamic> && parentRoute.fullscreenDialog;
-    return Center(
-      child: FushiIconButtonControl(
-        icon: useCloseButton ? const CloseButtonIcon() : const BackButtonIcon(),
+    return _glassCircle(
+      context,
+      FushiIconButtonControl(
+        icon: FushiIcon(
+          useCloseButton ? CupertinoIcons.xmark : CupertinoIcons.chevron_back,
+          color: fg,
+          size: useCloseButton ? 18 : 22,
+        ),
         tooltip: useCloseButton
             ? l10n.closeButtonTooltip
             : l10n.backButtonTooltip,
@@ -81,9 +141,15 @@ Widget? _glassLeading(
   required bool automaticallyImplyLeading,
 }) {
   if (leading != null) {
-    // 框架只给 IconButton 包 Center；玻璃图标按钮同样要居中，否则会被
-    // leading 槽的紧约束拉成 56×56。
-    return leading is FushiIconButtonControl ? Center(child: leading) : leading;
+    // 调用方给的图标按钮 / 返回 / 关闭键同样落进圆形玻璃底；其它 leading
+    // （头像、品牌位……）原样交给 AppBar。
+    if (leading is FushiIconButtonControl ||
+        leading is IconButton ||
+        leading is BackButton ||
+        leading is CloseButton) {
+      return _glassCircle(context, leading);
+    }
+    return leading;
   }
   if (!automaticallyImplyLeading) return null;
   return _impliedGlassLeading(context);
@@ -94,18 +160,20 @@ List<Widget>? _glassActions(
   required List<Widget>? actions,
   required bool automaticallyImplyActions,
 }) {
-  if (actions != null && actions.isNotEmpty) return actions;
-  if (!automaticallyImplyActions) return actions;
-  if (Scaffold.maybeOf(context)?.hasEndDrawer ?? false) {
-    return <Widget>[
+  List<Widget>? resolved = actions;
+  if ((resolved == null || resolved.isEmpty) &&
+      automaticallyImplyActions &&
+      (Scaffold.maybeOf(context)?.hasEndDrawer ?? false)) {
+    resolved = <Widget>[
       FushiIconButtonControl(
-        icon: const EndDrawerButtonIcon(),
+        icon: const FushiIcon(CupertinoIcons.sidebar_right, size: 20),
         tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
         onPressed: () => Scaffold.of(context).openEndDrawer(),
       ),
     ];
   }
-  return actions;
+  if (resolved == null || resolved.isEmpty) return resolved;
+  return <Widget>[_glassActionsCapsule(context, resolved)];
 }
 
 /// [AppBar] 的设计系统分派版。[preferredSize] 与 AppBar 同一对象形态
@@ -207,12 +275,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
             )
           : actions,
       automaticallyImplyActions: automaticallyImplyActions,
-      flexibleSpace: glass
-          ? _FushiGlassBarBackground(
-              tint: backgroundColor,
-              child: flexibleSpace,
-            )
-          : flexibleSpace,
+      flexibleSpace: flexibleSpace,
       bottom: bottom,
       elevation: glass ? 0 : elevation,
       scrolledUnderElevation: glass ? 0 : scrolledUnderElevation,
@@ -220,12 +283,15 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       shadowColor: glass ? Colors.transparent : shadowColor,
       surfaceTintColor: glass ? Colors.transparent : surfaceTintColor,
       shape: shape,
+      // 透明：页面的实色分组底直接透上来，顶栏本身不是玻璃。
       backgroundColor: glass ? Colors.transparent : backgroundColor,
       foregroundColor: foregroundColor,
       iconTheme: iconTheme,
       actionsIconTheme: actionsIconTheme,
       primary: primary,
-      centerTitle: centerTitle,
+      centerTitle: glass
+          ? (centerTitle ?? !_isDesktopBar(context))
+          : centerTitle,
       excludeHeaderSemantics: excludeHeaderSemantics,
       titleSpacing: titleSpacing,
       toolbarOpacity: toolbarOpacity,
@@ -233,7 +299,9 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       toolbarHeight: toolbarHeight,
       leadingWidth: leadingWidth,
       toolbarTextStyle: toolbarTextStyle,
-      titleTextStyle: titleTextStyle,
+      titleTextStyle: glass
+          ? (titleTextStyle ?? _glassTitleStyle(context))
+          : titleTextStyle,
       systemOverlayStyle: systemOverlayStyle,
       forceMaterialTransparency: forceMaterialTransparency,
       useDefaultSemanticsOrder: useDefaultSemanticsOrder,
@@ -348,24 +416,25 @@ class FushiSliverAppBar extends StatelessWidget {
             )
           : actions,
       automaticallyImplyActions: automaticallyImplyActions,
-      flexibleSpace: glass
-          ? _FushiGlassBarBackground(
-              tint: backgroundColor,
-              child: flexibleSpace,
-            )
-          : flexibleSpace,
+      flexibleSpace: flexibleSpace,
       bottom: bottom,
       elevation: glass ? 0 : elevation,
       scrolledUnderElevation: glass ? 0 : scrolledUnderElevation,
       shadowColor: glass ? Colors.transparent : shadowColor,
       surfaceTintColor: glass ? Colors.transparent : surfaceTintColor,
       forceElevated: forceElevated,
-      backgroundColor: glass ? Colors.transparent : backgroundColor,
+      // 不是玻璃面：用页面实色底（与透明 AppBar 观感相同），钉住时滚上来的
+      // 内容才不会从标题底下透出来。
+      backgroundColor: glass
+          ? Theme.of(context).scaffoldBackgroundColor
+          : backgroundColor,
       foregroundColor: foregroundColor,
       iconTheme: iconTheme,
       actionsIconTheme: actionsIconTheme,
       primary: primary,
-      centerTitle: centerTitle,
+      centerTitle: glass
+          ? (centerTitle ?? !_isDesktopBar(context))
+          : centerTitle,
       excludeHeaderSemantics: excludeHeaderSemantics,
       titleSpacing: titleSpacing,
       collapsedHeight: collapsedHeight,
@@ -380,7 +449,9 @@ class FushiSliverAppBar extends StatelessWidget {
       toolbarHeight: toolbarHeight,
       leadingWidth: leadingWidth,
       toolbarTextStyle: toolbarTextStyle,
-      titleTextStyle: titleTextStyle,
+      titleTextStyle: glass
+          ? (titleTextStyle ?? _glassTitleStyle(context))
+          : titleTextStyle,
       systemOverlayStyle: systemOverlayStyle,
       forceMaterialTransparency: forceMaterialTransparency,
       useDefaultSemanticsOrder: useDefaultSemanticsOrder,
@@ -684,8 +755,8 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final TabBarThemeData tabTheme = TabBarTheme.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool dark = theme.colorScheme.brightness == Brightness.dark;
     final List<Widget> tabs = _bar.tabs;
     if (_segmentKeys.length != tabs.length) {
       _segmentKeys = <GlobalKey>[
@@ -698,24 +769,31 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
     final double segmentHeight = height - 2 * outerVertical - 2 * trackPadding;
     final int selected = _shown.clamp(0, tabs.length - 1);
 
+    // iOS 26 分段控件的滑块：浅色纯白、深色 #5A5A5E（UISegmentedControl 实测），
+    // 以有色玻璃渲染（液态档带一点高光 / 折射，降低透明度档就是实心）。
+    final Color thumb = dark ? const Color(0xFF5A5A5E) : Colors.white;
+
     Widget segment(int i) {
       final bool isSelected = i == selected;
+      // 选中 / 未选中都是 label 色（Apple 分段控件靠滑块与字重区分，不靠强调色），
+      // 未选中稍弱一档；调用方显式给的颜色照用。主题里的 MD3 TabBarTheme 颜色
+      // 是给下划线页签配的，不读。
       final Color fg = isSelected
-          ? (_bar.labelColor ?? tabTheme.labelColor ?? cs.onSecondaryContainer)
-          : (_bar.unselectedLabelColor ??
-                tabTheme.unselectedLabelColor ??
-                cs.onSurfaceVariant);
+          ? (_bar.labelColor ?? apple.label)
+          : (_bar.unselectedLabelColor ?? apple.label.withValues(alpha: 0.85));
       final TextStyle base =
           (isSelected
-              ? (_bar.labelStyle ?? tabTheme.labelStyle)
-              : (_bar.unselectedLabelStyle ??
-                    tabTheme.unselectedLabelStyle ??
-                    _bar.labelStyle ??
-                    tabTheme.labelStyle)) ??
+              ? _bar.labelStyle
+              : (_bar.unselectedLabelStyle ?? _bar.labelStyle)) ??
           theme.textTheme.titleSmall ??
           const TextStyle();
+      final double fontSize = (base.fontSize ?? 14).clamp(13.0, 15.0);
       Widget content = DefaultTextStyle(
-        style: base.copyWith(color: fg),
+        style: base.copyWith(
+          color: fg,
+          fontSize: fontSize,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         child: IconTheme.merge(
@@ -725,7 +803,6 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
             child: Padding(
               padding:
                   _bar.labelPadding ??
-                  tabTheme.labelPadding ??
                   const EdgeInsets.symmetric(horizontal: 14),
               child: Center(widthFactor: 1, child: tabs[i]),
             ),
@@ -747,13 +824,7 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
             ? GlassButtonStyle.filled
             : GlassButtonStyle.transparent,
         settings: isSelected
-            ? fushiGlassSettings(
-                context,
-                tint:
-                    _bar.indicatorColor ??
-                    tabTheme.indicatorColor ??
-                    cs.secondaryContainer,
-              )
+            ? fushiGlassSettings(context, tint: _bar.indicatorColor ?? thumb)
             : null,
         quality: fushiGlassQuality(context),
         shape: LiquidRoundedSuperellipse(borderRadius: segmentHeight / 2),
@@ -784,7 +855,7 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
 
     final TabAlignment alignment =
         _bar.tabAlignment ??
-        tabTheme.tabAlignment ??
+        TabBarTheme.of(context).tabAlignment ??
         (_bar.isScrollable ? TabAlignment.start : TabAlignment.fill);
     Widget row;
     if (_bar.isScrollable) {
@@ -810,14 +881,17 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
         ],
       );
     }
-    final Widget track = GlassContainer(
-      useOwnLayer: true,
-      quality: fushiGlassQuality(context, prominent: true),
-      shape: LiquidRoundedSuperellipse(
-        borderRadius: segmentHeight / 2 + trackPadding,
+    // 轨道是内容层上的中性填充胶囊（tertiarySystemFill），不是玻璃：玻璃只给
+    // 浮起来的那枚滑块。
+    final Widget track = DecoratedBox(
+      decoration: ShapeDecoration(
+        color: apple.tertiaryFill,
+        shape: const StadiumBorder(),
       ),
-      padding: const EdgeInsets.all(trackPadding),
-      child: Material(type: MaterialType.transparency, child: row),
+      child: Padding(
+        padding: const EdgeInsets.all(trackPadding),
+        child: Material(type: MaterialType.transparency, child: row),
+      ),
     );
     final bool hugs = _bar.isScrollable || alignment == TabAlignment.center;
     final AlignmentGeometry hugAlignment = alignment == TabAlignment.center

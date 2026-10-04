@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
@@ -184,7 +185,7 @@ class _VideoSourceScrapeRunDetailDialogState
       key: ValueKey<String>('video-source-run-issue-${issue.workTitle}'),
       density: FushiListDensity.compact,
       padding: EdgeInsets.zero,
-      leading: Icon(
+      leading: FushiIcon(
         isError ? Icons.error_outline : Icons.info_outline,
         color: isError
             ? Theme.of(context).colorScheme.error
@@ -207,7 +208,7 @@ class _VideoSourceScrapeRunDetailDialogState
               : FushiIconButtonControl(
                   tooltip: t.video_source_scrape_manual_search_title,
                   onPressed: () => unawaited(_bindManually(issue)),
-                  icon: const Icon(Icons.search),
+                  icon: const FushiIcon(Icons.search),
                 ),
     );
   }

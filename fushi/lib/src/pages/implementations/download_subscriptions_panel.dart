@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
@@ -174,7 +175,7 @@ class _DownloadSubscriptionsPanelState
             padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
             child: Row(
               children: <Widget>[
-                Icon(
+                FushiIcon(
                   Icons.schedule_outlined,
                   color: theme.colorScheme.primary,
                 ),
@@ -194,7 +195,7 @@ class _DownloadSubscriptionsPanelState
                           height: 16,
                           child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.refresh, size: 18),
+                      : const FushiIcon(Icons.refresh, size: 18),
                   label: Text(t.download_subscription_check_all),
                 ),
               ],
@@ -211,7 +212,7 @@ class _DownloadSubscriptionsPanelState
       padding: const EdgeInsets.all(24),
       children: <Widget>[
         const SizedBox(height: 72),
-        Icon(
+        FushiIcon(
           Icons.subscriptions_outlined,
           size: 48,
           color: theme.colorScheme.outline,
@@ -266,7 +267,7 @@ class _DownloadSubscriptionsPanelState
             // BUG-1184：标题是番剧名，右侧 trailing 挂着开关 + 刷新 + 删除（≈150px
             // 不可压缩），窄屏上留给番剧名的宽度只剩几十像素。行高自由，放宽到两行。
             titleMaxLines: 2,
-            leading: Icon(
+            leading: FushiIcon(
               subscription.enabled
                   ? Icons.notifications_active_outlined
                   : Icons.notifications_off_outlined,

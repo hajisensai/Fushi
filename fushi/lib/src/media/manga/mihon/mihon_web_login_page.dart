@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -463,7 +464,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
         appBar: FushiAppBar(
           title: Text(widget.sourceName),
           leading: FushiIconButtonControl(
-            icon: const Icon(Icons.close),
+            icon: const FushiIcon(Icons.close),
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
             onPressed: () => Navigator.of(context).pop(false),
           ),
@@ -514,7 +515,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             onPressed: _import == null
                 ? () => unawaited(_beginBrowserImport(jar))
                 : null,
-            icon: const Icon(Icons.extension_outlined),
+            icon: const FushiIcon(Icons.extension_outlined),
             label: Text(t.mihon_source_login_import_browser),
           ),
           if (_import != null) ...<Widget>[
@@ -551,7 +552,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             onPressed: controller != null && _canGoBack
                 ? () => unawaited(controller.goBack())
                 : null,
-            icon: const Icon(Icons.arrow_back),
+            icon: const FushiIcon(Icons.arrow_back),
           ),
           FushiIconButtonControl(
             key: const ValueKey<String>('mihon_login_forward'),
@@ -559,7 +560,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             onPressed: controller != null && _canGoForward
                 ? () => unawaited(controller.goForward())
                 : null,
-            icon: const Icon(Icons.arrow_forward),
+            icon: const FushiIcon(Icons.arrow_forward),
           ),
           FushiIconButtonControl(
             key: const ValueKey<String>('mihon_login_reload'),
@@ -567,7 +568,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             onPressed: controller != null
                 ? () => unawaited(controller.reload())
                 : null,
-            icon: const Icon(Icons.refresh),
+            icon: const FushiIcon(Icons.refresh),
           ),
           Expanded(
             child: Text(

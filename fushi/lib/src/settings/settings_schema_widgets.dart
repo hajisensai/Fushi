@@ -6,6 +6,7 @@ import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -380,7 +381,7 @@ class SettingsSchemaItem extends StatelessWidget {
     return ButtonSegment<T>(
       value: option.value,
       label: Text(option.label),
-      icon: option.icon != null ? Icon(option.icon, size: 16) : null,
+      icon: option.icon != null ? FushiIcon(option.icon, size: 16) : null,
       tooltip: option.tooltip ?? option.label,
     );
   }

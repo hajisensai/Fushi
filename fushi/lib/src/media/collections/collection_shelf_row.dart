@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -250,7 +251,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                     icon: AnimatedRotation(
                       turns: widget.collapsed ? -0.25 : 0,
                       duration: const Duration(milliseconds: 150),
-                      child: Icon(
+                      child: FushiIcon(
                         Icons.expand_more,
                         size: 20,
                         color: tokens.surfaces.onVariant,
@@ -282,7 +283,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
               // 多选态隐藏「查看全部」尾随件（行头点击整选而非导航）。
               if (!selectionMode) ...<Widget>[
                 Text(t.collection_view_all, style: tokens.type.metadata),
-                Icon(
+                FushiIcon(
                   Icons.chevron_right,
                   size: 18,
                   color: tokens.surfaces.onVariant,
@@ -379,7 +380,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                         padding: EdgeInsets.symmetric(
                           horizontal: tokens.spacing.gap,
                         ),
-                        child: Icon(
+                        child: FushiIcon(
                           Icons.new_label_outlined,
                           color: hoverColor,
                           size: 20,

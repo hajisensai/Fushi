@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 class RemoteSubscriptionsSection extends ConsumerStatefulWidget {
@@ -188,7 +189,7 @@ class _RemoteSubscriptionsSectionState
                       (InterconnectSubscriptionClient c) =>
                           c.checkNow(target, sub.subscriptionId),
                     ),
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const FushiIcon(Icons.refresh, size: 18),
           ),
           FushiIconButtonControl(
             key: ValueKey<String>(
@@ -202,7 +203,7 @@ class _RemoteSubscriptionsSectionState
                       (InterconnectSubscriptionClient c) =>
                           c.delete(target, sub.subscriptionId),
                     ),
-            icon: const Icon(Icons.delete_outline, size: 18),
+            icon: const FushiIcon(Icons.delete_outline, size: 18),
           ),
           FushiSwitch.adaptive(
             key: ValueKey<String>(

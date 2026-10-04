@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 
@@ -143,13 +144,13 @@ class ExtensionCatalogActions extends StatelessWidget {
         FushiOutlinedButton.icon(
           key: ValueKey<String>('${keyPrefix}_bulk_install'),
           onPressed: onBulkInstall,
-          icon: const Icon(Icons.playlist_add_check),
+          icon: const FushiIcon(Icons.playlist_add_check),
           label: Text(t.mihon_extension_bulk_install),
         ),
         FushiOutlinedButton.icon(
           key: ValueKey<String>('${keyPrefix}_update_all'),
           onPressed: onUpdateAll,
-          icon: const Icon(Icons.system_update_alt),
+          icon: const FushiIcon(Icons.system_update_alt),
           label: Text(t.mihon_extension_update_all),
         ),
       ],

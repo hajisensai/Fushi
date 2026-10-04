@@ -3,6 +3,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_button_assets.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 手柄按钮外形（TODO-942 P1）：面键/摇杆/系统键是圆钮，肩键/扳机是横向胶囊。
 enum GamepadPadShape { circle, pill }
@@ -280,7 +281,7 @@ class GamepadDpadCluster extends StatelessWidget {
         color: arm.bound ? scheme.primaryContainer : const Color(0x00000000),
         shape: shape,
       ),
-      child: Icon(
+      child: FushiIcon(
         icon,
         size: rect.shortestSide * 0.9,
         color: arm.bound ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,

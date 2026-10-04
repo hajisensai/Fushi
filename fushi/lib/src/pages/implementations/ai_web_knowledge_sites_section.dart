@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -73,7 +74,7 @@ class _AiWebKnowledgeCustomSitesSectionState
           for (final WebKnowledgeSite site in sites)
             FushiListItem(
               key: ValueKey<String>('ai-web-knowledge-site-${site.id}'),
-              leading: const Icon(Icons.travel_explore),
+              leading: const FushiIcon(Icons.travel_explore),
               title: Text(site.label),
               subtitle: Text(
                 site.endpoint.toString(),
@@ -100,7 +101,7 @@ class _AiWebKnowledgeCustomSitesSectionState
                       'ai-web-knowledge-site-${site.id}-remove',
                     ),
                     tooltip: t.ai_web_knowledge_custom_remove,
-                    icon: const Icon(Icons.remove_circle_outline),
+                    icon: const FushiIcon(Icons.remove_circle_outline),
                     onPressed: () => unawaited(_remove(prefs, site)),
                   ),
                 ],
@@ -111,7 +112,7 @@ class _AiWebKnowledgeCustomSitesSectionState
             child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('ai-web-knowledge-custom-add'),
               onPressed: () => unawaited(_add(prefs)),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.ai_web_knowledge_custom_add),
             ),
           ),

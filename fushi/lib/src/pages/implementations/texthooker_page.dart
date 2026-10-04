@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -236,7 +237,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ),
                   ),
                   FushiListItem(
-                    leading: const Icon(Icons.audiotrack_outlined),
+                    leading: const FushiIcon(Icons.audiotrack_outlined),
                     title: Text(line.audioBackend ?? t.game_track_voice),
                     subtitle: Text(
                       <String>[
@@ -291,7 +292,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         context,
                       ).surfaces.onSurface.withValues(alpha: 0.38);
                       return FushiListItem(
-                        leading: Icon(
+                        leading: FushiIcon(
                           excluded
                               ? Icons.music_off_outlined
                               : Icons.graphic_eq,
@@ -1343,7 +1344,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: <Widget>[
-              Icon(Icons.crop_free, size: 18, color: colors.primary),
+              FushiIcon(Icons.crop_free, size: 18, color: colors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1985,7 +1986,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.forum_outlined, size: 20),
+                const FushiIcon(Icons.forum_outlined, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -2061,7 +2062,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           // 是游戏 exe 的 SHA-256——用户拿到的只是一串字符。
                           FushiIconButtonControl(
                             tooltip: t.game_hook_code_paste_title,
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.content_paste_go_outlined,
                               size: 20,
                             ),
@@ -2069,7 +2070,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           ),
                           FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_save}',
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.bookmark_add_outlined,
                               size: 20,
                             ),
@@ -2077,7 +2078,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           ),
                           FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_import}',
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.file_download_outlined,
                               size: 20,
                             ),
@@ -2085,7 +2086,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           ),
                           FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_export}',
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.file_upload_outlined,
                               size: 20,
                             ),
@@ -2247,7 +2248,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Icon(
+                          FushiIcon(
                             Icons.sensors_off_outlined,
                             size: 42,
                             color: Theme.of(context).colorScheme.outline,
@@ -2349,7 +2350,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       tooltip: activeSteps > 0
           ? '${t.game_text_process_title} · $stepCountLabel'
           : t.game_text_process_title,
-      icon: const Icon(Icons.filter_alt_outlined, size: 20),
+      icon: const FushiIcon(Icons.filter_alt_outlined, size: 20),
       onPressed: hasThread
           ? () => unawaited(_openTextProcessEditor(selectedTextThreadKey))
           : null,
@@ -2616,7 +2617,7 @@ class _SessionOverviewCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             waitingForThread
                 ? Icons.forum_outlined
                 : state.isActive
@@ -2755,7 +2756,7 @@ class _ThreadSelectionRequiredCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.multitrack_audio_outlined,
                 size: 40,
                 color: Theme.of(context).colorScheme.outline,
@@ -2913,7 +2914,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.graphic_eq, size: 20),
+              const FushiIcon(Icons.graphic_eq, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -3041,7 +3042,7 @@ class _CaptureHealthCard extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                const Icon(Icons.monitor_heart_outlined, size: 20),
+                const FushiIcon(Icons.monitor_heart_outlined, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -3171,7 +3172,7 @@ class _HealthRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             ready ? Icons.check_circle_outline : Icons.schedule_outlined,
             size: 17,
             color: ready
@@ -3536,7 +3537,7 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
         if (collapsible) ...<Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.warning_amber_rounded,
                 size: 16,
                 color: widget.colors.tertiary,
@@ -3565,7 +3566,7 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
           FushiTextButton.icon(
             key: ValueKey<String>('game-line-expand-${widget.line.id}'),
             onPressed: () => setState(() => _expanded = !_expanded),
-            icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            icon: FushiIcon(_expanded ? Icons.expand_less : Icons.expand_more),
             label: Text(
               _expanded ? t.collection_collapse : t.collection_expand,
             ),
@@ -3591,7 +3592,7 @@ class _LineMinedChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.style, size: 12, color: colors.onPrimary),
+          FushiIcon(Icons.style, size: 12, color: colors.onPrimary),
           const SizedBox(width: 4),
           Text(
             t.game_line_mined,

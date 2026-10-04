@@ -384,7 +384,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
     if (isMobilePlatform) return const SizedBox.shrink();
     return Builder(
       builder: (BuildContext buttonContext) {
-        final Widget icon = Icon(
+        final Widget icon = FushiIcon(
           isFullscreen(buttonContext)
               ? Icons.fullscreen_exit
               : Icons.fullscreen,

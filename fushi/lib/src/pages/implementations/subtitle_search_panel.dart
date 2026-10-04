@@ -14,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -1044,7 +1045,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_apiKeyCollapsed && _apiKeyCtrl.text.trim().isNotEmpty) {
       return Row(
         children: <Widget>[
-          const Icon(Icons.vpn_key, size: 18),
+          const FushiIcon(Icons.vpn_key, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1219,7 +1220,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               labelText: t.video_jimaku_episode,
               hintText: t.video_jimaku_episode_hint,
               isDense: true,
-              prefixIcon: const Icon(Icons.tag, size: 18),
+              prefixIcon: const FushiIcon(Icons.tag, size: 18),
             ),
             onSubmitted: (_) => _search(),
           ),
@@ -1234,7 +1235,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               decoration: InputDecoration(
                 labelText: t.video_jimaku_filter,
                 isDense: true,
-                prefixIcon: const Icon(Icons.filter_list, size: 18),
+                prefixIcon: const FushiIcon(Icons.filter_list, size: 18),
               ),
               onChanged: (String v) => setState(() => _filter = v),
             ),
@@ -1328,7 +1329,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon, size: 18, color: theme.colorScheme.onErrorContainer),
+              FushiIcon(icon, size: 18, color: theme.colorScheme.onErrorContainer),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1371,7 +1372,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               const SizedBox(height: 8),
               FushiTextButton.icon(
                 onPressed: _showAllEpisodes,
-                icon: const Icon(Icons.list, size: 18),
+                icon: const FushiIcon(Icons.list, size: 18),
                 label: Text(t.video_jimaku_show_all_episodes),
               ),
             ],
@@ -1382,7 +1383,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_candidates.isEmpty) {
       // 未搜索的初始态（宽屏右栏占位）：淡图标示意结果将显示在这里，不引入新文案。
       return Center(
-        child: Icon(
+        child: FushiIcon(
           Icons.subtitles_outlined,
           size: 48,
           color: theme.colorScheme.outlineVariant,
@@ -1557,7 +1558,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               ),
             FushiFilledButton.icon(
               onPressed: _searching ? null : _search,
-              icon: const Icon(Icons.search),
+              icon: const FushiIcon(Icons.search),
               label: Text(t.video_jimaku_search),
             ),
           ],
@@ -1617,7 +1618,7 @@ class JimakuCandidateList extends StatelessWidget {
         return FushiListTileControl(
           contentPadding: const EdgeInsets.symmetric(vertical: 4),
           isThreeLine: true,
-          leading: const Icon(Icons.subtitles_outlined),
+          leading: const FushiIcon(Icons.subtitles_outlined),
           title: Text(
             c.name,
             maxLines: 3,
@@ -1636,7 +1637,7 @@ class JimakuCandidateList extends StatelessWidget {
                   height: 18,
                   child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.download),
+              : const FushiIcon(Icons.download),
           onTap: onDownload == null ? null : () => onDownload!(c),
         );
       },

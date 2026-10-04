@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -204,7 +205,7 @@ class _LeaderboardFriendsPageState
                       onPressed: myCode.isEmpty
                           ? null
                           : () => unawaited(leaderboardCopy(myCode)),
-                      icon: const Icon(Icons.copy),
+                      icon: const FushiIcon(Icons.copy),
                       label: Text(t.leaderboard_copy),
                     ),
                     FushiOutlinedButton.icon(
@@ -215,7 +216,7 @@ class _LeaderboardFriendsPageState
                                 t.leaderboard_friends_share_text(code: myCode),
                               ),
                             ),
-                      icon: const Icon(Icons.ios_share),
+                      icon: const FushiIcon(Icons.ios_share),
                       label: Text(t.leaderboard_share),
                     ),
                   ],
@@ -239,7 +240,7 @@ class _LeaderboardFriendsPageState
                   alignment: Alignment.centerLeft,
                   child: FushiFilledButton.icon(
                     onPressed: _adding ? null : () => unawaited(_add()),
-                    icon: const Icon(Icons.person_add_alt_1_outlined),
+                    icon: const FushiIcon(Icons.person_add_alt_1_outlined),
                     label: Text(t.leaderboard_friends_add),
                   ),
                 ),

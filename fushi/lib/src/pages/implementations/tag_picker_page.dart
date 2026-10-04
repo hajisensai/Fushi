@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
@@ -148,7 +149,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       floatingActionButton: FushiGlassFab(
         child: FloatingActionButton.extended(
           onPressed: _quickCreateTag,
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(Icons.add),
           label: Text(t.tag_new),
         ),
       ),

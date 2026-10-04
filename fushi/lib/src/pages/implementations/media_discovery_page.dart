@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
@@ -756,7 +757,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     ].join(' · ');
     return FushiListItem(
       key: const ValueKey<String>('discovery_hidden_reveal'),
-      leading: const Icon(Icons.visibility_off_outlined),
+      leading: const FushiIcon(Icons.visibility_off_outlined),
       title: Text(text),
       trailing: Text(t.discovery_hidden_show),
       onTap: () => setState(() => _revealHidden = true),
@@ -851,7 +852,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               padding: EdgeInsets.only(bottom: gap),
               child: Row(
                 children: <Widget>[
-                  Icon(
+                  FushiIcon(
                     Icons.travel_explore_outlined,
                     size: 18,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -898,7 +899,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             radius: 20,
             backgroundColor: colors.secondaryContainer,
             foregroundColor: colors.onSecondaryContainer,
-            child: Icon(
+            child: FushiIcon(
               browsable ? Icons.folder_open_outlined : Icons.search,
               size: 20,
             ),
@@ -928,7 +929,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: tokens.surfaces.onVariant),
+          FushiIcon(Icons.chevron_right, color: tokens.surfaces.onVariant),
         ],
       ),
     );
@@ -1043,7 +1044,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                   for (final DiscoveryEntry entry in visible.entries)
                     switch (entry) {
                       DiscoveryFolder() => FushiListItem(
-                          leading: const Icon(Icons.folder_outlined),
+                          leading: const FushiIcon(Icons.folder_outlined),
                           title: Text(entry.title),
                           // 目录条目不带来源名，用户看不出这是哪个站的目录。
                           subtitle: Text(
@@ -1056,7 +1057,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                                 t.media_source_count_manga(n: entry.itemCount!),
                             ].join(' · '),
                           ),
-                          trailing: const Icon(Icons.chevron_right),
+                          trailing: const FushiIcon(Icons.chevron_right),
                           onTap: () => _openFolder(entry),
                         ),
                       // 未隐藏时 0 做种条目灰显：死种能看到，但一眼分得出。
@@ -1066,7 +1067,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                           ),
                           opacity: entry.seeders == 0 ? 0.5 : 1,
                           child: FushiListItem(
-                            leading: Icon(
+                            leading: FushiIcon(
                               entry.payloadKind == DiscoveryPayloadKind.torrent
                                   ? Icons.link
                                   : Icons.insert_drive_file_outlined,
@@ -1112,7 +1113,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                           key: const ValueKey<String>(
                               'discovery_load_more_retry'),
                           onPressed: _retryLoadMore,
-                          icon: const Icon(Icons.refresh_rounded),
+                          icon: const FushiIcon(Icons.refresh_rounded),
                           label: Text(t.retry),
                         ),
                       ),
@@ -1148,7 +1149,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   Widget _retryButton() => FushiFilledButton.icon(
         key: const ValueKey<String>('discovery_retry'),
         onPressed: () => unawaited(_load()),
-        icon: const Icon(Icons.refresh_rounded),
+        icon: const FushiIcon(Icons.refresh_rounded),
         label: Text(t.retry),
       );
 

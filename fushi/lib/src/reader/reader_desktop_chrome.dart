@@ -20,6 +20,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 顶部工具栏视觉高度 == 挤压态预留高（chrome 铁律：同一真相源，见
 /// reader_chrome_floating.dart 文件头）。
@@ -321,7 +322,7 @@ class ReaderDesktopHeader extends StatelessWidget {
                             ),
                             tooltip: MaterialLocalizations.of(context)
                                 .moreButtonTooltip,
-                            icon: Icon(Icons.more_vert, color: textColor),
+                            icon: FushiIcon(Icons.more_vert, color: textColor),
                             iconSize: 22,
                             onSelected: (ReaderHeaderAction a) =>
                                 a.onPressed?.call(),
@@ -334,7 +335,7 @@ class ReaderDesktopHeader extends StatelessWidget {
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: <Widget>[
-                                      Icon(a.icon, size: 20),
+                                      FushiIcon(a.icon, size: 20),
                                       const SizedBox(width: 12),
                                       Flexible(
                                         child: Text(a.label),
@@ -377,7 +378,7 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget button = FushiIconButtonControl(
-      icon: Icon(icon, color: color),
+      icon: FushiIcon(icon, color: color),
       iconSize: 22,
       tooltip: tooltip,
       onPressed: onPressed,
@@ -440,7 +441,7 @@ class ReaderSideSheet extends StatelessWidget {
                 identifier: 'hibiki.reader.side_sheet.close',
                 child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_side_sheet_close'),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   onPressed: onClose,
                 ),

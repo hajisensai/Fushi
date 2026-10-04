@@ -3,6 +3,7 @@ import 'dart:convert' show utf8;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -3511,7 +3512,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: <Widget>[
-              const Icon(Icons.rule_folder_outlined, size: 20),
+              const FushiIcon(Icons.rule_folder_outlined, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -4273,7 +4274,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         ? 'home_video_hero_continue_${collection.id}'
                         : 'home_video_hero_continue_${item.pageKey}'),
                     onPressed: primaryAction,
-                    icon: const Icon(Icons.play_arrow),
+                    icon: const FushiIcon(Icons.play_arrow),
                     label: Text(collection != null
                         ? t.collection_continue_progress(n: continueEp)
                         : (standalone!.lastPositionMs > 0
@@ -4294,7 +4295,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                           color: Colors.white.withValues(alpha: 0.5),
                         ),
                       ),
-                      icon: const Icon(Icons.info_outline),
+                      icon: const FushiIcon(Icons.info_outline),
                       label: Text(t.video_hero_detail_view),
                     ),
                   ],
@@ -5515,7 +5516,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               FushiIconButtonControl(
                 tooltip: t.common_more_actions,
                 onPressed: () => _showVideoMenu(book),
-                icon: const Icon(Icons.more_horiz),
+                icon: const FushiIcon(Icons.more_horiz),
               ),
             const SizedBox(width: 6),
           ],
@@ -6669,7 +6670,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
+                  prefixIcon: const FushiIcon(Icons.search, size: 18),
                   hintText: t.library_search,
                   border: const OutlineInputBorder(),
                   contentPadding:
@@ -6677,7 +6678,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   suffixIcon: _searchQuery.isEmpty
                       ? null
                       : FushiIconButtonControl(
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const FushiIcon(Icons.close, size: 18),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
@@ -6969,7 +6970,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ? null
           : FushiFilledButton.icon(
               onPressed: widget.onOpenSources,
-              icon: const Icon(Icons.library_add_outlined),
+              icon: const FushiIcon(Icons.library_add_outlined),
               label: Text(t.library_empty_go_import),
             ),
     );
@@ -6983,7 +6984,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.filter_list_off, size: 56, color: colors.onSurfaceVariant),
+          FushiIcon(Icons.filter_list_off, size: 56, color: colors.onSurfaceVariant),
           const SizedBox(height: 12),
           Text(
             hint ?? t.tag_no_books_for_filter,
@@ -8469,17 +8470,17 @@ class _VideoBatchTagIntentRow extends StatelessWidget {
                   ButtonSegment<_VideoBatchTagIntent>(
                     value: _VideoBatchTagIntent.keep,
                     tooltip: t.batch_tag_keep,
-                    icon: const Icon(Icons.horizontal_rule_outlined, size: 16),
+                    icon: const FushiIcon(Icons.horizontal_rule_outlined, size: 16),
                   ),
                   ButtonSegment<_VideoBatchTagIntent>(
                     value: _VideoBatchTagIntent.add,
                     tooltip: t.batch_tag_add,
-                    icon: const Icon(Icons.add, size: 16),
+                    icon: const FushiIcon(Icons.add, size: 16),
                   ),
                   ButtonSegment<_VideoBatchTagIntent>(
                     value: _VideoBatchTagIntent.remove,
                     tooltip: t.batch_tag_remove,
-                    icon: Icon(
+                    icon: FushiIcon(
                       Icons.remove,
                       size: 16,
                       color: selected == _VideoBatchTagIntent.remove

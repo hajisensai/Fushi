@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -253,7 +254,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         actions: <Widget>[
           FushiIconButtonControl(
             tooltip: t.refresh,
-            icon: const Icon(Icons.refresh),
+            icon: const FushiIcon(Icons.refresh),
             onPressed: _loading ? null : () => unawaited(_load(force: true)),
           ),
         ],
@@ -279,7 +280,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         children: <Widget>[
           FushiIconButtonControl(
             tooltip: t.download_airing_calendar_week_prev,
-            icon: const Icon(Icons.chevron_left),
+            icon: const FushiIcon(Icons.chevron_left),
             onPressed: _loading ? null : () => _shiftWeek(-7),
           ),
           Text(
@@ -289,7 +290,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
           ),
           FushiIconButtonControl(
             tooltip: t.download_airing_calendar_week_next,
-            icon: const Icon(Icons.chevron_right),
+            icon: const FushiIcon(Icons.chevron_right),
             onPressed: _loading ? null : () => _shiftWeek(7),
           ),
           const Spacer(),
@@ -357,7 +358,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.cloud_off, size: 40, color: theme.colorScheme.error),
+              FushiIcon(Icons.cloud_off, size: 40, color: theme.colorScheme.error),
               const SizedBox(height: 12),
               Text(
                 t.download_airing_calendar_error,
@@ -385,7 +386,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
               ),
               const SizedBox(height: 16),
               FushiFilledButton.tonalIcon(
-                icon: const Icon(Icons.refresh),
+                icon: const FushiIcon(Icons.refresh),
                 label: Text(t.anime_download_retry),
                 onPressed: () => unawaited(_load(force: true)),
               ),
@@ -409,7 +410,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+              FushiIcon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
               const SizedBox(height: 12),
               Text(
                 message,
@@ -546,7 +547,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     // 明令的「普通页面不得就地重开局部 MD3 决策」，发现页的封面占位就是这么写的。
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.group,
-      child: const Icon(Icons.movie_outlined, size: 20),
+      child: const FushiIcon(Icons.movie_outlined, size: 20),
     );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,

@@ -8,6 +8,7 @@ import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
@@ -1828,7 +1829,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.system_update, size: 48, color: cs.primary),
+                    FushiIcon(Icons.system_update, size: 48, color: cs.primary),
                     const SizedBox(height: 16),
                     Text(
                       t.db_downgrade_title,
@@ -1885,7 +1886,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    FushiIcon(
                         cannotOpen
                             ? Icons.folder_off_outlined
                             : Icons.broken_image_outlined,
@@ -1955,7 +1956,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.folder_off_outlined,
+                    FushiIcon(Icons.folder_off_outlined,
                         size: 48, color: cs.primary),
                     const SizedBox(height: 16),
                     Text(
@@ -1982,12 +1983,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const Icon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(Icons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
                         FushiOutlinedButton.icon(
-                          icon: const Icon(Icons.folder_open, size: 18),
+                          icon: const FushiIcon(Icons.folder_open, size: 18),
                           label: Text(t.data_root_use_default_button),
                           onPressed: () =>
                               appModel.retryInitialiseWithDefaultRoot(),
@@ -2019,7 +2020,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.error_outline, size: 48, color: cs.error),
+                    FushiIcon(Icons.error_outline, size: 48, color: cs.error),
                     const SizedBox(height: 16),
                     Text(
                       t.initialization_failed,
@@ -2049,12 +2050,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const Icon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(Icons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
                         FushiOutlinedButton.icon(
-                          icon: const Icon(Icons.copy, size: 18),
+                          icon: const FushiIcon(Icons.copy, size: 18),
                           label: Text(t.copy_error),
                           onPressed: () {
                             Clipboard.setData(
@@ -2396,9 +2397,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           valueListenable: appModel.mediaOpenNotifier,
                           builder: (BuildContext context, bool mediaOpen,
                               Widget? child) {
+                            final WindowSizeClass sizeClass =
+                                windowSizeClassForWidth(viewport.width);
                             final bool railVisible = !mediaOpen &&
-                                windowSizeClassForWidth(viewport.width) !=
-                                    WindowSizeClass.compact;
+                                sizeClass != WindowSizeClass.compact;
+                            // 玻璃设计系统的 expanded 档是 224 宽的悬浮侧栏
+                            // （adaptiveNavRail extended），标题跟着它缩进。
+                            final double railWidth = isGlassDesign(context) &&
+                                    sizeClass == WindowSizeClass.expanded
+                                ? kGlassNavSidebarWidth
+                                : kAdaptiveNavRailWidth;
                             return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI
                               // zoom; align its title with the visually scaled
@@ -2407,7 +2415,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                               // size class / adaptiveNavRail), so they cannot
                               // drift apart behind a copied literal.
                               leadingInset: railVisible
-                                  ? kAdaptiveNavRailWidth * uiScale
+                                  ? railWidth * uiScale
                                   : 0,
                               title: ValueListenableBuilder<HomeTab>(
                                 valueListenable: homeShellTabNotifier,

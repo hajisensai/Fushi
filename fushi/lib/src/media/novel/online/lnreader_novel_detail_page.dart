@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -335,12 +336,12 @@ class _LnReaderNovelDetailPageState
           key: const ValueKey<String>('novel_detail_open_website'),
           tooltip: t.mihon_source_website_open,
           onPressed: () => unawaited(_openWebsite()),
-          icon: const Icon(Icons.open_in_new),
+          icon: const FushiIcon(Icons.open_in_new),
         ),
         FushiIconButtonControl(
           tooltip: t.refresh,
           onPressed: _loading ? null : () => unawaited(_load()),
-          icon: const Icon(Icons.refresh),
+          icon: const FushiIcon(Icons.refresh),
         ),
       ],
       body: _buildBody(context),
@@ -386,7 +387,7 @@ class _LnReaderNovelDetailPageState
                       dimension: 18,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.menu_book_outlined),
+                  : const FushiIcon(Icons.menu_book_outlined),
               label: Text(
                 inShelf ? t.book_continue_reading : t.novel_detail_read_online,
               ),
@@ -399,7 +400,7 @@ class _LnReaderNovelDetailPageState
                 onPressed: _opening
                     ? null
                     : () => unawaited(_removeFromShelf()),
-                icon: const Icon(Icons.library_add_check),
+                icon: const FushiIcon(Icons.library_add_check),
                 label: Text(t.novel_detail_library_remove),
               )
             else
@@ -408,13 +409,13 @@ class _LnReaderNovelDetailPageState
                 onPressed: chapters.isEmpty || _opening
                     ? null
                     : () => unawaited(_addToShelf()),
-                icon: const Icon(Icons.library_add_outlined),
+                icon: const FushiIcon(Icons.library_add_outlined),
                 label: Text(t.novel_detail_library_add),
               ),
             FushiOutlinedButton.icon(
               key: const ValueKey<String>('novel_detail_download'),
               onPressed: chapters.isEmpty ? null : () => unawaited(_download()),
-              icon: const Icon(Icons.download_outlined),
+              icon: const FushiIcon(Icons.download_outlined),
               label: Text(t.novel_detail_download),
             ),
           ],
@@ -463,7 +464,7 @@ class _LnReaderNovelDetailPageState
         key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
         tooltip: t.novel_detail_chapter_download,
         onPressed: () => unawaited(_download(startIndex: index)),
-        icon: const Icon(Icons.download_outlined),
+        icon: const FushiIcon(Icons.download_outlined),
       ),
       onTap: _opening
           ? null

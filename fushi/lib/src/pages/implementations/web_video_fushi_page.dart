@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:media_kit_video/media_kit_video.dart'
@@ -1718,7 +1719,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       actions: <Widget>[
         FushiPopupMenuButton<WebVideoHosting>(
           tooltip: t.web_video_hosting_menu,
-          icon: Icon(_windowed ? Icons.four_k_outlined : Icons.hd_outlined),
+          icon: FushiIcon(_windowed ? Icons.four_k_outlined : Icons.hd_outlined),
           onSelected: (WebVideoHosting h) => unawaited(_switchHosting(h)),
           itemBuilder: (BuildContext context) =>
               <PopupMenuEntry<WebVideoHosting>>[
@@ -1739,7 +1740,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           // 网页帧没有 mpv 缩放器，这里不列。
           FushiPopupMenuButton<VideoShaderTier>(
             tooltip: t.video_shader_tier_off,
-            icon: Icon(
+            icon: FushiIcon(
               _shaderActive
                   ? Icons.auto_fix_high
                   : Icons.auto_fix_high_outlined,
@@ -1764,7 +1765,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             icon: FushiBadgeControl.count(
               count: _minePending,
               isLabelVisible: _minePending > 0,
-              child: const Icon(Icons.auto_awesome_motion_outlined),
+              child: const FushiIcon(Icons.auto_awesome_motion_outlined),
             ),
             onPressed: _minePending == 0
                 ? null
@@ -1778,7 +1779,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         else if (_mineRunning)
           FushiIconButtonControl(
             tooltip: t.web_video_mine_queue_stop,
-            icon: const Icon(Icons.stop_circle_outlined),
+            icon: const FushiIcon(Icons.stop_circle_outlined),
             onPressed: () => _mineStopRequested = true,
           )
         else
@@ -1787,7 +1788,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             icon: FushiBadgeControl.count(
               count: _minePending,
               isLabelVisible: _minePending > 0,
-              child: const Icon(Icons.auto_awesome_motion_outlined),
+              child: const FushiIcon(Icons.auto_awesome_motion_outlined),
             ),
             onPressed: _minePending == 0
                 ? null
@@ -1795,7 +1796,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           ),
         FushiPopupMenuButton<String>(
           tooltip: t.web_video_track_menu,
-          icon: const Icon(Icons.subtitles_outlined),
+          icon: const FushiIcon(Icons.subtitles_outlined),
           onSelected: _selectTrack,
           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
             if (mine.isEmpty)
@@ -1813,7 +1814,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ),
         FushiIconButtonControl(
           tooltip: t.web_video_hide_native_subtitles,
-          icon: Icon(
+          icon: FushiIcon(
             _hideNativeSubtitles
                 ? Icons.closed_caption_disabled_outlined
                 : Icons.closed_caption_outlined,
@@ -1825,13 +1826,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ),
         FushiIconButtonControl(
           tooltip: t.video_subtitle_list,
-          icon: Icon(
+          icon: FushiIcon(
             _listVisible ? Icons.view_sidebar : Icons.view_sidebar_outlined,
           ),
           onPressed: _toggleList,
         ),
         FushiIconButtonControl(
-          icon: const Icon(Icons.fullscreen),
+          icon: const FushiIcon(Icons.fullscreen),
           onPressed: () => unawaited(_toggleFullscreen()),
         ),
       ],

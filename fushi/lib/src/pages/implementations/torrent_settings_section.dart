@@ -6,6 +6,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
@@ -558,7 +559,7 @@ class _TorrentSettingsSectionState
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check, size: 18),
+                    : const FushiIcon(Icons.network_check, size: 18),
                 label: Text(t.download_test_connection),
               ),
             ),
@@ -614,7 +615,7 @@ class _TorrentSettingsSectionState
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.refresh, size: 18),
+                    : const FushiIcon(Icons.refresh, size: 18),
                 label: Text(t.download_tracker_refresh),
               ),
             ),

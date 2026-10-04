@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// An on-screen keyboard driven entirely by a game controller / keyboard: the
 /// D-pad moves focus between keys (geometric, via [FushiFocusController]) and A
@@ -184,7 +185,7 @@ class _KbKeyState extends State<_KbKey> {
             constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
             alignment: Alignment.center,
             child: widget.icon != null
-                ? Icon(widget.icon, size: 20, color: colors.onSurface)
+                ? FushiIcon(widget.icon, size: 20, color: colors.onSurface)
                 : Text(
                     widget.label,
                     style: tokens.type.controlLabel

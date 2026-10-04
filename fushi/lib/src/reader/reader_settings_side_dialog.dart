@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -51,7 +52,7 @@ class ReaderSettingsSideButton extends StatelessWidget {
         tooltip: isLeft
             ? t.reader_settings_panel_move_right
             : t.reader_settings_panel_move_left,
-        icon: Icon(isLeft ? Icons.last_page : Icons.first_page),
+        icon: FushiIcon(isLeft ? Icons.last_page : Icons.first_page),
         onPressed: () async {
           final ReaderSideSheetSide next = isLeft
               ? ReaderSideSheetSide.right

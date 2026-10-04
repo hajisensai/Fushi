@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -280,7 +281,7 @@ class _AidokuCloudflareChallengePageState
       appBar: FushiAppBar(
         title: Text(t.manga_source_cloudflare_verify_title),
         leading: FushiIconButtonControl(
-          icon: const Icon(Icons.close),
+          icon: const FushiIcon(Icons.close),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
           onPressed: () => Navigator.of(context).pop(false),
         ),

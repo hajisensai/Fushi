@@ -12,14 +12,16 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
-        GlassDivider,
         GlassMenu,
         GlassMenuController,
         GlassMenuItem,
@@ -214,6 +216,16 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     // eink 例外由 FushiCard 内部兜住：eink scheme 把所有 surface container 塌
     // 缩成背景色，卡片没有可分层的填充，此时它自己补一圈实描边
     // （fushi_material_components.dart 的 eink 分支），这里不传 borderColor。
+    if (isGlassDesign(context)) {
+      // 「玻璃」设计系统：iOS 26 inset grouped 分组——实色
+      // secondarySystemGroupedBackground、圆角 iOS 24 / 桌面 12，不是玻璃。
+      return FushiCard(
+        padding: EdgeInsets.zero,
+        borderRadius: FushiAppleMetrics.of(context).groupBorderRadius,
+        color: color,
+        child: content,
+      );
+    }
     return FushiCard(
       padding: EdgeInsets.zero,
       borderRadius: tokens.radii.groupRadius,
@@ -233,7 +245,20 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     // 静态内嵌小标题（onTitleTap == null）是行上方的标签，保持上重下轻贴住下方
     // 设置行，行为不变。
     final bool interactive = onTitleTap != null;
-    final Widget label = cupertino
+    final bool glassDesign = isGlassDesign(context);
+    final Widget label = glassDesign && !cupertino
+        ? Padding(
+            // 「玻璃」设计系统：分组内标题是 13 号 secondaryLabel（iOS 分组
+            // 标题口径；中文不做大写变换）。
+            padding: interactive
+                ? const EdgeInsets.fromLTRB(16, 12, 16, 12)
+                : const EdgeInsets.fromLTRB(16, 10, 16, 2),
+            child: Text(
+              title!,
+              style: FushiAppleMetrics.of(context).footnoteStyle(context),
+            ),
+          )
+        : cupertino
         ? Padding(
             padding: interactive
                 ? const EdgeInsets.fromLTRB(16, 10, 16, 10)
@@ -264,18 +289,18 @@ class AdaptiveSettingsSurface extends StatelessWidget {
         if (titleTrailing != null)
           Padding(
             padding: EdgeInsets.only(
-              right: cupertino ? 12 : tokens.spacing.gap,
+              right: cupertino ? 12 : (glassDesign ? 16 : tokens.spacing.gap),
             ),
             child: titleTrailing!,
           ),
       ],
     );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
-    final Widget tappable = cupertino || isGlassDesign(context)
+    final Widget tappable = cupertino || glassDesign
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onTitleTap,
-            child: isGlassDesign(context)
+            child: glassDesign
                 ? FushiGlassPressHighlight(child: header)
                 : header,
           )
@@ -355,6 +380,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     if (widget.children.isEmpty) return const SizedBox.shrink();
 
     final bool cupertino = isCupertinoPlatform(context);
+    final bool glassDesign = isGlassDesign(context) && !cupertino;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool titleInside =
         widget.titlePlacement == SettingsSectionTitlePlacement.inside;
@@ -391,19 +417,24 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
                 ),
               ),
             AnimatedRotation(
-              turns: expanded ? 0.5 : 0.0,
+              // 玻璃：iOS 披露箭头 chevron_forward 展开时转到朝下（1/4 圈）。
+              turns: expanded ? (glassDesign ? 0.25 : 0.5) : 0.0,
               // eink 下动画归零（连续重绘=残影），箭头直接跳到目标朝向。
               duration: einkSafeDuration(
                 context,
                 const Duration(milliseconds: 180),
               ),
-              child: Icon(
-                cupertino ? CupertinoIcons.chevron_down : Icons.expand_more,
-                size: cupertino ? 16 : 22,
-                color: cupertino
-                    ? CupertinoColors.tertiaryLabel.resolveFrom(context)
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+              child: glassDesign
+                  ? const FushiAppleChevron()
+                  : FushiIcon(
+                      cupertino
+                          ? CupertinoIcons.chevron_down
+                          : Icons.expand_more,
+                      size: cupertino ? 16 : 22,
+                      color: cupertino
+                          ? CupertinoColors.tertiaryLabel.resolveFrom(context)
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
             ),
           ],
         ),
@@ -430,13 +461,27 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
       );
     }
 
+    final FushiAppleMetrics? apple =
+        glassDesign ? FushiAppleMetrics.of(context) : null;
     return Padding(
-      padding: EdgeInsets.only(bottom: cupertino ? 14 : 12),
+      // 玻璃：iOS inset grouped 分组之间的大间距（分组标题落在这段间距里）。
+      padding: EdgeInsets.only(
+        bottom: apple?.groupSpacing ?? (cupertino ? 14 : 12),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (!titleInside && widget.title != null && widget.title!.isNotEmpty)
-            cupertino
+            apple != null
+                ? Padding(
+                    // 分组外标题：13 号 secondaryLabel，与行文字起点对齐缩进。
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 7),
+                    child: Text(
+                      widget.title!,
+                      style: apple.footnoteStyle(context),
+                    ),
+                  )
+                : cupertino
                 ? Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                     child: Text(
@@ -468,15 +513,21 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     final List<Widget> result = <Widget>[];
     final bool glassDesign = isGlassDesign(context);
     for (int i = 0; i < rows.length; i++) {
-      if (i > 0 && glassDesign) {
-        // 「玻璃」设计系统：分组卡（GlassCard）里的行分隔是玻璃分隔线。
+      if (i > 0 && glassDesign && !cupertino) {
+        // 「玻璃」设计系统：iOS inset grouped 的行分隔——物理 1px separator，
+        // 从上一行的文字起点开始缩进（有行首图标时从图标后开始）、右端顶到
+        // 分组边缘；最后一行之后没有分隔线。
+        final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+        final double iconInset = _settingsRowHasIcon(rows[i - 1])
+            ? metrics.iconTileSize + tokens.spacing.gap + 4
+            : 0;
         result.add(
-          GlassDivider(
-            height: 1,
-            thickness: 0.5,
-            indent: tokens.spacing.rowHorizontal,
-            endIndent: tokens.spacing.rowHorizontal,
-            color: dividerColor.withValues(alpha: 0.6),
+          Container(
+            height: fushiHairline(context),
+            margin: EdgeInsetsDirectional.only(
+              start: metrics.rowHorizontal + iconInset,
+            ),
+            color: appleColorsOf(context).separator,
           ),
         );
       } else if (i > 0) {
@@ -494,6 +545,21 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     }
     return result;
   }
+
+  /// 行是否渲染行首图标（决定 iOS 分隔线的缩进起点）。只认识共享设置行族；
+  /// 其它自定义行按无图标处理（分隔线从 16 起）。
+  static bool _settingsRowHasIcon(Widget row) => switch (row) {
+        AdaptiveSettingsRow(:final bool showIcon, :final IconData? icon) =>
+          showIcon && icon != null,
+        AdaptiveSettingsSwitchRow(:final bool showIcon, :final IconData? icon) =>
+          showIcon && icon != null,
+        AdaptiveSettingsNavigationRow(
+          :final bool showIcon,
+          :final IconData? icon,
+        ) =>
+          showIcon && icon != null,
+        _ => false,
+      };
 }
 
 class AdaptiveSettingsRow extends StatelessWidget {
@@ -709,8 +775,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight:
-            isCupertinoPlatform(context) ? 46 : tokens.density.controlHeight,
+        minHeight: isCupertinoPlatform(context)
+            ? 46
+            : isGlassDesign(context)
+                // 玻璃：iOS 行高 44（桌面 38）；外层 Padding 已有竖直 gap。
+                ? FushiAppleMetrics.of(context).rowMinHeight -
+                    2 * tokens.spacing.gap
+                : tokens.density.controlHeight,
       ),
       child: Row(
         children: [
@@ -1732,7 +1803,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Icon(CupertinoIcons.chevron_down, size: 16, color: chevronColor),
+        FushiIcon(CupertinoIcons.chevron_down, size: 16, color: chevronColor),
       ],
     );
   }
@@ -1845,7 +1916,7 @@ class _GlassSettingsPickerState extends State<_GlassSettingsPicker> {
                 title: widget.labels[i],
                 isSelected: i == selected,
                 trailing:
-                    i == selected ? const Icon(Icons.check, size: 18) : null,
+                    i == selected ? const FushiIcon(Icons.check, size: 18) : null,
                 onTap: () {
                   if (i != selected) widget.onChanged(i);
                 },
@@ -2635,13 +2706,24 @@ class AdaptiveSettingsNavigationRow extends StatelessWidget {
     final Color color = cupertino
         ? CupertinoColors.tertiaryLabel.resolveFrom(context)
         : Theme.of(context).colorScheme.onSurfaceVariant;
+    if (isGlassDesign(context) && !cupertino) {
+      // 玻璃：iOS 可导航行的行尾 chevron（chevron_forward，tertiaryLabel）。
+      return AdaptiveSettingsRow(
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
+        showIcon: showIcon && icon != null,
+        onTap: onTap,
+        trailing: const FushiAppleChevron(),
+      );
+    }
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
       icon: icon,
       showIcon: showIcon && icon != null,
       onTap: onTap,
-      trailing: Icon(
+      trailing: FushiIcon(
         cupertino ? CupertinoIcons.chevron_right : Icons.chevron_right,
         size: cupertino ? 18 : 20,
         color: color,
@@ -2667,12 +2749,21 @@ class _SettingsLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextStyle? titleStyle = cupertino
-        ? tokens.type.listTitle
-        : Theme.of(context).textTheme.bodyMedium;
+    // 玻璃：iOS 行文字——标题 17 label、说明 15 secondaryLabel（桌面 15 / 13）。
+    final FushiAppleMetrics? apple = isGlassDesign(context) && !cupertino
+        ? FushiAppleMetrics.of(context)
+        : null;
+    final TextStyle? titleStyle = apple != null
+        ? apple.titleStyle(context)
+        : cupertino
+            ? tokens.type.listTitle
+            : Theme.of(context).textTheme.bodyMedium;
     final Color subtitleColor = cupertino
         ? CupertinoColors.secondaryLabel.resolveFrom(context)
         : Theme.of(context).colorScheme.onSurfaceVariant;
+    final TextStyle? subtitleStyle = apple != null
+        ? apple.subtitleStyle(context)
+        : Theme.of(context).textTheme.bodySmall?.copyWith(color: subtitleColor);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -2688,9 +2779,7 @@ class _SettingsLabel extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               subtitle!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+              style: subtitleStyle,
               // BUG-1184：null = 不钳行数，说明文字整段显示（见
               // [AdaptiveSettingsRow.subtitleMaxLines]）。
               //
@@ -2719,6 +2808,25 @@ class _SettingsIcon extends StatelessWidget {
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    if (!cupertino && isGlassDesign(context)) {
+      // 玻璃：iOS 设置页的行首图标——29×29（桌面 22×22）连续曲率圆角彩色方块
+      // + 白色图标。底色按图标在 iOS 系统色里稳定取一个（同一图标恒同色），
+      // 第一档是强调色。
+      final double side = FushiAppleMetrics.of(context).iconTileSize;
+      return DecoratedBox(
+        decoration: ShapeDecoration(
+          color: _appleIconTileColor(context, icon),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(side * 0.24),
+          ),
+        ),
+        child: SizedBox(
+          width: side,
+          height: side,
+          child: FushiIcon(icon, size: side * 0.62, color: Colors.white),
+        ),
+      );
+    }
     if (!cupertino) {
       return FushiBadge(
         icon: icon,
@@ -2737,10 +2845,26 @@ class _SettingsIcon extends StatelessWidget {
       child: SizedBox(
         width: 28,
         height: 28,
-        child: Icon(icon, size: 18, color: scheme.onPrimary),
+        child: FushiIcon(icon, size: 18, color: scheme.onPrimary),
       ),
     );
   }
+}
+
+/// iOS 设置页图标方块的底色：强调色 + iOS 系统色，按图标码位稳定取一个。
+Color _appleIconTileColor(BuildContext context, IconData icon) {
+  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  final List<Color> palette = <Color>[
+    appleColorsOf(context).accent,
+    dark ? const Color(0xFF30D158) : const Color(0xFF34C759), // green
+    dark ? const Color(0xFFFF9F0A) : const Color(0xFFFF9500), // orange
+    dark ? const Color(0xFFBF5AF2) : const Color(0xFFAF52DE), // purple
+    dark ? const Color(0xFFFF375F) : const Color(0xFFFF2D55), // pink
+    dark ? const Color(0xFF64D2FF) : const Color(0xFF32ADE6), // cyan
+    dark ? const Color(0xFF5E5CE6) : const Color(0xFF5856D6), // indigo
+    const Color(0xFF8E8E93), // gray
+  ];
+  return palette[icon.codePoint % palette.length];
 }
 
 class _SettingsStepButton extends StatelessWidget {
@@ -2761,11 +2885,11 @@ class _SettingsStepButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         minSize: 30,
         onPressed: onPressed,
-        child: Icon(icon, size: 18),
+        child: FushiIcon(icon, size: 18),
       );
     }
     return IconButton(
-      icon: Icon(icon, size: 18),
+      icon: FushiIcon(icon, size: 18),
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       onPressed: onPressed,

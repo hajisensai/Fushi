@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 库页搜索栏右侧的单选下拉筛选（书架与漫画库的阅读状态、游戏库的游玩状态共用；
@@ -114,7 +115,7 @@ class LibraryFilterChip extends StatelessWidget {
               ).textTheme.bodyMedium?.copyWith(color: foreground),
             ),
           ),
-          Icon(Icons.arrow_drop_down, size: 18, color: foreground),
+          FushiIcon(Icons.arrow_drop_down, size: 18, color: foreground),
         ],
       ),
     );

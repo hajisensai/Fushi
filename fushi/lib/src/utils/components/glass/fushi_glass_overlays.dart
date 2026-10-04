@@ -1,25 +1,37 @@
 import 'dart:math' as math;
 import 'dart:ui' show SemanticsRole;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 浮层族（对话框 / 弹出菜单 / 下拉 / 提示条）的「设计系统分派」包装：构造参数
 // 与 Material 原控件逐个同名同型，调用点只改类名。MD3 设计系统下原样构造原控件
-// （像素、焦点、语义一字不差）；「玻璃」设计系统下表面换成 liquid_glass_widgets
-// 的玻璃容器，交互骨架（路由、焦点陷阱、Esc 关闭、方向键在菜单项间移动、
-// Enter / 手柄 A 激活）保持框架原生链路不变。
+// （像素、焦点、语义一字不差）；「玻璃」设计系统下按 iOS 26 形态渲染：对话框是
+// 大圆角（32）玻璃 alert、菜单是 GlassMenu 式玻璃面板（行高 44、行尾对勾、
+// 细分隔线）、下拉是 pull-down 按钮、提示条是底部居中的玻璃胶囊。交互骨架
+// （路由、焦点陷阱、Esc 关闭、方向键在菜单项间移动、Enter / 手柄 A 激活）保持
+// 框架原生链路不变。
 
-/// 玻璃对话框圆角（对齐 GlassDialog 的连续曲率观感，比 MD3 的 28 略收）。
-const double _kGlassDialogRadius = 24;
+/// iOS 26 alert 的圆角（大圆角玻璃面板）。
+const double _kGlassDialogRadius = 32;
 
-/// 玻璃对话框内边距基准（GlassDialog 用 20）。
-const double _kGlassDialogPad = 20;
+/// iOS 26 alert 内边距基准。
+const double _kGlassDialogPad = 22;
+
+/// iOS 26 alert 宽度：纯文字 alert 固定在 270–320 之间。
+const double _kGlassAlertMinWidth = 270;
+const double _kGlassAlertMaxWidth = 320;
+
+/// 带表单 / 列表等复杂内容的对话框上限（窄到 320 会挤坏内容）。
+const double _kGlassDialogFormMaxWidth = 520;
 
 /// 与 Material [Dialog] 相同的默认外边距。
 const EdgeInsets _kDialogInsetPadding = EdgeInsets.symmetric(
@@ -27,16 +39,44 @@ const EdgeInsets _kDialogInsetPadding = EdgeInsets.symmetric(
   vertical: 24,
 );
 
-/// 玻璃菜单圆角。
-const double _kGlassMenuRadius = 16;
+/// 浮层面板（对话框 / 菜单 / 提示条）的玻璃参数。液态档沿用库 Messages
+/// 演示里 `_kMenuGlass` 的 iOS 26 实测值（深色 #262626 @50%、浅色白 @15%、
+/// blur 8），但对话框要承载大段文字，玻璃色更厚（深 @82% / 浅 @72%）以保证
+/// 可读；磨砂 / 关闭档直接用作用域的实底玻璃。[tint] 为调用方显式背景色。
+LiquidGlassSettings _overlayGlassSettings(
+  BuildContext context, {
+  bool thick = false,
+  Color? tint,
+}) {
+  final LiquidGlassSettings base = fushiGlassSettings(context, tint: tint);
+  if (tint != null || glassMaterialOf(context) != FushiGlassMaterial.liquid) {
+    return base;
+  }
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  return base.copyWith(
+    glassColor: dark
+        ? const Color(0xFF262626).withValues(alpha: thick ? 0.82 : 0.5)
+        : Colors.white.withValues(alpha: thick ? 0.72 : 0.15),
+    blur: thick ? 14 : 8,
+    thickness: dark ? 25 : 18,
+  );
+}
+
+/// 菜单面板圆角：iOS 26 GlassMenu 32，桌面（macOS 26 菜单）收到 22。
+double _menuRadius(BuildContext context) =>
+    fushiAppleCompact(context) ? 22 : 32;
+
+/// 菜单行高：iOS 44，桌面 32。
+double _menuRowHeight(BuildContext context) =>
+    fushiAppleCompact(context) ? 32 : 44;
 
 // ===========================================================================
 // 对话框
 // ===========================================================================
 
 /// 玻璃对话框外壳：布局语义照抄 Material [Dialog]（键盘让位、外边距、对齐、
-/// 尺寸约束、语义角色），表面换成 [GlassContainer]。内部垫一层透明
-/// [Material]，让内容里的 InkWell / ListTile 等仍有墨水宿主。
+/// 尺寸约束、语义角色），表面换成大圆角（32）prominent 玻璃面板。内部垫一层
+/// 透明 [Material]，让内容里的 InkWell / ListTile 等仍有墨水宿主。
 class _FushiGlassDialogShell extends StatelessWidget {
   const _FushiGlassDialogShell({
     required this.child,
@@ -44,6 +84,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
     this.insetPadding,
     this.alignment,
     this.constraints,
+    this.defaultConstraints = const BoxConstraints(minWidth: 280),
     this.clipBehavior,
     this.semanticsRole = SemanticsRole.dialog,
     this.insetAnimationDuration = const Duration(milliseconds: 100),
@@ -56,6 +97,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
   final EdgeInsets? insetPadding;
   final AlignmentGeometry? alignment;
   final BoxConstraints? constraints;
+  final BoxConstraints defaultConstraints;
   final Clip? clipBehavior;
   final SemanticsRole semanticsRole;
   final Duration insetAnimationDuration;
@@ -64,16 +106,12 @@ class _FushiGlassDialogShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final DialogThemeData dialogTheme = DialogTheme.of(context);
     final Color? explicitTint = tint != null && tint!.a > 0 ? tint : null;
     final Widget surface = GlassContainer(
       useOwnLayer: true,
       quality: fushiGlassQuality(context, prominent: true),
-      settings: fushiGlassSettings(
-        context,
-        tint: explicitTint ?? cs.surfaceContainerHigh,
-      ),
+      settings: _overlayGlassSettings(context, thick: true, tint: explicitTint),
       shape: fullscreen
           ? const LiquidRoundedRectangle(borderRadius: 0)
           : const LiquidRoundedSuperellipse(borderRadius: _kGlassDialogRadius),
@@ -102,9 +140,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
             alignment: alignment ?? dialogTheme.alignment ?? Alignment.center,
             child: ConstrainedBox(
               constraints:
-                  constraints ??
-                  dialogTheme.constraints ??
-                  const BoxConstraints(minWidth: 280),
+                  constraints ?? dialogTheme.constraints ?? defaultConstraints,
               child: surface,
             ),
           ),
@@ -114,21 +150,72 @@ class _FushiGlassDialogShell extends StatelessWidget {
   }
 }
 
+/// iOS 26 alert 标题：17 semibold，label 色。
 TextStyle _glassDialogTitleStyle(BuildContext context) {
   final ThemeData theme = Theme.of(context);
   return (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
-    fontSize: 18,
-    fontWeight: FontWeight.w700,
-    color: theme.colorScheme.onSurface,
+    fontSize: fushiAppleCompact(context) ? 15 : 17,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    color: appleColorsOf(context).label,
   );
 }
 
+/// iOS 26 alert 正文：15（桌面 13），label 色（iOS alert 正文不灰）。
 TextStyle _glassDialogContentStyle(BuildContext context) {
   final ThemeData theme = Theme.of(context);
   return (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-    color: theme.colorScheme.onSurfaceVariant,
-    height: 1.4,
+    fontSize: fushiAppleCompact(context) ? 13 : 15,
+    color: appleColorsOf(context).label,
+    height: 1.35,
   );
+}
+
+/// 内容是不是「纯文字」：是的话按 iOS alert 居中排版、宽度收进 270–320；
+/// 否则（表单 / 列表 / 自绘）按表单式对话框排版（左对齐、宽度放宽）。
+bool _isPlainTextContent(Widget? content) =>
+    content == null ||
+    content is Text ||
+    content is SelectableText ||
+    content is RichText;
+
+/// 动作是不是按钮：全部是按钮时才按 iOS 26 alert 排成撑满的胶囊（两个并排、
+/// 其余竖排）；夹了 Spacer / 复选框等自定义控件就保留调用方的横排布局。
+bool _isAlertButton(Widget w) =>
+    w is FushiTextButton ||
+    w is FushiFilledButton ||
+    w is FushiOutlinedButton ||
+    w is TextButton ||
+    w is FilledButton ||
+    w is ElevatedButton ||
+    w is OutlinedButton;
+
+/// iOS 26 alert 的动作区：一个按钮撑满；两个按钮并排等宽；三个及以上竖排。
+/// 全部包在 [FushiAlertActionScope] 里，按钮自己画成 alert 胶囊。
+Widget _glassAlertActions(BuildContext context, List<Widget> actions) {
+  const double gap = 10;
+  Widget layout;
+  if (actions.length == 2) {
+    layout = Row(
+      children: <Widget>[
+        Expanded(child: actions[0]),
+        const SizedBox(width: gap),
+        Expanded(child: actions[1]),
+      ],
+    );
+  } else {
+    layout = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < actions.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(height: gap),
+          actions[i],
+        ],
+      ],
+    );
+  }
+  return FushiAlertActionScope(child: layout);
 }
 
 /// [AlertDialog] 的设计系统分派版。
@@ -162,11 +249,11 @@ class FushiAlertDialog extends StatelessWidget {
     this.alignment,
     this.constraints,
     this.scrollable = false,
-  })  : scrollController = null,
-        actionScrollController = null,
-        insetAnimationDuration = const Duration(milliseconds: 100),
-        insetAnimationCurve = Curves.decelerate,
-        _adaptive = false;
+  }) : scrollController = null,
+       actionScrollController = null,
+       insetAnimationDuration = const Duration(milliseconds: 100),
+       insetAnimationCurve = Curves.decelerate,
+       _adaptive = false;
 
   /// [AlertDialog.adaptive] 的分派版：MD3 下按平台出 Cupertino / Material
   /// 对话框（同原控件），玻璃下与默认构造器同一个玻璃外壳。
@@ -264,7 +351,8 @@ class FushiAlertDialog extends StatelessWidget {
         surfaceTintColor: surfaceTintColor,
         semanticLabel: semanticLabel,
         insetPadding:
-            insetPadding ?? const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+            insetPadding ??
+            const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
         clipBehavior: clipBehavior,
         shape: shape,
         alignment: alignment,
@@ -310,10 +398,17 @@ class FushiAlertDialog extends StatelessWidget {
     return _buildGlass(context);
   }
 
+  /// iOS 26 alert：大圆角玻璃面板，标题 17 semibold 居中、正文居中，动作是
+  /// 底部撑满的胶囊（两个并排、多个竖排；主操作强调色、破坏性红字）。内容
+  /// 不是纯文字（表单 / 列表）时退成表单式：标题仍居中，内容左对齐、宽度放宽。
   Widget _buildGlass(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final DialogThemeData dialogTheme = DialogTheme.of(context);
     const double pad = _kGlassDialogPad;
+    final bool alertText = _isPlainTextContent(content);
+    final TextAlign contentAlign = alertText
+        ? TextAlign.center
+        : TextAlign.start;
 
     Widget? iconWidget;
     Widget? titleWidget;
@@ -324,22 +419,15 @@ class FushiAlertDialog extends StatelessWidget {
       iconWidget = Padding(
         padding:
             iconPadding ??
-            EdgeInsets.fromLTRB(
-              pad,
-              pad,
-              pad,
-              title != null
-                  ? 12
-                  : content != null
-                  ? 0
-                  : pad,
+            EdgeInsets.fromLTRB(pad, pad, pad, title != null ? 10 : 0),
+        child: Center(
+          child: IconTheme(
+            data: IconThemeData(
+              color: iconColor ?? dialogTheme.iconColor ?? apple.accent,
+              size: 30,
             ),
-        child: IconTheme(
-          data: IconThemeData(
-            color: iconColor ?? dialogTheme.iconColor ?? cs.secondary,
-            size: 24,
+            child: icon!,
           ),
-          child: icon!,
         ),
       );
     }
@@ -352,14 +440,14 @@ class FushiAlertDialog extends StatelessWidget {
               pad,
               icon == null ? pad : 0,
               pad,
-              content == null ? 16 : 0,
+              content == null ? pad : 0,
             ),
         child: DefaultTextStyle(
           style:
               titleTextStyle ??
               dialogTheme.titleTextStyle ??
               _glassDialogTitleStyle(context),
-          textAlign: icon == null ? TextAlign.start : TextAlign.center,
+          textAlign: TextAlign.center,
           child: Semantics(
             namesRoute:
                 semanticLabel == null &&
@@ -377,7 +465,7 @@ class FushiAlertDialog extends StatelessWidget {
             contentPadding ??
             EdgeInsets.fromLTRB(
               pad,
-              title == null && icon == null ? pad : 12,
+              title == null && icon == null ? pad : 6,
               pad,
               pad,
             ),
@@ -386,6 +474,7 @@ class FushiAlertDialog extends StatelessWidget {
               contentTextStyle ??
               dialogTheme.contentTextStyle ??
               _glassDialogContentStyle(context),
+          textAlign: contentAlign,
           child: Semantics(
             container: true,
             explicitChildNodes: true,
@@ -395,23 +484,33 @@ class FushiAlertDialog extends StatelessWidget {
       );
     }
 
-    if (actions != null) {
-      final double spacing = (buttonPadding?.horizontal ?? 16) / 2;
-      actionsWidget = Padding(
-        padding:
-            actionsPadding ??
-            dialogTheme.actionsPadding ??
-            const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: OverflowBar(
-          alignment: actionsAlignment ?? MainAxisAlignment.end,
-          spacing: spacing,
-          overflowAlignment:
-              actionsOverflowAlignment ?? OverflowBarAlignment.end,
-          overflowDirection: actionsOverflowDirection ?? VerticalDirection.down,
-          overflowSpacing: actionsOverflowButtonSpacing ?? 0,
-          children: actions!,
-        ),
-      );
+    final List<Widget>? acts = actions;
+    if (acts != null && acts.isNotEmpty) {
+      final EdgeInsetsGeometry padding =
+          actionsPadding ??
+          dialogTheme.actionsPadding ??
+          const EdgeInsets.fromLTRB(16, 0, 16, 16);
+      if (acts.every(_isAlertButton)) {
+        actionsWidget = Padding(
+          padding: padding,
+          child: _glassAlertActions(context, acts),
+        );
+      } else {
+        final double spacing = (buttonPadding?.horizontal ?? 16) / 2;
+        actionsWidget = Padding(
+          padding: padding,
+          child: OverflowBar(
+            alignment: actionsAlignment ?? MainAxisAlignment.end,
+            spacing: spacing,
+            overflowAlignment:
+                actionsOverflowAlignment ?? OverflowBarAlignment.end,
+            overflowDirection:
+                actionsOverflowDirection ?? VerticalDirection.down,
+            overflowSpacing: actionsOverflowButtonSpacing ?? 0,
+            children: acts,
+          ),
+        );
+      }
     }
 
     final List<Widget> columnChildren;
@@ -442,13 +541,13 @@ class FushiAlertDialog extends StatelessWidget {
       ];
     }
 
-    Widget dialogChild = IntrinsicWidth(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: columnChildren,
-      ),
+    Widget dialogChild = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: columnChildren,
     );
+    // 纯文字 alert 宽度固定（iOS 不随文字伸缩）；表单式按内容取宽。
+    if (!alertText) dialogChild = IntrinsicWidth(child: dialogChild);
     if (semanticLabel != null) {
       dialogChild = Semantics(
         scopesRoute: true,
@@ -463,6 +562,15 @@ class FushiAlertDialog extends StatelessWidget {
       insetPadding: insetPadding,
       alignment: alignment,
       constraints: constraints,
+      defaultConstraints: alertText
+          ? BoxConstraints(
+              minWidth: _kGlassAlertMinWidth,
+              maxWidth: fushiAppleCompact(context) ? _kGlassAlertMaxWidth : 300,
+            )
+          : const BoxConstraints(
+              minWidth: 300,
+              maxWidth: _kGlassDialogFormMaxWidth,
+            ),
       clipBehavior: clipBehavior,
       semanticsRole: SemanticsRole.alertDialog,
       child: dialogChild,
@@ -533,9 +641,9 @@ class FushiSimpleDialog extends StatelessWidget {
     }
     final DialogThemeData dialogTheme = DialogTheme.of(context);
     Widget body = IntrinsicWidth(
-      stepWidth: 56,
+      stepWidth: 20,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 280),
+        constraints: const BoxConstraints(minWidth: 270),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -548,6 +656,7 @@ class FushiSimpleDialog extends StatelessWidget {
                       titleTextStyle ??
                       dialogTheme.titleTextStyle ??
                       _glassDialogTitleStyle(context),
+                  textAlign: TextAlign.center,
                   child: Semantics(
                     namesRoute:
                         semanticLabel == null &&
@@ -594,8 +703,8 @@ class FushiSimpleDialog extends StatelessWidget {
   }
 }
 
-/// [SimpleDialogOption] 的设计系统分派版。玻璃下是一条透明玻璃行（悬停 /
-/// 焦点高亮由玻璃按钮给，Enter / 手柄 A 走同一条 ActivateIntent）。
+/// [SimpleDialogOption] 的设计系统分派版。玻璃下是一条 iOS 菜单式选项行
+/// （无底，悬停 / 焦点 / 按下铺中性灰高亮，Enter / 手柄 A 走 ActivateIntent）。
 class FushiSimpleDialogOption extends StatelessWidget {
   const FushiSimpleDialogOption({
     super.key,
@@ -617,18 +726,22 @@ class FushiSimpleDialogOption extends StatelessWidget {
         child: child,
       );
     }
-    return GlassButton.custom(
-      onTap: onPressed ?? () {},
-      enabled: onPressed != null,
-      style: GlassButtonStyle.transparent,
-      quality: fushiGlassQuality(context),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-      stretch: 0,
-      alignment: AlignmentDirectional.centerStart,
-      child: Padding(
+    final FushiAppleColors apple = appleColorsOf(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: _AppleMenuRow(
+        onTap: onPressed ?? () {},
+        enabled: onPressed != null,
+        minHeight: _menuRowHeight(context),
+        radius: 14,
         padding:
-            padding ?? const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-        child: child,
+            padding ?? const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        child: DefaultTextStyle.merge(
+          style: TextStyle(
+            color: onPressed != null ? apple.label : apple.tertiaryLabel,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
     );
   }
@@ -731,6 +844,116 @@ class FushiDialog extends StatelessWidget {
 // ===========================================================================
 // 弹出菜单
 // ===========================================================================
+
+/// iOS 26 菜单 / 列表选项行：无底，悬停 / 键盘焦点 / 按下时铺一层中性灰
+/// （systemFill）圆角高亮，左起内容、[trailing] 在行尾（选中对勾）。自带焦点
+/// 节点，[ActivateIntent]（Enter / 手柄 A）与点击都触发 [onTap]。
+class _AppleMenuRow extends StatefulWidget {
+  const _AppleMenuRow({
+    required this.onTap,
+    required this.enabled,
+    required this.minHeight,
+    required this.radius,
+    required this.padding,
+    required this.child,
+    this.trailing,
+    this.mouseCursor,
+  });
+
+  final VoidCallback onTap;
+  final bool enabled;
+  final double minHeight;
+  final double radius;
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+  final Widget? trailing;
+  final MouseCursor? mouseCursor;
+
+  @override
+  State<_AppleMenuRow> createState() => _AppleMenuRowState();
+}
+
+class _AppleMenuRowState extends State<_AppleMenuRow> {
+  bool _hovered = false;
+  bool _focused = false;
+  bool _pressed = false;
+
+  void _set(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool enabled = widget.enabled;
+    final bool highlight = enabled && (_hovered || _focused || _pressed);
+    final Widget body = AnimatedContainer(
+      duration: _pressed ? Duration.zero : const Duration(milliseconds: 120),
+      constraints: BoxConstraints(minHeight: widget.minHeight),
+      padding: widget.padding,
+      decoration: BoxDecoration(
+        color: highlight
+            ? (_pressed ? apple.fill : apple.secondaryFill)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(widget.radius),
+      ),
+      alignment: AlignmentDirectional.centerStart,
+      child: Row(
+        children: <Widget>[
+          Expanded(child: widget.child),
+          if (widget.trailing != null) ...<Widget>[
+            const SizedBox(width: 12),
+            widget.trailing!,
+          ],
+        ],
+      ),
+    );
+    return FocusableActionDetector(
+      enabled: enabled,
+      mouseCursor: enabled
+          ? (widget.mouseCursor ?? SystemMouseCursors.click)
+          : MouseCursor.defer,
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      onShowHoverHighlight: (bool v) => _set(() => _hovered = v),
+      onFocusChange: (bool v) => _set(() => _focused = v),
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTapDown: enabled ? (_) => _set(() => _pressed = true) : null,
+          onTapUp: enabled ? (_) => _set(() => _pressed = false) : null,
+          onTapCancel: enabled ? () => _set(() => _pressed = false) : null,
+          onTap: enabled ? widget.onTap : null,
+          child: body,
+        ),
+      ),
+    );
+  }
+}
+
+/// iOS 26 菜单的组间细分隔线（separator 色，半像素，两侧内缩）。
+Widget _appleMenuDivider(BuildContext context, double height) {
+  return SizedBox(
+    height: height,
+    child: Center(
+      child: Container(
+        height: 0.5,
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        color: appleColorsOf(context).separator,
+      ),
+    ),
+  );
+}
 
 /// [showMenu] 的设计系统分派版，签名逐参一致。MD3 下原样调 [showMenu]；
 /// 玻璃下推一条自绘 [PopupRoute]：菜单面是玻璃，菜单项仍是调用方给的
@@ -1002,69 +1225,61 @@ class _FushiGlassMenuBodyState<T> extends State<_FushiGlassMenuBody<T>> {
     super.dispose();
   }
 
-  /// 菜单项换成玻璃行：[PopupMenuItem]（含 [CheckedPopupMenuItem] 与仓库的
-  /// FushiPopupMenuItem 子类）渲染成整行宽的透明 [GlassButton]，child 原样
-  /// 放进去；点击语义同 Flutter 的 `PopupMenuItemState.handleTap`（先 onTap
-  /// 再带 value 关菜单）。[PopupMenuDivider] → [GlassDivider]。其它自定义
-  /// [PopupMenuEntry] 原样保留。
+  /// 菜单项换成 iOS 26 GlassMenu 行：[PopupMenuItem]（含 [CheckedPopupMenuItem]
+  /// 与仓库的 FushiPopupMenuItem 子类）渲染成整行宽的 [_AppleMenuRow]（行高
+  /// 44 / 桌面 32，label 色文字，中性灰高亮），child 原样放进去；选中项
+  /// （[CheckedPopupMenuItem.checked] 或 initialValue 对应项）行尾画
+  /// `CupertinoIcons.checkmark`。点击语义同 Flutter 的
+  /// `PopupMenuItemState.handleTap`（先 onTap 再带 value 关菜单）。
+  /// [PopupMenuDivider] → 细分隔线。其它自定义 [PopupMenuEntry] 原样保留。
   Widget _glassEntry(
     BuildContext context,
     PopupMenuEntry<T> entry, {
     required bool highlighted,
   }) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool compact = fushiAppleCompact(context);
     if (entry is PopupMenuDivider) {
-      return GlassDivider(height: entry.height, indent: 12, endIndent: 12);
+      return _appleMenuDivider(context, compact ? 9 : 13);
     }
     if (entry is! PopupMenuItem<T>) return entry;
     final PopupMenuItem<T> item = entry;
-    final bool checked = item is CheckedPopupMenuItem<T> && item.checked;
-    final Color fg =
-        item.enabled ? cs.onSurface : cs.onSurface.withValues(alpha: 0.38);
+    final bool checked =
+        (item is CheckedPopupMenuItem<T> && item.checked) || highlighted;
+    final Color fg = item.enabled ? apple.label : apple.tertiaryLabel;
+    final double rowHeight = item.height == kMinInteractiveDimension
+        ? _menuRowHeight(context)
+        : item.height;
+    final double rowRadius = _menuRadius(context) - 8;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      child: GlassButton.custom(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: _AppleMenuRow(
         onTap: () {
           item.onTap?.call();
           Navigator.pop<T>(context, item.value);
         },
         enabled: item.enabled,
-        style: highlighted || checked
-            ? GlassButtonStyle.filled
-            : GlassButtonStyle.transparent,
-        quality: fushiGlassQuality(context),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-        stretch: 0.15,
-        alignment: AlignmentDirectional.centerStart,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: item.height),
-          child: Padding(
-            padding: item.padding ??
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: IconTheme.merge(
-              data: IconThemeData(color: fg, size: 20),
-              child: DefaultTextStyle.merge(
-                style: (item.labelTextStyle?.resolve(<WidgetState>{}) ??
+        minHeight: rowHeight,
+        radius: rowRadius,
+        mouseCursor: item.mouseCursor,
+        padding:
+            item.padding ??
+            EdgeInsets.symmetric(horizontal: compact ? 10 : 14, vertical: 4),
+        trailing: checked
+            ? FushiIcon(CupertinoIcons.checkmark, size: compact ? 14 : 17, color: fg)
+            : null,
+        child: IconTheme.merge(
+          data: IconThemeData(color: fg, size: compact ? 16 : 20),
+          child: DefaultTextStyle.merge(
+            style:
+                (item.labelTextStyle?.resolve(<WidgetState>{}) ??
                         theme.textTheme.bodyLarge ??
                         const TextStyle())
-                    .copyWith(color: fg),
-                child: Row(
-                  children: <Widget>[
-                    if (item is CheckedPopupMenuItem<T>) ...<Widget>[
-                      SizedBox(
-                        width: 20,
-                        child: checked
-                            ? Icon(Icons.check, size: 18, color: cs.primary)
-                            : null,
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    Expanded(child: item.child ?? const SizedBox.shrink()),
-                  ],
-                ),
-              ),
-            ),
+                    .copyWith(color: fg, fontSize: compact ? 14 : 17),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            child: item.child ?? const SizedBox.shrink(),
           ),
         ),
       ),
@@ -1073,22 +1288,27 @@ class _FushiGlassMenuBodyState<T> extends State<_FushiGlassMenuBody<T>> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final _FushiGlassMenuRoute<T> route = widget.route;
     final int initial = _initialIndex;
+    final bool compact = fushiAppleCompact(context);
     final List<Widget> children = <Widget>[
       for (int i = 0; i < route.items.length; i++)
         Focus(
           focusNode: _entryNodes[i],
-          child: _glassEntry(context, route.items[i], highlighted: i == initial),
+          child: _glassEntry(
+            context,
+            route.items[i],
+            highlighted: i == initial,
+          ),
         ),
     ];
+    final double radius = _menuRadius(context);
     final Widget list = ConstrainedBox(
       constraints:
           route.constraints ??
-          const BoxConstraints(minWidth: 2 * 56, maxWidth: 5 * 56),
+          BoxConstraints(minWidth: compact ? 180 : 220, maxWidth: 300),
       child: IntrinsicWidth(
-        stepWidth: 56,
+        stepWidth: 20,
         child: Semantics(
           role: SemanticsRole.menu,
           scopesRoute: true,
@@ -1097,7 +1317,8 @@ class _FushiGlassMenuBodyState<T> extends State<_FushiGlassMenuBody<T>> {
           label: route.semanticLabel,
           child: SingleChildScrollView(
             padding:
-                route.menuPadding ?? const EdgeInsets.symmetric(vertical: 6),
+                route.menuPadding ??
+                EdgeInsets.symmetric(vertical: compact ? 6 : 8),
             child: ListBody(children: children),
           ),
         ),
@@ -1107,8 +1328,8 @@ class _FushiGlassMenuBodyState<T> extends State<_FushiGlassMenuBody<T>> {
       child: GlassContainer(
         useOwnLayer: true,
         quality: fushiGlassQuality(context, prominent: true),
-        settings: fushiGlassSettings(context, tint: cs.surfaceContainer),
-        shape: const LiquidRoundedSuperellipse(borderRadius: _kGlassMenuRadius),
+        settings: _overlayGlassSettings(context),
+        shape: LiquidRoundedSuperellipse(borderRadius: radius),
         clipBehavior: Clip.antiAlias,
         child: Material(type: MaterialType.transparency, child: list),
       ),
@@ -1236,16 +1457,13 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
     final String tooltip =
         widget.tooltip ?? MaterialLocalizations.of(context).showMenuTooltip;
     if (widget.child != null) {
+      // 自定义触发器是 iOS plain 按钮（无底，按下变淡），不是玻璃块。
       Widget button = Semantics(
         expanded: _glassExpanded,
-        child: GlassButton.custom(
-          onTap: showButtonMenu,
-          enabled: widget.enabled,
-          style: GlassButtonStyle.transparent,
-          quality: fushiGlassQuality(context),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-          stretch: 0,
-          label: tooltip,
+        child: FushiPlainButton(
+          onPressed: widget.enabled ? showButtonMenu : null,
+          borderRadius: BorderRadius.circular(12),
+          semanticLabel: tooltip,
           child: widget.child!,
         ),
       );
@@ -1259,7 +1477,8 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
     return FushiIconButtonControl(
       icon: Semantics(
         expanded: _glassExpanded,
-        child: widget.icon ?? Icon(Icons.adaptive.more),
+        // iOS 26 的「更多」是 SF ellipsis。
+        child: widget.icon ?? const FushiIcon(CupertinoIcons.ellipsis),
       ),
       padding: widget.padding,
       splashRadius: widget.splashRadius,
@@ -1278,8 +1497,10 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
 // ===========================================================================
 
 /// 玻璃菜单面板：MenuAnchor 自己的 Material 面在玻璃下被清成透明无阴影，
-/// 全部菜单项收进这一块玻璃里（项仍是 MenuAnchor 的直接后代，方向键 /
-/// Esc / 子菜单行为不变）。
+/// 全部菜单项收进这一块 iOS 26 GlassMenu 式玻璃里（项仍是 MenuAnchor 的直接
+/// 后代，方向键 / Esc / 子菜单行为不变）。菜单项（[MenuItemButton] 等）经
+/// [MenuButtonTheme] 改成 iOS 菜单行：行高 44 / 桌面 32、label 色、中性灰
+/// 圆角高亮。
 class _FushiGlassMenuPanel extends StatelessWidget {
   const _FushiGlassMenuPanel({required this.children});
 
@@ -1287,22 +1508,64 @@ class _FushiGlassMenuPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool compact = fushiAppleCompact(context);
+    final double radius = _menuRadius(context);
+    final ButtonStyle rowStyle = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll<Size>(
+        Size(compact ? 180 : 220, _menuRowHeight(context)),
+      ),
+      padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+      ),
+      shape: WidgetStatePropertyAll<OutlinedBorder>(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius - 8)),
+      ),
+      backgroundColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+      foregroundColor: WidgetStateProperty.resolveWith(
+        (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+            ? apple.tertiaryLabel
+            : apple.label,
+      ),
+      iconColor: WidgetStateProperty.resolveWith(
+        (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+            ? apple.tertiaryLabel
+            : apple.label,
+      ),
+      overlayColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+        if (states.contains(WidgetState.pressed)) return apple.fill;
+        if (states.contains(WidgetState.hovered) ||
+            states.contains(WidgetState.focused)) {
+          return apple.secondaryFill;
+        }
+        return null;
+      }),
+      textStyle: WidgetStatePropertyAll<TextStyle>(
+        TextStyle(fontSize: compact ? 14 : 17),
+      ),
+      splashFactory: NoSplash.splashFactory,
+    );
     return GlassContainer(
       useOwnLayer: true,
       quality: fushiGlassQuality(context, prominent: true),
-      settings: fushiGlassSettings(context, tint: cs.surfaceContainer),
-      shape: const LiquidRoundedSuperellipse(borderRadius: _kGlassMenuRadius),
+      settings: _overlayGlassSettings(context),
+      shape: LiquidRoundedSuperellipse(borderRadius: radius),
       clipBehavior: Clip.antiAlias,
       child: Material(
         type: MaterialType.transparency,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: IntrinsicWidth(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
+        child: MenuButtonTheme(
+          data: MenuButtonThemeData(style: rowStyle),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: compact ? 6 : 8,
+            ),
+            child: IntrinsicWidth(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
             ),
           ),
         ),
@@ -1319,9 +1582,7 @@ const MenuStyle _kGlassMenuAnchorStyle = MenuStyle(
   elevation: WidgetStatePropertyAll<double>(0),
   padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(EdgeInsets.zero),
   shape: WidgetStatePropertyAll<OutlinedBorder>(
-    RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(_kGlassMenuRadius)),
-    ),
+    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(32))),
   ),
 );
 
@@ -1409,8 +1670,26 @@ class FushiMenuAnchor extends StatelessWidget {
 // 下拉
 // ===========================================================================
 
-/// 玻璃下拉的「字段」按钮：一块填充玻璃，显示当前值 + 下拉箭头，Enter /
-/// 手柄 A / 点击都打开玻璃菜单。
+/// MD3 下拉箭头一律换成 iOS pull-down 的 `chevron.up.chevron.down`；调用方
+/// 给的其它图标（或显式隐藏用的空盒子）原样保留。
+Widget _pullDownChevron(Widget? icon, double size) {
+  final IconData? data = icon is Icon ? icon.icon : null;
+  final bool materialArrow =
+      data == Icons.arrow_drop_down ||
+      data == Icons.expand_more ||
+      data == Icons.keyboard_arrow_down ||
+      data == Icons.arrow_drop_down_rounded;
+  if (icon != null && !materialArrow) return icon;
+  return FushiIcon(CupertinoIcons.chevron_up_chevron_down, size: size);
+}
+
+/// 玻璃下拉的「字段」按钮，iOS 26 pull-down 形态：
+/// - [expanded]（表单里撑满的下拉，含 DropdownButtonFormField）= 与输入框同款
+///   的实色字段（tertiarySystemFill 底、圆角 10），当前值 + 行尾
+///   `chevron.up.chevron.down`；
+/// - 否则是 plain pull-down 按钮：无底的当前值文字 + 小号上下箭头，悬停铺
+///   中性灰。
+/// 都不是 MD3 下划线框；Enter / 手柄 A / 点击都打开玻璃菜单。
 Widget _glassDropdownField(
   BuildContext context, {
   required Widget value,
@@ -1429,11 +1708,11 @@ Widget _glassDropdownField(
   EdgeInsetsGeometry? padding,
 }) {
   final ThemeData theme = Theme.of(context);
-  final ColorScheme cs = theme.colorScheme;
+  final FushiAppleColors apple = appleColorsOf(context);
+  final bool compact = fushiAppleCompact(context);
   final bool enabled = onTap != null;
-  final Color fg = enabled
-      ? cs.onSurface
-      : cs.onSurface.withValues(alpha: 0.38);
+  final Color fg = enabled ? apple.label : apple.tertiaryLabel;
+  final double chevronSize = compact ? 11 : 13;
   final Widget row = Row(
     mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
     children: <Widget>[
@@ -1444,42 +1723,55 @@ Widget _glassDropdownField(
         )
       else
         Flexible(child: value),
-      const SizedBox(width: 4),
-      icon ?? const Icon(Icons.arrow_drop_down),
+      SizedBox(width: compact ? 4 : 6),
+      IconTheme.merge(
+        data: IconThemeData(
+          color: iconColor ?? (enabled ? apple.secondaryLabel : fg),
+          size: chevronSize,
+        ),
+        child: _pullDownChevron(icon, chevronSize),
+      ),
     ],
   );
-  return GlassButton.custom(
-    onTap: onTap ?? () {},
-    enabled: enabled,
-    style: GlassButtonStyle.filled,
-    quality: fushiGlassQuality(context),
-    shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-    stretch: 0,
+  Widget field = IconTheme.merge(
+    data: IconThemeData(color: fg, size: compact ? 16 : 18),
+    child: DefaultTextStyle(
+      style:
+          (style ??
+                  theme.textTheme.bodyLarge?.copyWith(
+                    fontSize: compact ? 14 : 17,
+                  ) ??
+                  const TextStyle())
+              .copyWith(color: style?.color ?? fg),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      child: row,
+    ),
+  );
+  final double minHeight = expanded
+      ? (dense || compact ? 36 : 44)
+      : (compact ? 28 : 34);
+  field = Container(
+    constraints: BoxConstraints(minHeight: minHeight),
+    padding:
+        padding ??
+        EdgeInsets.symmetric(horizontal: expanded ? 12 : (compact ? 6 : 8)),
+    alignment: expanded ? AlignmentDirectional.centerStart : null,
+    decoration: expanded
+        ? BoxDecoration(
+            color: apple.tertiaryFill,
+            borderRadius: BorderRadius.circular(10),
+          )
+        : null,
+    child: field,
+  );
+  return FushiPlainButton(
+    onPressed: onTap,
     focusNode: focusNode,
     autofocus: autofocus,
-    label: semanticLabel,
-    alignment: alignment,
-    child: IconTheme.merge(
-      data: IconThemeData(
-        color: iconColor ?? (enabled ? cs.onSurfaceVariant : fg),
-        size: iconSize,
-      ),
-      child: DefaultTextStyle(
-        style: (style ?? theme.textTheme.bodyLarge ?? const TextStyle())
-            .copyWith(color: style?.color ?? fg),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: dense ? 36 : 44),
-          child: Padding(
-            padding:
-                padding ??
-                EdgeInsets.symmetric(horizontal: 14, vertical: dense ? 4 : 8),
-            child: row,
-          ),
-        ),
-      ),
-    ),
+    borderRadius: BorderRadius.circular(expanded ? 10 : minHeight / 2),
+    semanticLabel: semanticLabel.isEmpty ? null : semanticLabel,
+    child: field,
   );
 }
 
@@ -1505,8 +1797,9 @@ double _anchorWidth(BuildContext anchor) {
   return box is RenderBox && box.hasSize ? box.size.width : 0;
 }
 
-/// [DropdownButton] 的设计系统分派版。玻璃下是一块玻璃字段 + 玻璃菜单
-/// （[DropdownMenuItem] 映射成同值的 [PopupMenuItem]）。
+/// [DropdownButton] 的设计系统分派版。玻璃下是 iOS 26 pull-down 按钮（当前值
+/// + `chevron.up.chevron.down`，撑满时是实色字段）+ 玻璃菜单
+/// （[DropdownMenuItem] 映射成同值的 [PopupMenuItem]，当前项行尾打勾）。
 class FushiDropdownButton<T> extends StatefulWidget {
   const FushiDropdownButton({
     super.key,
@@ -1707,8 +2000,8 @@ class _FushiDropdownSelection<T> {
   int get hashCode => value.hashCode;
 }
 
-/// [DropdownMenu] 的设计系统分派版。玻璃下是玻璃字段（标签 + 当前项）+ 玻璃
-/// 菜单；不提供输入过滤 / 搜索（仓库调用点都是纯选择）。选中后同步写回
+/// [DropdownMenu] 的设计系统分派版。玻璃下是 iOS pull-down 字段（标签 +
+/// 当前项）+ 玻璃菜单；不提供输入过滤 / 搜索（仓库调用点都是纯选择）。选中后同步写回
 /// [controller]（若给了）并回调 [onSelected]。
 class FushiDropdownMenu<T> extends StatefulWidget {
   const FushiDropdownMenu({
@@ -1907,13 +2200,13 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
       );
     }
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final DropdownMenuEntry<T>? entry = _selectedEntry;
     final Widget current = entry != null
         ? (entry.labelWidget ?? Text(entry.label))
         : Text(
             widget.hintText ?? '',
-            style: TextStyle(color: cs.onSurfaceVariant),
+            style: TextStyle(color: apple.secondaryLabel),
           );
     final Widget value = widget.label == null
         ? current
@@ -1923,7 +2216,7 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
             children: <Widget>[
               DefaultTextStyle.merge(
                 style: (theme.textTheme.labelSmall ?? const TextStyle())
-                    .copyWith(color: cs.onSurfaceVariant),
+                    .copyWith(color: apple.secondaryLabel),
                 child: widget.label!,
               ),
               current,
@@ -1944,7 +2237,7 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
         semanticLabel: entry?.label ?? widget.hintText ?? '',
         leading: widget.leadingIcon,
         icon: widget.showTrailingIcon
-            ? (widget.trailingIcon ?? const Icon(Icons.arrow_drop_down))
+            ? widget.trailingIcon
             : const SizedBox.shrink(),
         style: widget.textStyle,
       ),
@@ -1965,8 +2258,8 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
               note,
               style: (theme.textTheme.bodySmall ?? const TextStyle()).copyWith(
                 color: widget.errorText != null
-                    ? cs.error
-                    : cs.onSurfaceVariant,
+                    ? apple.destructive
+                    : apple.secondaryLabel,
               ),
             ),
           ),
@@ -1988,8 +2281,9 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
 /// `ScaffoldMessenger.showSnackBar(...)`，类型签名只收 SnackBar），构造参数
 /// 与父类逐个一致。构造时拿不到 context，所以分派推迟到 build：[content]
 /// 与 [action] 的 getter 返回包装 widget，各自在 build 时判 [isGlassDesign]——
-/// MD3 下原样渲染原内容 / 原 [SnackBarAction]（像素不变）；玻璃下内容进玻璃
-/// 胶囊、动作按钮收进胶囊（玻璃文字按钮），SnackBar 自己的动作槽让空。
+/// MD3 下原样渲染原内容 / 原 [SnackBarAction]（像素不变）；玻璃下是 iOS 26
+/// 式 toast：按内容取宽、底部居中的中性玻璃胶囊，动作是胶囊内的强调色 plain
+/// 文字按钮，SnackBar 自己的动作槽让空。
 ///
 /// SnackBar 自身的 Material 底色要在主题里清成透明（`snackBarTheme`
 /// backgroundColor 透明 + elevation 0），否则胶囊外还有一层底。
@@ -2038,36 +2332,50 @@ class _FushiSnackBarContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) return content;
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    return GlassContainer(
-      useOwnLayer: true,
-      quality: fushiGlassQuality(context, prominent: true),
-      settings: fushiGlassSettings(context, tint: cs.surfaceContainerHighest),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 20),
-      padding: EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: action != null ? 4 : 12,
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: DefaultTextStyle(
-              style: (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-                color: cs.onSurface,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-              child: IconTheme.merge(
-                data: IconThemeData(color: cs.onSurfaceVariant),
-                child: content,
-              ),
+    final FushiAppleColors apple = appleColorsOf(context);
+    // 胶囊按内容取宽并居中（SnackBar 本身撑满宽度，胶囊不跟着撑）；单行时
+    // 高 48、圆角 24 正好是全胶囊，多行退成圆角 24 的玻璃块。
+    return Center(
+      heightFactor: 1,
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: fushiGlassQuality(context, prominent: true),
+        settings: _overlayGlassSettings(context, thick: true),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, maxWidth: 560),
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              start: 20,
+              end: action != null ? 8 : 20,
+              top: 4,
+              bottom: 4,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Flexible(
+                  child: DefaultTextStyle(
+                    style: (theme.textTheme.bodyMedium ?? const TextStyle())
+                        .copyWith(
+                          color: apple.label,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                    child: IconTheme.merge(
+                      data: IconThemeData(color: apple.secondaryLabel),
+                      child: content,
+                    ),
+                  ),
+                ),
+                if (action != null) ...<Widget>[
+                  const SizedBox(width: 8),
+                  _FushiGlassSnackBarActionButton(action: action!),
+                ],
+              ],
             ),
           ),
-          if (action != null) ...<Widget>[
-            const SizedBox(width: 8),
-            _FushiGlassSnackBarActionButton(action: action!),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -2139,7 +2447,8 @@ class _FushiGlassSnackBarActionButtonState
 }
 
 /// [DropdownButtonFormField] 的设计系统分派版。MD3 下原样构造原控件；玻璃
-/// 下是 [FormField] + [FushiDropdownButton]（玻璃字段 + 玻璃菜单），
+/// 下是 [FormField] + [FushiDropdownButton]（iOS 实色 pull-down 字段 + 玻璃
+/// 菜单），
 /// `decoration` 的 labelText / label / hintText / helperText / errorText /
 /// prefixIcon / suffixIcon 画在字段周围，validator / onSaved /
 /// autovalidateMode 语义与原控件一致。
@@ -2263,7 +2572,7 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
       );
     }
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final InputDecoration deco = decoration ?? const InputDecoration();
     return FormField<T>(
       initialValue: _initial,
@@ -2274,7 +2583,8 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
       autovalidateMode: autovalidateMode,
       enabled: deco.enabled && onChanged != null,
       builder: (FormFieldState<T> field) {
-        final Widget? label = deco.label ??
+        final Widget? label =
+            deco.label ??
             (deco.labelText == null ? null : Text(deco.labelText!));
         final String? error = field.errorText ?? deco.errorText;
         final String? helper = deco.helperText;
@@ -2287,7 +2597,9 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 4, bottom: 6),
                 child: DefaultTextStyle.merge(
                   style: theme.textTheme.labelLarge?.copyWith(
-                    color: error != null ? cs.error : cs.onSurfaceVariant,
+                    color: error != null
+                        ? apple.destructive
+                        : apple.secondaryLabel,
                   ),
                   child: label,
                 ),
@@ -2303,7 +2615,8 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
                     items: items,
                     selectedItemBuilder: selectedItemBuilder,
                     value: field.value,
-                    hint: hint ??
+                    hint:
+                        hint ??
                         (deco.hintText == null ? null : Text(deco.hintText!)),
                     disabledHint: disabledHint,
                     onChanged: onChanged == null
@@ -2344,7 +2657,9 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
                   maxLines: deco.helperMaxLines ?? deco.errorMaxLines ?? 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: error != null ? cs.error : cs.onSurfaceVariant,
+                    color: error != null
+                        ? apple.destructive
+                        : apple.secondaryLabel,
                   ),
                 ),
               ),

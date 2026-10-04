@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/manga_cover_failure.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// Aidoku 源封面：浏览器 UA（+ 源站 Referer）经应用代理出口取图。
@@ -47,7 +48,7 @@ class _AidokuCoverImageState extends State<AidokuCoverImage> {
     if (value.isEmpty) {
       return const ColoredBox(
         color: _placeholderColor,
-        child: Center(child: Icon(Icons.image_not_supported_outlined)),
+        child: Center(child: FushiIcon(Icons.image_not_supported_outlined)),
       );
     }
     return Image(

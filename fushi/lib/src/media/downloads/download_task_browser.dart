@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
@@ -401,12 +402,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 18),
+          FushiIcon(icon, size: 18),
           const SizedBox(width: 6),
           Flexible(
             child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
-          const Icon(Icons.arrow_drop_down, size: 18),
+          const FushiIcon(Icons.arrow_drop_down, size: 18),
         ],
       ),
     ),
@@ -661,7 +662,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                         children: <Widget>[
                           FushiListItem(
                             key: ValueKey<String>('download-group-$key'),
-                            leading: Icon(
+                            leading: FushiIcon(
                               expanded
                                   ? Icons.expand_more
                                   : Icons.chevron_right,

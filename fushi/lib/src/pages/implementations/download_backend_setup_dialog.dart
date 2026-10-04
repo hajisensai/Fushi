@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -272,7 +273,7 @@ class _DownloadBackendSetupDialogState
                           height: 16,
                           child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.network_check, size: 18),
+                      : const FushiIcon(Icons.network_check, size: 18),
                   label: Text(t.download_test_connection),
                 ),
               ),

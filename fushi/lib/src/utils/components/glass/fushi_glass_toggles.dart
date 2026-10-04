@@ -1,27 +1,32 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 选择类控件（开关 / 滑块 / 复选 / 单选 / 列表行变体 / 分段按钮）的「设计系统
 // 分派」包装：构造参数与 Material 原控件逐个同名同型（含同名命名构造器），调用
 // 点只改类名。MD3 设计系统下原样构造原控件并转发全部参数（像素、焦点、语义
-// 一字不差）；「玻璃」设计系统下渲染 liquid_glass_widgets 组件：
+// 一字不差）；「玻璃」设计系统下按 iOS 26 的控件形态渲染：
 //
-// - Switch → [GlassSwitch]；Slider → [GlassSlider]（库不处理方向键，这里补上，
+// - Switch → [GlassSwitch]（iOS 开关：开 systemGreen、关 systemFill 灰轨、白色
+//   圆钮）；Slider → [GlassSlider]（细轨 + 白色大圆钮；库不处理方向键，这里补上，
 //   键位与 Material Slider 同：←/→ 恒调值，传统导航模式下 ↑/↓ 也调值）；
-// - Checkbox / Radio → [GlassButton.custom] 小圆角 / 圆形 + 勾 / 点自绘（库里
-//   没有对应组件），支持 tristate 与 RadioGroup；
-// - RangeSlider → 自绘轨道 + 两个 [GlassContainer] 玻璃拇指（库里没有）；
-// - *ListTile → [GlassListTile] 排版 + 整行一个焦点停靠点（与 Material 同：行内
-//   控件 ExcludeFocus，Enter / 手柄 A 经 ActivateIntent 切换）；
-// - SegmentedButton → 单选且能用 [GlassSegmentedControl] 表达时用它，否则（多选、
-//   允许空选、竖排、段数越界、label 不是纯文本）退回一排玻璃按钮。
+// - Checkbox → iOS 圆形勾选（强调色实心圆 + 白勾 / 灰色空心圈），Radio → 圆形
+//   单选钮，支持 tristate 与 RadioGroup；都是内容层实色控件，不是玻璃；
+// - RangeSlider → 自绘细轨 + 两个白色圆钮（库里没有区间滑块）；
+// - *ListTile → iOS 设置行（行高 44 起）+ 整行一个焦点停靠点（与 Material 同：
+//   行内控件 ExcludeFocus，Enter / 手柄 A 经 ActivateIntent 切换）；单选行是
+//   行尾强调色对勾；
+// - SegmentedButton → iOS 分段（灰轨 + 白色滑块），单选能用
+//   [GlassSegmentedControl] 表达时用它，否则退回同形态的实色分段行。
 //
-// 主色一律取 `Theme.of(context).colorScheme`（库默认是 iOS 蓝）。
+// 颜色一律取 Apple 系统色（`appleColorsOf`）。
 
 const Set<WidgetState> _kNoStates = <WidgetState>{};
 const Set<WidgetState> _kSelectedStates = <WidgetState>{WidgetState.selected};
@@ -95,8 +100,16 @@ double _sliderKeyStep(
   return range * unit;
 }
 
-/// 复选框 / 单选钮的玻璃指示器。[onTap] 为 null 时是列表行里的纯展示控件
-/// （不可聚焦、不吃指针、不出语义——由整行承担）。
+/// 复选框 / 单选钮的 iOS 26 指示器（**不是玻璃**，内容层控件）：
+/// - 复选（[round] 为 false）= iOS 圆形勾选：选中是强调色实心圆 + 白色
+///   `CupertinoIcons.checkmark`，未选中是 1.5px 的灰色空心圈（tertiaryLabel），
+///   三态的「部分选中」画白色短横；
+/// - 单选（[round] 为 true）= macOS 26 单选钮：选中是强调色实心圆 + 白色圆点，
+///   未选中同样是灰色空心圈。列表行里的单选另走 iOS 的行尾对勾（见
+///   [_GlassToggleTile]）。
+///
+/// [onTap] 为 null 时是列表行里的纯展示控件（不可聚焦、不吃指针、不出语义——
+/// 由整行承担）。
 Widget _glassCheckIndicator(
   BuildContext context, {
   required bool? value,
@@ -114,7 +127,7 @@ Widget _glassCheckIndicator(
   MaterialTapTargetSize? materialTapTargetSize,
   VisualDensity? visualDensity,
 }) {
-  final ColorScheme cs = Theme.of(context).colorScheme;
+  final FushiAppleColors apple = appleColorsOf(context);
   final bool selected = value != false;
   final Set<WidgetState> states = <WidgetState>{
     if (selected) WidgetState.selected,
@@ -122,77 +135,71 @@ Widget _glassCheckIndicator(
     if (isError) WidgetState.error,
   };
   final Color tint = isError
-      ? cs.error
-      : (fillColor?.resolve(states) ?? activeColor ?? cs.primary);
-  final Color mark = checkColor ?? (isError ? cs.onError : cs.onPrimary);
-  final double size = (round ? 20 : 18) * scale;
-  final ShapeBorder outline = round
-      ? const CircleBorder()
-      : RoundedRectangleBorder(borderRadius: BorderRadius.circular(5 * scale));
+      ? apple.destructive
+      : (fillColor?.resolve(states) ?? activeColor ?? apple.accent);
+  final Color mark = checkColor ?? Colors.white;
+  final double size = 22 * scale;
 
-  final Widget glyph;
-  if (!selected) {
-    glyph = DecoratedBox(
-      decoration: ShapeDecoration(
-        shape: outline is CircleBorder
-            ? CircleBorder(
-                side: BorderSide(
-                  color: isError ? cs.error : cs.onSurfaceVariant,
-                  width: 1.5,
-                ),
-              )
-            : RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(5 * scale),
-                side: BorderSide(
-                  color: isError ? cs.error : cs.onSurfaceVariant,
-                  width: 1.5,
-                ),
-              ),
-      ),
-      child: SizedBox.square(dimension: size),
-    );
-  } else if (round) {
-    glyph = Container(
-      width: size * 0.4,
-      height: size * 0.4,
-      decoration: BoxDecoration(color: mark, shape: BoxShape.circle),
-    );
-  } else {
-    glyph = Icon(
-      value == null ? Icons.remove_rounded : Icons.check_rounded,
-      size: size * 0.85,
-      color: mark,
-    );
-  }
-
-  final bool interactive = onTap != null;
-  Widget box = GlassButton.custom(
-    onTap: onTap ?? () {},
-    enabled: enabled,
-    style: selected ? GlassButtonStyle.prominent : GlassButtonStyle.filled,
-    settings: selected ? fushiGlassSettings(context, tint: tint) : null,
-    quality: fushiGlassQuality(context),
-    shape: round
-        ? const LiquidOval()
-        : LiquidRoundedSuperellipse(borderRadius: 5 * scale),
+  final Widget glyph = AnimatedContainer(
+    duration: const Duration(milliseconds: 150),
+    curve: Curves.easeOut,
     width: size,
     height: size,
-    stretch: 0.2,
-    focusNode: interactive ? focusNode : null,
-    autofocus: interactive && autofocus,
-    canRequestFocus: interactive,
-    excludeFromSemantics: !interactive,
-    label: semanticLabel ?? '',
-    child: Center(child: glyph),
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: selected ? tint : Colors.transparent,
+      border: selected
+          ? null
+          : Border.all(
+              color: isError ? apple.destructive : apple.tertiaryLabel,
+              width: 1.5,
+            ),
+    ),
+    child: !selected
+        ? null
+        : Center(
+            child: round
+                ? Container(
+                    width: size * 0.36,
+                    height: size * 0.36,
+                    decoration: BoxDecoration(
+                      color: mark,
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                : value == null
+                ? Container(
+                    width: size * 0.46,
+                    height: 2.2 * scale,
+                    decoration: BoxDecoration(
+                      color: mark,
+                      borderRadius: BorderRadius.circular(1.1 * scale),
+                    ),
+                  )
+                : FushiIcon(
+                    CupertinoIcons.checkmark,
+                    size: size * 0.62,
+                    color: mark,
+                  ),
+          ),
   );
-  if (!interactive) {
-    return ExcludeFocus(child: IgnorePointer(child: box));
+
+  if (onTap == null) {
+    return ExcludeFocus(child: IgnorePointer(child: glyph));
   }
-  box = Semantics(
+  final Widget box = Semantics(
     checked: value ?? false,
     mixed: value == null ? true : null,
     inMutuallyExclusiveGroup: round ? true : null,
-    child: box,
+    label: semanticLabel,
+    child: _AppleToggleHit(
+      enabled: enabled,
+      onTap: onTap,
+      focusNode: focusNode,
+      autofocus: autofocus,
+      ringRadius: size / 2 + 3,
+      child: glyph,
+    ),
   );
   final double target = _toggleTapTarget(
     context,
@@ -203,6 +210,96 @@ Widget _glassCheckIndicator(
     dimension: target,
     child: Center(child: box),
   );
+}
+
+/// 复选 / 单选的可交互外壳：自带焦点节点（Tab 可达），[ActivateIntent]
+/// （Enter / 手柄 A）与点击都触发 [onTap]，按下变淡，键盘焦点时外描一圈强调色
+/// 焦点环（半径 [ringRadius]）。
+class _AppleToggleHit extends StatefulWidget {
+  const _AppleToggleHit({
+    required this.enabled,
+    required this.onTap,
+    required this.focusNode,
+    required this.autofocus,
+    required this.ringRadius,
+    required this.child,
+  });
+
+  final bool enabled;
+  final VoidCallback onTap;
+  final FocusNode? focusNode;
+  final bool autofocus;
+  final double ringRadius;
+  final Widget child;
+
+  @override
+  State<_AppleToggleHit> createState() => _AppleToggleHitState();
+}
+
+class _AppleToggleHitState extends State<_AppleToggleHit> {
+  bool _pressed = false;
+  bool _focusHighlight = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    Widget body = AnimatedOpacity(
+      duration: _pressed ? Duration.zero : const Duration(milliseconds: 160),
+      opacity: !widget.enabled ? 0.38 : (_pressed ? 0.6 : 1),
+      child: widget.child,
+    );
+    if (_focusHighlight) {
+      body = Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: <Widget>[
+          body,
+          IgnorePointer(
+            child: Container(
+              width: widget.ringRadius * 2,
+              height: widget.ringRadius * 2,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: apple.accent, width: 2),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return FocusableActionDetector(
+      enabled: widget.enabled,
+      focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
+      mouseCursor: widget.enabled
+          ? SystemMouseCursors.click
+          : MouseCursor.defer,
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (bool value) {
+        setState(() => _focusHighlight = value);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: widget.enabled ? (_) => _setPressed(true) : null,
+        onTapUp: widget.enabled ? (_) => _setPressed(false) : null,
+        onTapCancel: widget.enabled ? () => _setPressed(false) : null,
+        onTap: widget.enabled ? widget.onTap : null,
+        child: body,
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -403,8 +500,9 @@ class FushiSwitch extends StatelessWidget {
   }
 }
 
-/// [GlassSwitch] 配色：轨道取 primary / surfaceContainerHighest（可被 Material
-/// 颜色参数覆盖），拇指默认白。[onChanged] 为 null 时给空回调（调用方负责禁用态）。
+/// [GlassSwitch]（库的 iOS 26 开关：胶囊轨 + 白色圆钮，拖动时圆钮变玻璃）
+/// 配色按 iOS：开 = systemGreen、关 = systemFill 灰轨（可被 Material 颜色参数
+/// 覆盖），圆钮白。[onChanged] 为 null 时给空回调（调用方负责禁用态）。
 Widget _glassSwitchVisual(
   BuildContext context, {
   required bool value,
@@ -418,13 +516,13 @@ Widget _glassSwitchVisual(
   WidgetStateProperty<Color?>? thumbColor,
   WidgetStateProperty<Color?>? trackColor,
 }) {
-  final ColorScheme cs = Theme.of(context).colorScheme;
+  final FushiAppleColors apple = appleColorsOf(context);
   final Color active =
-      activeTrackColor ?? trackColor?.resolve(_kSelectedStates) ?? cs.primary;
+      activeTrackColor ??
+      trackColor?.resolve(_kSelectedStates) ??
+      apple.success;
   final Color inactive =
-      inactiveTrackColor ??
-      trackColor?.resolve(_kNoStates) ??
-      cs.surfaceContainerHighest;
+      inactiveTrackColor ?? trackColor?.resolve(_kNoStates) ?? apple.fill;
   final Color thumb =
       thumbColor?.resolve(value ? _kSelectedStates : _kNoStates) ??
       (value ? activeThumbColor : inactiveThumbColor) ??
@@ -578,9 +676,11 @@ class FushiSlider extends StatelessWidget {
   }
 
   Widget _buildGlass(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final ValueChanged<double>? changed = onChanged;
     final bool enabled = changed != null;
+    // iOS 26 滑块：细轨（已填段强调色、未填段 systemFill）+ 白色大圆钮，拖动
+    // 时圆钮变玻璃（库的 GlassSlider 就是这个形态）。
     Widget slider = GlassSlider(
       value: value.clamp(min, max).toDouble(),
       onChanged: changed,
@@ -590,10 +690,10 @@ class FushiSlider extends StatelessWidget {
       max: max,
       divisions: divisions,
       label: label,
-      activeColor: activeColor ?? cs.primary,
-      inactiveColor: inactiveColor ?? cs.surfaceContainerHighest,
+      activeColor: activeColor ?? apple.accent,
+      inactiveColor: inactiveColor ?? apple.fill,
       thumbColor: thumbColor ?? Colors.white,
-      glowColor: cs.primary,
+      glowColor: apple.accent,
       quality: fushiGlassQuality(context),
       focusNode: focusNode,
       autofocus: autofocus,
@@ -768,7 +868,7 @@ class _GlassRangeSlider extends StatefulWidget {
 }
 
 class _GlassRangeSliderState extends State<_GlassRangeSlider> {
-  static const double _thumbSize = 24;
+  static const double _thumbSize = 28;
   static const double _height = 48;
   static const double _trackHeight = 4;
 
@@ -878,7 +978,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
   }
 
   Widget _thumb(int thumb, double left) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final bool focused = thumb == 0 ? _startFocused : _endFocused;
     final double v = thumb == 0 ? _latest.start : _latest.end;
     final String? label = thumb == 0
@@ -916,12 +1016,21 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
           child: Stack(
             clipBehavior: Clip.none,
             children: <Widget>[
-              GlassContainer(
+              Container(
                 width: _thumbSize,
                 height: _thumbSize,
-                shape: const LiquidOval(),
-                quality: fushiGlassQuality(context),
-                settings: fushiGlassSettings(context, tint: Colors.white),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x26000000),
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
+                    ),
+                    BoxShadow(color: Color(0x0F000000), blurRadius: 1),
+                  ],
+                ),
               ),
               if (focused)
                 Positioned.fill(
@@ -929,7 +1038,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: cs.primary, width: 2),
+                        border: Border.all(color: apple.accent, width: 2),
                       ),
                     ),
                   ),
@@ -944,7 +1053,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
                       label,
                       style: Theme.of(
                         context,
-                      ).textTheme.labelSmall?.copyWith(color: cs.onSurface),
+                      ).textTheme.labelSmall?.copyWith(color: apple.label),
                     ),
                   ),
                 ),
@@ -957,7 +1066,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     return SizedBox(
       height: _height,
       child: LayoutBuilder(
@@ -1006,8 +1115,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
                     height: _trackHeight,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color:
-                            widget.inactiveColor ?? cs.surfaceContainerHighest,
+                        color: widget.inactiveColor ?? apple.fill,
                         borderRadius: BorderRadius.circular(_trackHeight / 2),
                       ),
                     ),
@@ -1019,7 +1127,7 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
                     height: _trackHeight,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: widget.activeColor ?? cs.primary,
+                        color: widget.activeColor ?? apple.accent,
                         borderRadius: BorderRadius.circular(_trackHeight / 2),
                       ),
                     ),
@@ -1417,8 +1525,37 @@ class _FushiRadioState<T> extends State<FushiRadio<T>> with RadioClient<T> {
 // 列表行变体共用的玻璃行
 // ---------------------------------------------------------------------------
 
-/// 玻璃下的「选择类列表行」：[GlassListTile] 排版，整行是一个焦点停靠点
-/// （Enter / 手柄 A → ActivateIntent → [onTap]），行内 [control] 只做展示。
+/// iOS 单选列表行的行尾标记：选中 = 强调色 `CupertinoIcons.checkmark`，未选中
+/// 留出同宽空位（行内文字不随选中跳动）。纯展示，焦点与语义由整行承担。
+Widget _glassRadioCheckmark(
+  BuildContext context, {
+  required bool checked,
+  required bool enabled,
+  Color? color,
+  double scale = 1.0,
+}) {
+  final FushiAppleColors apple = appleColorsOf(context);
+  final double size = 20 * scale;
+  return ExcludeFocus(
+    child: IgnorePointer(
+      child: SizedBox.square(
+        dimension: size + 4,
+        child: checked
+            ? FushiIcon(
+                CupertinoIcons.checkmark,
+                size: size,
+                color: enabled ? (color ?? apple.accent) : apple.tertiaryLabel,
+              )
+            : null,
+      ),
+    ),
+  );
+}
+
+/// 玻璃下的「选择类列表行」：iOS 设置行（行高 44 起、label 色标题、
+/// secondaryLabel 副标题，实色内容层，不是玻璃），[GlassListTile] 排版，整行是
+/// 一个焦点停靠点（Enter / 手柄 A → ActivateIntent → [onTap]），行内 [control]
+/// 只做展示。
 class _GlassToggleTile extends StatefulWidget {
   const _GlassToggleTile({
     required this.focusNode,
@@ -1502,15 +1639,15 @@ class _GlassToggleTileState extends State<_GlassToggleTile> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final TextTheme tt = theme.textTheme;
     final bool enabled = widget.enabled;
     final bool dense = widget.dense ?? false;
-    final Color disabledFg = cs.onSurface.withValues(alpha: 0.38);
-    final Color titleColor = !enabled
-        ? disabledFg
-        : (widget.selected ? cs.primary : cs.onSurface);
-    final Color subtitleColor = enabled ? cs.onSurfaceVariant : disabledFg;
+    // iOS 行的选中态不染标题（选中由行尾对勾 / 开关表达），禁用整行变灰。
+    final Color titleColor = enabled ? apple.label : apple.tertiaryLabel;
+    final Color subtitleColor = enabled
+        ? apple.secondaryLabel
+        : apple.tertiaryLabel;
 
     final Widget? leading = widget.controlLeading
         ? widget.control
@@ -1528,6 +1665,7 @@ class _GlassToggleTileState extends State<_GlassToggleTile> {
           (dense ? tt.bodyMedium : tt.bodyLarge)?.copyWith(color: titleColor) ??
           TextStyle(color: titleColor),
       subtitleStyle: (tt.bodyMedium ?? const TextStyle()).copyWith(
+        fontSize: 13,
         color: subtitleColor,
       ),
     );
@@ -1538,24 +1676,23 @@ class _GlassToggleTileState extends State<_GlassToggleTile> {
             data: IconThemeData(color: subtitleColor),
             child: leading,
           ),
-          SizedBox(width: widget.horizontalTitleGap ?? 16),
+          SizedBox(width: widget.horizontalTitleGap ?? 12),
           Expanded(child: body),
         ],
       );
     }
+    // iOS 行高：单行 44，带副标题 58，三行 76。
     final double minHeight =
         widget.minTileHeight ??
-        (dense
-            ? 48
-            : widget.subtitle == null
-            ? 56
-            : ((widget.isThreeLine ?? false) ? 88 : 72));
+        (dense || widget.subtitle == null
+            ? 44
+            : ((widget.isThreeLine ?? false) ? 76 : 58));
     body = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding:
             widget.contentPadding ??
-            EdgeInsets.symmetric(horizontal: 16, vertical: dense ? 4 : 8),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Align(alignment: AlignmentDirectional.centerStart, child: body),
       ),
     );
@@ -1564,17 +1701,18 @@ class _GlassToggleTileState extends State<_GlassToggleTile> {
         (widget.selected ? widget.selectedTileColor : widget.tileColor) ??
         Colors.transparent;
     final bool highlight = enabled && (_pressed || _hovered || _focused);
-    final Color overlay =
-        widget.hoverColor ?? cs.onSurface.withValues(alpha: 0.08);
+    // 按下 / 悬停 / 焦点是 iOS 行高亮的中性灰（systemFill），不是 MD3 的
+    // onSurface 叠层。
+    final Color overlay = widget.hoverColor ?? apple.tertiaryFill;
     final Color fill = highlight ? Color.alphaBlend(overlay, base) : base;
     final BorderSide ring = _focused
-        ? BorderSide(color: cs.primary, width: 2)
+        ? BorderSide(color: apple.accent, width: 2)
         : BorderSide.none;
     final ShapeBorder shape = switch (widget.shape) {
       final OutlinedBorder outlined => outlined.copyWith(side: ring),
       final ShapeBorder other when !_focused => other,
       _ => RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: ring,
       ),
     };
@@ -2211,18 +2349,19 @@ class _FushiRadioListTileState<T> extends State<FushiRadioListTile<T>>
       title: widget.title,
       subtitle: widget.subtitle,
       secondary: widget.secondary,
-      control: _glassCheckIndicator(
+      control: _glassRadioCheckmark(
         context,
-        value: checked,
+        checked: checked,
         enabled: isEnabled,
-        onTap: null,
-        round: true,
-        activeColor: widget.activeColor,
-        fillColor: widget.fillColor,
+        color:
+            widget.fillColor?.resolve(
+              checked ? _kSelectedStates : _kNoStates,
+            ) ??
+            widget.activeColor,
         scale: widget.radioScaleFactor,
       ),
-      // RadioListTile 的 platform 默认把单选钮放在行首。
-      controlLeading: affinity != ListTileControlAffinity.trailing,
+      // iOS 单选列表的对勾在行尾；只有调用方显式要求行首时才放行首。
+      controlLeading: affinity == ListTileControlAffinity.leading,
       selected: widget.selected,
       tileColor: widget.tileColor,
       selectedTileColor: widget.selectedTileColor,
@@ -2544,10 +2683,11 @@ class FushiSwitchListTile extends StatelessWidget {
 
 /// [SegmentedButton] 的设计系统分派版。
 ///
-/// 玻璃下：单选、不允许空选、横排、2–6 段且每段 label 为 null 或纯文本 [Text]
-/// 时用 [GlassSegmentedControl]（滑动玻璃指示器，每段自带焦点 + Enter 激活）；
-/// 其余情形（多选、允许空选、竖排、段数越界、富文本 label）用一排玻璃按钮，
-/// 选中段以 secondaryContainer 着色、按 [showSelectedIcon] 显示勾。
+/// 玻璃下是 iOS 26 分段控件（systemFill 灰轨 + 白色滑块，高 32）：单选、不允许
+/// 空选、横排、2–6 段且每段 label 为 null 或纯文本 [Text] 时用
+/// [GlassSegmentedControl]（滑块拖动时变玻璃，每段自带焦点 + Enter 激活）；
+/// 其余情形（多选、允许空选、竖排、段数越界、富文本 label）用同形态的实色
+/// 分段行，按 [showSelectedIcon] 显示 SF 对勾。
 class FushiSegmentedButton<T> extends StatefulWidget {
   const FushiSegmentedButton({
     super.key,
@@ -2725,13 +2865,17 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
 
   Widget _buildSegmentedControl(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final TextStyle base = theme.textTheme.labelLarge ?? const TextStyle();
+    final FushiAppleColors apple = appleColorsOf(context);
+    final TextStyle base = (theme.textTheme.labelLarge ?? const TextStyle())
+        .copyWith(fontSize: 13);
     final TextStyle selectedStyle = base.copyWith(
-      color: cs.onSecondaryContainer,
+      color: apple.label,
       fontWeight: FontWeight.w600,
     );
-    final TextStyle unselectedStyle = base.copyWith(color: cs.onSurface);
+    final TextStyle unselectedStyle = base.copyWith(
+      color: apple.label,
+      fontWeight: FontWeight.w500,
+    );
     final List<ButtonSegment<T>> segments = widget.segments;
     final int selectedIndex = segments.indexWhere(
       (ButtonSegment<T> s) => widget.selected.contains(s.value),
@@ -2756,7 +2900,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
       }
       if (s.icon != null) {
         if (text != null) stacked = true;
-        w = w < 24 ? 24 : w;
+        w = w < 20 ? 20 : w;
       }
       if (w > widest) widest = w;
       glassSegments.add(
@@ -2769,17 +2913,20 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
       );
     }
     // 与 Material 一样按内容取宽（等宽段）；有 expandedInsets 时撑满。
-    final double intrinsic = segments.length * (widest + 32) + 4;
+    final double intrinsic = segments.length * (widest + 28) + 4;
+    // iOS 26 分段控件：systemFill 灰轨 + 白色（深色 #636366）滑块，高 32；
+    // 滑块拖动时由库变成玻璃。
     final Widget control = GlassSegmentedControl(
       segments: glassSegments,
       selectedIndex: selectedIndex,
       onSegmentSelected: (int index) => _handlePressed(segments[index].value),
-      height: stacked ? 54 : 40,
+      height: stacked ? 50 : 32,
+      iconSize: 17,
       selectedTextStyle: selectedStyle,
       unselectedTextStyle: unselectedStyle,
-      backgroundColor: fushiGlassFill(context),
-      indicatorColor: cs.secondaryContainer,
-      glowColor: cs.primary,
+      backgroundColor: apple.fill,
+      indicatorColor: _appleSegmentThumb(context),
+      glowColor: apple.accent,
       quality: fushiGlassQuality(context),
     );
     return LayoutBuilder(
@@ -2796,56 +2943,63 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     );
   }
 
+  /// 退回形态（多选 / 允许空选 / 竖排 / 富文本段）：同样是 iOS 分段的
+  /// systemFill 灰轨，选中段是白色（深色 #636366）滑块胶囊，内容层实色。
   Widget _buildButtonRow(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
     final bool expanded = widget.expandedInsets != null;
     final List<Widget> children = <Widget>[
       for (final ButtonSegment<T> s in widget.segments)
-        _segmentButton(context, cs, theme, s),
+        _segmentButton(context, s),
     ];
     Widget row = Flex(
       direction: widget.direction,
       mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-      spacing: 6,
+      spacing: 2,
       children: expanded
           ? <Widget>[for (final Widget c in children) Expanded(child: c)]
           : children,
+    );
+    row = DecoratedBox(
+      decoration: BoxDecoration(
+        color: apple.fill,
+        borderRadius: BorderRadius.circular(
+          widget.direction == Axis.horizontal ? 999 : 12,
+        ),
+      ),
+      child: Padding(padding: const EdgeInsets.all(2), child: row),
     );
     if (expanded) row = Padding(padding: widget.expandedInsets!, child: row);
     return row;
   }
 
-  Widget _segmentButton(
-    BuildContext context,
-    ColorScheme cs,
-    ThemeData theme,
-    ButtonSegment<T> s,
-  ) {
+  Widget _segmentButton(BuildContext context, ButtonSegment<T> s) {
+    final ThemeData theme = Theme.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
     final bool selected = widget.selected.contains(s.value);
     final bool enabled = _enabled && s.enabled;
-    final Color fg = !enabled
-        ? cs.onSurface.withValues(alpha: 0.38)
-        : (selected ? cs.onSecondaryContainer : cs.onSurface);
+    final Color fg = enabled ? apple.label : apple.tertiaryLabel;
     final Widget? icon = selected && widget.showSelectedIcon
-        ? (widget.selectedIcon ?? const Icon(Icons.check))
+        ? (widget.selectedIcon ?? const FushiIcon(CupertinoIcons.checkmark))
         : (s.label != null ? s.icon : null);
     final Widget label = s.label ?? s.icon ?? const SizedBox.shrink();
     final Widget content = IconTheme.merge(
-      data: IconThemeData(color: fg, size: 18),
+      data: IconThemeData(color: fg, size: 15),
       child: DefaultTextStyle.merge(
         style: (theme.textTheme.labelLarge ?? const TextStyle()).copyWith(
+          fontSize: 13,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           color: fg,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              if (icon != null) ...<Widget>[icon, const SizedBox(width: 6)],
+              if (icon != null) ...<Widget>[icon, const SizedBox(width: 4)],
               Flexible(child: label),
             ],
           ),
@@ -2853,25 +3007,126 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
       ),
     );
     final String? text = s.label is Text ? (s.label as Text).data : null;
-    Widget button = GlassButton.custom(
-      onTap: () => _handlePressed(s.value),
+    Widget button = _AppleSegment(
+      selected: selected,
       enabled: enabled,
-      style: selected ? GlassButtonStyle.filled : GlassButtonStyle.transparent,
-      settings: selected
-          ? fushiGlassSettings(context, tint: cs.secondaryContainer)
-          : null,
-      quality: fushiGlassQuality(context),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 20),
-      label: text ?? s.tooltip ?? '',
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 40),
-        child: Center(widthFactor: 1, heightFactor: 1, child: content),
-      ),
+      onTap: () => _handlePressed(s.value),
+      thumbColor: _appleSegmentThumb(context),
+      semanticLabel: text ?? s.tooltip,
+      child: content,
     );
-    button = Semantics(selected: selected, child: button);
     if (s.tooltip != null) {
       button = Tooltip(message: s.tooltip, child: button);
     }
     return button;
+  }
+}
+
+/// iOS 分段控件的滑块色：浅色白、深色 #636366（UISegmentedControl 的
+/// selectedSegmentTintColor 默认值）。
+Color _appleSegmentThumb(BuildContext context) =>
+    Theme.of(context).colorScheme.brightness == Brightness.dark
+    ? const Color(0xFF636366)
+    : Colors.white;
+
+/// 分段退回形态的单段：选中段是带细阴影的滑块胶囊，未选中段透明；整段一个
+/// 焦点停靠点（Enter / 手柄 A → ActivateIntent），键盘焦点画强调色焦点环。
+class _AppleSegment extends StatefulWidget {
+  const _AppleSegment({
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+    required this.thumbColor,
+    required this.semanticLabel,
+    required this.child,
+  });
+
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+  final Color thumbColor;
+  final String? semanticLabel;
+  final Widget child;
+
+  @override
+  State<_AppleSegment> createState() => _AppleSegmentState();
+}
+
+class _AppleSegmentState extends State<_AppleSegment> {
+  bool _pressed = false;
+  bool _focusHighlight = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Widget body = AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 28),
+      decoration: BoxDecoration(
+        color: widget.selected ? widget.thumbColor : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        border: _focusHighlight
+            ? Border.all(color: apple.accent, width: 2)
+            : null,
+        boxShadow: widget.selected
+            ? const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x1F000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
+                ),
+              ]
+            : const <BoxShadow>[],
+      ),
+      child: Center(
+        widthFactor: 1,
+        heightFactor: 1,
+        child: AnimatedOpacity(
+          duration: _pressed
+              ? Duration.zero
+              : const Duration(milliseconds: 160),
+          opacity: _pressed ? 0.5 : 1,
+          child: widget.child,
+        ),
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      enabled: widget.enabled,
+      label: widget.semanticLabel,
+      child: FocusableActionDetector(
+        enabled: widget.enabled,
+        mouseCursor: widget.enabled
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (ActivateIntent intent) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        onShowFocusHighlight: (bool value) {
+          setState(() => _focusHighlight = value);
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTapDown: widget.enabled ? (_) => _setPressed(true) : null,
+          onTapUp: widget.enabled ? (_) => _setPressed(false) : null,
+          onTapCancel: widget.enabled ? () => _setPressed(false) : null,
+          onTap: widget.enabled ? widget.onTap : null,
+          child: body,
+        ),
+      ),
+    );
   }
 }

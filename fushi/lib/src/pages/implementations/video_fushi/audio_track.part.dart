@@ -110,7 +110,7 @@ extension _VideoAudioTrack on _VideoFushiPageState {
         if (tracks.isEmpty) {
           return FushiListTileControl(
             dense: true,
-            leading: const Icon(Icons.audiotrack),
+            leading: const FushiIcon(Icons.audiotrack),
             title: Text(t.video_audio_track_empty),
             enabled: false,
           );
@@ -121,12 +121,12 @@ extension _VideoAudioTrack on _VideoFushiPageState {
             for (final AudioTrack track in tracks)
               FushiListTileControl(
                 dense: true,
-                leading: const Icon(Icons.audiotrack),
+                leading: const FushiIcon(Icons.audiotrack),
                 title: Text(_trackLabel(track.title, track.language, track.id)),
                 selected: _currentAudioTrackId == track.id,
                 selectedColor: cs.primary,
                 trailing: _currentAudioTrackId == track.id
-                    ? Icon(Icons.check, color: cs.primary)
+                    ? FushiIcon(Icons.check, color: cs.primary)
                     : null,
                 onTap: () => unawaited(_selectAudioTrack(controller, track)),
               ),

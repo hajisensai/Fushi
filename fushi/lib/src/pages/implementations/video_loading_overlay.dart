@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -53,7 +54,7 @@ class VideoLoadingOverlay extends StatelessWidget {
           Align(
             alignment: AlignmentDirectional.topStart,
             child: FushiIconButtonControl(
-              icon: const Icon(Icons.arrow_back),
+              icon: const FushiIcon(Icons.arrow_back),
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
               color: cs.onSurface,
               onPressed: onBack,
@@ -130,7 +131,7 @@ class VideoReadSpeedLabel extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.arrow_downward, size: 14, color: color),
+            FushiIcon(Icons.arrow_downward, size: 14, color: color),
             const SizedBox(width: 4),
             Text(
               FushiByteFormat.speed(bytesPerSecond),

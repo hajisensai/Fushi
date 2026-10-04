@@ -4,14 +4,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-// 输入框包装契约：MD3 下就是原 TextField / TextFormField；玻璃设计系统下是玻璃
-// 壳（GlassContainer）+ 无边框 CupertinoTextField，界面里没有 Material
-// TextField，且输入、controller、onChanged / onSubmitted、inputFormatters、
-// FocusNode、Form 校验与原控件一致。
+// 输入框包装契约：MD3 下就是原 TextField / TextFormField；玻璃设计系统下是 iOS
+// 26 实色输入框（tertiarySystemFill 底、圆角 10；搜索框全胶囊高 36，**不是
+// 玻璃**）+ 无边框 CupertinoTextField，界面里没有 Material TextField，且输入、
+// controller、onChanged / onSubmitted、inputFormatters、FocusNode、Form 校验与
+// 原控件一致。
 
 Future<void> _pump(
   WidgetTester tester,
@@ -54,7 +56,7 @@ void main() {
       expect(find.byType(CupertinoTextField), findsNothing);
     });
 
-    testWidgets('glass builds a glass field without a Material TextField', (
+    testWidgets('glass builds an iOS search capsule, no TextField, no glass', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -72,13 +74,52 @@ void main() {
       );
       expect(find.byType(TextField), findsNothing);
       expect(find.byType(InputDecorator), findsNothing);
-      expect(find.byType(GlassContainer), findsOneWidget);
+      expect(find.byType(GlassContainer), findsNothing);
       expect(find.byType(CupertinoTextField), findsOneWidget);
       expect(find.text('Name'), findsOneWidget);
       expect(find.text('Type here'), findsOneWidget);
       expect(find.text('Helper line'), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsOneWidget);
+      // 放大镜前缀 = 搜索框：SF 放大镜、systemFill 实色全胶囊、高 36。
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
       expect(find.byIcon(Icons.clear), findsOneWidget);
+      final BuildContext ctx = tester.element(find.byType(CupertinoTextField));
+      final Finder shell = find.ancestor(
+        of: find.byType(CupertinoTextField),
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is AnimatedContainer &&
+              w.decoration is BoxDecoration &&
+              (w.decoration! as BoxDecoration).color == appleColorsOf(ctx).fill,
+        ),
+      );
+      expect(shell, findsOneWidget);
+      expect(tester.getSize(shell).height, 36);
+    });
+
+    testWidgets('glass plain field is a rounded-10 tertiaryFill box', (
+      WidgetTester tester,
+    ) async {
+      await _pump(
+        tester,
+        const FushiTextFieldControl(
+          decoration: InputDecoration(hintText: 'Plain'),
+        ),
+        glass: true,
+      );
+      final BuildContext ctx = tester.element(find.byType(CupertinoTextField));
+      final AnimatedContainer shell = tester.widget<AnimatedContainer>(
+        find
+            .ancestor(
+              of: find.byType(CupertinoTextField),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      final BoxDecoration deco = shell.decoration! as BoxDecoration;
+      expect(deco.color, appleColorsOf(ctx).tertiaryFill);
+      expect(deco.borderRadius, BorderRadius.circular(10));
+      expect(deco.border, isNull);
     });
 
     testWidgets(
@@ -173,7 +214,7 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byType(GlassContainer), findsOneWidget);
+      expect(find.byType(GlassContainer), findsNothing);
       expect(find.byType(InputDecorator), findsNothing);
       expect(
         tester.widget<EditableText>(find.byType(EditableText)).hintLocales,
@@ -234,7 +275,7 @@ void main() {
       );
       expect(find.byType(TextFormField), findsNothing);
       expect(find.byType(TextField), findsNothing);
-      expect(find.byType(GlassContainer), findsOneWidget);
+      expect(find.byType(GlassContainer), findsNothing);
       expect(find.text('start'), findsOneWidget);
 
       await tester.enterText(find.byType(EditableText), '');

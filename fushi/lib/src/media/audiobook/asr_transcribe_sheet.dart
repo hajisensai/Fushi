@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
@@ -177,12 +178,12 @@ class _SubtitleSourceChooser extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           FushiListItem(
-            leading: const Icon(Icons.subtitles_outlined),
+            leading: const FushiIcon(Icons.subtitles_outlined),
             title: Text(t.srt_import_pick_subtitle_files),
             onTap: () => Navigator.pop(context, SubtitleSourceChoice.pickFile),
           ),
           FushiListItem(
-            leading: const Icon(Icons.record_voice_over_outlined),
+            leading: const FushiIcon(Icons.record_voice_over_outlined),
             title: Text(t.audiobook_transcribe_action),
             subtitle: Text(t.audiobook_subtitle_source_transcribe_hint),
             onTap: () =>
@@ -1148,7 +1149,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                   FushiIconButtonControl(
                     key: const ValueKey<String>('asr-transcribe-model-add'),
                     tooltip: t.audiobook_transcribe_model_custom_add,
-                    icon: const Icon(Icons.create_new_folder_outlined),
+                    icon: const FushiIcon(Icons.create_new_folder_outlined),
                     // 选中系统语音时接入本地 ONNX 模型没有意义（那是另一个引擎的
                     // 东西）——留着可点会让用户以为接进来就能给系统语音用。
                     onPressed: _canChangePreference &&
@@ -1256,12 +1257,12 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         add(
           _runRemote && _remoteTarget != null
               ? FushiFilledButton.icon(
-                  icon: const Icon(Icons.play_arrow_outlined, size: 18),
+                  icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
                   label: Text(t.audiobook_transcribe_start),
                   onPressed: _startTranscription,
                 )
               : FushiFilledButton.icon(
-                  icon: const Icon(Icons.download_outlined, size: 18),
+                  icon: const FushiIcon(Icons.download_outlined, size: 18),
                   label: Text(t.audiobook_transcribe_model_download),
                   onPressed: _startDownload,
                 ),
@@ -1269,7 +1270,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.ready:
         add(
           FushiFilledButton.icon(
-            icon: const Icon(Icons.play_arrow_outlined, size: 18),
+            icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
             label: Text(t.audiobook_transcribe_start),
             onPressed: _startTranscription,
           ),
@@ -1283,7 +1284,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
         add(
           FushiFilledButton.icon(
-            icon: const Icon(Icons.play_arrow_outlined, size: 18),
+            icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
             label: Text(t.audiobook_transcribe_resume),
             onPressed: _startTranscription,
           ),
@@ -1291,7 +1292,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.running:
         add(
           FushiFilledButton.icon(
-            icon: const Icon(Icons.pause_outlined, size: 18),
+            icon: const FushiIcon(Icons.pause_outlined, size: 18),
             label: Text(t.audiobook_transcribe_pause),
             onPressed: _pause,
           ),
@@ -1305,14 +1306,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
         add(
           FushiOutlinedButton.icon(
-            icon: const Icon(Icons.save_alt_outlined, size: 18),
+            icon: const FushiIcon(Icons.save_alt_outlined, size: 18),
             label: Text(t.audiobook_transcribe_export),
             onPressed: _finishedSrt == null ? null : _export,
           ),
         );
         add(
           FushiFilledButton.icon(
-            icon: const Icon(Icons.check_outlined, size: 18),
+            icon: const FushiIcon(Icons.check_outlined, size: 18),
             label: Text(t.audiobook_transcribe_use_result),
             onPressed: _finishedSrt == null
                 ? null
@@ -1322,7 +1323,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.error:
         add(
           FushiFilledButton.icon(
-            icon: const Icon(Icons.refresh_outlined, size: 18),
+            icon: const FushiIcon(Icons.refresh_outlined, size: 18),
             label: Text(t.audiobook_transcribe_resume),
             onPressed: _refreshPlan,
           ),

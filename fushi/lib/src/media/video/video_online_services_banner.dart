@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// One reminder shared by the video library's home, series and all sections.
@@ -90,7 +91,7 @@ class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner> {
                 children: <Widget>[
                   FushiTextButton.icon(
                     onPressed: _openOverview,
-                    icon: const Icon(Icons.info_outline),
+                    icon: const FushiIcon(Icons.info_outline),
                     label: Text(t.video_online_services_setup_register),
                   ),
                   FushiFilledButton.tonal(

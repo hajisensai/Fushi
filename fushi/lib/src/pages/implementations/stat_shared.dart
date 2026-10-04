@@ -4,6 +4,7 @@ import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -87,7 +88,7 @@ Widget buildStatMediaRow(
         ),
         if (onTap != null) ...<Widget>[
           SizedBox(width: tokens.spacing.gap / 2),
-          Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+          FushiIcon(Icons.chevron_right, color: colors.onSurfaceVariant),
         ],
       ],
     ),
@@ -123,7 +124,7 @@ Widget buildStatCoverSlot(
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final Widget placeholder = Center(
-    child: Icon(
+    child: FushiIcon(
       icon,
       size: width * 0.6,
       color: Theme.of(context).colorScheme.primary,
@@ -192,7 +193,7 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
-                    Icon(
+                    FushiIcon(
                       _expanded ? Icons.expand_less : Icons.expand_more,
                       color: colors.onSurfaceVariant,
                     ),
@@ -798,7 +799,7 @@ Widget buildStatCollectionLabel(
   return Row(
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
-      Icon(
+      FushiIcon(
         Icons.folder_outlined,
         size: 13,
         color: colorScheme.onSurfaceVariant,

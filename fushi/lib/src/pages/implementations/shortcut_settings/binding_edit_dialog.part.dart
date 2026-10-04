@@ -758,7 +758,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 )
               else if (canAddKeyboard)
                 FushiTextButton.icon(
-                  icon: const Icon(Icons.add, size: 18),
+                  icon: const FushiIcon(Icons.add, size: 18),
                   label: Text(t.shortcut_keyboard),
                   onPressed: _startCapture,
                 ),
@@ -846,7 +846,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   children: <Widget>[
                     FushiTextButton.icon(
                       key: const Key('shortcut_add_gamepad_capture'),
-                      icon: const Icon(Icons.add, size: 18),
+                      icon: const FushiIcon(Icons.add, size: 18),
                       label: Text(t.shortcut_gamepad),
                       onPressed: _startGamepadCapture,
                     ),
@@ -871,7 +871,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            Icon(
+                            FushiIcon(
                               Icons.list_outlined,
                               size: 18,
                               color: themeData.colorScheme.primary,
@@ -961,7 +961,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 else
                   FushiTextButton.icon(
                     key: const Key('shortcut_add_mouse'),
-                    icon: const Icon(Icons.mouse_outlined, size: 18),
+                    icon: const FushiIcon(Icons.mouse_outlined, size: 18),
                     label: Text(t.shortcut_mouse_button),
                     onPressed: _startMouseCapture,
                   ),
@@ -1039,7 +1039,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               else if (canAddWheel)
                 FushiTextButton.icon(
                   key: const Key('shortcut_add_wheel'),
-                  icon: const Icon(Icons.mouse_outlined, size: 18),
+                  icon: const FushiIcon(Icons.mouse_outlined, size: 18),
                   label: Text(t.shortcut_wheel),
                   onPressed: _startWheelCapture,
                 ),

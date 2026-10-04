@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
@@ -356,7 +357,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               key: const ValueKey<String>('manga_series_ocr_cancel'),
               tooltip: t.dialog_cancel,
               onPressed: () => unawaited(_cancelOcr()),
-              icon: const Icon(Icons.close),
+              icon: const FushiIcon(Icons.close),
             ),
         ],
       ),
@@ -1366,7 +1367,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             key: const ValueKey<String>('manga_series_open_website'),
             tooltip: t.mihon_source_website_open,
             onPressed: () => unawaited(_openWebsite(adapter, entry)),
-            icon: const Icon(Icons.open_in_new),
+            icon: const FushiIcon(Icons.open_in_new),
           ),
         // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
         // 不必先点一条锁章再从弹窗里找。
@@ -1377,7 +1378,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             onPressed: _busy || _refreshing
                 ? null
                 : () => unawaited(_loginToSource(login)),
-            icon: const Icon(Icons.login),
+            icon: const FushiIcon(Icons.login),
           ),
         if (canSubscribe)
           FushiIconButtonControl(
@@ -1386,7 +1387,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ? t.manga_series_unsubscribe
                 : t.manga_series_subscribe,
             onPressed: _busy ? null : () => unawaited(_toggleSubscription()),
-            icon: Icon(
+            icon: FushiIcon(
               entry.subscribed ? Icons.bookmark : Icons.bookmark_add_outlined,
             ),
           ),
@@ -1403,7 +1404,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                     height: 20,
                     child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.refresh),
+                : const FushiIcon(Icons.refresh),
           ),
         if (canSubscribe && entry.subscribed)
           FushiOverflowMenu<String>(
@@ -1635,7 +1636,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return FushiCard(
       child: Row(
         children: <Widget>[
-          Icon(Icons.cloud_off_outlined, color: theme.colorScheme.error),
+          FushiIcon(Icons.cloud_off_outlined, color: theme.colorScheme.error),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1715,7 +1716,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             );
             return const ColoredBox(
               color: Color(0xff303030),
-              child: Icon(Icons.menu_book_outlined),
+              child: FushiIcon(Icons.menu_book_outlined),
             );
           },
         );
@@ -1728,7 +1729,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     }
     return const ColoredBox(
       color: Color(0xff303030),
-      child: Icon(Icons.menu_book_outlined),
+      child: FushiIcon(Icons.menu_book_outlined),
     );
   }
 
@@ -1740,7 +1741,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         FushiFilledButton.icon(
           key: const ValueKey<String>('manga_series_open_local'),
           onPressed: _busy ? null : () => unawaited(_openLocalBook()),
-          icon: const Icon(Icons.play_arrow),
+          icon: const FushiIcon(Icons.play_arrow),
           label: Text(t.book_continue_reading),
         ),
         // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
@@ -1758,7 +1759,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           onPressed: resumeChapter == null || _busy
               ? null
               : () => unawaited(_openChapterAt(resumeIndex)),
-          icon: const Icon(Icons.play_arrow),
+          icon: const FushiIcon(Icons.play_arrow),
           label: Text(
             resumeChapter == null
                 ? t.book_continue_reading
@@ -1771,14 +1772,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_remove_from_bookshelf'),
             onPressed: _busy ? null : () => unawaited(_removeFromLibrary()),
-            icon: const Icon(Icons.library_add_check),
+            icon: const FushiIcon(Icons.library_add_check),
             label: Text(t.manga_series_remove_from_bookshelf),
           )
         else
           FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_add_to_bookshelf'),
             onPressed: _busy ? null : () => unawaited(_addToLibrary()),
-            icon: const Icon(Icons.library_add_outlined),
+            icon: const FushiIcon(Icons.library_add_outlined),
             label: Text(t.mihon_add_to_bookshelf),
           ),
         // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
@@ -1786,7 +1787,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_download_all'),
             onPressed: _busy ? null : () => unawaited(_downloadAll()),
-            icon: const Icon(Icons.download_outlined),
+            icon: const FushiIcon(Icons.download_outlined),
             label: Text(t.manga_series_download_all),
           ),
           FushiSelectableChip(
@@ -1799,7 +1800,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_ocr_all_downloaded'),
             onPressed: _busy ? null : () => unawaited(_ocrAllDownloaded()),
-            icon: const Icon(Icons.document_scanner_outlined),
+            icon: const FushiIcon(Icons.document_scanner_outlined),
             label: Text(t.manga_series_ocr_all_downloaded),
           ),
           _ocrSettingsButton(),
@@ -1815,7 +1816,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_series_ocr_settings'),
       onPressed: () => unawaited(_openOcrSettings()),
-      icon: const Icon(Icons.tune_outlined),
+      icon: const FushiIcon(Icons.tune_outlined),
       label: Text(t.manga_ocr_settings_open),
     );
   }
@@ -1842,7 +1843,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         FushiCard(
           padding: EdgeInsets.zero,
           child: FushiListItem(
-            leading: const Icon(Icons.auto_stories_outlined),
+            leading: const FushiIcon(Icons.auto_stories_outlined),
             title: Text(t.manga_series_page_count),
             trailing: Text('${row.chapterCount}'),
           ),

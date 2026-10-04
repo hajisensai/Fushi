@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -215,7 +216,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           // galgames.id），落库同走 addToCollection DAO；库页返回后 _reload 刷新分组。
           FushiIconButtonControl(
             tooltip: t.add_to_collection,
-            icon: const Icon(Icons.collections_bookmark_outlined),
+            icon: const FushiIcon(Icons.collections_bookmark_outlined),
             onPressed: () => unawaited(_addToCollection(game)),
           ),
         ],
@@ -337,7 +338,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             alignment: Alignment.centerLeft,
             child: FushiFilledButton.icon(
               onPressed: widget.onLaunch,
-              icon: const Icon(Icons.play_arrow),
+              icon: const FushiIcon(Icons.play_arrow),
               label: Text(t.game_launch),
             ),
           ),
@@ -542,7 +543,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               child: FushiTextButton.icon(
                 onPressed: () => setState(() => _tagsExpanded = !_tagsExpanded),
                 icon:
-                    Icon(_tagsExpanded ? Icons.expand_less : Icons.expand_more),
+                    FushiIcon(_tagsExpanded ? Icons.expand_less : Icons.expand_more),
                 label: Text(_tagsExpanded
                     ? t.collection_collapse
                     : '${t.collection_expand} +${tags.length - _kTagLimit}'),
@@ -648,7 +649,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               subtitle: Text(formatStatTime(row.durationSeconds * 1000)),
               trailing: FushiIconButtonControl(
                 tooltip: t.game_stat_delete_session,
-                icon: const Icon(Icons.delete_outline),
+                icon: const FushiIcon(Icons.delete_outline),
                 onPressed: () => unawaited(_deleteSession(row)),
               ),
             ),
@@ -937,7 +938,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
               child: FushiOutlinedButton.icon(
                 // 再入守卫在统一弹窗内（每行「使用」行内转圈），按钮无需禁用态。
                 onPressed: () => unawaited(_scrape()),
-                icon: const Icon(Icons.cloud_download_outlined),
+                icon: const FushiIcon(Icons.cloud_download_outlined),
                 label: Text(t.game_scrape),
               ),
             ),
@@ -945,7 +946,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
             Expanded(
               child: FushiFilledButton.icon(
                 onPressed: () => unawaited(_save()),
-                icon: const Icon(Icons.save_outlined),
+                icon: const FushiIcon(Icons.save_outlined),
                 label: Text(t.game_edit_save),
               ),
             ),

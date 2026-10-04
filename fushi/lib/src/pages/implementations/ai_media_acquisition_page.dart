@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
@@ -305,7 +306,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
                   FushiFilledButton.icon(
                     key: const ValueKey<String>('ai-media-acquire-send'),
                     onPressed: _busy ? null : () => unawaited(_submit()),
-                    icon: const Icon(Icons.auto_awesome_outlined),
+                    icon: const FushiIcon(Icons.auto_awesome_outlined),
                     label: Text(t.ai_media_acquire_send),
                   ),
                 ],
@@ -416,7 +417,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     } else if (acquired) {
       action = FushiTooltip(
         message: t.ai_media_acquire_started,
-        child: Icon(Icons.check_circle, color: theme.colorScheme.primary),
+        child: FushiIcon(Icons.check_circle, color: theme.colorScheme.primary),
       );
     } else if (recommended) {
       action = FushiFilledButton(
@@ -432,7 +433,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     return FushiListItem(
       key: ValueKey<String>('ai-media-acquire-candidate-${c.id}'),
       leading: recommended
-          ? Icon(Icons.auto_awesome, color: theme.colorScheme.primary)
+          ? FushiIcon(Icons.auto_awesome, color: theme.colorScheme.primary)
           : null,
       title: Text(c.title),
       titleMaxLines: 2,

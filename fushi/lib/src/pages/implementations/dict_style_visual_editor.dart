@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 词典查词结果的可视化样式面板：选部位 → 调属性。
@@ -71,7 +72,7 @@ class DictStyleVisualEditor extends StatelessWidget {
                   selected: part == selectedPart,
                   onSelected: (_) => onSelectPart(part),
                   avatar: _hasRules(part)
-                      ? const Icon(Icons.brush_outlined, size: 16)
+                      ? const FushiIcon(Icons.brush_outlined, size: 16)
                       : null,
                   label: Text(dictStylePartLabel(part)),
                 ),
@@ -84,7 +85,7 @@ class DictStyleVisualEditor extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Icon(
+                  FushiIcon(
                     Icons.info_outline,
                     size: 16,
                     color: tokens.surfaces.outline,
@@ -165,7 +166,7 @@ class DictStyleVisualEditor extends StatelessWidget {
             child: FushiTextButton.icon(
               onPressed:
                   _props.isEmpty ? null : () => _update(const DictStyleProps()),
-              icon: const Icon(Icons.restart_alt, size: 18),
+              icon: const FushiIcon(Icons.restart_alt, size: 18),
               label: Text(t.dict_style_part_reset),
             ),
           ),
@@ -444,13 +445,13 @@ class _ColorChoice extends StatelessWidget {
             ),
           ),
           child: showPaletteIcon
-              ? Icon(
+              ? FushiIcon(
                   Icons.colorize,
                   size: 16,
                   color: tokens.surfaces.onVariant,
                 )
               : (argb == null
-                  ? Icon(
+                  ? FushiIcon(
                       Icons.block,
                       size: 16,
                       color: tokens.surfaces.onVariant,

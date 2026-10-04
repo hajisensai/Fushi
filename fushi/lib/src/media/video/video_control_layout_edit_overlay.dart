@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -266,7 +267,7 @@ class _VideoControlLayoutEditOverlayState
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Icon(
+                          FushiIcon(
                             Icons.dashboard_customize_outlined,
                             size: 18,
                             color: cs.primary,
@@ -284,7 +285,7 @@ class _VideoControlLayoutEditOverlayState
                           FushiIconButtonControl(
                             tooltip: MaterialLocalizations.of(context)
                                 .closeButtonTooltip,
-                            icon: const Icon(Icons.close),
+                            icon: const FushiIcon(Icons.close),
                             onPressed: _cancelDraft,
                           ),
                           const SizedBox(width: 4),
@@ -344,7 +345,7 @@ class _VideoControlLayoutEditOverlayState
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(
+                FushiIcon(
                   Icons.dashboard_customize_outlined,
                   size: 18,
                   color: cs.primary,
@@ -362,7 +363,7 @@ class _VideoControlLayoutEditOverlayState
                 ),
                 FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   onPressed: _cancelDraft,
                 ),
               ],
@@ -604,7 +605,7 @@ class _VideoControlLayoutEditOverlayState
                       width: 28,
                       height: 28,
                     ),
-                    icon: Icon(
+                    icon: FushiIcon(
                       Icons.close,
                       size: 14,
                       color: cs.onSecondaryContainer,
@@ -648,7 +649,7 @@ class _VideoControlLayoutEditOverlayState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               videoControlItemIcon(
                 item,
                 bindings: widget.customActionBindings,

@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 视频控制条（底栏 / 顶栏按钮组）在**空间不够**时的唯一处置：按钮永远原尺寸，
 /// 放不下的按优先级收进末尾的「⋯」菜单（BUG-2832）。
@@ -429,7 +430,7 @@ class _VideoControlBarState extends State<VideoControlBar> {
             value: action,
             child: Row(
               children: <Widget>[
-                Icon(action.icon, size: 20),
+                FushiIcon(action.icon, size: 20),
                 const SizedBox(width: 12),
                 Flexible(child: Text(action.label)),
               ],

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -132,7 +133,7 @@ class _InterconnectMangaBrowsePageState
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: t.mihon_source_search,
-              prefixIcon: const Icon(Icons.search),
+              prefixIcon: const FushiIcon(Icons.search),
             ),
             onChanged: (String value) => setState(() => _query = value),
           ),
@@ -227,7 +228,7 @@ class _RemoteMangaCover extends StatelessWidget {
     if (url == null || url.isEmpty) {
       return const ColoredBox(
         color: Colors.black12,
-        child: Center(child: Icon(Icons.menu_book_outlined)),
+        child: Center(child: FushiIcon(Icons.menu_book_outlined)),
       );
     }
     return Image(
@@ -236,7 +237,7 @@ class _RemoteMangaCover extends StatelessWidget {
       errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
           const ColoredBox(
         color: Colors.black12,
-        child: Center(child: Icon(Icons.broken_image_outlined)),
+        child: Center(child: FushiIcon(Icons.broken_image_outlined)),
       ),
     );
   }

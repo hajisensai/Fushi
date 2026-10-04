@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
@@ -2156,7 +2157,7 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
                       return AdaptiveSettingsRow(
                         title: widget.labelFor(opt),
                         trailing: isSelected
-                            ? Icon(
+                            ? FushiIcon(
                                 Icons.check,
                                 color: Theme.of(context).colorScheme.primary,
                               )

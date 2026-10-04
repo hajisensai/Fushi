@@ -8,13 +8,16 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // 共享组件层「玻璃」设计系统分支的契约：
 // ① MD3 下树里没有任何 liquid_glass_widgets 组件（MD3 路径零回归）；
-// ② 玻璃下渲染的是 liquid 组件族，MD3 控件不出现；
+// ② 玻璃下控件 / 浮层是 liquid 组件族、MD3 控件不出现；内容层（卡片、列表
+//    行、设置分组、分隔线）按 Apple 26 规则是实色，不是玻璃；
 // ③ 玻璃下焦点 + Enter 仍经同一条 ActivateIntent 链路激活；
 // ④ 切换设计系统时，带 key 的导航节点与工具条里带 GlobalKey 的动作 Element
 //    不被重建（结构恒定，见 FushiGlassBackdrop / _NavSurfaceBackdrop）。
@@ -191,8 +194,12 @@ void main() {
     WidgetTester tester,
   ) async {
     await pumpGallery(tester, glass: true);
-    expect(find.byType(GlassCard), findsWidgets);
-    expect(find.byType(GlassListTile), findsOneWidget);
+    // 内容层实色：卡片 / 设置分组 = FushiAppleGroupSurface，列表行 =
+    // FushiAppleRow，没有 GlassCard / GlassListTile / 玻璃分隔线。
+    expect(find.byType(GlassCard), findsNothing);
+    expect(find.byType(GlassListTile), findsNothing);
+    expect(find.byType(FushiAppleGroupSurface), findsWidgets);
+    expect(find.byType(FushiAppleRow), findsOneWidget);
     expect(find.byType(GlassTextField), findsWidgets);
     expect(find.byType(GlassChip), findsWidgets);
     expect(find.byType(GlassContainer), findsWidgets);
@@ -203,7 +210,7 @@ void main() {
     expect(find.byType(GlassPicker), findsOneWidget);
     expect(find.byType(GlassProgressIndicator), findsOneWidget);
     expect(find.byType(GlassMenu), findsWidgets);
-    expect(find.byType(GlassDivider), findsWidgets);
+    expect(find.byType(GlassDivider), findsNothing);
     expect(find.byType(GlassButton), findsWidgets);
 
     expect(find.byType(Switch), findsNothing);
@@ -245,7 +252,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byType(GlassListTile), findsOneWidget);
+      expect(find.byType(FushiAppleRow), findsOneWidget);
       targetNodeOf(tester, find.text('row')).requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -367,7 +374,12 @@ void main() {
       );
       expect(identical(tester.element(find.byKey(actionKey)), actionBefore),
           isTrue);
-      expect(tester.getRect(find.byKey(fushiMaterialNavKey)), navRect);
+      // 玻璃底栏是悬浮胶囊（离底 ≥16、胶囊 62 高），比 MD3 底栏高；同一个
+      // Material 元素只是换了几何。
+      expect(
+        tester.getRect(find.byKey(fushiMaterialNavKey)).height,
+        greaterThanOrEqualTo(kGlassNavBarCapsuleHeight + 16),
+      );
 
       setOuter(() => glass = false);
       await tester.pump(const Duration(milliseconds: 500));
@@ -377,7 +389,156 @@ void main() {
       );
       expect(identical(tester.element(find.byKey(actionKey)), actionBefore),
           isTrue);
+      expect(tester.getRect(find.byKey(fushiMaterialNavKey)), navRect);
       expect(liquidWidgets(), findsNothing);
     },
   );
+
+  group('⑤ glass navigation shell (Apple 26)', () {
+    const List<AdaptiveNavItem> items = <AdaptiveNavItem>[
+      AdaptiveNavItem(icon: Icons.home, label: 'Home'),
+      AdaptiveNavItem(icon: Icons.book, label: 'Books'),
+      AdaptiveNavItem(icon: Icons.settings, label: 'Settings'),
+    ];
+
+    Future<int> pumpRail(
+      WidgetTester tester, {
+      required bool glass,
+      required bool extended,
+    }) async {
+      int tapped = -1;
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme(glass: glass),
+          themeAnimationDuration: Duration.zero,
+          home: FushiGlassScope(
+            child: FushiFocusRoot(
+              child: Scaffold(
+                body: Row(
+                  children: <Widget>[
+                    Builder(
+                      builder: (BuildContext context) => adaptiveNavRail(
+                        context: context,
+                        currentIndex: 0,
+                        onTap: (int i) => tapped = i,
+                        items: items,
+                        extended: extended,
+                      ),
+                    ),
+                    const Expanded(child: SizedBox.expand()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      return tapped;
+    }
+
+    testWidgets('MD3 rail stays 80 wide whatever `extended` says', (
+      WidgetTester tester,
+    ) async {
+      await pumpRail(tester, glass: false, extended: true);
+      expect(
+        tester.getSize(find.byKey(fushiMaterialNavKey)).width,
+        kAdaptiveNavRailWidth,
+      );
+      expect(liquidWidgets(), findsNothing);
+    });
+
+    testWidgets('glass extended sidebar: floating panel, icon + label rows', (
+      WidgetTester tester,
+    ) async {
+      await pumpRail(tester, glass: true, extended: true);
+      expect(
+        tester.getSize(find.byKey(fushiMaterialNavKey)).width,
+        kGlassNavSidebarWidth,
+      );
+      // 悬浮玻璃面板离窗口边 8。
+      final Rect panel = tester.getRect(find.byType(GlassContainer).first);
+      expect(panel.left, 8);
+      expect(panel.top, 8);
+      // 行是横排：图标在文字左边、同一水平线。
+      final Rect icon = tester.getRect(_fushiIcon(Icons.book));
+      final Rect label = tester.getRect(find.text('Books'));
+      expect(icon.right, lessThan(label.left));
+      expect((icon.center.dy - label.center.dy).abs(), lessThan(2));
+    });
+
+    testWidgets('glass collapsed sidebar is an icon-only strip', (
+      WidgetTester tester,
+    ) async {
+      await pumpRail(tester, glass: true, extended: false);
+      expect(
+        tester.getSize(find.byKey(fushiMaterialNavKey)).width,
+        kAdaptiveNavRailWidth,
+      );
+      expect(find.text('Books'), findsNothing);
+      expect(_fushiIcon(Icons.book), findsOneWidget);
+    });
+
+    testWidgets('glass sidebar row: focus + Enter selects', (
+      WidgetTester tester,
+    ) async {
+      int tapped = -1;
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme(glass: true),
+          themeAnimationDuration: Duration.zero,
+          home: FushiGlassScope(
+            child: FushiFocusRoot(
+              child: Scaffold(
+                body: Row(
+                  children: <Widget>[
+                    Builder(
+                      builder: (BuildContext context) => adaptiveNavRail(
+                        context: context,
+                        currentIndex: 0,
+                        onTap: (int i) => tapped = i,
+                        items: items,
+                      ),
+                    ),
+                    const Expanded(child: SizedBox.expand()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      final Focus focus = tester.widget<Focus>(
+        find
+            .descendant(
+              of: find
+                  .ancestor(
+                    of: find.text('Settings'),
+                    matching: find.byType(FushiFocusTarget),
+                  )
+                  .first,
+              matching: find.byType(Focus),
+            )
+            .first,
+      );
+      focus.focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(tapped, 2);
+    });
+  });
 }
+
+/// 玻璃设计系统下 [FushiIcon] 把 Material 图标映射成 SF 风格字形，按调用点
+/// 传入的原始图标找它。
+Finder _fushiIcon(IconData icon) => find.byWidgetPredicate(
+      (Widget w) => w is FushiIcon && w.icon == icon,
+    );

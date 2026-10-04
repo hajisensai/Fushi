@@ -235,7 +235,7 @@ extension _VideoLayout on _VideoFushiPageState {
       builder: (BuildContext context, Widget? _) {
         if (controller.hasFirstFrame) return const SizedBox.shrink();
         final String? cover = _bookRow?.coverPath;
-        final Widget placeholder = Icon(
+        final Widget placeholder = FushiIcon(
           Icons.music_note_rounded,
           size: 96,
           // 压在固定深色底上，前景走 chrome 固定亮色体系（不随主题）。
@@ -894,7 +894,7 @@ extension _VideoLayout on _VideoFushiPageState {
       final Widget button = FushiIconButtonControl(
         tooltip: _videoControlItemTooltip(item),
         iconSize: _videoControlIconSize,
-        icon: Icon(_videoControlItemIcon(item)),
+        icon: FushiIcon(_videoControlItemIcon(item)),
         // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
         // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
         // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
@@ -1106,7 +1106,7 @@ extension _VideoLayout on _VideoFushiPageState {
                             // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
                             color: cs.primary,
                             // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
-                            icon: Icon(
+                            icon: FushiIcon(
                               locked
                                   ? Icons.lock_outline
                                   : Icons.lock_open_outlined,
@@ -1179,7 +1179,7 @@ extension _VideoLayout on _VideoFushiPageState {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Icon(Icons.open_with_outlined, size: 18, color: cs.primary),
+                  FushiIcon(Icons.open_with_outlined, size: 18, color: cs.primary),
                   const SizedBox(width: 8),
                   Text(t.video_subtitle_drag_adjust_hint, style: labelStyle),
                   const SizedBox(width: 12),

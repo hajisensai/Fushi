@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
@@ -393,7 +394,7 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
       child: InkResponse(
         radius: 16,
         onTap: enabled ? onTap : null,
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: 18,
           color: enabled ? activeColor : disabledColor!,

@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -779,12 +780,12 @@ class _GameStreamPageState extends State<GameStreamPage>
                       FushiIconButtonControl(
                         tooltip: t.game_stream_settings_title,
                         color: Colors.white,
-                        icon: const Icon(Icons.settings_outlined),
+                        icon: const FushiIcon(Icons.settings_outlined),
                         onPressed: _openSettings,
                       ),
                       FushiOverflowMenu<_StreamMenuAction>(
                         tooltip: t.game_stream_more,
-                        iconWidget: const Icon(
+                        iconWidget: const FushiIcon(
                           Icons.more_vert,
                           color: Colors.white,
                         ),
@@ -825,13 +826,13 @@ class _GameStreamPageState extends State<GameStreamPage>
                       FushiIconButtonControl(
                         tooltip: t.game_stream_keys,
                         color: Colors.white,
-                        icon: const Icon(Icons.tune),
+                        icon: const FushiIcon(Icons.tune),
                         onPressed: _configureKeys,
                       ),
                       FushiIconButtonControl(
                         tooltip: t.game_stream_lookup_toggle,
                         color: Colors.white,
-                        icon: Icon(
+                        icon: FushiIcon(
                           _lookupVisible
                               ? Icons.menu_book
                               : Icons.menu_book_outlined,
@@ -842,7 +843,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                       FushiIconButtonControl(
                         tooltip: t.game_stream_controls_toggle,
                         color: Colors.white,
-                        icon: Icon(
+                        icon: FushiIcon(
                           _controlsVisible
                               ? Icons.gamepad
                               : Icons.gamepad_outlined,
@@ -1231,7 +1232,7 @@ class _IconPadButton extends StatelessWidget {
     return _PadShell(
       onDown: () => onButton(button, GameStreamInputAction.down),
       onUp: () => onButton(button, GameStreamInputAction.up),
-      child: Icon(icon, color: Colors.white),
+      child: FushiIcon(icon, color: Colors.white),
     );
   }
 }

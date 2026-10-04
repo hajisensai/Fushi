@@ -3,6 +3,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
@@ -203,7 +204,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           textInputAction: TextInputAction.search,
           decoration: InputDecoration(
             hintText: t.manga_global_search_hint,
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const FushiIcon(Icons.search),
           ),
           onSubmitted: (String _) => unawaited(_search()),
         ),
@@ -234,7 +235,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
                   onPressed: onOpenSources,
                   // 「导入」的图标（与书架空态引导同一个）。拼图块 extension_outlined
                   // 恰恰是本 bug 的病根：漫画库里没有叫「扩展」的入口。
-                  icon: const Icon(Icons.library_add_outlined),
+                  icon: const FushiIcon(Icons.library_add_outlined),
                   label: Text(t.manga_global_search_open_sources),
                 ),
               ],

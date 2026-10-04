@@ -1,8 +1,10 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:macos_ui/macos_ui.dart'
     show
         MacosScaffold,
@@ -1352,7 +1354,9 @@ class _HomePageState extends BasePageState<HomePage>
                 ))));
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
     // 系统窗口材质（Windows 11 Mica / macOS vibrancy）生效时首页外壳 scaffold
-    // 半透明让系统背景透出；push 出去的页面不受影响，仍是实心底。
+    // 半透明让系统背景透出；push 出去的页面不受影响，仍是实心底。玻璃设计系统
+    // 下只有导航层（悬浮侧栏及其四周）透出，内容区由 [_GlassContentSurface]
+    // 垫回实色分组底（Apple 26：内容层永远是实色）。
     // BackdropGroup：外壳里并排的玻璃导航（侧栏 / 底栏）用
     // BackdropFilter.grouped 共用一次背景采样，不再各自抓一遍屏。
     return ValueListenableBuilder<bool>(
@@ -1503,9 +1507,15 @@ class _HomePageState extends BasePageState<HomePage>
                 onTap: selectVisual,
                 items: displayItems,
                 leading: const NavRailBrandButton(),
+                // 玻璃设计系统：宽窗口是图标 + 文字的悬浮侧栏，medium 档收成窄条。
+                extended: sizeClass == WindowSizeClass.expanded,
               ),
             ),
-            Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
+            Expanded(
+              child: _GlassContentSurface(
+                child: FocusTraversalGroup(child: _bodyWithMiniBar()),
+              ),
+            ),
           ],
         ),
       ),
@@ -1529,10 +1539,21 @@ class _HomePageState extends BasePageState<HomePage>
       key: _homeBodyKey,
       children: <Widget>[
         Expanded(child: buildBody()),
-        if (visibility.isEnabled(ModuleId.browse))
-          const RecommendedPackDownloadMiniBar(),
-        if (visibility.isEnabled(ModuleId.listening))
-          const NowListeningMiniBar(),
+        // 玻璃设计系统的移动布局里内容延伸到悬浮标签栏下面（extendBody），
+        // 迷你条得抬到胶囊之上；它们空闲时收成零高，此时不能留空白，否则内容
+        // 就滚不到胶囊底下了——见 [_FloatingBarInset]。其余布局这里的 bottom
+        // padding 已被 SafeArea 吃掉，是 0，几何不变。
+        _FloatingBarInset(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (visibility.isEnabled(ModuleId.browse))
+                const RecommendedPackDownloadMiniBar(),
+              if (visibility.isEnabled(ModuleId.listening))
+                const NowListeningMiniBar(),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1554,9 +1575,20 @@ class _HomePageState extends BasePageState<HomePage>
     // an edge tab up into a content focus target. Mirrors the desktop layout,
     // which already isolates the rail and content panes (TODO-713: 移动端底栏
     // 边缘 tab 按左/右焦点跑到上部).
+    // 玻璃设计系统（iOS 26）：底栏是悬浮在内容上的玻璃胶囊，内容从它下面滚过
+    // ——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
+    // body 的 SafeArea 不再吃掉它，列表（ListView / GridView 的默认 padding）
+    // 自己把末尾垫到胶囊之上。
+    final bool glassDesign = isGlassDesign(context);
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: SafeArea(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
+      extendBody: glassDesign,
+      body: _GlassContentSurface(
+        child: SafeArea(
+          bottom: !glassDesign,
+          child: FocusTraversalGroup(child: _bodyWithMiniBar()),
+        ),
+      ),
       // The FocusTraversalGroup keeps the bottom-nav isolated as one closed
       // traversal block (TODO-713).
       bottomNavigationBar: FocusTraversalGroup(
@@ -3007,7 +3039,7 @@ class _HomePageState extends BasePageState<HomePage>
                     ),
                     tooltip: t.video_source_scrape_tasks_open,
                     onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-                    child: Icon(
+                    child: FushiIcon(
                       controller.pendingConfirmation == null
                           ? Icons.sync
                           : Icons.rule_folder_outlined,
@@ -3128,6 +3160,114 @@ class _HomePageState extends BasePageState<HomePage>
 ///
 /// 设置内容默认是 [FushiSettingsContent]；[child] 仅供 widget 测试注入轻量占位以独立
 /// 验证 PopScope 拦截行为（生产路径始终用默认值）。
+/// 玻璃设计系统下首页内容区的实色底。系统窗口材质（Windows 11 Mica / macOS
+/// vibrancy）生效时外壳 scaffold 是半透明的（见 [_HomePageState.build] 的
+/// Theme 包装）——Apple 26 只让导航层（侧栏 / 标签栏）透出背后，内容层永远
+/// 是实色分组底，所以这里给内容区垫回 `colorScheme.surface`。
+///
+/// 结构恒定：MD3 / 无窗口材质时也挂着，只是透明色（不画任何像素、不接命中）。
+class _GlassContentSurface extends StatelessWidget {
+  const _GlassContentSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool solid =
+        isGlassDesign(context) && theme.scaffoldBackgroundColor.a < 1;
+    // 底色画在不参与命中测试的背景槽里：ColoredBox 自身是 opaque 命中，直接
+    // 包住内容会改变 MD3 下空白区的点击穿透。
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ColoredBox(
+              color: solid ? theme.colorScheme.surface : Colors.transparent,
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+/// 底部迷你条的避让：子树有内容（高度 > 0）时在其下方垫出当前 MediaQuery 的
+/// bottom padding（玻璃移动布局里 = 悬浮标签栏占的高度），空闲收成零高时整块
+/// 也是零高——普通 Padding / SafeArea 不管子组件多高都会垫，会让内容永远
+/// 够不到胶囊底下。
+class _FloatingBarInset extends StatelessWidget {
+  const _FloatingBarInset({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _BottomInsetWhenVisible(
+      inset: MediaQuery.paddingOf(context).bottom,
+      child: child,
+    );
+  }
+}
+
+class _BottomInsetWhenVisible extends SingleChildRenderObjectWidget {
+  const _BottomInsetWhenVisible({required this.inset, super.child});
+
+  final double inset;
+
+  @override
+  _RenderBottomInsetWhenVisible createRenderObject(BuildContext context) =>
+      _RenderBottomInsetWhenVisible(inset);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderBottomInsetWhenVisible renderObject,
+  ) {
+    renderObject.inset = inset;
+  }
+}
+
+class _RenderBottomInsetWhenVisible extends RenderShiftedBox {
+  _RenderBottomInsetWhenVisible(this._inset) : super(null);
+
+  double _inset;
+
+  set inset(double value) {
+    if (value == _inset) return;
+    _inset = value;
+    markNeedsLayout();
+  }
+
+  Size _sizeFor(Size childSize, BoxConstraints constraints) {
+    final double extra = childSize.height > 0 ? _inset : 0;
+    return constraints.constrain(
+      Size(childSize.width, childSize.height + extra),
+    );
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final RenderBox? box = child;
+    if (box == null) return constraints.smallest;
+    return _sizeFor(box.getDryLayout(constraints), constraints);
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? box = child;
+    if (box == null) {
+      size = constraints.smallest;
+      return;
+    }
+    box.layout(constraints, parentUsesSize: true);
+    (box.parentData! as BoxParentData).offset = Offset.zero;
+    size = _sizeFor(box.size, constraints);
+  }
+}
+
 class HomeSettingsTabContent extends StatelessWidget {
   const HomeSettingsTabContent({
     super.key,

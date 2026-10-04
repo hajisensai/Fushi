@@ -15,6 +15,7 @@ import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形、
@@ -2265,7 +2266,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             Positioned(
               left: -6,
               top: -10,
-              child: Icon(
+              child: FushiIcon(
                 Icons.star,
                 size: widget.fontSize * 0.6,
                 color: starColor,

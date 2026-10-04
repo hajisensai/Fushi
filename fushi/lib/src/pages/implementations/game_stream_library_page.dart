@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -502,7 +503,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.cast_connected_outlined,
               size: 48,
               color: FushiDesignTokens.of(context).surfaces.onVariant,
@@ -515,7 +516,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
                 key: GameStreamLibraryPage.interconnectButtonKey,
                 autofocus: true,
                 onPressed: () => unawaited(_openInterconnect()),
-                icon: const Icon(Icons.devices_outlined),
+                icon: const FushiIcon(Icons.devices_outlined),
                 label: Text(t.game_stream_open_interconnect),
               ),
             ],
@@ -581,7 +582,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.desktop_windows_outlined, color: accent, size: 28),
+              FushiIcon(Icons.desktop_windows_outlined, color: accent, size: 28),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -596,7 +597,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
                     const SizedBox(height: 2),
                     Row(
                       children: <Widget>[
-                        Icon(_phaseIcon(host.phase), size: 14, color: accent),
+                        FushiIcon(_phaseIcon(host.phase), size: 14, color: accent),
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
@@ -669,7 +670,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
           padding: EdgeInsets.zero,
           child: FushiListItem(
             focusId: FushiFocusId('game-stream-session-${session.sessionId}'),
-            leading: const Icon(Icons.cast),
+            leading: const FushiIcon(Icons.cast),
             title: Text(session.gameTitle ?? t.game_stream_available),
             subtitle: Text(host.name),
             trailing: FushiFilledButton(
@@ -741,7 +742,7 @@ class _RunningBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.play_arrow, size: 14, color: colors.onPrimary),
+            FushiIcon(Icons.play_arrow, size: 14, color: colors.onPrimary),
             const SizedBox(width: 2),
             Text(
               t.game_stream_running,

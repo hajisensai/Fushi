@@ -276,7 +276,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                             ? t.backup_export_books_all
                             : t.backup_export_books_selected(
                                 count: chosenBooks!.length.toString()),
-                        trailing: const Icon(Icons.chevron_right),
+                        trailing: const FushiIcon(Icons.chevron_right),
                         onTap: () async {
                           final Set<String>? picked =
                               await _pickBooks(chosenBooks);
@@ -293,7 +293,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                             ? t.backup_export_videos_all
                             : t.backup_export_videos_selected(
                                 count: chosenVideos!.length.toString()),
-                        trailing: const Icon(Icons.chevron_right),
+                        trailing: const FushiIcon(Icons.chevron_right),
                         onTap: () async {
                           final Set<String>? picked =
                               await _pickVideos(chosenVideos);
@@ -639,7 +639,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      const Icon(Icons.upload_file_outlined, size: 18),
+                      const FushiIcon(Icons.upload_file_outlined, size: 18),
                       const SizedBox(width: 8),
                       Text(t.backup_export),
                     ],
@@ -844,7 +844,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  const Icon(Icons.download_outlined, size: 18),
+                  const FushiIcon(Icons.download_outlined, size: 18),
                   const SizedBox(width: 8),
                   Text(t.backup_import),
                 ],

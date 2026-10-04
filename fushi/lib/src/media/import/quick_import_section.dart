@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 「快速导入」区的一个入口按钮声明。
@@ -48,7 +49,7 @@ class QuickImportSection extends StatelessWidget {
               FushiFilledButton.tonalIcon(
                 onPressed:
                     action.enabled ? () => unawaited(action.onTap()) : null,
-                icon: Icon(action.icon, size: 18),
+                icon: FushiIcon(action.icon, size: 18),
                 label: Text(action.label),
               ),
           ],

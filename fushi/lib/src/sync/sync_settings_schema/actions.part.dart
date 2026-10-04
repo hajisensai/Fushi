@@ -138,7 +138,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            Icon(Icons.arrow_drop_down, color: scheme.primary),
+            FushiIcon(Icons.arrow_drop_down, color: scheme.primary),
           ],
         ),
       ),

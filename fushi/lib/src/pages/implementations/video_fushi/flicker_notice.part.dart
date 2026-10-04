@@ -72,7 +72,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
-                              Icon(
+                              FushiIcon(
                                 Icons.warning_amber_rounded,
                                 size: 22,
                                 color: cs.onErrorContainer,
@@ -109,7 +109,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                 visualDensity: VisualDensity.compact,
                                 tooltip: t.dialog_close,
                                 color: cs.onErrorContainer,
-                                icon: const Icon(Icons.close),
+                                icon: const FushiIcon(Icons.close),
                               ),
                             ],
                           ),

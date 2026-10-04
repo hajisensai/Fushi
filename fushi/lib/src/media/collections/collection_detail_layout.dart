@@ -3,6 +3,7 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 作品详情页的**共享布局**：hero（背景轮换 / 海报卡 / logo / 徽标 / 标签 / 人物 /
@@ -352,7 +353,7 @@ class CollectionDetailHero extends StatelessWidget {
         SizedBox(height: tokens.spacing.card),
         FushiFilledButton.icon(
           key: playButtonKey,
-          icon: const Icon(Icons.play_arrow_rounded),
+          icon: const FushiIcon(Icons.play_arrow_rounded),
           label: Text(playLabel ?? t.collection_play),
           onPressed: onPlay,
         ),
@@ -489,7 +490,7 @@ class CollectionHeroCreditChips extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        Icon(
+                        FushiIcon(
                           iconFor(credits[index].kind),
                           size: 13,
                           color: Colors.white.withValues(alpha: 0.76),
@@ -735,7 +736,7 @@ Widget collectionEpisodeThumbPlaceholder(double w, double h, ColorScheme cs) =>
         color: cs.surfaceContainerHighest,
         borderRadius: FushiBorderRadius.card,
       ),
-      child: Icon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
+      child: FushiIcon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
     );
 
 /// 单张集卡：左 16:9 缩略图 + 右「N. 集名」/集简介两行/观看状态，底部进度条。
@@ -859,13 +860,13 @@ class CollectionEpisodeCard extends StatelessWidget {
                         Row(
                           children: <Widget>[
                             if (completed)
-                              Icon(
+                              FushiIcon(
                                 Icons.check_circle,
                                 color: cs.primary,
                                 size: 16,
                               )
                             else if (started) ...<Widget>[
-                              Icon(
+                              FushiIcon(
                                 Icons.play_circle_outline,
                                 color: cs.onSurfaceVariant,
                                 size: 16,

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
@@ -310,7 +311,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                 alignment: Alignment.centerLeft,
                 child: FushiTextButton.icon(
                   onPressed: importing ? null : () => _openReMatchSheet(ab),
-                  icon: const Icon(Icons.tune_outlined, size: 18),
+                  icon: const FushiIcon(Icons.tune_outlined, size: 18),
                   label: Text(t.rematch_adjust_window),
                 ),
               ),
@@ -372,7 +373,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     return Row(
       children: [
-        Icon(icon, size: 16, color: color),
+        FushiIcon(icon, size: 16, color: color),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Text(

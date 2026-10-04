@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 
@@ -179,7 +180,7 @@ class _StatSessionsClearAllButton extends StatelessWidget {
   Widget build(BuildContext context) => FushiIconButtonControl(
         key: const ValueKey<String>('stat-sessions-clear-all'),
         tooltip: t.stat_sessions_clear_all,
-        icon: const Icon(Icons.playlist_remove, size: 20),
+        icon: const FushiIcon(Icons.playlist_remove, size: 20),
         onPressed: () => unawaited(_confirmAndClear(context)),
       );
 }
@@ -260,7 +261,7 @@ class _StatSessionListState extends State<StatSessionList> {
             onTap: () => unawaited(_edit(s)),
             trailing: FushiIconButtonControl(
               tooltip: t.stat_session_delete,
-              icon: const Icon(Icons.delete_outline),
+              icon: const FushiIcon(Icons.delete_outline),
               onPressed: () => unawaited(_confirmAndDelete(s)),
             ),
           ),
@@ -271,7 +272,7 @@ class _StatSessionListState extends State<StatSessionList> {
   Widget _buildLeading(StudySession s, ColorScheme colors) {
     final StatSessionCoverOf? coverOf = widget.coverOf;
     if (coverOf == null) {
-      return Icon(statSessionIcon(s), size: 18, color: colors.onSurfaceVariant);
+      return FushiIcon(statSessionIcon(s), size: 18, color: colors.onSurfaceVariant);
     }
     return buildStatCoverSlot(
       context,

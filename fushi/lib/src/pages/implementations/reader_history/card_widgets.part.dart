@@ -185,7 +185,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: 40,
           color: theme.colorScheme.onSurfaceVariant,

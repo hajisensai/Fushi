@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -844,7 +845,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          FushiIcon(icon, size: 18, color: scheme.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(

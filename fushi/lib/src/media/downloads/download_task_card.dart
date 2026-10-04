@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// Shared compact summary and explicit disclosure for every download source.
@@ -79,7 +80,7 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
             ),
             trailing: Semantics(
               expanded: _expanded,
-              child: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+              child: FushiIcon(_expanded ? Icons.expand_less : Icons.expand_more),
             ),
           ),
           if (progress != null && progress < 1)

@@ -20,6 +20,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -136,7 +137,7 @@ class _AiProviderSettingsSectionState
             child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('ai-provider-add'),
               onPressed: () => unawaited(_pickPresetAndAdd()),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.ai_provider_add),
             ),
           ),
@@ -205,7 +206,7 @@ class _AiProviderSettingsSectionState
                 key: ValueKey<String>('ai-provider-$index-delete'),
                 tooltip: t.ai_provider_delete,
                 onPressed: () => _delete(index),
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(Icons.remove_circle_outline),
               ),
             ],
           ),
@@ -321,7 +322,7 @@ class _AiProviderSettingsSectionState
                 onPressed: config == null || probe?.running == true
                     ? null
                     : () => unawaited(_fetchModels(draft)),
-                icon: const Icon(Icons.download_outlined),
+                icon: const FushiIcon(Icons.download_outlined),
                 label: Text(t.ai_provider_models_fetch),
               ),
               FushiOutlinedButton.icon(
@@ -337,7 +338,7 @@ class _AiProviderSettingsSectionState
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check_outlined),
+                    : const FushiIcon(Icons.network_check_outlined),
                 label: Text(t.ai_provider_test),
               ),
               if (probe != null && !probe.running)
@@ -385,7 +386,7 @@ class _AiProviderSettingsSectionState
                 height: 16,
                 child: FushiCircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.arrow_drop_down),
+            : const FushiIcon(Icons.arrow_drop_down),
         onPressed: ready && !busy
             ? () => unawaited(_pickModel(anchor, draft.id))
             : null,

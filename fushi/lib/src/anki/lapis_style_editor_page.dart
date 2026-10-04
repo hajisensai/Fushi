@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_lapis_style_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -306,7 +307,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                       height: 16,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_outlined),
+                  : const FushiIcon(Icons.auto_awesome_outlined),
               label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
             ),
           ),
@@ -544,12 +545,12 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             segments: <ButtonSegment<bool>>[
               ButtonSegment<bool>(
                 value: false,
-                icon: const Icon(Icons.flip_to_front_outlined),
+                icon: const FushiIcon(Icons.flip_to_front_outlined),
                 label: Text(t.anki_lapis_visual_front),
               ),
               ButtonSegment<bool>(
                 value: true,
-                icon: const Icon(Icons.flip_to_back_outlined),
+                icon: const FushiIcon(Icons.flip_to_back_outlined),
                 label: Text(t.anki_lapis_visual_back),
               ),
             ],
@@ -610,7 +611,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                 SizedBox(width: tokens.spacing.gap),
                 FushiFilledButton.icon(
                   onPressed: _isDirty ? _save : null,
-                  icon: const Icon(Icons.save_outlined),
+                  icon: const FushiIcon(Icons.save_outlined),
                   label: Text(t.dialog_save),
                 ),
               ],
@@ -759,7 +760,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           FushiExpansionTile(
             tilePadding: EdgeInsets.zero,
             childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            leading: const Icon(Icons.tune_outlined),
+            leading: const FushiIcon(Icons.tune_outlined),
             title: Text(t.anki_lapis_visual_target_inside_definition),
             initiallyExpanded: _isDetailedDefinitionTarget(_selectedField),
             children: <Widget>[
@@ -811,7 +812,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Icon(
+                  FushiIcon(
                     Icons.info_outline,
                     size: 16,
                     color: tokens.surfaces.onVariant,
@@ -886,15 +887,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               ),
               const ButtonSegment<LapisVisualTextAlign?>(
                 value: LapisVisualTextAlign.start,
-                icon: Icon(Icons.format_align_left_outlined),
+                icon: FushiIcon(Icons.format_align_left_outlined),
               ),
               const ButtonSegment<LapisVisualTextAlign?>(
                 value: LapisVisualTextAlign.center,
-                icon: Icon(Icons.format_align_center_outlined),
+                icon: FushiIcon(Icons.format_align_center_outlined),
               ),
               const ButtonSegment<LapisVisualTextAlign?>(
                 value: LapisVisualTextAlign.end,
-                icon: Icon(Icons.format_align_right_outlined),
+                icon: FushiIcon(Icons.format_align_right_outlined),
               ),
             ],
             selected: <LapisVisualTextAlign?>{rule.alignment},
@@ -955,7 +956,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             FushiExpansionTile(
               tilePadding: EdgeInsets.zero,
               childrenPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.crop_square_outlined),
+              leading: const FushiIcon(Icons.crop_square_outlined),
               title: Text(t.anki_lapis_visual_box_layout),
               children: <Widget>[
                 _buildOptionalSlider(
@@ -1020,7 +1021,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           FushiExpansionTile(
             tilePadding: EdgeInsets.zero,
             childrenPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.code_outlined),
+            leading: const FushiIcon(Icons.code_outlined),
             title: Text(t.anki_lapis_visual_advanced_css),
             subtitle: Text(t.anki_lapis_custom_css_hint),
             children: <Widget>[
@@ -1181,7 +1182,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.edit_outlined,
             size: 16,
             color: colors.onPrimaryContainer,
@@ -1241,7 +1242,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     return FushiExpansionTile(
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      leading: const Icon(Icons.dashboard_outlined),
+      leading: const FushiIcon(Icons.dashboard_outlined),
       title: Text(t.anki_lapis_visual_blocks),
       subtitle: Text(t.anki_lapis_visual_blocks_hint),
       initiallyExpanded: _blocks.isNotEmpty,
@@ -1250,7 +1251,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           FushiListItem(
             padding: EdgeInsets.zero,
             selected: block.id == _selectedBlockId,
-            leading: const Icon(Icons.crop_free_outlined),
+            leading: const FushiIcon(Icons.crop_free_outlined),
             title: Text(
               t.anki_lapis_visual_block_name(
                 index: _blocks.indexOf(block) + 1,
@@ -1263,7 +1264,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                       '${block.fields.join(' / ')}',
             ),
             trailing: FushiIconButtonControl(
-              icon: const Icon(Icons.delete_outline),
+              icon: const FushiIcon(Icons.delete_outline),
               tooltip: t.anki_lapis_visual_block_delete,
               onPressed: () => _removeBlock(block.id),
             ),
@@ -1273,7 +1274,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           alignment: AlignmentDirectional.centerStart,
           child: FushiTextButton.icon(
             onPressed: _addBlock,
-            icon: const Icon(Icons.add),
+            icon: const FushiIcon(Icons.add),
             label: Text(t.anki_lapis_visual_block_add),
           ),
         ),
@@ -1364,7 +1365,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           top: tokens.spacing.gap,
           bottom: tokens.spacing.gap,
         ),
-        leading: const Icon(Icons.dashboard_customize_outlined),
+        leading: const FushiIcon(Icons.dashboard_customize_outlined),
         title: Text(t.anki_lapis_visual_layout),
         subtitle: Text(t.anki_lapis_visual_layout_hint),
         initiallyExpanded: !_layout.isDefault,
@@ -1505,7 +1506,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   ? t.anki_field_not_mapped
                   : _mappingFor(ankiField),
             ),
-            trailing: const Icon(Icons.edit_outlined),
+            trailing: const FushiIcon(Icons.edit_outlined),
             onTap: () => unawaited(_editMapping(ankiField)),
           ),
       ],
@@ -1684,14 +1685,14 @@ class _LapisColorChoice extends StatelessWidget {
               ),
             ),
             child: switch ((showPaletteIcon, selected, colorHex)) {
-              (true, _, _) => const Icon(Icons.palette_outlined, size: 20),
-              (_, true, _) => Icon(
+              (true, _, _) => const FushiIcon(Icons.palette_outlined, size: 20),
+              (_, true, _) => FushiIcon(
                   Icons.check,
                   color: color.computeLuminance() > 0.55
                       ? colors.onSurface
                       : colors.surface,
                 ),
-              (_, _, null) => const Icon(Icons.format_color_reset_outlined),
+              (_, _, null) => const FushiIcon(Icons.format_color_reset_outlined),
               _ => null,
             },
           ),

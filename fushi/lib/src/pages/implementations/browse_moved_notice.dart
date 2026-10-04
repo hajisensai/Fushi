@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一次判定的结果。
@@ -76,7 +77,7 @@ Future<void> showBrowseMovedNoticeDialog(BuildContext context) {
     context: context,
     builder: (BuildContext dialogContext) => FushiAlertDialog(
       key: const ValueKey<String>('browse_moved_notice'),
-      icon: const Icon(Icons.explore_outlined),
+      icon: const FushiIcon(Icons.explore_outlined),
       title: Text(t.browse_moved_notice_title(browse: browse)),
       content: Text(
         t.browse_moved_notice_body(

@@ -7,6 +7,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
@@ -59,7 +60,7 @@ class IllustrationZoomViewer extends StatelessWidget {
                 '$diagnosticTag.coverDecode',
                 '${file.path}: $error',
               );
-              return const Icon(Icons.broken_image_outlined, size: 64);
+              return const FushiIcon(Icons.broken_image_outlined, size: 64);
             },
           ),
         ),
@@ -160,7 +161,7 @@ Future<void> showImageCopyContextMenu(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(Icons.copy_outlined, size: 18.0),
+            const FushiIcon(Icons.copy_outlined, size: 18.0),
             const SizedBox(width: 12.0),
             Text(t.reader_copy_image, style: const TextStyle(fontSize: 14.0)),
           ],

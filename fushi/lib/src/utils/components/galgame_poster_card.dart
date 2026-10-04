@@ -7,6 +7,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
@@ -265,7 +266,7 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
           color: colors.primary,
           borderRadius: FushiBorderRadius.chip,
         ),
-        child: Icon(Icons.check, size: 14, color: colors.onPrimary),
+        child: FushiIcon(Icons.check, size: 14, color: colors.onPrimary),
       ),
     );
   }

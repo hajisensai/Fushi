@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart'
     show PendingMineRow, PendingMineStatus;
@@ -236,12 +237,12 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
                         if (row.status == PendingMineStatus.failed)
                           FushiIconButtonControl(
                             tooltip: t.retry,
-                            icon: const Icon(Icons.refresh),
+                            icon: const FushiIcon(Icons.refresh),
                             onPressed: () => store.retry(row.id),
                           ),
                         FushiIconButtonControl(
                           tooltip: t.anki_pending_mines_delete,
-                          icon: const Icon(Icons.delete_outline),
+                          icon: const FushiIcon(Icons.delete_outline),
                           onPressed: () => _delete(row),
                         ),
                       ],
@@ -254,7 +255,7 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
           : FushiGlassFab(
               child: FloatingActionButton.extended(
                 onPressed: _sending ? null : _sendAll,
-                icon: const Icon(Icons.send),
+                icon: const FushiIcon(Icons.send),
                 label: Text(t.anki_pending_mines_send_all),
               ),
             ),

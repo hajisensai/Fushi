@@ -13,6 +13,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
@@ -269,7 +270,7 @@ class _DragFeedback extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.collections_bookmark_outlined,
               size: 18,
               color: tokens.surfaces.onSurface,
@@ -377,7 +378,7 @@ class _CollectionDropTargetState extends State<CollectionDropTarget> {
                         padding: EdgeInsets.symmetric(
                           horizontal: tokens.spacing.gap,
                         ),
-                        child: Icon(
+                        child: FushiIcon(
                           Icons.library_add_outlined,
                           color: hoverColor,
                           size: 20,

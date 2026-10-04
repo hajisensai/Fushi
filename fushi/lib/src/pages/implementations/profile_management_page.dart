@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
@@ -504,7 +505,7 @@ class _ProfileActionButton extends StatelessWidget {
         child: Semantics(
           button: true,
           label: tooltip,
-          child: Icon(cupertinoIcon, size: 20, color: color),
+          child: FushiIcon(cupertinoIcon, size: 20, color: color),
         ),
       );
     }

@@ -8,6 +8,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset, kCustomThemeDefaultSeed;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
@@ -326,7 +327,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           // Size inherited from FushiSchemeSwatch's badge IconTheme (14) so the
           // icon fits the smaller inner dot; an explicit size here would override
           // it and crowd the dot.
-          overlay: const Icon(Icons.auto_awesome_outlined),
+          overlay: const FushiIcon(Icons.auto_awesome_outlined),
           onTap: () async {
             await appModel.setAppThemeKey('system-theme');
             notifyReaderSettingsChanged(settingsContext);
@@ -407,7 +408,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           ),
           size: _swatchSize,
           selected: false,
-          overlay: const Icon(Icons.add),
+          overlay: const FushiIcon(Icons.add),
           onTap: () async {
             await pushSettingsPage(
               settingsContext,
@@ -457,17 +458,17 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
     segments: <ButtonSegment<String>>[
       ButtonSegment<String>(
         value: 'light',
-        icon: const Icon(Icons.light_mode_outlined, size: 16),
+        icon: const FushiIcon(Icons.light_mode_outlined, size: 16),
         tooltip: t.dark_mode_light,
       ),
       ButtonSegment<String>(
         value: 'system',
-        icon: const Icon(Icons.brightness_auto_outlined, size: 16),
+        icon: const FushiIcon(Icons.brightness_auto_outlined, size: 16),
         tooltip: t.dark_mode_system,
       ),
       ButtonSegment<String>(
         value: 'dark',
-        icon: const Icon(Icons.dark_mode_outlined, size: 16),
+        icon: const FushiIcon(Icons.dark_mode_outlined, size: 16),
         tooltip: t.dark_mode_dark,
       ),
     ],

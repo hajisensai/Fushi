@@ -385,14 +385,14 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   if (osd.icon != null) ...<Widget>[
-                    Icon(osd.icon, size: iconSize, color: textColor),
+                    FushiIcon(osd.icon, size: iconSize, color: textColor),
                     SizedBox(width: prominent ? 12 : 8),
                   ] else if (palette != null) ...<Widget>[
                     // 语义图标：e-ink / 灰阶下颜色会塌掉，形状是唯一区分手段。
-                    Icon(palette.icon, size: iconSize, color: textColor),
+                    FushiIcon(palette.icon, size: iconSize, color: textColor),
                     SizedBox(width: prominent ? 12 : 8),
                   ] else if (prominent) ...<Widget>[
-                    Icon(
+                    FushiIcon(
                       Icons.check_circle,
                       size: iconSize,
                       color: textColor,

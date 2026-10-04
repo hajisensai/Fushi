@@ -126,7 +126,7 @@ class _InputIconChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 14, color: fg),
+          FushiIcon(icon, size: 14, color: fg),
           SizedBox(width: tokens.spacing.gap * 0.375),
           Text(
             label,
@@ -142,7 +142,7 @@ class _InputIconChip extends StatelessWidget {
             InkWell(
               onTap: onDeleted,
               customBorder: const CircleBorder(),
-              child: Icon(Icons.close, size: 14, color: fg),
+              child: FushiIcon(Icons.close, size: 14, color: fg),
             ),
           ],
         ],

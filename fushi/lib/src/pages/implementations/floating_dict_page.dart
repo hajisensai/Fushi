@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -160,7 +161,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
               width: 28,
               height: 28,
               child: FushiIconButtonControl(
-                icon: Icon(
+                icon: FushiIcon(
                   Icons.close,
                   size: 16,
                   color: tokens.surfaces.onVariant,
@@ -242,7 +243,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           width: 20,
           height: 20,
           alignment: Alignment.bottomRight,
-          child: Icon(
+          child: FushiIcon(
             Icons.drag_handle,
             size: 14,
             color: cs.outlineVariant,

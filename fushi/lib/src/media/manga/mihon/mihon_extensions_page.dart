@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
@@ -669,7 +670,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(Icons.extension_outlined, size: 48),
+            const FushiIcon(Icons.extension_outlined, size: 48),
             const SizedBox(height: 12),
             Text(t.mihon_store_empty, textAlign: TextAlign.center),
             const SizedBox(height: 16),
@@ -678,12 +679,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               children: <Widget>[
                 FushiFilledButton.icon(
                   onPressed: _addStore,
-                  icon: const Icon(Icons.add_link),
+                  icon: const FushiIcon(Icons.add_link),
                   label: Text(t.mihon_store_add),
                 ),
                 FushiOutlinedButton.icon(
                   onPressed: _importApk,
-                  icon: const Icon(Icons.file_open_outlined),
+                  icon: const FushiIcon(Icons.file_open_outlined),
                   label: Text(t.mihon_extension_import),
                 ),
               ],
@@ -778,7 +779,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           ),
           padding: EdgeInsets.zero,
           child: FushiListItem(
-            leading: const Icon(Icons.hub_outlined),
+            leading: const FushiIcon(Icons.hub_outlined),
             title: Text(store.name),
             subtitle: Text(detail),
             trailing: Row(
@@ -787,12 +788,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 FushiIconButtonControl(
                   tooltip: t.mihon_store_edit,
                   onPressed: () => unawaited(_editStore(store)),
-                  icon: const Icon(Icons.edit_outlined),
+                  icon: const FushiIcon(Icons.edit_outlined),
                 ),
                 FushiIconButtonControl(
                   tooltip: t.mihon_store_remove,
                   onPressed: () => unawaited(_removeStore(store)),
-                  icon: const Icon(Icons.delete_outline),
+                  icon: const FushiIcon(Icons.delete_outline),
                 ),
               ],
             ),

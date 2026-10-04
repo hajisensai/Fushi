@@ -15,6 +15,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart'
     show formatDiscoveryBytes;
@@ -538,7 +539,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                             key: const ValueKey<String>(
                               'ai-video-acquire-restart',
                             ),
-                            avatar: const Icon(Icons.add_rounded, size: 16),
+                            avatar: const FushiIcon(Icons.add_rounded, size: 16),
                             label: Text(t.ai_video_acquire_restart),
                             onPressed: () =>
                                 unawaited(widget.service.restart()),
@@ -600,7 +601,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
             'ai-video-acquire-option-${q.slot.name}-${q.options[i].id}',
           ),
           avatar: q.preselectedIndex == i
-              ? const Icon(Icons.star_outline, size: 16)
+              ? const FushiIcon(Icons.star_outline, size: 16)
               : null,
           label: Text(switch (q.slot == VideoAcquisitionSlot.work
               ? _workHint(q.options[i])
@@ -652,7 +653,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           for (final String id in _state.workActions)
             FushiActionChipControl(
               key: ValueKey<String>('ai-video-acquire-action-$id'),
-              avatar: Icon(
+              avatar: FushiIcon(
                 id == kVideoAcquisitionOptionNone
                     ? Icons.swap_horiz_rounded
                     : Icons.video_library_outlined,
@@ -772,7 +773,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
             key: const ValueKey<String>('ai-video-acquire-send'),
             tooltip: t.ai_video_acquire_send,
             onPressed: enabled ? () => unawaited(_send()) : null,
-            icon: const Icon(Icons.send_rounded),
+            icon: const FushiIcon(Icons.send_rounded),
           ),
           SizedBox(width: tokens.spacing.gap),
           FushiIconButtonControl(
@@ -785,7 +786,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                 () => Navigator.of(context).maybePop(),
               _ => () => unawaited(widget.service.cancel()),
             },
-            icon: const Icon(Icons.close_rounded),
+            icon: const FushiIcon(Icons.close_rounded),
           ),
         ],
       ),

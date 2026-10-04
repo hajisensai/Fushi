@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
@@ -127,7 +128,7 @@ class _VideoResourceVersionGroupListState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 group.trusted
                     ? Icons.verified_rounded
                     : Icons.cloud_download_outlined,

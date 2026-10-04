@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -139,7 +140,7 @@ class AudiobookPlayBar extends StatelessWidget {
       children: <Widget>[
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_prev'),
-          icon: Icon(leftKey.icon),
+          icon: FushiIcon(leftKey.icon),
           iconSize: 22,
           style: flatStyle,
           tooltip: leftKey.tooltip,
@@ -148,7 +149,7 @@ class AudiobookPlayBar extends StatelessWidget {
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_play'),
           filledTonal: true,
-          icon: Icon(
+          icon: FushiIcon(
             controller.isPlaying
                 ? Icons.pause_outlined
                 : Icons.play_arrow_outlined,
@@ -160,7 +161,7 @@ class AudiobookPlayBar extends StatelessWidget {
         ),
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_next'),
-          icon: Icon(rightKey.icon),
+          icon: FushiIcon(rightKey.icon),
           iconSize: 22,
           style: flatStyle,
           tooltip: rightKey.tooltip,
@@ -182,7 +183,7 @@ class AudiobookPlayBar extends StatelessWidget {
           id: const FushiFocusId('audiobook_settings'),
           key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
           semanticsIdentifier: 'hibiki.reader.audiobook.settings',
-          icon: const Icon(Icons.tune_outlined),
+          icon: const FushiIcon(Icons.tune_outlined),
           iconSize: 20,
           style: flatStyle,
           onPressed: onOpenSettings,
@@ -237,7 +238,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
         // 保留 c3dbe59a1 的纸张前景色注入：开启态用满前景色 / 关闭态 60%。
         return _FocusableBarButton(
           id: const FushiFocusId('audiobook_follow'),
-          icon: Icon(on ? Icons.link : Icons.link_off),
+          icon: FushiIcon(on ? Icons.link : Icons.link_off),
           iconSize: 20,
           color: on ? onColor : offColor,
           tooltip: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
@@ -220,7 +221,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       return FushiIconButtonControl(
         tooltip: tooltip,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        icon: Icon(icon, size: 20),
+        icon: FushiIcon(icon, size: 20),
         color: selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
         onPressed: onTap,
       );
@@ -320,7 +321,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             if (selected)
               Padding(
                 padding: EdgeInsets.only(left: tokens.spacing.gap),
-                child: Icon(Icons.check, size: 20, color: foreground),
+                child: FushiIcon(Icons.check, size: 20, color: foreground),
               ),
           ],
         ),

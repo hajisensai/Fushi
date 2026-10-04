@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -6,8 +7,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-// 反馈包装契约：MD3 下是原进度条 / tooltip；玻璃下是 GlassProgressIndicator
-// （颜色取 colorScheme，不是库默认 iOS 蓝），tooltip 气泡是 GlassContainer。
+// 反馈包装契约：MD3 下是原进度条 / tooltip；玻璃下确定态是
+// GlassProgressIndicator（强调色，不是库默认 iOS 蓝）、不定态圆形是 iOS 菊花
+// CupertinoActivityIndicator，tooltip 气泡是 GlassContainer。
 
 Future<void> _pump(
   WidgetTester tester,
@@ -75,16 +77,16 @@ void main() {
     final List<GlassProgressIndicator> all = tester
         .widgetList<GlassProgressIndicator>(find.byType(GlassProgressIndicator))
         .toList();
-    expect(all, hasLength(4));
+    // 不定态圆形进度是 iOS 菊花，其余三个是玻璃进度条。
+    expect(all, hasLength(3));
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
     final BuildContext ctx = tester.element(find.byType(Column));
     final Color primary = Theme.of(ctx).colorScheme.primary;
     expect(all[0].color, primary);
     expect(all[0].height, 6);
     expect(all[0].value, 0.4);
-    expect(all[1].strokeWidth, 2);
-    expect(all[1].value, isNull);
-    expect(all[2].color, primary);
-    expect(all[3].color, Colors.orange);
+    expect(all[1].color, primary);
+    expect(all[2].color, Colors.orange);
     // 线性条撑满父级宽度（与 Material 一致）。
     expect(
       tester.getSize(find.byType(GlassProgressIndicator).first).width,

@@ -1,14 +1,16 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-// 标签包装契约：MD3 下是原 Material chip；玻璃下是 GlassChip（可 Tab 聚焦、
-// Enter 激活），界面里没有 RawChip。
+// 标签包装契约：MD3 下是原 Material chip；玻璃下是 iOS 26 的实色胶囊（不是
+// 玻璃，可 Tab 聚焦、Enter 激活），界面里没有 RawChip。
 
 Future<void> _pump(
   WidgetTester tester,
@@ -74,7 +76,7 @@ void main() {
   });
 
   group('glass', () {
-    testWidgets('renders GlassChip and no Material chip', (
+    testWidgets('renders solid iOS capsules, no Material chip, no glass', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -86,7 +88,11 @@ void main() {
               selected: true,
               onSelected: (_) {},
             ),
-            FushiFilterChip(label: const Text('filter'), onSelected: (_) {}),
+            FushiFilterChip(
+              label: const Text('filter'),
+              selected: true,
+              onSelected: (_) {},
+            ),
             FushiActionChipControl(
               label: const Text('action'),
               onPressed: () {},
@@ -99,17 +105,42 @@ void main() {
       );
       expect(find.byType(RawChip), findsNothing);
       expect(find.byType(ChoiceChip), findsNothing);
-      expect(find.byType(GlassChip), findsNWidgets(4));
-      // 纯展示 Chip 是不可交互的玻璃胶囊。
+      // 标签是内容层控件：没有任何玻璃。
+      expect(find.byType(GlassChip), findsNothing);
+      expect(find.byType(GlassContainer), findsNothing);
+      expect(find.byType(GlassButton), findsNothing);
+      // 选中的 ChoiceChip 靠强调色实底表达，不画对勾；FilterChip 画 SF 对勾。
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
+      // 选中胶囊是强调色实底 + 白字，高 32（移动端）。
+      final BuildContext ctx = tester.element(find.text('choice'));
+      final Color accent = appleColorsOf(ctx).accent;
       expect(
         find.ancestor(
-          of: find.text('plain'),
-          matching: find.byType(GlassContainer),
+          of: find.text('choice'),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is DecoratedBox &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).color == accent,
+          ),
         ),
         findsOneWidget,
       );
-      // 选中的 ChoiceChip 默认显示对勾。
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(DefaultTextStyle.of(ctx).style.color, Colors.white);
+      expect(
+        tester
+            .getSize(
+              find
+                  .ancestor(
+                    of: find.text('action'),
+                    matching: find.byType(DecoratedBox),
+                  )
+                  .first,
+            )
+            .height,
+        32,
+      );
     });
 
     testWidgets('ChoiceChip toggles on tap and on Tab + Enter', (
@@ -185,7 +216,7 @@ void main() {
       await tester.tap(find.text('input'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(log, <String>['select:true', 'press']);
-      await tester.tap(find.byIcon(Icons.close));
+      await tester.tap(find.byIcon(CupertinoIcons.xmark_circle_fill));
       await tester.pump(const Duration(milliseconds: 300));
       expect(log.last, 'delete');
     });
@@ -210,7 +241,7 @@ void main() {
       expect(node.hasFocus, isFalse);
     });
 
-    testWidgets('non-Text label falls back to a glass button chip', (
+    testWidgets('non-Text label renders the same capsule and activates', (
       WidgetTester tester,
     ) async {
       int pressed = 0;
@@ -226,7 +257,7 @@ void main() {
         glass: true,
       );
       expect(find.byType(RawChip), findsNothing);
-      expect(find.byType(GlassButton), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
       await _tabThenEnter(tester);
       expect(pressed, 1);
     });

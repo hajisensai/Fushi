@@ -24,6 +24,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 
@@ -297,7 +298,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
                 identifier: 'hibiki.reader.side_sheet.close',
                 child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_reader_stats_close'),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
@@ -385,7 +386,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
                   child: FushiTextButton.icon(
                     key: const ValueKey<String>('fushi_reader_stats_full'),
                     onPressed: widget.onOpenFullRecords,
-                    icon: const Icon(Icons.chevron_right, size: 18),
+                    icon: const FushiIcon(Icons.chevron_right, size: 18),
                     iconAlignment: IconAlignment.end,
                     label: Text(t.reader_stats_full_records_open),
                   ),
@@ -461,7 +462,7 @@ class _SessionClock extends StatelessWidget {
           identifier: 'hibiki.reader.stats.toggle_pause',
           child: FushiIconButtonControl.outlined(
             key: const ValueKey<String>('fushi_reader_stats_pause'),
-            icon: Icon(
+            icon: FushiIcon(
               session.active ? Icons.pause_rounded : Icons.play_arrow_rounded,
             ),
             tooltip: session.active

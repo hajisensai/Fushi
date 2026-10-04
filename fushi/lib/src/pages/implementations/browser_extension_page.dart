@@ -8,6 +8,7 @@ import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -185,7 +186,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                   height: 18,
                   child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.extension_outlined, size: 18),
+              : const FushiIcon(Icons.extension_outlined, size: 18),
           label: Text(_extensionDir == null
               ? t.browser_extension_prepare_button
               : t.browser_extension_reinstall_button),
@@ -228,7 +229,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 serverOn ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
                 size: 20,
                 color: serverOn
@@ -246,7 +247,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           const SizedBox(height: 10),
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 connected ? Icons.link : Icons.link_off,
                 size: 20,
                 color: connected
@@ -278,7 +279,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.public_outlined,
+              FushiIcon(Icons.public_outlined,
                   size: 20, color: theme.colorScheme.primary),
               const SizedBox(width: 10),
               Expanded(child: Text(t.browser_extension_test_page_title)),
@@ -297,7 +298,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             alignment: Alignment.centerLeft,
             child: FushiFilledButton.tonalIcon(
               onPressed: serverOn ? _openTestPage : null,
-              icon: const Icon(Icons.open_in_new_outlined, size: 18),
+              icon: const FushiIcon(Icons.open_in_new_outlined, size: 18),
               label: Text(t.browser_extension_test_page_action),
             ),
           ),
@@ -335,7 +336,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.verified_outlined,
+              FushiIcon(Icons.verified_outlined,
                   size: 20, color: theme.colorScheme.primary),
               const SizedBox(width: 10),
               Expanded(child: Text(t.browser_extension_step_verify)),
@@ -352,7 +353,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                       height: 16,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.wifi_tethering, size: 18),
+                  : const FushiIcon(Icons.wifi_tethering, size: 18),
               label: Text(_verifying
                   ? t.browser_extension_verify_checking
                   : t.browser_extension_verify_button),
@@ -363,7 +364,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(resultIcon, size: 18, color: tone),
+                FushiIcon(resultIcon, size: 18, color: tone),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(resultText, style: TextStyle(color: tone)),
@@ -391,7 +392,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Icon(Icons.info_outline,
+                  FushiIcon(Icons.info_outline,
                       size: 20, color: theme.colorScheme.onSurfaceVariant),
                   const SizedBox(width: 10),
                   Expanded(child: Text(t.browser_extension_version_label)),
@@ -419,7 +420,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Icon(Icons.update,
+                      FushiIcon(Icons.update,
                           size: 18, color: theme.colorScheme.onErrorContainer),
                       const SizedBox(width: 8),
                       Expanded(
@@ -503,7 +504,7 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
+          FushiIcon(icon, size: 20, color: theme.colorScheme.primary),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -567,7 +568,7 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(
+                FushiIcon(
                   Icons.info_outline,
                   color: theme.colorScheme.onTertiaryContainer,
                   size: 20,

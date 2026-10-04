@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
@@ -269,7 +270,7 @@ class _MediaCollectionGridDetailPageState
             value: _MemberMenuAction.open,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.open_in_new, size: 20),
+                const FushiIcon(Icons.open_in_new, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_open),
               ],
@@ -279,7 +280,7 @@ class _MediaCollectionGridDetailPageState
           value: _MemberMenuAction.remove,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.remove_circle_outline, size: 20),
+              const FushiIcon(Icons.remove_circle_outline, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_remove_member),
             ],

@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
@@ -127,7 +128,7 @@ class _CollectionRelationsSectionState
             value: _RelationMenuAction.download,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.download_outlined, size: 20),
+                const FushiIcon(Icons.download_outlined, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_relation_download),
               ],
@@ -137,7 +138,7 @@ class _CollectionRelationsSectionState
           value: _RelationMenuAction.bind,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.link, size: 20),
+              const FushiIcon(Icons.link, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_relation_bind),
             ],
@@ -261,7 +262,7 @@ class _CollectionRelationsSectionState
                       PositionedDirectional(
                         bottom: 6,
                         end: 6,
-                        child: Icon(
+                        child: FushiIcon(
                           Icons.link,
                           size: 16,
                           color: Colors.white.withValues(alpha: 0.9),

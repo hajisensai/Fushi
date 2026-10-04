@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -230,7 +231,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
         ],
       ),
       MihonPreferenceKind.unsupported => FushiListItem(
-        leading: const Icon(Icons.warning_amber_outlined),
+        leading: const FushiIcon(Icons.warning_amber_outlined),
         title: Text(preference.title),
         subtitle: Text(t.mihon_extension_incompatible),
       ),

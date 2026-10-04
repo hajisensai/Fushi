@@ -32,6 +32,7 @@ import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -365,7 +366,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: Row(
         children: <Widget>[
-          Icon(icon, color: cs.onSurfaceVariant),
+          FushiIcon(icon, color: cs.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Column(
@@ -422,7 +423,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             isLocal ? Icons.folder_outlined : Icons.cloud_outlined,
             color: cs.onSurfaceVariant,
           ),
@@ -698,7 +699,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             onPressed: () => Navigator.pop(ctx, _AddSourceChoice.local),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.folder_outlined),
+                const FushiIcon(Icons.folder_outlined),
                 const SizedBox(width: 16),
                 // BUG-1184：紧邻的「网络来源」选项已用 Expanded，这条漏了——窄屏 +
                 // 长本地化文案时裸 Text 直接把 Row 撑溢出。
@@ -711,7 +712,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(Icons.cloud_outlined),
+                const FushiIcon(Icons.cloud_outlined),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -764,7 +765,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             onPressed: () => Navigator.pop(ctx, _FolderImportChoice.asSource),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.create_new_folder_outlined),
+                const FushiIcon(Icons.create_new_folder_outlined),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -786,7 +787,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.file_download_outlined),
+                const FushiIcon(Icons.file_download_outlined),
                 const SizedBox(width: 16),
                 Expanded(child: Text(t.media_import_folder_once)),
               ],

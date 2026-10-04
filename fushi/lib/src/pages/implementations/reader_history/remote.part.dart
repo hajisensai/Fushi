@@ -273,7 +273,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               tooltip: t.remote_book_download,
               iconSize: 18,
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.download_outlined),
+              icon: const FushiIcon(Icons.download_outlined),
               // 多选态卡内子按钮叠在壳 InkWell 之上、不经 handleTap；置空让点击
               // 穿到壳走勾选，否则点到右上角仍是「没勾选直接下载」（审查 #1）。
               onPressed: _selectionMode && selectable
@@ -1206,7 +1206,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               tooltip: t.remote_book_download,
               iconSize: 18,
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.download_outlined),
+              icon: const FushiIcon(Icons.download_outlined),
               onPressed: _selectionMode && selectable
                   ? null
                   : () => _downloadRemoteSrtAudiobook(book),

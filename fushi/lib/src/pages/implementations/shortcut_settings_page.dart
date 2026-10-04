@@ -15,6 +15,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -309,7 +310,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
                 segments: <ButtonSegment<bool>>[
                   ButtonSegment<bool>(
                     value: false,
-                    icon: const Icon(Icons.list_outlined),
+                    icon: const FushiIcon(Icons.list_outlined),
                     tooltip: t.shortcut_view_list,
                   ),
                   ButtonSegment<bool>(
@@ -321,7 +322,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
                     // asked "where is the controller diagram?". A controller
                     // glyph tells the user at a glance that this segment shows
                     // the gamepad visual layout.
-                    icon: const Icon(Icons.sports_esports_outlined),
+                    icon: const FushiIcon(Icons.sports_esports_outlined),
                     tooltip: t.shortcut_view_visual,
                   ),
                 ],
@@ -365,7 +366,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(Icons.info_outline, size: 20, color: fg),
+            FushiIcon(Icons.info_outline, size: 20, color: fg),
             SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Text(

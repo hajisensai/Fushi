@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
@@ -182,7 +183,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
     return SizedBox(
       height: 120,
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: 40,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -343,9 +344,9 @@ class MediaItemDialogFrame extends StatelessWidget {
                     FushiListItem(
                       minHeight: 44,
                       padding: EdgeInsets.zero,
-                      leading: Icon(action.icon),
+                      leading: FushiIcon(action.icon),
                       title: Text(action.label),
-                      trailing: Icon(
+                      trailing: FushiIcon(
                         Icons.chevron_right,
                         color: colors.onSurfaceVariant,
                       ),

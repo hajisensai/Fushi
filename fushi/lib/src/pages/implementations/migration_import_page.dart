@@ -11,6 +11,7 @@ import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show fushiDatabaseFileName, PrefCodec;
@@ -341,14 +342,14 @@ class _MigrationImportPageState extends State<MigrationImportPage>
             for (final MigrationImportBatch batch in scan.ready)
               FushiListItem(
                 density: FushiListDensity.compact,
-                leading: const Icon(Icons.inventory_2_outlined),
+                leading: const FushiIcon(Icons.inventory_2_outlined),
                 title: Text(_batchLabel(batch.batch)),
               ),
             for (final MapEntry<String, List<String>> e
                 in scan.problems.entries)
               FushiListItem(
                 density: FushiListDensity.compact,
-                leading: Icon(Icons.error_outline,
+                leading: FushiIcon(Icons.error_outline,
                     color: Theme.of(context).colorScheme.error),
                 title: Text(t.migration_import_verify_failed(
                     batch: e.key, detail: e.value.join('; '))),

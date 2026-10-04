@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -250,7 +251,7 @@ class _UpdateEntryTile extends StatelessWidget {
                     'UpdatesCenterPage.coverDecode',
                     '$imagePath: $error',
                   );
-                  return Icon(
+                  return FushiIcon(
                     kind == null
                         ? Icons.notifications_outlined
                         : updateFeedKindIcon(kind),
@@ -261,7 +262,7 @@ class _UpdateEntryTile extends StatelessWidget {
                 },
               ),
             )
-          : Icon(
+          : FushiIcon(
               kind == null
                   ? Icons.notifications_outlined
                   : updateFeedKindIcon(kind),
@@ -279,7 +280,7 @@ class _UpdateEntryTile extends StatelessWidget {
       subtitleMaxLines: 1,
       // 未读点：与「加粗 = 未读」同一个事实的第二个可见表征，不靠字重也能分辨。
       trailing: unseen
-          ? Icon(Icons.circle, size: 8, color: theme.colorScheme.primary)
+          ? FushiIcon(Icons.circle, size: 8, color: theme.colorScheme.primary)
           : null,
       onTap: onTap,
     );
@@ -300,7 +301,7 @@ class _UpdatesEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.notifications_none_outlined,
               size: 48,
               color: theme.colorScheme.outline,

@@ -73,7 +73,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           child: desktop
               ? MaterialDesktopCustomButton(
                   icon:
-                      Icon(_volumeIconFor(value), size: _videoControlIconSize),
+                      FushiIcon(_volumeIconFor(value), size: _videoControlIconSize),
                   onPressed: () => _toggleControlPopover(
                     _VideoControlPopoverKind.volume,
                     popoverLink: popoverLink,
@@ -83,7 +83,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
                 )
               : MaterialCustomButton(
                   icon:
-                      Icon(_volumeIconFor(value), size: _videoControlIconSize),
+                      FushiIcon(_volumeIconFor(value), size: _videoControlIconSize),
                   onPressed: () => _toggleControlPopover(
                     _VideoControlPopoverKind.volume,
                     popoverLink: popoverLink,
@@ -536,7 +536,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.speed, color: cs.primary, size: 20 * _videoUiScale),
+              FushiIcon(Icons.speed, color: cs.primary, size: 20 * _videoUiScale),
               SizedBox(width: 8 * _videoUiScale),
               Expanded(
                 child: Text(

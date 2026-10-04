@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/startup/startup_splash_mark.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart' show t;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -60,7 +61,7 @@ class LoadingWatchdogView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.hourglass_empty, size: 48, color: colorScheme.primary),
+            FushiIcon(Icons.hourglass_empty, size: 48, color: colorScheme.primary),
             const SizedBox(height: 16),
             Text(
               t.loading_slow_title,
@@ -81,7 +82,7 @@ class LoadingWatchdogView extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             FushiFilledButton.icon(
-              icon: const Icon(Icons.refresh, size: 18),
+              icon: const FushiIcon(Icons.refresh, size: 18),
               label: Text(t.retry),
               onPressed: onRetry,
             ),

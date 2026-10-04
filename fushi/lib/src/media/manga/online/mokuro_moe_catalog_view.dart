@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -455,7 +456,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.public_off_outlined,
                 color: tokens.surfaces.onVariant,
               ),
@@ -538,7 +539,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
           controller: _searchCtrl,
           decoration: InputDecoration(
             hintText: t.manga_online_search_hint,
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const FushiIcon(Icons.search),
             isDense: true,
             border: const OutlineInputBorder(),
           ),
@@ -596,7 +597,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     // 无封面占位：MD3 tokens 面色（overlay = 最高 tonal 层），不裸引 scheme 角色。
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.overlay,
-      child: Icon(Icons.menu_book_outlined, color: tokens.surfaces.onVariant),
+      child: FushiIcon(Icons.menu_book_outlined, color: tokens.surfaces.onVariant),
     );
     return InkWell(
       borderRadius: tokens.radii.cardRadius,
@@ -759,7 +760,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         child: Row(
           children: <Widget>[
             if (imported)
-              Icon(Icons.check_circle, color: tokens.surfaces.primary)
+              FushiIcon(Icons.check_circle, color: tokens.surfaces.primary)
             else
               FushiCheckbox(
                 value: _selectedVolumes.contains(volume.name),

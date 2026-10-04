@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 横向剧集轨道的一条展示数据。
@@ -243,7 +244,7 @@ class _EpisodeRailCard extends StatelessWidget {
                       if (selected)
                         Padding(
                           padding: const EdgeInsetsDirectional.only(end: 6),
-                          child: Icon(
+                          child: FushiIcon(
                             Icons.play_arrow_rounded,
                             size: fontSize + 5,
                             color: Colors.white,
@@ -293,7 +294,7 @@ class _EpisodeRailCard extends StatelessWidget {
                         color: const Color(0xB8000000),
                         borderRadius: BorderRadius.circular(99),
                       ),
-                      child: Icon(
+                      child: FushiIcon(
                         entry.completed
                             ? Icons.check_rounded
                             : Icons.play_arrow_rounded,
@@ -334,7 +335,7 @@ class _EpisodeCover extends StatelessWidget {
   Widget _placeholder() => ColoredBox(
         color: colorScheme.surfaceContainerHighest,
         child: Center(
-          child: Icon(
+          child: FushiIcon(
             Icons.movie_outlined,
             size: 30,
             color: colorScheme.onSurfaceVariant,

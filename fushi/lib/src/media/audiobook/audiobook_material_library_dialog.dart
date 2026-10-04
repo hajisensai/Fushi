@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 class AudiobookMaterialLibraryDialog extends StatefulWidget {
@@ -107,13 +108,13 @@ class _AudiobookMaterialLibraryDialogState
                         subtitle: missing.contains(dir)
                             ? Text(t.audiobook_material_missing_dir)
                             : null,
-                        leading: Icon(
+                        leading: FushiIcon(
                           missing.contains(dir)
                               ? Icons.folder_off_outlined
                               : Icons.folder_outlined,
                         ),
                         trailing: FushiIconButtonControl(
-                          icon: const Icon(Icons.close),
+                          icon: const FushiIcon(Icons.close),
                           onPressed: () => _removeDir(dir),
                         ),
                       ),
@@ -138,7 +139,7 @@ class _AudiobookMaterialLibraryDialogState
         FushiTextButton.icon(
           key: const ValueKey<String>('audiobook-material-add-dir'),
           onPressed: _scanning ? null : _addDir,
-          icon: const Icon(Icons.create_new_folder_outlined),
+          icon: const FushiIcon(Icons.create_new_folder_outlined),
           label: Text(t.audiobook_material_add_dir),
         ),
         FushiTextButton(

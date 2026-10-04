@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_preferences_dialog.dart';
@@ -190,13 +191,13 @@ class _MihonInstalledSourcesSectionState
     key: const ValueKey<String>('mihon_sources_search_field'),
     controller: _searchController,
     decoration: InputDecoration(
-      prefixIcon: const Icon(Icons.search),
+      prefixIcon: const FushiIcon(Icons.search),
       hintText: t.mihon_sources_search_hint,
       border: const OutlineInputBorder(),
       suffixIcon: _searchQuery.isEmpty
           ? null
           : FushiIconButtonControl(
-              icon: const Icon(Icons.close),
+              icon: const FushiIcon(Icons.close),
               onPressed: () {
                 _searchController.clear();
                 setState(() => _searchQuery = '');
@@ -228,7 +229,7 @@ class _MihonInstalledSourcesSectionState
                     ),
                     tooltip: t.mihon_sources_sort_by_downloads,
                     onPressed: () => unawaited(_sortSourcesByDownloads()),
-                    icon: const Icon(Icons.sort),
+                    icon: const FushiIcon(Icons.sort),
                   ),
                 ],
               ),
@@ -349,7 +350,7 @@ class _MihonInstalledSourcesSectionState
                       'mihon_source_menu_${source.extensionPackage}_${source.sourceId}',
                     ),
                     tooltip: t.common_more_actions,
-                    icon: const Icon(Icons.more_vert),
+                    icon: const FushiIcon(Icons.more_vert),
                     onSelected: (_SourceAction action) => action.onTap?.call(),
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<_SourceAction>>[
@@ -361,7 +362,7 @@ class _MihonInstalledSourcesSectionState
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
-                                  Icon(action.icon, size: 20),
+                                  FushiIcon(action.icon, size: 20),
                                   const SizedBox(width: 12),
                                   Flexible(child: Text(action.label)),
                                 ],
@@ -377,7 +378,7 @@ class _MihonInstalledSourcesSectionState
                           key: action.key,
                           tooltip: action.label,
                           onPressed: action.onTap,
-                          icon: Icon(action.icon),
+                          icon: FushiIcon(action.icon),
                         ),
                     ],
                   ),

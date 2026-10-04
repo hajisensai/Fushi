@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-763/766「制卡·选择句子上下文」**app 原生顶层对话框**。
@@ -367,7 +368,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
         onPressed:
             _busy || _editing ? null : () => _startEdit(slot, index, text),
-        icon: const Icon(Icons.edit_outlined, size: 16),
+        icon: const FushiIcon(Icons.edit_outlined, size: 16),
       );
 
   /// 编辑态的卡内容：多行输入框 + 「放弃修改 / 确认修改」。
@@ -528,7 +529,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
           minimumSize: const Size(0, 36),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        icon: Icon(icon, size: 18),
+        icon: FushiIcon(icon, size: 18),
         label: Text(label),
       );
 
@@ -602,7 +603,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             FushiIconButtonControl(
               tooltip: t.popup_ctx_cancel,
               onPressed: _locked ? null : _cancel,
-              icon: const Icon(Icons.close, size: 20),
+              icon: const FushiIcon(Icons.close, size: 20),
             ),
           ],
         ),
@@ -690,7 +691,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
           if (widget.previewAudio != null)
             FushiTextButton.icon(
               onPressed: _locked ? null : _togglePreview,
-              icon: Icon(
+              icon: FushiIcon(
                 _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
               ),
               label: Text(

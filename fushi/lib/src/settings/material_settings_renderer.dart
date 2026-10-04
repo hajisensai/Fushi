@@ -8,6 +8,7 @@ import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
@@ -67,7 +68,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       selectedShape: pushRoutes
           ? FushiListItemSelectedShape.fill
           : FushiListItemSelectedShape.pill,
-      leading: Icon(destination.icon),
+      leading: FushiIcon(destination.icon),
       title: Text(destination.title),
       // TODO-1143：左父菜单在窄布局（clamp 280..360，最窄 280px）下曾把长分类
       // 标签（如「同步与备份（实验性）」）用 FushiListItem 默认 titleMaxLines:1
@@ -76,7 +77,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       subtitle: destination.summary != null ? Text(destination.summary!) : null,
       // Chevron implies push navigation; only show it when tapping actually
       // pushes a detail route (narrow layout), not in the master-detail pane.
-      trailing: pushRoutes ? const Icon(Icons.chevron_right) : null,
+      trailing: pushRoutes ? const FushiIcon(Icons.chevron_right) : null,
       onTap: () {
         onDestinationSelected(destination.id);
         if (!pushRoutes) return;

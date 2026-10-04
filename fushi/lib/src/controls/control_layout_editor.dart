@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 由 [ControlLayoutEditor] 交给宿主的「造一个槽位放置区」入口：宿主在舞台预览里
 /// 按自己的几何排布槽位，每个槽位调它一次拿到可投放区域。
@@ -142,7 +143,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
       children: <Widget>[
         Row(
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.dashboard_customize_outlined,
               size: 18,
               color: cs.primary,
@@ -216,7 +217,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
                 height: 32,
                 child: Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: Icon(
+                  child: FushiIcon(
                     removalSlot
                         ? Icons.remove_circle_outline
                         : Icons.add_circle_outline,
@@ -423,7 +424,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
                 ]
               : null,
         ),
-        child: Icon(widget.iconOf(item), size: 18, color: foreground),
+        child: FushiIcon(widget.iconOf(item), size: 18, color: foreground),
       ),
     );
     return FushiTooltip(

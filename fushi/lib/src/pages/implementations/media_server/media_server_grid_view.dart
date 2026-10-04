@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 库 / 文件夹 / BoxSet 的分页网格；搜索框非空时改走 [MediaServerBrowser.search]
@@ -297,7 +298,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         action: FushiFilledButton.icon(
           key: const ValueKey<String>('media-server-grid-retry'),
           onPressed: () => unawaited(_reload()),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );
@@ -368,7 +369,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
                 child: FushiTextButton.icon(
                   key: const ValueKey<String>('media-server-grid-retry-more'),
                   onPressed: _retryLoadMore,
-                  icon: const Icon(Icons.refresh_rounded),
+                  icon: const FushiIcon(Icons.refresh_rounded),
                   label: Text(t.retry),
                 ),
               ),
