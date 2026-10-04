@@ -52,6 +52,7 @@ class DesktopCtlHost implements CtlDesktopHandler {
     required this.openTarget,
     required this.lookupWord,
     required this.quitApp,
+    this.routes = const <CtlRoute>[],
   });
 
   /// AppModel 初始化完成且主导航可用。
@@ -60,6 +61,10 @@ class DesktopCtlHost implements CtlDesktopHandler {
   final Future<CtlOpenResult> Function(String target) openTarget;
   final Future<void> Function(String word) lookupWord;
   final Future<void> Function() quitApp;
+
+  /// 按域注册的路由（`ctl/desktop_ctl_routes.dart`）。
+  @override
+  final List<CtlRoute> routes;
 
   @override
   CtlAppStatus status() {

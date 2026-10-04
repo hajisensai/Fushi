@@ -11,4 +11,7 @@ export 'src/ctl_endpoint.dart';
 export 'src/ctl_launcher.dart';
 export 'src/ctl_paths.dart';
 export 'src/ctl_protocol.dart';
+export 'src/ctl_routes.dart';
+export 'src/ctl_command_registry.dart';
+export 'src/ctl_commands.dart';
 export 'src/ctl_server.dart';

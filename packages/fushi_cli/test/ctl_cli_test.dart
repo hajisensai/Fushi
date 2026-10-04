@@ -30,6 +30,22 @@ void main() {
     await root.delete(recursive: true);
   });
 
+  const List<CtlCommandGroup> testGroups = <CtlCommandGroup>[
+    CtlCommandGroup(
+      name: 'library',
+      summary: '书库',
+      commands: <CtlCommandSpec>[
+        CtlCommandSpec(name: 'ls', summary: '列出', build: _lsBooks),
+        CtlCommandSpec(
+          name: 'rm',
+          summary: '删除',
+          usage: '<key>',
+          build: _rmBook,
+        ),
+      ],
+    ),
+  ];
+
   Future<int> run(
     List<String> args, {
     CtlProcessStarter? starter,
@@ -45,6 +61,7 @@ void main() {
         starter ??
         (String exe, List<String> args) async => fail('不应拉起 app：$exe'),
     pollInterval: const Duration(milliseconds: 20),
+    groups: testGroups,
   );
 
   Future<FakeHandler> startApp({bool initialised = true}) async {
@@ -167,10 +184,43 @@ void main() {
     expect(handler.quits, 1);
   });
 
+  test('域命令：按命令表拼请求并输出 JSON', () async {
+    await startApp();
+    expect(await run(<String>['--json', 'library', 'ls']), kCliExitOk);
+    expect(jsonDecode(out.toString().trim()), <String, Object?>{
+      'books': <Object?>[
+        <String, Object?>{'key': 'a/1', 'title': '猫の本'},
+      ],
+    });
+  });
+
+  test('域命令：app 回 404 → 退出码 1 并带原因', () async {
+    await startApp();
+    expect(await run(<String>['library', 'rm', 'zzz']), kCliExitFailed);
+    expect(err.toString(), contains('没有这本书'));
+  });
+
+  test('域命令：缺位置参数 → 64，且不拉起 app', () async {
+    expect(await run(<String>['library', 'rm']), kCliExitUsage);
+    expect(err.toString(), contains('<key>'));
+  });
+
+  test('域命令：只给域名 → 列出子命令', () async {
+    expect(await run(<String>['library', '--help']), kCliExitOk);
+    expect(out.toString(), contains('rm <key>'));
+  });
+
   test('没有命令 → 用法错误', () async {
     expect(await run(const <String>[]), kCliExitUsage);
   });
 }
+
+CtlRequestSpec _lsBooks(CtlCommandContext c) =>
+    const CtlRequestSpec.get('/api/admin/library/books');
+
+CtlRequestSpec _rmBook(CtlCommandContext c) => CtlRequestSpec.delete(
+  '/api/admin/library/books/${Uri.encodeComponent(c.positional(0, 'key'))}',
+);
 
 /// 拿一个此刻没人监听的端口。
 Future<int> _closedPort() async {

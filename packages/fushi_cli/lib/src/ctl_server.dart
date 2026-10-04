@@ -7,6 +7,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import 'ctl_endpoint.dart';
 import 'ctl_protocol.dart';
+import 'ctl_routes.dart';
 
 /// app 侧实现的动作面。服务端只做鉴权、解析与状态码，不懂任何 app 语义。
 abstract interface class CtlDesktopHandler {
@@ -19,6 +20,9 @@ abstract interface class CtlDesktopHandler {
 
   /// 走与关窗口同一条落库再退出的路径。服务端先回 202 再调用它。
   Future<void> quit();
+
+  /// 按域注册的其余路由（书库、词典、设置……），见 [CtlRoute]。
+  List<CtlRoute> get routes;
 }
 
 /// 本机控制通道：只绑 127.0.0.1，随机端口，每次启动新 token。
@@ -97,21 +101,70 @@ class CtlServer {
       if (path == kCtlStatusPath && method == 'GET') {
         return _json(200, handler.status().toJson());
       }
-      if (method != 'POST') return _error(404, 'not_found');
-      switch (path) {
-        case kCtlOpenPath:
-          return _open(request);
-        case kCtlLookupPath:
-          return _lookup(request);
-        case kCtlQuitPath:
-          // 先把 202 送出去再退出：quit 会 exit(0)，晚了 CLI 只能看到连接断开。
-          Timer.run(() => unawaited(handler.quit()));
-          return _json(202, const <String, Object?>{'ok': true});
+      if (method == 'POST') {
+        switch (path) {
+          case kCtlOpenPath:
+            return _open(request);
+          case kCtlLookupPath:
+            return _lookup(request);
+          case kCtlQuitPath:
+            // 先把 202 送出去再退出：quit 会 exit(0)，晚了 CLI 只能看到连接断开。
+            Timer.run(() => unawaited(handler.quit()));
+            return _json(202, const <String, Object?>{'ok': true});
+        }
       }
-      return _error(404, 'not_found');
+      return await _dispatchRoute(request, method, path);
+    } on CtlFailure catch (failure) {
+      return _error(failure.status, failure.code, message: failure.message);
     } on Object catch (error) {
       return _error(500, 'internal', message: '$error');
     }
+  }
+
+  Future<shelf.Response> _dispatchRoute(
+    shelf.Request request,
+    String method,
+    String path,
+  ) async {
+    bool pathKnown = false;
+    for (final CtlRoute route in handler.routes) {
+      final Map<String, String>? params = route.match(path);
+      if (params == null) continue;
+      pathKnown = true;
+      if (route.method != method) continue;
+      if (route.requiresReady && !handler.status().initialised) {
+        return _error(409, kCtlErrorNotReady);
+      }
+      final Map<String, Object?> body = await _jsonBody(request);
+      final Object? result = await route.handler(
+        CtlCall(
+          method: method,
+          path: path,
+          params: params,
+          query: request.url.queryParameters,
+          body: body,
+        ),
+      );
+      return _jsonAny(200, result ?? const <String, Object?>{'ok': true});
+    }
+    return pathKnown
+        ? _error(405, 'method_not_allowed')
+        : _error(404, 'not_found');
+  }
+
+  static Future<Map<String, Object?>> _jsonBody(shelf.Request request) async {
+    final String text = await request.readAsString();
+    if (text.trim().isEmpty) return const <String, Object?>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      throw const CtlFailure.badRequest('body 不是合法 JSON');
+    }
+    if (decoded is! Map<String, Object?>) {
+      throw const CtlFailure.badRequest('body 必须是 JSON 对象');
+    }
+    return decoded;
   }
 
   Future<shelf.Response> _open(shelf.Request request) async {
@@ -170,14 +223,16 @@ class CtlServer {
   }
 
   static shelf.Response _json(int status, Map<String, Object?> body) =>
-      shelf.Response(
-        status,
-        body: jsonEncode(body),
-        headers: const <String, String>{
-          'Content-Type': 'application/json; charset=utf-8',
-          'Cache-Control': 'no-store',
-        },
-      );
+      _jsonAny(status, body);
+
+  static shelf.Response _jsonAny(int status, Object? body) => shelf.Response(
+    status,
+    body: jsonEncode(body),
+    headers: const <String, String>{
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  );
 
   static shelf.Response _error(int status, String code, {String? message}) =>
       _json(status, <String, Object?>{

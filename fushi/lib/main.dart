@@ -84,6 +84,8 @@ import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dar
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
+import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
@@ -1594,6 +1596,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           DesktopLookupService.instance.triggerLookup(word);
         },
         quitApp: _flushAndExitForWindowClose,
+        routes: buildDesktopCtlRoutes(
+          DesktopCtlContext(ref: ref, focusMainWindow: _focusMainWindowForCtl),
+        ),
       ),
     );
     if (!mounted) {

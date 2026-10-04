@@ -9,6 +9,30 @@ class FakeHandler implements CtlDesktopHandler {
   final List<String> opened = <String>[];
   final List<String> lookups = <String>[];
   int quits = 0;
+  final Map<String, String> books = <String, String>{'a/1': '猫の本'};
+
+  @override
+  List<CtlRoute> get routes => <CtlRoute>[
+    CtlRoute.get(
+      '/api/admin/library/books',
+      (CtlCall call) async => <String, Object?>{
+        'books': <Map<String, Object?>>[
+          for (final MapEntry<String, String> e in books.entries)
+            <String, Object?>{'key': e.key, 'title': e.value},
+        ],
+      },
+    ),
+    CtlRoute.delete('/api/admin/library/books/:key', (CtlCall call) async {
+      final String key = call.params['key']!;
+      if (books.remove(key) == null) throw CtlFailure.notFound('没有这本书：$key');
+      return null;
+    }),
+    CtlRoute.get(
+      '/api/admin/ping',
+      (CtlCall call) async => <String>['pong', call.query['n'] ?? ''],
+      requiresReady: false,
+    ),
+  ];
 
   @override
   CtlAppStatus status() => CtlAppStatus(
@@ -167,6 +191,72 @@ void main() {
       body: <String, Object?>{'nope': 1},
     );
     expect(response.statusCode, 400);
+  });
+
+  test('注册路由：路径参数解码、CtlFailure 映射、List 应答', () async {
+    final CtlClient client = CtlClient(endpoint);
+    addTearDown(client.close);
+    expect(
+      await client.call(
+        'GET',
+        '/api/admin/ping',
+        query: <String, String>{'n': '1'},
+      ),
+      <Object?>['pong', '1'],
+    );
+    expect(
+      await client.call(
+        'DELETE',
+        '/api/admin/library/books/${Uri.encodeComponent('a/1')}',
+      ),
+      <String, Object?>{'ok': true},
+    );
+    expect(handler.books, isEmpty);
+    await expectLater(
+      client.call('DELETE', '/api/admin/library/books/zzz'),
+      throwsA(
+        isA<CtlException>()
+            .having((CtlException e) => e.statusCode, 'status', 404)
+            .having((CtlException e) => e.message, 'message', contains('zzz')),
+      ),
+    );
+    await expectLater(
+      client.call('POST', '/api/admin/library/books'),
+      throwsA(
+        isA<CtlException>().having(
+          (CtlException e) => e.statusCode,
+          'status',
+          405,
+        ),
+      ),
+    );
+    await expectLater(
+      client.call('GET', '/api/admin/nope'),
+      throwsA(
+        isA<CtlException>().having(
+          (CtlException e) => e.statusCode,
+          'status',
+          404,
+        ),
+      ),
+    );
+  });
+
+  test('注册路由：未就绪回 409，requiresReady:false 的照常服务', () async {
+    handler.initialised = false;
+    final CtlClient client = CtlClient(endpoint);
+    addTearDown(client.close);
+    await expectLater(
+      client.call('GET', '/api/admin/library/books'),
+      throwsA(
+        isA<CtlException>().having(
+          (CtlException e) => e.isNotReady,
+          'notReady',
+          isTrue,
+        ),
+      ),
+    );
+    expect(await client.call('GET', '/api/admin/ping'), <Object?>['pong', '']);
   });
 
   test('坏的发现文件按「未运行」处理', () async {

@@ -57,6 +57,14 @@ class CtlClient {
     await _send('POST', kCtlQuitPath);
   }
 
+  /// 通用调用：按域注册的路由都走这里。返回解码后的 JSON（可能是 Map / List）。
+  Future<Object?> call(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+  }) => _sendAny(method, path, query: query, body: body);
+
   void close() {
     if (_ownsHttp) _http.close(force: true);
   }
@@ -66,7 +74,22 @@ class CtlClient {
     String path, {
     Map<String, Object?>? body,
   }) async {
-    final Uri uri = endpoint.baseUri.replace(path: path);
+    final Object? decoded = await _sendAny(method, path, body: body);
+    return decoded is Map<String, Object?>
+        ? decoded
+        : const <String, Object?>{};
+  }
+
+  Future<Object?> _sendAny(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+  }) async {
+    final Uri uri = endpoint.baseUri.replace(
+      path: path,
+      queryParameters: (query == null || query.isEmpty) ? null : query,
+    );
     final HttpClientResponse response;
     try {
       final HttpClientRequest request = await _http.openUrl(method, uri);
@@ -85,11 +108,10 @@ class CtlClient {
       throw CtlException(kCtlErrorUnreachable, message: error.message);
     }
     final String text = await utf8.decodeStream(response);
-    Map<String, Object?> decoded = const <String, Object?>{};
+    Object? json;
     if (text.isNotEmpty) {
       try {
-        final Object? json = jsonDecode(text);
-        if (json is Map<String, Object?>) decoded = json;
+        json = jsonDecode(text);
       } on FormatException {
         // 不是本通道的应答（端口被别的程序复用）：按协议错误报。
         throw CtlException(
@@ -99,11 +121,14 @@ class CtlClient {
         );
       }
     }
-    if (response.statusCode >= 200 && response.statusCode < 300) return decoded;
+    if (response.statusCode >= 200 && response.statusCode < 300) return json;
+    final Map<String, Object?> error = json is Map<String, Object?>
+        ? json
+        : const <String, Object?>{};
     throw CtlException(
-      decoded['error'] as String? ?? 'http_${response.statusCode}',
+      error['error'] as String? ?? 'http_${response.statusCode}',
       statusCode: response.statusCode,
-      message: decoded['message'] as String?,
+      message: error['message'] as String?,
     );
   }
 }

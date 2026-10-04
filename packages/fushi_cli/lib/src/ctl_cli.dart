@@ -17,9 +17,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:path/path.dart' as p;
 
 import 'ctl_client.dart';
+import 'ctl_command_registry.dart';
+import 'ctl_commands.dart';
 import 'ctl_endpoint.dart';
 import 'ctl_launcher.dart';
 import 'ctl_paths.dart';
@@ -49,7 +50,7 @@ const int kCliExitConfig = 78;
 
 const Duration _defaultTimeout = Duration(seconds: 90);
 
-ArgParser _buildParser() {
+ArgParser _buildParser(List<CtlCommandGroup> groups) {
   final ArgParser parser = ArgParser()
     ..addFlag('json', negatable: false, help: '输出 JSON（便于脚本解析）')
     ..addOption(
@@ -68,10 +69,45 @@ ArgParser _buildParser() {
   parser.addCommand('open');
   parser.addCommand('lookup');
   parser.addCommand('quit');
+  for (final CtlCommandGroup group in groups) {
+    final ArgParser groupParser = parser.addCommand(group.name)
+      ..addFlag('help', abbr: 'h', negatable: false, help: '显示帮助');
+    for (final CtlCommandSpec spec in group.commands) {
+      final ArgParser commandParser = groupParser.addCommand(spec.name)
+        ..addFlag('help', abbr: 'h', negatable: false, help: '显示帮助');
+      spec.configure?.call(commandParser);
+    }
+  }
   return parser;
 }
 
-void _usage(ArgParser parser, StringSink sink) {
+void _groupUsage(CtlCommandGroup group, StringSink sink) {
+  sink
+    ..writeln(
+      'fushi_cli ${group.name} <command> [options]  —— ${group.summary}',
+    )
+    ..writeln()
+    ..writeln('commands:');
+  for (final CtlCommandSpec spec in group.commands) {
+    final String head = '${spec.name} ${spec.usage}'.trim();
+    sink.writeln('  ${head.padRight(28)} ${spec.summary}');
+  }
+}
+
+void _commandUsage(
+  CtlCommandGroup group,
+  CtlCommandSpec spec,
+  ArgParser parser,
+  StringSink sink,
+) {
+  sink
+    ..writeln('fushi_cli ${group.name} ${spec.name} ${spec.usage}'.trimRight())
+    ..writeln('  ${spec.summary}')
+    ..writeln()
+    ..writeln(parser.usage);
+}
+
+void _usage(ArgParser parser, List<CtlCommandGroup> groups, StringSink sink) {
   sink
     ..writeln('fushi_cli <command> [options]')
     ..writeln()
@@ -82,7 +118,16 @@ void _usage(ArgParser parser, StringSink sink) {
     ..writeln('  start               确保 app 在运行并就绪')
     ..writeln('  open <路径|URL>     打开视频文件 / fushi:// 深链 / 卡片来源 URL')
     ..writeln('  lookup <词>         弹出查词')
-    ..writeln('  quit                落库后退出 app')
+    ..writeln('  quit                落库后退出 app');
+  if (groups.isNotEmpty) {
+    sink
+      ..writeln()
+      ..writeln('domains（fushi_cli <domain> --help 看子命令）:');
+    for (final CtlCommandGroup group in groups) {
+      sink.writeln('  ${group.name.padRight(18)} ${group.summary}');
+    }
+  }
+  sink
     ..writeln()
     ..writeln(parser.usage);
 }
@@ -97,21 +142,22 @@ Future<int> runFushiCli(
   StringSink? err,
   CtlProcessStarter starter = startDetachedProcess,
   Duration pollInterval = const Duration(milliseconds: 250),
+  List<CtlCommandGroup> groups = kCtlCommandGroups,
 }) async {
   final StringSink stdoutSink = out ?? stdout;
   final StringSink stderrSink = err ?? stderr;
-  final ArgParser parser = _buildParser();
+  final ArgParser parser = _buildParser(groups);
   final ArgResults results;
   try {
     results = parser.parse(args);
   } on FormatException catch (e) {
     stderrSink.writeln(e.message);
-    _usage(parser, stderrSink);
+    _usage(parser, groups, stderrSink);
     return kCliExitUsage;
   }
   final ArgResults? command = results.command;
   if (results['help'] as bool || command == null) {
-    _usage(parser, results['help'] as bool ? stdoutSink : stderrSink);
+    _usage(parser, groups, results['help'] as bool ? stdoutSink : stderrSink);
     return results['help'] as bool ? kCliExitOk : kCliExitUsage;
   }
   final int? timeoutSeconds = int.tryParse(results['timeout'] as String);
@@ -135,6 +181,8 @@ Future<int> runFushiCli(
     starter: starter,
     pollInterval: pollInterval,
     stateDir: resolveCtlStateDir(environment: env, operatingSystem: os),
+    groups: groups,
+    parser: parser,
   );
   try {
     return await cli.run(command);
@@ -163,7 +211,12 @@ class _Cli {
     required this.starter,
     required this.pollInterval,
     required this.stateDir,
+    required this.groups,
+    required this.parser,
   });
+
+  final List<CtlCommandGroup> groups;
+  final ArgParser parser;
 
   final bool json;
   final StringSink out;
@@ -201,6 +254,9 @@ class _Cli {
         case 'quit':
           return await _quit();
       }
+      for (final CtlCommandGroup group in groups) {
+        if (group.name == command.name) return await _runGroup(group, command);
+      }
       throw _CliFailure(kCliExitUsage, '未知命令：${command.name}');
     } on _CliFailure catch (failure) {
       _fail(failure.message, failure.exitCode);
@@ -208,13 +264,50 @@ class _Cli {
     } on CtlException catch (error) {
       final int code = switch (error.code) {
         kCtlErrorUnauthorized => kCliExitNoPerm,
-        kCtlErrorNotReady => kCliExitTempFail,
+        kCtlErrorNotReady || 'conflict' => kCliExitTempFail,
         kCtlErrorUnreachable => kCliExitUnavailable,
         _ => kCliExitFailed,
       };
       _fail(_describe(error), code);
       return code;
     }
+  }
+
+  Future<int> _runGroup(CtlCommandGroup group, ArgResults groupArgs) async {
+    final ArgResults? sub = groupArgs.command;
+    if (sub == null) {
+      _groupUsage(group, groupArgs['help'] as bool ? out : err);
+      return groupArgs['help'] as bool ? kCliExitOk : kCliExitUsage;
+    }
+    final CtlCommandSpec spec = group.find(sub.name!)!;
+    final ArgParser commandParser =
+        parser.commands[group.name]!.commands[spec.name]!;
+    if (sub['help'] as bool) {
+      _commandUsage(group, spec, commandParser, out);
+      return kCliExitOk;
+    }
+    final CtlRequestSpec request;
+    try {
+      request = spec.build(CtlCommandContext(sub));
+    } on CtlUsageError catch (error) {
+      err.writeln(error.message);
+      _commandUsage(group, spec, commandParser, err);
+      return kCliExitUsage;
+    }
+    await _ensureReady();
+    final Object? data = await _client!.call(
+      request.method,
+      request.path,
+      query: request.query,
+      body: request.body,
+    );
+    if (json) {
+      out.writeln(jsonEncode(data));
+    } else {
+      out.writeln((spec.render ?? renderCtlJson)(data));
+    }
+    if (data is Map && data['ok'] == false) return kCliExitFailed;
+    return kCliExitOk;
   }
 
   Future<int> _status() async {
@@ -233,7 +326,7 @@ class _Cli {
   Future<int> _open(List<String> rest) async {
     if (rest.length != 1)
       throw const _CliFailure(kCliExitUsage, '用法：fushi_cli open <路径|URL>');
-    final String target = _absoluteIfLocalFile(rest.single);
+    final String target = ctlAbsolutePath(rest.single);
     await _ensureReady();
     final CtlOpenKind? kind = await _client!.open(target);
     _emit(<String, Object?>{
@@ -267,18 +360,6 @@ class _Cli {
     _emit(<String, Object?>{'ok': true, 'pid': status.pid}, '已请求 Fushi 退出');
     return kCliExitOk;
   }
-
-  /// 本机文件参数在 CLI 这一侧转成绝对路径：app 进程的工作目录与 shell 不同。
-  String _absoluteIfLocalFile(String raw) {
-    if (Uri.tryParse(raw)?.hasScheme == true &&
-        !_looksLikeWindowsDrivePath(raw)) {
-      return raw;
-    }
-    return p.normalize(p.absolute(raw));
-  }
-
-  static bool _looksLikeWindowsDrivePath(String raw) =>
-      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(raw);
 
   String _requireStateDir() {
     final String? dir = stateDir;
@@ -388,7 +469,11 @@ class _Cli {
   }
 
   static String _describe(CtlException error) => switch (error.code) {
-    kCtlErrorRejected => 'Fushi 拒绝了这个目标：${error.message ?? '不支持的类型'}',
+    'not_found' ||
+    'bad_request' ||
+    'conflict' ||
+    'unsupported' => error.message ?? error.code,
+    kCtlErrorRejected => 'Fushi 拒绝：${error.message ?? '不支持的目标'}',
     kCtlErrorUnauthorized => '控制通道鉴权失败（token 不匹配）',
     kCtlErrorUnreachable => 'Fushi 已断开连接',
     _ => '请求失败：$error',
