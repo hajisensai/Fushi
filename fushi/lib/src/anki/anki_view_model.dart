@@ -13,6 +13,8 @@ import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart'
+    show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -393,6 +395,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 视频适配同时修改目标模板与字段映射，两者必须属于同一后端。
   AnkiVideoTemplateService get videoTemplateService =>
       AnkiVideoTemplateService(_repository);
+
+  /// 当前笔记类型能否直接播放同步视频片段；与制卡降级同一判据（null = 无法判定）。
+  Future<bool?> rendersSynchronizedClip() =>
+      probeSynchronizedClipSupport(_repository);
 
   Future<void> setLapisFontScalePercent(int percent) async {
     final updated = await _repository

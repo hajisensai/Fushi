@@ -6267,5 +6267,10 @@
   "anki_video_template_preview_hint": "Static sample of the first card back. Scripts, media and collection resources are not loaded; Kiku and other scripted layouts may be incomplete. This does not verify playback. Test a real card before relying on it.",
   "anki_video_template_autoplay": "Autoplay embedded WebM (MP4 follows Anki playback settings)",
   "anki_video_template_audio_required": "Use exactly one sentence audio mapping in another field, with its token appearing only once.",
-  "anki_video_template_restore_hint": "Restoring disables this player. Existing adapted WebM cards will temporarily lose video display and playback, but their media is kept. Enable adaptation again to restore playback."
+  "anki_video_template_restore_hint": "Restoring disables this player. Existing adapted WebM cards will temporarily lose video display and playback, but their media is kept. Enable adaptation again to restore playback.",
+  "anki_video_template_needed_hint": "This note type isn't adapted for video; GIF + audio will be used instead. Tap to adapt.",
+  "anki_video_template_fallback_title": "Note type not adapted for video",
+  "anki_video_template_fallback_body": "The note type $noteType can't play synchronized video clips, so this card used GIF + audio instead. Adapt the template to create video cards.",
+  "anki_video_template_fallback_dismiss": "Got it",
+  "anki_video_template_fallback_adapt": "Adapt"
 }
