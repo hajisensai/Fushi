@@ -97,7 +97,43 @@ class AdminClient {
   ///
   /// [path] 是 `/api/admin/...` 形式的绝对路径；路径里的 id 由调用方用
   /// [adminPathSegment] 编码。非 2xx 抛 [AdminApiException]。
-  Future<Object?> send(String method, String path, {Object? body, Map<String, String>? query}) async {
+  Future<Object?> send(String method, String path, {Object? body, Map<String, String>? query}) => _send(
+    method,
+    path,
+    query: query,
+    write: (HttpClientRequest request) async {
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+      }
+    },
+  );
+
+  /// 发一段原始字节（分块上传用）：[headers] 原样带上，[bytes] 作请求体。
+  Future<Object?> sendBytes(
+    String method,
+    String path, {
+    required List<int> bytes,
+    Map<String, String>? query,
+    Map<String, String> headers = const <String, String>{},
+  }) => _send(
+    method,
+    path,
+    query: query,
+    write: (HttpClientRequest request) async {
+      headers.forEach(request.headers.set);
+      request.headers.contentType = ContentType.binary;
+      request.contentLength = bytes.length;
+      request.add(bytes);
+    },
+  );
+
+  Future<Object?> _send(
+    String method,
+    String path, {
+    required Future<void> Function(HttpClientRequest request) write,
+    Map<String, String>? query,
+  }) async {
     final Uri uri = baseUri.replace(
       path: _joinPath(baseUri.path, path),
       queryParameters: query == null || query.isEmpty ? null : query,
@@ -108,10 +144,7 @@ class AdminClient {
       final HttpClientRequest request = await _http.openUrl(method, uri).timeout(timeout);
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (body != null) {
-        request.headers.contentType = ContentType.json;
-        request.write(jsonEncode(body));
-      }
+      await write(request);
       response = await request.close().timeout(timeout);
       text = await response.transform(utf8.decoder).join().timeout(timeout);
     } on TimeoutException {

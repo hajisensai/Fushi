@@ -338,9 +338,147 @@ void main() {
     expect(Directory('${dir.path}/data').existsSync(), isFalse);
   });
 
+  group('upload', () {
+    late _FakeUploadServer up;
+    late AdminClient upClient;
+    late Directory tmp;
+
+    setUp(() async {
+      up = await _FakeUploadServer.start();
+      upClient = AdminClient(baseUri: up.uri, token: 't');
+      tmp = await Directory.systemTemp.createTemp('fushi_ctl_up_');
+    });
+
+    tearDown(() async {
+      upClient.close();
+      await up.close();
+      await tmp.delete(recursive: true);
+    });
+
+    Future<int> upload(List<String> args) =>
+        runCtlAction(upClient, buildCtlParser().parse(args), out: out, err: err, uploadChunkBytes: 4);
+
+    test('分块上传，字节与 Content-Range 正确', () async {
+      final File f = File('${tmp.path}/ep01.mkv')..writeAsBytesSync(List<int>.generate(10, (int i) => i));
+      expect(await upload(<String>['upload', f.path, '--lib', 'v', '--path', '/Season1/']), 0, reason: '$err');
+      expect(up.stored['v:Season1/ep01.mkv'], List<int>.generate(10, (int i) => i));
+      expect(up.ranges, <String>['bytes 0-3/10', 'bytes 4-7/10', 'bytes 8-9/10']);
+    });
+
+    test('断点续传：从服务端已收字节数接着传', () async {
+      final File f = File('${tmp.path}/a.bin')..writeAsBytesSync(List<int>.generate(10, (int i) => i));
+      up.stored['v:a.bin'] = <int>[0, 1, 2, 3, 4, 5];
+      expect(await upload(<String>['upload', f.path, '--lib', 'v']), 0, reason: '$err');
+      expect(up.ranges, <String>['bytes 6-9/10']);
+      expect(up.stored['v:a.bin'], List<int>.generate(10, (int i) => i));
+    });
+
+    test('空文件发 0-0/0；已完整的文件跳过', () async {
+      final File empty = File('${tmp.path}/empty.txt')..writeAsBytesSync(<int>[]);
+      final File full = File('${tmp.path}/full.bin')..writeAsBytesSync(<int>[1, 2]);
+      up.stored['v:full.bin'] = <int>[1, 2];
+      expect(await upload(<String>['upload', empty.path, full.path, '--lib', 'v']), 0, reason: '$err');
+      expect(up.ranges, <String>['bytes 0-0/0']);
+    });
+
+    test('缺 --lib = 64，文件不存在 = 66，都不发请求', () async {
+      expect(await upload(<String>['upload', '${tmp.path}/x']), 64);
+      expect(await upload(<String>['upload', '${tmp.path}/missing', '--lib', 'v']), 66);
+      expect(up.ranges, isEmpty);
+    });
+  });
+
+  group('logs --follow', () {
+    test('newLogLines 只取窗口滑动后的新行', () {
+      expect(newLogLines(<String>[], <String>['a', 'b']), <String>['a', 'b']);
+      expect(newLogLines(<String>['a', 'b'], <String>['a', 'b', 'c']), <String>['c']);
+      expect(newLogLines(<String>['a', 'b', 'c'], <String>['b', 'c', 'd', 'e']), <String>['d', 'e']);
+      expect(newLogLines(<String>['a', 'b'], <String>['a', 'b']), isEmpty);
+      expect(newLogLines(<String>['a'], <String>['x', 'y']), <String>['x', 'y']);
+    });
+
+    test('轮询时不重复打印旧行', () async {
+      final List<Object?> bodies = <Object?>[
+        <String, Object?>{
+          'lines': <String>['l1', 'l2'],
+        },
+        <String, Object?>{
+          'lines': <String>['l1', 'l2', 'l3'],
+        },
+        <String, Object?>{
+          'lines': <String>['l2', 'l3', 'l4'],
+        },
+      ];
+      int polls = 0;
+      admin.nextBody = bodies[0];
+      final int code = await runCtlAction(
+        client,
+        buildCtlParser().parse(<String>['logs', '-f']),
+        out: out,
+        err: err,
+        followInterval: Duration.zero,
+        keepFollowing: () {
+          polls++;
+          if (polls < bodies.length) admin.nextBody = bodies[polls];
+          return polls < bodies.length;
+        },
+      );
+      expect(code, 0);
+      expect(out.toString().trim().split('\n'), <String>['l1', 'l2', 'l3', 'l4']);
+    });
+  });
+
   test('ctl 参数表能独立解析（cli.dart 复用同一份）', () {
     final ArgResults r = buildCtlParser().parse(<String>['downloads', 'add', 'm', '--title', 't']);
     expect(r.rest, <String>['downloads', 'add', 'm']);
     expect(r['title'], 't');
   });
+}
+
+/// 按 README「上传协议」实现的最小假上传端：追加到内存，校验 Content-Range 起点。
+class _FakeUploadServer {
+  _FakeUploadServer._(this._server);
+
+  static Future<_FakeUploadServer> start() async {
+    final _FakeUploadServer s = _FakeUploadServer._(await HttpServer.bind(InternetAddress.loopbackIPv4, 0));
+    s._server.listen(s._handle);
+    return s;
+  }
+
+  final HttpServer _server;
+  final Map<String, List<int>> stored = <String, List<int>>{};
+  final List<String> ranges = <String>[];
+
+  Uri get uri => Uri.parse('http://127.0.0.1:${_server.port}');
+
+  Future<void> _handle(HttpRequest request) async {
+    final String key = '${request.uri.queryParameters['library']}:${request.uri.queryParameters['path']}';
+    final List<int> have = stored.putIfAbsent(key, () => <int>[]);
+    Map<String, Object?> body;
+    int status = 200;
+    if (request.method == 'GET') {
+      body = <String, Object?>{'received': have.length};
+    } else {
+      final String range = request.headers.value('content-range') ?? '';
+      ranges.add(range);
+      final RegExpMatch m = RegExp(r'bytes (\d+)-(\d+)/(\d+)').firstMatch(range)!;
+      final int start = int.parse(m.group(1)!);
+      final int total = int.parse(m.group(3)!);
+      final List<int> chunk = <int>[for (final List<int> c in await request.toList()) ...c];
+      if (start != have.length) {
+        status = 409;
+        body = <String, Object?>{'error': 'offset mismatch'};
+      } else {
+        have.addAll(chunk);
+        body = <String, Object?>{'received': have.length, 'complete': have.length >= total};
+      }
+    }
+    request.response
+      ..statusCode = status
+      ..headers.contentType = ContentType.json
+      ..write(jsonEncode(body));
+    await request.response.close();
+  }
+
+  Future<void> close() => _server.close(force: true);
 }

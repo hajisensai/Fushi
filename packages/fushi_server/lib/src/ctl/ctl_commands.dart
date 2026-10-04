@@ -54,7 +54,10 @@ ArgParser buildCtlParser() => ArgParser()
   ..addOption('user', help: 'anki login：用户名')
   ..addOption('endpoint', help: 'anki login：自建同步服务器地址（缺省 AnkiWeb）')
   ..addFlag('accept-ankiweb', negatable: false, help: 'anki login：确认使用 AnkiWeb 的条款风险')
-  ..addFlag('discard-unsynced', negatable: false, help: 'anki logout：丢弃未同步的卡片');
+  ..addFlag('discard-unsynced', negatable: false, help: 'anki logout：丢弃未同步的卡片')
+  ..addOption('lib', help: 'upload：目标库根 id')
+  ..addOption('path', help: 'upload：库根下的相对目录（缺省放库根）')
+  ..addFlag('follow', abbr: 'f', negatable: false, help: 'logs：持续输出新日志（Ctrl-C 退出）');
 
 /// 短别名 → 规范动作名。
 const Map<String, String> _aliases = <String, String>{
@@ -72,7 +75,7 @@ const String kCtlUsage = '''
 fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--json]
 
   status                                   运行状态
-  logs                                     最近日志
+  logs [-f|--follow]                       最近日志（-f 持续跟随）
   pairing [ls] | revoke <peerId>           已配对设备 / 待确认 PIN
   libraries [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
@@ -87,6 +90,7 @@ fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--jso
        logout [--discard-unsynced]
   profiles [ls] | share|rm <id>
   p2p                                      P2P 隧道状态
+  upload <文件…> --lib <id> [--path <目录>] 分块断点续传到库根（传完记得 scan）
   raw <METHOD> </api/admin/...> ['<json>'] 直接调任意 admin 接口
 
   别名：pair=pairing lib=libraries dl=downloads sub=subscriptions
@@ -147,11 +151,21 @@ Future<int> runCtlAction(
   required StringSink out,
   required StringSink err,
   String? Function(String envName)? readSecret,
+  int uploadChunkBytes = kCtlUploadChunkBytes,
+  Duration followInterval = const Duration(seconds: 2),
+  bool Function()? keepFollowing,
 }) async {
   final List<String> rest = command.rest;
   if (rest.isEmpty) {
     err.writeln(kCtlUsage);
     return 64;
+  }
+  // 多请求的动作单独走，不进「一个动作 = 一个请求」的表。
+  if (rest.first == 'upload') {
+    return _upload(client, command, out: out, err: err, chunkBytes: uploadChunkBytes);
+  }
+  if (rest.first == 'logs' && command['follow'] as bool) {
+    return _followLogs(client, out: out, err: err, interval: followInterval, keepGoing: keepFollowing ?? () => true);
   }
   final _CtlRequest? request = _parseAction(rest, command, err, readSecret ?? _readSecretDefault);
   if (request == null) return 64;
@@ -161,10 +175,7 @@ Future<int> runCtlAction(
   } on AdminApiException catch (ex) {
     err.writeln('${request.method} ${request.path} 失败: $ex');
     if (command['json'] as bool && ex.body != null) out.writeln(_pretty(ex.body));
-    if (ex.status == 0) return 69;
-    if (ex.status == 401) return 77;
-    if (ex.status == 409) return 75;
-    return 1;
+    return _exitCodeFor(ex);
   }
   if (command['json'] as bool) {
     out.writeln(_pretty(response));
@@ -173,6 +184,140 @@ Future<int> runCtlAction(
   }
   if (response is Map && response['ok'] == false) return 1;
   return 0;
+}
+
+int _exitCodeFor(AdminApiException ex) => switch (ex.status) {
+  0 => 69,
+  401 => 77,
+  409 => 75,
+  _ => 1,
+};
+
+/// 与 WebUI 同一块大小（web_ui.dart 的 `CHUNK`）。
+const int kCtlUploadChunkBytes = 8 * 1024 * 1024;
+
+/// `ctl upload`：按 README「上传协议」分块 PUT，先 GET 已收字节数实现断点续传。
+Future<int> _upload(
+  AdminClient client,
+  ArgResults command, {
+  required StringSink out,
+  required StringSink err,
+  required int chunkBytes,
+}) async {
+  final List<String> files = command.rest.sublist(1);
+  final String? library = command['lib'] as String?;
+  if (files.isEmpty || library == null || library.trim().isEmpty) {
+    err.writeln('用法: fushi_server ctl upload <文件…> --lib <库根 id> [--path <目录>]');
+    return 64;
+  }
+  final String dir = ((command['path'] as String?) ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
+  for (final String local in files) {
+    if (!File(local).existsSync()) {
+      err.writeln('找不到文件: $local');
+      return 66;
+    }
+  }
+  final List<Map<String, Object?>> results = <Map<String, Object?>>[];
+  for (final String local in files) {
+    final File file = File(local);
+    final String name = file.uri.pathSegments.last;
+    final String rel = dir.isEmpty ? name : '$dir/$name';
+    final Map<String, String> query = <String, String>{'library': library.trim(), 'path': rel};
+    try {
+      final int size = await file.length();
+      final Object? status = await client.get('$_api/upload', query: query);
+      int offset = status is Map && status['received'] is int ? status['received'] as int : 0;
+      if (size == 0) {
+        await client.sendBytes(
+          'PUT',
+          '$_api/upload',
+          query: query,
+          bytes: const <int>[],
+          headers: const <String, String>{'Content-Range': 'bytes 0-0/0'},
+        );
+      } else if (offset >= size) {
+        err.writeln('$rel: 服务端已有完整文件，跳过');
+      } else {
+        final RandomAccessFile raf = await file.open();
+        try {
+          while (offset < size) {
+            final int end = offset + chunkBytes < size ? offset + chunkBytes : size;
+            await raf.setPosition(offset);
+            final List<int> chunk = await raf.read(end - offset);
+            final Object? r = await client.sendBytes(
+              'PUT',
+              '$_api/upload',
+              query: query,
+              bytes: chunk,
+              headers: <String, String>{'Content-Range': 'bytes $offset-${end - 1}/$size'},
+            );
+            final Object? received = r is Map ? r['received'] : null;
+            if (received is! int || received <= offset) {
+              throw AdminApiException(1, '服务端没有推进已收字节数（$received），停止以免死循环');
+            }
+            offset = received;
+            err.write('\r$rel  ${(offset * 100 / size).toStringAsFixed(1)}%   ');
+            if (r is Map && r['complete'] == true) break;
+          }
+          err.writeln();
+        } finally {
+          await raf.close();
+        }
+      }
+      results.add(<String, Object?>{'file': local, 'path': rel, 'bytes': size});
+      if (!(command['json'] as bool)) out.writeln('已上传 $local → $library:$rel');
+    } on AdminApiException catch (ex) {
+      err.writeln('\n$rel 上传失败: $ex');
+      return _exitCodeFor(ex);
+    }
+  }
+  if (command['json'] as bool) out.writeln(_pretty(<String, Object?>{'uploaded': results}));
+  return 0;
+}
+
+/// `ctl logs -f`：轮询 `/logs`，只打印新出现的行。
+Future<int> _followLogs(
+  AdminClient client, {
+  required StringSink out,
+  required StringSink err,
+  required Duration interval,
+  required bool Function() keepGoing,
+}) async {
+  List<String> previous = const <String>[];
+  while (true) {
+    final Object? response;
+    try {
+      response = await client.get('$_api/logs');
+    } on AdminApiException catch (ex) {
+      err.writeln('GET $_api/logs 失败: $ex');
+      return _exitCodeFor(ex);
+    }
+    final Object? raw = response is Map ? response['lines'] : null;
+    final List<String> current = raw is List ? raw.map((Object? l) => '$l').toList() : const <String>[];
+    for (final String line in newLogLines(previous, current)) {
+      out.writeln(line);
+    }
+    previous = current;
+    if (!keepGoing()) return 0;
+    await Future<void>.delayed(interval);
+  }
+}
+
+/// 服务端日志是滑动窗口（最近 N 行）：找 [previous] 的最长后缀与 [current] 的前缀重合，
+/// 重合之后的就是新行。没有重合（两次轮询之间滚过了整个窗口）就全部算新。
+List<String> newLogLines(List<String> previous, List<String> current) {
+  final int maxOverlap = previous.length < current.length ? previous.length : current.length;
+  for (int k = maxOverlap; k > 0; k--) {
+    bool same = true;
+    for (int i = 0; i < k; i++) {
+      if (previous[previous.length - k + i] != current[i]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return current.sublist(k);
+  }
+  return current;
 }
 
 typedef _Render = void Function(Object? response, StringSink out);
