@@ -1842,10 +1842,6 @@ HWND ResolveOverlayClickShieldGame() {
                   : fushi::game_client_extent::FindProcessClientWindow(pid);
 }
 
-// app.fushi.reader/system_ocr 的回话计时器（工作线程识别完，平台线程回话）。
-constexpr UINT_PTR kSystemOcrReplyTimerId = 0x46534F43;  // 'FSOC'
-constexpr UINT kSystemOcrReplyTickMs = 16;
-
 // Dart 的数值可能是 double / int32 / int64（`<double>[...]` 编码成 double，整数
 // 列表编码成 int）：三种都收。
 std::optional<double> NumberFromValue(const flutter::EncodableValue& value) {
@@ -1880,30 +1876,6 @@ const flutter::EncodableValue* FindArg(const flutter::EncodableMap* args,
   if (args == nullptr) return nullptr;
   const auto it = args->find(flutter::EncodableValue(key));
   return it == args->end() ? nullptr : &it->second;
-}
-
-flutter::EncodableValue SystemOcrReplyMap(const fushi::SystemOcrResult& ocr) {
-  flutter::EncodableList lines;
-  lines.reserve(ocr.lines.size());
-  for (const fushi::SystemOcrLine& line : ocr.lines) {
-    // 不带 `vertical`：由 Dart 的 inferSystemOcrVertical 按包围盒推断。
-    lines.push_back(flutter::EncodableValue(flutter::EncodableMap{
-        {flutter::EncodableValue("text"), flutter::EncodableValue(line.text)},
-        {flutter::EncodableValue("left"), flutter::EncodableValue(line.left)},
-        {flutter::EncodableValue("top"), flutter::EncodableValue(line.top)},
-        {flutter::EncodableValue("right"), flutter::EncodableValue(line.right)},
-        {flutter::EncodableValue("bottom"),
-         flutter::EncodableValue(line.bottom)},
-    }));
-  }
-  return flutter::EncodableValue(flutter::EncodableMap{
-      {flutter::EncodableValue("width"),
-       flutter::EncodableValue(static_cast<int32_t>(ocr.width))},
-      {flutter::EncodableValue("height"),
-       flutter::EncodableValue(static_cast<int32_t>(ocr.height))},
-      {flutter::EncodableValue("lines"),
-       flutter::EncodableValue(std::move(lines))},
-  });
 }
 
 }  // namespace
@@ -2378,72 +2350,11 @@ void FlutterWindow::StopScreenOcr() {
   }
 }
 
-// app.fushi.reader/system_ocr（Windows.Media.Ocr，契约见 system_ocr_channel.dart）。
-// isAvailable 只枚举识别语言，平台线程同步答；recognize 在工作线程识别，结果经
-// WorkerReplyQueue 由计时器投回平台线程回话。`tiles` 忽略（整页识别、行不带下标，
-// Dart 的跨片合并对这种结果是恒等的）；modelStatus 等 Android 专有方法回
-// NotImplemented（Dart 视为 MissingPluginException = 系统组件、恒就绪）。
+// app.fushi.reader/system_ocr：通道、工作线程与回话队列整块在
+// system_ocr_channel_host.cpp（本文件是 galgame 查词路由宿主，不碰识别实现）。
 void FlutterWindow::RegisterSystemOcrChannel() {
-  system_ocr_replies_ =
-      std::make_unique<fushi::WorkerReplyQueue<fushi::SystemOcrResult>>([] {
-        fushi::SystemOcrResult cancelled;
-        cancelled.error_code = "HOST_CLOSED";
-        cancelled.error_message = "system OCR host closed";
-        return cancelled;
-      });
-  system_ocr_channel_ =
-      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(),
-          "app.fushi.reader/system_ocr",
-          &flutter::StandardMethodCodec::GetInstance());
-  system_ocr_channel_->SetMethodCallHandler(
-      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
-             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
-                 result) {
-        const std::string& method = call.method_name();
-        if (method == "isAvailable") {
-          result->Success(
-              flutter::EncodableValue(fushi::SystemOcrIsAvailable()));
-          return;
-        }
-        if (method != "recognize") {
-          result->NotImplemented();
-          return;
-        }
-        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
-        const auto* bytes_value = FindArg(args, "bytes");
-        const auto* bytes =
-            bytes_value == nullptr
-                ? nullptr
-                : std::get_if<std::vector<uint8_t>>(bytes_value);
-        if (bytes == nullptr || bytes->empty()) {
-          result->Error("INVALID_IMAGE", "missing image bytes");
-          return;
-        }
-        const std::string language = StringFromValue(args, "language", "ja");
-        if (system_ocr_replies_->empty() &&
-            SetTimer(GetHandle(), kSystemOcrReplyTimerId, kSystemOcrReplyTickMs,
-                     nullptr) == 0) {
-          result->Error("RECOGNIZE_FAILED",
-                        "could not schedule OCR completion");
-          return;
-        }
-        auto reply = std::shared_ptr<
-            flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
-        auto completion = system_ocr_replies_->Enqueue(
-            [reply](fushi::SystemOcrResult ocr) {
-              if (!ocr.error_code.empty()) {
-                reply->Error(ocr.error_code, ocr.error_message);
-                return;
-              }
-              reply->Success(SystemOcrReplyMap(ocr));
-            });
-        if (completion) {
-          std::thread([image = *bytes, language, completion]() {
-            completion->Publish(fushi::RecognizeImageText(image, language));
-          }).detach();
-        }
-      });
+  system_ocr_host_ = std::make_unique<fushi::SystemOcrChannelHost>(
+      flutter_controller_->engine()->messenger(), GetHandle());
 }
 
 void FlutterWindow::RegisterImeGuardChannel() {
@@ -4622,16 +4533,11 @@ void FlutterWindow::OnDestroy() {
     window_capture_replies_->Close();
     window_capture_replies_.reset();
   }
-  if (system_ocr_channel_) {
-    system_ocr_channel_->SetMethodCallHandler(nullptr);
-  }
-  KillTimer(GetHandle(), kSystemOcrReplyTimerId);
-  if (system_ocr_replies_) {
+  if (system_ocr_host_) {
     // 未完成的识别回 HOST_CLOSED（messenger 此刻还活着）；之后才完成的结果丢弃。
-    system_ocr_replies_->Close();
-    system_ocr_replies_.reset();
+    system_ocr_host_->Shutdown();
+    system_ocr_host_.reset();
   }
-  system_ocr_channel_.reset();
   // TODO-1066 — 撤销全局侧键的 Raw Input 登记。登记是绑在**本窗口 HWND** 上的
   // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
   // 必须在这里主动摘掉而不是等进程退出兜底。
@@ -4689,13 +4595,8 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  if (message == WM_TIMER && wparam == kSystemOcrReplyTimerId) {
-    if (system_ocr_replies_) {
-      system_ocr_replies_->Drain();
-    }
-    if (!system_ocr_replies_ || system_ocr_replies_->empty()) {
-      KillTimer(hwnd, kSystemOcrReplyTimerId);
-    }
+  if (message == WM_TIMER && system_ocr_host_ &&
+      system_ocr_host_->HandleTimer(wparam)) {
     return 0;
   }
   if (message == WM_TIMER && wparam == kWindowCaptureReplyTimerId) {

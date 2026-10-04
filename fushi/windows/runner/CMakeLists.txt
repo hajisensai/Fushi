@@ -45,6 +45,7 @@ add_executable(${BINARY_NAME} WIN32
   "main.cpp"
   "screen_ocr_overlay.cpp"
   "system_font_list.cpp"
+  "system_ocr_channel_host.cpp"
   "system_ocr_windows.cpp"
   "utils.cpp"
   "win32_window.cpp"

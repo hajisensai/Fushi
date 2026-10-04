@@ -18,10 +18,9 @@
 #include "ime_association_guard.h"
 #include "ime_language_switch.h"
 #include "screen_ocr_overlay.h"
-#include "system_ocr_windows.h"
+#include "system_ocr_channel_host.h"
 #include "win32_window.h"
 #include "window_capture_reply_queue.h"
-#include "worker_reply_queue.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -117,12 +116,9 @@ class FlutterWindow : public Win32Window {
   // 关冻结层（不回调）并恢复球。
   void StopScreenOcr();
 
-  // app.fushi.reader/system_ocr（Windows.Media.Ocr）。识别在工作线程，结果经
-  // system_ocr_replies_ 由计时器在平台线程回话（同 window_capture 的范式）。
-  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
-      system_ocr_channel_;
-  std::unique_ptr<fushi::WorkerReplyQueue<fushi::SystemOcrResult>>
-      system_ocr_replies_;
+  // app.fushi.reader/system_ocr 的宿主（实现与工作线程都在
+  // system_ocr_channel_host.cpp；这里只持有并转发它的计时器消息）。
+  std::unique_ptr<fushi::SystemOcrChannelHost> system_ocr_host_;
   void RegisterSystemOcrChannel();
 
   // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
