@@ -6258,5 +6258,6 @@
   "video_subtitle_graphic_ocr_progress": "正在识别字幕 $done/$total",
   "video_subtitle_graphic_ocr_empty": "这条字幕轨没有识别出文字",
   "ai_video_acquire_franchise_unavailable": "没能取到「$title」的完整系列清单（资料源出错或不可用）。",
-  "ai_video_acquire_ask_franchise_fallback": "没找到符合要求的其它作品。只下载「$title」这一部吗？"
+  "ai_video_acquire_ask_franchise_fallback": "没找到符合要求的其它作品。只下载「$title」这一部吗？",
+  "ai_video_acquire_franchise_progress": "还在查「$name」：目前找到 $series 部剧集、$movies 部剧场版，继续查剩下的…"
 }
