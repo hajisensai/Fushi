@@ -6258,5 +6258,6 @@
   "video_subtitle_graphic_ocr_progress": "正在辨識字幕 $done/$total",
   "video_subtitle_graphic_ocr_empty": "這條字幕軌沒有辨識出文字",
   "ai_video_acquire_franchise_unavailable": "沒能取到「$title」的完整系列清單（資料源出錯或不可用）。",
-  "ai_video_acquire_ask_franchise_fallback": "沒找到符合要求的其它作品。只下載「$title」這一部嗎？"
+  "ai_video_acquire_ask_franchise_fallback": "沒找到符合要求的其它作品。只下載「$title」這一部嗎？",
+  "ai_video_acquire_franchise_progress": "還在查「$name」：目前找到 $series 部劇集、$movies 部劇場版，繼續查剩下的…"
 }

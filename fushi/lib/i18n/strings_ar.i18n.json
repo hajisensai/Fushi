@@ -6258,5 +6258,6 @@
   "video_subtitle_graphic_ocr_progress": "جارٍ التعرّف على الترجمة $done/$total",
   "video_subtitle_graphic_ocr_empty": "لم يُتعرّف على أي نص في مسار الترجمة هذا",
   "ai_video_acquire_franchise_unavailable": "Couldn’t get the full series list for “$title” (the metadata source failed or is unavailable).",
-  "ai_video_acquire_ask_franchise_fallback": "No other matching works were found. Download only “$title”?"
+  "ai_video_acquire_ask_franchise_fallback": "No other matching works were found. Download only “$title”?",
+  "ai_video_acquire_franchise_progress": "Still looking up “$name”: $series TV series and $movies movies found so far…"
 }
