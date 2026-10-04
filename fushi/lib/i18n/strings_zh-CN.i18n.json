@@ -6247,5 +6247,9 @@
   "ocr_system_model_play_services_fix": "修复 Google Play 服务",
   "ocr_system_model_play_services_unavailable": "本机没有可用的 Google Play 服务，无法使用系统 OCR。",
   "manga_ocr_ai_mode_low_confidence_legacy": "启用本选项之前识别的卷没有置信度记录，此档位不会动它们。想让大模型重读这类卷里没把握的字，请用本机模型对该卷重新识别。",
+  "ai_video_acquire_recommend_preference_current": "按你的画质、片源、码率偏好和搜索相关度，排第一的就是当前这个（第 $index 个版本）。",
+  "ai_video_acquire_recommend_preference_switch": "按你的画质、片源、码率偏好和搜索相关度，推荐第 $index 个版本，已切换过去。",
+  "ai_video_acquire_recommend_criteria_current": "按你说的条件，当前这个（第 $index 个版本）最合适。",
+  "ai_video_acquire_recommend_criteria_switch": "按你说的条件，第 $index 个版本最合适，已切换过去。",
   "ai_video_acquire_franchise_truncated": "「$name」系列太大，关联作品只查了一部分，下面的清单可能不全。"
 }

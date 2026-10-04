@@ -391,6 +391,11 @@ enum VideoAcquisitionSayKind {
   /// 没有更多版本了
   noMoreVersions,
 
+  /// 回答「哪个最好 / 你推荐哪个」：推荐的是第 N 个版本（args: index 1 起,
+  /// current = 推荐的就是正在展示的这张, byCriteria = 按用户说出的条件挑的，
+  /// false 时是按资源排序——偏好的画质 / 片源 / 码率，其次搜索相关度——排第一的）
+  recommendation,
+
   /// 已提交（args: mode, count）
   submitted,
 
@@ -519,6 +524,11 @@ enum VideoAcquisitionIntentKind {
 
   /// 算了。
   cancel,
+
+  /// 问「哪个最好 / 你推荐哪个 / 你帮我挑」。用户说了挑选条件（最小、做种最多…）
+  /// 时 `choiceIndex` 指向按该条件挑中的候选选项；没说条件时为 null，由引擎按资源
+  /// 排序给出推荐。
+  recommend,
 
   /// 没听懂。
   unclear,
