@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
+import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_data_routes.dart';
@@ -11,8 +14,25 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart'
+    show SyncAssetChannelScope, SyncChannel;
+import 'package:fushi/src/sync/sync_backend.dart' show SyncBackend;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show
+        BackupImportMode,
+        BackupImportPreset,
+        backupImportCategoriesFor,
+        backupImportPresetCategories,
+        importSelectableCategories;
 import 'package:path/path.dart' as p;
+
+/// 只用来造 [SyncChannel]，任何成员被碰到就是测试假设错了。
+class _NoBackend implements SyncBackend {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('unexpected ${invocation.memberName}');
+}
 
 /// 路由表构造期不读 ref（全部在处理器闭包里才读），给个占位即可。
 class _UnusedRef implements WidgetRef {
@@ -50,6 +70,8 @@ void main() {
         ('POST', '/api/admin/downloads/j1/cancel'),
         ('POST', '/api/admin/downloads/j1/retry'),
         ('DELETE', '/api/admin/downloads/j1'),
+        ('GET', '/api/admin/downloads/direct%3A3'),
+        ('POST', '/api/admin/downloads/direct%3A3/cancel'),
         ('GET', '/api/admin/media-servers'),
         ('GET', '/api/admin/media-servers/jellyfin%3Ahttp%3A%2F%2Fh/items'),
         ('GET', '/api/admin/media-servers/1/search'),
@@ -96,6 +118,251 @@ void main() {
           isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
         ),
       );
+    });
+  });
+
+  group('第二轮：参数先于 app 校验', () {
+    Future<void> expect400(String pattern, Map<String, Object?> body) =>
+        expectLater(
+          routes
+              .firstWhere(
+                (CtlRoute r) => r.pattern == pattern && r.method == 'POST',
+              )
+              .handler(CtlCall(method: 'POST', path: pattern, body: body)),
+          throwsA(
+            isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+          ),
+        );
+
+    test('sync run 未知通道名 400', () async {
+      await expect400('/api/admin/sync/run', <String, Object?>{
+        'channels': <String>['webDav'],
+      });
+    });
+
+    test('backup restore 未知模式 / 非法组合 400', () async {
+      await expect400('/api/admin/backups/restore', <String, Object?>{
+        'path': '/x.zip',
+        'confirm': true,
+        'mode': 'nuke',
+      });
+      await expect400('/api/admin/backups/restore', <String, Object?>{
+        'path': '/x.zip',
+        'confirm': true,
+        'categories': <String>['books'],
+      });
+    });
+  });
+
+  group('sync run 通道', () {
+    test('parseSyncChannelScopes：空 → null（全部通道），逗号分隔，未知 400', () {
+      expect(parseSyncChannelScopes(const <String>[]), isNull);
+      expect(
+        parseSyncChannelScopes(const <String>['cloud, interconnect']),
+        <SyncAssetChannelScope>{
+          SyncAssetChannelScope.cloud,
+          SyncAssetChannelScope.interconnect,
+        },
+      );
+      expect(
+        () => parseSyncChannelScopes(const <String>['webDav']),
+        throwsA(isA<CtlFailure>()),
+      );
+    });
+
+    test('syncChannelToWire 出通道名与后端名，不出后端实例', () {
+      expect(
+        syncChannelToWire(
+          SyncChannel(
+            _NoBackend(),
+            type: SyncBackendType.webDav,
+            isInterconnect: false,
+          ),
+        ),
+        <String, Object?>{'id': 'cloud', 'backend': 'webDav'},
+      );
+      expect(
+        syncChannelToWire(
+          SyncChannel(
+            _NoBackend(),
+            type: SyncBackendType.fushiServer,
+            isInterconnect: true,
+          ),
+        )['id'],
+        'interconnect',
+      );
+    });
+  });
+
+  group('backup restore 预设', () {
+    test('没给模式 → null（走 app 确认框）', () {
+      expect(
+        parseBackupImportPreset(
+          mode: null,
+          categories: const <String>[],
+          importSettings: false,
+        ),
+        isNull,
+      );
+    });
+
+    test('merge / replace 与分类、设置开关', () {
+      final BackupImportPreset merge = parseBackupImportPreset(
+        mode: 'merge',
+        categories: const <String>['books,fonts'],
+        importSettings: false,
+      )!;
+      expect(merge.mode, BackupImportMode.merge);
+      expect(merge.categories, <BackupCategory>{
+        BackupCategory.books,
+        BackupCategory.fonts,
+      });
+      final BackupImportPreset replace = parseBackupImportPreset(
+        mode: 'replace',
+        categories: const <String>[],
+        importSettings: true,
+      )!;
+      expect(replace.mode, BackupImportMode.overwrite);
+      expect(replace.categories, isNull);
+      expect(replace.importSettings, isTrue);
+    });
+
+    test('合并带 --import-settings、挑恒恢复分类都 400', () {
+      expect(
+        () => parseBackupImportPreset(
+          mode: 'merge',
+          categories: const <String>[],
+          importSettings: true,
+        ),
+        throwsA(isA<CtlFailure>()),
+      );
+      final BackupCategory fixed = BackupCategory.values.firstWhere(
+        (BackupCategory c) => !importSelectableCategories.contains(c),
+      );
+      expect(
+        () => parseBackupImportPreset(
+          mode: 'replace',
+          categories: <String>[fixed.name],
+          importSettings: false,
+        ),
+        throwsA(isA<CtlFailure>()),
+      );
+    });
+
+    test('预设分类与确认框同一规则：只保留备份里有的可勾选分类', () {
+      const BackupContentSummary summary = BackupContentSummary(
+        present: <BackupCategory>{BackupCategory.books, BackupCategory.fonts},
+      );
+      // null 预设 = 确认框默认（备份里有的全勾）。
+      expect(
+        backupImportPresetCategories(
+          const BackupImportPreset(mode: BackupImportMode.overwrite),
+          summary,
+        ),
+        backupImportCategoriesFor(BackupImportMode.overwrite, <BackupCategory>{
+          BackupCategory.books,
+          BackupCategory.fonts,
+        }),
+      );
+      // 只勾 books：fonts 被去掉；备份里没有的 games 即便点名也不选。
+      final Set<BackupCategory> picked = backupImportPresetCategories(
+        const BackupImportPreset(
+          mode: BackupImportMode.merge,
+          categories: <BackupCategory>{
+            BackupCategory.books,
+            BackupCategory.games,
+          },
+        ),
+        summary,
+      );
+      expect(picked, contains(BackupCategory.books));
+      expect(picked, isNot(contains(BackupCategory.fonts)));
+      expect(picked, isNot(contains(BackupCategory.games)));
+      for (final BackupCategory c in BackupCategory.values) {
+        if (!importSelectableCategories.contains(c)) {
+          expect(picked, contains(c), reason: '不可勾选的 ${c.name} 恒恢复');
+        }
+      }
+    });
+  });
+
+  group('dl add 直链', () {
+    test('任务 id 前缀与内容类型解析', () {
+      expect(parseDirectDownloadTaskId('direct:12'), 12);
+      expect(parseDirectDownloadTaskId('j1'), isNull);
+      expect(parseDirectDownloadTaskId('direct:x'), isNull);
+      expect(parseDirectDownloadKind('game'), DiscoveryMediaKind.game);
+      expect(() => parseDirectDownloadKind(null), throwsA(isA<CtlFailure>()));
+      expect(
+        () => parseDirectDownloadKind('movie'),
+        throwsA(isA<CtlFailure>()),
+      );
+    });
+
+    test('buildDirectLinkDiscoveryItem：标题取文件名，payload 已物化', () {
+      final DiscoveryResourceItem item = buildDirectLinkDiscoveryItem(
+        url: 'https://h.example/files/%E5%B0%8F%E8%AA%AC.epub?sig=abc',
+        kind: DiscoveryMediaKind.novel,
+      );
+      expect(item.sourceId, kDirectLinkDiscoverySourceId);
+      expect(item.title, '小説.epub');
+      expect(item.payloadKind, DiscoveryPayloadKind.httpFile);
+      expect(
+        directLinkPayloadOf(item)?.url,
+        'https://h.example/files/%E5%B0%8F%E8%AA%AC.epub?sig=abc',
+      );
+      expect(
+        buildDirectLinkDiscoveryItem(
+          url: 'https://h.example/',
+          kind: DiscoveryMediaKind.game,
+          title: ' T ',
+        ).title,
+        'T',
+      );
+      expect(
+        buildDirectLinkDiscoveryItem(
+          url: 'https://h.example/',
+          kind: DiscoveryMediaKind.game,
+        ).title,
+        'h.example',
+      );
+      expect(
+        () => buildDirectLinkDiscoveryItem(
+          url: 'ftp://h/x',
+          kind: DiscoveryMediaKind.game,
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('发现源条目不被当成直链（resolver 照旧问发现源）', () {
+      const DiscoveryResourceItem item = DiscoveryResourceItem(
+        sourceId: 'alist',
+        title: 'x',
+        id: 'x',
+        kind: DiscoveryMediaKind.novel,
+        payloadKind: DiscoveryPayloadKind.httpFile,
+        payload: DiscoveryHttpPayload(url: 'https://h/x'),
+      );
+      expect(directLinkPayloadOf(item), isNull);
+    });
+
+    test('directDownloadTaskToWire 不出完整地址，错误先抹凭据', () {
+      final DiscoveryDownloadTask task = DiscoveryDownloadTask.forTesting(
+        item: buildDirectLinkDiscoveryItem(
+          url: 'https://cdn.example/a.zip?token=s3cr3t',
+          kind: DiscoveryMediaKind.game,
+        ),
+        status: DiscoveryDownloadStatus.failed,
+        receivedBytes: 50,
+        totalBytes: 200,
+      )..error = 'GET https://cdn.example/a.zip?token=s3cr3t 403';
+      final Map<String, Object?> wire = directDownloadTaskToWire(task);
+      expect(wire['jobId'], 'direct:${task.taskId}');
+      expect(wire['host'], 'cdn.example');
+      expect(wire['lifecycle'], 'failed');
+      expect(wire['stageProgress'], 0.25);
+      expect(wire.toString(), isNot(contains('s3cr3t')));
     });
   });
 

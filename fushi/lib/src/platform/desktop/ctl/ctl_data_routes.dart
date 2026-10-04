@@ -6,6 +6,8 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 import 'package:fushi_core/fushi_core.dart'
     show FushiPairedPeerRow, VideoDownloadJobRow;
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart'
     show videoDownloadJobToWire;
@@ -13,6 +15,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -29,13 +32,22 @@ import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart'
     show runManualSyncWithFeedback;
 import 'package:fushi/src/sync/sync_auto_trigger.dart'
-    show ManualSyncOutcome, lastFullSweepOutcome, syncInProgress;
+    show
+        ManualSyncOutcome,
+        SyncAssetChannelScope,
+        SyncChannel,
+        enabledSyncChannelBackends,
+        lastFullSweepOutcome,
+        syncAssetChannelScopeOf,
+        syncInProgress;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
         // 设置页导出的默认分类集是唯一真相源，CLI 复用而不抄一份。
         // ignore: invalid_use_of_visible_for_testing_member
         defaultBackupExportCategories,
+        BackupImportMode,
+        BackupImportPreset,
         runBackupImportFlowForFile,
         runInterconnectLinkPairingFlow;
 
@@ -43,7 +55,8 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 ///
 /// 每条路由只做「门控 + 参数解析 + 调 app 既有入口 + 白名单出参」，业务都在
 /// 原服务里：备份 [BackupService] / [BackupRestoreService]、同步
-/// [runManualSyncWithFeedback]、下载 [AppModel.appDownloadHost] 与下载管线、媒体
+/// [runManualSyncWithFeedback]、下载 [AppModel.appDownloadHost] 与下载管线 / 直链队列
+/// [AppModel.discoveryDownloadQueue]、媒体
 /// 服务器 [MediaServerConfig.buildBrowser]、互联 [FushiSyncServerController]、存储
 /// [StorageUsageService]。
 List<CtlRoute> buildDataCtlRoutes(DesktopCtlContext context) => <CtlRoute>[
@@ -205,24 +218,57 @@ List<CtlRoute> _backupRoutes(DesktopCtlContext context) => <CtlRoute>[
     };
   }),
   // 恢复备份：交给 app 既有的导入编排 [runBackupImportFlowForFile]（校验 → 确认框
-  // 选覆盖 / 合并与分类 → 关库导入 → 自动重启）。CLI 不绕过那个确认框。
+  // 选覆盖 / 合并与分类 → 关库导入 → 自动重启）。
+  //
+  // 没给模式：照旧在 app 里弹确认框，由用户选。给了 mode（CLI `--merge` /
+  // `--replace`）：以 [BackupImportPreset] 跳过确认框——此时的最终确认就是 CLI 的
+  // `--yes` + 这里的 `confirm: true`（与 `dl rm` 等破坏性命令同一套双门），校验 /
+  // 版本检查 / 遮罩 / 重启一步不少。预设时版本检查在这里先做一遍，失败直接回
+  // 终端，而不是只在 app 里弹一条终端看不到的提示。
   CtlRoute.post('/api/admin/backups/restore', (CtlCall call) async {
     _requireConfirm(call, '恢复备份');
     final String path = call.requireString('path');
+    final BackupImportPreset? preset = parseBackupImportPreset(
+      mode: call.optString('mode'),
+      categories: call.stringList('categories'),
+      importSettings: call.optBool('importSettings') ?? false,
+    );
     if (!await File(path).exists()) throw CtlFailure.notFound('文件不存在：$path');
     final AppModel appModel = context.appModel;
     if (appModel.backupExportActive) {
       throw const CtlFailure.conflict('备份导出进行中，先等它结束');
     }
+    if (preset != null) {
+      final BackupMeta? meta = await BackupRestoreService.validateBackup(path);
+      if (meta == null) throw const CtlFailure.rejected('不是有效的 Fushi 备份包');
+      if (meta.schemaVersion > appModel.database.schemaVersion) {
+        throw CtlFailure.rejected(
+          '备份来自更新版本的 Fushi（schema ${meta.schemaVersion}），先升级 app',
+        );
+      }
+    }
     await _uiContext(context);
     _runDetached(
       'backup.restore',
-      () => runBackupImportFlowForFile(appModel: appModel, filePath: path),
+      () => runBackupImportFlowForFile(
+        appModel: appModel,
+        filePath: path,
+        preset: preset,
+      ),
     );
+    if (preset == null) {
+      return <String, Object?>{
+        'ok': true,
+        'path': path,
+        'message': '已在 Fushi 里打开恢复流程，请在确认框里选择覆盖或合并；完成后 app 会自动重启',
+      };
+    }
+    final bool merge = preset.mode == BackupImportMode.merge;
     return <String, Object?>{
       'ok': true,
       'path': path,
-      'message': '已在 Fushi 里打开恢复流程，请在确认框里选择覆盖或合并；完成后 app 会自动重启',
+      'mode': merge ? 'merge' : 'replace',
+      'message': '已开始${merge ? '合并' : '覆盖'}恢复（进度在 Fushi 里显示），完成后 app 会自动重启',
     };
   }),
 ];
@@ -238,6 +284,10 @@ List<CtlRoute> _syncRoutes(DesktopCtlContext context) => <CtlRoute>[
       'interconnectEnabled': await repo.isInterconnectEnabled(),
       'running': syncInProgress.value,
       'lastFullSweep': syncOutcomeToWire(lastFullSweepOutcome.value),
+      // 「立即同步」会跑的通道（与同步编排同一份枚举），`sync run <通道>` 认这些名。
+      'channels': (await enabledSyncChannelBackends(
+        repo,
+      )).map(syncChannelToWire).toList(),
       'backends': <Map<String, Object?>>[
         for (final SyncBackendType type in SyncBackendType.values)
           syncBackendToWire(
@@ -248,18 +298,41 @@ List<CtlRoute> _syncRoutes(DesktopCtlContext context) => <CtlRoute>[
       ],
     };
   }),
-  // 与设置页「立即同步」同一入口：云通道 + 互联通道一起跑，冲突 / 鉴权失效的
-  // 交互与提示都在 app 里出现。
+  // 与设置页「立即同步」同一入口：缺省云通道 + 互联通道一起跑；`channels` 只跑
+  // 指定的通道（[runManualFullSync] 的 onlyChannels）。冲突 / 鉴权失效的交互与
+  // 提示都在 app 里出现。
   CtlRoute.post('/api/admin/sync/run', (CtlCall call) async {
+    final Set<SyncAssetChannelScope>? only = parseSyncChannelScopes(
+      call.stringList('channels'),
+    );
     if (syncInProgress.value) {
       throw const CtlFailure.conflict('已有同步在进行中');
     }
     final AppModel appModel = context.appModel;
+    if (only != null) {
+      // 指定了没启用的通道：说清楚，而不是让它静默以「没配置」收场。
+      final Set<SyncAssetChannelScope> enabled = <SyncAssetChannelScope>{
+        for (final SyncChannel channel in await enabledSyncChannelBackends(
+          SyncRepository(appModel.database),
+        ))
+          syncAssetChannelScopeOf(channel),
+      };
+      final List<String> missing = <String>[
+        for (final SyncAssetChannelScope s in only)
+          if (!enabled.contains(s)) s.name,
+      ];
+      if (missing.isNotEmpty) {
+        throw CtlFailure.rejected(
+          '这些通道没有启用：${missing.join(', ')}（sync ls 查看可用通道）',
+        );
+      }
+    }
     final BuildContext ui = await _uiContext(context);
     if (!ui.mounted) throw const CtlFailure.conflict('主界面还没就绪，稍后再试');
     final Future<ManualSyncOutcome> run = runManualSyncWithFeedback(
       context: ui,
       appModel: appModel,
+      onlyChannels: only,
     );
     if (call.optBool('wait') != true) {
       _runDetached('sync.run', () => run);
@@ -294,6 +367,19 @@ Future<VideoDownloadJobRow> _requireJob(AppModel appModel, String id) async {
   return job;
 }
 
+/// 下载中心的直链队列（与下载页「直链下载」分区同一个实例，`AppModel` 懒建、
+/// app 生命周期常驻）。库还没开时没有队列可看。
+DiscoveryDownloadQueue? _directQueue(AppModel appModel) =>
+    appModel.isDatabaseReady ? appModel.discoveryDownloadQueue : null;
+
+DiscoveryDownloadTask _requireDirectTask(AppModel appModel, int taskId) {
+  for (final DiscoveryDownloadTask task
+      in _directQueue(appModel)?.tasks ?? const <DiscoveryDownloadTask>[]) {
+    if (task.taskId == taskId) return task;
+  }
+  throw CtlFailure.notFound('没有这个直链任务：$kCtlDirectDownloadIdPrefix$taskId');
+}
+
 VideoDownloadPipelineService _requirePipeline(AppModel appModel) =>
     appModel.videoDownloadPipelineService ??
     (throw const CtlFailure.rejected('本机下载后端没有配好（浏览 › 下载 里配置）'));
@@ -318,17 +404,24 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     _requireDownloads(appModel);
     return <String, Object?>{
       ...await appModel.appDownloadHost.capability(),
-      'jobs': (await appModel.appDownloadHost.listJobs())
-          .map(videoDownloadJobToWire)
-          .toList(),
+      'jobs': <Map<String, Object?>>[
+        ...(await appModel.appDownloadHost.listJobs()).map(
+          videoDownloadJobToWire,
+        ),
+        // 直链队列（下载页「直链下载」分区）的任务并进同一张表，id 带 `direct:` 前缀。
+        ...?_directQueue(appModel)?.tasks.map(directDownloadTaskToWire),
+      ],
     };
   }),
   CtlRoute.get('/api/admin/downloads/:id', (CtlCall call) async {
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
-    return videoDownloadJobToWire(
-      await _requireJob(appModel, call.params['id']!),
-    );
+    final String id = call.params['id']!;
+    final int? directId = parseDirectDownloadTaskId(id);
+    if (directId != null) {
+      return directDownloadTaskToWire(_requireDirectTask(appModel, directId));
+    }
+    return videoDownloadJobToWire(await _requireJob(appModel, id));
   }),
   // 磁链：走 [AppDownloadHost.addMagnet]（与 admin_api / 互联代下载同一入口，落到
   // 默认受管视频来源）。.torrent：打开「添加任务」对话框预填该种子，由用户确认
@@ -371,15 +464,61 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
           'message': '已在 Fushi 里打开「添加任务」对话框，确认后入队',
         };
       case CtlDownloadTargetKind.url:
-        throw const CtlFailure.unsupported(
-          '下载中心只收磁链与 .torrent；http 直链请先下载种子文件再添加',
+        // http(s) 直链：进下载中心既有的直链队列（发现页 http 资源同一条
+        // [DiscoveryDownloadQueue]：续传、自动重试、下完按内容类型自动入库）。
+        if (Uri.tryParse(target)?.path.toLowerCase().endsWith('.torrent') ??
+            false) {
+          throw const CtlFailure.unsupported(
+            '种子文件的 http 地址不能当直链下（会把 .torrent 当内容入库）；'
+            '先下载种子文件再 dl add 本地 .torrent',
+          );
+        }
+        final DiscoveryMediaKind kind = parseDirectDownloadKind(
+          call.optString('mediaKind'),
         );
+        final DiscoveryResourceItem item;
+        try {
+          item = buildDirectLinkDiscoveryItem(
+            url: target,
+            kind: kind,
+            title: call.optString('title'),
+          );
+        } on FormatException catch (e) {
+          throw CtlFailure.badRequest(e.message);
+        }
+        final DiscoveryDownloadQueue queue =
+            _directQueue(appModel) ??
+            (throw const CtlFailure.conflict('数据库还没就绪，稍后再试'));
+        final bool added = queue.enqueue(
+          item,
+          destinationDir: appModel.discoveryDownloadDirFor(kind),
+        );
+        final DiscoveryDownloadTask? task = queue.pendingTask(item);
+        final String? jobId = task == null
+            ? null
+            : '$kCtlDirectDownloadIdPrefix${task.taskId}';
+        if (!added) {
+          throw CtlFailure.conflict(
+            '同一地址已在下载队列中${jobId == null ? '' : '：$jobId'}',
+          );
+        }
+        return <String, Object?>{
+          'jobId': jobId,
+          'title': item.title,
+          'kind': kind.name,
+        };
     }
   }),
   CtlRoute.post('/api/admin/downloads/:id/cancel', (CtlCall call) async {
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
     final String id = call.params['id']!;
+    final int? directId = parseDirectDownloadTaskId(id);
+    if (directId != null) {
+      // 与下载页直链行「取消」同一入口：`.part` 保留，重试即续传。
+      _directQueue(appModel)!.cancel(_requireDirectTask(appModel, directId));
+      return null;
+    }
     await _requireJob(appModel, id);
     await _mapPipelineErrors(() => _requirePipeline(appModel).cancelJob(id));
     return null;
@@ -388,6 +527,16 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
     final String id = call.params['id']!;
+    final int? directId = parseDirectDownloadTaskId(id);
+    if (directId != null) {
+      final DiscoveryDownloadTask task = _requireDirectTask(appModel, directId);
+      if (task.status != DiscoveryDownloadStatus.failed &&
+          task.status != DiscoveryDownloadStatus.cancelled) {
+        throw CtlFailure.conflict('只有失败 / 已取消的任务能重试（当前：${task.status.name}）');
+      }
+      _directQueue(appModel)!.retry(task);
+      return null;
+    }
     await _requireJob(appModel, id);
     await _mapPipelineErrors(() => _requirePipeline(appModel).retryJob(id));
     return null;
@@ -398,11 +547,25 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
     _requireConfirm(call, '删除下载任务');
+    final bool deleteFiles = call.optBool('deleteFiles') ?? false;
+    final int? directId = parseDirectDownloadTaskId(call.params['id']!);
+    if (directId != null) {
+      // 与下载页直链行「删除任务」同一入口（[DiscoveryDownloadQueue.remove]）：只摘
+      // 行，`.part` 与已入库文件都不动——那边没有「连文件一起删」的语义。
+      if (deleteFiles) {
+        throw const CtlFailure.badRequest('直链任务只移除队列行，不支持 --delete-files');
+      }
+      _directQueue(appModel)!.remove(_requireDirectTask(appModel, directId));
+      return <String, Object?>{
+        'ok': true,
+        'jobId': '$kCtlDirectDownloadIdPrefix$directId',
+        'deletedFiles': false,
+      };
+    }
     final VideoDownloadJobRow job = await _requireJob(
       appModel,
       call.params['id']!,
     );
-    final bool deleteFiles = call.optBool('deleteFiles') ?? false;
     final VideoDownloadPipelineService? pipeline =
         appModel.videoDownloadPipelineService;
     await _mapPipelineErrors(() async {
