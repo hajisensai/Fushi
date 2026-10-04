@@ -5029,10 +5029,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       ShelfTitleOverflowTooltip(
                         title: title,
                         style: titleStyle,
-                        maxLines: 1,
+                        maxLines: 2,
                         child: Text(
                           title,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: titleStyle,
                         ),
@@ -5390,9 +5390,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 判成「非系列」），渲染出来就是先铺满整库再缩回散片。等映射，不闪。
     if (_seriesFilterPending) {
       return _emptyStateSlivers(
-        const Center(
-          key: ValueKey<String>('home_video_all_videos_maps_pending'),
-          child: CircularProgressIndicator(),
+        // 2026-10 体验优化：走平台自适应转圈，与本页其它加载态一致。
+        Center(
+          key: const ValueKey<String>('home_video_all_videos_maps_pending'),
+          child: adaptiveIndicator(context: context),
         ),
       );
     }
@@ -5488,57 +5489,61 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
       child: SizedBox(
         height: 96,
-        child: Row(
-          children: <Widget>[
-            SizedBox(
-              width: 164,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildCover(book, poster: false, landscapeSlot: true),
-                  if (_selectionMode)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: ShelfSelectionCheck(selected: selected),
+        // 2026-10 体验优化：窄屏收小封面槽（[videoListRowCoverWidth]），行高
+        // 不变，外层给 BookDragTarget 的 96 高约束照旧成立。
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) => Row(
+            children: <Widget>[
+              SizedBox(
+                width: videoListRowCoverWidth(box.maxWidth),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    _buildCover(book, poster: false, landscapeSlot: true),
+                    if (_selectionMode)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: ShelfSelectionCheck(selected: selected),
+                      ),
+                    if (selected)
+                      const Positioned.fill(child: ShelfSelectedOverlay()),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      book.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      _buildCardWatchMeta(book).isNotEmpty
+                          ? _buildCardWatchMeta(book)
+                          : book.videoPath,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FushiDesignTokens.of(context).type.metadata,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    book.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _buildCardWatchMeta(book).isNotEmpty
-                        ? _buildCardWatchMeta(book)
-                        : book.videoPath,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: FushiDesignTokens.of(context).type.metadata,
-                  ),
-                ],
-              ),
-            ),
-            if (!_selectionMode)
-              IconButton(
-                tooltip: t.common_more_actions,
-                onPressed: () => _showVideoMenu(book),
-                icon: const Icon(Icons.more_horiz),
-              ),
-            const SizedBox(width: 6),
-          ],
+              if (!_selectionMode)
+                IconButton(
+                  tooltip: t.common_more_actions,
+                  onPressed: () => _showVideoMenu(book),
+                  icon: const Icon(Icons.more_horiz),
+                ),
+              const SizedBox(width: 6),
+            ],
+          ),
         ),
       ),
     );
@@ -5586,55 +5591,84 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           _selectionMode ? null : () => _showRemoteVideoDialog(video),
       child: SizedBox(
         height: 96,
-        child: Row(
-          children: <Widget>[
-            SizedBox(
-              width: 164,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildRemoteVideoCover(
-                    video,
-                    poster: false,
-                    landscapeSlot: true,
-                  ),
-                  if (_selectionMode)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: ShelfSelectionCheck(selected: selected),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) => Row(
+            children: <Widget>[
+              SizedBox(
+                width: videoListRowCoverWidth(box.maxWidth),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    _buildRemoteVideoCover(
+                      video,
+                      poster: false,
+                      landscapeSlot: true,
                     ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
+                    if (_selectionMode)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: ShelfSelectionCheck(selected: selected),
+                      ),
+                    if (selected)
+                      const Positioned.fill(child: ShelfSelectedOverlay()),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    video.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    t.remote_video_info,
-                    style: FushiDesignTokens.of(context).type.metadata,
-                  ),
-                ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      video.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    // 2026-10 体验优化：副标题此前恒为「信息」二字，没有任何
+                    // 信息量；改成真实的时长 / 大小，两者都缺就不占行。
+                    if (_remoteVideoListMeta(video) case final String meta)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: FushiDesignTokens.of(context).type.metadata,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            _remoteVideoCloudBadge(safeKey),
-            const SizedBox(width: 14),
-          ],
+              _remoteVideoCloudBadge(safeKey),
+              // 与本地行同形：可见的「更多」入口，触屏不必靠长按发现操作面板。
+              if (!_selectionMode)
+                IconButton(
+                  key: ValueKey<String>('remote_video_list_more_$safeKey'),
+                  tooltip: t.common_more_actions,
+                  onPressed: () => _showRemoteVideoDialog(video),
+                  icon: const Icon(Icons.more_horiz),
+                ),
+              const SizedBox(width: 6),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// 远端列表行副标题：时长（分钟）· 大小；都没有返回 null。
+  String? _remoteVideoListMeta(RemoteVideoInfo video) {
+    final int? durationMs = video.durationMs;
+    final int? sizeBytes = video.sizeBytes;
+    final List<String> parts = <String>[
+      if (durationMs != null && durationMs >= 60000)
+        t.video_runtime_minutes(n: (durationMs / 60000).round()),
+      if (sizeBytes != null && sizeBytes > 0) formatRemoteVideoSize(sizeBytes),
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   ShelfSortKey _videoSortKey(VideoBookRow book) => ShelfSortKey(
@@ -6547,7 +6581,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// **自己导入的原始视频文件不删**（见 `LocalLibraryHostService.deleteVideo`）。
   ///
   /// 三种结果各有可见反馈——静默失败正是远端书删除的老毛病（只写日志、用户以为删了）：
-  /// * 成功 → 列表里消失（强制刷新绕过 [RemoteLibraryCache] TTL）；
+  /// * 成功 → 成功提示 + 列表里消失（强制刷新绕过 [RemoteLibraryCache] TTL）；
   /// * host 版本过旧不支持（404/405）→ 提示升级对端；
   /// * 其它失败（网络 / host 500）→ 提示失败。
   Future<void> _confirmDeleteRemoteVideo(
@@ -6581,13 +6615,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       ErrorLogService.instance.log('HomeVideoPage.deleteRemoteVideo', e, stack);
     }
     if (!mounted) return;
+    // 2026-10 体验优化：反馈统一走 FushiToast（与本页本地删除同一通道），
+    // 成功也给一句——此前成功只靠卡片消失，远端刷新慢时用户以为没删掉。
     if (failed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_failed)),
+      FushiToast.show(
+        msg: t.remote_delete_failed,
+        severity: ToastSeverity.error,
       );
     } else if (!supported) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.remote_delete_unsupported)),
+      FushiToast.show(
+        msg: t.remote_delete_unsupported,
+        severity: ToastSeverity.warning,
+      );
+    } else {
+      FushiToast.show(
+        msg: t.batch_delete_success_video(n: 1),
+        severity: ToastSeverity.success,
       );
     }
     // 删成功才需要重取清单；失败时列表本就没变。forceRefresh 绕过远端库缓存 TTL，
@@ -6677,45 +6720,72 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 标签时整栏只剩「批量选择」按钮。
   /// P5-A 视频库搜索框。形态与书架/游戏库页一致（三个库页搜索长一个样），
   /// 搜索词只影响本次会话、不落库。
+  ///
+  /// 2026-10 体验优化：窄于 [kVideoSearchBarInlineMinWidth] 时搜索框独占一行，
+  /// 年份 / 看完状态 chip 落到第二行（可横滑）。此前三者挤一行，手机竖屏上
+  /// 搜索框只剩一截、chip 文案被截断。
   Widget _buildVideoSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: SizedBox(
-              height: 40,
-              child: TextField(
-                key: const ValueKey<String>('video_search_field'),
-                controller: _searchController,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: t.library_search,
-                  border: const OutlineInputBorder(),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  suffixIcon: _searchQuery.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        ),
+    final Widget field = SizedBox(
+      height: 40,
+      child: TextField(
+        key: const ValueKey<String>('video_search_field'),
+        controller: _searchController,
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search, size: 18),
+          hintText: t.library_search,
+          border: const OutlineInputBorder(),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
                 ),
-                onChanged: (String value) =>
-                    setState(() => _searchQuery = value),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildYearFilterButton(),
-          const SizedBox(width: 8),
-          _buildWatchStatusFilterButton(),
-        ],
+        ),
+        onChanged: (String value) => setState(() => _searchQuery = value),
       ),
+    );
+    final List<Widget> chips = <Widget>[
+      _buildYearFilterButton(),
+      const SizedBox(width: 8),
+      _buildWatchStatusFilterButton(),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth >= kVideoSearchBarInlineMinWidth) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: <Widget>[
+                Expanded(child: field),
+                const SizedBox(width: 8),
+                ...chips,
+              ],
+            ),
+          );
+        }
+        return Column(
+          key: const ValueKey<String>('video_search_bar_stacked'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: field,
+            ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: Row(children: chips),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -6998,25 +7068,46 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 筛选空态。[hint] 非空时替换通用句——「全部视频」默认「非系列」档位筛空时
   /// 要告诉用户东西在系列页，而不是让人以为库空了（BUG-2835）。
+  ///
+  /// 2026-10 体验优化：通用句改用视频自己的 [t.video_library_filter_empty]
+  /// （此前借书架的 `tag_no_books_for_filter`，文案说的是「书」），并给一个
+  /// 「清除筛选」按钮一次性复位，不必逐个下拉找是哪一档把库筛空了。
   Widget _buildFilteredEmpty({String? hint}) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.filter_list_off, size: 56, color: colors.onSurfaceVariant),
-          const SizedBox(height: 12),
-          Text(
-            hint ?? t.tag_no_books_for_filter,
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.onSurfaceVariant),
-          ),
-        ],
+    return FushiPlaceholderMessage(
+      key: const ValueKey<String>('home_video_filtered_empty'),
+      icon: Icons.filter_list_off,
+      message: hint ?? t.video_library_filter_empty,
+      action: OutlinedButton.icon(
+        key: const ValueKey<String>('home_video_filters_clear'),
+        onPressed: _clearAllFilters,
+        icon: const Icon(Icons.filter_alt_off_outlined),
+        label: Text(t.library_filters_clear),
       ),
     );
+  }
+
+  /// 一次性清空搜索词与全部筛选（年份 / 看完状态 / 系列归属 / 媒体类型 /
+  /// 特典 / 来源 / 标签）。系列归属是唯一持久化的档位（BUG-2835），清空时
+  /// 同步写回偏好，否则下次进库又被旧档位筛空。标签筛选与书架共享
+  /// [selectedTagIdsProvider]，库页语义上同属「当前筛选」，一并清空。
+  void _clearAllFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _yearFilter = const VideoYearFilter.all();
+      _watchStatusFilter = VideoWatchStatusFilter.all;
+      _seriesFilter = VideoSeriesFilter.all;
+      _mediaTypeFilter = VideoMediaTypeFilter.all;
+      _extrasFilter = VideoExtrasFilter.all;
+      _sourceFilter = null;
+    });
+    if (ref.read(selectedTagIdsProvider).isNotEmpty) {
+      ref.read(selectedTagIdsProvider.notifier).state = <int>{};
+    }
+    unawaited(ref
+        .read(appProvider)
+        .prefsRepo
+        .setVideoAllSeriesFilterName(VideoSeriesFilter.all.name));
   }
 
   /// 封面下方文字块的实际高度：两行标题 + 一行观看进度 + 上下内边距，随文字缩放走。
@@ -7041,7 +7132,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
   }
 
-  /// 主页横卡只需要一行作品名 + 一行季集/进度，不复用墙卡为两行长标题预留的高度。
+  /// 主页横卡文字块：两行作品名 + 一行季集/进度。
+  ///
+  /// 2026-10 体验优化：标题由一行放宽到两行——横滚卡在手机上只有百来 dp 宽，
+  /// 日文剧名单行 ellipsis 只剩几个字（与墙卡 BUG-1184 同一问题）。高度按真实
+  /// 行高同步抬高，与 [_buildRowMediaCard] 的 `maxLines: 2` 一一对应。
   static double _videoRowCardTextBlock(BuildContext context) {
     final double titleLine = textLineHeight(
       context,
@@ -7049,7 +7144,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     final double metaLine =
         textLineHeight(context, FushiDesignTokens.of(context).type.metadata);
-    return titleLine + metaLine + 12 + kTextBlockSlack;
+    // padding 6(top)+4(bottom)，标题与副行间距 2。
+    return titleLine * 2 + metaLine + 12 + kTextBlockSlack;
   }
 
   /// 媒体库墙 sliver（TODO-2486，随主 [CustomScrollView] 滚动）：**行高固定**
