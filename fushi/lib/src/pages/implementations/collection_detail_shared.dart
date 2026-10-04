@@ -143,6 +143,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
     String? localFilesSubtitle,
     String? statisticsSubtitle,
     DeletionDisclosure? checkedDisclosure,
+    String? deleteSubscriptionsLabel,
   }) {
     return showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
@@ -154,6 +155,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         localFilesSubtitle: localFilesSubtitle,
         statisticsSubtitle: statisticsSubtitle,
         checkedDisclosure: checkedDisclosure,
+        deleteSubscriptionsLabel: deleteSubscriptionsLabel,
       ),
     );
   }
