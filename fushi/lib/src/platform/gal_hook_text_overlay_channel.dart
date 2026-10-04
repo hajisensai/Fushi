@@ -79,6 +79,7 @@ bool isGalLookupProductionProviderPair(int kind, int id) {
           id == 21 ||
           id == 22 ||
           id == 23 ||
+          id == 24 ||
           id == 28;
     case 3: // positioned_text_api
       return id == 9 || id == 10;

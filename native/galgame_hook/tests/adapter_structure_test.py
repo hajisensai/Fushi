@@ -445,7 +445,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(16, len(publishers), publishers)
+        self.assertEqual(17, len(publishers), publishers)
+        self.assertIn("kogado_hy_lookup.inc", publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
         self.assertIn("malie_lookup.inc", publishers)
@@ -509,9 +510,13 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(16, len(seen), seen)
+        self.assertEqual(17, len(seen), seen)
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
+        )
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels",
+            seen["kogado_hy_lookup.inc"],
         )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["bgi_lookup.inc"]
@@ -2304,6 +2309,36 @@ class AdapterStructureTest(unittest.TestCase):
         ]
         gated = gated[: gated.index("};")]
         self.assertIn("kLookupGeometryProviderIdMalie", gated)
+
+    def test_kogado_hy_lookup_claims_in_the_window_and_stays_gated(self) -> None:
+        """Kogado Hy 查词：点击只在游戏窗口子类里认领，受原生输入放行门控；游戏线程回调不做 IO。"""
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "kogado_hy_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        eligible = self._function_body(runtime, "bool KogadoHyPressEligible(")
+        self.assertIn("NativeInputAllowed", eligible)
+        self.assertIn("KogadoHyShieldActive", eligible)
+        self.assertIn("GetForegroundWindow", eligible)
+        subclass = self._function_body(runtime, "LRESULT CALLBACK KogadoHySubclassProc(")
+        self.assertIn("KogadoHyPressEligible", subclass)
+        self.assertIn("g_kogado_hy_def_subclass_proc", subclass)
+        for body in (eligible, subclass):
+            for forbidden in ("CreateFile", "KogadoHyLog", "MultiByteToWideChar",
+                              "std::wstring", "std::vector"):
+                self.assertNotIn(forbidden, body)
+        tick = self._function_body(runtime, "void ProcessKogadoHyLookupTick(")
+        self.assertLess(tick.index("PublishKogadoHyHit("),
+                        tick.index("FindKogadoHyWindow("))
+        registry = (ROOT / "hook" / "geometry_provider_registry.h").read_text(
+            encoding="utf-8"
+        )
+        gated = registry[
+            registry.index("kLookupGeometryNativeInputGatedProviders[]") :
+        ]
+        gated = gated[: gated.index("};")]
+        self.assertIn("kLookupGeometryProviderIdKogadoHy", gated)
 
     def test_fvp_lookup_is_structural_and_callbacks_stay_bounded(self) -> None:
         """FVP 文本道 + 查词 + 语音：站点只来自结构；游戏线程 / 消息线程回调不做 IO / 转码 / 分配。"""

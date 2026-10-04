@@ -919,14 +919,17 @@ constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
 constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
 // YU-RIS message-layer exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
-// Provider ids 24-27: reserved, unassigned. The Malie adapter took 28 while
+// Kogado "Hy" message-window row layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdKogadoHy = 24u;
+// Provider ids 25-27: reserved, unassigned. The Malie adapter took 28 while
 // other engine adapters were in flight; no branch in this repository uses
-// 24-27 (checked 2026-10-03 across all local refs). Every production pair is
-// whitelisted in three places that must change together: IsProductionProviderPair
+// 25-27 (checked 2026-10-04 across all local refs and upstream/develop).
+// Every production pair is whitelisted in three places that must change
+// together: IsProductionProviderPair
 // (fushi/windows/runner/lookup_hit_validation.h),
 // isGalLookupProductionProviderPair (fushi/lib/src/platform/
 // gal_hook_text_overlay_channel.dart) and its contract test
-// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 24-27 as
+// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 25-27 as
 // rejected). Register a new id here first.
 // Malie RICHTEXT3D message exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;

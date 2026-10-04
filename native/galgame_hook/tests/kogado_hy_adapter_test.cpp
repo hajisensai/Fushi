@@ -42,6 +42,9 @@ constexpr uint32_t kSecondWaitCaller = 0x1e80u;
 constexpr uint32_t kModeGlobal = 0x403300u;
 constexpr uint32_t kCursorFullScreen = 0x1040u;
 constexpr uint32_t kCursorAdventure = 0x1050u;
+constexpr uint32_t kClientToScreen = 0x1030u;
+constexpr uint32_t kSetVisible = 0x1060u;
+constexpr uint32_t kSetModify = 0x1070u;
 
 struct Image {
   std::vector<uint8_t> bytes = std::vector<uint8_t>(kImageSize, 0xccu);
@@ -68,13 +71,18 @@ struct Image {
 void EmitRenderer(Image* image, uint32_t rva) {
   image->Seek(rva);
   image->Put({0x55u, 0x8bu, 0xecu, 0x83u, 0xc4u, 0xd0u});  // frame prologue
-  image->Nops(8u);
+  image->Put({0xc1u, 0xe7u, 0x03u});  // shl edi,3
+  image->Put({0x8du, 0x3cu, 0x7fu});  // lea edi,[edi+edi*2]   pitch 24
+  image->Nops(2u);
   image->Call(kBoxFill);
   image->Nops(8u);
   image->Put({0x8bu, 0x45u, 0xd4u});                  // mov eax,[ebp-0x2c]
   image->Put({0x8bu, 0x80u, 0x84u, 0x00u, 0x00u, 0x00u});  // mov eax,[eax+0x84]
   image->Call(kSetText);
-  image->Nops(12u);
+  image->Nops(5u);
+  image->Put({0x68u});  // push 0x208 (row width)
+  image->Put32(0x208u);
+  image->Put({0x6au, 0x14u});  // push 0x14 (row height)
   image->Call(kDraw);
   image->Put({0xc3u});
 }
@@ -83,7 +91,8 @@ void EmitRenderer(Image* image, uint32_t rva) {
 // stride 53 from the counter, then RENDER handed the row array and the
 // counter.
 void EmitMessageCaller(Image* image, uint32_t rva, uint32_t render,
-                       uint32_t counter, uint32_t base) {
+                       uint32_t counter, uint32_t base, uint8_t panel,
+                       bool set_modify) {
   image->Seek(rva);
   image->Put({0x55u, 0x8bu, 0xecu, 0x83u, 0xc4u, 0xd8u});
   image->Put({0x8bu, 0x93u});  // mov edx,[ebx+counter]
@@ -105,6 +114,10 @@ void EmitMessageCaller(Image* image, uint32_t rva, uint32_t render,
   image->Put32(base);
   image->Put({0x8bu, 0xc3u});  // mov eax,ebx
   image->Call(render);
+  if (set_modify) {
+    image->Put({0x8bu, 0x43u, panel});  // mov eax,[ebx+panel]
+    image->Call(kSetModify);
+  }
   image->Put({0xc3u});
 }
 
@@ -136,7 +149,9 @@ void EmitExports(Image* image, bool with_draw) {
   };
   std::vector<Name> names = {{kh::kExportBoxFill, kBoxFill},
                              {kh::kExportSetText, kSetText},
-                             {"@THyRGBPanel@ClientToScreen$qqrrit1", 0x1030u}};
+                             {kh::kExportClientToScreen, kClientToScreen},
+                             {kh::kExportSetVisible, kSetVisible},
+                             {kh::kExportSetModify, kSetModify}};
   if (with_draw) names.push_back({kh::kExportDraw, kDraw});
   const uint32_t functions = kExportDir + 0x40u;
   const uint32_t name_table = functions + 0x40u;
@@ -254,19 +269,29 @@ struct Options {
   bool wait = true;
   bool restore = true;
   bool second_wait = false;
+  bool set_modify = true;
 };
 
 Image Build(const Options& options) {
   Image image;
   EmitHeaders(&image);
   EmitExports(&image, options.draw_export);
-  for (uint32_t f : {kSetText, kBoxFill, kDraw, 0x1030u}) {
+  for (uint32_t f : {kSetText, kBoxFill, kDraw, kSetModify}) {
     image.Seek(f);
     image.Put({0xc3u});
   }
+  // ClientToScreen: push ebx; push esi; mov ebx,[eax+0x70]; add [edx],ebx;
+  // mov ebx,[eax+0x74]; add [ecx],ebx; mov esi,[eax+0x38]
+  image.Seek(kClientToScreen);
+  image.Put({0x53u, 0x56u, 0x8bu, 0x58u, 0x70u, 0x01u, 0x1au, 0x8bu, 0x58u,
+             0x74u, 0x01u, 0x19u, 0x8bu, 0x70u, 0x38u, 0xc3u});
+  // SetVisible: mov cl,[eax+0x31]
+  image.Seek(kSetVisible);
+  image.Put({0x8au, 0x48u, 0x31u, 0xc3u});
   EmitRenderer(&image, kRender);
   if (options.message_caller) {
-    EmitMessageCaller(&image, kMessageCaller, kRender, 0x1ecu, 0x118u);
+    EmitMessageCaller(&image, kMessageCaller, kRender, 0x1ecu, 0x118u, 0x60u,
+                      options.set_modify);
   }
   if (options.song) {
     EmitRenderer(&image, kSongRender);
@@ -274,7 +299,8 @@ Image Build(const Options& options) {
   }
   if (options.second_message_renderer) {
     EmitRenderer(&image, kSecondRender);
-    EmitMessageCaller(&image, kSecondCaller, kSecondRender, 0x598u, 0x248u);
+    EmitMessageCaller(&image, kSecondCaller, kSecondRender, 0x598u, 0x248u,
+                      0x74u, true);
   }
   for (uint32_t f : {kCursorFullScreen, kCursorAdventure}) {
     image.Seek(f);
@@ -505,6 +531,110 @@ void TestBrokenRowsAreRejected() {
          kh::PageResult::kRejected);
 }
 
+// ── in-game lookup ─────────────────────────────────────────────────────────
+
+void TestResolvesLookupLayout() {
+  const Image image = Build(Options());
+  kh::Sites sites;
+  assert(kh::ResolveSites(View(image), &sites) == kh::SiteResult::kResolved);
+  kh::LookupSites layout;
+  assert(kh::ResolveLookupSites(View(image), sites, &layout) ==
+         kh::LookupSiteResult::kResolved);
+  assert(layout.row_pitch == 24u);
+  assert(layout.row_width == 0x208u && layout.row_height == 0x14u);
+  assert(layout.panel_x == 0x70u && layout.panel_y == 0x74u);
+  assert(layout.panel_parent == 0x38u && layout.panel_shown == 0x31u);
+  assert(layout.array_count == 1u);
+  assert(kh::ArrayPanel(layout, 0x118u) == 0x60u);
+  assert(kh::ArrayPanel(layout, 0x248u) == 0u);
+}
+
+void TestLookupNeedsEveryArrayPanel() {
+  Options options;
+  options.set_modify = false;
+  const Image image = Build(options);
+  kh::Sites sites;
+  assert(kh::ResolveSites(View(image), &sites) == kh::SiteResult::kResolved);
+  kh::LookupSites layout;
+  assert(kh::ResolveLookupSites(View(image), sites, &layout) ==
+         kh::LookupSiteResult::kNoArrayPanel);
+  assert(layout.array_count == 0u);
+}
+
+kh::LookupSites Layout(uint32_t width) {
+  kh::LookupSites layout;
+  layout.row_pitch = 24u;
+  layout.row_width = width;
+  layout.row_height = 20u;
+  return layout;
+}
+
+void TestUnitGlyphsFollowComposedText() {
+  const std::vector<uint8_t> rows = Rows({kName, kQuoteOpen, kIndentClose});
+  std::string text;
+  bool speaker = false;
+  assert(kh::ComposePage(rows.data(), kStride, 0u, 2u, &text, &speaker) ==
+         kh::PageResult::kText);
+  kh::UnitGlyph glyphs[64];
+  const size_t count = kh::BuildUnitGlyphs(rows.data(), kStride, 0u, 2u,
+                                           Layout(520u), glyphs, 64u);
+  // One glyph per CP932 character of the published text.
+  assert(count == 6u && text.size() == 12u);
+  for (size_t i = 0u; i < count; ++i) assert(glyphs[i].source_index == i);
+  // Row 1 starts at x 0; row 2 after its indent (one ideographic space).
+  assert(glyphs[0].x == 0 && glyphs[0].y == 24 && glyphs[0].w == 20 &&
+         glyphs[0].h == 20);
+  assert(glyphs[3].x == 20 && glyphs[3].y == 48);
+  assert(glyphs[5].x == 60 && glyphs[5].y == 48);
+}
+
+void TestUnitGlyphsHalfWidthAndBounds() {
+  const std::vector<uint8_t> rows = Rows({"ab" + kAi});
+  kh::UnitGlyph glyphs[8];
+  assert(kh::BuildUnitGlyphs(rows.data(), kStride, 0u, 0u, Layout(520u),
+                             glyphs, 8u) == 4u);
+  assert(glyphs[0].w == 10 && glyphs[1].x == 10 && glyphs[1].w == 10);
+  assert(glyphs[2].x == 20 && glyphs[2].w == 20);
+  // A row wider than the band fails closed; so does a full glyph buffer.
+  assert(kh::BuildUnitGlyphs(rows.data(), kStride, 0u, 0u, Layout(50u),
+                             glyphs, 8u) == 0u);
+  assert(kh::BuildUnitGlyphs(rows.data(), kStride, 0u, 0u, Layout(520u),
+                             glyphs, 3u) == 0u);
+}
+
+void TestProjectionAndHitTest() {
+  // 640x480 design stretched to a 1120x840 client (1.75x).
+  kh::PixelRect rect;
+  assert(kh::ProjectRect(60, 336, 20, 20, 640, 480, 1120, 840, &rect));
+  assert(rect.x == 105 && rect.y == 588 && rect.w == 35 && rect.h == 35);
+  assert(!kh::ProjectRect(630, 470, 20, 20, 640, 480, 1120, 840, &rect));
+  kh::UnitGlyph glyphs[2];
+  glyphs[0] = {0, 0, 20, 20, 0u};
+  glyphs[1] = {20, 0, 20, 20, 1u};
+  size_t hit = 9u;
+  assert(kh::HitTestGlyphs(glyphs, 2u, 60, 336, 85, 340, &hit) && hit == 1u);
+  assert(!kh::HitTestGlyphs(glyphs, 2u, 60, 336, 59, 340, &hit));
+  assert(!kh::HitTestGlyphs(glyphs, 2u, 60, 336, 70, 356, &hit));
+}
+
+void TestClaimSwallowsOnlyItsOwnUp() {
+  bool pending = false;
+  auto d = kh::DecideButtonMessage(kh::ButtonMessage::kDown, &pending);
+  assert(d.evaluate && !d.swallow);
+  pending = true;  // the press was claimed
+  d = kh::DecideButtonMessage(kh::ButtonMessage::kUp, &pending);
+  assert(d.swallow && !pending);
+  // An unclaimed UP passes.
+  d = kh::DecideButtonMessage(kh::ButtonMessage::kUp, &pending);
+  assert(!d.swallow);
+  // A lost UP: the next DOWN drops the stale claim.
+  pending = true;
+  d = kh::DecideButtonMessage(kh::ButtonMessage::kDown, &pending);
+  assert(d.evaluate && !pending);
+  d = kh::DecideButtonMessage(kh::ButtonMessage::kOther, &pending);
+  assert(!d.evaluate && !d.swallow);
+}
+
 }  // namespace
 
 int main() {
@@ -522,6 +652,12 @@ int main() {
   TestNarrationKeepsFirstRowIndent();
   TestFullScreenUnitStartsAfterTheWait();
   TestBrokenRowsAreRejected();
+  TestResolvesLookupLayout();
+  TestLookupNeedsEveryArrayPanel();
+  TestUnitGlyphsFollowComposedText();
+  TestUnitGlyphsHalfWidthAndBounds();
+  TestProjectionAndHitTest();
+  TestClaimSwallowsOnlyItsOwnUp();
   std::printf("kogado_hy adapter tests passed\n");
   return 0;
 }

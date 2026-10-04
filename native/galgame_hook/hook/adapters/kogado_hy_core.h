@@ -669,4 +669,314 @@ inline PageResult ComposePage(const uint8_t* rows, uint32_t stride,
                                        : PageResult::kText;
 }
 
+// ── in-game lookup: geometry sites ─────────────────────────────────────────
+//
+// Where a row sits: RENDER clears the row's band and copies the rendered row
+// into the panel layer at (0, row * PITCH), WIDTH x HEIGHT:
+//   shl r,imm8; lea r,[r+r*s]                 PITCH = (1 << imm8) * (1 + s)
+//   push WIDTH (68 imm32); push HEIGHT (6A imm8); ...; call THyAlpha::Draw
+// The row is MS Gothic at HEIGHT pixels: a CP932 byte is HEIGHT / 2 wide.
+// The panel: every RENDER call site that shows a row on screen is followed by
+// `mov eax,[ebx+P]; call THyRGBPanel::SetModify` for the panel of the row
+// array it was handed.  A panel's position is its own offset plus its
+// parents' (the exported THyRGBPanel::ClientToScreen walks
+// `mov ebx,[eax+X]; add [edx],ebx; mov ebx,[eax+Y]; add [ecx],ebx;
+// mov esi,[eax+PARENT]`), and THyRGBPanel::SetVisible reads its shown flag
+// first (`mov cl,[eax+V]`).
+
+inline constexpr char kExportSetModify[] = "@THyRGBPanel@SetModify$qqrv";
+inline constexpr char kExportClientToScreen[] =
+    "@THyRGBPanel@ClientToScreen$qqrrit1";
+inline constexpr char kExportSetVisible[] = "@THyRGBPanel@SetVisible$qqro";
+
+inline constexpr uint32_t kMaxPanelChain = 16u;
+inline constexpr int32_t kMinDesignSide = 64;
+inline constexpr int32_t kMaxDesignSide = 8192;
+inline constexpr uint16_t kNoSource = 0xffffu;
+
+struct LookupSites {
+  uint32_t row_pitch = 0u;
+  uint32_t row_width = 0u;
+  uint32_t row_height = 0u;
+  uint32_t panel_x = 0u;
+  uint32_t panel_y = 0u;
+  uint32_t panel_parent = 0u;
+  uint32_t panel_shown = 0u;
+  std::array<uint32_t, 4> array_base{};
+  std::array<uint32_t, 4> array_panel{};
+  uint32_t array_count = 0u;
+};
+
+enum class LookupSiteResult : uint32_t {
+  kResolved = 0,
+  kNoPanelExports = 1,
+  kNoRowLayout = 2,
+  kNoPanelFields = 3,
+  kNoArrayPanel = 4,
+  kAmbiguous = 5,
+};
+
+// The panel of the row array `base`, or 0.
+inline uint32_t ArrayPanel(const LookupSites& sites, uint32_t base) {
+  for (uint32_t i = 0u; i < sites.array_count; ++i) {
+    if (sites.array_base[i] == base) return sites.array_panel[i];
+  }
+  return 0u;
+}
+
+inline LookupSiteResult ResolveLookupSites(const ImageView& image,
+                                           const Sites& sites,
+                                           LookupSites* out) {
+  *out = LookupSites();
+  const uint32_t set_modify = FindExport(image, kExportSetModify);
+  const uint32_t client_to_screen = FindExport(image, kExportClientToScreen);
+  const uint32_t set_visible = FindExport(image, kExportSetVisible);
+  const uint32_t draw = FindExport(image, kExportDraw);
+  if (set_modify == 0u || client_to_screen == 0u || set_visible == 0u ||
+      draw == 0u || sites.render == 0u) {
+    return LookupSiteResult::kNoPanelExports;
+  }
+  // Row layout inside RENDER (up to its Draw call).
+  uint32_t draw_call = 0u;
+  for (uint32_t k = sites.render; k < sites.render + 0x100u; ++k) {
+    uint32_t t = 0u;
+    if (CallTarget(image, k, &t) && t == draw) {
+      draw_call = k;
+      break;
+    }
+  }
+  if (draw_call == 0u) return LookupSiteResult::kNoRowLayout;
+  for (uint32_t k = sites.render; k + 6u <= draw_call; ++k) {
+    // shl r,imm8 (C1 /4, mod=11) then lea r,[r+r*s] (8D, SIB base=index=r).
+    const uint8_t m = U8(image, k + 1u);
+    if (U8(image, k) != 0xc1u || (m & 0xf8u) != 0xe0u) continue;
+    const uint8_t reg = static_cast<uint8_t>(m & 7u);
+    const uint8_t shift = U8(image, k + 2u);
+    for (uint32_t j = k + 3u; j < k + 12u && j + 3u <= draw_call; ++j) {
+      if (U8(image, j) != 0x8du) continue;
+      const uint8_t lm = U8(image, j + 1u);
+      const uint8_t sib = U8(image, j + 2u);
+      if ((lm >> 6) != 0u || (lm & 7u) != 4u ||
+          ((lm >> 3) & 7u) != reg || (sib & 7u) != reg ||
+          ((sib >> 3) & 7u) != reg || (sib >> 6) == 0u || shift > 8u) {
+        continue;
+      }
+      out->row_pitch = (1u << shift) * (1u + (1u << (sib >> 6)));
+      break;
+    }
+    if (out->row_pitch != 0u) break;
+  }
+  for (uint32_t back = 7u; back <= 0x18u && back <= draw_call; ++back) {
+    const uint32_t k = draw_call - back;
+    if (U8(image, k) == 0x68u && U8(image, k + 5u) == 0x6au) {
+      out->row_width = U32(image, k + 1u);
+      out->row_height = U8(image, k + 6u);
+      break;
+    }
+  }
+  if (out->row_pitch == 0u || out->row_height < 8u ||
+      out->row_height > out->row_pitch || out->row_height % 2u != 0u ||
+      out->row_width < out->row_height ||
+      out->row_width / (out->row_height / 2u) > sites.stride) {
+    *out = LookupSites();
+    return LookupSiteResult::kNoRowLayout;
+  }
+  // Panel fields from the exported panel methods.
+  {
+    uint32_t k = client_to_screen;
+    while (k < client_to_screen + 4u && U8(image, k) != 0x8bu) ++k;
+    if (U8(image, k) != 0x8bu || U8(image, k + 1u) != 0x58u ||
+        U8(image, k + 3u) != 0x01u || U8(image, k + 5u) != 0x8bu ||
+        U8(image, k + 6u) != 0x58u || U8(image, k + 8u) != 0x01u ||
+        U8(image, k + 10u) != 0x8bu || U8(image, k + 11u) != 0x70u) {
+      *out = LookupSites();
+      return LookupSiteResult::kNoPanelFields;
+    }
+    out->panel_x = U8(image, k + 2u);
+    out->panel_y = U8(image, k + 7u);
+    out->panel_parent = U8(image, k + 12u);
+  }
+  if (U8(image, set_visible) != 0x8au || U8(image, set_visible + 1u) != 0x48u) {
+    *out = LookupSites();
+    return LookupSiteResult::kNoPanelFields;
+  }
+  out->panel_shown = U8(image, set_visible + 2u);
+  // Each row array's panel.
+  for (uint32_t i = 0u; i < sites.callers; ++i) {
+    const uint32_t call = sites.render_calls[i];
+    uint32_t base = 0u;
+    bool handed = false;
+    for (uint32_t back = 6u; back <= 0x30u && back <= call && !handed;
+         ++back) {
+      handed = DecodeLeaEdxDisp32(image, call - back, &base);
+    }
+    uint32_t panel = 0u, length = 0u, t = 0u;
+    if (!handed ||
+        !DecodeEaxFromEbx(image, call + 5u, &panel, &length) ||
+        !CallTarget(image, call + 5u + length, &t) || t != set_modify) {
+      continue;
+    }
+    const uint32_t known = ArrayPanel(*out, base);
+    if (known != 0u && known != panel) {
+      *out = LookupSites();
+      return LookupSiteResult::kAmbiguous;
+    }
+    if (known == 0u && out->array_count < out->array_base.size()) {
+      out->array_base[out->array_count] = base;
+      out->array_panel[out->array_count] = panel;
+      ++out->array_count;
+    }
+  }
+  for (uint32_t i = 0u; i < sites.base_count; ++i) {
+    if (ArrayPanel(*out, sites.bases[i]) == 0u) {
+      *out = LookupSites();
+      return LookupSiteResult::kNoArrayPanel;
+    }
+  }
+  return LookupSiteResult::kResolved;
+}
+
+// ── in-game lookup: unit glyphs ────────────────────────────────────────────
+
+// A glyph of the unit, in the panel's pixels, with its UTF-16 unit index in
+// the published line (every CP932 character is one UTF-16 unit).
+struct UnitGlyph {
+  int32_t x = 0;
+  int32_t y = 0;
+  int32_t w = 0;
+  int32_t h = 0;
+  uint16_t source_index = kNoSource;
+};
+
+inline constexpr size_t kMaxUnitGlyphs = kMaxRows * kMaxStride;
+
+// The glyphs of the unit the published line came from, exactly in the order
+// ComposePage joined them (speaker row and continuation indent skipped).
+// Returns the glyph count, or 0 when the rows are not clean text.
+inline size_t BuildUnitGlyphs(const uint8_t* rows, uint32_t stride,
+                              uint32_t first_row, uint32_t last_row,
+                              const LookupSites& layout, UnitGlyph* out,
+                              size_t capacity) {
+  if (stride < kMinStride || stride > kMaxStride || last_row >= kMaxRows ||
+      first_row > last_row || layout.row_height == 0u) {
+    return 0u;
+  }
+  const int32_t byte_w = static_cast<int32_t>(layout.row_height / 2u);
+  size_t count = 0u;
+  uint32_t source = 0u;
+  for (uint32_t r = first_row; r <= last_row; ++r) {
+    const uint8_t* row = rows + static_cast<size_t>(r) * stride;
+    const size_t length = RowLength(row, stride);
+    if (length == SIZE_MAX) return 0u;
+    if (r == first_row && IsSpeakerRow(row, length)) continue;
+    size_t start = 0u;
+    if (source != 0u) {
+      while (start + 2u <= length &&
+             std::memcmp(row + start, kIdeographicSpace, 2u) == 0) {
+        start += 2u;
+      }
+    }
+    for (size_t b = start; b < length;) {
+      const size_t bytes = IsCp932Lead(row[b]) ? 2u : 1u;
+      if (count >= capacity || source >= kNoSource) return 0u;
+      UnitGlyph& g = out[count++];
+      g.x = static_cast<int32_t>(b) * byte_w;
+      g.y = static_cast<int32_t>((r * layout.row_pitch));
+      g.w = static_cast<int32_t>(bytes) * byte_w;
+      g.h = static_cast<int32_t>(layout.row_height);
+      g.source_index = static_cast<uint16_t>(source++);
+      if (g.x + g.w > static_cast<int32_t>(layout.row_width)) return 0u;
+      b += bytes;
+    }
+  }
+  return count;
+}
+
+// ── projection, hit testing, click claim ───────────────────────────────────
+
+struct PixelRect {
+  int32_t x = 0;
+  int32_t y = 0;
+  int32_t w = 0;
+  int32_t h = 0;
+};
+
+inline bool DesignPlausible(int32_t w, int32_t h) {
+  return w >= kMinDesignSide && h >= kMinDesignSide && w <= kMaxDesignSide &&
+         h <= kMaxDesignSide;
+}
+
+// A design-pixel rect onto a client of physical_w x physical_h that shows the
+// whole design screen (a stretched DPI-unaware window or a full screen).
+inline bool ProjectRect(int32_t x, int32_t y, int32_t w, int32_t h,
+                        int32_t design_w, int32_t design_h, int32_t physical_w,
+                        int32_t physical_h, PixelRect* out) {
+  if (out == nullptr || !DesignPlausible(design_w, design_h) ||
+      physical_w <= 0 || physical_h <= 0 || w <= 0 || h <= 0 || x < 0 ||
+      y < 0 || x + w > design_w || y + h > design_h) {
+    return false;
+  }
+  const double sx = static_cast<double>(physical_w) / design_w;
+  const double sy = static_cast<double>(physical_h) / design_h;
+  const int32_t x0 = static_cast<int32_t>(x * sx);
+  const int32_t y0 = static_cast<int32_t>(y * sy);
+  const double right = (x + w) * sx;
+  const double bottom = (y + h) * sy;
+  int32_t x1 = static_cast<int32_t>(right);
+  int32_t y1 = static_cast<int32_t>(bottom);
+  if (x1 < right) ++x1;
+  if (y1 < bottom) ++y1;
+  if (x1 > physical_w || y1 > physical_h || x1 - x0 < 1 || y1 - y0 < 1) {
+    return false;
+  }
+  *out = {x0, y0, x1 - x0, y1 - y0};
+  return true;
+}
+
+// The one glyph under a design-pixel point (glyph boxes offset by the
+// panel's origin), or false when none or the point is ambiguous.
+inline bool HitTestGlyphs(const UnitGlyph* glyphs, size_t count,
+                          int32_t origin_x, int32_t origin_y, int32_t x,
+                          int32_t y, size_t* hit) {
+  if (glyphs == nullptr || hit == nullptr) return false;
+  size_t found = count;
+  for (size_t i = 0u; i < count; ++i) {
+    const UnitGlyph& g = glyphs[i];
+    const int32_t gx = origin_x + g.x;
+    const int32_t gy = origin_y + g.y;
+    if (x < gx || y < gy || x >= gx + g.w || y >= gy + g.h) continue;
+    if (found != count) return false;
+    found = i;
+  }
+  if (found == count) return false;
+  *hit = found;
+  return true;
+}
+
+// The engine reads clicks only as window messages (no key-state polling), so
+// the claim lives in the game window's procedure, for mouse and promoted
+// touch alike: a press on a glyph is swallowed together with its own UP.
+// When that UP never arrives, the next DOWN drops the stale claim, so it can
+// never eat the UP of a later, unrelated press.
+enum class ButtonMessage : uint8_t { kOther = 0, kDown = 1, kUp = 2 };
+
+struct ClaimDecision {
+  bool evaluate = false;  // a DOWN: test it against the model
+  bool swallow = false;   // the UP of a claimed press
+};
+
+inline ClaimDecision DecideButtonMessage(ButtonMessage message,
+                                         bool* up_pending) {
+  ClaimDecision decision;
+  if (up_pending == nullptr) return decision;
+  if (message == ButtonMessage::kDown) {
+    *up_pending = false;
+    decision.evaluate = true;
+  } else if (message == ButtonMessage::kUp) {
+    decision.swallow = *up_pending;
+    *up_pending = false;
+  }
+  return decision;
+}
+
 }  // namespace fushi_voice_hook::kogado_hy

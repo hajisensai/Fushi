@@ -102,6 +102,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/yuris_voice_core.h"
   "hook/adapters/kogado_hy_adapter.inc"
   "hook/adapters/kogado_hy_core.h"
+  "hook/adapters/kogado_hy_lookup.inc"
   "hook/adapters/kogado_hy_profile.h"
   "hook/adapters/kogado_hy_text.inc"
   "hook/adapters/fvp_adapter.inc"
