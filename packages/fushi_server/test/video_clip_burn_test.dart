@@ -33,6 +33,11 @@ bool _hasLibassFfmpeg() {
 
 /// 只回放失败结果的 ffmpeg 后端，记录每次调用的参数。
 class _ScriptedFfmpeg implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   final List<List<String>> calls = <List<String>>[];
 
   @override
