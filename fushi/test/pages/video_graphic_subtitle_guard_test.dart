@@ -105,10 +105,9 @@ void main() {
     );
     expect(method, greaterThan(-1));
     final String body = src.substring(method, src.indexOf('\n  }\n', method));
-    // 抽轨 → TS 解封装 → 解析 → 识别（AI 重读与漫画同一引擎装配）→ SRT。
+    // 抽轨成 .sup → 解析 → 识别（AI 重读与漫画同一引擎装配）→ SRT。
     for (final String step in <String>[
-      'extractGraphicSubtitleTrackToTs(',
-      'mpegTsToPgsSup(',
+      'extractGraphicSubtitleTrackToSup(',
       'PgsSubtitleParser.parse(',
       'prepare: _prepareGraphicSubtitleOcr',
       'recognizeGraphicSubtitleCues(',
