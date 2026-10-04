@@ -1292,6 +1292,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// 一个游戏合集的横排行：行头（合集名 + 数量 + 查看全部 → 详情页）+ 行内成员
   /// 游戏卡（与散卡同一渲染，交互/焦点自带）。折叠偏好走游戏库自己的命名空间。
+  /// 合集长按菜单的封面图源：自设封面 → 行内顺序第一个有封面文件的游戏；都没有
+  /// 时为 null（菜单不画封面块）。
+  ImageProvider? _collectionMenuCoverImage(
+    CollectionGroup<GalgameEntry> group,
+    MediaCollectionRow collection,
+  ) {
+    final List<String?> candidates = <String?>[
+      collection.coverPath,
+      for (final CollectionOrderingItem<GalgameEntry> it in group.items)
+        it.payload.coverPath,
+    ];
+    for (final String? path in candidates) {
+      if (path != null && path.isNotEmpty && File(path).existsSync()) {
+        return FileImage(File(path));
+      }
+    }
+    return null;
+  }
+
   Widget _buildCollectionRow(
     CollectionGroup<GalgameEntry> group,
     MediaCollectionRow collection,
@@ -1323,6 +1342,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             context: context,
             db: _appModel.database,
             collection: collection,
+            coverImage: _collectionMenuCoverImage(group, collection),
             onOpenDetail: () => _openCollectionDetail(collection),
             onChanged: () => unawaited(_reload()),
           ),
