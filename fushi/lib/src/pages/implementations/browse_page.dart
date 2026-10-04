@@ -819,16 +819,27 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     return FushiFileDropTarget(
       debugLabel: 'downloads',
       onDrop: _handleDownloadsDrop,
-      child: Scaffold(
-        // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载
-        // 任务折叠区贴底、中段结果列表是唯一的 Expanded。默认
-        // resizeToAvoidBottomInset:true 时，手机软键盘弹出会压掉 body 高度、
-        // 顶掉贴底任务区。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
-        // 本就不看），顶部输入框保持可见、布局不反流。
-        resizeToAvoidBottomInset: false,
+      // 2026-10 体验优化：BUG-1003 的 inset 关闭原先对整页生效，来源 / 扩展 /
+      // 发现页签里的搜索框在手机上会被软键盘直接盖住、列表也滚不到底。只在
+      // 「下载」页签（贴底任务区）关 inset，其它页签恢复默认让键盘顶起 body。
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (BuildContext context, Widget? body) {
+          final bool onDownloads =
+              tabs[controller.index.clamp(0, tabs.length - 1)] ==
+              BrowseTab.downloads;
+          return Scaffold(
+            // BUG-1003：下载页签把输入框放在上半部、任务折叠区贴底、中段列表是
+            // 唯一的 Expanded。默认 resizeToAvoidBottomInset:true 时，手机软键盘
+            // 弹出会压掉 body 高度、顶掉贴底任务区。在该页签关掉 inset 让键盘
+            // 只覆盖下半部（打字时本就不看），顶部输入框保持可见、布局不反流。
+            resizeToAvoidBottomInset: !onDownloads,
+            body: body,
+          );
+        },
         // 作为 home tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push
         // 进来（设置入口）时的状态栏避让，双层无副作用。
-        body: SafeArea(
+        child: SafeArea(
           bottom: false,
           child: Column(
             children: <Widget>[

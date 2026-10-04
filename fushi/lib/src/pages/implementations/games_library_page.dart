@@ -716,60 +716,100 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
-  /// 顶部工具条：搜索框 + 排序入口 + 筛选入口。
+  /// 工具条是否走窄屏两行布局（按 App 缩放折算回真实宽度后 <600）。
+  bool get _compactToolbar =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
+  /// 顶部工具条：搜索框 + 状态筛选 + 刮削 + 排序 + 筛选。
+  ///
+  /// 2026-10 体验优化：原先一行塞五个控件，手机上搜索框被挤到只剩图标宽。
+  /// 窄屏（缩放折算 <600）改两行：搜索框独占一行，第二行放状态筛选与筛选
+  /// 按钮，刮削 / 排序收进溢出菜单（与书架 `_compactLibraryToolbar` 同口径）。
   Widget _buildToolbar(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool compact = _compactToolbar;
+    final Widget search = SizedBox(
+      height: compact ? 44 : 40,
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search, size: 18),
+          hintText: t.game_search,
+          border: const OutlineInputBorder(),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          suffixIcon: _view.search.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _view = _view.copyWith(search: ''));
+                  },
+                ),
+        ),
+        // 搜索词只影响本次会话，不落库（见 GalgameLibraryView 注释）。
+        onChanged: (String value) =>
+            setState(() => _view = _view.copyWith(search: value)),
+      ),
+    );
+    // 游玩状态与筛选面板里的「游玩状态」是同一个 [GalgameLibraryView.status]，
+    // 两处入口改的是同一份持久化视图，不会互相打架。
+    final Widget statusFilter = LibraryFilterDropdown<GalgamePlayStatus>(
+      key: const ValueKey<String>('games_filter_play_status'),
+      value: _view.status,
+      options: const <GalgamePlayStatus>[
+        ...kGalgamePlayStatusMenuOrder,
+        GalgamePlayStatus.unset,
+      ],
+      labelOf: galgamePlayStatusLabel,
+      title: t.game_filter_status,
+      allLabel: t.game_filter_all,
+      onSelected: (GalgamePlayStatus? status) => _setView(
+        status == null
+            ? _view.copyWith(clearStatus: true)
+            : _view.copyWith(status: status),
+      ),
+    );
+    final Widget filterButton = _buildFilterButton(context);
+    if (compact) {
+      return Padding(
+        key: const ValueKey<String>('games_toolbar_compact'),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            search,
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                // 不能 Flexible + Spacer：两者平分剩余宽，筛选 chip 只拿到一半
+                // 会溢出；Align 把整段剩余宽都给它、左对齐。
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: statusFilter,
+                  ),
+                ),
+                filterButton,
+                _buildCompactOverflowMenu(),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Row(
         children: <Widget>[
-          Expanded(
-            child: SizedBox(
-              height: 40,
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: t.game_search,
-                  border: const OutlineInputBorder(),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  suffixIcon: _view.search.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _view = _view.copyWith(search: ''));
-                          },
-                        ),
-                ),
-                // 搜索词只影响本次会话，不落库（见 GalgameLibraryView 注释）。
-                onChanged: (String value) =>
-                    setState(() => _view = _view.copyWith(search: value)),
-              ),
-            ),
-          ),
+          Expanded(child: search),
           const SizedBox(width: 8),
-          // 游玩状态与筛选面板里的「游玩状态」是同一个 [GalgameLibraryView.status]，
-          // 两处入口改的是同一份持久化视图，不会互相打架。
-          LibraryFilterDropdown<GalgamePlayStatus>(
-            key: const ValueKey<String>('games_filter_play_status'),
-            value: _view.status,
-            options: const <GalgamePlayStatus>[
-              ...kGalgamePlayStatusMenuOrder,
-              GalgamePlayStatus.unset,
-            ],
-            labelOf: galgamePlayStatusLabel,
-            title: t.game_filter_status,
-            allLabel: t.game_filter_all,
-            onSelected: (GalgamePlayStatus? status) => _setView(
-              status == null
-                  ? _view.copyWith(clearStatus: true)
-                  : _view.copyWith(status: status),
-            ),
-          ),
+          statusFilter,
           const SizedBox(width: 4),
           FushiIconButton(
             tooltip: t.scrape_all,
@@ -781,44 +821,90 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           PopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
             icon: const Icon(Icons.sort),
-            onSelected: (GalgameSortField field) => _setView(
-              field == _view.sortField
-                  // 再点当前维度 = 翻转方向（少一个独立的升降序按钮）。
-                  ? _view.copyWith(ascending: !_view.ascending)
-                  : _view.copyWith(sortField: field),
-            ),
+            onSelected: _selectSortField,
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<GalgameSortField>>[
               for (final GalgameSortField field in GalgameSortField.values)
                 PopupMenuItem<GalgameSortField>(
                   value: field,
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(child: Text(galgameSortFieldLabel(field))),
-                      if (field == _view.sortField)
-                        Icon(
-                          _view.ascending
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward,
-                          size: 16,
-                        ),
-                    ],
-                  ),
+                  child: _sortFieldMenuLabel(field),
                 ),
             ],
           ),
-          IconButton(
-            tooltip: t.game_filter,
-            onPressed: () => unawaited(_showFilterSheet()),
-            icon: Icon(
-              _view.hasActiveFilter
-                  ? Icons.filter_alt
-                  : Icons.filter_alt_outlined,
-              color: _view.hasActiveFilter ? colors.primary : null,
-            ),
-          ),
+          filterButton,
         ],
       ),
+    );
+  }
+
+  /// 再点当前维度 = 翻转方向（少一个独立的升降序按钮）。
+  void _selectSortField(GalgameSortField field) => _setView(
+        field == _view.sortField
+            ? _view.copyWith(ascending: !_view.ascending)
+            : _view.copyWith(sortField: field),
+      );
+
+  Widget _sortFieldMenuLabel(GalgameSortField field) {
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(galgameSortFieldLabel(field))),
+        if (field == _view.sortField)
+          Icon(
+            _view.ascending ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 16,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFilterButton(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return IconButton(
+      tooltip: t.game_filter,
+      onPressed: () => unawaited(_showFilterSheet()),
+      icon: Icon(
+        _view.hasActiveFilter ? Icons.filter_alt : Icons.filter_alt_outlined,
+        color: _view.hasActiveFilter ? colors.primary : null,
+      ),
+    );
+  }
+
+  /// 窄屏溢出菜单：「全部刮削」+ 排序维度（排序维度直接平铺，少一层子菜单）。
+  Widget _buildCompactOverflowMenu() {
+    return PopupMenuButton<Object>(
+      key: const ValueKey<String>('games_toolbar_overflow'),
+      tooltip: t.common_more_actions,
+      icon: const Icon(Icons.more_vert),
+      onSelected: (Object value) {
+        if (value is GalgameSortField) {
+          _selectSortField(value);
+        } else if (value == _GamesToolbarOverflowAction.scrapeAll) {
+          unawaited(_scrapeAllGames());
+        }
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<Object>>[
+        PopupMenuItem<Object>(
+          value: _GamesToolbarOverflowAction.scrapeAll,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.manage_search_outlined, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Text(t.scrape_all)),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<Object>(
+          enabled: false,
+          height: 32,
+          child: Text(t.game_sort),
+        ),
+        for (final GalgameSortField field in GalgameSortField.values)
+          PopupMenuItem<Object>(
+            value: field,
+            child: _sortFieldMenuLabel(field),
+          ),
+      ],
     );
   }
 
@@ -2054,3 +2140,6 @@ class GameCoverThumb extends StatelessWidget {
     return placeholder;
   }
 }
+
+/// 游戏库窄屏工具条溢出菜单里除排序维度外的动作。
+enum _GamesToolbarOverflowAction { scrapeAll }
