@@ -359,8 +359,9 @@ class MediaItemDialogFrame extends StatelessWidget {
     final bool banner =
         cover != null && aspect != null && aspect > _bannerMinAspect;
     // 宽框 + 并排头部：启动按钮与快捷 chip 进头部右栏；横幅头部下方本来就是整宽，
-    // 动作留在正文里。
-    final bool actionsInHeader = wide && !banner && cover != null;
+    // 动作留在正文里。没有任何主动作时不进头部，否则右栏只剩一段空白间距。
+    final bool actionsInHeader =
+        wide && !banner && cover != null && _hasPrimaryActions;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -624,14 +625,18 @@ class MediaItemDialogFrame extends StatelessWidget {
 
   // -- actions ----------------------------------------------------------------
 
+  bool get _hasLaunchAction =>
+      showLaunchAction && launchLabel != null && onLaunch != null;
+
+  bool get _hasPrimaryActions => _hasLaunchAction || quickActions.isNotEmpty;
+
   /// 启动按钮 + 快捷 chip。正文里时末尾留 [FushiSpacingTokens.gap] 与列表动作分开；
   /// 在头部右栏时贴底，不再追加间距。
   List<Widget> _buildPrimaryActions(
     FushiDesignTokens tokens, {
     bool trailingGap = true,
   }) {
-    final bool hasLaunch =
-        showLaunchAction && launchLabel != null && onLaunch != null;
+    final bool hasLaunch = _hasLaunchAction;
     return <Widget>[
       if (hasLaunch) ...<Widget>[
         SizedBox(
