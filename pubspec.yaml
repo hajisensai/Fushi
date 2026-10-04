@@ -25,6 +25,7 @@ workspace:
   - packages/flutter_inappwebview_windows
   - packages/fushi_anki
   - packages/fushi_audio
+  - packages/fushi_cli
   - packages/fushi_core
   - packages/fushi_dictionary
   - packages/fushi_engine

@@ -83,6 +83,8 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
+import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
@@ -792,6 +794,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 见 [initState]）。持有以便 [dispose] 注销。
   AppLifecycleListener? _exitRequestListener;
 
+  /// 桌面本机控制通道（`fushi_cli` 的服务端，见 [_startCtlServer]）。
+  CtlServer? _ctlServer;
+
   /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
   /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
   /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
@@ -895,6 +900,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
+    }
+    if (_isDesktop) {
+      unawaited(_startCtlServer());
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
     // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
@@ -1102,6 +1110,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _guardedExitStep('exit flush', () async {
         await ExitFlushRegistry.instance.flushAll();
       }),
+      // 删掉 CLI 发现文件：exit(0) 之后不会再有 dispose，不删就留下一份残留
+      // （CLI 能认出残留，但少一次连不上的探测）。
+      _guardedExitStep('ctl channel stop', () async {
+        await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
+      }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续
@@ -1204,6 +1217,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
     _exitRequestListener?.dispose();
+    unawaited(_ctlServer?.stop());
+    _ctlServer = null;
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -1558,6 +1573,64 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     await _openExternalVideo(videoPath);
     return null;
+  }
+
+  /// 启动桌面本机控制通道：`fushi_cli` 经 127.0.0.1 + token 驱动本 app。
+  ///
+  /// 在 initState 就开（不等初始化完成）：CLI 拉起 app 后靠它判断「进程已起、还在
+  /// 初始化」，`status` 回 `initialised:false`，open / lookup 回 409 让 CLI 继续等。
+  Future<void> _startCtlServer() async {
+    final CtlServer? server = await startDesktopCtlServer(
+      DesktopCtlHost(
+        isReady: () {
+          final AppModel model = ref.read(appProvider);
+          return model.isInitialised &&
+              model.navigatorKey.currentState != null;
+        },
+        appVersion: () => ref.read(appProvider).packageInfo.version,
+        openTarget: _handleCtlOpen,
+        lookupWord: (String word) async {
+          await _focusMainWindowForCtl();
+          DesktopLookupService.instance.triggerLookup(word);
+        },
+        quitApp: _flushAndExitForWindowClose,
+      ),
+    );
+    if (!mounted) {
+      await server?.stop();
+      return;
+    }
+    _ctlServer = server;
+  }
+
+  /// `fushi_cli open`：先按 argv 同一组候选裁决（拒绝要回给终端），接受的目标交给
+  /// 单实例转交的同一个出口 [_handleExternalVideoChannel] 落地。
+  ///
+  /// 不 await 落地：视频分支会 await 播放页 push，那要等用户关掉播放页才返回，
+  /// CLI 不该挂到那时候。
+  Future<CtlOpenResult> _handleCtlOpen(String target) async {
+    final CtlOpenResult verdict = classifyCtlOpenTarget(
+      target,
+      videoModuleEnabled:
+          ref.read(appProvider).moduleVisibility.isEnabled(ModuleId.video),
+    );
+    if (!verdict.accepted) return verdict;
+    await _focusMainWindowForCtl();
+    unawaited(
+      _handleExternalVideoChannel(MethodCall('openExternalVideo', target)),
+    );
+    return verdict;
+  }
+
+  /// 单实例转交时 C++ 侧会前置主窗；CLI 走网络通道到这里，没人替我们做，自己前置。
+  Future<void> _focusMainWindowForCtl() async {
+    try {
+      if (await windowManager.isMinimized()) await windowManager.restore();
+      await windowManager.show();
+      await windowManager.focus();
+    } catch (e) {
+      debugPrint('[Fushi] ctl focus main window failed: $e');
+    }
   }
 
   /// TODO-1092: Windows runner 报告「系统强调色/主题色已变」。经短去抖合并同一次
