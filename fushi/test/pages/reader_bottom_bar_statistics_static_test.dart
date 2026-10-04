@@ -136,7 +136,12 @@ void main() {
         '  Widget? _buildAudiobookBarTrailing() {',
         '  /// 小说页的窗口全屏切换',
       );
-      expect(trailing, contains('_readerControlActionsIn(slot)'));
+      expect(trailing, contains('if (slot.isBottom)'));
+      expect(trailing, contains('_renderableControlsIn(slot)'));
+      expect(trailing, contains('!_isDuplicatedByAudiobookPlayBar(item)'));
+      expect(trailing,
+          contains('_readerControlButton(_readerControlAction(item))'),
+          reason: '过滤播放条自带的重复传输键后，统计等槽位按钮仍走共享动作');
       expect(
           trailing, contains('_playbackStatusInline ? _buildBarStatusText()'),
           reason: '状态读数仍是播放条右端的落点');

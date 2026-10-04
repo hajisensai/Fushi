@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -72,6 +73,36 @@ void main() {
           expect(r.left, greaterThanOrEqualTo(0));
           expect(r.right, lessThanOrEqualTo(360));
         }
+
+        final Finder trailingScroll = find.byKey(
+          const ValueKey<String>('audiobook_play_bar_trailing'),
+        );
+        final ScrollableState scrollable = tester.state<ScrollableState>(
+          find.descendant(
+            of: trailingScroll,
+            matching: find.byType(Scrollable),
+          ),
+        );
+        expect(scrollable.position.maxScrollExtent, greaterThan(0));
+        final Rect playbackBefore = tester.getRect(
+          find.byIcon(Icons.play_arrow_outlined),
+        );
+        await tester.drag(
+          trailingScroll,
+          Offset(reversed ? -80 : 80, 0),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          scrollable.position.pixels,
+          greaterThan(0),
+          reason: '溢出的槽位按钮必须能用鼠标拖出来',
+        );
+        expect(
+          tester.getRect(find.byIcon(Icons.play_arrow_outlined)),
+          playbackBefore,
+          reason: '横拖只移动 trailing，固定播放键不动',
+        );
       },
     );
   }

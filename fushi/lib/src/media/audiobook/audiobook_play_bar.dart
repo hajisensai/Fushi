@@ -178,11 +178,13 @@ class AudiobookPlayBar extends StatelessWidget {
         Expanded(
           child: Align(
             alignment: reversed ? Alignment.centerLeft : Alignment.centerRight,
-            child: SingleChildScrollView(
-              key: const ValueKey<String>('audiobook_play_bar_trailing'),
-              scrollDirection: Axis.horizontal,
-              reverse: !reversed,
-              child: trailing,
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                key: const ValueKey<String>('audiobook_play_bar_trailing'),
+                scrollDirection: Axis.horizontal,
+                reverse: !reversed,
+                child: trailing,
+              ),
             ),
           ),
         ),

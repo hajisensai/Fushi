@@ -6358,10 +6358,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: field,
             ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-              child: Row(children: chips),
+            HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                child: Row(children: chips),
+              ),
             ),
           ],
         );
@@ -6376,22 +6378,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 搜索栏那一行在手机宽度上放不下，单列一行并可横向滚动（来源只有一个时不出
   /// 来源档——只有一个选项的筛选没有意义）。
   Widget _buildAllVideosFilterRow() {
-    return SingleChildScrollView(
-      key: const ValueKey<String>('home_video_all_videos_filter_row'),
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      child: Row(
-        children: <Widget>[
-          _buildSeriesFilterButton(),
-          const SizedBox(width: 8),
-          _buildMediaTypeFilterButton(),
-          const SizedBox(width: 8),
-          _buildExtrasFilterButton(),
-          if (_videoSourcesById.length >= 2) ...<Widget>[
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('home_video_all_videos_filter_row'),
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+        child: Row(
+          children: <Widget>[
+            _buildSeriesFilterButton(),
             const SizedBox(width: 8),
-            _buildSourceFilterButton(),
+            _buildMediaTypeFilterButton(),
+            const SizedBox(width: 8),
+            _buildExtrasFilterButton(),
+            if (_videoSourcesById.length >= 2) ...<Widget>[
+              const SizedBox(width: 8),
+              _buildSourceFilterButton(),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
