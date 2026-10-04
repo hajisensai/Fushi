@@ -6289,5 +6289,15 @@
   "anki_desktop_launch_started": "正在启动 Anki…",
   "anki_desktop_launch_already_running": "Anki 已在运行。",
   "anki_desktop_launch_not_configured": "请先设置 Anki 程序路径。",
-  "anki_desktop_launch_failed": "启动 Anki 失败：$error"
+  "anki_desktop_launch_failed": "启动 Anki 失败：$error",
+  "audiobook_auto_transcribe": "下载后自动转录有声书",
+  "audiobook_auto_transcribe_hint": "下载的有声书没有字幕时，用本机语音模型转录后自动入库（带正文就对齐，没有就生成字幕书）。转录较耗时，缺语音模型时会自动下载。",
+  "audiobook_transcribe_task_subtitle": "有声书 · 转录后入库",
+  "audiobook_transcribe_status_preparing": "准备中",
+  "audiobook_transcribe_status_downloading_model": "下载语音模型中",
+  "audiobook_transcribe_status_transcribing": "转录中",
+  "audiobook_transcribe_status_importing": "入库中",
+  "audiobook_transcribe_status_done": "已入库",
+  "audiobook_transcribe_status_skipped": "库中已有同名书，已跳过",
+  "audiobook_transcribe_status_queued_after_download": "已排队转录"
 }

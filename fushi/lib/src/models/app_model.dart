@@ -7161,6 +7161,10 @@ class AppModel with ChangeNotifier {
   Future<void> setAudiobookBackgroundPlay({required bool value}) =>
       prefsRepo.setAudiobookBackgroundPlay(value: value);
 
+  bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
+  Future<void> setAudiobookAutoTranscribe({required bool value}) =>
+      prefsRepo.setAudiobookAutoTranscribe(value: value);
+
   // ── player streams & audio handler (delegated to AudioController) ───
 
   Stream<void> get playStream => audioCtrl.playStream;
