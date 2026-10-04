@@ -202,23 +202,22 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'book-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: BookImportDialogFrame(
-        title: Text(t.srt_import),
-        content: _buildForm(),
-        actions: [
-          // 漫画入口（「OCR 导入漫画」/「在线目录」）均已移出书籍导入框：
-          // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
-          adaptiveDialogAction(
-            context: context,
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
-          ),
-          buildImportAction(context, onImport: _doImport),
-        ],
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'book-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: BookImportDialogFrame(
+          title: t.srt_import,
+          content: _buildForm(),
+          actions: [
+            // 漫画入口（「OCR 导入漫画」/「在线目录」）均已移出书籍导入框：
+            // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
+            // 2026-10 体验优化：导入中取消键禁用（见 buildImportPopGuard）。
+            buildCancelAction(context),
+            buildImportAction(context, onImport: _doImport),
+          ],
+        ),
       ),
     );
   }
@@ -399,6 +398,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _epubRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_epub,
       subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
       icon: Icons.menu_book_outlined,
@@ -408,6 +408,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.menu_book_outlined,
           tooltip: t.srt_import_pick_epub,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickEpub,
         ),
       ],
@@ -416,6 +417,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _subtitleRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_subtitle_files,
       subtitle: _subtitlePath == null
           ? null
@@ -428,6 +430,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
+            enabled: !importing,
             onTap: () async => setState(() {
               _subtitlePath = null;
               _subtitleName = null;
@@ -437,6 +440,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.subtitles_outlined,
           tooltip: t.srt_import_pick_subtitle_files,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickSubtitle,
         ),
         if (isAsrSupported)
@@ -444,7 +448,8 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
             isWideTapArea: true,
-            onTap: importing ? null : _transcribeSubtitleFromAudio,
+            enabled: !importing,
+            onTap: _transcribeSubtitleFromAudio,
           ),
       ],
     );
@@ -526,6 +531,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _audioRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_audio_files,
       subtitle: _audioPaths.isEmpty
           ? null
@@ -540,6 +546,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
+            enabled: !importing,
             onTap: () async => setState(() {
               _audioPaths = [];
               _audioCoverPath = null;
@@ -549,6 +556,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickAudio,
         ),
       ],
@@ -793,6 +801,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   Widget _coverRow() {
     final String? effectiveCover = _coverPath ?? _audioCoverPath;
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_cover,
       subtitle: effectiveCover == null ? null : p.basename(effectiveCover),
       icon: Icons.image_outlined,
@@ -803,6 +812,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
+            enabled: !importing,
             onTap: () async => setState(() {
               _coverPath = null;
               _audioCoverPath = null;
@@ -812,6 +822,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.image_outlined,
           tooltip: t.srt_import_pick_cover,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickCover,
         ),
       ],
@@ -1244,32 +1255,18 @@ class BookImportDialogFrame extends StatelessWidget {
     super.key,
   });
 
-  final Widget title;
+  /// 2026-10 体验优化：标题交给 [ImportDialogFrame] 的固定页头（与有声书导入
+  /// 一致），不再塞进可滚动 body——此前表单一长，标题就跟着滚出视口。
+  final String title;
   final Widget content;
   final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-
     return ImportDialogFrame(
       leadingIcon: Icons.library_add_outlined,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          DefaultTextStyle.merge(
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.listTitle.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-            child: title,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          content,
-        ],
-      ),
+      title: title,
+      body: content,
       actions: actions,
     );
   }

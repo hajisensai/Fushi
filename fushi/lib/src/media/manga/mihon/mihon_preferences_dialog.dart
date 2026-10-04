@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// Mihon 在线来源的偏好编辑弹窗。
@@ -43,7 +44,8 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
       final List<MihonPreference> preferences = await widget.manager
           .getPreferences(widget.source);
       if (mounted) setState(() => _preferences = preferences);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MihonPreferencesDialog', error, stack);
       if (mounted) setState(() => _error = error);
     }
   }
@@ -63,7 +65,8 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
           }
         });
       }
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MihonPreferencesDialog', error, stack);
       if (mounted) setState(() => _error = error);
     } finally {
       if (mounted) setState(() => _savingKey = null);
@@ -106,7 +109,8 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
         _textDrafts.clear();
       });
       Navigator.pop(context);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MihonPreferencesDialog', error, stack);
       if (mounted) setState(() => _error = error);
     } finally {
       if (mounted) setState(() => _savingAll = false);
@@ -120,8 +124,9 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
       title: Text('${widget.source.name} · ${t.mihon_source_preferences}'),
       content: SizedBox(
         width: 480,
+        // 2026-10 体验优化：不再把原始异常 toString 直接给用户看。
         child: _error != null
-            ? Text('$_error')
+            ? Text(describeOnlineSourceError(_error!))
             : preferences == null
             ? Center(child: adaptiveIndicator(context: context))
             : preferences.isEmpty

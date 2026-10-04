@@ -171,11 +171,24 @@ class AudiobookPlayBar extends StatelessWidget {
     final List<Widget> barItems = <Widget>[
       playbackControls,
       SizedBox(width: tokens.spacing.gap / 2),
-      const Spacer(),
+      // 2026-10 体验优化：trailing（底栏槽位按钮 + 状态读数）原本是定宽 Row
+      // 紧跟 Spacer，360dp 下拖进 3 颗以上按钮整条 bar 就溢出。改成占满剩余
+      // 宽度、贴着跟随键对齐、放不下时横向滚动——三联键与跟随键永远完整可点。
       if (trailing != null) ...<Widget>[
-        trailing!,
+        Expanded(
+          child: Align(
+            alignment: reversed ? Alignment.centerLeft : Alignment.centerRight,
+            child: SingleChildScrollView(
+              key: const ValueKey<String>('audiobook_play_bar_trailing'),
+              scrollDirection: Axis.horizontal,
+              reverse: !reversed,
+              child: trailing,
+            ),
+          ),
+        ),
         SizedBox(width: tokens.spacing.gap),
-      ],
+      ] else
+        const Spacer(),
       AudiobookFollowAudioButton(controller: controller, foregroundColor: fg),
       if (showSettingsButton)
         _FocusableBarButton(

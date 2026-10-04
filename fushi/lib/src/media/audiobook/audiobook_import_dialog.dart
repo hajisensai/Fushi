@@ -180,11 +180,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'audiobook-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: _buildContent(context),
+    // 2026-10 体验优化：导入 / 重新匹配进行中禁止关闭（见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'audiobook-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: _buildContent(context),
+      ),
     );
   }
 
@@ -237,28 +240,27 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           showImportForm ? _buildImportForm() : _buildAttachedView(existing),
       actions: showImportForm
           ? [
-              adaptiveDialogAction(
-                context: context,
-                onPressed: () => Navigator.pop(context),
-                child: Text(t.dialog_cancel),
-              ),
+              buildCancelAction(context),
               buildImportAction(context, onImport: _doImport),
             ]
           : [
               adaptiveDialogAction(
                 context: context,
-                onPressed: () => Navigator.pop(context),
+                onPressed: importing ? null : () => Navigator.pop(context),
                 child: Text(t.dialog_close),
               ),
               adaptiveDialogAction(
                 context: context,
-                onPressed: () => _enterReplaceSubtitleMode(existing),
+                onPressed: importing
+                    ? null
+                    : () => _enterReplaceSubtitleMode(existing),
                 child: Text(t.audio_panel_pick_new_subtitle),
               ),
               adaptiveDialogAction(
                 context: context,
                 isDestructiveAction: true,
-                onPressed: () => _removeAudiobook(existing),
+                onPressed:
+                    importing ? null : () => _removeAudiobook(existing),
                 child: Text(t.audiobook_delete),
               ),
             ],
@@ -442,6 +444,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 由用户明确挑文件而非盲目吞整个目录 —— 多段有声书语义完好保留。
   Widget _audioSourceRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_audio_files,
       subtitle: _hasAudioSource ? _audioSourceLabel : null,
       icon: Icons.audio_file_outlined,
@@ -451,6 +454,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickAudioFiles,
         ),
       ],
@@ -460,6 +464,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 对齐文件行：标签 + [选文件] 按钮。
   Widget _alignmentRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.audiobook_pick_alignment,
       subtitle: _alignmentPath == null
           ? null
@@ -471,6 +476,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           icon: Icons.align_horizontal_left,
           tooltip: t.audiobook_pick_alignment,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickAlignment,
         ),
         if (isAsrSupported)
@@ -478,7 +484,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
             isWideTapArea: true,
-            onTap: importing ? null : _transcribeAlignmentFromAudio,
+            enabled: !importing,
+            onTap: _transcribeAlignmentFromAudio,
           ),
       ],
     );

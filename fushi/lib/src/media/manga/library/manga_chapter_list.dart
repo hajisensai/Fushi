@@ -15,6 +15,16 @@ enum _ChapterDownloadState {
   failed,
 }
 
+/// 章节下载失败文案：原因为空时只给「失败」，否则「失败 · 原因」。
+///
+/// 2026-10 体验优化：章节列表与下载页任务行原各拼一份，下载页那份在原因为
+/// 空时留下尾冒号；收成一个函数两处共用。
+String mangaChapterDownloadFailedLabel(String? lastError) {
+  final String reason = lastError?.trim() ?? '';
+  if (reason.isEmpty) return t.manga_chapter_download_status_failed;
+  return '${t.manga_chapter_download_status_failed} · $reason';
+}
+
 /// 章节列表。
 ///
 /// 作品页和阅读器里的「章节」弹层用**同一个** widget：两处对「已读怎么显示、
@@ -302,7 +312,8 @@ class MangaChapterList extends StatelessWidget {
           t.manga_chapter_download_status_downloaded,
         // 失败原因原样露出来：扩展抛的 `Log in via WebView ...` 之类正是用户要
         // 知道的下一步；只写「下载失败」等于把答案藏起来（BUG-2479）。
-        _ChapterDownloadState.failed => _failedLabel(job?.lastError),
+        _ChapterDownloadState.failed =>
+          mangaChapterDownloadFailedLabel(job?.lastError),
         _ChapterDownloadState.notDownloaded => t.manga_chapter_not_downloaded,
       },
       if (chapter.key == ocrRunningChapterKey)
@@ -328,12 +339,6 @@ class MangaChapterList extends StatelessWidget {
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );
-  }
-
-  static String _failedLabel(String? lastError) {
-    final String reason = lastError?.trim() ?? '';
-    if (reason.isEmpty) return t.manga_chapter_download_status_failed;
-    return '${t.manga_chapter_download_status_failed} · $reason';
   }
 
   Widget _buildTrailing(

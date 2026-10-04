@@ -25,7 +25,7 @@ void main() {
     await tester.pumpWidget(
       buildApp(
         BookImportDialogFrame(
-          title: const Text('Import Book'),
+          title: 'Import Book',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: const [
