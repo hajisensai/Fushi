@@ -218,6 +218,19 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           await _confirmDeleteSrtBook(book);
         },
       ),
+      // 2026-10 体验优化：「音频文件丢失」此前只在角标 Tooltip 里（触屏看不到），
+      // 菜单里只有一颗不说原因的「重新定位文件」快捷键。改为列表首项，文案把
+      // 原因和动作一起说出来。
+      if (_srtBookHasMissingAudio(book) &&
+          modules.isEnabled(ModuleId.listening))
+        DialogListAction(
+          label: '${t.audiobook_audio_missing} · ${t.audiobook_relocate}',
+          icon: Icons.find_replace_outlined,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _relocateSrtBookAudio(book);
+          },
+        ),
       // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
       // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
       DialogListAction(
@@ -233,16 +246,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           onPressed: () {
             Navigator.pop(dialogContext);
             removeFromCollection();
-          },
-        ),
-      if (_srtBookHasMissingAudio(book) &&
-          modules.isEnabled(ModuleId.listening))
-        DialogQuickAction(
-          label: t.audiobook_relocate,
-          icon: Icons.find_replace_outlined,
-          onPressed: () async {
-            Navigator.pop(dialogContext);
-            await _relocateSrtBookAudio(book);
           },
         ),
       // 单卡「加入合集」：与 EPUB 卡菜单对称，纯字幕书（bookKey 为空）也可加入；
@@ -342,11 +345,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // bookKey 非空才可用，_toggleFloatingLyricFromShelf 按 bookKey 解析。
         if ((Platform.isAndroid || Platform.isWindows) &&
             modules.isEnabled(ModuleId.listening))
+          // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），
+          // 改成明确的「关闭悬浮字幕」+ 不同图标。
           DialogListAction(
             label: _isBackgroundListeningBook(bookKey)
-                ? '${t.floating_lyric_toggle_action} ✓'
+                ? t.floating_lyric_stop_action
                 : t.floating_lyric_toggle_action,
-            icon: Icons.subtitles_outlined,
+            icon: _isBackgroundListeningBook(bookKey)
+                ? Icons.subtitles_off_outlined
+                : Icons.subtitles_outlined,
             onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
           ),
       ],
@@ -569,6 +576,52 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
     );
     if (decision == null || !mounted) return;
+
+    // 2026-10 体验优化：确认后进入忙碌态——阻塞式进度弹窗（不可点遮罩 / 返回
+    // 关闭），批量栏与卡片在删除期间都点不到。此前确认框一关页面毫无反馈，
+    // 几十本书要删好几秒，用户以为没生效又点一次，或在删除途中改选中集。
+    final Set<String> toDelete = targetKeys;
+    final ValueNotifier<int> progress = ValueNotifier<int>(0);
+    final int total = targetCollectionIds.length + toDelete.length;
+    final NavigatorState progressNavigator =
+        Navigator.of(context, rootNavigator: true);
+    unawaited(
+      showAppDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext ctx) => PopScope<Object?>(
+          canPop: false,
+          child: _ShelfBatchDeleteProgressDialog(
+            progress: progress,
+            total: total,
+          ),
+        ),
+      ),
+    );
+    // 等进度弹窗真正挂上再开删：删除若瞬间完成，下面的 pop 不能先于 push。
+    await WidgetsBinding.instance.endOfFrame;
+    try {
+      await _runBatchDelete(
+        targetKeys: toDelete,
+        targetCollectionIds: targetCollectionIds,
+        collectionCount: collectionCount,
+        decision: decision,
+        progress: progress,
+      );
+    } finally {
+      progressNavigator.pop();
+    }
+  }
+
+  /// [_batchDeleteConfirm] 确认后的执行体（2026-10 体验优化拆出，外层负责忙碌态）。
+  /// 每处理完一个目标（合集或散卡）把 [progress] +1。
+  Future<void> _runBatchDelete({
+    required Set<String> targetKeys,
+    required Set<int> targetCollectionIds,
+    required int collectionCount,
+    required DeleteDecision decision,
+    required ValueNotifier<int> progress,
+  }) async {
     final DeleteScope scope = decision.scope;
     final bool deleteLocalFiles = decision.deleteLocalFiles;
     final bool deleteStatistics = decision.deleteStatistics;
@@ -581,6 +634,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       final int removed =
           await deleteMediaCollectionWithAssets(appModel.database, id);
       if (removed > 0) dissolved++;
+      progress.value++;
     }
 
     int deleted = 0;
@@ -644,6 +698,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           if (result.deleted) deleted++;
         }
       }
+      progress.value++;
     }
     if (!mounted) return;
     _refreshSrtBooks();
@@ -1059,6 +1114,19 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         localFiles,
         source: 'ReaderHistory.deleteSrtBookLocalFiles',
       );
+      // 2026-10 体验优化：单本删除此前成功失败都静默；没删到行（已被别处删掉 /
+      // 写库失败）时卡片原样留着，用户只会以为没点上。
+      if (srtResult.deleted == 0) {
+        FushiToast.show(
+          msg: t.epub_delete_error,
+          severity: ToastSeverity.error,
+        );
+      } else {
+        FushiToast.show(
+          msg: t.batch_delete_success(n: 1),
+          severity: ToastSeverity.success,
+        );
+      }
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       _rebuild(() {});
@@ -1079,7 +1147,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     Navigator.pop(context);
     if (_isBackgroundListeningBook(bookKey)) {
       await appModel.stopBackgroundListening();
-      if (mounted) _rebuild(() {});
+      if (!mounted) return;
+      // 2026-10 体验优化：停止后台听书此前静默，用户不确定点没点上。
+      FushiToast.show(
+        msg: t.floating_lyric_stop_action,
+        severity: ToastSeverity.info,
+      );
+      _rebuild(() {});
       return;
     }
     final BackgroundListenResult result =
@@ -1148,6 +1222,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       );
       return;
     }
+    // 2026-10 体验优化：成功也给反馈（与批量删除同一文案）。
+    FushiToast.show(
+      msg: t.batch_delete_success(n: 1),
+      severity: ToastSeverity.success,
+    );
     _refreshSrtBooks();
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
@@ -1571,4 +1650,46 @@ class _AudiobookInfo {
   const _AudiobookInfo({required this.hasAudiobook, required this.healthKind});
   final bool hasAudiobook;
   final HealthKind healthKind;
+}
+
+/// 书架批量删除的阻塞式进度弹窗（2026-10 体验优化）。
+class _ShelfBatchDeleteProgressDialog extends StatelessWidget {
+  const _ShelfBatchDeleteProgressDialog({
+    required this.progress,
+    required this.total,
+  });
+
+  final ValueNotifier<int> progress;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
+      maxWidth: 360,
+      scrollable: false,
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (BuildContext context, int done, Widget? _) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  '${t.delete_in_progress} $done / $total',
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap),
+                LinearProgressIndicator(
+                  value: total == 0 ? null : done / total,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 }

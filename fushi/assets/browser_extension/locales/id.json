@@ -425,5 +425,5 @@
   "pc_style_more": "Semua pengaturan",
   "pc_hint_site_track": "Video ini memutar trek subtitle milik situs, jadi lapisan Fushi tetap tersembunyi. Ketuk untuk menampilkan subtitle Fushi sebagai gantinya.",
   "opt_playerControls_title": "Tombol subtitle di dalam pemutar",
-  "opt_playerControls_desc": "Menambahkan tombol Fushi ke bilah kontrol pemutar (YouTube dan Netflix; di situs lain muncul tombol bulat di kanan bawah video selama penunjuk berada di atasnya). Menunya mengubah pengaturan yang sama dengan halaman ini — subtitle Fushi, mengganti subtitle situs, menyembunyikannya, selisih waktu, dan tampilan subtitle — tanpa meninggalkan video."
+  "opt_playerControls_desc": "Menambahkan tombol Fushi ke bilah kontrol pemutar (YouTube dan Netflix; di situs lain muncul tombol bulat di kanan atas video selama penunjuk berada di atasnya). Menunya mengubah pengaturan yang sama dengan halaman ini — subtitle Fushi, mengganti subtitle situs, menyembunyikannya, selisih waktu, dan tampilan subtitle — tanpa meninggalkan video."
 }

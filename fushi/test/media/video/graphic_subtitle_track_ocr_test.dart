@@ -8,12 +8,54 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
 import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
+
+/// 记下 ffmpeg 参数；[writeSup] 时往输出路径（末参）写一份 `.sup`，否则写空壳。
+class _RecordingFfmpegBackend implements FfmpegBackend {
+  _RecordingFfmpegBackend({required this.returnCode, required this.writeSup});
+
+  final int returnCode;
+  final bool writeSup;
+  List<String>? args;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    this.args = args;
+    File(args.last).writeAsBytesSync(writeSup ? _sup() : <int>[]);
+    return FfmpegRunResult(returnCode: returnCode, output: 'boom');
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw UnimplementedError();
+}
+
+/// 直接起入库的精简 ffmpeg 进程。
+class _BinaryFfmpegBackend implements FfmpegBackend {
+  _BinaryFfmpegBackend(this.executable);
+
+  final String executable;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    final ProcessResult r = await Process.run(executable, <String>[
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      ...args,
+    ]).timeout(timeout);
+    return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stderr}');
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw UnimplementedError();
+}
 
 /// 一个 PGS 段（不带 `PG` 头）：类型 + 长度 + 段体。
 typedef _Segment = ({int type, List<int> body});
-
-const int _pid = 0x1200;
 
 List<int> _u16(int v) => <int>[(v >> 8) & 0xFF, v & 0xFF];
 
@@ -109,77 +151,6 @@ Uint8List _sup() {
   return out.toBytes();
 }
 
-List<int> _ptsBytes(int pts) => <int>[
-  0x21 | ((pts >> 29) & 0x0E),
-  (pts >> 22) & 0xFF,
-  ((pts >> 14) & 0xFE) | 1,
-  (pts >> 7) & 0xFF,
-  ((pts << 1) & 0xFE) | 1,
-];
-
-/// 把一个 PES 切成 188 字节 TS 包；末包用自适应域填充。
-List<int> _packetize(int pid, List<int> pes) {
-  final List<int> out = <int>[];
-  int o = 0;
-  int cc = 0;
-  while (o < pes.length) {
-    final int remain = pes.length - o;
-    final bool first = o == 0;
-    final List<int> header = <int>[
-      0x47,
-      (first ? 0x40 : 0x00) | ((pid >> 8) & 0x1F),
-      pid & 0xFF,
-    ];
-    if (remain >= 184) {
-      out
-        ..addAll(header)
-        ..add(0x10 | (cc++ & 0xF))
-        ..addAll(pes.sublist(o, o + 184));
-      o += 184;
-      continue;
-    }
-    // 自适应域：长度字节 + 标志字节 + 填充。
-    final int afLen = 183 - remain;
-    out
-      ..addAll(header)
-      ..add(0x30 | (cc++ & 0xF))
-      ..add(afLen);
-    if (afLen > 0) {
-      out
-        ..add(0x00)
-        ..addAll(List<int>.filled(afLen - 1, 0xFF));
-    }
-    out.addAll(pes.sublist(o));
-    o = pes.length;
-  }
-  return out;
-}
-
-Uint8List _ts() {
-  final List<int> out = <int>[
-    // 一个无关 PID 的包（PAT 位置），解封装应跳过。
-    0x47, 0x40, 0x00, 0x10, ...List<int>.filled(184, 0xFF),
-  ];
-  for (final (int pts, List<_Segment> Function() build) in _displaySets) {
-    final List<int> payload = <int>[
-      for (final _Segment s in build()) ...<int>[
-        s.type,
-        ..._u16(s.body.length),
-        ...s.body,
-      ],
-    ];
-    final List<int> pes = <int>[
-      0x00, 0x00, 0x01, 0xBD,
-      ..._u16(payload.length + 8),
-      0x81, 0x80, 0x05, // PTS only
-      ..._ptsBytes(pts),
-      ...payload,
-    ];
-    out.addAll(_packetize(_pid, pes));
-  }
-  return Uint8List.fromList(out);
-}
-
 MokuroImage _page(List<List<String>> blocks) => MokuroImage(
   url: 'x.png',
   size: const MokuroSize(100, 40),
@@ -252,14 +223,112 @@ void main() {
     });
   });
 
-  group('mpegTsToPgsSup', () {
-    test('TS 解封装后与原始 .sup 逐字节一致（跳过无关 PID）', () {
-      expect(mpegTsToPgsSup(_ts()), _sup());
+  group('extractGraphicSubtitleTrackToSup', () {
+    late Directory dir;
+    late File video;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('fushi_sup_extract_');
+      video = File(p.join(dir.path, 'v.mkv'))..writeAsBytesSync(<int>[0]);
+    });
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test('按相对序号原样复制成 .sup', () async {
+      final _RecordingFfmpegBackend backend = _RecordingFfmpegBackend(
+        returnCode: 0,
+        writeSup: true,
+      );
+      final String out = p.join(dir.path, 'track.sup');
+      final bool ok = await extractGraphicSubtitleTrackToSup(
+        videoPath: video.path,
+        streamIndex: 2,
+        supPath: out,
+        backend: backend,
+      );
+      expect(ok, isTrue);
+      expect(backend.args, <String>[
+        '-y',
+        '-i',
+        video.path,
+        '-map',
+        '0:s:2',
+        '-c',
+        'copy',
+        '-f',
+        'sup',
+        out,
+      ]);
     });
 
-    test('没有同步字节返回空', () {
-      expect(mpegTsToPgsSup(Uint8List.fromList(<int>[1, 2, 3])), isEmpty);
+    test('失败：删掉空壳文件、交出失败摘要', () async {
+      final String out = p.join(dir.path, 'track.sup');
+      final List<String> failures = <String>[];
+      final bool ok = await extractGraphicSubtitleTrackToSup(
+        videoPath: video.path,
+        streamIndex: 0,
+        supPath: out,
+        onFailure: failures.add,
+        backend: _RecordingFfmpegBackend(returnCode: 1, writeSup: false),
+      );
+      expect(ok, isFalse);
+      expect(File(out).existsSync(), isFalse);
+      expect(failures.single, contains('boom'));
     });
+
+    test('输入不存在不调 ffmpeg', () async {
+      final _RecordingFfmpegBackend backend = _RecordingFfmpegBackend(
+        returnCode: 0,
+        writeSup: true,
+      );
+      final List<String> failures = <String>[];
+      final bool ok = await extractGraphicSubtitleTrackToSup(
+        videoPath: p.join(dir.path, 'missing.mkv'),
+        streamIndex: 0,
+        supPath: p.join(dir.path, 'track.sup'),
+        onFailure: failures.add,
+        backend: backend,
+      );
+      expect(ok, isFalse);
+      expect(backend.args, isNull);
+      expect(failures, <String>['input missing']);
+    });
+
+    // 入库的桌面精简 ffmpeg 真跑一遍：缺 sup 封装器时这里报
+    // "Requested output format 'sup' is not known"。夹具是一条 PGS 轨的 mkv
+    // （单测里的 _sup() 由完整 ffmpeg 封装，mkv 把起点归零：1s/1.5s/3s → 0/0.5/2s）。
+    final String windowsBinary = p.normalize(
+      '../third_party/ffmpeg-min/windows/ffmpeg.exe',
+    );
+    test(
+      '入库的精简 ffmpeg 能把 mkv 里的 PGS 轨抽成 .sup',
+      () async {
+        final String out = p.join(dir.path, 'track.sup');
+        final List<String> failures = <String>[];
+        final bool ok = await extractGraphicSubtitleTrackToSup(
+          videoPath: 'test/fixtures/video/pgs_one_cue.mkv',
+          streamIndex: 0,
+          supPath: out,
+          onFailure: failures.add,
+          backend: _BinaryFfmpegBackend(windowsBinary),
+        );
+        expect(ok, isTrue, reason: failures.join('\n'));
+        final List<PgsCue> cues = PgsSubtitleParser.parse(
+          File(out).readAsBytesSync(),
+        );
+        expect(cues, hasLength(1));
+        expect(cues.single.startMs, 0);
+        expect(cues.single.endMs, 2000);
+        expect(cues.single.bounds, (
+          left: 100,
+          top: 200,
+          right: 104,
+          bottom: 202,
+        ));
+      },
+      skip: Platform.isWindows && File(windowsBinary).existsSync()
+          ? false
+          : '只有 Windows 能跑入库的 ffmpeg-min/windows/ffmpeg.exe',
+    );
   });
 
   group('buildGraphicSubtitleSrt', () {

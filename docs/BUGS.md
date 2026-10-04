@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2700 条。点号进各自文件。
+> 共 2701 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2941](bugs/BUG-2941-download-collection-sync-order.md) | ✅ | ✅ | 下载合集选集乱序：同步平手取远端冲掉按集号排序 |
 | [BUG-2940](bugs/BUG-2940-synced-clip-silent-audio.md) | ✅ | ✅ | 同步片段导出放过 0 音频包的 webm（#1951） |
 | [BUG-2939](bugs/BUG-2939-mobile-libmpv-no-muxer.md) | ✅ | ✅ | Android/iOS/macOS 随包 libmpv 无 muxer，dump-cache 恒失败（#1953） |
 | [BUG-2937](bugs/BUG-2937-franchise-walk-batched.md) | ✅ | ✅ | AI下视频整套：系列查不完时按预算截断交半张清单·应分批续查到走完 |

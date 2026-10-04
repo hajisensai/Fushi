@@ -549,7 +549,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                 : FilledButton.tonalIcon(
                     key: const ValueKey<String>('manga_discovery_open_sources'),
                     onPressed: openSources,
-                    icon: const Icon(Icons.extension_outlined),
+                    // 2026-10 体验优化：与全局搜索空态同一「导入」图标；拼图块
+                    // 暗示「扩展」入口，而库页里没有叫「扩展」的按钮。
+                    icon: const Icon(Icons.library_add_outlined),
                     label: Text(t.manga_discovery_empty_action),
                   ),
           ),
@@ -859,10 +861,12 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         child: FushiPlaceholderMessage(
           icon: Icons.cloud_off_outlined,
           message: t.manga_discovery_load_failed,
-          action: FilledButton.tonal(
+          // 2026-10 体验优化：重试按钮统一 FilledButton.icon(refresh_rounded)。
+          action: FilledButton.icon(
             key: const ValueKey<String>('manga_discovery_retry'),
             onPressed: () => unawaited(_loadFirst()),
-            child: Text(t.retry),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(t.retry),
           ),
         ),
       );
