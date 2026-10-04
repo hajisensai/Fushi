@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 统计页会话流（用户 2026-09-08：每个域都要会话级统计，能删误点的会话）的行为守卫：
 ///  * 每行显示 标题 · 起止 · 量纲；空串标题回退 mediaKey；
@@ -397,7 +398,7 @@ void main() {
     final Finder confirm =
         find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
     expect(
-      tester.widget<FilledButton>(confirm).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed,
       isNull,
       reason: '防呆：没勾确认项之前不许清',
     );

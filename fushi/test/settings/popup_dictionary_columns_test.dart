@@ -18,6 +18,7 @@ import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-776「查词弹窗配置一行显示 N 个词典（实验性）」。一个词条内多词典块原本是
 /// 纵向单列；新功能改为同一词条内每行并排 N 个（N=1 退化为现状单列）。列数由
@@ -138,7 +139,7 @@ void main() {
       await tester.pumpWidget(buildHarness(await prefsBackedAppModel(db)));
       await tester.pump();
 
-      final Slider slider = tester.widget<Slider>(find.byType(Slider));
+      final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.byType(Slider)));
       expect(slider.min, 1, reason: 'N=1 是退化的经典单列下界');
       expect(slider.max, 4);
       expect(slider.divisions, 3, reason: '1..4 共 4 档 = 3 个 division');

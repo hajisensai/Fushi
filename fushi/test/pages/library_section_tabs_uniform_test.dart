@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 书架 / 漫画 / 视频 / 游戏四个模块的顶栏分区导航统一走 [LibrarySectionTabs]
 /// （唯一实现），形态是 MD3 primary tabs。
@@ -111,7 +112,7 @@ void main() {
       width: 1600,
     );
 
-    final TabBar bar = tester.widget<TabBar>(find.byType(TabBar));
+    final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
     expect(bar.isScrollable, isTrue, reason: '段数可变，滚动是正常形态而非降级');
     expect(
       bar.tabAlignment,
@@ -158,7 +159,7 @@ void main() {
 
     expect(taps, <int>[2], reason: '点击必须照常上报给宿主');
     expect(
-      tester.widget<TabBar>(find.byType(TabBar)).controller!.index,
+      tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!.index,
       0,
       reason: '宿主没改 selected，指示器必须被拉回——controller 是 selected 的投影，'
           '不是第二份真相',
@@ -198,7 +199,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      identical(tester.widget<TabBar>(find.byType(TabBar)).controller, host),
+      identical(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller, host),
       isTrue,
       reason: 'TabBar 必须挂在宿主那一个 controller 上，不得自建第二个',
     );
@@ -211,7 +212,7 @@ void main() {
     // 反向：宿主自己换页（横滑 / 外部 animateTo）时指示器跟着走。
     host.animateTo(0);
     await tester.pumpAndSettle();
-    expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!.index, 0);
   });
 
   testWidgets('fill 形态摆得下时铺满整行、摆不下时退回可滚动',
@@ -242,7 +243,7 @@ void main() {
     }
 
     await pumpFill(900);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isFalse);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isFalse);
     // 三段等分整行：相邻两段中心距 = 行宽 / 3，末段中心在 5/6 处（贴左形态下
     // 三段全挤在左边一两百像素内）。
     expect(centerGap(tester, '小说', '漫画'), closeTo(300, 1));
@@ -252,7 +253,7 @@ void main() {
     );
 
     await pumpFill(120);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isTrue,
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isTrue,
         reason: '摆不下时必须退回可滚动，不能把段挤到截字');
     expect(tester.takeException(), isNull);
   });

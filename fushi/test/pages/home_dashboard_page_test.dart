@@ -29,6 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -416,7 +417,7 @@ void main() {
     // 书卡封面底部进度条 = percent/100（50/100 → 0.5）；目标未设（goal=0）时
     // 页面上没有其它 LinearProgressIndicator。
     final LinearProgressIndicator bar = tester
-        .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+        .widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)));
     expect(bar.value, 0.5);
     // 散卡：标题=书名，副标题=「阅读 · 50%」。
     expect(find.text('横滑测试书'), findsOneWidget);
@@ -1384,9 +1385,7 @@ void main() {
       find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
       findsOneWidget,
     );
-    final TextField dailyField = tester.widget<TextField>(
-      find.descendant(of: dialog, matching: find.byType(TextField)).first,
-    );
+    final TextField dailyField = tester.widget<TextField>(glassUnwrap<TextField>(find.descendant(of: dialog, matching: find.byType(TextField)).first),);
     expect(dailyField.decoration?.helperText, isNull);
     // 参考值：与目标同口径（全来源合计）的近 7 日日均。
     expect(
@@ -1401,7 +1400,7 @@ void main() {
     await tester.tap(find.widgetWithText(ActionChip, '5000'));
     await tester.pump();
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField))).controller?.text,
       '5000',
     );
 

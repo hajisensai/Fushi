@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   Widget buildSubject(Widget child) {
@@ -49,7 +50,7 @@ void main() {
       ),
     );
 
-    final ChoiceChip chip = tester.widget<ChoiceChip>(find.byType(ChoiceChip));
+    final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)));
     final RoundedRectangleBorder shape = chip.shape! as RoundedRectangleBorder;
 
     expect(chip.selected, isTrue);
@@ -109,7 +110,7 @@ void main() {
     );
 
     final OutlinedButton button =
-        tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+        tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byType(OutlinedButton)));
     final RoundedRectangleBorder shape = button.style!.shape!
         .resolve(<WidgetState>{})! as RoundedRectangleBorder;
 
@@ -823,7 +824,7 @@ void main() {
       ),
     );
 
-    final Switch previewSwitch = tester.widget<Switch>(find.byType(Switch));
+    final Switch previewSwitch = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch)));
     final Color trackColor = previewSwitch.trackColor!.resolve(
       <WidgetState>{WidgetState.disabled, WidgetState.selected},
     )!;
@@ -883,7 +884,7 @@ void main() {
     );
 
     final Icon icon = tester.widget<Icon>(find.byIcon(Icons.sell_outlined));
-    final Divider divider = tester.widget<Divider>(find.byType(Divider));
+    final Divider divider = tester.widget<Divider>(glassUnwrap<Divider>(find.byType(Divider)));
 
     expect(find.byType(SafeArea), findsOneWidget);
     expect(find.text('Filters'), findsOneWidget);
@@ -948,7 +949,7 @@ void main() {
       ),
     );
 
-    final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+    final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
     final RoundedRectangleBorder shape =
         dialog.shape! as RoundedRectangleBorder;
 

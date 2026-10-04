@@ -6,6 +6,7 @@ import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   setUp(() {
@@ -95,9 +96,9 @@ void main() {
       t.font_target_dictionary,
     );
 
-    expect(tester.widget<FilterChip>(appUiChip).selected, isFalse);
-    expect(tester.widget<FilterChip>(bodyChip).selected, isTrue);
-    expect(tester.widget<FilterChip>(dictionaryChip).selected, isTrue);
+    expect(tester.widget<FilterChip>(glassUnwrap<FilterChip>(appUiChip)).selected, isFalse);
+    expect(tester.widget<FilterChip>(glassUnwrap<FilterChip>(bodyChip)).selected, isTrue);
+    expect(tester.widget<FilterChip>(glassUnwrap<FilterChip>(dictionaryChip)).selected, isTrue);
 
     await tester.tap(appUiChip);
     await tester.pump();

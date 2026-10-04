@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import '../helpers/glass_unwrap.dart';
 
 const Key _leadingCue = ValueKey<String>(
   'library-section-tabs-leading-overflow-cue',
@@ -109,7 +110,7 @@ void main() {
     await pumpFillTabs(tester, width: 480, labels: <String>['小说', '漫画', long]);
 
     expect(
-      tester.widget<TabBar>(find.byType(TabBar)).isScrollable,
+      tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable,
       isTrue,
       reason: '最宽段放不进等分格时必须退回可滚动形态',
     );
@@ -131,11 +132,11 @@ void main() {
     const List<String> labels = <String>['首页', '系列', '全部视频', '发现', '来源', '设置'];
 
     await pumpFillTabs(tester, width: 240, labels: labels);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isTrue);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isTrue);
     expect(find.byKey(_trailingCue), findsOneWidget, reason: '窄窗溢出时应有尾部渐隐');
 
     await pumpFillTabs(tester, width: 1200, labels: labels);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isFalse);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isFalse);
     expect(find.byKey(_leadingCue), findsNothing);
     expect(
       find.byKey(_trailingCue),

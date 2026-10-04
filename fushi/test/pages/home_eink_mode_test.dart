@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 最小 eink 主题：白底黑字的纯黑白 scheme + 扩展标志，与产品 `_buildThemeData`
 /// 的 eink 分支同源（这里只需要颜色角色塌缩这一层）。
@@ -333,9 +334,7 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(
         tester
-            .widget<CircularProgressIndicator>(
-              find.byType(CircularProgressIndicator),
-            )
+            .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),)
             .value,
         0.5,
       );
@@ -353,9 +352,7 @@ void main() {
         ),
       );
       final CircularProgressIndicator ring = tester
-          .widget<CircularProgressIndicator>(
-            find.byType(CircularProgressIndicator),
-          );
+          .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),);
       expect(ring.value, 0, reason: 'null = 无限转圈，eink 下钉成 0');
       final List<Container> discs = tester
           .widgetList<Container>(find.byType(Container))
@@ -401,7 +398,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final TabBar bar = tester.widget<TabBar>(find.byType(TabBar));
+      final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
       expect(bar.controller?.animationDuration, Duration.zero);
 
       final Finder gradientBox = find.byWidgetPredicate(
@@ -433,7 +430,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final TabBar bar = tester.widget<TabBar>(find.byType(TabBar));
+      final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
       expect(bar.controller?.animationDuration, kTabScrollDuration);
     });
   });

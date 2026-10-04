@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// TODO-712 守卫：阅读器有声书播放控制条的所有可点按钮必须注册为应用焦点目标
 /// （[FushiFocusTarget]），否则在 `experimentalFocusNavigation` 下方向键 / 手柄
@@ -32,7 +33,7 @@ void main() {
 
     // 每个 IconButton 必须有一个 FushiFocusTarget 祖先。
     final Iterable<IconButton> buttons =
-        tester.widgetList<IconButton>(find.byType(IconButton));
+        tester.widgetList<IconButton>(glassUnwrapAll<IconButton>(find.byType(IconButton)));
     expect(buttons.length, 5, reason: '播放条应有 5 个图标按钮：上一句/播放/下一句/follow/设置');
     for (final Element el in find.byType(IconButton).evaluate()) {
       final Finder target = find.ancestor(

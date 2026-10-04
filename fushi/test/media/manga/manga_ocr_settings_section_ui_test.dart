@@ -18,6 +18,7 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// Fake 服务，模型状态与下载流可编程。
 class _FakeOcrService implements MangaOcrService {
@@ -317,7 +318,7 @@ void main() {
 
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+    expect(tester.widget<DropdownButton<int>>(glassUnwrap<DropdownButton<int>>(dropdown)).value, 0);
     await tester.ensureVisible(field);
     await tester.tap(field);
     await tester.pumpAndSettle();
@@ -328,7 +329,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 4);
+    expect(tester.widget<DropdownButton<int>>(glassUnwrap<DropdownButton<int>>(dropdown)).value, 4);
     await tester.ensureVisible(field);
     await tester.tap(field);
     await tester.pumpAndSettle();
@@ -339,7 +340,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+    expect(tester.widget<DropdownButton<int>>(glassUnwrap<DropdownButton<int>>(dropdown)).value, 0);
   });
 
   String engineLabel(MangaOcrLocalModel model) =>
@@ -620,7 +621,7 @@ void main() {
       OutlinedButton,
       t.manga_ocr_delete,
     );
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNotNull);
     final Finder importButton = find.byKey(
       const ValueKey<String>('manga_ocr_import_button'),
     );
@@ -634,7 +635,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(importer.calls, hasLength(1));
     expect(imported.isCompleted, isFalse);
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNull);
     await tester.ensureVisible(deleteButton);
     await tester.tap(deleteButton);
     await tester.pump();
@@ -642,7 +643,7 @@ void main() {
     expect(service.deleteCalls, 0);
     imported.complete();
     await tester.pumpAndSettle();
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNotNull);
   });
 
   testWidgets('detect external shows probed version',

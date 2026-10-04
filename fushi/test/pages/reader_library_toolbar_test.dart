@@ -8,6 +8,7 @@ import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 Widget host(Widget child) => ProviderScope(
       child: TranslationProvider(
@@ -91,7 +92,7 @@ void main() {
     expect(find.textContaining('Dictionary'), findsOneWidget);
     expect(
       tester
-          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)))
           .value,
       0.5,
     );

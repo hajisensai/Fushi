@@ -21,6 +21,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/test_platform_services.dart';
+import '../../helpers/glass_unwrap.dart';
 
 class _FakeInAppWebViewController implements InAppWebViewController {
   @override
@@ -356,10 +357,10 @@ void main() {
     // 「设置」抽屉：标题下一条标签栏把分类摊平同屏切换（导航 / 有声书不在这里，
     // 它们各有自己的 presentation），默认落在第一组「布局显示」上。不再用分段条。
     expect(find.byType(FushiSegmentedStrip<String>), findsNothing);
-    final TabBar tabBar = tester.widget<TabBar>(find.descendant(
+    final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.descendant(
       of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
       matching: find.byType(TabBar),
-    ));
+    )));
     expect(tabBar.tabs, hasLength(3));
     expect(tabBar.controller!.index, 0);
     expect(find.text(t.section_layout), findsWidgets);

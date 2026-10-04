@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(
       NativeDatabase.memory(
@@ -692,7 +693,7 @@ void main() {
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(localeField()).controller!.text,
+      tester.widget<TextField>(glassUnwrap<TextField>(localeField())).controller!.text,
       'ja',
     );
     await tester.enterText(localeField(), '   ');

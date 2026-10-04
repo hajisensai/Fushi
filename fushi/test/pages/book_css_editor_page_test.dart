@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
 // `flutter test --dart-define=SLANG_MOCK=true` and a conditional
 // import.  For now we import the real generated file:
 import 'package:fushi/i18n/strings.g.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   late Directory tmpDir;
@@ -123,7 +124,7 @@ void main() {
       expect(find.text('a.css'), findsOneWidget);
       expect(find.text('b.css'), findsOneWidget);
       final TextField tf =
-          tester.widget<TextField>(find.byType(TextField).first);
+          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
       expect(tf.controller!.text, 'aaa');
     },
   );
@@ -161,7 +162,7 @@ void main() {
 
       // First chip should still be selected (editor still shows modified text)
       final TextField tf =
-          tester.widget<TextField>(find.byType(TextField).first);
+          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
       expect(tf.controller!.text, 'modified');
     },
   );
@@ -215,7 +216,7 @@ void main() {
 
       // Editor should be back to disk content
       final TextField tf =
-          tester.widget<TextField>(find.byType(TextField).first);
+          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
       expect(tf.controller!.text, 'original content');
 
       // No .original file should exist on disk

@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import 'widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 三大库页搜索框的形态参数，逐字抄自上面三处调用点。
 const double _libraryPageFieldHeight = 40;
@@ -57,7 +58,7 @@ Future<void> _pumpSearchField(
 }
 
 InputDecoration _decorationOf(WidgetTester tester) {
-  final TextField field = tester.widget<TextField>(find.byType(TextField));
+  final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField)));
   final InputDecoration? decoration = field.decoration;
   expect(decoration, isNotNull, reason: '搜索框必须带 InputDecoration');
   return decoration!;

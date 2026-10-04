@@ -12,6 +12,7 @@ import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:path/path.dart' as p;
+import '../helpers/glass_unwrap.dart';
 
 const String _sourceId = '00112233-4455-4677-8899-aabbccddeeff';
 final CardSourceLink _link = CardSourceLink(
@@ -131,11 +132,11 @@ Future<void> _chooseSentenceAndSave(WidgetTester tester) async {
     FilledButton,
     t.card_source_review_save,
   );
-  expect(tester.widget<FilledButton>(save).onPressed, isNull);
-  expect(tester.widget<Checkbox>(sentence).value, isFalse);
+  expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(save)).onPressed, isNull);
+  expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(sentence)).value, isFalse);
   await tester.tap(sentence);
   await tester.pump();
-  expect(tester.widget<Checkbox>(sentence).value, isTrue);
+  expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(sentence)).value, isTrue);
   await tester.tap(save);
   await tester.pump();
 }
@@ -528,7 +529,7 @@ void main() {
       TextButton,
       t.card_source_review_continue,
     );
-    expect(tester.widget<TextButton>(continueButton).onPressed, isNull);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(continueButton)).onPressed, isNull);
     repository.pendingRead!.complete(null);
     await _until(tester, () => !session.busy);
     await pending;

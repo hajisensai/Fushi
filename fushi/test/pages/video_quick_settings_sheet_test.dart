@@ -22,6 +22,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import '../helpers/video_quick_settings_harness.dart';
+import '../helpers/glass_unwrap.dart';
 
 // 阶段 B：VideoQuickSettingsSheet 改消费 settings schema 投影（唯一真相源
 // settings_schema_video.dart + VideoQuickSettingsHost 能力槽），旧 ~60 个构造参数
@@ -247,9 +248,7 @@ void main() {
     expect(find.byType(SegmentedButton<VideoShaderTier>), findsOneWidget);
     // 单选器每档都有一个 ButtonSegment（五段互斥单选）。
     final SegmentedButton<VideoShaderTier> seg =
-        tester.widget<SegmentedButton<VideoShaderTier>>(
-      find.byType(SegmentedButton<VideoShaderTier>),
-    );
+        tester.widget<SegmentedButton<VideoShaderTier>>(glassUnwrap<SegmentedButton<VideoShaderTier>>(find.byType(SegmentedButton<VideoShaderTier>)),);
     expect(seg.segments.map((s) => s.value).toSet(), <VideoShaderTier>{
       VideoShaderTier.off,
       VideoShaderTier.low,
@@ -946,9 +945,7 @@ void main() {
       AdaptiveSettingsRow,
       t.video_setting_av_delay,
     );
-    final Slider slider = tester.widget<Slider>(
-      find.descendant(of: delayRow, matching: find.byType(Slider)),
-    );
+    final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.descendant(of: delayRow, matching: find.byType(Slider))),);
     expect(slider.value, 1200);
     expect(slider.min, -10000);
     expect(slider.max, 10000);
@@ -959,7 +956,7 @@ void main() {
       matching: find.byType(TextField),
     );
     expect(field, findsOneWidget);
-    final TextField tf = tester.widget<TextField>(field);
+    final TextField tf = tester.widget<TextField>(glassUnwrap<TextField>(field));
     expect(tf.controller!.text, '1200');
   });
 
@@ -1500,7 +1497,7 @@ void main() {
     await tester.ensureVisible(slider);
     await tester.pumpAndSettle();
 
-    final double before = tester.widget<Slider>(slider).value;
+    final double before = tester.widget<Slider>(glassUnwrap<Slider>(slider)).value;
     final TestGesture gesture =
         await tester.startGesture(tester.getCenter(slider));
     // 分多段移动模拟真实拖动的多个 tick。
@@ -1511,7 +1508,7 @@ void main() {
 
     expect(commits, isEmpty,
         reason: '拖动 tick 不得写穿 asb 配置（BUG-963：逐档写穿致全页 rebuild）');
-    expect(tester.widget<Slider>(slider).value, greaterThan(before),
+    expect(tester.widget<Slider>(glassUnwrap<Slider>(slider)).value, greaterThan(before),
         reason: '拖动中滑块须本地跟手（临时值在渲染层 State，而非落盘回读）');
 
     await gesture.up();

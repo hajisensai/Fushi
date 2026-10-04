@@ -21,6 +21,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 查词音量滑条粒度（飞书 row57「查词音量的滑条也改成和有声书音量一样的」）：
 /// 旧实现 divisions: 20（0–100% 共 20 档）= 拖动和方向键都是 5% 一跳，标题无读数。
@@ -118,7 +119,7 @@ void main() {
       await tester.pumpWidget(buildHarness(AppModel(testPlatformServices())));
       await tester.pump();
 
-      final Slider slider = tester.widget<Slider>(find.byType(Slider));
+      final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.byType(Slider)));
       expect(slider.min, 0);
       expect(slider.max, 100);
       expect(slider.divisions, 100,

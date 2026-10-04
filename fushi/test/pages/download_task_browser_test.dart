@@ -12,6 +12,7 @@ import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import '../helpers/glass_unwrap.dart';
 
 DownloadTaskEntry _task(
   String id, {
@@ -271,7 +272,7 @@ void main() {
     expect(find.text('half'), findsNothing);
     expect(progressBar, findsOneWidget);
     expect(
-      tester.widget<LinearProgressIndicator>(progressBar).value,
+      tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(progressBar)).value,
       closeTo(0.375, 1e-9),
     );
     expect(find.text('38%'), findsOneWidget);
@@ -537,7 +538,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(cardTaps, 0, reason: '选择态里卡片按钮必须让位，否则勾选会变成删除');
       expect(
-        tester.widget<Checkbox>(find.byType(Checkbox)).value,
+        tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox))).value,
         isTrue,
         reason: '这一下应该被算作「勾选这一行」',
       );

@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   group('BackupImportOverlayView（修①/修②：两阶段遮罩）', () {
@@ -133,8 +134,7 @@ void main() {
       await tester.pump();
 
       final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator));
+          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)));
       expect(bar.value, isNotNull);
       expect(bar.value, closeTo(0.42, 1e-9));
 
@@ -142,8 +142,7 @@ void main() {
       progress.value = 0.87;
       await tester.pump();
       final LinearProgressIndicator bar2 =
-          tester.widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator));
+          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)));
       expect(bar2.value, closeTo(0.87, 1e-9));
     });
   });
@@ -174,8 +173,7 @@ void main() {
       expect(find.text(t.backup_import_validating_hint), findsOneWidget);
       // 读取/预览无字节进度 → 不确定进度条（value 为 null）。
       final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator));
+          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)));
       expect(bar.value, isNull);
       // validating 期给「取消」出口（DB 仍打开，可安全中断回设置页）。
       expect(find.text(t.dialog_cancel), findsOneWidget);

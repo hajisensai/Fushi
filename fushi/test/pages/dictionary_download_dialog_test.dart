@@ -7,6 +7,7 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   setUp(() {
@@ -536,29 +537,23 @@ void main() {
 
       expect(
         tester
-            .widget<TextButton>(
-              find.byKey(const ValueKey<String>('dict-download-select-all')),
-            )
+            .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(const ValueKey<String>('dict-download-select-all'))),)
             .onPressed,
         isNull,
       );
       expect(
         tester
-            .widget<TextButton>(
-              find.byKey(
+            .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(
                 const ValueKey<String>('dict-download-invert-selection'),
-              ),
-            )
+              )),)
             .onPressed,
         isNull,
       );
       expect(
         tester
-            .widget<Checkbox>(
-              find.byKey(
+            .widget<Checkbox>(glassUnwrap<Checkbox>(find.byKey(
                 const ValueKey<String>('dict-download-category-check-jaEn'),
-              ),
-            )
+              )),)
             .onChanged,
         isNull,
         reason: '本类全已安装时说「已全选」是谎话，框必须点不动',

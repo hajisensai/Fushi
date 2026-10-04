@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 
 import '../widgets/widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 共享改名弹窗原语的行为契约。
 ///
@@ -56,7 +57,7 @@ VoidCallback? _okOnPressed(WidgetTester tester) {
     }
     return null;
   }
-  return tester.widget<TextButton>(ok).onPressed;
+  return tester.widget<TextButton>(glassUnwrap<TextButton>(ok)).onPressed;
 }
 
 void main() {

@@ -10,6 +10,7 @@ import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 
 import '../../widgets/widget_test_helpers.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// 有声书音量粒度（飞书 row50「音量调整要更细一点」）：
 /// 旧实现 divisions: 20（0–200% 共 20 档）= 拖动和方向键都是 10% 一跳。
@@ -55,7 +56,7 @@ void main() {
           .pumpWidget(buildRow(initial: 1.0, onValue: (v) => value = v));
       await tester.pump();
 
-      final Slider slider = tester.widget<Slider>(find.byType(Slider));
+      final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.byType(Slider)));
       expect(slider.max, AudiobookVolumeRow.maxVolume);
       expect(slider.divisions, AudiobookVolumeRow.sliderDivisions,
           reason: '0–2.0 共 200 档 = 1% 一档（旧 20 档 = 10% 太粗）');

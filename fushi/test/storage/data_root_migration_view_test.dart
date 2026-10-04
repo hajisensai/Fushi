@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/storage/data_root_migration_view.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   group('DataRootMigrationView (TODO-959 机制A：搬移中遮罩)', () {
@@ -39,9 +40,7 @@ void main() {
       expect(find.text(t.data_storage_migrate_overlay_warning), findsOneWidget);
       // 有进度条。progress=null → 不确定进度（value 为 null）。
       final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(
-        find.byType(LinearProgressIndicator),
-      );
+          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),);
       expect(bar.value, isNull);
 
       // 背景非 null 且非纯黑（修复的核心：消除「真黑底」）。
@@ -69,9 +68,7 @@ void main() {
       await tester.pump();
 
       final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(
-        find.byType(LinearProgressIndicator),
-      );
+          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),);
       expect(bar.value, closeTo(0.3, 1e-9));
 
       // 给定的 splash 背景被尊重（非回退）。

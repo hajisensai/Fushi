@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下：
@@ -652,9 +653,9 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
       if (index >= _segmentKeys.length) return;
       final BuildContext? target = _segmentKeys[index].currentContext;
       if (target == null) return;
-      Scrollable.ensureVisible(
+      // 焦点驱动滚动的唯一实现者（守卫 focus_architecture_static_test）。
+      FushiFocusScroll.ensureVisible(
         target,
-        alignment: 0.5,
         duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
       );
     });

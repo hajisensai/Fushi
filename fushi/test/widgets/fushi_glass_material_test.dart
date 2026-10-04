@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import '../helpers/glass_unwrap.dart';
 
 // 毛玻璃材质（偏好 `glass_material`）第一阶段契约：
 // - 偏好值解析容错、主题工厂把材质注入 [FushiGlassTheme]；
@@ -228,7 +229,7 @@ void main() {
   ) async {
     await pumpDialog(tester, theme());
     expect(find.byType(BackdropFilter), findsNothing);
-    expect(tester.widget<Dialog>(find.byType(Dialog)).backgroundColor, isNull);
+    expect(tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog))).backgroundColor, isNull);
   });
 
   testWidgets('FushiDialogFrame turns translucent when frosted', (
@@ -237,7 +238,7 @@ void main() {
     await pumpDialog(tester, theme(glass: FushiGlassMaterial.frosted));
     expect(hasBlur(tester), isTrue);
     expect(
-      tester.widget<Dialog>(find.byType(Dialog)).backgroundColor,
+      tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog))).backgroundColor,
       Colors.transparent,
     );
     expect(find.text('Dialog body'), findsOneWidget);

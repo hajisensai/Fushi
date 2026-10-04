@@ -11,6 +11,7 @@ import 'package:fushi/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 游戏顶栏切子区时指示条要滑动（用户反馈「小说漫画游戏导航栏都没动画」）。
 ///
@@ -46,12 +47,10 @@ void main() {
   });
 
   TabController controllerIn(WidgetTester tester, Key sectionKey) {
-    final TabBar bar = tester.widget<TabBar>(
-      find.descendant(
+    final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.descendant(
         of: find.byKey(sectionKey, skipOffstage: false),
         matching: find.byType(TabBar, skipOffstage: false),
-      ),
-    );
+      )),);
     return bar.controller!;
   }
 

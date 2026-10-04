@@ -32,6 +32,7 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
 import 'package:fushi/utils.dart' show t;
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 AiProviderConfig _config({
   String id = 'p1',
@@ -849,12 +850,10 @@ void main() {
       // 候选只是辅助输入；写不进去就等于升级后把人家的自定义模型名吞了）。
       expect(
         tester
-            .widget<TextField>(
-              find.descendant(
+            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
                 of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
                 matching: find.byType(TextField),
-              ),
-            )
+              )),)
             .controller!
             .text,
         'gpt-4o-mini',
@@ -884,12 +883,10 @@ void main() {
       // 显示着不同的模型名，而落盘的偏偏是用户没在看的那一个。
       expect(
         tester
-            .widget<TextField>(
-              find.descendant(
+            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
                 of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
                 matching: find.byType(TextField),
-              ),
-            )
+              )),)
             .controller!
             .text,
         'o4-mini',

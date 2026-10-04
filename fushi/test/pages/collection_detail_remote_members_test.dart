@@ -13,6 +13,7 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteCollectionMembership, RemoteVideoInfo;
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// BUG-1704 · 互联客户端打开合集详情显示「合集为空」。
 ///
@@ -231,10 +232,10 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<CircularProgressIndicator>(find.descendant(
+          .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.descendant(
             of: badge,
             matching: find.byType(CircularProgressIndicator),
-          ))
+          )))
           .value,
       0.5,
       reason: '进度环跟着管理器的进度回报走',

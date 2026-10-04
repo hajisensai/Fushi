@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -212,8 +213,7 @@ void main() {
     );
     expect(
       tester
-          .widget<OutlinedButton>(
-              find.byKey(const ValueKey<String>('alist-site-0-test')))
+          .widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('alist-site-0-test'))))
           .onPressed,
       isNull,
       reason: '配置无效时测试连接不可用',

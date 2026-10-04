@@ -26,6 +26,7 @@ import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
+import '../../helpers/glass_unwrap.dart';
 
 /// 移动端形态的内置服务：平台不支持（远程是唯一可用引擎）。
 class _UnsupportedOcrService implements MangaOcrService {
@@ -209,7 +210,7 @@ void main() {
     // 远程可用 → Run 可点（唯一引擎，无需分段选择器）。
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
     await tester.tap(runBtn);
     await tester.pump();
     expect(remote.lastImageDir, imageDir.path);
@@ -253,8 +254,7 @@ void main() {
 
     // 选项保留（与另外三个引擎同构），但置灰。
     final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(
-            find.byType(SegmentedButton<MangaOcrEngineId>));
+        tester.widget<SegmentedButton<MangaOcrEngineId>>(glassUnwrap<SegmentedButton<MangaOcrEngineId>>(find.byType(SegmentedButton<MangaOcrEngineId>)));
     final ButtonSegment<MangaOcrEngineId> pairedSegment = selector.segments
         .firstWhere((ButtonSegment<MangaOcrEngineId> s) =>
             s.value == MangaOcrEngineId.pairedHost);
@@ -287,7 +287,7 @@ void main() {
     expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
   });
 
   testWidgets(
@@ -306,7 +306,7 @@ void main() {
     expect(find.text(t.manga_remote_ocr_not_ready), findsNothing);
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
   });
 
   testWidgets('no capable host: remote hidden, engines-none, Run disabled',
@@ -321,7 +321,7 @@ void main() {
     expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
   });
 
   testWidgets(
@@ -339,8 +339,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(
-            find.byType(SegmentedButton<MangaOcrEngineId>));
+        tester.widget<SegmentedButton<MangaOcrEngineId>>(glassUnwrap<SegmentedButton<MangaOcrEngineId>>(find.byType(SegmentedButton<MangaOcrEngineId>)));
     final ButtonSegment<MangaOcrEngineId> paired = selector.segments.firstWhere(
       (ButtonSegment<MangaOcrEngineId> segment) =>
           segment.value == MangaOcrEngineId.pairedHost,
@@ -349,7 +348,7 @@ void main() {
     expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.pairedHost});
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
   });
 
   testWidgets(
@@ -418,6 +417,6 @@ void main() {
     // 回到 configure：Run 可再点。
     final Finder runBtn =
         find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(runBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
   });
 }

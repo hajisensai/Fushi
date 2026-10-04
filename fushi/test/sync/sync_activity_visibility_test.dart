@@ -7,6 +7,7 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 「同步进度条只有一条线、没有任何文字」的回归守卫。
 ///
@@ -163,9 +164,7 @@ void main() {
       // 准备段没有可测总数 → 不确定进度条。
       expect(
         tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
+            .widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),)
             .value,
         isNull,
       );
@@ -187,9 +186,7 @@ void main() {
       );
       expect(
         tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
+            .widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),)
             .value,
         closeTo(3 / 8, 1e-9),
       );
