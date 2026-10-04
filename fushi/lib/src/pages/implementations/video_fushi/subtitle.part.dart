@@ -2031,11 +2031,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     try {
       _showOsd(t.video_subtitle_graphic_ocr_extracting);
       work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
-      final String tsPath = p.join(work.path, 'track.ts');
-      final bool extracted = await extractGraphicSubtitleTrackToTs(
+      final String supPath = p.join(work.path, 'track.sup');
+      final bool extracted = await extractGraphicSubtitleTrackToSup(
         videoPath: videoPath,
         streamIndex: streamIndex,
-        tsPath: tsPath,
+        supPath: supPath,
         onFailure: (String summary) => ErrorLogService.instance.log(
           'video.graphicSubtitleOcr.extract',
           summary,
@@ -2048,7 +2048,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         return;
       }
       final List<PgsCue> cues = PgsSubtitleParser.parse(
-        mpegTsToPgsSup(await File(tsPath).readAsBytes()),
+        await File(supPath).readAsBytes(),
       );
       if (!isCurrent()) return;
       if (cues.isEmpty) {
