@@ -350,6 +350,7 @@ class VideoDiscoveryService {
         name: tmdb.name,
         series: const <VideoDiscoveryItem>[],
         movies: tmdb.movies,
+        truncated: tmdb.truncated,
       );
     }
     return mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
