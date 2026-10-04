@@ -1,4 +1,5 @@
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -20,20 +21,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// - **手动序整合集 LWW**：orderUpdatedAt 新者整表覆盖成员 sortIndex；平手取
 ///   远端（共享清单）序——两端从未手动排序(=0)时也能收敛到同一顺序，而不是各
 ///   持己序永久 ping-pong。不做逐成员位置合并（两个排列不存在有意义的合并）。
-///   例外（BUG-2941）：两端都为 0 且调用方能给出**派生序**（[CollectionDerivedOrder]，
-///   如下载合集的集号序）时以派生序为准——此时远端序只是另一端的到达顺序，不是
-///   任何人的意图，平手取远端会把本端的集号序冲回下载完成顺序。
+///   例外（BUG-2941）：[CollectionManifestEntry.episodeOrdered]（下载管理的合集）且
+///   两端都为 0 时，视频成员按成员键里的季/集重排——远端序只是另一端的下载到达
+///   顺序，不是任何人的意图；重排只依赖 wire 成员键，各端结果逐字节相同。
 /// - **合集删除墓碑**（deletedAt，清单 entry 级）防复活；与成员墓碑同一基线
 ///   规则：晚于基线 ⇒ 删除生效；早于基线且对端活着 ⇒ 对端重建了，合集复活。
-/// 两端都没手动排过序（orderUpdatedAt 均为 0）时，合集成员的派生顺序。
-/// 返回 null = 该合集没有派生序（照旧平手取远端）；非 null 必须是 [members] 的
-/// 一个排列。[members] 为合并后的存活成员（wire 键域）。
-typedef CollectionDerivedOrder = List<CollectionMemberKey>? Function(
-  String name,
-  String collectionType,
-  List<CollectionMemberKey> members,
-);
-
 class CollectionSyncEngine {
   CollectionSyncEngine._(); // 纯静态引擎，禁实例化。
 
@@ -52,7 +44,6 @@ class CollectionSyncEngine {
     int? nowMs,
     bool localIsPeer = false,
     bool stampPublish = true,
-    CollectionDerivedOrder? derivedOrder,
   }) {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final Map<String, _NormalizedEntry> lSide = _normalize(local);
@@ -69,11 +60,10 @@ class CollectionSyncEngine {
     for (final String key in orderedKeys) {
       final _NormalizedEntry? l = lSide[key];
       final _NormalizedEntry? r = rSide[key];
-      CollectionManifestEntry? merged = _mergeOne(l, r,
-          lastSyncedAtMs: lastSyncedAtMs,
-          lPeer: localIsPeer,
-          derivedOrder: derivedOrder);
+      CollectionManifestEntry? merged =
+          _mergeOne(l, r, lastSyncedAtMs: lastSyncedAtMs, lPeer: localIsPeer);
       if (merged == null) continue; // 双方都无知识（不可达）或全空壳被剪枝。
+      merged = _withEpisodeOrder(merged);
       // 首次发布盖时戳：把本端新造/新并入的（publishedAt 尚空的）墓碑/删除标记为
       // now，供对端用「基线 vs publishedAt」判新旧（§2.3 因果修复）。
       if (stampPublish) merged = _stampEntry(merged, now);
@@ -154,6 +144,7 @@ class CollectionSyncEngine {
       ],
       // 盖发布戳时重建整个 entry：必须透传 tagNames，否则每轮盖戳都会丢标签。
       tagNames: e.tagNames,
+      episodeOrdered: e.episodeOrdered,
     );
   }
 
@@ -166,7 +157,6 @@ class CollectionSyncEngine {
     required int lastSyncedAtMs,
     bool lPeer = false,
     bool rPeer = true,
-    CollectionDerivedOrder? derivedOrder,
   }) {
     // 单侧知识：原样并入（对侧从未见过该合集/墓碑）。
     if (l == null && r == null) return null;
@@ -240,18 +230,13 @@ class CollectionSyncEngine {
     final bool localOrderWins = l.orderUpdatedAt > r.orderUpdatedAt;
     final _NormalizedEntry winner = localOrderWins ? l : r;
     final _NormalizedEntry loser = localOrderWins ? r : l;
-    List<String> orderedAlive = <String>[
+    final List<String> orderedAlive = <String>[
       for (final String mk in winner.memberOrder)
         if (aliveMembers.contains(mk)) mk,
       for (final String mk in loser.memberOrder)
         if (aliveMembers.contains(mk) && !winner.membersByKey.containsKey(mk))
           mk,
     ];
-    if (derivedOrder != null &&
-        l.orderUpdatedAt == 0 &&
-        r.orderUpdatedAt == 0) {
-      orderedAlive = _applyDerivedOrder(l, orderedAlive, derivedOrder);
-    }
 
     final int mergedOrderUpdatedAt = l.orderUpdatedAt > r.orderUpdatedAt
         ? l.orderUpdatedAt
@@ -272,7 +257,39 @@ class CollectionSyncEngine {
       ],
       // 双活标签并集（只增不删；确定性排序供 canonicalJson 幂等）。
       tagNames: <String>{...l.tagNames, ...r.tagNames}.toList()..sort(),
+      episodeOrdered: l.episodeOrdered || r.episodeOrdered,
     ));
+  }
+
+  /// 集号序合集（[CollectionManifestEntry.episodeOrdered]）在无人手动排序时，
+  /// 视频成员按集号重排（BUG-2941）。有人手动排过（orderUpdatedAt > 0）的照旧
+  /// LWW，其它合集原样返回。
+  static CollectionManifestEntry _withEpisodeOrder(CollectionManifestEntry e) {
+    if (!e.episodeOrdered || e.orderUpdatedAt != 0 || e.deletedAt != null) {
+      return e;
+    }
+    final List<CollectionManifestMember> current =
+        List<CollectionManifestMember>.of(e.members)
+          ..sort((CollectionManifestMember a, CollectionManifestMember b) =>
+              a.sortIndex.compareTo(b.sortIndex));
+    final List<CollectionMemberKey> ordered = orderDownloadedCollectionMembers(
+      <CollectionMemberKey>[
+        for (final CollectionManifestMember m in current)
+          (mediaType: m.mediaType, entryKey: m.entryKey),
+      ],
+    );
+    return CollectionManifestEntry(
+      name: e.name,
+      collectionType: e.collectionType,
+      orderUpdatedAt: e.orderUpdatedAt,
+      members: _reindexed(<String>[
+        for (final CollectionMemberKey m in ordered)
+          _memberKey(m.mediaType, m.entryKey),
+      ]),
+      memberTombstones: e.memberTombstones,
+      tagNames: e.tagNames,
+      episodeOrdered: true,
+    );
   }
 
   /// 一条墓碑「对本端是不是新闻」：对端侧用 publishedAt（首次进共享清单的时刻，回退
@@ -438,36 +455,10 @@ class CollectionSyncEngine {
         membersByKey: byKey,
         tombstones: tombs,
         tagNames: e.tagNames.toSet(),
+        episodeOrdered: e.episodeOrdered,
       );
     }
     return out;
-  }
-
-  /// 用 [derivedOrder] 重排 [orderedAlive]；派生序不给（null）或不是同一成员集
-  /// 的排列时原样返回（调用方契约违规不应毁掉合并结果）。
-  static List<String> _applyDerivedOrder(
-    _NormalizedEntry entry,
-    List<String> orderedAlive,
-    CollectionDerivedOrder derivedOrder,
-  ) {
-    final List<CollectionMemberKey>? derived = derivedOrder(
-      entry.name,
-      entry.collectionType,
-      <CollectionMemberKey>[
-        for (final String mk in orderedAlive)
-          (mediaType: _memberMediaType(mk), entryKey: _memberEntryKey(mk)),
-      ],
-    );
-    if (derived == null) return orderedAlive;
-    final List<String> next = <String>[
-      for (final CollectionMemberKey m in derived)
-        _memberKey(m.mediaType, m.entryKey),
-    ];
-    if (next.length != orderedAlive.length ||
-        !next.toSet().containsAll(orderedAlive)) {
-      return orderedAlive;
-    }
-    return next;
   }
 
   // 键编码：NUL 分隔（两段都不含 NUL），同 backup_merge_engine._collectionKey。
@@ -547,6 +538,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
     ..sort(
         (MediaCollectionRow a, MediaCollectionRow b) => a.id.compareTo(b.id));
 
+  final Set<int> episodeOrderedIds = await db.downloadManagedCollectionIds();
   final List<CollectionManifestEntry> entries = <CollectionManifestEntry>[];
   final Set<String> seen = <String>{};
   for (final MediaCollectionRow row in byId) {
@@ -589,6 +581,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
             ),
       ],
       tagNames: <String>[for (final BookTagRow t in rowTags) t.name],
+      episodeOrdered: episodeOrderedIds.contains(row.id),
     ));
   }
 
@@ -766,10 +759,14 @@ class _NormalizedEntry {
     required this.membersByKey,
     required this.tombstones,
     required this.tagNames,
+    this.episodeOrdered = false,
   });
 
   final String name;
   final String collectionType;
+
+  /// 见 [CollectionManifestEntry.episodeOrdered]（死条目恒 false）。
+  final bool episodeOrdered;
 
   /// 非 null = 该侧认为合集已删（deletedAt 毫秒戳）。
   final int? deletedAt;
@@ -814,6 +811,7 @@ class _NormalizedEntry {
             ),
         ],
         tagNames: tagNames.toList()..sort(),
+        episodeOrdered: episodeOrdered,
       );
 }
 
@@ -852,6 +850,7 @@ class _FoldGroup {
       <String, int>{}; // 决策用 max(pub??removed)。
 
   final Set<String> _tagNames = <String>{}; // 各活文件标签并集（只增不删）。
+  bool _episodeOrdered = false; // 任一活文件标了集号序即是（BUG-2941）。
 
   void observe(_NormalizedEntry e, int fileTime) {
     if (e.deletedAt != null) {
@@ -869,6 +868,7 @@ class _FoldGroup {
       return; // 归一化后的死条目不携带成员/墓碑/标签。
     }
     _tagNames.addAll(e.tagNames); // 活文件标签并集。
+    if (e.episodeOrdered) _episodeOrdered = true;
     if (fileTime > _aliveFileTimeMax) _aliveFileTimeMax = fileTime;
     if (e.orderUpdatedAt > _orderUpdatedAtMax) {
       _orderUpdatedAtMax = e.orderUpdatedAt;
@@ -966,6 +966,7 @@ class _FoldGroup {
       ],
       // 折叠活分支标签并集（确定性排序）；死分支上方 return 不带标签。
       tagNames: _tagNames.toList()..sort(),
+      episodeOrdered: _episodeOrdered,
     ));
   }
 

@@ -52,7 +52,6 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
           remote: remote,
           lastSyncedAtMs: baseline,
           nowMs: nextBaseline,
-          derivedOrder: await loadDownloadedCollectionDerivedOrder(_db),
         );
 
         report.collectionsUpdated +=

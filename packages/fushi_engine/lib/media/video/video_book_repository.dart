@@ -294,23 +294,14 @@ class VideoBookRepository {
     final List<MediaCollectionItemRow> items =
         await _db.getCollectionItems(collectionId);
     if (items.length < 2) return;
-    final Map<String, String> videoPathByUid = <String, String>{};
-    for (final MediaCollectionItemRow item in items) {
-      if (item.mediaType != MediaKind.video.dbValue) continue;
-      final VideoBookRow? book = await _db.getVideoBookByBookUid(item.entryKey);
-      if (book != null) videoPathByUid[book.bookUid] = book.videoPath;
-    }
-    // 与合集同步的派生序同一个函数（BUG-2941）：两处口径不同，同步就会每轮
-    // 判「本地与合并结果不一致」来回改写。
+    // 与合集同步对 episodeOrdered 条目的合并同一个函数（BUG-2941）：两处口径
+    // 不同，同步就会每轮判「本地与合并结果不一致」来回改写。
     await _db.reorderCollectionItemsAutomatically(
       collectionId,
-      orderDownloadedCollectionMembers(
-        <CollectionMemberKey>[
-          for (final MediaCollectionItemRow item in items)
-            (mediaType: item.mediaType, entryKey: item.entryKey),
-        ],
-        videoPathByUid: videoPathByUid,
-      ),
+      orderDownloadedCollectionMembers(<CollectionMemberKey>[
+        for (final MediaCollectionItemRow item in items)
+          (mediaType: item.mediaType, entryKey: item.entryKey),
+      ]),
     );
   }
 

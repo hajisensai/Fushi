@@ -18,7 +18,6 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         isMangaPackage,
         repackageMangaBook;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
-import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
@@ -916,7 +915,6 @@ class SyncOrchestrator {
           remote: remote,
           lastSyncedAtMs: baseline,
           nowMs: nextBaseline,
-          derivedOrder: await loadDownloadedCollectionDerivedOrder(_db),
         );
 
         report.collectionsUpdated +=
