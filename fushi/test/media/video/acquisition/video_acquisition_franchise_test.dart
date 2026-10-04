@@ -473,12 +473,136 @@ void main() {
       expect(s.state.question!.slot, VideoAcquisitionSlot.mode);
     });
 
-    test('没有系列来源（null）同样退回单部', () {
+    // BUG-2936：「全部哆啦A梦剧场版」资料源不可用时，旧逻辑静默改成单部、
+    // 去下锚点那部 TV（1979 版 1700+ 集）——替用户下了别的东西。
+    test('BUG-2936 系列来源不可用（null）→ 说明并问，不静默改下锚点', () {
       final _Session s = _Session(_defaults);
       _reachFranchise(s);
-      s.feed(const VideoAcquisitionFranchiseLoadedEvent(null));
-      expect(s.said, contains(VideoAcquisitionSayKind.franchiseNotFound));
-      expect(s.state.slots.scope, VideoAcquisitionScope.work);
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        const VideoAcquisitionFranchiseLoadedEvent(null),
+      );
+      expect(effects, isEmpty);
+      expect(s.said, contains(VideoAcquisitionSayKind.franchiseUnavailable));
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseNotFound)),
+      );
+      expect(s.state.question!.slot, VideoAcquisitionSlot.franchiseFallback);
+      expect(s.state.question!.args['title'], 'Doraemon');
+      expect(s.optionIds, <String>[
+        kVideoAcquisitionOptionContinue,
+        kVideoAcquisitionOptionCancel,
+      ]);
+      // 用户还没答：范围仍是「剧场版」。
+      expect(s.state.slots.scope, VideoAcquisitionScope.franchiseMovies);
+      expect(s.state.busy, isFalse);
+    });
+
+    test('BUG-2936 要剧场版但系列里一部剧场版都没有 → 问，不拿 TV 锚点顶替', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: const <VideoDiscoveryItem>[],
+          ),
+        ),
+      );
+      // 清单完整，只是没有剧场版：不说「取不到」，直接问。
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseUnavailable)),
+      );
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseNotFound)),
+      );
+      expect(s.state.question!.slot, VideoAcquisitionSlot.franchiseFallback);
+      expect(s.state.slots.scope, VideoAcquisitionScope.franchiseMovies);
+    });
+
+    test('BUG-2936 问后选「继续」→ 按单部走；选「取消」→ 结束', () {
+      final _Session go = _Session(_defaults);
+      _reachFranchise(go);
+      go.feed(const VideoAcquisitionFranchiseLoadedEvent(null));
+      go.feed(
+        const VideoAcquisitionChipChosenEvent(
+          slot: VideoAcquisitionSlot.franchiseFallback,
+          optionId: kVideoAcquisitionOptionContinue,
+        ),
+      );
+      expect(go.state.slots.scope, VideoAcquisitionScope.work);
+      // 单部流程：在播剧集要问下载还是订阅。
+      expect(go.state.question!.slot, VideoAcquisitionSlot.mode);
+
+      final _Session stop = _Session(_defaults);
+      _reachFranchise(stop);
+      stop.feed(const VideoAcquisitionFranchiseLoadedEvent(null));
+      stop.feed(
+        const VideoAcquisitionChipChosenEvent(
+          slot: VideoAcquisitionSlot.franchiseFallback,
+          optionId: kVideoAcquisitionOptionCancel,
+        ),
+      );
+      expect(stop.said.last, VideoAcquisitionSayKind.cancelled);
+    });
+
+    test('BUG-2936 清单不全且只剩锚点 → 不能说「没有同系列」，要说取不到并问', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s, scope: VideoAcquisitionScope.franchise);
+      s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: const <VideoDiscoveryItem>[],
+            incomplete: true,
+          ),
+        ),
+      );
+      expect(s.said, contains(VideoAcquisitionSayKind.franchiseUnavailable));
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseNotFound)),
+      );
+      expect(s.state.question!.slot, VideoAcquisitionSlot.franchiseFallback);
+    });
+
+    test('BUG-2936 清单不全但有作品 → 照常出清单，并说明可能不全', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: <VideoDiscoveryItem>[_movie1980, _movie2006],
+            incomplete: true,
+          ),
+        ),
+      );
+      expect(
+        effects.single,
+        isA<VideoAcquisitionResolveFranchiseEntryEffect>(),
+      );
+      final List<VideoAcquisitionSayKind> said = s.said;
+      expect(
+        said.indexOf(VideoAcquisitionSayKind.franchiseIncomplete),
+        said.indexOf(VideoAcquisitionSayKind.franchiseFound) + 1,
+      );
+      expect(s.state.franchiseEntries, hasLength(2));
+    });
+
+    test('BUG-2936 清单完整时不说「可能不全」', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(VideoAcquisitionFranchiseLoadedEvent(_franchise));
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseIncomplete)),
+      );
     });
   });
 

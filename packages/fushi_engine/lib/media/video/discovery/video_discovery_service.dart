@@ -320,16 +320,21 @@ class VideoDiscoveryService {
   /// 「整套下载」：[item] 所在系列的全部剧集与剧场版（见 `video_franchise.dart`）。
   ///
   /// TMDB collection（要 key）与 MAL 关联链（不要 key，只对动画走）两份合并；
-  /// 两个来源都不可用返回 null。单个来源失败只记诊断、不拖垮另一个。
+  /// 两个来源都不可用返回 null。单个来源失败只记诊断、不拖垮另一个，但合并结果
+  /// 标 [VideoFranchise.incomplete]——少了一个来源的清单不能当成完整系列
+  /// （BUG-2936）。
   Future<VideoFranchise?> loadFranchise(VideoDiscoveryItem item) async {
     if (_closed) return null;
+    bool failed = false;
     VideoFranchise? tmdb;
     for (final VideoDiscoveryProvider provider in _providers) {
       if (provider is VideoFranchiseSource) {
-        tmdb = await _guardFranchise(
+        final _FranchiseAttempt attempt = await _guardFranchise(
           'tmdb',
           () => resolveVideoFranchise(provider as VideoFranchiseSource, item),
         );
+        tmdb = attempt.franchise;
+        failed |= attempt.failed;
         break;
       }
     }
@@ -338,10 +343,12 @@ class VideoDiscoveryService {
         _metadataProviders[VideoMetadataProviderKind.mal];
     if (malProvider is MalVideoMetadataProvider &&
         item.reference.discoveryCategory == VideoDiscoveryCategory.anime) {
-      mal = await _guardFranchise(
+      final _FranchiseAttempt attempt = await _guardFranchise(
         'mal',
         () => resolveMalFranchise(_MalFranchiseSource(malProvider), item),
       );
+      mal = attempt.franchise;
+      failed |= attempt.failed;
     }
     // 动画的剧集以 MAL 为准：TMDB 把一部动画按「整部剧（含全部季）」收，MAL 按
     // 每季一个作品收——两边都进清单，同一批集会被整部剧和分季重复下载。
@@ -350,23 +357,32 @@ class VideoDiscoveryService {
         name: tmdb.name,
         series: const <VideoDiscoveryItem>[],
         movies: tmdb.movies,
+        incomplete: tmdb.incomplete,
       );
     }
-    return mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
+    final VideoFranchise? merged =
+        mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
+    if (merged == null || !failed) return merged;
+    return VideoFranchise(
+      name: merged.name,
+      series: merged.series,
+      movies: merged.movies,
+      incomplete: true,
+    );
   }
 
-  Future<VideoFranchise?> _guardFranchise(
+  Future<_FranchiseAttempt> _guardFranchise(
     String source,
     Future<VideoFranchise?> Function() body,
   ) async {
     try {
-      return await body();
+      return (franchise: await body(), failed: false);
     } on Object catch (error, stack) {
       engineLog.logDiagnostic(
         'VideoDiscoveryService.loadFranchise.$source',
         '$error\n$stack',
       );
-      return null;
+      return (franchise: null, failed: true);
     }
   }
 
@@ -973,6 +989,10 @@ VideoDiscoveryRequest _requestAtPage(VideoDiscoveryRequest request, int page) =>
     );
 
 /// MAL provider → 系列关联来源的薄适配。
+/// 一个系列来源跑一次的结果：`failed` 区分「来源没有这部的数据」（null）与
+/// 「来源出错」——后者让合并清单标不全。
+typedef _FranchiseAttempt = ({VideoFranchise? franchise, bool failed});
+
 class _MalFranchiseSource implements VideoFranchiseRelationSource {
   _MalFranchiseSource(this._provider);
 

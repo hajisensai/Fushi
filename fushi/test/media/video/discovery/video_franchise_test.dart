@@ -283,6 +283,33 @@ void main() {
       ),
     ])!;
     expect(merged.movies.single.reference.mediaId, '500');
+    expect(merged.incomplete, isFalse);
+  });
+
+  test('BUG-2936 合并时任一来源不全，合并结果就不全', () {
+    const VideoFranchise whole = VideoFranchise(
+      name: 'Doraemon',
+      series: <VideoDiscoveryItem>[],
+      movies: <VideoDiscoveryItem>[],
+    );
+    const VideoFranchise cut = VideoFranchise(
+      name: 'Doraemon',
+      series: <VideoDiscoveryItem>[],
+      movies: <VideoDiscoveryItem>[],
+      incomplete: true,
+    );
+    expect(
+      mergeVideoFranchises(<VideoFranchise?>[whole, cut])!.incomplete,
+      isTrue,
+    );
+    expect(
+      mergeVideoFranchises(<VideoFranchise?>[cut, null])!.incomplete,
+      isTrue,
+    );
+    expect(
+      mergeVideoFranchises(<VideoFranchise?>[whole, null])!.incomplete,
+      isFalse,
+    );
   });
 
   group('videoFranchiseCollectionMatches', () {
@@ -312,8 +339,9 @@ void main() {
       String title,
       String type,
       int year,
-      List<MalRelation> relations,
-    ) => MalRelatedWorks(
+      List<MalRelation> relations, {
+      int? runtime,
+    }) => MalRelatedWorks(
       work: VideoMetadataWork(
         provider: VideoMetadataProviderKind.mal,
         kind: type == 'Movie'
@@ -321,6 +349,7 @@ void main() {
             : VideoMetadataMediaKind.tv,
         title: title,
         year: year,
+        runtimeMinutes: runtime,
         ids: <VideoMetadataId>[
           VideoMetadataId(type: 'mal', value: '$id', isDefault: true),
         ],
@@ -368,6 +397,7 @@ void main() {
       );
       expect(mal.fetched, isNot(contains(8)));
       expect(mal.fetched, isNot(contains(9)));
+      expect(franchise.incomplete, isFalse);
     });
 
     test('走到上限就停', () async {
@@ -384,6 +414,127 @@ void main() {
       ))!;
       expect(franchise.movies, hasLength(3));
       expect(mal.fetched, hasLength(3));
+      // BUG-2936：队列里还有没走的作品 → 必须标「不全」，不能当完整清单交出去。
+      expect(franchise.incomplete, isTrue);
+    });
+
+    test('BUG-2936 哆啦A梦形态：旧版外传挂满剧场版 + 特别篇，新版剧场版仍收全', () async {
+      // 真实图（MAL 2471 / 8687）：1979 版 Side story 下 37 部剧场版夹着短片与
+      // 特别篇，2005 版另挂 22 部剧场版。广度优先先把 1979 那层走完才轮到 2005
+      // 的剧场版——旧上限 60 在这里耗尽，最新的剧场版全部静默丢失。
+      final Map<int, MalRelatedWorks> works = <int, MalRelatedWorks>{};
+      final List<MalRelation> oldSide = <MalRelation>[];
+      for (int i = 0; i < 37; i++) {
+        final int id = 100 + i;
+        works[id] = node(
+          id,
+          'Doraemon Movie ${i + 1}',
+          'Movie',
+          1980 + i,
+          <MalRelation>[
+            MalRelation(relation: 'Parent story', malId: 1),
+            // 每部剧场版都挂着同映短片。
+            MalRelation(relation: 'Side story', malId: 300 + i),
+          ],
+          runtime: 95,
+        );
+        works[300 + i] = node(
+          300 + i,
+          'Short ${i + 1}',
+          'Movie',
+          1980 + i,
+          const <MalRelation>[],
+          runtime: 20,
+        );
+        oldSide.add(MalRelation(relation: 'Side story', malId: id));
+        if (i % 4 == 0) {
+          works[500 + i] = node(
+            500 + i,
+            'Special ${i + 1}',
+            'Special',
+            1980 + i,
+            const <MalRelation>[],
+          );
+          oldSide.add(MalRelation(relation: 'Side story', malId: 500 + i));
+        }
+      }
+      final List<MalRelation> newSide = <MalRelation>[];
+      for (int i = 0; i < 22; i++) {
+        final int id = 200 + i;
+        works[id] = node(
+          id,
+          'Doraemon Movie ${38 + i}',
+          'Movie',
+          2018 + i,
+          const <MalRelation>[MalRelation(relation: 'Parent story', malId: 2)],
+          runtime: 105,
+        );
+        newSide.add(MalRelation(relation: 'Side story', malId: id));
+      }
+      works[1] = node(1, 'Doraemon (1979)', 'TV', 1979, <MalRelation>[
+        ...oldSide,
+        const MalRelation(relation: 'Sequel', malId: 2),
+      ]);
+      works[2] = node(2, 'Doraemon (2005)', 'TV', 2005, <MalRelation>[
+        const MalRelation(relation: 'Prequel', malId: 1),
+        ...newSide,
+      ]);
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        _FakeMal(works),
+        _item(
+          '1',
+          'Doraemon (1979)',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+      ))!;
+      expect(franchise.series, hasLength(2));
+      expect(
+        franchise.movies.map((VideoDiscoveryItem e) => e.reference.title),
+        <String>[for (int i = 1; i <= 59; i++) 'Doraemon Movie $i'],
+        reason: '新版剧场版（Movie 38+）不能因为预算耗在旧版那层而丢；短片不算剧场版',
+      );
+      expect(franchise.incomplete, isFalse);
+    });
+
+    test('BUG-2936 短于长片下限的 Movie 是同映短片，不收；片长未知照收', () async {
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        1: node(1, 'Doraemon', 'TV', 1979, const <MalRelation>[
+          MalRelation(relation: 'Side story', malId: 2),
+          MalRelation(relation: 'Side story', malId: 3),
+          MalRelation(relation: 'Side story', malId: 4),
+        ]),
+        2: node(
+          2,
+          'Feature',
+          'Movie',
+          1980,
+          const <MalRelation>[],
+          runtime: 92,
+        ),
+        3: node(
+          3,
+          'Short film',
+          'Movie',
+          1981,
+          const <MalRelation>[],
+          runtime: 15,
+        ),
+        4: node(4, 'Unknown runtime', 'Movie', 1982, const <MalRelation>[]),
+      });
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item(
+          '1',
+          'Doraemon',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+      ))!;
+      expect(
+        franchise.movies.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['2', '4'],
+      );
     });
 
     test('锚点没有 MAL 身份：按标题搜，只认标题完全一致的', () async {
@@ -433,6 +584,17 @@ void main() {
         _item('1', 'Movie 1', provider: 'mal'),
       ))!;
       expect(franchise.movies, hasLength(2));
+      // BUG-2936：中途断了的清单不是「完整的系列」。
+      expect(franchise.incomplete, isTrue);
+    });
+
+    test('BUG-2936 第一个请求就失败：返回空的不全清单，而不是「没有同系列」', () async {
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        _FakeMal(const <int, MalRelatedWorks>{}, failOn: 1),
+        _item('1', 'Doraemon', provider: 'mal'),
+      ))!;
+      expect(franchise.length, 0);
+      expect(franchise.incomplete, isTrue);
     });
 
     test('同名新旧版按年份选起点', () async {
