@@ -11,6 +11,20 @@ fushi_cli lookup <词>       # 弹出查词
 fushi_cli quit              # 落库后退出 app（与关窗口同一条路径）
 ```
 
+按域的命令（`fushi_cli <域> --help` 看子命令，`fushi_cli <域> <命令> --help` 看选项）：
+
+| 域 | 覆盖 |
+|---|---|
+| `library` | 书架 / 媒体库条目 ls / get / rm、导入（EPUB / PDF / 文本 / 漫画 / 有声书 / 视频 / 游戏）、在 app 里打开、最近打开、来源库扫描 |
+| `dict` / `anki` | 词典 ls / 启用停用 / 排序 / 删除 / 导入 / 在线更新、结构化查词结果；Anki 状态、牌组、笔记类型、制卡、查重、同步 |
+| `config` / `module` / `profile` / `stats` / `keys` | 设置项读写（与设置页同一入口，机密打码）、模块开关、Profile 管理与导入导出、学习统计、快捷键清单 |
+| `backup` / `sync` / `dl` / `mediaserver` / `peer` / `storage` | 备份创建与恢复、云同步、下载中心、Jellyfin / Emby / Plex 浏览与搜索、互联 host 与配对、存储占用 |
+| `ext` / `source` / `discover` / `play` / `nav` | 漫画 / 视频 / 小说扩展与仓库、在线源搜索 / 加库 / 下载、发现与一键获取、有声书播放遥控、顶层页面跳转 |
+
+app 侧每个域一个路由文件 `fushi/lib/src/platform/desktop/ctl/ctl_<域>_routes.dart`，CLI 侧一个命令文件
+`lib/src/commands/<域>_commands.dart`；每条路由都调用 app 里 UI 按钮背后的同一个方法，不另写业务逻辑。
+破坏性操作（删除、恢复备份、覆盖）必须加 `--yes`。
+
 全局选项：`--json`（机器可读输出）、`--app <路径>`、`--timeout <秒>`（默认 90）、
 `--no-launch`。
 
