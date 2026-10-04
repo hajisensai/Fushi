@@ -22,7 +22,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `touch-lookup.js` | 隔离 | 触屏点按/长按查词：单指点正文=查词（默认开）、长按≈0.5s=查词（默认关）；复用 content.js 的 `fushiLookupAtPoint`，零新增查词链路，只认 touch 主指针，绝不影响鼠标行为 |
 | `mobile-drawer.js` | 隔离 | 移动端字幕列表抽屉：安卓无 chrome.sidePanel，触屏视频页挂边缘 ☰ 钮 + 隐形手势带（点=开关、按住=拖宽自由停位）；横屏右挂仅全屏（页面态让位形态太杂已禁用）、竖屏底挂，内容为 iframe 内嵌 `side-panel.html?fushiEmbed=1`（选轨/跳转/偏移/制卡/查词全套复用）；全屏态压播放器让位并以 adopt 跟随其自重排，几何存 `mobileSubtitleDrawerGeom` |
-| `player-controls.js` | 隔离 | 播放器内嵌字幕控制：把一颗 Fushi 按钮插进站点自己的控制栏（YouTube `.ytp-right-controls` / Netflix 全屏钮左侧），其余站点退回「悬停视频时右下角浮出」的通用钮；菜单是字幕开关（覆盖层 / 替代原生 / 全轨叠加 / 底色 / 隐藏）+ 字幕列表 + 时轴偏移 + 字幕外观快捷面板，全部写既有键或调既有执行端，不新增状态（见「播放器内嵌字幕控制」） |
+| `player-controls.js` | 隔离 | 播放器内嵌字幕控制：把一颗 Fushi 按钮插进站点自己的控制栏（YouTube `.ytp-right-controls` / Netflix 全屏钮左侧），其余站点退回「悬停视频时右上角浮出」的通用钮；菜单是字幕开关（覆盖层 / 替代原生 / 全轨叠加 / 底色 / 隐藏）+ 字幕列表 + 时轴偏移 + 字幕外观快捷面板，全部写既有键或调既有执行端，不新增状态（见「播放器内嵌字幕控制」） |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
 | `stream-bridge.js` | MAIN | 通用流媒体字幕桥（asb 移植）：TVer / Bilibili.tv / Hulu JP / Prime Video 整集字幕拦截 |
