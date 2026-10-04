@@ -9,13 +9,14 @@
 //     glyphs on the message panel (the panel chain's offsets, read live) and
 //     on the client, offers / retires the provider, publishes the model for
 //     the game thread and turns claimed presses into registry hits.
-//   * game thread — the RENDER detour installs the window subclass on the
-//     thread that owns the game window (SetWindowSubclass only works there).
-//   * game thread — the window subclass: the engine reads clicks only as
-//     window messages, for mouse and promoted touch alike.  A left press on
-//     exactly one glyph of the current model, with every gate passing, is
-//     swallowed together with its own UP and queued for the worker; anything
-//     else reaches the engine unchanged.
+//   * window thread — the game window's procedure, replaced once by the worker
+//     (SetWindowLongPtr, chained to the previous procedure with
+//     CallWindowProc; the window thread is not the script thread that renders
+//     the rows).  The engine reads clicks only as window messages, for mouse
+//     and promoted touch alike.  A left press on exactly one glyph of the
+//     current model, with every gate passing, is swallowed together with its
+//     own UP and queued for the worker; anything else reaches the engine
+//     unchanged.
 //
 // Fail closed everywhere: an unresolved layout, a hidden or moved panel, a
 // client with another aspect than the design screen or a missing native-input
@@ -27,7 +28,6 @@ constexpr uint32_t kKogadoHyUnitSlots = 4u;
 constexpr uint32_t kKogadoHyModelGlyphs = 512u;
 constexpr uint32_t kKogadoHySubmitSlots = 8u;
 constexpr uint64_t kKogadoHyWindowRetryMs = 500u;
-constexpr UINT_PTR kKogadoHySubclassId = 0x4b4f4744u;  // 'KOGD'
 
 struct KogadoHyUnit {
   uint64_t unit = 0u;
@@ -92,15 +92,15 @@ struct KogadoHyLookupRuntime {
   // ── resolved once ──
   kogado_hy::LookupSites layout;
 
-  // ── game-thread-owned ──
-  bool subclassed = false;
-  bool subclass_failed = false;
+  bool procedure_replaced = false;
+  bool procedure_failed = false;
+
+  // ── window-thread-owned ──
   bool up_pending = false;
   KogadoHyModel input_model;
 
   // ── shared ──
-  std::atomic<uintptr_t> target_window{0u};  // worker -> game thread
-  std::atomic<uint32_t> model_version{0u};   // seqlock: odd while writing
+  std::atomic<uint32_t> model_version{0u};  // seqlock: odd while writing
   KogadoHyModel shared_model;
   std::array<std::atomic<uint64_t>, kKogadoHySubmitSlots> submit_seq = {};
   std::array<KogadoHySubmit, kKogadoHySubmitSlots> submits = {};
@@ -112,15 +112,10 @@ struct KogadoHyLookupRuntime {
 
 KogadoHyLookupRuntime g_kogado_hy_lookup;
 
-// comctl32's subclass API, resolved from the copy the game already loaded (the
-// hook DLL does not import comctl32).
-using KogadoHySubclassProc_t = LRESULT(CALLBACK*)(HWND, UINT, WPARAM, LPARAM,
-                                                  UINT_PTR, DWORD_PTR);
-using KogadoHySetWindowSubclass_t = BOOL(WINAPI*)(HWND, KogadoHySubclassProc_t,
-                                                  UINT_PTR, DWORD_PTR);
-using KogadoHyDefSubclassProc_t = LRESULT(WINAPI*)(HWND, UINT, WPARAM, LPARAM);
-KogadoHySetWindowSubclass_t g_kogado_hy_set_window_subclass = nullptr;
-KogadoHyDefSubclassProc_t g_kogado_hy_def_subclass_proc = nullptr;
+// The game window's previous procedure (whoever subclassed it before us) and
+// whether the window is Unicode; set once before the replacement is visible.
+std::atomic<WNDPROC> g_kogado_hy_previous_proc{nullptr};
+bool g_kogado_hy_window_unicode = false;
 
 template <typename T>
 bool ReadKogadoHyValue(uintptr_t address, T* out) {
@@ -176,6 +171,8 @@ bool ReadKogadoHyUnitPanel(uintptr_t window_object, uintptr_t rows,
 }
 
 // ── HookWorker: units and the model ────────────────────────────────────────
+
+void ReplaceKogadoHyWindowProcedure(HWND window);
 
 // Called by the text lane for every published unit (kogado_hy_text.inc).
 void NoteKogadoHyPublishedUnit(const KogadoHyPageEvent& event,
@@ -241,15 +238,14 @@ void RetireKogadoHyLookup(uint32_t reason) {
   }
 }
 
-// The game window: the one visible top-level (non-child) window of the
-// thread that renders the message window, with a client area (the hidden
-// TApplication owner window has none).
+// The game window: the one visible top-level (non-child) window of this
+// process whose class the game image registered, with a client area (the
+// hidden TApplication owner window has none; the host's overlay windows
+// belong to the hook DLL).
 void FindKogadoHyWindow() {
   auto& rt = g_kogado_hy_lookup;
   if (rt.window != nullptr && IsWindow(rt.window)) return;
   rt.window = nullptr;
-  const DWORD thread = g_kogado_hy.game_thread.load(std::memory_order_acquire);
-  if (thread == 0u) return;
   const uint64_t now = GetTickCount64();
   if (rt.window_retry_tick != 0u &&
       now - rt.window_retry_tick < kKogadoHyWindowRetryMs) {
@@ -257,15 +253,21 @@ void FindKogadoHyWindow() {
   }
   rt.window_retry_tick = now;
   struct Search {
-    DWORD thread = 0u;
+    HMODULE image = nullptr;
     HWND window = nullptr;
     uint32_t matches = 0u;
   } search;
-  search.thread = thread;
-  EnumThreadWindows(
-      thread,
+  search.image = GetModuleHandleW(nullptr);
+  EnumWindows(
       [](HWND hwnd, LPARAM context) -> BOOL {
         auto* s = reinterpret_cast<Search*>(context);
+        DWORD pid = 0u;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid != GetCurrentProcessId() ||
+            reinterpret_cast<HMODULE>(GetClassLongPtrW(hwnd, GCLP_HMODULE)) !=
+                s->image) {
+          return TRUE;
+        }
         RECT client = {};
         // A VCL form is owned by the hidden TApplication window, so its
         // GetParent() is that owner: only a child style rules a window out.
@@ -282,8 +284,7 @@ void FindKogadoHyWindow() {
       reinterpret_cast<LPARAM>(&search));
   if (search.matches != 1u) return;
   rt.window = search.window;
-  rt.target_window.store(reinterpret_cast<uintptr_t>(rt.window),
-                         std::memory_order_release);
+  ReplaceKogadoHyWindowProcedure(rt.window);
 }
 
 struct KogadoHyDpiScope {
@@ -576,9 +577,11 @@ bool KogadoHyPressEligible(HWND hwnd, int32_t x, int32_t y,
       model.count == 0u || model.window != reinterpret_cast<uintptr_t>(hwnd)) {
     return RejectKogadoHyPress(2u);
   }
-  // The unit on screen is still the modelled one, at the modelled row.
-  if (g_kogado_hy.current_unit != model.unit ||
-      g_kogado_hy.current_last_row != model.last_row) {
+  // The unit on screen is still the modelled one, at the modelled row (the
+  // script thread publishes both; this runs on the window thread).
+  if (g_kogado_hy.shown_unit.load(std::memory_order_acquire) != model.unit ||
+      g_kogado_hy.shown_last_row.load(std::memory_order_acquire) !=
+          model.last_row) {
     return RejectKogadoHyPress(3u);
   }
   if (!fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
@@ -630,8 +633,8 @@ void QueueKogadoHySubmit(const KogadoHySubmit& submit) {
   rt.submit_count.store(sequence, std::memory_order_release);
 }
 
-LRESULT CALLBACK KogadoHySubclassProc(HWND hwnd, UINT message, WPARAM wparam,
-                                      LPARAM lparam, UINT_PTR, DWORD_PTR) {
+LRESULT CALLBACK KogadoHyWindowProc(HWND hwnd, UINT message, WPARAM wparam,
+                                    LPARAM lparam) {
   auto& rt = g_kogado_hy_lookup;
   if (g_kogado_hy.live.load(std::memory_order_acquire)) {
     bool swallow = false;
@@ -660,25 +663,48 @@ LRESULT CALLBACK KogadoHySubclassProc(HWND hwnd, UINT message, WPARAM wparam,
     }
     if (swallow) return 0;
   }
-  return g_kogado_hy_def_subclass_proc(hwnd, message, wparam, lparam);
+  const WNDPROC previous =
+      g_kogado_hy_previous_proc.load(std::memory_order_acquire);
+  return g_kogado_hy_window_unicode
+             ? CallWindowProcW(previous, hwnd, message, wparam, lparam)
+             : CallWindowProcA(previous, hwnd, message, wparam, lparam);
 }
 
-// Game thread (RENDER detour): subclass the game window once, from the
-// thread that owns it.
-void KogadoHyInstallSubclassOnGameThread() {
+// Worker: replace the game window's procedure once, chaining to whatever was
+// there (the engine's VCL procedure or another component's subclass).  Never
+// restored: a later subclass may chain to ours; when the lookup is off the
+// procedure passes everything through.
+void ReplaceKogadoHyWindowProcedure(HWND window) {
   auto& rt = g_kogado_hy_lookup;
-  if (!rt.installed || rt.subclassed || rt.subclass_failed) return;
-  const HWND window = reinterpret_cast<HWND>(
-      rt.target_window.load(std::memory_order_acquire));
-  if (window == nullptr) return;
-  if (GetWindowThreadProcessId(window, nullptr) != GetCurrentThreadId()) {
-    rt.subclass_failed = true;
+  if (rt.procedure_replaced || rt.procedure_failed || window == nullptr) return;
+  g_kogado_hy_window_unicode = IsWindowUnicode(window) != FALSE;
+  const LONG_PTR current = g_kogado_hy_window_unicode
+                               ? GetWindowLongPtrW(window, GWLP_WNDPROC)
+                               : GetWindowLongPtrA(window, GWLP_WNDPROC);
+  if (current == 0) {
+    rt.procedure_failed = true;
     return;
   }
-  rt.subclassed = g_kogado_hy_set_window_subclass(
-                       window, &KogadoHySubclassProc, kKogadoHySubclassId,
-                       0u) != FALSE;
-  rt.subclass_failed = !rt.subclassed;
+  g_kogado_hy_previous_proc.store(reinterpret_cast<WNDPROC>(current),
+                                  std::memory_order_release);
+  const LONG_PTR replaced =
+      g_kogado_hy_window_unicode
+          ? SetWindowLongPtrW(window, GWLP_WNDPROC,
+                              reinterpret_cast<LONG_PTR>(&KogadoHyWindowProc))
+          : SetWindowLongPtrA(window, GWLP_WNDPROC,
+                              reinterpret_cast<LONG_PTR>(&KogadoHyWindowProc));
+  // The procedure the window really had at the swap is the one to chain to
+  // (another component may have subclassed it since we read it; until this
+  // store the earlier one, still a valid procedure of the chain, is used).
+  rt.procedure_replaced = replaced != 0;
+  if (rt.procedure_replaced) {
+    g_kogado_hy_previous_proc.store(reinterpret_cast<WNDPROC>(replaced),
+                                    std::memory_order_release);
+  } else {
+    rt.procedure_failed = true;
+  }
+  KogadoHyLog(L"kogado-hy-lookup: window procedure replaced=%d unicode=%d",
+              rt.procedure_replaced ? 1 : 0, g_kogado_hy_window_unicode ? 1 : 0);
 }
 
 bool InstallKogadoHyLookup() {
@@ -686,19 +712,6 @@ bool InstallKogadoHyLookup() {
   if (rt.installed) return true;
   if (rt.resolved || !g_kogado_hy.installed) return false;
   rt.resolved = true;
-  const HMODULE comctl = GetModuleHandleW(L"comctl32.dll");
-  if (comctl != nullptr) {
-    g_kogado_hy_set_window_subclass =
-        reinterpret_cast<KogadoHySetWindowSubclass_t>(
-            GetProcAddress(comctl, "SetWindowSubclass"));
-    g_kogado_hy_def_subclass_proc = reinterpret_cast<KogadoHyDefSubclassProc_t>(
-        GetProcAddress(comctl, "DefSubclassProc"));
-  }
-  if (g_kogado_hy_set_window_subclass == nullptr ||
-      g_kogado_hy_def_subclass_proc == nullptr) {
-    KogadoHyLog(L"kogado-hy-lookup: comctl32 subclass API unavailable");
-    return false;
-  }
   kogado_hy::ImageView view;
   if (!LoadKogadoHyPristineView(&view)) return false;
   rt.site_result =

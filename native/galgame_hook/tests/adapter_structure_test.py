@@ -2321,9 +2321,9 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("NativeInputAllowed", eligible)
         self.assertIn("KogadoHyShieldActive", eligible)
         self.assertIn("GetForegroundWindow", eligible)
-        subclass = self._function_body(runtime, "LRESULT CALLBACK KogadoHySubclassProc(")
+        subclass = self._function_body(runtime, "LRESULT CALLBACK KogadoHyWindowProc(")
         self.assertIn("KogadoHyPressEligible", subclass)
-        self.assertIn("g_kogado_hy_def_subclass_proc", subclass)
+        self.assertIn("CallWindowProcA", subclass)
         for body in (eligible, subclass):
             for forbidden in ("CreateFile", "KogadoHyLog", "MultiByteToWideChar",
                               "std::wstring", "std::vector"):

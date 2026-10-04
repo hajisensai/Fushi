@@ -67,7 +67,6 @@ struct KogadoHyTextRuntime {
   // command, RENDER is reached from the message command), so these need no
   // synchronisation.
   uint64_t current_unit = 0u;
-  uint32_t current_last_row = 0u;
   uintptr_t current_rows = 0u;
   uint32_t unit_first_row = 0u;
   bool unit_closed = false;
@@ -79,11 +78,12 @@ struct KogadoHyTextRuntime {
   std::array<KogadoHyPageEvent, kKogadoHyPageSlots> events = {};
   std::atomic<uint32_t> render_hits{0u};
   std::atomic<uint32_t> wait_hits{0u};
-  std::atomic<DWORD> game_thread{0u};  // the thread that renders the rows
+  // The unit and row last rendered, for the window thread's click gate.
+  std::atomic<uint64_t> shown_unit{0u};
+  std::atomic<uint32_t> shown_last_row{0u};
 };
 
 KogadoHyTextRuntime g_kogado_hy;
-void KogadoHyInstallSubclassOnGameThread();
 struct KogadoHyPageEvent;
 void NoteKogadoHyPublishedUnit(const KogadoHyPageEvent& event,
                                const std::wstring& text, uint64_t text_event);
@@ -168,8 +168,8 @@ void __cdecl KogadoHyRenderObserve(uintptr_t window, uintptr_t rows,
   } __except (EXCEPTION_EXECUTE_HANDLER) {
   }
   if (!copied) return;  // slot stays 0: never handed to the worker
-  rt.game_thread.store(GetCurrentThreadId(), std::memory_order_release);
-  KogadoHyInstallSubclassOnGameThread();
+  rt.shown_unit.store(rt.current_unit, std::memory_order_release);
+  rt.shown_last_row.store(row, std::memory_order_release);
   event.sequence = sequence;
   event.tick = GetTickCount64();
   event.unit = rt.current_unit;
@@ -177,7 +177,6 @@ void __cdecl KogadoHyRenderObserve(uintptr_t window, uintptr_t rows,
   event.rows = rows;
   event.first_row = rt.unit_first_row;
   event.last_row = row;
-  rt.current_last_row = row;
   event.stride = stride;
   std::atomic_thread_fence(std::memory_order_release);
   slot_seq.store(sequence, std::memory_order_release);
