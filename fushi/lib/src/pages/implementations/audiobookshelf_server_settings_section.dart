@@ -287,12 +287,7 @@ class _AudiobookshelfServerSettingsSectionState
   Future<void> _saveValidDrafts() async {
     final AppModel? appModel = _appModel;
     if (appModel == null) return;
-    final Map<String, AudiobookshelfServerConfig> stored =
-        <String, AudiobookshelfServerConfig>{
-          for (final AudiobookshelfServerConfig config
-              in appModel.prefsRepo.discoveryAudiobookshelfServers)
-            config.id: config,
-        };
+    final Map<String, AudiobookshelfServerConfig> stored = _storedConfigs();
     final List<AudiobookshelfServerConfig> configs =
         <AudiobookshelfServerConfig>[
           for (final _AbsDraft draft in _drafts)
@@ -307,23 +302,38 @@ class _AudiobookshelfServerSettingsSectionState
     await appModel.setDiscoveryAudiobookshelfServers(configs);
   }
 
+  /// 偏好里当前的服务器配置（按 id）。令牌以它为准，除非本区刚改过令牌。
+  Map<String, AudiobookshelfServerConfig> _storedConfigs() {
+    final AppModel? appModel = _appModel;
+    if (appModel == null) return const <String, AudiobookshelfServerConfig>{};
+    return <String, AudiobookshelfServerConfig>{
+      for (final AudiobookshelfServerConfig config
+          in appModel.prefsRepo.discoveryAudiobookshelfServers)
+        config.id: config,
+    };
+  }
+
   /// 未登录：用 API key 或账号密码换令牌；已登录：用现有令牌列一次库（顺带验证
   /// 令牌还活着）。两条路径都以「列出有声书库」收尾，报回库数或失败原因。
   Future<void> _connect(String draftId) async {
     final _AbsDraft? draft = _draftById(draftId);
-    final AudiobookshelfServerConfig? config = draft?.toConfig(null);
+    // 与落盘同一个令牌真相源：本区没动过令牌时以偏好里的为准——发现源刷新时会
+    // 轮换 refresh token，草稿里那份可能已经作废，拿它探测会误报「会话失效」。
+    final AudiobookshelfServerConfig? config =
+        draft?.toConfig(_storedConfigs()[draftId]);
     if (draft == null || config == null) return;
     setState(() => _probes[draftId] = const _ProbeState.running());
 
+    final AudiobookshelfTokens? currentTokens = config.tokens;
     final bool useApiKey =
-        draft.tokens == null && draft.apiKey.trim().isNotEmpty;
+        currentTokens == null && draft.apiKey.trim().isNotEmpty;
     // 统一出站装配点（代理 / 超时），也是 outbound_http_discipline 守卫的要求。
     final AudiobookshelfApi api = AudiobookshelfApi(
       serverUrl: config.serverUrl,
       providerId: audiobookshelfSourceIdFor(config.id),
       tokens: useApiKey
           ? AudiobookshelfTokens(accessToken: draft.apiKey.trim())
-          : draft.tokens,
+          : currentTokens,
       client: createAppHttpIoClient(),
     );
     _ProbeState result;
@@ -332,7 +342,7 @@ class _AudiobookshelfServerSettingsSectionState
     try {
       if (useApiKey) {
         username = (await api.me()).username;
-      } else if (draft.tokens == null) {
+      } else if (currentTokens == null) {
         username = (await api.login(
           draft.username.trim(),
           draft.password,
@@ -370,7 +380,8 @@ class _AudiobookshelfServerSettingsSectionState
     final int index = _drafts.indexWhere((_AbsDraft d) => d.id == draftId);
     if (index < 0) return; // 连接期间用户删掉了这台服务器
     final _AbsDraft current = _drafts[index];
-    final bool tokensChanged = tokens != null && tokens != current.tokens;
+    // 只有这次探测自己换来/刷新了令牌才写回；没变就别把偏好里的值再抄一遍。
+    final bool tokensChanged = tokens != null && tokens != currentTokens;
     setState(() {
       if (tokensChanged) {
         _drafts[index] = current.copyWith(

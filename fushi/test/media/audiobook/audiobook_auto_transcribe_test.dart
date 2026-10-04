@@ -17,10 +17,13 @@ Future<DiscoveryImportOutcome> _route(
   TranscribeAudiobookPlan plan, {
   required bool enabled,
   AudiobookMaterialMatch match = const AudiobookMaterialMatch(),
+  Set<String> contentInLibrary = const <String>{},
   required _Calls calls,
 }) => routeTranscribeAudiobookPlan(
   plan,
   autoTranscribeEnabled: enabled,
+  contentAlreadyInLibrary: (String path) async =>
+      contentInLibrary.contains(path),
   matchMaterials: (List<String> audio, String title) async => match,
   importNow: (DiscoveryImportPlan p) async {
     calls.imported.add(p);
@@ -56,7 +59,7 @@ void main() {
       expect(audiobookTitleForAudioPaths(<String>['/x/book.mp3']), 'book');
     });
 
-    test('多文件同目录取目录名;跨目录退回第一份的文件名', () {
+    test('多文件取最近公共祖先目录名;没有公共目录时退回第一份的文件名', () {
       expect(
         audiobookTitleForAudioPaths(<String>[
           '/dl/銀河鉄道の夜/01.mp3',
@@ -64,8 +67,21 @@ void main() {
         ]),
         '銀河鉄道の夜',
       );
+      // 多碟:书名/CD1、书名/CD2——不能叫成「CD1」或「01」(两本多碟书会被同名
+      // 查重互相挤掉)。
+      expect(
+        audiobookTitleForAudioPaths(<String>[
+          r'D:\dl\銀河鉄道の夜\CD1\01.mp3',
+          r'D:\dl\銀河鉄道の夜\CD2\01.mp3',
+        ]),
+        '銀河鉄道の夜',
+      );
       expect(
         audiobookTitleForAudioPaths(<String>['/a/01.mp3', '/b/02.mp3']),
+        '01',
+      );
+      expect(
+        audiobookTitleForAudioPaths(<String>[r'D:\01.mp3', r'E:\02.mp3']),
         '01',
       );
     });
@@ -175,6 +191,42 @@ void main() {
         calls: calls,
       );
       expect(calls.enqueued.single, startsWith('Book|/m/b.epub|'));
+    });
+
+    test('正文已在库 → 入队前就挡下(同齐料包的原因码),不白跑转录', () async {
+      for (final AudiobookMaterialMatch match in <AudiobookMaterialMatch>[
+        const AudiobookMaterialMatch(),
+        const AudiobookMaterialMatch(subtitlePath: '/m/b.srt'),
+      ]) {
+        final _Calls calls = _Calls();
+        await expectLater(
+          _route(
+            const TranscribeAudiobookPlan(
+              audioPaths: <String>['/dl/Book/01.mp3'],
+              contentPath: '/dl/Book/book.epub',
+            ),
+            enabled: true,
+            match: match,
+            contentInLibrary: const <String>{'/dl/Book/book.epub'},
+            calls: calls,
+          ),
+          throwsA(
+            isA<DiscoveryImportBlockedException>()
+                .having(
+                  (DiscoveryImportBlockedException e) => e.blocker,
+                  'blocker',
+                  DiscoveryImportBlocker.audiobookBookAlreadyInLibrary,
+                )
+                .having(
+                  (DiscoveryImportBlockedException e) => e.detail,
+                  'detail',
+                  'book.epub',
+                ),
+          ),
+        );
+        expect(calls.enqueued, isEmpty);
+        expect(calls.imported, isEmpty);
+      }
     });
 
     test('包里自带正文优先于素材库', () async {

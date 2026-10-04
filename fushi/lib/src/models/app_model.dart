@@ -181,7 +181,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
     show
         importDiscoveryAudiobook,
         importDiscoverySubtitleAudiobook,
-        importTranscribedAudiobook;
+        importTranscribedAudiobook,
+        isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
@@ -5565,9 +5566,9 @@ class AppModel with ChangeNotifier {
 
   /// 发现页新内容类型（有声书/游戏）种子完成后的入库回调：整包路径交给
   /// [DiscoveryImportExecutor]（分类 → 解压 → 复用各域既有导入原语）。
-  /// 返回入库条目数；分类不出/解压失败抛 [DiscoveryImportBlockedException]，
+  /// 返回入库结果（条目数 / 移交转录）；分类不出/解压失败抛 [DiscoveryImportBlockedException]，
   /// service 侧收进 failReason 展示。
-  Future<int?> _importDiscoveryDownload(
+  Future<DiscoveryImportOutcome?> _importDiscoveryDownload(
     AnimeDownloadPlan plan,
     List<String> absolutePaths,
   ) async {
@@ -5577,9 +5578,7 @@ class AppModel with ChangeNotifier {
       _ => null,
     };
     if (kind == null) return null;
-    final DiscoveryImportOutcome outcome =
-        await discoveryImportExecutor.importPaths(kind, absolutePaths);
-    return outcome.importedCount;
+    return discoveryImportExecutor.importPaths(kind, absolutePaths);
   }
 
   /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
@@ -5631,6 +5630,8 @@ class AppModel with ChangeNotifier {
     return routeTranscribeAudiobookPlan(
       plan,
       autoTranscribeEnabled: audiobookAutoTranscribeActive,
+      contentAlreadyInLibrary: (String contentPath) =>
+          isDuplicateDiscoveryAudiobookContent(database, contentPath),
       matchMaterials: (List<String> audioPaths, String title) =>
           matchAudiobookMaterialsForAudio(
         audiobookMaterialService,
@@ -7603,6 +7604,13 @@ class AppModel with ChangeNotifier {
     await _disposeVideoDownloadPipelineRuntime(
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
+    // 转录后入库队列：入库那一步写库，必须在关库前停下（在跑的入库等它写完；
+    // 在跑的转录在下一个检查点暂停，进度留在 ASR 任务目录，任务回到排队、下次
+    // 启动续跑）。置空：数据根可能随之迁移，下次按新目录重建。
+    final AudiobookTranscribeImportQueue? transcribeQueue =
+        _audiobookTranscribeImportQueue;
+    _audiobookTranscribeImportQueue = null;
+    await transcribeQueue?.close();
     // 扩展视频沉浸时间桥持 StudyClock 写链：关库前封段并等写完，否则最后一段丢、
     // 或 stop 落在已关闭连接上抛「connection was closed」。幂等，可与
     // stopYomitanApiServer 重复调。

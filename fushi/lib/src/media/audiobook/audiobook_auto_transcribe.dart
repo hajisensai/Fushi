@@ -19,7 +19,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.d
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
-    show audiobookTitleForAudioPaths;
+    show audiobookTitleForAudioPaths, discoveryImportFileName;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
@@ -189,12 +189,16 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
 /// 导入执行器 `transcribeAudiobook` 端口的实现（依赖经参数注入，可单测）。
 ///
 /// - [autoTranscribeEnabled]：开关开 **且** 本机支持 ASR。
+/// - [contentAlreadyInLibrary]：正文会不会撞上库里的同名书。撞上就以
+///   `audiobookBookAlreadyInLibrary` 挡下（同齐料包的既有口径，UI 告诉用户去
+///   那本书里手动导入有声书），而不是先跑几个小时转录再在入库那一步失败。
 /// - [matchMaterials]：按音频 + 书名查素材库。
 /// - [importNow]：素材库配齐时立刻入库（对齐或独立字幕书）。
 /// - [enqueue]：排进转录后入库队列。
 Future<DiscoveryImportOutcome> routeTranscribeAudiobookPlan(
   TranscribeAudiobookPlan plan, {
   required bool autoTranscribeEnabled,
+  required Future<bool> Function(String contentPath) contentAlreadyInLibrary,
   required Future<AudiobookMaterialMatch> Function(
     List<String> audioPaths,
     String title,
@@ -217,6 +221,12 @@ Future<DiscoveryImportOutcome> routeTranscribeAudiobookPlan(
   // 没有地方提示「这是猜的」（同 planAudiobookFromMaterials 的纪律）。
   final String? content =
       plan.contentPath ?? (match.contentIsWeakMatch ? null : match.contentPath);
+  if (content != null && await contentAlreadyInLibrary(content)) {
+    throw DiscoveryImportBlockedException(
+      DiscoveryImportBlocker.audiobookBookAlreadyInLibrary,
+      discoveryImportFileName(content),
+    );
+  }
   final String? subtitle = match.subtitleIsWeakMatch
       ? null
       : match.subtitlePath;
