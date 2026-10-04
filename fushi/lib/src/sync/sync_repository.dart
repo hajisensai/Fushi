@@ -1587,6 +1587,9 @@ class SyncRepository {
     'discovery_opds_servers',
     // 同形：AList / OpenList 站点清单，条目里带 base64 密码。
     'discovery_alist_sites',
+    // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
+    // 两台设备共用一枚只会互相把对方挤下线）。
+    'discovery_audiobookshelf_servers',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

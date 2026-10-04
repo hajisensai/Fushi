@@ -245,6 +245,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   String _searchResultsQuery = '';
   int _searchGeneration = 0;
   bool _isSearching = false;
+
+  /// 2026-10 体验优化：上一次书内搜索是否抛错。出错不能显示成「无结果」
+  /// （用户会以为书里真没有），要给出失败提示 + 重试。
+  bool _searchFailed = false;
   bool _layoutReloading = false;
   bool _exitScheduled = false;
 
@@ -281,6 +285,43 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
 
+  /// 2026-10 体验优化：收藏句删除改为「先标记 + 撤销窗口」，窗口到期（或面板
+  /// 关闭）才真正调 [ReaderQuickSettingsSheet.onDeleteFavorite] 落库；此前
+  /// 一点即删、无确认无撤销，与相邻的复制键只隔 4dp，误触即丢数据。
+  final Map<FavoriteSentence, Timer> _pendingFavoriteDeletes =
+      <FavoriteSentence, Timer>{};
+
+  static const Duration _favoriteUndoWindow = Duration(seconds: 5);
+
+  void _markFavoriteDeleted(FavoriteSentence fav) {
+    if (_pendingFavoriteDeletes.containsKey(fav)) return;
+    setState(() {
+      _pendingFavoriteDeletes[fav] = Timer(
+        _favoriteUndoWindow,
+        () => unawaited(_commitFavoriteDelete(fav)),
+      );
+    });
+  }
+
+  void _undoFavoriteDelete(FavoriteSentence fav) {
+    final Timer? timer = _pendingFavoriteDeletes.remove(fav);
+    if (timer == null) return;
+    timer.cancel();
+    setState(() {});
+  }
+
+  Future<void> _commitFavoriteDelete(FavoriteSentence fav) async {
+    final Timer? timer = _pendingFavoriteDeletes.remove(fav);
+    if (timer == null) return;
+    timer.cancel();
+    if (mounted) {
+      setState(() {
+        _favorites = List<FavoriteSentence>.of(_favorites)..remove(fav);
+      });
+    }
+    await widget.onDeleteFavorite?.call(fav);
+  }
+
   // Local mirror of the audiobook overlay toggles. These are NOT schema items:
   // flipping them needs reader-page side effects (overlay show/hide, permission
   // request, live floating-lyric style) that a preference-only schema item
@@ -292,6 +333,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   @override
   void dispose() {
+    // 面板关闭时仍在撤销窗口里的删除照常落库（用户没点撤销 = 确认删除）。
+    for (final FavoriteSentence fav
+        in List<FavoriteSentence>.of(_pendingFavoriteDeletes.keys)) {
+      unawaited(_commitFavoriteDelete(fav));
+    }
     _sideSheetTabController?.dispose();
     _searchController.dispose();
     _charJumpController.dispose();
@@ -1042,7 +1088,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final String query = _searchController.text.trim();
     if (query.isEmpty) return;
     final int gen = ++_searchGeneration;
-    setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+      _searchFailed = false;
+    });
     try {
       final List<BookSearchResult> results = widget.epubBook != null
           ? await AudiobookBridge.searchBook(widget.epubBook!, query)
@@ -1061,6 +1110,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         _searchResults = const [];
         _searchResultsQuery = '';
         _isSearching = false;
+        _searchFailed = true;
       });
     }
   }
@@ -1158,6 +1208,25 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 );
               },
             ),
+          ),
+        ] else if (!_isSearching && _searchFailed) ...[
+          SizedBox(height: tokens.spacing.gap),
+          Row(
+            key: const ValueKey<String>('book_search_failed'),
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  t.book_search_failed,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _doSearch,
+                child: Text(t.retry),
+              ),
+            ],
           ),
         ] else if (!_isSearching &&
             _searchController.text.trim().isNotEmpty) ...[
@@ -1497,9 +1566,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.delayMs,
       builder: (ctx, ms, _) {
+        // 2026-10 体验优化：声明 trailing 固有宽度（4 颗 48 按钮 + 72 读数），
+        // 窄屏按真实需求换行而不是把标题削成一个字。
         return AdaptiveSettingsRow(
           title: t.av_sync,
           icon: Icons.sync_outlined,
+          trailingWidth: 4 * kMinInteractiveDimension + 72,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1513,15 +1585,27 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 tooltip: '-50ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
               ),
-              FushiFocusable(
-                onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
-                child: SizedBox(
-                  width: 72,
-                  child: Text(
-                    _formatDelayMs(ms),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+              // 2026-10 体验优化：「点数字归零」此前没有任何可见提示。非零时
+              // 读数改用主色 + 下划线（可点的观感），并挂 Tooltip「归零」。
+              Tooltip(
+                message: ms == 0 ? '' : t.av_sync_reset,
+                child: FushiFocusable(
+                  onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
+                  child: SizedBox(
+                    width: 72,
+                    height: kMinInteractiveDimension,
+                    child: Center(
+                      child: Text(
+                        _formatDelayMs(ms),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: ms == 0 ? null : theme.colorScheme.primary,
+                          decoration: ms == 0
+                              ? TextDecoration.none
+                              : TextDecoration.underline,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1914,37 +1998,39 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       title: t.favorites(n: _favorites.length),
       children: [
         for (final FavoriteSentence favorite in _favorites)
-          _InBookFavoriteRow(
-            favorite: favorite,
-            // BUG-875 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
-            // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
-            // 失败（章字符账本未就绪）时不追加、只显示原元信息。
-            metaLabel: _favoriteMetaLabel(favorite, fmt),
-            color: _highlightColor(favorite.color),
-            onPlay: widget.onPlayFavorite == null
-                ? null
-                : () async => widget.onPlayFavorite?.call(favorite),
-            onJump:
-                favorite.sectionIndex == null || widget.onJumpToFavorite == null
-                    ? null
-                    : () async {
-                        Navigator.of(context).pop();
-                        await widget.onJumpToFavorite?.call(favorite);
-                      },
-            onCopy: () {
-              Clipboard.setData(ClipboardData(text: favorite.text));
-              FushiToast.show(msg: t.copy, severity: ToastSeverity.success);
-            },
-            onDelete: () async {
-              await widget.onDeleteFavorite?.call(favorite);
-              if (mounted) {
-                setState(() {
-                  _favorites = List<FavoriteSentence>.of(_favorites)
-                    ..remove(favorite);
-                });
-              }
-            },
-          ),
+          if (_pendingFavoriteDeletes.containsKey(favorite))
+            _InBookFavoriteUndoRow(
+              favorite: favorite,
+              onUndo: () => _undoFavoriteDelete(favorite),
+            )
+          else
+            _InBookFavoriteRow(
+              favorite: favorite,
+              // BUG-875 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
+              // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
+              // 失败（章字符账本未就绪）时不追加、只显示原元信息。
+              metaLabel: _favoriteMetaLabel(favorite, fmt),
+              color: _highlightColor(favorite.color),
+              onPlay: widget.onPlayFavorite == null
+                  ? null
+                  : () async => widget.onPlayFavorite?.call(favorite),
+              onJump: favorite.sectionIndex == null ||
+                      widget.onJumpToFavorite == null
+                  ? null
+                  : () async {
+                      Navigator.of(context).pop();
+                      await widget.onJumpToFavorite?.call(favorite);
+                    },
+              onCopy: () {
+                Clipboard.setData(ClipboardData(text: favorite.text));
+                // 2026-10 体验优化：提示文案是「已复制」而不是动作名「复制」。
+                FushiToast.show(
+                  msg: t.copied_to_clipboard,
+                  severity: ToastSeverity.success,
+                );
+              },
+              onDelete: () => _markFavoriteDeleted(favorite),
+            ),
       ],
     );
   }
@@ -2285,7 +2371,8 @@ class _InBookFavoriteRow extends StatelessWidget {
               tooltip: t.play,
               onPressed: onPlay!,
             ),
-            SizedBox(width: tokens.spacing.gap / 2),
+            // 2026-10 体验优化：按钮间距 ≥ 8，避免复制 / 删除误触。
+            SizedBox(width: tokens.spacing.gap),
           ],
           _InBookIconButton(
             materialIcon: Icons.copy_outlined,
@@ -2293,7 +2380,7 @@ class _InBookFavoriteRow extends StatelessWidget {
             tooltip: t.copy,
             onPressed: onCopy,
           ),
-          SizedBox(width: tokens.spacing.gap / 2),
+          SizedBox(width: tokens.spacing.gap),
           _InBookIconButton(
             materialIcon: Icons.delete_outline,
             cupertinoIcon: CupertinoIcons.delete,
@@ -2319,6 +2406,50 @@ class _InBookFavoriteRow extends StatelessWidget {
   }
 }
 
+/// 2026-10 体验优化：收藏句删除后的撤销窗口行——原文划线 + 「撤销」按钮。
+class _InBookFavoriteUndoRow extends StatelessWidget {
+  const _InBookFavoriteUndoRow({
+    required this.favorite,
+    required this.onUndo,
+  });
+
+  final FavoriteSentence favorite;
+  final VoidCallback onUndo;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      key: ValueKey<String>('in_book_favorite_undo_${favorite.id}'),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: tokens.spacing.gap / 2,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              favorite.text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          TextButton(
+            onPressed: onUndo,
+            child: Text(t.undo),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InBookIconButton extends StatelessWidget {
   const _InBookIconButton({
     required this.materialIcon,
@@ -2337,7 +2468,6 @@ class _InBookIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color color = destructive
         ? (cupertino
             ? CupertinoColors.destructiveRed.resolveFrom(context)
@@ -2349,7 +2479,7 @@ class _InBookIconButton extends StatelessWidget {
     if (cupertino) {
       return CupertinoButton(
         padding: EdgeInsets.zero,
-        minSize: 32,
+        minSize: kMinInteractiveDimension,
         onPressed: onPressed,
         child: Semantics(
           button: true,
@@ -2364,9 +2494,10 @@ class _InBookIconButton extends StatelessWidget {
       size: 18,
       enabledColor: color,
       tooltip: tooltip,
-      constraints: BoxConstraints(
-        minWidth: tokens.spacing.gap * 4,
-        minHeight: tokens.spacing.gap * 4,
+      // 2026-10 体验优化：命中区 32 → 48（标准触控目标）。
+      constraints: const BoxConstraints(
+        minWidth: kMinInteractiveDimension,
+        minHeight: kMinInteractiveDimension,
       ),
       padding: EdgeInsets.zero,
       onTap: onPressed,
@@ -2429,7 +2560,11 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
         icon: widget.icon,
         size: 18,
         tooltip: widget.tooltip,
-        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        // 2026-10 体验优化：32×32 → 48×48 标准触控目标。
+        constraints: const BoxConstraints.tightFor(
+          width: kMinInteractiveDimension,
+          height: kMinInteractiveDimension,
+        ),
         padding: EdgeInsets.zero,
         onTap: widget.onPressed,
       ),

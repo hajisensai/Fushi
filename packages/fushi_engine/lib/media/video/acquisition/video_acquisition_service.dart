@@ -287,6 +287,8 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
         });
       case VideoAcquisitionLoadFranchiseEffect():
         await _loadFranchise(effect.item);
+      case VideoAcquisitionContinueFranchiseEffect():
+        await _continueFranchise(effect.more);
       case VideoAcquisitionResolveFranchiseEntryEffect():
         await _resolveFranchiseEntry(effect);
       case VideoAcquisitionSubmitFranchiseEffect():
@@ -310,6 +312,31 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       );
     }
     _queue.add(VideoAcquisitionFranchiseLoadedEvent(franchise));
+  }
+
+  /// 接着查下一批。续查本身出错（遍历内部已把请求失败收成 truncated，这里兜的是
+  /// 别的异常）时回灌一份空的 truncated 批：reducer 把已收到的部分照常交给用户，
+  /// 并说清单不全——而不是让会话停在「正在找系列」。
+  Future<void> _continueFranchise(
+    Future<VideoFranchise> Function() more,
+  ) async {
+    VideoFranchise batch;
+    try {
+      batch = await more();
+    } catch (error, stack) {
+      lastError = error;
+      engineLog.logDiagnostic(
+        'VideoAcquisition.continueFranchise',
+        '$error\n$stack',
+      );
+      batch = const VideoFranchise(
+        name: '',
+        series: <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[],
+        truncated: true,
+      );
+    }
+    _queue.add(VideoAcquisitionFranchiseLoadedEvent(batch));
   }
 
   /// 一部作品：详情（剧集才要——定下载还是订阅）+ 在库 / 已订阅 + 资源。任何一步

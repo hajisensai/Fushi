@@ -123,17 +123,44 @@ test('TODO-1881: gen button enabled with count on matching site', () => {
   assert.ok(yt.label.includes('1'));
   assert.ok(yt.hint.includes('Netflix'));
 });
-test('TODO-1881: gen button disabled on wrong site, hint lists pending sites', () => {
-  const q = [{ site: 'netflix', netflixId: 'a' }, { site: 'youtube', youtubeId: 'c' }];
-  const s = fushiGenButtonState(q, false, 'other');
+test('TODO-1881: Netflix-only queue on a non-Netflix tab stays disabled and points at the queue', () => {
+  const s = fushiGenButtonState([{ site: 'netflix', netflixId: 'a' }], false, 'other');
   assert.strictEqual(s.mode, 'wrongSite');
   assert.strictEqual(s.enabled, false);
   assert.ok(s.hint.includes('Netflix 1 张'));
-  assert.ok(s.hint.includes('YouTube 1 张'));
-  // 站点匹配但该站点无可生成项（netflix tab + 只有 yt 项）同样按 wrongSite 处理。
-  const s2 = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, 'netflix');
-  assert.strictEqual(s2.mode, 'wrongSite');
-  assert.strictEqual(s2.enabled, false);
+});
+// 用户 2026-10-04「点进去放一会儿视频才能制卡，能不能全自动」：YouTube 生成在 service worker 里跑，
+// 不需要视频页——任何 tab（Netflix 页且有 Netflix 项时除外）都能直接点。
+test('YouTube items generate from any tab, no video page needed', () => {
+  for (const site of ['other', 'youtube', 'netflix']) {
+    const s = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, site);
+    assert.strictEqual(s.mode, 'generate', site);
+    assert.strictEqual(s.target, 'youtube', site);
+    assert.strictEqual(s.enabled, true, site);
+    assert.ok(s.label.includes('1'), site);
+  }
+  // 混合队列不在 Netflix 页：先生成 YouTube，hint 说明 Netflix 还要去播放页。
+  const mixed = fushiGenButtonState(
+    [{ site: 'netflix', netflixId: 'a' }, { site: 'youtube', youtubeId: 'c' }], false, 'other');
+  assert.strictEqual(mixed.target, 'youtube');
+  assert.ok(mixed.hint.includes('Netflix'));
+  // 混合队列在 Netflix 页：录 Netflix（需关 popup 就地录）。
+  const onNf = fushiGenButtonState(
+    [{ site: 'netflix', netflixId: 'a' }, { site: 'youtube', youtubeId: 'c' }], false, 'netflix');
+  assert.strictEqual(onNf.target, 'netflix');
+});
+test('button stays disabled until the current tab is known (it could be a Netflix playback page)', () => {
+  const s = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, null);
+  assert.strictEqual(s.mode, 'pending');
+  assert.strictEqual(s.enabled, false);
+});
+test('YouTube batch in progress shows progress and blocks a second click', () => {
+  const s = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, 'other', { done: 2, total: 5 });
+  assert.strictEqual(s.mode, 'running');
+  assert.strictEqual(s.enabled, false);
+  assert.ok(s.label.includes('2/5'));
+  // Netflix 录制取消逃生口优先级不变。
+  assert.strictEqual(fushiGenButtonState([], true, 'other', { done: 0, total: 1 }).mode, 'cancel');
 });
 
 // ── popup「Fushi 字幕」开关：subtitleOverlayEnabled 的读判据与写集合 ──

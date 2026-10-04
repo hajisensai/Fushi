@@ -297,7 +297,6 @@
   "ctx_confirm": "カードを作成",
   "ctx_cancel": "キャンセル",
   "gen_youtube_queue_empty": "YouTube キューは空です：字幕をオン → Shift を押しながら単語にホバー → ポップアップの「マイニング」でキューに追加してから生成してください",
-  "gen_ext_updated_refresh": "拡張機能が更新されました。ページを再読み込み（F5）して再試行してください",
   "gen_progress": "生成中… {done}/{total}",
   "gen_partial_anki_unconfigured": "一部のみ生成：Anki が設定されていません。Fushi で Anki を設定して再試行してください（処理 {done}、保留 {kept}）",
   "gen_partial_anki_unconfigured_kept": "一部のみ生成：Anki が設定されていません。Fushi で Anki を設定して再試行してください（保留 {kept}）",
@@ -368,7 +367,7 @@
   "ap_gen_unsupported_hint": "キュー内のカードは一括生成に対応していないサイトのものです。1 枚ずつ削除するか、キューを消去してください",
   "ap_gen_start_record_n": "録画して生成を開始（{n} 枚）",
   "ap_gen_start_n": "生成を開始（{n} 枚）",
-  "ap_gen_other_youtube_hint": "ほかに YouTube に {n} 枚あります。YouTube のページに切り替えて生成してください",
+  "ap_gen_other_youtube_hint": "YouTube の {n} 枚は Netflix 以外のページでこのメニューを開けば生成できます",
   "ap_gen_other_netflix_hint": "ほかに Netflix に {n} 枚あります。Netflix の再生ページに切り替えて生成してください",
   "ap_gen_site_count": "{site} {n} 枚",
   "ap_gen_wrong_site_hint": "保留中：{pending}。キューの項目をクリックして動画ページへ移動してから生成してください",
@@ -426,5 +425,5 @@
   "pc_style_more": "すべての設定",
   "pc_hint_site_track": "この動画はサイト自身の字幕トラックを再生しているため、Fushi の字幕は表示されません。タップすると Fushi の字幕に切り替わります。",
   "opt_playerControls_title": "プレーヤー内の字幕ボタン",
-  "opt_playerControls_desc": "プレーヤー自身のコントロールバーに Fushi ボタンを追加します（YouTube と Netflix。ほかのサイトではポインターを重ねている間だけ動画の右下に丸いボタンが出ます）。メニューからこのページと同じ設定——Fushi 字幕、サイト字幕の置き換え、非表示、タイミング調整、字幕の見た目——を動画から離れずに切り替えられます。"
+  "opt_playerControls_desc": "プレーヤー自身のコントロールバーに Fushi ボタンを追加します（YouTube と Netflix。ほかのサイトではポインターを重ねている間だけ動画の右上に丸いボタンが出ます）。メニューからこのページと同じ設定——Fushi 字幕、サイト字幕の置き換え、非表示、タイミング調整、字幕の見た目——を動画から離れずに切り替えられます。"
 }

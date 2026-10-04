@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
+import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -199,6 +200,16 @@ SettingsDestination buildServicesDestination() {
                 ? t.settings_service_not_configured
                 : t.settings_service_configured,
             body: (SettingsContext c) => const AListSiteSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.audiobookshelf_servers',
+            title: t.discovery_audiobookshelf_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) =>
+                const AudiobookshelfServerSettingsSection(),
           ),
         ],
       ),

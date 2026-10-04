@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
+import 'package:fushi/src/media/manga/library/manga_chapter_list.dart'
+    show mangaChapterDownloadFailedLabel;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
@@ -183,7 +185,9 @@ String _statusLabel(MangaDownloadJobRow job) => switch (job.status) {
             ),
       MangaDownloadJobStatus.done => t.manga_online_downloaded,
       MangaDownloadJobStatus.cancelled => t.download_status_cancelled,
-      _ => '${t.manga_online_failed}: ${job.lastError ?? ''}',
+      // 2026-10 体验优化：lastError 为空时原写法留下「失败: 」尾冒号；与章节列表
+      // 共用同一个失败文案拼法。
+      _ => mangaChapterDownloadFailedLabel(job.lastError),
     };
 
 /// 卡片展开后的详情行：状态图标 + 标题 + 状态文案 + 行内动作。
@@ -197,6 +201,13 @@ class _MangaDownloadTaskRow extends StatelessWidget {
   final MangaDownloadJobRow job;
   final String status;
   final MangaDownloadService downloads;
+
+  /// 2026-10 体验优化：20 号图标 + 默认 8 内边距只有 36dp 命中区，低于触摸
+  /// 最小 48dp；手机上重试 / 取消常点空。
+  static const BoxConstraints _actionTarget = BoxConstraints(
+    minWidth: 48,
+    minHeight: 48,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -255,6 +266,7 @@ class _MangaDownloadTaskRow extends StatelessWidget {
               tooltip: t.retry,
               icon: Icons.refresh,
               size: 20,
+              constraints: _actionTarget,
               onTap: () => unawaited(downloads.retry(job.jobId)),
             )
           : job.status == MangaDownloadJobStatus.done
@@ -263,6 +275,7 @@ class _MangaDownloadTaskRow extends StatelessWidget {
                   tooltip: t.dialog_cancel,
                   icon: Icons.close,
                   size: 20,
+                  constraints: _actionTarget,
                   onTap: () => unawaited(downloads.cancel(job.jobId)),
                 ),
     );

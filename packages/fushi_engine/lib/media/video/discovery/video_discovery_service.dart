@@ -368,6 +368,7 @@ class VideoDiscoveryService {
       series: merged.series,
       movies: merged.movies,
       truncated: true,
+      more: merged.more,
     );
   }
 

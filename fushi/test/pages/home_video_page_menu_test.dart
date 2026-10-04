@@ -287,6 +287,9 @@ void main() {
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
+          // 墙卡清晰度角标的规格服务不会真起 ffprobe：套件级默认探测器已在
+          // test/flutter_test_config.dart 换成不起进程的假探测器
+          // （helpers/fake_video_specs_probe.dart）。
         ],
         child: TranslationProvider(
           child: MaterialApp(
