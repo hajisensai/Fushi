@@ -6332,5 +6332,7 @@
   "discovery_audiobookshelf_item_narrated_by": "Narrated by ${name}",
   "discovery_audiobookshelf_session_test": "Test connection",
   "collection_delete_also_subscriptions": "Also delete $n download subscription(s) for this collection",
-  "download_task_group_delete": "Delete all tasks in this group"
+  "download_task_group_delete": "Delete all tasks in this group",
+  "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
+  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers."
 }

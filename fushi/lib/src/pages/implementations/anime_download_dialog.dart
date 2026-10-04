@@ -2842,7 +2842,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   void _openTaskDetail(AnimeDownloadPlan plan) {
     showDialog<void>(
       context: context,
-      builder: (BuildContext context) => TorrentTaskDetailDialog(plan: plan),
+      builder: (BuildContext context) => TorrentTaskDetailDialog(
+        plan: plan,
+        networkIssue: ref.read(appProvider).torrentNetworkIssue,
+      ),
     );
   }
 
