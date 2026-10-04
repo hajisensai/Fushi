@@ -441,20 +441,31 @@ void main() {
     });
 
     test('sweep 的接线读新偏好，且设置页真画了这个开关', () {
+      // sweep 的装配随刮削运行时从 HomePage 搬到了 video_scrape_runtime.dart。
       final String homePage = File(
         'lib/src/pages/implementations/home_page.dart',
       ).readAsStringSync();
+      final String runtime = File(
+        'lib/src/media/video/metadata/video_scrape_runtime.dart',
+      ).readAsStringSync();
       expect(
-        homePage,
-        contains(
-            'isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape'),
+        runtime,
+        contains('isAutoBackfillEnabled: () => '
+            'appModel.videoLibraryAutoBackfillScrape'),
         reason: 'sweep 必须挂在自己的总闸上',
       );
       expect(
-        homePage,
-        isNot(contains('videoAutoScrape')),
-        reason: '不得回退到契约写着「不联网」且用户改不了的 video_auto_scrape',
+        runtime,
+        contains('isEnabled: _isAutoBackfillEnabled'),
+        reason: '总闸要真的传进 VideoLibraryScrapeSweep',
       );
+      for (final String source in <String>[homePage, runtime]) {
+        expect(
+          source,
+          isNot(contains('videoAutoScrape')),
+          reason: '不得回退到契约写着「不联网」且用户改不了的 video_auto_scrape',
+        );
+      }
 
       final String videoSettings = File(
         'lib/src/settings/settings_schema_video.dart',
