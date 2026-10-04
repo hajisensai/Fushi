@@ -59,6 +59,7 @@ class CollectionDetailHero extends StatelessWidget {
     this.continueLabel,
     this.playLabel,
     this.playButtonKey,
+    this.secondaryAction,
     super.key,
   });
 
@@ -108,6 +109,9 @@ class CollectionDetailHero extends StatelessWidget {
   final Key? playButtonKey;
 
   final VoidCallback? onPlay;
+
+  /// 播放按钮旁的次按钮（如媒体服务器详情的「下载到本机」）；null 不占位。
+  final Widget? secondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +181,21 @@ class CollectionDetailHero extends StatelessWidget {
                       fit: BoxFit.cover,
                       alignment: Alignment.center,
                       gaplessPlayback: true,
+                      // 首帧淡入：解码完成那一帧从底色渐显；同步命中缓存的
+                      // 直接出图。时长走动效令牌（墨水屏 / 减弱动效归零）。
+                      frameBuilder: (BuildContext context, Widget child,
+                              int? frame, bool wasSynchronouslyLoaded) =>
+                          wasSynchronouslyLoaded
+                              ? child
+                              : AnimatedOpacity(
+                                  opacity: frame == null ? 0 : 1,
+                                  duration: fushiMotionDuration(
+                                    context,
+                                    FushiMotion.long,
+                                  ),
+                                  curve: FushiMotion.standard,
+                                  child: child,
+                                ),
                       errorBuilder: (_, __, ___) =>
                           ColoredBox(color: cs.surfaceContainerHighest),
                     ),
@@ -359,13 +378,22 @@ class CollectionDetailHero extends StatelessWidget {
           ),
         ],
         SizedBox(height: tokens.spacing.card),
-        FushiFilledButton.icon(
-          key: playButtonKey,
-          icon: const FushiIcon(Icons.play_arrow_rounded),
-          label: Text(playLabel ?? t.collection_play),
-          onPressed: onPlay,
-          // Apple：压在 hero 深色渐变上，固定白底黑字（Apple TV 播放钮）。
-          overImage: true,
+        // 主按钮「播放 / 继续」+ 可选次按钮；窄屏放不下时次按钮换行。
+        Wrap(
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            FushiFilledButton.icon(
+              key: playButtonKey,
+              icon: const FushiIcon(Icons.play_arrow_rounded),
+              label: Text(playLabel ?? t.collection_play),
+              onPressed: onPlay,
+              // Apple：压在 hero 深色渐变上，固定白底黑字（Apple TV 播放钮）。
+              overImage: true,
+            ),
+            if (secondaryAction != null) secondaryAction!,
+          ],
         ),
       ],
     );

@@ -18,12 +18,18 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 //    系统而被拆掉重建）；
 // ④ popup.css 的透明文档宿主 / 强调色段与扩展生成物保持一致。
 void main() {
-  ThemeData theme({required bool glass}) => buildFushiThemeData(
+  // 默认钉 Windows：flutter test 的 defaultTargetPlatform 是 Android，而 Android
+  // 的查词面板背后是 Hybrid Composition WebView、采不到模糊（恒不透明，见下方
+  // 专门的用例）；「真玻璃」契约只在 WebView 以纹理合成的 Windows / Linux 上成立。
+  ThemeData theme({
+    required bool glass,
+    TargetPlatform platform = TargetPlatform.windows,
+  }) => buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
     glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
     glassDesign: glass,
-  );
+  ).copyWith(platform: platform);
 
   Widget host(ThemeData data, Widget child) => MaterialApp(
     theme: data,
@@ -80,6 +86,55 @@ void main() {
     expect(stack.children.first, isA<Positioned>());
   });
 
+  testWidgets('MD3：查词浮层也是磨砂玻璃（BackdropFilter 在 WebView 背后，Material 透明）；'
+      '独立窗保持不透明', (WidgetTester tester) async {
+    const Key childKey = ValueKey<String>('webview');
+    await tester.pumpWidget(
+      host(
+        theme(glass: false),
+        const FushiPopupSurface(
+          borderOnForeground: false,
+          child: SizedBox.expand(key: childKey),
+        ),
+      ),
+    );
+    final Finder blur = find.descendant(
+      of: find.byType(FushiPopupSurface),
+      matching: find.byType(BackdropFilter),
+    );
+    expect(blur, findsOneWidget);
+    expect(
+      find.descendant(of: blur, matching: find.byKey(childKey)),
+      findsNothing,
+    );
+    final Material material = tester.widget<Material>(
+      find
+          .ancestor(of: find.byKey(childKey), matching: find.byType(Material))
+          .first,
+    );
+    expect(material.color, Colors.transparent);
+    expect(material.borderOnForeground, isFalse);
+
+    await tester.pumpWidget(
+      host(
+        theme(glass: false),
+        const FushiPopupSurface(
+          borderOnForeground: false,
+          standaloneWindow: true,
+          color: Colors.white,
+          child: SizedBox.expand(key: childKey),
+        ),
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(FushiPopupSurface),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('MD3：同一 Stack 槽位、无玻璃组件；切换设计系统子节点不重挂', (
     WidgetTester tester,
   ) async {
@@ -116,10 +171,81 @@ void main() {
     );
   });
 
+  testWidgets('Android（阅读器 WebView 是 Hybrid Composition 原生 View、采不到模糊）：'
+      '两套设计系统都画不透明面板', (WidgetTester tester) async {
+    for (final bool glass in <bool>[true, false]) {
+      await tester.pumpWidget(
+        host(
+          theme(glass: glass, platform: TargetPlatform.android),
+          const FushiPopupSurface(
+            borderOnForeground: false,
+            child: SizedBox.expand(),
+          ),
+        ),
+      );
+      Finder inSurface(Type t) => find.descendant(
+        of: find.byType(FushiPopupSurface),
+        matching: find.byType(t),
+      );
+      expect(
+        inSurface(GlassContainer),
+        findsNothing,
+        reason: 'glass=$glass：HC 下着色器采不到 WebView，半透明只会透出未模糊的正文',
+      );
+      expect(
+        inSurface(BackdropFilter),
+        findsNothing,
+        reason: 'glass=$glass：BackdropFilter 只采得到 overlay surface 自己画的东西',
+      );
+      final Iterable<ColoredBox> boxes = tester.widgetList<ColoredBox>(
+        inSurface(ColoredBox),
+      );
+      expect(
+        boxes.any((ColoredBox b) => b.color.a == 1.0),
+        isTrue,
+        reason: 'glass=$glass：面板必须不透明',
+      );
+    }
+  });
+
+  testWidgets('iOS / macOS（背后是原生平台视图、采不到模糊）：两套设计系统都画不透明面板', (
+    WidgetTester tester,
+  ) async {
+    for (final bool glass in <bool>[true, false]) {
+      await tester.pumpWidget(
+        host(
+          theme(glass: glass, platform: TargetPlatform.macOS),
+          const FushiPopupSurface(
+            borderOnForeground: false,
+            child: SizedBox.expand(),
+          ),
+        ),
+      );
+      Finder inSurface(Type t) => find.descendant(
+        of: find.byType(FushiPopupSurface),
+        matching: find.byType(t),
+      );
+      expect(
+        inSurface(GlassContainer),
+        findsNothing,
+        reason: 'glass=$glass：半透明玻璃会把下面一层的字原样透出来',
+      );
+      expect(inSurface(BackdropFilter), findsNothing);
+      final Iterable<ColoredBox> boxes = tester.widgetList<ColoredBox>(
+        inSurface(ColoredBox),
+      );
+      expect(
+        boxes.any((ColoredBox b) => b.color.a == 1.0),
+        isTrue,
+        reason: 'glass=$glass：面板必须不透明',
+      );
+    }
+  });
+
   group('popup.css 材质宿主 / 强调色段', () {
     final String popupCss = File('assets/popup/popup.css').readAsStringSync();
 
-    test('app 内 Apple 宿主文档透明（玻璃卡面由 Flutter 画）', () {
+    test('app 内宿主文档透明（玻璃卡面由 Flutter 画）', () {
       expect(
         RegExp(
           r'html\.fushi-glass-host,\s*html\.fushi-glass-host body\s*\{\s*'

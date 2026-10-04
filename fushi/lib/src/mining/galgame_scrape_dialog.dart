@@ -14,6 +14,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 游戏「刮削元数据」统一弹窗。
 ///
@@ -421,12 +422,19 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
         message: t.game_scrape_no_result,
       );
     }
-    return ListView.separated(
-      shrinkWrap: true,
-      itemCount: _candidates.length,
-      separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildCandidateTile(theme, tokens, _candidates[index]),
+    // 每次搜索出新结果都重开进场窗口（replayKey = 本次结果列表），候选行
+    // 错峰淡入；墨水屏 / 减弱动效下瞬间到位。
+    return FushiEntranceScope(
+      replayKey: _candidates,
+      child: ListView.separated(
+        shrinkWrap: true,
+        itemCount: _candidates.length,
+        separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
+        itemBuilder: fushiStaggeredItemBuilder(
+          (BuildContext context, int index) =>
+              _buildCandidateTile(theme, tokens, _candidates[index]),
+        ),
+      ),
     );
   }
 
@@ -456,6 +464,9 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
                   candidate.displayName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 2),

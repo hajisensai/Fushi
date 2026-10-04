@@ -637,10 +637,10 @@ void main() {
         glass: false,
       );
       expect(find.byType(SegmentedButton<String>), findsOneWidget);
-      expect(find.byType(GlassSegmentedControl), findsNothing);
+      expect(find.byType(FushiAppleSegmentedControl), findsNothing);
     });
 
-    testWidgets('glass single select uses GlassSegmentedControl', (
+    testWidgets('glass single select uses FushiAppleSegmentedControl', (
       WidgetTester tester,
     ) async {
       Set<String> selected = <String>{'a'};
@@ -658,7 +658,7 @@ void main() {
         glass: true,
       );
       expect(find.byType(SegmentedButton<String>), findsNothing);
-      expect(find.byType(GlassSegmentedControl), findsOneWidget);
+      expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
 
       await tester.tap(find.text('Beta'));
       await settle(tester);
@@ -689,7 +689,7 @@ void main() {
         glass: true,
       );
       expect(find.byType(SegmentedButton<String>), findsNothing);
-      expect(find.byType(GlassSegmentedControl), findsNothing);
+      expect(find.byType(FushiAppleSegmentedControl), findsNothing);
       expect(find.byType(GlassButton), findsNothing);
       // 选中段显示 SF 对勾。
       expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
@@ -719,7 +719,7 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byType(GlassSegmentedControl), findsOneWidget);
+      expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
       await tester.tap(find.text('Beta'), warnIfMissed: false);
       await settle(tester);
     });
@@ -809,7 +809,7 @@ void main() {
       expect(find.byType(FushiAppleSwitch), findsNWidgets(2));
       expect(find.byType(FushiAppleSlider), findsOneWidget);
       expect(find.byType(GlassListTile), findsNWidgets(3));
-      expect(find.byType(GlassSegmentedControl), findsOneWidget);
+      expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
     });
   }
 }

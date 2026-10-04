@@ -53,8 +53,8 @@
         /* outline 画在内容之上、贴圆角：不占布局（border 会把宿主撑宽 2px，影响落点计算）。 */
         outline: 1px solid rgba(0, 0, 0, 0.08);
         outline-offset: -1px;
-        /* 投影与嵌套子层同一公式的第 1 级（nested-popup-host.js fushiNestedLayerSkin：子层每深
-           一层略加重，材质不变）。 */
+        /* 投影与嵌套子层逐字相同（nested-popup-host.js fushiNestedLayerSkin）：每一层查词卡
+           外观都与第一层一致，不随层深加重、填充也不另立下限（用户 2026-10-05 拍板）。 */
         box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
     }
 

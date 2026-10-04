@@ -3775,6 +3775,10 @@ function closeAudioSourceMenu(restoreFocus) {
     __fushiAudioMenu = null;
     window.__fushiAudioMenuOpen = false;
     document.removeEventListener('pointerdown', state.onDocPointerDown, true);
+    if (state.onViewportChange) {
+        window.removeEventListener('scroll', state.onViewportChange, true);
+        window.removeEventListener('resize', state.onViewportChange);
+    }
     if (state.modal) {
         window.__fushiPopupModalDepth = Math.max(0, (window.__fushiPopupModalDepth || 1) - 1);
     }
@@ -3794,7 +3798,7 @@ window.fushiCloseAudioSourceMenu = closeAudioSourceMenu;
 const AUDIO_MENU_THEME_VARS = [
     '--text-color', '--background-color', '--md-primary', '--md-on-primary',
     '--md-surface-container-high', '--md-outline-variant', '--primary-color',
-    '--surface-container-high', '--outline-variant',
+    '--surface-container-high', '--outline-variant', '--fushi-card-bg-rgb',
 ];
 function applyAudioMenuTheme(menu) {
     const container = __fushiContainer();
@@ -3806,32 +3810,134 @@ function applyAudioMenuTheme(menu) {
             const v = cs.getPropertyValue(name);
             if (v && v.trim()) menu.style.setProperty(name, v.trim());
         }
+        // 独立 shadow 宿主里没有弹窗的字体链，沿用弹窗容器的。
+        if (cs.fontFamily) menu.style.fontFamily = cs.fontFamily;
     } catch (_) { /* 无样式信息：走 CSS 兜底色 */ }
     const has = (cls) => html.classList.contains(cls) ||
         !!(container && container.classList && container.classList.contains(cls));
     if (has('fushi-glass-host') || has('fushi-glass')) menu.classList.add('is-glass');
     if (has('eink')) menu.classList.add('is-eink');
+    // 宿主声明背后采不到模糊（iOS / macOS）：菜单用实底，不赌 backdrop-filter。
+    if (has('fushi-solid-backdrop')) menu.classList.add('is-solid');
+    // 明暗：菜单可能挂在独立 shadow 宿主里，祖先链上没有 data-theme，从容器 / <html> 抄。
+    const theme = (container && container.getAttribute && container.getAttribute('data-theme')) ||
+        html.getAttribute('data-theme');
+    if (theme) menu.setAttribute('data-theme', theme);
+}
+
+// 菜单落点（纯函数，供测试）：所有坐标都在 getBoundingClientRect 同一空间。
+// 默认在按钮下方、右缘对齐按钮右缘（popover 口径），间距 [gap]；下方放不下且上方更宽裕
+// 时翻到上方；横向夹进 [bounds]（弹窗可见区，已扣滚动条）内、两侧留 [margin]。
+// 返回 { left, top, placement: 'below'|'above', maxHeight, originX }，originX 是按钮
+// 右缘在菜单内的横坐标（展开动画的 transform-origin 落在贴按钮的那个角）。
+function computeAudioMenuPlacement(btn, menuW, menuH, bounds, gap, margin) {
+    const availBelow = bounds.bottom - btn.bottom - gap - margin;
+    const availAbove = btn.top - bounds.top - gap - margin;
+    const below = availBelow >= menuH || availBelow >= availAbove;
+    const maxHeight = Math.max(60, below ? availBelow : availAbove);
+    const height = Math.min(menuH, maxHeight);
+    const minLeft = bounds.left + margin;
+    const maxLeft = bounds.right - margin - menuW;
+    let left = btn.right - menuW;
+    left = maxLeft < minLeft ? minLeft : Math.max(minLeft, Math.min(left, maxLeft));
+    const top = below ? btn.bottom + gap : btn.top - gap - height;
+    const originX = Math.max(0, Math.min(menuW, btn.right - left));
+    return { left, top, placement: below ? 'below' : 'above', maxHeight, originX };
+}
+
+// 弹窗的可见区（getBoundingClientRect 空间）：视口（fixed right/bottom:0 量出，天然扣掉
+// 经典滚动条；底边按宿主注入的可见高度 BUG-2734 收缩），再与扩展弹窗宿主（shadow host，
+// 固定尺寸、内部滚动的那只卡）的内侧求交——菜单挂在宿主外面，但仍只在弹窗范围里展开。
+function audioMenuBounds(menu, origin) {
+    const s = menu.style;
+    s.left = 'auto';
+    s.top = 'auto';
+    s.right = '0px';
+    s.bottom = '0px';
+    const edge = menu.getBoundingClientRect();
+    s.right = 'auto';
+    s.bottom = 'auto';
+    s.left = '0px';
+    s.top = '0px';
+    const bounds = { left: origin.left, top: origin.top, right: edge.right, bottom: edge.bottom };
+    const ih = window.innerHeight || 0;
+    const vh = __fushiVisibleViewportHeight();
+    if (ih > 0 && vh > 0 && vh < ih) {
+        bounds.bottom = bounds.top + (bounds.bottom - bounds.top) * (vh / ih);
+    }
+    const host = window.__fushiRoot && window.__fushiRoot.host;
+    if (host && typeof host.getBoundingClientRect === 'function') {
+        const r = host.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+            const ow = host.offsetWidth || r.width;
+            const scrollbar = host.clientWidth ? Math.max(0, (ow - host.clientWidth) * (r.width / ow)) : 0;
+            bounds.left = Math.max(bounds.left, r.left);
+            bounds.top = Math.max(bounds.top, r.top);
+            bounds.right = Math.min(bounds.right, r.right - scrollbar);
+            bounds.bottom = Math.min(bounds.bottom, r.bottom);
+        }
+    }
+    return bounds;
 }
 
 function positionAudioSourceMenu(menu, button) {
-    // fixed 元素的包含块不一定是视口（扩展宿主带 backdrop-filter 时就是宿主盒）：
-    // 先放到 (0,0) 量出包含块原点，再按视口坐标减回去。
-    menu.style.left = '0px';
-    menu.style.top = '0px';
+    const s = menu.style;
+    // 量的时候摘掉展开动画的 scale（transform 会改变 getBoundingClientRect）。
+    s.transform = 'none';
+    s.maxHeight = '';
+    // fixed 的包含块与缩放都不一定是视口原样（宿主 zoom、带 filter 的祖先）：放到 (0,0)
+    // 与 (100,100) 各量一次，得到包含块原点与「样式 px → 矩形 px」的比例，再换算回去。
+    s.right = 'auto';
+    s.bottom = 'auto';
+    s.left = '0px';
+    s.top = '0px';
     const origin = menu.getBoundingClientRect();
-    const btnRect = button.getBoundingClientRect();
-    const viewportW = __fushiViewportWidth();
-    const viewportH = __fushiVisibleViewportHeight();
-    const below = viewportH - btnRect.bottom - 8;
-    const above = btnRect.top - 8;
-    const placeBelow = below >= Math.min(menu.scrollHeight, 160) || below >= above;
-    menu.style.maxHeight = Math.max(80, (placeBelow ? below : above) - 4) + 'px';
-    const rect = menu.getBoundingClientRect();
-    let left = btnRect.left + btnRect.width / 2 - rect.width / 2;
-    left = Math.max(4, Math.min(left, viewportW - rect.width - 4));
-    const top = placeBelow ? btnRect.bottom + 6 : Math.max(4, btnRect.top - rect.height - 6);
-    menu.style.left = (left - origin.left) + 'px';
-    menu.style.top = (top - origin.top) + 'px';
+    s.left = '100px';
+    s.top = '100px';
+    const probe = menu.getBoundingClientRect();
+    const sx = (probe.left - origin.left) / 100 || 1;
+    const sy = (probe.top - origin.top) / 100 || 1;
+    s.left = '0px';
+    s.top = '0px';
+    const bounds = audioMenuBounds(menu, origin);
+    const margin = 8;
+    s.maxWidth = Math.max(160, Math.min(320 * sx, bounds.right - bounds.left - margin * 2) / sx) + 'px';
+    const size = menu.getBoundingClientRect();
+    const btn = button.getBoundingClientRect();
+    const place = computeAudioMenuPlacement(btn, size.width, size.height, bounds, 6, margin);
+    s.maxHeight = (place.maxHeight / sy) + 'px';
+    s.left = ((place.left - origin.left) / sx) + 'px';
+    s.top = ((place.top - origin.top) / sy) + 'px';
+    s.transformOrigin = (place.originX / sx) + 'px ' + (place.placement === 'below' ? '0' : '100%');
+    s.transform = '';
+    menu.dataset.placement = place.placement;
+}
+
+// 菜单的挂载点。in-app / 嵌套子层（iframe 文档）挂 body：fixed 就是弹窗自己的视口。
+// 扩展第一层的 __fushiRoot 是 shadow root，它的宿主是固定尺寸、overflow 滚动、带
+// backdrop-filter 的卡——backdrop-filter 让宿主成为 fixed 的包含块，菜单会跟着内容滚、
+// 被宿主的 overflow 裁掉右半边（用户截图）。这里给菜单单独建一个挂在 documentElement
+// 上的 shadow 宿主（零尺寸、无 filter / transform，fixed 回到视口），样式表从弹窗
+// shadow root 克隆过来。嵌套子层的 shadow 宿主铺满自己的 iframe，同样适用。
+function __fushiAudioMenuMount() {
+    const root = window.__fushiRoot;
+    if (!root || !root.host || typeof document.createElement !== 'function') return document.body;
+    let host = typeof document.getElementById === 'function'
+        ? document.getElementById('fushi-audio-menu-host') : null;
+    if (!host || !host.shadowRoot) {
+        host = document.createElement('div');
+        host.id = 'fushi-audio-menu-host';
+        host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;';
+        const shadow = host.attachShadow({ mode: 'open' });
+        for (const node of Array.from(root.children || [])) {
+            const tag = (node.tagName || '').toLowerCase();
+            if (tag === 'style' || (tag === 'link' && node.rel === 'stylesheet')) {
+                shadow.appendChild(node.cloneNode(true));
+            }
+        }
+        (document.documentElement || document.body).appendChild(host);
+    }
+    return host.shadowRoot;
 }
 
 function audioMenuItems(menu) {
@@ -3842,7 +3948,8 @@ function onAudioMenuKeyDown(e) {
     const state = __fushiAudioMenu;
     if (!state) return;
     const items = audioMenuItems(state.menu);
-    const active = __fushiRootNode().activeElement || document.activeElement;
+    const menuRoot = typeof state.menu.getRootNode === 'function' ? state.menu.getRootNode() : null;
+    const active = (menuRoot && menuRoot.activeElement) || document.activeElement;
     const index = items.indexOf(active && active.closest
         ? active.closest('.fushi-audio-menu-item') : null);
     const focusAt = (i) => {
@@ -3881,6 +3988,45 @@ function onAudioMenuKeyDown(e) {
     e.stopPropagation();
 }
 
+// 菜单项文案：主标签 = 实际音频源名，副标签 = 来自哪个已配置的源。列表型远端源
+// （Yomitan 本地音频服务器那类，一个 URL 回 NHK16 / SMK8 / Forvo (说话人) / JPod101 多条）
+// 的 `name` 是用户给这条配置起的名字（例如「Anki」），`variant` 才是具体音频源——
+// 旧实现拿 name 当主标签，于是每项都显示成「Anki」、真正的源名挤在第二行被截断。
+function audioMenuItemLabel(choice, reading, showSource) {
+    // 音频源服务器回的名字可能是没填参的格式串（实测「TAAS %s」）：占位符一律剥掉，
+    // 剥完为空就退回配置名 / URL 域名 / 读音，绝不把 %s 摆给用户看。
+    const clean = (v) => String(v || '')
+        .replace(/%(\d+\$)?[sdif@]/g, '')
+        .replace(/\{\s*\w*\s*\}/g, '')
+        .replace(/[(（[【]\s*[)）\]】]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s\-–—:：·•|,，(（]+|[\s\-–—:：·•|,，(（]+$/g, '')
+        .trim();
+    const name = clean(choice && choice.name);
+    const variant = clean(choice && choice.variant);
+    let host = '';
+    try {
+        const u = choice && choice.url;
+        if (typeof u === 'string' && /^https?:/i.test(u)) host = new URL(u).hostname;
+    } catch (_) { /* 非法 URL：不给域名 */ }
+    if (variant) {
+        const secondary = showSource !== false && name && name !== variant ? name : '';
+        return { primary: variant, secondary };
+    }
+    return { primary: name || host || String(reading || ''), secondary: '' };
+}
+
+// 副标签（来自哪个已配置的源）只在有信息量时显示：菜单里出现了不止一个配置源。
+// 全部来自同一个源（常见：只配了一个 Yomitan 本地音频服务器，每项都是「Anki」）时
+// 那一行纯属噪音，各项收成单行。
+function audioMenuShowsSource(choices) {
+    const names = new Set();
+    for (const c of choices || []) {
+        if (c && String(c.variant || '').trim()) names.add(String(c.name || '').trim());
+    }
+    return names.size > 1;
+}
+
 function renderAudioSourceMenuItems(menu, button, choices, reading) {
     menu.removeAttribute('aria-busy');
     menu.textContent = '';
@@ -3895,6 +4041,7 @@ function renderAudioSourceMenuItems(menu, button, choices, reading) {
         menu.appendChild(empty);
         return;
     }
+    const showSource = audioMenuShowsSource(choices);
     choices.forEach((choice, i) => {
         const item = el('button', {
             className: 'fushi-audio-menu-item',
@@ -3903,14 +4050,16 @@ function renderAudioSourceMenuItems(menu, button, choices, reading) {
             type: 'button',
         });
         item.dataset.audioIndex = String(i);
+        const label = audioMenuItemLabel(choice, reading, showSource);
+        item.title = label.secondary ? label.primary + ' — ' + label.secondary : label.primary;
         item.appendChild(el('span', {
             className: 'fushi-audio-menu-name',
-            textContent: choice.name || reading,
+            textContent: label.primary,
         }));
-        if (choice.variant) {
+        if (label.secondary) {
             item.appendChild(el('span', {
                 className: 'fushi-audio-menu-variant',
-                textContent: choice.variant,
+                textContent: label.secondary,
             }));
         }
         item.addEventListener('click', async (e) => {
@@ -3946,15 +4095,28 @@ async function openAudioSourceMenu(button, expression, reading, options) {
     menu.addEventListener('click', (e) => e.stopPropagation());
     menu.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); });
     applyAudioMenuTheme(menu);
-    __fushiOverlayParent().appendChild(menu);
+    try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            menu.classList.add('no-motion');
+        }
+    } catch (_) { /* no-op */ }
+    __fushiAudioMenuMount().appendChild(menu);
     const onDocPointerDown = (e) => {
         const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
         if (path.includes(menu) || path.includes(button) || menu.contains(e.target)) return;
         closeAudioSourceMenu(false);
     };
     document.addEventListener('pointerdown', onDocPointerDown, true);
+    // 内容滚动 / 窗口变化：按钮已经挪走，菜单不再贴着它——直接关（菜单自身内部滚动除外）。
+    const onViewportChange = (e) => {
+        if (e && e.type === 'scroll' && e.target && (e.target === menu ||
+            (typeof menu.contains === 'function' && menu.contains(e.target)))) return;
+        closeAudioSourceMenu(false);
+    };
+    window.addEventListener('scroll', onViewportChange, true);
+    window.addEventListener('resize', onViewportChange);
     window.__fushiPopupModalDepth = (window.__fushiPopupModalDepth || 0) + 1;
-    __fushiAudioMenu = { menu, button, modal: true, onDocPointerDown, generation };
+    __fushiAudioMenu = { menu, button, modal: true, onDocPointerDown, onViewportChange, generation };
     window.__fushiAudioMenuOpen = true;
     button.setAttribute('aria-expanded', 'true');
     button.setAttribute('aria-controls', menuId);
@@ -6140,7 +6302,141 @@ if (typeof window.addEventListener === 'function'
     window.addEventListener('resize', updateEffectiveDictColumns);
 }
 
+// 查询中的加载态（WebView 内）。宿主在**结果还没到**时推的是搜索期占位（app 内
+// `kPopupSearchingPlaceholderResult`，注入 `window.lookupPending = true`）；旧实现把它
+// 当成「没有词条」直接画「No results」，查词开始到结果落地之间就会闪一下假空态（Flutter
+// 盖板一撤、新结果还没渲染完的那几帧尤其明显）。这里改画加载指示器：
+//   · 150ms 后才露出（快查询根本不闪）；
+//   · 一旦露出至少停 300ms（结果早到就把这次渲染推迟到满 300ms，避免一闪而过）；
+//   · 结果替换掉已露出的指示器时淡入 150ms。
+// 指示器是 MD3 Expressive 加载指示器的 CSS 版（主色圆角形状在几种轮廓间变形旋转）；
+// 墨水屏 / 系统要求减少动态效果时换成静止三点。与 Flutter 侧 FushiDeferredLoading
+// 同一组时长。
+//
+// 指示器的 infinite 动画只能在「查询确实还在进行、且文档可见」时存在：热槽 WebView
+// 初始化 / 关闭复位都会推一次搜索期占位，随后停驻在屏外；Windows 上 WebView2 是纹理
+// 合成，停驻页里只要有一个 infinite 动画就会持续出帧（空闲 CPU / GPU）。所以占位
+// 本身只是一个**空的** `.popup-loading` 盒子，动画元素到 150ms 阈值、确认仍 pending
+// 且文档可见时才插入；任何换 DOM 的渲染、文档转隐藏都会把它摘掉（不是暂停）。
+// 注意：app 内热槽 seed / 复位推的也是 `lookupPending = true`（同一个占位单例），
+// 页面内无法区分「停驻空闲」与「真在查」——停驻期能否不插指示器取决于宿主是否在
+// 停驻时撤掉 pending / 让文档转 hidden。
+const POPUP_LOADING_DELAY_MS = 150;
+const POPUP_LOADING_MIN_VISIBLE_MS = 300;
+const POPUP_RESULTS_FADE_MS = 150;
+let __fushiLoadingTimer = 0;
+let __fushiLoadingShownAt = 0;
+let __fushiLoadingNode = null;
+let __fushiDeferredRenderTimer = 0;
+
+function __fushiPopupReducedMotion() {
+    try {
+        if (document.documentElement.classList.contains('eink')) return true;
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (_) {
+        return false;
+    }
+}
+
+function __fushiPopupDocumentHidden() {
+    try {
+        return document.visibilityState === 'hidden';
+    } catch (_) {
+        return false;
+    }
+}
+
+// 摘掉已插入的指示器元素（动画随元素一起消失），保留空占位盒子；挂起的露出计时作废。
+function __fushiUnmountPopupLoadingIndicator() {
+    if (__fushiLoadingTimer) clearTimeout(__fushiLoadingTimer);
+    __fushiLoadingTimer = 0;
+    __fushiLoadingShownAt = 0;
+    const node = __fushiLoadingNode;
+    if (!node) return;
+    node.innerHTML = '';
+    node.classList.remove('visible');
+    node.classList.remove('is-static');
+}
+
+// 阈值到时才插入指示器：仍是同一个占位、仍挂在文档上、宿主仍声明 pending、文档可见。
+function __fushiArmPopupLoadingIndicator() {
+    if (__fushiLoadingTimer) clearTimeout(__fushiLoadingTimer);
+    __fushiLoadingTimer = 0;
+    const node = __fushiLoadingNode;
+    if (!node || __fushiPopupDocumentHidden()) return;
+    __fushiLoadingTimer = setTimeout(() => {
+        __fushiLoadingTimer = 0;
+        if (node !== __fushiLoadingNode || !node.isConnected) return;
+        if (window.lookupPending !== true || __fushiPopupDocumentHidden()) return;
+        const still = __fushiPopupReducedMotion();
+        // 只插入实际要显示的那一种：静止三点没有动画，变形形状才有。
+        node.innerHTML = still
+            ? '<div class="popup-loading-dots"><span></span><span></span><span></span></div>'
+            : '<div class="popup-loading-shape"></div>';
+        if (still) node.classList.add('is-static');
+        // 先落一次样式再加 .visible，0→1 的淡入过渡才会真的跑。
+        void node.offsetWidth;
+        node.classList.add('visible');
+        __fushiLoadingShownAt = performance.now();
+    }, POPUP_LOADING_DELAY_MS);
+}
+
+function renderPopupLoading(container) {
+    __fushiUnmountPopupLoadingIndicator();
+    container.innerHTML = '<div class="popup-loading" role="status" aria-busy="true"></div>';
+    __fushiLoadingNode = container.querySelector('.popup-loading');
+    __fushiArmPopupLoadingIndicator();
+}
+
+// 文档转隐藏（WebView 被挂起 / 窗口隐藏）：摘掉指示器；重新可见且仍在等结果时按同一
+// 150ms 阈值重新插入。
+function __fushiOnPopupVisibilityChange() {
+    if (__fushiPopupDocumentHidden()) {
+        __fushiUnmountPopupLoadingIndicator();
+        return;
+    }
+    const node = __fushiLoadingNode;
+    if (node && node.isConnected && window.lookupPending === true
+        && !__fushiLoadingShownAt && !__fushiLoadingTimer) {
+        __fushiArmPopupLoadingIndicator();
+    }
+}
+if (typeof document !== 'undefined' && document
+    && typeof document.addEventListener === 'function'
+    && !window.__fushiPopupLoadingVisibilityHooked) {
+    window.__fushiPopupLoadingVisibilityHooked = true;
+    document.addEventListener('visibilitychange', __fushiOnPopupVisibilityChange);
+}
+
+// 本次渲染要替换掉一个已露出的加载指示器、且它露出不足 300ms：返回还要等多久（ms）。
+function popupLoadingHoldRemaining(now, shownAt, minVisible) {
+    if (!shownAt) return 0;
+    return Math.max(0, minVisible - (now - shownAt));
+}
+
 window.renderPopup = function() {
+    // 有结果要替换已露出的加载指示器：先补足最短停留时间，再真正渲染（宿主等的
+    // popupRendered 随之后移，渲染令牌不变）。仍是搜索期占位时不必等。
+    if (__fushiDeferredRenderTimer) {
+        clearTimeout(__fushiDeferredRenderTimer);
+        __fushiDeferredRenderTimer = 0;
+    }
+    if (window.lookupPending !== true) {
+        const hold = popupLoadingHoldRemaining(
+            performance.now(), __fushiLoadingShownAt, POPUP_LOADING_MIN_VISIBLE_MS);
+        if (hold > 0) {
+            __fushiDeferredRenderTimer = setTimeout(() => {
+                __fushiDeferredRenderTimer = 0;
+                window.renderPopup();
+            }, hold);
+            return;
+        }
+    }
+    // 走到这里就要换掉当前 DOM：没露出的指示器计时作废、已插入的指示器摘掉（下面
+    // 换 innerHTML 也会摘，这里先显式断开引用）；露出过的，结果淡入接上。
+    const replacingLoader = __fushiLoadingShownAt > 0;
+    __fushiUnmountPopupLoadingIndicator();
+    __fushiLoadingNode = null;
     const t0 = performance.now();
     // Invalidate every deferred dictionary-block task from the preceding DOM
     // before taking ANY early return. Previously no-results/kanji-only paths
@@ -6182,6 +6478,20 @@ window.renderPopup = function() {
         console.error('[popup] renderPopup kanji card render failed', e);
         window.__fushiReportJsError('renderPopup.kanjiCard', (e && e.message) || String(e), e && e.stack);
         kanjiSection = null;
+    }
+
+    if ((!entries || !entries.length) && !kanjiSection && window.lookupPending === true) {
+        // 搜索期占位：查询还没结束，不是「没有结果」。
+        renderPopupLoading(container);
+        window._renderedGlossaryCounts = [];
+        _firePopupRendered();
+        return;
+    }
+    if (replacingLoader && !__fushiPopupReducedMotion() && typeof container.animate === 'function') {
+        try {
+            container.animate([{ opacity: 0 }, { opacity: 1 }],
+                { duration: POPUP_RESULTS_FADE_MS, easing: 'ease-out' });
+        } catch (_) { /* no-op */ }
     }
 
     if ((!entries || !entries.length) && !kanjiSection) {

@@ -143,16 +143,41 @@ test('content.css：玻璃样式整段在 @supports 内，数值与 Flutter 侧�
   assert.ok(reduced, '玻璃段缺减少透明度回退');
   assert.match(reduced[1], /:host\(\[data-fushi-glass\]\)\s*\{[^}]*backdrop-filter:\s*none/);
   assert.match(reduced[1], /background-color:\s*rgb\(var\(--fushi-card-bg-rgb/);
-  // @supports 段之外不得再出现任何玻璃钩子 / backdrop-filter（不支持时保持不透明）。
-  // 「选择音频源」菜单（.fushi-audio-menu.is-glass / .is-eink）自带材质，不是弹窗卡片的玻璃钩子。
+  // @supports 段之外不得再出现任何**材质**（backdrop-filter / 半透明卡底）——不支持时保持不透明。
+  // 例外两类：「选择音频源」菜单（.fushi-audio-menu.is-glass / .is-eink）自带材质；共享 popup.css 的
+  // 强调色段 `:where(html.fushi-glass-host, .fushi-glass) …` 只给标签 / 按钮上主题主色，不碰材质。
   const outside = css.replace(block, '').replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '');
-  assert.ok(!/fushi-glass|backdrop-filter/.test(outside), '玻璃钩子漏到 @supports 段外');
+  assert.ok(!/backdrop-filter/.test(outside), 'backdrop-filter 漏到 @supports 段外');
+  assertGlassHooksAreAccentOnly(outside, '@supports 段外');
 });
 
-test('共享 popup.css 不含玻璃钩子（app 内弹窗背后无可模糊的内容）', () => {
+// 共享 popup.css / content.css 里 @supports 段之外挂着 fushi-glass 钩子的规则，只能是强调色段：
+// 选择器以 :where(html.fushi-glass-host, .fushi-glass) 开头，声明里不得有材质（模糊 / 卡片底色）。
+// app 内专用的 `html.fushi-glass-host` 透明文档宿主（Flutter 画玻璃卡面）由生成器丢弃，不得进扩展。
+function assertGlassHooksAreAccentOnly(css, where) {
+  const rule = /([^{}]+)\{([^}]*)\}/g;
+  let m;
+  while ((m = rule.exec(css))) {
+    const sel = m[1].trim();
+    if (!/fushi-glass/.test(sel)) continue;
+    assert.ok(!/backdrop-filter/.test(m[2]), `${where}的玻璃钩子规则带了模糊：${sel}`);
+    if (/^html\.fushi-glass-host/.test(sel)) continue; // app 内透明宿主，只在 popup.css
+    for (const part of sel.split(/,(?![^(]*\))/)) {
+      assert.match(part.trim(), /^:where\(html\.fushi-glass-host, \.fushi-glass\) /,
+        `${where}出现强调色段以外的玻璃钩子：${part.trim()}`);
+    }
+  }
+}
+
+test('共享 popup.css 不含卡片材质（app 内弹窗的玻璃由 Flutter 画，文档里无可模糊的内容）', () => {
   const popupCss = fs.readFileSync(POPUP_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
     // 音频源菜单浮在同一文档的词条之上，背后有真内容可模糊，是本条的有意例外。
     .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '');
-  assert.ok(!/fushi-glass|backdrop-filter/.test(popupCss));
+  assert.ok(!/backdrop-filter/.test(popupCss));
+  assertGlassHooksAreAccentOnly(popupCss, 'popup.css ');
+  // app 内 Apple 宿主：文档透明（卡面是 Flutter 的玻璃 / 材质面板）。
+  assert.match(popupCss, /html\.fushi-glass-host,\s*html\.fushi-glass-host body\s*\{\s*background:\s*transparent;/);
+  // 生成器丢弃 app 专用宿主规则，扩展 content.css 里不得出现。
+  assert.ok(!/html\.fushi-glass-host body/.test(fs.readFileSync(CONTENT_CSS, 'utf8')));
 });

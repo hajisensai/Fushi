@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -54,6 +55,7 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
     this.hintText,
     this.focusId,
     this.entrySubtitle,
+    this.inline = false,
   });
 
   final List<GamepadDropdownEntry<T>> entries;
@@ -74,6 +76,11 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
   /// null/empty for a value keeps that row single-line. The closed trigger
   /// still shows only the label.
   final String? Function(T value)? entrySubtitle;
+
+  /// 与搜索框 / 筛选胶囊同排的行内用法：MD3 触发器收成与它们同高
+  /// （[fushiInlineControlHeight]），不再是表单下拉的 48+ 高。Apple 路径本来
+  /// 就是行内胶囊，不受影响。
+  final bool inline;
 
   @override
   State<GamepadMenuDropdown<T>> createState() => _GamepadMenuDropdownState<T>();
@@ -141,6 +148,15 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       // width is given) — matches the prior call sites' expandedInsets usage.
       expandedInsets: EdgeInsets.zero,
       menuHeight: menuHeight,
+      inputDecorationTheme: widget.inline
+          ? InputDecorationThemeData(
+              isDense: true,
+              constraints: BoxConstraints.tightFor(
+                height: fushiInlineControlHeight(context),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            )
+          : null,
       initialSelection: widget.selected,
       enabled: widget.enabled,
       label: widget.label == null ? null : Text(widget.label!),
@@ -377,7 +393,10 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     FushiDesignTokens tokens,
     VoidCallback? onPressed,
   ) {
-    final bool capsule = widget.width != null;
+    // 行内用法（与搜索框同排）同样画成全胶囊，并钉成行内控件高度。
+    final bool capsule = widget.width != null || widget.inline;
+    final double? inlineHeight =
+        widget.inline ? fushiInlineControlHeight(context) : null;
     final String text = _selectedLabel ?? widget.hintText ?? widget.label ?? '';
     if (isEinkTheme(context)) {
       return FushiOutlinedButton(
@@ -416,7 +435,13 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       final FushiAppleColors apple = appleColorsOf(context);
       final bool compact = fushiAppleCompact(context);
       final bool enabled = onPressed != null;
-      final double radius = capsule ? (compact ? 17 : 22) : 10;
+      final double minHeight = inlineHeight ?? (compact ? 34 : 44);
+      final double radius = capsule ? minHeight / 2 : 10;
+      // 深色下无色透明玻璃（黑 14%）压在纯黑分组底上是隐形的，只剩文字和
+      // 箭头飘着：静止态自绘 tertiarySystemFill + 0.5px 低 alpha 细描边给出
+      // 轮廓（与玻璃搜索胶囊同一口径）；浅色玻璃本身是白雾面 + 投影，不叠。
+      final bool dark =
+          Theme.of(context).colorScheme.brightness == Brightness.dark;
       return fushiClearGlassBezel(
         context,
         radius: radius,
@@ -424,24 +449,40 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           focusNode: _triggerFocus,
           onPressed: onPressed,
           borderRadius: BorderRadius.circular(radius),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: compact ? 34 : 44),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: dark ? apple.tertiaryFill : null,
+              borderRadius: BorderRadius.circular(radius),
+              border: dark
+                  ? Border.all(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      width: 0.5,
+                    )
+                  : null,
+            ),
+            child: ConstrainedBox(
+            constraints: inlineHeight != null
+                ? BoxConstraints.tightFor(height: inlineHeight)
+                : BoxConstraints(minHeight: minHeight),
             child: Opacity(
               opacity: enabled ? 1 : 0.4,
               child: Padding(
                 padding: EdgeInsetsDirectional.only(
                   start: capsule ? 14 : 12,
                   end: 10,
-                  top: 6,
-                  bottom: 6,
+                  top: inlineHeight != null ? 0 : 6,
+                  bottom: inlineHeight != null ? 0 : 6,
                 ),
                 child: Row(
                   children: <Widget>[
                     Expanded(
                       child: Text(
                         text,
-                        maxLines: 2,
+                        maxLines: inlineHeight != null ? 1 : 2,
                         softWrap: true,
+                        overflow: inlineHeight != null
+                            ? TextOverflow.ellipsis
+                            : null,
                         style: tokens.type.listTitle.copyWith(color: apple.label),
                       ),
                     ),
@@ -456,21 +497,30 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
               ),
             ),
           ),
+          ),
         ),
       );
     }
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return FushiOutlinedButton(
+    final Widget md3 = FushiOutlinedButton(
       focusNode: _triggerFocus,
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         alignment: Alignment.centerLeft,
-        minimumSize: Size(0, capsule ? 40 : 48),
+        minimumSize: Size(0, inlineHeight ?? (capsule ? 40 : 48)),
+        // 行内：钉成 [fushiInlineControlHeight]（40），与同排搜索胶囊等高——
+        // 否则 listTitle 字号 + rowVertical 内边距会把它撑到 48。
+        maximumSize: inlineHeight == null
+            ? null
+            : Size(double.infinity, inlineHeight),
+        tapTargetSize: inlineHeight == null
+            ? null
+            : MaterialTapTargetSize.shrinkWrap,
         padding: EdgeInsetsDirectional.only(
           start: 16,
           end: 12,
-          top: tokens.spacing.rowVertical,
-          bottom: tokens.spacing.rowVertical,
+          top: inlineHeight != null ? 0 : tokens.spacing.rowVertical,
+          bottom: inlineHeight != null ? 0 : tokens.spacing.rowVertical,
         ),
         backgroundColor: cs.surfaceContainerHigh,
         disabledBackgroundColor: cs.onSurface.withValues(alpha: 0.04),
@@ -485,8 +535,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           Expanded(
             child: Text(
               text,
-              maxLines: 2,
+              maxLines: inlineHeight != null ? 1 : 2,
               softWrap: true,
+              overflow: inlineHeight != null ? TextOverflow.ellipsis : null,
               style: tokens.type.listTitle,
             ),
           ),
@@ -499,6 +550,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         ],
       ),
     );
+    return inlineHeight == null
+        ? md3
+        : SizedBox(height: inlineHeight, child: md3);
   }
 
   /// One menu entry. The selected entry gets the MD3 "selected" state — a
@@ -610,6 +664,7 @@ class FushiDropdown<T> extends StatefulWidget {
     required this.onChanged,
     this.enabled = true,
     this.focusId,
+    this.inline = false,
     super.key,
   });
 
@@ -629,6 +684,9 @@ class FushiDropdown<T> extends StatefulWidget {
   /// Whether the button allows changing the option or not.
   final bool enabled;
   final FushiFocusId? focusId;
+
+  /// 见 [GamepadMenuDropdown.inline]。
+  final bool inline;
 
   @override
   State<FushiDropdown<T>> createState() => _FushiDropdownState<T>();
@@ -656,6 +714,7 @@ class _FushiDropdownState<T> extends State<FushiDropdown<T>> {
       selected: dropdownValue,
       onChanged: _onSelected,
       focusId: widget.focusId,
+      inline: widget.inline,
       entries: <GamepadDropdownEntry<T>>[
         for (final T value in uniqueOptions)
           (value: value, label: widget.generateLabel(value)),

@@ -33,6 +33,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
@@ -1135,18 +1136,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       top: pos.top,
       width: pos.width,
       height: pos.height,
+      // 查询中：卡壳先铺上，加载指示器（MD3 Expressive 变形 / Apple 菊花 / 墨水屏
+      // 沙漏）150ms 后才露出——快查询只看到卡壳一闪而过、不闪转圈；绝不画「未找到」。
       child: FushiPopupSurface(
         color: fillColor,
-        child: Column(
-          children: [
-            FushiLinearProgressIndicator(
-              backgroundColor: Colors.transparent,
-              color: effectiveCs.primary,
-              minHeight: 2.75,
-            ),
-            Expanded(child: Container()),
-          ],
-        ),
+        child: FushiDeferredLoading(active: true, color: effectiveCs.primary),
       ),
     );
   }
@@ -1700,28 +1694,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return ValueListenableBuilder<bool>(
       valueListenable: _isSearchingNotifier,
       builder: (context, value, child) {
-        return Visibility(
-          visible: value,
-          child: SizedBox(
-            height: double.infinity,
-            width: double.infinity,
-            child: FushiCard(
-              padding: EdgeInsets.zero,
-              color: Colors.transparent,
-              borderColor: Colors.transparent,
-              borderRadius: BorderRadius.zero,
-              child: Column(
-                children: [
-                  FushiLinearProgressIndicator(
-                    backgroundColor: Colors.transparent,
-                    color: theme.colorScheme.primary,
-                    minHeight: 2.75,
-                  ),
-                  Expanded(child: Container())
-                ],
-              ),
-            ),
-          ),
+        // 顶层查词在途（含「已显示、等热槽 WebView 报 popupRendered」）：延迟加载层
+        // ——150ms 后才露出指示器、露出后至少停 300ms，撤场后是不拦指针的空盒。
+        return FushiDeferredLoading(
+          active: value,
+          color: theme.colorScheme.primary,
         );
       },
     );

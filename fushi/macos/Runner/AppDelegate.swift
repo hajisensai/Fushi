@@ -47,6 +47,10 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
       FushiClipboardImage.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // 查词浮层的真模糊背衬：WebView 下方的 NSVisualEffectView 平台视图
+      // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
+      FushiNativeMaterial.register(
+        with: controller.registrar(forPlugin: "FushiNativeMaterial"))
       let startupWindowChannel = FlutterMethodChannel(
         name: "app.fushi/window",
         binaryMessenger: controller.engine.binaryMessenger)
@@ -284,7 +288,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         lines.append(String(repeating: "  ", count: depth)
           + "\(type(of: v)) frame=(\(Int(f.origin.x)),\(Int(f.origin.y)) \(Int(f.width))x\(Int(f.height)))"
           + (v.isHidden ? " hidden" : ""))
-        if depth < 4 { for c in v.subviews { walk(c, depth + 1) } }
+        if depth < 9 { for c in v.subviews { walk(c, depth + 1) } }
       }
       if let content = window.contentView { walk(content, 0) }
       result(["views": lines.joined(separator: "\n")])

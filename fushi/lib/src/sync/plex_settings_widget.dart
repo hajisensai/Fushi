@@ -343,7 +343,10 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
                   const SizedBox(height: 8),
                   Text(
                     t.jellyfin_servers_signed_in_title,
-                    style: textTheme.titleSmall,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
                   ),
                   if (servers.isEmpty)
                     Padding(
@@ -358,12 +361,21 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
                   const SizedBox(height: 12),
                   Text(
                     t.jellyfin_servers_add_title,
-                    style: textTheme.titleSmall,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   _buildAccountSignIn(textTheme),
                   const SizedBox(height: 16),
-                  Text(t.plex_manual_title, style: textTheme.titleSmall),
+                  Text(
+                    t.plex_manual_title,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   _buildManualForm(),
                 ],
@@ -380,7 +392,8 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         : activeUrl;
     return FushiListItem(
       key: ValueKey<String>('plex-server-${config.sourceId}'),
-      leading: const FushiIcon(Icons.dns_outlined),
+      // Plex 用「播放圆钮」、Jellyfin 系用「服务器机柜」，与浏览页服务器列表同一套类型图标。
+      leading: const FushiIcon(Icons.play_circle_outline_rounded),
       title: Text(label),
       subtitle: config.accountName.isEmpty ? null : Text(config.accountName),
       trailing: FushiIconButton(

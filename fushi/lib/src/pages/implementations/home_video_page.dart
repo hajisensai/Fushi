@@ -96,6 +96,8 @@ import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/media/library_progress_reset.dart';
+import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
@@ -3316,8 +3318,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 清除这一集的观看进度（行级四列 + 互联 LWW 镜像键，见
   /// [VideoBookRepository.clearWatchProgress]）。写库触发 videoBooks 表级变更，
   /// 墙卡 / 首页 hero / 合集续播锚点随流刷新；这里再显式 [_refresh] 一次与改名同纪律。
+  ///
+  /// 先过确认框（与书架「重置阅读状态」同一个）：误点开一集后除了进度，还可以选择
+  /// 只撤最近一次观看会话或清掉这一集的全部统计（默认都不动），落地见
+  /// [resetVideoWatchState]。
   Future<void> _clearWatchProgress(VideoBookRow book) async {
-    await widget.repo.clearWatchProgress(book.bookUid);
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.video_watch_progress_clear,
+      message: t.library_progress_reset_video_message,
+      itemTitle: book.title,
+    );
+    if (records == null || !mounted) return;
+    try {
+      await resetVideoWatchState(
+        db: appModelNoUpdate.database,
+        repo: widget.repo,
+        bookUid: book.bookUid,
+        title: book.title,
+        records: records,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('HomeVideo.clearWatchProgress', e, stack);
+      if (!mounted) return;
+      _refresh();
+      FushiToast.show(
+        msg: t.library_progress_reset_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
     _refresh();
     FushiToast.show(
@@ -4548,7 +4578,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     bool newBadge = false,
     bool cloudBadge = false,
   }) {
-    final TextStyle? titleStyle = Theme.of(context).textTheme.bodyMedium;
+    final TextStyle titleStyle = shelfCardTitleStyle(context);
     Widget buildCard(BuildContext context, VideoCardOrientation orientation) {
       final double width = videoCardWidthForOrientation(
         orientation: orientation,
@@ -4556,7 +4586,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return SizedBox(
         width: width,
-        child: FushiCard(
+        child: shelfCoverCard(
           key: cardKey,
           focusId: focusId,
           padding: EdgeInsets.zero,
@@ -4573,7 +4603,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             children: <Widget>[
               SizedBox(
                 height: coverHeight,
-                child: Stack(
+                child: ShelfCoverFrame(child: Stack(
                   fit: StackFit.expand,
                   children: <Widget>[
                     if (cover == null)
@@ -4633,11 +4663,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         child: CoverProgressStrip(value: progressFraction),
                       ),
                   ],
-                ),
+                )),
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -5494,11 +5524,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         : null;
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
-    final FushiCard card = FushiCard(
+    final FushiCard card = shelfCoverCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
       focusId: FushiFocusId('home-video-collection-${collection.id}'),
       padding: EdgeInsets.zero,
-      selected: selected,
       // 多选态整卡点击 = 整选合集；平时点击 = 进详情（原「查看全部」）。
       onTap: () {
         if (_selectionMode) {
@@ -5526,7 +5555,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             // CoverOrientationBuilder 探测注入），与散卡同分流。
             aspectRatio:
                 orientation == VideoCardOrientation.landscape ? 16 / 9 : 2 / 3,
-            child: Stack(
+            child: ShelfCoverFrame(
+              stackedBehind: _buildCollectionCover(
+                group,
+                landscapeSlot:
+                    orientation == VideoCardOrientation.landscape,
+              ),
+              child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
                 _buildCollectionCover(
@@ -5576,7 +5611,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 if (selected)
                   const Positioned.fill(child: ShelfSelectedOverlay()),
               ],
-            ),
+            )),
           ),
           // footer：合集名 + 进度行（结构与散卡 [_buildCard] 同骨架）。
           Expanded(
@@ -5584,24 +5619,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
                   // TODO-2490：两行仍放不下时，桌面悬停显示完整合集名。
                   child: ShelfTitleOverflowTooltip(
                     title: _workTitle(collection),
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: shelfCardTitleStyle(context),
                     maxLines: 2,
                     child: Text(
                       _workTitle(collection),
                       // BUG-1184：与同网格的散卡标题同规格（两行）。
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: shelfCardTitleStyle(context),
                     ),
                   ),
                 ),
                 Flexible(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
                     child: Text(
                       _collectionProgressLabel(group),
                       maxLines: 1,
@@ -5834,11 +5869,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final bool selected = showSelection && _selectedUids.contains(selectionKey);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
-    final Widget card = FushiCard(
+    final Widget card = shelfCoverCard(
       key: ValueKey<String>('remote_video_card_$safeKey'),
       focusId: FushiFocusId('home-video-remote-$safeKey'),
       padding: EdgeInsets.zero,
-      selected: selected,
       // 合集行内点远端成员：带合集成员上下文进播放器（连播）；散卡区无上下文（单视频）。
       onTap: () => _dispatchCardTap(
         selectionKey: selectable ? selectionKey : null,
@@ -5865,7 +5899,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           AspectRatio(
             aspectRatio:
                 orientation == VideoCardOrientation.landscape ? 16 / 9 : 2 / 3,
-            child: Stack(
+            child: ShelfCoverFrame(child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
                 _buildRemoteVideoCover(
@@ -5932,7 +5966,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   child: _remoteVideoCloudBadge(safeKey),
                 ),
               ],
-            ),
+            )),
           ),
           Expanded(
             child: Column(
@@ -5944,14 +5978,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   // TODO-2490：两行仍放不下时，桌面悬停显示完整标题。
                   child: ShelfTitleOverflowTooltip(
                     title: video.title,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: shelfCardTitleStyle(context),
                     maxLines: 2,
                     child: Text(
                       video.title,
                       // BUG-1184：远端视频占位卡与本地散卡同规格（两行）。
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: shelfCardTitleStyle(context),
                     ),
                   ),
                 ),
@@ -7655,11 +7689,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 块2：只有可单独勾选的卡才在多选态显示勾选框/高亮/切换选中。
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(book.bookUid);
-    final FushiCard fushiCard = FushiCard(
+    final FushiCard fushiCard = shelfCoverCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: FushiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
-      selected: selected,
       // 选择态：点击切换勾选、长按交给祖先的扫选接管区（与书架 _bookCardShell 一致）。
       // 成员卡（selectable=false）多选态照常开播、不切换选中。分发走
       // [_dispatchCardTap]（所有散卡唯一入口）。
@@ -7688,7 +7721,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           AspectRatio(
             aspectRatio:
                 orientation == VideoCardOrientation.landscape ? 16 / 9 : 2 / 3,
-            child: Stack(
+            child: ShelfCoverFrame(child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
                 if (coverOverride != null)
@@ -7757,7 +7790,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   ),
                 ),
               ],
-            ),
+            )),
           ),
           // 文字块占封面下方剩余固定高度（cell 高 − 2:3 封面 = _kVideoCardTextBlock）。
           // 标题单行 ellipsis 内收；进度行用 Flexible 让位，浮动高度不反灌进封面区
@@ -7768,12 +7801,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
                   // TODO-2490：两行仍放不下时，桌面悬停显示完整标题；触屏长按
                   // 菜单（MediaItemDialogFrame 标题不限行）看全名。
                   child: ShelfTitleOverflowTooltip(
                     title: displayTitle,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: shelfCardTitleStyle(context),
                     maxLines: 2,
                     child: Text(
                       displayTitle,
@@ -7781,7 +7814,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       // 文字块高度已按两行标题算出（[_videoCardTextBlock]）。
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: shelfCardTitleStyle(context),
                     ),
                   ),
                 ),
@@ -7792,7 +7825,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     when meta.isNotEmpty)
                   Flexible(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
                       child: Text(
                         meta,
                         maxLines: 1,

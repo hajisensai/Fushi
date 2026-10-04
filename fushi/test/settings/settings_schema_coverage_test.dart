@@ -481,6 +481,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  // 「只在小说中底部停靠」：总开关关着时出现的小说专属入口，写的是同一组停靠键
+  // （总开关 + 四个模块细分），生效点同上；只翻小说有效值的语义由专项测试咬住。
+  'lookup/Dock only in novels':
+      'test/settings/reader_lookup_popup_size_settings_test.dart',
   // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
   // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
   'lookup/Pick meaning from context with AI':

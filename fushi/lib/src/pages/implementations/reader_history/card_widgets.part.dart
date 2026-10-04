@@ -201,7 +201,6 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double selectionInset = tokens.spacing.gap / 2;
     final SelectionSlot? slot =
         selectionKey == null ? null : SelectionSlot.loose(selectionKey);
     void handleTap() {
@@ -232,26 +231,20 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
           type: MaterialType.transparency,
           child: InkWell(
             canRequestFocus: false,
-            borderRadius: tokens.radii.cardRadius,
+            // 封面即卡片：状态层 / 水波与封面同圆角（[shelfCoverRadius]）。
+            borderRadius: shelfCoverRadius(context),
             onTap: handleTap,
             // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
             // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
             onLongPress: _selectionMode ? null : onLongPress,
             child: AspectRatio(
               aspectRatio: slotAspectRatio,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  child,
-                  if (_selectionMode && selectionKey != null)
-                    Positioned(
-                      top: selectionInset,
-                      left: selectionInset,
-                      child: ShelfSelectionCheck(selected: selected),
-                    ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
+              // 勾选圈与选中罩画在**封面上**（卡内 [ShelfCoverFrame] 读这一层），
+              // 不再连标题 footer 一起罩住整个卡槽。
+              child: ShelfCoverSelection(
+                selectionMode: _selectionMode && selectionKey != null,
+                selected: selected,
+                child: child,
               ),
             ),
           ),
@@ -403,12 +396,11 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     );
   }
 
+  /// 封面即卡片（2026-10-04）：封面框是共享 [ShelfCoverFrame]（MD3 12 圆角 /
+  /// Apple 10 圆角 + 0.5px 内描边 + 柔和投影 / 墨水屏描边），不再套一张
+  /// 色块底的 FushiCard；fitHeight 两侧几像素余量落在框自带的衬底上。
   Widget _bookCardCoverFrame(Widget child) {
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      margin: EdgeInsets.zero,
-      child: child,
-    );
+    return ShelfCoverFrame(child: child);
   }
 
   Widget _bookCardTagArea(Widget tagLabels) {
@@ -461,17 +453,14 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     }
     final bool glass = isGlassDesign(context);
     final FushiAppleColors apple = appleColorsOf(context);
-    return FushiLinearProgressIndicator(
+    // 与视频卡同一条封面进度（[CoverProgressStrip]：MD3 贴底细线 / Apple 内缩
+    // 胶囊 / 墨水屏实色）；读完换完成色——MD3 tertiary、Apple 系统绿（tertiary
+    // 在 Apple 色板里没有「完成」语义）。
+    return CoverProgressStrip(
       value: value,
-      // Apple：轨道是系统灰 tertiaryFill，读完用系统绿（tertiary 在 Apple 色板
-      // 里没有「完成」语义）；MD3 维持 surfaceContainerHighest / tertiary。
-      backgroundColor: glass
-          ? apple.tertiaryFill
-          : theme.colorScheme.surfaceContainerHighest,
       color: completed
           ? (glass ? apple.success : theme.colorScheme.tertiary)
-          : theme.colorScheme.primary,
-      minHeight: 3,
+          : null,
     );
   }
 

@@ -467,7 +467,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               const SizedBox(height: 8),
               Text(
                 t.jellyfin_servers_signed_in_title,
-                style: textTheme.titleSmall,
+                style: FushiSectionTitle.styleOf(
+                  context, FushiSectionTitleLevel.group),
               ),
               if (servers.isEmpty)
                 Padding(
@@ -480,7 +481,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               for (final JellyfinServerConfig config in servers)
                 _buildServerRow(config),
               const SizedBox(height: 12),
-              Text(t.jellyfin_servers_add_title, style: textTheme.titleSmall),
+              Text(t.jellyfin_servers_add_title,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group)),
               const SizedBox(height: 8),
               _buildSignInForm(),
             ],
@@ -566,7 +569,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                 // 视频库）。每台服务器各自一份。
                 Text(
                   t.jellyfin_libraries_title,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group),
                 ),
                 Text(
                   t.jellyfin_libraries_hint,
@@ -576,7 +580,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                 const SizedBox(height: 8),
                 Text(
                   t.jellyfin_routes_title,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group),
                 ),
                 Text(
                   t.jellyfin_routes_hint,

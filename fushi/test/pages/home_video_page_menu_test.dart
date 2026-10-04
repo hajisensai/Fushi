@@ -676,6 +676,9 @@ void main() {
 
     await tester.tap(find.text(t.video_watch_progress_clear));
     await tester.pumpAndSettle();
+    // 先过确认框（学习记录两条勾选默认都不勾 = 统计不动）。
+    await tester.tap(find.text(t.library_progress_reset_confirm));
+    await tester.pumpAndSettle();
 
     final VideoBookRow row = (await db.getVideoBookByBookUid('video/1'))!;
     expect(row.lastPositionMs, 0);

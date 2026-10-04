@@ -63,6 +63,8 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/media/library_progress_reset.dart';
+import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
@@ -2569,6 +2571,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ? Icons.check_circle
             : Icons.check_circle_outline,
         onPressed: () => _toggleBookCompleted(bookKey),
+      ),
+      // 误点开一本书后把它变回「没读过」：进度归零 + 取消读完 + 离开继续阅读，
+      // 学习记录可选只撤最近一次 / 全清（默认不动），见 [_resetBookReadingState]。
+      DialogListAction(
+        label: t.library_progress_reset_action,
+        icon: Icons.restart_alt_outlined,
+        onPressed: () => _resetBookReadingState(item, bookKey),
       ),
       // 统一三库页刮削入口：书卡菜单直达「在线刮削封面」（视频/游戏的刮削都在
       // 卡菜单一层，书此前必须绕「编辑信息→封面字段小图标」两层，用户实报）。

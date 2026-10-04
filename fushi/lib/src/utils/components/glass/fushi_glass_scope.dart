@@ -147,6 +147,27 @@ bool fushiGlassOverPlatformView(BuildContext context) {
   return platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
 }
 
+/// 查词浮层背后的正文（阅读器 / 漫画 / 上一层查词卡，都是 WebView 平台视图）
+/// 能否被 Flutter 采样做真模糊。
+///
+/// 只有 Windows / Linux 的 WebView 以纹理合成进 Flutter 场景，[BackdropFilter]
+/// 采得到它的像素。iOS / macOS 是原生视图；Android 的 flutter_inappwebview
+/// 走 Hybrid Composition（全仓未设 `useHybridComposition`，fork 默认 true →
+/// `initExpensiveAndroidView`）：WebView 是真 Android View，画在它上面的
+/// Flutter 层落在独立的 overlay surface 里，[BackdropFilter] / 玻璃着色器只能
+/// 采到这块 overlay 里自己画过的东西，采不到下面的 WebView——半透明面板只会把
+/// 正文原样（不模糊）透出来。这三端的查词面板一律不透明。
+///
+/// 与 [fushiGlassOverPlatformView] 分开：那个判据决定控件层玻璃走哪条渲染路径，
+/// 改它会牵动 Android 上所有控件玻璃；这里只管查词面板「要不要半透明」。
+/// 判据读 [ThemeData.platform]（测试可经主题覆盖）。
+bool fushiPopupBackdropSampleable(BuildContext context) {
+  final TargetPlatform platform = Theme.of(context).platform;
+  return platform != TargetPlatform.iOS &&
+      platform != TargetPlatform.macOS &&
+      platform != TargetPlatform.android;
+}
+
 /// 浮在原生平台视图（阅读器 / 漫画 / 视频正文）上的玻璃 settings：在
 /// [fushiGlassSettings] 之上补一份实色兜底填充——着色器真采不到背景的地方
 /// 显示系统材质的实色（深 #1C1C1E / 浅 #F9F9F9），而不是一块黑。与

@@ -255,7 +255,7 @@ class _FushiDestructiveConfirmDialogState
                 title: Text(widget.deleteSubscriptionsLabel!),
                 leading: ExcludeFocus(
                   child: IgnorePointer(
-                    child: Checkbox(
+                    child: FushiCheckbox(
                       value: _deleteSubscriptions,
                       onChanged: (_) {},
                     ),

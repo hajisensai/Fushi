@@ -64,9 +64,15 @@ class VideoDiscoveryActions {
     this.onOpenSubscriptions,
     this.onCancelDownloads,
     this.onAiAcquire,
+    this.detailsUpdates,
   });
 
   final VideoDiscoveryDetailLoader? loadDetails;
+
+  /// 详情数据源有了更好的数据时发事件（例如后台刚下好动画 → TMDB 交叉索引，
+  /// 资料语言的简介这时才拿得到）：详情页与发现页 Hero 收到后各重取一次
+  /// [loadDetails]。null = 数据源不会变。
+  final Stream<void>? detailsUpdates;
   final VideoDiscoveryStatusWatch? watchStatus;
   final VideoDiscoveryAction? onSearchResource;
   final VideoDiscoveryAction? onSearchSubtitle;
@@ -166,12 +172,30 @@ class VideoDiscoveryDetailPage extends StatefulWidget {
 class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   late Future<VideoDiscoveryDetailData> _detailsFuture;
   Stream<VideoDiscoveryAcquisitionState>? _statusStream;
+  StreamSubscription<void>? _detailsUpdates;
 
   @override
   void initState() {
     super.initState();
     _detailsFuture = _loadDetails();
     _statusStream = _watchStatus();
+    _listenDetailsUpdates();
+  }
+
+  /// 数据源变好（如交叉索引后台就绪）时原地重取：FutureBuilder 换 future 时
+  /// 保留上一份数据，页面不会闪回空态。
+  void _listenDetailsUpdates() {
+    unawaited(_detailsUpdates?.cancel());
+    _detailsUpdates = widget.actions.detailsUpdates?.listen((_) {
+      if (!mounted) return;
+      setState(() => _detailsFuture = _loadDetails());
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_detailsUpdates?.cancel());
+    super.dispose();
   }
 
   @override
@@ -192,6 +216,12 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           widget.actions.watchStatus,
         )) {
       _statusStream = _watchStatus();
+    }
+    if (!identical(
+      oldWidget.actions.detailsUpdates,
+      widget.actions.detailsUpdates,
+    )) {
+      _listenDetailsUpdates();
     }
   }
 

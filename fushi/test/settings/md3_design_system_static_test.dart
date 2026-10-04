@@ -2028,10 +2028,11 @@ void main() {
     expect(cardShell, contains('FushiDesignTokens.of(context)'));
     expect(cardShell, contains('tokens.spacing'));
     // 巡检 PR-3：勾选圈 / 选中罩视觉提取到共享 ShelfSelectionCheck /
-    // ShelfSelectedOverlay（与 SeriesShelfCard 共用，eink 实底统一处理），
-    // shell 消费共享组件，token 守卫跟随到共享文件。
-    expect(cardShell, contains('ShelfSelectionCheck(selected: selected)'));
-    expect(cardShell, contains('ShelfSelectedOverlay()'));
+    // ShelfSelectedOverlay（eink 实底统一处理），token 守卫跟随到共享文件。
+    // 2026-10-04 封面即卡片：shell 只广播多选态（ShelfCoverSelection），由卡内
+    // 共享封面框 ShelfCoverFrame 把两件共享组件画在封面上。
+    expect(cardShell, contains('ShelfCoverSelection('));
+    expect(cardShell, contains('selected: selected,'));
     expect(cardShell, isNot(contains('Spacing.of(context)')));
     expect(cardShell, isNot(contains('top: 4,')));
     expect(cardShell, isNot(contains('left: 4,')));
@@ -2046,6 +2047,11 @@ void main() {
     ).readAsStringSync();
     expect(sharedSelection, contains('FushiDesignTokens.of(context)'));
     expect(sharedSelection, contains('tokens.surfaces'));
+    expect(
+      sharedSelection,
+      contains('ShelfSelectionCheck(selected: selection.selected)'),
+    );
+    expect(sharedSelection, contains('const Positioned.fill(child: ShelfSelectedOverlay())'));
     expect(sharedSelection, isNot(contains('theme.colorScheme.outline')));
   });
 

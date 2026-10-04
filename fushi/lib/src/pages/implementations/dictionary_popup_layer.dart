@@ -11,9 +11,13 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
+// BUG-2947：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
+export 'package:fushi/src/lookup/lookup_overlay_navigator.dart'
+    show LookupOverlayNavigator;
 // 占位单例的 canonical 声明已收口到 dictionary_popup_controller.dart（controller
 // 内部 seed/复位也用它，必须同一对象）；此处 re-export 维持既有宿主 import 不变。
 export 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
@@ -410,13 +414,36 @@ Widget parkedPopupLayer({
       // [entranceStartProgress]>0：本层接替已在屏上的搜索占位卡翻出，从占位卡当前的
       // 淡入进度接着淡；从 0 重来会在交接处露出一段透底空框（见
       // DictionaryPopupEntry.searchPlaceholderShownFor）。
-      child: _PopupEntranceFade(
+      child: _PopupLayerVisibility(
         visible: visible,
-        startProgress: entranceStartProgress,
-        child: child,
+        child: _PopupEntranceFade(
+          visible: visible,
+          startProgress: entranceStartProgress,
+          child: child,
+        ),
       ),
     ),
   );
+}
+
+/// 把 [parkedPopupLayer] 的**最终**可见性（条目可见 && 未被对话框挪到屏外）交给层内
+/// 的 [DictionaryPopupLayer]，供 `popupLookupPending` 判「这一层当前真的在屏上」。
+/// 停驻层的 Visibility 维持了 TickerMode（maintainAnimation），无法借它判停驻，故单设。
+/// 不经 [parkedPopupLayer] 直接挂的层（串流查词等）本来就在屏上，缺省按可见。
+class _PopupLayerVisibility extends InheritedWidget {
+  const _PopupLayerVisibility({required this.visible, required super.child});
+
+  final bool visible;
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_PopupLayerVisibility>()
+          ?.visible ??
+      true;
+
+  @override
+  bool updateShouldNotify(_PopupLayerVisibility oldWidget) =>
+      visible != oldWidget.visible;
 }
 
 /// 停驻 realm 在停驻期的外壳尺寸（逻辑像素）。接管时 Positioned 换成真实几何，
@@ -1553,6 +1580,14 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 拆后下一次换词退化为冷建 WebView2，BUG-094 的预热白白丢掉。「别露出热槽空白
     // 壳」的诉求改由下面的不透明「未找到」盖板满足，与搜索中盖板同一手法。
     if (hasRenderableResults || isSearching || keepWebViewWarm) {
+      // 页面的 `window.lookupPending`：查询状态（宿主传入的 isSearching = 控制器条目
+      // 状态）× 本层此刻是否在屏上。停驻 / seed / 复位 ⇒ false，页面不起循环加载动画；
+      // 复用热槽激活查词 ⇒ true（占位单例不变也会推，见 DictionaryPopupWebView）。
+      final bool lookupPending = popupLookupPending(
+        layerVisible: _PopupLayerVisibility.of(context),
+        isSearching: isSearching,
+        result: result,
+      );
       return Stack(
         children: [
           popupWebViewOverflow(
@@ -1562,6 +1597,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             visibleViewportHeight: visibleHeight,
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
+            lookupPending: lookupPending,
             restoreScrollTop: restoreScrollTop,
             reorderOf: resultReorderOf,
             hasChildPopup: hasChildPopup,
@@ -1595,25 +1631,20 @@ class DictionaryPopupLayer extends StatelessWidget {
           // 加载态，待词条到达即撤掉露出已渲染内容。书内查词结果就绪后才可见
           // （那时 hasRenderableResults=true 不触发）、分页 load-more 有词条也不触发，故只对
           // 视频这条「可见+搜索中+无词条」路径生效，四个表面共用同一组件、观感一致。
-          if (isSearching && !hasRenderableResults)
-            Positioned.fill(
-              child: ColoredBox(
-                color: fillColor,
-                child: Column(
-                  children: [
-                    FushiLinearProgressIndicator(
-                      backgroundColor: Colors.transparent,
-                      color: Theme.of(context).colorScheme.primary,
-                      minHeight: 2.75,
-                    ),
-                    const Expanded(child: SizedBox.shrink()),
-                  ],
-                ),
-              ),
-            )
+          //
+          // 盖板常驻在树里（[FushiDeferredLoading] 撤场后是零尺寸空盒）：底色立即铺上
+          // 盖住空载 WebView，加载指示器（MD3 Expressive 变形 / Apple 菊花 / 墨水屏沙漏）
+          // 150ms 后才淡入——快查询不闪；一旦露出至少停 300ms 再整层淡出，结果随之淡入，
+          // 不会一闪而过。查询中**绝不**出「未找到」：那只属于下面的真实空结果。
+          Positioned.fill(
+            child: FushiDeferredLoading(
+              active: isSearching && !hasRenderableResults,
+              background: fillColor,
+            ),
+          ),
           // BUG-2588：热槽真实空结果——盖板而不是拆 WebView（见上）。ColoredBox 命中
           // 行为 opaque，WebView 收不到穿透的指针事件。
-          else if (isRealEmptyResult)
+          if (isRealEmptyResult)
             Positioned.fill(
               child: ColoredBox(
                 color: fillColor,
@@ -1624,6 +1655,12 @@ class DictionaryPopupLayer extends StatelessWidget {
       );
     }
 
+    // 非热槽层：只有查询真的结束且为空（[isRealEmptyResult]）才出「未找到」；还没有
+    // 结果（null / 搜索期占位单例）是加载中，不是空——旧实现在这里一律画「未找到」，
+    // 查词开始到结果落地之间会闪一下假空态。
+    if (!isRealEmptyResult) {
+      return FushiDeferredLoading(active: true, background: fillColor);
+    }
     return _buildNoResultsPlaceholder(context, tokens);
   }
 

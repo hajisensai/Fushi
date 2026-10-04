@@ -32,6 +32,11 @@ import Flutter
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // 查词浮层的真模糊背衬：WebView 下方的 UIVisualEffectView 平台视图
+    // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FushiNativeMaterial") {
+      FushiNativeMaterial.register(with: registrar)
+    }
     installChannels(binaryMessenger: engineBridge.applicationRegistrar.messenger())
   }
 

@@ -42,6 +42,8 @@ import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/library_progress_reset.dart';
+import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -1979,7 +1981,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _clearEpisodeWatchProgress(CollectionEpisodeSlot episode) async {
     final VideoBookRow? local = episode.local;
     if (local == null) return;
-    await VideoBookRepository(widget.database).clearWatchProgress(local.bookUid);
+    // 与视频库卡菜单同一确认框 / 同一落地（可选撤最近一次会话或清全部统计）。
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.video_watch_progress_clear,
+      message: t.library_progress_reset_video_message,
+      itemTitle: local.title,
+    );
+    if (records == null || !mounted) return;
+    try {
+      await resetVideoWatchState(
+        db: widget.database,
+        repo: VideoBookRepository(widget.database),
+        bookUid: local.bookUid,
+        title: local.title,
+        records: records,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CollectionDetail.clearWatch', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.library_progress_reset_failed,
+        severity: ToastSeverity.error,
+      );
+      await _reload();
+      return;
+    }
     if (!mounted) return;
     widget.onChanged();
     FushiToast.show(

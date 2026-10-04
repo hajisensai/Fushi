@@ -1423,7 +1423,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   Widget _buildPopupOverlay(BuildContext overlayContext) {
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return FushiAppUiScaleNeutralizer(
+    // BUG-2947：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    return LookupOverlayNavigator(
+     child: FushiAppUiScaleNeutralizer(
       child: Theme(
         data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
@@ -1482,6 +1484,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           },
         ),
       ),
+     ),
     );
   }
 

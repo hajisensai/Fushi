@@ -56,7 +56,7 @@ void main() {
       expect(find.byType(CupertinoTextField), findsNothing);
     });
 
-    testWidgets('glass builds an iOS search capsule, no TextField, no glass', (
+    testWidgets('glass builds an iOS search capsule in one clear-glass bezel', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -74,27 +74,35 @@ void main() {
       );
       expect(find.byType(TextField), findsNothing);
       expect(find.byType(InputDecorator), findsNothing);
-      expect(find.byType(GlassContainer), findsNothing);
+      // 搜索胶囊是控件层（用户 2026-10-04「往液态玻璃靠」）：恰好一枚无色透明
+      // 玻璃 bezel，不再在里面另套玻璃。
+      expect(find.byType(GlassContainer), findsOneWidget);
       expect(find.byType(CupertinoTextField), findsOneWidget);
       expect(find.text('Name'), findsOneWidget);
       expect(find.text('Type here'), findsOneWidget);
       expect(find.text('Helper line'), findsOneWidget);
-      // 放大镜前缀 = 搜索框：SF 放大镜、systemFill 实色全胶囊、高 36。
+      // 放大镜前缀 = 搜索框：SF 放大镜、全胶囊（圆角 18）、高 36。浅色下胶囊
+      // 底交给玻璃（不叠灰），深色才在玻璃里自绘 tertiarySystemFill。
       expect(find.byIcon(Icons.search), findsNothing);
       expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
       expect(find.byIcon(Icons.clear), findsOneWidget);
-      final BuildContext ctx = tester.element(find.byType(CupertinoTextField));
       final Finder shell = find.ancestor(
         of: find.byType(CupertinoTextField),
         matching: find.byWidgetPredicate(
           (Widget w) =>
               w is AnimatedContainer &&
               w.decoration is BoxDecoration &&
-              (w.decoration! as BoxDecoration).color == appleColorsOf(ctx).fill,
+              (w.decoration! as BoxDecoration).borderRadius ==
+                  BorderRadius.circular(18),
         ),
       );
       expect(shell, findsOneWidget);
       expect(tester.getSize(shell).height, 36);
+      expect(
+        (tester.widget<AnimatedContainer>(shell).decoration! as BoxDecoration)
+            .color,
+        Colors.transparent,
+      );
     });
 
     testWidgets('glass plain field is a rounded-10 tertiaryFill box', (

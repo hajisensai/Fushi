@@ -44,8 +44,9 @@
     }
   }
   // 子层外观与第一层（#hibiki-popup-host 的 :host([data-fushi-glass])）同一套参数：同圆角
-  // （app 下发的 --fushi-radius-card）、同玻璃（blur 20px + saturate 1.4、黑/白 8% 描边），
-  // 只有投影随层深略加重以示层级。
+  // （app 下发的 --fushi-radius-card）、同玻璃（blur 20px + saturate 1.4、黑/白 8% 描边）、
+  // 同投影（0 10px 32px 22% 黑）、同填充（nested-popup.js 挂 .fushi-glass，走 content.css 第一层
+  // 那两条亮 0.72 / 暗 0.62）。每一层都与第一层外观一致，不随层深变化（用户 2026-10-05 拍板）。
   // 玻璃的模糊**全部由本脚本写在外框的行内样式里**，不再靠 manifest 注入的页面级 content.css
   // （旧做法：iframe.fushi-nested-layer[data-fushi-glass] 规则）。manifest content_scripts 的
   // JS / CSS 在扩展加载时读进内存，此后磁盘上的扩展目录被 app 覆盖更新、扩展没重载时，标签页里
@@ -78,13 +79,12 @@
     const s = typeof fushiResolveTheme === 'function' ? fushiResolveTheme(cs) : cs;
     return s === 'dark' ? 'dark' : 'light';
   }
-  function fushiNestedLayerSkin(theme, depth) {
+  function fushiNestedLayerSkin(theme) {
     const radius = (theme && typeof theme['--fushi-radius-card'] === 'string' && theme['--fushi-radius-card']) || '10px';
-    const d = Math.max(1, Math.min(6, depth | 0));
-    const y = 8 + d * 2, blur = 28 + d * 4, alpha = (0.18 + d * 0.04).toFixed(2);
+    // 与 content.css :host([data-fushi-glass]) 的 box-shadow 逐字相同。
     return 'color-scheme:' + fushiNestedScheme(theme) + ';' +
       '--fushi-radius-card:' + radius + ';border-radius:' + radius + ';' +
-      'box-shadow:0 ' + y + 'px ' + blur + 'px rgba(0,0,0,' + alpha + ');';
+      'box-shadow:0 10px 32px rgba(0,0,0,0.22);';
   }
   // 选边与第一层同一套规则（content.js fushiApplyPlacement，BUG-2773）：popup.js 双发
   // popupRendered——首发只有首词条高度、尾批建完再发终高。旧实现每发都重新选边：首发矮、
@@ -191,7 +191,7 @@
       box.className = 'fushi-nested-layer';
       const glass = fushiNestedGlass(response.data.theme) && fushiNestedBackdropUsable();
       box.style.cssText = 'position:fixed;z-index:2147483647;visibility:hidden;overflow:hidden;' +
-        fushiNestedLayerSkin(response.data.theme, parent ? layers.indexOf(parent) + 3 : 2) +
+        fushiNestedLayerSkin(response.data.theme) +
         (glass ? fushiNestedGlassStyle(scheme) : '');
       if (glass) box.setAttribute('data-fushi-glass', scheme);
       box.appendChild(frame);

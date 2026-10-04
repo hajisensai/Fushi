@@ -1795,6 +1795,8 @@ class _HomePageState extends BasePageState<HomePage>
     final bool browseReachable = _browseReachable;
     return VideoDiscoveryActions(
       loadDetails: _loadVideoDiscoveryDetails,
+      // 动画 → TMDB 交叉索引后台就绪时，详情 / Hero 重取一次换成资料语言简介。
+      detailsUpdates: _videoDiscoveryService?.detailsUpdates,
       watchStatus: _watchVideoDiscoveryStatus,
       onSearchResource: _openVideoDiscoveryResourceSearch,
       onSearchSubtitle: _openVideoDiscoverySubtitleSearch,

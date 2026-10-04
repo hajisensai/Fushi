@@ -117,7 +117,7 @@ const double _kGlassNavBarEdgeOverhang = 24;
 
 /// MD3（Material 3 Expressive）展开态导航 rail 的总宽（宽窗口，图标 + 文字
 /// 横排的行）。窄窗口仍是 [kAdaptiveNavRailWidth] 的收起 rail。
-const double kMaterialNavRailExpandedWidth = 240;
+const double kMaterialNavRailExpandedWidth = 200;
 
 /// MD3 展开 rail 一行的高度与收起 rail / 底栏指示器药丸的尺寸（M3 Expressive：
 /// 行 56、药丸 56×32，全圆角）。
@@ -140,7 +140,7 @@ double _glassNavBarBottomMargin(BuildContext context) =>
 
 /// 「玻璃」设计系统（macOS 26）展开态悬浮侧栏占的总宽（含四周 8 的悬浮边距）。
 /// 窄窗口（medium 尺寸档）收成只有图标的窄条，总宽回到 [kAdaptiveNavRailWidth]。
-const double kGlassNavSidebarWidth = 240;
+const double kGlassNavSidebarWidth = 208;
 
 /// 悬浮侧栏离窗口左 / 上 / 下边的距离。
 const double _kGlassSidebarMargin = 8;

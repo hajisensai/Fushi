@@ -725,6 +725,9 @@ const double _kConnectedInnerRadius = 8;
 /// 段与段之间的缝。
 const double _kConnectedGap = 2;
 
+/// 前置图标 / 对勾与文字的间距。
+const double _kConnectedIconGap = 8;
+
 /// 按下的段变宽的比例（邻段各让出一半）。
 const double _kConnectedGrow = 0.12;
 
@@ -735,8 +738,10 @@ const double _kConnectedGrow = 0.12;
 /// 形态：段间 2px 缝；组外侧两端全圆角，内侧相邻角 8；**选中段弹成全胶囊**
 /// （default spatial 弹簧）并填 primary + onPrimary + 对勾（M3 Expressive
 /// 连接式组用的是 filled toggle：选中 primary；secondaryContainer 与未选的
-/// surfaceContainerHigh 同为浅色，两段读成两颗互不相干的淡色胶囊），未选
-/// surfaceContainerHigh + onSurfaceVariant；高 40；按下的段宽 +12%、
+/// 底同为浅色，两段读成两颗互不相干的淡色胶囊），未选
+/// surfaceContainerHighest + onSurface；高 40（紧凑密度 32）；各段等宽，宽度
+/// 按「最宽标签 + 对勾槽」预留，对勾随选中弹簧从 0 展开，切换选中时整组
+/// 总宽与其它段位置都不动；按下的段宽 +12%、
 /// 相邻段让出（fast spatial 弹簧），松手复原。调用方 style 的颜色 / 字体 /
 /// 内边距 / 密度照用，shape 与 side 由组决定（与 SegmentedButton 一样不下发到段）。
 class FushiConnectedButtonGroup<T> extends StatefulWidget {
@@ -891,7 +896,7 @@ class _FushiConnectedButtonGroupState<T>
     splashFactory: style?.splashFactory,
   );
 
-  /// Expressive 段默认值：未选 onSurfaceVariant、选中 onPrimary，
+  /// Expressive 段默认值：未选 onSurface、选中 onPrimary，
   /// 状态层取同色 8% / 10%。背景色由选中进度插值，见 build。
   static ButtonStyle _defaults(ThemeData theme) {
     final ColorScheme cs = theme.colorScheme;
@@ -901,7 +906,7 @@ class _FushiConnectedButtonGroupState<T>
       }
       return states.contains(WidgetState.selected)
           ? cs.onPrimary
-          : cs.onSurfaceVariant;
+          : cs.onSurface;
     }
 
     return ButtonStyle(
@@ -970,6 +975,11 @@ class _FushiConnectedButtonGroupState<T>
               segTheme.selectedIcon ??
               const Icon(Icons.check)
         : null;
+    // 对勾槽的宽：按钮实际图标尺寸（调用方 / 主题 style 的 iconSize，缺省 18）。
+    final double iconExtent =
+        callerStyle.iconSize?.resolve(const <WidgetState>{}) ??
+        themeStyle.iconSize?.resolve(const <WidgetState>{}) ??
+        18;
     final bool enabled = widget.onSelectionChanged != null;
     final int n = widget.segments.length;
     final bool horizontal = widget.direction == Axis.horizontal;
@@ -981,24 +991,31 @@ class _FushiConnectedButtonGroupState<T>
       controller.update(WidgetState.selected, isSelected);
       final Widget label =
           segment.label ?? segment.icon ?? const SizedBox.shrink();
-      final Widget? icon = (isSelected && widget.showSelectedIcon)
-          ? selectedIcon
-          : (segment.label != null ? segment.icon : null);
-      final Widget content = icon == null
-          ? label
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 8,
-              children: <Widget>[
-                icon,
-                Flexible(child: label),
-              ],
-            );
+      // 段自带的前置图标（有文字时才作前置；纯图标段的图标就是 label）。
+      final Widget? leadingIcon = segment.label != null ? segment.icon : null;
       final bool segmentEnabled = enabled && segment.enabled;
       final Widget button = AnimatedBuilder(
         animation: _select[i].animation,
         builder: (BuildContext context, Widget? _) {
           final double s = _select[i].value;
+          final Widget content = selectedIcon == null
+              ? (leadingIcon == null
+                    ? label
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: _kConnectedIconGap,
+                        children: <Widget>[
+                          leadingIcon,
+                          Flexible(child: label),
+                        ],
+                      ))
+              : _ConnectedSegmentContent(
+                  progress: s,
+                  iconExtent: iconExtent,
+                  selectedIcon: selectedIcon,
+                  leadingIcon: leadingIcon,
+                  label: label,
+                );
           ButtonStyle style = callerStyle.copyWith(
             shape: WidgetStatePropertyAll<OutlinedBorder>(
               FushiMorphBorder(
@@ -1017,7 +1034,7 @@ class _FushiConnectedButtonGroupState<T>
               backgroundColor: WidgetStatePropertyAll<Color?>(
                 segmentEnabled
                     ? Color.lerp(
-                        cs.surfaceContainerHigh,
+                        cs.surfaceContainerHighest,
                         cs.primary,
                         s.clamp(0.0, 1.0),
                       )
@@ -1025,10 +1042,12 @@ class _FushiConnectedButtonGroupState<T>
               ),
             );
           }
-          if (!customPadding && icon != null) {
+          if (!customPadding && (selectedIcon != null || leadingIcon != null)) {
+            // 有对勾槽 / 前置图标时左右各 12（M3 带图标按钮是 12 / 16；这里
+            // 对勾槽在每段都预留，取对称 12 让未选段的文字仍在段正中）。
             style = style.copyWith(
               padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                EdgeInsetsDirectional.fromSTEB(12, 0, 16, 0),
+                EdgeInsets.symmetric(horizontal: 12),
               ),
             );
           }
@@ -1109,6 +1128,102 @@ class _FushiConnectedButtonGroupState<T>
           padding: EdgeInsets.symmetric(vertical: tapPadding / 2),
           child: group,
         ),
+      ),
+    );
+  }
+}
+
+/// 连接式按钮组单段的内容：对勾槽 + 文字。
+///
+/// 宽度恒定不随选中变化——这是「切换选中时整组不跳宽」的关键：各段等宽取
+/// 最宽段的固有宽，若对勾只出现在选中段，最宽者就随选中段而变（实测 2 段
+/// 「已解锁 / 全部」选中前者 194.6、后者 166.4）。这里每段都按「对勾槽 +
+/// 间距 + 文字」占位：未选时槽宽为 0、两侧各补一半空白让文字居中，选中时
+/// 槽随 [progress]（选中弹簧）展开、空白同步收回，总宽不变，文字平滑右移。
+///
+/// 段自带前置图标（[leadingIcon]）时槽恒定满宽，对勾与该图标交叉淡入。
+class _ConnectedSegmentContent extends StatelessWidget {
+  const _ConnectedSegmentContent({
+    required this.progress,
+    required this.iconExtent,
+    required this.selectedIcon,
+    required this.leadingIcon,
+    required this.label,
+  });
+
+  final double progress;
+  final double iconExtent;
+  final Widget selectedIcon;
+  final Widget? leadingIcon;
+  final Widget label;
+
+  @override
+  Widget build(BuildContext context) {
+    final double p = progress.clamp(0.0, 1.0);
+    final double slot = iconExtent + _kConnectedIconGap;
+    Widget sized(Widget icon) => SizedBox(
+      width: iconExtent,
+      height: iconExtent,
+      child: Center(child: icon),
+    );
+    final Widget? leading = leadingIcon;
+    if (leading != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: _kConnectedIconGap,
+        children: <Widget>[
+          SizedBox(
+            width: iconExtent,
+            height: iconExtent,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                // 透明的那枚不建（别让未选段树里多出一个对勾图标）。
+                if (p < 1) Opacity(opacity: 1 - p, child: sized(leading)),
+                if (p > 0) Opacity(opacity: p, child: sized(selectedIcon)),
+              ],
+            ),
+          ),
+          Flexible(child: label),
+        ],
+      );
+    }
+    final double open = slot * p;
+    final double side = (slot - open) / 2;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: side),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // 槽恒在（宽 0 时什么都不画），选中切换不改子树结构。
+          SizedBox(
+            width: open,
+            height: iconExtent,
+            // 未选（宽 0）时不建对勾，树里只有选中段带对勾图标。
+            child: p <= 0
+                ? null
+                : ClipRect(
+                    child: OverflowBox(
+                      minWidth: slot,
+                      maxWidth: slot,
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Padding(
+                        padding: const EdgeInsetsDirectional.only(
+                          end: _kConnectedIconGap,
+                        ),
+                        child: Opacity(
+                          opacity: p,
+                          child: Transform.scale(
+                            scale: 0.6 + 0.4 * p,
+                            child: sized(selectedIcon),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          Flexible(child: label),
+        ],
       ),
     );
   }

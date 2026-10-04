@@ -6182,7 +6182,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // （用户报「退视频红屏」）。故：State 失效就不渲染浮层；Theme 也改用 entry 自己的
     // `overlayContext`（与本 entry 同寿命）而非借用更短命的 State `context`。
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return FushiAppUiScaleNeutralizer(
+    // BUG-2947：浮层自带导航层，弹窗里唤出的右键「查词 / 复制」菜单与顶栏溢出菜单
+    // 推进它而不是根 Navigator——否则菜单被 Overlay.rearrange 压到本 entry 之下。
+    return LookupOverlayNavigator(
+     child: FushiAppUiScaleNeutralizer(
       child: Theme(
         data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
@@ -6272,6 +6275,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           },
         ),
       ),
+     ),
     );
   }
 

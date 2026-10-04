@@ -96,6 +96,9 @@ function transformSelector(raw) {
   // are document-global. Keep verbatim: the family name is app-namespaced and the
   // src is a self-contained data: URI, so nothing leaks from / depends on the host.
   if (p.startsWith('@font-face')) return p;
+  // @keyframes（查询加载指示器的形状变形）：名字带 fushi- 命名空间，规则体里只有百分比
+  // 关键帧，原样保留即可，不会作用到宿主页任何元素。
+  if (/^@keyframes fushi-/.test(p)) return p;
   // Verbatim class/id/:where() rules — already popup-scoped in practice.
   if (p.startsWith('.') || p.startsWith('#') || p.startsWith(':where(')) return p;
   // Document-level rules → re-root at #entries-container.

@@ -69,7 +69,6 @@ bool _isSearchDecoration(InputDecoration decoration) {
       icon == CupertinoIcons.search;
 }
 
-
 /// MD3 设计系统下的输入框外观（用户 2026-10-04：「所有输入框都很丑」）。
 ///
 /// 调用点普遍手写 `border: const OutlineInputBorder()`（灰色细描边方框），
@@ -93,13 +92,22 @@ InputDecoration? fushiMd3FieldDecoration(
   final ColorScheme cs = Theme.of(context).colorScheme;
   final bool search = _isSearchDecoration(decoration);
   final BorderRadius radius = BorderRadius.circular(search ? 999 : 12);
-  OutlineInputBorder outline([Color? color, double width = 0]) =>
-      OutlineInputBorder(
-        borderRadius: radius,
-        borderSide: color == null
-            ? BorderSide.none
-            : BorderSide(color: color, width: width),
-      );
+  // 带标题（labelText / label）的字段用「填充式」边框：OutlineInputBorder 会把
+  // 浮起的标题放在边框线**上**（为描边留缺口），没有可见描边的填充框里，标题就
+  // 骑在填充块的上沿、一半露在框外（禁用 / 已有内容的「服务器」「API Key」）。
+  // M3 填充式文本框的标题浮在填充块**内**顶部，总高 56——非 outline 边框就是
+  // 这个布局；描边（聚焦 / 错误）照旧画一整圈圆角。
+  final bool labelled =
+      decoration.label != null || decoration.labelText != null;
+  InputBorder outline([Color? color, double width = 0]) {
+    final BorderSide side = color == null
+        ? BorderSide.none
+        : BorderSide(color: color, width: width);
+    return labelled && !search
+        ? _FushiFilledFieldBorder(borderRadius: radius, borderSide: side)
+        : OutlineInputBorder(borderRadius: radius, borderSide: side);
+  }
+
   final EdgeInsetsGeometry? padding = search
       ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
       : decoration.contentPadding;
@@ -113,12 +121,100 @@ InputDecoration? fushiMd3FieldDecoration(
     focusedBorder: outline(cs.primary, 2),
     errorBorder: outline(cs.error, 1.5),
     focusedErrorBorder: outline(cs.error, 2),
-    hintStyle:
-        decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
+    hintStyle: decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
     prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
     suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
     contentPadding: padding,
   );
+}
+
+/// MD3 填充式字段的边框：形状是全圆角矩形（填充按它裁），描边画一整圈，
+/// 但 [isOutline] 为 false——InputDecorator 据此把浮起的标题放在填充块内部
+/// 顶端（M3 filled text field），而不是骑在边框线上。见 [fushiMd3FieldDecoration]。
+class _FushiFilledFieldBorder extends InputBorder {
+  const _FushiFilledFieldBorder({
+    required this.borderRadius,
+    super.borderSide = BorderSide.none,
+  });
+
+  final BorderRadius borderRadius;
+
+  @override
+  bool get isOutline => false;
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.all(borderSide.width);
+
+  @override
+  _FushiFilledFieldBorder copyWith({BorderSide? borderSide}) =>
+      _FushiFilledFieldBorder(
+        borderRadius: borderRadius,
+        borderSide: borderSide ?? this.borderSide,
+      );
+
+  @override
+  ShapeBorder scale(double t) => _FushiFilledFieldBorder(
+    borderRadius: borderRadius * t,
+    borderSide: borderSide.scale(t),
+  );
+
+  @override
+  ShapeBorder? lerpFrom(ShapeBorder? a, double t) {
+    if (a is _FushiFilledFieldBorder) {
+      return _FushiFilledFieldBorder(
+        borderRadius: BorderRadius.lerp(a.borderRadius, borderRadius, t)!,
+        borderSide: BorderSide.lerp(a.borderSide, borderSide, t),
+      );
+    }
+    return super.lerpFrom(a, t);
+  }
+
+  @override
+  ShapeBorder? lerpTo(ShapeBorder? b, double t) {
+    if (b is _FushiFilledFieldBorder) {
+      return _FushiFilledFieldBorder(
+        borderRadius: BorderRadius.lerp(borderRadius, b.borderRadius, t)!,
+        borderSide: BorderSide.lerp(borderSide, b.borderSide, t),
+      );
+    }
+    return super.lerpTo(b, t);
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => Path()
+    ..addRRect(
+      borderRadius
+          .resolve(textDirection)
+          .toRRect(rect)
+          .deflate(borderSide.width),
+    );
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRRect(borderRadius.resolve(textDirection).toRRect(rect));
+
+  @override
+  void paint(
+    Canvas canvas,
+    Rect rect, {
+    double? gapStart,
+    double gapExtent = 0.0,
+    double gapPercentage = 0.0,
+    TextDirection? textDirection,
+  }) {
+    if (borderSide.style == BorderStyle.none || borderSide.width == 0) return;
+    final RRect outer = borderRadius.resolve(textDirection).toRRect(rect);
+    canvas.drawRRect(outer.deflate(borderSide.width / 2), borderSide.toPaint());
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _FushiFilledFieldBorder &&
+      other.borderSide == borderSide &&
+      other.borderRadius == borderRadius;
+
+  @override
+  int get hashCode => Object.hash(borderSide, borderRadius);
 }
 
 /// [TextField] 的设计系统分派版。
@@ -546,6 +642,10 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     }
 
     Widget field = CupertinoTextField.borderless(
+      // 显式给一个无色装饰：borderless 的 decoration 是 null，禁用态时
+      // CupertinoTextField 会在文字后面铺 _kDisabledBackground（深色 #050505 /
+      // 浅色 #FAFAFA）——圆角实色框里多出一条方形黑 / 白底。
+      decoration: const BoxDecoration(),
       groupId: _c.groupId,
       controller: _controller,
       focusNode: _focusNode,
@@ -677,7 +777,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
                   ? TextLeadingDistribution.even
                   : null,
             )
-        .merge(_c.style);
+            .merge(_c.style);
 
     final Widget editable = _buildEditable(context, style, hasError);
 
@@ -781,11 +881,30 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 实色字段。调用方显式给了填充色时照旧实色。
     final bool glassSearch =
         capsule && !(customFill != null && customFill.a > 0);
+    final bool dark = theme.colorScheme.brightness == Brightness.dark;
+    // 深色下的玻璃搜索胶囊：无色透明玻璃（深色配方是黑 14%）压在纯黑分组底上
+    // 等于隐形——只剩一枚放大镜飘着。静止态在玻璃里自绘一层 tertiarySystemFill
+    // （iOS 深色 UISearchTextField 的底）+ 0.5px 低 alpha 细描边给出轮廓，文字
+    // 始终在这层之上；浅色玻璃本身是白 62% 雾面 + 投影，轮廓清楚，不再叠灰。
     final Color fill = customFill != null && customFill.a > 0
         ? customFill
-        : (glassSearch ? Colors.transparent : apple.tertiaryFill);
-    // 聚焦本身在 iOS 上没有描边；这里只给一圈极淡的强调色光圈，作为键盘 /
-    // 手柄导航落到输入框时的焦点指示。错误态用 1px destructive 描边。
+        : (glassSearch
+              ? (dark ? apple.tertiaryFill : Colors.transparent)
+              : apple.tertiaryFill);
+    final BorderRadius shellRadius = BorderRadius.circular(capsule ? 18 : 10);
+    // 聚焦本身在 iOS 上没有描边；这里只给一圈细的强调色内环（1.5px、画在框内），
+    // 作为键盘 / 手柄导航落到输入框时的焦点指示。以前是 3px 外扩的 BoxShadow：
+    // 单色强调色在深色下是白色，外扩一圈就是一道厚白边；搜索胶囊外面还包着
+    // 玻璃，外扩部分被玻璃形状裁掉，而 BoxShadow 又会透过近乎透明的填充把整个
+    // 胶囊染成一块灰 / 白（浅色聚焦时整枚胶囊变成灰块）。错误态 1px destructive。
+    final Border? restingBorder = enabled && hasError
+        ? Border.all(color: apple.destructive)
+        : (glassSearch && dark
+              ? Border.all(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  width: 0.5,
+                )
+              : null);
     Widget shell = AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       curve: Curves.easeOut,
@@ -796,18 +915,17 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
           : const BoxConstraints(),
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: BorderRadius.circular(capsule ? 18 : 10),
-        border: enabled && hasError
-            ? Border.all(color: apple.destructive)
-            : null,
-        boxShadow: enabled && focused && !hasError
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: apple.accent.withValues(alpha: 0.28),
-                  spreadRadius: 3,
-                ),
-              ]
-            : const <BoxShadow>[],
+        borderRadius: shellRadius,
+        border: restingBorder,
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: shellRadius,
+        border: enabled && focused && !hasError
+            ? Border.all(
+                color: apple.accent.withValues(alpha: dark ? 0.6 : 0.5),
+                width: 1.5,
+              )
+            : Border.all(color: Colors.transparent, width: 1.5),
       ),
       child: capsule
           ? Align(

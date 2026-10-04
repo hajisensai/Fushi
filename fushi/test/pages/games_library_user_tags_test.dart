@@ -163,6 +163,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.tag_label), findsOneWidget);
 
+    // 菜单项多于 800x600 视口能放下的行数时菜单自身可滚：先滚到该项再点。
+    await tester.ensureVisible(find.text(t.tag_label));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.tag_label));
     await tester.pumpAndSettle();
     expect(find.byType(TagPickerPage), findsOneWidget,

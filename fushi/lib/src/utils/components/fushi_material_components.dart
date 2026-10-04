@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
@@ -38,11 +39,12 @@ import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
         GlassContainer,
-        GlassSwitch,
         LiquidRoundedRectangle,
         LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -174,6 +176,7 @@ class FushiCard extends StatefulWidget {
     this.focusId,
     this.pressScale = true,
     this.grouped = false,
+    this.clipBehavior = Clip.antiAlias,
   });
 
   final Widget child;
@@ -194,6 +197,10 @@ class FushiCard extends StatefulWidget {
   /// grouped 的单元格按下只高亮、不缩放（整组里单独一格缩一下会和上下格错开
   /// 一道缝）；MD3 分段卡不受影响。
   final bool grouped;
+
+  /// 卡片是否把内容裁进自身圆角。封面卡（`shelfCoverCard`，底色透明、封面即
+  /// 卡片）传 [Clip.none]：封面框自己裁圆角并画阴影，被卡片裁掉阴影就没了。
+  final Clip clipBehavior;
 
   /// 桌面端鼠标右键（secondary tap）触发，通常映射到与 [onLongPress] 相同的
   /// 上下文菜单。触摸/手柄设备没有 secondary tap，故配线全平台无副作用。
@@ -224,7 +231,10 @@ class _FushiCardState extends State<FushiCard> {
     // 卡片没有边就与页面融为一体；主题层只给裸 Card 补了描边（CardThemeData），
     // FushiCard 在这里自己补。选中态加粗到 2px——eink 下 selected 填充色同样
     // 塌缩，边宽是唯一可辨的选中信号。
-    final BorderSide side = widget.borderColor != null
+    // 透明描边等于没有描边：不要让它占 1px 笔宽把内容（封面即卡片的封面）
+    // 往里挤，造成卡片比卡槽窄 2px。
+    final BorderSide side = widget.borderColor != null &&
+            widget.borderColor!.a > 0
         ? BorderSide(color: widget.borderColor!)
         : (eink
             ? BorderSide(
@@ -262,7 +272,7 @@ class _FushiCardState extends State<FushiCard> {
                   child: Material(
                     type: MaterialType.transparency,
                     shape: RoundedRectangleBorder(borderRadius: radius),
-                    clipBehavior: Clip.antiAlias,
+                    clipBehavior: widget.clipBehavior,
                     child: widget.onTap == null &&
                             widget.onLongPress == null &&
                             widget.onSecondaryTap == null
@@ -270,6 +280,9 @@ class _FushiCardState extends State<FushiCard> {
                         : InkWell(
                             onTap: widget.onTap,
                             onLongPress: widget.onLongPress,
+                            // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
+                            // （像素不变），封面卡不裁剪时靠它保持圆角。
+                            borderRadius: radius,
                             // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
                             // 由外层 Material 裁在圆角里；墨水屏交回默认。
                             overlayColor: eink
@@ -350,6 +363,7 @@ class _FushiCardState extends State<FushiCard> {
           child: FushiAppleGroupSurface(
             color: widget.color,
             borderRadius: radius,
+            clipBehavior: widget.clipBehavior,
             child: body,
           ),
         ),
@@ -744,10 +758,22 @@ class FushiSearchField extends StatelessWidget {
     this.clearButtonKey,
     this.focusId,
     this.onClear,
+    this.size = FushiSearchFieldSize.regular,
+    this.trailing = const <Widget>[],
   });
 
   final Key? fieldKey;
   final Key? clearButtonKey;
+
+  /// 尺寸档：[FushiSearchFieldSize.regular] 是工具条 / 行内搜索胶囊（MD3 40、
+  /// Apple 36）；[FushiSearchFieldSize.large] 是页面顶部的独立搜索栏——MD3 按
+  /// M3 SearchBar（56 高全圆角、24 前置图标、48 触控的尾部动作、bodyLarge），
+  /// Apple 没有 56 的搜索栏，仍是 iOS 搜索胶囊（36），不拉伸。
+  final FushiSearchFieldSize size;
+
+  /// 尾部动作（排在清除 / 软键盘按钮之后），例如直达管理页的圆钮。large 档
+  /// MD3 下每个动作给 48×48 触控区。
+  final List<Widget> trailing;
   final FushiFocusId? focusId;
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -757,13 +783,22 @@ class FushiSearchField extends StatelessWidget {
   final VoidCallback? onClear;
 
   /// 搜索框尾部按钮（清除 + 软键盘 / 粘贴），MD3 与 Apple 两条分支共用。
-  List<Widget> _trailing(BuildContext context, TextEditingValue value) {
+  List<Widget> _trailing(
+    BuildContext context,
+    TextEditingValue value, {
+    bool large = false,
+  }) {
+    // large 档（MD3 SearchBar）：24 图标 + 12 内边距 = 48 触控区。
+    final double iconSize =
+        large ? kFushiSearchFieldLargeIconSize : kFushiSearchFieldIconSize;
+    final EdgeInsets padding =
+        large ? const EdgeInsets.all(12) : const EdgeInsets.all(4);
     final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
       context: context,
       controller: controller,
       onChanged: onChanged,
-      iconSize: kFushiSearchFieldIconSize,
-      padding: const EdgeInsets.all(4),
+      iconSize: iconSize,
+      padding: padding,
     );
     return <Widget>[
       if (onClear != null && value.text.isNotEmpty)
@@ -771,8 +806,8 @@ class FushiSearchField extends StatelessWidget {
           key: clearButtonKey,
           icon: Icons.close,
           tooltip: t.clear,
-          size: kFushiSearchFieldIconSize,
-          padding: const EdgeInsets.all(4),
+          size: iconSize,
+          padding: padding,
           onTap: () {
             onClear?.call();
             if (focusNode.canRequestFocus) {
@@ -781,6 +816,13 @@ class FushiSearchField extends StatelessWidget {
           },
         ),
       if (inputSuffix != null) inputSuffix,
+      for (final Widget action in trailing)
+        large
+            ? ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                child: Center(widthFactor: 1, child: action),
+              )
+            : action,
     ];
   }
 
@@ -812,6 +854,99 @@ class FushiSearchField extends StatelessWidget {
       ..scheduleFrame();
   }
 
+  /// MD3 large 档 = M3 SearchBar：56 高、28 圆角全胶囊、surfaceContainerHigh
+  /// 填充、无描边；前置放大镜 24、尾部动作 48 触控区、bodyLarge 正文竖直居中。
+  /// 聚焦不画 2px 主色描边（那是文本框的语言，SearchBar 没有），改用状态层：
+  /// 悬停 8% / 聚焦 10% onSurface 叠在填充上，键盘焦点照样看得见。
+  /// 墨水屏：无填充、1px onSurface 实线描边（聚焦 2px），不靠灰阶状态层。
+  Widget _buildMd3Large(BuildContext context, TextEditingValue value) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final List<Widget> trailing = _trailing(context, value, large: true);
+    final BorderRadius radius =
+        BorderRadius.circular(kFushiSearchFieldLargeHeight / 2);
+    OutlineInputBorder border(BorderSide side) =>
+        OutlineInputBorder(borderRadius: radius, borderSide: side);
+    final BorderSide resting =
+        eink ? BorderSide(color: cs.onSurface) : BorderSide.none;
+    final Color base = cs.surfaceContainerHigh;
+    final TextStyle text = (theme.textTheme.bodyLarge ?? const TextStyle())
+        .copyWith(
+      color: cs.onSurface,
+      height: 1.25,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+    return SizedBox(
+      height: kFushiSearchFieldLargeHeight,
+      child: TextField(
+        key: fieldKey,
+        controller: controller,
+        focusNode: focusNode,
+        style: text,
+        textAlignVertical: TextAlignVertical.center,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hintText,
+          hintStyle: text.copyWith(color: cs.onSurfaceVariant),
+          filled: !eink,
+          fillColor: eink
+              ? null
+              : WidgetStateColor.resolveWith((Set<WidgetState> states) {
+                  if (states.contains(WidgetState.focused)) {
+                    return Color.alphaBlend(
+                      cs.onSurface.withValues(alpha: 0.10),
+                      base,
+                    );
+                  }
+                  if (states.contains(WidgetState.hovered)) {
+                    return Color.alphaBlend(
+                      cs.onSurface.withValues(alpha: 0.08),
+                      base,
+                    );
+                  }
+                  return base;
+                }),
+          hoverColor: Colors.transparent,
+          border: border(resting),
+          enabledBorder: border(resting),
+          focusedBorder: border(
+            eink ? BorderSide(color: cs.onSurface, width: 2) : BorderSide.none,
+          ),
+          prefixIcon: const Padding(
+            padding: EdgeInsetsDirectional.only(start: 16, end: 12),
+            child: FushiIcon(
+              Icons.search,
+              size: kFushiSearchFieldLargeIconSize,
+            ),
+          ),
+          prefixIconColor: cs.onSurfaceVariant,
+          // 图标槽给满 56：InputDecorator 的容器高取图标槽与正文的较大者，
+          // 只给 48 时容器是 48、贴在 56 盒子顶上，正文比胶囊中线高 4px。
+          prefixIconConstraints: const BoxConstraints(
+            minHeight: kFushiSearchFieldLargeHeight,
+          ),
+          suffixIcon: trailing.isEmpty
+              ? null
+              : Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 4),
+                  child:
+                      Row(mainAxisSize: MainAxisSize.min, children: trailing),
+                ),
+          suffixIconColor: cs.onSurfaceVariant,
+          suffixIconConstraints: const BoxConstraints(
+            minHeight: kFushiSearchFieldLargeHeight,
+          ),
+          contentPadding: const EdgeInsetsDirectional.only(end: 16),
+        ),
+        textInputAction: TextInputAction.search,
+        onEditingComplete: _finishSubmit,
+        onChanged: onChanged,
+        onSubmitted: onSubmitted,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -828,18 +963,18 @@ class FushiSearchField extends StatelessWidget {
         builder: (context, value, _) {
           final List<Widget> trailing = _trailing(context, value);
           // 用户 2026-10-04「所有组件都要往液态玻璃靠」：搜索框是 iOS 26 的
-          // 玻璃搜索胶囊——输入框本体透明（填充给一个近乎透明的值，让
-          // FushiTextFieldControl 不再铺 systemFill），外面包一层透明液态玻璃
-          // 胶囊。系统降低透明度（材质 off）时回落 systemFill 实色胶囊。
-          final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
-          final Widget field = FushiTextFieldControl(
+          // 玻璃搜索胶囊。胶囊形态（玻璃 bezel、深色下的静止底与细描边、
+          // 聚焦内环、降低透明度时回落实色）全由 FushiTextFieldControl 认出
+          // 前缀放大镜后给出，与库页搜索框同一实现——以前这里外包一层自己的
+          // GlassContainer、再把输入框填充压成近乎透明，聚焦光圈的 BoxShadow
+          // 会透过那层填充把整枚胶囊染成灰 / 白块。large 档在 Apple 下同为
+          // 36 的 iOS 搜索胶囊（Apple 没有 56 的搜索栏）。
+          return FushiTextFieldControl(
             key: fieldKey,
             controller: controller,
             focusNode: focusNode,
             decoration: InputDecoration(
               hintText: hintText,
-              filled: glass ? true : null,
-              fillColor: glass ? const Color(0x01000000) : null,
               prefixIcon: const FushiIcon(
                 Icons.search,
                 size: kFushiSearchFieldIconSize,
@@ -852,15 +987,6 @@ class FushiSearchField extends StatelessWidget {
             onEditingComplete: _finishSubmit,
             onChanged: onChanged,
             onSubmitted: onSubmitted,
-          );
-          if (!glass) return field;
-          // 无色透明玻璃（Niratan 工具栏「搜索书籍」）：不再用带灰填充的
-          // 常规玻璃（深色 #262626@65% 读起来就是一块灰底）。
-          return GlassContainer(
-            shape: const LiquidRoundedRectangle(borderRadius: 100),
-            quality: fushiGlassQuality(context),
-            settings: fushiClearGlassSettings(context),
-            child: field,
           );
         },
       );
@@ -885,6 +1011,9 @@ class FushiSearchField extends StatelessWidget {
       searchBar = ValueListenableBuilder<TextEditingValue>(
         valueListenable: controller,
         builder: (context, value, _) {
+          if (size == FushiSearchFieldSize.large) {
+            return _buildMd3Large(context, value);
+          }
           final List<Widget> trailing = _trailing(context, value);
           // MD3（2026-10-04 输入框统一）：与库页搜索同一枚填充胶囊——
           // fushiMd3FieldDecoration 认出前缀放大镜后给全圆角、surfaceContainerHigh
@@ -995,6 +1124,15 @@ class FushiSearchField extends StatelessWidget {
 /// 常量定义放在类之后：`md3_design_system_static_test` 用 `class FushiSearchField`
 /// 这个字面量当上一段切片的终点，插在类前会把这段注释卷进它的扫描面。
 const double kFushiSearchFieldHeight = 40;
+
+/// [FushiSearchField] 的尺寸档，见 [FushiSearchField.size]。
+enum FushiSearchFieldSize { regular, large }
+
+/// MD3 large 档（M3 SearchBar）的高度；Apple 下 large 仍是 36 的 iOS 搜索胶囊。
+const double kFushiSearchFieldLargeHeight = 56;
+
+/// MD3 large 档的前置 / 尾部图标尺寸（M3 SearchBar 24dp）。
+const double kFushiSearchFieldLargeIconSize = 24;
 
 /// 搜索框内前缀/后缀图标尺寸。[FushiIconButton] 默认 24px 图标 + `spacing.gap` 内边距
 /// 合计约 40 高，正好撑破 [kFushiSearchFieldHeight] 的内容区，故 trailing 按钮必须同时
@@ -2701,18 +2839,13 @@ class FushiPreviewSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) {
-      // 纯预览：玻璃开关恒为开、不可交互、不进焦点遍历。
-      return IgnorePointer(
-        child: ExcludeFocus(
-          child: GlassSwitch(
-            value: true,
-            onChanged: (_) {},
-            activeColor: trackColor,
-            thumbColor: thumbColor,
-            enableHaptics: false,
-            quality: fushiGlassQuality(context),
-          ),
-        ),
+      // 纯预览：与设置页 Apple 开关同一枚 [FushiAppleSwitch]，恒为开；
+      // onChanged 为 null = 纯展示（不吃手势、不进焦点遍历）。
+      return FushiAppleSwitch(
+        value: true,
+        onChanged: null,
+        activeTrackColor: trackColor,
+        activeThumbColor: thumbColor,
       );
     }
     return Switch(
@@ -4717,12 +4850,19 @@ class FushiPopupSurface extends StatelessWidget {
         ),
       );
     }
-    // 结构恒定：MD3 装平台视图的浮层同样挂在 [_ApplePopupGlassBackdrop] 的同一个
-    // Stack 槽位里（背景槽为空盒、passthrough 约束），设计系统切换时 WebView
-    // 不会被拆出重挂；纯 Flutter 浮层（foreground 描边）不受影响。
+    // MD3 查词浮层（装平台视图、非独立窗）同样是玻璃材质，与浏览器扩展页内弹窗
+    // 同一组参数（用户 2026-10-04：「查词框要和浏览器扩展一样有液态玻璃材质」，
+    // 扩展在任何主题下都是玻璃）：面板色（主色 5% 淡染）亮 90% / 暗 88% + 20 模糊，
+    // 画在 WebView 背后（[_ApplePopupGlassBackdrop] 背景槽），WebView 文档透明
+    // （popup.css `html.fushi-glass-host`）。Material 改透明、去掉 elevation 投影
+    // ——半透明面上的阴影会透出来把玻璃压脏——轮廓靠 outlineVariant 细线。
+    // 墨水屏、独立窗（standaloneWindow：背后是别的 app，BUG-818 要求不透明）照旧实色。
+    // 结构恒定：两种情况都挂在同一个 Stack 槽位里，切换时 WebView 不会被拆出重挂；
+    // 纯 Flutter 浮层（foreground 描边）不受影响。
+    final bool md3Glass = !borderOnForeground && !eink && !standaloneWindow;
     final Widget md3 = Material(
-      color: color ?? tokens.surfaces.card,
-      elevation: eink || elevation > 0 ? elevation : 2,
+      color: md3Glass ? Colors.transparent : (color ?? tokens.surfaces.card),
+      elevation: md3Glass ? 0 : (eink || elevation > 0 ? elevation : 2),
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: _outerRadius(tokens),
@@ -4741,10 +4881,15 @@ class FushiPopupSurface extends StatelessWidget {
       ),
     );
     if (borderOnForeground) return md3;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return _ApplePopupGlassBackdrop(
-      enabled: false,
+      enabled: md3Glass,
+      md3: true,
       borderRadius: _outerRadius(tokens),
-      panelColor: Colors.transparent,
+      panelColor: Color.alphaBlend(
+        scheme.primary.withValues(alpha: 0.05),
+        (color ?? scheme.surfaceContainer).withValues(alpha: 1),
+      ),
       child: md3,
     );
   }
@@ -4763,30 +4908,43 @@ class FushiPopupSurface extends StatelessWidget {
   }
 }
 
+/// 所有查词浮层层（第一层 / 热槽与每一层嵌套）的 BackdropFilter 共用的背景快照
+/// key。等价于在所有浮层的公共祖先挂一个 [BackdropGroup]，但浮层宿主有六处
+/// （视频 / 网页视频 / 阅读器 / 查词页 / texthooker / 悬浮歌词），各自的 Stack 里
+/// 浮层是 [Positioned] 直接子项，用一个全局 key 让它们无需改宿主结构就进同一组。
+/// 只有 Impeller 认这个 key（同 key 的滤镜共用第一次读到的背景，子层模糊的是正文
+/// 而不是下面那层查词卡）；Skia 后端忽略它。
+final BackdropKey kFushiLookupPopupBackdropKey = BackdropKey();
+
 /// Apple 查词浮层的玻璃背衬（[FushiPopupSurface] 装平台视图时用）。
 ///
 /// 与 [FushiGlassBackdrop] 同一形态（Stack 兄弟层、passthrough、[enabled] 为
 /// false 时背景槽是空盒），区别在材质参数：查词面板背后是正文（阅读器 /
-/// 视频 / 漫画），要读得清词条，所以不用控件层那种几乎透明的薄玻璃，而是
-/// 「面板底色 72%（深 66%）+ 20 模糊」——与浏览器扩展页内弹窗
-/// （content.css `#entries-container.fushi-glass`：亮 0.72 / 暗 0.62、模糊 20）
-/// 同一组数。
+/// 视频 / 漫画 / 上一层查词卡），要读得清词条，所以不用控件层那种几乎透明的
+/// 薄玻璃，而是「面板底色 亮 90% / 暗 88% + 20 模糊」。
 ///
-/// 逐平台：Windows / Android / Linux 的 WebView 以纹理合成进 Flutter 场景，
-/// 着色器采得到背后的正文，是真玻璃；iOS / macOS 背后的正文是原生平台视图，
-/// 着色器采不到（[fushiGlassOverPlatformView]），采不到的地方回落到**不透明**
-/// 面板色（[LiquidGlassSettings.platformViewFallbackColor]）——即系统材质的
-/// 实色面板 + 发丝描边，不会塌成黑底。降低透明度（[FushiGlassMaterial.off]）
-/// 一律不透明、零模糊。
+/// 逐平台（[fushiPopupBackdropSampleable]）：Windows / Linux 的 WebView 以纹理
+/// 合成进 Flutter 场景，采得到背后的正文，是真玻璃；iOS / macOS 背后的正文是
+/// 原生平台视图，Android 的阅读器 WebView 走 Hybrid Composition（真 Android
+/// View，Flutter 画在它上面的层是独立 overlay surface），都采不到，半透明填充
+/// 只会把下面的字原样透出来，所以直接画**不透明**面板 + 发丝描边（iOS / macOS
+/// 另有原生系统材质，见 [_buildNativeMaterial]）。降低透明度 / 高对比度 / 墨水屏
+/// 同样不透明、零模糊。
 class _ApplePopupGlassBackdrop extends StatelessWidget {
   const _ApplePopupGlassBackdrop({
     required this.enabled,
     required this.borderRadius,
     required this.panelColor,
     required this.child,
+    this.md3 = false,
   });
 
   final bool enabled;
+
+  /// MD3 版：Flutter 自己的 [BackdropFilter] 磨砂（不走 liquid_glass 的高光 /
+  /// 折射，MD3 没有那套光照语言）。iOS / macOS / Android 背后是原生平台视图、
+  /// 采不到，直接画不透明面板色。
+  final bool md3;
   final BorderRadius borderRadius;
   final Color panelColor;
   final Widget child;
@@ -4808,24 +4966,154 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final Color opaque = panelColor.withValues(alpha: 1);
-    final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
-    final Color tint =
-        solid ? opaque : opaque.withValues(alpha: dark ? 0.66 : 0.72);
+    if (fushiGlassOverPlatformView(context) &&
+        fushiNativePopupMaterialAvailableOf(context)) {
+      return _buildNativeMaterial(context, dark: dark);
+    }
+    // 查词面板压在**正文文字**上（阅读器 / 视频字幕 / 上一层查词卡），可读性优先：
+    // - 采不到背后画面（iOS / macOS 背后是原生 WebView 平台视图；Android 的 WebView
+    //   是 Hybrid Composition 原生 View，BackdropFilter 与着色器都采不到，半透明
+    //   填充只会把下面的字原样透出来——用户报「Mac 上嵌套查词很透明」）、降低透明度、
+    //   高对比度、墨水屏：一律不透明面板；
+    // - 能真模糊（Windows / Linux，WebView 以纹理合成进 Flutter 场景）：
+    //   面板色 亮 90% / 暗 88% + 20 模糊。这是用户 2026-10-05 认定「刚好」的观感
+    //   （从当时截图反推有效 alpha ≈ 0.89；0.66 / 0.72 被嫌太透）。
+    //   每一层嵌套查词都用这同一组参数（用户 2026-10-05 拍板「每层都和第一层一样」），
+    //   且所有查词层的 BackdropFilter 共用一个 [kFushiLookupPopupBackdropKey]：
+    //   Impeller 下同 key 的滤镜共用一张背景快照，子层模糊的是正文而不是下面那层
+    //   查词卡（玻璃叠玻璃不会一层比一层实）。Skia 后端（Windows / Linux 默认）忽略
+    //   这个 key，那里各层只是参数一致。
+    //   MD3 的玻璃材质档恒为 off（[FushiGlassTheme.material] 只在玻璃设计系统下
+    //   非 off），所以 MD3 直接问系统「降低透明度」；Apple 问材质档（已扣除它）。
+    final bool transparencyAllowed = md3
+        ? !SystemTransparency.reduceTransparency.value
+        : glassMaterialOf(context) != FushiGlassMaterial.off;
+    final bool realBlur = fushiPopupBackdropSampleable(context) &&
+        transparencyAllowed &&
+        !(MediaQuery.maybeHighContrastOf(context) ?? false) &&
+        !isEinkTheme(context);
+    final Color fill =
+        realBlur ? opaque.withValues(alpha: dark ? 0.88 : 0.9) : opaque;
+    // 玻璃设计系统的「毛玻璃」档（frosted）与 MD3 同走 BackdropFilter，才能进同一个
+    // 背景快照组；液态玻璃着色器（liquid_glass_widgets）每个 GlassContainer 自带
+    // 私有 BackdropGroup，进不了跨层的组。
+    if (md3 ||
+        (realBlur && glassMaterialOf(context) == FushiGlassMaterial.frosted)) {
+      return IgnorePointer(
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: realBlur
+              ? BackdropFilter(
+                  backdropGroupKey: kFushiLookupPopupBackdropKey,
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: ColoredBox(color: fill),
+                )
+              : ColoredBox(color: opaque),
+        ),
+      );
+    }
+    if (!realBlur) {
+      // 不走玻璃着色器：它在平台视图上的回落只管「采样为空」的像素，采到的是透明
+      // 平台视图区时仍按半透明合成。直接画实色系统材质面板。
+      return IgnorePointer(
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: ColoredBox(color: opaque),
+        ),
+      );
+    }
     return IgnorePointer(
       child: GlassContainer(
         useOwnLayer: true,
         shape: LiquidRoundedRectangle(borderRadius: borderRadius.topLeft.x),
         quality: fushiGlassQuality(context, prominent: true),
-        settings: fushiGlassSettingsOverPlatformView(context, tint: tint)
-            .copyWith(
-          blur: solid ? 0 : 20,
-          platformViewFallbackColor: opaque,
-        ),
+        settings: fushiGlassSettingsOverPlatformView(context, tint: fill)
+            .copyWith(blur: 20, platformViewFallbackColor: opaque),
         platformViewBackdrop: fushiGlassOverPlatformView(context),
         child: const SizedBox.expand(),
       ),
     );
   }
+
+  /// iOS / macOS 真模糊：弹窗 WebView 下方垫原生系统材质
+  /// （[FushiNativeMaterialBackdrop]：macOS `NSVisualEffectView` `.withinWindow` /
+  /// iOS `UIVisualEffectView`），系统合成器在窗口内模糊背后的阅读器 WKWebView
+  /// ——Flutter 的 [BackdropFilter] 采不到原生平台视图，这条路采得到。
+  ///
+  /// - MD3：材质上叠一层面板色（主色 5% 淡染的 surfaceContainer）低 alpha 色层，
+  ///   面板仍读作 MD3 的配色；Apple：纯系统材质，只有用户手动指定的词典底色才淡染。
+  /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]）：画进形状内会被材质
+  ///   采样、把模糊整块压暗。它画在原生视图之前（同一 Stack 的更低层），不会给
+  ///   平台视图挖 hit-test 忽略区（BUG-1692）。
+  Widget _buildNativeMaterial(BuildContext context, {required bool dark}) {
+    final Color appleDefault = appleColorsOf(context).secondaryGroupedBackground;
+    // 嵌套层与第一层同一材质 / 色层（用户 2026-10-05 拍板）。
+    final Color? tint = md3
+        ? panelColor.withValues(alpha: dark ? 0.42 : 0.38)
+        : (panelColor.withValues(alpha: 1) == appleDefault.withValues(alpha: 1)
+            ? null
+            : panelColor.withValues(alpha: 0.4));
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        IgnorePointer(
+          child: CustomPaint(
+            painter: _PopupOuterShadowPainter(
+              borderRadius: borderRadius,
+              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
+            ),
+          ),
+        ),
+        FushiNativeMaterialBackdrop(
+          dark: dark,
+          borderRadius: borderRadius.topLeft.x,
+          continuousCorners: !md3,
+          tint: tint,
+        ),
+      ],
+    );
+  }
+}
+
+/// 只画在圆角矩形**外侧**的柔和投影（内侧裁掉）：原生材质会采样它背后的一切，
+/// 画进形状内的阴影会被模糊进面板、把材质整体压暗。
+class _PopupOuterShadowPainter extends CustomPainter {
+  const _PopupOuterShadowPainter({
+    required this.borderRadius,
+    required this.color,
+  });
+
+  final BorderRadius borderRadius;
+  final Color color;
+
+  static const double _blurSigma = 12;
+  static const double _offsetY = 4;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final RRect shape = borderRadius.toRRect(Offset.zero & size);
+    final Rect bounds = (Offset.zero & size).inflate(_blurSigma * 3 + _offsetY);
+    canvas.save();
+    canvas.clipPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect(bounds),
+        Path()..addRRect(shape),
+      ),
+    );
+    canvas.drawRRect(
+      shape.shift(const Offset(0, _offsetY)),
+      Paint()
+        ..color = color
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, _blurSigma),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_PopupOuterShadowPainter oldDelegate) =>
+      oldDelegate.borderRadius != borderRadius || oldDelegate.color != color;
 }
 
 class FushiCompactSearchRow extends StatelessWidget {

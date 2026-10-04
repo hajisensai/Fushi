@@ -304,7 +304,7 @@ test('nested layer whose first render is final keeps the measured side', () => {
 });
 
 // 用户截图：第一层是玻璃，第二层起是白色实底 + 写死 10px 圆角——子层没走同一套材质。
-test('every nested layer gets the first layer glass skin; only the shadow deepens with depth', () => {
+test('every nested layer looks exactly like the first layer (same glass, outline and shadow at every depth)', () => {
   const h = harness();
   h.api.open('子');
   h.lookups[0].callback({ ok: true, data: { popupJson: JSON.stringify([{ expression: '子' }]),
@@ -327,8 +327,19 @@ test('every nested layer gets the first layer glass skin; only the shadow deepen
   const grandchild = h.frames[1];
   assert.equal(grandchild.box.attrs['data-fushi-glass'], 'dark');
   assert.match(grandchild.box.style.cssText, /border-radius:14px/);
-  const shadowY = (frame) => Number(/box-shadow:0 (\d+)px/.exec(frame.box.style.cssText)[1]);
-  assert.ok(shadowY(grandchild) > shadowY(child), '更深的层投影更重');
+  // 每一层外观都与第一层一致（用户 2026-10-05 拍板）：投影 / 模糊 / 描边逐字取第一层
+  // content.css :host([data-fushi-glass]) 的值，不随层深变化。
+  const contentCss = fs.readFileSync(path.join(__dirname, 'vendor', 'content.css'), 'utf8');
+  const hostRule = /:host\(\[data-fushi-glass\]\)\s*\{([^}]*)\}/.exec(contentCss)[1];
+  const firstShadow = /box-shadow:\s*([^;]+);/.exec(hostRule)[1].replace(/,\s*/g, ',');
+  const firstBlur = /(?<!-)backdrop-filter:\s*([^;]+);/.exec(hostRule)[1];
+  for (const layer of [child, grandchild]) {
+    assert.ok(layer.box.style.cssText.includes('box-shadow:' + firstShadow + ';'), '投影与第一层相同');
+    assert.ok(layer.box.style.cssText.includes('backdrop-filter:' + firstBlur + ';'), '模糊与第一层相同');
+    assert.match(layer.box.style.cssText, /outline:1px solid rgba\(255,255,255,0\.08\)/, '描边与第一层暗色相同');
+  }
+  const skin = (frame) => frame.box.style.cssText.replace(/(top|left|width|height|visibility|transform|opacity|transition)[^;]*;/g, '');
+  assert.equal(skin(grandchild), skin(child), '孙层外观参数与子层逐字相同');
   // 墨水屏（--fushi-glass: '0'）保持不透明。
   h.event(grandchild, { type: 'ready' });
   h.call(grandchild, 'textSelected', ['曾', { x: 10, y: 20 }]);

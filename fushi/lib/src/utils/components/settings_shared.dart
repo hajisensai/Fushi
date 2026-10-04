@@ -25,9 +25,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show showFushiMenu;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
-    show FushiSegmentedButton;
+    show FushiAppleSwitch, FushiSegmentedButton;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassStepper, GlassSwitch, GlassTextField;
+    show GlassStepper, GlassTextField;
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
@@ -1197,27 +1197,29 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
   }
 }
 
-/// 「玻璃」设计系统设置行的开关：iOS 开关，桌面收成 macOS 设置里的小号开关
-/// （≈ 40×20，不是 58×26 的大胶囊）。开启色恒为强调色（用户 2026-10-04 拍板）；
-/// 滑块取强调色上的前景色——默认单色主题深色下强调色是白，滑块随之变黑，
-/// 不会白上白。禁用态与 [adaptiveSwitch] 同语义（不可点、不可聚焦）。
+/// 「玻璃」设计系统设置行的开关：与 [FushiSwitch] 的 Apple 分支同一枚
+/// [FushiAppleSwitch]——经典 iOS / macOS 开关（触屏 51×31、桌面 38×22 全胶囊
+/// 轨 + 正圆钮带柔和投影，弹簧过渡）。开启色恒为强调色（用户 2026-10-04 拍板）；
+/// 开态圆钮取强调色上的前景色——默认单色主题深色下强调色是白，圆钮随之变黑，
+/// 不会白上白；关态 systemFill 灰轨 + 白钮。禁用态与 [adaptiveSwitch] 同语义
+/// （不可点、不可聚焦）。
+///
+/// 不再用库的 `GlassSwitch`（用户 2026-10-05 Windows 深色截图）：它的圆钮是
+/// 比例写死的横向长胶囊（1.6 倍轨高），开态轨道还带一圈强调色外发光，压在
+/// 深色分组卡上像白钮溢出 / 被裁；圆钮的玻璃透镜走 GlassEffect，在 Skia 上
+/// 没有回退。设置页里同一屏同时出现两种开关（行内 FushiSwitch 与设置行）也
+/// 不该长得不一样。
 Widget glassSettingsSwitch({
   required BuildContext context,
   required bool value,
   required ValueChanged<bool>? onChanged,
 }) {
   final FushiAppleColors apple = appleColorsOf(context);
-  final bool desktop = FushiAppleMetrics.of(context).desktop;
-  final Widget glassSwitch = GlassSwitch(
+  final Widget glassSwitch = FushiAppleSwitch(
     value: value,
-    onChanged: onChanged ?? (_) {},
-    activeColor: apple.accent,
-    // 关闭态滑块落在灰轨上，白色恒清晰；开启态落在强调色上，取其前景色。
-    thumbColor: value ? apple.onAccent : Colors.white,
-    inactiveColor: apple.fill,
-    width: desktop ? 40 : 54,
-    height: desktop ? 20 : 26,
-    quality: fushiGlassQuality(context),
+    onChanged: onChanged,
+    activeTrackColor: apple.accent,
+    inactiveTrackColor: apple.fill,
   );
   if (onChanged != null) return glassSwitch;
   return IgnorePointer(

@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi/utils.dart';
@@ -1051,18 +1052,11 @@ mixin DictionaryPageMixin {
         // BUG-1364：与 [parkedPopupLayer] 的 `visible` 同源，纳入同一个嵌套安全计数。
         visible: _popupHidingDialogDepth == 0,
         child: popupEntranceFade(
+            // 查询中：卡壳先铺上，加载指示器 150ms 后才露出（快查询不闪转圈）；
+            // 绝不画「未找到」——那只属于查完为空的结果。
             child: FushiPopupSurface(
           color: fill,
-          child: Column(
-            children: <Widget>[
-              FushiLinearProgressIndicator(
-                backgroundColor: Colors.transparent,
-                color: cs.primary,
-                minHeight: 2.75,
-              ),
-              const Expanded(child: SizedBox.shrink()),
-            ],
-          ),
+          child: FushiDeferredLoading(active: true, color: cs.primary),
         )),
       ),
     );

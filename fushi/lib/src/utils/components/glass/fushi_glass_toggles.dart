@@ -31,7 +31,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 //   行内控件 ExcludeFocus，Enter / 手柄 A 经 ActivateIntent 切换）；单选行是
 //   行尾强调色对勾；
 // - SegmentedButton → iOS 分段（灰轨 + 白色滑块），单选能用
-//   [GlassSegmentedControl] 表达时用它，否则退回同形态的实色分段行。
+//   [FushiAppleSegmentedControl] 表达时用它，否则退回同形态的实色分段行。
 //
 // 颜色一律取 Apple 系统色（`appleColorsOf`）。
 
@@ -648,12 +648,15 @@ bool _appleDesktopMetrics(BuildContext context) {
 Size _appleSwitchSize(BuildContext context) =>
     _appleDesktopMetrics(context) ? const Size(38, 22) : const Size(51, 31);
 
-/// 液态玻璃透镜是否可用：只在液态档（系统没开「降低透明度」、着色器可用）且
-/// 允许动画时。否则开关 / 滑块圆钮按下时保持实色。
-bool _appleLensAllowed(BuildContext context) {
-  return glassMaterialOf(context) == FushiGlassMaterial.liquid &&
-      !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
-}
+/// 开关 / 滑块圆钮按下时是否换成液态玻璃透镜：**恒 false**——圆钮一律是实色
+/// 胶囊 / 正圆，按下时朝行进方向拉长（经典 iOS 按压反馈）。
+///
+/// 透镜（premium [GlassContainer]）在 Impeller 上会带出一圈高光描边、在深色
+/// 底上发白成团，Skia 上又根本不走（液态被降成磨砂档），同一个控件两端两种
+/// 样子；分段控件的同类透镜已经因为「不透明白胶囊盖住文字」被用户点名
+/// （2026-10-05 Windows + Mac 截图）。稳定观感优先，透镜整体关掉；判据留成
+/// 函数，日后有不出白圈的透镜参数再在这里按材质放开。
+bool _appleLensAllowed(BuildContext context) => false;
 
 /// 透镜放大 / 回弹的时长（减少动态效果时瞬变）。
 Duration _appleLensDuration(BuildContext context) =>
@@ -3674,7 +3677,8 @@ class FushiSwitchListTile extends StatelessWidget {
 /// 玻璃下是 iOS / macOS 26 分段控件（无色透明玻璃轨 + 更亮的透明滑块，高
 /// iOS 36 / macOS 30）：单选、不允许
 /// 空选、横排、2–6 段且每段 label 为 null 或纯文本 [Text] 时用
-/// [GlassSegmentedControl]（滑块拖动时变玻璃，每段自带焦点 + Enter 激活）；
+/// [FushiAppleSegmentedControl]（滑块自绘在文字之下、可横拖，每段自带焦点 +
+/// Enter 激活）；
 /// 其余情形（多选、允许空选、竖排、段数越界、富文本 label）用同形态的实色
 /// 分段行，按 [showSelectedIcon] 显示 SF 对勾。
 class FushiSegmentedButton<T> extends StatefulWidget {
@@ -3772,8 +3776,8 @@ class FushiSegmentedButton<T> extends StatefulWidget {
 }
 
 class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
-  // GlassSegmentedControl 在 tapDown 与 tap 上各回调一次（两次之间父级还没
-  // 重建），这里吞掉同一次点击的第二次通知。
+  // 父级异步重建（例如先写偏好再 setState）之前同一次点击可能再通知一次
+  // （分段的 tap 与拖动结束都会选），这里吞掉重复通知。
   Set<T>? _pendingSelection;
 
   @override
@@ -3808,7 +3812,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     notify(updated);
   }
 
-  /// 能否用 [GlassSegmentedControl] 表达（否则退回玻璃按钮行）。
+  /// 能否用 [FushiAppleSegmentedControl] 表达（否则退回玻璃按钮行）。
   bool get _fitsSegmentedControl {
     if (widget.multiSelectionEnabled || widget.emptySelectionAllowed) {
       return false;
@@ -3893,7 +3897,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     double widest = 0;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
     final TextDirection textDirection = Directionality.of(context);
-    final List<GlassSegment> glassSegments = <GlassSegment>[];
+    final List<FushiAppleSegmentData> appleSegments = <FushiAppleSegmentData>[];
     for (final ButtonSegment<T> s in segments) {
       final String? text = (s.label as Text?)?.data;
       double w = 0;
@@ -3912,8 +3916,8 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
         w = w < 20 ? 20 : w;
       }
       if (w > widest) widest = w;
-      glassSegments.add(
-        GlassSegment(
+      appleSegments.add(
+        FushiAppleSegmentData(
           icon: s.icon,
           label: text,
           tooltip: s.tooltip,
@@ -3923,42 +3927,32 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     }
     // 与 Material 一样按内容取宽（等宽段）；有 expandedInsets 时撑满。
     final double intrinsic = segments.length * (widest + 28) + 6;
-    // iOS / macOS 26 液态玻璃分段控件（用户 2026-10-04，参照 Niratan）：轨道
-    // 是一枚无色透明玻璃胶囊（[_appleGlassTrack]，只有高光边、无灰底），选中
-    // 滑块是更亮一点的无色透明 pill——按下 / 拖动时由库做拉伸、放大、果冻形变
-    // 与折射（premium 档两遍绘制，标签在透镜下被折射）。系统「降低透明度」
-    // （glassMaterialOf == off）下轨道退回 systemFill 实色、滑块实色高一阶底。
+    // iOS / macOS 26 分段控件：轨道是一枚无色透明玻璃胶囊（[_appleGlassTrack]，
+    // 降低透明度时退回 systemFill 实色），选中滑块由 [FushiAppleSegmentedControl]
+    // 自绘在文字**之下**（深色白 20% + 0.5 px 低透明内高光、浅色白 + 柔和投影）。
     // 高度：iOS 36、macOS 30（系统 regular 分段 28–32）；图标 + 文字叠排 50。
     final double height = stacked ? 50 : (compact ? 30 : 36);
     final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
-    final Widget control = GlassSegmentedControl(
-      segments: glassSegments,
+    final Widget control = FushiAppleSegmentedControl(
+      segments: appleSegments,
       selectedIndex: selectedIndex,
-      onSegmentSelected: (int index) => _handlePressed(segments[index].value),
+      onSelected: _enabled
+          ? (int index) => _handlePressed(segments[index].value)
+          : null,
       height: height,
       iconSize: compact ? 15 : 17,
-      padding: const EdgeInsets.all(3),
-      selectedTextStyle: selectedStyle,
-      unselectedTextStyle: unselectedStyle,
-      backgroundColor: solid ? apple.fill : Colors.transparent,
-      indicatorColor: solid
-          ? apple.tertiaryGroupedBackground
-          : _appleClearLensColor(context),
-      indicatorSettings: fushiClearGlassSettings(context, lighter: true),
-      // 按下 / 拖动时透镜向外鼓出（库的果冻放大），与 podcasts 演示同口径。
-      indicatorExpansion: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 12,
-        vertical: compact ? 6 : 8,
-      ),
-      glowColor: Colors.white.withValues(alpha: 0.35),
-      // 独立玻璃层：透镜在按下 / 拖动时取背后的轨道与文字做真实折射（不挂
-      // 自己的层时透镜只能走无折射的单遍路径，看起来就是一块半透明色块）。
-      useOwnLayer: !solid,
-      settings: fushiClearGlassSettings(context),
-      quality: fushiGlassQuality(context, prominent: true),
+      selectedStyle: selectedStyle,
+      unselectedStyle: unselectedStyle,
+      solid: solid,
     );
     final Widget track = solid
-        ? control
+        ? DecoratedBox(
+            decoration: BoxDecoration(
+              color: apple.fill,
+              borderRadius: BorderRadius.circular(height / 2),
+            ),
+            child: control,
+          )
         : _appleGlassTrack(context, radius: height / 2, child: control);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -4060,11 +4054,344 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   }
 }
 
-/// 分段控件选中段静止时的透明 pill 色：比轨道亮一点的无色白（深色 16% /
-/// 浅色 70%），不着强调色。
+/// [FushiAppleSegmentedControl] 的一段：文字 / 图标（可同时给，图标在上）。
+class FushiAppleSegmentData {
+  const FushiAppleSegmentData({
+    this.label,
+    this.icon,
+    this.tooltip,
+    this.enabled = true,
+  });
+
+  final String? label;
+  final Widget? icon;
+  final String? tooltip;
+  final bool enabled;
+}
+
+/// Apple 设计系统的等宽分段控件（iOS / macOS 26 `UISegmentedControl` 形态）：
+/// 选中滑块自绘、**永远在文字之下**，文字层在上。
+///
+/// 不再用库的 `GlassSegmentedControl`（用户 2026-10-05 Windows + Mac 截图）：
+/// 它的选中滑块在按下 / 切换时换成 `GlassEffect` 透镜——Skia 上走 2D 指示器
+/// 着色器（premium 参数 = 8 px 实色描边）、Impeller 上 premium 档第二遍透镜
+/// 画在文字**之上**，两端都成了一颗盖住选中文字的不透明白胶囊，旁边还拖着
+/// 一块折射出来的暗色色块；鼠标点按只要抖 1 px 就被它的拖动识别器吞掉、点击
+/// 静默无效。观感稳定优先于「透镜」效果，所以滑块只是一枚普通的形状：
+/// - 深色：白 20% + 0.5 px 低透明度内高光（不发白、不成圈）；
+/// - 浅色：白色 + iOS 的柔和投影；
+/// - 降低透明度（[solid]）：深色 tertiaryGroupedBackground、浅色白。
+///
+/// 交互：点一段选中；在控件上横拖时滑块跟手，松开吸附到最近一段；每段一个
+/// 焦点停靠点（Enter / 手柄 A → [ActivateIntent]），键盘焦点画强调色环；
+/// [onSelected] 为 null 时纯展示。切换时滑块弹簧滑动（减少动态效果 / 墨水屏
+/// 下瞬移）。
+class FushiAppleSegmentedControl extends StatefulWidget {
+  const FushiAppleSegmentedControl({
+    super.key,
+    required this.segments,
+    required this.selectedIndex,
+    required this.onSelected,
+    required this.height,
+    required this.selectedStyle,
+    required this.unselectedStyle,
+    this.iconSize = 17,
+    this.solid = false,
+  });
+
+  final List<FushiAppleSegmentData> segments;
+  final int selectedIndex;
+  final ValueChanged<int>? onSelected;
+  final double height;
+  final TextStyle selectedStyle;
+  final TextStyle unselectedStyle;
+  final double iconSize;
+
+  /// 系统「降低透明度」：滑块用实色。
+  final bool solid;
+
+  @override
+  State<FushiAppleSegmentedControl> createState() =>
+      _FushiAppleSegmentedControlState();
+}
+
+class _FushiAppleSegmentedControlState
+    extends State<FushiAppleSegmentedControl> {
+  /// 轨道内边距：滑块与轨道外沿之间留 3 px（iOS 同）。
+  static const double _inset = 3;
+
+  /// 拖动中滑块中心（控件局部坐标）；null = 不在拖动。
+  double? _dragCenter;
+  int? _pressedIndex;
+  int? _focusedIndex;
+
+  bool get _enabled => widget.onSelected != null;
+
+  void _select(int index) {
+    if (!_enabled || index < 0 || index >= widget.segments.length) return;
+    if (!widget.segments[index].enabled) return;
+    if (index != widget.selectedIndex) widget.onSelected!(index);
+  }
+
+  Widget _segmentContent(FushiAppleSegmentData data, TextStyle style) {
+    final Widget? text = data.label == null || data.label!.isEmpty
+        ? null
+        : Text(
+            data.label!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          );
+    final Widget? icon = data.icon == null
+        ? null
+        : IconTheme.merge(
+            data: IconThemeData(
+              color: style.color,
+              size: text == null ? widget.iconSize + 3 : widget.iconSize,
+            ),
+            child: data.icon!,
+          );
+    final Widget body = icon != null && text != null
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[icon, const SizedBox(height: 2), text],
+          )
+        : (icon ?? text ?? const SizedBox.shrink());
+    return AnimatedDefaultTextStyle(
+      duration: einkSafeDuration(context, const Duration(milliseconds: 180)),
+      style: style,
+      child: body,
+    );
+  }
+
+  BoxDecoration _thumbDecoration(BuildContext context, double radius) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool dark =
+        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    if (dark) {
+      return BoxDecoration(
+        color: widget.solid
+            ? apple.tertiaryGroupedBackground
+            : Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(radius),
+        // 0.5 px 低透明度内高光：只是让滑块边缘略有质感，不成「白圈」。
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.12),
+          width: 0.5,
+        ),
+      );
+    }
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(
+        color: Colors.black.withValues(alpha: 0.04),
+        width: 0.5,
+      ),
+      boxShadow: const <BoxShadow>[
+        BoxShadow(
+          color: Color(0x1F000000),
+          blurRadius: 8,
+          offset: Offset(0, 3),
+        ),
+        BoxShadow(
+          color: Color(0x0A000000),
+          blurRadius: 1,
+          offset: Offset(0, 3),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final int count = widget.segments.length;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    final bool reduceMotion =
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false) ||
+        isEinkTheme(context);
+    return SizedBox(
+      height: widget.height,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double width = constraints.maxWidth;
+          final double segmentWidth = math.max(
+            0,
+            (width - _inset * 2) / math.max(1, count),
+          );
+          final double thumbHeight = math.max(0, widget.height - _inset * 2);
+          final double radius = thumbHeight / 2;
+          // 逻辑段号 ↔ 视觉位置（RTL 镜像）。
+          int visualOf(int index) => rtl ? count - 1 - index : index;
+          int logicalIndexAt(double x) {
+            final int visual = segmentWidth <= 0
+                ? 0
+                : ((x - _inset) / segmentWidth).floor().clamp(0, count - 1);
+            return rtl ? count - 1 - visual : visual;
+          }
+
+          final int selected = widget.selectedIndex;
+          final double thumbLeft = _dragCenter != null
+              ? (_dragCenter! - segmentWidth / 2).clamp(
+                  _inset,
+                  math.max(_inset, width - _inset - segmentWidth),
+                )
+              : _inset + segmentWidth * visualOf(selected.clamp(0, count - 1));
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            dragStartBehavior: DragStartBehavior.down,
+            onHorizontalDragStart: _enabled
+                ? (DragStartDetails d) =>
+                      setState(() => _dragCenter = d.localPosition.dx)
+                : null,
+            onHorizontalDragUpdate: _enabled
+                ? (DragUpdateDetails d) =>
+                      setState(() => _dragCenter = d.localPosition.dx)
+                : null,
+            onHorizontalDragEnd: _enabled
+                ? (DragEndDetails _) {
+                    final double? center = _dragCenter;
+                    setState(() {
+                      _dragCenter = null;
+                      _pressedIndex = null;
+                    });
+                    if (center != null) _select(logicalIndexAt(center));
+                  }
+                : null,
+            onHorizontalDragCancel: _enabled
+                ? () => setState(() => _dragCenter = null)
+                : null,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                // 选中滑块：在文字层之下。
+                if (selected >= 0 && count > 0)
+                  AnimatedPositioned(
+                    duration: _dragCenter != null || reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 320),
+                    // 略冲过头再落定的弹簧感（iOS 分段滑块）。
+                    curve: const Cubic(0.3, 1.18, 0.55, 1),
+                    left: thumbLeft,
+                    top: _inset,
+                    width: segmentWidth,
+                    height: thumbHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: _thumbDecoration(context, radius),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: _inset,
+                  right: _inset,
+                  top: 0,
+                  bottom: 0,
+                  child: Row(
+                    textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+                    children: <Widget>[
+                      for (int i = 0; i < count; i++)
+                        Expanded(
+                          child: _buildCell(
+                            context,
+                            i,
+                            apple,
+                            selected: i == selected,
+                            radius: radius,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCell(
+    BuildContext context,
+    int index,
+    FushiAppleColors apple, {
+    required bool selected,
+    required double radius,
+  }) {
+    final FushiAppleSegmentData data = widget.segments[index];
+    final bool enabled = _enabled && data.enabled;
+    final TextStyle style = selected
+        ? widget.selectedStyle
+        : widget.unselectedStyle;
+    final bool pressed = _pressedIndex == index && !selected;
+    Widget content = AnimatedOpacity(
+      duration: pressed
+          ? Duration.zero
+          : einkSafeDuration(context, const Duration(milliseconds: 160)),
+      opacity: !data.enabled ? 0.38 : (pressed ? 0.5 : 1),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Center(child: _segmentContent(data, style)),
+      ),
+    );
+    if (_focusedIndex == index) {
+      content = DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius + 3),
+          border: Border.all(color: apple.accent, width: 2),
+        ),
+        child: content,
+      );
+    }
+    Widget cell = Semantics(
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      label: data.label ?? data.tooltip,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        mouseCursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (ActivateIntent intent) {
+              _select(index);
+              return null;
+            },
+          ),
+        },
+        onShowFocusHighlight: (bool value) {
+          setState(() => _focusedIndex = value ? index : null);
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTapDown: enabled
+              ? (_) => setState(() => _pressedIndex = index)
+              : null,
+          onTapUp: enabled ? (_) => setState(() => _pressedIndex = null) : null,
+          onTapCancel: enabled
+              ? () => setState(() => _pressedIndex = null)
+              : null,
+          onTap: enabled ? () => _select(index) : null,
+          child: content,
+        ),
+      ),
+    );
+    if (data.tooltip != null && data.tooltip != data.label) {
+      cell = Tooltip(message: data.tooltip, child: cell);
+    }
+    return cell;
+  }
+}
+
+/// 分段控件选中段静止时的透明 pill 色：比轨道亮一点的无色白（深色 20% /
+/// 浅色 70%），不着强调色。深色 16% 压在 #1C1C1E 卡片 + 透明玻璃轨上与轨道
+/// 只差一阶，选中段读不出来（用户 2026-10-05 Windows 深色截图）。
 Color _appleClearLensColor(BuildContext context) {
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-  return Colors.white.withValues(alpha: dark ? 0.16 : 0.7);
+  return Colors.white.withValues(alpha: dark ? 0.2 : 0.7);
 }
 
 /// 分段控件的液态玻璃轨：在控件**背后**垫一枚透明玻璃胶囊（兄弟层，而不是把

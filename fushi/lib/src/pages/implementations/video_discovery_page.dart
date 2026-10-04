@@ -119,6 +119,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       const <discovery.VideoDiscoveryItem>[];
   List<ExternalProviderFailure> _failures = const <ExternalProviderFailure>[];
 
+  /// Hero 简介与详情页同一份数据：列表条目的简介是来源原文（动画卡片来自
+  /// AniList / MAL，恒英文），详情经 [VideoDiscoveryActions.loadDetails] 按资料
+  /// 语言合并（含 TMDB 交叉引用）。Hero 是发现页唯一显示简介的地方，所以对
+  /// Hero 这一条预取详情、用详情的简介；详情回来前不显示简介，免得先闪一段
+  /// 英文再换成中文。
+  String? _heroDetailKey;
+  bool _heroDetailPending = false;
+  String? _heroDetailOverview;
+
   VideoDiscoveryController get _controller =>
       widget.controller ?? const EmptyVideoDiscoveryController();
 
@@ -153,19 +162,39 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _listenDetailsUpdates();
     unawaited(_reload());
   }
 
   @override
   void didUpdateWidget(covariant VideoDiscoveryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(
+      oldWidget.actions.detailsUpdates,
+      widget.actions.detailsUpdates,
+    )) {
+      _listenDetailsUpdates();
+    }
     if (!identical(oldWidget.controller, widget.controller)) {
       unawaited(_reload());
     }
   }
 
+  StreamSubscription<void>? _detailsUpdates;
+
+  /// 详情数据源变好（交叉索引后台就绪）时，Hero 原地重取一次：保留当前简介，
+  /// 新数据到了再替换，不闪空。
+  void _listenDetailsUpdates() {
+    unawaited(_detailsUpdates?.cancel());
+    _detailsUpdates = widget.actions.detailsUpdates?.listen((_) {
+      if (!mounted || _popular.isEmpty || _hasActiveSearchOrFilter) return;
+      unawaited(_hydrateHero(_popular.first, refresh: true));
+    });
+  }
+
   @override
   void dispose() {
+    unawaited(_detailsUpdates?.cancel());
     _debounce.dispose();
     _scrollController
       ..removeListener(_onScroll)
@@ -223,6 +252,11 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       _seasonalAnime = const <discovery.VideoDiscoveryItem>[];
       _failures = const <ExternalProviderFailure>[];
       _hasMore = false;
+      // 换控制器（资料语言 / key 变了）或换筛选都重取：详情按资料语言合并，
+      // 留着上一轮的简介就是旧语言。重复取同一条由传输层缓存兜住。
+      _heroDetailKey = null;
+      _heroDetailPending = false;
+      _heroDetailOverview = null;
     });
 
     if (_hasActiveSearchOrFilter) {
@@ -286,6 +320,49 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       _totalFailure = merged.isTotalFailure;
       _loading = false;
     });
+    if (_popular.isNotEmpty) unawaited(_hydrateHero(_popular.first));
+  }
+
+  /// [refresh]：数据源变好后的重取——当前简介留着，新的到了再换。
+  Future<void> _hydrateHero(
+    discovery.VideoDiscoveryItem item, {
+    bool refresh = false,
+  }) async {
+    final VideoDiscoveryDetailLoader? loader = widget.actions.loadDetails;
+    final String key = item.reference.canonicalIdentityKey;
+    if (loader == null) return;
+    if (refresh) {
+      if (_heroDetailKey != key || _heroDetailPending) return;
+    } else {
+      if (_heroDetailKey == key) return;
+      setState(() {
+        _heroDetailKey = key;
+        _heroDetailPending = true;
+        _heroDetailOverview = null;
+      });
+    }
+    String? overview;
+    try {
+      overview = (await loader(item)).item.overview;
+    } on Object {
+      // 详情取不到：退回列表条目自带的简介（重取失败则保留当前的）。
+      if (refresh) return;
+      overview = null;
+    }
+    if (!mounted || _heroDetailKey != key) return;
+    setState(() {
+      _heroDetailPending = false;
+      _heroDetailOverview = overview;
+    });
+  }
+
+  String? _heroSummary(discovery.VideoDiscoveryItem item) {
+    if (_heroDetailKey != item.reference.canonicalIdentityKey) {
+      return item.overview;
+    }
+    if (_heroDetailPending) return null;
+    final String? detailed = _heroDetailOverview?.trim();
+    return detailed == null || detailed.isEmpty ? item.overview : detailed;
   }
 
   Future<void> _loadMore() async {
@@ -1050,7 +1127,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         _videoDiscoveryCategoryLabel(item.reference.discoveryCategory),
         if (item.score != null) '★ ${item.score!.toStringAsFixed(1)}',
       ],
-      summary: item.overview,
+      summary: _heroSummary(item),
       backdrop: backdrop,
       poster: poster,
       actionLabel: t.video_hero_detail_view,

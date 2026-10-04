@@ -145,9 +145,28 @@ bool yomitan_parser::parse_tag_bank(std::string_view content, std::vector<Tag>& 
   return !error;
 }
 
-bool yomitan_parser::parse_kanji_bank(std::string_view content, std::vector<Kanji>& out) {
-  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(out, content);
-  return !error;
+bool yomitan_parser::parse_kanji_bank(std::string_view content, std::vector<Kanji>& out, size_t* skipped) {
+  std::vector<glz::raw_json_view> raw;
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(raw, content);
+  if (error) {
+    return false;
+  }
+  size_t bad = 0;
+  out.reserve(out.size() + raw.size());
+  for (const auto& entry : raw) {
+    Kanji kanji;
+    // The views in [kanji] point into [content] (raw_json_view does too), so
+    // they stay valid for the caller exactly as with the whole-bank read.
+    auto entry_error =
+        glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(kanji, entry.str);
+    if (entry_error) {
+      bad++;
+      continue;
+    }
+    out.emplace_back(std::move(kanji));
+  }
+  if (skipped) *skipped = bad;
+  return true;
 }
 
 bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& out) {

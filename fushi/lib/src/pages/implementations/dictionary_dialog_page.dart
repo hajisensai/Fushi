@@ -17,6 +17,7 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
@@ -366,7 +367,11 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
+    // Apple 设计系统（iOS 26 / macOS 26）与 Cupertino 渲染一样把导入 / 更新 / 清空
+    // 放进标题栏动作（桌面一排玻璃圆钮、窄屏「…」溢出菜单），不再在内容层铺一排
+    // MD3 tonal 按钮——iOS 的「添加」类动作住在导航栏，内容层只放列表。
+    final bool cupertino =
+        isCupertinoPlatform(context) || isGlassDesign(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // 桌面三端：整页包一层文件拖放区，把拖入的词典包接到与「导入词典」按钮同源的
     // 导入路径（TODO-059）。移动端 FushiFileDropTarget 直接透传 child，零开销。
@@ -1370,21 +1375,48 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
           child: FushiCard(
             padding: EdgeInsets.zero,
-            child: ValueListenableBuilder<String>(
-              valueListenable: controller.message,
-              builder: (_, String msg, __) => FushiListItem(
-                minHeight: 44,
-                leading: const FushiIcon(Icons.cloud_download_outlined, size: 18),
-                title: Text(
-                  msg.isEmpty ? t.dict_update_checking : msg,
-                  style: textTheme.bodySmall,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                ValueListenableBuilder<String>(
+                  valueListenable: controller.message,
+                  builder: (_, String msg, __) => FushiListItem(
+                    minHeight: 44,
+                    leading: const FushiIcon(
+                      Icons.cloud_download_outlined,
+                      size: 18,
+                    ),
+                    title: Text(
+                      msg.isEmpty ? t.dict_update_checking : msg,
+                      style: textTheme.bodySmall,
+                    ),
+                    titleMaxLines: 2,
+                    trailing: FushiTextButton(
+                      onPressed: _showDownloadProgressDialog,
+                      child: Text(t.dict_download_progress_show),
+                    ),
+                  ),
                 ),
-                titleMaxLines: 2,
-                trailing: FushiTextButton(
-                  onPressed: _showDownloadProgressDialog,
-                  child: Text(t.dict_download_progress_show),
+                // 后台任务的进度直接画在回程条里（MD3 Expressive 波浪进度 / Apple
+                // 细进度条），不必点开进度对话框才知道跑到哪了；没有进度值时是
+                // 不定态。
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.card,
+                    0,
+                    tokens.spacing.card,
+                    tokens.spacing.gap,
+                  ),
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: controller.progress,
+                    builder: (_, double progress, __) =>
+                        FushiLinearProgressIndicator(
+                      value: progress > 0 ? progress : null,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         );
@@ -1525,7 +1557,11 @@ class _DictionaryDialogPageState extends BasePageState {
         if (selectedDictionaries.isEmpty)
           _buildEmptyCategoryRow()
         else
-          _buildDictionaryList(selectedDictionaries),
+          // 进场窗口：首开与切换词典类型时，首屏词典行错峰淡入上移。
+          FushiEntranceScope(
+            replayKey: _selectedType,
+            child: _buildDictionaryList(selectedDictionaries),
+          ),
       ],
     );
   }
@@ -1972,13 +2008,20 @@ class _DictionaryDialogPageState extends BasePageState {
       // FushiReorderableColumn 的 to 已是最终下标，直接 removeAt(from)/insert(to)。
       onReorder: (int from, int to) =>
           _reorderDictionaries(from, to, dictionaries),
-      itemBuilder: (BuildContext context, int index) => _buildDictionaryTile(
-        dictionary: dictionaries[index],
+      // 逐行错峰进场（窗口见 buildContent 的 FushiEntranceScope）：只改透明度与
+      // 位移、不改布局，列表测高与拖拽浮层复制不受影响；拖拽浮层挂载时窗口早已
+      // 关闭，浮层瞬间出现。
+      itemBuilder: (BuildContext context, int index) => FushiStaggeredEntrance(
         index: index,
-        count: dictionaries.length,
-        isLast: index == dictionaries.length - 1,
-        onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
-        onMoveDown: () => _reorderDictionaries(index, index + 1, dictionaries),
+        child: _buildDictionaryTile(
+          dictionary: dictionaries[index],
+          index: index,
+          count: dictionaries.length,
+          isLast: index == dictionaries.length - 1,
+          onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
+          onMoveDown: () =>
+              _reorderDictionaries(index, index + 1, dictionaries),
+        ),
       ),
     );
   }

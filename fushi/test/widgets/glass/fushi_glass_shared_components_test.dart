@@ -210,7 +210,7 @@ void main() {
     expect(find.byType(GlassContainer), findsWidgets);
     expect(find.byType(FushiAppleSwitch), findsWidgets);
     expect(find.byType(FushiAppleSlider), findsOneWidget);
-    expect(find.byType(GlassSegmentedControl), findsOneWidget);
+    expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
     expect(find.byType(GlassStepper), findsOneWidget);
     // 设置行的选择器是 macOS / iOS 弹出菜单按钮（当前值 + 上下箭头 → 玻璃
     // 菜单），不再是 GlassPicker 玻璃字段。
