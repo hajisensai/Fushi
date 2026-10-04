@@ -6251,10 +6251,12 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works.",
+  "ai_video_acquire_franchise_truncated": "Couldn’t look up every related work of “$name” — the list below may be missing some.",
   "video_subtitle_graphic_ocr_track": "Convert to text subtitles (OCR)",
   "video_subtitle_graphic_ocr_track_hint": "Recognize the whole track once; then tap words to look them up while playing",
   "video_subtitle_graphic_ocr_extracting": "Extracting image subtitle track…",
   "video_subtitle_graphic_ocr_progress": "Recognizing subtitles $done/$total",
-  "video_subtitle_graphic_ocr_empty": "No text recognized in this subtitle track"
+  "video_subtitle_graphic_ocr_empty": "No text recognized in this subtitle track",
+  "ai_video_acquire_franchise_unavailable": "Couldn’t get the full series list for “$title” (the metadata source failed or is unavailable).",
+  "ai_video_acquire_ask_franchise_fallback": "No other matching works were found. Download only “$title”?"
 }

@@ -240,6 +240,8 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         t.ai_video_acquire_franchise_truncated(name: arg('name')),
       VideoAcquisitionSayKind.franchiseNotFound =>
         t.ai_video_acquire_franchise_not_found(title: arg('title')),
+      VideoAcquisitionSayKind.franchiseUnavailable =>
+        t.ai_video_acquire_franchise_unavailable(title: arg('title')),
       VideoAcquisitionSayKind.franchiseReady =>
         t.ai_video_acquire_franchise_ready(
           ready: arg('ready'),
@@ -346,6 +348,10 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     VideoAcquisitionSlot.presence => t.ai_video_acquire_ask_presence,
     // 清单卡上方已经有 franchiseReady 那句说明，问句本身不再重复。
     VideoAcquisitionSlot.franchise => '',
+    VideoAcquisitionSlot.franchiseFallback =>
+      t.ai_video_acquire_ask_franchise_fallback(
+        title: '${q.args['title'] ?? ''}',
+      ),
   };
 
   String _optionLabel(VideoAcquisitionSlot slot, VideoAcquisitionOption o) {

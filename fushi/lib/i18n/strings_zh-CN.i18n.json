@@ -6251,10 +6251,12 @@
   "ai_video_acquire_recommend_preference_switch": "按你的画质、片源、码率偏好和搜索相关度，推荐第 $index 个版本，已切换过去。",
   "ai_video_acquire_recommend_criteria_current": "按你说的条件，当前这个（第 $index 个版本）最合适。",
   "ai_video_acquire_recommend_criteria_switch": "按你说的条件，第 $index 个版本最合适，已切换过去。",
-  "ai_video_acquire_franchise_truncated": "「$name」系列太大，关联作品只查了一部分，下面的清单可能不全。",
+  "ai_video_acquire_franchise_truncated": "「$name」的关联作品没能全部查到，下面的清单可能不全。",
   "video_subtitle_graphic_ocr_track": "转成文字字幕（OCR）",
   "video_subtitle_graphic_ocr_track_hint": "整轨识别一次，之后播放中直接点字查词",
   "video_subtitle_graphic_ocr_extracting": "正在抽取图形字幕轨…",
   "video_subtitle_graphic_ocr_progress": "正在识别字幕 $done/$total",
-  "video_subtitle_graphic_ocr_empty": "这条字幕轨没有识别出文字"
+  "video_subtitle_graphic_ocr_empty": "这条字幕轨没有识别出文字",
+  "ai_video_acquire_franchise_unavailable": "没能取到「$title」的完整系列清单（资料源出错或不可用）。",
+  "ai_video_acquire_ask_franchise_fallback": "没找到符合要求的其它作品。只下载「$title」这一部吗？"
 }
