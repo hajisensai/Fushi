@@ -6125,7 +6125,7 @@ class AppModel with ChangeNotifier {
               completedCount++;
               continue;
             }
-            await _autoRedownloadAndReimport(dictionary, remote, job);
+            await redownloadAndReimportDictionary(dictionary, remote, job);
             completedCount++;
           } catch (e, stack) {
             if (DictionaryDownloadController.isCancellation(e)) break;
@@ -6156,7 +6156,10 @@ class AppModel with ChangeNotifier {
   ///
   /// BUG-2707：下载地址与回写来源都取自 [remote]（远端 index 声明的新版地址），
   /// 本地记录的旧 downloadUrl 可能钉在旧版本目录，拿它下载等于重导旧包。
-  Future<void> _autoRedownloadAndReimport(
+  ///
+  /// 公开给桌面 CLI 的 `dict update`（`ctl_dictionary_routes.dart`）复用，与启动期
+  /// 自动更新同一条「下载 → 显式替换目标重导」链路，不另写一套。
+  Future<void> redownloadAndReimportDictionary(
     Dictionary dictionary,
     DictionaryRemoteIndexResult remote,
     DictionaryDownloadJob job,
