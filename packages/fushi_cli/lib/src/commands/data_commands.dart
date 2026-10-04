@@ -32,9 +32,11 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'restore',
-        summary: '恢复备份（在 app 里弹确认框选覆盖 / 合并，完成后 app 重启）',
+        summary:
+            '恢复备份（给 --merge / --replace 直接开始，否则在 app 里弹确认框选；'
+            '完成后 app 重启）',
         usage: '<file>',
-        configure: _configureYes,
+        configure: _configureBackupRestore,
         build: _backupRestore,
         render: _renderMessage,
       ),
@@ -52,7 +54,8 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'run',
-        summary: '立即同步（云通道 + 互联通道，同设置页「立即同步」）',
+        summary: '立即同步（同设置页「立即同步」；缺省全部已启用通道，可只跑 cloud / interconnect）',
+        usage: '[<cloud|interconnect>...]',
         configure: _configureSyncRun,
         build: _syncRun,
         render: _renderSyncRun,
@@ -61,7 +64,7 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
   ),
   CtlCommandGroup(
     name: 'dl',
-    summary: '下载中心（磁力 / 种子任务）',
+    summary: '下载中心（磁力 / 种子 / http 直链任务）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'ls',
@@ -77,8 +80,8 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'add',
-        summary: '添加任务：磁链直接入队；.torrent 在 app 里打开添加对话框',
-        usage: '<magnet|file.torrent>',
+        summary: '添加任务：磁链与 http 直链直接入队；.torrent 在 app 里打开添加对话框',
+        usage: '<magnet|file.torrent|url>',
         configure: _configureDlAdd,
         build: _dlAdd,
         render: _renderDlAdd,
@@ -283,12 +286,53 @@ String _renderBackupCreate(Object? data) {
   ].join('\n');
 }
 
+void _configureBackupRestore(ArgParser parser) {
+  _configureYes(parser);
+  parser
+    ..addFlag('merge', negatable: false, help: '合并：保留本机数据，只补上备份里有而本机没有的（不弹确认框）')
+    ..addFlag('replace', negatable: false, help: '覆盖：用备份替换本机资料库（不弹确认框）')
+    ..addMultiOption(
+      'category',
+      help:
+          '配合 --merge / --replace：只恢复这些可挑选分类（可重复 / 逗号分隔：'
+          'dictionary,books,audiobooks,fonts,videos,localAudio,games,progress,'
+          'statistics）；其余分类恒恢复。缺省全部',
+    )
+    ..addFlag(
+      'import-settings',
+      negatable: false,
+      help: '配合 --replace：连设置层一起导入（缺省保留本机设置）',
+    );
+}
+
 CtlRequestSpec _backupRestore(CtlCommandContext c) {
   final String file = ctlAbsolutePath(c.positional(0, 'file'));
+  final bool merge = c.flag('merge');
+  final bool replace = c.flag('replace');
+  if (merge && replace) {
+    throw const CtlUsageError('--merge 与 --replace 只能二选一');
+  }
+  final List<String> categories = c.multiOption('category');
+  final bool importSettings = c.flag('import-settings');
+  if (!merge && !replace && (categories.isNotEmpty || importSettings)) {
+    throw const CtlUsageError(
+      '--category / --import-settings 要和 --merge 或 --replace 一起用',
+    );
+  }
+  if (importSettings && !replace) {
+    throw const CtlUsageError('--import-settings 只用于 --replace');
+  }
   _requireYes(c, '恢复备份');
   return CtlRequestSpec.post(
     '/api/admin/backups/restore',
-    body: <String, Object?>{'path': file, 'confirm': true},
+    body: <String, Object?>{
+      'path': file,
+      'confirm': true,
+      if (merge) 'mode': 'merge',
+      if (replace) 'mode': 'replace',
+      if (categories.isNotEmpty) 'categories': categories,
+      if (importSettings) 'importSettings': true,
+    },
   );
 }
 
@@ -300,6 +344,10 @@ CtlRequestSpec _syncLs(CtlCommandContext c) =>
 String _renderSyncLs(Object? data) {
   if (data is! Map) return renderCtlJson(data);
   final Object? last = data['lastFullSweep'];
+  final List<String> channels = <String>[
+    for (final Object? row in (data['channels'] as List<Object?>? ?? []))
+      if (row is Map) '${row['id']}（${row['backend']}）',
+  ];
   return <String>[
     renderCtlTable(data['backends'], const <(String, String)>[
       ('后端', 'id'),
@@ -307,6 +355,8 @@ String _renderSyncLs(Object? data) {
       ('已配置', 'configured'),
     ]),
     '',
+    '可同步通道（sync run <通道>）：'
+        '${channels.isEmpty ? '（无）' : channels.join('、')}',
     '自动同步：${data['autoSync'] == true ? '开' : '关'}'
         '  互联同步：${data['interconnectEnabled'] == true ? '开' : '关'}'
         '  正在同步：${data['running'] == true ? '是' : '否'}',
@@ -318,13 +368,29 @@ void _configureSyncRun(ArgParser parser) {
   parser.addFlag('wait', negatable: false, help: '等同步跑完再返回结果');
 }
 
+/// 同步通道名（app 侧 `SyncAssetChannelScope` 的取值；`sync ls` 列出本机已启用的）。
+const List<String> _syncChannelNames = <String>['cloud', 'interconnect'];
+
 CtlRequestSpec _syncRun(CtlCommandContext c) {
-  if (c.rest.isNotEmpty) {
-    throw const CtlUsageError('目前只能整体同步全部已启用通道，不支持指定单个后端');
+  final List<String> channels = <String>[
+    for (final String raw in c.rest)
+      for (final String name in raw.split(','))
+        if (name.trim().isNotEmpty) name.trim(),
+  ];
+  for (final String name in channels) {
+    if (!_syncChannelNames.contains(name)) {
+      throw CtlUsageError(
+        '未知的同步通道：$name（可选：${_syncChannelNames.join(' / ')}；'
+        'sync ls 查看本机已启用的通道）',
+      );
+    }
   }
   return CtlRequestSpec.post(
     '/api/admin/sync/run',
-    body: <String, Object?>{if (c.flag('wait')) 'wait': true},
+    body: <String, Object?>{
+      if (channels.isNotEmpty) 'channels': channels.toSet().toList(),
+      if (c.flag('wait')) 'wait': true,
+    },
   );
 }
 
@@ -359,27 +425,49 @@ CtlRequestSpec _dlGet(CtlCommandContext c) => CtlRequestSpec.get(
   '/api/admin/downloads/${_seg(c.positional(0, 'jobId'))}',
 );
 
+/// 磁链 / 种子任务的视频类型（决定刮削方式）。
+const List<String> _dlVideoKinds = <String>['movie', 'tv'];
+
+/// http 直链的内容类型（app 侧直链队列 `DiscoveryMediaKind`，决定下完入哪个库）。
+const List<String> _dlDirectKinds = <String>[
+  'novel',
+  'audiobook',
+  'game',
+  'manga',
+];
+
 void _configureDlAdd(ArgParser parser) {
   parser
-    ..addOption('title', help: '任务标题（缺省取磁链的 dn）')
+    ..addOption('title', help: '任务标题（缺省取磁链的 dn / 直链文件名）')
     ..addOption(
       'kind',
-      allowed: <String>['movie', 'tv'],
-      defaultsTo: 'movie',
-      help: '视频类型（决定刮削方式）',
+      allowed: <String>[..._dlVideoKinds, ..._dlDirectKinds],
+      help:
+          '磁链 / 种子：movie（缺省）或 tv，决定刮削方式；'
+          'http 直链必填：novel / audiobook / game / manga，下完按它自动入库',
     );
 }
 
 CtlRequestSpec _dlAdd(CtlCommandContext c) {
-  final String raw = c.positional(0, 'magnet|file.torrent');
+  final String raw = c.positional(0, 'magnet|file.torrent|url');
   final bool magnet = raw.toLowerCase().startsWith('magnet:');
   final bool url = RegExp(r'^https?://', caseSensitive: false).hasMatch(raw);
+  final String? kind = c.option('kind');
+  if (url) {
+    if (kind == null || !_dlDirectKinds.contains(kind)) {
+      throw CtlUsageError(
+        'http 直链要用 --kind 指定内容类型（${_dlDirectKinds.join(' / ')}）',
+      );
+    }
+  } else if (kind != null && !_dlVideoKinds.contains(kind)) {
+    throw CtlUsageError('磁链 / 种子任务的 --kind 只能是 ${_dlVideoKinds.join(' / ')}');
+  }
   return CtlRequestSpec.post(
     '/api/admin/downloads',
     body: <String, Object?>{
       'target': (magnet || url) ? raw : ctlAbsolutePath(raw),
       if (c.option('title') != null) 'title': c.option('title'),
-      'mediaKind': c.option('kind') ?? 'movie',
+      'mediaKind': kind ?? 'movie',
     },
   );
 }

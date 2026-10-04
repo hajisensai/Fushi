@@ -96,6 +96,64 @@ void main() {
         'confirm': true,
       });
     });
+
+    test('restore --merge / --replace 带模式与分类，仍要 --yes', () {
+      expect(
+        () => build('backup', 'restore', <String>['b.zip', '--merge']),
+        usageError(),
+      );
+      final CtlRequestSpec m = build('backup', 'restore', <String>[
+        'b.zip',
+        '--merge',
+        '--category',
+        'books,fonts',
+        '-y',
+      ]);
+      expect(m.body, <String, Object?>{
+        'path': p.normalize(p.absolute('b.zip')),
+        'confirm': true,
+        'mode': 'merge',
+        'categories': <String>['books', 'fonts'],
+      });
+      final CtlRequestSpec r = build('backup', 'restore', <String>[
+        'b.zip',
+        '--replace',
+        '--import-settings',
+        '--yes',
+      ]);
+      expect(r.body!['mode'], 'replace');
+      expect(r.body!['importSettings'], isTrue);
+    });
+
+    test('restore 选项组合错误', () {
+      expect(
+        () => build('backup', 'restore', <String>[
+          'b.zip',
+          '--merge',
+          '--replace',
+          '-y',
+        ]),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'restore', <String>[
+          'b.zip',
+          '--category',
+          'books',
+          '-y',
+        ]),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'restore', <String>[
+          'b.zip',
+          '--merge',
+          '--import-settings',
+          '-y',
+        ]),
+        usageError(),
+      );
+    });
   });
 
   group('sync', () {
@@ -110,7 +168,20 @@ void main() {
       });
     });
 
-    test('run 不支持指定单个后端', () {
+    test('run 指定通道：位置参数 / 逗号分隔、去重，未知名用法错误', () {
+      expect(
+        build('sync', 'run', <String>['interconnect', '--wait']).body,
+        <String, Object?>{
+          'channels': <String>['interconnect'],
+          'wait': true,
+        },
+      );
+      expect(
+        build('sync', 'run', <String>['cloud,interconnect', 'cloud']).body,
+        <String, Object?>{
+          'channels': <String>['cloud', 'interconnect'],
+        },
+      );
       expect(() => build('sync', 'run', <String>['webDav']), usageError());
     });
   });
@@ -145,9 +216,27 @@ void main() {
         'mediaKind': 'movie',
       });
       final CtlRequestSpec u = build('dl', 'add', <String>[
-        'https://x/a.torrent',
+        'https://x/a.epub',
+        '--kind',
+        'novel',
       ]);
-      expect(u.body!['target'], 'https://x/a.torrent');
+      expect(u.body, <String, Object?>{
+        'target': 'https://x/a.epub',
+        'mediaKind': 'novel',
+      });
+      // 直链必须给内容类型；磁链 / 种子不收直链的类型。
+      expect(
+        () => build('dl', 'add', <String>['https://x/a.epub']),
+        usageError(),
+      );
+      expect(
+        () => build('dl', 'add', <String>['https://x/a.epub', '--kind', 'tv']),
+        usageError(),
+      );
+      expect(
+        () => build('dl', 'add', <String>[magnet, '--kind', 'novel']),
+        usageError(),
+      );
       expect(() => build('dl', 'add', <String>[]), usageError());
       expect(
         () => build('dl', 'add', <String>[magnet, '--kind', 'anime']),
@@ -300,6 +389,21 @@ void main() {
       });
       expect(text, contains('2.0 KB'));
       expect(text, contains('合计：3.0 MB'));
+    });
+
+    test('sync ls 列出可用通道名', () {
+      final String text = render('sync', 'ls', <String, Object?>{
+        'autoSync': true,
+        'interconnectEnabled': true,
+        'running': false,
+        'channels': <Object?>[
+          <String, Object?>{'id': 'cloud', 'backend': 'webDav'},
+          <String, Object?>{'id': 'interconnect', 'backend': 'fushiServer'},
+        ],
+        'backends': <Object?>[],
+      });
+      expect(text, contains('cloud（webDav）'));
+      expect(text, contains('interconnect（fushiServer）'));
     });
 
     test('sync run 两种结果', () {

@@ -7,6 +7,8 @@
 library;
 
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
 
@@ -14,7 +16,11 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart'
+    show SyncAssetChannelScope, SyncChannel, syncAssetChannelScopeOf;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show BackupImportMode, BackupImportPreset, backupImportSelectableCategories;
 
 /// 错误信息里可能夹带的凭据（媒体服务器 URL 上的 `api_key` / `X-Plex-Token`、
 /// `Authorization` 头回显等）统一抹掉后才回给终端。
@@ -82,6 +88,56 @@ Map<String, Object?> backupMetaToWire(BackupMeta meta) => <String, Object?>{
   'excludedCategories': meta.excludedCategories.toList()..sort(),
 };
 
+/// `backup restore` 的预设：[mode] 为 null（CLI 没给 --merge / --replace）→ 返回
+/// null，走 app 确认框；给了模式就组预设，分类只认该模式下确认框里**可勾选**的
+/// 那些（其余分类恒恢复，指定它们没有意义，直接 400 说清楚）。
+BackupImportPreset? parseBackupImportPreset({
+  required String? mode,
+  required List<String> categories,
+  required bool importSettings,
+}) {
+  if (mode == null) {
+    if (categories.isNotEmpty || importSettings) {
+      throw const CtlFailure.badRequest(
+        '--category / --import-settings 要和 --merge 或 --replace 一起用',
+      );
+    }
+    return null;
+  }
+  final BackupImportMode importMode = switch (mode) {
+    'merge' => BackupImportMode.merge,
+    'replace' || 'overwrite' => BackupImportMode.overwrite,
+    _ => throw CtlFailure.badRequest('未知的恢复模式：$mode（只认 merge / replace）'),
+  };
+  if (importSettings && importMode != BackupImportMode.overwrite) {
+    throw const CtlFailure.badRequest(
+      '--import-settings 只用于 --replace（合并恒保留本机设置）',
+    );
+  }
+  final Set<BackupCategory>? selected = parseBackupCategories(categories);
+  if (selected != null) {
+    final Set<BackupCategory> selectable = backupImportSelectableCategories(
+      importMode,
+    );
+    final List<BackupCategory> fixed = <BackupCategory>[
+      for (final BackupCategory c in selected)
+        if (!selectable.contains(c)) c,
+    ];
+    if (fixed.isNotEmpty) {
+      throw CtlFailure.badRequest(
+        '这些分类恢复时恒包含、不能挑选：'
+        '${fixed.map((BackupCategory c) => c.name).join(', ')}（可挑选：'
+        '${selectable.map((BackupCategory c) => c.name).join(', ')}）',
+      );
+    }
+  }
+  return BackupImportPreset(
+    mode: importMode,
+    categories: selected,
+    importSettings: importSettings,
+  );
+}
+
 Map<String, Object?> backupSummaryToWire(BackupContentSummary summary) =>
     <String, Object?>{
       for (final MapEntry<BackupCategory, int> e in summary.counts.entries)
@@ -100,6 +156,36 @@ Map<String, Object?> syncBackendToWire({
   'selected': selected,
   'configured': configured,
 };
+
+/// 一条已启用的同步通道：通道名（`sync run <通道>` 认的就是它）+ 它解析自哪个后端。
+Map<String, Object?> syncChannelToWire(SyncChannel channel) =>
+    <String, Object?>{
+      'id': syncAssetChannelScopeOf(channel).name,
+      'backend': channel.type.name,
+    };
+
+/// `sync run [<通道>...]` 的通道名 → 过滤集合。空名单 = null（全部已启用通道）；
+/// 认不出的名字 400，并列出合法取值。
+Set<SyncAssetChannelScope>? parseSyncChannelScopes(List<String> names) {
+  final Set<SyncAssetChannelScope> out = <SyncAssetChannelScope>{};
+  for (final String raw in names) {
+    for (final String name in raw.split(',')) {
+      final String trimmed = name.trim();
+      if (trimmed.isEmpty) continue;
+      final SyncAssetChannelScope? scope = SyncAssetChannelScope.values
+          .where((SyncAssetChannelScope s) => s.name == trimmed)
+          .firstOrNull;
+      if (scope == null) {
+        throw CtlFailure.badRequest(
+          '未知的同步通道：$trimmed（可选：'
+          '${SyncAssetChannelScope.values.map((SyncAssetChannelScope s) => s.name).join(', ')}）',
+        );
+      }
+      out.add(scope);
+    }
+  }
+  return out.isEmpty ? null : out;
+}
 
 Map<String, Object?>? syncOutcomeToWire(SyncRunOutcome? outcome) =>
     outcome == null
@@ -138,6 +224,55 @@ CtlDownloadTargetKind classifyDownloadTarget(String target) {
   }
   if (lower.endsWith('.torrent')) return CtlDownloadTargetKind.torrentFile;
   throw const CtlFailure.badRequest('只认磁力链接（magnet:?…）或 .torrent 文件');
+}
+
+/// 直链任务在控制通道上的 id 前缀：视频下载任务的 id 是持久化字符串，直链队列的
+/// 任务 id 是进程内自增整数，加前缀避免两边撞号。
+const String kCtlDirectDownloadIdPrefix = 'direct:';
+
+/// `direct:<n>` → n；不是直链任务 id 返回 null。
+int? parseDirectDownloadTaskId(String id) =>
+    id.startsWith(kCtlDirectDownloadIdPrefix)
+    ? int.tryParse(id.substring(kCtlDirectDownloadIdPrefix.length))
+    : null;
+
+/// `dl add <url> --kind` 的直链内容类型（决定下完后自动入哪个库）。
+DiscoveryMediaKind parseDirectDownloadKind(String? kind) {
+  for (final DiscoveryMediaKind k in DiscoveryMediaKind.values) {
+    if (k.name == kind) return k;
+  }
+  throw CtlFailure.badRequest(
+    'http 直链要用 --kind 指定内容类型（'
+    '${DiscoveryMediaKind.values.map((DiscoveryMediaKind k) => k.name).join(' / ')}），'
+    '下完按它自动入库',
+  );
+}
+
+/// 直链队列里的一个任务。地址不出（签名 URL 常带令牌），只报主机名；错误信息先抹凭据。
+Map<String, Object?> directDownloadTaskToWire(DiscoveryDownloadTask task) {
+  final DiscoveryPayload? payload = task.item.payload;
+  final String? host = payload is DiscoveryHttpPayload
+      ? Uri.tryParse(payload.url)?.host
+      : null;
+  final int? total = task.totalBytes;
+  return <String, Object?>{
+    'jobId': '$kCtlDirectDownloadIdPrefix${task.taskId}',
+    'title': task.item.title,
+    'kind': task.item.kind.name,
+    'source': task.item.sourceId,
+    if (host != null && host.isNotEmpty) 'host': host,
+    'lifecycle': task.status.name,
+    'stage': 'direct',
+    'receivedBytes': task.receivedBytes,
+    if (total != null) 'totalBytes': total,
+    if (total != null && total > 0)
+      'stageProgress': (task.receivedBytes / total).clamp(0.0, 1.0),
+    'createdAt': task.createdAt,
+    if (task.error != null) 'lastError': redactCtlSecrets(task.error!),
+    if (task.filePath != null) 'filePath': task.filePath,
+    if (task.importOutcome?.summary != null)
+      'imported': task.importOutcome!.summary,
+  };
 }
 
 /// 磁链任务的标题：显式给的优先，否则取磁链里的 `dn`（显示名）。都没有返回 null。

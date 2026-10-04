@@ -122,6 +122,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
@@ -5756,6 +5757,9 @@ class AppModel with ChangeNotifier {
     if (existing != null) return existing;
     final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
       resolvePayload: (DiscoveryResourceItem item) {
+        // 直链条目（控制通道 `dl add <url>`）没有发现源，payload 入队时已物化。
+        final DiscoveryHttpPayload? direct = directLinkPayloadOf(item);
+        if (direct != null) return Future<DiscoveryPayload>.value(direct);
         final MediaDiscoverySource? source =
             mediaDiscoveryService.sourceById(item.sourceId);
         if (source == null) {
