@@ -186,14 +186,26 @@ const Set<String> kVideoFranchiseMalRelations = <String>{
   'alternative version',
 };
 
-/// MAL `type` → 系列里的哪一段；null = 不收（OVA / Special / PV / CM / Music——
-/// 这些是特典或番外，不是「全部季 + 全部剧场版」）。
-VideoMetadataMediaKind? _malFranchiseKind(String? malType) =>
-    switch (malType?.trim().toLowerCase()) {
-      'movie' => VideoMetadataMediaKind.movie,
+/// 长片下限（分钟）：AMPAS / BFI 对「长片」的定义是 40 分钟以上。MAL 把同映
+/// 短片（哆啦A梦剧场版同映的 15–30 分钟短片、The☆Doraemons、天象馆片）也标
+/// `Movie`，不按片长分就会默认勾选进「全部剧场版」（BUG-2936）。片长未知的照收。
+const int kVideoFranchiseMinFeatureMinutes = 40;
+
+/// MAL `type` → 系列里的哪一段；null = 不收（OVA / Special / PV / CM / Music /
+/// 短于 [kVideoFranchiseMinFeatureMinutes] 的同映短片——这些是特典或番外，不是
+/// 「全部季 + 全部剧场版」）。
+VideoMetadataMediaKind? _malFranchiseKind(MalRelatedWorks related) =>
+    switch (related.malType?.trim().toLowerCase()) {
+      'movie' =>
+        _isShortFilm(related.work) ? null : VideoMetadataMediaKind.movie,
       'tv' || 'ona' => VideoMetadataMediaKind.tv,
       _ => null,
     };
+
+bool _isShortFilm(VideoMetadataWork work) {
+  final int? minutes = work.runtimeMinutes;
+  return minutes != null && minutes < kVideoFranchiseMinFeatureMinutes;
+}
 
 /// MAL 关联链展开的系列；锚点既没有 MAL 身份、按标题也搜不到时返回 null。
 Future<VideoFranchise?> resolveMalFranchise(
@@ -227,7 +239,7 @@ Future<VideoFranchise?> resolveMalFranchise(
     }
     if (related == null) continue;
     name ??= related.work.title;
-    final VideoMetadataMediaKind? kind = _malFranchiseKind(related.malType);
+    final VideoMetadataMediaKind? kind = _malFranchiseKind(related);
     if (kind != null) {
       final VideoDiscoveryItem item = VideoDiscoveryItem.fromMetadataWork(
         work: related.work.kind == kind

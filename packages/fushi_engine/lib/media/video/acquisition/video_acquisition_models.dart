@@ -221,6 +221,10 @@ enum VideoAcquisitionSlot {
   /// 整套清单确认：全部提交 / 取消（逐部勾选在页面的清单卡上）。
   franchise,
 
+  /// 整套没找到用户要的那部分（或清单取不到）：只下这一部 / 取消
+  /// （args: title）。
+  franchiseFallback,
+
   /// 版本确认：就这个 / 换一个 / 取消。
   resource,
 
@@ -422,6 +426,10 @@ enum VideoAcquisitionSayKind {
 
   /// 这部作品没有找到同系列的其它作品，按单部继续（args: title）
   franchiseNotFound,
+
+  /// 没能取到完整的系列清单（资料源出错 / 不可用；args: title）——之后问
+  /// [VideoAcquisitionSlot.franchiseFallback]，不静默降级成单部（BUG-2936）
+  franchiseUnavailable,
 
   /// 整套清单已就绪（args: ready, total）
   franchiseReady,

@@ -312,8 +312,9 @@ void main() {
       String title,
       String type,
       int year,
-      List<MalRelation> relations,
-    ) => MalRelatedWorks(
+      List<MalRelation> relations, {
+      int? runtime,
+    }) => MalRelatedWorks(
       work: VideoMetadataWork(
         provider: VideoMetadataProviderKind.mal,
         kind: type == 'Movie'
@@ -321,6 +322,7 @@ void main() {
             : VideoMetadataMediaKind.tv,
         title: title,
         year: year,
+        runtimeMinutes: runtime,
         ids: <VideoMetadataId>[
           VideoMetadataId(type: 'mal', value: '$id', isDefault: true),
         ],
@@ -567,6 +569,68 @@ void main() {
       ))!;
       expect(franchise.movies, hasLength(2));
       expect(franchise.truncated, isTrue);
+    });
+
+    test('BUG-2936 第一个请求就失败：空清单也要标没走完，而不是「没有同系列」', () async {
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        _FakeMal(const <int, MalRelatedWorks>{}, failOn: 1),
+        _item('1', 'Doraemon', provider: 'mal'),
+      ))!;
+      expect(franchise.length, 0);
+      expect(franchise.truncated, isTrue);
+    });
+
+    test('BUG-2936 短于长片下限的 Movie 是同映短片，不收；片长未知照收', () async {
+      // MAL 2471 的 Side story 里，剧场版之间夹着「Ken-chan no Bouken」
+      // 「Boku, Momotarou no Nanna no Sa」、The☆Doraemons 等 15–30 分钟短片，
+      // 类型同样是 Movie。
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        1: node(1, 'Doraemon (1979)', 'TV', 1979, const <MalRelation>[
+          MalRelation(relation: 'Side story', malId: 2),
+          MalRelation(relation: 'Side story', malId: 3),
+          MalRelation(relation: 'Side story', malId: 4),
+          MalRelation(relation: 'Side story', malId: 5),
+        ]),
+        2: node(
+          2,
+          'Doraemon Movie 01',
+          'Movie',
+          1980,
+          const <MalRelation>[],
+          runtime: 92,
+        ),
+        3: node(
+          3,
+          'Ken-chan no Bouken',
+          'Movie',
+          1981,
+          const <MalRelation>[],
+          runtime: 15,
+        ),
+        4: node(
+          4,
+          'Exactly forty minutes',
+          'Movie',
+          1982,
+          const <MalRelation>[],
+          runtime: kVideoFranchiseMinFeatureMinutes,
+        ),
+        5: node(5, 'Unknown runtime', 'Movie', 1983, const <MalRelation>[]),
+      });
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item(
+          '1',
+          'Doraemon (1979)',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+      ))!;
+      expect(
+        franchise.movies.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['2', '4', '5'],
+      );
+      expect(franchise.truncated, isFalse);
     });
 
     test('同名新旧版按年份选起点', () async {

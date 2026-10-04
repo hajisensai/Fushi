@@ -6251,10 +6251,12 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works.",
+  "ai_video_acquire_franchise_truncated": "Couldn’t look up every related work of “$name” — the list below may be missing some.",
   "video_subtitle_graphic_ocr_track": "แปลงเป็นคำบรรยายข้อความ (OCR)",
   "video_subtitle_graphic_ocr_track_hint": "อ่านทั้งแทร็กครั้งเดียว จากนั้นแตะคำเพื่อค้นหาได้ขณะเล่น",
   "video_subtitle_graphic_ocr_extracting": "กำลังดึงแทร็กคำบรรยายแบบภาพ…",
   "video_subtitle_graphic_ocr_progress": "กำลังอ่านคำบรรยาย $done/$total",
-  "video_subtitle_graphic_ocr_empty": "ไม่พบข้อความในแทร็กคำบรรยายนี้"
+  "video_subtitle_graphic_ocr_empty": "ไม่พบข้อความในแทร็กคำบรรยายนี้",
+  "ai_video_acquire_franchise_unavailable": "Couldn’t get the full series list for “$title” (the metadata source failed or is unavailable).",
+  "ai_video_acquire_ask_franchise_fallback": "No other matching works were found. Download only “$title”?"
 }
