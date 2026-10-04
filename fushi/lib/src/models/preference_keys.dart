@@ -87,6 +87,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // username/passwordB64/enabled/allowInsecureHttp）。String，读写见
   // PreferencesRepository。与 discovery_opds_servers 同形、同隔离纪律。
   'discovery_alist_sites',
+  // 用户自配的 Audiobookshelf 服务器清单（JSON 数组：id/name/url/username/
+  // accessTokenB64/refreshTokenB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。不存密码，只存令牌；refresh token 轮换后由
+  // AppModel.persistAudiobookshelfTokens 写回。与 discovery_opds_servers 同隔离纪律。
+  'discovery_audiobookshelf_servers',
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
@@ -489,6 +494,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'ai_providers',
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
   'discovery_alist_sites',
+  // 每条 Audiobookshelf 服务器记录里带 base64 的 access / refresh token。
+  'discovery_audiobookshelf_servers',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',
