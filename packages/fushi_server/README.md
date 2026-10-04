@@ -157,6 +157,27 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 
 所有子命令接受 `--config <path>`（默认当前目录 `fushi_server.yaml`）和 `--verbose`。
 
+### `ctl`：操作正在运行的 serve
+
+上面的命令都是**离线**的（直接开数据目录）。`serve` 在跑时，用 `ctl` 经下面的 admin API
+改它，不碰数据库；扫描进度、下载队列、订阅、模型下载这些运行时状态也只有 `ctl` 看得到。
+
+```
+fushi_server ctl status | logs | p2p
+fushi_server ctl lib [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
+fushi_server ctl scan [--prune|--no-prune]
+fushi_server ctl dl [ls] | add <magnet> --title t [--media-kind movie|tv] | cancel|retry|rm <id>
+fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
+fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
+fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
+fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
+```
+
+地址按配置的 `admin_bind` / `admin_port` / `tls` 推本机地址（通配 bind 换回环），token 读
+`admin_token`；TLS 下按数据目录里服务端证书的指纹钉扎。远程用 `--url` / `--token` /
+`--fingerprint` 覆盖。`--json` 原样输出。退出码：0 成功、1 服务端拒绝、64 用法错误、
+69 连不上、75 冲突（409）、77 鉴权失败。完整动作表见 `fushi_server --help`。
+
 ## admin API（WebUI 用的那套）
 
 鉴权：`Authorization: Bearer <admin_token>`，或浏览器 `POST /login`（表单 `token=`）拿 cookie。全部 JSON，前缀 `/api/admin/`：

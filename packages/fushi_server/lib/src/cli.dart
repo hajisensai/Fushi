@@ -9,6 +9,7 @@
 /// fushi_server admin  reset-token                     [--config …]
 /// fushi_server models pull|status --language ja        [--config …]
 /// fushi_server transcribe <audio> --language ja [--out x.srt] [--config …]
+/// fushi_server ctl <action> …   （经 admin API 操作运行中的 serve，见 ctl_commands.dart）
 /// ```
 library;
 
@@ -23,6 +24,7 @@ import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/ctl/ctl_commands.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
@@ -101,14 +103,17 @@ ArgParser _buildParser() {
     ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
     ..addOption('out', abbr: 'o', help: '输出 .srt 路径（默认与音频同名）')
     ..addFlag('cpu', negatable: false, help: '只用 CPU');
+  parser.addCommand('ctl', buildCtlParser());
   return parser;
 }
 
 void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
   stdout.writeln('commands: init | serve | scan | status | pair ls|revoke <peerId> | '
-      'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang>\n');
+      'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang> | '
+      'ctl <action>\n');
   stdout.writeln(parser.usage);
+  stdout.writeln('\n$kCtlUsage');
 }
 
 Future<int> runFushiServerCli(List<String> args) async {
@@ -158,6 +163,9 @@ Future<int> runFushiServerCli(List<String> args) async {
       return _withRuntime(configFile, verbose, (_Runtime rt) => _models(rt, command));
     case 'transcribe':
       return _withRuntime(configFile, verbose, (_Runtime rt) => _transcribe(rt, command));
+    case 'ctl':
+      // 不走 _withRuntime：ctl 只发 HTTP，不开数据库、不装 host 绑定（serve 正占着它们）。
+      return runCtl(configFile, command);
   }
   _usage(parser);
   return 64;
