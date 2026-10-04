@@ -216,8 +216,9 @@ void main() {
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> activators =
           buildVideoPlayerShortcutsFromRegistry(registry, actions(<String>[]));
-      for (final ShortcutActivator activator in activators.keys) {
-        if (activator is! SingleActivator) continue;
+      expect(activators, isNotEmpty);
+      for (final ShortcutActivator raw in activators.keys) {
+        final SingleActivator activator = (raw as InputBindingActivator).exact;
         expect(
           activator.trigger,
           isNot(LogicalKeyboardKey.keyE),
