@@ -10,6 +10,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 首页「正在听书」迷你条（TODO-291 阶段2）。
@@ -167,11 +168,12 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         isAndroid: Platform.isAndroid,
         manufacturer: maker,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(hint),
-          duration: const Duration(seconds: 4),
-        ),
+      // 2026-10 体验优化：全应用统一走 FushiToast（SnackBar 会被底部播放条 /
+      // 导航栏遮住，且与其它入口的同一失败提示样式不一致）。
+      FushiToast.show(
+        msg: hint,
+        severity: ToastSeverity.error,
+        toastLength: Toast.LENGTH_LONG,
       );
       return;
     }

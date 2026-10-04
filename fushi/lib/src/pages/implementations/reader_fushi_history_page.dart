@@ -2694,11 +2694,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块。
       if ((Platform.isAndroid || Platform.isWindows) &&
           modules.isEnabled(ModuleId.listening))
+        // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），
+        // 改成明确的「关闭悬浮字幕」+ 不同图标。
         DialogListAction(
           label: _isBackgroundListeningBook(bookKey)
-              ? '${t.floating_lyric_toggle_action} ✓'
+              ? t.floating_lyric_stop_action
               : t.floating_lyric_toggle_action,
-          icon: Icons.subtitles_outlined,
+          icon: _isBackgroundListeningBook(bookKey)
+              ? Icons.subtitles_off_outlined
+              : Icons.subtitles_outlined,
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];
