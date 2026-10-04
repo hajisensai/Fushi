@@ -35,9 +35,7 @@ void main() {
     // "Bad state: Too many elements"。按标题取，和上一条测试同一个判据。
     final CoreAudioSeries series = CoreAudioCatalog.parse(
       _catalogBytes(),
-    ).series.firstWhere(
-      (CoreAudioSeries value) => value.title == 'リアデイルの大地にて',
-    );
+    ).series.firstWhere((CoreAudioSeries value) => value.title == 'リアデイルの大地にて');
     final InspectedTorrentMetainfo metainfo = inspectTorrentMetainfo(
       _torrentBytes(),
     );
@@ -57,7 +55,6 @@ void main() {
           sourceTorrentId: '1616763',
           fileSizeKiB: null,
           coverUrl: null,
-          releaseDate: null,
           amazonId: null,
         ),
         metainfo,
@@ -114,6 +111,13 @@ void main() {
       expect(volumes.first.note, 'TMW Part 1');
       expect(volumes.first.isDownloadable, isTrue);
       expect(volumes.first.payload, isNull, reason: '.torrent 只在点击下载时获取');
+      // BUG-2934：CoreAudio 的 release_date 是纸书初版日期，且同系列各卷常被
+      // 复制成第 1 卷的日期（京吹 8 卷全是 2013-12-19，有声书实为 2025 年陆续
+      // 上架）。它不是有声书发售日，语料里明明有 release_date 也不得展示。
+      expect(
+        volumes.map((DiscoveryResourceItem value) => value.dateText),
+        everyElement(isNull),
+      );
 
       final DiscoverySelectedTorrentPayload payload =
           await source.resolvePayload(volumes.first)
