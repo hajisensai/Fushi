@@ -4,11 +4,13 @@
 /// - [parseCtlIndexRanges]：`--chapters 1-10,15,20-` 的解析；
 /// - [CtlOnlineTaskRegistry]：CLI 发起、没有现成下载中心承载的长任务（LNReader 整本下载）；
 /// - [CtlDiscoveryResultCache]：`discover search` 的结果按短 id 暂存，供 `discover get` 取回；
-/// - [homeTabFromCtlName] / [kCtlNavigationNames]：`nav go <页面>` 的名字表。
+/// - [homeTabFromCtlName] / [kCtlNavigationNames]：`nav go <页面>` 的名字表；
+/// - [resolveCtlPlaybackTarget]：`play --target video|audiobook` 的选择。
 library;
 
 import 'package:fushi_cli/fushi_cli.dart' show CtlFailure;
 
+import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/models/home_tab.dart';
 
 /// 在线扩展 / 在线源的内容域。
@@ -256,4 +258,60 @@ HomeTab homeTabFromCtlName(String raw) {
     );
   }
   return tab;
+}
+
+/// `play` 命令遥控的播放器种类。
+enum CtlPlaybackTarget {
+  /// 视频播放页（`videoPlaybackRemotes` 登记的最上层那页）。
+  video,
+
+  /// 进程级有声书会话（`AppModel.audiobookSession`）。
+  audiobook,
+}
+
+/// 选出 `play` 要控制的播放器：
+///
+/// - [requested] 为 `video` / `audiobook` 时照办（不管那边在不在，由调用方报「没有」）；
+/// - 缺省 / `auto`：有视频页登记（[hasVideo]，视频页开着就盖在有声书之上）→ 视频；
+///   否则有有声书会话 → 有声书；都没有 → null。
+///
+/// 未知取值抛 [CtlFailure.badRequest]。
+CtlPlaybackTarget? resolveCtlPlaybackTarget({
+  required String? requested,
+  required bool hasVideo,
+  required bool hasAudiobook,
+}) {
+  final String value = (requested ?? '').trim().toLowerCase();
+  switch (value) {
+    case '' || 'auto':
+      if (hasVideo) return CtlPlaybackTarget.video;
+      if (hasAudiobook) return CtlPlaybackTarget.audiobook;
+      return null;
+    case 'video':
+      return CtlPlaybackTarget.video;
+    case 'audiobook' || 'audio':
+      return CtlPlaybackTarget.audiobook;
+    default:
+      throw CtlFailure.badRequest('未知 target：$requested（video | audiobook）');
+  }
+}
+
+/// 视频页遥控状态的应答形状（与有声书那份同字段，`kind: video`，身份键是 `bookUid`）。
+/// [snapshot] 为 null = 视频页已打开但控制器还没就绪（`ready: false`）。
+Map<String, Object?> ctlVideoPlaybackJson(VideoPlaybackSnapshot? snapshot) {
+  if (snapshot == null) {
+    return <String, Object?>{'active': true, 'kind': 'video', 'ready': false};
+  }
+  return <String, Object?>{
+    'active': true,
+    'kind': 'video',
+    'ready': true,
+    'bookUid': snapshot.bookUid,
+    'title': snapshot.title,
+    'playing': snapshot.playing,
+    'positionMs': snapshot.positionMs,
+    'durationMs': snapshot.durationMs,
+    'speed': snapshot.speed,
+    'cue': snapshot.cue,
+  };
 }

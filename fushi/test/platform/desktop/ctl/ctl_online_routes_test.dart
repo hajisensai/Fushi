@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 
+import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_online_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_online_support.dart';
@@ -166,6 +167,105 @@ void main() {
 
     test('未知名抛 400', () {
       expect(() => homeTabFromCtlName('nowhere'), _badRequest());
+    });
+  });
+
+  group('播放目标选择', () {
+    test('缺省 / auto：视频页优先，其次有声书，都没有为 null', () {
+      for (final String? requested in <String?>[null, '', 'auto', ' AUTO ']) {
+        expect(
+          resolveCtlPlaybackTarget(
+            requested: requested,
+            hasVideo: true,
+            hasAudiobook: true,
+          ),
+          CtlPlaybackTarget.video,
+        );
+        expect(
+          resolveCtlPlaybackTarget(
+            requested: requested,
+            hasVideo: false,
+            hasAudiobook: true,
+          ),
+          CtlPlaybackTarget.audiobook,
+        );
+        expect(
+          resolveCtlPlaybackTarget(
+            requested: requested,
+            hasVideo: false,
+            hasAudiobook: false,
+          ),
+          isNull,
+        );
+      }
+    });
+
+    test('显式 target 照办，不看对方在不在', () {
+      expect(
+        resolveCtlPlaybackTarget(
+          requested: 'audiobook',
+          hasVideo: true,
+          hasAudiobook: false,
+        ),
+        CtlPlaybackTarget.audiobook,
+      );
+      expect(
+        resolveCtlPlaybackTarget(
+          requested: 'Video',
+          hasVideo: false,
+          hasAudiobook: true,
+        ),
+        CtlPlaybackTarget.video,
+      );
+    });
+
+    test('未知 target 抛 400', () {
+      expect(
+        () => resolveCtlPlaybackTarget(
+          requested: 'tv',
+          hasVideo: true,
+          hasAudiobook: true,
+        ),
+        _badRequest(),
+      );
+    });
+  });
+
+  group('视频播放状态应答', () {
+    test('未就绪：ready false', () {
+      expect(ctlVideoPlaybackJson(null), <String, Object?>{
+        'active': true,
+        'kind': 'video',
+        'ready': false,
+      });
+    });
+
+    test('就绪：字段齐全', () {
+      expect(
+        ctlVideoPlaybackJson(
+          const VideoPlaybackSnapshot(
+            title: '第1話',
+            bookUid: 'uid-1',
+            positionMs: 1000,
+            durationMs: 2000,
+            playing: true,
+            speed: 1.5,
+            cue: 'こんにちは',
+          ),
+        ),
+        <String, Object?>{
+          'active': true,
+          'kind': 'video',
+          'ready': true,
+          'bookUid': 'uid-1',
+          'title': '第1話',
+          'playing': true,
+          'positionMs': 1000,
+          'durationMs': 2000,
+          'speed': 1.5,
+          'cue': 'こんにちは',
+        },
+      );
     });
   });
 }

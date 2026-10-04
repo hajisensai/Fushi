@@ -134,29 +134,33 @@ const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
   ),
   CtlCommandGroup(
     name: 'play',
-    summary: '播放遥控（当前在播的有声书）',
+    summary: '播放遥控（视频播放页 / 有声书，缺省视频页开着就控制视频）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'status',
         summary: '当前播放状态',
+        configure: _configurePlayTarget,
         build: _buildPlayStatus,
         render: _renderPlayback,
       ),
       CtlCommandSpec(
         name: 'pause',
         summary: '暂停',
+        configure: _configurePlayTarget,
         build: _buildPlayPause,
         render: _renderPlayback,
       ),
       CtlCommandSpec(
         name: 'resume',
         summary: '继续播放',
+        configure: _configurePlayTarget,
         build: _buildPlayResume,
         render: _renderPlayback,
       ),
       CtlCommandSpec(
         name: 'toggle',
         summary: '播放 / 暂停切换',
+        configure: _configurePlayTarget,
         build: _buildPlayToggle,
         render: _renderPlayback,
       ),
@@ -164,18 +168,21 @@ const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
         name: 'seek',
         summary: '跳到绝对位置或前后跳（负数前加 --：play seek -- -10）',
         usage: '<秒|mm:ss|+N|-N>',
+        configure: _configurePlayTarget,
         build: _buildPlaySeek,
         render: _renderPlayback,
       ),
       CtlCommandSpec(
         name: 'next',
         summary: '下一句',
+        configure: _configurePlayTarget,
         build: _buildPlayNext,
         render: _renderPlayback,
       ),
       CtlCommandSpec(
         name: 'prev',
         summary: '上一句',
+        configure: _configurePlayTarget,
         build: _buildPlayPrev,
         render: _renderPlayback,
       ),
@@ -183,6 +190,7 @@ const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
         name: 'rate',
         summary: '设置倍速（0.25–4）',
         usage: '<倍速>',
+        configure: _configurePlayTarget,
         build: _buildPlayRate,
         render: _renderPlayback,
       ),
@@ -675,35 +683,60 @@ String _renderDiscoverGet(Object? data) => data is Map
 
 const String _playback = '/api/admin/playback';
 
-CtlRequestSpec _control(String action) => CtlRequestSpec.post(
-  '$_playback/control',
-  body: <String, Object?>{'action': action},
+void _configurePlayTarget(ArgParser parser) => parser.addOption(
+  'target',
+  allowed: const <String>['video', 'audiobook'],
+  help: '要控制的播放器（缺省：视频播放页开着就控制视频，否则有声书）',
 );
 
-CtlRequestSpec _buildPlayStatus(CtlCommandContext context) =>
-    const CtlRequestSpec.get(_playback);
+/// `--target` 透传：GET 走 query、POST 走 body。
+String? _playTarget(CtlCommandContext context) => context.option('target');
 
-CtlRequestSpec _buildPlayPause(CtlCommandContext context) => _control('pause');
+CtlRequestSpec _control(CtlCommandContext context, String action) {
+  final String? target = _playTarget(context);
+  return CtlRequestSpec.post(
+    '$_playback/control',
+    body: <String, Object?>{
+      'action': action,
+      if (target != null) 'target': target,
+    },
+  );
+}
+
+CtlRequestSpec _buildPlayStatus(CtlCommandContext context) {
+  final String? target = _playTarget(context);
+  return CtlRequestSpec.get(
+    _playback,
+    query: <String, String>{if (target != null) 'target': target},
+  );
+}
+
+CtlRequestSpec _buildPlayPause(CtlCommandContext context) =>
+    _control(context, 'pause');
 
 CtlRequestSpec _buildPlayResume(CtlCommandContext context) =>
-    _control('resume');
+    _control(context, 'resume');
 
 CtlRequestSpec _buildPlayToggle(CtlCommandContext context) =>
-    _control('toggle');
+    _control(context, 'toggle');
 
-CtlRequestSpec _buildPlayNext(CtlCommandContext context) => _control('next');
+CtlRequestSpec _buildPlayNext(CtlCommandContext context) =>
+    _control(context, 'next');
 
-CtlRequestSpec _buildPlayPrev(CtlCommandContext context) => _control('prev');
+CtlRequestSpec _buildPlayPrev(CtlCommandContext context) =>
+    _control(context, 'prev');
 
 CtlRequestSpec _buildPlaySeek(CtlCommandContext context) {
   final ({double seconds, bool relative}) target = parseCtlSeekTarget(
     context.positional(0, '秒|mm:ss|+N|-N'),
   );
+  final String? player = _playTarget(context);
   return CtlRequestSpec.post(
     '$_playback/seek',
     body: <String, Object?>{
       'seconds': target.seconds,
       'relative': target.relative,
+      if (player != null) 'target': player,
     },
   );
 }
@@ -714,9 +747,10 @@ CtlRequestSpec _buildPlayRate(CtlCommandContext context) {
   if (rate == null || rate < 0.25 || rate > 4) {
     throw CtlUsageError('倍速必须在 0.25–4 之间：$raw');
   }
+  final String? player = _playTarget(context);
   return CtlRequestSpec.post(
     '$_playback/rate',
-    body: <String, Object?>{'rate': rate},
+    body: <String, Object?>{'rate': rate, if (player != null) 'target': player},
   );
 }
 
@@ -761,9 +795,17 @@ String _clock(Object? ms) {
 }
 
 String _renderPlayback(Object? data) {
-  if (data is! Map || data['active'] != true) return '没有正在播放的有声书';
+  if (data is! Map || data['active'] != true) {
+    return switch (data is Map ? data['kind'] : null) {
+      'video' => '没有打开的视频播放页',
+      'audiobook' => '没有正在播放的有声书',
+      _ => '没有正在播放的视频或有声书',
+    };
+  }
+  final String kind = data['kind'] == 'video' ? '视频' : '有声书';
+  if (data['ready'] == false) return '[$kind] 加载中…';
   return <String>[
-    '${data['playing'] == true ? '▶ 播放中' : '⏸ 已暂停'}  ${data['title'] ?? ''}',
+    '[$kind] ${data['playing'] == true ? '▶ 播放中' : '⏸ 已暂停'}  ${data['title'] ?? ''}',
     '${_clock(data['positionMs'])} / ${_clock(data['durationMs'])}  ×${data['speed']}',
     if (data['cue'] != null) '「${data['cue']}」',
   ].join('\n');

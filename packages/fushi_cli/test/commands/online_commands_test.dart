@@ -362,6 +362,74 @@ void main() {
       );
     });
 
+    test('--target 透传：GET 走 query、POST 走 body，缺省不带', () {
+      expect(_build('play', 'status', <String>[]).query, isEmpty);
+      final CtlRequestSpec status = _build('play', 'status', <String>[
+        '--target',
+        'video',
+      ]);
+      expect(status.query, <String, String>{'target': 'video'});
+      expect(
+        _build('play', 'toggle', <String>['--target', 'audiobook']).body,
+        <String, Object?>{'action': 'toggle', 'target': 'audiobook'},
+      );
+      expect(
+        _build('play', 'seek', <String>['+5', '--target', 'video']).body,
+        <String, Object?>{'seconds': 5.0, 'relative': true, 'target': 'video'},
+      );
+      expect(
+        _build('play', 'rate', <String>['2', '--target', 'video']).body,
+        <String, Object?>{'rate': 2.0, 'target': 'video'},
+      );
+      expect(
+        () => _build('play', 'pause', <String>['--target', 'tv']),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('render 按 kind 区分视频 / 有声书', () {
+      final CtlCommandSpec status = _spec('play', 'status');
+      expect(
+        status.render!(<String, Object?>{'active': false}),
+        '没有正在播放的视频或有声书',
+      );
+      expect(
+        status.render!(<String, Object?>{'active': false, 'kind': 'video'}),
+        '没有打开的视频播放页',
+      );
+      expect(
+        status.render!(<String, Object?>{
+          'active': true,
+          'kind': 'video',
+          'ready': false,
+        }),
+        '[视频] 加载中…',
+      );
+      final String video = status.render!(<String, Object?>{
+        'active': true,
+        'kind': 'video',
+        'ready': true,
+        'title': '第1話',
+        'playing': true,
+        'positionMs': 61000,
+        'durationMs': 1440000,
+        'speed': 1.0,
+        'cue': 'こんにちは',
+      });
+      expect(video, contains('[视频] ▶ 播放中  第1話'));
+      expect(video, contains('01:01 / 24:00'));
+      expect(video, contains('「こんにちは」'));
+      expect(
+        status.render!(<String, Object?>{
+          'active': true,
+          'kind': 'audiobook',
+          'playing': false,
+          'title': 'x',
+        }),
+        startsWith('[有声书] ⏸ 已暂停  x'),
+      );
+    });
+
     test('seek / rate 用法错误', () {
       expect(() => _build('play', 'seek', <String>[]), _usageError());
       expect(() => parseCtlSeekTarget('abc'), _usageError());

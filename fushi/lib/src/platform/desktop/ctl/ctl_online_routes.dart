@@ -43,6 +43,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
+import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -1292,24 +1293,59 @@ class _OnlineCtl {
 
   // ── 播放遥控 ────────────────────────────────────────────────────────────
 
-  /// 当前唯一可遥控的播放器是进程级有声书会话（[AppModel.audiobookSession]，脱离
-  /// 阅读器存活）。视频播放页的控制器是页内私有的，没有全局登记点。
+  /// 可遥控的播放器有两种：视频播放页（页面在 initState 登记进
+  /// [videoPlaybackRemotes]，叠加时最上层优先）与进程级有声书会话
+  /// （[AppModel.audiobookSession]，脱离阅读器存活）。`target` 缺省时视频页开着就
+  /// 控制视频（它盖在一切之上），否则有声书；见 [resolveCtlPlaybackTarget]。
+  CtlPlaybackTarget? _playbackTarget(CtlCall call) => resolveCtlPlaybackTarget(
+    requested: call.optString('target'),
+    hasVideo: videoPlaybackRemotes.current.value != null,
+    hasAudiobook: appModel.audiobookSession.controller != null,
+  );
+
   AudiobookPlayerController _requirePlayer() {
     final AudiobookPlayerController? controller =
         appModel.audiobookSession.controller;
     if (controller == null) {
-      throw const CtlFailure.conflict('没有正在播放的有声书（视频播放页暂不支持遥控）');
+      throw const CtlFailure.conflict('没有正在播放的有声书');
     }
     return controller;
   }
 
-  Future<Object?> playbackStatus(CtlCall call) async {
-    final AudiobookSession session = appModel.audiobookSession;
-    final AudiobookPlayerController? controller = session.controller;
-    if (controller == null) {
-      return <String, Object?>{'active': false};
+  /// 视频页遥控面 + 就绪快照；没有视频页 / 控制器未就绪都是 409。
+  (VideoPlaybackRemote, VideoPlaybackSnapshot) _requireVideo() {
+    final VideoPlaybackRemote? remote = videoPlaybackRemotes.current.value;
+    if (remote == null) throw const CtlFailure.conflict('没有打开的视频播放页');
+    final VideoPlaybackSnapshot? snapshot = remote.snapshot();
+    if (snapshot == null) {
+      throw const CtlFailure.conflict('视频还在加载，稍后再试');
     }
-    return _playbackJson(session, controller);
+    return (remote, snapshot);
+  }
+
+  /// 没指定 target 且两边都没有时的统一报错。
+  CtlPlaybackTarget _requireTarget(CtlCall call) =>
+      _playbackTarget(call) ??
+      (throw const CtlFailure.conflict('没有正在播放的视频或有声书'));
+
+  Future<Object?> playbackStatus(CtlCall call) async {
+    switch (_playbackTarget(call)) {
+      case null:
+        return <String, Object?>{'active': false};
+      case CtlPlaybackTarget.video:
+        final VideoPlaybackRemote? remote = videoPlaybackRemotes.current.value;
+        if (remote == null) {
+          return <String, Object?>{'active': false, 'kind': 'video'};
+        }
+        return ctlVideoPlaybackJson(remote.snapshot());
+      case CtlPlaybackTarget.audiobook:
+        final AudiobookSession session = appModel.audiobookSession;
+        final AudiobookPlayerController? controller = session.controller;
+        if (controller == null) {
+          return <String, Object?>{'active': false, 'kind': 'audiobook'};
+        }
+        return _playbackJson(session, controller);
+    }
   }
 
   static Map<String, Object?> _playbackJson(
@@ -1327,9 +1363,31 @@ class _OnlineCtl {
     'cue': controller.currentCue?.text,
   };
 
+  static Never _unknownAction(String action) => throw CtlFailure.badRequest(
+    '未知动作：$action（pause | resume | toggle | next | prev）',
+  );
+
   Future<Object?> playbackControl(CtlCall call) async {
-    final AudiobookPlayerController controller = _requirePlayer();
     final String action = call.requireString('action');
+    if (_requireTarget(call) == CtlPlaybackTarget.video) {
+      final (VideoPlaybackRemote remote, _) = _requireVideo();
+      switch (action) {
+        case 'pause':
+          await remote.pause();
+        case 'resume' || 'play':
+          await remote.play();
+        case 'toggle':
+          await remote.toggle();
+        case 'next':
+          await remote.nextCue();
+        case 'prev':
+          await remote.previousCue();
+        default:
+          _unknownAction(action);
+      }
+      return ctlVideoPlaybackJson(remote.snapshot());
+    }
+    final AudiobookPlayerController controller = _requirePlayer();
     switch (action) {
       case 'pause':
         await controller.pause();
@@ -1347,15 +1405,12 @@ class _OnlineCtl {
       case 'prev':
         await controller.skipToPrevCue();
       default:
-        throw CtlFailure.badRequest(
-          '未知动作：$action（pause | resume | toggle | next | prev）',
-        );
+        _unknownAction(action);
     }
     return _playbackJson(appModel.audiobookSession, controller);
   }
 
   Future<Object?> playbackSeek(CtlCall call) async {
-    final AudiobookPlayerController controller = _requirePlayer();
     final Object? raw = call.body['seconds'] ?? call.query['seconds'];
     final double? seconds = raw is num
         ? raw.toDouble()
@@ -1363,6 +1418,21 @@ class _OnlineCtl {
     if (seconds == null) throw const CtlFailure.badRequest('seconds 必须是数字');
     final bool relative = call.optBool('relative') ?? false;
     final int deltaMs = (seconds * 1000).round();
+    if (_requireTarget(call) == CtlPlaybackTarget.video) {
+      final (VideoPlaybackRemote remote, VideoPlaybackSnapshot snapshot) =
+          _requireVideo();
+      if (relative) {
+        // 与快捷键 ←/→ 同一入口（controller.seekRelative，含连按基准累积）。
+        await remote.seekByMs(deltaMs);
+      } else {
+        final int total = snapshot.durationMs ?? 0;
+        await remote.seekToMs(
+          total > 0 ? deltaMs.clamp(0, total) : (deltaMs < 0 ? 0 : deltaMs),
+        );
+      }
+      return ctlVideoPlaybackJson(remote.snapshot());
+    }
+    final AudiobookPlayerController controller = _requirePlayer();
     final int targetMs = relative
         ? controller.globalPosition.inMilliseconds + deltaMs
         : deltaMs;
@@ -1375,12 +1445,18 @@ class _OnlineCtl {
   }
 
   Future<Object?> playbackRate(CtlCall call) async {
-    final AudiobookPlayerController controller = _requirePlayer();
     final Object? raw = call.body['rate'] ?? call.query['rate'];
     final double? rate = raw is num ? raw.toDouble() : double.tryParse('$raw');
     if (rate == null || rate < 0.25 || rate > 4) {
       throw const CtlFailure.badRequest('rate 必须在 0.25–4 之间');
     }
+    if (_requireTarget(call) == CtlPlaybackTarget.video) {
+      final (VideoPlaybackRemote remote, _) = _requireVideo();
+      // 页内倍速菜单同一入口（夹取 + 按 bookUid 持久化）。
+      await remote.setRate(rate);
+      return ctlVideoPlaybackJson(remote.snapshot());
+    }
+    final AudiobookPlayerController controller = _requirePlayer();
     await controller.setSpeed(rate);
     return _playbackJson(appModel.audiobookSession, controller);
   }
