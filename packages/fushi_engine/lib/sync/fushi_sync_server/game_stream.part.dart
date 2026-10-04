@@ -8,7 +8,10 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
   ) async {
     final FushiRemoteGameStreamService? service = _gameStreamService;
     if (service == null) {
-      return shelf.Response.notFound('Game stream off');
+      // 不是「旧 host 没这个端点」，是这台 host 明确不提供（无头服务端没有桌面
+      // 与游戏窗口）。回 501 + 机器可读的原因，与 capabilities 的 `gameStream: false`
+      // 同一个真相；client 对任何非 2xx 都按「不可用」处理，旧 client 行为不变。
+      return gameStreamUnsupportedResponse();
     }
     // HTTPS is not optional here. WebRTC's DTLS-SRTP confidentiality rests
     // entirely on the integrity of the signalling channel: over plaintext HTTP
@@ -116,3 +119,18 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
     return request.change(body: jsonEncode(body));
   }
 }
+
+/// 这台 host 不提供游戏串流时 `/api/game-stream/*` 的统一响应：501 + JSON
+/// `{error: 'unsupported', feature: 'gameStream'}`（区别于「旧 host 没有该端点」的 404）。
+shelf.Response gameStreamUnsupportedResponse() => shelf.Response(
+      501,
+      body: jsonEncode(<String, String>{
+        'error': 'unsupported',
+        'feature': 'gameStream',
+        'message': 'This host does not provide game streaming '
+            '(it needs the Windows desktop app running the game).',
+      }),
+      headers: const <String, String>{
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    );

@@ -13,6 +13,7 @@ import 'package:fushi_server/src/commands/sync_commands.dart';
 import 'package:fushi_server/src/commands/tracking_commands.dart';
 import 'package:fushi_server/src/commands/subs_commands.dart';
 import 'package:fushi_server/src/commands/video_commands.dart';
+import 'package:fushi_server/src/commands/dict_commands.dart';
 
 /// 每个模块一行；模块内部的命令名不得与 `cli.dart` 内建命令或其它模块重名
 /// （`test/cli_modules_test.dart` 守卫）。
@@ -28,4 +29,5 @@ const List<CliModule> kCliModules = <CliModule>[
   TrackingModule(),
   SubsCliModule(),
   VideoCliModule(),
+  DictCliModule(),
 ];

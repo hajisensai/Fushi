@@ -316,6 +316,31 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
 
+## 词典与远程查词
+
+带上 `libfushidicts_ffi`（与 app 同一个 C++ 引擎，源码 `native/fushidicts/`）时，服务端提供互联查词：
+`/api/lookup/dictionary`（含 `popupOnly`）、词典图片 `/api/media/dictionary`，以及查词历史（`record: true` 落服务端
+DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` 的 `lookup.dictionary` / `lookup.history`
+如实反映引擎是否加载成功；加载失败 serve 照常起，查词路由不注册（客户端按不可用处理）。
+
+- 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
+  Linux 自编：`cmake -S native/fushidicts -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja -C build fushidicts_ffi`
+  （需要支持 `std::ranges::to` 的编译器，如 GCC 14）。
+- 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
+  `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
+- 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
+
+```
+fushi_server dict ls [--json]
+fushi_server dict add <yomitan.zip> [--json]   # 同名视为更新，保留排序与隐藏设置
+fushi_server dict rm <词典名> [--json]
+```
+
+  离线改动在 serve 重启后进引擎。退出码：用法错 64、词典包 / 配置不存在 66、原生库不可用 69、导入失败 1。
+
+制卡转发（`/api/mine`、`/api/mine/forward`、`/api/duplicate`）在服务端带 `fushi-anki-sync` helper 时接线，
+落到上面「Anki 落地」的同一个牌组集合；`/api/capabilities` 报 `mining`。
+
 ## GPU（CUDA）
 
 随包的是 CPU 版 onnxruntime。要 NVIDIA 加速：
@@ -326,7 +351,8 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 
 ## 服务端**不**做什么
 
-- 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
+- 不做游戏串流：`/api/game-stream/*` 恒回 `501 {"error":"unsupported","feature":"gameStream"}`，`/api/capabilities` 报 `gameStream: false`。
+- 不做浸入式制卡（`mineImmersion` 回错误）与「在 Anki 里打开」/ 笔记类型编辑 / 媒体去重；查词结果不带词条发音（`lookupAudio` 恒空）。
 - 不做查词发音：本地音频库（`/api/library/localaudio`）同词典包一样只做存储中转——客户端推上来的库落 `<data_dir>/support/local_audio_<n>.db`、登记进 `preferences` 表的 `local_audio_dbs`（与 app 同键同形），其它客户端可列出 / 拉取 / 删除；服务端自己不播发音。
 - 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，与 app 同一编码；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效；不能经互联「配置文件」设——Torznab 配置含 API key，出境时按凭据剔除，服务端寄存的配置文件也不应用到自己身上）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
