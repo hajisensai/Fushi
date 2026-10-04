@@ -6259,5 +6259,17 @@
   "video_subtitle_graphic_ocr_empty": "这条字幕轨没有识别出文字",
   "ai_video_acquire_franchise_unavailable": "没能取到「$title」的完整系列清单（资料源出错或不可用）。",
   "ai_video_acquire_ask_franchise_fallback": "没找到符合要求的其它作品。只下载「$title」这一部吗？",
-  "ai_video_acquire_franchise_progress": "还在查「$name」：目前找到 $series 部剧集、$movies 部剧场版，继续查剩下的…"
+  "ai_video_acquire_franchise_progress": "还在查「$name」：目前找到 $series 部剧集、$movies 部剧场版，继续查剩下的…",
+  "anki_desktop_auto_launch": "启动 Fushi 时自动启动 Anki",
+  "anki_desktop_auto_launch_hint": "启动时若本机 AnkiConnect 没有响应，就自动打开 Anki 桌面版。",
+  "anki_desktop_executable": "Anki 程序路径",
+  "anki_desktop_executable_unset_required": "未设置。请选择 Anki 程序，或先打开 Anki 再点「检测」。",
+  "anki_desktop_executable_unset_default": "未设置，将使用系统默认的 Anki。",
+  "anki_desktop_executable_detect": "从运行中的 Anki 检测",
+  "anki_desktop_executable_detect_failed": "没有检测到。新版 Anki 经启动器运行，请手动选择程序。",
+  "anki_desktop_launch": "立即启动 Anki",
+  "anki_desktop_launch_started": "正在启动 Anki…",
+  "anki_desktop_launch_already_running": "Anki 已在运行。",
+  "anki_desktop_launch_not_configured": "请先设置 Anki 程序路径。",
+  "anki_desktop_launch_failed": "启动 Anki 失败：$error"
 }

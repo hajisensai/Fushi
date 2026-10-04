@@ -6259,5 +6259,17 @@
   "video_subtitle_graphic_ocr_empty": "Nessun testo riconosciuto in questa traccia di sottotitoli",
   "ai_video_acquire_franchise_unavailable": "Couldn’t get the full series list for “$title” (the metadata source failed or is unavailable).",
   "ai_video_acquire_ask_franchise_fallback": "No other matching works were found. Download only “$title”?",
-  "ai_video_acquire_franchise_progress": "Still looking up “$name”: $series TV series and $movies movies found so far…"
+  "ai_video_acquire_franchise_progress": "Still looking up “$name”: $series TV series and $movies movies found so far…",
+  "anki_desktop_auto_launch": "Launch Anki when Fushi starts",
+  "anki_desktop_auto_launch_hint": "If AnkiConnect on this computer isn't responding when Fushi starts, open Anki desktop automatically.",
+  "anki_desktop_executable": "Anki program",
+  "anki_desktop_executable_unset_required": "Not set. Choose Anki's program, or open Anki and tap Detect.",
+  "anki_desktop_executable_unset_default": "Not set. The system's default Anki will be used.",
+  "anki_desktop_executable_detect": "Detect from running Anki",
+  "anki_desktop_executable_detect_failed": "Couldn't detect it. Newer Anki versions run through a launcher; choose the program manually.",
+  "anki_desktop_launch": "Launch Anki now",
+  "anki_desktop_launch_started": "Starting Anki…",
+  "anki_desktop_launch_already_running": "Anki is already running.",
+  "anki_desktop_launch_not_configured": "Set the Anki program first.",
+  "anki_desktop_launch_failed": "Couldn't start Anki: $error"
 }
