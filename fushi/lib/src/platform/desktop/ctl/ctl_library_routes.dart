@@ -761,6 +761,7 @@ class _LibraryCtlHandlers {
       galgameRepo: _app.galgameRepo,
       isKindEnabled: _kindVisible,
       keepDuplicates: duplicate == 'suffix',
+      ingestVideoFile: _context.ingestExternalVideo,
     );
     final List<LibraryCtlImportResult> results = await importer.importAll(
       paths,

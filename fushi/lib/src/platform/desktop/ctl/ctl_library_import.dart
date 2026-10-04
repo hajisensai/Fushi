@@ -21,6 +21,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
@@ -38,7 +39,7 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
 
-/// 视频单文件没有非交互的入库原语（只活在导入对话框与 main.dart 的外部打开里）。
+/// 宿主没提供外部视频入库入口时（测试夹具）的提示；播放列表（m3u8）同样走这里。
 const String kLibraryCtlVideoFileHint =
     '视频文件请用 `fushi_cli open <文件>`（外部打开：入库并播放），'
     '或把所在目录用 `library import <目录> --kind video` 登记成来源';
@@ -49,7 +50,9 @@ class LibraryCtlImporter {
     required GalgameRepository galgameRepo,
     required bool Function(LibraryCtlKind kind) isKindEnabled,
     required bool keepDuplicates,
-  }) : _db = db,
+    Future<String?> Function(String path)? ingestVideoFile,
+  }) : _ingestVideoFile = ingestVideoFile,
+       _db = db,
        _galgameRepo = galgameRepo,
        _isKindEnabled = isKindEnabled,
        _policy = keepDuplicates
@@ -60,6 +63,39 @@ class LibraryCtlImporter {
   final GalgameRepository _galgameRepo;
   final bool Function(LibraryCtlKind kind) _isKindEnabled;
   final DuplicatePolicy _policy;
+  final Future<String?> Function(String path)? _ingestVideoFile;
+
+  /// 视频单文件：走外部打开同一个入库入口（按路径去重，同一文件重复导入复用旧条目）。
+  Future<LibraryCtlImportResult> _importVideoFile(String path) async {
+    final LibraryCtlImportResult? gated = _moduleGate(
+      path,
+      LibraryCtlKind.video,
+    );
+    if (gated != null) return gated;
+    final Future<String?> Function(String path)? ingest = _ingestVideoFile;
+    if (ingest == null || !isSupportedVideoFile(path)) {
+      return _unsupported(
+        path,
+        kLibraryCtlVideoFileHint,
+        kind: LibraryCtlKind.video,
+      );
+    }
+    final String? bookUid = await ingest(path);
+    if (bookUid == null) {
+      return LibraryCtlImportResult(
+        path: path,
+        status: LibraryCtlImportStatus.failed,
+        kind: LibraryCtlKind.video,
+        message: '视频入库失败（原因见 app 内提示）',
+      );
+    }
+    return LibraryCtlImportResult(
+      path: path,
+      status: LibraryCtlImportStatus.imported,
+      kind: LibraryCtlKind.video,
+      keys: <String>[LibraryCtlKey(LibraryCtlStore.video, bookUid).wire],
+    );
+  }
 
   /// 逐个路径导入。`--kind audiobook` 时全部路径（目录递归展开）合起来是**一本**
   /// 有声书的素材（正文 + 字幕 + 音频）。
@@ -133,9 +169,7 @@ class LibraryCtlImporter {
     final bool isDirectory = type == FileSystemEntityType.directory;
     switch (kind) {
       case LibraryCtlKind.video:
-        if (!isDirectory) {
-          return _unsupported(path, kLibraryCtlVideoFileHint, kind: kind);
-        }
+        if (!isDirectory) return _importVideoFile(path);
         return _addSource(path, LibraryCtlKind.video, SourceLibraryKind.video);
       case LibraryCtlKind.game:
         return _importGame(path, isDirectory: isDirectory);
@@ -190,7 +224,8 @@ class LibraryCtlImporter {
     if (dropped.torrents.isNotEmpty) {
       return _unsupported(path, '种子文件请交给下载中心（不在 library 域）');
     }
-    if (dropped.playlists.isNotEmpty || dropped.videos.isNotEmpty) {
+    if (dropped.videos.isNotEmpty) return _importVideoFile(path);
+    if (dropped.playlists.isNotEmpty) {
       return _unsupported(
         path,
         kLibraryCtlVideoFileHint,

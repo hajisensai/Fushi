@@ -1597,7 +1597,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         },
         quitApp: _flushAndExitForWindowClose,
         routes: buildDesktopCtlRoutes(
-          DesktopCtlContext(ref: ref, focusMainWindow: _focusMainWindowForCtl),
+          DesktopCtlContext(
+            ref: ref,
+            focusMainWindow: _focusMainWindowForCtl,
+            ingestExternalVideo: _ingestExternalVideo,
+          ),
         ),
       ),
     );
@@ -1667,6 +1671,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
 
+    final String? bookUid = await _ingestExternalVideo(videoPath);
+    if (bookUid == null) return;
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+
+    if (!mounted) return;
+    // This process-level launch path owns a NavigatorState but has no themed
+    // descendant BuildContext, so its route contract is explicitly Material.
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
+      ),
+    );
+  }
+
+  /// 外部视频入库（不打开）：模块门 → 存在性 → 按路径去重建/取 VideoBook。
+  /// 失败（模块关 / 文件不存在 / 入库异常）已给 toast 并返回 null。
+  /// [_openExternalVideo] 与 `fushi_cli library import` 共用这一个入口。
+  Future<String?> _ingestExternalVideo(String videoPath) async {
     // ⓪ 模块门：视频模块关掉时「看不见也到不了」——文件关联 / 命令行 argv /
     // 单实例转发 / 拖拽四条外部路径都汇到这里，是唯一能读到偏好的落地点（冷启动
     // argv 分支跑在 AppModel.initialise 之前，那时 prefs 还在 Drift 里读不到）。
@@ -1679,7 +1702,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         msg: t.module_disabled_hint,
         severity: ToastSeverity.info,
       );
-      return;
+      return null;
     }
 
     // ③ 存在性校验：冷启动 argv 路径虽在 main() 已 existsSync 过，但从那次检查到
@@ -1690,7 +1713,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         msg: t.video_file_not_found,
         severity: ToastSeverity.error,
       );
-      return;
+      return null;
     }
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
@@ -1760,19 +1783,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       );
     } catch (e) {
       debugPrint('[Fushi] external video upsert failed: $e');
-      return;
+      return null;
     }
-
-    if (!mounted) return;
-    // This process-level launch path owns a NavigatorState but has no themed
-    // descendant BuildContext, so its route contract is explicitly Material.
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
-      ),
-    );
+    return bookUid;
   }
+
 
   void _scheduleWindowsUpdateHandoffReconcile() {
     if (_windowsUpdateHandoffScheduled || _windowsUpdateHandoffChecked) {

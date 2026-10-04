@@ -279,13 +279,16 @@ void main() {
     late Directory tmp;
     Set<LibraryCtlKind> disabled = <LibraryCtlKind>{};
 
-    LibraryCtlImporter importer({bool keepDuplicates = false}) =>
-        LibraryCtlImporter(
-          db: db,
-          galgameRepo: games,
-          isKindEnabled: (LibraryCtlKind kind) => !disabled.contains(kind),
-          keepDuplicates: keepDuplicates,
-        );
+    LibraryCtlImporter importer({
+      bool keepDuplicates = false,
+      Future<String?> Function(String path)? ingestVideoFile,
+    }) => LibraryCtlImporter(
+      db: db,
+      galgameRepo: games,
+      isKindEnabled: (LibraryCtlKind kind) => !disabled.contains(kind),
+      keepDuplicates: keepDuplicates,
+      ingestVideoFile: ingestVideoFile,
+    );
 
     String touch(String name) {
       final File file = File(p.join(tmp.path, name))
@@ -339,6 +342,47 @@ void main() {
       );
       expect(results.single.status, LibraryCtlImportStatus.unsupported);
       expect(results.single.message, kLibraryCtlVideoFileHint);
+    });
+
+    test('宿主提供外部视频入库入口 → 视频文件走它入库，键为 video:<bookUid>', () async {
+      final List<String> ingested = <String>[];
+      final LibraryCtlImporter withIngest = importer(
+        ingestVideoFile: (String path) async {
+          ingested.add(path);
+          return 'video/ext/abc';
+        },
+      );
+      final String video = touch('ep01.mkv');
+      final List<LibraryCtlImportResult> results = await withIngest.importAll(
+        <String>[video],
+      );
+      expect(ingested, <String>[video]);
+      expect(results.single.status, LibraryCtlImportStatus.imported);
+      expect(results.single.keys, <String>['video:video/ext/abc']);
+    });
+
+    test('外部视频入库失败 → failed；视频模块关闭 → 不调用入库', () async {
+      int calls = 0;
+      Future<String?> failing(String path) async {
+        calls++;
+        return null;
+      }
+
+      final String video = touch('ep02.mp4');
+      expect(
+        (await importer(
+          ingestVideoFile: failing,
+        ).importAll(<String>[video])).single.status,
+        LibraryCtlImportStatus.failed,
+      );
+      disabled = <LibraryCtlKind>{LibraryCtlKind.video};
+      expect(
+        (await importer(
+          ingestVideoFile: failing,
+        ).importAll(<String>[video])).single.status,
+        LibraryCtlImportStatus.unsupported,
+      );
+      expect(calls, 1);
     });
 
     test('游戏 exe：登记入库，再导一次按已在库跳过', () async {
