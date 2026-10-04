@@ -6326,5 +6326,7 @@
   "discovery_audiobookshelf_session_expired": "Audiobookshelf 登录已失效，请到设置里重新登录",
   "discovery_audiobookshelf_download_forbidden": "该 Audiobookshelf 账号没有下载权限，请让服务器管理员开启下载权限",
   "discovery_audiobookshelf_item_narrated_by": "演播：${name}",
-  "discovery_audiobookshelf_session_test": "测试连接"
+  "discovery_audiobookshelf_session_test": "测试连接",
+  "collection_delete_also_subscriptions": "同时删除该合集的 $n 个下载订阅",
+  "download_task_group_delete": "删除整组任务"
 }

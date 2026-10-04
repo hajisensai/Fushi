@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
@@ -253,6 +254,8 @@ Future<void> _deleteCollection({
 }) async {
   final List<MediaCollectionItemRow> members =
       await db.getCollectionItems(collection.id);
+  final CollectionOwnedSubscriptions subscriptions =
+      await CollectionOwnedSubscriptions.load(db, <int>[collection.id]);
   if (!context.mounted) return;
   final bool canDeleteMembers =
       onDeleteMembersMedia != null && members.isNotEmpty;
@@ -269,9 +272,12 @@ Future<void> _deleteCollection({
       statisticsSubtitle:
           canDeleteMembers ? deleteMembersStatisticsSubtitle : null,
       checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
+      deleteSubscriptionsLabel: subscriptions.deleteLabel,
     ),
   );
   if (result == null || !context.mounted) return;
+  // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
+  if (result.deleteSubscriptions) await subscriptions.delete(db);
   if (result.checked && onDeleteMembersMedia != null) {
     await onDeleteMembersMedia(
       List<MediaCollectionItemRow>.of(members),

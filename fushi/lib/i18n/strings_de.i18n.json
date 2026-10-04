@@ -6326,5 +6326,7 @@
   "discovery_audiobookshelf_session_expired": "Audiobookshelf sign-in has expired. Sign in again in settings",
   "discovery_audiobookshelf_download_forbidden": "This Audiobookshelf account has no download permission. Ask the server admin to allow downloads",
   "discovery_audiobookshelf_item_narrated_by": "Narrated by ${name}",
-  "discovery_audiobookshelf_session_test": "Test connection"
+  "discovery_audiobookshelf_session_test": "Test connection",
+  "collection_delete_also_subscriptions": "Also delete $n download subscription(s) for this collection",
+  "download_task_group_delete": "Delete all tasks in this group"
 }

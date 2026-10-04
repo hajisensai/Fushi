@@ -1,5 +1,6 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
+import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -1275,6 +1276,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // [FushiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _members.isNotEmpty;
+    final CollectionOwnedSubscriptions subscriptions =
+        await CollectionOwnedSubscriptions.load(
+      widget.database,
+      <int>[widget.collection.id],
+    );
+    if (!mounted) return;
     final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
@@ -1286,8 +1293,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               : null,
       statisticsSubtitle:
           canDeleteMembers ? widget.deleteMembersStatisticsSubtitle : null,
+      deleteSubscriptionsLabel: subscriptions.deleteLabel,
     );
     if (result == null || !mounted) return;
+    // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
+    if (result.deleteSubscriptions) {
+      await subscriptions.delete(widget.database);
+    }
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
     // 引用行并自删空合集，故随后的解散多为幂等收尾（写合集级墓碑）。解散必须走
     // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
