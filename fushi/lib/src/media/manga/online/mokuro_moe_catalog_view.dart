@@ -12,6 +12,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// mokuro.moe 目录内容体的外层可见状态快照：标题与动作按钮所需的最小事实。
 ///
@@ -579,16 +580,22 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     }
     final List<MokuroMoeSeries> series = _filteredSeries;
     // 千余系列：GridView.builder 懒构建。
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 128,
-        childAspectRatio: 0.58,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+    // 2026-10 动效重做：首屏系列错峰淡入，滚动带出的瞬间出现。
+    return FushiEntranceScope(
+      child: GridView.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 128,
+          childAspectRatio: 0.58,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: series.length,
+        itemBuilder: (BuildContext context, int index) =>
+            FushiStaggeredEntrance(
+          index: index,
+          child: _buildSeriesTile(tokens, series[index]),
+        ),
       ),
-      itemCount: series.length,
-      itemBuilder: (BuildContext context, int index) =>
-          _buildSeriesTile(tokens, series[index]),
     );
   }
 

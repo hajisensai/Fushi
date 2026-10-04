@@ -1951,9 +1951,19 @@ void main() {
       expect(frame, isNot(contains('SingleChildScrollView(')));
       expect(frame, isNot(contains('ListTile(')));
       expect(frame, isNot(contains('OutlinedButton.icon(')));
-      // 旧 scrim 背景结构（封面铺底 + 渐变遮罩）不得回归。
-      expect(frame, isNot(contains('Positioned.fill')));
+      // 旧 scrim 背景结构（**前景封面**铺底 + 渐变遮罩、封面几乎不可见）不得回归。
+      // 2026-10-04 起封面块两侧允许铺一层「同图模糊垫底」（coverBackdrop，只填
+      // contain 后的横向留白）：Positioned.fill 只能装垫底图 / 色层，传入的封面
+      // widget 必须仍是 Stack 的最后一个非定位子项、清晰地画在最前面。
+      expect(frame, isNot(contains('Positioned.fill(child: cover')));
       expect(frame, isNot(contains('LinearGradient(')));
+      expect(frame, contains('final ImageProvider? coverBackdrop;'));
+      expect(frame, contains('ui.ImageFilter.blur('));
+      expect(
+        frame,
+        matches(RegExp(r'cover!,\s*\],\s*\),\s*\);')),
+        reason: '前景封面必须是垫底 Stack 的最后一个子项（画在最上层）',
+      );
     },
   );
 

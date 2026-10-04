@@ -58,6 +58,7 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -1140,17 +1141,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 不知道是否加入了」说的正是空库那一次）。现在占位恒定排在库内容段之前；空态 /
   /// 无匹配态用 [SliverFillRemaining] 只吃它**之后**的剩余空间，挤不掉它。
   Widget _buildBody(BuildContext context, List<GalgameEntry> visible) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final _GameGridMetrics metrics =
-            _GameGridMetrics.forWidth(constraints.maxWidth);
-        return CustomScrollView(
-          slivers: <Widget>[
-            ..._buildPendingDownloadSlivers(context, metrics),
-            ..._buildLibrarySlivers(context, visible, metrics),
-          ],
-        );
-      },
+    // 2026-10 动效重做：首屏卡片错峰淡入（与书架 / 视频库同一套），滚动带出的
+    // 卡瞬间出现。
+    return FushiEntranceScope(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final _GameGridMetrics metrics =
+              _GameGridMetrics.forWidth(constraints.maxWidth);
+          return CustomScrollView(
+            slivers: <Widget>[
+              ..._buildPendingDownloadSlivers(context, metrics),
+              ..._buildLibrarySlivers(context, visible, metrics),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1175,8 +1180,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             mainAxisExtent: _gameCardExtent(context, metrics.cardWidth),
           ),
           itemCount: pending.length,
-          itemBuilder: (BuildContext context, int i) =>
-              _buildPendingDownloadCard(pending[i]),
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildPendingDownloadCard(pending[i]),
+          ),
         ),
       ),
     ];
@@ -1273,8 +1280,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             mainAxisExtent: _gameCardExtent(context, metrics.cardWidth),
           ),
           itemCount: loose.length,
-          itemBuilder: (BuildContext context, int i) =>
-              _buildGameCard(loose[i]),
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildGameCard(loose[i]),
+          ),
         ),
       );
     }
@@ -1714,6 +1723,7 @@ class _GameCard extends StatelessWidget {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _dialogCover(dialogContext),
+        coverBackdrop: _dialogCoverBackdrop(),
         title: game.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -1746,6 +1756,14 @@ class _GameCard extends StatelessWidget {
 
   /// 长按对话框顶部的封面块：有封面文件用降采样图（BoxFit.contain 整图可见），
   /// 无封面用与书架长按框同规格的占位图标（size 40 / onSurfaceVariant）。
+  /// 长按菜单封面块的模糊垫底图源：与 [_dialogCover] 同一判据，无封面为 null。
+  ImageProvider? _dialogCoverBackdrop() {
+    final String? cover = game.coverPath;
+    if (cover == null || cover.isEmpty) return null;
+    final File file = File(cover);
+    return file.existsSync() ? FileImage(file) : null;
+  }
+
   Widget _dialogCover(BuildContext context) {
     final String? cover = game.coverPath;
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {

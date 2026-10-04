@@ -288,7 +288,7 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
               if (reference.mediaKind == VideoMetadataMediaKind.movie) anchor,
             ],
             // 资料源整个不可用：清单只有联网补全核对上的那部分（BUG-2936）。
-            incomplete: true,
+            truncated: true,
           ),
       VideoFranchise(name: franchise, series: series, movies: movies),
     ]);

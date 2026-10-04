@@ -421,15 +421,15 @@ enum VideoAcquisitionSayKind {
   /// 找到系列（args: name, series, movies）——之后逐部找资源
   franchiseFound,
 
+  /// 系列解析没走完（[VideoFranchise.truncated]）：清单可能不全（args: name）
+  franchiseTruncated,
+
   /// 这部作品没有找到同系列的其它作品，按单部继续（args: title）
   franchiseNotFound,
 
   /// 没能取到完整的系列清单（资料源出错 / 不可用；args: title）——之后问
   /// [VideoAcquisitionSlot.franchiseFallback]，不静默降级成单部（BUG-2936）
   franchiseUnavailable,
-
-  /// 资料源没走完整个系列，下面的清单可能不全（跟在 franchiseFound 后）
-  franchiseIncomplete,
 
   /// 整套清单已就绪（args: ready, total）
   franchiseReady,

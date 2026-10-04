@@ -376,6 +376,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteBookCover(book),
+        coverBackdrop: _remoteBookCoverBackdrop(book),
         title: book.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -521,6 +522,22 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         ),
       ],
     );
+  }
+
+  /// 远端书长按菜单封面块的模糊垫底图源：与 [_buildRemoteBookCover] 同一选链
+  /// （本地已下载封面 → 互联钉扎客户端拉的远端封面），都拿不到时为 null。
+  ImageProvider? _remoteBookCoverBackdrop(RemoteBookInfo book) {
+    final String? coverPath = book.coverPath;
+    if (coverPath != null && File(coverPath).existsSync()) {
+      return FileImage(File(coverPath));
+    }
+    final String? coverUrl = book.coverUrl;
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(_remoteBookClient);
+    if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      return RemoteCoverImage(coverUrl, fetcher, cacheKey: book.title);
+    }
+    return null;
   }
 
   Widget _buildRemoteBookCover(RemoteBookInfo book) {

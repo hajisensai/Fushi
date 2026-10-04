@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 一台已配对主机上一个可用的串流客户端（已绑定到能连通的那个地址）。
 class GameStreamHostConnection {
@@ -452,44 +453,49 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     final double page = tokens.spacing.page;
     final List<GameStreamLibraryGame> games =
         host.library?.games ?? const <GameStreamLibraryGame>[];
-    return CustomScrollView(
-      slivers: <Widget>[
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.gap),
-          sliver: SliverList.list(
-            children: <Widget>[
-              if (_hosts.length > 1) _buildHostSwitcher(tokens),
-              _buildHostHeader(context, host),
-              if (_notice != null) _buildNotice(context, _notice!),
-              if (host.sessions.isNotEmpty) ..._buildSessions(context, host),
-              if (host.phase == _HostPhase.ready && games.isNotEmpty)
-                _sectionLabel(context, t.game_library),
-            ],
-          ),
-        ),
-        if (host.phase == _HostPhase.ready && games.isEmpty)
-          SliverToBoxAdapter(
-            child: _buildMessage(context, t.game_stream_library_empty),
-          ),
-        if (host.phase == _HostPhase.ready && games.isNotEmpty)
+    return FushiEntranceScope(
+      child: CustomScrollView(
+        slivers: <Widget>[
           SliverPadding(
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.section),
-            ),
-            sliver: SliverGrid.builder(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 200,
-                mainAxisSpacing: 20,
-                crossAxisSpacing: 16,
-                childAspectRatio: 0.6,
-              ),
-              itemCount: games.length,
-              itemBuilder: (BuildContext context, int index) =>
-                  _buildGameCard(context, host, games[index]),
+            padding: EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.gap),
+            sliver: SliverList.list(
+              children: <Widget>[
+                if (_hosts.length > 1) _buildHostSwitcher(tokens),
+                _buildHostHeader(context, host),
+                if (_notice != null) _buildNotice(context, _notice!),
+                if (host.sessions.isNotEmpty) ..._buildSessions(context, host),
+                if (host.phase == _HostPhase.ready && games.isNotEmpty)
+                  _sectionLabel(context, t.game_library),
+              ],
             ),
           ),
-      ],
+          if (host.phase == _HostPhase.ready && games.isEmpty)
+            SliverToBoxAdapter(
+              child: _buildMessage(context, t.game_stream_library_empty),
+            ),
+          if (host.phase == _HostPhase.ready && games.isNotEmpty)
+            SliverPadding(
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.section),
+              ),
+              sliver: SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 200,
+                  mainAxisSpacing: 20,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.6,
+                ),
+                itemCount: games.length,
+                itemBuilder: (BuildContext context, int index) =>
+                    FushiStaggeredEntrance(
+                      index: index,
+                      child: _buildGameCard(context, host, games[index]),
+                    ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

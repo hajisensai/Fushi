@@ -321,7 +321,7 @@ class VideoDiscoveryService {
   ///
   /// TMDB collection（要 key）与 MAL 关联链（不要 key，只对动画走）两份合并；
   /// 两个来源都不可用返回 null。单个来源失败只记诊断、不拖垮另一个，但合并结果
-  /// 标 [VideoFranchise.incomplete]——少了一个来源的清单不能当成完整系列
+  /// 标 [VideoFranchise.truncated]——少了一个来源的清单不能当成完整系列
   /// （BUG-2936）。
   Future<VideoFranchise?> loadFranchise(VideoDiscoveryItem item) async {
     if (_closed) return null;
@@ -357,7 +357,7 @@ class VideoDiscoveryService {
         name: tmdb.name,
         series: const <VideoDiscoveryItem>[],
         movies: tmdb.movies,
-        incomplete: tmdb.incomplete,
+        truncated: tmdb.truncated,
       );
     }
     final VideoFranchise? merged =
@@ -367,7 +367,7 @@ class VideoDiscoveryService {
       name: merged.name,
       series: merged.series,
       movies: merged.movies,
-      incomplete: true,
+      truncated: true,
     );
   }
 
@@ -990,7 +990,7 @@ VideoDiscoveryRequest _requestAtPage(VideoDiscoveryRequest request, int page) =>
 
 /// MAL provider → 系列关联来源的薄适配。
 /// 一个系列来源跑一次的结果：`failed` 区分「来源没有这部的数据」（null）与
-/// 「来源出错」——后者让合并清单标不全。
+/// 「来源出错」——后者让合并清单标没走完。
 typedef _FranchiseAttempt = ({VideoFranchise? franchise, bool failed});
 
 class _MalFranchiseSource implements VideoFranchiseRelationSource {

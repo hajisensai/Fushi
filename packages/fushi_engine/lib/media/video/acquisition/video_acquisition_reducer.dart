@@ -2036,39 +2036,43 @@ VideoAcquisitionReduction _onFranchiseLoaded(
         for (final VideoDiscoveryItem item in members)
           VideoAcquisitionFranchiseEntry(item: item),
       ];
-  VideoAcquisitionState next = state
-      .say(
-        VideoAcquisitionSay(
-          VideoAcquisitionSayKind.franchiseFound,
-          args: <String, Object?>{
-            'name': franchise!.name,
-            'series': entries
-                .where(
-                  (VideoAcquisitionFranchiseEntry e) =>
-                      e.item.reference.mediaKind == VideoMetadataMediaKind.tv,
+  final VideoAcquisitionState found = state.say(
+    VideoAcquisitionSay(
+      VideoAcquisitionSayKind.franchiseFound,
+      args: <String, Object?>{
+        'name': franchise!.name,
+        'series': entries
+            .where(
+              (VideoAcquisitionFranchiseEntry e) =>
+                  e.item.reference.mediaKind == VideoMetadataMediaKind.tv,
+            )
+            .length,
+        'movies': entries
+            .where(
+              (VideoAcquisitionFranchiseEntry e) =>
+                  e.item.reference.mediaKind == VideoMetadataMediaKind.movie,
+            )
+            .length,
+      },
+    ),
+  );
+  // 清单是解析走到一半的结果：照常往下走（已收到的照样要下），但不能让用户把它
+  // 当成「全部」（BUG-2935）。
+  final VideoAcquisitionState next =
+      (franchise.truncated
+              ? found.say(
+                  VideoAcquisitionSay(
+                    VideoAcquisitionSayKind.franchiseTruncated,
+                    args: <String, Object?>{'name': franchise.name},
+                  ),
                 )
-                .length,
-            'movies': entries
-                .where(
-                  (VideoAcquisitionFranchiseEntry e) =>
-                      e.item.reference.mediaKind ==
-                      VideoMetadataMediaKind.movie,
-                )
-                .length,
-          },
-        ),
-      )
-      .copyWith(
-        stage: VideoAcquisitionStage.planningFranchise,
-        franchiseName: franchise.name,
-        franchiseEntries: entries,
-        busy: true,
-      );
-  if (franchise.incomplete) {
-    next = next.say(
-      const VideoAcquisitionSay(VideoAcquisitionSayKind.franchiseIncomplete),
-    );
-  }
+              : found)
+          .copyWith(
+            stage: VideoAcquisitionStage.planningFranchise,
+            franchiseName: franchise.name,
+            franchiseEntries: entries,
+            busy: true,
+          );
   return (
     next,
     <VideoAcquisitionEffect>[
@@ -2082,7 +2086,7 @@ VideoAcquisitionReduction _onFranchiseLoaded(
 
 /// 系列里没有锚点以外的、用户要的那部分。
 ///
-/// 只有清单**完整**且锚点本身就属于用户要的范围（整套 / 要剧场版而锚点是剧场版 /
+/// 只有清单**走完了**且锚点本身就属于用户要的范围（整套 / 要剧场版而锚点是剧场版 /
 /// 要剧集而锚点是剧集）时，「只下这一部」才就是用户要的东西，说一声直接按单部
 /// 继续。否则——「全部哆啦A梦剧场版」却只剩锚点那部 TV（1979 版 1700+ 集），
 /// 或资料源出错 / 不可用、根本不知道有没有——静默降级就是替用户下了别的东西，
@@ -2093,7 +2097,7 @@ VideoAcquisitionReduction _franchiseHasNothingMore(
   VideoAcquisitionDefaults defaults,
 ) {
   final VideoMediaReference anchor = state.chosenItem!.reference;
-  final bool known = franchise != null && !franchise.incomplete;
+  final bool known = franchise != null && !franchise.truncated;
   if (known && _anchorFitsScope(anchor, state.slots.scope)) {
     final VideoAcquisitionState single = state
         .copyWith(

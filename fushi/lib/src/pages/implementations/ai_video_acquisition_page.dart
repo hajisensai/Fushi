@@ -236,12 +236,12 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           series: arg('series'),
           movies: arg('movies'),
         ),
+      VideoAcquisitionSayKind.franchiseTruncated =>
+        t.ai_video_acquire_franchise_truncated(name: arg('name')),
       VideoAcquisitionSayKind.franchiseNotFound =>
         t.ai_video_acquire_franchise_not_found(title: arg('title')),
       VideoAcquisitionSayKind.franchiseUnavailable =>
         t.ai_video_acquire_franchise_unavailable(title: arg('title')),
-      VideoAcquisitionSayKind.franchiseIncomplete =>
-        t.ai_video_acquire_franchise_incomplete,
       VideoAcquisitionSayKind.franchiseReady =>
         t.ai_video_acquire_franchise_ready(
           ready: arg('ready'),

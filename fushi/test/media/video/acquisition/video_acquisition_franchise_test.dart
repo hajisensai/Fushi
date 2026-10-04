@@ -145,6 +145,44 @@ void main() {
       expect(s.said, isNot(contains(VideoAcquisitionSayKind.question)));
     });
 
+    test('系列解析没走完（BUG-2935）：照常逐部找资源，但明说清单可能不全', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: const <VideoDiscoveryItem>[],
+            movies: <VideoDiscoveryItem>[_movie1980, _movie2006],
+            truncated: true,
+          ),
+        ),
+      );
+      expect(s.state.stage, VideoAcquisitionStage.planningFranchise);
+      expect(
+        effects.single,
+        isA<VideoAcquisitionResolveFranchiseEntryEffect>(),
+      );
+      expect(
+        s.said,
+        containsAllInOrder(<VideoAcquisitionSayKind>[
+          VideoAcquisitionSayKind.franchiseFound,
+          VideoAcquisitionSayKind.franchiseTruncated,
+        ]),
+      );
+    });
+
+    test('系列走完了不提「可能不全」', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(VideoAcquisitionFranchiseLoadedEvent(_franchise));
+      expect(s.said, contains(VideoAcquisitionSayKind.franchiseFound));
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseTruncated)),
+      );
+    });
+
     test('范围 movies 只收剧场版，逐部串行找资源', () {
       final _Session s = _Session(_defaults);
       _reachFranchise(s);
@@ -558,7 +596,7 @@ void main() {
             name: 'Doraemon',
             series: <VideoDiscoveryItem>[_show],
             movies: const <VideoDiscoveryItem>[],
-            incomplete: true,
+            truncated: true,
           ),
         ),
       );
@@ -568,41 +606,6 @@ void main() {
         isNot(contains(VideoAcquisitionSayKind.franchiseNotFound)),
       );
       expect(s.state.question!.slot, VideoAcquisitionSlot.franchiseFallback);
-    });
-
-    test('BUG-2936 清单不全但有作品 → 照常出清单，并说明可能不全', () {
-      final _Session s = _Session(_defaults);
-      _reachFranchise(s);
-      final List<VideoAcquisitionEffect> effects = s.feed(
-        VideoAcquisitionFranchiseLoadedEvent(
-          VideoFranchise(
-            name: 'Doraemon',
-            series: <VideoDiscoveryItem>[_show],
-            movies: <VideoDiscoveryItem>[_movie1980, _movie2006],
-            incomplete: true,
-          ),
-        ),
-      );
-      expect(
-        effects.single,
-        isA<VideoAcquisitionResolveFranchiseEntryEffect>(),
-      );
-      final List<VideoAcquisitionSayKind> said = s.said;
-      expect(
-        said.indexOf(VideoAcquisitionSayKind.franchiseIncomplete),
-        said.indexOf(VideoAcquisitionSayKind.franchiseFound) + 1,
-      );
-      expect(s.state.franchiseEntries, hasLength(2));
-    });
-
-    test('BUG-2936 清单完整时不说「可能不全」', () {
-      final _Session s = _Session(_defaults);
-      _reachFranchise(s);
-      s.feed(VideoAcquisitionFranchiseLoadedEvent(_franchise));
-      expect(
-        s.said,
-        isNot(contains(VideoAcquisitionSayKind.franchiseIncomplete)),
-      );
     });
   });
 
