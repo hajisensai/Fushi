@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ db68226. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.9.1-debug.17049-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17049-ios.ipa",
-      "releaseSequence": 17049,
-      "tag": "v2.9.1-debug.17049+b5f84cc",
-      "version": "2.9.1-debug.17049",
-      "size": 75089816,
-      "sha256": "7a41fbf0fcf2beb6d062a3aa0d96e92f1f4399cd8df7582c3a2b568a5c38ee33"
-    },
-    {
-      "name": "fushi-2.9.1-debug.17049-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17049-macos.zip",
-      "releaseSequence": 17049,
-      "tag": "v2.9.1-debug.17049+b5f84cc",
-      "version": "2.9.1-debug.17049",
-      "size": 376615329,
-      "sha256": "dacbbe3ffecd4404b7737e64a79c25b3567055255ab39bf1797d6b0b825510ef"
-    },
-    {
       "name": "fushi-2.9.1-debug.17057-db68226-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17057-db68226-debug.apk",
       "releaseSequence": 17057,
@@ -33,6 +15,24 @@
       "version": "2.9.1-debug.17057",
       "size": 358982964,
       "sha256": "2339174c1cb63cfb31182993cb43d904c38859a2fb6951f3b581d2358cad0e4b"
+    },
+    {
+      "name": "fushi-2.9.1-debug.17057-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17057-ios.ipa",
+      "releaseSequence": 17057,
+      "tag": "v2.9.1-debug.17057+db68226",
+      "version": "2.9.1-debug.17057",
+      "size": 75092248,
+      "sha256": "b8e48f9d6b381434fbe3f3cc51bd5f53f4d94eb61dfe639db06fbaab27979290"
+    },
+    {
+      "name": "fushi-2.9.1-debug.17057-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17057-macos.zip",
+      "releaseSequence": 17057,
+      "tag": "v2.9.1-debug.17057+db68226",
+      "version": "2.9.1-debug.17057",
+      "size": 376606141,
+      "sha256": "360e67803810bbcdcfb04cad0fe1a7d58b0884a3128080ed75eade93bdc0e3c4"
     },
     {
       "name": "fushi-2.9.1-debug.17057-windows-setup.exe",
