@@ -170,7 +170,18 @@ fushi_server ctl dl [ls] | add <magnet> --title t [--media-kind movie|tv] | canc
 fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
 fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
 fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
+fushi_server ctl upload <文件…> --lib <id> [--path 目录]   分块断点续传（传完 scan）
+fushi_server ctl logs -f                                 跟随日志
 fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
+
+# 经互联接口（admin 以 host 身份代调 /api/admin/host/*，配对路由除外）
+fushi_server ctl books|videos|audiobooks|dict|metadata [ls]
+fushi_server ctl books progress <key> [--set '<json>']   videos position|playback <id> …
+fushi_server ctl scrape pending | sweep | ai-identify <id> | search <bookUid> -q 词
+                  | identify <bookUid> --provider anidb|mal|tmdb --external-id <id>
+fushi_server ctl jobs submit asr <音频> -l ja -o out.srt   在运行中的服务上转录
+fushi_server ctl assistant start --feature f | show <id> --wait | act <id> '<json>'
+fushi_server ctl host <METHOD> <互联路径> ['<json>']       直调任意互联接口
 ```
 
 地址按配置的 `admin_bind` / `admin_port` / `tls` 推本机地址（通配 bind 换回环），token 读
