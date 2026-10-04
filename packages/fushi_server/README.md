@@ -189,6 +189,15 @@ fushi_server ctl host <METHOD> <互联路径> ['<json>']       直调任意互�
 `--fingerprint` 覆盖。`--json` 原样输出。退出码：0 成功、1 服务端拒绝、64 用法错误、
 69 连不上、75 冲突（409）、77 鉴权失败。完整动作表见 `fushi_server --help`。
 
+**数据目录互斥**：`serve` 与所有直接打开数据库的离线命令（`scan` / `status` / `import` /
+`audiobook` / `dict` …）启动时都要拿 `<data_dir>/fushi_server.lock` 的排他 OS 文件锁（进程退出
+自动释放，锁文件里记着持有者 pid 与 WebUI 地址）。serve 运行期间离线命令一律以 **75** 拒绝——
+包括看似只读的 `status`：打开运行时就会跑 schema 迁移 / 补写偏好，和 serve 的写事务并发不安全；
+运行中请用上面的 `ctl`。第二个 serve、或离线命令正在跑时启动 serve，同样 75。
+
+**`--json` 的 stdout**：只有最终那一个 JSON 文档（Linux / macOS 在 fd 层把后台 isolate 与原生库的
+打印整体改道 stderr），可直接 `| jq`；进度与诊断一律在 stderr。
+
 ## admin API（WebUI 用的那套）
 
 鉴权：`Authorization: Bearer <admin_token>`，或浏览器 `POST /login`（表单 `token=`）拿 cookie。全部 JSON，前缀 `/api/admin/`：

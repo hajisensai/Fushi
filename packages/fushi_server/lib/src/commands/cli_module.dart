@@ -11,13 +11,17 @@ import 'package:fushi_server/src/server_runtime.dart';
 
 /// 一次命令调用的上下文。
 class CliContext {
-  const CliContext({required this.configFile, required this.verbose});
+  const CliContext({required this.configFile, required this.verbose, this.commandLabel});
 
   final File configFile;
   final bool verbose;
 
-  /// 离线命令的标准前置（打开配置 / 数据库 / 宿主装配），见 [withServerRuntime]。
-  Future<int> withRuntime(Future<int> Function(ServerRuntime rt) body) => withServerRuntime(configFile, verbose, body);
+  /// 命令链摘要（`audiobook align`），写进数据目录锁文件给被拒的进程看。
+  final String? commandLabel;
+
+  /// 离线命令的标准前置（打开配置 / 数据库 / 宿主装配；数据目录被占 → 75），见 [withServerRuntime]。
+  Future<int> withRuntime(Future<int> Function(ServerRuntime rt) body) =>
+      withServerRuntime(configFile, verbose, body, command: commandLabel);
 }
 
 /// 一组顶层子命令。
