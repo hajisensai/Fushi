@@ -330,9 +330,9 @@ void main() {
     });
   });
 
-  // BUG-2926：传输原语每读一块就回报一次进度，此前每次都通知，订阅整个管理器的
+  // BUG-2944：传输原语每读一块就回报一次进度，此前每次都通知，订阅整个管理器的
   // 书架 / 媒体库页跟着每块整页重建，iOS 下载期间掉帧。
-  group('progress notification throttle (BUG-2926)', () {
+  group('progress notification throttle (BUG-2944)', () {
     late Directory dir;
 
     setUp(() async {

@@ -565,7 +565,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         child: const Icon(Icons.download_done),
       );
     }
-    // 只订阅整数百分比，字节级进度回报不整页重建（BUG-2926）。
+    // 只订阅整数百分比，字节级进度回报不整页重建（BUG-2944）。
     final InterconnectDownloadBadgeState? task = _appModelOrNull == null
         ? null
         : ref.watch(

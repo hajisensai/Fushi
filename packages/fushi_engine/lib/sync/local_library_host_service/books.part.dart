@@ -348,7 +348,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       // srtBooks / audioCues / audiobooks）。见 HBK-AUDIT-041。
       // TODO-1195 part B：用户删书记墓碑，避免旧备份合并导入时复活。
       final int deleted = await _db.deleteEpubBook(row.bookKey, tombstone: true);
-      // BUG-2927：再记同步删除墓碑。上面的 tombstone 只防旧备份复活，其它设备
+      // BUG-2945：再记同步删除墓碑。上面的 tombstone 只防旧备份复活，其它设备
       // 拉 /api/tombstones 读的是 sync_deletion_tombstones——host 不写，「从所有
       // 设备删除」就只删掉了发起端与 host 两份。
       if (deleted > 0) {

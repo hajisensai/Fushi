@@ -369,7 +369,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。
 /// 方法逐字搬自 LocalLibraryHostService；各域 mixin 以 `on _LocalLibraryHostBase, _LocalLibraryHostShared` 取用。
 mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
-  /// host 端删除资产后记同步删除墓碑（BUG-2927），让其它已配对设备经
+  /// host 端删除资产后记同步删除墓碑（BUG-2945），让其它已配对设备经
   /// `/api/tombstones` 拉到并删掉本地副本。best-effort：墓碑写失败不该把已
   /// 完成的删除变成 HTTP 500。
   Future<void> _writeHostSyncTombstone(

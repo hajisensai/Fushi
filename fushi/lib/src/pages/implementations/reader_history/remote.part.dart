@@ -336,7 +336,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     required String safeKey,
     required String keyPrefix,
   }) {
-    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2926）。
+    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2944）。
     final InterconnectDownloadBadgeState? task = ref.watch(
         interconnectDownloadManagerProvider
             .select((m) => m.badgeStateFor(taskId)));

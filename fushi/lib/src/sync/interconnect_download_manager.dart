@@ -155,7 +155,7 @@ class InterconnectDownloadAggregate {
   bool get isFailed => running == 0 && failed > 0;
 }
 
-/// 单个任务在卡片角标上可见的状态（BUG-2926）：进度量化到整数百分比，
+/// 单个任务在卡片角标上可见的状态（BUG-2944）：进度量化到整数百分比，
 /// -1 表示尚无进度回报。record 按值比较，供 `provider.select` 收窄重建。
 typedef InterconnectDownloadBadgeState = ({
   InterconnectDownloadStatus status,
@@ -163,7 +163,7 @@ typedef InterconnectDownloadBadgeState = ({
   String? error,
 });
 
-/// 合集角标可见的聚合状态（BUG-2926）。
+/// 合集角标可见的聚合状态（BUG-2944）。
 typedef InterconnectDownloadAggregateBadgeState = ({
   bool isRunning,
   bool isFailed,
@@ -367,13 +367,13 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// 卡片角标需要的那部分任务状态，进度量化到整数百分比（-1 = 不确定）。
   ///
   /// 角标所在的书架 / 媒体库页用
-  /// `ref.watch(provider.select((m) => m.badgeStateFor(id)))` 订阅（BUG-2926）：
+  /// `ref.watch(provider.select((m) => m.badgeStateFor(id)))` 订阅（BUG-2944）：
   /// record 按值比较，字节回报不改变百分比时不触发整页重建；直接 `ref.watch`
   /// 管理器则每次通知都整页重建。
   InterconnectDownloadBadgeState? badgeStateFor(String id) =>
       interconnectDownloadBadgeState(_tasks[id]);
 
-  /// [aggregateFor] 的角标投影，进度同样量化到整数百分比（BUG-2926）。
+  /// [aggregateFor] 的角标投影，进度同样量化到整数百分比（BUG-2944）。
   InterconnectDownloadAggregateBadgeState? aggregateBadgeStateFor(
     Iterable<String> ids,
   ) {
@@ -771,15 +771,15 @@ class InterconnectDownloadManager extends ChangeNotifier {
     _notifyProgress(id);
   }
 
-  /// 进度回报的最小通知间隔（BUG-2926）。
+  /// 进度回报的最小通知间隔（BUG-2944）。
   @visibleForTesting
   static const int progressNotifyIntervalMs = 250;
 
-  /// 每个在跑任务上一次**进度类**通知的时刻与整数百分比（BUG-2926）。
+  /// 每个在跑任务上一次**进度类**通知的时刻与整数百分比（BUG-2944）。
   final Map<String, ({int at, int percent})> _lastProgressNotify =
       <String, ({int at, int percent})>{};
 
-  /// 进度 / 字节回报的节流通知（BUG-2926）：传输原语每读一块就回报一次（局域网
+  /// 进度 / 字节回报的节流通知（BUG-2944）：传输原语每读一块就回报一次（局域网
   /// 下一秒几百上千次），此前每次都 `notifyListeners()`，书架 / 媒体库页整页
   /// `ref.watch` 管理器，于是下载期间每块都整页重建，iOS 上直接掉成个位数帧率。
   /// 任务快照照常每次更新（读方随时拿到最新值），只把**通知**收敛到「整数百分比

@@ -5730,7 +5730,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 被 `if (!mounted) return;` 吃掉 → 用户永远不知道下载挂了。这里让失败态跟进度
   /// 一样落在卡片上，重进页面照样看得到；再点一次下载即重试（新任务顶掉旧失败态）。
   Widget? _remoteDownloadBadge(RemoteVideoInfo video, String safeKey) {
-    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2926）。
+    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2944）。
     final InterconnectDownloadBadgeState? task = ref.watch(
         interconnectDownloadManagerProvider
             .select((m) => m.badgeStateFor(video.id)));

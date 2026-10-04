@@ -350,7 +350,8 @@ void main() {
         reason: 'host 删书后必须记同步墓碑，否则删除传播在 host 这里断链');
   });
 
-  test('client 删有声书推送到 host：host 写 audiobook 与关联 srtbook 墓碑', () async {
+  test('client 删有声书推送到 host：host 只写 audiobook 墓碑（关联 SRT 不另写）',
+      () async {
     await hostDb.upsertAudiobook(AudiobooksCompanion.insert(
       bookKey: 'ab-1',
       alignmentFormat: 'srt',
@@ -371,8 +372,10 @@ void main() {
     expect(await hostDb.getAllAudiobooks(), isEmpty);
     expect(await hostDb.getAllSrtBooks(), isEmpty);
     expect(await hostTombstoneCount(SyncTombstoneKind.audiobook, 'ab-1'), 1);
+    // 关联 SRT 书身份是 bookKey，已由 audiobook 墓碑覆盖；再写 srtbook 会让
+    // 对端弹两条重复确认（srt_book_repository standalone 判据）。
     expect(
-        await hostTombstoneCount(SyncTombstoneKind.srtbook, 'srt-of-ab-1'), 1);
+        await hostTombstoneCount(SyncTombstoneKind.srtbook, 'srt-of-ab-1'), 0);
   });
 
   test('client 删纯 SRT 书推送到 host：host 写 srtbook 墓碑', () async {
