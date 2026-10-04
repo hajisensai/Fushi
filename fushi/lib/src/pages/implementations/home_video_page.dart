@@ -3,6 +3,7 @@ import 'dart:convert' show utf8;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
+import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -1805,6 +1806,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 不能写成三元表达式：两分支各含 await 时 analyzer 视互为 async gap，
     // 两处 context 都报 use_build_context_synchronously（CI warning 致命）。
     final DeleteDecision? decision;
+    CollectionOwnedSubscriptions subscriptions =
+        CollectionOwnedSubscriptions.none;
+    bool deleteSubscriptions = true;
     if (collectionCount == 0) {
       // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
       // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
@@ -1822,11 +1826,52 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               anyLocalFile ? t.delete_local_files_video_desc : null,
           statisticsSubtitle: t.delete_statistics_video_desc);
     } else {
+      // 订阅快照在弹框前定死（删合集后归属线就断了，见
+      // [CollectionOwnedSubscriptions]）；勾选态在框关后照读。
+      subscriptions = await CollectionOwnedSubscriptions.load(
+        ref.read(appProvider).database,
+        targetCollectionIds,
+      );
+      if (!mounted) return;
+      final String? subscriptionsLabel = subscriptions.deleteLabel;
       decision = await showAppDialog<DeleteDecision>(
         context: context,
         builder: (BuildContext ctx) => AlertDialog(
           title: Text(t.dialog_delete),
-          content: Text(message),
+          content: subscriptionsLabel == null
+              ? Text(message)
+              : StatefulBuilder(
+                  builder: (BuildContext ctx, StateSetter setDialogState) =>
+                      Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(message),
+                      // 与 FushiDestructiveConfirmDialog 的勾选行同一写法：
+                      // 整行是唯一停靠点，Checkbox 只做显示。
+                      FushiListItem(
+                        key: const ValueKey<String>(
+                          'batch-dissolve-delete-subscriptions',
+                        ),
+                        density: FushiListDensity.compact,
+                        padding: EdgeInsets.zero,
+                        titleMaxLines: 3,
+                        title: Text(subscriptionsLabel),
+                        leading: ExcludeFocus(
+                          child: IgnorePointer(
+                            child: Checkbox(
+                              value: deleteSubscriptions,
+                              onChanged: (_) {},
+                            ),
+                          ),
+                        ),
+                        onTap: () => setDialogState(
+                          () => deleteSubscriptions = !deleteSubscriptions,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.pop(ctx, null),
@@ -1854,6 +1899,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 用确认框弹出前定死的那份目标，不重新读选中集——否则删除量与用户刚点头的
     // 数字对不上。
     final Set<int> toDissolve = targetCollectionIds;
+    // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
+    if (deleteSubscriptions) await subscriptions.delete(db);
     int dissolved = 0;
     for (final int id in toDissolve) {
       final int removed = await deleteMediaCollectionWithAssets(db, id);
@@ -5730,14 +5777,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 被 `if (!mounted) return;` 吃掉 → 用户永远不知道下载挂了。这里让失败态跟进度
   /// 一样落在卡片上，重进页面照样看得到；再点一次下载即重试（新任务顶掉旧失败态）。
   Widget? _remoteDownloadBadge(RemoteVideoInfo video, String safeKey) {
-    final InterconnectDownloadTask? task =
-        ref.watch(interconnectDownloadManagerProvider).taskFor(video.id);
+    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2944）。
+    final InterconnectDownloadBadgeState? task = ref.watch(
+        interconnectDownloadManagerProvider
+            .select((m) => m.badgeStateFor(video.id)));
     if (task == null) return null;
     switch (task.status) {
       case InterconnectDownloadStatus.running:
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('remote_video_downloading_$safeKey'),
-          progress: task.progress,
+          progress: task.percent < 0 ? null : task.percent / 100,
           tooltip: t.remote_video_downloading,
         );
       case InterconnectDownloadStatus.failed:
@@ -5757,13 +5806,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 有任务在跑 → 进度环（各成员进度均值，已完成计满）；全部结束且有失败 → 失败
   /// 角标；没有成员有任务 / 全部完成 → null（画回云角标）。
   Widget? _collectionDownloadBadge(int collectionId, List<String> memberIds) {
-    final InterconnectDownloadAggregate? agg =
-        ref.watch(interconnectDownloadManagerProvider).aggregateFor(memberIds);
+    final InterconnectDownloadAggregateBadgeState? agg = ref.watch(
+        interconnectDownloadManagerProvider
+            .select((m) => m.aggregateBadgeStateFor(memberIds)));
     if (agg == null) return null;
     if (agg.isRunning) {
       return RemoteDownloadProgressBadge(
         key: ValueKey<String>('home_video_collection_downloading_$collectionId'),
-        progress: agg.progress,
+        progress: agg.percent / 100,
         tooltip: t.remote_video_downloading,
       );
     }

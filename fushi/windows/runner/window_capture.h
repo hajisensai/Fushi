@@ -155,6 +155,12 @@ WindowCaptureResult CaptureWindowPng(HWND hwnd);
 // Flutter、单实例互斥量或 WebView2 初始化。
 int RunPrintWindowCaptureHelperIfRequested();
 
+// BGRA 像素缓冲（stride = 每行字节数，可含行尾 padding）→ PNG 字节（WIC）。失败返回空
+// vector 并写 |error|。调用线程须已初始化 COM。截屏识字（screen_ocr_overlay.cpp）也用它。
+std::vector<uint8_t> EncodeBgraToPng(const uint8_t* pixels, UINT width,
+                                     UINT height, UINT stride,
+                                     std::string* error);
+
 }  // namespace fushi
 
 #endif  // RUNNER_WINDOW_CAPTURE_H_

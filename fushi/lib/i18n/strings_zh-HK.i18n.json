@@ -5799,6 +5799,10 @@
   "floating_ball_ocr_model_unavailable": "系統 OCR 模型尚未就緒",
   "floating_ball_ocr_pick_hint": "點文字查詞",
   "floating_ball_ocr_notification": "正在截屏識字",
+  "floating_ball_ocr_recognizing": "正在識別文字…",
+  "floating_ball_ocr_close": "關閉",
+  "floating_ball_ocr_screen_permission": "需要在「系統設定 → 私隱與安全性 → 螢幕錄影」裏允許 Fushi，才能截圖識字",
+  "floating_ball_ocr_language_missing": "系統沒有安裝日語文字識別：到「設定 → 時間與語言 → 語言與地區」新增日語（含光學字元辨識）",
   "media_stats_action": "查看統計",
   "media_stats_title": "統計",
   "media_stats_total": "累計",
@@ -6326,5 +6330,7 @@
   "discovery_audiobookshelf_session_expired": "Audiobookshelf sign-in has expired. Sign in again in settings",
   "discovery_audiobookshelf_download_forbidden": "This Audiobookshelf account has no download permission. Ask the server admin to allow downloads",
   "discovery_audiobookshelf_item_narrated_by": "Narrated by ${name}",
-  "discovery_audiobookshelf_session_test": "Test connection"
+  "discovery_audiobookshelf_session_test": "Test connection",
+  "collection_delete_also_subscriptions": "Also delete $n download subscription(s) for this collection",
+  "download_task_group_delete": "Delete all tasks in this group"
 }

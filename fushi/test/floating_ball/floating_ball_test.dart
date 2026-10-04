@@ -45,7 +45,7 @@ void main() {
       );
     });
 
-    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 同步，没有截屏与拍照', () {
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步，没有拍照', () {
       Set<FloatingBallGlobalAction> onDesktop(
         FloatingBallScope scope, {
         bool lookupModuleEnabled = true,
@@ -65,10 +65,11 @@ void main() {
         FloatingBallGlobalAction.lookup,
         FloatingBallGlobalAction.popupLookup,
         FloatingBallGlobalAction.clipboard,
+        FloatingBallGlobalAction.screenOcr,
         FloatingBallGlobalAction.sync,
       });
-      // 查词模块关着：打开查词页与全局查词都没有入口，只剩剪贴板（它在覆盖窗
-      // 不可用时退回主窗查词弹窗）与同步（与查词无关）。
+      // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
+      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步（与查词无关）。
       expect(
         onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
         <FloatingBallGlobalAction>{

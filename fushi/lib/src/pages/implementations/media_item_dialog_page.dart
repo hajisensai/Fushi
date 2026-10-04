@@ -229,10 +229,22 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
 // Dialog frame (pure layout, testable in isolation)
 // ---------------------------------------------------------------------------
 
-/// Long-press book-settings dialog.
+/// Long-press / right-click media dialog shared by the book, video, game and
+/// collection libraries.
 ///
-/// The cover is used as the dialog background with a readable scrim in front.
-/// Title, author, and actions sit in the foreground using shared MD3 controls.
+/// 2026-10-04 重设计（用户反馈：书架右键弹窗「两侧有空白很丑」）。旧版把封面
+/// 整宽 `BoxFit.contain` 画成限高顶块：竖版书封在 420 宽的框里只占中间三分之一，
+/// 两侧是大片 letterbox；下面再接一长串单列动作，桌面上又高又窄。现在：
+///
+/// * **头部（hero）**：封面按**自身宽高比**画成带圆角与投影的封面卡，不再有
+///   letterbox；整条头部背后铺同一张图的模糊垫底，并用渐变淡入对话框底色。
+///   竖版 / 方形封面（书、漫画、游戏）与标题**并排**；横版封面（视频）自动切到
+///   **横幅**，整宽显示、标题在下。宽高比从 [coverBackdrop] 的降采样解码里取，
+///   与模糊垫底共用同一次解码。
+/// * **宽框（桌面 / 平板）**：对话框放宽到 [_wideMaxWidth]，启动按钮与快捷 chip
+///   挪进封面右侧（填掉标题下方的空白），列表动作排成两列，整体高度大幅缩短。
+/// * **窄框（手机）**：单列、封面卡缩到 [_narrowCoverWidth]，快捷 chip 在头部下方。
+///
 /// The launch/read affordance is optional so shelf book long-press menus can
 /// stay management-only while ordinary history dialogs can still expose it.
 ///
@@ -254,16 +266,16 @@ class MediaItemDialogFrame extends StatelessWidget {
     super.key,
   });
 
+  /// 封面 widget（调用方自己负责 `BoxFit.contain` 与解码失败兜底）。本骨架把它
+  /// 放进按宽高比定尺寸的封面卡里，所以 contain 恰好铺满、不留边。
   final Widget? cover;
 
-  /// 封面块两侧的「同图模糊垫底」图源（2026-10-04 用户反馈：竖版封面 contain
-  /// 后两侧大片纯色空白，「差点意思」）。非空时封面块背后铺一层同一张图的 cover
-  /// 裁切 + 高斯模糊 + 半透明压暗，横向留白被封面自身的色调填满，前景封面仍完整
-  /// 不裁。
+  /// 封面图源：头部模糊垫底 + 封面宽高比探测共用。
   ///
   /// 只收图源、不复用 [cover] widget：后者可能带 key / GlobalKey，画两遍会撞
-  /// key。解码按 [_backdropDecodeWidth] 降采样——模糊后看不出分辨率，省内存与
-  /// 解码。为 null（占位图标、拿不到图源）时退回纯色 letterbox；墨水屏不模糊。
+  /// key。解码按 [_backdropDecodeWidth] 降采样——模糊后看不出分辨率，宽高比也只差
+  /// 不到 1%。为 null（占位图标、拿不到图源）时头部退回纯色底、封面卡按默认竖版
+  /// 比例；墨水屏不模糊。
   final ImageProvider? coverBackdrop;
   final String title;
   final String? author;
@@ -274,201 +286,533 @@ class MediaItemDialogFrame extends StatelessWidget {
   final List<DialogListAction> listActions;
   final List<DialogDangerAction> dangerActions;
 
-  /// Cover height cap as a fraction of screen height. With the cover rendered at
-  /// the top of the dialog (BoxFit.contain inside [_buildCover]) the whole cover
-  /// stays visible (no hard crop) while the dialog never grows taller than the
-  /// screen.
+  /// Cover height cap as a fraction of screen height, so neither a very tall
+  /// portrait cover nor a full-width video banner can push the dialog past the
+  /// screen. The whole artwork stays visible (no hard crop): the cover card is
+  /// sized to the artwork's own aspect ratio and only shrinks proportionally.
   ///
   /// TODO-455 had turned the cover into a dimmed background behind a heavy
   /// readability scrim, which made the cover effectively invisible (~7% opacity);
-  /// TODO-557 restores the cover as a visible top-of-dialog block.
+  /// TODO-557 restored the cover as a visible foreground block — the hero cover
+  /// card keeps that rule (the blurred backdrop is decoration only).
   static const double _coverHeightFactor = 0.34;
 
-  /// 模糊垫底的解码宽度（像素）：σ=28 的模糊之后 64px 与原图看不出差别。
+  /// 模糊垫底与宽高比探测的解码宽度（像素）：σ=28 的模糊之后 64px 与原图看不出差别。
   static const int _backdropDecodeWidth = 64;
 
-  Widget _buildCoverBlock(
-    BuildContext context,
-    FushiDesignTokens tokens,
-    double screenHeight,
-  ) {
-    final ImageProvider? backdrop = coverBackdrop;
-    final Widget block = backdrop == null || isEinkTheme(context)
-        ? ColoredBox(
-            color: tokens.surfaces.overlay,
-            child: cover!,
-          )
-        : ClipRect(
-            child: Stack(
-              // passthrough：前景封面拿到与原 letterbox 相同的约束（整宽、限高），
-              // Stack 尺寸仍由封面决定，几何与改造前逐值一致。
-              fit: StackFit.passthrough,
-              children: <Widget>[
-                Positioned.fill(
-                  child: ColoredBox(color: tokens.surfaces.overlay),
-                ),
-                Positioned.fill(
-                  child: ExcludeSemantics(
-                    child: ImageFiltered(
-                      imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                      child: Image(
-                        key: const ValueKey<String>(
-                          'media_item_dialog_cover_backdrop',
-                        ),
-                        image: ResizeImage.resizeIfNeeded(
-                          _backdropDecodeWidth,
-                          null,
-                          backdrop,
-                        ),
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  ),
-                ),
-                // 压暗一层：模糊色块只做氛围，不能比前景封面抢眼，也让浅色封面
-                // 的两侧不至于发白刺眼。
-                Positioned.fill(
-                  child: ColoredBox(
-                    color: tokens.surfaces.overlay.withValues(alpha: 0.45),
-                  ),
-                ),
-                cover!,
-              ],
-            ),
-          );
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: screenHeight * _coverHeightFactor,
-      ),
-      child: block,
-    );
-  }
+  /// 对话框可用宽度达到它即按宽框排版（启动 / 快捷动作进头部、列表动作双列）。
+  static const double _wideLayoutMinWidth = 520;
+
+  /// 屏幕宽度达到它才把对话框放宽到 [_wideMaxWidth]；更窄的屏维持
+  /// [FushiDialogFrame] 默认的 420 上限（手机本来也到不了）。
+  static const double _wideScreenMinWidth = 720;
+  static const double _wideMaxWidth = 600;
+  static const double _narrowMaxWidth = 420;
+
+  static const double _wideCoverWidth = 148;
+  static const double _narrowCoverWidth = 104;
+
+  /// 宽高比超过它按横版封面（视频缩略图）走横幅；方形游戏封面仍与标题并排。
+  static const double _bannerMinAspect = 1.15;
+
+  /// 宽高比尚未解析（加载中 / 无图源）时封面卡的默认比例：书封最常见的 2:3。
+  static const double _defaultPortraitAspect = 2 / 3;
 
   @override
   Widget build(BuildContext context) {
-    final double screenHeight = MediaQuery.sizeOf(context).height;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
-
+    final Size screen = MediaQuery.sizeOf(context);
+    final bool wideScreen = screen.width >= _wideScreenMinWidth;
+    // 一份降采样 provider 同时喂宽高比探测与模糊垫底（ImageCache 只解码一次）。
+    final ImageProvider? decoded = coverBackdrop == null
+        ? null
+        : ResizeImage.resizeIfNeeded(
+            _backdropDecodeWidth, null, coverBackdrop!);
+    final ImageProvider? backdrop = isEinkTheme(context) ? null : decoded;
     return FushiDialogFrame(
-      child: Column(
+      maxWidth: wideScreen ? _wideMaxWidth : _narrowMaxWidth,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool wide = constraints.maxWidth >= _wideLayoutMinWidth;
+          return _CoverAspectResolver(
+            image: decoded,
+            builder: (BuildContext context, double? aspect) => _buildBody(
+              context,
+              wide: wide,
+              aspect: aspect,
+              backdrop: backdrop,
+              screenHeight: screen.height,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context, {
+    required bool wide,
+    required double? aspect,
+    required ImageProvider? backdrop,
+    required double screenHeight,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool banner =
+        cover != null && aspect != null && aspect > _bannerMinAspect;
+    // 宽框 + 并排头部：启动按钮与快捷 chip 进头部右栏；横幅头部下方本来就是整宽，
+    // 动作留在正文里。没有任何主动作时不进头部，否则右栏只剩一段空白间距。
+    final bool actionsInHeader =
+        wide && !banner && cover != null && _hasPrimaryActions;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildHeader(
+          context,
+          tokens,
+          wide: wide,
+          banner: banner,
+          aspect: aspect,
+          backdrop: backdrop,
+          screenHeight: screenHeight,
+          actionsInHeader: actionsInHeader,
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (!actionsInHeader) ..._buildPrimaryActions(tokens),
+              if (listActions.isNotEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                const FushiDivider(),
+                SizedBox(height: tokens.spacing.gap / 2),
+                _buildListActions(tokens, columns: wide ? 2 : 1),
+              ],
+              if (dangerActions.isNotEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                const FushiDivider(),
+                SizedBox(height: tokens.spacing.gap / 2),
+                _buildDangerActions(context),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -- header -----------------------------------------------------------------
+
+  Widget _buildHeader(
+    BuildContext context,
+    FushiDesignTokens tokens, {
+    required bool wide,
+    required bool banner,
+    required double? aspect,
+    required ImageProvider? backdrop,
+    required double screenHeight,
+    required bool actionsInHeader,
+  }) {
+    final double maxCoverHeight = screenHeight * _coverHeightFactor;
+    final Widget info = _buildTitleBlock(context, tokens, wide: wide);
+    final Widget content;
+    if (cover == null) {
+      content = info;
+    } else if (banner) {
+      content = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // Visible cover block at the top of the dialog (TODO-557). The cover
-          // widget itself uses BoxFit.contain, so the whole artwork stays
-          // visible and is never cropped; the ColoredBox letterboxes it.
-          if (cover != null) _buildCoverBlock(context, tokens, screenHeight),
-          Padding(
-            padding: EdgeInsets.all(tokens.spacing.card),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  title,
-                  // TODO-2490：本弹窗是库页卡片长按/右键「看全名」的兜底路径——
-                  // 卡上标题最多两行省略，这里再截断则超长条目名到处都看不全。
-                  // 外层 FushiDialogFrame 默认可滚动且限高，不会撑出屏。
-                  style: tokens.type.pageTitle.copyWith(
-                    color: colors.onSurface,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (author != null) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap / 2),
-                  Text(
-                    author!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.listSubtitle.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                SizedBox(height: tokens.spacing.card),
-                if (showLaunchAction &&
-                    launchLabel != null &&
-                    onLaunch != null) ...<Widget>[
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: onLaunch,
-                      child: Text(
-                        launchLabel!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: tokens.spacing.gap + 4),
-                ],
-                if (quickActions.isNotEmpty)
-                  _buildQuickActions(context, tokens),
-                if (listActions.isNotEmpty) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  const FushiDivider(),
-                  for (final DialogListAction action in listActions)
-                    FushiListItem(
-                      minHeight: 44,
-                      padding: EdgeInsets.zero,
-                      leading: Icon(action.icon),
-                      title: Text(action.label),
-                      // 不画尾部 chevron（2026-10-04）：这些是「就地执行 / 弹个小框」
-                      // 的菜单动作，不是推入子页的导航项；每行一个「>」暗示了不存在
-                      // 的层级，还把视线拉向右缘。MD3 菜单项同样不带箭头。
-                      onTap: action.onPressed,
-                    ),
-                ],
-                if (dangerActions.isNotEmpty) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  const FushiDivider(),
-                  SizedBox(height: tokens.spacing.gap / 2),
-                  for (final DialogDangerAction action in dangerActions)
-                    Center(
-                      child: TextButton(
-                        onPressed: action.onPressed,
-                        style: TextButton.styleFrom(
-                          foregroundColor: action.muted
-                              ? colors.onSurfaceVariant
-                              : colors.error,
-                        ),
-                        child: Text(
-                          action.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                ],
-              ],
+          Center(
+            child: _buildCoverCard(
+              context,
+              tokens,
+              aspect: aspect!,
+              maxWidth: double.infinity,
+              maxHeight: maxCoverHeight,
             ),
           ),
+          SizedBox(height: tokens.spacing.card - 4),
+          info,
+        ],
+      );
+    } else {
+      final Widget coverCard = _buildCoverCard(
+        context,
+        tokens,
+        aspect: aspect ?? _defaultPortraitAspect,
+        maxWidth: wide ? _wideCoverWidth : _narrowCoverWidth,
+        maxHeight: maxCoverHeight,
+      );
+      content = IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(alignment: Alignment.topCenter, child: coverCard),
+            SizedBox(width: tokens.spacing.rowHorizontal),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  info,
+                  if (actionsInHeader) ...<Widget>[
+                    const Spacer(),
+                    SizedBox(height: tokens.spacing.card),
+                    ..._buildPrimaryActions(tokens, trailingGap: false),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: _buildHeaderBackground(context, backdrop)),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.card,
+            tokens.spacing.card,
+            tokens.spacing.card - 4,
+          ),
+          child: content,
+        ),
+      ],
+    );
+  }
+
+  /// 头部背景：同图模糊垫底，按纵向渐变透明度淡出（顶部约半透明、底部完全透明），
+  /// 直接透出对话框自己的底色——头部无缝融进正文、交界处没有硬边，也不必知道
+  /// 对话框底色是哪个 surface 角色。无图源 / 墨水屏时只是一层同样淡出的浅 overlay。
+  Widget _buildHeaderBackground(BuildContext context, ImageProvider? backdrop) {
+    if (backdrop == null) {
+      final Color overlay = FushiDesignTokens.of(context).surfaces.overlay;
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[overlay, overlay.withValues(alpha: 0)],
+          ),
+        ),
+      );
+    }
+    return ClipRect(
+      child: ExcludeSemantics(
+        child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          // 只取 alpha：模糊色块只做氛围，压到半透明以下，浅色封面也不会让
+          // 标题发白看不清。
+          shaderCallback: (Rect bounds) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: <double>[0, 0.55, 1],
+            colors: <Color>[
+              Color(0x8CFFFFFF),
+              Color(0x4DFFFFFF),
+              Color(0x00FFFFFF),
+            ],
+          ).createShader(bounds),
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            child: Image(
+              key: const ValueKey<String>('media_item_dialog_cover_backdrop'),
+              image: backdrop,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 封面卡：按 [aspect] 定尺寸（宽不超过 [maxWidth]、高不超过 [maxHeight]），
+  /// 前景封面清晰画在最上层，整幅可见不裁切。
+  Widget _buildCoverCard(
+    BuildContext context,
+    FushiDesignTokens tokens, {
+    required double aspect,
+    required double maxWidth,
+    required double maxHeight,
+  }) {
+    final bool eink = isEinkTheme(context);
+    final Widget card = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: tokens.radii.cardRadius,
+        boxShadow: eink
+            ? null
+            : const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x47000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 6),
+                ),
+              ],
+      ),
+      child: ClipRRect(
+        borderRadius: tokens.radii.cardRadius,
+        child: ColoredBox(
+          color: tokens.surfaces.overlay,
+          child: cover!,
+        ),
+      ),
+    );
+    if (!maxWidth.isFinite) {
+      // 横幅：宽度跟可用宽度走，由 AspectRatio 推高、ConstrainedBox 限高。
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: AspectRatio(aspectRatio: aspect, child: card),
+      );
+    }
+    // 并排头部在 IntrinsicHeight 里：尺寸必须是确定值，不能依赖封面 widget 的
+    // 内在尺寸（图片未解码时为 0）。先按宽定高，超高再按高反推宽。
+    double width = maxWidth;
+    double height = width / aspect;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspect;
+    }
+    return SizedBox(width: width, height: height, child: card);
+  }
+
+  Widget _buildTitleBlock(
+    BuildContext context,
+    FushiDesignTokens tokens, {
+    required bool wide,
+  }) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          // TODO-2490：本弹窗是库页卡片长按/右键「看全名」的兜底路径——
+          // 卡上标题最多两行省略，这里再截断则超长条目名到处都看不全。
+          // 外层 FushiDialogFrame 默认可滚动且限高，不会撑出屏。
+          style:
+              (wide ? tokens.type.pageTitle : tokens.type.listTitle).copyWith(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w700,
+            height: 1.3,
+          ),
+        ),
+        if (author != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            author!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.listSubtitle.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // -- actions ----------------------------------------------------------------
+
+  bool get _hasLaunchAction =>
+      showLaunchAction && launchLabel != null && onLaunch != null;
+
+  bool get _hasPrimaryActions => _hasLaunchAction || quickActions.isNotEmpty;
+
+  /// 启动按钮 + 快捷 chip。正文里时末尾留 [FushiSpacingTokens.gap] 与列表动作分开；
+  /// 在头部右栏时贴底，不再追加间距。
+  List<Widget> _buildPrimaryActions(
+    FushiDesignTokens tokens, {
+    bool trailingGap = true,
+  }) {
+    final bool hasLaunch = _hasLaunchAction;
+    return <Widget>[
+      if (hasLaunch) ...<Widget>[
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: onLaunch,
+            child: Text(
+              launchLabel!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        if (quickActions.isNotEmpty) SizedBox(height: tokens.spacing.gap),
+      ],
+      if (quickActions.isNotEmpty) _buildQuickActions(tokens),
+      if (trailingGap && (hasLaunch || quickActions.isNotEmpty))
+        SizedBox(height: tokens.spacing.gap),
+    ];
+  }
+
+  Widget _buildQuickActions(FushiDesignTokens tokens) {
+    return Builder(
+      builder: (BuildContext context) => _QuickActionGrid(
+        gap: tokens.spacing.gap,
+        textDirection: Directionality.of(context),
+        children: <Widget>[
+          for (final DialogQuickAction action in quickActions)
+            FushiActionChip(
+              label: action.label,
+              icon: action.icon,
+              onPressed: action.onPressed,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildQuickActions(BuildContext context, FushiDesignTokens tokens) {
-    return _QuickActionGrid(
-      gap: tokens.spacing.gap,
-      textDirection: Directionality.of(context),
-      children: <Widget>[
-        for (final DialogQuickAction action in quickActions)
-          _quickActionChip(action),
-      ],
+  /// 列表动作：窄框单列；宽框按行两列（焦点 / Tab 顺序仍是阅读顺序：左→右、上→下）。
+  Widget _buildListActions(FushiDesignTokens tokens, {required int columns}) {
+    final List<Widget> rows = <Widget>[];
+    for (int i = 0; i < listActions.length; i += columns) {
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (int c = 0; c < columns; c++) ...<Widget>[
+              if (c > 0) SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: i + c < listActions.length
+                    ? _listActionItem(listActions[i + c], tokens)
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
     );
   }
 
-  Widget _quickActionChip(DialogQuickAction action) {
-    return FushiActionChip(
-      label: action.label,
-      icon: action.icon,
-      onPressed: action.onPressed,
+  Widget _listActionItem(DialogListAction action, FushiDesignTokens tokens) {
+    return FushiListItem(
+      minHeight: 44,
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+      leading: Icon(action.icon),
+      title: Text(action.label),
+      // 不画尾部 chevron（2026-10-04）：这些是「就地执行 / 弹个小框」
+      // 的菜单动作，不是推入子页的导航项；每行一个「>」暗示了不存在
+      // 的层级，还把视线拉向右缘。MD3 菜单项同样不带箭头。
+      onTap: action.onPressed,
     );
   }
+
+  Widget _buildDangerActions(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: FushiDesignTokens.of(context).spacing.gap,
+      children: <Widget>[
+        for (final DialogDangerAction action in dangerActions)
+          TextButton(
+            onPressed: action.onPressed,
+            style: TextButton.styleFrom(
+              foregroundColor:
+                  action.muted ? colors.onSurfaceVariant : colors.error,
+            ),
+            child: Text(
+              action.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 解析 [image] 的宽高比交给 [builder]；未解析完 / 解析失败 / 无图源时给 null。
+///
+/// 封面卡要在第一帧就按真实比例定尺寸才不会留 letterbox，而 [cover] 是调用方
+/// 给的不透明 widget、量不到图片本身。这里直接监听图源（与模糊垫底同一个降采样
+/// provider，ImageCache 命中后同步回调，不额外解码）。
+class _CoverAspectResolver extends StatefulWidget {
+  const _CoverAspectResolver({required this.image, required this.builder});
+
+  final ImageProvider? image;
+  final Widget Function(BuildContext context, double? aspect) builder;
+
+  @override
+  State<_CoverAspectResolver> createState() => _CoverAspectResolverState();
+}
+
+class _CoverAspectResolverState extends State<_CoverAspectResolver> {
+  ImageStream? _stream;
+  late final ImageStreamListener _listener = ImageStreamListener(
+    _onImage,
+    onError: (Object _, StackTrace? __) {},
+  );
+  double? _aspect;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_CoverAspectResolver oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) {
+      _aspect = null;
+      _resolve();
+    }
+  }
+
+  void _resolve() {
+    final ImageProvider? image = widget.image;
+    if (image == null) {
+      _stream?.removeListener(_listener);
+      _stream = null;
+      return;
+    }
+    final ImageStream stream =
+        image.resolve(createLocalImageConfiguration(context));
+    if (stream.key == _stream?.key) return;
+    _stream?.removeListener(_listener);
+    _stream = stream..addListener(_listener);
+  }
+
+  void _onImage(ImageInfo info, bool synchronousCall) {
+    final int width = info.image.width;
+    final int height = info.image.height;
+    info.dispose();
+    if (width <= 0 || height <= 0) return;
+    final double aspect = width / height;
+    if (aspect == _aspect) return;
+    if (synchronousCall) {
+      _aspect = aspect;
+    } else if (mounted) {
+      setState(() => _aspect = aspect);
+    }
+  }
+
+  @override
+  void dispose() {
+    _stream?.removeListener(_listener);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _aspect);
 }
 
 /// 等宽快捷 chip 网格：按 chip 的**真实内在宽度**决定每行放几列。

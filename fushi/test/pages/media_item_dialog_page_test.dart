@@ -52,7 +52,7 @@ void main() {
     // dimmed background hidden behind a readability scrim (TODO-557 regression).
     expect(
       source,
-      contains('maxHeight: screenHeight * _coverHeightFactor'),
+      contains('screenHeight * _coverHeightFactor'),
       reason: 'the cover must be a height-capped top block, not a background',
     );
     expect(
