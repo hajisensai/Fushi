@@ -425,5 +425,5 @@
   "pc_style_more": "Tous les réglages",
   "pc_hint_site_track": "Cette vidéo lit la piste de sous-titres du site, la couche Fushi reste donc masquée. Touchez pour afficher les sous-titres Fushi à la place.",
   "opt_playerControls_title": "Bouton de sous-titres dans le lecteur",
-  "opt_playerControls_desc": "Ajoute un bouton Fushi à la barre de contrôle du lecteur (YouTube et Netflix ; ailleurs, un bouton rond apparaît en bas à droite de la vidéo tant que le pointeur est dessus). Son menu bascule les mêmes réglages que cette page — sous-titres Fushi, remplacement des sous-titres du site, masquage, décalage temporel et apparence — sans quitter la vidéo."
+  "opt_playerControls_desc": "Ajoute un bouton Fushi à la barre de contrôle du lecteur (YouTube et Netflix ; ailleurs, un bouton rond apparaît en haut à droite de la vidéo tant que le pointeur est dessus). Son menu bascule les mêmes réglages que cette page — sous-titres Fushi, remplacement des sous-titres du site, masquage, décalage temporel et apparence — sans quitter la vidéo."
 }

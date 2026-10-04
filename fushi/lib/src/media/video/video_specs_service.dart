@@ -69,14 +69,29 @@ final videoSpecsProvider = Provider<VideoSpecsService>(
   (ref) => ref.watch(appProvider).videoSpecsService,
 );
 
+/// 规格探测器的签名：给一个本地路径，返回探测结论。
+typedef VideoSpecsProbe = Future<VideoProbeFacts> Function(String path);
+
+/// 构造 [VideoSpecsService] 时**未显式传 `probe`** 所用的探测器。
+///
+/// 生产恒为 [probeVideoFacts]（真起 ffprobe），任何代码都不该改它。它存在只为一件事：
+/// `AppModel.videoSpecsService` 自己 `new` 服务、不收探测器参数，widget 测试渲染真实
+/// AppModel + 真实视频文件时，卡片角标会真起 ffprobe 子进程，与 FakeAsync 的 20s 超时
+/// 计时器赛跑——装了 ffmpeg 的机器（含 CI 镜像）上随机报 pending timer。测试套件在
+/// `test/flutter_test_config.dart` 把它换成不起进程的假探测器；测探测本身的测试显式传
+/// `probe:`，不受影响。
+@visibleForTesting
+VideoSpecsProbe videoSpecsDefaultProbe = probeVideoFacts;
+
 /// 规格服务。挂在 [AppModel] 之下，库页与详情页共用一份缓存。
 class VideoSpecsService extends ChangeNotifier {
-  VideoSpecsService(this._db, {this.probe = probeVideoFacts});
+  VideoSpecsService(this._db, {VideoSpecsProbe? probe})
+    : probe = probe ?? videoSpecsDefaultProbe;
 
   final FushiDatabase _db;
 
   /// 探测入口，可注入以便单测不真起 ffprobe。
-  final Future<VideoProbeFacts> Function(String path) probe;
+  final VideoSpecsProbe probe;
 
   /// 已知规格。**value 可为 null**：null = 已经查过、这个文件**确实**给不出规格
   /// （无视频流的容器 / 坏文件 / 流 URL），用来防止对同一个文件反复重探。

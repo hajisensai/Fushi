@@ -425,5 +425,5 @@
   "pc_style_more": "Tất cả cài đặt",
   "pc_hint_site_track": "Video này đang phát bản phụ đề của chính trang web, nên lớp phụ đề Fushi vẫn ẩn. Chạm để hiển thị phụ đề Fushi thay thế.",
   "opt_playerControls_title": "Nút phụ đề trong trình phát",
-  "opt_playerControls_desc": "Thêm một nút Fushi vào thanh điều khiển của chính trình phát (YouTube và Netflix; ở các trang khác, một nút tròn hiện ở góc dưới bên phải video khi con trỏ ở trên video). Menu của nút đổi đúng những cài đặt có trên trang này — phụ đề Fushi, thay phụ đề của trang, ẩn phụ đề, lệch thời gian và giao diện phụ đề — mà không phải rời khỏi video."
+  "opt_playerControls_desc": "Thêm một nút Fushi vào thanh điều khiển của chính trình phát (YouTube và Netflix; ở các trang khác, một nút tròn hiện ở góc trên bên phải video khi con trỏ ở trên video). Menu của nút đổi đúng những cài đặt có trên trang này — phụ đề Fushi, thay phụ đề của trang, ẩn phụ đề, lệch thời gian và giao diện phụ đề — mà không phải rời khỏi video."
 }

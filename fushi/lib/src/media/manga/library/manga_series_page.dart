@@ -645,7 +645,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on OnlineMangaUnavailable catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.sibling', error, stack);
       if (mounted) {
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
       return;
     } finally {
@@ -1105,7 +1108,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
       setState(() => _refreshError = wrapped);
       if (!silent) {
-        FushiToast.show(msg: wrapped.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: wrapped.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -1282,7 +1288,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (mounted) {
         _challengeRetry = () => _openChapterAt(index);
         setState(() => _refreshError = error);
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.openChapter', error, stack);
@@ -1582,16 +1591,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
-  /// 运行时失败的可读文案：桥接层 message 往往是 `Exception: ...` 原串，
-  /// 经 [describeOnlineSourceError] 归一（2026-10 体验优化）。
-  static String _loadErrorText(OnlineMangaUnavailable error) {
-    final Object? cause = error.cause;
-    if (error.reason != OnlineMangaUnavailableReason.runtimeFailure ||
-        cause == null) {
-      return error.message;
-    }
-    return describeOnlineSourceError(cause);
-  }
+  /// 可读文案：桥接层 message 往往是 `Exception: ...` 原串，经
+  /// [OnlineMangaUnavailable.userMessage] 归一（2026-10 体验优化）；原串只进
+  /// 「查看详情」。
+  static String _loadErrorText(OnlineMangaUnavailable error) =>
+      error.userMessage;
 
   /// 一点内容都拉不到时的完整错误视图。
   ///
