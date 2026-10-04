@@ -149,6 +149,11 @@ test('YouTube items generate from any tab, no video page needed', () => {
     [{ site: 'netflix', netflixId: 'a' }, { site: 'youtube', youtubeId: 'c' }], false, 'netflix');
   assert.strictEqual(onNf.target, 'netflix');
 });
+test('button stays disabled until the current tab is known (it could be a Netflix playback page)', () => {
+  const s = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, null);
+  assert.strictEqual(s.mode, 'pending');
+  assert.strictEqual(s.enabled, false);
+});
 test('YouTube batch in progress shows progress and blocks a second click', () => {
   const s = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, 'other', { done: 2, total: 5 });
   assert.strictEqual(s.mode, 'running');

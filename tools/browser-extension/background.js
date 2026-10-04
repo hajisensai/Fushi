@@ -365,7 +365,8 @@ async function maybeSelfReload(data) {
     const st = await chrome.storage.local.get(
         ['fushiReloadedForBuild', 'fushiUpdateStale']);
     const decision = self.FUSHI_SELF_UPDATE.decide(
-        remote, local, st.fushiReloadedForBuild, await isOffscreenRecording());
+        // 批量制卡进行中（Netflix 录制 / YouTube 队列）都先不重载：reload 会把循环拦腰斩断。
+        remote, local, st.fushiReloadedForBuild, (await isOffscreenRecording()) || !!fushiYtBatch);
     if (decision.action === 'clear') {
       if (st.fushiUpdateStale) {
         await chrome.storage.local.remove(['fushiUpdateStale']);
@@ -651,7 +652,13 @@ async function stopTabCapture() {
 //
 // 进行中状态只放内存：SW 被杀 = 循环也没了，内存态天然与事实一致；放 storage 会留下
 // 「永远生成中」的残影把按钮锁死。
-let fushiYtBatch = null; // {done, total}；null = 空闲
+//
+// MV3 会杀掉空闲 30 秒、或等一个 fetch 太久的 SW，而单条裁 GIF+音频可能很慢。所以：
+// ① 每成功一条**立刻**出队——被杀最多丢在途那一条，重跑时服务端回 duplicate 照样出队；
+// ② 批量期间定时调扩展 API 续命；③ 进度 toast 不用常驻（SW 死了不会有人来撤它）；
+// ④ popup 在 running 态定时回问 fushiYtBatchStatus，SW 重启后内存态为 null 即自动解锁。
+let fushiYtBatch = null; // {done, total}；null = 空闲（total 为 0 = 已占位、还在读队列）
+const FUSHI_YT_KEEPALIVE_MS = 20000;
 
 /**
  * 单条 YouTube 制卡请求。返回与 content 时代 mineYoutube 消息完全同形的 resp，
@@ -677,16 +684,33 @@ async function fushiMineYoutubeItem(q) {
   }
 }
 
+/** @returns {Promise<object[]>} 当前队列（storage 是跨标签唯一真相源）。 */
+async function fushiReadQueue() {
+  const got = await chrome.storage.local.get(['fushiQueue']);
+  return Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
+}
+
 /**
- * 只按 id 剔除本次成功的项：storage 读-改-写，生成期间别处新入队的不会被误删。
- * @param {string[]} okIds
+ * 只按 id 剔除一项：storage 读-改-写，生成期间别处新入队的不会被误删。
+ * @param {string} id
  * @returns {Promise<void>}
  */
-async function fushiRemoveQueuedIds(okIds) {
-  if (!okIds.length) return;
-  const got = await chrome.storage.local.get(['fushiQueue']);
-  const fresh = Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
-  await chrome.storage.local.set({ fushiQueue: fresh.filter((it) => !it || okIds.indexOf(it.id) < 0) });
+async function fushiRemoveQueuedId(id) {
+  const fresh = await fushiReadQueue();
+  await chrome.storage.local.set({ fushiQueue: fresh.filter((it) => !it || it.id !== id) });
+}
+
+/**
+ * 与 action-popup.js fushiTabSite 同判据（hostname 后缀），不能用 URL 子串——
+ * `google.com/search?q=netflix.com` 不是 Netflix 页。
+ * @param {string} url
+ * @returns {boolean}
+ */
+function fushiIsNetflixUrl(url) {
+  try {
+    const h = new URL(String(url || '')).hostname;
+    return h === 'netflix.com' || h.endsWith('.netflix.com');
+  } catch (_) { return false; }
 }
 
 /**
@@ -726,34 +750,43 @@ async function fushiYtBatchPublish() {
  * @returns {Promise<void>}
  */
 async function fushiRunYoutubeQueue(toastTabId) {
-  if (fushiYtBatch) return; // 已在跑：重复点击不再开第二条循环
-  const got = await chrome.storage.local.get(['fushiQueue']);
-  const items = (Array.isArray(got.fushiQueue) ? got.fushiQueue : [])
-    .filter((it) => it && it.site === 'youtube' && it.youtubeId);
-  if (!items.length) { fushiToastTab(toastTabId, bgT('gen_youtube_queue_empty')); return; }
-  fushiYtBatch = { done: 0, total: items.length };
-  let ok = 0, unconfigured = 0;
+  // 已在跑：重复点击不再开第二条循环。占位必须在第一个 await 之前同步完成——否则双击的两条
+  // 消息都会先过这道检查再各自 await，跑出两条循环、每张卡制两遍。
+  if (fushiYtBatch) return;
+  fushiYtBatch = { done: 0, total: 0 };
+  const keepAlive = setInterval(() => {
+    try { chrome.runtime.getPlatformInfo(() => { try { void chrome.runtime.lastError; } catch (_) {} }); } catch (_) {}
+  }, FUSHI_YT_KEEPALIVE_MS);
+  let items = [];
+  let ok = 0, unconfigured = 0, skipped = 0;
   let firstNotice = null;
-  const okIds = [];
   try {
+    items = (await fushiReadQueue()).filter((it) => it && it.site === 'youtube' && it.youtubeId);
+    if (!items.length) { fushiToastTab(toastTabId, bgT('gen_youtube_queue_empty')); return; }
+    fushiYtBatch = { done: 0, total: items.length };
     await fushiYtBatchPublish();
-    fushiToastTab(toastTabId, bgT('gen_progress', fushiYtBatch), { sticky: true });
+    fushiToastTab(toastTabId, bgT('gen_progress', fushiYtBatch));
     for (const q of items) {
-      const o = self.fushiMineOutcome(await fushiMineYoutubeItem(q), bgT);
-      if (o.cls === 'done') { ok++; okIds.push(q.id); }
-      if (o.cls === 'unconfigured') unconfigured++;
-      // 一条条弹会被下一条进度盖掉；留第一条原因随最终结果一起给（同类失败通常同因）。
-      if (o.notice && !firstNotice) firstNotice = o;
+      // 生成期间用户可能在 popup 里删了/清空了：每条开工前对一次真相源，删掉的不制。
+      if ((await fushiReadQueue()).some((it) => it && it.id === q.id)) {
+        const o = self.fushiMineOutcome(await fushiMineYoutubeItem(q), bgT);
+        if (o.cls === 'done') { ok++; await fushiRemoveQueuedId(q.id); }
+        if (o.cls === 'unconfigured') unconfigured++;
+        // 一条条弹会被下一条进度盖掉；留第一条原因随最终结果一起给（同类失败通常同因）。
+        if (o.notice && !firstNotice) firstNotice = o;
+      } else {
+        skipped++;
+      }
       fushiYtBatch = { done: fushiYtBatch.done + 1, total: items.length };
       await fushiYtBatchPublish();
-      fushiToastTab(toastTabId, bgT('gen_progress', fushiYtBatch), { sticky: true });
+      fushiToastTab(toastTabId, bgT('gen_progress', fushiYtBatch));
     }
-    await fushiRemoveQueuedIds(okIds);
   } finally {
+    clearInterval(keepAlive);
     fushiYtBatch = null;
     await fushiYtBatchPublish();
   }
-  const fail = items.length - ok;
+  const fail = items.length - ok - skipped;
   let summary = unconfigured > 0
     ? bgT('gen_partial_anki_unconfigured', { done: ok, kept: fail })
     : bgT('gen_done_processed', { done: ok }) + (fail ? bgT('gen_done_failed_suffix', { fail }) : '');
@@ -773,8 +806,7 @@ async function fushiIconClick(tab) {
   const q = Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
   // 与 action-popup.js fushiGenButtonState 同判据：只有「在 Netflix 页且有 Netflix 待生成项」才
   // 录 Netflix；其余一律在这里跑 YouTube 队列（不需要视频页，任何 tab 都行）。
-  const onNetflix = url.indexOf('netflix.com') >= 0;
-  if (!(onNetflix && q.some((it) => it && it.site === 'netflix' && it.netflixId))) {
+  if (!(fushiIsNetflixUrl(url) && q.some((it) => it && it.site === 'netflix' && it.netflixId))) {
     await fushiRunYoutubeQueue(tab.id);
     return;
   }

@@ -88,6 +88,8 @@ function fushiGenButtonState(queue, batchActive, tabSite, ytBatch) {
       enabled: false, hint: '',
     };
   }
+  // 当前 tab 还没查到（null）：不知道是不是 Netflix 播放页，点了可能走错分支 → 先禁用。
+  if (tabSite == null) return { mode: 'pending', label: t('ap_gen_start'), enabled: false, hint: '' };
   const list = Array.isArray(queue) ? queue : [];
   const nf = list.filter((q) => q && q.site === 'netflix' && q.netflixId).length;
   const yt = list.filter((q) => q && q.site === 'youtube' && q.youtubeId).length;
@@ -261,10 +263,11 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   // YouTube 批量进度：background 内存态是唯一真相源（SW 被杀 = 没有批量在跑），打开时问一次，
   // 之后跟 fushiYtBatchProgress 广播走。
   let ytBatch = null;
+  let genTabKnown = false; // tabs.query 回来前 tabSite=null → 按钮禁用
   function updateGenButton(queue, batch) {
     if (!genEl) return;
     const state = fushiGenButtonState(
-      queue, !!(batch && batch.active), fushiTabSite(genTab && genTab.url), ytBatch);
+      queue, !!(batch && batch.active), genTabKnown ? fushiTabSite(genTab && genTab.url) : null, ytBatch);
     genEl.textContent = state.label;
     genEl.disabled = !state.enabled;
     genEl.dataset.mode = state.mode;
@@ -395,17 +398,22 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     ytBatch = batch && batch.total > 0 ? batch : null;
     readQueue().then((q) => refreshGenButton(q));
   }
+  function queryYtBatch() {
+    try {
+      chrome.runtime.sendMessage({ type: 'fushiYtBatchStatus' }, (resp) => {
+        try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+        applyYtBatch(resp && resp.batch);
+      });
+    } catch (_) {}
+  }
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg && msg.type === 'fushiYtBatchProgress') applyYtBatch(msg.batch);
     });
   } catch (_) {}
-  try {
-    chrome.runtime.sendMessage({ type: 'fushiYtBatchStatus' }, (resp) => {
-      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
-      if (resp && resp.batch) applyYtBatch(resp.batch);
-    });
-  } catch (_) {}
+  queryYtBatch();
+  // running 态回问：SW 中途被杀就不会再有「结束」广播；重启后的 SW 内存态为 null → 解锁按钮。
+  setInterval(() => { if (ytBatch) queryYtBatch(); }, 3000);
 
   // 浏览器原生 Side Panel 入口。**这是全扩展唯一真正能开侧边栏的路径**（popup 在扩展上下文里，
   // 点击带瞬态用户激活），所以它必须一次都不能失手。
@@ -489,6 +497,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   try {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       genTab = (tabs && tabs[0]) || null;
+      genTabKnown = true;
       readQueue().then((q) => refreshGenButton(q));
     });
   } catch (_) {}

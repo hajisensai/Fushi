@@ -38,6 +38,7 @@ function loadBackground(queue, respond) {
   const broadcasts = [];
   const listeners = [];
   let releaseFetch; // 置为函数时 fetch 挂起，直到测试放行
+  let holdAt = 0; // 第 n 次 /api/mine 挂起（模拟那一条慢到 SW 被杀）
   const local = {
     get(keys, cb) {
       const out = {};
@@ -80,7 +81,9 @@ function loadBackground(queue, respond) {
         return { ok: true, status: 200, json: async () => ({}) };
       }
       posts.push(body);
-      if (typeof releaseFetch === 'function') await new Promise((r) => { releaseFetch = r; });
+      if (typeof releaseFetch === 'function' || posts.length === holdAt) {
+        await new Promise((r) => { releaseFetch = r; });
+      }
       const res = respond(body);
       if (res && res.__status) return { ok: false, status: res.__status, json: async () => null };
       return { ok: true, status: 200, json: async () => res };
@@ -99,6 +102,7 @@ function loadBackground(queue, respond) {
   return {
     store, posts, toasts, broadcasts,
     holdFetch() { releaseFetch = () => {}; },
+    holdNth(n) { holdAt = n; },
     release() { const r = releaseFetch; releaseFetch = undefined; if (typeof r === 'function') r(); },
     send(msg) {
       let resp;
@@ -175,4 +179,44 @@ test('Anki not configured keeps the items and says so; settings-fixable HTTP err
   const last = bg401.toasts[bg401.toasts.length - 1].msg;
   assert.ok(last.text.includes('mine_err_401'), last.text);
   assert.strictEqual(last.openSettings, true);
+});
+
+// ── 审查回归：SW 生命周期 / 竞态 / 与 popup 判据一致 ──
+test('double click (two messages in the same tick) runs one loop, each card mined once', async () => {
+  const bg = loadBackground([yt('a', 'vidA'), yt('b', 'vidB')], () => ({ result: 'success' }));
+  bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+  bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+  await flush();
+  assert.deepStrictEqual(bg.posts.map((b) => b.youtubeVideoId), ['vidA', 'vidB']);
+});
+
+test('a URL that merely contains netflix.com is not a Netflix page', async () => {
+  const bg = loadBackground([{ id: 'n1', site: 'netflix', netflixId: '42' }, yt('a', 'vidA')],
+    () => ({ result: 'success' }));
+  bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://www.google.com/search?q=netflix.com' } });
+  await flush();
+  assert.strictEqual(bg.posts.length, 1, '应生成 YouTube，而不是在 Google 页上起 Netflix 录制');
+  assert.strictEqual(bg.store.fushiNfBatch, undefined);
+});
+
+test('each success leaves the queue at once, so an SW killed mid-batch never re-mines finished cards', async () => {
+  const bg = loadBackground([yt('a', 'vidA'), yt('b', 'vidB')], () => ({ result: 'success' }));
+  bg.holdNth(2); // 第二条慢到 SW 被杀：此刻 a 必须已经出队
+  bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+  await flush();
+  assert.strictEqual(bg.posts.length, 2);
+  assert.deepStrictEqual(bg.store.fushiQueue.map((q) => q.id), ['b']);
+});
+
+test('cards removed from the queue mid-batch are not mined and are not counted as failures', async () => {
+  let bg = null;
+  bg = loadBackground([yt('a', 'vidA'), yt('b', 'vidB')], (body) => {
+    if (body.youtubeVideoId === 'vidA') bg.store.fushiQueue = bg.store.fushiQueue.filter((q) => q.id !== 'b');
+    return { result: 'success' };
+  });
+  bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+  await flush();
+  assert.deepStrictEqual(bg.posts.map((b) => b.youtubeVideoId), ['vidA']);
+  const last = bg.toasts[bg.toasts.length - 1].msg.text;
+  assert.ok(!last.includes('gen_done_failed_suffix'), '用户删掉的不算失败：' + last);
 });
