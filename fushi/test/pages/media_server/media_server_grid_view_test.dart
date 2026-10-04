@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/utils.dart';
@@ -258,5 +259,56 @@ void main() {
       find.byKey(const ValueKey<String>('media-server-grid-card-movie-0')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('2026-10：窄屏排序收成图标菜单，选项同样重置分页', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    browser.children['lib-movies'] = fakeMovies(5);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('media-server-grid-sort')),
+      findsNothing,
+      reason: '窄屏不再放写死 180 宽的下拉',
+    );
+    final Finder compact = find.byKey(
+      const ValueKey<String>('media-server-grid-sort-compact'),
+    );
+    expect(compact, findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(compact);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.media_server_sort_date_added).last);
+    await tester.pumpAndSettle();
+
+    final FakePageRequest last = childrenRequests().last;
+    expect(last.startIndex, 0);
+    expect(last.sort, MediaServerSort.dateAdded);
+  });
+
+  testWidgets('2026-10：电影卡左上「详情」角标进详情而不是播放', (WidgetTester tester) async {
+    browser.children['lib-movies'] = fakeMovies(2);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    final Finder info = find.descendant(
+      of: find.byKey(const ValueKey<String>('media-server-grid-card-movie-0')),
+      matching: find.byKey(const ValueKey<String>('media-server-card-info')),
+    );
+    expect(info, findsOneWidget);
+    final Size hit = tester.getSize(info);
+    expect(hit.width, greaterThanOrEqualTo(40));
+    expect(hit.height, greaterThanOrEqualTo(40));
+
+    await tester.tap(info);
+    await tester.pumpAndSettle();
+
+    expect(played, isEmpty, reason: '角标是详情入口，不触发播放');
+    expect(find.byType(MediaServerDetailView), findsOneWidget);
   });
 }

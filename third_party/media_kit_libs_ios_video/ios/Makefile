@@ -30,9 +30,18 @@ all: Frameworks/*.xcframework Frameworks/.symlinks
 # pink/magenta, this one matches vo=gpu-next. The Dart side relies on it via
 # textureRendererReshapesDolbyVision(); dropping the patch means flipping that.
 #
+# BUG-2939 (#1953): the full flavor has no muxer at all, so mpv's `dump-cache`
+# (online-video mining copies the buffered sentence out of the player instead
+# of fetching it again) always failed with "Output format not found". This
+# build adds `--enable-muxer=matroska` on top of the dovi patch
+# (hajisensai/libmpv-darwin-build @ hibiki/mkv-muxer). Verified from the built
+# tarball: every Avformat slice carries matroskaenc's own strings (the dovi
+# build had none), Avcodec still reports 6.1.6, Mpv still carries the DV patch.
+# fushi/test/build/libmpv_mkv_muxer_guard_test.dart pins the `mkvmux` name.
+#
 # MPV_XCFRAMEWORKS_VERSION is only a cache-path label here, not an upstream tag.
-MPV_XCFRAMEWORKS_VERSION=ffmpeg6.1.6-dovi
-MPV_XCFRAMEWORKS_SHA256SUM=00184863042aa110f030f41b19d5138701110d0bd51d0c167ecc64522e71f894
+MPV_XCFRAMEWORKS_VERSION=ffmpeg6.1.6-mkvmux-dovi
+MPV_XCFRAMEWORKS_SHA256SUM=3f7e7c797625c6b8883b57959aeed2dff9e69742c5c9da66f063269cacd36d22
 
 .cache/xcframeworks/libmpv-xcframeworks-${MPV_XCFRAMEWORKS_VERSION}-ios-universal.tar.gz:
 	mkdir -p .cache/xcframeworks

@@ -103,10 +103,10 @@ void main() {
     // 用户拍板设计稿（2026-08-01）：顶部全宽 backdrop hero 轮播（最近在看前 5
     // 合集）→「继续观看」/「最近添加」横滚行 → 竖横混排媒体库墙。撤任一接线
     // 或回退到恒 2:3 单一网格即转红。
-    expect(homeSrc.contains('_buildHeroCarousel'), isTrue,
-        reason: '视频首页必须有 hero 轮播（最近在看合集，backdrop 优先）');
+    // hero 轮播的断言已删（2026-10-04）：#792 dashboard 化后首页不再渲染轮播，
+    // `_buildHeroCarousel` 只剩无调用方的死代码，旧断言反而强迫死代码留存。
     expect(homeSrc.contains('getAllCollectionScrapeMeta'), isTrue,
-        reason: 'hero 轮播必须消费合集刮削资料（backdrop / 简介 / airDate）');
+        reason: '视频首页必须消费合集刮削资料（作品名 / 年份筛选）');
     expect(homeSrc.contains('_buildContinueRow'), isTrue,
         reason: '必须有「继续观看」横滚行');
     expect(homeSrc.contains('_buildRecentlyAddedRow'), isTrue,

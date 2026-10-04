@@ -63,10 +63,54 @@ class MangaExtensionManagementTile extends StatelessWidget {
   /// 展开自带源清单，由调用点显式放宽。
   final int subtitleMaxLines;
 
+  /// 窄于此宽度时文字动作按钮下移到副标题下方一行。
+  ///
+  /// 2026-10 体验优化：trailing 的 `Wrap` 在 `FushiListItem` 的 `Row` 里拿到
+  /// 的是无界宽度，永远不会换行——窄屏上「预览 + 安装」两个按钮加开关直接
+  /// 把标题列挤到只剩几个字甚至溢出。
+  static const double compactActionsBreakpoint = 480;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildTile(
+            context,
+            narrow: constraints.maxWidth < compactActionsBreakpoint,
+          ),
+    );
+  }
+
+  Widget _buildTile(BuildContext context, {required bool narrow}) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<Widget> actions = <Widget>[
+      if (secondaryLabel != null)
+        TextButton(
+          style: _actionStyle,
+          onPressed: onSecondary,
+          child: Text(secondaryLabel!),
+        ),
+      if (primaryLabel != null)
+        TextButton(
+          style: _actionStyle,
+          onPressed: onPrimary,
+          child: Text(primaryLabel!),
+        ),
+    ];
+    final List<Widget> trailingChildren = <Widget>[
+      if (busy)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: SizedBox.square(
+            dimension: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      if (enabled != null)
+        Switch.adaptive(value: enabled!, onChanged: onEnabledChanged),
+      if (!narrow) ...actions,
+    ];
     return FushiCard(
       // 行与行之间必须有实边距：卡片圆角 10 而外边距为 0 时，相邻卡片之间只
       // 从圆角缺口漏出几处页面底色，看着像锯齿而不是分隔。
@@ -103,34 +147,30 @@ class MangaExtensionManagementTile extends StatelessWidget {
             ],
           ],
         ),
-        subtitle: subtitle,
-        trailing: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            if (busy)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+        subtitle: narrow && actions.isNotEmpty
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  subtitle,
+                  const SizedBox(height: 4),
+                  Wrap(
+                    key: const ValueKey<String>(
+                      'manga_extension_tile_compact_actions',
+                    ),
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: actions,
+                  ),
+                ],
+              )
+            : subtitle,
+        trailing: trailingChildren.isEmpty
+            ? null
+            : Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: trailingChildren,
               ),
-            if (enabled != null)
-              Switch.adaptive(value: enabled!, onChanged: onEnabledChanged),
-            if (secondaryLabel != null)
-              TextButton(
-                style: _actionStyle,
-                onPressed: onSecondary,
-                child: Text(secondaryLabel!),
-              ),
-            if (primaryLabel != null)
-              TextButton(
-                style: _actionStyle,
-                onPressed: onPrimary,
-                child: Text(primaryLabel!),
-              ),
-          ],
-        ),
       ),
     );
   }

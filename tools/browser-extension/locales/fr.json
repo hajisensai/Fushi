@@ -297,7 +297,6 @@
   "ctx_confirm": "Créer la carte",
   "ctx_cancel": "Annuler",
   "gen_youtube_queue_empty": "La file YouTube est vide : activez les sous-titres → survolez un mot avec Shift → appuyez sur « miner » dans la fenêtre pour le mettre en file, puis générez",
-  "gen_ext_updated_refresh": "L’extension a été mise à jour ; actualisez la page (F5) et réessayez",
   "gen_progress": "Génération… {done}/{total}",
   "gen_partial_anki_unconfigured": "Génération partielle : Anki n’est pas configuré — configurez Anki dans Fushi et réessayez ({done} traitées, {kept} conservées)",
   "gen_partial_anki_unconfigured_kept": "Génération partielle : Anki n’est pas configuré — configurez Anki dans Fushi et réessayez ({kept} conservées)",
@@ -368,7 +367,7 @@
   "ap_gen_unsupported_hint": "Les cartes en file proviennent de sites sans génération par lot ; retirez-les une par une ou videz la file",
   "ap_gen_start_record_n": "Lancer l’enregistrement et la génération ({n} cartes)",
   "ap_gen_start_n": "Lancer la génération ({n} cartes)",
-  "ap_gen_other_youtube_hint": "{n} de plus sur YouTube — passez sur une page YouTube pour les générer",
+  "ap_gen_other_youtube_hint": "{n} de plus depuis YouTube — ouvrez ce menu sur n’importe quelle page hors Netflix pour les générer",
   "ap_gen_other_netflix_hint": "{n} de plus sur Netflix — passez sur une page de lecture Netflix pour les générer",
   "ap_gen_site_count": "{site} {n} cartes",
   "ap_gen_wrong_site_hint": "En attente : {pending} — cliquez sur un élément de la file pour aller à sa page vidéo, puis générez",
@@ -426,5 +425,5 @@
   "pc_style_more": "Tous les réglages",
   "pc_hint_site_track": "Cette vidéo lit la piste de sous-titres du site, la couche Fushi reste donc masquée. Touchez pour afficher les sous-titres Fushi à la place.",
   "opt_playerControls_title": "Bouton de sous-titres dans le lecteur",
-  "opt_playerControls_desc": "Ajoute un bouton Fushi à la barre de contrôle du lecteur (YouTube et Netflix ; ailleurs, un bouton rond apparaît en bas à droite de la vidéo tant que le pointeur est dessus). Son menu bascule les mêmes réglages que cette page — sous-titres Fushi, remplacement des sous-titres du site, masquage, décalage temporel et apparence — sans quitter la vidéo."
+  "opt_playerControls_desc": "Ajoute un bouton Fushi à la barre de contrôle du lecteur (YouTube et Netflix ; ailleurs, un bouton rond apparaît en haut à droite de la vidéo tant que le pointeur est dessus). Son menu bascule les mêmes réglages que cette page — sous-titres Fushi, remplacement des sous-titres du site, masquage, décalage temporel et apparence — sans quitter la vidéo."
 }

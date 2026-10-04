@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart'
     show ValueNotifier, immutable, mapEquals;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
     show DiscoveryImportBlockedException;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
@@ -262,7 +264,7 @@ class AnimeDownloadService {
       AnimeDownloadPlan plan,
       List<String> videoAbsolutePaths,
     )? subtitleResolver,
-    Future<int?> Function(
+    Future<DiscoveryImportOutcome?> Function(
       AnimeDownloadPlan plan,
       List<String> absolutePaths,
     )? discoveryImporter,
@@ -310,8 +312,9 @@ class AnimeDownloadService {
   /// 发现页新内容类型（[AnimeDownloadPlan.kindAudiobook] /
   /// [AnimeDownloadPlan.kindGame]）的入库回调（AppModel 接线
   /// `DiscoveryImportExecutor.importPaths`；null = 不支持，按失败处理）。
-  /// 返回成功入库的条目数（0/null = 无/失败）。
-  final Future<int?> Function(
+  /// 返回入库结果：条目数（0 = 无/失败），或 `deferred`（有声书只有音频、
+  /// 入库移交给转录队列——下载本身成功，不能落 failed）。
+  final Future<DiscoveryImportOutcome?> Function(
     AnimeDownloadPlan plan,
     List<String> absolutePaths,
   )? _discoveryImporter;
@@ -918,15 +921,20 @@ class AnimeDownloadService {
     List<TorrentFileEntry> files,
   ) async {
     int imported = 0;
+    bool deferred = false;
     String? importError;
-    final Future<int?> Function(AnimeDownloadPlan, List<String>)? importer =
-        _discoveryImporter;
+    final Future<DiscoveryImportOutcome?> Function(
+      AnimeDownloadPlan,
+      List<String>,
+    )? importer = _discoveryImporter;
     if (importer == null) {
       importError = 'content kind ${plan.contentKind} unsupported';
     } else {
       try {
-        imported =
-            await importer(plan, resolveAllAbsolutePaths(info, files)) ?? 0;
+        final DiscoveryImportOutcome? outcome =
+            await importer(plan, resolveAllAbsolutePaths(info, files));
+        imported = outcome?.importedCount ?? 0;
+        deferred = outcome?.deferred ?? false;
       } on DiscoveryImportBlockedException catch (e) {
         // 内容问题（缺字幕/同名书已在库/解压失败…）落稳定原因码，任务行翻译成
         // 用户能照着做的文案，不把异常 toString 甩给用户（BUG-2775）。
@@ -935,7 +943,9 @@ class AnimeDownloadService {
         importError = 'discovery import failed: $e';
       }
     }
-    if (imported > 0) {
+    // deferred：下载与分类都成功，入库已排进转录队列（那条任务在下载中心另有
+    // 一行），这里的使命完成了。
+    if (imported > 0 || deferred) {
       await store.save(
         plan.copyWith(
           status: AnimeDownloadPlan.statusImported,

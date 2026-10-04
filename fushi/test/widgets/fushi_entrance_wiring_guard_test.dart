@@ -47,4 +47,34 @@ void main() {
       greaterThanOrEqualTo(2),
     );
   });
+
+  // 2026-10-04 用户追加「所有功能全部都要做」：其余库页 / 浏览页网格同样接入。
+  // 每个文件都要同时有窗口（scope）与逐项包装，缺 scope 时窗口常开、懒加载
+  // 滚出的每一格都会淡入（拖影）。
+  test('其余库页与浏览页网格都在进场窗口内错峰进场', () {
+    for (final String path in <String>[
+      'lib/src/pages/implementations/games_library_page.dart',
+      'lib/src/pages/implementations/game_stream_library_page.dart',
+      'lib/src/pages/implementations/history_reader_page.dart',
+      'lib/src/pages/implementations/media_server/media_server_grid_view.dart',
+      'lib/src/pages/implementations/video_discovery_page.dart',
+      'lib/src/media/online/online_source_browse_page.dart',
+      'lib/src/media/manga/discovery/manga_discovery_page.dart',
+      'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart',
+      'lib/src/media/manga/online/mokuro_moe_catalog_view.dart',
+      // 合集详情（视频剧集列表 / 书与游戏成员网格）与首页仪表盘分区 + 横滚行。
+      'lib/src/pages/implementations/media_collection_detail_page.dart',
+      'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+      'lib/src/pages/implementations/home_dashboard_page.dart',
+    ]) {
+      final String src = read(path);
+      expect(src, contains('FushiEntranceScope('), reason: path);
+      expect(
+        src.contains('FushiStaggeredEntrance(') ||
+            src.contains('fushiStaggeredItemBuilder('),
+        isTrue,
+        reason: path,
+      );
+    }
+  });
 }

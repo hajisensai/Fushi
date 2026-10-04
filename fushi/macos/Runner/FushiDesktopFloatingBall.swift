@@ -519,6 +519,12 @@ final class DesktopFloatingBallController: NSObject {
 
   private var screenObserver: NSObjectProtocol?
 
+  // 截屏识字（FushiDesktopScreenOcr.swift）：冻结层、会话代数（stop / 新一次 start
+  // 之后到达的旧截图一律作废）、球是否因截屏被藏起。
+  private var screenOcrOverlay: DesktopScreenOcrOverlay?
+  private var screenOcrGeneration = 0
+  private var screenOcrBallHidden = false
+
   init(binaryMessenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(
       name: kDesktopFloatingBallChannel, binaryMessenger: binaryMessenger)
@@ -552,6 +558,15 @@ final class DesktopFloatingBallController: NSObject {
     case "takeSystemBallClosedByUser":
       // 关闭即时推给 Dart（进程就是 app），没有需要补取的持久标记。
       result(false)
+    case "startScreenOcrCapture":
+      startScreenOcrCapture(call.arguments as? [String: Any] ?? [:], result: result)
+    case "updateScreenOcrOverlay":
+      updateScreenOcrOverlay(call.arguments as? [String: Any] ?? [:])
+      result(nil)
+    case "stopScreenOcr":
+      // Dart 主动关：不回调。
+      endScreenOcr(restoreBall: true)
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -600,6 +615,9 @@ final class DesktopFloatingBallController: NSObject {
 
   /// 销毁全部窗口（stopSystemBall / 用户点关闭 / app 退出）。
   func destroy() {
+    // 冻结层随球一起拆（不回调、不恢复——球马上也没了）。
+    endScreenOcr(restoreBall: false)
+    screenOcrBallHidden = false
     stopTimer()
     expandAnimation = nil
     snapAnimation = nil
@@ -1074,6 +1092,130 @@ final class DesktopFloatingBallController: NSObject {
     case "sync": return "Sync now"
     default: return id
     }
+  }
+
+  // MARK: 截屏识字
+
+  /// `startScreenOcrCapture`：选屏 → 查权限 → 藏球 → 截整块屏 → 立即盖冻结层。
+  /// 失败（`permission_denied` / `capture_failed`）时球已恢复、不显示冻结层。
+  private func startScreenOcrCapture(_ args: [String: Any], result: @escaping FlutterResult) {
+    // 上一次还没结束（截图在途或冻结层还开着）：直接作废，不回调。
+    endScreenOcr(restoreBall: false)
+    screenOcrGeneration += 1
+    let generation = screenOcrGeneration
+
+    let anchor = (args["anchor"] as? [NSNumber])?.map { $0.doubleValue }
+    guard let screen = DesktopScreenCapture.screen(forAnchor: anchor) else {
+      restoreBallAfterScreenOcr()
+      result(["error": "capture_failed"])
+      return
+    }
+    // 没有「屏幕录制」权限：请求一次（首次弹系统框，之后只是把 Fushi 列进设置里），
+    // 本次直接失败，由 Dart 唤起主窗提示。截不到别的 app 的窗口内容，强截没有意义。
+    if !CGPreflightScreenCaptureAccess() {
+      CGRequestScreenCaptureAccess()
+      restoreBallAfterScreenOcr()
+      result(["error": "permission_denied"])
+      return
+    }
+
+    let labels = (args["labels"] as? [String: String]) ?? [:]
+    var ocrPrimary = primary
+    var ocrSurface = surface
+    var ocrOnSurface = onSurface
+    if let colors = args["colors"] as? [String: Any] {
+      func color(_ key: String) -> DesktopFloatingBallColor? {
+        guard let n = colors[key] as? NSNumber else { return nil }
+        return DesktopFloatingBallColor(argb: UInt32(truncatingIfNeeded: n.int64Value))
+      }
+      ocrPrimary = color("primary") ?? ocrPrimary
+      ocrSurface = color("surface") ?? ocrSurface
+      ocrOnSurface = color("onSurface") ?? ocrOnSurface
+    }
+
+    // 藏球与按钮列（不销毁）：菜单直接收掉，球面板 orderOut。截图时再按 windowID
+    // 排除球面板，双保险。
+    collapseImmediately()
+    var excluded: [Int] = []
+    if let panel = ballPanel {
+      excluded.append(panel.windowNumber)
+      panel.orderOut(nil)
+      screenOcrBallHidden = true
+    }
+
+    DesktopScreenCapture.capture(screen: screen, excludedWindowNumbers: excluded) {
+      [weak self] outcome in
+      guard let self = self, generation == self.screenOcrGeneration else {
+        // 期间被 stopScreenOcr / stopSystemBall / 新一次 start 取代：球已由取代方处理。
+        result(["error": "capture_failed"])
+        return
+      }
+      let image: CGImage
+      switch outcome {
+      case .success(let captured):
+        image = captured
+      case .failure(let failure):
+        self.restoreBallAfterScreenOcr()
+        result(["error": failure == .permissionDenied ? "permission_denied" : "capture_failed"])
+        return
+      }
+      guard let png = DesktopScreenCapture.pngData(image) else {
+        self.restoreBallAfterScreenOcr()
+        result(["error": "capture_failed"])
+        return
+      }
+      let overlay = DesktopScreenOcrOverlay(
+        screen: screen, image: image, labels: labels,
+        primary: ocrPrimary, surface: ocrSurface, onSurface: ocrOnSurface,
+        onTap: { [weak self] point in
+          self?.channel.invokeMethod(
+            "screenOcrTap", arguments: ["x": Double(point.x), "y": Double(point.y)])
+        },
+        onDismiss: { [weak self] in
+          guard let self = self, self.screenOcrOverlay != nil else { return }
+          self.endScreenOcr(restoreBall: true)
+          self.channel.invokeMethod("screenOcrDismissed", arguments: nil)
+        })
+      self.screenOcrOverlay = overlay
+      overlay.show()
+      result([
+        "png": FlutterStandardTypedData(bytes: png),
+        "screen": DesktopScreenCapture.physicalRect(of: screen),
+      ])
+    }
+  }
+
+  /// `updateScreenOcrOverlay`：`lines` 为截图像素 [l, t, r, b]；`message` 为 null 时
+  /// 显示 labels.hint。
+  private func updateScreenOcrOverlay(_ args: [String: Any]) {
+    guard let overlay = screenOcrOverlay else { return }
+    var rects: [CGRect] = []
+    for raw in (args["lines"] as? [Any]) ?? [] {
+      guard let v = (raw as? [NSNumber])?.map({ CGFloat($0.doubleValue) }), v.count == 4,
+        v[2] > v[0], v[3] > v[1]
+      else { continue }
+      rects.append(CGRect(x: v[0], y: v[1], width: v[2] - v[0], height: v[3] - v[1]))
+    }
+    overlay.update(lines: rects, message: args["message"] as? String)
+  }
+
+  /// 结束本次截屏识字：作废在途截图、关冻结层，按需把球放回来。不回调 Dart。
+  private func endScreenOcr(restoreBall: Bool) {
+    screenOcrGeneration += 1
+    if let overlay = screenOcrOverlay {
+      screenOcrOverlay = nil
+      overlay.close()
+    }
+    // restoreBall == false：要么马上重新截（球继续藏着），要么球正被销毁。
+    if restoreBall { restoreBallAfterScreenOcr() }
+  }
+
+  private func restoreBallAfterScreenOcr() {
+    guard screenOcrBallHidden else { return }
+    screenOcrBallHidden = false
+    guard let panel = ballPanel else { return }
+    setProgress(0)
+    panel.orderFrontRegardless()
   }
 
   /// 显示器配置 / 工作区 / 缩放变化：收起并按停靠边 + 比例在新视口重摆（位置永远

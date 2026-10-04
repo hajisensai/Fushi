@@ -243,10 +243,12 @@ void main() {
             .readAsStringSync();
     final int frameStart = source.indexOf('class MediaItemDialogFrame');
     expect(frameStart, isNonNegative);
-    final String build = _methodSource(
-      source.substring(frameStart),
-      '  @override\n  Widget build(BuildContext context) {',
-    );
+    // 2026-10-04 hero 重设计把骨架拆成了 _buildBody / _buildListActions 等
+    // helper，节奏与列表项图标的约束按整个 Frame 类源码判定。
+    final int frameEnd =
+        source.indexOf('class _CoverAspectResolver', frameStart);
+    expect(frameEnd, greaterThan(frameStart));
+    final String build = source.substring(frameStart, frameEnd);
 
     expect(build, contains('leading: Icon(action.icon)'));
     expect(
@@ -280,19 +282,4 @@ bool _didEllipsise(WidgetTester tester, String label) {
   final RenderParagraph paragraph =
       tester.renderObject<RenderParagraph>(find.text(label));
   return paragraph.didExceedMaxLines;
-}
-
-String _methodSource(String source, String signature) {
-  final int start = source.indexOf(signature);
-  expect(start, isNonNegative, reason: 'missing $signature');
-  int depth = 0;
-  final int bodyStart = source.indexOf('{', start);
-  for (int i = bodyStart; i < source.length; i++) {
-    if (source[i] == '{') depth++;
-    if (source[i] == '}') {
-      depth--;
-      if (depth == 0) return source.substring(start, i + 1);
-    }
-  }
-  throw StateError('unterminated method: $signature');
 }

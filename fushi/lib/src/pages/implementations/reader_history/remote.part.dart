@@ -336,14 +336,16 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     required String safeKey,
     required String keyPrefix,
   }) {
-    final InterconnectDownloadTask? task =
-        ref.watch(interconnectDownloadManagerProvider).taskFor(taskId);
+    // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2944）。
+    final InterconnectDownloadBadgeState? task = ref.watch(
+        interconnectDownloadManagerProvider
+            .select((m) => m.badgeStateFor(taskId)));
     if (task == null) return null;
     switch (task.status) {
       case InterconnectDownloadStatus.running:
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('${keyPrefix}_downloading_$safeKey'),
-          progress: task.progress,
+          progress: task.percent < 0 ? null : task.percent / 100,
           tooltip: t.remote_book_downloading,
         );
       case InterconnectDownloadStatus.failed:
@@ -376,6 +378,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteBookCover(book),
+        coverBackdrop: _remoteBookCoverBackdrop(book),
         title: book.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -521,6 +524,22 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         ),
       ],
     );
+  }
+
+  /// 远端书长按菜单封面块的模糊垫底图源：与 [_buildRemoteBookCover] 同一选链
+  /// （本地已下载封面 → 互联钉扎客户端拉的远端封面），都拿不到时为 null。
+  ImageProvider? _remoteBookCoverBackdrop(RemoteBookInfo book) {
+    final String? coverPath = book.coverPath;
+    if (coverPath != null && File(coverPath).existsSync()) {
+      return FileImage(File(coverPath));
+    }
+    final String? coverUrl = book.coverUrl;
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(_remoteBookClient);
+    if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      return RemoteCoverImage(coverUrl, fetcher, cacheKey: book.title);
+    }
+    return null;
   }
 
   Widget _buildRemoteBookCover(RemoteBookInfo book) {

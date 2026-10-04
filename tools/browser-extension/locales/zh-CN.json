@@ -297,7 +297,6 @@
   "ctx_confirm": "确认制卡",
   "ctx_cancel": "取消",
   "gen_youtube_queue_empty": "YouTube 队列为空：先开字幕 → shift 查词 → 点弹窗「制卡」入队，再来生成",
-  "gen_ext_updated_refresh": "扩展已更新，刷新页面(F5)后重试",
   "gen_progress": "生成中… {done}/{total}",
   "gen_partial_anki_unconfigured": "部分未生成：Anki 未配置，请在 Fushi 中配置 Anki 后重试（已处理 {done}，保留 {kept}）",
   "gen_partial_anki_unconfigured_kept": "部分未生成：Anki 未配置，请在 Fushi 中配置 Anki 后重试（保留 {kept}）",
@@ -368,7 +367,7 @@
   "ap_gen_unsupported_hint": "队列里的卡片来自暂不支持批量生成的站点，可逐项删除或清空",
   "ap_gen_start_record_n": "开始录制生成（{n} 张）",
   "ap_gen_start_n": "开始生成（{n} 张）",
-  "ap_gen_other_youtube_hint": "另有 YouTube {n} 张，需切到 YouTube 页面生成",
+  "ap_gen_other_youtube_hint": "另有 YouTube {n} 张：在 Netflix 以外的任意页面打开本菜单即可生成",
   "ap_gen_other_netflix_hint": "另有 Netflix {n} 张，需切到 Netflix 播放页生成",
   "ap_gen_site_count": "{site} {n} 张",
   "ap_gen_wrong_site_hint": "待生成：{pending}，点队列条目跳到对应视频页再生成",
@@ -426,5 +425,5 @@
   "pc_style_more": "全部设置",
   "pc_hint_site_track": "这个视频放的是站点自带字幕轨，所以 Fushi 覆盖层不出画。点这里改用 Fushi 字幕。",
   "opt_playerControls_title": "播放器内的字幕按钮",
-  "opt_playerControls_desc": "在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在视频上时于右下角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。"
+  "opt_playerControls_desc": "在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在视频上时于右上角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。"
 }

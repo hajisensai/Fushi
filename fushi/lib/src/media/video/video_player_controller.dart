@@ -1260,6 +1260,18 @@ class VideoPlayerController extends ChangeNotifier
     return _player?.screenshot(format: 'image/jpeg');
   }
 
+  /// 截取当前帧并合成 libmpv 自绘的字幕（mpv `screenshot-raw subtitles`），PNG 字节。
+  ///
+  /// 图形字幕（PGS / VobSub / DVB）只存在于 libmpv 的渲染里，Dart 侧没有 cue；图形
+  /// 字幕查词（`graphic_subtitle_ocr.dart`）靠这张合成帧做 OCR。PNG 无损——JPEG 的块
+  /// 效应正落在字幕描边上，会拉低识别率。未 [load] 返回 null。
+  Future<Uint8List?> captureFrameWithSubtitles() async {
+    return _player?.screenshot(
+      format: 'image/png',
+      includeLibassSubtitles: true,
+    );
+  }
+
   /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件
   /// （libmpv `dump-cache`），给在线视频制卡当本地抽取源（见 [CachedMediaSnapshot]）。
   ///
