@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
@@ -148,16 +149,20 @@ class _AidokuCatalog extends OnlineSourceCatalog<Map<String, Object?>> {
     );
   }
 
-  /// Aidoku 的无头运行时解不了 Cloudflare 挑战（见 [aidokuErrorMessage]），
-  /// 没有可点的验证入口。
+  /// Cloudflare 拦截给专门文案（见 [aidokuErrorMessage]）。
+  @override
+  String describeError(Object error) => aidokuErrorMessage(error);
+
+  /// Aidoku 的无头运行时解不了 Cloudflare 挑战，没有可点的验证入口。
+  ///
+  /// 2026-10 体验优化：这里原先把错误文字再画一遍，与页面行内错误重复显示
+  /// 两次；文案改由 [describeError] 单出口。
   @override
   Widget buildVerifyAction(
     BuildContext context, {
     required Object? error,
     required Future<void> Function() onVerified,
-  }) => error == null
-      ? const SizedBox.shrink()
-      : Text(aidokuErrorMessage(error), textAlign: TextAlign.center);
+  }) => const SizedBox.shrink();
 }
 
 /// 源浏览里的作品页入口。
@@ -248,7 +253,8 @@ String aidokuErrorMessage(Object? error) {
       error.code == kAidokuCloudflareChallengeCode) {
     return t.manga_source_cloudflare_blocked;
   }
-  return '$error';
+  if (error == null) return t.online_source_error_generic;
+  return describeOnlineSourceError(error);
 }
 
 /// Aidoku 章节的展示标题：标题为空时回退到卷/话号。

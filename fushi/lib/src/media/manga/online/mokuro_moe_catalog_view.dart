@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
@@ -276,11 +277,15 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         _library = library;
         _loading = false;
       });
-    } catch (e) {
+    } on Object catch (e, stack) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = '$e';
+        _loadError = describeOnlineSourceError(
+          e,
+          logTag: 'MokuroMoeCatalogView.library',
+          stackTrace: stack,
+        );
       });
     }
   }
@@ -343,11 +348,15 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         );
         _seriesLoading = false;
       });
-    } catch (e) {
+    } on Object catch (e, stack) {
       if (!mounted || token != _seriesToken) return;
       setState(() {
         _seriesLoading = false;
-        _seriesError = '$e';
+        _seriesError = describeOnlineSourceError(
+          e,
+          logTag: 'MokuroMoeCatalogView.series',
+          stackTrace: stack,
+        );
       });
     }
   }
@@ -431,7 +440,10 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MokuroMoeCatalogView.enqueue', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
       return;
     }
@@ -552,29 +564,21 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   }
 
   Widget _buildBrowseBody(FushiDesignTokens tokens) {
+    // 2026-10 体验优化：加载 / 错误态统一 adaptiveIndicator +
+    // FushiPlaceholderMessage，重试统一 FilledButton.icon。
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: adaptiveIndicator(context: context));
     }
     final String? error = _loadError;
     if (error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              '${t.manga_online_load_failed}: $error',
-              style: tokens.type.listSubtitle
-                  .copyWith(color: Theme.of(context).colorScheme.error),
-              textAlign: TextAlign.center,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            OutlinedButton(
-              onPressed: _loadLibrary,
-              child: Text(t.retry),
-            ),
-          ],
+      return FushiPlaceholderMessage(
+        icon: Icons.cloud_off_outlined,
+        message: t.manga_online_load_failed,
+        detail: error,
+        action: FilledButton.icon(
+          onPressed: _loadLibrary,
+          icon: const Icon(Icons.refresh_rounded),
+          label: Text(t.retry),
         ),
       );
     }
@@ -686,28 +690,18 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   /// 什么都不画的空白，用户无从判断发生了什么。
   Widget _buildSeriesBody(FushiDesignTokens tokens, MokuroMoeSeries series) {
     if (_seriesLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: adaptiveIndicator(context: context));
     }
     final String? error = _seriesError;
     if (error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              '${t.manga_online_detail_load_failed}: $error',
-              style: tokens.type.listSubtitle
-                  .copyWith(color: Theme.of(context).colorScheme.error),
-              textAlign: TextAlign.center,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            OutlinedButton(
-              onPressed: () => unawaited(_openSeries(series)),
-              child: Text(t.retry),
-            ),
-          ],
+      return FushiPlaceholderMessage(
+        icon: Icons.cloud_off_outlined,
+        message: t.manga_online_detail_load_failed,
+        detail: error,
+        action: FilledButton.icon(
+          onPressed: () => unawaited(_openSeries(series)),
+          icon: const Icon(Icons.refresh_rounded),
+          label: Text(t.retry),
         ),
       );
     }

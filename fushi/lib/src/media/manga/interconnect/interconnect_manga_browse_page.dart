@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
@@ -36,6 +38,7 @@ class InterconnectMangaBrowsePage extends ConsumerStatefulWidget {
 class _InterconnectMangaBrowsePageState
     extends ConsumerState<InterconnectMangaBrowsePage> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   late final InterconnectSyncBackend _backend =
       widget.backend ?? InterconnectSyncBackend.instance;
   List<RemoteBookInfo> _items = const <RemoteBookInfo>[];
@@ -52,6 +55,7 @@ class _InterconnectMangaBrowsePageState
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -73,7 +77,12 @@ class _InterconnectMangaBrowsePageState
         _items = items;
         _loading = false;
       });
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'InterconnectMangaBrowse.load',
+        error,
+        stack,
+      );
       if (!mounted) return;
       setState(() {
         _error = error;
@@ -127,15 +136,19 @@ class _InterconnectMangaBrowsePageState
         ),
         headerBottom: Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: TextField(
-            key: const ValueKey<String>('interconnect_manga_search'),
+          // 2026-10 体验优化：统一为 FushiSearchField；本页边打边滤。
+          child: FushiSearchField(
+            fieldKey: const ValueKey<String>('interconnect_manga_search'),
+            focusId: const FushiFocusId('interconnect-manga-search'),
             controller: _searchController,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: t.mihon_source_search,
-              prefixIcon: const Icon(Icons.search),
-            ),
+            focusNode: _searchFocus,
+            hintText: t.mihon_source_search,
             onChanged: (String value) => setState(() => _query = value),
+            onSubmitted: (String value) => setState(() => _query = value),
+            onClear: () {
+              _searchController.clear();
+              setState(() => _query = '');
+            },
           ),
         ),
         body: _buildResults(),
@@ -145,28 +158,27 @@ class _InterconnectMangaBrowsePageState
     if (_loading && _items.isEmpty) {
       return Center(child: adaptiveIndicator(context: context));
     }
-    if (_error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$_error', textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              TextButton(
-                key: const ValueKey<String>('interconnect_manga_retry'),
-                onPressed: () => unawaited(_load()),
-                child: Text(t.retry),
-              ),
-            ],
-          ),
+    // 2026-10 体验优化：错误 / 空态统一 FushiPlaceholderMessage，重试统一
+    // FilledButton.icon；错误文案经 describeOnlineSourceError 归一。
+    final Object? error = _error;
+    if (error != null && _items.isEmpty) {
+      return FushiPlaceholderMessage(
+        icon: Icons.error_outline,
+        message: describeOnlineSourceError(error),
+        action: FilledButton.icon(
+          key: const ValueKey<String>('interconnect_manga_retry'),
+          onPressed: () => unawaited(_load()),
+          icon: const Icon(Icons.refresh_rounded),
+          label: Text(t.retry),
         ),
       );
     }
     final List<RemoteBookInfo> visible = _visible;
     if (visible.isEmpty) {
-      return Center(child: Text(t.mihon_source_no_results));
+      return FushiPlaceholderMessage(
+        icon: Icons.search_off_outlined,
+        message: t.mihon_source_no_results,
+      );
     }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
