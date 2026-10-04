@@ -241,8 +241,9 @@ void RetireKogadoHyLookup(uint32_t reason) {
   }
 }
 
-// The game window: the one visible top-level window of this process, owned
-// by the thread that renders the message window, with a client area.
+// The game window: the one visible top-level (non-child) window of the
+// thread that renders the message window, with a client area (the hidden
+// TApplication owner window has none).
 void FindKogadoHyWindow() {
   auto& rt = g_kogado_hy_lookup;
   if (rt.window != nullptr && IsWindow(rt.window)) return;
@@ -266,7 +267,10 @@ void FindKogadoHyWindow() {
       [](HWND hwnd, LPARAM context) -> BOOL {
         auto* s = reinterpret_cast<Search*>(context);
         RECT client = {};
-        if (!IsWindowVisible(hwnd) || GetParent(hwnd) != nullptr ||
+        // A VCL form is owned by the hidden TApplication window, so its
+        // GetParent() is that owner: only a child style rules a window out.
+        if (!IsWindowVisible(hwnd) ||
+            (GetWindowLongW(hwnd, GWL_STYLE) & WS_CHILD) != 0 ||
             !GetClientRect(hwnd, &client) || client.right <= 0 ||
             client.bottom <= 0) {
           return TRUE;
