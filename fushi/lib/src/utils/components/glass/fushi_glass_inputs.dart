@@ -4,9 +4,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // 输入框族的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型，
@@ -53,12 +55,70 @@ Widget _cupertinoContextMenuBuilder(
 /// 读出的信号。
 bool _isSearchDecoration(InputDecoration decoration) {
   final Widget? prefix = decoration.prefixIcon;
-  if (prefix is! Icon) return false;
-  final IconData? icon = prefix.icon;
+  // 调用点的图标经全局替换是 FushiIcon（玻璃下映射成 SF 字形），原生 Icon
+  // 也认——只认 Icon 会让全部搜索框失去胶囊形态。
+  final IconData? icon = switch (prefix) {
+    final FushiIcon i => i.icon,
+    final Icon i => i.icon,
+    _ => null,
+  };
+  if (icon == null) return false;
   return icon == Icons.search ||
       icon == Icons.search_rounded ||
       icon == Icons.search_outlined ||
       icon == CupertinoIcons.search;
+}
+
+
+/// MD3 设计系统下的输入框外观（用户 2026-10-04：「所有输入框都很丑」）。
+///
+/// 调用点普遍手写 `border: const OutlineInputBorder()`（灰色细描边方框），
+/// 或不写边框（Flutter 默认下划线）。这里统一换成现代 MD3 的填充式：
+/// surfaceContainerHigh 柔和底、圆角 12、静止无描边，聚焦 2px 主色描边，
+/// 错误态 error 描边；搜索框（前缀放大镜）是全圆角胶囊。
+/// 调用方显式 `InputBorder.none`（嵌在自绘容器里的输入）与自定义边框类型
+/// 原样保留；墨水屏保留原样（它靠描边表达边界，填充色在墨水屏上是灰噪点）。
+InputDecoration? fushiMd3FieldDecoration(
+  BuildContext context,
+  InputDecoration? decoration,
+) {
+  if (decoration == null || isEinkTheme(context)) return decoration;
+  final InputBorder? border = decoration.border;
+  if (border == InputBorder.none) return decoration;
+  if (border != null &&
+      border is! OutlineInputBorder &&
+      border is! UnderlineInputBorder) {
+    return decoration;
+  }
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  final bool search = _isSearchDecoration(decoration);
+  final BorderRadius radius = BorderRadius.circular(search ? 999 : 12);
+  OutlineInputBorder outline([Color? color, double width = 0]) =>
+      OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: color == null
+            ? BorderSide.none
+            : BorderSide(color: color, width: width),
+      );
+  final EdgeInsetsGeometry? padding = search
+      ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
+      : decoration.contentPadding;
+  return decoration.copyWith(
+    filled: true,
+    fillColor: decoration.fillColor ?? cs.surfaceContainerHigh,
+    hoverColor: Colors.transparent,
+    border: outline(),
+    enabledBorder: outline(),
+    disabledBorder: outline(),
+    focusedBorder: outline(cs.primary, 2),
+    errorBorder: outline(cs.error, 1.5),
+    focusedErrorBorder: outline(cs.error, 2),
+    hintStyle:
+        decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
+    prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
+    suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
+    contentPadding: padding,
+  );
 }
 
 /// [TextField] 的设计系统分派版。
@@ -221,14 +281,20 @@ class FushiTextFieldControl extends StatelessWidget {
       controller: controller,
       focusNode: focusNode,
       undoController: undoController,
-      decoration: decoration,
+      decoration: fushiMd3FieldDecoration(context, decoration),
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       textCapitalization: textCapitalization,
       style: style,
       strutStyle: strutStyle,
       textAlign: textAlign,
-      textAlignVertical: textAlignVertical,
+      textAlignVertical:
+          textAlignVertical ??
+          (maxLines == 1 &&
+                  decoration != null &&
+                  _isSearchDecoration(decoration!)
+              ? TextAlignVertical.center
+              : null),
       textDirection: textDirection,
       readOnly: readOnly,
       toolbarOptions: toolbarOptions,
@@ -493,7 +559,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       style: style,
       strutStyle: _c.strutStyle,
       textAlign: _c.textAlign,
-      textAlignVertical: _c.textAlignVertical,
+      textAlignVertical:
+          _c.textAlignVertical ??
+          (_c.maxLines == 1 ? TextAlignVertical.center : null),
       textDirection: _c.textDirection,
       readOnly: _c.readOnly,
       showCursor: _c.showCursor,
@@ -595,8 +663,20 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final bool focused = _focusNode.hasFocus;
     final bool hasError = _hasError;
 
-    final TextStyle style = (tt.bodyLarge ?? const TextStyle())
-        .copyWith(color: enabled ? apple.label : apple.tertiaryLabel)
+    // 桌面（macOS 尺度）正文 15，移动端 iOS 17。
+    final TextStyle style =
+        ((fushiAppleCompact(context) ? tt.bodyMedium : tt.bodyLarge) ??
+                const TextStyle())
+            .copyWith(
+              color: enabled ? apple.label : apple.tertiaryLabel,
+              // 单行框：正文主题行高 1.5 的行距按字体 ascent/descent 比例分配，
+              // CJK 字体多分在下方，文字明显低于放大镜 / 胶囊中线。收紧行高并
+              // 上下均分，文字与占位符落在框的光学中线上。
+              height: _c.maxLines == 1 ? 1.25 : null,
+              leadingDistribution: _c.maxLines == 1
+                  ? TextLeadingDistribution.even
+                  : null,
+            )
         .merge(_c.style);
 
     final Widget editable = _buildEditable(context, style, hasError);
@@ -639,7 +719,14 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final Widget? prefixIcon = iconSlot(
       search ? const FushiIcon(CupertinoIcons.search) : decoration.prefixIcon,
     );
-    final Widget? suffixIcon = iconSlot(decoration.suffixIcon);
+    // 搜索胶囊定高 36：调用方常把标准图标按钮（40–48 高）塞进 suffixIcon 当
+    // 清除钮，它会把输入行撑高、在定高父级里溢出，文字随之偏离竖直中线（用户
+    // 2026-10-04「搜索框文字没有垂直居中」）。布局上只给尾部图标 28 高，按钮
+    // 本体照原尺寸居中绘制在上面（OverflowBox），点按区不变小。
+    Widget? suffixIcon = iconSlot(decoration.suffixIcon);
+    if (search && suffixIcon != null && _c.maxLines == 1) {
+      suffixIcon = _CappedHeightBox(height: 28, child: suffixIcon);
+    }
     final Widget? prefix = affix(
       decoration.prefix,
       decoration.prefixText,
@@ -675,9 +762,8 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     }
 
     // iOS 输入框是内容层控件：实色 tertiarySystemFill 底、圆角 10、无下划线
-    // 无描边（iOS 26 的 roundedRect 文本框）；搜索框是高 36 的全胶囊
-    // （UISearchBar 的 searchTextField，systemFill 底）。**不是玻璃**——玻璃
-    // 只给浮在内容上的导航与控件层。调用方显式 filled + fillColor 时尊重它。
+    // 无描边（iOS 26 的 roundedRect 文本框）；搜索框是高 36 的全胶囊（控件层，
+    // 无色透明玻璃，见下）。调用方显式 filled + fillColor 时尊重它。
     final EdgeInsetsGeometry padding =
         decoration.contentPadding ??
         (search
@@ -689,10 +775,15 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final Color? customFill = (decoration.filled ?? false)
         ? decoration.fillColor
         : null;
+    final bool capsule = search && !multiline;
+    // 搜索胶囊是控件层（macOS 26 工具栏 / 侧栏顶的搜索框、iOS 26 的搜索
+    // 胶囊）：无色透明液态玻璃，不铺 systemFill 灰底；普通输入框仍是内容层
+    // 实色字段。调用方显式给了填充色时照旧实色。
+    final bool glassSearch =
+        capsule && !(customFill != null && customFill.a > 0);
     final Color fill = customFill != null && customFill.a > 0
         ? customFill
-        : (search ? apple.fill : apple.tertiaryFill);
-    final bool capsule = search && !multiline;
+        : (glassSearch ? Colors.transparent : apple.tertiaryFill);
     // 聚焦本身在 iOS 上没有描边；这里只给一圈极淡的强调色光圈，作为键盘 /
     // 手柄导航落到输入框时的焦点指示。错误态用 1px destructive 描边。
     Widget shell = AnimatedContainer(
@@ -726,6 +817,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
             )
           : row,
     );
+    if (glassSearch) {
+      shell = fushiClearGlassBezel(context, radius: 18, child: shell);
+    }
     if (decoration.constraints != null) {
       shell = ConstrainedBox(
         constraints: decoration.constraints!,
@@ -766,6 +860,13 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
 
     Widget content = Column(
       mainAxisSize: _c.expands ? MainAxisSize.max : MainAxisSize.min,
+      // 调用方常把单行框放进比字段本身更高的定高盒（库页 / 工具条搜索
+      // `SizedBox(height: 40)` 而胶囊只有 36）：没有标题 / 辅助文字时让字段在
+      // 多出的高度里竖直居中，而不是贴顶（贴顶时文字比盒子中线高 2px）。
+      mainAxisAlignment:
+          label == null && helperOrError == null && counter == null
+          ? MainAxisAlignment.center
+          : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (label != null)
@@ -990,7 +1091,7 @@ class FushiTextFormFieldControl extends StatelessWidget {
       initialValue: initialValue,
       focusNode: focusNode,
       forceErrorText: forceErrorText,
-      decoration: decoration,
+      decoration: fushiMd3FieldDecoration(context, decoration),
       keyboardType: keyboardType,
       textCapitalization: textCapitalization,
       textInputAction: textInputAction,
@@ -998,7 +1099,13 @@ class FushiTextFormFieldControl extends StatelessWidget {
       strutStyle: strutStyle,
       textDirection: textDirection,
       textAlign: textAlign,
-      textAlignVertical: textAlignVertical,
+      textAlignVertical:
+          textAlignVertical ??
+          (maxLines == 1 &&
+                  decoration != null &&
+                  _isSearchDecoration(decoration!)
+              ? TextAlignVertical.center
+              : null),
       autofocus: autofocus,
       readOnly: readOnly,
       toolbarOptions: toolbarOptions,
@@ -1259,5 +1366,72 @@ class _GlassTextFormFieldState extends FormFieldState<String> {
     if (_effectiveController.text != value) {
       didChange(_effectiveController.text);
     }
+  }
+}
+
+/// 布局上只占 [height] 高（宽度随子组件）、子组件按自身高度竖直居中绘制的盒子：
+/// 让搜索胶囊尾部塞进来的标准尺寸图标按钮不再撑高定高输入行。
+class _CappedHeightBox extends SingleChildRenderObjectWidget {
+  const _CappedHeightBox({required this.height, required Widget super.child});
+
+  final double height;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCappedHeightBox(height);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCappedHeightBox renderObject,
+  ) {
+    renderObject.cap = height;
+  }
+}
+
+class _RenderCappedHeightBox extends RenderShiftedBox {
+  _RenderCappedHeightBox(this._cap) : super(null);
+
+  double _cap;
+  set cap(double value) {
+    if (value == _cap) return;
+    _cap = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? box = child;
+    if (box == null) {
+      size = constraints.constrain(Size(0, _cap));
+      return;
+    }
+    box.layout(
+      BoxConstraints(maxWidth: constraints.maxWidth, maxHeight: 48),
+      parentUsesSize: true,
+    );
+    size = constraints.constrain(
+      Size(box.size.width, box.size.height < _cap ? box.size.height : _cap),
+    );
+    (box.parentData! as BoxParentData).offset = Offset(
+      0,
+      (size.height - box.size.height) / 2,
+    );
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    // 按钮本体比布局盒高：在按钮自身范围内的点按照样命中。
+    final RenderBox? box = child;
+    if (box == null) return false;
+    final Offset offset = (box.parentData! as BoxParentData).offset;
+    final bool hit = result.addWithPaintOffset(
+      offset: offset,
+      position: position,
+      hitTest: (BoxHitTestResult result, Offset transformed) =>
+          box.hitTest(result, position: transformed),
+    );
+    if (hit) result.add(BoxHitTestEntry(this, position));
+    return hit;
   }
 }

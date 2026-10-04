@@ -269,12 +269,6 @@ class _MiscellaneousSettingsBodyState
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 静态提示不再伪装成设置行（行标题会被 titleMaxLines 截断、还带行高/分隔线
-    // 语义），改用与 schema section footer 同款的说明文字样式。
-    TextStyle? footerStyle(BuildContext context) =>
-        Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: FushiDesignTokens.of(context).surfaces.onVariant,
-            );
     if (!Platform.isAndroid && !Platform.isWindows) {
       // 本平台不支持换图标：占位说明，不渲染空设置卡。
       return FushiPlaceholderMessage(
@@ -300,7 +294,10 @@ class _MiscellaneousSettingsBodyState
           ],
         ),
         if (_customSupported)
-          SettingsSectionFooter(t.icon_custom_hint, style: footerStyle),
+          // 静态提示不伪装成设置行（行标题会被 titleMaxLines 截断、还带行高 /
+          // 分隔线语义），用 schema section footer 同款的分组脚注（样式按设计
+          // 系统由 SettingsSectionFooter 自己取）。
+          SettingsSectionFooter(t.icon_custom_hint),
       ],
     );
   }
@@ -384,9 +381,13 @@ class _AppIconTile extends StatelessWidget {
             child: FushiCard(
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               selected: selected,
+              // Apple：未选中的图标卡只是实色底，不勾 separator 描边框；
+              // 选中仍是强调色细边 + 角标对勾。
               borderColor: selected
                   ? theme.colorScheme.primary
-                  : theme.colorScheme.outlineVariant,
+                  : (isGlassDesign(context)
+                      ? null
+                      : theme.colorScheme.outlineVariant),
               onTap: enabled ? onTap : null,
               child: Stack(
                 fit: StackFit.expand,

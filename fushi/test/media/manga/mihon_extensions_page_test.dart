@@ -133,7 +133,7 @@ void main() {
     expect(blocking.prepareCalls, 1);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLoadingView), findsOneWidget);
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     await pumpStandalone(tester);

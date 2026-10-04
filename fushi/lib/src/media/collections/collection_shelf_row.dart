@@ -367,7 +367,13 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: eink ? null : hoverColor.withValues(alpha: 0.18),
+                      // 与 CollectionDropTarget 同一口径：MD3 primary 12%、
+                      // Apple 中性 systemFill 灰罩 + 强调色描边。
+                      color: eink
+                          ? null
+                          : isGlassDesign(context)
+                              ? appleColorsOf(context).fill
+                              : hoverColor.withValues(alpha: 0.12),
                       borderRadius: tokens.radii.controlRadius,
                       border: Border.all(
                         color: hoverColor,

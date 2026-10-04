@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,7 @@ import 'package:fushi_engine/media/video/series_playback_prefs.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -237,7 +239,6 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/render_backend_service.dart';
-import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
 import 'package:fushi/src/platform/windows_ime_space_channel.dart';
 import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
@@ -247,6 +248,7 @@ import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/copy_feedback.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -937,11 +939,95 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double get _videoButtonBarHeight => _videoButtonBarHeightBase * _videoUiScale;
 
   /// 顶/底栏控制图标尺寸，随界面大小缩放（TODO-067）。与查词弹窗 ×appUiScale 同口径。
-  double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale;
+  /// Apple 设计系统下取 SF Symbols 在 AVKit 控件条里的字形尺寸（24，玻璃胶囊里
+  /// 32 的 Material 字形显得笨重）；按钮命中区仍是 IconButton 的 字形 + 16。
+  double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale * (_appleChrome ? _videoAppleControlIconSizeBase / _videoControlIconSizeBase : 1.0);
 
-  /// 中央播放/暂停键尺寸，随界面大小缩放（TODO-067）。
+  /// 中央播放/暂停键尺寸，随界面大小缩放（TODO-067）。Apple 下主播放键比其余
+  /// 按钮大一档（32 vs 24），与 AVKit 底栏同一层级关系。
   double get _videoPlayPauseIconSize =>
-      _videoPlayPauseIconSizeBase * _videoUiScale;
+      _videoPlayPauseIconSizeBase * _videoUiScale * (_appleChrome ? _videoApplePlayPauseIconSizeBase / _videoPlayPauseIconSizeBase : 1.0);
+
+  static const double _videoAppleControlIconSizeBase = 24;
+  static const double _videoApplePlayPauseIconSizeBase = 32;
+
+  /// Apple（iOS / macOS 26）设计系统下的播放器 chrome（[videoAppleChrome]，墨水屏
+  /// 恒 false）。只换几何参数与叶子，控制条结构不随它增删。
+  bool get _appleChrome => videoAppleChrome(context);
+
+  /// Apple：底栏玻璃胶囊把按钮行与进度条整体抬离播放区底边的量（胶囊离底
+  /// [kVideoAppleChromeEdgeInset]，按钮行下沿再高出胶囊下沿
+  /// [kVideoAppleCapsuleBottomPadding]）。移动端本就有 [_videoBottomChromeBaseline]，
+  /// 只补差额。MD3 / mini 档（没有底栏、也就没有胶囊）恒 0。
+  ///
+  /// 这个量必须同时进**控制条 theme** 与所有「按进度条几何推导」的地方（字幕避让、
+  /// 章节刻度、缩略图预览、自动连播卡），否则字幕会压进抬高后的进度条——桌面加在
+  /// 按钮行高上（桌面几何以按钮行高为基准），移动端加在离底基线上，见
+  /// [_videoGeometryButtonBarLift] / [_videoGeometryBottomBaseline]。
+  double get _appleBottomLift {
+    if (!_appleChrome || !_controlsDensity.showBottomButtonBar) return 0;
+    const double target =
+        kVideoAppleChromeEdgeInset + kVideoAppleCapsuleBottomPadding;
+    return _isDesktopVideoControls
+        ? target
+        : target - _videoBottomChromeBaseline;
+  }
+
+  /// 进度条几何推导里桌面「按钮行高」要叠加的抬升（见 [_appleBottomLift]）。
+  double get _videoGeometryButtonBarLift =>
+      _isDesktopVideoControls ? _appleBottomLift : 0;
+
+  /// 进度条几何推导里移动端的离底基线（[_videoBottomChromeBaseline] + 抬升）。
+  double get _videoGeometryBottomBaseline =>
+      _videoBottomChromeBaseline +
+      (_isDesktopVideoControls ? 0 : _appleBottomLift);
+
+  /// 进度条左右内缩：MD3 = media_kit 默认 16；Apple = 胶囊外边距 + 胶囊内边距，
+  /// 轨道落在玻璃胶囊里面。章节刻度 / 缩略图预览层与它同源。
+  double get _videoSeekBarSideInset =>
+      _appleChrome ? kVideoAppleChromeEdgeInset + 16 : 16;
+
+  /// Apple：底栏按钮行左右内缩（胶囊外边距 + 8）。
+  double get _videoAppleButtonBarSideInset => kVideoAppleChromeEdgeInset + 8;
+
+  /// Apple：底栏玻璃胶囊的几何（[VideoAppleChromeBackdrop]）。与 theme 喂给 media_kit
+  /// 的同一组量推导：下沿 = 按钮行下沿 − [kVideoAppleCapsuleBottomPadding]，上沿 =
+  /// 进度条轨道中线 + [kVideoAppleCapsuleTopPadding]（没有进度条时 = 按钮行上沿）。
+  /// MD3 / mini 档返回 null。
+  VideoAppleCapsuleGeometry? _appleCapsuleGeometry() {
+    if (!_appleChrome || !_controlsDensity.showBottomButtonBar) return null;
+    final double d = _controlsDensityScale;
+    final double barHeight = _videoButtonBarHeight * d;
+    final double buttonBottom;
+    final double trackCenter;
+    if (_isDesktopVideoControls) {
+      buttonBottom = _appleBottomLift;
+      // 桌面：进度条容器骑按钮行上沿、被下压 overlap，轨道在容器竖直正中。
+      trackCenter = buttonBottom +
+          barHeight -
+          _videoDesktopSeekBarButtonBarOverlap * d +
+          _videoDesktopSeekBarContainerHeight * d / 2;
+    } else {
+      buttonBottom = _videoBottomChromeBaseline +
+          _videoBottomSystemInset() +
+          _appleBottomLift;
+      // 移动：进度条容器在按钮行上方 gap 处，轨道贴容器底缘。
+      trackCenter = buttonBottom +
+          barHeight +
+          _videoSeekBarButtonGap * d +
+          _videoSeekBarTrackHeight * d / 2;
+    }
+    final double top = _controlsDensity.showSeekBar
+        ? trackCenter + kVideoAppleCapsuleTopPadding * d
+        : buttonBottom + barHeight + kVideoAppleCapsuleBottomPadding;
+    final double bottom = buttonBottom - kVideoAppleCapsuleBottomPadding;
+    return VideoAppleCapsuleGeometry(
+      left: kVideoAppleChromeEdgeInset,
+      right: kVideoAppleChromeEdgeInset,
+      bottom: bottom,
+      height: top - bottom,
+    );
+  }
 
   /// 移动控制条底部留白基线（BUG-184）：进度条 / 底部按钮条不贴屏幕物理底边。
   ///
@@ -1028,13 +1114,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double get _activeSeekBarButtonBarOverlap =>
       _isDesktopVideoControls ? _videoDesktopSeekBarButtonBarOverlap : 0;
 
-  /// 进度条拖动滑块尺寸，随界面大小缩放（TODO-157）。
+  /// 进度条拖动滑块尺寸，随界面大小缩放（TODO-157）。Apple 下没有滑块（iOS 26
+  /// 的 scrubber 靠按住时加粗轨道反馈，见 [_videoAppleSeekBarActiveHeightBase]）。
   double get _videoSeekBarThumbSize =>
-      _videoSeekBarThumbSizeBase * _videoUiScale;
+      _appleChrome ? 0 : _videoSeekBarThumbSizeBase * _videoUiScale;
 
-  /// 进度条轨道高度，随界面大小缩放（TODO-157）。
+  /// 进度条轨道高度，随界面大小缩放（TODO-157）。Apple 下是 iOS 26 的 4pt 细轨。
   double get _videoSeekBarTrackHeight =>
-      _videoSeekBarTrackHeightBase * _videoUiScale;
+      (_appleChrome
+          ? _videoAppleSeekBarTrackHeightBase
+          : _videoSeekBarTrackHeightBase) *
+      _videoUiScale;
+
+  static const double _videoAppleSeekBarTrackHeightBase = 4;
+
+  /// Apple：按住 / 悬停进度条时轨道加粗到的高度（iOS 26 scrubber）。
+  static const double _videoAppleSeekBarActiveHeightBase = 10;
 
   /// 字幕避让骑在进度条轨道上缘之上的呼吸间距，随界面大小缩放（TODO-568）。
   double get _videoSubtitleSeekBarBreathingGap =>
@@ -1099,17 +1194,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// chrome 强调色（按钮 / 进度条 / 滑块）：恒亮 tone 的 primary，见
   /// [videoChromeAccentColor]。
-  Color _videoChromeAccent(ColorScheme cs) => videoChromeAccentColor(cs);
+  ///
+  /// Apple 设计系统下恒白（AVKit：按钮字形、已播放进度、时间都是白色 label，强调色
+  /// 不上播放器 chrome——玻璃 + 白字才是 iOS 26 的播放控件）。
+  Color _videoChromeAccent(ColorScheme cs) =>
+      _appleChrome ? videoChromeNeutralForeground : videoChromeAccentColor(cs);
 
   /// 顶栏标题字号，随界面大小缩放（TODO-067），与图标按钮同口径。
   double get _videoControlTitleFontSize =>
       _videoControlTitleFontSizeBase * _videoUiScale;
 
   /// 顶栏标题样式：中性前景固定近白（chrome 固定亮色体系，不随 colorScheme）。
-  TextStyle _videoControlTitleStyle() => TextStyle(
-    color: _videoChromeNeutralFg,
-    fontSize: _videoControlTitleFontSize,
-  );
+  ///
+  /// Apple：iOS 26 播放器标题是 15pt semibold 白字（headline 档），比 MD3 的 16
+  /// 常规字重更紧凑、更有层级。
+  TextStyle _videoControlTitleStyle() => _appleChrome
+      ? TextStyle(
+          color: _videoChromeNeutralFg,
+          fontSize: 15 * _videoUiScale,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.2,
+        )
+      : TextStyle(
+          color: _videoChromeNeutralFg,
+          fontSize: _videoControlTitleFontSize,
+        );
 
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
@@ -7231,9 +7340,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     //
     // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
     // 监听 _titleNotifier 才能在全屏换集后刷新标题。
+    // Apple：标题在中段（topCenter）时与 iOS 26 播放器一样居中于两组玻璃钮之间。
     return _topBarTitleText(
       alignment: slot == VideoControlSlot.topRight
           ? AlignmentDirectional.centerEnd
+          : _appleChrome && slot == VideoControlSlot.topCenter
+          ? AlignmentDirectional.center
           : AlignmentDirectional.centerStart,
     );
   }
@@ -7249,6 +7361,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           overflow: TextOverflow.ellipsis,
           textAlign: alignment == AlignmentDirectional.centerEnd
               ? TextAlign.end
+              : alignment == AlignmentDirectional.center
+              ? TextAlign.center
               : TextAlign.start,
           style: _videoControlTitleStyle(),
         ),
@@ -7275,7 +7389,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.playPause:
         return FushiTooltip(
           message: t.video_bottom_play_pause,
-          child: desktop
+          child: _appleChrome
+              ? _applePlayPauseButton(controller, desktop: desktop)
+              : desktop
               ? MaterialDesktopPlayOrPauseButton(
                   iconSize: _videoPlayPauseIconSize,
                 )
@@ -7370,6 +7486,45 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.settings:
         return const SizedBox.shrink();
     }
+  }
+
+  /// Apple：播放 / 暂停换成 SF 的 play.fill / pause.fill 实心字形（AVKit 不做
+  /// Material 那种 play↔pause 形变动画）。仍是 media_kit 的按钮壳（同尺寸、同颜色
+  /// 来源 `buttonBarButtonColor`、同焦点链路），只换叶子；状态随 [controller] 重建。
+  /// 移动端与 MD3 分支一样在按下时续命控制条（TODO-1059）。
+  Widget _applePlayPauseButton(
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (BuildContext context, Widget? _) {
+        // 与 MD3 播放键同一个尺寸源（[_videoPlayPauseIconSize]）。
+        final double size = _videoPlayPauseIconSize;
+        final Widget icon = FushiIcon(
+          controller.isPlaying
+              ? CupertinoIcons.pause_fill
+              : CupertinoIcons.play_fill,
+          size: size,
+        );
+        void onPressed() {
+          _pokeControlsVisible();
+          unawaited(controller.playOrPause());
+        }
+
+        return desktop
+            ? MaterialDesktopCustomButton(
+                icon: icon,
+                iconSize: size,
+                onPressed: onPressed,
+              )
+            : MaterialCustomButton(
+                icon: icon,
+                iconSize: size,
+                onPressed: onPressed,
+              );
+      },
+    );
   }
 
   Widget _plainSlotButton(
@@ -7570,20 +7725,34 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 按钮要的宽度足额给出去、把真正剩下的宽度交给标题。放不下时不再横滚裁切（旧
     // reverse 横向列表把右组从左边裁掉，「剧集列表」只露出半个图标——截图里返回键
     // 后面那个小「▸」，BUG-2832），而是按优先级收进组尾的「⋯」，按钮永远完整。
-    return VideoControlBar(
-      fill: false,
-      moreButtonBuilder: (VoidCallback open) =>
-          _videoBarMoreButton(open, desktop: desktop),
-      entries: <VideoBarEntry>[
-        for (final VideoControlItem item in items)
-          _videoBarEntry(
-            item,
-            controller,
-            slot: slot,
-            cluster: VideoBarCluster.start,
-            child: buttonFor(item),
-          ),
-      ],
+    //
+    // Apple：整组按钮垫一块透明液态玻璃（iOS 26 顶栏：返回是一枚玻璃圆钮，右上角
+    // 动作收进一枚玻璃胶囊）。玻璃是按钮组背后的兄弟层，MD3 下是空盒、零内边距，
+    // 按钮组本身的位置 / 约束 / 焦点链路不变。
+    Widget buttonGroup() {
+      return VideoControlBar(
+        fill: false,
+        moreButtonBuilder: (VoidCallback open) =>
+            _videoBarMoreButton(open, desktop: desktop),
+        entries: <VideoBarEntry>[
+          for (final VideoControlItem item in items)
+            _videoBarEntry(
+              item,
+              controller,
+              slot: slot,
+              cluster: VideoBarCluster.start,
+              child: buttonFor(item),
+            ),
+        ],
+      );
+    }
+
+    return VideoGlassSurface(
+      enabled: _appleChrome,
+      padding: items.length > 1
+          ? EdgeInsets.symmetric(horizontal: 4 * _videoUiScale)
+          : EdgeInsets.zero,
+      child: buttonGroup(),
     );
   }
 
@@ -7941,11 +8110,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 底栏时间指示器，前景走 chrome 固定亮色强调色（压固定深色 scrim，不随 colorScheme）。
   Widget _bottomPositionIndicator({required bool desktop}) {
-    final TextStyle style = TextStyle(
-      height: 1.0,
-      fontSize: 12.0 * _videoUiScale,
-      color: _videoChromeAccent(Theme.of(context).colorScheme),
-    );
+    // Apple：AVKit 的时间是 13pt 等宽数字（tabular figures，跳秒时不左右抖），
+    // 白色 label 略降透明度，让它比按钮字形低一个层级。
+    final TextStyle style = _appleChrome
+        ? TextStyle(
+            height: 1.0,
+            fontSize: 13.0 * _videoUiScale,
+            fontWeight: FontWeight.w500,
+            color: videoChromeNeutralForeground.withValues(alpha: 0.85),
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          )
+        : TextStyle(
+            height: 1.0,
+            fontSize: 12.0 * _videoUiScale,
+            color: _videoChromeAccent(Theme.of(context).colorScheme),
+          );
     return desktop
         ? MaterialDesktopPositionIndicator(style: style)
         : MaterialPositionIndicator(style: style);
@@ -7986,6 +8165,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required Color color,
     required VoidCallback onTap,
   }) {
+    // Apple：AVKit 的 ±10 秒键是带数字的 SF 字形（gobackward.10 / goforward.10），
+    // 不另挂文字标注；跳转秒数与 MD3 的 ±10s 同一个常量（[_seekRelative] 的 10000）。
+    if (_appleChrome) {
+      final bool forward = tooltip == t.video_bottom_seek_forward;
+      return FushiTooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: EdgeInsets.all(8 * _videoUiScale),
+            child: FushiIcon(
+              forward ? CupertinoIcons.goforward_10 : CupertinoIcons.gobackward_10,
+              size: _videoControlIconSize,
+              color: color,
+              semanticLabel: label,
+            ),
+          ),
+        ),
+      );
+    }
     return FushiTooltip(
       message: tooltip,
       child: InkWell(
@@ -8203,8 +8403,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 与下面 seek bar 两项同理必须按 0 算：否则小窗里控制条一「可见」（media_kit 仍
       // 会因 hover 翻 visible，尽管它在这一档一个像素都画不出来），字幕就为一条根本
       // 不存在的按钮行凭空上移一格——画面越小这一格越扎眼。
+      // Apple：底栏玻璃胶囊把整组控件抬离底边（[_appleBottomLift]）——桌面几何以
+      // 按钮行高为基准、移动端以离底基线为基准，抬升分别叠在这两项上。
       buttonBarHeight: _controlsDensity.showBottomButtonBar
-          ? _videoButtonBarHeight * densityScale
+          ? _videoButtonBarHeight * densityScale + _videoGeometryButtonBarLift
           : 0,
       seekBarButtonGap: _videoSeekBarButtonGap * densityScale,
       // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
@@ -8222,7 +8424,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? _activeSeekBarButtonBarOverlap * densityScale
           : 0,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap * densityScale,
-      bottomChromeBaseline: _videoBottomChromeBaseline,
+      bottomChromeBaseline: _videoGeometryBottomBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
     );
   }
@@ -9253,10 +9455,40 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             if (didPop) return;
             await _handleBackOrExit();
           },
-          child: _buildScaffold(controller, videoController, cs),
+          // 桌面自绘顶栏挂在 Navigator 外只认根主题 surface；窗口化播放时页面
+          // 最顶上是黑底画面（Video fill 黑 + 上下黑边），不上报就在画面顶上
+          // 压一条浅色带。零布局。
+          child: FushiTitleBarColorScope(
+            colors: _desktopTitleBarColors(controller, videoController, cs),
+            child: _buildScaffold(controller, videoController, cs),
+          ),
         ),
       ),
     );
+  }
+
+  /// 桌面自绘顶栏该跟的颜色＝本页最顶上一排像素：回看横幅在场时是横幅底，
+  /// 画面已挂上时是播放器黑底，加载 / 失败 / 缺资源态就是页面 surface（不表态，
+  /// 顶栏用根主题）。
+  FushiTitleBarColors? _desktopTitleBarColors(
+    VideoPlayerController? controller,
+    VideoController? videoController,
+    ColorScheme cs,
+  ) {
+    if (_sourceReviewSession case final SourceReviewSession session
+        when session.isReview) {
+      return (
+        background: cs.secondaryContainer,
+        foreground: cs.onSecondaryContainer,
+      );
+    }
+    final bool videoShown =
+        !_failed &&
+        !_missingResource &&
+        controller != null &&
+        videoController != null &&
+        _videoReadyToShow;
+    return videoShown ? fushiTitleBarColorsOn(Colors.black) : null;
   }
 
   Widget _buildScaffold(

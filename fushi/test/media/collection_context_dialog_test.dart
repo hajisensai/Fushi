@@ -97,11 +97,12 @@ void main() {
     return probe;
   }
 
-  /// 点菜单里的「删除合集」危险动作 → 进确认框。菜单项渲染成 TextButton，
-  /// 确认框的确认键是 isDestructiveAction 的 FilledButton，两者同文案不同控件，
-  /// 各自按控件类型定位就不会认错。
+  /// 点菜单里的「删除合集」危险动作 → 进确认框。菜单项渲染成分段分组行
+  /// （InkWell，2026-10-04 起危险动作与列表动作同一形态、error 色），确认框的
+  /// 确认键是 isDestructiveAction 的 FilledButton，两者同文案不同控件，各自按
+  /// 控件类型定位就不会认错。
   Future<void> tapDeleteAction(WidgetTester tester) async {
-    await tester.tap(find.widgetWithText(TextButton, t.delete_collection));
+    await tester.tap(find.widgetWithText(InkWell, t.delete_collection).first);
     await tester.pumpAndSettle();
   }
 

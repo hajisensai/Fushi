@@ -6,6 +6,7 @@ import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -182,7 +183,6 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
 
   Widget _buildBody(BuildContext context, Set<int> selectedIds) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
     final List<BookTagRow>? tags = _tags;
     if (tags == null) {
       return Padding(
@@ -193,12 +193,10 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
     if (tags.isEmpty) {
       return Padding(
         padding: EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
-        child: Text(
-          t.tag_no_tags_hint,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        // 与标签管理页的空状态同一件共享占位（图标 + 文案）。
+        child: FushiPlaceholderMessage(
+          icon: Icons.label_outline,
+          message: t.tag_no_tags_hint,
         ),
       );
     }

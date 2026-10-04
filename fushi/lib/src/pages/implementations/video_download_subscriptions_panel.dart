@@ -289,7 +289,7 @@ class _VideoDownloadSubscriptionsPanelState
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: FushiCircularProgressIndicator());
+          return const FushiLoadingView();
         }
         final List<VideoDownloadSubscriptionRow> subscriptions = snapshot.data!;
         return VideoDownloadSubscriptionsView(
@@ -974,8 +974,11 @@ class _SubscriptionItemsSection extends StatelessWidget {
                   },
                   size: 18,
                   color: switch (item.status) {
+                    // Apple：完成是语义绿（单色强调色不表达成功）。
                     VideoDownloadSubscriptionItemStatus.processed =>
-                      theme.colorScheme.primary,
+                      isGlassDesign(context)
+                          ? fushiStatusColor(context, FushiStatusTone.success)
+                          : theme.colorScheme.primary,
                     VideoDownloadSubscriptionItemStatus.failed =>
                       theme.colorScheme.error,
                     _ => theme.colorScheme.onSurfaceVariant,
@@ -1020,36 +1023,11 @@ class _VideoDownloadSubscriptionMessage extends StatelessWidget {
   final String title;
   final String? body;
 
+  /// 走共享空状态：MD3 是分组底色信息块，Apple 是 ContentUnavailableView
+  /// 形态（无底、secondaryLabel 大图标 + 17 semibold 标题）。
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(icon, size: 44, color: theme.colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium,
-            ),
-            if (body != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                body!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+    return FushiPlaceholderMessage(icon: icon, message: title, detail: body);
   }
 }
 

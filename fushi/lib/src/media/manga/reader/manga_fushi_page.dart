@@ -62,6 +62,8 @@ import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiTitleBarColorScope, FushiTitleBarColors, fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
@@ -2681,6 +2683,36 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       default:
         return Theme.of(context).colorScheme.surface;
     }
+  }
+
+  /// 桌面自绘顶栏该跟的颜色＝本页最顶上一排像素：顶栏画着时是暗条叠在底色上
+  /// （悬浮态半透明暗条下面多是页边底色，按底色合成），否则回看横幅在顶（固定态
+  /// 顶栏收起时它贴页顶），再否则就是阅读器底色。
+  FushiTitleBarColors _desktopTitleBarColors(BuildContext context) {
+    final Color background = _backgroundColor;
+    if (mangaChromeBarPainted(
+      floating: _chromeFloating,
+      chromeVisible: _chromeVisible,
+      transientVisible: _chrome.transientVisible,
+      contentReady: _chromeActionsEnabled,
+    )) {
+      final MangaChromeColors chrome = MangaChromeColors.of(context);
+      return (
+        background: Color.alphaBlend(
+          _chromeFloating ? chrome.floatingBar : chrome.fixedBar,
+          background,
+        ),
+        foreground: chrome.foreground,
+      );
+    }
+    if (_sourceReviewSession != null) {
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      return (
+        background: scheme.secondaryContainer,
+        foreground: scheme.onSecondaryContainer,
+      );
+    }
+    return fushiTitleBarColorsOn(background);
   }
 
   /// 同一个底色给 WebView 文档用的 CSS 值。两处**必须**同源：页图是
@@ -5550,7 +5582,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
       ),
     );
-    return WindowFullscreenHost(child: page);
+    // 桌面自绘顶栏挂在 Navigator 外只认根主题 surface；漫画页最顶上一排可能是
+    // 顶栏（固定 / 悬浮暗条）、回看横幅或「漫画 · 底色」（黑 / 白 / 灰），都
+    // 与 surface 不同源，不上报就在页顶切出一条异色带。零布局。
+    return WindowFullscreenHost(
+      child: FushiTitleBarColorScope(
+        colors: _desktopTitleBarColors(context),
+        child: page,
+      ),
+    );
   }
 
   /// BUG-1888：切换界面可见性。移动端联动系统栏——隐藏界面即进入沉浸式全屏；
@@ -5977,7 +6017,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (_chapterNotDownloaded) return _buildChapterNotDownloaded();
     if (_bookRow == null || _imagesDir == null || _payload == null) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     // 平台无关的「内容已加载」标记：非 Linux 是原生 WebView，Linux 是无后端占位
     // （`manga_webview` key 仅存在于前者，随宿主平台变化）。加载成功的普适可观察
@@ -6083,55 +6123,59 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _shelfChapterIndex < entry.chapters.length
         ? entry.chapters[_shelfChapterIndex].name
         : '';
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const FushiIcon(
-              Icons.cloud_download_outlined,
-              size: 48,
-              color: Colors.white70,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              t.manga_chapter_not_downloaded,
-              key: const ValueKey<String>('manga_chapter_not_downloaded'),
-              style: const TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
-            if (chapterName.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 4),
+    // 本态恒画在黑底阅读区上：Apple 浅色 app 的主按钮是黑色强调色，压在黑底上
+    // 直接隐形，整块换成恒深色档主题（MD3 / 深色 app 原样，结构不变）。
+    return FushiAppleDarkTier(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const FushiIcon(
+                Icons.cloud_download_outlined,
+                size: 48,
+                color: Colors.white70,
+              ),
+              const SizedBox(height: 12),
               Text(
-                chapterName,
-                style: const TextStyle(color: Colors.white54),
+                t.manga_chapter_not_downloaded,
+                key: const ValueKey<String>('manga_chapter_not_downloaded'),
+                style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
-            ],
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: <Widget>[
-                FushiFilledButton.icon(
-                  key: const ValueKey<String>('manga_reader_enqueue_download'),
-                  onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
-                  icon: const FushiIcon(Icons.download),
-                  label: Text(t.manga_chapter_download_action),
-                ),
-                FushiOutlinedButton.icon(
-                  key: const ValueKey<String>('manga_reader_pick_chapter'),
-                  onPressed: _switchingChapter
-                      ? null
-                      : () => unawaited(_showChapterPicker()),
-                  icon: const FushiIcon(Icons.list_alt_outlined),
-                  label: Text(t.manga_series_chapters_action),
+              if (chapterName.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  chapterName,
+                  style: const TextStyle(color: Colors.white54),
+                  textAlign: TextAlign.center,
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: <Widget>[
+                  FushiFilledButton.icon(
+                    key: const ValueKey<String>('manga_reader_enqueue_download'),
+                    onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
+                    icon: const FushiIcon(Icons.download),
+                    label: Text(t.manga_chapter_download_action),
+                  ),
+                  FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('manga_reader_pick_chapter'),
+                    onPressed: _switchingChapter
+                        ? null
+                        : () => unawaited(_showChapterPicker()),
+                    icon: const FushiIcon(Icons.list_alt_outlined),
+                    label: Text(t.manga_series_chapters_action),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -191,14 +191,21 @@ double videoSubtitleUiScale(SettingsContext context) {
   return host?.uiScale ?? context.appModel.appUiScale;
 }
 
-/// 拖动中的实时预览（不落盘）：仅播放中有 overlay 可预览，无 host 时为 no-op。
+/// 拖动中的实时预览（不落盘）：播放中发给页面 overlay；同时写进
+/// [videoSubtitleStyleDraft]，让设置里的字幕样式预览（`SubtitleStylePreview`）
+/// 跟着拖动实时变化——全局设置页没有 overlay，那块预览是唯一的即时反馈。
 void previewVideoSubtitleStyle(
   SettingsContext context,
   VideoSubtitleStyle Function(VideoSubtitleStyle style) mutate,
 ) {
   final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  // 播放中以页面权威值为基（与旧行为一致）；全局设置页叠在上一次拖动预览上。
+  final VideoSubtitleStyle next = mutate(host?.subtitleStyle() ??
+      videoSubtitleStyleDraft.value ??
+      currentVideoSubtitleStyle(context));
+  videoSubtitleStyleDraft.value = next;
   if (host == null) return;
-  host.onSubtitleStylePreview(mutate(host.subtitleStyle()));
+  host.onSubtitleStylePreview(next);
   context.refresh();
 }
 
@@ -218,6 +225,8 @@ Future<void> commitVideoSubtitleStyle(
       VideoSubtitleStyle.encode(next),
     );
   }
+  // 已落盘：预览回到读偏好（与 next 相同），拖动预览态作废。
+  videoSubtitleStyleDraft.value = null;
   context.refresh();
 }
 

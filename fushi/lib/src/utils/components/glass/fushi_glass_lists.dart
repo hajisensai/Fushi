@@ -1,6 +1,11 @@
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiCard;
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show kSettingsSegmentGap, settingsSegmentRadius;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -130,8 +135,52 @@ class FushiAppleChevron extends StatelessWidget {
   }
 }
 
+/// 选择型列表（单选 / 多选）选中项的行尾强调色对勾（iOS / macOS 菜单与设置
+/// 选择列表口径）。导航型列表的选中用强调色实底，不用它。
+class FushiAppleCheckmark extends StatelessWidget {
+  const FushiAppleCheckmark({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    return FushiIcon(
+      CupertinoIcons.checkmark_alt,
+      size: metrics.desktop ? 16 : 20,
+      color: appleColorsOf(context).accent,
+    );
+  }
+}
+
+// ─────────────────────── MD3 内容层规格 ───────────────────────
+
+/// MD3 列表行状态层 / 选中底的圆角（行在容器里左右内缩，不顶到容器边）。
+const double kFushiMd3RowRadius = 12;
+
+/// MD3 列表行状态层的水平内缩：行内容的起点仍在容器边 16 处（内边距相应减去
+/// 这一段），只有高亮块比容器窄一圈。
+const double kFushiMd3RowInset = 4;
+
+/// MD3 卡片圆角（FushiCard / FushiCardControl / cardTheme 同一个值）。
+const double kFushiMd3CardRadius = 16;
+
+/// MD3 内容层（卡片、列表行）的柔和状态层：悬停 onSurface 8%、按下 / 焦点
+/// 10%。比控件的 [WidgetState] 默认层更轻，成片的列表扫过去不跳。
+WidgetStateProperty<Color?> fushiMd3ContentStateLayer(ColorScheme cs) {
+  return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+    if (states.contains(WidgetState.pressed) ||
+        states.contains(WidgetState.focused)) {
+      return cs.onSurface.withValues(alpha: 0.10);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return cs.onSurface.withValues(alpha: 0.08);
+    }
+    return null;
+  });
+}
+
 /// Apple 26 的实色可点行：按下 = systemFill 高亮、桌面悬停 = tertiaryFill、
-/// 键盘 / 手柄焦点 = 强调色 2px 描边，选中 = secondaryFill 底。
+/// 键盘 / 手柄焦点 = 强调色 2px 描边，选中 = [selectedBackground]（默认
+/// secondaryFill；导航列表传强调色实底，选择列表传透明、改用行尾对勾）。
 ///
 /// 焦点契约与 Material 行一致：[focusable] 时自身是一个 Tab 停靠点，Enter /
 /// 手柄 A 经 [ActivateIntent] 触发 [onTap]；外层已有焦点目标（FushiFocusTarget）
@@ -196,14 +245,18 @@ class _FushiAppleRowState extends State<FushiAppleRow> {
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool interactive = _interactive;
+    // 选中底色为透明（选择型列表：选中只靠行尾对勾）时，选中不压住悬停 / 按下
+    // 反馈——否则当前项悬停没有任何反应。
+    final Color selectedBg = widget.selectedBackground ?? apple.secondaryFill;
+    final bool paintSelected = widget.selected && selectedBg.a > 0;
     final Color background = !interactive
-        ? (widget.selected
-              ? (widget.selectedBackground ?? apple.secondaryFill)
+        ? (paintSelected
+              ? selectedBg
               : (widget.background ?? Colors.transparent))
         : _pressed
         ? apple.fill
-        : widget.selected
-        ? (widget.selectedBackground ?? apple.secondaryFill)
+        : paintSelected
+        ? selectedBg
         : _hovered
         ? apple.tertiaryFill
         : (widget.background ?? Colors.transparent);
@@ -360,9 +413,14 @@ double _hairlineThickness(BuildContext context, double? requested) {
 ///
 /// 玻璃设计系统下是 iOS inset grouped 的**实色行**（[FushiAppleRow]，不是
 /// 玻璃）：最小高 44（桌面 38）、左右 16、标题 17 / 副标题 15（桌面 15 / 13）、
-/// 行首图标强调色、行尾附件 secondaryLabel；按下 = systemFill、选中 =
-/// secondaryFill 底 + 强调色前景，键盘 / 手柄焦点画强调色描边。行自身是
-/// Tab 停靠点，Enter / 手柄 A → ActivateIntent 触发 onTap。
+/// 行首图标强调色、行尾附件 secondaryLabel；悬停 = tertiaryFill、按下 =
+/// systemFill；选中 = 行尾强调色对勾（选择型，默认），调用点给了
+/// selectedTileColor 时 = 整行铺该底色（导航型）；键盘 / 手柄焦点画强调色
+/// 描边。行自身是 Tab 停靠点，Enter / 手柄 A → ActivateIntent 触发 onTap。
+///
+/// MD3 下是原生 [ListTile]（形状 / 选中色由 listTileTheme 给：内缩 12 圆角
+/// 状态层、secondaryContainer 选中底 + onSecondaryContainer 前景），左右各
+/// 内缩 [kFushiMd3RowInset]，文字起点仍在 16。
 class FushiListTileControl extends StatelessWidget {
   const FushiListTileControl({
     super.key,
@@ -446,7 +504,13 @@ class FushiListTileControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _GlassListTileHost(config: this);
-    return ListTile(
+    // MD3：状态层 / 选中底是内缩的 12 圆角块（listTileTheme 给形状与选中色），
+    // 行左右各让出 [kFushiMd3RowInset]，内边距相应减去同样一段，文字起点仍在
+    // 容器边 16 处。调用点自己给了 contentPadding / 整行底色（tileColor，要顶满
+    // 容器）或墨水屏时不内缩，与以前一致。
+    final bool inset =
+        contentPadding == null && tileColor == null && !isEinkTheme(context);
+    final Widget tile = ListTile(
       leading: leading,
       title: title,
       subtitle: subtitle,
@@ -462,7 +526,11 @@ class FushiListTileControl extends StatelessWidget {
       titleTextStyle: titleTextStyle,
       subtitleTextStyle: subtitleTextStyle,
       leadingAndTrailingTextStyle: leadingAndTrailingTextStyle,
-      contentPadding: contentPadding,
+      contentPadding: inset
+          ? const EdgeInsetsDirectional.symmetric(
+              horizontal: 16 - kFushiMd3RowInset,
+            )
+          : contentPadding,
       enabled: enabled,
       onTap: onTap,
       onLongPress: onLongPress,
@@ -485,6 +553,11 @@ class FushiListTileControl extends StatelessWidget {
       internalAddSemanticForOnTap: internalAddSemanticForOnTap,
       statesController: statesController,
     );
+    if (!inset) return tile;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: kFushiMd3RowInset),
+      child: tile,
+    );
   }
 }
 
@@ -504,13 +577,18 @@ class _GlassListTileHost extends StatelessWidget {
     final bool selected = c.selected;
     final bool threeLine = c.isThreeLine ?? tileTheme.isThreeLine ?? false;
     final Color disabled = apple.tertiaryLabel;
-    // 选中前景：调用点显式给的 selectedColor 优先，否则强调色（iOS 列表里
-    // 「当前项」的勾选 / 文字口径）。
-    final Color selectedFg = c.selectedColor ?? apple.accent;
+    // 选中态两种口径（与设置侧栏 / 菜单一致）：
+    // - 调用点给了 selectedTileColor = 导航型（「当前位置」）：整行铺那个底色；
+    // - 否则 = 选择型（单选 / 多选列表，ListTile 的绝大多数用法）：不铺底、不
+    //   加粗，行尾强调色对勾（调用点自己给了 trailing 就用它的）。
+    final bool navSelected = selected && c.selectedTileColor != null;
+    final bool autoCheck = selected && !navSelected && c.trailing == null;
+    // 选中前景：调用点显式给的 selectedColor 优先，否则不变色（选中信号是
+    // 对勾 / 底色，不是彩色文字）。
     final Color titleColor = !enabled
         ? disabled
-        : selected
-        ? selectedFg
+        : selected && c.selectedColor != null
+        ? c.selectedColor!
         : (c.textColor ?? apple.label);
     final Color subtitleColor = !enabled
         ? disabled
@@ -518,20 +596,20 @@ class _GlassListTileHost extends StatelessWidget {
     // 行首图标：强调色（iOS 列表图标口径）；行尾附件：secondaryLabel。
     final Color leadingColor = !enabled
         ? disabled
-        : selected
-        ? selectedFg
+        : selected && c.selectedColor != null
+        ? c.selectedColor!
         : (c.iconColor ?? apple.accent);
     final Color trailingColor = !enabled
         ? disabled
         : (c.iconColor ?? apple.secondaryLabel);
+    final Widget? trailingWidget = autoCheck
+        ? const FushiAppleCheckmark()
+        : c.trailing;
 
     final TextStyle titleStyle = metrics
         .titleStyle(context)
         .merge(c.titleTextStyle)
-        .copyWith(
-          color: titleColor,
-          fontWeight: selected ? FontWeight.w600 : null,
-        );
+        .copyWith(color: titleColor);
     final TextStyle subtitleStyle = metrics
         .subtitleStyle(context)
         .merge(c.subtitleTextStyle)
@@ -587,13 +665,13 @@ class _GlassListTileHost extends StatelessWidget {
           SizedBox(width: c.horizontalTitleGap ?? metrics.leadingGap),
         ],
         Expanded(child: titleBlock),
-        if (c.trailing != null) ...<Widget>[
+        if (trailingWidget != null) ...<Widget>[
           const SizedBox(width: 8),
           IconTheme.merge(
             data: IconThemeData(color: trailingColor, size: 20),
             child: DefaultTextStyle.merge(
               style: trailingStyle,
-              child: c.trailing!,
+              child: trailingWidget,
             ),
           ),
         ],
@@ -626,7 +704,9 @@ class _GlassListTileHost extends StatelessWidget {
       mouseCursor: c.mouseCursor,
       borderRadius: radius,
       background: c.tileColor,
-      selectedBackground: c.selectedTileColor,
+      selectedBackground: navSelected
+          ? c.selectedTileColor
+          : Colors.transparent,
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: minHeight),
         child: Padding(padding: padding, child: row),
@@ -721,6 +801,18 @@ class FushiExpansionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _GlassExpansionTile(config: this);
+    // MD3：Material 默认在展开态上下各画一条 dividerColor 线、收起态无线，
+    // 一开一合整块上下跳线。改成展开 / 收起同一个无边 12 圆角形状（水波裁在
+    // 圆角里），展开内容与表头留在同一块面上；展开图标仍是 Material 默认的
+    // expand_more 旋转。调用点 / 主题给了形状就用它的；墨水屏保持原样（分隔线
+    // 在那里是唯一的块边界）。
+    final ExpansionTileThemeData expansionTheme = ExpansionTileTheme.of(
+      context,
+    );
+    final bool softShape = !isEinkTheme(context);
+    const ShapeBorder md3Shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(kFushiMd3RowRadius)),
+    );
     return ExpansionTile(
       leading: leading,
       title: title,
@@ -740,9 +832,15 @@ class FushiExpansionTile extends StatelessWidget {
       collapsedTextColor: collapsedTextColor,
       iconColor: iconColor,
       collapsedIconColor: collapsedIconColor,
-      shape: shape,
-      collapsedShape: collapsedShape,
-      clipBehavior: clipBehavior,
+      shape: shape ?? expansionTheme.shape ?? (softShape ? md3Shape : null),
+      collapsedShape:
+          collapsedShape ??
+          expansionTheme.collapsedShape ??
+          (softShape ? md3Shape : null),
+      clipBehavior:
+          clipBehavior ??
+          expansionTheme.clipBehavior ??
+          (softShape ? Clip.antiAlias : null),
       controlAffinity: controlAffinity,
       controller: controller,
       dense: dense,
@@ -983,7 +1081,9 @@ class FushiDividerControl extends StatelessWidget {
     if (!isGlassDesign(context)) {
       return Divider(
         height: height,
-        thickness: thickness,
+        // MD3：outlineVariant 1px（主题里是 0.5 的物理细线，在 1x 屏上发虚）；
+        // 墨水屏交回主题（与以前一致）。
+        thickness: thickness ?? (isEinkTheme(context) ? null : 1),
         indent: indent,
         endIndent: endIndent,
         color: color,
@@ -1029,7 +1129,7 @@ class FushiVerticalDivider extends StatelessWidget {
     if (!isGlassDesign(context)) {
       return VerticalDivider(
         width: width,
-        thickness: thickness,
+        thickness: thickness ?? (isEinkTheme(context) ? null : 1),
         indent: indent,
         endIndent: endIndent,
         color: color,
@@ -1060,8 +1160,11 @@ enum _CardVariant { elevated, filled, outlined }
 ///
 /// 玻璃设计系统下是 Apple 的**实色**卡片（[FushiAppleGroupSurface]，不是玻璃）：
 /// 底色 secondarySystemGroupedBackground（调用点显式 color 优先）、连续曲率
-/// 圆角（调用点显式 shape 的圆角优先，否则 iOS 24 / 桌面 12）、无阴影；
-/// outlined 叠一圈 separator 细线。零内边距，与 Material Card 一致由 child 留白。
+/// 圆角（调用点显式 shape 的圆角优先，否则 iOS 24 / 桌面 12）、无描边无阴影；
+/// outlined 是调用点显式要的边界，叠一圈 separator 物理细线。零内边距，与
+/// Material Card 一致由 child 留白。
+///
+/// MD3 下是原生 [Card]，规格见 build 内注释（无阴影、16 圆角、填充分层）。
 class FushiCardControl extends StatelessWidget {
   const FushiCardControl({
     super.key,
@@ -1120,13 +1223,25 @@ class FushiCardControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
+      // MD3 内容层卡片：无阴影、无 surface tint，靠填充分层表达边界——
+      // 常规 / filled = cardTheme 的 surfaceContainerLow；调用点要求了抬升
+      // （elevation > 0）的换成高一档的 surfaceContainer、阴影压平；outlined =
+      // surface 底 + outlineVariant 1px（cardTheme 的形状不带边，原样透传会
+      // 把 Card.outlined 的边吞掉）。墨水屏：填充塌缩成背景色，描边换成实
+      // outline，抬升不换色（与以前一致）。
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      final bool eink = isEinkTheme(context);
+      final bool raised = elevation != null && elevation! > 0;
+      final double? flatElevation = raised && !eink ? 0 : elevation;
+      final Color flatShadow = shadowColor ?? Colors.transparent;
+      final Color flatTint = surfaceTintColor ?? Colors.transparent;
       switch (_variant) {
         case _CardVariant.elevated:
           return Card(
-            color: color,
-            shadowColor: shadowColor,
-            surfaceTintColor: surfaceTintColor,
-            elevation: elevation,
+            color: color ?? (raised && !eink ? cs.surfaceContainer : null),
+            shadowColor: flatShadow,
+            surfaceTintColor: flatTint,
+            elevation: flatElevation,
             shape: shape,
             borderOnForeground: borderOnForeground,
             margin: margin,
@@ -1137,9 +1252,9 @@ class FushiCardControl extends StatelessWidget {
         case _CardVariant.filled:
           return Card.filled(
             color: color,
-            shadowColor: shadowColor,
-            surfaceTintColor: surfaceTintColor,
-            elevation: elevation,
+            shadowColor: flatShadow,
+            surfaceTintColor: flatTint,
+            elevation: flatElevation,
             shape: shape,
             borderOnForeground: borderOnForeground,
             margin: margin,
@@ -1149,11 +1264,20 @@ class FushiCardControl extends StatelessWidget {
           );
         case _CardVariant.outlined:
           return Card.outlined(
-            color: color,
-            shadowColor: shadowColor,
-            surfaceTintColor: surfaceTintColor,
-            elevation: elevation,
-            shape: shape,
+            color: color ?? (eink ? null : cs.surface),
+            shadowColor: flatShadow,
+            surfaceTintColor: flatTint,
+            elevation: flatElevation,
+            shape:
+                shape ??
+                RoundedRectangleBorder(
+                  borderRadius: const BorderRadius.all(
+                    Radius.circular(kFushiMd3CardRadius),
+                  ),
+                  side: BorderSide(
+                    color: eink ? cs.outline : cs.outlineVariant,
+                  ),
+                ),
             borderOnForeground: borderOnForeground,
             margin: margin,
             clipBehavior: clipBehavior,
@@ -1177,7 +1301,7 @@ class FushiCardControl extends StatelessWidget {
           )
         : explicitSide;
     Widget card = FushiAppleGroupSurface(
-      color: color,
+      color: _appleCardColor(context, color),
       borderRadius: explicitRadius == null
           ? null
           : BorderRadius.circular(explicitRadius),
@@ -1191,6 +1315,22 @@ class FushiCardControl extends StatelessWidget {
       child: card,
     );
   }
+}
+
+/// Apple 下卡片底色：调用点按 MD3 色阶给的「抬高一档」容器色
+/// （surfaceContainerHigh / Highest，MD3 里用来把卡片从同色页面上拉开）在
+/// Apple 色板里分别是 #2C2C2E / #3A3A3C 这类控件灰，铺成整张卡就是一块发闷
+/// 的灰板。按 Apple 的分组底阶梯映射：High → 卡片底
+/// （secondarySystemGroupedBackground，即 null 默认），Highest → 再嵌一层
+/// （tertiarySystemGroupedBackground）。其余显式色原样尊重。
+Color? _appleCardColor(BuildContext context, Color? color) {
+  if (color == null) return null;
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  if (color == cs.surfaceContainerHigh) return null;
+  if (color == cs.surfaceContainerHighest) {
+    return appleColorsOf(context).tertiaryGroupedBackground;
+  }
+  return color;
 }
 
 double? _cornerRadius(ShapeBorder? shape) {
@@ -1365,6 +1505,209 @@ class FushiBadgeControl extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: <Widget>[base, if (badge != null) badge],
+    );
+  }
+}
+
+// ───────────────────────────── 分组列表 ─────────────────────────────
+
+/// 分组列表里第 [index] 行（共 [count] 行）的圆角。
+///
+/// - MD3：Android 16 分段分组（[settingsSegmentRadius]：组首 / 组尾外侧大圆角、
+///   中间小圆角，独行四角都大）；
+/// - Apple：iOS inset grouped（只有组首两上角 / 组尾两下角是分组圆角，中间行
+///   方角，整组读作一块圆角卡）。
+BorderRadius fushiGroupedItemRadius(
+  BuildContext context,
+  int index,
+  int count,
+) {
+  if (!isGlassDesign(context)) return settingsSegmentRadius(index, count);
+  final Radius outer = Radius.circular(FushiAppleMetrics.of(context).groupRadius);
+  return BorderRadius.vertical(
+    top: index <= 0 ? outer : Radius.zero,
+    bottom: index >= count - 1 ? outer : Radius.zero,
+  );
+}
+
+/// 分组列表行与行之间的缝：MD3 分段 [kSettingsSegmentGap]（2px），Apple 0
+/// （行间靠 separator 细线）。自己插行间距的列表（拖拽重排列）用它取 spacing。
+double fushiGroupedListGap(BuildContext context) =>
+    isGlassDesign(context) ? 0 : kSettingsSegmentGap;
+
+/// 分组列表的一行外壳：把 [child] 放进一张按组内位置定圆角的 [FushiCard]。
+///
+/// - MD3（Android 16 segmented list）：每行一张分段卡，行间 2px 缝
+///   （[includeGap] 时由本行的下外边距给出，末行不加），圆角见
+///   [fushiGroupedItemRadius]；墨水屏下 FushiCard 给每段补实描边。
+/// - Apple（inset grouped）：行间无缝，非首行顶部一条从文字起点
+///   （[separatorIndent]，默认行内边距 16）开始的 separator 物理细线；可点行
+///   按下只高亮不缩放（[FushiCard.grouped]）。
+///
+/// 结构恒定：分隔线层（Stack 的第 2 个孩子）在两套设计系统、任何位置都在，
+/// 只换高度与颜色——按设计系统 / 行位置增删它会让行内容整棵重挂。
+///
+/// 行内容的交互有两种接法：整行可点时把 [onTap] 等交给本外壳（焦点目标由
+/// FushiCard 挂）；行内已有自己的可点行（[FushiListItem] 带 onTap）时外壳不传。
+class FushiGroupedListItem extends StatelessWidget {
+  const FushiGroupedListItem({
+    required this.index,
+    required this.count,
+    required this.child,
+    super.key,
+    this.margin = EdgeInsets.zero,
+    this.includeGap = true,
+    this.separatorIndent,
+    this.color,
+    this.selected = false,
+    this.onTap,
+    this.onLongPress,
+    this.onSecondaryTap,
+    this.focusId,
+  });
+
+  /// 本行在组内的位置（0 起）与组内总行数：决定圆角、缝与分隔线。
+  final int index;
+  final int count;
+  final Widget child;
+
+  /// 外边距（通常是左右页边距）；MD3 行间缝另加在底部。
+  final EdgeInsetsGeometry margin;
+
+  /// MD3 是否由本行的下外边距给出行间缝。外层列表自己插 spacing 的（如
+  /// FushiReorderableColumn，用 [fushiGroupedListGap]）传 false。
+  final bool includeGap;
+
+  /// Apple 分隔线的起点（距行左缘）。null = 行内边距 16；带行首图标的行传
+  /// 「行内边距 + 图标宽 + 图标与文字间距」，让线从文字起点开始。
+  final double? separatorIndent;
+  final Color? color;
+  final bool selected;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onSecondaryTap;
+  final FushiFocusId? focusId;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool glass = isGlassDesign(context);
+    final bool last = index >= count - 1;
+    final bool separator = glass && index > 0;
+    final double gap = includeGap && !last ? fushiGroupedListGap(context) : 0;
+    return FushiCard(
+      margin: margin.add(EdgeInsets.only(bottom: gap)),
+      padding: EdgeInsets.zero,
+      borderRadius: fushiGroupedItemRadius(context, index, count),
+      color: color,
+      selected: selected,
+      grouped: true,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      onSecondaryTap: onSecondaryTap,
+      focusId: focusId,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          child,
+          PositionedDirectional(
+            top: 0,
+            start:
+                separatorIndent ?? FushiAppleMetrics.of(context).rowHorizontal,
+            end: 0,
+            child: IgnorePointer(
+              child: SizedBox(
+                height: separator ? fushiHairline(context) : 0,
+                child: ColoredBox(
+                  color: separator
+                      ? appleColorsOf(context).separator
+                      : Colors.transparent,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 一组行读作一个分组（MD3 分段 / Apple inset grouped，见
+/// [FushiGroupedListItem]）。[children] 是各行内容，本组件按位置给每行套外壳；
+/// 行要整行可点、带焦点目标时直接用 [FushiGroupedListItem] 自己拼。
+class FushiGroupedList extends StatelessWidget {
+  const FushiGroupedList({
+    required this.children,
+    super.key,
+    this.padding = EdgeInsets.zero,
+    this.separatorIndent,
+  });
+
+  final List<Widget> children;
+
+  /// 整组的外边距（通常左右页边距）。
+  final EdgeInsetsGeometry padding;
+
+  /// 见 [FushiGroupedListItem.separatorIndent]。
+  final double? separatorIndent;
+
+  @override
+  Widget build(BuildContext context) {
+    final int count = children.length;
+    return Padding(
+      padding: padding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int i = 0; i < count; i++)
+            FushiGroupedListItem(
+              // 行带 LocalKey 时外壳跟着它走（重排时外壳与行一起移动）；
+              // GlobalKey 不能复用在两层上，那种行外壳按位置复用。
+              key: children[i].key is LocalKey
+                  ? ValueKey<Key?>(children[i].key)
+                  : null,
+              index: i,
+              count: count,
+              separatorIndent: separatorIndent,
+              child: children[i],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// [FushiGroupedList] 的 sliver 版：[itemBuilder] 只建行内容，外壳（圆角 /
+/// 缝 / 分隔线）由本组件按位置套上，长列表懒建。
+class SliverFushiGroupedList extends StatelessWidget {
+  const SliverFushiGroupedList({
+    required this.itemCount,
+    required this.itemBuilder,
+    super.key,
+    this.itemMargin = EdgeInsets.zero,
+    this.separatorIndent,
+  });
+
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+
+  /// 每行的外边距（通常左右页边距）。
+  final EdgeInsetsGeometry itemMargin;
+
+  /// 见 [FushiGroupedListItem.separatorIndent]。
+  final double? separatorIndent;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverList.builder(
+      itemCount: itemCount,
+      itemBuilder: (BuildContext context, int index) => FushiGroupedListItem(
+        index: index,
+        count: itemCount,
+        margin: itemMargin,
+        separatorIndent: separatorIndent,
+        child: itemBuilder(context, index),
+      ),
     );
   }
 }

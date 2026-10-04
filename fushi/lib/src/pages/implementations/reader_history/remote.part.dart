@@ -241,6 +241,14 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   Widget _buildRemoteBookCard(RemoteBookInfo book,
       {bool selectable = true, String focusIdPrefix = ''}) {
     final String safeKey = _safeRemoteBookKey(book.title);
+    final Widget? taskBadge = _remoteBookTaskBadge(
+      taskId: InterconnectDownloadManager.bookTaskId(book.downloadId),
+      safeKey: safeKey,
+      keyPrefix: 'remote_book',
+    );
+    // 进行中 → 铺满封面的压暗 + 进度环（loadingOverlay 槽），右上角让空（不再
+    // 画下载按钮）；失败 → 右上失败角标；其余 → 右上下载按钮。
+    final bool downloading = taskBadge is RemoteDownloadProgressBadge;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
@@ -263,11 +271,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         leadingBadge: _selectionMode && selectable
             ? null
             : _buildRemoteBookTypeBadge(book, safeKey),
-        coverBadge: _remoteBookTaskBadge(
-              taskId: InterconnectDownloadManager.bookTaskId(book.downloadId),
-              safeKey: safeKey,
-              keyPrefix: 'remote_book',
-            ) ??
+        loadingOverlay: downloading ? taskBadge : null,
+        coverBadge: downloading
+            ? null
+            : taskBadge ??
             FushiIconButtonControl.filledTonal(
               key: ValueKey<String>('remote_book_download_$safeKey'),
               tooltip: t.remote_book_download,
@@ -344,6 +351,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('${keyPrefix}_downloading_$safeKey'),
           progress: task.progress,
+          receivedBytes: task.receivedBytes,
+          totalBytes: task.totalBytes,
           tooltip: t.remote_book_downloading,
         );
       case InterconnectDownloadStatus.failed:
@@ -376,6 +385,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteBookCover(book),
+        coverBackdrop: _remoteBookCoverBackdrop(book),
         title: book.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -521,6 +531,22 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         ),
       ],
     );
+  }
+
+  /// 远端书长按菜单头部模糊垫底与封面宽高比的图源：与 [_buildRemoteBookCover]
+  /// 同一选链（本地已下载封面 → 互联钉扎客户端拉的远端封面），都没有时为 null。
+  ImageProvider? _remoteBookCoverBackdrop(RemoteBookInfo book) {
+    final String? coverPath = book.coverPath;
+    if (coverPath != null && File(coverPath).existsSync()) {
+      return resizedFileImage(File(coverPath));
+    }
+    final String? coverUrl = book.coverUrl;
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(_remoteBookClient);
+    if (coverUrl != null && coverUrl.isNotEmpty && fetcher != null) {
+      return RemoteCoverImage(coverUrl, fetcher, cacheKey: book.title);
+    }
+    return null;
   }
 
   Widget _buildRemoteBookCover(RemoteBookInfo book) {
@@ -1159,6 +1185,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     final String title = book.title ?? book.identity;
     final String safeKey = _safeRemoteBookKey(title);
     final ColorScheme cs = theme.colorScheme;
+    final Widget? taskBadge = _remoteBookTaskBadge(
+      taskId: InterconnectDownloadManager.srtAudiobookTaskId(book.identity),
+      safeKey: safeKey,
+      keyPrefix: 'remote_srt',
+    );
+    // 同远端 EPUB 卡：进行中铺满封面，右上角让空。
+    final bool downloading = taskBadge is RemoteDownloadProgressBadge;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
@@ -1195,12 +1228,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   foreground: cs.onSecondaryContainer,
                 ),
               ),
-        coverBadge: _remoteBookTaskBadge(
-              taskId:
-                  InterconnectDownloadManager.srtAudiobookTaskId(book.identity),
-              safeKey: safeKey,
-              keyPrefix: 'remote_srt',
-            ) ??
+        loadingOverlay: downloading ? taskBadge : null,
+        coverBadge: downloading
+            ? null
+            : taskBadge ??
             FushiIconButtonControl.filledTonal(
               key: ValueKey<String>('remote_srt_download_$safeKey'),
               tooltip: t.remote_book_download,

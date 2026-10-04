@@ -541,7 +541,6 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
             hintText: t.manga_online_search_hint,
             prefixIcon: const FushiIcon(Icons.search),
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (String value) => setState(() => _query = value),
         ),
@@ -553,7 +552,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
 
   Widget _buildBrowseBody(FushiDesignTokens tokens) {
     if (_loading) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     final String? error = _loadError;
     if (error != null) {
@@ -680,7 +679,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   /// 什么都不画的空白，用户无从判断发生了什么。
   Widget _buildSeriesBody(FushiDesignTokens tokens, MokuroMoeSeries series) {
     if (_seriesLoading) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     final String? error = _seriesError;
     if (error != null) {

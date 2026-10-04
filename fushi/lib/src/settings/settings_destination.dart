@@ -114,6 +114,11 @@ typedef SettingsVisibility = bool Function(SettingsContext context);
 typedef SettingsSubtitleBuilder = String? Function(SettingsContext context);
 typedef SettingsItemAction = FutureOr<void> Function(SettingsContext context);
 typedef SettingsItemBuilder = Widget Function(SettingsContext context);
+
+/// 一个 custom item 渲染成**多行**：返回的每个 widget 在所属分组里各占一行
+/// （MD3 各是一张分段卡、Apple 行间画 inset 分隔线），见 [SettingsCustomItem.rows]。
+typedef SettingsItemRowsBuilder =
+    List<Widget> Function(SettingsContext context);
 typedef SettingsValueGetter<T extends Object> =
     T Function(SettingsContext context);
 typedef SettingsValueChanged<T extends Object> =
@@ -615,9 +620,33 @@ class SettingsCustomItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
-  });
+  }) : rowsBuilder = null;
+
+  /// 可增删的记录列表（自定义站点、仓库地址…）：schema 的 item 树表达不了「条数
+  /// 随数据变」，但每条记录仍该是分组里的一行。[rowsBuilder] 返回的每个 widget
+  /// 由 schema 渲染器拆成分组里的独立行（与同组的声明式行同一分段 / 分隔线规则），
+  /// 记录变化后调用 `SettingsContext.refresh` 重建。不认识多行的宿主（快捷设置
+  /// 面板等）走 [builder]，退化成一列竖排的行。
+  SettingsCustomItem.rows({
+    required super.id,
+    required SettingsItemRowsBuilder this.rowsBuilder,
+    super.title = '',
+    this.searchTitle,
+    super.subtitle,
+    super.icon,
+    super.visible,
+    super.reader,
+    super.video,
+  }) : builder = ((SettingsContext context) => Column(
+         mainAxisSize: MainAxisSize.min,
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: rowsBuilder(context),
+       ));
 
   final SettingsItemBuilder builder;
+
+  /// 非空 = 多行 custom item（见 [SettingsCustomItem.rows]）。
+  final SettingsItemRowsBuilder? rowsBuilder;
 
   /// 搜索元数据 opt-in：custom 行的 [title] 通常为空（正文由 [builder] 自绘），
   /// 默认不可搜。声明本字段后该行以此标题进入设置搜索（展平/打分/结果展示均用它，

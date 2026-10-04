@@ -327,7 +327,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Padding(
                 padding: EdgeInsets.all(16),
-                child: Center(child: FushiCircularProgressIndicator(strokeWidth: 2)),
+                child: Center(child: FushiLoadingView(compact: true)),
               );
             }
             final List<PlexServerConfig> servers =

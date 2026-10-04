@@ -1320,22 +1320,27 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
+      // 中性信息块，错误语义只上在单色图标上（不再整块 errorContainer）。
       child: Material(
         key: kSubtitleNoticeBannerKey,
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: fushiNeutralBlockColor(context),
+        borderRadius: fushiNeutralBlockRadius(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              FushiIcon(icon, size: 18, color: theme.colorScheme.onErrorContainer),
+              FushiIcon(
+                icon,
+                size: 18,
+                color: fushiStatusColor(context, FushiStatusTone.error),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   message,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
+                    color: fushiNeutralBlockForeground(context),
                   ),
                 ),
               ),

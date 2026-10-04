@@ -134,7 +134,7 @@ class FushiFocusController extends ChangeNotifier {
 
   BuildContext? get activeContext {
     final _FocusCandidate? active = _currentCandidate(_candidates());
-    if (active != null && active.context.mounted) return active.context;
+    if (active != null && _isLiveContext(active.context)) return active.context;
     return fallbackNode.context ?? _rootContext;
   }
 
@@ -217,14 +217,14 @@ class FushiFocusController extends ChangeNotifier {
   bool get activeIsOnlyFocusableInNearestScrollable {
     final List<_FocusCandidate> candidates = _candidates();
     final _FocusCandidate? active = _currentCandidate(candidates);
-    if (active == null || !active.context.mounted) return false;
+    if (active == null || !_isLiveContext(active.context)) return false;
     final ScrollableState? activeScrollable = Scrollable.maybeOf(
       active.context,
     );
     if (activeScrollable == null) return false;
     for (final _FocusCandidate candidate in candidates) {
       if (identical(candidate.node, active.node)) continue;
-      if (!candidate.context.mounted) continue;
+      if (!_isLiveContext(candidate.context)) continue;
       if (identical(Scrollable.maybeOf(candidate.context), activeScrollable)) {
         return false;
       }
@@ -524,7 +524,7 @@ class FushiFocusController extends ChangeNotifier {
     for (final FocusNode node in FocusManager.instance.rootScope.descendants) {
       if (node is! FocusScopeNode) continue;
       final BuildContext? context = node.context;
-      if (context == null || !context.mounted) continue;
+      if (context == null || !_isLiveContext(context)) continue;
       final ModalRoute<dynamic>? route = ModalRoute.of(context);
       if (route == null || !route.isCurrent) continue;
       firstScopeOfRoute.putIfAbsent(route, () => node);
@@ -622,7 +622,7 @@ class FushiFocusController extends ChangeNotifier {
 
   void _scheduleReveal(BuildContext context, FocusNode node) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (context.mounted && node.hasFocus) {
+      if (_isLiveContext(context) && node.hasFocus) {
         FushiFocusScroll.ensureVisible(context);
       }
     });
@@ -755,7 +755,7 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   bool _isCurrentRoute(BuildContext context) {
-    if (!context.mounted) return false;
+    if (!_isLiveContext(context)) return false;
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     return route == null || route.isCurrent;
   }
@@ -933,7 +933,7 @@ class FushiFocusController extends ChangeNotifier {
   /// 最近的 [FocusTraversalGroup] 元素（无则 null）——方向导航「面板」身份的主边界。
   /// 用 Element 标识（跨重建稳定，且一次 move() 内整棵树不会重建）而非 widget 实例。
   Element? _nearestTraversalGroup(BuildContext context) {
-    if (!context.mounted) return null;
+    if (!_isLiveContext(context)) return null;
     Element? group;
     context.visitAncestorElements((Element element) {
       if (element.widget is FocusTraversalGroup) {
@@ -1115,4 +1115,16 @@ class _FushiFocusScope extends InheritedNotifier<FushiFocusController> {
 
   /// null = 焦点导航禁用（FushiFocusRoot.enabled == false）。
   final FushiFocusController? controller;
+}
+
+/// 上下文是否处于活动态：mounted 且其渲染对象仍挂在渲染树上。
+///
+/// 子树被摘下（切换设计系统时外壳结构变化、GlobalKey 重挂）到 dispose 之前，
+/// 元素仍 mounted 却已停用；对它 `ModalRoute.of` / 取 size 会断言并连锁成整屏
+/// 红。[Element.renderObject] 的取值不做生命周期断言，停用后其渲染对象已从树上
+/// detach，以此判活。
+bool _isLiveContext(BuildContext context) {
+  if (!context.mounted) return false;
+  final RenderObject? renderObject = (context as Element).renderObject;
+  return renderObject != null && renderObject.attached;
 }

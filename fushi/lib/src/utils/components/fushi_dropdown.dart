@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -84,6 +86,13 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'gamepad-dropdown-${identityHashCode(this)}',
   );
+
+  /// Apple 路径的菜单锚（触发器）与打开状态：Apple 下菜单走 [showFushiMenu]
+  /// 的路由（从触发器变形展开、统一定位），不用 MenuAnchor。
+  final GlobalKey _appleAnchorKey = GlobalKey(
+    debugLabel: 'gamepadDropdownAppleAnchor',
+  );
+  bool _appleMenuOpen = false;
 
   @override
   void dispose() {
@@ -193,7 +202,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
             (constraints.maxWidth.isFinite ? constraints.maxWidth : null);
         final Widget anchor = _focusableAnchor(
           context,
-          _menuAnchor(context, menuWidth),
+          isGlassDesign(context)
+              ? _appleMenuTrigger(context)
+              : _menuAnchor(context, menuWidth),
         );
         return fixedWidth == null
             ? anchor
@@ -209,7 +220,11 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) {
             if (widget.enabled) {
-              _menu.isOpen ? _menu.close() : _menu.open();
+              if (isGlassDesign(context)) {
+                _openAppleMenu();
+              } else {
+                _menu.isOpen ? _menu.close() : _menu.open();
+              }
             }
             return null;
           },
@@ -221,6 +236,86 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         enabled: widget.enabled,
         child: anchor,
       ),
+    );
+  }
+
+  /// Apple 路径：触发器原样（[_trigger]），点开推 [showFushiMenu] 的菜单
+  /// 路由——触发器下方 6px、至少与触发器同宽、从触发器变形展开；焦点落在
+  /// 当前项，方向键 / 手柄 D-pad 在项间移动，A / Enter 选中，B / Esc 关闭并
+  /// 把焦点还给触发器。
+  Widget _appleMenuTrigger(BuildContext context) {
+    return KeyedSubtree(
+      key: _appleAnchorKey,
+      child: _trigger(
+        context,
+        FushiDesignTokens.of(context),
+        widget.enabled ? _openAppleMenu : null,
+      ),
+    );
+  }
+
+  Future<void> _openAppleMenu() async {
+    final BuildContext? anchor = _appleAnchorKey.currentContext;
+    final RenderObject? box = anchor?.findRenderObject();
+    if (_appleMenuOpen ||
+        anchor == null ||
+        box is! RenderBox ||
+        !box.hasSize ||
+        widget.entries.isEmpty) {
+      return;
+    }
+    int selected = -1;
+    for (int i = 0; i < widget.entries.length; i++) {
+      if (widget.entries[i].value == widget.selected) {
+        selected = i;
+        break;
+      }
+    }
+    final double width = box.size.width;
+    _appleMenuOpen = true;
+    final int? picked = await showFushiMenu<int>(
+      context: context,
+      positionBuilder: fushiMenuAnchorPosition(anchor),
+      initialValue: selected >= 0 ? selected : null,
+      constraints: BoxConstraints(
+        minWidth: width,
+        maxWidth: width > 320 ? width : 320,
+        maxHeight: MediaQuery.sizeOf(context).height * _kMenuMaxHeightFactor,
+      ),
+      items: <PopupMenuEntry<int>>[
+        for (int i = 0; i < widget.entries.length; i++)
+          PopupMenuItem<int>(
+            value: i,
+            child: _appleEntryLabel(context, widget.entries[i]),
+          ),
+      ],
+    );
+    _appleMenuOpen = false;
+    if (!mounted || picked == null || picked >= widget.entries.length) return;
+    widget.onChanged(widget.entries[picked].value);
+  }
+
+  /// Apple 菜单行的文案：标题（菜单行统一给字号 / 颜色）+ 可选的次行灰字。
+  Widget _appleEntryLabel(BuildContext context, GamepadDropdownEntry<T> e) {
+    final String? subtitle = widget.entrySubtitle?.call(e.value);
+    if (subtitle == null || subtitle.isEmpty) {
+      return Text(e.label, maxLines: 2, softWrap: true);
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(e.label, maxLines: 2, softWrap: true),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: fushiAppleCompact(context) ? 11 : 13,
+            color: appleColorsOf(context).secondaryLabel,
+          ),
+        ),
+      ],
     );
   }
 
@@ -261,38 +356,148 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       ],
       builder:
           (BuildContext context, MenuController controller, Widget? child) {
-        return FushiOutlinedButton(
-          focusNode: _triggerFocus,
-          onPressed: widget.enabled
+        return _trigger(
+          context,
+          tokens,
+          widget.enabled
               ? () => controller.isOpen ? controller.close() : controller.open()
               : null,
-          style: OutlinedButton.styleFrom(
-            alignment: Alignment.centerLeft,
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal,
-              vertical: tokens.spacing.rowVertical,
-            ),
-            shape:
-                RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  _selectedLabel ?? widget.hintText ?? widget.label ?? '',
-                  maxLines: 2,
-                  softWrap: true,
-                  style: tokens.type.listTitle,
-                ),
-              ),
-              FushiIcon(
-                Icons.arrow_drop_down,
-                color: tokens.surfaces.onVariant,
-              ),
-            ],
-          ),
         );
       },
+    );
+  }
+
+  /// 收起态触发器，与库页筛选胶囊 `LibraryFilterChip` 同一套语言：无描边的
+  /// 填充底 + 尾部展开箭头。给了固定 [GamepadMenuDropdown.width] 的是行内
+  /// 下拉，画成全胶囊；撑满父级的（表单 / 设置行）画成输入框式填充字段，
+  /// 与 `fushiMd3FieldDecoration` / Apple 文本框同圆角，和并排的输入框对齐。
+  /// 墨水屏保留描边方框（填充色在灰阶下塌掉，描边才是可读的边界）。
+  Widget _trigger(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    VoidCallback? onPressed,
+  ) {
+    final bool capsule = widget.width != null;
+    final String text = _selectedLabel ?? widget.hintText ?? widget.label ?? '';
+    if (isEinkTheme(context)) {
+      return FushiOutlinedButton(
+        focusNode: _triggerFocus,
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal,
+            vertical: tokens.spacing.rowVertical,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 2,
+                softWrap: true,
+                style: tokens.type.listTitle,
+              ),
+            ),
+            FushiIcon(
+              Icons.arrow_drop_down,
+              color: tokens.surfaces.onVariant,
+            ),
+          ],
+        ),
+      );
+    }
+    if (isGlassDesign(context)) {
+      // iOS / macOS 26 的 pop-up button（Niratan「Klee ⌃⌄」）：控件层，无色
+      // 透明液态玻璃 bezel（不是 systemFill 灰块），label 色文字、上下双箭头，
+      // 悬停 / 按下由 FushiPlainButton 给；降低透明度时玻璃回落实色。
+      final FushiAppleColors apple = appleColorsOf(context);
+      final bool compact = fushiAppleCompact(context);
+      final bool enabled = onPressed != null;
+      final double radius = capsule ? (compact ? 17 : 22) : 10;
+      return fushiClearGlassBezel(
+        context,
+        radius: radius,
+        child: FushiPlainButton(
+          focusNode: _triggerFocus,
+          onPressed: onPressed,
+          borderRadius: BorderRadius.circular(radius),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: compact ? 34 : 44),
+            child: Opacity(
+              opacity: enabled ? 1 : 0.4,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: capsule ? 14 : 12,
+                  end: 10,
+                  top: 6,
+                  bottom: 6,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        text,
+                        maxLines: 2,
+                        softWrap: true,
+                        style: tokens.type.listTitle.copyWith(color: apple.label),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      CupertinoIcons.chevron_up_chevron_down,
+                      size: 13,
+                      color: apple.secondaryLabel,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return FushiOutlinedButton(
+      focusNode: _triggerFocus,
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        alignment: Alignment.centerLeft,
+        minimumSize: Size(0, capsule ? 40 : 48),
+        padding: EdgeInsetsDirectional.only(
+          start: 16,
+          end: 12,
+          top: tokens.spacing.rowVertical,
+          bottom: tokens.spacing.rowVertical,
+        ),
+        backgroundColor: cs.surfaceContainerHigh,
+        disabledBackgroundColor: cs.onSurface.withValues(alpha: 0.04),
+        foregroundColor: cs.onSurface,
+        side: BorderSide.none,
+        shape: capsule
+            ? const StadiumBorder()
+            : RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              softWrap: true,
+              style: tokens.type.listTitle,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.expand_more_rounded,
+            size: 20,
+            color: cs.onSurfaceVariant,
+          ),
+        ],
+      ),
     );
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -375,33 +376,22 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
             constraints: const BoxConstraints(
               maxWidth: kFushiSettingsDialogMaxWidth,
             ),
-            child: SizedBox(
-              width: double.infinity,
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.card,
-                    vertical: tokens.spacing.gap,
-                  ),
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: tokens.spacing.gap,
-                    runSpacing: tokens.spacing.gap / 2,
-                    children: [
-                      FushiOutlinedButton(
-                        onPressed:
-                            _currentTabCanReset() ? _doResetCurrent : null,
-                        child: Text(t.book_css_editor_reset_current),
-                      ),
-                      FushiFilledButton(
-                        onPressed: () => _doSave(_selectedIndex),
-                        child: Text(t.book_css_editor_save),
-                      ),
-                    ],
-                  ),
+            // 共享底部动作条（限宽居中，MD3 不铺底色）：Apple 悬浮玻璃胶囊。
+            child: FushiBottomActionBar(
+              md3Surface: false,
+              leading: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiOutlinedButton(
+                  onPressed: _currentTabCanReset() ? _doResetCurrent : null,
+                  child: Text(t.book_css_editor_reset_current),
                 ),
               ),
+              actions: <Widget>[
+                FushiFilledButton(
+                  onPressed: () => _doSave(_selectedIndex),
+                  child: Text(t.book_css_editor_save),
+                ),
+              ],
             ),
           ),
         ),

@@ -719,11 +719,21 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
             child: FushiCircularProgressIndicator(strokeWidth: 2),
           );
         case SubtitleBatchStatus.done:
-          return const FushiIcon(Icons.check_circle, size: 18, color: Colors.green);
+          // 语义色走主题（MD3 和谐化绿 / Apple systemGreen；墨水屏 onSurface），
+          // 不再硬编码 Colors.green / red。
+          return FushiIcon(
+            Icons.check_circle,
+            size: 18,
+            color: fushiStatusColor(context, FushiStatusTone.success),
+          );
         case SubtitleBatchStatus.noMatch:
           return const FushiIcon(Icons.search_off, size: 18);
         case SubtitleBatchStatus.failed:
-          return const FushiIcon(Icons.error_outline, size: 18, color: Colors.red);
+          return FushiIcon(
+            Icons.error_outline,
+            size: 18,
+            color: fushiStatusColor(context, FushiStatusTone.error),
+          );
         case SubtitleBatchStatus.pending:
           return const FushiIcon(Icons.schedule, size: 18);
       }
@@ -740,7 +750,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
     return (source.index.byEpisode[episode]?.isEmpty ?? true)
         ? const FushiIcon(Icons.search_off, size: 18)
-        : const FushiIcon(Icons.check_circle_outline, size: 18, color: Colors.green);
+        : FushiIcon(
+            Icons.check_circle_outline,
+            size: 18,
+            color: fushiStatusColor(context, FushiStatusTone.success),
+          );
   }
 
   Widget? _episodeSubtitle(VideoBookRow member, int memberIndex) {
@@ -932,18 +946,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final String? notice = _notice;
     if (notice == null && !_seriesLookupFailed) return null;
     final bool error = notice != null && _noticeIsError;
-    final Color bg = error
-        ? theme.colorScheme.errorContainer
-        : theme.colorScheme.secondaryContainer;
-    final Color fg = error
-        ? theme.colorScheme.onErrorContainer
-        : theme.colorScheme.onSecondaryContainer;
+    // 中性信息块，错误语义只上在单色图标上。
+    final Color fg = fushiNeutralBlockForeground(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         key: kSubtitleNoticeBannerKey,
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
+        color: fushiNeutralBlockColor(context),
+        borderRadius: fushiNeutralBlockRadius(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
@@ -952,7 +962,9 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
               FushiIcon(
                 error ? Icons.error_outline : Icons.info_outline,
                 size: 18,
-                color: fg,
+                color: error
+                    ? fushiStatusColor(context, FushiStatusTone.error)
+                    : fushiNeutralSecondaryForeground(context),
               ),
               const SizedBox(width: 8),
               Expanded(

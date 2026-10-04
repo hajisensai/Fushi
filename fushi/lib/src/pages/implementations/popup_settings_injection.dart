@@ -111,8 +111,18 @@ String _themeVariablesJs({
   final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
   final String einkLine =
       "document.documentElement.classList.toggle('eink', $eink);\n";
+  // Apple 设计系统：弹窗卡面由 Flutter [FushiPopupSurface] 画（app 内是液态玻璃、
+  // 独立窗是不透明系统材质面板），WebView 文档背景透明、词条直接落在材质上，
+  // 并按 Apple 口径给标签 / 选中态吃强调色（popup.css `html.fushi-glass-host`）。
+  // 桌面全局查词窗（.global-lookup）卡面是文档自己的 body，不挂；墨水屏不挂。
+  // toggle 同 eink：热槽跨渲染持久，切回 MD3 必须摘掉。
+  final bool glassHost = !globalLookup &&
+      !eink &&
+      (theme.extension<FushiGlassTheme>()?.glassDesign ?? false);
+  final String glassLine =
+      "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n";
   return '''
-      $classLine      $einkLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
       document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
       document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');

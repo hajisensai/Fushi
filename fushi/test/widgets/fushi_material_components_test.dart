@@ -37,7 +37,7 @@ void main() {
     expect(editorPanel, isNot(contains('fontSize: 12')));
   });
 
-  testWidgets('FushiSelectableChip uses MD3 selected and outline tokens',
+  testWidgets('FushiSelectableChip uses MD3 pill, tonal fill and checkmark',
       (WidgetTester tester) async {
     bool selected = true;
     await tester.pumpWidget(
@@ -51,17 +51,15 @@ void main() {
     );
 
     final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)));
-    final RoundedRectangleBorder shape = chip.shape! as RoundedRectangleBorder;
+    final ColorScheme scheme =
+        Theme.of(tester.element(find.byType(ChoiceChip))).colorScheme;
 
     expect(chip.selected, isTrue);
-    expect(chip.showCheckmark, isFalse);
-    expect(shape.borderRadius, BorderRadius.circular(6));
-    expect(
-      chip.selectedColor,
-      Theme.of(tester.element(find.byType(ChoiceChip)))
-          .colorScheme
-          .primaryContainer,
-    );
+    expect(chip.showCheckmark, isTrue);
+    expect(chip.shape, isA<StadiumBorder>());
+    expect(chip.side, BorderSide.none);
+    expect(chip.backgroundColor, scheme.surfaceContainerHigh);
+    expect(chip.selectedColor, scheme.secondaryContainer);
 
     await tester.tap(find.byType(ChoiceChip));
     expect(selected, isFalse);
@@ -96,7 +94,7 @@ void main() {
     expect(selected, isTrue);
   });
 
-  testWidgets('FushiActionChip uses shared outline action styling',
+  testWidgets('FushiActionChip uses a tonal pill without outline',
       (WidgetTester tester) async {
     bool tapped = false;
     await tester.pumpWidget(
@@ -111,10 +109,11 @@ void main() {
 
     final OutlinedButton button =
         tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byType(OutlinedButton)));
-    final RoundedRectangleBorder shape = button.style!.shape!
-        .resolve(<WidgetState>{})! as RoundedRectangleBorder;
-
-    expect(shape.borderRadius, BorderRadius.circular(6));
+    expect(
+      button.style!.shape!.resolve(<WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
+    expect(button.style!.side!.resolve(<WidgetState>{}), BorderSide.none);
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
 
     await tester.tap(find.byType(FushiActionChip));
@@ -884,14 +883,14 @@ void main() {
     );
 
     final Icon icon = tester.widget<Icon>(find.byIcon(Icons.sell_outlined));
-    final Divider divider = tester.widget<Divider>(glassUnwrap<Divider>(find.byType(Divider)));
 
     expect(find.byType(SafeArea), findsOneWidget);
     expect(find.text('Filters'), findsOneWidget);
     expect(find.text('Body'), findsOneWidget);
     expect(find.text('Footer'), findsOneWidget);
     expect(icon.size, 20);
-    expect(divider.height, 1);
+    // MD3 sheet 底部动作区不压分隔线（2026-10-04 弹层统一）。
+    expect(find.byType(Divider), findsNothing);
   });
 
   testWidgets('FushiModalSheetFrame makes long sheet bodies scrollable',

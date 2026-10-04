@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 毛玻璃表面的模糊半径（sigma）。比阅读器顶部进度条（12）更重：弹层 / 对话框
@@ -80,9 +81,16 @@ class FushiGlassFab extends StatelessWidget {
     final bool themedTransparent =
         theme.floatingActionButtonTheme.backgroundColor == Colors.transparent;
     if (!themedTransparent) return child;
+    // Apple 设计系统：iOS 26 的悬浮按钮是中性玻璃胶囊（标准 56 高 → 半径 28，
+    // 圆钮 / 扩展胶囊同一个半径），着色交给强调色图标，不铺 primaryContainer。
+    final bool apple = isGlassDesign(context);
     return FushiGlassSurface(
-      baseColor: theme.colorScheme.primaryContainer,
-      borderRadius: FushiBorderRadius.control,
+      baseColor: apple
+          ? appleColorsOf(context).secondaryGroupedBackground
+          : theme.colorScheme.primaryContainer,
+      borderRadius: apple
+          ? const BorderRadius.all(Radius.circular(28))
+          : FushiBorderRadius.control,
       child: child,
     );
   }

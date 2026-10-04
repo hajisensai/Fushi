@@ -349,7 +349,6 @@ class _LnReaderNovelDetailPageState
   }
 
   Widget _buildBody(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final LnReaderNovel? novel = _novel;
     final Object? error = _error;
     final String title = novel?.name.isNotEmpty == true
@@ -423,9 +422,11 @@ class _LnReaderNovelDetailPageState
         if (error != null)
           Padding(
             padding: const EdgeInsets.only(top: 16),
-            child: Text(
-              '$error',
-              style: TextStyle(color: theme.colorScheme.error),
+            // 错误走统一提示条（MD3 中性底 + error 图标 / Apple tertiaryFill
+            // 实色底），不再是一行裸红字。
+            child: FushiInlineNotice(
+              severity: FushiNoticeSeverity.error,
+              message: '$error',
             ),
           ),
         // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。

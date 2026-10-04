@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -17,12 +18,27 @@ import 'package:fushi/utils.dart';
 class ModuleSettingsView extends ConsumerStatefulWidget {
   const ModuleSettingsView({
     required this.destinationId,
-    required this.navigation,
+    required Widget this.navigation,
     super.key,
-  });
+  }) : routeTitle = null;
+
+  /// 推出来的独立设置页（如「设置 › AI」「设置 › 互联」）：页头是
+  /// [FushiPageHeader.route]——标题 + 自动返回键，不再各页手写
+  /// 「返回键 + titleLarge」。
+  const ModuleSettingsView.route({
+    required this.destinationId,
+    required String title,
+    super.key,
+  }) : navigation = null,
+       routeTitle = title;
 
   final SettingsDestinationId destinationId;
-  final Widget navigation;
+
+  /// 模块内嵌形态的分段导航页头主位；[ModuleSettingsView.route] 下为 null。
+  final Widget? navigation;
+
+  /// [ModuleSettingsView.route] 的页面标题。
+  final String? routeTitle;
 
   @override
   ConsumerState<ModuleSettingsView> createState() => _ModuleSettingsViewState();
@@ -43,7 +59,11 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
       (SettingsDestination destination) =>
           destination.id == widget.destinationId,
     );
-    final SettingsRenderer renderer = isCupertinoPlatform(context)
+    // 玻璃：与设置主页同一套 macOS / iOS 设置详情（GlassSettingsRenderer）。
+    final SettingsRenderer renderer =
+        isGlassDesign(context) && !isCupertinoPlatform(context)
+        ? const GlassSettingsRenderer()
+        : isCupertinoPlatform(context)
         ? const CupertinoSettingsRenderer()
         : const MaterialSettingsRenderer();
 
@@ -56,7 +76,10 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
     // DesktopContentKind.settings，不受影响。
     return Column(
       children: <Widget>[
-        FushiPageHeader.customTitle(title: widget.navigation),
+        if (widget.routeTitle case final String title)
+          FushiPageHeader.route(title: title)
+        else
+          FushiPageHeader.customTitle(title: widget.navigation!),
         Expanded(
           child: renderer.buildDetailContent(
             settingsContext: settingsContext,

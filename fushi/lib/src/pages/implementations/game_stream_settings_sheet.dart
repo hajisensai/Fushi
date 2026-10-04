@@ -109,6 +109,8 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
                     }),
                     child: Text(t.game_stream_settings_reset),
                   ),
+                  // 两枚按钮之间留出间距：Apple 下是两颗相邻胶囊，贴着会粘成一块。
+                  const SizedBox(width: 8),
                   FushiFilledButton(
                     key: GameStreamSettingsSheet.saveKey,
                     onPressed: () => Navigator.of(context).pop(_settings),

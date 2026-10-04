@@ -119,6 +119,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       safeArea: false,
       body: FushiPopupSurface(
         color: tokens.surfaces.search.withValues(alpha: 0.94),
+        // 悬浮词典是独立窗口：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
+        standaloneWindow: true,
         padding: EdgeInsets.all(tokens.spacing.gap),
         child: Column(
           children: [

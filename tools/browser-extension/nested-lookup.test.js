@@ -381,7 +381,7 @@ test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档�
       '嵌套查词绝不能移除弹窗 host（用户报「把旧弹窗关掉」）');
   assert.strictEqual(world.windowObj.__fushiRoot, before.host.shadowRoot,
       '父层必须保留自己的 shadow root');
-  assert.strictEqual(world.body.children.filter(c => c.tagName === 'IFRAME').length, 1,
+  assert.strictEqual(world.body.children.filter(c => c.className === 'fushi-nested-layer' && (c.children || []).some(k => k.tagName === 'IFRAME')).length, 1,
       '子词必须在独立 iframe 展示，不能替换父层');
   // 「旧弹窗被关掉」的直接视觉来源：重新走一遍入场淡入（opacity 压 0 再翻 1）。内容原地
   // 替换绝不该让弹窗先消失一次。

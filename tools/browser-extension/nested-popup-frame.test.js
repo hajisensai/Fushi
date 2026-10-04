@@ -15,11 +15,10 @@ function world() {
     };
   }
   const root = element(), host = element();
-  const closeButton = element();
   host.attachShadow = () => root;
   const document = {
     documentElement: element(),
-    getElementById: id => id === 'fushi-nested-root' ? host : id === 'fushi-nested-close' ? closeButton : null,
+    getElementById: id => id === 'fushi-nested-root' ? host : null,
     createElement: element,
     addEventListener(name, handler) { documentListeners[name] = handler; },
   };
@@ -48,7 +47,7 @@ function world() {
     if (!port.onmessage) connect();
     port.onmessage({ data: { __fushiPopupFrame: true, ...data } });
   }
-  return { window, document, root, host, sent, parent, port, connect, windowReceive, receive, documentListeners, closeButton,
+  return { window, document, root, host, sent, parent, port, connect, windowReceive, receive, documentListeners,
     get renders() { return renders; }, get cssData() { return cssData; },
     get mediaRoot() { return mediaRoot; }, get autoReadOptions() { return autoReadOptions; },
     get minedIndex() { return minedIndex; }, get highlighted() { return highlighted; } };
@@ -160,11 +159,21 @@ test('frame activation, Escape and modal mine dispatch do not rerender the dicti
   assert.equal(w.renders, 0);
 });
 
-test('close button only closes its layer and parent highlight uses shared selection state', () => {
+// 用户 2026-10-04：查词弹窗不要右上角的关闭钮。本层只靠 Esc / 点本层外 / 鼠标离开逐层关闭。
+test('nested layer has no visible close button; Escape and tap-outside still close only this layer', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'nested-popup.html'), 'utf8');
+  assert.doesNotMatch(html, /fushi-nested-close|<button/);
   const w = world();
   w.connect();
-  w.closeButton.listeners.click();
+  w.window.__fushiOnTapOutside();
   assert.equal(w.sent.at(-1).data.type, 'close');
+  w.documentListeners.keydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
+  assert.equal(w.sent.at(-1).data.type, 'close');
+});
+
+test('parent highlight uses shared selection state', () => {
+  const w = world();
+  w.connect();
   w.receive({ type: 'highlight', length: 2 });
   assert.equal(w.highlighted, 2);
   w.receive({ type: 'highlight', length: -1 });
@@ -172,4 +181,24 @@ test('close button only closes its layer and parent highlight uses shared select
   w.receive({ type: 'highlight', length: 5 }, {});
   assert.equal(w.highlighted, 2);
   assert.equal(w.renders, 0);
+});
+
+// 2026-10-04 录屏：子层「半透明却不模糊」。半透明填充只在宿主握手确认外框正在模糊时才挂。
+test('translucent glass fill only when the host confirms its backdrop blur', () => {
+  const container = (w) => w.root.children[2];
+  const classes = (w) => {
+    const set = new Set();
+    container(w).classList = { toggle(name, on) { if (on) set.add(name); else set.delete(name); } };
+    return set;
+  };
+  const theme = { '--fushi-color-scheme': 'light' };
+  const confirmed = world(), cs1 = classes(confirmed);
+  confirmed.receive({ type: 'render', data: { popupJson: '[]', theme, glassBackdrop: true } });
+  assert.equal(cs1.has('fushi-glass'), true);
+  const legacy = world(), cs2 = classes(legacy);
+  legacy.receive({ type: 'render', data: { popupJson: '[]', theme } });
+  assert.equal(cs2.has('fushi-glass'), false, '旧宿主不给模糊握手：保持不透明');
+  const eink = world(), cs3 = classes(eink);
+  eink.receive({ type: 'render', data: { popupJson: '[]', theme: { ...theme, '--fushi-glass': '0' }, glassBackdrop: true } });
+  assert.equal(cs3.has('fushi-glass'), false);
 });

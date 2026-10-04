@@ -48,7 +48,7 @@ const OVERLAY = join(scriptsDir, 'content-css-overlay.css');
 // 没有走 prefers-color-scheme 块，与扩展页面上的 theme.css 语义完全一致。
 const THEME_CSS = join(repoRoot, 'tools', 'browser-extension', 'theme.css');
 const IN_PAGE_THEME_HOSTS =
-  ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)';
+  ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
 const OUTPUTS = [
   join(repoRoot, 'tools', 'browser-extension', 'vendor', 'content.css'),
   join(repoRoot, 'fushi', 'assets', 'browser_extension', 'vendor', 'content.css'),
@@ -82,7 +82,10 @@ function transformSelector(raw) {
   if (p === '') return null;
   // App-external-window-only modes: the extension host #entries-container never
   // carries these classes, so drop them entirely (dead weight otherwise).
-  if (p.startsWith('html.global-lookup') || p.startsWith('html.mobile-external')) {
+  // html.fushi-glass-host 同理：app 内 Apple 设计系统的透明文档宿主（Flutter 画玻璃卡面），
+  // 扩展的玻璃走 content-css-overlay.css 的 :host([data-fushi-glass]) / .fushi-glass。
+  if (p.startsWith('html.global-lookup') || p.startsWith('html.mobile-external') ||
+      p.startsWith('html.fushi-glass-host')) {
     return null;
   }
   // Named custom highlight (CSS Custom Highlight API) is global by design and its

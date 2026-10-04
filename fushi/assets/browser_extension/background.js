@@ -311,22 +311,8 @@ const APP_THEME_MIRROR_KEYS = [
 ];
 let appThemeMirror = null;
 let appThemeMirrorLoaded = null;
-// app 设计系统的玻璃开关（--fushi-glass '1'/'0'）同样镜像进 storage.appGlassMirror，供扩展
-// 材质「跟随 Fushi」（theme.js extensionMaterial = 'auto'）给设置页 / 工具栏菜单 / 侧边栏决定
-// 玻璃还是实心。缺该 key（旧 app）不写，同值不重复写。
-let appGlassMirror = null;
-function rememberAppGlass(theme) {
-  const v = theme['--fushi-glass'];
-  if (v !== '1' && v !== '0') return;
-  const glass = v === '1';
-  if (glass === appGlassMirror) return;
-  appGlassMirror = glass;
-  try { chrome.storage.local.set({ appGlassMirror: glass }); } catch (_) {}
-}
-
 function rememberAppTheme(theme) {
   if (!theme || typeof theme !== 'object') return;
-  rememberAppGlass(theme);
   const scheme = theme['--fushi-color-scheme'];
   if (scheme !== 'light' && scheme !== 'dark') return;
   const colors = {};
@@ -1120,6 +1106,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!r.ok) { sendResponse({ ok: false, status: r.status, url: null }); return; }
         const data = await r.json();
         sendResponse({ ok: !!(data && data.url), url: (data && data.url) || null, contentType: (data && data.contentType) || null });
+      } else if (msg.type === 'lookupAudioList') {
+        // 「选择音频源」菜单：POST /api/lookup/audio/list {expression,reading}（Basic auth）→
+        // {audioSources:[{name, variant, url}]}，url 同为免鉴权短命 /api/lookup/audio/file?id=。
+        // 旧 app 无该端点 → !r.ok → 空列表（popup.js 按「暂无发音」处理）。
+        const r = await fetch(base + '/api/lookup/audio/list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
+        });
+        if (!r.ok) { sendResponse({ ok: false, status: r.status, audioSources: [] }); return; }
+        const data = await r.json();
+        const list = data && Array.isArray(data.audioSources) ? data.audioSources : [];
+        sendResponse({
+          ok: true,
+          audioSources: list.filter((s) => s && typeof s.url === 'string' && s.url).map((s) => ({
+            name: typeof s.name === 'string' ? s.name : '',
+            variant: typeof s.variant === 'string' ? s.variant : '',
+            url: s.url,
+          })),
+        });
       } else if (msg.type === 'youtubeCaptions') {
         // A（BUG-783 后续）：扩展抓 YouTube 网页视频**真整集字幕**——POST /api/youtube/captions
         // {videoId,preferLang} → server 复用 app 内已修的解析器（androidVr getPlayerResponse +

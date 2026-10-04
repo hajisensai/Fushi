@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -71,7 +72,12 @@ class BackupImportOverlayView extends StatelessWidget {
         : failed
             ? Icons.error_outline
             : Icons.check_circle;
-    final Color statusColor = failed ? cs.error : cs.primary;
+    // Apple：强调色是单色，完成态的 ✓ 用系统绿（进行中仍用强调色）。
+    final Color statusColor = failed
+        ? cs.error
+        : (!inProgress && isGlassDesign(context)
+            ? appleColorsOf(context).success
+            : cs.primary);
     // 主行文案：validating=「正在读取备份…」；running=「正在导入备份」；done/failed=结果文案。
     final String title = validating
         ? t.backup_import_validating_title

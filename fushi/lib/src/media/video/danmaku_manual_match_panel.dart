@@ -121,7 +121,7 @@ class _DanmakuManualMatchPanelState extends State<DanmakuManualMatchPanel> {
 
   Widget _buildResults(ColorScheme cs) {
     if (_searching) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     final DandanplaySearchResult? result = _result;
     if (result == null) {

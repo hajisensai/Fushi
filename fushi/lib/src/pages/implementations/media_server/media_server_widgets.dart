@@ -200,14 +200,7 @@ class MediaServerItemCard extends StatelessWidget {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: IgnorePointer(
-                      child: FushiLinearProgressIndicator(
-                        value: progress,
-                        minHeight: 3,
-                        backgroundColor: Colors.black.withValues(alpha: 0.35),
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
+                    child: CoverProgressStrip(value: progress),
                   ),
               ],
             ),
@@ -425,16 +418,13 @@ class MediaServerContinueCard extends StatelessWidget {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: IgnorePointer(
-                      child: FushiLinearProgressIndicator(
-                        key: const ValueKey<String>(
-                          'media-server-continue-progress',
-                        ),
-                        value: progress,
-                        minHeight: 4,
-                        backgroundColor: Colors.black.withValues(alpha: 0.45),
-                        color: Theme.of(context).colorScheme.primary,
+                    child: CoverProgressStrip(
+                      progressKey: const ValueKey<String>(
+                        'media-server-continue-progress',
                       ),
+                      value: progress,
+                      minHeight: 4,
+                      trackOpacity: 0.45,
                     ),
                   ),
               ],
@@ -668,7 +658,11 @@ class MediaServerRow extends StatelessWidget {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge,
+                    // Apple 横滑行的区块标题是粗体 title2（Music / Podcasts 的行头）；
+                    // MD3 原样。
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: isGlassDesign(context) ? FontWeight.w700 : null,
+                    ),
                   ),
                 ),
                 if (onViewAll != null)

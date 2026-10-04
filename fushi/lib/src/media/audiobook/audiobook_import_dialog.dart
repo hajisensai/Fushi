@@ -352,19 +352,21 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final String pctStr = health.ratePct?.toString() ?? '?';
     final String? reason = health.reason;
     final String tail = (reason == null || reason.isEmpty) ? '' : ' · $reason';
-    final cs = Theme.of(context).colorScheme;
+    // 状态色走共享 [fushiStatusColor]（MD3 与主色协调的绿 / 橙 / error；Apple
+    // 系统绿 / 橙 / 红）：旧实现借 tertiary / secondary 表达「成功 / 部分」，
+    // 在 Apple 色板里 tertiary 是橙、secondary 是强调色，语义全错位。
     switch (health.kind) {
       case HealthKind.ok:
         icon = Icons.check_circle;
-        color = cs.tertiary;
+        color = fushiStatusColor(context, FushiStatusTone.success);
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.partial:
         icon = Icons.warning_amber;
-        color = cs.secondary;
+        color = fushiStatusColor(context, FushiStatusTone.warning);
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.failed:
         icon = Icons.error_outline;
-        color = cs.error;
+        color = fushiStatusColor(context, FushiStatusTone.error);
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.running:
       case HealthKind.unrun:

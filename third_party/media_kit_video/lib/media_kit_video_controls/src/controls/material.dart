@@ -312,6 +312,16 @@ class MaterialVideoControlsThemeData {
   /// [Alignment] of seek bar inside the seek bar container.
   final Alignment seekBarAlignment;
 
+  /// Hibiki patch (glass design system): corner radius of the seek bar track
+  /// (and its buffer / position fills). `0` (default) keeps the upstream
+  /// square-ended track pixel-for-pixel.
+  final double seekBarRadius;
+
+  /// Hibiki patch (glass design system): track height while the seek bar is
+  /// pressed / dragged (iOS 26 thickens the scrubber under the finger). `null`
+  /// (default) keeps the upstream constant [seekBarHeight].
+  final double? seekBarActiveHeight;
+
   // SUBTITLE
 
   /// Whether to shift the subtitles upwards when the controls are visible.
@@ -449,6 +459,8 @@ class MaterialVideoControlsThemeData {
     this.seekBarThumbSize = 12.8,
     this.seekBarThumbColor = const Color(0xFFFF0000),
     this.seekBarAlignment = Alignment.bottomCenter,
+    this.seekBarRadius = 0.0,
+    this.seekBarActiveHeight,
     this.shiftSubtitlesOnControlsVisibilityChange = false,
     this.visibilityNotifier,
     this.restartHideTimerSignal,
@@ -509,6 +521,8 @@ class MaterialVideoControlsThemeData {
     double? seekBarThumbSize,
     Color? seekBarThumbColor,
     Alignment? seekBarAlignment,
+    double? seekBarRadius,
+    double? seekBarActiveHeight,
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
     Listenable? restartHideTimerSignal,
@@ -589,6 +603,8 @@ class MaterialVideoControlsThemeData {
       seekBarThumbSize: seekBarThumbSize ?? this.seekBarThumbSize,
       seekBarThumbColor: seekBarThumbColor ?? this.seekBarThumbColor,
       seekBarAlignment: seekBarAlignment ?? this.seekBarAlignment,
+      seekBarRadius: seekBarRadius ?? this.seekBarRadius,
+      seekBarActiveHeight: seekBarActiveHeight ?? this.seekBarActiveHeight,
       shiftSubtitlesOnControlsVisibilityChange:
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
@@ -2037,9 +2053,28 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
                   children: [
                     Container(
                       width: constraints.maxWidth,
-                      height: _theme(context).seekBarHeight,
+                      // Hibiki patch (glass design system): optional thicker
+                      // track while pressed + rounded track; defaults keep the
+                      // upstream constant-height square track.
+                      height: tapped &&
+                              _theme(context).seekBarActiveHeight != null
+                          ? _theme(context).seekBarActiveHeight
+                          : _theme(context).seekBarHeight,
                       alignment: Alignment.bottomLeft,
-                      color: _theme(context).seekBarColor,
+                      color: _theme(context).seekBarRadius > 0
+                          ? null
+                          : _theme(context).seekBarColor,
+                      decoration: _theme(context).seekBarRadius > 0
+                          ? BoxDecoration(
+                              color: _theme(context).seekBarColor,
+                              borderRadius: BorderRadius.circular(
+                                _theme(context).seekBarRadius,
+                              ),
+                            )
+                          : null,
+                      clipBehavior: _theme(context).seekBarRadius > 0
+                          ? Clip.antiAlias
+                          : Clip.none,
                       child: Stack(
                         clipBehavior: Clip.none,
                         alignment: Alignment.bottomLeft,

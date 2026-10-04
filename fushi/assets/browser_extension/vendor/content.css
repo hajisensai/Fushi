@@ -660,6 +660,139 @@
     opacity: 1;
 }
 
+/* 「选择音频源」菜单（♪ 触屏长按 / 桌面右键 / Shift+F10 打开，popup.js
+   openAudioSourceMenu）。列出当前词每个启用音频源各自解析出的候选，点项即播。
+   与 .audio-hint 同一套定位：挂在 __fushiOverlayParent() 顶层、position:fixed +
+   JS 按按钮屏幕坐标算好的 left/top（in-app 弹窗与 app 外覆盖窗都锚在按钮旁）。
+   基础外观是 MD3 tonal 菜单（surfaceContainerHigh 实底 + 柔和阴影）；玻璃宿主
+   （Apple 设计系统 html.fushi-glass-host / 扩展 .fushi-glass）在支持
+   backdrop-filter 时换成半透明玻璃（.is-glass）；墨水屏 .is-eink。两个 class 由 JS
+   applyAudioMenuTheme 从 <html> / 扩展弹窗容器镜像过来——扩展里菜单挂在 shadow root
+   顶层、不是容器后代，祖先选择器够不着。选中 / 聚焦项用主题主色
+   淡染（与链接、选中词典名同一强调色）。长按不弹系统 callout：按钮上关掉。 */
+.audio-button {
+    -webkit-touch-callout: none;
+}
+
+.fushi-audio-menu {
+    position: fixed;
+    z-index: 10001;
+    min-width: 168px;
+    max-width: min(280px, calc(100vw - 8px));
+    overflow-y: auto;
+    padding: 4px;
+    border-radius: 12px;
+    color: var(--text-color);
+    background: var(--md-surface-container-high, var(--surface-container-high));
+    border: 1px solid var(--md-outline-variant, var(--outline-variant));
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+    font-size: 13px;
+    line-height: 1.35;
+    -webkit-user-select: none;
+    user-select: none;
+    opacity: 0;
+    transition: opacity 0.14s ease;
+}
+
+.fushi-audio-menu.visible {
+    opacity: 1;
+}
+
+.fushi-audio-menu-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    justify-content: center;
+}
+
+.fushi-audio-menu-item:hover,
+.fushi-audio-menu-item:focus-visible {
+    background: color-mix(in srgb, var(--md-primary, var(--primary-color)) 14%, transparent);
+    color: var(--md-primary, var(--primary-color));
+    outline: none;
+}
+
+.fushi-audio-menu-item[aria-disabled="true"] {
+    cursor: default;
+    opacity: 0.6;
+    background: transparent;
+    color: inherit;
+}
+
+.fushi-audio-menu-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.fushi-audio-menu-variant {
+    font-size: 11px;
+    opacity: 0.72;
+    overflow-wrap: anywhere;
+}
+
+/* 加载中：一行三点（不需要文案，aria-busy 由 JS 置）。不用 @keyframes / @supports /
+   @media：generate-content-css.mjs 不处理嵌套 at-rule，扩展 content.css 生成会直接报错。 */
+.fushi-audio-menu-loading {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    padding: 12px 10px;
+}
+
+.fushi-audio-menu-loading > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--md-primary, var(--primary-color));
+    opacity: 0.3;
+}
+
+.fushi-audio-menu-loading > span:nth-child(2) {
+    opacity: 0.55;
+}
+
+.fushi-audio-menu-loading > span:nth-child(3) {
+    opacity: 0.8;
+}
+
+/* 玻璃宿主：半透明填充 + 背景模糊（模糊的是同一文档里菜单背后的词条内容，
+   真能采到）。不支持 backdrop-filter 的内核只剩 78% 填充，仍清晰可读。 */
+.fushi-audio-menu.is-glass {
+    background: color-mix(in srgb, var(--md-surface-container-high, var(--surface-container-high)) 78%, transparent);
+    border-color: color-mix(in srgb, var(--text-color) 10%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    backdrop-filter: blur(20px) saturate(1.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 10px 32px rgba(0, 0, 0, 0.24);
+}
+
+/* 墨水屏：纯黑白、实线边框、无阴影无模糊无动画，聚焦项反色。 */
+.fushi-audio-menu.is-eink {
+    background: var(--background-color);
+    color: var(--text-color);
+    border: 1px solid var(--text-color);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    transition: none;
+}
+
+.fushi-audio-menu.is-eink .fushi-audio-menu-item:hover,
+.fushi-audio-menu.is-eink .fushi-audio-menu-item:focus-visible {
+    background: var(--text-color);
+    color: var(--background-color);
+}
+
 .entry-tags {
     margin-top: -4px;
     -webkit-user-select: none;
@@ -1907,6 +2040,31 @@
     min-height: 320px;
 }
 
+:where(html.fushi-glass-host, .fushi-glass) .frequency-group {
+    border-color: color-mix(in srgb, var(--primary-color) 38%, transparent);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .frequency-dict-label,
+:where(html.fushi-glass-host, .fushi-glass) .pitch-dict-label {
+    background-color: color-mix(in srgb, var(--primary-color) 16%, transparent);
+    color: var(--primary-color);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .expr-tag,
+:where(html.fushi-glass-host, .fushi-glass) .deinflection-tag {
+    background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .audio-button,
+:where(html.fushi-glass-host, .fushi-glass) .open-anki-button,
+:where(html.fushi-glass-host, .fushi-glass) .favorite-button:where(:not(.favorited)),
+:where(html.fushi-glass-host, .fushi-glass) .mine-button:where(:not(.latest)) {
+    /* :not 包进 :where 保持 (0,1,0)：:disabled / .audio-unavailable / :hover 这些
+       (0,2,0) 的状态规则照旧压得过这里。 */
+    color: var(--primary-color);
+    opacity: 0.8;
+}
+
 /* =====================================================================
  * E-ink 墨水屏模式（html.eink）。
  *
@@ -2076,7 +2234,7 @@
 }
 
 /* ── theme.css tokens, re-rooted to the in-page hosts (generated; edit theme.css) ── */
-:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls) {
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host) {
   color-scheme: light dark;
   --fushi-bg: oklch(0.965 0.012 145);
   --fushi-surface: oklch(0.99 0.008 145);
@@ -2099,12 +2257,12 @@
   --fushi-on-scrim: #f7f8f2;
 }
 
-:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)[data-theme="light"] {
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)[data-theme="light"] {
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls):not([data-theme="light"]) {
+  :where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host):not([data-theme="light"]) {
     --fushi-bg: oklch(0.18 0.018 145);
     --fushi-surface: oklch(0.225 0.022 145);
     --fushi-surface-muted: oklch(0.27 0.026 145);
@@ -2122,7 +2280,7 @@
   }
 }
 
-:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)[data-theme="dark"] {
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)[data-theme="dark"] {
   color-scheme: dark;
   --fushi-bg: oklch(0.18 0.018 145);
   --fushi-surface: oklch(0.225 0.022 145);
@@ -2174,7 +2332,7 @@
     zoom: var(--fushi-popup-zoom, 1);
 }
 
-/* 玻璃材质（app 设计系统选「玻璃」时随查词响应 theme 下发 --fushi-glass: '1'）。
+/* 玻璃材质（扩展唯一的材质；只有 app 开墨水屏时随查词响应 theme 下发 --fushi-glass: '0' 关掉）。
    为什么只在扩展这里写、不进共享的 popup.css：backdrop-filter 只能模糊**同一文档**里画在
    它后面的东西。扩展弹窗挂在网页文档的 shadow root 里，背后就是网页本身，能真模糊；
    app 内查词弹窗是独立 WebView（热槽）浮在 Flutter 画面上，WebView 文档里卡片背后
@@ -2185,8 +2343,8 @@
    在宿主里滚动；backdrop-filter 落在宿主自己的圆角盒上最稳，容器的半透明填充再被宿主的
    overflow 圆角裁掉。数值与 Flutter 侧同源（fushi_glass_surface.dart）：模糊 sigma 20、
    填充不透明度亮 0.72 / 暗 0.62、描边黑/白 8%。整段包在 @supports 里：不支持
-   backdrop-filter 的内核什么都不改，卡片保持原来的不透明底；开关关时（缺 key = 旧 app 同）
-   两个钩子都不存在，与改动前逐像素一致。 */
+   backdrop-filter 的内核什么都不改，卡片保持原来的不透明底；系统要求减少透明度时同样回落
+   不透明、不模糊（兼容层，不是可选样式）；墨水屏时两个钩子都不存在。 */
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :host([data-fushi-glass]) {
         border-radius: var(--fushi-radius-card, 10px);
@@ -2195,6 +2353,9 @@
         /* outline 画在内容之上、贴圆角：不占布局（border 会把宿主撑宽 2px，影响落点计算）。 */
         outline: 1px solid rgba(0, 0, 0, 0.08);
         outline-offset: -1px;
+        /* 投影与嵌套子层同一公式的第 1 级（nested-popup-host.js fushiNestedLayerSkin：子层每深
+           一层略加重，材质不变）。 */
+        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
     }
 
     :host([data-fushi-glass="dark"]) {
@@ -2208,6 +2369,64 @@
     #entries-container.fushi-glass:not(.eink)[data-theme="dark"] {
         background-color: rgba(var(--fushi-card-bg-rgb, 0, 0, 0), 0.62);
     }
+
+    /* 页内 toast（content.js fushiToast）与拖放提示（subtitle-panel.js）：玻璃胶囊。不支持
+       backdrop-filter 时保持段外的实色底（见下方 #fushi-toast / #fushi-subtitle-drop-hint）。 */
+    html #fushi-toast,
+    html #fushi-subtitle-drop-hint {
+        background-color: color-mix(in oklch, var(--fushi-surface) 74%, transparent);
+        -webkit-backdrop-filter: blur(24px) saturate(1.8);
+        backdrop-filter: blur(24px) saturate(1.8);
+    }
+
+    html #fushi-toast[data-theme="dark"],
+    html #fushi-subtitle-drop-hint[data-theme="dark"] {
+        background-color: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 60%, black) 62%, transparent);
+    }
+
+    @media (prefers-reduced-transparency: reduce) {
+        :host([data-fushi-glass]) {
+            -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+        }
+
+        #entries-container.fushi-glass:not(.eink),
+        #entries-container.fushi-glass:not(.eink)[data-theme="dark"] {
+            background-color: rgb(var(--fushi-card-bg-rgb, 255, 255, 255));
+        }
+
+        html #fushi-toast,
+        html #fushi-toast[data-theme="dark"],
+        html #fushi-subtitle-drop-hint,
+        html #fushi-subtitle-drop-hint[data-theme="dark"] {
+            -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+        }
+
+        html #fushi-toast,
+        html #fushi-toast[data-theme="dark"],
+        html #fushi-subtitle-drop-hint,
+        html #fushi-subtitle-drop-hint[data-theme="dark"] {
+            background-color: var(--fushi-surface);
+        }
+    }
+}
+
+/* toast 的实色外观（玻璃版在上面的 @supports 段里覆盖填充与模糊）。定位 / 显隐 / 可点态是 JS
+   的行内样式；#fushi-toast 在 theme.css 重根宿主清单里，data-theme 由 JS 按扩展主题写。 */
+#fushi-toast {
+    border-radius: 20px;
+    color: var(--fushi-text);
+    background-color: var(--fushi-surface);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 50%);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 16px 40px -12px rgba(0, 0, 0, 0.45);
+}
+
+#fushi-toast[data-theme="dark"] {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 50%);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 }
 
 /* 制卡队列浮动 chip（TODO-1184）：头部 pill（计数 + 生成）+ 可展开列表（逐项删除）。
@@ -2499,12 +2718,14 @@
     z-index: 2147483646;
     display: flex;
     align-items: center;
-    padding: 8px 14px;
-    border: 1px solid var(--md-primary, #9dd7b8);
+    padding: 9px 16px;
+    /* 胶囊外观跟扩展明暗 / 调色板（data-theme 由 subtitle-panel.js 写）；这里是实色版，
+       玻璃版（半透明 + 模糊）在文件开头的 @supports 段里覆盖。 */
+    border: 1px solid color-mix(in oklch, var(--fushi-primary) 35%, transparent);
     border-radius: 999px;
-    color: var(--md-on-primary-container, #b9f2cf);
-    background: rgba(12, 20, 16, 0.92);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    color: var(--fushi-text);
+    background-color: var(--fushi-surface);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 10px 28px -10px rgba(0, 0, 0, 0.45);
     font: 600 13px/1.3 "Hiragino Sans", "Yu Gothic UI", sans-serif;
     letter-spacing: 0.02em;
     white-space: nowrap;

@@ -11,6 +11,9 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 /// Android receiver entry point. The page intentionally accepts a repository
 /// instead of discovering hosts globally, so only already-paired candidates
@@ -149,21 +152,17 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: FushiCircularProgressIndicator())
+          ? const FushiLoadingView()
           : _buildBody(context),
     );
   }
 
   Widget _buildBody(BuildContext context) {
     if (_hosts.every((_GameStreamHost host) => host.sessions.isEmpty)) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            _error ?? t.game_stream_none,
-            textAlign: TextAlign.center,
-          ),
-        ),
+      // 空态 / 失败态走共享占位件（两套设计系统统一的图标 + 文案层级）。
+      return FushiPlaceholderMessage(
+        icon: _error == null ? Icons.cast_outlined : Icons.error_outline,
+        message: _error ?? t.game_stream_none,
       );
     }
     return ListView(
@@ -174,7 +173,9 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(
               _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: fushiStatusColor(context, FushiStatusTone.error),
+              ),
             ),
           ),
         for (final _GameStreamHost host in _hosts)

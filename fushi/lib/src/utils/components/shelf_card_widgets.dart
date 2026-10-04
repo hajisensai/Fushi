@@ -94,26 +94,42 @@ class ShelfSelectionCheck extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    final Color selectionColor = tokens.surfaces.primary;
     final bool eink = isEinkTheme(context);
+    // Apple（iOS 照片的多选圈）：未选中 = 白色细环的空心圆（内部透明，封面
+    // 直接透出来）+ 一圈淡投影把白环从浅色封面上托出来；选中 = 强调色实心圆
+    // + onAccent 勾（环同强调色，实心圆没有第二道白边）。结构与 MD3 相同
+    // （同一个 Container + 图标），只换颜色。
+    final bool apple = isGlassDesign(context) && !eink;
+    final FushiAppleColors palette = appleColorsOf(context);
+    final Color selectionColor = apple ? palette.accent : tokens.surfaces.primary;
     final Color idleFill = eink
         ? tokens.surfaces.page
-        : tokens.surfaces.page.withValues(alpha: 0.7);
+        : apple
+            ? Colors.transparent
+            : tokens.surfaces.page.withValues(alpha: 0.7);
+    final Color ringColor = apple
+        ? (selected ? selectionColor : Colors.white)
+        : selected
+            ? selectionColor
+            : tokens.surfaces.outline;
+    final Color checkColor = apple ? palette.onAccent : theme.colorScheme.onPrimary;
     return IgnorePointer(
       child: Container(
         decoration: BoxDecoration(
           color: selected ? selectionColor : idleFill,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? selectionColor : tokens.surfaces.outline,
-            width: 1.5,
-          ),
+          border: Border.all(color: ringColor, width: 1.5),
+          boxShadow: apple
+              ? const <BoxShadow>[
+                  BoxShadow(color: Color(0x40000000), blurRadius: 4),
+                ]
+              : null,
         ),
         padding: EdgeInsets.all(tokens.spacing.gap / 4),
         child: FushiIcon(
           Icons.check,
           size: tokens.spacing.gap * 1.75,
-          color: selected ? theme.colorScheme.onPrimary : Colors.transparent,
+          color: selected ? checkColor : Colors.transparent,
         ),
       ),
     );
@@ -123,7 +139,9 @@ class ShelfSelectionCheck extends StatelessWidget {
 /// 选中态整卡覆盖罩（书卡 / 系列折叠卡共用），配 `Positioned.fill` 使用。
 ///
 /// 常规主题为 primary 12% 半透明罩；eink 半透明罩合成抖动灰且 primary 已塌缩，
-/// 改 2px 实心描边作唯一选中信号（与 FushiCard eink 选中态同语义）。
+/// 改 2px 实心描边作唯一选中信号（与 FushiCard eink 选中态同语义）。Apple
+/// （iOS 照片多选）是中性的 systemFill 灰罩——单色强调色在浅色下是黑，12% 的
+/// 强调色罩读作脏灰，且 Apple 的选中信号本来就在勾选圈上。
 class ShelfSelectedOverlay extends StatelessWidget {
   const ShelfSelectedOverlay({super.key});
 
@@ -131,6 +149,7 @@ class ShelfSelectedOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
     return IgnorePointer(
       child: DecoratedBox(
         decoration: eink
@@ -139,7 +158,9 @@ class ShelfSelectedOverlay extends StatelessWidget {
                 borderRadius: tokens.radii.cardRadius,
               )
             : BoxDecoration(
-                color: tokens.surfaces.primary.withValues(alpha: 0.12),
+                color: apple
+                    ? appleColorsOf(context).fill
+                    : tokens.surfaces.primary.withValues(alpha: 0.12),
                 borderRadius: tokens.radii.cardRadius,
               ),
       ),
@@ -147,41 +168,130 @@ class ShelfSelectedOverlay extends StatelessWidget {
   }
 }
 
+/// 封面底边的观看 / 阅读进度条（YouTube / Apple TV 式，贴封面底边、配
+/// `Positioned(left: 0, right: 0, bottom: 0)` 使用）。视频库横排卡 / 墙卡、
+/// 媒体服务器卡、首页继续观看卡共用，进度色与轨道只在这里写一次：
+///
+/// - MD3：primary 进度 + 黑 35% 半透明轨道（压在封面上任何颜色都看得见）；
+/// - Apple：白色进度条（单色强调色在浅色下是黑，压在封面暗轨上看不见；Apple
+///   TV 的封面进度一律白条）+ 同一条暗轨；
+/// - 墨水屏：半透明黑轨道压在封面上是抖动灰，改实心页面底色轨道 + 前景色
+///   进度，黑白各一段、无灰阶。
+///
+/// 点击穿透（[IgnorePointer]）内建：进度条不抢卡片的点按。
+class CoverProgressStrip extends StatelessWidget {
+  const CoverProgressStrip({
+    required this.value,
+    super.key,
+    this.minHeight = 3,
+    this.trackOpacity = 0.35,
+    this.progressKey,
+  });
+
+  /// 进度 0–1。
+  final double value;
+
+  /// 条高（封面卡 3，大号继续观看卡 4）。
+  final double minHeight;
+
+  /// 暗轨的黑色不透明度（墨水屏不用）。
+  final double trackOpacity;
+
+  /// 挂在内部进度指示器上的 key（测试按 key 读 value / minHeight）。
+  final Key? progressKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    return IgnorePointer(
+      child: FushiLinearProgressIndicator(
+        key: progressKey,
+        value: value,
+        minHeight: minHeight,
+        backgroundColor: eink
+            ? tokens.surfaces.page
+            : Colors.black.withValues(alpha: trackOpacity),
+        color: eink
+            ? tokens.surfaces.onSurface
+            : apple
+                ? Colors.white
+                : Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+}
+
 /// 无封面占位（书架 / 视频库 / 游戏库共用）。
 ///
-/// 巡检 B11：深色主题下无封面占位（卡面色 ≈ 页面背景）与背景零对比，占位卡读作
-/// 一块空洞——统一补 1px 描边（tokens.surfaces.outline，全主题恒有；eink 的卡级
-/// 描边另由 FushiCard 兜，叠加无害）。[backgroundColor] 供视频/游戏库保留各自的
-/// 高阶容器底色，书架传 null 维持无底色原样。
+/// 柔和填充块（无描边）+ 居中单色图标，圆角与封面卡一致：MD3 = surfaceContainerHigh
+/// 填充、onSurfaceVariant 图标；Apple = tertiaryFill 填充、tertiaryLabel 图标。
+/// 巡检 B11 的「深色下占位与背景零对比」由填充色解决（比卡面高一阶），不再靠
+/// 1px 描边。墨水屏保留描边、不填充（灰阶下填充会塌成和页面同色的灰块）。
+/// [backgroundColor] 供调用方显式指定 MD3 / 墨水屏底色（Apple 下恒为
+/// tertiaryFill）；[title] 非空时在图标下方显示两行标题（卡片自身没有标题
+/// footer 的场景用）。
 class ShelfCoverPlaceholder extends StatelessWidget {
   const ShelfCoverPlaceholder({
     required this.icon,
     this.iconSize = 40,
     this.backgroundColor,
+    this.title,
     super.key,
   });
 
   final IconData icon;
   final double iconSize;
   final Color? backgroundColor;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
-    // 全走 tokens（tokens.surfaces.outline 即 scheme 的 outlineVariant、onVariant
-    // 即 onSurfaceVariant）：本文件被 MD3 静态守卫盯着，不许直读 scheme 的描边角色。
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    // Apple 下恒为系统灰填充（内容层的占位就是 tertiaryFill，不随调用方的
+    // MD3 容器色阶走）；MD3 / 墨水屏尊重调用方显式底色。
+    final Color? fill = glass
+        ? apple.tertiaryFill
+        : backgroundColor ??
+            (eink ? null : Theme.of(context).colorScheme.surfaceContainerHigh);
+    final Color foreground =
+        glass ? apple.tertiaryLabel : tokens.surfaces.onVariant;
+    final String? label = title;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border.all(color: tokens.surfaces.outline),
+        color: fill,
+        border: eink ? Border.all(color: tokens.surfaces.outline) : null,
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Center(
-        child: FushiIcon(
-          icon,
-          size: iconSize,
-          color: tokens.surfaces.onVariant,
-        ),
+        child: label == null || label.isEmpty
+            ? FushiIcon(icon, size: iconSize, color: foreground)
+            : Padding(
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FushiIcon(icon, size: iconSize * 0.8, color: foreground),
+                    SizedBox(height: tokens.spacing.gap / 2),
+                    Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: tokens.type.metadata.copyWith(
+                        color: glass
+                            ? apple.secondaryLabel
+                            : tokens.surfaces.onVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }

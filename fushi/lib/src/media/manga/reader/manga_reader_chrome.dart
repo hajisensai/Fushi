@@ -16,6 +16,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart' show FushiBorderRadius;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
@@ -76,6 +77,105 @@ bool mangaChromeBarPainted({
 }) {
   if (!chromeVisible) return false;
   return !floating || transientVisible || !contentReady;
+}
+
+/// 漫画 chrome（顶栏 / 底栏 / 角标 / 胶囊）的配色。
+///
+/// 栏恒为深色（见文件头：底色偏好只管页图周围），所以 Apple 设计系统下取的是
+/// **深色档**系统色（`FushiAppleColors.of(Brightness.dark)`），不跟随 app 亮暗——
+/// 浅色主题下的单色强调色是黑，画在深色栏上等于隐形。MD3 保持原值。
+@immutable
+class MangaChromeColors {
+  const MangaChromeColors({
+    required this.foreground,
+    required this.secondaryForeground,
+    required this.accent,
+    required this.warning,
+    required this.fixedBar,
+    required this.floatingBar,
+    required this.hairline,
+    required this.groupDivider,
+    required this.chipFill,
+    required this.badgeFill,
+    required this.hiddenBadgeFill,
+    required this.sliderInactive,
+    required this.apple,
+  });
+
+  static const MangaChromeColors _material = MangaChromeColors(
+    foreground: Colors.white,
+    secondaryForeground: Colors.white70,
+    accent: Colors.amberAccent,
+    warning: Colors.amberAccent,
+    fixedBar: Color(0xF2141414),
+    floatingBar: Color(0xB3000000),
+    hairline: Colors.white12,
+    groupDivider: Colors.white24,
+    chipFill: Colors.white12,
+    badgeFill: Color(0xB3000000),
+    hiddenBadgeFill: Color(0x66000000),
+    sliderInactive: null,
+    apple: false,
+  );
+
+  /// 当前设计系统下的配色。
+  static MangaChromeColors of(BuildContext context) {
+    if (!isGlassDesign(context)) return _material;
+    // 漫画 chrome 恒压在黑底页图上：取恒深色档色板（单色强调色在深色档取白、
+    // 有彩强调色按深色档重建明度，见 [appleDarkColorsOf]）。
+    final FushiAppleColors dark = appleDarkColorsOf(context);
+    return MangaChromeColors(
+      foreground: dark.label,
+      secondaryForeground: dark.secondaryLabel,
+      accent: dark.accent,
+      warning: dark.warning,
+      // 深色 secondarySystemGroupedBackground：比纯黑页图周围高一层，栏与页图
+      // 分得开；悬浮态压低不透明度，透出下面的页图。
+      fixedBar: const Color(0xF51C1C1E),
+      floatingBar: const Color(0xC71C1C1E),
+      hairline: dark.separator,
+      groupDivider: dark.separator,
+      // 工具栏里的项不带 bezel（HIG Toolbars：toolbar items don't include a
+      // bezel）：页码 / 状态小胶囊不铺 systemFill 灰底，悬停由 FushiPlainButton 给。
+      chipFill: Colors.transparent,
+      badgeFill: const Color(0xD91C1C1E),
+      hiddenBadgeFill: const Color(0x991C1C1E),
+      sliderInactive: dark.fill,
+      apple: true,
+    );
+  }
+
+  final Color foreground;
+  final Color secondaryForeground;
+
+  /// 开关型动作开启态的强调色（MD3 琥珀；Apple 深色档强调色）。
+  final Color accent;
+
+  /// 降级 / 告警读数色（BUG-1163：推理后端降级必须看得见）。
+  final Color warning;
+  final Color fixedBar;
+  final Color floatingBar;
+
+  /// 固定态栏与页图之间的细线。
+  final Color hairline;
+
+  /// 顶栏动作组之间的竖分隔。
+  final Color groupDivider;
+
+  /// 页码胶囊 / 状态胶囊的填充。
+  final Color chipFill;
+
+  /// OCR 进度浮标底。
+  final Color badgeFill;
+
+  /// 隐藏界面时页码角标底。
+  final Color hiddenBadgeFill;
+
+  /// 底栏 slider 未填段；null = 跟主题（MD3 原样）。
+  final Color? sliderInactive;
+
+  /// 是否 Apple 设计系统（决定开启态画法与胶囊是否带描边）。
+  final bool apple;
 }
 
 /// 顶栏里的一颗动作。[active] 是「开关型」动作的当前态（高亮 + 溢出菜单打勾）。
@@ -258,15 +358,9 @@ class MangaReaderTopBar extends StatelessWidget {
   /// 页码胶囊右侧的状态件（OCR 进度胶囊 / debug 命中信息）。
   final Widget? status;
 
-  static const Color _fg = Colors.white;
-  static const Color _fgDim = Colors.white70;
-  static const Color _accent = Colors.amberAccent;
-
-  Color get _background =>
-      floating ? const Color(0xB3000000) : const Color(0xF2141414);
-
   @override
   Widget build(BuildContext context) {
+    final MangaChromeColors colors = MangaChromeColors.of(context);
     final double statusBar = MediaQuery.paddingOf(context).top;
     final List<List<MangaChromeAction>> visibleGroups =
         <List<MangaChromeAction>>[
@@ -275,10 +369,10 @@ class MangaReaderTopBar extends StatelessWidget {
         ];
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: _background,
+        color: floating ? colors.floatingBar : colors.fixedBar,
         border: floating
             ? null
-            : const Border(bottom: BorderSide(color: Colors.white12)),
+            : Border(bottom: BorderSide(color: colors.hairline)),
       ),
       child: Padding(
         padding: EdgeInsets.only(top: statusBar),
@@ -300,7 +394,7 @@ class MangaReaderTopBar extends StatelessWidget {
                     groups: visibleGroups,
                     titleAreaMinWidth: label == null
                         ? 0
-                        : _pageChipWidth(context, label),
+                        : _pageChipWidth(context, colors, label),
                   );
                   final bool compact = plan.compact;
                   return Padding(
@@ -314,15 +408,17 @@ class MangaReaderTopBar extends StatelessWidget {
                             'manga_reader_back_button',
                           ),
                           tooltip: backTooltip,
-                          color: _fg,
+                          color: colors.foreground,
                           iconSize: 22,
                           icon: const FushiIcon(Icons.arrow_back),
                           onPressed: onBack,
                         ),
-                        for (final MangaChromeAction a in leading) _button(a),
+                        for (final MangaChromeAction a in leading)
+                          _button(a, colors),
                         Expanded(
                           child: _buildTitleArea(
                             context,
+                            colors,
                             compact: compact,
                             label: label,
                             maxChipWidth: plan.titleAreaWidth,
@@ -333,12 +429,12 @@ class MangaReaderTopBar extends StatelessWidget {
                           i < visibleGroups.length;
                           i++
                         ) ...<Widget>[
-                          if (i > 0 && !compact) _divider(),
+                          if (i > 0 && !compact) _divider(colors),
                           for (final MangaChromeAction a in visibleGroups[i])
-                            if (plan.inline.contains(a)) _button(a),
+                            if (plan.inline.contains(a)) _button(a, colors),
                         ],
                         if (plan.overflow.isNotEmpty)
-                          _overflowMenu(context, plan.overflow),
+                          _overflowMenu(context, colors, plan.overflow),
                       ],
                     ),
                   );
@@ -351,20 +447,24 @@ class MangaReaderTopBar extends StatelessWidget {
     );
   }
 
-  TextStyle? _pageChipStyle(BuildContext context) =>
+  TextStyle? _pageChipStyle(BuildContext context, MangaChromeColors colors) =>
       Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: _fg,
+        color: colors.foreground,
         fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
       );
 
   /// 页码胶囊按当前字号缩放（[MediaQuery.textScalerOf]）的实测宽。
-  double _pageChipWidth(BuildContext context, String label) {
+  double _pageChipWidth(
+    BuildContext context,
+    MangaChromeColors colors,
+    String label,
+  ) {
     final TextPainter painter = TextPainter(
       text: TextSpan(
         text: label,
         style: DefaultTextStyle.of(
           context,
-        ).style.merge(_pageChipStyle(context)),
+        ).style.merge(_pageChipStyle(context, colors)),
       ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
@@ -376,7 +476,8 @@ class MangaReaderTopBar extends StatelessWidget {
   }
 
   Widget _buildTitleArea(
-    BuildContext context, {
+    BuildContext context,
+    MangaChromeColors colors, {
     required bool compact,
     required String? label,
     required double maxChipWidth,
@@ -394,7 +495,7 @@ class MangaReaderTopBar extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: text.titleSmall?.copyWith(
-                  color: _fg.withValues(alpha: 0.9),
+                  color: colors.foreground.withValues(alpha: 0.9),
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -405,28 +506,25 @@ class MangaReaderTopBar extends StatelessWidget {
           // 时，文字省略而不是画出槽外被按钮盖住。
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxChipWidth),
-            child: Material(
-              color: Colors.white12,
-              borderRadius: FushiBorderRadius.chip,
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                key: const ValueKey<String>('manga_page_jump_button'),
-                onTap: onPageTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: kMangaPageChipHorizontalPadding,
-                    vertical: 5,
+            child: colors.apple
+                // Apple：iOS `.bordered` 小胶囊——系统填充色底、全圆角、按下
+                // 变淡，无水波。
+                ? FushiPlainButton(
+                    key: const ValueKey<String>('manga_page_jump_button'),
+                    onPressed: onPageTap,
+                    borderRadius: const BorderRadius.all(Radius.circular(999)),
+                    child: _pageChipLabel(context, colors, label),
+                  )
+                : Material(
+                    color: colors.chipFill,
+                    borderRadius: FushiBorderRadius.chip,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      key: const ValueKey<String>('manga_page_jump_button'),
+                      onTap: onPageTap,
+                      child: _pageChipLabel(context, colors, label),
+                    ),
                   ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: _pageChipStyle(context),
-                  ),
-                ),
-              ),
-            ),
           ),
         if (status != null) ...<Widget>[
           const SizedBox(width: 8),
@@ -436,36 +534,78 @@ class MangaReaderTopBar extends StatelessWidget {
     );
   }
 
-  Widget _divider() => const Padding(
-    padding: EdgeInsets.symmetric(horizontal: 2),
-    child: SizedBox(
-      width: 1,
-      height: 20,
-      child: ColoredBox(color: Colors.white24),
+  Widget _pageChipLabel(
+    BuildContext context,
+    MangaChromeColors colors,
+    String label,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: kMangaPageChipHorizontalPadding,
+      vertical: 5,
+    ),
+    child: Text(
+      label,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+      style: _pageChipStyle(context, colors),
     ),
   );
 
-  Widget _button(MangaChromeAction a) {
+  Widget _divider(MangaChromeColors colors) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: SizedBox(
+      width: 1,
+      height: 20,
+      child: ColoredBox(color: colors.groupDivider),
+    ),
+  );
+
+  Widget _button(MangaChromeAction a, MangaChromeColors colors) {
+    // Apple：开启态是 iOS 26 工具栏里「开着的」开关钮——强调色实心圆 + 反色
+    // 字形（[FushiIconButtonControl] 的选中态），而不是只给图标换色。
+    final bool appleActive = colors.apple && a.active && !a.busy;
     final Widget icon = a.busy
-        ? const SizedBox.square(
+        ? SizedBox.square(
             dimension: 20,
-            child: FushiCircularProgressIndicator(strokeWidth: 2, color: _fg),
+            child: FushiCircularProgressIndicator(
+              strokeWidth: 2,
+              color: colors.foreground,
+            ),
           )
-        : FushiIcon(a.icon, color: a.active ? _accent : _fg);
+        : FushiIcon(
+            a.icon,
+            color: appleActive
+                ? appleOnAccent(colors.accent)
+                : (a.active ? colors.accent : colors.foreground),
+          );
     return FushiIconButtonControl(
       key: a.key,
       tooltip: a.label,
       iconSize: 22,
       icon: icon,
+      isSelected: appleActive ? true : null,
+      style: appleActive
+          ? ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll<Color>(colors.accent),
+              foregroundColor: WidgetStatePropertyAll<Color>(
+                appleOnAccent(colors.accent),
+              ),
+            )
+          : null,
       onPressed: a.onPressed,
     );
   }
 
-  Widget _overflowMenu(BuildContext context, List<MangaChromeAction> overflow) {
+  Widget _overflowMenu(
+    BuildContext context,
+    MangaChromeColors colors,
+    List<MangaChromeAction> overflow,
+  ) {
     return FushiPopupMenuButton<MangaChromeAction>(
       key: const ValueKey<String>('manga_chrome_overflow'),
       tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
-      icon: const FushiIcon(Icons.more_vert, color: _fg),
+      icon: FushiIcon(Icons.more_vert, color: colors.foreground),
       iconSize: 22,
       onSelected: (MangaChromeAction a) => a.onPressed?.call(),
       itemBuilder: (BuildContext context) =>
@@ -506,15 +646,21 @@ class MangaChromeStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color fg = warning
-        ? MangaReaderTopBar._accent
-        : MangaReaderTopBar._fgDim;
+    final MangaChromeColors colors = MangaChromeColors.of(context);
+    final Color fg = warning ? colors.warning : colors.secondaryForeground;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: FushiBorderRadius.chip,
-        border: warning ? Border.all(color: fg.withValues(alpha: 0.6)) : null,
+        // Apple 不画描边框：告警用告警色的淡填充表达，胶囊全圆角。
+        color: colors.apple
+            ? (warning ? fg.withValues(alpha: 0.18) : colors.chipFill)
+            : Colors.white10,
+        borderRadius: colors.apple
+            ? const BorderRadius.all(Radius.circular(999))
+            : FushiBorderRadius.chip,
+        border: warning && !colors.apple
+            ? Border.all(color: fg.withValues(alpha: 0.6))
+            : null,
       ),
       child: Text(
         text,
@@ -548,14 +694,19 @@ class MangaOcrProgressBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color fg = warning ? MangaReaderTopBar._accent : Colors.white;
+    final MangaChromeColors colors = MangaChromeColors.of(context);
+    final Color fg = warning ? colors.warning : colors.foreground;
     return IgnorePointer(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xB3000000),
-          borderRadius: FushiBorderRadius.chip,
-          border: warning ? Border.all(color: fg.withValues(alpha: 0.6)) : null,
+          color: colors.badgeFill,
+          borderRadius: colors.apple
+              ? const BorderRadius.all(Radius.circular(999))
+              : FushiBorderRadius.chip,
+          border: warning && !colors.apple
+              ? Border.all(color: fg.withValues(alpha: 0.6))
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -670,15 +821,14 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
   Widget build(BuildContext context) {
     if (widget.pageCount <= 1) return const SizedBox.shrink();
     final TextTheme text = Theme.of(context).textTheme;
+    final MangaChromeColors colors = MangaChromeColors.of(context);
     final double bottomInset = MediaQuery.paddingOf(context).bottom;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: widget.floating
-            ? const Color(0xB3000000)
-            : const Color(0xF2141414),
+        color: widget.floating ? colors.floatingBar : colors.fixedBar,
         border: widget.floating
             ? null
-            : const Border(top: BorderSide(color: Colors.white12)),
+            : Border(top: BorderSide(color: colors.hairline)),
       ),
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomInset),
@@ -704,7 +854,7 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
                   ) +
                   1;
               final TextStyle? readout = text.labelMedium?.copyWith(
-                color: MangaReaderTopBar._fg,
+                color: colors.foreground,
                 fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               );
               return Row(
@@ -720,6 +870,10 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
                       key: const ValueKey<String>('manga_page_slider'),
                       value: position.clamp(0, maxPosition),
                       max: maxPosition,
+                      // Apple 滑块默认取主题强调色（浅色单色主题下是黑），画在
+                      // 恒深色的栏上要换成深色档的强调色 / 填充色；MD3 原样。
+                      activeColor: colors.apple ? colors.accent : null,
+                      inactiveColor: colors.sliderInactive,
                       // 每一格恰好一页：divisions 缺省时滑块落在页与页之间，
                       // 松手才 round，拖动读数会跳。
                       divisions: pageCount > 1 ? pageCount - 1 : null,
@@ -740,7 +894,9 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
                   Text(
                     '$pageCount',
                     key: const ValueKey<String>('manga_slider_page_count'),
-                    style: readout?.copyWith(color: MangaReaderTopBar._fgDim),
+                    style: readout?.copyWith(
+                      color: colors.secondaryForeground,
+                    ),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -777,17 +933,20 @@ class MangaHiddenPageBadge extends StatelessWidget {
         builder: (BuildContext context, Widget? _) {
           final String? shown = label();
           if (shown == null) return const SizedBox.shrink();
+          final MangaChromeColors colors = MangaChromeColors.of(context);
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: const Color(0x66000000),
-              borderRadius: FushiBorderRadius.chip,
+              color: colors.hiddenBadgeFill,
+              borderRadius: colors.apple
+                  ? const BorderRadius.all(Radius.circular(999))
+                  : FushiBorderRadius.chip,
             ),
             child: Text(
               shown,
               key: const ValueKey<String>('manga_hidden_page_badge'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.white70,
+                color: colors.secondaryForeground,
                 fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),

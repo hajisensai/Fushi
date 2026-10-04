@@ -289,10 +289,7 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
     if (_error != null) {
       body = Text(t.media_stats_load_failed);
     } else if (summary == null) {
-      body = const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: FushiCircularProgressIndicator()),
-      );
+      body = const FushiLoadingView();
     } else if (summary.isEmpty) {
       body = Text(
         t.media_stats_empty,

@@ -3139,6 +3139,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildCover(book),
+        // 图源喂头部模糊垫底与封面宽高比：横版缩略图据此走整宽横幅，而不是塞进
+        // 默认 2:3 的竖版封面卡里上下大片留白（2026-10-04 用户截图）。
+        coverBackdrop: _localCoverProvider(book),
         title: book.title,
         showLaunchAction: false,
         // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
@@ -3636,9 +3639,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             child: Column(
               children: <Widget>[
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                // 搜索 + 筛选 + 多选 / 排序收成一条库页工具行（2026-10-04），
+                // 标签 chip 只在有标签时另起一行。
                 if (widget.section != VideoLibrarySection.home)
-                  _buildVideoSearchBar(),
-                if (_isAllVideosSection) _buildAllVideosFilterRow(),
+                  _buildVideoSearchBar(allTags),
                 if (widget.section != VideoLibrarySection.home)
                   _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
@@ -4274,6 +4278,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         ? 'home_video_hero_continue_${collection.id}'
                         : 'home_video_hero_continue_${item.pageKey}'),
                     onPressed: primaryAction,
+                    // Apple：单色强调色在浅色下是黑胶囊，压在 hero 黑渐变上看不见；
+                    // 与合集详情页 hero 同款白底黑字（MD3 原样）。
+                    overImage: true,
                     icon: const FushiIcon(Icons.play_arrow),
                     label: Text(collection != null
                         ? t.collection_continue_progress(n: continueEp)
@@ -4931,8 +4938,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     if (cover == null)
                       ShelfCoverPlaceholder(
                         icon: Icons.movie_outlined,
-                        backgroundColor:
-                            Theme.of(context).colorScheme.surfaceContainer,
                       )
                     else
                       PortraitCoverImage(
@@ -4941,8 +4946,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                             orientation == VideoCardOrientation.landscape,
                         errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
                           icon: Icons.movie_outlined,
-                          backgroundColor:
-                              Theme.of(context).colorScheme.surfaceContainer,
                         ),
                       ),
                     if (newBadge || episodeNumber != null)
@@ -4985,18 +4988,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        child: IgnorePointer(
-                          // eink：半透明黑轨道压在封面上是抖动灰，改实心页面
-                          // 底色轨道（进度色 primary 已是前景色）。
-                          child: FushiLinearProgressIndicator(
-                            value: progressFraction,
-                            minHeight: 3,
-                            backgroundColor: isEinkTheme(context)
-                                ? Theme.of(context).colorScheme.surface
-                                : Colors.black.withValues(alpha: 0.35),
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
+                        // 轨道 / 进度色（MD3 / Apple 白条 / 墨水屏实色）见共享组件。
+                        child: CoverProgressStrip(value: progressFraction),
                       ),
                   ],
                 ),
@@ -5371,9 +5364,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 判成「非系列」），渲染出来就是先铺满整库再缩回散片。等映射，不闪。
     if (_seriesFilterPending) {
       return _emptyStateSlivers(
-        const Center(
+        const FushiLoadingView(
           key: ValueKey<String>('home_video_all_videos_maps_pending'),
-          child: FushiCircularProgressIndicator(),
         ),
       );
     }
@@ -5878,7 +5870,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 集数角标，TODO-2486 设计稿拍板）。成员在下载 / 刚失败时该位
                 // 换成下载态角标（下载本身蕴含「有远端成员」，不叠两枚）。
                 if (downloadBadge != null)
-                  Positioned(bottom: 6, right: 6, child: downloadBadge)
+                  positionRemoteDownloadBadge(
+                    downloadBadge,
+                    corner: (Widget badge) =>
+                        Positioned(bottom: 6, right: 6, child: badge),
+                  )
                 else if (hasRemoteMember)
                   Positioned(
                     bottom: 6,
@@ -5996,7 +5992,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         landscapeSlot: landscapeSlot,
         errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         ),
       );
     }
@@ -6010,7 +6005,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           landscapeSlot: landscapeSlot,
           errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
             icon: Icons.movie_outlined,
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
           ),
         );
       }
@@ -6027,7 +6021,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           landscapeSlot: landscapeSlot,
           errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
             icon: Icons.movie_outlined,
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
           ),
         );
       }
@@ -6047,7 +6040,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     return ShelfCoverPlaceholder(
       icon: Icons.movie_outlined,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
     );
   }
 
@@ -6105,6 +6097,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('remote_video_downloading_$safeKey'),
           progress: task.progress,
+          receivedBytes: task.receivedBytes,
+          totalBytes: task.totalBytes,
           tooltip: t.remote_video_downloading,
         );
       case InterconnectDownloadStatus.failed:
@@ -6214,8 +6208,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // SnackBar，而下载与页面生命周期解耦，失败常发生在用户已离开本页
                 // 之后（`if (!mounted) return;`）→ 用户等半天回来看到的还是一张
                 // 什么都没发生的占位卡。角标是恒定出口，重进页面照样在。
+                // 进行中 → 铺满封面的压暗 + 进度环 + 百分比；失败 → 右上角标。
                 if (downloadBadge != null)
-                  Positioned(top: 6, right: 6, child: downloadBadge),
+                  positionRemoteDownloadBadge(
+                    downloadBadge,
+                    corner: (Widget badge) =>
+                        Positioned(top: 6, right: 6, child: badge),
+                  ),
                 // 左上一列：远端标签 chip（BUG-1808，host 清单下发标签名）在上、
                 // 字幕角标在下。标签补画前这个角只有字幕角标，两者并成一列后谁都
                 // 不遮谁。字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
@@ -6311,7 +6310,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (image == null) {
       return ShelfCoverPlaceholder(
         icon: Icons.movie_outlined,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       );
     }
     // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：非 poster 槽位保留
@@ -6324,7 +6322,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         imageKey: coverKey,
         errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         ),
       );
     }
@@ -6336,7 +6333,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         ),
       ),
     );
@@ -6478,6 +6474,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteVideoCover(video),
+        coverBackdrop: _remoteCoverProvider(video),
         title: video.title,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -6651,77 +6648,46 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [selectedTagIdsProvider] 与书架联动；批量选择动作经 [onToggleSelectionMode]
   /// 与书架对齐（TODO-063：此前视频 tab 没传，缺了「标签设置旁的选择」）。
   ///
-  /// 渲染条件：与书架 [reader_fushi_history_page._buildTagBar] 一致——**永远渲染
-  /// 整栏**（不再「无标签隐藏」），批量选择按钮才能常驻露出（否则空标签库点不到
-  /// 批量入口、无法批量删除）。组件内部「管理标签」齿轮仍只在有标签时显示，故无
-  /// 标签时整栏只剩「批量选择」按钮。
-  /// P5-A 视频库搜索框。形态与书架/游戏库页一致（三个库页搜索长一个样），
-  /// 搜索词只影响本次会话、不落库。
-  Widget _buildVideoSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: SizedBox(
-              height: 40,
-              child: FushiTextFieldControl(
-                key: const ValueKey<String>('video_search_field'),
-                controller: _searchController,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const FushiIcon(Icons.search, size: 18),
-                  hintText: t.library_search,
-                  border: const OutlineInputBorder(),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  suffixIcon: _searchQuery.isEmpty
-                      ? null
-                      : FushiIconButtonControl(
-                          icon: const FushiIcon(Icons.close, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        ),
-                ),
-                onChanged: (String value) =>
-                    setState(() => _searchQuery = value),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _buildYearFilterButton(),
-          const SizedBox(width: 8),
-          _buildWatchStatusFilterButton(),
-        ],
-      ),
-    );
-  }
-
-  /// 「全部视频」专属筛选行：系列归属 / 媒体类型 / 正片特典 / 来源。
+  /// 渲染条件：与书架 [reader_fushi_history_page._buildTagBar] 一致——「批量选择」
+  /// 永远露出（否则空标签库点不到批量入口、无法批量删除），2026-10-04 起它与排序
+  /// 一起挪进工具行行尾；标签 chip 段（含「管理标签」齿轮）只在有标签时占一行。
   ///
-  /// 系列归属档位只在「全部视频」露出：那里整库逐条平铺，是唯一会被系列集数淹没
-  /// 的视图；系列页本身按合集折叠，再给它这个档位没有意义。BUG-2835 起另加三档，
-  /// 搜索栏那一行在手机宽度上放不下，单列一行并可横向滚动（来源只有一个时不出
-  /// 来源档——只有一个选项的筛选没有意义）。
-  Widget _buildAllVideosFilterRow() {
-    return SingleChildScrollView(
-      key: const ValueKey<String>('home_video_all_videos_filter_row'),
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      child: Row(
-        children: <Widget>[
+  /// P5-A 视频库工具行：搜索框 + 筛选胶囊 + 行尾「批量选择 / 排序」，形态与
+  /// 书架 / 游戏库页同一个 [LibraryToolbar]（宽屏一行；窄屏搜索一行、筛选下一行
+  /// 横滚）。搜索词只影响本次会话、不落库。
+  ///
+  /// 「全部视频」另有系列归属 / 媒体类型 / 正片特典 / 来源四档：系列归属只在这里
+  /// 露出——整库逐条平铺，是唯一会被系列集数淹没的视图；系列页本身按合集折叠，
+  /// 再给它这个档位没有意义。来源只有一个时不出来源档（只有一个选项的筛选没有
+  /// 意义）。筛选多了放不下时横向滚动，不换行（BUG-2835）。
+  Widget _buildVideoSearchBar(List<BookTagRow> tags) {
+    return LibraryToolbar(
+      filtersKey: _isAllVideosSection
+          ? const ValueKey<String>('home_video_all_videos_filter_row')
+          : null,
+      search: LibrarySearchField(
+        fieldKey: const ValueKey<String>('video_search_field'),
+        controller: _searchController,
+        hintText: t.library_search,
+        onChanged: (String value) => setState(() => _searchQuery = value),
+        onClear: () {
+          _searchController.clear();
+          setState(() => _searchQuery = '');
+        },
+      ),
+      filters: <Widget>[
+        _buildYearFilterButton(),
+        _buildWatchStatusFilterButton(),
+        if (_isAllVideosSection) ...<Widget>[
           _buildSeriesFilterButton(),
-          const SizedBox(width: 8),
           _buildMediaTypeFilterButton(),
-          const SizedBox(width: 8),
           _buildExtrasFilterButton(),
-          if (_videoSourcesById.length >= 2) ...<Widget>[
-            const SizedBox(width: 8),
-            _buildSourceFilterButton(),
-          ],
+          if (_videoSourcesById.length >= 2) _buildSourceFilterButton(),
         ],
+      ],
+      trailing: _buildTagFilterBar(
+        tags,
+        part: FushiTagFilterBarPart.actions,
       ),
     );
   }
@@ -6914,9 +6880,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           t.video_filter_watch_status_completed,
       };
 
-  Widget _buildTagFilterBar(List<BookTagRow> tags) {
+  /// [part]：工具行行尾的「批量选择 / 排序」（[FushiTagFilterBarPart.actions]）
+  /// 或工具行下方的标签 chip 段（[FushiTagFilterBarPart.tags]，无标签时零高度）。
+  /// 两段同一组参数，批量选择按钮因此常驻在工具行里。
+  Widget _buildTagFilterBar(
+    List<BookTagRow> tags, {
+    FushiTagFilterBarPart part = FushiTagFilterBarPart.tags,
+  }) {
     return FushiTagFilterBar(
       tags: tags,
+      part: part,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
@@ -6979,23 +6952,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 筛选空态。[hint] 非空时替换通用句——「全部视频」默认「非系列」档位筛空时
   /// 要告诉用户东西在系列页，而不是让人以为库空了（BUG-2835）。
   Widget _buildFilteredEmpty({String? hint}) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FushiIcon(Icons.filter_list_off, size: 56, color: colors.onSurfaceVariant),
-          const SizedBox(height: 12),
-          Text(
-            hint ?? t.tag_no_books_for_filter,
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.onSurfaceVariant),
-          ),
-        ],
-      ),
+    // 共享空状态（MD3 分组信息块 / Apple ContentUnavailableView），与库空态同族。
+    return FushiPlaceholderMessage(
+      icon: Icons.filter_list_off,
+      message: hint ?? t.tag_no_books_for_filter,
     );
   }
 
@@ -7094,6 +7054,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
+  /// 合集长按菜单的封面图源，与合集卡同一优先级：自设封面 → 刮削到的作品海报
+  /// → 按合集内顺序第一个有封面文件的本地成员。都没有时为 null（菜单不画封面）。
+  ImageProvider? _collectionMenuCoverImage(
+    MediaCollectionRow collection,
+    List<String> memberUidOrder,
+    List<VideoBookRow> library,
+  ) {
+    final String? own = collection.coverPath;
+    if (own != null && own.isNotEmpty && File(own).existsSync()) {
+      return resizedFileImage(File(own));
+    }
+    final ImageProvider? canonical =
+        _canonicalCollectionPosterProvider(collection.id);
+    if (canonical != null) return canonical;
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow b in library) b.bookUid: b,
+    };
+    for (final String uid in memberUidOrder) {
+      final VideoBookRow? member = byUid[uid];
+      if (member == null) continue;
+      final ImageProvider? cover = _localCoverProvider(member);
+      if (cover != null) return cover;
+    }
+    return null;
+  }
+
   /// 合集封面卡长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
@@ -7104,19 +7090,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 「同时删除本地文件」二级勾选只在这个合集真有本机原件时才摆出来（成员全是
     // 远端流就没有文件可删，与单删 / 批删同一条「兑现不了就不显示」纪律）。判据
     // [videoBookHasLocalFiles] 要的是视频行本身，成员引用行只有 uid，故先取一遍库。
-    final Set<String> memberUids = <String>{
+    final List<String> memberUidOrder = <String>[
       for (final MediaCollectionItemRow m
           in await db.getCollectionItems(collection.id))
         if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
-    };
-    final bool anyLocalFile = memberUids.isNotEmpty &&
-        (await repo.listAll()).any((VideoBookRow b) =>
-            memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b));
+    ];
+    final Set<String> memberUids = memberUidOrder.toSet();
+    final List<VideoBookRow> library =
+        memberUids.isEmpty ? const <VideoBookRow>[] : await repo.listAll();
+    final bool anyLocalFile = library.any((VideoBookRow b) =>
+        memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b));
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: db,
       collection: collection,
+      coverImage: _collectionMenuCoverImage(
+        collection,
+        memberUidOrder,
+        library,
+      ),
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         ref.invalidate(collectionTagMapProvider);
@@ -8011,17 +8004,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: IgnorePointer(
-                      // eink：同横排卡——半透明轨道换实心页面底色。
-                      child: FushiLinearProgressIndicator(
-                        value: watchFrac,
-                        minHeight: 3,
-                        backgroundColor: isEinkTheme(context)
-                            ? Theme.of(context).colorScheme.surface
-                            : Colors.black.withValues(alpha: 0.35),
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
+                    child: CoverProgressStrip(value: watchFrac),
                   ),
                 // v95：清晰度 / HDR 角标。落左下角是因为另外三角已被占满（左上=标签
                 // 与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
@@ -8278,7 +8261,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
       return ShelfCoverPlaceholder(
         icon: Icons.movie_outlined,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       );
     }
     if (poster) {
@@ -8288,7 +8270,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         landscapeSlot: landscapeSlot,
         errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         ),
       );
     }
@@ -8302,7 +8283,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         cacheWidth: kLocalCoverDecodePixelWidth,
         errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         ),
       ),
     );

@@ -14,6 +14,8 @@ import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -985,61 +987,6 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
-  Widget _mappingCard(int index) {
-    final _PathMappingDraft draft = _mappings[index];
-    return FushiCard(
-      key: ValueKey<String>('video-path-mapping-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: <Widget>[
-          Align(
-            alignment: Alignment.centerRight,
-            child: FushiIconButtonControl(
-              key: ValueKey<String>('video-path-mapping-$index-remove'),
-              tooltip: t.video_external_remove,
-              onPressed: () {
-                setState(() => _mappings.removeAt(index));
-                _saveMappingsIfValid();
-              },
-              icon: const FushiIcon(Icons.remove_circle_outline),
-            ),
-          ),
-          _field(
-            key: ValueKey<String>('video-path-mapping-$index-profile'),
-            label: t.video_download_backend_profile_id,
-            initialValue: draft.backendProfileId,
-            errorText: draft.backendProfileId.trim().isEmpty
-                ? t.video_download_path_mapping_invalid
-                : null,
-            onChanged: (String value) =>
-                _updateMapping(index, draft.copyWith(backendProfileId: value)),
-          ),
-          _field(
-            key: ValueKey<String>('video-path-mapping-$index-remote'),
-            label: t.video_download_remote_root,
-            initialValue: draft.remoteRoot,
-            errorText: draft.remoteRoot.trim().isEmpty
-                ? t.video_download_path_mapping_invalid
-                : null,
-            onChanged: (String value) =>
-                _updateMapping(index, draft.copyWith(remoteRoot: value)),
-          ),
-          _field(
-            key: ValueKey<String>('video-path-mapping-$index-local'),
-            label: t.video_download_local_root,
-            initialValue: draft.localRoot,
-            errorText: p.isAbsolute(draft.localRoot.trim())
-                ? null
-                : t.video_download_path_mapping_invalid,
-            onChanged: (String value) =>
-                _updateMapping(index, draft.copyWith(localRoot: value)),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 把整段落到与普通设置行同一条 16px 左右基线上，正文吃满剩下的宽度。
   ///
   /// 这一段此前三种行各有一套左右边界：输入框自己缩到 480；`SwitchListTile`
@@ -1079,13 +1026,24 @@ class _VideoExternalProviderSettingsSectionState
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: FushiCircularProgressIndicator()),
-      );
+      return const FushiLoadingView();
     }
     if (_store == null) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
+    // 下载落盘管道是「下载设置」里的一页：渲染成真正的设置分组（MD3 分段卡 /
+    // Apple inset grouped），分组自己承接行基线，不再套本组件的表单基线。
+    if (widget.scope == VideoExternalProviderScope.downloadRouting) {
+      return Column(
+        key: ValueKey<VideoExternalProviderScope>(widget.scope),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (_saveFailed)
+            _alignSectionBaseline(context, _saveFailedBanner(theme)),
+          ..._downloadRoutingGroups(theme),
+        ],
+      );
+    }
     final List<Widget> blocks = switch (widget.scope) {
       VideoExternalProviderScope.jimaku => <Widget>[_jimakuFields()],
       VideoExternalProviderScope.openSubtitles => <Widget>[
@@ -1107,9 +1065,8 @@ class _VideoExternalProviderSettingsSectionState
       VideoExternalProviderScope.resourceSources => _resourceSourceBlocks(
         theme,
       ),
-      VideoExternalProviderScope.downloadRouting => _downloadRoutingBlocks(
-        theme,
-      ),
+      // 上面已提前返回分组形态。
+      VideoExternalProviderScope.downloadRouting => const <Widget>[],
     };
     return _alignSectionBaseline(
       context,
@@ -1158,66 +1115,162 @@ class _VideoExternalProviderSettingsSectionState
     ];
   }
 
-  /// 下载落盘管道：路径映射 + 下载目标视频来源。
-  List<Widget> _downloadRoutingBlocks(ThemeData theme) {
-    return <Widget>[
-      SettingsSearchTarget(
-        id: 'downloads.path_mappings',
-        child: _sectionHeading(
-          theme,
-          t.video_download_path_mappings_title,
-          t.video_download_path_mappings_hint,
-          icon: Icons.route_outlined,
-        ),
-      ),
+  /// 下载落盘管道：路径映射 + 下载目标视频来源，每块都是真正的设置分组。
+  ///
+  /// 每条映射是一个独立分组（三个输入行 + 删除行），「添加映射」是映射分组之后
+  /// 的一个动作分组，分组标题只挂在第一个分组上、说明落在脚注里——不再是卡片
+  /// 套卡片 + 自绘小节标题 + 硬分割线。
+  List<Widget> _downloadRoutingGroups(ThemeData theme) {
+    final String mappingsTitle = t.video_download_path_mappings_title;
+    final List<Widget> mappingGroups = <Widget>[
       for (int index = 0; index < _mappings.length; index++)
-        _mappingCard(index),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: FushiOutlinedButton.icon(
-          key: const ValueKey<String>('video-path-mapping-add'),
-          onPressed: () => setState(
-            () => _mappings.add(
-              _PathMappingDraft.empty(
-                _newDraftId('mapping'),
-                suggestedBackendProfileId: _suggestedBackendProfileId,
+        _mappingGroup(index, title: index == 0 ? mappingsTitle : null),
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('video-path-mapping-add-group'),
+        title: _mappings.isEmpty ? mappingsTitle : null,
+        children: <Widget>[
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('video-path-mapping-add'),
+            title: t.video_download_path_mapping_add,
+            icon: Icons.add,
+            showIcon: true,
+            onTap: () => setState(
+              () => _mappings.add(
+                _PathMappingDraft.empty(
+                  _newDraftId('mapping'),
+                  suggestedBackendProfileId: _suggestedBackendProfileId,
+                ),
               ),
             ),
           ),
-          icon: const FushiIcon(Icons.add),
-          label: Text(t.video_download_path_mapping_add),
-        ),
+        ],
       ),
-      const FushiDividerControl(height: 32),
-      _sectionHeading(
-        theme,
-        t.video_download_target_source_title,
-        t.video_download_target_source_hint,
-        icon: Icons.video_library_outlined,
+      SettingsSectionFooter(t.video_download_path_mappings_hint),
+    ];
+    return <Widget>[
+      SettingsSearchTarget(
+        id: 'downloads.path_mappings',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: mappingGroups,
+        ),
       ),
       SettingsSearchTarget(
         id: 'downloads.target_source',
-        child: _targetSourceField(theme),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AdaptiveSettingsSection(
+              title: t.video_download_target_source_title,
+              children: <Widget>[
+                if (_sources.isEmpty)
+                  AdaptiveSettingsRow(
+                    title: t.video_download_target_source_none,
+                    subtitle: t.video_download_target_source_empty,
+                  )
+                else
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal:
+                          FushiDesignTokens.of(context).spacing.rowHorizontal,
+                      vertical: 10,
+                    ),
+                    child: _targetSourceField(theme),
+                  ),
+              ],
+            ),
+            SettingsSectionFooter(t.video_download_target_source_hint),
+          ],
+        ),
       ),
     ];
   }
 
-  Widget _targetSourceField(ThemeData theme) {
-    if (_sources.isEmpty) {
-      return Text(
-        t.video_download_target_source_empty,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+  /// 一条路径映射的分组：三个输入行（标题在上、输入框在下撑满行宽）+ 删除行。
+  /// 非法值的提示挂在输入框自己的错误态上。
+  Widget _mappingGroup(int index, {String? title}) {
+    final _PathMappingDraft draft = _mappings[index];
+    Widget input({
+      required String keySuffix,
+      required String label,
+      required String initialValue,
+      required String? errorText,
+      required ValueChanged<String> onChanged,
+    }) {
+      return AdaptiveSettingsRow(
+        title: label,
+        controlBelow: true,
+        trailing: FushiTextFormFieldControl(
+          key: ValueKey<String>('video-path-mapping-$index-$keySuffix'),
+          initialValue: initialValue,
+          decoration: InputDecoration(
+            errorText: errorText,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: onChanged,
         ),
       );
     }
+
+    return AdaptiveSettingsSection(
+      key: ValueKey<String>('video-path-mapping-${draft.id}'),
+      title: title,
+      children: <Widget>[
+        input(
+          keySuffix: 'profile',
+          label: t.video_download_backend_profile_id,
+          initialValue: draft.backendProfileId,
+          errorText: draft.backendProfileId.trim().isEmpty
+              ? t.video_download_path_mapping_invalid
+              : null,
+          onChanged: (String value) =>
+              _updateMapping(index, draft.copyWith(backendProfileId: value)),
+        ),
+        input(
+          keySuffix: 'remote',
+          label: t.video_download_remote_root,
+          initialValue: draft.remoteRoot,
+          errorText: draft.remoteRoot.trim().isEmpty
+              ? t.video_download_path_mapping_invalid
+              : null,
+          onChanged: (String value) =>
+              _updateMapping(index, draft.copyWith(remoteRoot: value)),
+        ),
+        input(
+          keySuffix: 'local',
+          label: t.video_download_local_root,
+          initialValue: draft.localRoot,
+          errorText: p.isAbsolute(draft.localRoot.trim())
+              ? null
+              : t.video_download_path_mapping_invalid,
+          onChanged: (String value) =>
+              _updateMapping(index, draft.copyWith(localRoot: value)),
+        ),
+        AdaptiveSettingsRow(
+          key: ValueKey<String>('video-path-mapping-$index-remove'),
+          title: t.video_external_remove,
+          icon: Icons.remove_circle_outline,
+          showIcon: true,
+          onTap: () {
+            setState(() => _mappings.removeAt(index));
+            _saveMappingsIfValid();
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _targetSourceField(ThemeData theme) {
     return FushiDropdownButtonFormField<int>(
       key: ValueKey<String>('video-target-source-${_targetSourceId ?? 'none'}'),
       initialValue: _targetSourceId ?? 0,
-      decoration: InputDecoration(
-        labelText: t.video_download_target_source_none,
+      // 分组标题已经说明这是什么，下拉框自己不再挂浮动标签。
+      decoration: const InputDecoration(
         isDense: true,
-        border: const OutlineInputBorder(),
+        border: OutlineInputBorder(),
       ),
       isExpanded: true,
       items: <DropdownMenuItem<int>>[

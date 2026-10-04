@@ -220,36 +220,24 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             ),
           ],
         ),
+        // 连接状态提示走共享的内联提示块（MD3 中性底 + 语义图标 / Apple 实色
+        // 分组底 + 语义色图标），不再是一行裸红字 / 居中灰字飘在两个分组之间。
         if (uiState.errorMessage != null)
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.gap + tokens.spacing.gap / 2,
-              0,
-              tokens.spacing.gap + tokens.spacing.gap / 2,
-              tokens.spacing.gap + tokens.spacing.gap / 2,
+            padding: EdgeInsets.only(
+              bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
             ),
-            child: Text(
-              uiState.errorMessage!,
-              style: textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
+            child: FushiInlineNotice(
+              message: uiState.errorMessage!,
+              severity: FushiNoticeSeverity.error,
             ),
           ),
         if (!uiState.isConfigured && uiState.errorMessage == null)
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.page + tokens.spacing.gap / 2,
+            padding: EdgeInsets.only(
+              bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
             ),
-            child: Text(
-              t.anki_not_configured,
-              textAlign: TextAlign.center,
-              style: textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+            child: FushiInlineNotice(message: t.anki_not_configured),
           ),
         if (uiState.isConfigured) ...[
           AdaptiveSettingsSection(

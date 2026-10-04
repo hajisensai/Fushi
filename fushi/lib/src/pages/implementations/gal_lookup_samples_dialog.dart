@@ -10,8 +10,8 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 bool _sameSourceViewport(WindowCaptureMetadata? a, WindowCaptureMetadata? b) {
@@ -1027,28 +1027,25 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   Widget _statusBanner() {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
+    // 中性信息块；失败语义只上在单色图标上，正文仍是 onSurface 可读色，
+    // 不再整块 errorContainer。
     final Color foreground = _failed
-        ? colors.onErrorContainer
+        ? fushiNeutralBlockForeground(context)
         : colors.onSurfaceVariant;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: _failed
-            ? colors.errorContainer
-            : FushiDesignTokens.of(
-                context,
-              ).surfaces.overlay.withValues(alpha: 0.5),
-        borderRadius: FushiBorderRadius.card,
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           FushiIcon(
             _failed ? Icons.error_outline : Icons.info_outline,
             size: 18,
-            color: foreground,
+            color: _failed
+                ? fushiStatusColor(context, FushiStatusTone.error)
+                : foreground,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1082,12 +1079,11 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
 
   Widget _emptySamples() {
     final TextTheme text = Theme.of(context).textTheme;
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color secondary = fushiNeutralSecondaryForeground(context);
+    // 空态区：中性信息块底（MD3 surfaceContainerHigh / Apple tertiaryFill，
+    // 墨水屏补描边），不再是细描边方框。
     return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: colors.outlineVariant),
-        borderRadius: FushiBorderRadius.control,
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
@@ -1097,7 +1093,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               FushiIcon(
                 Icons.add_photo_alternate_outlined,
                 size: 48,
-                color: colors.onSurfaceVariant,
+                color: secondary,
               ),
               const SizedBox(height: 12),
               Text(t.game_lookup_samples_empty, style: text.titleMedium),
@@ -1105,7 +1101,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               Text(
                 t.game_lookup_samples_hint,
                 textAlign: TextAlign.center,
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                style: text.bodySmall?.copyWith(color: secondary),
               ),
               const SizedBox(height: 16),
               FushiFilledButton.tonalIcon(
@@ -1122,24 +1118,10 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   }
 
   Widget _stepHeader(int step, String title) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Row(
       children: <Widget>[
-        Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: colors.primaryContainer,
-            shape: BoxShape.circle,
-          ),
-          child: Text(
-            '$step',
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: colors.onPrimaryContainer),
-          ),
-        ),
+        // 中性步骤圆（无当前步概念）。
+        FushiStepNumberBadge(number: step, size: 22),
         const SizedBox(width: 8),
         Expanded(
           child: Text(title, style: Theme.of(context).textTheme.titleSmall),

@@ -4,7 +4,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
+import 'package:fushi/utils.dart'
+    show t, FushiLoadingView, FushiToast, ToastSeverity;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
@@ -383,9 +384,9 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
       content: SizedBox(
         width: 420,
         child: _loading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 80,
-                child: Center(child: FushiCircularProgressIndicator()),
+                child: Center(child: FushiLoadingView(compact: true)),
               )
             : nonEmpty.isEmpty
             ? Text(t.anki_note_viewer_empty)

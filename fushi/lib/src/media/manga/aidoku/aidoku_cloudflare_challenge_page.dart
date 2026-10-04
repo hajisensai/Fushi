@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
 /// 在 app 根 navigator 就绪后调用一次；runtime 遇到 `CLOUDFLARE_CHALLENGE` 时
@@ -300,7 +301,7 @@ class _AidokuCloudflareChallengePageState
             child:
                 widget.webViewBuilder?.call(context) ??
                 (!_environmentReady
-                    ? const Center(child: FushiCircularProgressIndicator())
+                    ? const FushiLoadingView()
                     : KeyedSubtree(
                         // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正
                         // 重建出新的 platform view，而不动 WebView 自己的锚点。

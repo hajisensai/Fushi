@@ -207,28 +207,15 @@ class _DownloadSubscriptionsPanelState
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(24),
       children: <Widget>[
         const SizedBox(height: 72),
-        FushiIcon(
-          Icons.subscriptions_outlined,
-          size: 48,
-          color: theme.colorScheme.outline,
-        ),
-        const SizedBox(height: 16),
-        Text(
-          t.download_subscription_empty_title,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          t.download_subscription_empty_body,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.outline),
+        // 空态走共享占位（MD3 分组底卡 / Apple ContentUnavailableView 观感）。
+        FushiPlaceholderMessage(
+          icon: Icons.subscriptions_outlined,
+          message: t.download_subscription_empty_title,
+          detail: t.download_subscription_empty_body,
         ),
       ],
     );

@@ -298,11 +298,9 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           if (scan == null)
             Column(
               children: <Widget>[
-                const Center(child: FushiCircularProgressIndicator()),
-                const SizedBox(height: 12),
                 // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
-                Text(_scanningLabel ?? t.migration_import_verifying_hint,
-                    textAlign: TextAlign.center),
+                FushiLoadingView(
+                    message: _scanningLabel ?? t.migration_import_verifying_hint),
                 if (_scanningLabel != null) ...<Widget>[
                   const SizedBox(height: 4),
                   Text(
@@ -315,26 +313,19 @@ class _MigrationImportPageState extends State<MigrationImportPage>
             )
           else if (!scan.storagePermissionGranted)
             // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
-            FushiCard(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      t.migration_import_permission_title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(t.migration_import_permission_body),
-                    const SizedBox(height: 12),
-                    FushiFilledButton(
-                      onPressed: _requestPermission,
-                      child: Text(t.migration_import_permission_grant),
-                    ),
-                  ],
+            // 共享提示块（标题 + 正文 + 动作），MD3 中性底 / Apple 系统灰底，
+            // 不再手搭卡片 + 内边距。
+            FushiInlineNotice(
+              severity: FushiNoticeSeverity.warning,
+              icon: Icons.folder_off_outlined,
+              title: t.migration_import_permission_title,
+              message: t.migration_import_permission_body,
+              actions: <Widget>[
+                FushiFilledButton(
+                  onPressed: _requestPermission,
+                  child: Text(t.migration_import_permission_grant),
                 ),
-              ),
+              ],
             )
           else if (!scan.hasAnything)
             Text(t.migration_import_nothing)
@@ -356,9 +347,12 @@ class _MigrationImportPageState extends State<MigrationImportPage>
                 titleMaxLines: 3,
               ),
             const SizedBox(height: 8),
+            // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
             if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              FushiInlineNotice(
+                severity: FushiNoticeSeverity.error,
+                message: _error!,
+              ),
             if (_status != null) Text(_status!),
             const SizedBox(height: 8),
             FushiFilledButton(

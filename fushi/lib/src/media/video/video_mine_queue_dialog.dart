@@ -157,7 +157,7 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
       content: SizedBox(
         width: 520,
         child: _loading
-            ? const Center(child: FushiCircularProgressIndicator())
+            ? const FushiLoadingView()
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,

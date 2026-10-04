@@ -278,10 +278,30 @@ KeyEventResult _handleGlobalBack(
   }
   if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
   final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (nav == null) return KeyEventResult.ignored;
+  if (!nav.canPop()) return _backOnRootRoute(nav);
   // Escape 落在弹层上：让给框架（见上方文档的两条既有语义）。
   if (event.logicalKey == LogicalKeyboardKey.escape &&
       _topRouteIsPopup(navigatorKey)) {
+    return KeyEventResult.ignored;
+  }
+  nav.maybePop();
+  return KeyEventResult.handled;
+}
+
+/// 根路由（首页）上按返回：没有可弹出的路由，但页内状态可能用 [PopScope]
+/// 拦截返回——例如书架 / 视频库的批量选择模式（BUG-250），返回应先退出选择。
+/// `canPop()` 为 false 时以前直接忽略，Esc 永远到不了这些 PopScope；这里只在
+/// 根路由当前声明「不弹出」（[RoutePopDisposition.doNotPop]，即有 PopScope
+/// 拦着）时调 [NavigatorState.maybePop] 把返回交给它，其余情况照旧忽略。
+KeyEventResult _backOnRootRoute(NavigatorState nav) {
+  Route<dynamic>? top;
+  nav.popUntil((Route<dynamic> route) {
+    top = route;
+    return true;
+  });
+  final Route<dynamic>? route = top;
+  if (route == null || route.popDisposition != RoutePopDisposition.doNotPop) {
     return KeyEventResult.ignored;
   }
   nav.maybePop();
@@ -301,7 +321,8 @@ KeyEventResult _handleEscapeWithoutRegistry(
     return KeyEventResult.ignored;
   }
   final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (nav == null) return KeyEventResult.ignored;
+  if (!nav.canPop()) return _backOnRootRoute(nav);
   if (_topRouteIsPopup(navigatorKey)) return KeyEventResult.ignored;
   nav.maybePop();
   return KeyEventResult.handled;

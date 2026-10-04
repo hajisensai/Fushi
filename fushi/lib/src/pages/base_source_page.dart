@@ -1032,9 +1032,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   Widget buildDictionary() {
+    // 覆盖主题（阅读器纸色亮暗）下重挂一层玻璃作用域：库组件的默认玻璃变体
+    // 跟随弹窗主题的亮暗，而不是 app 根上的那份。结构恒定（MD3 也挂）。
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
-      child: AnimatedBuilder(
+      child: FushiGlassScope(child: AnimatedBuilder(
         animation: _popupListenable,
         builder: (context, _) {
           final stack = _popup.entries;
@@ -1110,7 +1112,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             },
           );
         },
-      ),
+      )),
     );
   }
 

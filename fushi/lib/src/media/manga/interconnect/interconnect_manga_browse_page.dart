@@ -225,19 +225,31 @@ class _RemoteMangaCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? url = book.coverUrl;
+    // 占位底跟随主题中性色：black12 在深色主题下几乎不可见。
+    final ColorScheme cs = Theme.of(context).colorScheme;
     if (url == null || url.isEmpty) {
-      return const ColoredBox(
-        color: Colors.black12,
-        child: Center(child: FushiIcon(Icons.menu_book_outlined)),
+      return ColoredBox(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: FushiIcon(
+            Icons.menu_book_outlined,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
       );
     }
     return Image(
       image: RemoteCoverImage(url, backend, cacheKey: book.downloadId),
       fit: BoxFit.cover,
       errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-          const ColoredBox(
-        color: Colors.black12,
-        child: Center(child: FushiIcon(Icons.broken_image_outlined)),
+          ColoredBox(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: FushiIcon(
+            Icons.broken_image_outlined,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
       ),
     );
   }

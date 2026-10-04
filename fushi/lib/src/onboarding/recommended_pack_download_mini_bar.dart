@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 推荐包下载的**全局**常驻迷你条，挂在首页 shell 的内容区底部
 /// （`home_page.dart` 的 `_bodyWithMiniBar`，移动底栏 / 桌面 rail / macOS 三套布局
@@ -80,82 +81,111 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         if (!controller.isActive || controller.miniBarDismissed.value) {
           return const SizedBox.shrink();
         }
-        // 面色走设计令牌的语义角色，不在这里自己挑 MD3 surface：`surfaces.overlay`
-        // 正是「正在听书」那条迷你条用的同一层，两条并排堆在同一个槽里才读成一条
-        // 底部状态带。
         final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final ColorScheme scheme = Theme.of(context).colorScheme;
         final TextTheme textTheme = Theme.of(context).textTheme;
         // eink：overlay 面层塌成页面底色，这条状态带与上方 tab 正文连成一片；
         // 顶上描一条线把它切出来。
         final bool eink = isEinkTheme(context);
-        return Material(
-          color: tokens.surfaces.overlay,
-          shape: eink
-              ? Border(top: BorderSide(color: tokens.surfaces.outline))
-              : null,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // 下载中才画进度条：0 = 总大小未知（服务器不报 length），退化成不定态
-              // （eink 下钉成 0：不定态动画在墨水屏上是整条带子持续刷新；默认轨道色
-              // surfaceContainerHighest 也塌成底色，给实色轨道才看得见）。
-              if (controller.isDownloading)
-                FushiLinearProgressIndicator(
-                  minHeight: 2,
-                  value: einkSafeProgressValue(
-                    context,
-                    controller.progress.value > 0
-                        ? controller.progress.value
-                        : null,
-                  ),
-                  backgroundColor: eink ? scheme.surface : null,
+        final Widget body = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            // 下载中才画进度条：0 = 总大小未知（服务器不报 length），退化成不定态
+            // （eink 下钉成 0：不定态动画在墨水屏上是整条带子持续刷新；默认轨道色
+            // surfaceContainerHighest 也塌成底色，给实色轨道才看得见）。
+            if (controller.isDownloading)
+              FushiLinearProgressIndicator(
+                minHeight: 2,
+                value: einkSafeProgressValue(
+                  context,
+                  controller.progress.value > 0
+                      ? controller.progress.value
+                      : null,
                 ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(_icon, color: tokens.surfaces.onVariant),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            _title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: textTheme.titleSmall,
-                          ),
-                          Text(
-                            _subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: _failure == null
-                                  ? tokens.surfaces.onVariant
-                                  : scheme.error,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ..._actions,
-                    // 收起**从不**动下载本身：这是「不想看」，不是「不想下」。
-                    FushiIconButtonControl(
-                      icon: const FushiIcon(Icons.close),
-                      tooltip: t.onboarding_pack_mini_bar_hide,
-                      onPressed: controller.dismissMiniBar,
-                    ),
-                  ],
-                ),
+                backgroundColor: eink ? scheme.surface : null,
               ),
-            ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: <Widget>[
+                  FushiIcon(_icon, color: tokens.surfaces.onVariant),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          _title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.titleSmall,
+                        ),
+                        Text(
+                          _subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: _failure == null
+                                ? tokens.surfaces.onVariant
+                                : scheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ..._actions,
+                  // 收起**从不**动下载本身：这是「不想看」，不是「不想下」。
+                  FushiIconButtonControl(
+                    icon: const FushiIcon(Icons.close),
+                    tooltip: t.onboarding_pack_mini_bar_hide,
+                    onPressed: controller.dismissMiniBar,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+        // 外形与「正在听书」迷你条三态同口径（两条叠在同一个底部槽里）：
+        // 墨水屏贴边整条 + 顶线；Apple 离边 14 的浮动玻璃胶囊（导航与控件层）；
+        // MD3 离边 12 的浮动卡（surfaceContainerHigh、圆角 16、elevation 2）。
+        if (eink) {
+          return Material(
+            color: tokens.surfaces.overlay,
+            shape: Border(top: BorderSide(color: tokens.surfaces.outline)),
+            child: body,
+          );
+        }
+        if (isGlassDesign(context)) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+            child: GlassContainer(
+              useOwnLayer: true,
+              quality: fushiGlassQuality(context, prominent: true),
+              // 与正在听书迷你条同一档：浮在内容上的大块条用无色 bar 玻璃，
+              // 不是带灰填充的常规玻璃。
+              settings: fushiClearGlassSettings(context, bar: true),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 28),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: body,
+              ),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          child: Material(
+            color: scheme.surfaceContainerHigh,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: scheme.shadow,
+            elevation: 2,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: body,
           ),
         );
       },

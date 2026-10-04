@@ -1213,7 +1213,6 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     );
     final Widget filter = FushiSegmentedButton<bool>(
       key: const ValueKey<String>('fushi_gallery_filter'),
-      showSelectedIcon: false,
       segments: <ButtonSegment<bool>>[
         ButtonSegment<bool>(
           value: true,
@@ -1328,7 +1327,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     }
     if (_peekingSibling && _sibling == null) {
       _layout = null;
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     if (_images.isEmpty) {
       _layout = null;

@@ -3,6 +3,7 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
+import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -25,6 +26,13 @@ class CollectionHeroCredit {
   final String kind;
   final String name;
 }
+
+/// hero 上的数字 / 标签 / 人物胶囊描边：Apple 的 hero 元信息是无描边的
+/// 半透明胶囊（描边是 MD3 outlined chip 的语言），玻璃下去掉描边。
+Border? _heroChipBorder(BuildContext context, double alpha) =>
+    isGlassDesign(context)
+    ? null
+    : Border.all(color: Colors.white.withValues(alpha: alpha));
 
 /// 详情页 hero：60% 视口高（460–680）。
 ///
@@ -356,6 +364,8 @@ class CollectionDetailHero extends StatelessWidget {
           icon: const FushiIcon(Icons.play_arrow_rounded),
           label: Text(playLabel ?? t.collection_play),
           onPressed: onPlay,
+          // Apple：压在 hero 深色渐变上，固定白底黑字（Apple TV 播放钮）。
+          overImage: true,
         ),
       ],
     );
@@ -393,7 +403,7 @@ class CollectionHeroBadgeChips extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.32),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+              border: _heroChipBorder(context, 0.28),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -429,7 +439,7 @@ class CollectionHeroTagChips extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+              border: _heroChipBorder(context, 0.22),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -478,9 +488,7 @@ class CollectionHeroCreditChips extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.32),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.24),
-                    ),
+                    border: _heroChipBorder(context, 0.24),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -620,7 +628,8 @@ class CollectionWorkDetailsSection extends StatelessWidget {
   }
 }
 
-/// 「选集」一类区块标题（titleLarge 加粗，带页边距）。
+/// 「选集」一类区块标题：委托共享 [FushiSectionTitle]（内容区块层级），
+/// 只带页边距、上下间距由调用方的 gap 决定。
 class CollectionSectionTitle extends StatelessWidget {
   const CollectionSectionTitle(this.text, {super.key});
 
@@ -629,14 +638,9 @@ class CollectionSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
+    return FushiSectionTitle(
+      text,
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      child: Text(
-        text,
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-      ),
     );
   }
 }
@@ -799,8 +803,12 @@ class CollectionEpisodeCard extends StatelessWidget {
     final String? summary = this.summary;
     return IgnorePointer(
       child: Material(
+        // Apple：primaryContainer 在单色强调色下就是灰填充，再乘 0.35 后与卡片底
+        // 几乎同色，续播集认不出来；改用高一阶的实色 raised 底（iOS 选中行同款）。
         color: isContinue
-            ? cs.primaryContainer.withValues(alpha: 0.35)
+            ? (isGlassDesign(context)
+                  ? cs.surfaceContainerHigh
+                  : cs.primaryContainer.withValues(alpha: 0.35))
             : cs.surfaceContainerLow,
         borderRadius: FushiBorderRadius.card,
         clipBehavior: Clip.antiAlias,
@@ -814,8 +822,13 @@ class CollectionEpisodeCard extends StatelessWidget {
                   Stack(
                     children: <Widget>[
                       thumb,
+                      // 进行中 → 铺满缩略图的压暗 + 进度环；失败 → 右下角标。
                       if (downloadBadge case final Widget badge)
-                        Positioned(right: 4, bottom: 4, child: badge)
+                        positionRemoteDownloadBadge(
+                          badge,
+                          corner: (Widget b) =>
+                              Positioned(right: 4, bottom: 4, child: b),
+                        )
                       else if (isRemote)
                         const Positioned(
                           right: 4,

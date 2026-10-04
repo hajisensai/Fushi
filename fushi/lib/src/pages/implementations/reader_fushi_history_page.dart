@@ -663,7 +663,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             child: Column(
               children: [
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                _buildSearchBar(),
+                // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行（2026-10-04），
+                // 标签 chip 只在有标签时另起一行。
+                _buildSearchBar(allTags.valueOrNull ?? const []),
                 _buildTagBar(allTags.valueOrNull ?? const []),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 SyncProgressBanner(compact: _compactLibraryToolbar),
@@ -780,11 +782,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       ) ==
       WindowSizeClass.compact;
 
-  Widget _buildTagBar(List<BookTagRow> allTags) {
+  /// [part]：工具行行尾的「管理标签 / 批量选择 / 排序」（[FushiTagFilterBarPart.actions]，
+  /// 窄屏用 44 触控尺寸；管理标签常驻，key `library_tag_settings`）或工具行下方的
+  /// 标签 chip 段（无标签时零高度）。
+  Widget _buildTagBar(
+    List<BookTagRow> allTags, {
+    FushiTagFilterBarPart part = FushiTagFilterBarPart.tags,
+  }) {
     return FushiTagFilterBar(
       tags: allTags,
+      part: part,
       pinActions: _compactLibraryToolbar,
-      showTagManagement: !_compactLibraryToolbar,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
@@ -962,79 +970,38 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     setState(() {});
   }
 
-  /// P5-A 书架搜索框。形态与游戏库页工具条一致（三个库页搜索长一个样），
-  /// 搜索词只影响本次会话、不落库。
-  Future<void> _openTagManagement() async {
-    await Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const TagManagementPage(),
-      ),
-    );
-    if (!mounted) return;
-    ref.invalidate(allTagsProvider);
-    ref.invalidate(bookTagMapProvider);
-  }
+  /// P5-A 书架工具行：搜索框 + 阅读状态 + 行尾「管理标签 / 批量选择 / 排序」，
+  /// 与视频库 / 游戏库同一个 [LibraryToolbar]。搜索词只影响本次会话、不落库。
 
-  Widget _buildSearchBar() {
-    final Widget search = SizedBox(
-      height: _compactLibraryToolbar ? 44 : 40,
-      child: FushiTextFieldControl(
-        key: const ValueKey<String>('shelf_search_field'),
-        controller: _searchController,
-        decoration: InputDecoration(
-          isDense: true,
-          prefixIcon: const FushiIcon(Icons.search, size: 18),
-          hintText: t.library_search,
-          border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 4,
-          ),
-          suffixIcon: _searchQuery.isEmpty
-              ? null
-              : FushiIconButtonControl(
-                  icon: const FushiIcon(Icons.close, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = '');
-                  },
-                ),
-        ),
-        onChanged: (String value) => setState(() => _searchQuery = value),
-      ),
+  Widget _buildSearchBar(List<BookTagRow> allTags) {
+    final Widget actions = _buildTagBar(
+      allTags,
+      part: FushiTagFilterBarPart.actions,
     );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: search),
-          const SizedBox(width: 8),
-          LibraryFilterDropdown<ShelfReadStatus>(
-            key: const ValueKey<String>('shelf_filter_read_status'),
-            value: _readStatusFilter,
-            options: ShelfReadStatus.values,
-            labelOf: _readStatusLabel,
-            title: t.shelf_filter_read_status,
-            allLabel: t.home_filter_all,
-            onSelected: _setReadStatusFilter,
-          ),
-          if (_compactLibraryToolbar) ...<Widget>[
-            const SizedBox(width: 8),
-            FushiIconButtonControl(
-              key: const ValueKey<String>('library_tag_settings'),
-              tooltip: t.tag_manage,
-              constraints: const BoxConstraints(
-                minWidth: 44,
-                minHeight: 44,
-              ),
-              icon: const FushiIcon(Icons.settings_outlined, size: 22),
-              onPressed: _openTagManagement,
-            ),
-          ],
-        ],
+    return LibraryToolbar(
+      search: LibrarySearchField(
+        fieldKey: const ValueKey<String>('shelf_search_field'),
+        controller: _searchController,
+        hintText: t.library_search,
+        onChanged: (String value) => setState(() => _searchQuery = value),
+        onClear: () {
+          _searchController.clear();
+          setState(() => _searchQuery = '');
+        },
       ),
+      filters: <Widget>[
+        LibraryFilterDropdown<ShelfReadStatus>(
+          key: const ValueKey<String>('shelf_filter_read_status'),
+          value: _readStatusFilter,
+          options: ShelfReadStatus.values,
+          labelOf: _readStatusLabel,
+          title: t.shelf_filter_read_status,
+          allLabel: t.home_filter_all,
+          onSelected: _setReadStatusFilter,
+        ),
+      ],
+      // 行尾：管理标签（常驻，key `library_tag_settings`）+ 批量选择 + 排序。
+      trailing: actions,
     );
   }
 
@@ -1975,10 +1942,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 语义与合集详情页 AppBar 同源；删除支持「连同书一起删」勾选（复用
   /// [_deleteCollectionMembersMedia] 分派纪律）。
   Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
+    final String? ownCover = collection.coverPath;
     return showCollectionContextDialog(
       context: context,
       db: appModel.database,
       collection: collection,
+      coverImage: ownCover != null &&
+              ownCover.isNotEmpty &&
+              File(ownCover).existsSync()
+          ? resizedFileImage(File(ownCover))
+          : null,
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         // 改名/删除影响折叠映射；标签影响行头 chip；删本体影响书架条目。

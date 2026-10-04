@@ -63,12 +63,14 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 
 /// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
 const String kWebVideoJsHandler = 'fushiWebVideo';
@@ -1636,7 +1638,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (fail != null) {
       return Scaffold(
         appBar: FushiAppBar(),
-        body: Center(child: Text(fail)),
+        // 加载失败走统一空状态（MD3 中性卡 / Apple ContentUnavailableView），
+        // 不再是光秃秃一行居中文字。
+        body: FushiPlaceholderMessage(
+          icon: Icons.error_outline,
+          message: fail,
+        ),
       );
     }
     final VideoBookRow? row = _row;
@@ -1648,7 +1655,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // 慢或悬挂时，桌面端没有系统返回键，用户就被钉在这个转圈上。
       return Scaffold(
         appBar: FushiAppBar(),
-        body: const Center(child: FushiCircularProgressIndicator()),
+        body: const FushiLoadingView(),
       );
     }
     // 网页流媒体页属于视频模块，同样是**窗口全屏的合法宿主**（见
@@ -1660,12 +1667,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         focusNode: _focusNode,
         autofocus: true,
         child: Scaffold(
-          backgroundColor: Colors.black,
+          // 页面底是 surface、只有画面区垫黑：顶栏（FushiAppBar，MD3 未滚动 /
+          // Apple 恒透明）画在 Scaffold 底色上，整页黑底会让它变成黑条——标题
+          // 按 onSurface 取色，浅色主题下黑字压黑底看不见，桌面自绘顶栏（根主题
+          // surface）与它之间还切出一道明暗接缝。
+          backgroundColor: cs.surface,
           appBar: _fullscreen ? null : _buildAppBar(row, cs),
           body: Row(
             children: <Widget>[
               Expanded(
-                child: Stack(
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: Stack(
                   children: <Widget>[
                     Positioned.fill(
                       child: KeyedSubtree(
@@ -1689,6 +1702,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                         ),
                       ),
                   ],
+                ),
                 ),
               ),
               if (_listVisible) _buildListPanel(cs),

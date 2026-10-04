@@ -337,14 +337,20 @@ class LeaderboardAvatar extends ConsumerWidget {
     final String initial = account.nickname.isEmpty
         ? '?'
         : String.fromCharCodes(account.nickname.runes.take(1));
+    // 无头像时的首字占位：中性底（MD3 surfaceContainerHigh / Apple fill），
+    // 不再是 primaryContainer 彩色圆。
+    final bool glass = isGlassDesign(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget fallback = ColoredBox(
-      color: colors.primaryContainer,
+      color: glass ? appleColorsOf(context).fill : tokens.surfaces.search,
       child: Center(
         child: Text(
           initial,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(color: colors.onPrimaryContainer),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: glass
+                ? appleColorsOf(context).secondaryLabel
+                : colors.onSurfaceVariant,
+          ),
         ),
       ),
     );
@@ -398,13 +404,14 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final double width = widget.width;
     final double height = width * 1.42;
+    // 无封面占位：中性填充 + 单色种类图标（不再是 secondaryContainer 色块）。
     final Widget placeholder = ColoredBox(
-      color: colors.secondaryContainer,
+      color: fushiNeutralBlockColor(context),
       child: Center(
         child: FushiIcon(
           _kindIcon,
           size: width * 0.42,
-          color: colors.onSecondaryContainer,
+          color: fushiNeutralSecondaryForeground(context),
         ),
       ),
     );
@@ -507,7 +514,7 @@ class LeaderboardErrorView extends StatelessWidget {
   }
 }
 
-/// 页内小标题（区块名）。
+/// 页内小标题（区块名）：委托共享 [FushiSectionTitle.group]。
 class LeaderboardSectionTitle extends StatelessWidget {
   const LeaderboardSectionTitle(this.text, {this.trailing, super.key});
 
@@ -517,18 +524,14 @@ class LeaderboardSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
+    return FushiSectionTitle.group(
+      text,
+      trailing: trailing,
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
         tokens.spacing.section,
         tokens.spacing.card,
         tokens.spacing.gap,
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: Text(text, style: tokens.type.sectionLabel)),
-          if (trailing != null) trailing!,
-        ],
       ),
     );
   }

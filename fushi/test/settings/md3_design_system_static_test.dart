@@ -76,7 +76,8 @@ void main() {
     'lib/src/settings/settings_home_page.dart': <String>['FushiPageHeader'],
     'lib/src/utils/components/fushi_list_tile.dart': <String>['FushiListItem'],
     'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
-      'FushiCard',
+      // 选区工具条是浮层（MD3 浮层面 / Apple 玻璃胶囊），不是内容卡片。
+      'FushiPopupSurface',
       'FushiOverflowMenu',
     ],
     'lib/src/pages/implementations/home_dictionary_page.dart': <String>[
@@ -763,6 +764,13 @@ void main() {
           'user content passed to LyricsModeHtml / the platform overlay '
           'channel, not page chrome — same rationale as the parent '
           'reader_fushi_page.dart allowlist (extracted verbatim).',
+      // 2026-10-04 歌词覆盖层 Apple 外观：按用户要求逐值复刻 Niratan 的 Apple Music
+      // 播放面板（封面圆角 12、进度条 / 元数据 / 读数的固定字号），画在恒深色的
+      // 模糊封面媒体面上，是播放器内容而非普通页面 chrome；MD3 外观仍走设计令牌。
+      'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
+          'Apple Music-style lyrics player reproduces Niratan player metrics '
+          '(artwork radius, scrubber and metadata type sizes) on a fixed-dark '
+          'blurred-cover media surface; player content, not page chrome.',
       // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
       // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
@@ -816,6 +824,12 @@ void main() {
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
           'white-on-black caption radius/size), not ordinary page chrome.',
+      'lib/src/media/video/subtitle_style_preview.dart':
+          'Subtitle style preview renders caption content at the real '
+          'subtitle font size inside a simulated video frame (frame radius '
+          'and surfaceContainerLow backdrop are the preview specimen shell), '
+          'same reviewed exception class as the subtitle overlay and the '
+          'font target preview.',
       'lib/src/media/audiobook/audiobook_clip_text_render.dart':
           'TODO-945 audiobook clip share renders the selected sentence into '
           'a shareable video frame (offscreen RepaintBoundary → PNG); the '
@@ -1227,6 +1241,11 @@ void main() {
         'fontSize:',
       },
       'lib/src/media/video/video_subtitle_style.dart': <String>{'fontSize:'},
+      'lib/src/media/video/subtitle_style_preview.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'fontSize:',
+      },
       'lib/src/media/video/subtitle_transcript_text.dart': <String>{
         'fontSize:',
       },
@@ -1275,7 +1294,6 @@ void main() {
         'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/game_diagnostics_page.dart': <String>{
-        'BorderRadius.circular(',
         'ListTile(',
       },
       'lib/src/pages/implementations/games_library_page.dart': <String>{
@@ -1289,7 +1307,6 @@ void main() {
         'BorderRadius.circular(',
       },
       'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
-        'BorderRadius.circular(',
         'ListTile(',
       },
       'lib/src/pages/implementations/subtitle_search_panel.dart': <String>{
@@ -1347,6 +1364,8 @@ void main() {
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:',
       },
+      'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
+          <String>{'BorderRadius.circular(', 'fontSize:'},
       'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>{
         'surfaceContainerHighest',
       },
@@ -1931,19 +1950,31 @@ void main() {
         source.length,
       );
 
-      // 共享 MD3 对话框框 + 顶部可见封面块（限高 + letterbox 背景）。
+      // 共享 MD3 对话框框 + 可见封面卡（2026-10-04 hero 重设计：封面按自身宽高比
+      // 定尺寸，不再整宽 contain 出 letterbox；限高仍在）。
       expect(frame, contains('FushiDialogFrame('));
       expect(frame, contains('ConstrainedBox('));
       expect(frame, contains('ColoredBox('));
       expect(frame, contains('tokens.surfaces.overlay'));
-      // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
-      // BUG-2603：chip 网格是按真实内在宽度决定列数的 _QuickActionGrid，不再是
+      expect(frame, contains('AspectRatio('));
+      expect(frame, contains('class _CoverAspectResolver'));
+      expect(frame, contains('screenHeight * _coverHeightFactor'));
+      // 宽框列表动作双列、窄框单列。
+      expect(frame, contains('columns = wide ? 2 : 1'));
+      // MD3 action layout（Material 3 Expressive）：快捷动作是等宽 tonal 图标文字
+      // 按钮网格，列表动作是分段分组卡，危险动作是文字按钮。
+      // BUG-2603：网格是按真实内在宽度决定列数的 _QuickActionGrid，不再是
       // 「常量猜最小宽 + Wrap」（那套在手机宽度把标签截成「查…/导…/从…」）。
       expect(frame, contains('_QuickActionGrid('));
       expect(frame, isNot(contains('_quickActionMinChipWidth')));
-      expect(frame, contains('FushiActionChip('));
-      expect(frame, contains('FushiListItem('));
-      expect(frame, contains('TextButton('));
+      expect(frame, contains('FushiFilledButton.tonalIcon('));
+      expect(frame, contains('_Md3SegmentRow('));
+      // 2026-10-04：列表 / 多余快捷 / 危险动作都是同一张分段分组网格（行列缝
+      // kSettingsSegmentGap、外角 24 内角 4），危险组 error 色、另起一组。
+      expect(frame, contains('_buildMd3SegmentGrid('));
+      expect(frame, contains('kSettingsSegmentOuterRadius'));
+      expect(frame, contains('SizedBox(height: kSettingsSegmentGap)'));
+      expect(frame, contains('DialogDangerAction(muted: false) => colors.error'));
       expect(frame, contains('final bool showLaunchAction;'));
       expect(frame, contains('showLaunchAction &&'));
       expect(frame, contains('launchLabel != null'));
@@ -1951,9 +1982,23 @@ void main() {
       expect(frame, isNot(contains('SingleChildScrollView(')));
       expect(frame, isNot(contains('ListTile(')));
       expect(frame, isNot(contains('OutlinedButton.icon(')));
-      // 旧 scrim 背景结构（封面铺底 + 渐变遮罩）不得回归。
-      expect(frame, isNot(contains('Positioned.fill')));
-      expect(frame, isNot(contains('LinearGradient(')));
+      // 旧 scrim 背景结构（TODO-455：**前景封面**铺底 + 渐变遮罩、封面几乎不可见）
+      // 不得回归。hero 头部（MD3）/ 整块面板（Apple）的模糊垫底与渐变只装
+      // coverBackdrop 图源（降采样后的另一份图），传入的封面 widget 只能出现在
+      // 前景封面卡里、清晰不透明。
+      expect(frame, isNot(contains('Positioned.fill(child: cover')));
+      expect(frame, contains('final ImageProvider? coverBackdrop;'));
+      expect(frame, contains('ui.ImageFilter.blur('));
+      expect(
+        RegExp(r'cover!').allMatches(frame).length,
+        1,
+        reason: '封面 widget 只画一次：在前景封面卡里',
+      );
+      expect(
+        frame,
+        matches(RegExp(r'ClipRRect\([^;]*?child: cover!,')),
+        reason: '前景封面必须在圆角封面卡（ClipRRect）里画，不是背景层',
+      );
     },
   );
 
@@ -3334,7 +3379,10 @@ void main() {
       'Widget _buildPending(BuildContext context)',
       illustrationsSource.length,
     );
-    expect(illustrationsBody, contains('tokens.spacing'));
+    // 装载 / 出错态改由共享 FushiLoadingView / FushiPlaceholderMessage 承担
+    // 间距（它们内部取 tokens.spacing），页面不再自排。
+    expect(illustrationsBody, contains('FushiLoadingView'));
+    expect(illustrationsBody, contains('FushiPlaceholderMessage'));
     expect(
       illustrationsBody,
       isNot(contains('padding: const EdgeInsets.all(32)')),

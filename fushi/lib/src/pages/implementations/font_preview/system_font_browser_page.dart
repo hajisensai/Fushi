@@ -5,9 +5,13 @@ import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart'
 import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
 import 'package:fushi/src/pages/implementations/font_preview/system_font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -169,9 +173,11 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
           ],
           if (!_list.namesReliable) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.custom_fonts_system_names_approximate,
-              style: tokens.type.metadata.copyWith(color: scheme.error),
+            // 「名称是近似值」是提醒不是错误：走共享提示块（警告图标），
+            // 不再是整行红字。
+            FushiInlineNotice(
+              severity: FushiNoticeSeverity.warning,
+              message: t.custom_fonts_system_names_approximate,
             ),
           ],
           SizedBox(height: tokens.spacing.gap),
@@ -180,10 +186,13 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
     );
 
     final Widget list = _loading
-        ? const Center(child: FushiCircularProgressIndicator())
+        ? const FushiLoadingView()
         : visible.isEmpty
         ? Center(
-            child: Text(t.custom_fonts_empty, style: tokens.type.listSubtitle),
+            child: FushiPlaceholderMessage(
+              icon: Icons.font_download_off_outlined,
+              message: t.custom_fonts_empty,
+            ),
           )
         : ListView.builder(
             key: const ValueKey<String>('system-font-list'),
@@ -222,9 +231,22 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
           );
 
     final String? previewFamily = _previewFamily;
+    // 底部预览面板：MD3 = group 底 + 2 级抬升；Apple = 无投影、顶部一条
+    // separator 发丝线（iOS 底部工具区的分隔方式）。只换参数，不增删包装层。
+    final bool glass = isGlassDesign(context);
     final Widget bottomPanel = Material(
-      color: tokens.surfaces.group,
-      elevation: 2,
+      color: glass
+          ? appleColorsOf(context).secondaryGroupedBackground
+          : tokens.surfaces.group,
+      elevation: glass ? 0 : 2,
+      shape: glass
+          ? Border(
+              top: BorderSide(
+                color: appleColorsOf(context).separator,
+                width: 0.5,
+              ),
+            )
+          : null,
       child: SafeArea(
         top: false,
         child: Padding(

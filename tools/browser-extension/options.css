@@ -617,7 +617,8 @@ summary:focus-visible {
   }
 }
 
-/* ── 配色主题：色块网格（与 app 设置页的主题选择器同一取向：一排圆点 + 名称，选中描边）。 ── */
+/* ── 配色主题：等大主题卡网格（与 app 设置页 FushiSchemeSwatch 同一取向：微缩界面预览 +
+   名称；选中 = 预览外留 2px 缝的主色环 + 右上角 ✓ 徽标）。卡片是浅玻璃，悬停微微浮起。 ── */
 .setting-row-block {
   flex-wrap: wrap;
   align-items: start;
@@ -626,53 +627,153 @@ summary:focus-visible {
 .setting-row-block .setting-copy { flex-basis: 100%; }
 
 .palette-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 12px;
   width: 100%;
-  padding-top: 4px;
+  padding-top: 6px;
 }
 
 .palette-swatch {
+  position: relative;
   display: grid;
   justify-items: center;
-  gap: 6px;
-  width: 78px;
-  padding: 6px 2px 4px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: transparent;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px 8px 10px;
+  border: 1px solid var(--fushi-glass-edge, color-mix(in oklch, var(--outline) 50%, transparent));
+  border-radius: 18px;
+  background-color: var(--fushi-glass-fill-subtle, var(--surface));
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-glass-highlight, #fff) 35%, transparent), transparent 55%);
+  box-shadow: inset 0 1px 0 var(--fushi-glass-highlight, transparent), 0 1px 2px color-mix(in oklch, var(--text) 6%, transparent);
   color: var(--text);
   font: inherit;
   cursor: pointer;
+  outline: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
 }
 
-.palette-swatch:hover { background: color-mix(in oklch, var(--primary-soft) 55%, transparent); }
-.palette-swatch:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.palette-swatch.is-selected { border-color: var(--primary); background: var(--primary-soft); }
+.palette-swatch:hover {
+  transform: translateY(-2px);
+  background-color: var(--fushi-glass-fill-strong, var(--surface));
+  box-shadow: inset 0 1px 0 var(--fushi-glass-highlight, transparent), 0 10px 22px -12px color-mix(in oklch, var(--text) 40%, transparent);
+}
 
-.palette-dot {
-  --swatch-primary: var(--primary);
-  --swatch-surface: var(--surface);
+.palette-swatch:active { transform: translateY(0) scale(0.98); }
+
+.palette-swatch:focus-visible {
+  border-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--fushi-glass-highlight, transparent), 0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent);
+}
+
+.palette-preview {
+  --sw-bg: var(--bg);
+  --sw-bar: var(--fushi-surface-strong);
+  --sw-text: var(--text);
+  --sw-primary: var(--primary);
+  position: relative;
+  display: block;
+  width: 88px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 13px;
+  background: var(--sw-bg);
+  /* 细描边画在内容之上：浅色预览放在浅色卡片上也有边界。 */
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--text) 22%, transparent), 0 1px 3px color-mix(in oklch, var(--text) 14%, transparent);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.16s ease;
+}
+
+.pv-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 24%;
+  background: var(--sw-bar);
+}
+
+.pv-bar::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sw-primary);
+  transform: translateY(-50%);
+}
+
+.pv-line {
+  position: absolute;
+  left: 12%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--sw-text);
+}
+
+.pv-line-1 { top: 36%; width: 62%; opacity: 0.9; }
+.pv-line-2 { top: 50%; width: 44%; height: 4px; opacity: 0.42; }
+
+.pv-pill {
+  position: absolute;
+  left: 12%;
+  top: 68%;
+  width: 42%;
+  height: 16%;
+  border-radius: 999px;
+  background: var(--sw-primary);
+}
+
+.palette-preview.is-pending {
+  background: repeating-linear-gradient(135deg, var(--surface-muted) 0 6px, var(--surface) 6px 12px);
+}
+
+.palette-swatch.is-selected .palette-preview { outline-color: var(--primary); }
+
+.palette-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--outline) 70%, transparent);
-  background: linear-gradient(135deg, var(--swatch-primary) 0 50%, var(--swatch-surface) 50% 100%);
-  color: var(--muted);
-  font-size: 20px;
-  font-weight: 600;
-  box-shadow: 0 1px 4px color-mix(in oklch, var(--text) 18%, transparent);
+  color: var(--on-primary, #fff);
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--surface), 0 2px 6px color-mix(in oklch, var(--primary) 45%, transparent);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
-.palette-swatch.is-selected .palette-dot { border-color: var(--primary-strong); }
-.palette-dot.is-pending { background: repeating-linear-gradient(135deg, var(--surface-muted) 0 6px, var(--surface) 6px 12px); }
-.palette-add .palette-dot { background: var(--surface-muted); border-style: dashed; }
+.palette-swatch.is-selected .palette-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 新建：同尺寸的虚线预览 + 居中 ＋。 */
+.palette-add .palette-preview {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--muted);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.palette-add:hover .palette-preview {
+  border-color: var(--primary);
+  color: var(--primary);
+}
 
 .palette-name {
-  max-width: 78px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -682,6 +783,11 @@ summary:focus-visible {
 }
 
 .palette-swatch.is-selected .palette-name { color: var(--primary-strong); font-weight: 690; }
+
+@media (prefers-reduced-motion: reduce) {
+  .palette-swatch:hover,
+  .palette-swatch:active { transform: none; }
+}
 
 /* 自定义主题编辑器：字段 + 明暗双预览（预览卡吃派生出的 --fushi-* 内联变量）。 */
 .custom-theme-editor {

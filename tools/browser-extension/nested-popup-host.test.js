@@ -33,6 +33,7 @@ function harness(handler = () => null) {
   const window = {
     fushiT: FUSHI_T,
     innerWidth: 1280, innerHeight: 900,
+    CSS: { supports: () => true },
     addEventListener: (name, callback) => { listeners[name] = callback; },
     fushiIsEntryQueued: () => false,
     renderPopup: () => renderCount++,
@@ -49,10 +50,20 @@ function harness(handler = () => null) {
     } },
     document: {
       createElement: tag => {
+        if (tag === 'div') {
+          // 外框：定位 / 玻璃 / 显隐都在这一层，iframe 是它唯一的孩子。
+          return {
+            style: {}, attrs: {}, child: null, removed: false,
+            setAttribute(k, v) { this.attrs[k] = v; },
+            appendChild(child) { this.child = child; child.box = this; },
+            remove() { this.removed = true; if (this.child) this.child.removed = true; },
+            getBoundingClientRect: () => ({ left: 100, top: 120 }),
+          };
+        }
         assert.equal(tag, 'iframe');
         const frame = {
           style: {}, messages: [], windowMessages: [], removed: false,
-          setAttribute() {},
+          attrs: {}, setAttribute(k, v) { this.attrs[k] = v; },
           remove() { this.removed = true; },
           focus() { focusCount++; },
           getBoundingClientRect: () => ({ left: 100, top: 120 }),
@@ -67,7 +78,7 @@ function harness(handler = () => null) {
         } };
         return frame;
       },
-      body: { appendChild: frame => frames.push(frame) },
+      body: { appendChild: box => { assert.ok(box.child, 'body 下挂的是外框，iframe 在框内'); frames.push(box.child); } },
     },
     fushiHost: root,
     fushiPendingCueWindow: { cue: 'root sentence' },
@@ -108,11 +119,11 @@ test('nested lookup preserves parent DOM, scroll and pause, revealing child only
   assert.equal(h.root.innerHTML, 'unchanged parent dictionary');
   assert.equal(h.root.scrollTop, 312);
   assert.equal(h.counts().renderCount, 0);
-  assert.match(child.style.cssText, /visibility:hidden/);
+  assert.match(child.box.style.cssText, /visibility:hidden/);
   h.event(child, { type: 'ready' });
   assert.equal(child.messages.filter(message => message.type === 'render').length, 1);
   h.call(child, 'popupRendered', [240]);
-  assert.equal(child.style.visibility, 'visible');
+  assert.equal(child.box.style.visibility, 'visible');
   assert.equal(h.counts().resumeCount, 0);
 });
 
@@ -207,4 +218,90 @@ test('asynchronous bridge replies are not delivered to a closed frame or its rep
     assert.equal(frame.messages.some(message => message.type === 'reply' && message.id === 42), false);
   }
   assert.equal(h.counts().resumeCount, 0);
+});
+
+// 2026-10-04 录屏：子层首发 popupRendered 只有首词条高度 → 判词下方放得下、先在底部冒一小条，
+// 尾批建完终高一到又整块跳到词上方。尾批在途时按 theme 上限选边、显示即锁边。
+test('nested layer picks its side by the final height and locks it once revealed', () => {
+  const h = harness();
+  const plans = [];
+  // 词下方只放得下 300px：矮于 300 落下方，否则落上方。
+  h.context.fushiComputePlacement = (anchor, size, viewport, side) => {
+    plans.push({ height: size.height, side: side || null });
+    const s = side || (size.height <= 300 ? 'below' : 'above');
+    return { left: 10, top: s === 'below' ? 600 : 100, maxHeight: null, side: s };
+  };
+  h.api.open('子', { x: 80, y: 560 }); h.replyLookup(0);
+  const child = h.frames[0];
+  const animations = [];
+  child.box.animate = (keyframes, options) => { animations.push({ keyframes, options }); return {}; };
+  // 首发：首词条 120px，尾批仍在途。
+  h.call(child, 'popupRendered', [120, 1, 900, true]);
+  assert.equal(child.box.style.visibility, 'visible');
+  assert.equal(child.box.style.top, '100px', '按最终可能的高度选边：直接落上方，不先落下方');
+  assert.equal(animations.length, 1, '显示时播一次入场动画');
+  assert.equal(child.box.style.transformOrigin, '50% 100%', '落上方时从贴词的底边长出');
+  // 终高：长高后仍在同一侧，不翻边、不重播动画。
+  h.call(child, 'popupRendered', [480, 1, 900, false], 2);
+  assert.equal(child.box.style.top, '100px');
+  assert.equal(plans.at(-1).side, 'above', '显示后复算锁在已选一侧');
+  assert.equal(animations.length, 1);
+});
+
+test('nested layer whose first render is final keeps the measured side', () => {
+  const h = harness();
+  h.context.fushiComputePlacement = (anchor, size, viewport, side) => {
+    const s = side || (size.height <= 300 ? 'below' : 'above');
+    return { left: 10, top: s === 'below' ? 600 : 100, maxHeight: null, side: s };
+  };
+  h.api.open('子', { x: 80, y: 560 }); h.replyLookup(0);
+  const child = h.frames[0];
+  h.call(child, 'popupRendered', [120, 1, 900, false]);
+  assert.equal(child.box.style.top, '600px', '只有一条词条（不在途）时按实测高度落词下方');
+});
+
+// 用户截图：第一层是玻璃，第二层起是白色实底 + 写死 10px 圆角——子层没走同一套材质。
+test('every nested layer gets the first layer glass skin; only the shadow deepens with depth', () => {
+  const h = harness();
+  h.api.open('子');
+  h.lookups[0].callback({ ok: true, data: { popupJson: JSON.stringify([{ expression: '子' }]),
+    theme: { '--fushi-radius-card': '14px', '--fushi-color-scheme': 'dark' } } });
+  const child = h.frames[0];
+  assert.equal(child.box.className, 'fushi-nested-layer');
+  assert.equal(child.box.attrs['data-fushi-glass'], 'dark');
+  assert.match(child.box.style.cssText, /border-radius:14px/);
+  assert.match(child.style.cssText, /color-scheme:dark/, 'iframe 元素与 iframe 根的 color-scheme 必须一致，否则 Chrome 垫不透明画布底');
+  assert.match(child.style.cssText, /background:transparent/);
+  // 模糊写在外框行内样式里，不依赖 manifest 注入、可能是旧版缓存的页面级 content.css。
+  assert.match(child.box.style.cssText, /backdrop-filter:blur\(20px\) saturate\(1\.4\)/);
+  assert.match(child.box.style.cssText, /overflow:hidden/, '外框裁切圆角');
+  h.event(child, { type: 'ready' });
+  const render = child.messages.find(message => message.type === 'render');
+  assert.equal(render.data.glassBackdrop, true, '握手：告诉内容外框正在模糊，内容才换半透明填充');
+  h.call(child, 'textSelected', ['孫', { x: 10, y: 20 }]);
+  h.lookups[1].callback({ ok: true, data: { popupJson: JSON.stringify([{ expression: '孫' }]),
+    theme: { '--fushi-radius-card': '14px', '--fushi-color-scheme': 'dark' } } });
+  const grandchild = h.frames[1];
+  assert.equal(grandchild.box.attrs['data-fushi-glass'], 'dark');
+  assert.match(grandchild.box.style.cssText, /border-radius:14px/);
+  const shadowY = (frame) => Number(/box-shadow:0 (\d+)px/.exec(frame.box.style.cssText)[1]);
+  assert.ok(shadowY(grandchild) > shadowY(child), '更深的层投影更重');
+  // 墨水屏（--fushi-glass: '0'）保持不透明。
+  h.event(grandchild, { type: 'ready' });
+  h.call(grandchild, 'textSelected', ['曾', { x: 10, y: 20 }]);
+  h.lookups[2].callback({ ok: true, data: { popupJson: JSON.stringify([{ expression: '曾' }]),
+    theme: { '--fushi-glass': '0' } } });
+  assert.equal(h.frames[2].box.attrs['data-fushi-glass'], undefined);
+  assert.doesNotMatch(h.frames[2].box.style.cssText, /backdrop-filter/);
+  h.event(h.frames[2], { type: 'ready' });
+  assert.equal(h.frames[2].messages.find(message => message.type === 'render').data.glassBackdrop, false);
+});
+
+test('without usable backdrop-filter the layer stays opaque instead of translucent-without-blur', () => {
+  const h = harness();
+  h.window.CSS = { supports: () => false };
+  h.api.open('子'); h.replyLookup(0);
+  const child = h.frames[0];
+  assert.doesNotMatch(child.box.style.cssText, /backdrop-filter/);
+  assert.equal(child.messages.find(message => message.type === 'render').data.glassBackdrop, false);
 });

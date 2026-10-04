@@ -1024,9 +1024,17 @@ class DictionaryPopupLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final fillColor = overrideFillColor ?? colorScheme.surface;
+    // Apple 设计系统：面板是玻璃（[FushiPopupSurface] 把 colorScheme.surface 换成
+    // secondarySystemGroupedBackground 材质色）。搜索中 / 空结果的不透明盖板要与
+    // 玻璃同色系，否则深色下是一块纯黑（systemGroupedBackground）压在 #1C1C1E
+    // 玻璃上，切换时闪一下。MD3 不变。
+    final Color coverColor =
+        overrideFillColor == null && isGlassDesign(context)
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : fillColor;
 
     final Widget? topBar = _buildTopBar(context);
-    final Widget body = _buildContent(context, fillColor);
+    final Widget body = _buildContent(context, coverColor);
 
     final Widget surfaceChild;
     if (topBar != null) {

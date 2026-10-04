@@ -478,7 +478,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
       // `standardWindowButton.isHidden` 复位 → 交通灯在窗口化播放态重新遮住左上角控件。
       // 退全屏后重新断言隐藏（与 initState 的隐藏一致）。仅 macOS 有交通灯；
       // Windows / Linux 桌面 no-op。
-      await setMacOSTrafficLightsHidden(true);
+      FushiDesktopTitleBar.reassertMacTrafficLights();
       return;
     }
     await SystemChrome.setEnabledSystemUIMode(

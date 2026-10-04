@@ -14,6 +14,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 
 /// 该源能不能在 app 里登录，以及登录页要打开哪个地址；不能则返回 null。
 ///
@@ -546,30 +548,33 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       padding: const EdgeInsets.fromLTRB(4, 0, 16, 4),
       child: Row(
         children: <Widget>[
-          FushiIconButtonControl(
-            key: const ValueKey<String>('mihon_login_back'),
-            tooltip: t.back,
-            onPressed: controller != null && _canGoBack
-                ? () => unawaited(controller.goBack())
-                : null,
-            icon: const FushiIcon(Icons.arrow_back),
-          ),
-          FushiIconButtonControl(
-            key: const ValueKey<String>('mihon_login_forward'),
-            tooltip: t.mihon_source_login_forward,
-            onPressed: controller != null && _canGoForward
-                ? () => unawaited(controller.goForward())
-                : null,
-            icon: const FushiIcon(Icons.arrow_forward),
-          ),
-          FushiIconButtonControl(
-            key: const ValueKey<String>('mihon_login_reload'),
-            tooltip: t.refresh,
-            onPressed: controller != null
-                ? () => unawaited(controller.reload())
-                : null,
-            icon: const FushiIcon(Icons.refresh),
-          ),
+          FushiToolbar(dense: true, children: <Widget>[
+            FushiIconButtonControl(
+              key: const ValueKey<String>('mihon_login_back'),
+              tooltip: t.back,
+              onPressed: controller != null && _canGoBack
+                  ? () => unawaited(controller.goBack())
+                  : null,
+              icon: const FushiIcon(Icons.arrow_back),
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('mihon_login_forward'),
+              tooltip: t.mihon_source_login_forward,
+              onPressed: controller != null && _canGoForward
+                  ? () => unawaited(controller.goForward())
+                  : null,
+              icon: const FushiIcon(Icons.arrow_forward),
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('mihon_login_reload'),
+              tooltip: t.refresh,
+              onPressed: controller != null
+                  ? () => unawaited(controller.reload())
+                  : null,
+              icon: const FushiIcon(Icons.refresh),
+            ),
+          ]),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               _currentUrl,
@@ -589,7 +594,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
     final Widget Function(BuildContext context)? stub = widget.webViewBuilder;
     if (stub != null) return stub(context);
     if (!_environmentReady) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     return KeyedSubtree(
       // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正

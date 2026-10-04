@@ -1839,6 +1839,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('collection_episode_downloading_${task.id}'),
           progress: task.progress,
+          receivedBytes: task.receivedBytes,
+          totalBytes: task.totalBytes,
           tooltip: t.remote_video_downloading,
         );
       case InterconnectDownloadStatus.failed:

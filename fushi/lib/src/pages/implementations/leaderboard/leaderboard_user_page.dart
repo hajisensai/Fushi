@@ -309,7 +309,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       );
     }
     if (card == null) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     String standing(LeaderboardMetric m) {
       final UserStanding s = card.standing(m);

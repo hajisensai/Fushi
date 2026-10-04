@@ -1660,7 +1660,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 节头；未分组殿后；节/小节按最新收藏倒序，行保持时间倒序）。
   Widget _buildGroupedListView() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<CollectionGroupRow<_CollectionItem>> rows = groupCollectionItems(
       items: _visibleItems,
       collectionIdOf: _collectionIdForItem,
@@ -1674,7 +1673,28 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       },
       mediaLabelOf: _itemDisplayBookTitle,
     );
+    // 2026-10-04 收藏夹重做：两个节头之间连续的收藏行读作一个分组（MD3 分段卡 /
+    // Apple inset grouped）。预先算出每行在所在分组里的位置与组长，行外壳按它
+    // 定圆角、缝与分隔线。
+    final List<int> groupIndex = List<int>.filled(rows.length, 0);
+    final List<int> groupCount = List<int>.filled(rows.length, 0);
+    int runStart = -1;
+    for (int i = 0; i <= rows.length; i++) {
+      final bool isItem =
+          i < rows.length && rows[i].kind == CollectionGroupRowKind.item;
+      if (isItem) {
+        if (runStart < 0) runStart = i;
+      } else if (runStart >= 0) {
+        for (int j = runStart; j < i; j++) {
+          groupIndex[j] = j - runStart;
+          groupCount[j] = i - runStart;
+        }
+        runStart = -1;
+      }
+    }
+    final double page = tokens.spacing.page;
     return ListView.builder(
+      padding: EdgeInsets.only(bottom: tokens.spacing.card),
       itemCount: rows.length,
       itemBuilder: (BuildContext context, int index) {
         final CollectionGroupRow<_CollectionItem> row = rows[index];
@@ -1684,48 +1704,38 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 ? t.stat_detail_ungrouped
                 : (_collectionNamesById[row.collectionId] ??
                     t.stat_detail_ungrouped);
-            return Padding(
+            // 合集名 = 内容区块标题（MD3 titleLarge / Apple Title 2 粗体），
+            // 不再是主色文件夹图标 + 小号字。
+            return FushiSectionTitle(
+              name,
               padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.card,
-                tokens.spacing.card,
+                page,
+                index == 0 ? tokens.spacing.gap : tokens.spacing.card + 8,
+                page,
                 tokens.spacing.gap / 2,
-              ),
-              child: Row(
-                children: <Widget>[
-                  FushiIcon(Icons.folder_outlined, size: 18, color: scheme.primary),
-                  SizedBox(width: tokens.spacing.gap / 2),
-                  Expanded(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                ],
               ),
             );
           case CollectionGroupRowKind.mediaHeader:
-            return Padding(
+            // 所属书 / 视频 = 分组小标题（MD3 titleSmall 主色 / Apple 13 号
+            // 灰字），与分组行的文字起点对齐。
+            return FushiSectionTitle.group(
+              row.mediaLabel!,
               padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card + tokens.spacing.gap,
+                page + tokens.spacing.rowHorizontal,
+                tokens.spacing.gap,
+                page,
                 tokens.spacing.gap / 2,
-                tokens.spacing.card,
-                0,
-              ),
-              child: Text(
-                row.mediaLabel!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
               ),
             );
           case CollectionGroupRowKind.item:
-            return _buildItem(row.item!);
+            final _CollectionItem item = row.item!;
+            return FushiGroupedListItem(
+              key: ValueKey<String>('favorite-row-${_itemKey(item)}'),
+              index: groupIndex[index],
+              count: groupCount[index],
+              margin: EdgeInsets.symmetric(horizontal: page),
+              child: _buildItem(item),
+            );
         }
       },
     );
@@ -2025,7 +2035,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                   FushiIcon(
                     icon,
                     size: 20,
-                    color: Theme.of(context).colorScheme.tertiary,
+                    // Apple 色板里 tertiary 是系统橙（warning），类型图标在
+                    // Apple 下走单色 secondaryLabel，不给内容行上彩。
+                    color: isGlassDesign(context)
+                        ? appleColorsOf(context).secondaryLabel
+                        : Theme.of(context).colorScheme.tertiary,
                   ),
                   Text(
                     typeLabel,
@@ -2080,9 +2094,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                       },
                     ),
                   if (canNavigate)
+                    // Apple 行尾 chevron：小号 tertiaryLabel（iOS disclosure
+                    // indicator 观感）；MD3 维持 24 号 onSurfaceVariant。
                     FushiIcon(
                       Icons.chevron_right,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      size: isGlassDesign(context) ? 16 : null,
+                      color: isGlassDesign(context)
+                          ? appleColorsOf(context).tertiaryLabel
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                 ],
               ),
@@ -2189,7 +2208,6 @@ class CollectionDeleteDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
 
     return FushiDialogFrame(
       maxWidth: 420,
@@ -2210,17 +2228,13 @@ class CollectionDeleteDialog extends StatelessWidget {
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Container(
-              padding: EdgeInsets.all(tokens.spacing.gap),
-              decoration: BoxDecoration(
-                color: colors.errorContainer,
-                borderRadius: tokens.radii.controlRadius,
-              ),
-              child: FushiIcon(
-                Icons.delete_outline,
-                color: colors.onErrorContainer,
-                size: 20,
-              ),
+            // 中性方底 + 错误色单色图标（不再是 errorContainer 彩色方块）。
+            FushiNeutralIconBadge(
+              icon: Icons.delete_outline,
+              size: 20 + tokens.spacing.gap * 2,
+              iconSize: 20,
+              circle: false,
+              color: fushiStatusColor(context, FushiStatusTone.error),
             ),
             SizedBox(width: tokens.spacing.gap + 4),
             Expanded(child: Text(message, style: tokens.type.listSubtitle)),

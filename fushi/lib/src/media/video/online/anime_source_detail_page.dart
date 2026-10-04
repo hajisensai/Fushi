@@ -440,7 +440,6 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   }
 
   Widget _buildBody(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final Object? error = _error;
     final int resume = _resumeIndex;
     final bool canPlay = !_loading && _episodes.isNotEmpty;
@@ -506,9 +505,11 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Text(
-                  '$error',
-                  style: TextStyle(color: theme.colorScheme.error),
+                // 错误走统一提示条（MD3 中性底 + error 图标 / Apple tertiaryFill
+                // 实色底），不再是一行裸红字。
+                FushiInlineNotice(
+                  severity: FushiNoticeSeverity.error,
+                  message: '$error',
                 ),
                 MihonCloudflareAction(
                   runtime: widget.manager.runtime,

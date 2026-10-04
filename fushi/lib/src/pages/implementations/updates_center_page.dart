@@ -232,6 +232,13 @@ class _UpdateEntryTile extends StatelessWidget {
           DateTime.fromMillisecondsSinceEpoch(publishedAt),
         ),
     ].join(' · ');
+    // 已读图标：MD3 = outline；Apple 下 colorScheme.outline 映射成分隔线色，
+    // 作图标几乎看不见，改用 tertiaryLabel（iOS 弱化图标的系统色）。
+    final Color iconColor = unseen
+        ? theme.colorScheme.primary
+        : (isGlassDesign(context)
+              ? appleColorsOf(context).tertiaryLabel
+              : theme.colorScheme.outline);
     // 走共享的 FushiListItem 而不是裸 ListTile：普通页面外壳的 MD3 决策收口在
     // 组件层（md3_design_system_static_test 守着这条），每页自己拼一遍 ListTile
     // 正是那条守卫要拦的东西。
@@ -255,9 +262,7 @@ class _UpdateEntryTile extends StatelessWidget {
                     kind == null
                         ? Icons.notifications_outlined
                         : updateFeedKindIcon(kind),
-                    color: unseen
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.outline,
+                    color: iconColor,
                   );
                 },
               ),
@@ -266,9 +271,7 @@ class _UpdateEntryTile extends StatelessWidget {
               kind == null
                   ? Icons.notifications_outlined
                   : updateFeedKindIcon(kind),
-              color: unseen
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.outline,
+              color: iconColor,
             ),
       title: Text(
         entry.title,
@@ -294,31 +297,12 @@ class _UpdatesEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(
-              Icons.notifications_none_outlined,
-              size: 48,
-              color: theme.colorScheme.outline,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Text(t.updates_center_empty, style: theme.textTheme.titleMedium),
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.updates_center_empty_hint,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ],
-        ),
-      ),
+    // 统一空态：MD3 中性分组底块 / Apple 无底块大图标 + 灰字，各自在
+    // FushiPlaceholderMessage 里分派；提示语作次级说明。
+    return FushiPlaceholderMessage(
+      icon: Icons.notifications_none_outlined,
+      message: t.updates_center_empty,
+      detail: t.updates_center_empty_hint,
     );
   }
 }

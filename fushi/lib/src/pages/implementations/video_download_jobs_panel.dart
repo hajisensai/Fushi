@@ -480,7 +480,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
             );
           }
           if (!snapshot.hasData) {
-            return const Center(child: FushiCircularProgressIndicator());
+            return const FushiLoadingView();
           }
           final List<VideoDownloadJobRow> jobs = snapshot.data!;
           if (jobs.isEmpty) {
@@ -944,7 +944,12 @@ class _VideoDownloadJobCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
-    final Color statusColor = _statusColor(colors);
+    // Apple：完成是语义绿（单色强调色在 Apple 下是黑 / 白，不表达成功）。
+    final Color statusColor =
+        isGlassDesign(context) &&
+                job.lifecycle == VideoDownloadJobLifecycle.completed
+            ? fushiStatusColor(context, FushiStatusTone.success)
+            : _statusColor(colors);
     final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1487,27 +1492,9 @@ class _MessageState extends StatelessWidget {
   final IconData icon;
   final String message;
 
+  // 空 / 错误态统一走共享占位（MD3 分组底卡 / Apple 无底大图标 + 次级字），
+  // 不再手写 outline 色图标 + 文字。
   @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(icon, size: 40, color: theme.colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      FushiPlaceholderMessage(icon: icon, message: message);
 }

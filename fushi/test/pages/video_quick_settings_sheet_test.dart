@@ -245,10 +245,14 @@ void main() {
 
     // 顶部是五档单选器（无/低/中/高/极高）。
     expect(find.text(t.video_shader_quality_tier), findsOneWidget);
-    expect(find.byType(SegmentedButton<VideoShaderTier>), findsOneWidget);
+    // 单选器是设计系统分派包装 FushiSegmentedButton（MD3 下渲染成 M3 Expressive
+    // 连接式按钮组，墨水屏才是 Material SegmentedButton），按包装类型命中。
+    expect(find.byType(FushiSegmentedButton<VideoShaderTier>), findsOneWidget);
     // 单选器每档都有一个 ButtonSegment（五段互斥单选）。
-    final SegmentedButton<VideoShaderTier> seg =
-        tester.widget<SegmentedButton<VideoShaderTier>>(glassUnwrap<SegmentedButton<VideoShaderTier>>(find.byType(SegmentedButton<VideoShaderTier>)),);
+    final FushiSegmentedButton<VideoShaderTier> seg =
+        tester.widget<FushiSegmentedButton<VideoShaderTier>>(
+      find.byType(FushiSegmentedButton<VideoShaderTier>),
+    );
     expect(seg.segments.map((s) => s.value).toSet(), <VideoShaderTier>{
       VideoShaderTier.off,
       VideoShaderTier.low,
@@ -328,7 +332,7 @@ void main() {
     // 初始默认（highQuality=true + 空启用集）已高亮「低」档；先点「无」（值变化触发回调）：
     // 「无」档零下载——关闭内置缩放 + 空启用集，直接经回调切档、不弹下载框。
     // 档名在选择器分段 + 下方对照表都出现，故须定位到选择器内的分段（对照表只展示不可点）。
-    final Finder selector = find.byType(SegmentedButton<VideoShaderTier>);
+    final Finder selector = find.byType(FushiSegmentedButton<VideoShaderTier>);
     await tester.tap(find.descendant(
         of: selector, matching: find.text(t.video_shader_tier_off)));
     await tester.pumpAndSettle();
@@ -375,8 +379,13 @@ void main() {
     // 不再有左右 master-detail（无 MaterialSupportingPaneLayout / 左栏 FushiListItem）。
     expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
     expect(find.byType(FushiListItem), findsNothing);
-    // 每个分类一个 FushiSelectableChip（六分类 → 至少 6 个）。
-    expect(find.byType(FushiSelectableChip), findsAtLeastNWidgets(6));
+    // 每个分类一个顶栏标签（七分类，按 id key 命中，见上方循环）。
+    expect(
+      find.byWidgetPredicate((Widget w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('video-settings-cat-')),
+      findsAtLeastNWidgets(6),
+    );
 
     // 分类 chip 在上、详情在下（顶栏）：分类条的 dy 必须小于详情的 dy。
     final double categoryY = tester.getTopLeft(_categoryChip('subtitle')).dy;
@@ -441,7 +450,7 @@ void main() {
         icon: Icons.auto_fix_high_outlined,
         label: t.video_settings_cat_shaders
       ),
-      (id: 'mpv', icon: Icons.tune, label: t.video_settings_cat_mpv),
+      (id: 'mpv', icon: Icons.tune, label: t.video_settings_cat_picture),
       (
         id: 'subtitle',
         icon: Icons.subtitles_outlined,
@@ -757,7 +766,7 @@ void main() {
   // 在窄右 pane / 高 UI scale 下被截断。修复后标题是 TextField 上方独立、可换行、
   // 完整显示的 Text；输入框不再走单行浮动 label。
   Future<void> openMpvAdvanced(WidgetTester tester) async {
-    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_picture);
     // mpv 详情是 shrinkWrap 的投影列表，会一次性 build 全部分组（含底部「高级」段），
     // 离屏 widget 仍完成 layout，故无需滚动即可命中并测量标题。
   }
@@ -834,7 +843,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
 
-    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_picture);
 
     // 解码/画质/色彩/重置都内嵌在详情 pane（不是导航行 → pop → 二级对话框）。
     // hwdec 是 picker 行：下拉可能为测宽离屏复刻一份标题，故 findsWidgets。
@@ -853,7 +862,7 @@ void main() {
     VideoMpvConfig? committed;
     await _pumpSheet(tester, onMpvConfigChanged: (c) => committed = c);
 
-    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
+    await _tapCategory(tester, 'mpv', t.video_settings_cat_picture);
 
     // 切「去色带」开关 → 即改即生效回调（无保存按钮）。mpv 分类按 order 排序后
     // 首个 Switch 仍是 deband（hwdec 是 picker 不是 Switch）。
@@ -1318,7 +1327,8 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
 
-    await _tapCategory(tester, 'mpv', t.video_settings_cat_mpv);
+    // mpv 的音频小节（变速保持音高 / 声道 / 归一化）在面板里挪到「音频」页。
+    await _tapCategory(tester, 'audio', t.video_settings_cat_audio);
 
     // 音频分组仍在（变速保持音高 / 声道 / 归一化），但不再有音频延迟行。分组标题
     // 限定在设置分区内命中：顶栏「音频」分类 chip 的全文标签（TODO-1351）与 mpv
@@ -1641,7 +1651,7 @@ void main() {
     // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=28，顶部 card=20（不再贴死），
     // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
     // 故 padding 落在它外层那个 Padding widget 上，按值精确定位。
-    final Finder firstCategoryChip = find.byType(FushiSelectableChip).first;
+    final Finder firstCategoryChip = _categoryChip('playback');
     final Iterable<Padding> categoryPads = tester.widgetList<Padding>(
       find.ancestor(
         of: firstCategoryChip,
@@ -1812,7 +1822,18 @@ void main() {
         2,
       );
       expect(settingsChip, findsOneWidget);
-      expect(find.text(t.video_control_settings), findsNothing);
+      // 舞台上的按钮只画图标；「可用按钮」托盘里的胶囊本来就带名字，不在此列。
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('video-control-editor-preview'),
+          ),
+          matching: find.text(t.video_control_settings),
+        ),
+        findsNothing,
+      );
+      final int namesBefore =
+          find.text(t.video_control_settings).evaluate().length;
       expect(
         tester.getSemantics(settingsChip),
         matchesSemantics(label: t.video_control_settings, isButton: true),
@@ -1820,7 +1841,11 @@ void main() {
 
       await tester.longPress(settingsChip);
       await tester.pumpAndSettle();
-      expect(find.text(t.video_control_settings), findsOneWidget);
+      expect(
+        find.text(t.video_control_settings),
+        findsNWidgets(namesBefore + 1),
+        reason: '长按舞台按钮应弹出名称 tooltip',
+      );
       Tooltip.dismissAllToolTips();
       await tester.pumpAndSettle();
       semantics.dispose();
@@ -2392,8 +2417,8 @@ void main() {
       // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」标签，按固有宽度完整
       // 渲染（allowLabelOverflow，无 ellipsis），放不下由横滑条兜底；TODO-640 的
       // 纯图标 + tooltip 方案废弃，不得回退。
-      expect(src, contains('allowLabelOverflow: true'),
-          reason: '顶栏分类 chip 标签须完整渲染不省略（TODO-1351）');
+      expect(src, contains('overflow: TextOverflow.visible'),
+          reason: '顶栏分类标签须完整渲染不省略（TODO-1351）');
       expect(src, isNot(contains('iconOnly: true')),
           reason: '顶栏分类 chip 不得退回仅图标模式（TODO-1351 用户复诉）');
       expect(src, contains('_buildWideDetailTitle('),

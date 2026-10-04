@@ -352,31 +352,10 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// controller is dead and how to enable it. A styled inline banner (not a
   /// blocking dialog) so it informs without interrupting.
   Widget _buildGameInputHint(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color fg = theme.colorScheme.onSecondaryContainer;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      child: Container(
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.secondaryContainer,
-          borderRadius: tokens.radii.cardRadius,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            FushiIcon(Icons.info_outline, size: 20, color: fg),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Text(
-                t.shortcut_gamepad_unavailable_hint,
-                style: theme.textTheme.bodyMedium?.copyWith(color: fg),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: FushiInlineNotice(message: t.shortcut_gamepad_unavailable_hint),
     );
   }
 

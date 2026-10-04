@@ -1714,10 +1714,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               'MangaSeriesPage.coverDecode',
               '$resolved: $error',
             );
-            return const ColoredBox(
-              color: Color(0xff303030),
-              child: FushiIcon(Icons.menu_book_outlined),
-            );
+            return _coverPlaceholder(context);
           },
         );
       }
@@ -1727,9 +1724,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       final Widget Function(BuildContext)? builder = target.remoteCoverBuilder;
       if (builder != null) return builder(context);
     }
-    return const ColoredBox(
-      color: Color(0xff303030),
-      child: FushiIcon(Icons.menu_book_outlined),
+    return _coverPlaceholder(context);
+  }
+
+  /// 无封面 / 封面解码失败的占位块：跟随主题的中性底（深浅色都可读），
+  /// 不再是写死的深灰 #303030（浅色主题下是突兀的黑块、图标也看不清）。
+  Widget _coverPlaceholder(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: cs.surfaceContainerHighest,
+      child: FushiIcon(Icons.menu_book_outlined, color: cs.onSurfaceVariant),
     );
   }
 

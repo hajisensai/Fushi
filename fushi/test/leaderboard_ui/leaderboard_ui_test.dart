@@ -17,7 +17,7 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
 import 'package:fushi/utils.dart'
-    show FushiDestructiveConfirmDialog, FushiSelectableChip;
+    show FushiDestructiveConfirmDialog, FushiLoadingView, FushiSelectableChip;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -1026,7 +1026,7 @@ void main() {
     await tester.tap(chip(t.leaderboard_window_week));
     await settle(tester);
     expect(weekGates, hasLength(1));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLoadingView), findsOneWidget);
     expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
 
     // 周失败：只在周这一格显示错误，分享不可点；总那一格照旧是卡片。

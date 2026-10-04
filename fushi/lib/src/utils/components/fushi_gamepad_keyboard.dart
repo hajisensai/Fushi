@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -173,24 +174,51 @@ class _KbKeyState extends State<_KbKey> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // Apple：系统键盘的实色键帽（二级分组底、圆角 6、底边 1px 深色键沿、按下
+    // systemFill 高亮、无水波），浮在玻璃底部面板上；MD3 保持 overlay 面 + chip
+    // 圆角 + 水波。键沿那层 DecoratedBox 两套设计系统都在（MD3 是空装饰），
+    // 结构不随设计系统增删。
+    final bool apple = isGlassDesign(context);
+    final FushiAppleColors palette = appleColorsOf(context);
+    final Color keyForeground = apple ? palette.label : colors.onSurface;
+    const BorderRadius appleKeyRadius = BorderRadius.all(Radius.circular(6));
     final Widget key = Padding(
       padding: EdgeInsets.all(tokens.spacing.gap / 4),
-      child: Material(
-        color: tokens.surfaces.overlay,
-        shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: widget.onPress,
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
-            alignment: Alignment.center,
-            child: widget.icon != null
-                ? FushiIcon(widget.icon, size: 20, color: colors.onSurface)
-                : Text(
-                    widget.label,
-                    style: tokens.type.controlLabel
-                        .copyWith(color: colors.onSurface),
+      child: DecoratedBox(
+        decoration: apple
+            ? BoxDecoration(
+                borderRadius: appleKeyRadius,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: palette.opaqueSeparator,
+                    offset: const Offset(0, 1),
                   ),
+                ],
+              )
+            : const BoxDecoration(),
+        child: Material(
+          color: apple
+              ? palette.secondaryGroupedBackground
+              : tokens.surfaces.overlay,
+          shape: RoundedRectangleBorder(
+            borderRadius: apple ? appleKeyRadius : tokens.radii.chipRadius,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: widget.onPress,
+            splashFactory: apple ? NoSplash.splashFactory : null,
+            highlightColor: apple ? palette.fill : null,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
+              alignment: Alignment.center,
+              child: widget.icon != null
+                  ? FushiIcon(widget.icon, size: 20, color: keyForeground)
+                  : Text(
+                      widget.label,
+                      style: tokens.type.controlLabel
+                          .copyWith(color: keyForeground),
+                    ),
+            ),
           ),
         ),
       ),

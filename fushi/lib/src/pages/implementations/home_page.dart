@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
@@ -779,6 +780,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _appleChrome.dispose();
+    _largeTitle.dispose();
+    _shellActions.dispose();
     appModelNoUpdate.videoScrapeControllerResolver = null;
     assert(() {
       HomePage.debugSelectTab = null;
@@ -1380,6 +1384,95 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// Apple 设计系统（iOS 26 / macOS 26）的滚动驱动导航层状态：内容是否滚到
+  /// 顶部 / 底部导航层下面（scroll edge effect）与底部标签栏的最小化。
+  final FushiAppleScrollChrome _appleChrome = FushiAppleScrollChrome();
+
+  /// 外壳大标题条的收起状态（两套设计系统共用）。
+  final FushiLargeTitleCollapse _largeTitle = FushiLargeTitleCollapse();
+
+  /// 外壳大标题条右侧的页头动作槽：库页 / 浏览 / 查词的页头在外壳里时把动作
+  /// 登记到这里（分区页签因此独占整行），可见那份由大标题条画出。
+  final FushiShellActionsSlot _shellActions = FushiShellActionsSlot();
+
+  /// 内容区外包一层滚动观察（喂 [_appleChrome] 与 [_largeTitle]）+ 顶部的
+  /// 页面大标题条（[FushiShellLargeTitleBar]）+ 内容区顶部的 scroll edge 带
+  /// （内容滚上去之后，顶部一段 soft 渐隐；只渐隐不模糊——下面常是静止的
+  /// 页头）。结构恒定：MD3 下同样挂着这层 NotificationListener / Stack，只是
+  /// 不处理通知、不画边缘带，切设计系统不重挂内容子树。
+  Widget _withAppleScrollChrome(Widget content) {
+    _appleChrome.syncScope(_visibleTab);
+    _largeTitle.syncScope(_visibleTab);
+    final bool apple = isGlassDesign(context);
+    return NotificationListener<Notification>(
+      onNotification: (Notification notification) {
+        // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
+        if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+        _largeTitle.handleNotification(notification);
+        return apple && _appleChrome.handleNotification(notification);
+      },
+      // 外壳大标题条在内容之上（库页的分区页签行之上）；条与内容的父层两套
+      // 设计系统、有无标题都恒定，只靠条的高度 / 透明度变化。
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ListenableBuilder(
+            listenable: _largeTitle,
+            builder: (BuildContext context, Widget? _) =>
+                FushiShellLargeTitleBar(
+              title: _shellTitleFor(_visibleTab),
+              collapsed: _largeTitle.collapsed,
+              actions: _shellActions,
+            ),
+          ),
+          Expanded(child: _withAppleTopEdge(content, apple: apple)),
+        ],
+      ),
+    );
+  }
+
+  /// 外壳大标题条下面那条 scroll edge 带（Apple：内容滚上去之后内容区顶部的
+  /// soft 渐隐）。
+  Widget _withAppleTopEdge(Widget content, {required bool apple}) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        content,
+        if (apple)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 14,
+            child: ListenableBuilder(
+              listenable: _appleChrome,
+              builder: (BuildContext context, Widget? _) =>
+                  FushiAppleScrollEdge(
+                side: FushiScrollEdgeSide.top,
+                visible: _appleChrome.contentUnderTop,
+                blur: false,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 外壳为 [tab] 显示的页面大标题：有自己分区页签行、却没有页面名的库页
+  /// （书架 / 漫画 / 视频 / 游戏）与浏览、查词。桌面自绘控制条已不再显示
+  /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、浏览器扩展与设置
+  /// 自带标题或不需要，返回 null。
+  String? _shellTitleFor(HomeTab tab) => switch (tab) {
+        HomeTab.books ||
+        HomeTab.manga ||
+        HomeTab.video ||
+        HomeTab.games ||
+        HomeTab.browse ||
+        HomeTab.dictionaries =>
+          homeNavItemFor(tab).label,
+        HomeTab.home || HomeTab.browserExtension || HomeTab.settings => null,
+      };
+
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
   /// [homeNavItemFor]，保证三处标签/选中图标一致。
   AdaptiveNavItem _navItemFor(HomeTab tab) => homeNavItemFor(tab);
@@ -1513,7 +1606,9 @@ class _HomePageState extends BasePageState<HomePage>
             ),
             Expanded(
               child: _GlassContentSurface(
-                child: FocusTraversalGroup(child: _bodyWithMiniBar()),
+                child: _withAppleScrollChrome(
+                  FocusTraversalGroup(child: _bodyWithMiniBar()),
+                ),
               ),
             ),
           ],
@@ -1580,29 +1675,49 @@ class _HomePageState extends BasePageState<HomePage>
     // body 的 SafeArea 不再吃掉它，列表（ListView / GridView 的默认 padding）
     // 自己把末尾垫到胶囊之上。
     final bool glassDesign = isGlassDesign(context);
+    // Apple（iOS 26）：「查词」是搜索类目的地，拆成胶囊右侧的独立圆形搜索钮
+    // （`Tab(role: .search)`）；下滑时胶囊最小化成只剩当前项的小圆，内容压在
+    // 胶囊下面时底部有一段 scroll edge 渐隐（状态都在 [_appleChrome]）。
+    final int? glassSearchIndex =
+        glassDesign && tabs.contains(HomeTab.dictionaries)
+            ? homeVisualIndexForTab(
+                tabs: tabs,
+                tab: HomeTab.dictionaries,
+                reversed: reversed,
+              )
+            : null;
     return Scaffold(
       resizeToAvoidBottomInset: false,
       extendBody: glassDesign,
       body: _GlassContentSurface(
         child: SafeArea(
           bottom: !glassDesign,
-          child: FocusTraversalGroup(child: _bodyWithMiniBar()),
+          child: _withAppleScrollChrome(
+            FocusTraversalGroup(child: _bodyWithMiniBar()),
+          ),
         ),
       ),
       // The FocusTraversalGroup keeps the bottom-nav isolated as one closed
       // traversal block (TODO-713).
-      bottomNavigationBar: FocusTraversalGroup(
-        child: adaptiveBottomBar(
-          context: context,
-          currentIndex: visualIndex,
-          onTap: (int index) {
-            _selectTabFromNav(homeTabForVisualIndex(
-              tabs: tabs,
-              visualIndex: index,
-              reversed: reversed,
-            ));
-          },
-          items: displayItems,
+      bottomNavigationBar: ListenableBuilder(
+        listenable: _appleChrome,
+        builder: (BuildContext context, Widget? _) => FocusTraversalGroup(
+          child: adaptiveBottomBar(
+            context: context,
+            currentIndex: visualIndex,
+            onTap: (int index) {
+              _selectTabFromNav(homeTabForVisualIndex(
+                tabs: tabs,
+                visualIndex: index,
+                reversed: reversed,
+              ));
+            },
+            items: displayItems,
+            glassMinimized: _appleChrome.minimized,
+            onGlassExpand: _appleChrome.expand,
+            glassContentUnder: _appleChrome.contentUnderBottom,
+            glassSearchIndex: glassSearchIndex,
+          ),
         ),
       ),
     );
@@ -3128,13 +3243,17 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
     };
-    return PrimaryScrollController(
-      controller: _tabScrollControllers.putIfAbsent(
-        tab,
-        ScrollController.new,
+    return FushiShellTitleScope(
+      title: _shellTitleFor(tab),
+      actionsSlot: _shellActions,
+      child: PrimaryScrollController(
+        controller: _tabScrollControllers.putIfAbsent(
+          tab,
+          ScrollController.new,
+        ),
+        automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+        child: content,
       ),
-      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-      child: content,
     );
   }
 

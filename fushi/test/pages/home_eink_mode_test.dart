@@ -345,7 +345,15 @@ void main() {
         _wrap(
           const Row(
             children: <Widget>[
-              RemoteDownloadProgressBadge(progress: null, tooltip: '下载中'),
+              // 进度态铺满封面（自身撑满父级），给一个封面大小的框。
+              SizedBox(
+                width: 120,
+                height: 180,
+                child: RemoteDownloadProgressBadge(
+                  progress: null,
+                  tooltip: '下载中',
+                ),
+              ),
               RemoteDownloadFailedBadge(tooltip: '失败'),
             ],
           ),

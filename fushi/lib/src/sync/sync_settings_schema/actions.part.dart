@@ -110,7 +110,6 @@ class _AssetTransferMenuRow extends StatelessWidget {
   }
 
   Widget _menu(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return FushiOverflowMenu<SyncAssetDirection>(
       tooltip: t.sync_asset_transfer_menu,
       items: <PopupMenuEntry<SyncAssetDirection>>[
@@ -126,22 +125,8 @@ class _AssetTransferMenuRow extends StatelessWidget {
         ),
       ],
       onSelected: (SyncAssetDirection direction) => _run(context, direction),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              t.sync_asset_transfer_menu,
-              style: TextStyle(
-                color: scheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            FushiIcon(Icons.arrow_drop_down, color: scheme.primary),
-          ],
-        ),
-      ),
+      // 共享「文字 + 下拉」触发器（MD3 expand_more / Apple chevron.up.chevron.down）。
+      child: FushiMenuLabelTrigger(label: t.sync_asset_transfer_menu),
     );
   }
 

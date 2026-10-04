@@ -351,23 +351,30 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
             BuildContext context,
             AsyncSnapshot<List<BangumiWatchedItem>> snapshot,
           ) {
+            // 加载 / 失败 / 空走统一占位件（MD3 中性块 / Apple 大图标灰字），
+            // 不再是裸菊花与裸文字。
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: FushiCircularProgressIndicator());
+              return const FushiLoadingView();
             }
             if (snapshot.hasError) {
               return Center(
-                child: Text(
-                  t.media_tracking_watched_load_failed(
+                child: FushiPlaceholderMessage(
+                  icon: Icons.error_outline,
+                  message: t.media_tracking_watched_load_failed(
                     error: snapshot.error!,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               );
             }
             final List<BangumiWatchedItem> watched =
                 snapshot.data ?? const <BangumiWatchedItem>[];
             if (watched.isEmpty) {
-              return Center(child: Text(t.media_tracking_watched_empty));
+              return Center(
+                child: FushiPlaceholderMessage(
+                  icon: Icons.visibility_outlined,
+                  message: t.media_tracking_watched_empty,
+                ),
+              );
             }
             return ListView.separated(
               itemCount: watched.length,
@@ -1655,7 +1662,6 @@ class _HomeDashboardPageState
     _ContinueEntry entry, {
     required bool landscape,
   }) {
-    final bool eink = isEinkTheme(context);
     final double coverWidth =
         landscape ? _kContinueCoverHeight * 16 / 9 : _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
@@ -1703,20 +1709,8 @@ class _HomeDashboardPageState
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        child: IgnorePointer(
-                          // eink：半透明黑轨道压在封面上是抖动灰，改实心页面底色
-                          // 轨道 + 前景色进度，黑白各自一段、无灰阶。
-                          child: FushiLinearProgressIndicator(
-                            value: progress,
-                            minHeight: 3,
-                            backgroundColor: eink
-                                ? tokens.surfaces.page
-                                : Colors.black.withValues(alpha: 0.35),
-                            color: eink
-                                ? tokens.surfaces.onSurface
-                                : tokens.surfaces.primary,
-                          ),
-                        ),
+                        // 轨道 / 进度色（MD3 / Apple 白条 / 墨水屏实色）见共享组件。
+                        child: CoverProgressStrip(value: progress),
                       ),
                   ],
                 ),
@@ -1911,7 +1905,10 @@ class _HomeDashboardPageState
   Widget _coverPlaceholder(FushiDesignTokens tokens, IconData icon) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: tokens.surfaces.card,
+        // Apple：分区卡底与 surfaces.card 同色，占位会整块消失；换中性填充。
+        color: isGlassDesign(context)
+            ? fushiNeutralBlockColor(context)
+            : tokens.surfaces.card,
         border: isEinkTheme(context)
             ? Border.all(color: tokens.surfaces.outline)
             : null,
@@ -2078,8 +2075,9 @@ class _HomeDashboardPageState
             // GitHub 式浅格子。BUG-1276：黑色/自定义主题仍可能把 surface 色阶
             // 压得过近，因此再用 outlineVariant 描边兜底；即使填充与卡底同色，
             // 53 周空格也不会重新融进背景。
-            emptyColor: tokens.surfaces.overlay,
-            emptyBorderColor: tokens.surfaces.outline,
+            // Apple 下换成无边 systemFill 灰格（见 [statHeatmapEmptyColors]）。
+            emptyColor: statHeatmapEmptyColors(context).$1,
+            emptyBorderColor: statHeatmapEmptyColors(context).$2,
             // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
             // 时长段），字数与时长都跟随当前来源筛选。
             valueLabel: (String dateKey, int chars) {
@@ -2210,7 +2208,12 @@ class _HomeDashboardPageState
                   child: FushiLinearProgressIndicator(
                     value: fraction,
                     minHeight: 6,
-                    backgroundColor: tokens.surfaces.card,
+                    // 非墨水屏不传 surfaces.card：它与分区卡底（group）只差一档
+                    // （Apple 下两者同色），轨道整条隐形；交给进度条默认轨道
+                    // （MD3 secondaryContainer / Apple systemFill）。
+                    backgroundColor: isEinkTheme(context)
+                        ? tokens.surfaces.card
+                        : null,
                     color: tokens.surfaces.primary,
                   ),
                 ),
@@ -3231,11 +3234,18 @@ class _HomeDashboardPageState
     // eink：group 面层塌缩成页面底色，四张分区卡（学习活动 / 继续 / 最近添加 /
     // 动态）的边界全没了，整页读成一根连续的列；补 1px 描边（FushiCard 同款）。
     final bool eink = isEinkTheme(context);
+    // Apple：内容层是实色——分区卡用 secondarySystemGroupedBackground（不是半透明
+    // 的 group 令牌）+ inset grouped 圆角（iOS ≈ 24 / 桌面 12），与 FushiCard 同口径。
+    final bool apple = isGlassDesign(context);
     return DecoratedBox(
       decoration: ShapeDecoration(
-        color: tokens.surfaces.group,
+        color: apple
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : tokens.surfaces.group,
         shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.card,
+          borderRadius: apple
+              ? FushiAppleMetrics.of(context).groupBorderRadius
+              : FushiBorderRadius.card,
           side: eink
               ? BorderSide(color: tokens.surfaces.outline)
               : BorderSide.none,
@@ -3339,34 +3349,22 @@ class _MigrationReadonlyBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FushiCard(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(t.migration_readonly_note),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                FushiFilledButton.tonal(
-                  onPressed: () => _channel.launchFushi(),
-                  child: Text(t.migration_open_fushi),
-                ),
-                const SizedBox(width: 8),
-                FushiTextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MigrationPage(appModel: appModel),
-                    ),
-                  ),
-                  child: Text(t.migration_reexport),
-                ),
-              ],
-            ),
-          ],
+    return FushiInlineNotice(
+      message: t.migration_readonly_note,
+      actions: <Widget>[
+        FushiFilledButton.tonal(
+          onPressed: () => _channel.launchFushi(),
+          child: Text(t.migration_open_fushi),
         ),
-      ),
+        FushiTextButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => MigrationPage(appModel: appModel),
+            ),
+          ),
+          child: Text(t.migration_reexport),
+        ),
+      ],
     );
   }
 }
@@ -3452,11 +3450,9 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
     // 在数据早已导完、无事可做的情况下一直被问「检测到迁移数据，现在导入？」。
     if (!_importDone &&
         (_hasTransferData || (_legacyInstalled && !_storageGranted))) {
-      inner = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(t.migration_import_detected),
-          const SizedBox(height: 8),
+      inner = FushiInlineNotice(
+        message: t.migration_import_detected,
+        actions: <Widget>[
           FushiFilledButton.tonal(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -3468,11 +3464,9 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
         ],
       );
     } else if (_importDone && _legacyInstalled) {
-      inner = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(t.migration_uninstall_prompt),
-          const SizedBox(height: 8),
+      inner = FushiInlineNotice(
+        message: t.migration_uninstall_prompt,
+        actions: <Widget>[
           FushiFilledButton.tonal(
             onPressed: () async {
               await _channel.requestUninstall(kHibikiPackageName);
@@ -3487,9 +3481,7 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
     if (inner == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.card),
-      child: FushiCard(
-        child: Padding(padding: const EdgeInsets.all(12), child: inner),
-      ),
+      child: inner,
     );
   }
 }

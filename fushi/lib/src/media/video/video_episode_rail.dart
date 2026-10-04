@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -204,7 +205,9 @@ class _EpisodeRailCard extends StatelessWidget {
             color: borderColor,
             width: selected ? 2 : 1,
           ),
-          boxShadow: selected
+          // Apple：选中只靠强调色描边表达，不画彩色外发光（那是 MD2 的
+          // 光晕语言，iOS 26 的选中卡没有投影）。
+          boxShadow: selected && !isGlassDesign(context)
               ? <BoxShadow>[
                   BoxShadow(
                     color: colorScheme.primary.withValues(alpha: 0.24),

@@ -448,6 +448,24 @@ extension _VideoLayout on _VideoFushiPageState {
                     onLongPressEnd: _handleVideoLongPressEnd,
                     child: Stack(
                       children: <Widget>[
+                        // Apple（iOS / macOS 26）：控制条背后的很淡的顶 / 底暗化 + 底栏液态
+                        // 玻璃胶囊。必须排在 media_kit 控制条**之前**（画在按钮 / 进度条
+                        // 下面、画面上面）；外层 padding 与控制条同源（BUG-1783），显隐跟
+                        // 控制条同一个 notifier、同速淡入淡出。MD3 / 墨水屏下是零尺寸盒。
+                        Positioned.fill(
+                          child: Padding(
+                            padding: _videoControlsChromeInsets(),
+                            child: VideoAppleChromeBackdrop(
+                              enabled: _appleChrome,
+                              visible: _videoControlsVisible,
+                              duration: _videoControlsTransitionDuration,
+                              capsule: _appleCapsuleGeometry(),
+                              showTopScrim: _controlsDensity.showTopBar,
+                              showBottomScrim:
+                                  _controlsDensity.showBottomButtonBar,
+                            ),
+                          ),
+                        ),
                         // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
                         // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
                         // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
@@ -891,19 +909,24 @@ extension _VideoLayout on _VideoFushiPageState {
       // 用户嫌左 / 右浮条按钮的圆底碍眼，要求只留裸图标浮在画面上。IconButton 自带
       // InkWell 仍提供点击涟漪，故去掉 Material 容器不丢点击反馈。图标仍走主题强调色
       // cs.primary + iconSize 走 _videoControlIconSize（吃 appUiScale，TODO-388/604 不变）。
-      final Widget button = FushiIconButtonControl(
-        tooltip: _videoControlItemTooltip(item),
-        iconSize: _videoControlIconSize,
-        icon: FushiIcon(_videoControlItemIcon(item)),
-        // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
-        // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
-        // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
-        color: _videoChromeAccent(cs),
-        onPressed: () => _activateVideoControlItem(
-          item,
-          controller,
-          popoverLink: popoverLink,
-          sourceSlot: slot,
+      // Apple：浮在画面上的单钮是一枚透明液态玻璃圆钮（iOS 26 悬浮控件），
+      // 玻璃垫在按钮背后；MD3 下玻璃层为空，仍是 TODO-635 的裸图标。
+      final Widget button = VideoGlassSurface(
+        enabled: _appleChrome,
+        child: FushiIconButtonControl(
+          tooltip: _videoControlItemTooltip(item),
+          iconSize: _videoControlIconSize,
+          icon: FushiIcon(_videoControlItemIcon(item)),
+          // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
+          // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
+          // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
+          color: _videoChromeAccent(cs),
+          onPressed: () => _activateVideoControlItem(
+            item,
+            controller,
+            popoverLink: popoverLink,
+            sourceSlot: slot,
+          ),
         ),
       );
       if (popoverLink == null) return button;
@@ -1052,6 +1075,7 @@ extension _VideoLayout on _VideoFushiPageState {
   /// （与字幕跳转面板 / OSD 同源，BUG-120）。
   Widget _buildSideLockButton() {
     final ColorScheme cs = _videoChromeColorScheme(context);
+    final bool apple = _appleChrome;
     final double iconSize = _videoControlIconSize;
     return Positioned(
       left: 0,
@@ -1089,12 +1113,19 @@ extension _VideoLayout on _VideoFushiPageState {
                       // 与屏幕右侧 rail 的 [_railHoverKeepAlive] 同款（用户要求「改成和屏幕
                       // 右侧按钮一样」）。
                       child: _lockButtonHoverKeepAlive(
-                        child: Material(
+                        // Apple：锁钮是一枚透明液态玻璃圆钮 + 白色字形（玻璃垫在
+                        // 背后，Material 圆底换成透明只留裁切）；MD3 不变。
+                        child: VideoGlassSurface(
+                          enabled: apple,
+                          child: Material(
                           // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
                           // 仍按主题自配对；alpha 收敛进两档制的半透明档
                           // （UI 巡检 PR-4，此前 0.55 独立一档）。
-                          color: cs.surface
-                              .withValues(alpha: kVideoOverlayTranslucentAlpha),
+                          color: apple
+                              ? Colors.transparent
+                              : cs.surface.withValues(
+                                  alpha: kVideoOverlayTranslucentAlpha,
+                                ),
                           shape: const CircleBorder(),
                           clipBehavior: Clip.antiAlias,
                           child: FushiIconButtonControl(
@@ -1104,7 +1135,7 @@ extension _VideoLayout on _VideoFushiPageState {
                             iconSize: iconSize,
                             // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
                             // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
-                            color: cs.primary,
+                            color: apple ? videoChromeNeutralForeground : cs.primary,
                             // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
                             icon: FushiIcon(
                               locked
@@ -1113,6 +1144,7 @@ extension _VideoLayout on _VideoFushiPageState {
                             ),
                             onPressed: _toggleImmersiveLock,
                           ),
+                        ),
                         ),
                       ),
                     ),

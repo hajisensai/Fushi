@@ -428,7 +428,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(16),
-            child: Center(child: FushiCircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiLoadingView(compact: true)),
           );
         }
         final List<JellyfinServerConfig> servers =
@@ -593,6 +593,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                         )
                       : FushiTextButton(
                           onPressed: () => _signOut(config),
+                          destructive: true,
                           child: Text(t.jellyfin_sign_out),
                         ),
                 ),
@@ -676,7 +677,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(12),
-            child: Center(child: FushiCircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiLoadingView(compact: true)),
           );
         }
         if (snapshot.hasError) {

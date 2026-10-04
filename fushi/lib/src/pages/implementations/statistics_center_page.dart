@@ -300,11 +300,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   Widget _buildBody(FushiDesignTokens tokens) {
     if (_loading) {
-      return Center(
-        child: FushiCircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      );
+      return const FushiLoadingView();
     }
     if (_error != null) {
       return Center(child: Text(_error!, style: tokens.type.metadata));
@@ -520,8 +516,10 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
                 child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 6,
-                  backgroundColor: tokens.surfaces.card,
-                  color: tokens.surfaces.primary,
+                  // 轨道不传 surfaces.card：它与外层 FushiCard 同一档面色，整条
+                  // 隐形；用进度条默认轨道（MD3 secondaryContainer / Apple
+                  // systemFill）。
+                  color: statChartColorsOf(context).series,
                 ),
               ),
             ),

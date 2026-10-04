@@ -180,6 +180,16 @@ class _DownloadBackendSetupDialogState
   }
 
   Widget _note(ThemeData theme, String text, {bool warning = false}) {
+    // 警告走共享提示条（语义只上在图标色上），不再整段红字。
+    if (warning) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: FushiInlineNotice(
+          severity: FushiNoticeSeverity.warning,
+          message: text,
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(

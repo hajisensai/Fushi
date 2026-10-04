@@ -73,12 +73,23 @@ class AudiobookPlayBar extends StatelessWidget {
     // 前景色时（c3dbe59a1）用 12% tonal 底 + 满前景色，保证任何纸张主题上都有
     // 对比度且不泄漏 app Material 主题的 secondaryContainer；为 null 时回退到
     // filledTonal 的默认 secondaryContainer/onSecondaryContainer 配色。
-    final ButtonStyle? playStyle = fg != null
-        ? IconButton.styleFrom(
-            backgroundColor: fg.withValues(alpha: 0.12),
-            foregroundColor: fg,
-          )
-        : null;
+    //
+    // Apple：iOS 播放键的 `.glassProminent` 形态——纸张前景色实心圆 + 反色
+    // 字形（不透明前景色经 [fushiGlassFill] 的 tint 档按 0.82 重铺）。不用
+    // 12% 前景色的轻着色：玻璃本身已是中性灰底，再叠一层淡色圆对比度不够。
+    final ButtonStyle? playStyle = fg == null
+        ? null
+        : isGlassDesign(context)
+            ? ButtonStyle(
+                backgroundColor: WidgetStatePropertyAll<Color>(fg),
+                foregroundColor: WidgetStatePropertyAll<Color>(
+                  appleOnAccent(fg.withValues(alpha: 1)),
+                ),
+              )
+            : IconButton.styleFrom(
+                backgroundColor: fg.withValues(alpha: 0.12),
+                foregroundColor: fg,
+              );
     // 上一句/下一句、设置齿轮按旧版是无框原生 [IconButton]（仅图标），纸张主题
     // 前景色经 [IconButton.styleFrom] 的 foregroundColor 注入。
     final ButtonStyle? flatStyle =

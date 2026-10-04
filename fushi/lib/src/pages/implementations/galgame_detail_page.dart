@@ -201,7 +201,12 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     if (game == null) {
       return Scaffold(
         appBar: FushiAppBar(),
-        body: Center(child: Text(t.game_detail_missing)),
+        body: Center(
+          child: FushiPlaceholderMessage(
+            icon: Icons.videogame_asset_off_outlined,
+            message: t.game_detail_missing,
+          ),
+        ),
       );
     }
     return Scaffold(
@@ -289,20 +294,24 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
-  /// 封面块：max 宽 160 / max 高 260 / 圆角 / 大阴影（契约 §2）。
+  /// 封面块：max 宽 160 / max 高 260 / 圆角 / 柔和单层阴影（契约 §2）。
+  /// 原 0.28 / blur 18 / 下移 8 的重投影是 MD2 观感；收成极淡的单层阴影，
+  /// 封面仍与背景分离但不再「浮起」。墨水屏不画阴影（灰阶投影 = 脏污）。
   Widget _coverBlock(BuildContext context, GalgameEntry game) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 160, maxHeight: 260),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: FushiBorderRadius.card,
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: isEinkTheme(context)
+            ? null
+            : <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 12,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: AspectRatio(
         aspectRatio: 3 / 4,
@@ -592,22 +601,31 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            _kpi(theme, t.game_stat_total_time,
-                formatStatTime(game.totalPlaySeconds * 1000)),
-            _kpi(theme, t.game_stat_sessions, '${game.sessionCount}'),
-            _kpi(
-                theme, t.game_stat_today, formatStatTime(_todaySeconds * 1000)),
-            _kpi(
-              theme,
-              t.game_stat_last_played,
-              game.lastPlayedMs <= 0
-                  ? t.game_never_played
-                  : formatGalgameDate(
-                      DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs)),
+        // 四个 KPI 收进一块中性信息底（MD3 surfaceContainerHigh r12 / Apple
+        // tertiaryFill r10）：裸文字行与下方折线图、会话列表没有分组边界，
+        // 读起来像散落的标签。两套设计系统都包这一层，结构恒定。
+        DecoratedBox(
+          decoration: fushiNeutralBlockDecoration(context),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: <Widget>[
+                _kpi(theme, t.game_stat_total_time,
+                    formatStatTime(game.totalPlaySeconds * 1000)),
+                _kpi(theme, t.game_stat_sessions, '${game.sessionCount}'),
+                _kpi(
+                    theme, t.game_stat_today, formatStatTime(_todaySeconds * 1000)),
+                _kpi(
+                  theme,
+                  t.game_stat_last_played,
+                  game.lastPlayedMs <= 0
+                      ? t.game_never_played
+                      : formatGalgameDate(
+                          DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs)),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         const SizedBox(height: 20),
         Row(

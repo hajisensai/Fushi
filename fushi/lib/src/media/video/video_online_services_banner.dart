@@ -71,42 +71,24 @@ class _VideoOnlineServicesBannerState extends State<VideoOnlineServicesBanner> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      child: FushiCard(
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.rowHorizontal,
-            vertical: tokens.spacing.rowVertical,
+      child: FushiInlineNotice(
+        title: t.video_online_services_setup_title,
+        message: t.video_online_services_setup_description,
+        actions: <Widget>[
+          FushiTextButton.icon(
+            onPressed: _openOverview,
+            icon: const FushiIcon(Icons.info_outline),
+            label: Text(t.video_online_services_setup_register),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(t.video_online_services_setup_title,
-                  style: Theme.of(context).textTheme.titleSmall),
-              SizedBox(height: tokens.spacing.gap),
-              Text(t.video_online_services_setup_description),
-              SizedBox(height: tokens.spacing.gap),
-              Wrap(
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: <Widget>[
-                  FushiTextButton.icon(
-                    onPressed: _openOverview,
-                    icon: const FushiIcon(Icons.info_outline),
-                    label: Text(t.video_online_services_setup_register),
-                  ),
-                  FushiFilledButton.tonal(
-                    onPressed: _openSettings,
-                    child: Text(t.video_online_services_setup_settings),
-                  ),
-                  FushiTextButton(
-                    onPressed: _dismiss,
-                    child: Text(t.video_online_services_setup_dismiss),
-                  ),
-                ],
-              ),
-            ],
+          FushiFilledButton.tonal(
+            onPressed: _openSettings,
+            child: Text(t.video_online_services_setup_settings),
           ),
-        ),
+          FushiTextButton(
+            onPressed: _dismiss,
+            child: Text(t.video_online_services_setup_dismiss),
+          ),
+        ],
       ),
     );
   }

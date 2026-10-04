@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -504,10 +505,11 @@ class _WorkbenchPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 警告走共享标签的语义状态（MD3 harmonize 橙淡底 / Apple systemOrange
+    // 淡底 / 墨水屏描边），不再手拼 surface 色调 + 选中描边。
     return FushiTagChip(
       label: '$label: $value',
-      color: warning ? colors.tertiaryContainer : null,
+      status: warning ? FushiStatusTone.warning : null,
     );
   }
 }
@@ -853,7 +855,7 @@ class _GalAttachedCalibrationDialogState
                         !_previewCurrent ||
                             widget.controller.calibrationStatus ==
                                 GalAttachedCalibrationStatus.failed
-                        ? Theme.of(context).colorScheme.error
+                        ? fushiStatusColor(context, FushiStatusTone.error)
                         : null,
                   ),
                 ),
@@ -1118,7 +1120,9 @@ class _GalAttachedCalibrationDialogState
               if (_error != null)
                 Text(
                   _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  style: TextStyle(
+                    color: fushiStatusColor(context, FushiStatusTone.error),
+                  ),
                 ),
             ],
           ),

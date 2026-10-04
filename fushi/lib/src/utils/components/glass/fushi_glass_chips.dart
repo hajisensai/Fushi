@@ -4,15 +4,21 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassButton, GlassButtonStyle, LiquidRoundedRectangle;
 
 // 标签族（Chip / ChoiceChip / FilterChip / ActionChip / InputChip）的「设计系统
 // 分派」包装：构造参数与 Material 原控件逐个同名同型（含 `.elevated`），调用点
-// 只改类名。MD3 下原样构造原控件；「玻璃」设计系统下渲染 iOS 26 的胶囊标签。
+// 只改类名。MD3 下构造原控件，外观由全局 chipTheme 统一（全胶囊、高 32、未选中
+// surfaceContainerHigh 无描边、选中 secondaryContainer，FilterChip 带对勾）；
+// 「玻璃」设计系统下渲染 iOS 26 的胶囊标签。
 //
-// iOS 26 的标签是**内容层控件，不是玻璃**（Apple 26：玻璃只给浮在内容上的
-// 导航与控件层）：未选中 = systemFill 中性填充 + label 色文字，选中 = 强调色
-// 实底 + 白字，高 32（桌面 28），全胶囊、无描边。可交互的标签自带焦点节点
+// 可交互标签是液态玻璃胶囊（用户 2026-10-04：「所有组件都要往液态玻璃靠」）：
+// 未选中 = 透明玻璃 + label 色文字，选中 = 强调色着色玻璃 + 反色字，高 32
+// （桌面 28），全胶囊、库的按压拉伸；系统降低透明度时回落实色胶囊
+// （systemFill / 强调色实底）。纯展示标签恒为实色灰胶囊。可交互的标签自带焦点节点
 // （Tab 可达、Enter / 手柄 A → ActivateIntent），与全局焦点导航同一条激活链路。
 //
 // 命名：仓库已有共享组件 `FushiActionChip`（fushi_material_components.dart），
@@ -48,6 +54,7 @@ Widget _glassChip(
   FocusNode? focusNode,
   bool autofocus = false,
   String? tooltip,
+  bool focusable = true,
 }) {
   final ThemeData theme = Theme.of(context);
   final FushiAppleColors apple = appleColorsOf(context);
@@ -146,12 +153,22 @@ Widget _glassChip(
     ),
   );
 
+  // 可交互的标签是液态玻璃胶囊（用户 2026-10-04：「所有组件都要往液态玻璃
+  // 靠」）：未选中 = 透明玻璃，选中 = 强调色着色玻璃；系统降低透明度（材质
+  // off）时回落实色胶囊。纯展示标签恒为实色灰胶囊。
+  final bool glass =
+      interactive && glassMaterialOf(context) != FushiGlassMaterial.off;
+  final bool customUnselected =
+      !selected && (stateFill != null || backgroundColor != null);
   Widget chip = _AppleChip(
     interactive: interactive,
+    glass: glass,
+    glassTint: selected || customUnselected ? fill : null,
     enabled: enabled,
     onTap: onTap,
     focusNode: focusNode,
     autofocus: autofocus,
+    focusable: focusable,
     fill: fill,
     height: height,
     child: content,
@@ -174,9 +191,24 @@ class _AppleChip extends StatefulWidget {
     required this.fill,
     required this.height,
     required this.child,
+    this.focusable = true,
+    this.glass = false,
+    this.glassTint,
   });
 
   final bool interactive;
+
+  /// true：画成液态玻璃胶囊（库的 [GlassButton]，带按压拉伸），而不是实色
+  /// [fill] 胶囊。
+  final bool glass;
+
+  /// 玻璃的着色（选中 = 强调色）；null = 透明玻璃。
+  final Color? glassTint;
+
+  /// false：可点但不自带焦点节点——外层已经有焦点目标（共享 chip 在
+  /// FushiFocusRoot 里由 FushiFocusTarget 接管焦点与 ActivateIntent），再带一个
+  /// 会让 Tab 在同一枚 chip 上停两次。
+  final bool focusable;
   final bool enabled;
   final VoidCallback? onTap;
   final FocusNode? focusNode;
@@ -202,6 +234,7 @@ class _AppleChipState extends State<_AppleChip> {
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final BorderRadius radius = BorderRadius.circular(widget.height / 2);
+    if (widget.glass && widget.interactive) return _buildGlass(context, apple);
     Widget pill = ConstrainedBox(
       constraints: BoxConstraints(minHeight: widget.height),
       child: DecoratedBox(
@@ -224,6 +257,24 @@ class _AppleChipState extends State<_AppleChip> {
     );
     if (!widget.interactive) return pill;
     final bool tappable = widget.enabled && widget.onTap != null;
+    final Widget gesture = Semantics(
+      button: true,
+      enabled: widget.enabled,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: tappable ? (_) => _setPressed(true) : null,
+        onTapUp: tappable ? (_) => _setPressed(false) : null,
+        onTapCancel: tappable ? () => _setPressed(false) : null,
+        onTap: tappable ? widget.onTap : null,
+        child: pill,
+      ),
+    );
+    if (!widget.focusable) {
+      return MouseRegion(
+        cursor: tappable ? SystemMouseCursors.click : MouseCursor.defer,
+        child: gesture,
+      );
+    }
     return FocusableActionDetector(
       enabled: widget.enabled,
       focusNode: widget.focusNode,
@@ -240,20 +291,111 @@ class _AppleChipState extends State<_AppleChip> {
       onShowFocusHighlight: (bool value) {
         setState(() => _focusHighlight = value);
       },
-      child: Semantics(
-        button: true,
-        enabled: widget.enabled,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: tappable ? (_) => _setPressed(true) : null,
-          onTapUp: tappable ? (_) => _setPressed(false) : null,
-          onTapCancel: tappable ? () => _setPressed(false) : null,
-          onTap: tappable ? widget.onTap : null,
-          child: pill,
+      child: gesture,
+    );
+  }
+
+  /// 液态玻璃形态：外形、按压拉伸与高光交给库的 [GlassButton]（与 GlassChip
+  /// 同参：胶囊、interactionScale 1.03、stretch 0.3）；焦点与 [ActivateIntent]
+  /// 仍由外层 FocusableActionDetector 接（GlassButton 自己不取焦点），键盘焦点
+  /// 画一圈强调色描边。
+  Widget _buildGlass(BuildContext context, FushiAppleColors apple) {
+    final bool tappable = widget.enabled && widget.onTap != null;
+    final BorderRadius radius = BorderRadius.circular(widget.height / 2);
+    Widget body = IntrinsicWidth(
+      child: IntrinsicHeight(
+        child: GlassButton.custom(
+          onTap: tappable ? widget.onTap! : () {},
+          enabled: widget.enabled,
+          style: widget.glassTint != null
+              ? GlassButtonStyle.prominent
+              : GlassButtonStyle.filled,
+          settings: fushiGlassSettings(context, tint: widget.glassTint),
+          quality: fushiGlassQuality(context),
+          shape: const LiquidRoundedRectangle(borderRadius: 100),
+          interactionScale: 1.03,
+          stretch: 0.3,
+          canRequestFocus: false,
+          excludeFromSemantics: true,
+          width: double.infinity,
+          height: double.infinity,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: widget.height),
+            child: Center(widthFactor: 1, heightFactor: 1, child: widget.child),
+          ),
         ),
       ),
     );
+    body = DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: _focusHighlight
+            ? Border.all(color: apple.accent, width: 2)
+            : null,
+      ),
+      child: body,
+    );
+    body = Opacity(opacity: widget.enabled ? 1 : 0.4, child: body);
+    body = Semantics(button: true, enabled: widget.enabled, child: body);
+    if (!widget.focusable) return body;
+    return FocusableActionDetector(
+      enabled: widget.enabled,
+      focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
+      mouseCursor: tappable ? SystemMouseCursors.click : MouseCursor.defer,
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            if (tappable) widget.onTap!();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (bool value) {
+        setState(() => _focusHighlight = value);
+      },
+      child: body,
+    );
   }
+}
+
+/// 共享 chip（`fushi_material_components.dart` 的 FushiSelectableChip /
+/// FushiActionChip / FushiTagChip）在 Apple 设计系统下的渲染入口：与
+/// [FushiChoiceChip] 等包装同一枚胶囊（可交互时是液态玻璃：未选中透明玻璃 +
+/// label 字，选中强调色着色玻璃 + 反色字，高 32 / 桌面 28；降低透明度时回落
+/// 实色胶囊）。
+///
+/// [onTap] 与 [onDeleted] 都为 null 时是纯展示标签（不进焦点链、不显禁用态）。
+/// [focusable] 为 false 时不自带焦点节点（调用方外层已有焦点目标）。
+Widget fushiAppleChip(
+  BuildContext context, {
+  required Widget label,
+  required VoidCallback? onTap,
+  bool selected = false,
+  Widget? avatar,
+  Color? selectedColor,
+  Color? backgroundColor,
+  IconThemeData? iconTheme,
+  VoidCallback? onDeleted,
+  String? tooltip,
+  bool focusable = true,
+}) {
+  return _glassChip(
+    context,
+    label: label,
+    interactive: onTap != null || onDeleted != null,
+    enabled: true,
+    onTap: onTap,
+    avatar: avatar,
+    selected: selected,
+    selectedColor: selectedColor,
+    backgroundColor: backgroundColor,
+    iconTheme: iconTheme,
+    onDeleted: onDeleted,
+    tooltip: tooltip,
+    focusable: focusable,
+  );
 }
 
 /// [Chip] 的设计系统分派版。
@@ -576,6 +718,17 @@ class FushiChoiceChip extends StatelessWidget {
   }
 }
 
+/// [FushiFilterChip] 的语义色调。
+enum FushiFilterChipTone {
+  /// 普通筛选：选中 = 包含。
+  include,
+
+  /// 排除态（三态筛选「未选 → 包含 → 排除」的第三态）：MD3 errorContainer 底 +
+  /// 减号；Apple 中性灰底 + destructive 色减号（iOS 不铺饱和红块）。排除态
+  /// 恒按「选中」渲染、不画对勾，调用方传不传 [FushiFilterChip.selected] 都行。
+  exclude,
+}
+
 /// [FilterChip] 的设计系统分派版（含 `.elevated`）。
 class FushiFilterChip extends StatelessWidget {
   const FushiFilterChip({
@@ -616,6 +769,7 @@ class FushiFilterChip extends StatelessWidget {
     this.deleteIconBoxConstraints,
     this.chipAnimationStyle,
     this.mouseCursor,
+    this.tone = FushiFilterChipTone.include,
   }) : _elevated = false;
 
   const FushiFilterChip.elevated({
@@ -656,6 +810,7 @@ class FushiFilterChip extends StatelessWidget {
     this.deleteIconBoxConstraints,
     this.chipAnimationStyle,
     this.mouseCursor,
+    this.tone = FushiFilterChipTone.include,
   }) : _elevated = true;
 
   final Widget? avatar;
@@ -694,28 +849,44 @@ class FushiFilterChip extends StatelessWidget {
   final BoxConstraints? deleteIconBoxConstraints;
   final ChipAnimationStyle? chipAnimationStyle;
   final MouseCursor? mouseCursor;
+
+  /// 语义色调，默认 [FushiFilterChipTone.include]（与原 FilterChip 完全一致）。
+  final FushiFilterChipTone tone;
   final bool _elevated;
 
   @override
   Widget build(BuildContext context) {
+    final bool exclude = tone == FushiFilterChipTone.exclude;
     if (isGlassDesign(context)) {
       final ValueChanged<bool>? select = onSelected;
+      // 排除态：不走强调色选中底，换中性灰底 + destructive 减号；选中对勾
+      // 会顶掉 avatar，所以排除态不画对勾。
+      final FushiAppleColors? apple = exclude ? appleColorsOf(context) : null;
       return _glassChip(
         context,
         label: label,
         interactive: true,
         enabled: select != null,
         onTap: select == null ? null : () => select(!selected),
-        avatar: avatar,
+        avatar: apple != null
+            ? (avatar ??
+                  FushiIcon(
+                    CupertinoIcons.minus,
+                    size: 16,
+                    color: apple.destructive,
+                  ))
+            : avatar,
         labelStyle: labelStyle,
         padding: padding,
         labelPadding: labelPadding,
         visualDensity: visualDensity,
-        selected: selected,
-        showCheckmark: showCheckmark ?? true,
+        selected: selected && !exclude,
+        showCheckmark: exclude ? false : (showCheckmark ?? true),
         checkmarkColor: checkmarkColor,
         selectedColor: selectedColor,
-        backgroundColor: backgroundColor,
+        backgroundColor: apple != null
+            ? (backgroundColor ?? apple.secondaryFill)
+            : backgroundColor,
         disabledColor: disabledColor,
         color: color,
         iconTheme: iconTheme,
@@ -728,13 +899,32 @@ class FushiFilterChip extends StatelessWidget {
         tooltip: tooltip,
       );
     }
+    // MD3 filter chip 选中带前导对勾；全局 chipTheme 关掉了对勾（单选 ChoiceChip
+    // 靠填充表达），这里在未显式指定时打开。
+    // 排除态：errorContainer 底 + onErrorContainer 减号与文字，不画对勾（对勾
+    // 会顶掉减号）。
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Widget? effectiveAvatar = exclude
+        ? (avatar ??
+              FushiIcon(Icons.remove, size: 18, color: scheme.onErrorContainer))
+        : avatar;
+    final bool effectiveSelected = selected || exclude;
+    final Color? effectiveSelectedColor = exclude
+        ? (selectedColor ?? scheme.errorContainer)
+        : selectedColor;
+    final TextStyle? effectiveLabelStyle = exclude
+        ? (labelStyle ?? const TextStyle()).copyWith(
+            color: labelStyle?.color ?? scheme.onErrorContainer,
+          )
+        : labelStyle;
+    final bool effectiveShowCheckmark = exclude ? false : (showCheckmark ?? true);
     if (_elevated) {
       return FilterChip.elevated(
-        avatar: avatar,
+        avatar: effectiveAvatar,
         label: label,
-        labelStyle: labelStyle,
+        labelStyle: effectiveLabelStyle,
         labelPadding: labelPadding,
-        selected: selected,
+        selected: effectiveSelected,
         onSelected: onSelected,
         deleteIcon: deleteIcon,
         onDeleted: onDeleted,
@@ -742,7 +932,7 @@ class FushiFilterChip extends StatelessWidget {
         deleteButtonTooltipMessage: deleteButtonTooltipMessage,
         pressElevation: pressElevation,
         disabledColor: disabledColor,
-        selectedColor: selectedColor,
+        selectedColor: effectiveSelectedColor,
         tooltip: tooltip,
         side: side,
         shape: shape,
@@ -759,7 +949,7 @@ class FushiFilterChip extends StatelessWidget {
         surfaceTintColor: surfaceTintColor,
         iconTheme: iconTheme,
         selectedShadowColor: selectedShadowColor,
-        showCheckmark: showCheckmark,
+        showCheckmark: effectiveShowCheckmark,
         checkmarkColor: checkmarkColor,
         avatarBorder: avatarBorder,
         avatarBoxConstraints: avatarBoxConstraints,
@@ -769,11 +959,11 @@ class FushiFilterChip extends StatelessWidget {
       );
     }
     return FilterChip(
-      avatar: avatar,
+      avatar: effectiveAvatar,
       label: label,
-      labelStyle: labelStyle,
+      labelStyle: effectiveLabelStyle,
       labelPadding: labelPadding,
-      selected: selected,
+      selected: effectiveSelected,
       onSelected: onSelected,
       deleteIcon: deleteIcon,
       onDeleted: onDeleted,
@@ -781,7 +971,7 @@ class FushiFilterChip extends StatelessWidget {
       deleteButtonTooltipMessage: deleteButtonTooltipMessage,
       pressElevation: pressElevation,
       disabledColor: disabledColor,
-      selectedColor: selectedColor,
+      selectedColor: effectiveSelectedColor,
       tooltip: tooltip,
       side: side,
       shape: shape,
@@ -798,7 +988,7 @@ class FushiFilterChip extends StatelessWidget {
       surfaceTintColor: surfaceTintColor,
       iconTheme: iconTheme,
       selectedShadowColor: selectedShadowColor,
-      showCheckmark: showCheckmark,
+      showCheckmark: effectiveShowCheckmark,
       checkmarkColor: checkmarkColor,
       avatarBorder: avatarBorder,
       avatarBoxConstraints: avatarBoxConstraints,

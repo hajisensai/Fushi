@@ -1,10 +1,18 @@
+import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiTitleBarColorScope;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -26,17 +34,43 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 /// 圆形玻璃钮的直径（iOS 26 导航栏 bar button 实测 44）。
 const double _kGlassBarControlExtent = 44;
 
+/// 栏上玻璃控件里的图标字号（SF Symbols 在 44 圆钮 / 胶囊里实测 ≈ 19–20）。
+const double _kGlassBarIconSize = 20;
+
+/// 玻璃顶栏 leading 槽的宽：44 圆钮 + 离屏幕边 16（iOS 26 导航栏边距）。
+const double _kGlassLeadingWidth = _kGlassBarControlExtent + 16;
+
+/// 顶栏 scroll edge 带的高度（顶栏下沿往内容里延伸的那段渐隐）。
+const double _kGlassTopEdgeExtent = 20;
+
+/// SliverAppBar 在栏内下沿留出的 scroll edge 段：钉住后内容就在栏下面滚，
+/// 这一段从实色渐隐成透明。
+const double _kGlassSliverEdgeExtent = 16;
+
 /// 玻璃顶栏上的一枚圆形玻璃底（返回键 / 单个导航钮）：里面的
 /// [FushiIconButtonControl] 是透明玻璃按钮，焦点 / Enter / 语义都在它身上。
-Widget _glassCircle(BuildContext context, Widget child) {
-  return Center(
+/// [alignment] 让 leading 槽里的圆钮贴着离屏幕边 16 的位置（槽宽
+/// [_kGlassLeadingWidth]），而不是在 56 宽的槽里居中。
+Widget _glassCircle(
+  BuildContext context,
+  Widget child, {
+  AlignmentGeometry alignment = Alignment.center,
+}) {
+  return Align(
+    alignment: alignment,
     child: SizedBox.square(
       dimension: _kGlassBarControlExtent,
       child: GlassContainer(
         useOwnLayer: true,
         quality: fushiGlassQuality(context),
         shape: const LiquidOval(),
-        child: Center(child: child),
+        child: IconTheme.merge(
+          data: IconThemeData(
+            size: _kGlassBarIconSize,
+            color: appleColorsOf(context).label,
+          ),
+          child: Center(child: child),
+        ),
       ),
     ),
   );
@@ -46,9 +80,15 @@ Widget _glassCircle(BuildContext context, Widget child) {
 /// 胶囊收成圆）。子组件原样挂在 Row 里，GlobalKey / 焦点 / 菜单锚点都不变；
 /// 只是高度从 AppBar 的 stretch 改成胶囊内的 44 松约束。
 Widget _glassActionsCapsule(BuildContext context, List<Widget> actions) {
+  // 胶囊离屏幕边与 leading 圆钮对称：移动 16（iOS 导航栏边距）、桌面 12；
+  // 胶囊里的图标统一 20 号 label 色（SF Symbols 在 bar button 里的字号），
+  // 钮与钮之间不再另加缝——每枚钮自带 40–44 的点按区，排在一起就是 iOS
+  // UIBarButtonItemGroup 的间距。
   return Center(
     child: Padding(
-      padding: const EdgeInsetsDirectional.only(end: 8),
+      padding: EdgeInsetsDirectional.only(
+        end: _isDesktopBar(context) ? 12 : 16,
+      ),
       child: GlassContainer(
         useOwnLayer: true,
         quality: fushiGlassQuality(context),
@@ -63,7 +103,13 @@ Widget _glassActionsCapsule(BuildContext context, List<Widget> actions) {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+            child: IconTheme.merge(
+              data: IconThemeData(
+                size: _kGlassBarIconSize,
+                color: appleColorsOf(context).label,
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+            ),
           ),
         ),
       ),
@@ -107,6 +153,7 @@ Widget? _impliedGlassLeading(BuildContext context) {
   if (scaffold?.hasDrawer ?? false) {
     return _glassCircle(
       context,
+      alignment: AlignmentDirectional.centerEnd,
       FushiIconButtonControl(
         icon: FushiIcon(CupertinoIcons.line_horizontal_3, color: fg, size: 20),
         tooltip: l10n.openAppDrawerTooltip,
@@ -119,6 +166,7 @@ Widget? _impliedGlassLeading(BuildContext context) {
         parentRoute is PageRoute<dynamic> && parentRoute.fullscreenDialog;
     return _glassCircle(
       context,
+      alignment: AlignmentDirectional.centerEnd,
       FushiIconButtonControl(
         icon: FushiIcon(
           useCloseButton ? CupertinoIcons.xmark : CupertinoIcons.chevron_back,
@@ -147,7 +195,11 @@ Widget? _glassLeading(
         leading is IconButton ||
         leading is BackButton ||
         leading is CloseButton) {
-      return _glassCircle(context, leading);
+      return _glassCircle(
+        context,
+        leading,
+        alignment: AlignmentDirectional.centerEnd,
+      );
     }
     return leading;
   }
@@ -174,6 +226,180 @@ List<Widget>? _glassActions(
   }
   if (resolved == null || resolved.isEmpty) return resolved;
   return <Widget>[_glassActionsCapsule(context, resolved)];
+}
+
+/// 返回键图标统一：MD3 一律 Material 的 `arrow_back`（框架在 iOS / macOS 上
+/// 默认给 `arrow_back_ios`，与其余平台不一致）；Apple 下调用方给的
+/// [BackButton] 也画成 SF 风格的 chevron（它落在圆形玻璃钮里）。
+class _BackIconTheme extends StatelessWidget {
+  const _BackIconTheme({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool glass = isGlassDesign(context);
+    final ActionIconThemeData base =
+        ActionIconTheme.of(context) ?? const ActionIconThemeData();
+    return ActionIconTheme(
+      data: base.copyWith(
+        backButtonIconBuilder: (BuildContext context) => glass
+            ? const FushiIcon(CupertinoIcons.chevron_back, size: 22)
+            : const Icon(Icons.arrow_back),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Apple 26 的 scroll edge effect（顶栏版）：内容滚到顶栏下面之后，顶栏下沿
+/// 往内容里延伸一段 soft 渐隐 + 渐进模糊（[FushiAppleScrollEdge]），内容是
+/// 「化进」栏里而不是被一刀切掉。是否滚到栏下用与框架 AppBar 同一个判据
+/// （Scaffold 的 [ScrollNotificationObserver] + [notificationPredicate]）。
+/// 边缘带画在栏的盒子外面（Stack 不裁剪），Scaffold 先画 body 后画 appBar，
+/// 所以它正好盖在正文顶部；不参与命中测试。[enabled] 为 false（MD3）时只是
+/// 一层透传的 Stack。
+///
+/// MD3 下同一个滚动判据还喂桌面自绘顶栏：主题顶栏滚到内容上面后换成
+/// surfaceContainer（[md3ScrolledColor]），而自绘顶栏挂在 Navigator 外只认根
+/// 主题 surface——不跟着上报，两条栏之间就切出一道色带。只有贴着窗口顶、
+/// 横跨整个 Navigator 宽的顶栏才上报（对话框 / 分栏里的顶栏不碰窗口顶栏）。
+class _AppleBarScrollEdge extends StatefulWidget {
+  const _AppleBarScrollEdge({
+    required this.enabled,
+    required this.notificationPredicate,
+    required this.child,
+    this.md3ScrolledColor,
+  });
+
+  final bool enabled;
+  final ScrollNotificationPredicate notificationPredicate;
+  final Widget child;
+
+  /// MD3 顶栏滚到内容上面之后的实际底色；null = 不随滚动换色（Apple、显式
+  /// 底色、透明顶栏），不向桌面顶栏上报。
+  final Color? md3ScrolledColor;
+
+  @override
+  State<_AppleBarScrollEdge> createState() => _AppleBarScrollEdgeState();
+}
+
+class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
+  ScrollNotificationObserverState? _observer;
+  bool _scrolledUnder = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _observer?.removeListener(_handleScroll);
+    _observer = ScrollNotificationObserver.maybeOf(context);
+    _observer?.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _observer?.removeListener(_handleScroll);
+    _observer = null;
+    super.dispose();
+  }
+
+  /// 本栏是否贴着窗口顶、横跨整个根 Navigator（= 紧挨在桌面自绘顶栏下面）。
+  bool _spansWindowTop() {
+    final RenderObject? box = context.findRenderObject();
+    final RenderObject? nav = Navigator.maybeOf(
+      context,
+      rootNavigator: true,
+    )?.context.findRenderObject();
+    if (box is! RenderBox || nav is! RenderBox) return false;
+    if (!box.hasSize || !nav.hasSize || !box.attached || !nav.attached) {
+      return false;
+    }
+    final Rect rect = MatrixUtils.transformRect(
+      box.getTransformTo(nav),
+      Offset.zero & box.size,
+    );
+    return rect.top.abs() < 1 &&
+        rect.left.abs() < 1 &&
+        (rect.right - nav.size.width).abs() < 1;
+  }
+
+  bool _atWindowTop = false;
+
+  void _handleScroll(ScrollNotification notification) {
+    if (!widget.enabled && widget.md3ScrolledColor == null) return;
+    if (notification is! ScrollUpdateNotification ||
+        !widget.notificationPredicate(notification)) {
+      return;
+    }
+    final ScrollMetrics metrics = notification.metrics;
+    final bool under = switch (metrics.axisDirection) {
+      AxisDirection.up => metrics.extentAfter > 0,
+      AxisDirection.down => metrics.extentBefore > 0,
+      AxisDirection.left || AxisDirection.right => _scrolledUnder,
+    };
+    if (under != _scrolledUnder && mounted) {
+      final bool atTop = !widget.enabled && under && _spansWindowTop();
+      setState(() {
+        _scrolledUnder = under;
+        _atWindowTop = atTop;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color? scrolled = widget.md3ScrolledColor;
+    // 结构恒定：两套设计系统、滚没滚动都挂着这层上报，只换 colors（null =
+    // 不表态，顶栏回落根主题）。
+    return FushiTitleBarColorScope(
+      colors: !widget.enabled && scrolled != null && _scrolledUnder &&
+              _atWindowTop
+          ? (
+              background: scrolled,
+              foreground: Theme.of(context).colorScheme.onSurfaceVariant,
+            )
+          : null,
+      child: Stack(
+        clipBehavior: Clip.none,
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          widget.child,
+          if (widget.enabled)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -_kGlassTopEdgeExtent,
+              height: _kGlassTopEdgeExtent,
+              child: FushiAppleScrollEdge(
+                side: FushiScrollEdgeSide.top,
+                visible: _scrolledUnder,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// MD3 主题顶栏滚到内容上面之后的底色（[AppBarTheme.backgroundColor] 是
+/// 按 scrolledUnder 解析的 [WidgetStateColor]）；调用方给了显式底色、强制透明、
+/// 或主题底色不随滚动变时返回 null。
+Color? _md3ScrolledAppBarColor(
+  BuildContext context, {
+  required Color? backgroundColor,
+  required bool forceMaterialTransparency,
+  required bool primary,
+}) {
+  if (backgroundColor != null || forceMaterialTransparency || !primary) {
+    return null;
+  }
+  final Color? themed = AppBarTheme.of(context).backgroundColor;
+  if (themed is! WidgetStateColor) return null;
+  final Color scrolled = themed.resolve(<WidgetState>{
+    WidgetState.scrolledUnder,
+  });
+  final Color idle = themed.resolve(<WidgetState>{});
+  return scrolled == idle || scrolled.a < 1 ? null : scrolled;
 }
 
 /// [AppBar] 的设计系统分派版。[preferredSize] 与 AppBar 同一对象形态
@@ -257,6 +483,26 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
+    // 结构恒定：两套设计系统都包同一层返回键图标主题 + scroll edge 观察层，
+    // 只换参数。
+    return _BackIconTheme(
+      child: _AppleBarScrollEdge(
+        enabled: glass,
+        notificationPredicate: notificationPredicate,
+        md3ScrolledColor: glass
+            ? null
+            : _md3ScrolledAppBarColor(
+                context,
+                backgroundColor: backgroundColor,
+                forceMaterialTransparency: forceMaterialTransparency,
+                primary: primary,
+              ),
+        child: _buildBar(context, glass),
+      ),
+    );
+  }
+
+  Widget _buildBar(BuildContext context, bool glass) {
     return AppBar(
       leading: glass
           ? _glassLeading(
@@ -297,7 +543,9 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       toolbarOpacity: toolbarOpacity,
       bottomOpacity: bottomOpacity,
       toolbarHeight: toolbarHeight,
-      leadingWidth: leadingWidth,
+      leadingWidth: glass
+          ? (leadingWidth ?? _kGlassLeadingWidth)
+          : leadingWidth,
       toolbarTextStyle: toolbarTextStyle,
       titleTextStyle: glass
           ? (titleTextStyle ?? _glassTitleStyle(context))
@@ -312,7 +560,18 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// [SliverAppBar] 的设计系统分派版。
+/// [SliverAppBar] 的变体：普通 / medium / large（M3 可收起的大标题栏）。
+enum _FushiSliverAppBarVariant { small, medium, large }
+
+/// [SliverAppBar] 的设计系统分派版（含 `.medium` / `.large`）。
+///
+/// - MD3：原样构造 [SliverAppBar] / [SliverAppBar.medium] /
+///   [SliverAppBar.large]（M3 的 headlineSmall / headlineMedium 大标题随滚动
+///   收进 22 号的小标题）。
+/// - Apple 26：有标题、调用方没自带 flexibleSpace 时是 iOS 大标题导航栏——
+///   大标题（iOS 34 / 桌面 26 bold，靠前）排在工具栏下面，随滚动被工具栏
+///   「吃进去」并淡出，同时居中的 17 semibold 小标题淡入；栏钉住（floating
+///   栏除外）。钉住后内容在栏下面滚，栏的下沿是一段 scroll edge 渐隐。
 class FushiSliverAppBar extends StatelessWidget {
   const FushiSliverAppBar({
     super.key,
@@ -354,7 +613,93 @@ class FushiSliverAppBar extends StatelessWidget {
     this.useDefaultSemanticsOrder = true,
     this.clipBehavior,
     this.actionsPadding,
-  });
+  }) : _variant = _FushiSliverAppBarVariant.small;
+
+  /// [SliverAppBar.medium] 的分派版（默认钉住、工具栏 64）。
+  const FushiSliverAppBar.medium({
+    super.key,
+    this.leading,
+    this.automaticallyImplyLeading = true,
+    this.title,
+    this.actions,
+    this.automaticallyImplyActions = true,
+    this.flexibleSpace,
+    this.bottom,
+    this.elevation,
+    this.scrolledUnderElevation,
+    this.shadowColor,
+    this.surfaceTintColor,
+    this.forceElevated = false,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.iconTheme,
+    this.actionsIconTheme,
+    this.primary = true,
+    this.centerTitle,
+    this.excludeHeaderSemantics = false,
+    this.titleSpacing,
+    this.collapsedHeight,
+    this.expandedHeight,
+    this.floating = false,
+    this.pinned = true,
+    this.snap = false,
+    this.stretch = false,
+    this.stretchTriggerOffset = 100.0,
+    this.onStretchTrigger,
+    this.shape,
+    this.toolbarHeight = 64,
+    this.leadingWidth,
+    this.toolbarTextStyle,
+    this.titleTextStyle,
+    this.systemOverlayStyle,
+    this.forceMaterialTransparency = false,
+    this.useDefaultSemanticsOrder = true,
+    this.clipBehavior,
+    this.actionsPadding,
+  }) : _variant = _FushiSliverAppBarVariant.medium;
+
+  /// [SliverAppBar.large] 的分派版（默认钉住、工具栏 64）。
+  const FushiSliverAppBar.large({
+    super.key,
+    this.leading,
+    this.automaticallyImplyLeading = true,
+    this.title,
+    this.actions,
+    this.automaticallyImplyActions = true,
+    this.flexibleSpace,
+    this.bottom,
+    this.elevation,
+    this.scrolledUnderElevation,
+    this.shadowColor,
+    this.surfaceTintColor,
+    this.forceElevated = false,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.iconTheme,
+    this.actionsIconTheme,
+    this.primary = true,
+    this.centerTitle,
+    this.excludeHeaderSemantics = false,
+    this.titleSpacing,
+    this.collapsedHeight,
+    this.expandedHeight,
+    this.floating = false,
+    this.pinned = true,
+    this.snap = false,
+    this.stretch = false,
+    this.stretchTriggerOffset = 100.0,
+    this.onStretchTrigger,
+    this.shape,
+    this.toolbarHeight = 64,
+    this.leadingWidth,
+    this.toolbarTextStyle,
+    this.titleTextStyle,
+    this.systemOverlayStyle,
+    this.forceMaterialTransparency = false,
+    this.useDefaultSemanticsOrder = true,
+    this.clipBehavior,
+    this.actionsPadding,
+  }) : _variant = _FushiSliverAppBarVariant.large;
 
   final Widget? leading;
   final bool automaticallyImplyLeading;
@@ -394,69 +739,736 @@ class FushiSliverAppBar extends StatelessWidget {
   final bool useDefaultSemanticsOrder;
   final Clip? clipBehavior;
   final EdgeInsetsGeometry? actionsPadding;
+  final _FushiSliverAppBarVariant _variant;
 
   @override
   Widget build(BuildContext context) {
-    final bool glass = isGlassDesign(context);
+    if (!isGlassDesign(context)) return _BackIconTheme(child: _material());
+    return _BackIconTheme(child: _glass(context));
+  }
+
+  SliverAppBar _material() {
+    switch (_variant) {
+      case _FushiSliverAppBarVariant.small:
+        return SliverAppBar(
+          leading: leading,
+          automaticallyImplyLeading: automaticallyImplyLeading,
+          title: title,
+          actions: actions,
+          automaticallyImplyActions: automaticallyImplyActions,
+          flexibleSpace: flexibleSpace,
+          bottom: bottom,
+          elevation: elevation,
+          scrolledUnderElevation: scrolledUnderElevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          forceElevated: forceElevated,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          iconTheme: iconTheme,
+          actionsIconTheme: actionsIconTheme,
+          primary: primary,
+          centerTitle: centerTitle,
+          excludeHeaderSemantics: excludeHeaderSemantics,
+          titleSpacing: titleSpacing,
+          collapsedHeight: collapsedHeight,
+          expandedHeight: expandedHeight,
+          floating: floating,
+          pinned: pinned,
+          snap: snap,
+          stretch: stretch,
+          stretchTriggerOffset: stretchTriggerOffset,
+          onStretchTrigger: onStretchTrigger,
+          shape: shape,
+          toolbarHeight: toolbarHeight,
+          leadingWidth: leadingWidth,
+          toolbarTextStyle: toolbarTextStyle,
+          titleTextStyle: titleTextStyle,
+          systemOverlayStyle: systemOverlayStyle,
+          forceMaterialTransparency: forceMaterialTransparency,
+          useDefaultSemanticsOrder: useDefaultSemanticsOrder,
+          clipBehavior: clipBehavior,
+          actionsPadding: actionsPadding,
+        );
+      case _FushiSliverAppBarVariant.medium:
+        return SliverAppBar.medium(
+          leading: leading,
+          automaticallyImplyLeading: automaticallyImplyLeading,
+          title: title,
+          actions: actions,
+          automaticallyImplyActions: automaticallyImplyActions,
+          flexibleSpace: flexibleSpace,
+          bottom: bottom,
+          elevation: elevation,
+          scrolledUnderElevation: scrolledUnderElevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          forceElevated: forceElevated,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          iconTheme: iconTheme,
+          actionsIconTheme: actionsIconTheme,
+          primary: primary,
+          centerTitle: centerTitle,
+          excludeHeaderSemantics: excludeHeaderSemantics,
+          titleSpacing: titleSpacing,
+          collapsedHeight: collapsedHeight,
+          expandedHeight: expandedHeight,
+          floating: floating,
+          pinned: pinned,
+          snap: snap,
+          stretch: stretch,
+          stretchTriggerOffset: stretchTriggerOffset,
+          onStretchTrigger: onStretchTrigger,
+          shape: shape,
+          toolbarHeight: toolbarHeight,
+          leadingWidth: leadingWidth,
+          toolbarTextStyle: toolbarTextStyle,
+          titleTextStyle: titleTextStyle,
+          systemOverlayStyle: systemOverlayStyle,
+          forceMaterialTransparency: forceMaterialTransparency,
+          useDefaultSemanticsOrder: useDefaultSemanticsOrder,
+          clipBehavior: clipBehavior,
+          actionsPadding: actionsPadding,
+        );
+      case _FushiSliverAppBarVariant.large:
+        return SliverAppBar.large(
+          leading: leading,
+          automaticallyImplyLeading: automaticallyImplyLeading,
+          title: title,
+          actions: actions,
+          automaticallyImplyActions: automaticallyImplyActions,
+          flexibleSpace: flexibleSpace,
+          bottom: bottom,
+          elevation: elevation,
+          scrolledUnderElevation: scrolledUnderElevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          forceElevated: forceElevated,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          iconTheme: iconTheme,
+          actionsIconTheme: actionsIconTheme,
+          primary: primary,
+          centerTitle: centerTitle,
+          excludeHeaderSemantics: excludeHeaderSemantics,
+          titleSpacing: titleSpacing,
+          collapsedHeight: collapsedHeight,
+          expandedHeight: expandedHeight,
+          floating: floating,
+          pinned: pinned,
+          snap: snap,
+          stretch: stretch,
+          stretchTriggerOffset: stretchTriggerOffset,
+          onStretchTrigger: onStretchTrigger,
+          shape: shape,
+          toolbarHeight: toolbarHeight,
+          leadingWidth: leadingWidth,
+          toolbarTextStyle: toolbarTextStyle,
+          titleTextStyle: titleTextStyle,
+          systemOverlayStyle: systemOverlayStyle,
+          forceMaterialTransparency: forceMaterialTransparency,
+          useDefaultSemanticsOrder: useDefaultSemanticsOrder,
+          clipBehavior: clipBehavior,
+          actionsPadding: actionsPadding,
+        );
+    }
+  }
+
+  Widget _glass(BuildContext context) {
+    final bool desktop = _isDesktopBar(context);
+    // 自带 flexibleSpace（封面头图之类）的调用方有自己的设计，只换控件皮肤、
+    // 不接大标题与渐隐底。
+    final bool ownBackdrop = flexibleSpace == null;
+    final Widget? resolvedTitle = title;
+    final bool largeTitle =
+        ownBackdrop &&
+        resolvedTitle != null &&
+        (_variant != _FushiSliverAppBarVariant.small || expandedHeight == null);
+    final double bottomHeight = bottom?.preferredSize.height ?? 0;
+    final double band = desktop
+        ? _kAppleLargeTitleBandDesktop
+        : _kAppleLargeTitleBand;
+    final Color pageColor = Theme.of(context).scaffoldBackgroundColor;
     return SliverAppBar(
-      leading: glass
-          ? _glassLeading(
-              context,
-              leading: leading,
-              automaticallyImplyLeading: automaticallyImplyLeading,
-            )
-          : leading,
+      leading: _glassLeading(
+        context,
+        leading: leading,
+        automaticallyImplyLeading: automaticallyImplyLeading,
+      ),
       automaticallyImplyLeading: automaticallyImplyLeading,
-      title: title,
-      actions: glass
-          ? _glassActions(
-              context,
-              actions: actions,
-              automaticallyImplyActions: automaticallyImplyActions,
-            )
-          : actions,
+      title: largeTitle
+          ? _AppleCollapsedTitle(band: band, child: resolvedTitle)
+          : resolvedTitle,
+      actions: _glassActions(
+        context,
+        actions: actions,
+        automaticallyImplyActions: automaticallyImplyActions,
+      ),
       automaticallyImplyActions: automaticallyImplyActions,
-      flexibleSpace: flexibleSpace,
+      flexibleSpace: ownBackdrop
+          ? _AppleSliverBackdrop(
+              color: pageColor,
+              largeTitle: largeTitle ? resolvedTitle : null,
+              largeTitleStyle: _glassLargeTitleStyle(context),
+              band: band,
+              bottomHeight: bottomHeight,
+              horizontalPadding: desktop ? 20 : 16,
+            )
+          : flexibleSpace,
       bottom: bottom,
-      elevation: glass ? 0 : elevation,
-      scrolledUnderElevation: glass ? 0 : scrolledUnderElevation,
-      shadowColor: glass ? Colors.transparent : shadowColor,
-      surfaceTintColor: glass ? Colors.transparent : surfaceTintColor,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
       forceElevated: forceElevated,
-      // 不是玻璃面：用页面实色底（与透明 AppBar 观感相同），钉住时滚上来的
-      // 内容才不会从标题底下透出来。
-      backgroundColor: glass
-          ? Theme.of(context).scaffoldBackgroundColor
-          : backgroundColor,
+      // 不是玻璃面。自绘底（[_AppleSliverBackdrop]）时栏本身透明——底与
+      // 下沿渐隐由它画；调用方自带 flexibleSpace 时仍是页面实色底，钉住时
+      // 滚上来的内容不会从标题底下透出来。
+      backgroundColor: ownBackdrop ? Colors.transparent : pageColor,
       foregroundColor: foregroundColor,
       iconTheme: iconTheme,
       actionsIconTheme: actionsIconTheme,
       primary: primary,
-      centerTitle: glass
-          ? (centerTitle ?? !_isDesktopBar(context))
-          : centerTitle,
+      centerTitle: largeTitle ? true : (centerTitle ?? !desktop),
       excludeHeaderSemantics: excludeHeaderSemantics,
       titleSpacing: titleSpacing,
       collapsedHeight: collapsedHeight,
-      expandedHeight: expandedHeight,
+      expandedHeight: largeTitle
+          ? (expandedHeight ?? toolbarHeight + band + bottomHeight)
+          : expandedHeight,
       floating: floating,
-      pinned: pinned,
+      // iOS 的大标题导航栏恒钉住；floating 栏保留调用方的行为。
+      pinned: largeTitle && !floating ? true : pinned,
       snap: snap,
       stretch: stretch,
       stretchTriggerOffset: stretchTriggerOffset,
       onStretchTrigger: onStretchTrigger,
       shape: shape,
       toolbarHeight: toolbarHeight,
-      leadingWidth: leadingWidth,
+      leadingWidth: leadingWidth ?? _kGlassLeadingWidth,
       toolbarTextStyle: toolbarTextStyle,
-      titleTextStyle: glass
-          ? (titleTextStyle ?? _glassTitleStyle(context))
-          : titleTextStyle,
+      titleTextStyle:
+          titleTextStyle ??
+          (largeTitle
+              ? _glassInlineTitleStyle(context)
+              : _glassTitleStyle(context)),
       systemOverlayStyle: systemOverlayStyle,
       forceMaterialTransparency: forceMaterialTransparency,
       useDefaultSemanticsOrder: useDefaultSemanticsOrder,
       clipBehavior: clipBehavior,
       actionsPadding: actionsPadding,
+    );
+  }
+}
+
+/// iOS 大标题行占的高度（UINavigationBar 大标题模式 96 − 内联 44 = 52）；
+/// macOS 26 的窗口大标题小一号。
+const double _kAppleLargeTitleBand = 52;
+const double _kAppleLargeTitleBandDesktop = 44;
+
+/// 大标题字阶：iOS 34 bold、桌面 26 bold（label 色）。
+TextStyle _glassLargeTitleStyle(BuildContext context) {
+  final bool desktop = _isDesktopBar(context);
+  return (Theme.of(context).textTheme.headlineMedium ?? const TextStyle())
+      .copyWith(
+        fontSize: desktop ? 26 : 34,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        letterSpacing: desktop ? 0 : 0.37,
+        color: appleColorsOf(context).label,
+      );
+}
+
+/// 大标题收起后的内联小标题：17 semibold、居中（两端一致）。
+TextStyle _glassInlineTitleStyle(BuildContext context) {
+  return (Theme.of(context).textTheme.titleMedium ?? const TextStyle())
+      .copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: appleColorsOf(context).label,
+      );
+}
+
+/// 大标题行还露在外面的高度（0 = 完全收进工具栏）。读 SliverAppBar 提供的
+/// [FlexibleSpaceBarSettings]；读不到（不在 SliverAppBar 里）当作已收起。
+double _visibleLargeTitleBand(BuildContext context) {
+  final FlexibleSpaceBarSettings? settings = context
+      .dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+  if (settings == null) return 0;
+  return math.max(0, settings.currentExtent - settings.minExtent);
+}
+
+/// 工具栏里的内联小标题：大标题还露着时隐藏，大标题快收进工具栏时淡入。
+/// 纯由滚动位置驱动（不是定时动画），减弱动态效果下同样跟手。
+class _AppleCollapsedTitle extends StatelessWidget {
+  const _AppleCollapsedTitle({required this.band, required this.child});
+
+  final double band;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double visible = _visibleLargeTitleBand(context);
+    final double opacity = (1 - visible / (band * 0.45)).clamp(0.0, 1.0);
+    return ExcludeSemantics(
+      excluding: opacity == 0,
+      child: Opacity(opacity: opacity, child: child),
+    );
+  }
+}
+
+/// Apple 大标题 SliverAppBar 的底：页面实色 + 下沿 scroll edge 段（钉住后
+/// 内容在栏下面滚时，这一段从实色渐隐成透明并叠渐进模糊），以及工具栏下面
+/// 那行靠前的大标题——它随栏收起被工具栏「吃进去」（裁剪）并淡出。
+class _AppleSliverBackdrop extends StatelessWidget {
+  const _AppleSliverBackdrop({
+    required this.color,
+    required this.largeTitle,
+    required this.largeTitleStyle,
+    required this.band,
+    required this.bottomHeight,
+    required this.horizontalPadding,
+  });
+
+  final Color color;
+  final Widget? largeTitle;
+  final TextStyle largeTitleStyle;
+  final double band;
+  final double bottomHeight;
+  final double horizontalPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final FlexibleSpaceBarSettings? settings = context
+        .dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    final bool under = settings?.isScrolledUnder ?? false;
+    final double visible = _visibleLargeTitleBand(context);
+    final double titleOpacity = ((visible - band * 0.35) / (band * 0.5)).clamp(
+      0.0,
+      1.0,
+    );
+    final Widget? title = largeTitle;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        Column(
+          children: <Widget>[
+            Expanded(child: ColoredBox(color: color)),
+            SizedBox(
+              height: _kGlassSliverEdgeExtent,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  AnimatedOpacity(
+                    opacity: under ? 0 : 1,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: FushiMotion.standard,
+                    child: ColoredBox(color: color),
+                  ),
+                  FushiAppleScrollEdge(
+                    side: FushiScrollEdgeSide.top,
+                    visible: under,
+                    color: color,
+                    maxSigma: 6,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (title != null && settings != null)
+          Positioned(
+            left: horizontalPadding,
+            right: horizontalPadding,
+            top: settings.minExtent - bottomHeight,
+            bottom: bottomHeight,
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: AlignmentDirectional.bottomStart,
+                minHeight: 0,
+                maxHeight: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ExcludeSemantics(
+                    excluding: titleOpacity == 0,
+                    child: Opacity(
+                      opacity: titleOpacity,
+                      child: DefaultTextStyle(
+                        style: largeTitleStyle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        child: Semantics(header: true, child: title),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 页头（[FushiPageHeader.route]）的返回键：Apple 是 44 的圆形玻璃钮
+/// （SF chevron，与玻璃顶栏的隐含返回键同一形态），MD3 是 `arrow_back`
+/// 图标按钮（48 命中盒，与脚手架默认返回键同口径）。[onPressed] 为 null 时
+/// `Navigator.maybePop`；那种情况下当前路由不能返回就不出现。
+class FushiRouteBackButton extends StatelessWidget {
+  const FushiRouteBackButton({this.onPressed, super.key});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final VoidCallback? explicit = onPressed;
+    if (explicit == null) {
+      final NavigatorState? navigator = Navigator.maybeOf(context);
+      if (navigator == null || !navigator.canPop()) {
+        return const SizedBox.shrink();
+      }
+    }
+    final VoidCallback handler =
+        explicit ?? () => Navigator.of(context).maybePop();
+    final String tooltip = MaterialLocalizations.of(context).backButtonTooltip;
+    if (isGlassDesign(context)) {
+      return _glassCircle(
+        context,
+        FushiIconButtonControl(
+          icon: FushiIcon(
+            CupertinoIcons.chevron_back,
+            color: appleColorsOf(context).label,
+            size: 22,
+          ),
+          tooltip: tooltip,
+          onPressed: handler,
+        ),
+      );
+    }
+    return FushiIconButtonControl(
+      icon: const Icon(Icons.arrow_back),
+      tooltip: tooltip,
+      onPressed: handler,
+    );
+  }
+}
+
+/// 首页外壳给当前 tab 子树下发的「外壳已经显示的页面名」。
+///
+/// 外壳顶部的 [FushiShellLargeTitleBar] 已经画了这个名字；tab 内自己的
+/// [FushiPageHeader] 若是同名纯文字标题（如查词页的「查词」）就不再重复画。
+/// 值按 tab 固定（外壳在每个 tab 的内容外各包一层），不随设计系统 / 滚动变。
+class FushiShellTitleScope extends InheritedWidget {
+  const FushiShellTitleScope({
+    required this.title,
+    required super.child,
+    this.actionsSlot,
+    super.key,
+  });
+
+  /// 外壳为这个 tab 显示的页面名；null = 外壳不显示大标题（首页 / 设置等）。
+  final String? title;
+
+  /// 外壳大标题条右侧的动作槽（见 [FushiShellActionsSlot]）；null = 外壳不收
+  /// 页头动作，页头照旧把动作画在自己那一行。
+  final FushiShellActionsSlot? actionsSlot;
+
+  /// 最近的外壳页面名；不在首页外壳里（推出来的路由、组件测试）为 null。
+  static String? maybeTitleOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiShellTitleScope>()?.title;
+
+  /// 最近外壳的动作槽；外壳这一 tab 不显示大标题时也返回 null（没有地方放）。
+  static FushiShellActionsSlot? maybeActionsSlotOf(BuildContext context) {
+    final FushiShellTitleScope? scope = context
+        .dependOnInheritedWidgetOfExactType<FushiShellTitleScope>();
+    if (scope == null || scope.title == null) return null;
+    return scope.actionsSlot;
+  }
+
+  @override
+  bool updateShouldNotify(FushiShellTitleScope oldWidget) =>
+      oldWidget.title != title || oldWidget.actionsSlot != actionsSlot;
+}
+
+/// 首页外壳大标题条右侧的「页头动作」槽（2026-10-04「顶部标签栏做成全宽」）。
+///
+/// 库页的页头原本把分区页签和动作（搜索 / 合集 / 刷新…）挤在同一行，页签只
+/// 分到左边一截。iOS 26 / macOS 26 的做法是动作进大标题行右侧的工具栏胶囊、
+/// MD3 是 top app bar 的 actions 位——两者都是「标题行右侧」。外壳的大标题条
+/// 正好就是那一行，所以页头在外壳里时把动作**登记**到这里，自己那一行只剩
+/// 页签、整行铺满。
+///
+/// 同一外壳下常驻着多份页头（保活的 tab / 分区、IndexedStack 里的子区），
+/// 每份登记时带上自己此刻是否可见（TickerMode + [Visibility]），槽显示**最后
+/// 登记的可见**那份。登记发生在页头 build 期，通知延到帧末（build 期不能让
+/// 树上更早的条重建）。
+class FushiShellActionsSlot extends ChangeNotifier {
+  final Map<Object, ({bool visible, Widget actions})> _claims =
+      <Object, ({bool visible, Widget actions})>{};
+  bool _notifyScheduled = false;
+  bool _disposed = false;
+
+  /// 当前应显示的动作；没有可见的登记时为 null。
+  Widget? get actions {
+    Widget? result;
+    for (final ({bool visible, Widget actions}) claim in _claims.values) {
+      if (claim.visible) result = claim.actions;
+    }
+    return result;
+  }
+
+  /// [owner]（通常是页头的 State）登记 / 更新自己的动作。
+  void claim(Object owner, {required bool visible, required Widget actions}) {
+    _claims[owner] = (visible: visible, actions: actions);
+    _scheduleNotify();
+  }
+
+  /// [owner] 撤回登记（页头卸载、或不再需要外壳代放动作）。
+  void release(Object owner) {
+    if (_claims.remove(owner) != null) _scheduleNotify();
+  }
+
+  void _scheduleNotify() {
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _notifyScheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _claims.clear();
+    super.dispose();
+  }
+}
+
+/// 首页外壳（库页 / 浏览 / 查词）的页面大标题条：在库页自己的分区页签行
+/// 之上，随内容滚离顶部收起（[collapsed] 由外壳的 [FushiLargeTitleCollapse]
+/// 给出）。
+///
+/// - Apple：iOS 34 / 桌面 26 bold 的大标题靠前，收起时被条的下沿「吃进去」
+///   并淡出，同时条顶部淡入居中的 17 semibold 小标题（与
+///   [FushiSliverAppBar.large] 的玻璃版同一字阶）；条本身无底色。
+/// - MD3：large top app bar 语义——headlineMedium（28）靠前，收起成
+///   titleLarge（22）靠前小标题，底色从透明过渡到 surfaceContainer，无阴影线。
+///
+/// 结构恒定：[title] 为 null（外壳这一 tab 不显示大标题）时只是高度 0，
+/// 两套设计系统、展开 / 收起都是同一棵树，切换不重挂外壳下面的子树。
+/// 墨水屏与「减弱动态效果」下 [fushiMotionDuration] 归零，直接切换。
+class FushiShellLargeTitleBar extends StatelessWidget {
+  const FushiShellLargeTitleBar({
+    required this.title,
+    required this.collapsed,
+    this.actions,
+    super.key,
+  });
+
+  final String? title;
+  final bool collapsed;
+
+  /// 可见页头登记的动作（[FushiShellActionsSlot]）：画在标题行右侧——Apple 是
+  /// 一枚工具栏玻璃胶囊，MD3 是 top app bar 的 actions 位。null = 外壳不收动作。
+  final FushiShellActionsSlot? actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiShellActionsSlot? slot = actions;
+    if (slot == null) return _buildBar(context, null);
+    return ListenableBuilder(
+      listenable: slot,
+      builder: (BuildContext context, Widget? _) =>
+          _buildBar(context, slot.actions),
+    );
+  }
+
+  Widget _buildBar(BuildContext context, Widget? trailing) {
+    final bool apple = isGlassDesign(context);
+    final bool desktop = _isDesktopBar(context);
+    final ThemeData theme = Theme.of(context);
+    final String text = title ?? '';
+    final bool hasTitle = text.isNotEmpty;
+    final double horizontal = FushiDesignTokens.of(context).spacing.page;
+    // 展开 / 收起高度。Apple：iOS 大标题行 52、内联栏 44；桌面大标题小一号，
+    // 收起后贴着窗口控制条只留一条 32 的内联标题行。MD3：标题行 + large app
+    // bar 的下边距（移动 64 / 桌面 56），收起成紧凑的 titleLarge 行。
+    final double expandedHeight = apple
+        ? (desktop ? 46 : 52)
+        : (desktop ? 56 : 64);
+    // 标题行右侧挂着动作时，收起后也要容得下一排 44 的按钮（桌面 Apple 的
+    // 32 内联行放不下）。
+    final double collapsedHeight = math.max(
+      apple ? (desktop ? 32 : 44) : (desktop ? 44 : 52),
+      trailing == null ? 0.0 : 44.0,
+    );
+    final TextStyle largeStyle = apple
+        ? _glassLargeTitleStyle(context)
+        : (theme.textTheme.headlineMedium ?? const TextStyle()).copyWith(
+            color: theme.colorScheme.onSurface,
+          );
+    final TextStyle smallStyle = apple
+        ? _glassInlineTitleStyle(context)
+        : (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
+            color: theme.colorScheme.onSurface,
+          );
+    // 收起时不再给标题条单独铺 surfaceContainer：分区页签行、搜索行仍是页面
+    // 底色，只有标题条变灰会在页头中间切出一道色带（用户 2026-10-04「往下拖这块
+    // 会泛灰」）。两套设计系统都保持透明，收起靠字号 / 高度变化表达。
+    const Color scrolledColor = Colors.transparent;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: collapsed ? 1 : 0),
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+      builder: (BuildContext context, double t, Widget? _) {
+        final double height = hasTitle
+            ? lerpDouble(expandedHeight, collapsedHeight, t)!
+            : 0;
+        // 大标题先走：收起前半程就淡完；小标题后半程才出现，两者不叠字。
+        // 看不见的那一份文字置空（不删组件，树结构不变）：静止时页面上只有一个
+        // 页面名文本，按文字找组件的测试 / 无障碍不会数到两份。
+        final double largeOpacity = (1 - t * 2).clamp(0.0, 1.0);
+        final double smallOpacity = ((t - 0.5) * 2).clamp(0.0, 1.0);
+        return SizedBox(
+          height: height,
+          child: ClipRect(
+            child: ColoredBox(
+              color: scrolledColor.withValues(alpha: scrolledColor.a * t),
+              // 标题区与右侧动作是同一行：两份标题叠在 Expanded 里，动作是行尾
+              // 的非弹性子项。无动作时尾项是零宽占位，结构不变。
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontal),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) => Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _titleStack(
+                          apple: apple,
+                          text: text,
+                          hasTitle: hasTitle,
+                          largeStyle: largeStyle,
+                          smallStyle: smallStyle,
+                          largeOpacity: largeOpacity,
+                          smallOpacity: smallOpacity,
+                          collapsedHeight: collapsedHeight,
+                        ),
+                      ),
+                      _trailing(
+                        context,
+                        trailing: trailing,
+                        rowWidth: box.maxWidth,
+                        title: hasTitle ? text : '',
+                        largeStyle: largeStyle,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 行尾动作：限宽 = 行宽 − 给标题留的宽（大标题实际字宽，至多行宽 45%）−
+  /// 间距；动作自己在这个宽度内决定是否收进 ⋯。
+  Widget _trailing(
+    BuildContext context, {
+    required Widget? trailing,
+    required double rowWidth,
+    required String title,
+    required TextStyle largeStyle,
+  }) {
+    if (trailing == null || !rowWidth.isFinite) return const SizedBox.shrink();
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: title, style: largeStyle),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final double titleWidth = painter.width;
+    painter.dispose();
+    const double gap = 12;
+    final double maxWidth = math.max(
+      0.0,
+      rowWidth - math.min(titleWidth, rowWidth * 0.45) - gap,
+    );
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: gap),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: trailing,
+      ),
+    );
+  }
+
+  Widget _titleStack({
+    required bool apple,
+    required String text,
+    required bool hasTitle,
+    required TextStyle largeStyle,
+    required TextStyle smallStyle,
+    required double largeOpacity,
+    required double smallOpacity,
+    required double collapsedHeight,
+  }) {
+    const double horizontal = 0;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        // 大标题贴条的下沿：条变矮时它随下沿上移、顶部被裁掉。
+        Positioned(
+          left: horizontal,
+          right: horizontal,
+          bottom: apple ? 4 : 8,
+          child: ExcludeSemantics(
+            excluding: !hasTitle || largeOpacity == 0,
+            child: Opacity(
+              opacity: largeOpacity,
+              child: Semantics(
+                header: true,
+                child: Text(
+                  largeOpacity > 0 ? text : '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: largeStyle,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: horizontal,
+          right: horizontal,
+          top: 0,
+          height: collapsedHeight,
+          child: ExcludeSemantics(
+            excluding: !hasTitle || smallOpacity == 0,
+            child: Opacity(
+              opacity: smallOpacity,
+              child: Align(
+                // Apple 的内联标题居中；MD3 收起后的小标题靠前。
+                alignment: apple
+                    ? Alignment.center
+                    : AlignmentDirectional.centerStart,
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    smallOpacity > 0 ? text : '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: smallStyle,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -568,7 +1580,53 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
   final TabIndicatorAnimation? indicatorAnimation;
   final bool _secondary;
 
-  TabBar _material() {
+  /// MD3（2026-10 页签统一，Material 3 Expressive）：调用方没显式给的值按
+  /// 主题补默认——主页签选中 primary + titleSmall w600、未选中
+  /// onSurfaceVariant w500，指示条 3px 圆头 primary、宽度跟文字
+  /// （[TabBarIndicatorSize.label]，框架 M3 默认就是这一形态并随切换滑动），
+  /// 整排分隔线压成极淡的 outlineVariant；次级页签全宽 2px 下划线（框架
+  /// 默认）+ onSurface 文字。状态层圆角。墨水屏分隔线保持实描边，选中 /
+  /// 未选中靠字重与指示条区分。[theme] 为 null 时（[preferredSize]）只要几何，
+  /// 不碰颜色。
+  TabBar _material([ThemeData? theme]) {
+    final ColorScheme? cs = theme?.colorScheme;
+    final TextStyle? titleSmall = theme?.textTheme.titleSmall;
+    final bool eink = theme?.extension<FushiEinkTheme>()?.einkMode ?? false;
+    final Color? labelColor =
+        this.labelColor ?? (_secondary ? cs?.onSurface : cs?.primary);
+    final Color? unselectedLabelColor =
+        this.unselectedLabelColor ?? cs?.onSurfaceVariant;
+    final TextStyle? labelStyle =
+        this.labelStyle ?? titleSmall?.copyWith(fontWeight: FontWeight.w600);
+    final TextStyle? unselectedLabelStyle =
+        this.unselectedLabelStyle ??
+        (this.labelStyle == null
+            ? titleSmall?.copyWith(fontWeight: FontWeight.w500)
+            : null);
+    final Color? dividerColor =
+        this.dividerColor ??
+        (cs == null || eink
+            ? null
+            : cs.outlineVariant.withValues(alpha: cs.outlineVariant.a * 0.5));
+    final BorderRadius? splashBorderRadius =
+        this.splashBorderRadius ??
+        (theme == null ? null : BorderRadius.circular(10));
+    // 主页签指示条（2026-10-04 默认页签重做，MD3 Expressive）：3dp 全圆头胶囊，
+    // 宽度跟文字、两端各让 2dp——框架 M3 默认只圆上两角、底边是直角压在分隔线
+    // 上，读起来像一截被切掉的色块。调用方给了 [indicator] 原样用；给了
+    // [indicatorColor] 只换颜色。几何（[preferredSize]）不读它，高度不变。
+    final Decoration? indicator =
+        this.indicator ??
+        (_secondary || cs == null
+            ? null
+            : UnderlineTabIndicator(
+                borderSide: BorderSide(
+                  width: 3,
+                  color: indicatorColor ?? cs.primary,
+                ),
+                borderRadius: const BorderRadius.all(Radius.circular(3)),
+                insets: const EdgeInsets.symmetric(horizontal: 2),
+              ));
     if (_secondary) {
       return TabBar.secondary(
         tabs: tabs,
@@ -644,7 +1702,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!isGlassDesign(context)) return _material();
+    if (!isGlassDesign(context)) return _material(Theme.of(context));
     return _FushiGlassTabBar(bar: this);
   }
 }
@@ -662,6 +1720,11 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
   TabController? _controller;
   int _shown = 0;
   List<GlobalKey> _segmentKeys = <GlobalKey>[];
+
+  /// 各页签的文字（内容）区：指示条按它量宽度，铺满（fill）档的页签再宽，
+  /// 短条也只跟文字一样长（iOS 文字页签的下划线跟字走）。
+  List<GlobalKey> _contentKeys = <GlobalKey>[];
+  final GlobalKey _rowKey = GlobalKey();
 
   FushiTabBar get _bar => widget.bar;
 
@@ -756,38 +1819,39 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
-    final bool dark = theme.colorScheme.brightness == Brightness.dark;
     final List<Widget> tabs = _bar.tabs;
     if (_segmentKeys.length != tabs.length) {
       _segmentKeys = <GlobalKey>[
         for (int i = 0; i < tabs.length; i++) GlobalKey(),
       ];
+      _contentKeys = <GlobalKey>[
+        for (int i = 0; i < tabs.length; i++) GlobalKey(),
+      ];
     }
-    const double outerVertical = 4;
-    const double trackPadding = 3;
+    const double outerVertical = 0;
     final double height = _bar.preferredSize.height;
-    final double segmentHeight = height - 2 * outerVertical - 2 * trackPadding;
     final int selected = _shown.clamp(0, tabs.length - 1);
-
-    // iOS 26 分段控件的滑块：浅色纯白、深色 #5A5A5E（UISegmentedControl 实测），
-    // 以有色玻璃渲染（液态档带一点高光 / 折射，降低透明度档就是实心）。
-    final Color thumb = dark ? const Color(0xFF5A5A5E) : Colors.white;
+    // 选中下划线：调用方的 indicatorColor 优先，否则强调色（默认单色主题即
+    // 黑 / 白）。圆角短条，宽度跟随文字。
+    final Color indicator = _bar.indicatorColor ?? apple.accent;
 
     Widget segment(int i) {
       final bool isSelected = i == selected;
-      // 选中 / 未选中都是 label 色（Apple 分段控件靠滑块与字重区分，不靠强调色），
-      // 未选中稍弱一档；调用方显式给的颜色照用。主题里的 MD3 TabBarTheme 颜色
-      // 是给下划线页签配的，不读。
+      // Apple 式文字页签（用户 2026-10-04：顶部不用分段控件、继续用标签页）：
+      // 选中 = 强调色 semibold + 文字下方圆角强调色短条；未选中 =
+      // secondaryLabel。没有 MD3 水波纹、没有整条分隔线。主题里的 MD3
+      // TabBarTheme 颜色不读，调用方显式给的颜色照用。
       final Color fg = isSelected
-          ? (_bar.labelColor ?? apple.label)
-          : (_bar.unselectedLabelColor ?? apple.label.withValues(alpha: 0.85));
+          ? (_bar.labelColor ?? apple.accent)
+          : (_bar.unselectedLabelColor ?? apple.secondaryLabel);
       final TextStyle base =
           (isSelected
               ? _bar.labelStyle
               : (_bar.unselectedLabelStyle ?? _bar.labelStyle)) ??
           theme.textTheme.titleSmall ??
           const TextStyle();
-      final double fontSize = (base.fontSize ?? 14).clamp(13.0, 15.0);
+      // 下限 12：库页分区页签在窄屏逐级收紧时会显式下发 13 / 12 号字。
+      final double fontSize = (base.fontSize ?? 14).clamp(12.0, 15.0);
       Widget content = DefaultTextStyle(
         style: base.copyWith(
           color: fg,
@@ -798,15 +1862,7 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
         overflow: TextOverflow.ellipsis,
         child: IconTheme.merge(
           data: IconThemeData(color: fg, size: 20),
-          child: SizedBox(
-            height: segmentHeight,
-            child: Padding(
-              padding:
-                  _bar.labelPadding ??
-                  const EdgeInsets.symmetric(horizontal: 14),
-              child: Center(widthFactor: 1, child: tabs[i]),
-            ),
-          ),
+          child: tabs[i],
         ),
       );
       if (_bar.textScaler != null) {
@@ -817,19 +1873,16 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
           ),
         );
       }
-      Widget button = GlassButton.custom(
+      Widget button = _FushiAppleTab(
         key: _segmentKeys[i],
+        contentKey: _contentKeys[i],
+        selected: isSelected,
+        indicator: indicator,
+        height: height,
+        padding:
+            _bar.labelPadding ?? const EdgeInsets.symmetric(horizontal: 12),
+        semanticLabel: _semanticLabelOf(tabs[i]),
         onTap: () => _select(i),
-        style: isSelected
-            ? GlassButtonStyle.filled
-            : GlassButtonStyle.transparent,
-        settings: isSelected
-            ? fushiGlassSettings(context, tint: _bar.indicatorColor ?? thumb)
-            : null,
-        quality: fushiGlassQuality(context),
-        shape: LiquidRoundedSuperellipse(borderRadius: segmentHeight / 2),
-        stretch: 0.2,
-        label: _semanticLabelOf(tabs[i]),
         child: content,
       );
       button = Semantics(selected: isSelected, child: button);
@@ -853,6 +1906,25 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
       return button;
     }
 
+    // 整排共用一条下划线，随 TabController.animation 在相邻两页签之间插值滑动
+    // （点选时动画过去，横滑翻页时实时跟手）。在绘制阶段量各页签的位置，
+    // 布局已完成，不必等下一帧。
+    Widget slidingIndicator(Widget tabsRow) => CustomPaint(
+      key: _rowKey,
+      foregroundPainter: _FushiTabIndicatorPainter(
+        animation:
+            _controller!.animation ??
+            AlwaysStoppedAnimation<double>(_controller!.index.toDouble()),
+        controller: _controller!,
+        tabKeys: _contentKeys,
+        rowKey: _rowKey,
+        color: indicator,
+        // 量的是文字区，两端各多出 2px，短条比字略宽一点、不显得局促。
+        inset: -2,
+      ),
+      child: tabsRow,
+    );
+
     final TabAlignment alignment =
         _bar.tabAlignment ??
         TabBarTheme.of(context).tabAlignment ??
@@ -864,35 +1936,32 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
         controller: _bar.scrollController,
         physics: _bar.physics,
         dragStartBehavior: _bar.dragStartBehavior,
-        child: Row(
+        child: slidingIndicator(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int i = 0; i < tabs.length; i++) segment(i),
+            ],
+          ),
+        ),
+      );
+    } else if (alignment == TabAlignment.center) {
+      row = slidingIndicator(
+        Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[for (int i = 0; i < tabs.length; i++) segment(i)],
         ),
       );
-    } else if (alignment == TabAlignment.center) {
-      row = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[for (int i = 0; i < tabs.length; i++) segment(i)],
-      );
     } else {
-      row = Row(
-        children: <Widget>[
-          for (int i = 0; i < tabs.length; i++) Expanded(child: segment(i)),
-        ],
+      row = slidingIndicator(
+        Row(
+          children: <Widget>[
+            for (int i = 0; i < tabs.length; i++) Expanded(child: segment(i)),
+          ],
+        ),
       );
     }
-    // 轨道是内容层上的中性填充胶囊（tertiarySystemFill），不是玻璃：玻璃只给
-    // 浮起来的那枚滑块。
-    final Widget track = DecoratedBox(
-      decoration: ShapeDecoration(
-        color: apple.tertiaryFill,
-        shape: const StadiumBorder(),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(trackPadding),
-        child: Material(type: MaterialType.transparency, child: row),
-      ),
-    );
+    final Widget track = Material(type: MaterialType.transparency, child: row);
     final bool hugs = _bar.isScrollable || alignment == TabAlignment.center;
     final AlignmentGeometry hugAlignment = alignment == TabAlignment.center
         ? Alignment.center
@@ -909,4 +1978,179 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
       ),
     );
   }
+}
+
+/// 玻璃设计系统的单个文字页签：文字 + 选中时下方 3px 圆角强调色短条，悬停
+/// 一层极淡填充；可 Tab 聚焦、Enter 触发（ActivateIntent）。
+class _FushiAppleTab extends StatefulWidget {
+  const _FushiAppleTab({
+    super.key,
+    required this.contentKey,
+    required this.selected,
+    required this.indicator,
+    required this.height,
+    required this.padding,
+    required this.semanticLabel,
+    required this.onTap,
+    required this.child,
+  });
+
+  /// 挂在文字区上，供滑动指示条量宽度。
+  final GlobalKey contentKey;
+  final bool selected;
+  final Color indicator;
+  final double height;
+  final EdgeInsetsGeometry padding;
+  final String semanticLabel;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_FushiAppleTab> createState() => _FushiAppleTabState();
+}
+
+class _FushiAppleTabState extends State<_FushiAppleTab> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      label: widget.semanticLabel.isEmpty ? null : widget.semanticLabel,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (bool v) => setState(() => _hovered = v),
+        onShowFocusHighlight: (bool v) => setState(() => _focused = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (ActivateIntent _) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: SizedBox(
+            height: widget.height,
+            child: Padding(
+              padding: widget.padding,
+              child: Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  Positioned.fill(
+                    top: 6,
+                    bottom: 6,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        color: _hovered || _focused
+                            ? apple.tertiaryFill
+                            : Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: _focused
+                              ? BorderSide(color: widget.indicator, width: 1.5)
+                              : BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Center(
+                      widthFactor: 1,
+                      child: KeyedSubtree(
+                        key: widget.contentKey,
+                        child: widget.child,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [_FushiGlassTabBarState] 的滑动下划线：读 TabController 动画值，在第
+/// floor / ceil 两个页签的文字区之间线性插值位置与宽度。
+class _FushiTabIndicatorPainter extends CustomPainter {
+  _FushiTabIndicatorPainter({
+    required Animation<double> animation,
+    required this.controller,
+    required this.tabKeys,
+    required this.rowKey,
+    required this.color,
+    required this.inset,
+  }) : _animation = animation,
+       super(repaint: animation);
+
+  final Animation<double> _animation;
+  final TabController controller;
+  final List<GlobalKey> tabKeys;
+  final GlobalKey rowKey;
+  final Color color;
+  final double inset;
+
+  Rect? _tabRect(int index) {
+    if (index < 0 || index >= tabKeys.length) return null;
+    final RenderObject? tab = tabKeys[index].currentContext?.findRenderObject();
+    final RenderObject? row = rowKey.currentContext?.findRenderObject();
+    if (tab is! RenderBox || row is! RenderBox || !tab.hasSize) return null;
+    final Offset origin = tab.localToGlobal(Offset.zero, ancestor: row);
+    return origin & tab.size;
+  }
+
+  /// 液态拉伸（iOS 26 液态指示器）：两条边按不同缓动插值——前进方向上的
+  /// 前沿先走（ease-out）、后沿后到（ease-in），中途短条被拉长、把 A 与 B
+  /// 连成一条，再向 B 收拢。曲线只是 t 的函数、t 直接取自
+  /// TabController.animation：点选时随动画、横滑翻页时跟手；往回拖时 t 反向
+  /// 走，同一对曲线自然让左沿成为前沿。减弱动态效果下框架把动画时长归零，
+  /// 指示条直接落到目标，不出现拉伸。
+  static double _leadEdge(double t) => 1 - (1 - t) * (1 - t);
+  static double _trailEdge(double t) => t * t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (tabKeys.isEmpty) return;
+    final double value = _animation.value.clamp(0.0, tabKeys.length - 1.0);
+    final int from = value.floor();
+    final int to = value.ceil();
+    final Rect? a = _tabRect(from);
+    final Rect? b = _tabRect(to);
+    if (a == null || b == null) return;
+    final double t = value - from;
+    // 从 floor 页签走向 ceil 页签时，屏幕上向右走（LTR）的话右沿是前沿；
+    // RTL 下 ceil 在左边，左沿成为前沿。
+    final bool towardRight = b.left >= a.left;
+    final double leftT = towardRight ? _trailEdge(t) : _leadEdge(t);
+    final double rightT = towardRight ? _leadEdge(t) : _trailEdge(t);
+    final double left = lerpDouble(a.left, b.left, leftT)! + inset;
+    final double right = lerpDouble(a.right, b.right, rightT)! - inset;
+    if (right <= left) return;
+    final Rect bar = Rect.fromLTRB(
+      left,
+      size.height - 5,
+      right,
+      size.height - 2,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bar, const Radius.circular(1.5)),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FushiTabIndicatorPainter old) =>
+      old.color != color ||
+      old.inset != inset ||
+      old.controller != controller ||
+      old.tabKeys != tabKeys;
 }

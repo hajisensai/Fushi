@@ -476,6 +476,38 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     });
   }
 
+  /// 捕获中提示框。MD3：主题色描边框。Apple：macOS「录制快捷键」那种实色
+  /// 灰底圆角块 + 强调色 2px 环（选中 / 进行中走强调色），不是空心描边方框。
+  BoxDecoration _captureDecoration(
+    BuildContext context,
+    FushiDesignTokens tokens,
+  ) {
+    final ThemeData themeData = Theme.of(context);
+    if (isGlassDesign(context)) {
+      final FushiAppleColors apple = appleColorsOf(context);
+      return BoxDecoration(
+        color: apple.tertiaryFill,
+        border: Border.all(color: apple.accent, width: 2),
+        borderRadius: const BorderRadius.all(Radius.circular(10)),
+      );
+    }
+    return BoxDecoration(
+      border: Border.all(color: themeData.colorScheme.primary),
+      borderRadius: tokens.radii.controlRadius,
+    );
+  }
+
+  /// 捕获中提示文字：MD3 主题色；Apple 用 label 色（强调色已在环上，单色
+  /// 主题下强调色字压在灰底上对比也不足）。
+  TextStyle? _captureTextStyle(BuildContext context) {
+    final ThemeData themeData = Theme.of(context);
+    return themeData.textTheme.bodyMedium?.copyWith(
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).label
+          : themeData.colorScheme.primary,
+    );
+  }
+
   Future<_ConflictResolution?> _showConflictReassignmentDialog(
     ShortcutAction conflict,
   ) async {
@@ -732,17 +764,11 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                           vertical: tokens.spacing.gap + 4,
                           horizontal: tokens.spacing.gap,
                         ),
-                        decoration: BoxDecoration(
-                          border:
-                              Border.all(color: themeData.colorScheme.primary),
-                          borderRadius: tokens.radii.controlRadius,
-                        ),
+                        decoration: _captureDecoration(context, tokens),
                         child: Text(
                           t.shortcut_press_key,
                           textAlign: TextAlign.center,
-                          style: themeData.textTheme.bodyMedium?.copyWith(
-                            color: themeData.colorScheme.primary,
-                          ),
+                          style: _captureTextStyle(context),
                         ),
                       ),
                     ),
@@ -813,18 +839,11 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                             vertical: tokens.spacing.gap + 4,
                             horizontal: tokens.spacing.gap,
                           ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: themeData.colorScheme.primary,
-                            ),
-                            borderRadius: tokens.radii.controlRadius,
-                          ),
+                          decoration: _captureDecoration(context, tokens),
                           child: Text(
                             t.shortcut_press_gamepad,
                             textAlign: TextAlign.center,
-                            style: themeData.textTheme.bodyMedium?.copyWith(
-                              color: themeData.colorScheme.primary,
-                            ),
+                            style: _captureTextStyle(context),
                           ),
                         ),
                       ),
@@ -933,18 +952,11 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                             vertical: tokens.spacing.gap + 4,
                             horizontal: tokens.spacing.gap,
                           ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: themeData.colorScheme.primary,
-                            ),
-                            borderRadius: tokens.radii.controlRadius,
-                          ),
+                          decoration: _captureDecoration(context, tokens),
                           child: Text(
                             t.shortcut_press_mouse_button,
                             textAlign: TextAlign.center,
-                            style: themeData.textTheme.bodyMedium?.copyWith(
-                              color: themeData.colorScheme.primary,
-                            ),
+                            style: _captureTextStyle(context),
                           ),
                         ),
                       ),
@@ -1011,18 +1023,11 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                           vertical: tokens.spacing.gap + 4,
                           horizontal: tokens.spacing.gap,
                         ),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: themeData.colorScheme.primary,
-                          ),
-                          borderRadius: tokens.radii.controlRadius,
-                        ),
+                        decoration: _captureDecoration(context, tokens),
                         child: Text(
                           t.shortcut_press_wheel,
                           textAlign: TextAlign.center,
-                          style: themeData.textTheme.bodyMedium?.copyWith(
-                            color: themeData.colorScheme.primary,
-                          ),
+                          style: _captureTextStyle(context),
                         ),
                       ),
                     ),

@@ -139,9 +139,9 @@ class _LnReaderInstalledSourcesSectionState
         ),
         if (all.isEmpty)
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(t.novel_online_sources_empty),
+            child: FushiPlaceholderMessage(
+              icon: Icons.menu_book_outlined,
+              message: t.novel_online_sources_empty,
             ),
           )
         else
@@ -151,6 +151,8 @@ class _LnReaderInstalledSourcesSectionState
               visible[index],
               all.indexOf(visible[index]),
               reorderable: reorderable,
+              groupIndex: index,
+              groupCount: visible.length,
             ),
           ),
         if (_searchQuery.trim().isNotEmpty && visible.isEmpty && all.isNotEmpty)
@@ -168,6 +170,8 @@ class _LnReaderInstalledSourcesSectionState
     LnReaderInstalledPlugin plugin,
     int index, {
     required bool reorderable,
+    required int groupIndex,
+    required int groupCount,
   }) {
     final LnReaderManager manager = widget.manager;
     final List<_SourceAction> actions = <_SourceAction>[
@@ -196,11 +200,10 @@ class _LnReaderInstalledSourcesSectionState
         onTap: () => unawaited(manager.setPinned(plugin, !plugin.pinned)),
       ),
     ];
-    return FushiCard(
-      margin: EdgeInsets.only(
-        bottom: FushiDesignTokens.of(context).spacing.gap,
-      ),
-      padding: EdgeInsets.zero,
+    // 已装源整段读作一个分组（MD3 分段 / Apple inset grouped）。
+    return FushiGroupedListItem(
+      index: groupIndex,
+      count: groupCount,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool compact = constraints.maxWidth < _kInlineActionsMinWidth;

@@ -355,6 +355,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// 提供商列表是「每家一行 → 点进编辑页」：编辑字段 / 自检 / 删除都在编辑页上。
+    Future<void> openEditor(WidgetTester tester, String providerId) =>
+        tapKey(tester, 'ai-provider-$providerId');
+
+    Future<void> closeEditor(WidgetTester tester) async {
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('选预设新增一家 → 填 key/模型 → 防抖后写穿偏好', (WidgetTester tester) async {
       await pumpSection(tester);
       expect(prefs.aiProviders, isEmpty);
@@ -400,6 +409,7 @@ void main() {
         ),
       );
       await pumpSection(tester);
+      await openEditor(tester, 'p1');
 
       // `htt` 不是合法地址：这条草稿本轮无效（它仍留在界面上，不报错也不弹窗——
       // 用户只是还没打完）。回归点（S1）：此前无效草稿直接被跳过、整份覆盖落盘，
@@ -578,6 +588,7 @@ void main() {
         ),
       );
       await pumpSection(tester);
+      await openEditor(tester, 'p1');
 
       await tapKey(tester, 'ai-provider-0-delete');
       await tester.pump(const Duration(seconds: 1));
@@ -606,6 +617,7 @@ void main() {
         const AiFeatureAssignments(defaultProviderId: 'p1'),
       );
       await pumpSection(tester);
+      await openEditor(tester, 'p1');
 
       await tapKey(tester, 'ai-provider-0-allow-http');
       await tester.pump(const Duration(seconds: 1));
@@ -639,6 +651,9 @@ void main() {
       ]);
 
       // 上一次有效版本的回落只覆盖「还在草稿列表里」的 id：删掉就是删掉。
+      // （新增后自动进了新草稿的编辑页：退回列表再进 p1。）
+      await closeEditor(tester);
+      await openEditor(tester, 'p1');
       await enter(tester, 'ai-provider-0-base-url', 'htt');
       await tapKey(tester, 'ai-provider-0-delete');
       await tester.pump(const Duration(seconds: 1));
@@ -748,6 +763,7 @@ void main() {
         }, status: 404);
       });
 
+      await openEditor(tester, 'p1');
       await tapKey(tester, 'ai-provider-0-test');
 
       // 回归点（S4）：此前只跑 listModels，模型名拼错照样「连接正常」。
@@ -782,6 +798,7 @@ void main() {
         }),
       );
 
+      await openEditor(tester, 'p1');
       await tapKey(tester, 'ai-provider-0-test');
       expect(find.text(t.ai_provider_test_ok), findsOneWidget);
     });
@@ -796,6 +813,7 @@ void main() {
         return jsonResponse(<String, Object?>{'data': <Object?>[]});
       });
 
+      await openEditor(tester, 'p1');
       await tapKey(tester, 'ai-provider-0-test');
       expect(seen.single.method, 'GET');
       expect(seen.single.url.path, '/v1/models');
@@ -845,6 +863,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await openEditor(tester, 'p1');
 
       // 迁移面：老用户落盘的模型名必须原样回显在字段里（字段仍是自由文本，
       // 候选只是辅助输入；写不进去就等于升级后把人家的自定义模型名吞了）。

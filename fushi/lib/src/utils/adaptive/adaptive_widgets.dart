@@ -7,18 +7,22 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiFilledButton, FushiTextButton;
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show FushiFilledButton;
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
+    show FushiExpressiveLoadingIndicator;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show
-        GlassProgressIndicator,
-        GlassSegment,
-        GlassContainer,
-        GlassSegmentedControl,
-        GlassSlider,
-        GlassSwitch,
-        LiquidVerticalRoundedSuperellipse;
+        FushiAppleProgressRing,
+        FushiCircularProgressIndicator,
+        fushiAppleActivityIndicator;
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSegmentedButton, FushiSlider, FushiSwitch;
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassContainer, LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 Widget adaptiveDialogAction({
@@ -28,17 +32,16 @@ Widget adaptiveDialogAction({
   bool isDestructiveAction = false,
   bool isDefaultAction = false,
 }) {
-  // 「玻璃」设计系统：玻璃按钮族（fushi_glass_buttons 的分派包装在玻璃下渲染
-  // GlassButton，自带焦点环 + Enter → ActivateIntent）。配色口径与 MD3 分支一致：
-  // 默认动作 = 主色玻璃、破坏性 = errorContainer 着色、其余 = 透明玻璃。
+  // Apple 设计系统（偏好值 glass）：对话框动作是实色胶囊（自带焦点环 +
+  // Enter → ActivateIntent）。默认动作 = 强调色实底；破坏性 = 系统灰胶囊 +
+  // destructive 红字（iOS / macOS 的破坏性按钮从不铺粉色 / 红色底）；其余 =
+  // 系统灰胶囊（取消类）。
   if (isGlassDesign(context)) {
     if (isDestructiveAction) {
-      final ColorScheme cs = Theme.of(context).colorScheme;
-      return FushiFilledButton(
+      return FushiFilledButton.tonal(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: cs.errorContainer,
-          foregroundColor: cs.onErrorContainer,
+          foregroundColor: appleColorsOf(context).destructive,
         ),
         child: child,
       );
@@ -46,7 +49,7 @@ Widget adaptiveDialogAction({
     if (isDefaultAction) {
       return FushiFilledButton(onPressed: onPressed, child: child);
     }
-    return FushiTextButton(onPressed: onPressed, child: child);
+    return FushiFilledButton.tonal(onPressed: onPressed, child: child);
   }
   // macOS-native: PushButton is the standard dialog button. Default action =
   // filled primary; destructive = error-tinted; everything else = secondary
@@ -106,19 +109,13 @@ Widget adaptiveSwitch({
   Color? activeColor,
 }) {
   if (isGlassDesign(context)) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    // GlassSwitch 的 onChanged 不可空：禁用态用 IgnorePointer + 半透明表达，
-    // 与 MD3 Switch(onChanged: null) 同语义（不可点、不可聚焦）。
-    final Widget glassSwitch = GlassSwitch(
+    // Apple 设计系统：委托给 FushiSwitch 的 Apple 开关（与 FushiSwitch 调用点
+    // 同一个观感：强调色轨 + onAccent 圆钮、关态 systemFill 灰轨）。禁用态由它
+    // 自己表达（不可点、不可聚焦、半透明），与 MD3 Switch(onChanged: null) 同语义。
+    return FushiSwitch(
       value: value,
-      onChanged: onChanged ?? (_) {},
-      activeColor: activeColor ?? cs.primary,
-      inactiveColor: cs.outlineVariant,
-      quality: fushiGlassQuality(context),
-    );
-    if (onChanged != null) return glassSwitch;
-    return IgnorePointer(
-      child: ExcludeFocus(child: Opacity(opacity: 0.38, child: glassSwitch)),
+      onChanged: onChanged,
+      activeTrackColor: activeColor,
     );
   }
   // macOS-native: MacosSwitch is a clean drop-in (nullable onChanged handles the
@@ -160,9 +157,10 @@ Widget adaptiveSlider({
   ValueChanged<double>? onChangeEnd,
 }) {
   if (isGlassDesign(context)) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return GlassSlider(
-      value: value.clamp(min, max).toDouble(),
+    // Apple 设计系统：委托给 FushiSlider 的 Apple 滑块（细轨 + 白色圆钮，方向键
+    // 与语义增减齐全），与 FushiSlider 调用点同一个观感。
+    return FushiSlider(
+      value: value,
       onChanged: onChanged,
       onChangeStart: onChangeStart,
       onChangeEnd: onChangeEnd,
@@ -170,10 +168,7 @@ Widget adaptiveSlider({
       max: max,
       divisions: divisions,
       label: label,
-      activeColor: cs.primary,
-      inactiveColor: cs.outlineVariant,
-      thumbColor: thumbColor ?? Colors.white,
-      quality: fushiGlassQuality(context),
+      thumbColor: thumbColor,
     );
   }
   // macOS-native: MacosSlider has no onChangeEnd/onChangeStart/divisions, so a
@@ -261,14 +256,31 @@ Widget adaptiveIndicator({
     );
   }
   if (isGlassDesign(context)) {
-    // 与 CircularProgressIndicator 同一个 36 的默认外框：调用点常把它塞进
-    // 14~20 的 tight SizedBox，紧约束下照样跟着缩。
-    return GlassProgressIndicator.circular(
-      value: value?.clamp(0.0, 1.0),
-      size: 36,
-      strokeWidth: strokeWidth ?? 4.0,
-      color: color ?? Theme.of(context).colorScheme.primary,
-      quality: fushiGlassQuality(context),
+    // Apple 设计系统：不确定态是 iOS / macOS 的菊花（系统灰，常规半径 10）；
+    // 确定进度是细圆环（强调色进度 + systemFill 底环、圆头）。都不是玻璃——
+    // 进度指示是内容，不是浮层控件。36 的默认外框：调用点常把它塞进 14~20 的
+    // tight SizedBox，紧约束下跟着缩、无约束时不放大。
+    if (value == null) {
+      return fushiAppleActivityIndicator(
+        context,
+        color: color,
+        radius: strokeWidth != null ? strokeWidth * 2.5 : null,
+      );
+    }
+    final FushiAppleColors apple = appleColorsOf(context);
+    return SizedBox.square(
+      dimension: 36,
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: FushiAppleProgressRing(
+            value: value.clamp(0.0, 1.0),
+            color: color ?? apple.accent,
+            trackColor: apple.fill,
+            strokeWidth: strokeWidth ?? 3,
+          ),
+        ),
+      ),
     );
   }
   if (isCupertinoPlatform(context)) {
@@ -282,7 +294,21 @@ Widget adaptiveIndicator({
     }
     return CupertinoActivityIndicator(color: color, radius: radius);
   }
-  return CircularProgressIndicator(
+  // MD3：Material 3 Expressive。不定态是 LoadingIndicator（主色形状连续变形 +
+  // 旋转），确定态是波浪进度环；都放进与 M3 2024 版原控件相同的 40 外框，
+  // 紧约束下等比缩小、无约束时不放大。
+  if (value == null) {
+    return SizedBox.square(
+      dimension: 40,
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: FushiExpressiveLoadingIndicator(size: 40, color: color),
+        ),
+      ),
+    );
+  }
+  return FushiCircularProgressIndicator(
     color: color,
     strokeWidth: strokeWidth ?? 4.0,
     value: value,
@@ -302,12 +328,64 @@ Future<T?> adaptiveModalSheet<T>({
       builder: builder,
     );
   }
+  final bool noMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  final AnimationStyle sheetMotion = noMotion
+      ? AnimationStyle.noAnimation
+      : fushiMd3SheetAnimationStyle;
   if (isGlassDesign(context)) {
-    // 「玻璃」设计系统：弹层表面是只有上圆角的玻璃（GlassSheet 的形状与拖动条
-    // 观感）。不直接用 GlassSheet：它把内容放进非弹性槽 / 自带滚动视图，内容
-    // 拿到的是无界高度，而这里的调用点（FushiModalSheetFrame 等）靠 Flexible
-    // 在弹层高度内收缩，放进去会抛无界约束。BottomSheet 只剩路由 / 拖拽关闭
-    // 职责，自身透明无阴影。
+    final TargetPlatform platform = Theme.of(context).platform;
+    final bool desktop =
+        platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux;
+    if (desktop) {
+      // macOS 26 sheet：从窗口顶部正中垂下的实色面板（宽 480–640、圆角 18、
+      // 大半径柔和阴影），不是底部抽屉。走 RawDialogRoute：Esc（DismissIntent）
+      // 关闭、点遮罩关闭、独立焦点作用域、pop 返回值与底部弹层一致。
+      return showGeneralDialog<T>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        barrierColor: Colors.black.withValues(alpha: 0.18),
+        transitionDuration: noMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 260),
+        pageBuilder:
+            (
+              BuildContext sheetContext,
+              Animation<double> animation,
+              Animation<double> secondaryAnimation,
+            ) => _AppleDesktopSheet(child: builder(sheetContext)),
+        transitionBuilder:
+            (
+              BuildContext context,
+              Animation<double> animation,
+              Animation<double> secondaryAnimation,
+              Widget child,
+            ) {
+              final Animation<double> curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.08),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+      );
+    }
+    // iOS 26 sheet：四周内缩的悬浮液态玻璃面板（左右下留 8、圆角 34），拖动条
+    // 上拉到 large（≈92% 屏高）时贴边、玻璃转为实色 secondaryGroupedBackground，
+    // 下拉回到 medium / 关闭。BottomSheet 只剩路由 / 拖拽关闭职责，自身透明。
+    // 不用库的 GlassModalSheet：它按固定 detent 高度排版（短确认框也会被撑到
+    // 45%），且自带路由，Esc / 焦点作用域 / isScrollControlled 语义都要重接。
     return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: isScrollControlled,
@@ -315,7 +393,9 @@ Future<T?> adaptiveModalSheet<T>({
       showDragHandle: false,
       backgroundColor: Colors.transparent,
       elevation: 0,
-      sheetAnimationStyle: fushiMd3SheetAnimationStyle,
+      constraints: const BoxConstraints(),
+      barrierColor: Colors.black.withValues(alpha: 0.2),
+      sheetAnimationStyle: sheetMotion,
       builder: (BuildContext sheetContext) => _LiquidSheetBody(
         showDragHandle: showDragHandle,
         child: builder(sheetContext),
@@ -333,7 +413,7 @@ Future<T?> adaptiveModalSheet<T>({
       showDragHandle: false,
       backgroundColor: Colors.transparent,
       elevation: 0,
-      sheetAnimationStyle: fushiMd3SheetAnimationStyle,
+      sheetAnimationStyle: sheetMotion,
       builder: (BuildContext sheetContext) => _GlassSheetBody(
         showDragHandle: showDragHandle,
         child: builder(sheetContext),
@@ -345,64 +425,185 @@ Future<T?> adaptiveModalSheet<T>({
     isScrollControlled: isScrollControlled,
     useSafeArea: useSafeArea,
     showDragHandle: showDragHandle,
-    sheetAnimationStyle: fushiMd3SheetAnimationStyle,
+    sheetAnimationStyle: sheetMotion,
     builder: builder,
   );
 }
 
-/// 玻璃设计系统的底部弹层表面：上圆角超椭圆 [GlassContainer] + 与 M3 同几何的
-/// 拖动条（48 高交互区 + 36x5 胶囊）。内容外包一层透明 Material，弹层里的 MD3
-/// 子组件（InkWell 等）仍有画墨水的祖先。
-class _LiquidSheetBody extends StatelessWidget {
+/// Apple 设计系统的移动端底部弹层（iOS 26 sheet）。
+///
+/// - medium（默认）：四周内缩的悬浮液态玻璃面板——左右与底部留 8、圆角 34
+///   （贴着屏幕圆角的观感），高度随内容（受路由的 isScrollControlled 约束）；
+/// - large：拖动条上拉切过去，面板贴边（左右下 0、上两角保留 34），高 ≈92%
+///   屏高，玻璃转为实色 secondaryGroupedBackground（iOS 全高 sheet 不透底）；
+/// - 拖动条 36×5 tertiaryLabel；在拖动条上下拉：large → medium，medium →
+///   关闭（与 BottomSheet 自身的整块下拉关闭并存）。
+/// 系统降低透明度（材质 off）时 medium 也是实色；系统关闭动画时切换无过渡。
+/// 内容外包一层透明 Material，弹层里依赖 Material 祖先的子组件照常工作。
+class _LiquidSheetBody extends StatefulWidget {
   const _LiquidSheetBody({required this.showDragHandle, required this.child});
 
   final bool showDragHandle;
   final Widget child;
 
   @override
+  State<_LiquidSheetBody> createState() => _LiquidSheetBodyState();
+}
+
+class _LiquidSheetBodyState extends State<_LiquidSheetBody> {
+  static const double _margin = 8;
+  static const double _radius = 34;
+  static const double _largeFraction = 0.92;
+
+  bool _large = false;
+  double _dragDy = 0;
+
+  void _onDragEnd(DragEndDetails details) {
+    final double velocity = details.primaryVelocity ?? 0;
+    final double dy = _dragDy;
+    _dragDy = 0;
+    if (dy < -40 || velocity < -600) {
+      if (!_large) setState(() => _large = true);
+    } else if (dy > 40 || velocity > 600) {
+      if (_large) {
+        setState(() => _large = false);
+      } else {
+        Navigator.of(context).maybePop();
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final double radius = FushiBorderRadius.sheet.topLeft.x;
-    final Widget content = Material(
+    final FushiAppleColors apple = appleColorsOf(context);
+    final MediaQueryData media = MediaQuery.of(context);
+    final bool noMotion = media.disableAnimations;
+    final bool solid =
+        _large || glassMaterialOf(context) == FushiGlassMaterial.off;
+    final double margin = _large ? 0 : _margin;
+    final BorderRadius radius = _large
+        ? const BorderRadius.vertical(top: Radius.circular(_radius))
+        : const BorderRadius.all(Radius.circular(_radius));
+
+    Widget content = Material(
       type: MaterialType.transparency,
-      child: child,
+      child: widget.child,
     );
-    return GlassContainer(
-      shape: LiquidVerticalRoundedSuperellipse(
-        topRadius: radius,
-        bottomRadius: 0,
-      ),
-      quality: fushiGlassQuality(context, prominent: true),
-      settings: fushiGlassSettings(
-        context,
-        tint: FushiDesignTokens.of(context).surfaces.group,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: showDragHandle
-          ? Stack(
-              alignment: Alignment.topCenter,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.only(top: kMinInteractiveDimension),
-                  child: content,
-                ),
-                SizedBox(
-                  height: kMinInteractiveDimension,
-                  child: Center(
-                    child: Container(
-                      width: 36,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.45),
-                        borderRadius:
-                            const BorderRadius.all(Radius.circular(2.5)),
-                      ),
-                    ),
+    if (widget.showDragHandle) {
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragUpdate: (DragUpdateDetails d) =>
+                _dragDy += d.primaryDelta ?? 0,
+            onVerticalDragEnd: _onDragEnd,
+            onTap: () => setState(() => _large = !_large),
+            child: SizedBox(
+              height: 22,
+              child: Center(
+                child: Container(
+                  width: 36,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: apple.tertiaryLabel,
+                    borderRadius: const BorderRadius.all(Radius.circular(2.5)),
                   ),
                 ),
-              ],
-            )
-          : content,
+              ),
+            ),
+          ),
+          Flexible(child: content),
+        ],
+      );
+    }
+    if (_large) {
+      content = SizedBox(
+        height: media.size.height * _largeFraction,
+        child: content,
+      );
+    }
+
+    final Widget panel = solid
+        ? DecoratedBox(
+            decoration: BoxDecoration(
+              color: apple.secondaryGroupedBackground,
+              borderRadius: radius,
+            ),
+            child: ClipRRect(borderRadius: radius, child: content),
+          )
+        : GlassContainer(
+            shape: LiquidRoundedSuperellipse(borderRadius: _radius),
+            quality: fushiGlassQuality(context, prominent: true),
+            settings: fushiGlassSettings(context),
+            clipBehavior: Clip.antiAlias,
+            child: content,
+          );
+
+    return AnimatedPadding(
+      duration: noMotion ? Duration.zero : const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.fromLTRB(margin, 0, margin, margin),
+      child: panel,
+    );
+  }
+}
+
+/// Apple 设计系统的桌面弹层（macOS 26 sheet）：贴窗口顶部正中、宽 480–640、
+/// 圆角 18、实色面板（深 #2C2C2E / 浅白）+ 大半径柔和阴影，最高 85% 窗口高。
+/// 内容外包透明 Material（依赖 Material 祖先的子组件照常工作）。
+class _AppleDesktopSheet extends StatelessWidget {
+  const _AppleDesktopSheet({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Size size = MediaQuery.sizeOf(context);
+    const BorderRadius radius = BorderRadius.all(Radius.circular(18));
+    final double width = (size.width - 32).clamp(0, 640).toDouble();
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: width < 480 ? width : 480,
+              maxWidth: width,
+              maxHeight: size.height * 0.85,
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: dark ? const Color(0xFF2C2C2E) : Colors.white,
+                borderRadius: radius,
+                border: Border.all(
+                  color: dark
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : Colors.black.withValues(alpha: 0.08),
+                  width: 0.5,
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: dark ? 0.5 : 0.22),
+                    blurRadius: 40,
+                    offset: const Offset(0, 16),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: radius,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -457,10 +658,22 @@ Widget adaptiveSegmentedButton<T extends Object>({
   ButtonStyle? style,
 }) {
   if (isGlassDesign(context)) {
-    return _GlassSegmentedButton<T>(
-      segments: segments,
-      selected: selected,
-      onSelectionChanged: onSelectionChanged,
+    // Apple 设计系统：委托给 FushiSegmentedButton 的 iOS 分段（systemFill 灰轨 +
+    // 白色滑块），与 FushiSegmentedButton 调用点同一个观感。有界宽下撑满（沿用
+    // 以前玻璃分段的布局），无界宽（横向滚动的分段条宿主）按内容取宽。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return FushiSegmentedButton<T>(
+          segments: segments,
+          selected: selected,
+          onSelectionChanged: onSelectionChanged,
+          emptySelectionAllowed: selected.isEmpty,
+          showSelectedIcon: false,
+          expandedInsets:
+              constraints.maxWidth.isFinite ? EdgeInsets.zero : null,
+          style: style,
+        );
+      },
     );
   }
   if (isCupertinoPlatform(context)) {
@@ -483,91 +696,6 @@ Widget adaptiveSegmentedButton<T extends Object>({
     onSelectionChanged: onSelectionChanged,
     style: style,
   );
-}
-
-/// 「玻璃」设计系统的分段控件：[GlassSegmentedControl]（滑动玻璃指示器）。
-///
-/// [ButtonSegment] 的文字段取 Text.data、图标段取 icon、tooltip / enabled 原样
-/// 带过去。GlassSegmentedControl 按段均分可用宽：在无界宽（横向滚动的分段条
-/// 宿主）里先按与 settings_shared 同口径的估宽给出自然宽，避免无界约束。
-class _GlassSegmentedButton<T extends Object> extends StatelessWidget {
-  const _GlassSegmentedButton({
-    required this.segments,
-    required this.selected,
-    required this.onSelectionChanged,
-  });
-
-  final List<ButtonSegment<T>> segments;
-  final Set<T> selected;
-  final ValueChanged<Set<T>> onSelectionChanged;
-
-  static String? _labelOf(ButtonSegment<Object> segment) {
-    final Widget? label = segment.label;
-    if (label is Text) return label.data ?? label.textSpan?.toPlainText();
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextStyle base = FushiDesignTokens.of(context).type.controlLabel;
-    final int found = selected.isEmpty
-        ? -1
-        : segments
-            .indexWhere((ButtonSegment<T> s) => s.value == selected.first);
-    final int selectedIndex = found < 0 ? 0 : found;
-    final List<GlassSegment> glassSegments = <GlassSegment>[
-      for (final ButtonSegment<T> s in segments)
-        GlassSegment(
-          label: _labelOf(s),
-          icon: _labelOf(s) == null ? s.icon : null,
-          tooltip: s.tooltip,
-          enabled: s.enabled,
-        ),
-    ];
-    final double textScale = MediaQuery.textScalerOf(context).scale(1);
-    double naturalWidth = 4;
-    for (final ButtonSegment<T> s in segments) {
-      final String? label = _labelOf(s);
-      naturalWidth += label == null
-          ? 48
-          : 32 + _estimateTextWidth(label, (base.fontSize ?? 14) * textScale);
-    }
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final Widget control = GlassSegmentedControl(
-          segments: glassSegments,
-          selectedIndex: selectedIndex,
-          onSegmentSelected: (int index) {
-            if (index < 0 || index >= segments.length) return;
-            if (!segments[index].enabled) return;
-            onSelectionChanged(<T>{segments[index].value});
-          },
-          selectedTextStyle: base.copyWith(
-            color: cs.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
-          unselectedTextStyle: base.copyWith(color: cs.onSurfaceVariant),
-          selectedIconColor: cs.onSurface,
-          unselectedIconColor: cs.onSurfaceVariant,
-          iconSize: 18,
-          indicatorColor: cs.secondaryContainer.withValues(alpha: 0.6),
-          quality: fushiGlassQuality(context),
-        );
-        if (constraints.maxWidth.isFinite) return control;
-        return SizedBox(width: naturalWidth, child: control);
-      },
-    );
-  }
-
-  /// CJK / 全角按 1em，其余按 0.62em（与 settings_shared 的分段估宽同口径）。
-  static double _estimateTextWidth(String text, double fontSize) {
-    double width = 0;
-    for (final int rune in text.runes) {
-      width += rune >= 0x1100 ? fontSize : fontSize * 0.62;
-    }
-    return width;
-  }
 }
 
 Route<T> adaptivePageRoute<T>({

@@ -403,13 +403,22 @@ class _LanguageChip extends StatelessWidget {
   final String language;
 
   @override
-  Widget build(BuildContext context) => CircleAvatar(
-    radius: 14,
-    child: Text(
-      language.toUpperCase(),
-      style: Theme.of(context).textTheme.labelSmall,
-    ),
-  );
+  Widget build(BuildContext context) {
+    // 中性灰底：CircleAvatar 默认 primaryContainer 是彩色 tonal 块，语言码只是
+    // 元信息，不该抢主色（Apple 设计系统下更是禁止彩色底块）。
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return CircleAvatar(
+      radius: 14,
+      backgroundColor: cs.surfaceContainerHighest,
+      foregroundColor: cs.onSurfaceVariant,
+      child: Text(
+        language.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: cs.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
 }
 
 class _SectionMessage extends StatelessWidget {

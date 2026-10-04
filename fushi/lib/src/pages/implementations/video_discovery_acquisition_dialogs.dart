@@ -1312,7 +1312,7 @@ class _VideoResourceSearchSurfaceState
       (!widget.subscription || (filter != null && _strictConfirmed));
 
   Widget _buildResults() {
-    if (_loading) return const Center(child: FushiCircularProgressIndicator());
+    if (_loading) return const FushiLoadingView();
     final ProviderBatchResult<VideoResourceCandidate>? result = _result;
     if (result == null) {
       return Center(child: Text(t.anime_download_search_start_hint));
@@ -1947,7 +1947,7 @@ class _VideoDiscoverySubtitleSearchDialogState
   }
 
   Widget _buildSubtitleResults() {
-    if (_loading) return const Center(child: FushiCircularProgressIndicator());
+    if (_loading) return const FushiLoadingView();
     final ProviderBatchResult<VideoSubtitleCandidate>? result = _result;
     if (result == null || result.isTotalFailure) {
       return Center(
@@ -2114,18 +2114,12 @@ class _ProviderWarning extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-      child: Row(
-        children: <Widget>[
-          FushiIcon(
-            error ? Icons.error_outline_rounded : Icons.warning_amber_rounded,
-            color: error ? colors.error : colors.tertiary,
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(child: Text(message, style: tokens.type.metadata)),
-        ],
+      child: FushiInlineNotice(
+        severity:
+            error ? FushiNoticeSeverity.error : FushiNoticeSeverity.warning,
+        message: message,
       ),
     );
   }
@@ -2147,32 +2141,8 @@ class _NoProviderEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
-            SizedBox(height: tokens.spacing.gap),
-            Text(title, style: theme.textTheme.titleSmall),
-            SizedBox(height: tokens.spacing.gap / 2),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Text(
-                hint,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // 空态走共享占位（MD3 分组底卡 / Apple ContentUnavailableView 观感）。
+    return FushiPlaceholderMessage(icon: icon, message: title, detail: hint);
   }
 }
 

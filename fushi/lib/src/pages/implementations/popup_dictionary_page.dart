@@ -543,6 +543,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final Widget card = FushiPopupSurface(
       color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
           .withValues(alpha: 1.0),
+      // 独立的系统查词浮窗：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
+      standaloneWindow: true,
       child: Column(
         children: [
           // TODO-951 症状B：关闭是「结果」，滑动只是其中一种「触发行为」，二者解耦。

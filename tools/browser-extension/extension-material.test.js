@@ -4,22 +4,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// 扩展「材质」设置（用户 2026-10-04：「浏览器插件可以造一套液态玻璃的主题」）。
-// 材质与配色正交（同 app 设计系统 glass_material 独立于颜色主题）：
-//   extensionMaterial = 'auto'（跟随 Fushi：app 设计系统选了玻璃 → 玻璃）| 'solid' | 'glass'。
+// 扩展的材质：液态玻璃是唯一材质（用户 2026-10-04：「浏览器插件的材质默认液态玻璃，然后砍掉
+// 之前的样式」）。原先的「材质」设置（extensionMaterial = 跟随 Fushi / 实心 / 玻璃）与 app
+// 设计系统镜像（appGlassMirror）一并删除；配色主题（extensionPalette）与材质正交，保留。
 // 本测试钉住：
-//  ① theme.js resolveGlass 真值表 + 扩展页面根 data-material 随设置 / app 镜像即时切换，
-//     宿主网页的 <html> 绝不写；
-//  ② content.js 查词弹窗的玻璃钩子经 resolveGlass 决议（显式设置压过 app 下发的 --fushi-glass）；
-//  ③ background 把 app 下发的 --fushi-glass 镜像进 appGlassMirror；
-//  ④ glass.css：全部规则挂在 :root[data-material="glass"] 下（实心时零影响），带 -webkit- 前缀，
-//     有不支持 backdrop-filter / 减少透明度 / 减少动态效果三条回退；三个扩展页面在页面 CSS 之后引入；
-//  ⑤ options 页的材质下拉 + 节导航锚点都指向真实存在的节。
+//  ① theme.js 不再有材质决议：扩展页面根不写 data-material，旧存储里的 extensionMaterial /
+//     appGlassMirror 读到也忽略，扩展页面启动时清掉（宿主网页不清）；
+//  ② content.js 查词弹窗恒上玻璃，只有 app 墨水屏下发 --fushi-glass: '0' 时关；
+//  ③ background 不再镜像 app 的玻璃开关；options 页没有材质下拉，17 份文案都已删；
+//  ④ glass.css 无条件生效（不挂任何属性开关），带 -webkit- 前缀，保留不支持 backdrop-filter /
+//     减少透明度 / 减少动态效果三条兼容回退，且回退压得过暗色块；三个扩展页面在页面 CSS 之后引入；
+//  ⑤ options 页的节导航锚点都指向真实存在的节。
 
 const THEME_SRC = fs.readFileSync(path.join(__dirname, 'theme.js'), 'utf8');
 const GLASS_CSS = fs.readFileSync(path.join(__dirname, 'glass.css'), 'utf8');
 
-function storageMock(stored) {
+function storageMock(stored, removed) {
   const changeListeners = [];
   return {
     local: {
@@ -35,6 +35,10 @@ function storageMock(stored) {
         for (const fn of changeListeners) fn(changes, 'local');
         return Promise.resolve();
       },
+      remove: (keys) => {
+        for (const k of [].concat(keys)) { removed.push(k); delete stored[k]; }
+        return Promise.resolve();
+      },
     },
     onChanged: { addListener: (fn) => changeListeners.push(fn) },
   };
@@ -43,12 +47,13 @@ function storageMock(stored) {
 function loadTheme(opts) {
   opts = opts || {};
   const stored = Object.assign({}, opts.stored);
+  const removed = [];
   const rootAttrs = {};
   const sandbox = {
     console,
     location: { protocol: opts.protocol || 'chrome-extension:' },
     matchMedia: () => ({ matches: false, addEventListener() {} }),
-    chrome: { storage: storageMock(stored) },
+    chrome: { storage: storageMock(stored, removed) },
     document: {
       documentElement: { setAttribute: (k, v) => { rootAttrs[k] = v; }, removeAttribute: (k) => { delete rootAttrs[k]; } },
       createElement: () => ({}),
@@ -57,50 +62,35 @@ function loadTheme(opts) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(THEME_SRC, sandbox, { filename: 'theme.js' });
-  return { theme: sandbox.fushiTheme, rootAttrs, set: (p) => sandbox.chrome.storage.local.set(p) };
+  return { theme: sandbox.fushiTheme, rootAttrs, stored, removed, set: (p) => sandbox.chrome.storage.local.set(p) };
 }
 
 // ───────── ① theme.js ─────────
 
-test('resolveGlass 真值表：显式 glass / solid 压过 app；auto 跟本次 app 开关，缺省跟镜像', () => {
-  const h = loadTheme();
-  assert.strictEqual(h.theme.material, 'auto', '缺省 = 跟随 Fushi');
-  assert.strictEqual(h.theme.resolveGlass(), false, '从未查过词（无镜像）= 实心');
-  assert.strictEqual(h.theme.resolveGlass(true), true, 'auto 下查词弹窗跟本次响应');
-  assert.strictEqual(h.theme.resolveGlass(false), false);
-  h.set({ appGlassMirror: true });
-  assert.strictEqual(h.theme.resolveGlass(), true, 'auto 下扩展页面跟 app 设计系统镜像');
-  h.set({ extensionMaterial: 'solid' });
-  assert.strictEqual(h.theme.resolveGlass(true), false, '显式实心压过 app 的玻璃');
-  assert.strictEqual(h.theme.resolveGlass(), false);
-  h.set({ extensionMaterial: 'glass', appGlassMirror: false });
-  assert.strictEqual(h.theme.resolveGlass(false), true, '显式液态玻璃压过 app 的实心');
-  h.set({ extensionMaterial: 'bogus' });
-  assert.strictEqual(h.theme.material, 'auto', '坏值当 auto');
+test('theme.js 没有材质决议：不导出 material / resolveGlass，扩展页面根不写 data-material', () => {
+  const h = loadTheme({ stored: { extensionMaterial: 'solid', appGlassMirror: false } });
+  assert.strictEqual(h.theme.material, undefined);
+  assert.strictEqual(h.theme.resolveGlass, undefined);
+  assert.strictEqual(h.theme.setMaterial, undefined);
+  assert.strictEqual(h.rootAttrs['data-material'], undefined, '旧存储的「实心」读到也忽略');
+  h.set({ extensionMaterial: 'glass', extensionTheme: 'dark' });
+  assert.strictEqual(h.rootAttrs['data-material'], undefined);
+  assert.strictEqual(h.rootAttrs['data-theme'], 'dark', '明暗照旧生效');
+  assert.doesNotMatch(THEME_SRC, /data-material/);
 });
 
-test('扩展页面：根 data-material 随设置与 app 镜像即时切换', () => {
-  const h = loadTheme({ stored: { extensionMaterial: 'glass' } });
-  assert.strictEqual(h.rootAttrs['data-material'], 'glass');
-  h.set({ extensionMaterial: 'solid' });
-  assert.strictEqual(h.rootAttrs['data-material'], undefined);
-  h.set({ extensionMaterial: 'auto' });
-  assert.strictEqual(h.rootAttrs['data-material'], undefined, 'auto + 无镜像 = 实心');
-  h.set({ appGlassMirror: true });
-  assert.strictEqual(h.rootAttrs['data-material'], 'glass', '「跟随 Fushi」：app 选了玻璃即玻璃');
-  h.set({ appGlassMirror: false });
-  assert.strictEqual(h.rootAttrs['data-material'], undefined);
-});
-
-test('宿主网页：绝不往 <html> 写 data-material', () => {
-  const h = loadTheme({ protocol: 'https:', stored: { extensionMaterial: 'glass', appGlassMirror: true } });
-  assert.strictEqual(h.rootAttrs['data-material'], undefined);
-  assert.strictEqual(h.theme.resolveGlass(false), true, '但查词弹窗仍按设置决议');
+test('扩展页面启动时清掉旧材质键；宿主网页不清', () => {
+  const page = loadTheme({ stored: { extensionMaterial: 'solid', appGlassMirror: true, extensionTheme: 'dark' } });
+  assert.deepStrictEqual([...page.removed].sort(), ['appGlassMirror', 'extensionMaterial']);
+  assert.ok(!('extensionMaterial' in page.stored));
+  assert.strictEqual(page.stored.extensionTheme, 'dark', '只清退役键');
+  const host = loadTheme({ protocol: 'https:', stored: { extensionMaterial: 'solid' } });
+  assert.deepStrictEqual(host.removed, []);
 });
 
 // ───────── ② content.js 查词弹窗 ─────────
 
-function loadContent(resolveGlass) {
+function loadContent(fushiTheme) {
   const noop = () => {};
   const el = () => ({
     style: { cssText: '', setProperty: noop, getPropertyValue: () => '' },
@@ -135,9 +125,7 @@ function loadContent(resolveGlass) {
     matchMedia: () => ({ matches: false, addEventListener: noop }),
     flutter_inappwebview: { callHandler: noop },
   };
-  if (resolveGlass) {
-    sandbox.window.fushiTheme = { resolve: (f) => f || 'light', resolveGlass };
-  }
+  if (fushiTheme) sandbox.window.fushiTheme = fushiTheme;
   sandbox.window.window = sandbox.window;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'vendor', 'dict-media.js'), 'utf8'), sandbox);
@@ -164,42 +152,50 @@ function fakePopup() {
   return { c, classes, hostAttrs };
 }
 
-test('查词弹窗：玻璃开关经 theme.js resolveGlass 决议（显式设置压过 app 下发）', () => {
-  const seen = [];
-  // 设置 = 液态玻璃：app 下发实心也上玻璃。
-  const forced = loadContent((app) => { seen.push(app); return true; });
-  const p = fakePopup();
-  forced.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'dark', '--fushi-glass': '0' }, false);
-  assert.deepStrictEqual(seen, [false], 'resolveGlass 收到的是本次响应的 app 开关');
-  assert.ok(p.classes.has('fushi-glass'));
-  assert.strictEqual(p.hostAttrs['data-fushi-glass'], 'dark');
-  // 设置 = 实心：app 下发玻璃也不上。
-  const off = loadContent(() => false);
-  const q = fakePopup();
-  off.fushiApplyTheme(q.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '1' }, false);
-  assert.ok(!q.classes.has('fushi-glass'));
-  assert.ok(!('data-fushi-glass' in q.hostAttrs));
+test('查词弹窗：恒上玻璃，与 theme.js / 旧材质设置无关', () => {
+  // theme.js 缺席，以及旧 theme.js 仍带 resolveGlass（返回实心）时都不影响。
+  for (const theme of [null, { resolve: (f) => f || 'light', resolveGlass: () => false }]) {
+    const s = loadContent(theme);
+    const p = fakePopup();
+    s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'dark', '--fushi-glass': '1' }, false);
+    assert.ok(p.classes.has('fushi-glass'));
+    assert.strictEqual(p.hostAttrs['data-fushi-glass'], 'dark');
+    const q = fakePopup();
+    s.fushiApplyTheme(q.c, { '--fushi-color-scheme': 'light' }, false);
+    assert.ok(q.classes.has('fushi-glass'), '缺 key（旧 app）同样是玻璃');
+    assert.strictEqual(q.hostAttrs['data-fushi-glass'], 'light');
+  }
+  const src = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
+  assert.doesNotMatch(src, /resolveGlass/);
 });
 
-test('查词弹窗：theme.js 缺席时退回 app 开关（与加设置前一致）', () => {
+test('查词弹窗：只有墨水屏（--fushi-glass: 0）关玻璃，同一弹窗上即时摘钩子', () => {
   const s = loadContent(null);
   const p = fakePopup();
   s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '1' }, false);
-  assert.ok(p.classes.has('fushi-glass'));
+  s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '0' }, false);
+  assert.ok(!p.classes.has('fushi-glass'));
+  assert.ok(!('data-fushi-glass' in p.hostAttrs));
 });
 
-// ───────── ③ background 镜像 ─────────
+// ───────── ③ background / options / 文案 ─────────
 
-test('background：app 下发的 --fushi-glass 镜像进 appGlassMirror（缺 key 不写、同值不重写）', () => {
+test('background 不再镜像 app 的玻璃开关', () => {
   const bg = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
-  const start = bg.indexOf('function rememberAppGlass(');
-  assert.ok(start >= 0);
-  const body = bg.slice(start, bg.indexOf('\n}\n', start));
-  assert.match(body, /if \(v !== '1' && v !== '0'\) return;/);
-  assert.match(body, /if \(glass === appGlassMirror\) return;/);
-  assert.match(body, /chrome\.storage\.local\.set\(\{ appGlassMirror: glass \}\)/);
-  const remember = bg.slice(bg.indexOf('function rememberAppTheme('));
-  assert.match(remember.slice(0, 200), /rememberAppGlass\(theme\);/, '颜色键不全时也要先镜像玻璃开关');
+  assert.doesNotMatch(bg, /appGlassMirror|rememberAppGlass|--fushi-glass/);
+});
+
+test('options 页没有材质下拉；17 份文案都没有材质 key', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'options.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, 'options.js'), 'utf8');
+  assert.doesNotMatch(html, /extensionMaterial/);
+  assert.doesNotMatch(js, /extensionMaterial/);
+  const dir = path.join(__dirname, 'locales');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json') || f === 'en.js');
+  assert.strictEqual(files.length, 17);
+  for (const f of files) {
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, f), 'utf8'), /opt_extensionMaterial_/, f);
+  }
 });
 
 // ───────── ④ glass.css ─────────
@@ -220,10 +216,9 @@ function splitTopLevel(sel) {
   return parts;
 }
 
-test('glass.css：每条规则都挂在 :root[data-material="glass"] 下（实心时一条不生效）', () => {
+test('glass.css：无条件生效，不挂任何材质属性开关', () => {
   const css = stripComments(GLASS_CSS);
   const selectors = [];
-  // 取出每个规则块的选择器（跳过 @supports / @media 包裹行本身）。
   const re = /([^{}]+)\{/g;
   let m;
   while ((m = re.exec(css))) {
@@ -234,18 +229,19 @@ test('glass.css：每条规则都挂在 :root[data-material="glass"] 下（实�
   assert.ok(selectors.length > 10);
   for (const sel of selectors) {
     for (const part of splitTopLevel(sel)) {
-      assert.match(part.trim(), /^:root\[data-material="glass"\]/, '未挂材质属性的选择器：' + part.trim());
+      assert.match(part.trim(), /^:root/, '页面级玻璃规则都从 :root 起：' + part.trim());
     }
   }
+  assert.doesNotMatch(css, /data-material/);
 });
 
-test('glass.css：模糊带 -webkit- 前缀，明暗两套，三条回退齐全', () => {
+test('glass.css：模糊带 -webkit- 前缀，明暗两套，三条兼容回退齐全且压得过暗色块', () => {
   const css = stripComments(GLASS_CSS);
   assert.match(css, /-webkit-backdrop-filter:\s*var\(--fushi-glass-filter\)/);
   assert.match(css, /[^-]backdrop-filter:\s*var\(--fushi-glass-filter\)/);
   assert.match(css, /--fushi-glass-filter:\s*blur\(\d+px\) saturate\([\d.]+\)/);
-  assert.match(css, /@media \(prefers-color-scheme: dark\)\s*\{\s*:root\[data-material="glass"\]:not\(\[data-theme="light"\]\)/);
-  assert.match(css, /:root\[data-material="glass"\]\[data-theme="dark"\]\s*\{/);
+  assert.match(css, /@media \(prefers-color-scheme: dark\)\s*\{\s*:root:not\(\[data-theme="light"\]\)/);
+  assert.match(css, /:root\[data-theme="dark"\]\s*\{/);
   const supportsNot = /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)\s*\{([\s\S]*?)\n\}/.exec(css);
   assert.ok(supportsNot, '缺不支持 backdrop-filter 的实心回退');
   assert.match(supportsNot[1], /--fushi-glass-fill:\s*var\(--fushi-surface\)/);
@@ -253,6 +249,11 @@ test('glass.css：模糊带 -webkit- 前缀，明暗两套，三条回退齐全'
   assert.ok(reduced, '缺减少透明度回退');
   assert.match(reduced[1], /--fushi-glass-fill:\s*var\(--fushi-surface\)/);
   assert.match(reduced[1], /--fushi-glass-filter:\s*none/);
+  // 回退的特异性 (0,2,0) 且排在暗色块之后：暗色下实心填充不会被暗色块（同为 (0,2,0)）盖回半透明。
+  for (const block of [supportsNot[1], reduced[1]]) {
+    assert.match(block, /^\s*:root:is\(\[data-theme\], :not\(\[data-theme\]\)\)\s*\{/);
+  }
+  assert.ok(css.indexOf('@supports not') > css.lastIndexOf(':root[data-theme="dark"]'));
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   // 颜色来自调色板：表面填充都是 --fushi-surface 的半透明混合，不另起一套底色。
   assert.match(css, /--fushi-glass-fill:\s*color-mix\(in oklch, var\(--fushi-surface\) \d+%, transparent\)/);
@@ -275,14 +276,8 @@ test('三个扩展页面在页面样式之后引入 glass.css；侧栏被抽屉 
 
 // ───────── ⑤ options 页 ─────────
 
-test('options：材质下拉三档并持久化到 extensionMaterial；节导航锚点都指向真实的节', () => {
+test('options：节导航锚点都指向真实的节', () => {
   const html = fs.readFileSync(path.join(__dirname, 'options.html'), 'utf8');
-  const js = fs.readFileSync(path.join(__dirname, 'options.js'), 'utf8');
-  const select = /<select class="select-input" id="extensionMaterial">([\s\S]*?)<\/select>/.exec(html);
-  assert.ok(select, 'options.html 缺材质下拉');
-  const values = [...select[1].matchAll(/value="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepStrictEqual(values, ['auto', 'solid', 'glass']);
-  assert.match(js, /extensionMaterial: \{ key: 'extensionMaterial', fallback: 'auto' \}/);
   const nav = /<nav class="section-nav" id="sectionNav"[\s\S]*?<\/nav>/.exec(html)[0];
   const targets = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
   assert.ok(targets.length >= 8);

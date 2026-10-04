@@ -1946,9 +1946,16 @@ JSON.stringify((function(){
     final appModel = ref.read(appProvider);
     // 初始 HTML 底色与主题注入器同源（popupCardSurface），
     // 避免两路底色不一致造成的一帧闪变。
-    final Color bgColor = popupCardSurface(
-        scheme: Theme.of(context).colorScheme,
-        override: appModel.overrideDictionaryColor);
+    // Apple 设计系统：注入后文档背景透明（html.fushi-glass-host），卡面是 Flutter
+    // 画的材质面板；注入前的首帧先用同色系的面板色（secondarySystemGroupedBackground），
+    // 别让深色下纯黑的 systemGroupedBackground 闪一帧。
+    final Color bgColor = appModel.overrideDictionaryColor == null &&
+            isGlassDesign(context) &&
+            !isEinkTheme(context)
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : popupCardSurface(
+            scheme: Theme.of(context).colorScheme,
+            override: appModel.overrideDictionaryColor);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';
@@ -2883,6 +2890,30 @@ JSON.stringify((function(){
           },
         );
 
+        // 「选择音频源」菜单（♪ 长按 / 右键 / Shift+F10）：每个启用源各自解析出的
+        // 全部候选 `[{name, variant, url}]`，url 与 resolveWordAudio 同样可直接播放。
+        controller.addJavaScriptHandler(
+          handlerName: 'listWordAudioSources',
+          callback: (args) async {
+            return _guardJsBridge<List<Map<String, String>>>(
+              'DictPopupWebview.listWordAudioSources',
+              const <Map<String, String>>[],
+              ErrorLogService.instance,
+              () async {
+                if (args.isEmpty || args[0] is! Map) {
+                  return const <Map<String, String>>[];
+                }
+                final data = args[0] as Map;
+                final expression = data['expression']?.toString() ?? '';
+                final reading = data['reading']?.toString() ?? '';
+                if (expression.isEmpty) return const <Map<String, String>>[];
+                return listWordAudioWebViewChoices(
+                    ref.read(appProvider), expression, reading);
+              },
+            );
+          },
+        );
+
         // Word audio no longer round-trips to a native/libmpv player: popup.js
         // plays the resolved URL itself with an HTML5 <audio> element (unified
         // with the browser extension and every desktop surface — see
@@ -3067,6 +3098,26 @@ JSON.stringify((function(){
   /// WebView2 原生项，禁原生后自补 [Clipboard.setData]）。BUG-802：选区读取从早年的
   /// `getSelectedText`（桌面 fork 未实现 + 只读顶层文档）改为穿透同源 iframe 的
   /// [_selectedTextAcrossFrames]，否则复制/搜索拿到空串永远无效。
+  /// [globalPosition] 处是不是弹窗里的音频按钮 ♪（或已打开的音频源菜单）。WebView
+  /// 视口 CSS px 与本 widget 的本地逻辑坐标一一对应（缩放已由 globalToLocal 吃掉），
+  /// 直接 `elementFromPoint`。WebView 未就绪 / 脚本失败一律按「不是」处理，宿主菜单照旧。
+  Future<bool> _secondaryClickHitsAudioButton(Offset globalPosition) async {
+    final InAppWebViewController? controller = _controller;
+    final RenderObject? box = context.findRenderObject();
+    if (controller == null || box is! RenderBox || !box.hasSize) return false;
+    final Offset p = box.globalToLocal(globalPosition);
+    try {
+      final Object? hit = await controller.evaluateJavascript(
+          source: '(function(){var e=document.elementFromPoint('
+              '${p.dx.toStringAsFixed(1)},${p.dy.toStringAsFixed(1)});'
+              "return !!(e&&e.closest&&e.closest('.audio-button, .fushi-audio-menu'));"
+              '})()');
+      return hit == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _showWindowsContextMenu(
       BuildContext context, Offset globalPosition) async {
     // BUG-1451 根因：选区是**易失状态**，而 [showMenu] 是一个真实 route——打开到用户
@@ -3075,7 +3126,13 @@ JSON.stringify((function(){
     // 是「菜单关闭那一刻」的状态而非「用户右键那一刻」的状态，任一环变动就拿空串，
     // 再被 `if (text.isEmpty) return` 静默吞掉 —— 用户看到的就是「菜单弹了、点复制没反应」。
     // 正确的数据流是在**事件源头**取快照：右键按下即发起读取，菜单只是选择动作的 UI。
+    // 右键落在 ♪ 上：popup.js 收到 DOM contextmenu 会自己弹「选择音频源」菜单，
+    // 宿主的搜索 / 复制菜单让位（否则两张菜单叠在一起）。按下即判，不等 DOM 事件
+    // ——fork 把指针转给 WebView2 是异步的，此刻 DOM 还没见到这次按下。
+    // 选区快照仍在最前发起（BUG-1451），再判让位。
     final Future<String> selectionAtRightClick = _selectedTextAcrossFrames();
+    if (await _secondaryClickHitsAudioButton(globalPosition)) return;
+    if (!mounted || !context.mounted) return;
     final RenderObject? overlayObject =
         Overlay.of(context).context.findRenderObject();
     if (overlayObject is! RenderBox || !overlayObject.hasSize) return;

@@ -139,13 +139,19 @@ void main() {
       expect(label?.fontFamily, 'Sentinel');
     });
 
-    test('非 eink：零行为变化', () async {
+    test('非 eink：MD3 胶囊 chip（secondaryContainer 选中 + 配对 label 色）', () async {
       final ThemeData theme = notifier.theme;
+      final ColorScheme cs = theme.colorScheme;
+      expect(theme.chipTheme.selectedColor, cs.secondaryContainer);
+      expect(theme.chipTheme.backgroundColor, cs.surfaceContainerHigh);
+      expect(theme.chipTheme.side, BorderSide.none);
+      final WidgetStateColor label =
+          theme.chipTheme.labelStyle!.color! as WidgetStateColor;
       expect(
-        theme.chipTheme.selectedColor,
-        theme.colorScheme.secondaryContainer,
+        label.resolve(<WidgetState>{WidgetState.selected}),
+        cs.onSecondaryContainer,
       );
-      expect(theme.chipTheme.labelStyle, isNull);
+      expect(label.resolve(<WidgetState>{}), cs.onSurfaceVariant);
     });
   });
 
@@ -194,15 +200,15 @@ void main() {
       );
     });
 
-    testWidgets('非 eink：仍用 primaryContainer（零行为变化）', (
+    testWidgets('非 eink：secondaryContainer 填充、无描边（MD3 胶囊 chip）', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(app(eink: false, selected: true));
       final Element context = tester.element(find.byType(ChoiceChip));
       final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
       final ColorScheme cs = Theme.of(context).colorScheme;
-      expect(chip.selectedColor, cs.primaryContainer);
-      expect(chip.side!.color, cs.primaryContainer);
+      expect(chip.selectedColor, cs.secondaryContainer);
+      expect(chip.side, BorderSide.none);
     });
   });
 }

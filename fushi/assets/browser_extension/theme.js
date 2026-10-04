@@ -16,12 +16,10 @@
 //   绝不碰宿主页 :root。查词弹窗的 --md-* 由 popupVars() 给三处弹窗壳覆盖，弹窗与其它表面
 //   同一款主题。
 //
-// 材质（与调色板正交，同 app 设计系统 glass_material 独立于颜色主题）：
-//   extensionMaterial = 'auto'（跟随 Fushi：app 设计系统选了玻璃即玻璃，镜像自查词响应的
-//   --fushi-glass → appGlassMirror）| 'solid' | 'glass'。扩展页面根上写 data-material="glass"
-//   （glass.css 全部规则挂在这个属性下）；网页里的查词弹窗经 resolveGlass(appFlag) 决议是否
-//   套 content.js 的玻璃变体（auto 时照旧吃本次查词响应的 --fushi-glass）。宿主网页的 <html>
-//   绝不写 data-material。
+// 材质：液态玻璃是扩展唯一的材质（用户 2026-10-04 拍板，实心样式与「材质」设置一并删除），
+//   glass.css 无条件生效，不再由这里决议；只有系统「减少透明度」/ 内核不支持 backdrop-filter
+//   时由 glass.css 自身的兼容层回落实心。旧版本存下的 extensionMaterial / appGlassMirror
+//   读到也忽略，启动时顺手清掉。
 //
 // content script / 扩展页面共用一份；没有 chrome.storage 的环境（纯 vm 测试）退化为
 // 跟随系统、setPreference 仍可用。
@@ -33,15 +31,12 @@
   var PALETTE_KEY = 'extensionPalette';
   var CUSTOM_KEY = 'extensionCustomThemes';
   var APP_MIRROR_KEY = 'appThemeMirror';
-  var MATERIAL_KEY = 'extensionMaterial';
-  var APP_GLASS_KEY = 'appGlassMirror';
+  // 已退役的材质设置键（只用于清理旧存储）。
+  var RETIRED_KEYS = ['extensionMaterial', 'appGlassMirror'];
   var STYLE_ID = 'fushi-theme-palette';
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
-  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)';
+  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
   var VALID = { auto: true, light: true, dark: true };
-  var VALID_MATERIAL = { auto: true, solid: true, glass: true };
-  var material = 'auto';
-  var appGlass = null;
   var pref = 'auto';
   var paletteId = 'fushi';
   var customThemes = [];
@@ -58,19 +53,6 @@
       return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
         ? 'dark' : 'light';
     } catch (_) { return 'light'; }
-  }
-
-  function normalizeMaterial(v) {
-    return typeof v === 'string' && VALID_MATERIAL[v] === true ? v : 'auto';
-  }
-
-  // 本刻是否用玻璃材质。appFlag 是「跟随 Fushi」时的即时来源（查词弹窗传本次响应的
-  // --fushi-glass === '1'）；不传则用镜像下来的 app 设计系统（appGlassMirror，从未查过词 = 实心）。
-  function resolveGlass(appFlag) {
-    if (material === 'glass') return true;
-    if (material === 'solid') return false;
-    if (typeof appFlag === 'boolean') return appFlag;
-    return appGlass === true;
   }
 
   // 显式明暗（'light' / 'dark'），auto 时为 null。
@@ -198,20 +180,6 @@
     if (paletteId === 'app') notify();
   }
 
-  function setMaterial(v) {
-    var n = normalizeMaterial(v);
-    if (n === material) return;
-    material = n;
-    notify();
-  }
-
-  function setAppGlass(v) {
-    var n = typeof v === 'boolean' ? v : null;
-    if (n === appGlass) return;
-    appGlass = n;
-    if (material === 'auto') notify();
-  }
-
   function onChange(fn) {
     if (typeof fn === 'function') subscribers.push(fn);
   }
@@ -227,8 +195,6 @@
         if (!root) return;
         if (e) root.setAttribute('data-theme', e);
         else root.removeAttribute('data-theme');
-        if (resolveGlass()) root.setAttribute('data-material', 'glass');
-        else root.removeAttribute('data-material');
       } catch (_) {}
       applyPaletteStyle(doc);
     }
@@ -250,15 +216,20 @@
     paletteId = palette ? palette.normalizePaletteId(c[PALETTE_KEY]) : 'fushi';
     customThemes = palette ? palette.normalizeCustomThemes(c[CUSTOM_KEY]) : [];
     appMirror = (c[APP_MIRROR_KEY] && typeof c[APP_MIRROR_KEY] === 'object') ? c[APP_MIRROR_KEY] : null;
-    material = normalizeMaterial(c[MATERIAL_KEY]);
-    appGlass = typeof c[APP_GLASS_KEY] === 'boolean' ? c[APP_GLASS_KEY] : null;
     notify();
   }
 
   try {
-    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY, MATERIAL_KEY, APP_GLASS_KEY];
+    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY];
     var p = chrome.storage.local.get(keys, readAll);
     if (p && typeof p.then === 'function') p.then(readAll, function () {});
+  } catch (_) {}
+  // 旧版「材质」设置留下的键：只有扩展自己的页面清（content script 每个网页都跑，不必重复写）。
+  try {
+    if (isExtensionPage() && chrome.storage.local.remove) {
+      var r = chrome.storage.local.remove(RETIRED_KEYS);
+      if (r && typeof r.then === 'function') r.then(null, function () {});
+    }
   } catch (_) {}
   try {
     chrome.storage.onChanged.addListener(function (changes, area) {
@@ -267,8 +238,6 @@
       if (changes[PALETTE_KEY]) setPalette(changes[PALETTE_KEY].newValue);
       if (changes[CUSTOM_KEY]) setCustomThemes(changes[CUSTOM_KEY].newValue);
       if (changes[APP_MIRROR_KEY]) setAppMirror(changes[APP_MIRROR_KEY].newValue);
-      if (changes[MATERIAL_KEY]) setMaterial(changes[MATERIAL_KEY].newValue);
-      if (changes[APP_GLASS_KEY]) setAppGlass(changes[APP_GLASS_KEY].newValue);
     });
   } catch (_) {}
   try {
@@ -290,16 +259,12 @@
     PALETTE_KEY: PALETTE_KEY,
     CUSTOM_KEY: CUSTOM_KEY,
     APP_MIRROR_KEY: APP_MIRROR_KEY,
-    MATERIAL_KEY: MATERIAL_KEY,
-    APP_GLASS_KEY: APP_GLASS_KEY,
     get preference() { return pref; },
-    get material() { return material; },
     get palette() { return paletteId; },
     get customThemes() { return customThemes.slice(); },
     get appMirror() { return appMirror; },
     explicit: explicit,
     resolve: resolve,
-    resolveGlass: resolveGlass,
     tokens: tokens,
     popupVars: popupVars,
     applyPopupPalette: applyPopupPalette,
@@ -311,7 +276,5 @@
     setPalette: setPalette,
     setCustomThemes: setCustomThemes,
     setAppMirror: setAppMirror,
-    setMaterial: setMaterial,
-    setAppGlass: setAppGlass,
   };
 })();

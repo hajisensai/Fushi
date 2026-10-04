@@ -476,7 +476,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 ),
                 const SizedBox(height: 12),
                 if (_searching)
-                  const Center(child: FushiCircularProgressIndicator.adaptive())
+                  const FushiLoadingView()
                 else if (results != null && results.isEmpty)
                   Text(t.video_source_scrape_manual_search_empty)
                 else if (results != null)

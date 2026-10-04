@@ -89,11 +89,12 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight,
+      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _videoGeometryBottomBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );
@@ -116,8 +117,8 @@ extension _VideoChapter on _VideoFushiPageState {
                 child: Padding(
                   // 水平内缩 16px 对齐 seekBarMargin；竖直由 band 锚定到 seek bar 轨道。
                   padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
+                    left: _videoSeekBarSideInset,
+                    right: _videoSeekBarSideInset,
                     bottom: band.bottom,
                   ),
                   child: Align(
@@ -160,11 +161,12 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight,
+      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _videoGeometryBottomBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );
@@ -183,7 +185,10 @@ extension _VideoChapter on _VideoFushiPageState {
             return IgnorePointer(
               child: Padding(
                 // 水平内缩 16px 对齐 seekBarMargin；轨道内宽由内部 LayoutBuilder 取。
-                padding: const EdgeInsets.only(left: 16, right: 16),
+                padding: EdgeInsets.only(
+                  left: _videoSeekBarSideInset,
+                  right: _videoSeekBarSideInset,
+                ),
                 child: LayoutBuilder(
                   builder: (BuildContext _, BoxConstraints constraints) {
                     return Stack(

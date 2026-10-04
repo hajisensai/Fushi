@@ -220,7 +220,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 同款：eval 必须 try/catch 吞掉。BUG-927。
       Object? rawText;
       try {
-        rawText = await _controller?.evaluateJavascript(
+        rawText = await _surfaceController?.evaluateJavascript(
           source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
         );
       } catch (e, stack) {
@@ -451,7 +451,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     const double handleReserve = 32 + gap;
 
     final RenderBox? webBox =
-        _webViewKey.currentContext?.findRenderObject() as RenderBox?;
+        _surfaceWebViewKey.currentContext?.findRenderObject() as RenderBox?;
     final Map<String, double>? r = data.rect;
     double selectionTop;
     double selectionBottom;
@@ -485,8 +485,39 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final bool hasAudio = _audiobookController != null &&
         _audiobookController!.chapterCueCount > 0;
     final ThemeData theme = Theme.of(overlayContext);
+    final bool glass = isGlassDesign(overlayContext);
 
     Widget button(IconData icon, String label, String action) {
+      if (glass) {
+        // Apple：iOS 26 编辑菜单里的一格——无底、按下变淡、无水波；字形与
+        // 文字同为 label 色（不上强调色，菜单项是中性的）。
+        final Color fg = appleColorsOf(overlayContext).label;
+        return FushiPlainButton(
+          onPressed: () => _runSelectionAction(action),
+          borderRadius: BorderRadius.circular(barHeight / 2),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12.0,
+              vertical: 10.0,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiIcon(icon, size: 18.0, color: fg),
+                const SizedBox(width: 6.0),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14.0,
+                    fontWeight: FontWeight.w500,
+                    color: fg,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return InkWell(
         onTap: () => _runSelectionAction(action),
         child: Padding(
@@ -506,6 +537,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
     }
 
+    List<Widget> selectionButtons() => <Widget>[
+          button(Icons.search_outlined, t.search, 'search'),
+          button(Icons.copy_outlined, t.copy, 'copy'),
+          if (isAndroidPlatform) button(Icons.share_outlined, t.share, 'share'),
+          if (isAndroidPlatform)
+            button(Icons.travel_explore, t.selection_web_search, 'webSearch'),
+          button(Icons.star_border, t.action_favorite, 'favorite'),
+          if (hasAudio)
+            button(Icons.movie_creation_outlined, t.audiobook_export_clip,
+                'export'),
+        ];
+
     return Positioned(
       left: gap,
       right: gap,
@@ -514,29 +557,38 @@ extension _ReaderChrome on _ReaderFushiPageState {
         alignment: Alignment.center,
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: Material(
-            elevation: 6,
-            color: theme.popupMenuTheme.color ??
-                theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(8.0),
-            clipBehavior: Clip.antiAlias,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                button(Icons.search_outlined, t.search, 'search'),
-                button(Icons.copy_outlined, t.copy, 'copy'),
-                if (isAndroidPlatform)
-                  button(Icons.share_outlined, t.share, 'share'),
-                if (isAndroidPlatform)
-                  button(Icons.travel_explore, t.selection_web_search,
-                      'webSearch'),
-                button(Icons.star_border, t.action_favorite, 'favorite'),
-                if (hasAudio)
-                  button(Icons.movie_creation_outlined, t.audiobook_export_clip,
-                      'export'),
-              ],
-            ),
-          ),
+          child: glass
+              // Apple：iOS 26 文本编辑菜单——浮在正文上的液态玻璃胶囊（控件层），
+              // 高度同 MD3 条（[barHeight]），定位算法不变。iOS / macOS 正文是
+              // 原生 WebView 平台视图，着色器采不到它，走 BackdropFilter 回退。
+              ? GlassContainer(
+                  useOwnLayer: true,
+                  quality: fushiGlassQuality(overlayContext, prominent: true),
+                  settings: fushiGlassSettingsOverPlatformView(overlayContext),
+                  shape: const LiquidRoundedSuperellipse(
+                    borderRadius: barHeight / 2,
+                  ),
+                  platformViewBackdrop:
+                      fushiGlassOverPlatformView(overlayContext),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: selectionButtons(),
+                    ),
+                  ),
+                )
+              : Material(
+                  elevation: kFushiFloatingElevation,
+                  color: theme.popupMenuTheme.color ??
+                      theme.colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(8.0),
+                  clipBehavior: Clip.antiAlias,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: selectionButtons(),
+                  ),
+                ),
         ),
       ),
     );
@@ -618,7 +670,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _clearReaderAppSelection() async {
     _removeSelectionActionBar();
     try {
-      await _controller?.evaluateJavascript(
+      await _surfaceController?.evaluateJavascript(
         source: ReaderSelectionScripts.clearInvocation(),
       );
     } catch (e, stack) {
@@ -641,7 +693,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<ReaderSelectionData?> _fillLookupStateFromNativeSelection() async {
     Object? raw;
     try {
-      raw = await _controller?.evaluateJavascript(
+      raw = await _surfaceController?.evaluateJavascript(
         source: ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation(),
       );
     } catch (e, stack) {
@@ -765,7 +817,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _hideReaderSelectionHandles() async {
     _removeSelectionActionBar();
     try {
-      await _controller?.evaluateJavascript(
+      await _surfaceController?.evaluateJavascript(
         source: 'window.fushiSelection.hideSelectionHandles()',
       );
     } catch (e, stack) {
@@ -781,7 +833,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 解码 → 跳过并记日志（光栅封面 <svg><image> 的内层位图已由 JS 侧解析为真实位图 URL）。
   Future<List<({int normOffset, Uint8List bytes})>>
       _extractSelectionClipImages() async {
-    final InAppWebViewController? controller = _controller;
+    final InAppWebViewController? controller = _surfaceController;
     if (controller == null) {
       return const <({int normOffset, Uint8List bytes})>[];
     }
@@ -1127,7 +1179,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   Future<void> _applyChromeInsets() async {
-    if (_controller == null || !_readerContentReady || _lyricsMode) return;
+    if (_controller == null || !_readerContentReady) return;
     // TODO-975：底栏预留经单一真相源 _readerBottomReserve（悬浮态恒 0、挤压态含底栏高
     // + 系统 inset），取代散落的 `_showChrome ? height+inset : inset` 三元式。
     final double top = _readerTopOffset;
@@ -1190,7 +1242,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 分页模式 JS 侧整体 no-op，连续模式才真重锚（与现有重锚路径门控一致）。
   Future<void> _applyChromeInsetsAndReanchor() async {
     await _applyChromeInsets();
-    if (!mounted || _controller == null || _settings == null || _lyricsMode) {
+    if (!mounted || _controller == null || _settings == null) {
       return;
     }
     await _reanchorForStyleChange(_currentStyleJson());
@@ -1325,7 +1377,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       gateAllowed: readerUiScaleReanchorAllowed(
         controllerAvailable: _controller != null,
         readerContentReady: _readerContentReady,
-        lyricsMode: _lyricsMode,
+        // 覆盖层架构：歌词不再替换正文文档，正文重锚不看歌词态。
+        lyricsMode: false,
         restoreInFlight: _restoreInFlight,
         continuousMode: _settings?.isContinuousMode == true,
       ),
@@ -1380,7 +1433,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       gateAllowed: readerRestoreReanchorAllowed(
         controllerAvailable: _controller != null,
         readerContentReady: _readerContentReady,
-        lyricsMode: _lyricsMode,
+        lyricsMode: false,
         continuousMode: _settings?.isContinuousMode == true,
       ),
       // 阶段 1：取恢复自己的精确字符锚 + 置旗。BUG-2652：不能现场采样——iOS 上同一个
@@ -1454,7 +1507,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       gateAllowed: readerStyleReanchorAllowed(
         controllerAvailable: _controller != null,
         readerContentReady: _readerContentReady,
-        lyricsMode: _lyricsMode,
+        lyricsMode: false,
       ),
       // 阶段 1：同步换 CSS + 采精确锚 + 置旗（必须先于 reflow 落地，挡住归零 scroll 污染落库）。
       evalBegin: () => _controller!.evaluateJavascript(
@@ -1556,7 +1609,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 渲染前 _hasEverLoaded 仍为 false，底栏照旧不显示，行为不变。
     // TODO-975：悬浮模式额外受 _chromeTransientVisible 门控（_bottomBarShouldPaint）；
     // 挤压模式恒随 _hasEverLoaded && _showChrome（旧行为）。
-    if (!_bottomBarShouldPaint) {
+    // 歌词覆盖层在场：底栏排在查词弹层之后（要盖住弹层），却必须在歌词覆盖层之下——
+    // 覆盖层自带全套播放控件，⋯ 菜单里是底栏 / 顶栏的全部操作。这里只停画，
+    // 预留高不受影响（正文版面不随进出歌词变化）。
+    if (_lyricsMode || !_bottomBarShouldPaint) {
       return const SizedBox.shrink();
     }
     if (_audiobookController != null) {
@@ -2576,10 +2632,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       _lastProgressValue = 0.0;
       _lastProgressCharOffset = -1;
     }
-    if (_lyricsMode) {
-      await _loadLyricsPage();
-      return;
-    }
+    if (_lyricsMode) unawaited(_loadLyricsPage());
     final InAppWebViewController controller = _controller!;
     final int generation = _navigateGeneration;
     final int chapter = _currentChapter;
@@ -2601,8 +2654,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!mounted ||
         generation != _navigateGeneration ||
         chapter != _currentChapter ||
-        !identical(controller, _controller) ||
-        _lyricsMode) {
+        !identical(controller, _controller)) {
       return;
     }
     final ReaderStableProgressDetails? snapshot =
@@ -3132,6 +3184,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// preset 命中用手调底色，未命中（light/system/自定义/未来 key）跟随真实
   /// ColorScheme，自定义主题再盖上用户显式指定的角色。
   ReaderThemeColors get _readerThemeColors {
+    // 墨水屏：正文 CSS 无视主题 key 一律纯黑白（[ReaderContentStyles.css] 的
+    // einkMode 分支，黑白方向跟 app 明暗）。Dart 侧若仍按预设纸色（ecru 等）
+    // 画 Scaffold / 桌面顶栏 / 工具栏，正文四周与顶上就切出一条异色带——两边
+    // 必须同源。高亮色角色照旧走主题（CSS 侧墨水屏另行线式化）。
+    if (appModel.einkMode) {
+      final bool dark = appModel.isDarkMode;
+      final ReaderThemeColors themed = resolveReaderThemeColors(
+        themeKey: appModel.appThemeKey,
+        presetMap: _themeMap,
+        scheme: appModel.buildColorScheme(
+          dark ? Brightness.dark : Brightness.light,
+        ),
+        customOverrides: _customReaderThemeOverrides,
+        audioHighlightOverride: appModel.audioHighlightColor,
+      );
+      return einkReaderThemeColors(themed, dark: dark);
+    }
     return resolveReaderThemeColors(
       themeKey: appModel.appThemeKey,
       presetMap: _themeMap,
@@ -3201,6 +3270,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       buildColorScheme: appModel.buildColorScheme,
       textTheme: appModel.textTheme,
       designSystem: appModel.themeNotifier.designSystemTheme,
+      glassDesign: appModel.themeNotifier.designSystem == 'glass',
+      glass: appModel.themeNotifier.glassMaterial,
+      monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',
     );
     appModel.setOverrideDictionaryColor(resolved.fillColor);
     appModel.setOverrideDictionaryTheme(resolved.theme);
@@ -3230,10 +3302,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   Future<void> _refreshSectionHighlights(int section) async {
     if (_controller == null) return;
-    if (_lyricsMode) {
-      await _applyLyricsFavorites();
-      return;
-    }
+    if (_lyricsMode) await _applyLyricsFavorites();
     final List<FavoriteSentence> chapterFavs =
         await _favoriteSentencesForSection(section);
     if (!mounted || _controller == null || section != _lookupSectionIndex) {

@@ -334,9 +334,14 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                 ),
               )
             : null;
+    // Apple：信息卡是内容层的实色分组底（secondarySystemGroupedBackground），
+    // 不是半透明灰——与下方设置分组同一层级，不发灰发脏。
+    final bool glass = isGlassDesign(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: glass
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Padding(
@@ -356,7 +361,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                   children: <Widget>[
                     if (coverPath != null) ...<Widget>[
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(glass ? 8 : 6),
                         child: Image.file(
                           File(coverPath),
                           key: const ValueKey<String>('fushi_audiobook_cover'),
@@ -441,6 +446,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
               child: FushiSlider(
                 key: const ValueKey<String>('fushi_audiobook_panel_slider'),
                 value: value,
+                // Apple 滑块不走 SliderTheme 的 trackShape：章首刻度经参数传入。
+                ticks: ticks,
                 // 拖动期间只更新本地目标（不发 seek），松手一次性 seek；落定前拇指
                 // 留在目标处（见 _effectiveScrubMs）。
                 onChangeStart: durMs > 0

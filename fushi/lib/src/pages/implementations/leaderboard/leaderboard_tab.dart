@@ -64,7 +64,7 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
       future: _loaded,
       builder: (BuildContext context, AsyncSnapshot<void> snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: FushiCircularProgressIndicator());
+          return const FushiLoadingView();
         }
         if (snap.hasError) {
           return LeaderboardErrorView(
@@ -698,10 +698,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   List<Widget> _buildBoard(FushiDesignTokens tokens) {
     if (_loading) {
       return <Widget>[
-        Padding(
-          padding: EdgeInsets.all(tokens.spacing.section),
-          child: const Center(child: FushiCircularProgressIndicator()),
-        ),
+        const FushiLoadingView(),
       ];
     }
     if (_error != null) {

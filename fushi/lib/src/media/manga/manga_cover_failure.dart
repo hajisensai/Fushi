@@ -22,7 +22,7 @@ class MangaCoverFailure extends StatelessWidget {
     required this.error,
     required this.onRetry,
     this.runtime,
-    this.backgroundColor = const Color(0xff303030),
+    this.backgroundColor,
     super.key,
   });
 
@@ -31,7 +31,8 @@ class MangaCoverFailure extends StatelessWidget {
 
   /// Mihon runtime；Aidoku 封面没有挑战求解器，传 null 即恒走重试图标。
   final Object? runtime;
-  final Color backgroundColor;
+  /// 底色；null 时跟随主题中性色（surfaceContainerHighest），深浅色都可读。
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -50,12 +51,19 @@ class MangaCoverFailure extends StatelessWidget {
             onPressed: onRetry,
             icon: const FushiIcon(Icons.refresh),
           );
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return ColoredBox(
-      color: backgroundColor,
+      color: backgroundColor ?? cs.surfaceContainerHighest,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: <Widget>[const FushiIcon(Icons.broken_image_outlined), action],
+          children: <Widget>[
+            FushiIcon(
+              Icons.broken_image_outlined,
+              color: cs.onSurfaceVariant,
+            ),
+            action,
+          ],
         ),
       ),
     );

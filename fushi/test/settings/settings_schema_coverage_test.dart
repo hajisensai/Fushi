@@ -809,6 +809,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/torrent/anime_download_config_backend_test.dart',
   'downloads/Ban relative progress cheat':
       'test/media/torrent/anime_download_config_backend_test.dart',
+  // 「对等加密」2026-10 起从自绘分段条换成标准分段设置行，焦点遍历开始能驱动它；
+  // 生效点同样在 native session 下发，由编解码测试覆盖。
+  'downloads/Peer encryption':
+      'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',

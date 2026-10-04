@@ -1301,12 +1301,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         ),
       );
     } else if (_entries == null) {
-      body = const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: FushiCircularProgressIndicator.adaptive(),
-        ),
-      );
+      body = const FushiLoadingView();
     } else if (_showOnlyConflicts
         ? _entriesInPlay.isEmpty
         : (_entries!.isEmpty && (_dicts?.isEmpty ?? true))) {
@@ -1575,13 +1570,20 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     final isConflict = entry.hasConflict;
 
+    // Apple：iOS 不铺粉色错误底块——冲突条目保持透明底，只用 destructive
+    // 低透明细描边 + 标题旁单色警示图标区分；MD3 原样。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) ? appleColorsOf(context) : null;
     return FushiCard(
-      color: isConflict
+      color: isConflict && apple == null
           ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
           : Colors.transparent,
       margin: const EdgeInsets.symmetric(vertical: 2),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      borderColor: isConflict ? theme.colorScheme.errorContainer : null,
+      borderColor: !isConflict
+          ? null
+          : (apple?.destructive.withValues(alpha: 0.45) ??
+              theme.colorScheme.errorContainer),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1756,9 +1758,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   Widget _directionIcon(SyncCompareEntry entry, ThemeData theme) {
     final cs = theme.colorScheme;
+    // Apple：tertiary 映射成系统橙（警示色），上传不是警示——两个方向都用强调色，
+    // 靠图标形状区分；MD3 保持 primary / tertiary 两色。
+    final Color uploadColor =
+        isGlassDesign(context) ? appleColorsOf(context).accent : cs.tertiary;
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     if (choice == SyncChoice.useLocal) {
-      return FushiIcon(Icons.cloud_upload_outlined, size: 18, color: cs.tertiary);
+      return FushiIcon(Icons.cloud_upload_outlined, size: 18, color: uploadColor);
     }
     if (choice == SyncChoice.useRemote) {
       return FushiIcon(Icons.cloud_download_outlined, size: 18, color: cs.primary);
@@ -1770,7 +1776,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     };
     final color = switch (entry.autoDirection) {
       SyncDirection.importFromTtu => cs.primary,
-      SyncDirection.exportToTtu => cs.tertiary,
+      SyncDirection.exportToTtu => uploadColor,
       SyncDirection.synced => cs.onSurfaceVariant,
     };
     return FushiIcon(icon, size: 18, color: color);

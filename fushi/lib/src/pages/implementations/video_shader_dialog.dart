@@ -382,16 +382,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
               showIcon: true,
             ),
           ]
-        : <Widget>[
-            for (final String name in _files)
-              FushiCheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: Text(name, overflow: TextOverflow.ellipsis),
-                value: _enabled.contains(name),
-                onChanged: (bool? v) => _toggle(name, v ?? false),
-              ),
-          ];
+        : _installedShaderRows();
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -407,24 +398,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
             ),
             // 选档前就把五档「档名 — 一句话 + 显卡要求」常驻列出，便于横向比较，
             // 不用点开某档才看到要求（用户诉求 2）。当前命中档加粗高亮。
-            VideoShaderTierComparison(current: _currentTier),
+            VideoShaderTierComparison(
+              current: _currentTier,
+              onSelect: _selectTier,
+            ),
             if (_currentTier == null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-                child: Text(
-                  t.video_shader_tier_custom_hint,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
+              _ShaderFootnote(text: t.video_shader_tier_custom_hint),
             if (isMobilePlatform)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-                child: Text(
-                  t.video_shader_mobile_perf_hint,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.tertiary,
-                      ),
-                ),
+              _ShaderFootnote(
+                text: t.video_shader_mobile_perf_hint,
+                warning: true,
               ),
           ],
         ),
@@ -458,6 +441,58 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
           children: installedRows,
         ),
       ],
+    );
+  }
+
+  /// 已安装着色器 → 设置开关行（与上方导入行同一行组件、同一文字起点）。
+  ///
+  /// 文件名按前缀分组（`Anime4K_…` / `ArtCNN_…`）：同前缀至少两个文件时在组前
+  /// 挂一个小组名，组内行标题去掉前缀与扩展名、下划线换空格（「Restore CNN M」），
+  /// 副标题保留完整文件名——人读标题、文件身份照样一眼可查。显示顺序按组首次出现
+  /// 的位置聚拢，**启用集顺序仍按 [_files] 目录顺序**（见 [_toggle]），不受影响。
+  List<Widget> _installedShaderRows() {
+    final Map<String, List<String>> groups = <String, List<String>>{};
+    for (final String name in _files) {
+      groups.putIfAbsent(_shaderFamily(name), () => <String>[]).add(name);
+    }
+    final List<String> loose = <String>[
+      for (final MapEntry<String, List<String>> entry in groups.entries)
+        if (entry.key.isEmpty || entry.value.length < 2) ...entry.value,
+    ];
+    final List<Widget> rows = <Widget>[
+      for (final String name in loose) _shaderRow(name, family: ''),
+    ];
+    for (final MapEntry<String, List<String>> entry in groups.entries) {
+      if (entry.key.isEmpty || entry.value.length < 2) continue;
+      rows.add(_ShaderGroupLabel(text: entry.key));
+      for (final String name in entry.value) {
+        rows.add(_shaderRow(name, family: entry.key));
+      }
+    }
+    return rows;
+  }
+
+  /// 文件名的系列前缀（第一个 `_` 之前）；没有下划线 = 无系列。
+  static String _shaderFamily(String name) {
+    final String stem = p.basenameWithoutExtension(name);
+    final int cut = stem.indexOf('_');
+    return cut <= 0 ? '' : stem.substring(0, cut);
+  }
+
+  Widget _shaderRow(String name, {required String family}) {
+    String title = p.basenameWithoutExtension(name);
+    if (family.isNotEmpty && title.length > family.length + 1) {
+      title = title.substring(family.length + 1);
+    }
+    title = title.replaceAll('_', ' ');
+    return AdaptiveSettingsSwitchRow(
+      key: ValueKey<String>('video-shader-file-$name'),
+      title: title,
+      subtitle: name,
+      icon: Icons.auto_awesome_outlined,
+      showIcon: true,
+      value: _enabled.contains(name),
+      onChanged: (bool v) => _toggle(name, v),
     );
   }
 
@@ -497,7 +532,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   }
 }
 
-/// 已有 settings surface 内的扁平分组：只保留标题和分隔线，不再创建卡片。
+/// 已有 settings surface 内的扁平分组：只渲染分组标题与行，不再创建卡片（外层
+/// 设置卡就是这一页的唯一底板，守卫见 video_player_settings_master_detail_guard）。
+///
+/// - MD3（Android 16 设置）：分组标题与其它分类页的分段分组标题同一口径
+///   （titleSmall · primary · w600，左缘对齐行内边距）；行与行之间不画分隔线——
+///   卡片里的设置行靠 64 行高与留白分节，分隔线只会让它变回一张表格。
+/// - Apple（iOS 26 inset grouped）：分组标题走 [SettingsSectionHeader] 的 Apple
+///   分支（13 号 semibold secondaryLabel）；行间 1 物理像素 separator，从文字
+///   起点（有行首图标时从图标之后）开始，与 schema 分组同一条缩进规则；分组之间
+///   一条通栏 separator。
 class _EmbeddedShaderSection extends StatelessWidget {
   const _EmbeddedShaderSection({
     required this.title,
@@ -511,29 +555,143 @@ class _EmbeddedShaderSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color dividerColor = Theme.of(context).colorScheme.outlineVariant;
+    final bool glass = isGlassDesign(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final double inset = tokens.spacing.rowHorizontal;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (showTopDivider)
-          FushiDividerControl(height: 1, thickness: 0.5, color: dividerColor),
-        SettingsSectionHeader(
-          title,
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-        ),
+        if (showTopDivider && glass) const _AppleSeparator(flush: true),
+        if (glass)
+          SettingsSectionHeader(
+            title,
+            padding: EdgeInsets.fromLTRB(inset, 14, inset, 4),
+          )
+        else
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              inset,
+              showTopDivider ? tokens.spacing.card : tokens.spacing.gap * 2,
+              inset,
+              tokens.spacing.gap / 2,
+            ),
+            child: Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: isEinkTheme(context)
+                    ? theme.colorScheme.onSurface
+                    : theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         for (int index = 0; index < children.length; index++) ...<Widget>[
-          if (index > 0)
-            FushiDividerControl(
-              height: 1,
-              thickness: 0.5,
-              indent: 16,
-              endIndent: 16,
-              color: dividerColor,
+          if (glass &&
+              index > 0 &&
+              children[index] is! _ShaderGroupLabel &&
+              children[index] is! _ShaderFootnote &&
+              children[index - 1] is! _ShaderGroupLabel)
+            _AppleSeparator(
+              afterIcon: settingsRowHasLeadingIcon(children[index - 1]),
             ),
           children[index],
         ],
       ],
+    );
+  }
+}
+
+/// Apple inset grouped 行分隔线：1 物理像素 separator，右端顶到分组边缘。
+/// [flush] = 分组之间的通栏线；否则左端从行文字起点开始（[afterIcon] 时再让过
+/// 行首图标位），与 schema 分组的分隔线缩进同一规则。
+class _AppleSeparator extends StatelessWidget {
+  const _AppleSeparator({this.afterIcon = false, this.flush = false});
+
+  final bool afterIcon;
+  final bool flush;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final double start = flush
+        ? 0
+        : metrics.rowHorizontal +
+            (afterIcon
+                ? metrics.iconTileSize +
+                    FushiDesignTokens.of(context).spacing.gap +
+                    4
+                : 0);
+    return Container(
+      height: fushiHairline(context),
+      margin: EdgeInsetsDirectional.only(start: start),
+      color: appleColorsOf(context).separator,
+    );
+  }
+}
+
+/// 已安装着色器按系列前缀分组时的小组名（`Anime4K` / `ArtCNN`）：比分组标题低
+/// 一级，左缘与行文字起点（图标之后）对齐，读起来是「组 → 子组 → 行」。
+class _ShaderGroupLabel extends StatelessWidget {
+  const _ShaderGroupLabel({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool glass = isGlassDesign(context);
+    final double iconColumn = glass
+        ? FushiAppleMetrics.of(context).iconTileSize
+        : 30;
+    final TextStyle? style = glass
+        ? FushiAppleMetrics.of(context).footnoteStyle(context)
+        : Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            );
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.rowHorizontal + iconColumn + tokens.spacing.gap + 4,
+        tokens.spacing.gap + 2,
+        tokens.spacing.rowHorizontal,
+        glass ? 2 : 0,
+      ),
+      child: Text(text, style: style),
+    );
+  }
+}
+
+/// 档位区下方的一行说明（自定义勾选提示 / 移动端性能提示）：与行文字同一左缘，
+/// MD3 bodySmall onSurfaceVariant（[warning] 用 tertiary），Apple footnote 灰字
+/// （[warning] 用系统橙）。
+class _ShaderFootnote extends StatelessWidget {
+  const _ShaderFootnote({required this.text, this.warning = false});
+
+  final String text;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? style = isGlassDesign(context)
+        ? FushiAppleMetrics.of(context).footnoteStyle(context).copyWith(
+              color: warning ? appleColorsOf(context).warning : null,
+            )
+        : theme.textTheme.bodySmall?.copyWith(
+            color: warning
+                ? theme.colorScheme.tertiary
+                : theme.colorScheme.onSurfaceVariant,
+          );
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.rowHorizontal,
+        2,
+        tokens.spacing.rowHorizontal,
+        tokens.spacing.gap,
+      ),
+      child: Text(text, style: style),
     );
   }
 }
@@ -840,7 +998,11 @@ class VideoShaderTierSelector extends StatelessWidget {
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        // 与设置行同一左缘（rowHorizontal），上下留出与行间距同档的呼吸。
+        padding: EdgeInsets.symmetric(
+          horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
+          vertical: FushiDesignTokens.of(context).spacing.gap,
+        ),
         child: FushiSegmentedButton<VideoShaderTier>(
           segments: <ButtonSegment<VideoShaderTier>>[
             for (final VideoShaderTierSpec spec in shaderTiersFor())
@@ -865,65 +1027,74 @@ class VideoShaderTierSelector extends StatelessWidget {
   }
 }
 
-/// 五档画质对照表：把「无/低/中/高/极高」每一档的「档名 — 一句话说明 + 显卡要求」
-/// 紧凑列出，常驻在档位选择器下方——让用户**选档前**就能横向比较各档的画质取舍与
-/// GPU 门槛（型号示例已写在各档 [shaderTierLabelDescription] 里），而不是点选某档后
-/// 才看到要求（用户诉求 2）。当前命中的 [current] 档加粗高亮；自定义勾选（current=null）
-/// 时不高亮任何档。纯展示，不可点（切档仍走上方的 [VideoShaderTierSelector]）。
+/// 五档画质对照列表：把「无/低/中/高/极高」每一档列成一条标准设置行——档名是
+/// 标题、「一句话说明 + 显卡要求」是副标题，常驻在档位选择器下方，让用户**选档前**
+/// 就能纵向比较各档的画质取舍与 GPU 门槛（用户诉求 2）。
+///
+/// 当前命中的 [current] 档用选中态表达（行尾对勾 + 标题强调色），不再整行铺底色
+/// 做成表格；自定义勾选（current=null）时没有对勾。给了 [onSelect] 时整行可点
+/// （与上方分段按钮同一入口，iOS 选择列表 / MD3 单选列表的直觉）。
 class VideoShaderTierComparison extends StatelessWidget {
-  const VideoShaderTierComparison({required this.current, super.key});
+  const VideoShaderTierComparison({
+    required this.current,
+    this.onSelect,
+    super.key,
+  });
 
-  /// 当前命中的档（null=自定义勾选，不高亮任何行）。
+  /// 当前命中的档（null=自定义勾选，不标记任何行）。
   final VideoShaderTier? current;
+
+  /// 点行选档；null = 纯展示。
+  final Future<void> Function(VideoShaderTier tier)? onSelect;
+
+  static IconData _tierIcon(VideoShaderTier tier) {
+    switch (tier) {
+      case VideoShaderTier.off:
+        return Icons.signal_cellular_0_bar;
+      case VideoShaderTier.low:
+        return Icons.signal_cellular_alt_1_bar;
+      case VideoShaderTier.medium:
+        return Icons.signal_cellular_alt_2_bar;
+      case VideoShaderTier.high:
+        return Icons.signal_cellular_alt;
+      case VideoShaderTier.ultra:
+        return Icons.auto_awesome_outlined;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (final VideoShaderTierSpec spec in shaderTiersFor())
-            () {
-              final bool active = current == spec.tier;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    // 档名列：定宽，加粗高亮当前档，便于上下对齐成「表格」观感。
-                    SizedBox(
-                      width: 52,
-                      child: Text(
-                        shaderTierLabel(spec.tier),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight:
-                              active ? FontWeight.w700 : FontWeight.w500,
-                          color: active ? cs.primary : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // 说明列：一句话 + 显卡要求（含 N卡/A卡型号示例）。
-                    Expanded(
-                      child: Text(
-                        shaderTierLabelDescription(spec.tier),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: active
-                              ? cs.onSurface
-                              : cs.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }(),
+    final bool glass = isGlassDesign(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color checkColor = glass
+        ? appleColorsOf(context).accent
+        : (isEinkTheme(context) ? cs.onSurface : cs.primary);
+    final List<VideoShaderTierSpec> specs = shaderTiersFor();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < specs.length; i++) ...<Widget>[
+          if (glass && i > 0)
+            const _AppleSeparator(afterIcon: true),
+          Semantics(
+            selected: current == specs[i].tier,
+            child: AdaptiveSettingsRow(
+              key: ValueKey<String>('video-shader-tier-row-${specs[i].tier.name}'),
+              title: shaderTierLabel(specs[i].tier),
+              subtitle: shaderTierLabelDescription(specs[i].tier),
+              icon: _tierIcon(specs[i].tier),
+              showIcon: true,
+              trailing: current == specs[i].tier
+                  ? FushiIcon(Icons.check, color: checkColor)
+                  : null,
+              onTap: onSelect == null
+                  ? null
+                  : () => onSelect!(specs[i].tier),
+            ),
+          ),
         ],
-      ),
+      ],
     );
   }
 }

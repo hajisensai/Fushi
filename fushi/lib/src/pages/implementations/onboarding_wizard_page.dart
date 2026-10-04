@@ -1632,8 +1632,12 @@ class OnboardingProgressBar extends StatelessWidget {
                     curve: fushiMd3StateCurve,
                     height: 4,
                     decoration: BoxDecoration(
-                      color:
-                          i <= current ? colors.primary : colors.outlineVariant,
+                      // Apple 未走到的段用 systemFill 灰轨（与进度条轨道同色）。
+                      color: i <= current
+                          ? colors.primary
+                          : isGlassDesign(context)
+                          ? appleColorsOf(context).fill
+                          : colors.outlineVariant,
                       borderRadius: tokens.radii.chipRadius,
                     ),
                   ),
@@ -1667,15 +1671,9 @@ class OnboardingStepHero extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: colors.primaryContainer,
-            shape: BoxShape.circle,
-          ),
-          child: FushiIcon(icon, size: 28, color: colors.onPrimaryContainer),
-        ),
+        // 中性圆底单色图标：彩色 primaryContainer 圆块会和同屏的填充按钮、
+        // 中性卡片抢视觉，Apple 下强调色更是只留给交互元素。
+        FushiNeutralIconBadge(icon: icon, size: 56, iconSize: 28),
         SizedBox(width: tokens.spacing.card),
         Expanded(
           child: Column(
@@ -1711,7 +1709,7 @@ class OnboardingSectionLabel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(title, style: tokens.type.sectionLabel),
+        FushiSectionTitle.group(title, padding: EdgeInsets.zero),
         if (hint != null) ...<Widget>[
           SizedBox(height: tokens.spacing.gap / 4),
           Text(
@@ -1753,7 +1751,11 @@ class OnboardingFeatureTile extends StatelessWidget {
     final ColorScheme colors = theme.colorScheme;
     return FushiCard(
       selected: selected,
-      borderColor: selected ? colors.primary : colors.outlineVariant,
+      // Apple 卡片不描边：交给 FushiCard 的玻璃分支（未选中透明边、选中强调色
+      // 边，边宽两态相同，几何仍一致）。
+      borderColor: isGlassDesign(context)
+          ? null
+          : (selected ? colors.primary : colors.outlineVariant),
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.card,
         vertical: tokens.spacing.gap,
@@ -2195,21 +2197,8 @@ class OnboardingTutorialStep extends StatelessWidget {
             width: 32,
             child: Column(
               children: <Widget>[
-                Container(
-                  width: 28,
-                  height: 28,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colors.primaryContainer,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$number',
-                    style: theme.textTheme.labelLarge!.copyWith(
-                      color: colors.onPrimaryContainer,
-                    ),
-                  ),
-                ),
+                // 步骤圆：中性底 + 数字（教程列表没有「当前步」，全部中性）。
+                FushiStepNumberBadge(number: number),
                 if (!isLast)
                   Expanded(
                     child: Container(
@@ -2321,9 +2310,12 @@ class OnboardingSampleSentenceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    final ColorScheme colors = theme.colorScheme;
+    // 示例句是卡片里的高亮信息块：中性填充（MD3 surfaceContainerHigh /
+    // Apple tertiaryFill），强调色只上在手势图标上，不再整卡 primaryContainer。
+    final Color foreground = fushiNeutralBlockForeground(context);
+    final Color secondary = fushiNeutralSecondaryForeground(context);
     return FushiCard(
-      color: colors.primaryContainer,
+      color: fushiNeutralBlockColor(context),
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2334,13 +2326,13 @@ class OnboardingSampleSentenceCard extends StatelessWidget {
               FushiIcon(
                 Icons.touch_app_outlined,
                 size: 18,
-                color: colors.onPrimaryContainer,
+                color: fushiAccentForeground(context),
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               Text(
                 t.onboarding_sample_sentence_label,
                 style: tokens.type.sectionLabel.copyWith(
-                  color: colors.onPrimaryContainer,
+                  color: secondary,
                 ),
               ),
             ],
@@ -2349,14 +2341,14 @@ class OnboardingSampleSentenceCard extends StatelessWidget {
           Text(
             sentence,
             style: theme.textTheme.titleLarge!.copyWith(
-              color: colors.onPrimaryContainer,
+              color: foreground,
             ),
           ),
           SizedBox(height: tokens.spacing.gap),
           Text(
             t.onboarding_sample_sentence_hint,
             style: theme.textTheme.bodySmall!.copyWith(
-              color: colors.onPrimaryContainer,
+              color: secondary,
             ),
           ),
         ],

@@ -25,6 +25,10 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 /// 一台已配对主机上一个可用的串流客户端（已绑定到能连通的那个地址）。
 class GameStreamHostConnection {
@@ -117,26 +121,9 @@ class GameStreamLibraryServices {
       MaterialPageRoute<void>(
         builder: (BuildContext context) => Scaffold(
           body: SafeArea(
-            child: ModuleSettingsView(
+            child: ModuleSettingsView.route(
               destinationId: SettingsDestinationId.interconnect,
-              navigation: Row(
-                children: <Widget>[
-                  FushiIconButton(
-                    icon: Icons.arrow_back,
-                    tooltip: t.back,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      t.settings_destination_interconnect,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                ],
-              ),
+              title: t.settings_destination_interconnect,
             ),
           ),
         ),
@@ -440,7 +427,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
           ),
           Expanded(
             child: loading
-                ? const Center(child: FushiCircularProgressIndicator())
+                ? const FushiLoadingView()
                 : _buildBody(context),
           ),
         ],
@@ -497,32 +484,20 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
   }
 
   Widget _buildNoHosts(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(
-              Icons.cast_connected_outlined,
-              size: 48,
-              color: FushiDesignTokens.of(context).surfaces.onVariant,
+    // 空态走共享占位件：图标 / 文案 / 行动按钮的层级与两套设计系统的配色
+    // 都由它统一，不再手搓一列 Icon + Text。
+    return FushiPlaceholderMessage(
+      icon: Icons.cast_connected_outlined,
+      message: t.game_stream_no_hosts,
+      action: _services.openInterconnectSettings == null
+          ? null
+          : FushiFilledButton.icon(
+              key: GameStreamLibraryPage.interconnectButtonKey,
+              autofocus: true,
+              onPressed: () => unawaited(_openInterconnect()),
+              icon: const FushiIcon(Icons.devices_outlined),
+              label: Text(t.game_stream_open_interconnect),
             ),
-            const SizedBox(height: 16),
-            Text(t.game_stream_no_hosts, textAlign: TextAlign.center),
-            if (_services.openInterconnectSettings != null) ...<Widget>[
-              const SizedBox(height: 16),
-              FushiFilledButton.icon(
-                key: GameStreamLibraryPage.interconnectButtonKey,
-                autofocus: true,
-                onPressed: () => unawaited(_openInterconnect()),
-                icon: const FushiIcon(Icons.devices_outlined),
-                label: Text(t.game_stream_open_interconnect),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 
@@ -569,11 +544,13 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool online = host.phase == _HostPhase.ready;
     final bool launchOff = online && host.library?.launchEnabled == false;
+    // 状态只落在单色图标 / 文字上：MD3 primary / error，Apple accent /
+    // systemRed（墨水屏统一 onSurface，靠图标形状区分）。
     final Color accent = online
-        ? theme.colorScheme.primary
+        ? fushiAccentForeground(context)
         : host.phase == _HostPhase.loading
         ? tokens.surfaces.onVariant
-        : theme.colorScheme.error;
+        : fushiStatusColor(context, FushiStatusTone.error);
     return FushiCard(
       margin: EdgeInsets.only(bottom: tokens.spacing.gap),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -646,7 +623,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
       child: Text(
         message,
         style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.error,
+          color: fushiStatusColor(context, FushiStatusTone.error),
         ),
       ),
     );
@@ -731,29 +708,10 @@ class _RunningBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.primary,
-        borderRadius: FushiBorderRadius.chip,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(Icons.play_arrow, size: 14, color: colors.onPrimary),
-            const SizedBox(width: 2),
-            Text(
-              t.game_stream_running,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: colors.onPrimary),
-            ),
-          ],
-        ),
-      ),
-    );
+    // 与书架 / 视频卡的封面角标同一形态（深色胶囊；Apple 磨砂），不再铺整块
+    // primary 彩色底（角标底随主题反相，语义绿在浅色主题的深底上对比不够，
+    // 保持角标前景色）。
+    return CoverBadge(icon: Icons.play_arrow, label: t.game_stream_running);
   }
 }
 
@@ -975,7 +933,7 @@ class _GameStreamLaunchDialogState extends State<_GameStreamLaunchDialog> {
             Text(
               failure,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.error,
+                color: fushiStatusColor(context, FushiStatusTone.error),
               ),
             ),
         ],

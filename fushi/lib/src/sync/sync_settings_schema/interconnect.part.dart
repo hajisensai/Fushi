@@ -4,6 +4,23 @@ part of '../sync_settings_schema.dart';
 // Hibiki P2P interconnect: client config, host server mode, LAN discovery.
 // Shares the parent library's imports + private scope (_syncSettings / _showSnackBar / _SyncSettingsState); moved verbatim.
 
+/// 互联自绘块里的小节标题（「已保存的连接」「局域网设备」）：MD3 = titleSmall；
+/// Apple = 13 号 semibold secondaryLabel（与玻璃设置渲染器的分组标题同一口径），
+/// 不在 Apple 实色分组卡里冒出一行 MD3 标题字。
+TextStyle? _interconnectSubheadStyle(BuildContext context) =>
+    isGlassDesign(context)
+        ? FushiAppleMetrics.of(context)
+            .footnoteStyle(context)
+            .copyWith(fontWeight: FontWeight.w600)
+        : Theme.of(context).textTheme.titleSmall;
+
+/// 互联自绘块里字段上方的小标签（「令牌」「已配对设备」）：MD3 = labelSmall；
+/// Apple = footnote secondaryLabel。
+TextStyle? _interconnectFieldLabelStyle(BuildContext context) =>
+    isGlassDesign(context)
+        ? FushiAppleMetrics.of(context).footnoteStyle(context)
+        : Theme.of(context).textTheme.labelSmall;
+
 // ── Hibiki server config widget (connect to another Hibiki instance) ─
 
 class _FushiServerConfigWidget extends StatefulWidget {
@@ -182,7 +199,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         : Text(
             ok ? t.sync_connection_success : t.sync_connection_failed,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: ok ? theme.colorScheme.primary : theme.colorScheme.error,
+              // Apple：强调色是单色（黑 / 白），成功态改用系统绿。
+              color: ok
+                  ? (isGlassDesign(context)
+                      ? appleColorsOf(context).success
+                      : theme.colorScheme.primary)
+                  : theme.colorScheme.error,
             ),
           );
     if (parseInterconnectP2pUrl(url) == null) return reach;
@@ -538,6 +560,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
+    // 「已连接」是成功态：Apple 下强调色是单色，改用系统绿。
+    final Color connectedColor = isGlassDesign(context)
+        ? appleColorsOf(context).success
+        : theme.colorScheme.primary;
     // Mutual exclusion: while this device serves peers, it can't also connect
     // out as a client. Block adding/editing connections; deleting stays allowed
     // so the user can clear them and switch roles.
@@ -552,7 +578,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // 「连接到其他设备」罩着两个 widget，此前本列表裸露无题，空列表时更是只剩一个
           // 孤零零的「添加」按钮，用户不知道这块是什么、该怎么连。
           Text(t.interconnect_peer_list_title,
-              style: theme.textTheme.titleSmall),
+              style: _interconnectSubheadStyle(context)),
           const SizedBox(height: 8),
           if (_urls.isEmpty)
             Text(
@@ -713,12 +739,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               child: Row(
                 children: <Widget>[
                   FushiIcon(Icons.check_circle_outline,
-                      size: 18, color: theme.colorScheme.primary),
+                      size: 18, color: connectedColor),
                   const SizedBox(width: 6),
                   Text(
                     t.sync_client_connected,
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.primary),
+                        ?.copyWith(color: connectedColor),
                   ),
                 ],
               ),
@@ -1420,7 +1446,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             ],
             const SizedBox(height: 12),
             Text(t.sync_server_token,
-                style: Theme.of(context).textTheme.labelSmall),
+                style: _interconnectFieldLabelStyle(context)),
             const SizedBox(height: 4),
             // BUG-1184：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
             // 直接切掉且毫无提示。令牌必须整串可见（用户要照着输/核对），去掉行数上限。
@@ -1458,7 +1484,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             // TODO-961 M1b: 已配对设备列表 + 逐台移除（吊销 per-peer token）。
             const SizedBox(height: 16),
             Text(t.sync_paired_peers_title,
-                style: Theme.of(context).textTheme.labelSmall),
+                style: _interconnectFieldLabelStyle(context)),
             const SizedBox(height: 4),
             if (_pairedPeers.isEmpty)
               Text(
@@ -1779,7 +1805,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           Row(
             children: <Widget>[
               Text(t.sync_lan_discovery,
-                  style: Theme.of(context).textTheme.titleSmall),
+                  style: _interconnectSubheadStyle(context)),
               const Spacer(),
               if (_scanning)
                 SizedBox(

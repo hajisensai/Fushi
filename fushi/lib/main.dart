@@ -302,18 +302,15 @@ void main([List<String> args = const <String>[]]) {
         // just flips NSWindow properties). The app frame is therefore
         // unconditional on both hosts once the plugin is initialised.
         //
-        // macOS 走同一条路（用户拍板：两端同一个 MD3 顶栏）：`hidden` 在 macOS
-        // 上是 `titleVisibility=.hidden` + `titlebarAppearsTransparent` +
-        // `fullSizeContentView`，`windowButtonVisibility: false` 则把红黄绿三个
-        // 交通灯 `standardWindowButton(_).isHidden = true`。于是 macOS 不再有
-        // 系统交通灯，最小化/缩放/关闭全部由 [FushiDesktopTitleBar] 的 MD3 按钮
-        // 提供（AppKit 仍然自己拥有窗口四边的 resize 边框，不需要 app 代劳）。
-        // 这也一并根除了「交通灯浮在 Flutter 内容左上角」派生的一整串让位补丁
-        // （BUG-869 的 SafeArea 保留带、BUG-973 视频页临时隐藏、BUG-1343 阅读器
-        // 自绘拖拽带）。
+        // macOS 也用自绘顶栏：`hidden` 在 macOS 上是 `titleVisibility=.hidden` +
+        // `titlebarAppearsTransparent` + `fullSizeContentView`（AppKit 仍拥有四边
+        // resize 边框）。窗口按钮按平台：
+        // 2026-10-04 用户改主意：macOS 无论设计系统一律用系统原生红绿灯（自绘
+        // 顶栏左侧给它们留位，内容全屏时由 FushiDesktopTitleBar 隐藏），Windows /
+        // Linux 仍是 MD3 按钮。
         await windowManager.setTitleBarStyle(
           TitleBarStyle.hidden,
-          windowButtonVisibility: false,
+          windowButtonVisibility: Platform.isMacOS,
         );
         FushiDesktopTitleBar.markEnabled();
       }
@@ -2401,12 +2398,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                 windowSizeClassForWidth(viewport.width);
                             final bool railVisible = !mediaOpen &&
                                 sizeClass != WindowSizeClass.compact;
-                            // 玻璃设计系统的 expanded 档是 224 宽的悬浮侧栏
-                            // （adaptiveNavRail extended），标题跟着它缩进。
-                            final double railWidth = isGlassDesign(context) &&
-                                    sizeClass == WindowSizeClass.expanded
-                                ? kGlassNavSidebarWidth
-                                : kAdaptiveNavRailWidth;
+                            // expanded 档是展开侧栏（玻璃 224 悬浮侧栏 / MD3
+                            // 240 展开 rail，adaptiveNavRail extended），标题
+                            // 跟着它缩进。
+                            final double railWidth = adaptiveNavRailWidthFor(
+                              context,
+                              extended: sizeClass == WindowSizeClass.expanded,
+                            );
                             return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI
                               // zoom; align its title with the visually scaled

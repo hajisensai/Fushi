@@ -17,6 +17,7 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 class FushiAppleColors extends ThemeExtension<FushiAppleColors> {
   const FushiAppleColors({
     required this.accent,
+    required this.onAccent,
     required this.groupedBackground,
     required this.secondaryGroupedBackground,
     required this.tertiaryGroupedBackground,
@@ -38,15 +39,18 @@ class FushiAppleColors extends ThemeExtension<FushiAppleColors> {
     final bool dark = brightness == Brightness.dark;
     return FushiAppleColors(
       accent: accent,
+      onAccent: appleOnAccent(accent),
+      // 页面底：白底黑字 / 黑底白字（用户 2026-10-04 定调）。卡片与分组靠一层
+      // 系统灰从页面底里拉开：浅色 #F2F2F7、深色 #1C1C1E。
       groupedBackground: dark
           ? const Color(0xFF000000)
-          : const Color(0xFFF2F2F7),
+          : const Color(0xFFFFFFFF),
       secondaryGroupedBackground: dark
           ? const Color(0xFF1C1C1E)
-          : const Color(0xFFFFFFFF),
+          : const Color(0xFFF2F2F7),
       tertiaryGroupedBackground: dark
           ? const Color(0xFF2C2C2E)
-          : const Color(0xFFF2F2F7),
+          : const Color(0xFFE5E5EA),
       label: dark ? const Color(0xFFFFFFFF) : const Color(0xFF000000),
       secondaryLabel: dark ? const Color(0x99EBEBF5) : const Color(0x993C3C43),
       tertiaryLabel: dark ? const Color(0x4DEBEBF5) : const Color(0x4D3C3C43),
@@ -62,6 +66,10 @@ class FushiAppleColors extends ThemeExtension<FushiAppleColors> {
   }
 
   final Color accent;
+
+  /// 强调色上的前景（主按钮文字、勾、设置图标字形）：按强调色明暗取黑 / 白——
+  /// 默认单色主题深色下强调色是白，前景必须是黑。
+  final Color onAccent;
 
   /// 页面底（systemGroupedBackground）。
   final Color groupedBackground;
@@ -90,6 +98,7 @@ class FushiAppleColors extends ThemeExtension<FushiAppleColors> {
   @override
   FushiAppleColors copyWith({Color? accent}) => FushiAppleColors(
     accent: accent ?? this.accent,
+    onAccent: accent == null ? onAccent : appleOnAccent(accent),
     groupedBackground: groupedBackground,
     secondaryGroupedBackground: secondaryGroupedBackground,
     tertiaryGroupedBackground: tertiaryGroupedBackground,
@@ -112,6 +121,7 @@ class FushiAppleColors extends ThemeExtension<FushiAppleColors> {
     Color l(Color a, Color b) => Color.lerp(a, b, t)!;
     return FushiAppleColors(
       accent: l(accent, other.accent),
+      onAccent: l(onAccent, other.onAccent),
       groupedBackground: l(groupedBackground, other.groupedBackground),
       secondaryGroupedBackground: l(
         secondaryGroupedBackground,
@@ -150,6 +160,29 @@ FushiAppleColors appleColorsOf(BuildContext context) {
       );
 }
 
+/// 「恒深色」的 Apple 系统色：漫画阅读器 chrome、视频控件、页图上的空状态这类
+/// 永远压在黑底 / 画面上的控件层，不随 app 亮暗换色——浅色 app 里照样要深色档
+/// （白字、深色填充）。强调色跟随 app：单色强调色（浅黑 / 深白）在深色档一律取
+/// 白；有彩强调色保留色相、按深色档（tone 60）重建明度。app 本就是深色时直接
+/// 返回当前色板。
+FushiAppleColors appleDarkColorsOf(BuildContext context) {
+  final FushiAppleColors current = appleColorsOf(context);
+  if (Theme.of(context).colorScheme.brightness == Brightness.dark) {
+    return current;
+  }
+  return FushiAppleColors.of(
+    Brightness.dark,
+    appleDarkTierAccent(current.accent),
+  );
+}
+
+/// [appleDarkColorsOf] 的强调色换算（导出给需要单独换算强调色的调用点）。
+Color appleDarkTierAccent(Color accent) {
+  final int argb = accent.toARGB32();
+  if (argb == 0xFF000000 || argb == 0xFFFFFFFF) return Colors.white;
+  return appleAccentFrom(accent, Brightness.dark);
+}
+
 /// 把主题色转成 iOS 系统色风格的强调色：保留色相，饱和度拉到系统色水准，
 /// 明度定在 iOS systemBlue 那一档（浅色 tone 50、深色 tone 60），白字可读。
 /// 近乎无彩的主题色（灰阶主题）回落到 systemBlue。
@@ -164,16 +197,31 @@ Color appleAccentFrom(Color primary, Brightness brightness) {
   );
 }
 
+/// 强调色上的前景色（黑 / 白二选一，按强调色明暗）。
+Color appleOnAccent(Color accent) =>
+    ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
+    ? Colors.white
+    : Colors.black;
+
+/// 默认主题的单色强调色：浅色黑、深色白（iOS 单色界面，白底黑字 / 黑底白字）。
+Color appleMonochromeAccent(Brightness brightness) =>
+    brightness == Brightness.dark ? Colors.white : Colors.black;
+
 /// 不透明地叠色（把半透明系统色压平到底色上，给只收不透明色的 MD3 槽位用）。
 Color _over(Color fg, Color bg) => Color.alphaBlend(fg, bg);
 
 /// 玻璃设计系统的 [ColorScheme]：以 [base] 的亮度与色相为种子，所有表面 /
 /// 文字 / 描边槽位换成 Apple 系统色。MD3 组件主题读这些槽位，因此仍走 Material
 /// 渲染的少数表面也自动是 Apple 观感。
-ColorScheme appleColorScheme(ColorScheme base) {
+///
+/// [monochrome]（默认主题）：强调色取单色（浅色黑 / 深色白），不从主题色派生。
+ColorScheme appleColorScheme(ColorScheme base, {bool monochrome = false}) {
   final Brightness b = base.brightness;
   final bool dark = b == Brightness.dark;
-  final Color accent = appleAccentFrom(base.primary, b);
+  final Color accent = monochrome
+      ? appleMonochromeAccent(b)
+      : appleAccentFrom(base.primary, b);
+  final Color onAccent = appleOnAccent(accent);
   final FushiAppleColors a = FushiAppleColors.of(b, accent);
   final Color bg = a.groupedBackground;
   final Color card = a.secondaryGroupedBackground;
@@ -181,14 +229,13 @@ ColorScheme appleColorScheme(ColorScheme base) {
   final Color raisedHigh = dark
       ? const Color(0xFF3A3A3C)
       : const Color(0xFFD1D1D6);
-  final Color tintedAccent = _over(
-    accent.withValues(alpha: dark ? 0.26 : 0.14),
-    card,
-  );
+  final Color tintedAccent = monochrome
+      ? _over(a.fill, card)
+      : _over(accent.withValues(alpha: dark ? 0.26 : 0.14), card);
   final Color fillOpaque = _over(a.fill, card);
   return base.copyWith(
     primary: accent,
-    onPrimary: Colors.white,
+    onPrimary: onAccent,
     primaryContainer: tintedAccent,
     onPrimaryContainer: accent,
     primaryFixed: tintedAccent,
@@ -199,7 +246,7 @@ ColorScheme appleColorScheme(ColorScheme base) {
     // 选中态底（导航选中行、选中 chip、分段选中）：Apple 用中性灰填充 +
     // 强调色图标 / 文字，不是 MD3 的 tonal 彩色容器。
     secondary: accent,
-    onSecondary: Colors.white,
+    onSecondary: onAccent,
     secondaryContainer: fillOpaque,
     onSecondaryContainer: a.label,
     tertiary: a.warning,

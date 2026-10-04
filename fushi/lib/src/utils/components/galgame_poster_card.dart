@@ -7,7 +7,6 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
@@ -201,7 +200,7 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
               widget.cover,
               if (widget.overlayText != null && widget.overlayText!.isNotEmpty)
                 _buildSortOverlay(context),
-              if (widget.multiSelected) _buildSelectBadge(colors),
+              if (widget.multiSelected) _buildSelectBadge(),
               if (widget.trailing != null)
                 Positioned(top: 4, right: 4, child: widget.trailing!),
             ],
@@ -254,20 +253,13 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
     );
   }
 
-  /// 左上角方形多选勾标（20×20，主色底 + 勾）。
-  Widget _buildSelectBadge(ColorScheme colors) {
-    return Positioned(
+  /// 左上角多选勾标：与书架 / 视频库同一枚 [ShelfSelectionCheck]（MD3 主色圆 +
+  /// 反色勾；Apple 强调色圆 + 白环，iOS 照片多选观感），不再另画一个方块。
+  Widget _buildSelectBadge() {
+    return const Positioned(
       top: 6,
       left: 6,
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          color: colors.primary,
-          borderRadius: FushiBorderRadius.chip,
-        ),
-        child: FushiIcon(Icons.check, size: 14, color: colors.onPrimary),
-      ),
+      child: ShelfSelectionCheck(selected: true),
     );
   }
 }

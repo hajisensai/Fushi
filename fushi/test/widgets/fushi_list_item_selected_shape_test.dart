@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show kFushiMd3RowInset, kFushiMd3RowRadius;
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -29,7 +31,7 @@ void main() {
     expect(ink.borderRadius, isNotNull);
   });
 
-  testWidgets('default fill shape keeps square full-bleed highlight',
+  testWidgets('default fill shape uses a narrower rounded inset highlight',
       (WidgetTester tester) async {
     await tester.pumpWidget(_host(
       FushiListItem(
@@ -43,10 +45,16 @@ void main() {
     final AnimatedContainer container = tester.widget<AnimatedContainer>(
       find.byType(AnimatedContainer),
     );
-    // fill 路径：AnimatedContainer 把 color: 规范化为无圆角 BoxDecoration，
-    // 故 borderRadius 必须为 null（方角满宽），且无内缩 margin（golden 不变）。
+    // fill 路径（2026-10-04 卡片 / 列表统一）：MD3 状态层与选中底也是 12 圆角
+    // 块，只内缩 4（pill 内缩 8），不再顶到容器边。
     final BoxDecoration decoration = container.decoration! as BoxDecoration;
-    expect(decoration.borderRadius, isNull);
-    expect(container.margin, EdgeInsets.zero);
+    expect(
+      decoration.borderRadius,
+      const BorderRadius.all(Radius.circular(kFushiMd3RowRadius)),
+    );
+    expect(
+      container.margin,
+      const EdgeInsets.symmetric(horizontal: kFushiMd3RowInset),
+    );
   });
 }

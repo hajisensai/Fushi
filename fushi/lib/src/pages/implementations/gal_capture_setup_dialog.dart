@@ -243,7 +243,14 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
           const FushiDividerControl(height: 1),
           Expanded(
             child: threads.isEmpty
-                ? Center(child: Text(t.game_waiting_for_text))
+                ? Center(
+                    child: Text(
+                      t.game_waiting_for_text,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: fushiNeutralSecondaryForeground(context),
+                      ),
+                    ),
+                  )
                 : ListView.builder(
                     padding: const EdgeInsets.all(8),
                     itemCount: threads.length,

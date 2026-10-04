@@ -40,7 +40,8 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
     );
   }
 
-  /// 顶部醒目提示条（MD3 errorContainer 语义色）。显示态才占尺寸并可点，隐藏态零尺寸。
+  /// 顶部醒目提示条：中性浮层面（surfaceContainer）+ 轻阴影，警告语义只上在单色
+  /// 图标上（不再整块 errorContainer）。显示态才占尺寸并可点，隐藏态零尺寸。
   Widget _buildBlackFlickerNoticeOverlay() {
     final ColorScheme cs = _videoChromeColorScheme(context);
     return Positioned(
@@ -59,10 +60,10 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
                   child: Material(
-                    color: cs.errorContainer,
+                    color: cs.surfaceContainer,
                     borderRadius: BorderRadius.circular(12),
                     clipBehavior: Clip.antiAlias,
-                    elevation: 6,
+                    elevation: kFushiFloatingElevation,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
                       child: Column(
@@ -75,7 +76,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                               FushiIcon(
                                 Icons.warning_amber_rounded,
                                 size: 22,
-                                color: cs.onErrorContainer,
+                                color: cs.error,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -85,7 +86,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                     Text(
                                       t.video_windows_black_flash_notice_title,
                                       style: TextStyle(
-                                        color: cs.onErrorContainer,
+                                        color: cs.onSurface,
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                         height: 1.25,
@@ -95,7 +96,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                     Text(
                                       t.video_windows_black_flash_notice_body,
                                       style: TextStyle(
-                                        color: cs.onErrorContainer,
+                                        color: cs.onSurfaceVariant,
                                         fontSize: 13,
                                         height: 1.35,
                                       ),
@@ -108,7 +109,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                 iconSize: 20,
                                 visualDensity: VisualDensity.compact,
                                 tooltip: t.dialog_close,
-                                color: cs.onErrorContainer,
+                                color: cs.onSurfaceVariant,
                                 icon: const FushiIcon(Icons.close),
                               ),
                             ],
@@ -119,7 +120,7 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                               FushiTextButton(
                                 onPressed: _suppressBlackFlickerNotice,
                                 style: TextButton.styleFrom(
-                                  foregroundColor: cs.onErrorContainer,
+                                  foregroundColor: cs.onSurfaceVariant,
                                   visualDensity: VisualDensity.compact,
                                 ),
                                 child: Text(

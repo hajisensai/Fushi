@@ -211,7 +211,9 @@ class _ServerCard extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          const FushiIcon(Icons.dns_outlined, size: 32),
+          // 服务器图标走中性圆底徽标（MD3 surfaceContainerHigh / Apple fill），
+          // 不再是一颗裸的 32 号大图标。
+          const FushiNeutralIconBadge(icon: Icons.dns_outlined, iconSize: 22),
           SizedBox(width: tokens.spacing.rowHorizontal),
           Expanded(
             child: Column(
@@ -273,7 +275,14 @@ class _ServerCard extends StatelessWidget {
                   ),
               ],
             ),
-          const FushiIcon(Icons.chevron_right_rounded),
+          // Apple 行尾 chevron：小号、tertiaryLabel 色；MD3 原样。
+          FushiIcon(
+            Icons.chevron_right_rounded,
+            size: isGlassDesign(context) ? 18 : null,
+            color: isGlassDesign(context)
+                ? appleColorsOf(context).tertiaryLabel
+                : null,
+          ),
         ],
       ),
     );

@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-// 反馈包装契约：MD3 下是原进度条 / tooltip；玻璃下确定态是
-// GlassProgressIndicator（强调色，不是库默认 iOS 蓝）、不定态圆形是 iOS 菊花
+// 反馈包装契约：MD3 下是 M3 Expressive 波浪进度 / 原 tooltip；Apple 下确定态是
+// Apple 细轨 / 细圆环（强调色）、不定态圆形是 iOS 菊花
 // CupertinoActivityIndicator，tooltip 气泡是 GlassContainer。
 
 Future<void> _pump(
@@ -51,13 +52,23 @@ void main() {
       ),
       glass: false,
     );
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
+    // MD3 = Material 3 Expressive 波浪进度（自绘）；`.adaptive` 在测试平台
+    // （Android）上同样走波浪环。
+    expect(find.byType(FushiWavyLinearProgress), findsOneWidget);
+    expect(find.byType(FushiWavyCircularProgress), findsNWidgets(2));
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byType(Tooltip), findsOneWidget);
-    expect(find.byType(GlassProgressIndicator), findsNothing);
+    expect(find.byType(FushiAppleLinearProgress), findsNothing);
+    final FushiWavyLinearProgress linear = tester.widget(
+      find.byType(FushiWavyLinearProgress),
+    );
+    expect(linear.strokeWidth, 6);
+    // 波浪相位动画在跑，不能 pumpAndSettle。
+    await tester.pump(const Duration(milliseconds: 500));
   });
 
-  testWidgets('glass builds GlassProgressIndicator with scheme colors', (
+  testWidgets('glass builds Apple progress with scheme colors', (
     WidgetTester tester,
   ) async {
     await _pump(
@@ -74,24 +85,24 @@ void main() {
     );
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    final List<GlassProgressIndicator> all = tester
-        .widgetList<GlassProgressIndicator>(find.byType(GlassProgressIndicator))
-        .toList();
-    // 不定态圆形进度是 iOS 菊花，其余三个是玻璃进度条。
-    expect(all, hasLength(3));
+    // 不定态圆形进度是 iOS 菊花；线性是 Apple 细轨；确定态圆形是细圆环。
     expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    final FushiAppleLinearProgress linear = tester.widget(
+      find.byType(FushiAppleLinearProgress),
+    );
+    final List<FushiAppleProgressRing> rings = tester
+        .widgetList<FushiAppleProgressRing>(find.byType(FushiAppleProgressRing))
+        .toList();
+    expect(rings, hasLength(2));
     final BuildContext ctx = tester.element(find.byType(Column));
     final Color primary = Theme.of(ctx).colorScheme.primary;
-    expect(all[0].color, primary);
-    expect(all[0].height, 6);
-    expect(all[0].value, 0.4);
-    expect(all[1].color, primary);
-    expect(all[2].color, Colors.orange);
+    expect(linear.color, primary);
+    expect(linear.height, 6);
+    expect(linear.value, 0.4);
+    expect(rings[0].color, primary);
+    expect(rings[1].color, Colors.orange);
     // 线性条撑满父级宽度（与 Material 一致）。
-    expect(
-      tester.getSize(find.byType(GlassProgressIndicator).first).width,
-      300,
-    );
+    expect(tester.getSize(find.byType(FushiAppleLinearProgress)).width, 300);
     // 不定态动画在跑，不能 pumpAndSettle。
     await tester.pump(const Duration(milliseconds: 500));
   });

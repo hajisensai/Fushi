@@ -9,8 +9,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-// 标签包装契约：MD3 下是原 Material chip；玻璃下是 iOS 26 的实色胶囊（不是
-// 玻璃，可 Tab 聚焦、Enter 激活），界面里没有 RawChip。
+// 标签包装契约：MD3 下是原 Material chip；玻璃下可交互标签是液态玻璃胶囊
+// （GlassButton：未选中透明玻璃、选中强调色着色玻璃，可 Tab 聚焦、Enter 激活），
+// 纯展示标签是实色灰胶囊；界面里没有 RawChip。
 
 Future<void> _pump(
   WidgetTester tester,
@@ -76,7 +77,7 @@ void main() {
   });
 
   group('glass', () {
-    testWidgets('renders solid iOS capsules, no Material chip, no glass', (
+    testWidgets('renders liquid-glass capsules, no Material chip', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -105,38 +106,47 @@ void main() {
       );
       expect(find.byType(RawChip), findsNothing);
       expect(find.byType(ChoiceChip), findsNothing);
-      // 标签是内容层控件：没有任何玻璃。
+      // 四枚可交互标签是玻璃胶囊（GlassButton），纯展示的 plain 不是。
       expect(find.byType(GlassChip), findsNothing);
-      expect(find.byType(GlassContainer), findsNothing);
-      expect(find.byType(GlassButton), findsNothing);
+      expect(find.byType(GlassButton), findsNWidgets(4));
+      expect(
+        find.ancestor(
+          of: find.text('plain'),
+          matching: find.byType(GlassButton),
+        ),
+        findsNothing,
+      );
       // 选中的 ChoiceChip 靠强调色实底表达，不画对勾；FilterChip 画 SF 对勾。
       expect(find.byIcon(Icons.check), findsNothing);
       expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
-      // 选中胶囊是强调色实底 + 白字，高 32（移动端）。
+      // 选中胶囊是强调色着色玻璃 + 反色字，高 32（移动端）。
       final BuildContext ctx = tester.element(find.text('choice'));
       final Color accent = appleColorsOf(ctx).accent;
-      expect(
+      final GlassButton selectedGlass = tester.widget<GlassButton>(
         find.ancestor(
           of: find.text('choice'),
-          matching: find.byWidgetPredicate(
-            (Widget w) =>
-                w is DecoratedBox &&
-                w.decoration is BoxDecoration &&
-                (w.decoration as BoxDecoration).color == accent,
-          ),
+          matching: find.byType(GlassButton),
         ),
-        findsOneWidget,
+      );
+      expect(
+        selectedGlass.settings?.glassColor,
+        fushiGlassFill(ctx, tint: accent),
       );
       expect(DefaultTextStyle.of(ctx).style.color, Colors.white);
+      final GlassButton actionGlass = tester.widget<GlassButton>(
+        find.ancestor(
+          of: find.text('action'),
+          matching: find.byType(GlassButton),
+        ),
+      );
+      expect(actionGlass.settings?.glassColor, fushiGlassFill(ctx));
       expect(
         tester
             .getSize(
-              find
-                  .ancestor(
-                    of: find.text('action'),
-                    matching: find.byType(DecoratedBox),
-                  )
-                  .first,
+              find.ancestor(
+                of: find.text('action'),
+                matching: find.byType(GlassButton),
+              ),
             )
             .height,
         32,
@@ -257,7 +267,7 @@ void main() {
         glass: true,
       );
       expect(find.byType(RawChip), findsNothing);
-      expect(find.byType(GlassButton), findsNothing);
+      expect(find.byType(GlassButton), findsOneWidget);
       await _tabThenEnter(tester);
       expect(pressed, 1);
     });

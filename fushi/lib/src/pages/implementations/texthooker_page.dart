@@ -1337,7 +1337,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return Material(
       // 走共享设计 token 的语义 overlay 面（顶层容器面调性），不在页面里直接引原始
       // ColorScheme 面 token（MD3 守卫要求 ordinary chrome 走共享组件）。
-      color: FushiDesignTokens.of(context).surfaces.overlay,
+      // Apple：surfaces.overlay 是 systemGray4 档（深 #48484A）的占位色，整条
+      // 铺开就是一块重灰；改成内容层分组底（secondarySystemGroupedBackground）。
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).secondaryGroupedBackground
+          : FushiDesignTokens.of(context).surfaces.overlay,
       child: InkWell(
         onTap: _pickExternalWindow,
         child: Padding(
@@ -1997,23 +2001,32 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 if (_unreadLines > 0)
                   // 补 onTertiaryContainer 前景（此前继承默认前景，深色主题下
                   // 对比不足）；点击 = 跳到最新一行并清零未读。
+                  // chip 统一（2026-10-04）：可点的胶囊与其它 chip 同一语言——
+                  // MD3 secondaryContainer + onSecondaryContainer，Apple 是无
+                  // bezel 的 plain 按钮（强调色字、不铺 systemFill 灰底）；13 号 w500。
                   Material(
-                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    color: isGlassDesign(context)
+                        ? Colors.transparent
+                        : Theme.of(context).colorScheme.secondaryContainer,
                     borderRadius: BorderRadius.circular(999),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(999),
                       onTap: _jumpToLatestAndClearUnread,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 12,
+                          vertical: 6,
                         ),
                         child: Text(
                           '${t.game_unread_lines} $_unreadLines',
                           style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onTertiaryContainer,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: isGlassDesign(context)
+                                ? appleColorsOf(context).accent
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSecondaryContainer,
                           ),
                         ),
                       ),
@@ -2054,8 +2067,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   child: HorizontalDragScrollable(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: FushiToolbar(
+                        dense: true,
                         children: <Widget>[
                           // 粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
                           // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须
@@ -3231,20 +3244,12 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color background = ready
-        ? colors.primaryContainer
-        : colors.surfaceContainerHighest;
-    final Color foreground = ready
-        ? colors.onPrimaryContainer
-        : colors.onSurfaceVariant;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(label, style: TextStyle(color: foreground)),
+    // 共享状态标签：就绪 = 成功色（MD3 harmonize 绿淡底 / Apple 中性灰底 +
+    // 系统绿字），未就绪 = 中性。
+    return FushiTag(
+      text: label,
+      tone: ready ? FushiTagTone.success : FushiTagTone.neutral,
+      dense: true,
     );
   }
 }
@@ -3582,26 +3587,12 @@ class _LineMinedChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colors.primary,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FushiIcon(Icons.style, size: 12, color: colors.onPrimary),
-          const SizedBox(width: 4),
-          Text(
-            t.game_line_mined,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(color: colors.onPrimary),
-          ),
-        ],
-      ),
+    // 与 [_LineAudioChip] 同一枚共享标签：强调色调 + 卡片图标。
+    return FushiTag(
+      text: t.game_line_mined,
+      icon: Icons.style,
+      tone: FushiTagTone.accent,
+      dense: true,
     );
   }
 }
@@ -3626,16 +3617,10 @@ class _LineAudioChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     // 语义化 reason 优先于通用状态：无配音是常态不是故障；超长切片是可疑不是正常。
     if (status == TexthookerLineAudioStatus.missing &&
         fallbackReason == kGalLineNoVoiceReason) {
-      return _chip(
-        context,
-        t.game_line_audio_no_voice,
-        colors.surfaceContainerHighest,
-        colors.onSurfaceVariant,
-      );
+      return _chip(t.game_line_audio_no_voice, FushiTagTone.neutral);
     }
     // 「已按干净源策略抑制」绝不能和「无配音」共用灰标：前者是「没证据」，后者是
     // 「有证据判定没配音」。混成一句会让用户以为游戏这句本来就没语音。
@@ -3643,63 +3628,42 @@ class _LineAudioChip extends StatelessWidget {
         fallbackReason == kGalCleanSourceSuppressedReason) {
       return FushiTooltip(
         message: t.game_line_audio_suppressed_hint,
-        child: _chip(
-          context,
-          t.game_line_audio_suppressed,
-          colors.secondaryContainer,
-          colors.onSecondaryContainer,
-        ),
+        child: _chip(t.game_line_audio_suppressed, FushiTagTone.accent),
       );
     }
     if (fallbackReason == kGalOverlongSliceSuspectReason) {
       return FushiTooltip(
         message: t.game_line_audio_overlong_hint,
-        child: _chip(
-          context,
-          t.game_line_audio_overlong,
-          colors.tertiaryContainer,
-          colors.onTertiaryContainer,
-        ),
+        child: _chip(t.game_line_audio_overlong, FushiTagTone.warning),
       );
     }
-    final (String, Color, Color) appearance = switch (status) {
+    final (String, FushiTagTone) appearance = switch (status) {
       TexthookerLineAudioStatus.pending => (
         t.game_line_audio_pending,
-        colors.secondaryContainer,
-        colors.onSecondaryContainer,
+        FushiTagTone.neutral,
       ),
       TexthookerLineAudioStatus.matched => (
         t.game_line_audio_matched,
-        colors.primaryContainer,
-        colors.onPrimaryContainer,
+        FushiTagTone.success,
       ),
       TexthookerLineAudioStatus.encoded => (
         t.game_line_audio_encoded,
-        colors.primaryContainer,
-        colors.onPrimaryContainer,
+        FushiTagTone.success,
       ),
       TexthookerLineAudioStatus.fallback => (
         t.game_line_audio_fallback,
-        colors.tertiaryContainer,
-        colors.onTertiaryContainer,
+        FushiTagTone.warning,
       ),
       TexthookerLineAudioStatus.missing => (
         t.game_line_audio_missing,
-        colors.errorContainer,
-        colors.onErrorContainer,
+        FushiTagTone.error,
       ),
       TexthookerLineAudioStatus.unavailable => (
         t.game_line_audio_unavailable,
-        colors.surfaceContainerHighest,
-        colors.onSurfaceVariant,
+        FushiTagTone.neutral,
       ),
     };
-    final Widget chip = _chip(
-      context,
-      appearance.$1,
-      appearance.$2,
-      appearance.$3,
-    );
+    final Widget chip = _chip(appearance.$1, appearance.$2);
     // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
     if (backend == 'system_loopback') {
       return FushiTooltip(message: t.game_line_audio_loopback_hint, child: chip);
@@ -3707,26 +3671,10 @@ class _LineAudioChip extends StatelessWidget {
     return chip;
   }
 
-  Widget _chip(
-    BuildContext context,
-    String label,
-    Color background,
-    Color foreground,
-  ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: foreground),
-      ),
-    );
-  }
+  /// 共享状态标签：语义由 [tone] 决定，配色交给设计系统（MD3 tonal 容器 /
+  /// 状态色淡底；Apple 中性灰底 + 语义字色；墨水屏描边）。
+  Widget _chip(String label, FushiTagTone tone) =>
+      FushiTag(text: label, tone: tone, dense: true);
 }
 
 /// 给分词结果补上每个词首字在整行里的 UTF-16 偏移。

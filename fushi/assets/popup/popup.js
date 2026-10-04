@@ -3663,6 +3663,11 @@ function createAudioButton(expression, reading, entryIndex) {
     const button = el('button', {
         className: 'inline-action-button audio-button',
         onclick: async () => {
+            // 长按刚弹出音频源菜单：这次抬起带来的 click 不能再播默认源。
+            if (button.dataset.fushiSuppressClick === '1') {
+                delete button.dataset.fushiSuppressClick;
+                return;
+            }
             const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
             if (!audioUrl) {
                 // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
@@ -3675,7 +3680,298 @@ function createAudioButton(expression, reading, entryIndex) {
         }
     });
     setButtonIcon(button, 'audio');
+    bindAudioSourceMenuTriggers(button, expression, reading || expression);
     return button;
+}
+
+// ── 「选择音频源」菜单 ────────────────────────────────────────────────────────────
+// 单击 ♪ 播默认源（首个解析出的源，与原行为一致）；触屏长按 ~450ms / 桌面右键 /
+// 按钮聚焦时 Shift+F10 或 ContextMenu 键 → 在按钮旁弹出菜单，列出当前词每个启用
+// 音频源各自解析出的候选（源名 + 变体），点项即播并关菜单。列表经宿主桥
+// `listWordAudioSources({expression, reading})` → `[{name, variant, url}]` 取得：
+// app 内 / app 外由 Dart 逐源解析（listWordAudioWebViewChoices），扩展经 background
+// 打 /api/lookup/audio/list。旧宿主没有这根桥（抛错 / 回 null）时菜单退化为只列
+// 默认源一项，绝不报错。选中项只用于本次播放：制卡仍按 TODO-766 现解析默认源
+// （没有「制卡用指定音频」的既有桥，不在这里发明）。
+// 菜单挂在 __fushiOverlayParent() 顶层（与 .audio-hint 同一套 fixed 定位），开着时
+// 记一层 __fushiPopupModalDepth，让宿主键桥（BUG-1347）把方向键 / Esc 让给菜单。
+const AUDIO_MENU_LONG_PRESS_MS = 450;
+const AUDIO_MENU_MOVE_TOLERANCE_PX = 10;
+let __fushiAudioMenu = null; // { menu, button, modal, onDocPointerDown, generation }
+let __fushiAudioMenuGeneration = 0;
+
+function bindAudioSourceMenuTriggers(button, expression, reading) {
+    let pressTimer = 0;
+    let pressStart = null;
+    const cancelPress = () => {
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = 0;
+        pressStart = null;
+    };
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    button.addEventListener('pointerdown', (e) => {
+        // 长按后有的内核不再派发 click：残留的吞点击标记在下一次按下时作废。
+        delete button.dataset.fushiSuppressClick;
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        cancelPress();
+        pressStart = { x: e.clientX, y: e.clientY };
+        pressTimer = setTimeout(() => {
+            pressTimer = 0;
+            pressStart = null;
+            button.dataset.fushiSuppressClick = '1';
+            openAudioSourceMenu(button, expression, reading, { focusFirst: false });
+        }, AUDIO_MENU_LONG_PRESS_MS);
+    });
+    button.addEventListener('pointermove', (e) => {
+        if (!pressStart) return;
+        if (Math.abs(e.clientX - pressStart.x) > AUDIO_MENU_MOVE_TOLERANCE_PX ||
+            Math.abs(e.clientY - pressStart.y) > AUDIO_MENU_MOVE_TOLERANCE_PX) {
+            cancelPress();
+        }
+    });
+    button.addEventListener('pointerup', cancelPress);
+    button.addEventListener('pointercancel', cancelPress);
+    button.addEventListener('pointerleave', cancelPress);
+    // 桌面右键（Android 长按同样会派发 contextmenu：菜单已由长按打开时只吞掉原生菜单）。
+    button.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (__fushiAudioMenu && __fushiAudioMenu.button === button) return;
+        cancelPress();
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            button.dataset.fushiSuppressClick = '1';
+        }
+        openAudioSourceMenu(button, expression, reading, { focusFirst: false });
+    });
+    button.addEventListener('keydown', (e) => {
+        const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
+        if (!isMenuKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openAudioSourceMenu(button, expression, reading, { focusFirst: true });
+    });
+}
+
+async function fetchAudioSourceChoices(expression, reading) {
+    let list = null;
+    try {
+        list = await window.flutter_inappwebview.callHandler(
+            'listWordAudioSources', { expression, reading });
+    } catch (_) {
+        list = null;
+    }
+    if (Array.isArray(list)) {
+        return list.filter((item) => item && typeof item.url === 'string' && item.url);
+    }
+    // 旧宿主没有列表桥：退化成只列默认源。
+    const url = await fetchAudioUrl(expression, reading);
+    return url ? [{ name: '', variant: '', url }] : [];
+}
+
+function closeAudioSourceMenu(restoreFocus) {
+    const state = __fushiAudioMenu;
+    if (!state) return;
+    __fushiAudioMenu = null;
+    window.__fushiAudioMenuOpen = false;
+    document.removeEventListener('pointerdown', state.onDocPointerDown, true);
+    if (state.modal) {
+        window.__fushiPopupModalDepth = Math.max(0, (window.__fushiPopupModalDepth || 1) - 1);
+    }
+    state.button.setAttribute('aria-expanded', 'false');
+    const menu = state.menu;
+    menu.classList.remove('visible');
+    setTimeout(() => menu.remove(), 160);
+    if (restoreFocus && state.button.isConnected) {
+        try { state.button.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+    }
+}
+window.fushiCloseAudioSourceMenu = closeAudioSourceMenu;
+
+// 扩展里菜单挂在 shadow root 顶层，是 #entries-container 的兄弟：容器上 setProperty 的
+// 主题变量（--md-* 等）继承不到，材质 / 墨水屏 class 也不在祖先链上。这里把这几样从
+// 容器（in-app 是 <html>）抄到菜单自身。in-app 菜单挂 body，变量本就继承，抄一遍无害。
+const AUDIO_MENU_THEME_VARS = [
+    '--text-color', '--background-color', '--md-primary', '--md-on-primary',
+    '--md-surface-container-high', '--md-outline-variant', '--primary-color',
+    '--surface-container-high', '--outline-variant',
+];
+function applyAudioMenuTheme(menu) {
+    const container = __fushiContainer();
+    const themeEl = (window.__fushiRoot && container) ? container : document.documentElement;
+    const html = document.documentElement;
+    try {
+        const cs = getComputedStyle(themeEl);
+        for (const name of AUDIO_MENU_THEME_VARS) {
+            const v = cs.getPropertyValue(name);
+            if (v && v.trim()) menu.style.setProperty(name, v.trim());
+        }
+    } catch (_) { /* 无样式信息：走 CSS 兜底色 */ }
+    const has = (cls) => html.classList.contains(cls) ||
+        !!(container && container.classList && container.classList.contains(cls));
+    if (has('fushi-glass-host') || has('fushi-glass')) menu.classList.add('is-glass');
+    if (has('eink')) menu.classList.add('is-eink');
+}
+
+function positionAudioSourceMenu(menu, button) {
+    // fixed 元素的包含块不一定是视口（扩展宿主带 backdrop-filter 时就是宿主盒）：
+    // 先放到 (0,0) 量出包含块原点，再按视口坐标减回去。
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    const origin = menu.getBoundingClientRect();
+    const btnRect = button.getBoundingClientRect();
+    const viewportW = __fushiViewportWidth();
+    const viewportH = __fushiVisibleViewportHeight();
+    const below = viewportH - btnRect.bottom - 8;
+    const above = btnRect.top - 8;
+    const placeBelow = below >= Math.min(menu.scrollHeight, 160) || below >= above;
+    menu.style.maxHeight = Math.max(80, (placeBelow ? below : above) - 4) + 'px';
+    const rect = menu.getBoundingClientRect();
+    let left = btnRect.left + btnRect.width / 2 - rect.width / 2;
+    left = Math.max(4, Math.min(left, viewportW - rect.width - 4));
+    const top = placeBelow ? btnRect.bottom + 6 : Math.max(4, btnRect.top - rect.height - 6);
+    menu.style.left = (left - origin.left) + 'px';
+    menu.style.top = (top - origin.top) + 'px';
+}
+
+function audioMenuItems(menu) {
+    return Array.from(menu.querySelectorAll('.fushi-audio-menu-item:not([aria-disabled="true"])'));
+}
+
+function onAudioMenuKeyDown(e) {
+    const state = __fushiAudioMenu;
+    if (!state) return;
+    const items = audioMenuItems(state.menu);
+    const active = __fushiRootNode().activeElement || document.activeElement;
+    const index = items.indexOf(active && active.closest
+        ? active.closest('.fushi-audio-menu-item') : null);
+    const focusAt = (i) => {
+        if (!items.length) return;
+        const next = items[(i + items.length) % items.length];
+        try { next.focus({ preventScroll: false }); } catch (_) { /* no-op */ }
+    };
+    switch (e.key) {
+        case 'ArrowDown':
+            focusAt(index < 0 ? 0 : index + 1);
+            break;
+        case 'ArrowUp':
+            focusAt(index < 0 ? items.length - 1 : index - 1);
+            break;
+        case 'Home':
+            focusAt(0);
+            break;
+        case 'End':
+            focusAt(items.length - 1);
+            break;
+        case 'Escape':
+        case 'Esc':
+            closeAudioSourceMenu(true);
+            break;
+        case 'Tab':
+            closeAudioSourceMenu(true);
+            break;
+        case 'Enter':
+        case ' ':
+            if (index >= 0) items[index].click();
+            break;
+        default:
+            return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function renderAudioSourceMenuItems(menu, button, choices, reading) {
+    menu.removeAttribute('aria-busy');
+    menu.textContent = '';
+    if (!choices.length) {
+        const empty = el('div', {
+            className: 'fushi-audio-menu-item',
+            role: 'menuitem',
+            tabIndex: -1,
+            textContent: window.i18nNoAudioAvailable || '暂无发音',
+        });
+        empty.setAttribute('aria-disabled', 'true');
+        menu.appendChild(empty);
+        return;
+    }
+    choices.forEach((choice, i) => {
+        const item = el('button', {
+            className: 'fushi-audio-menu-item',
+            role: 'menuitem',
+            tabIndex: -1,
+            type: 'button',
+        });
+        item.dataset.audioIndex = String(i);
+        item.appendChild(el('span', {
+            className: 'fushi-audio-menu-name',
+            textContent: choice.name || reading,
+        }));
+        if (choice.variant) {
+            item.appendChild(el('span', {
+                className: 'fushi-audio-menu-variant',
+                textContent: choice.variant,
+            }));
+        }
+        item.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAudioSourceMenu(true);
+            if (!await playWordAudio(choice.url)) showAudioError(button);
+        });
+        menu.appendChild(item);
+    });
+}
+
+async function openAudioSourceMenu(button, expression, reading, options) {
+    if (!button || !button.isConnected) return;
+    closeAudioSourceMenu(false);
+    __fushiHideButtonTip();
+    const generation = ++__fushiAudioMenuGeneration;
+    const menuId = 'fushi-audio-menu-' + generation;
+    if (!button.id) button.id = 'fushi-audio-button-' + generation;
+    const menu = el('div', {
+        className: 'fushi-audio-menu',
+        role: 'menu',
+        id: menuId,
+        tabIndex: -1,
+    });
+    menu.setAttribute('aria-labelledby', button.id);
+    menu.setAttribute('aria-busy', 'true');
+    const loading = el('div', { className: 'fushi-audio-menu-loading' },
+        [el('span'), el('span'), el('span')]);
+    menu.appendChild(loading);
+    menu.addEventListener('keydown', onAudioMenuKeyDown);
+    // 菜单内的指针事件不外溢：不触发文档 click 的 tapOutside / 选词。
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    menu.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); });
+    applyAudioMenuTheme(menu);
+    __fushiOverlayParent().appendChild(menu);
+    const onDocPointerDown = (e) => {
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        if (path.includes(menu) || path.includes(button) || menu.contains(e.target)) return;
+        closeAudioSourceMenu(false);
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    window.__fushiPopupModalDepth = (window.__fushiPopupModalDepth || 0) + 1;
+    __fushiAudioMenu = { menu, button, modal: true, onDocPointerDown, generation };
+    window.__fushiAudioMenuOpen = true;
+    button.setAttribute('aria-expanded', 'true');
+    button.setAttribute('aria-controls', menuId);
+    positionAudioSourceMenu(menu, button);
+    requestAnimationFrame(() => menu.classList.add('visible'));
+    try { menu.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+
+    const choices = await fetchAudioSourceChoices(expression, reading);
+    if (!__fushiAudioMenu || __fushiAudioMenu.generation !== generation) return;
+    renderAudioSourceMenuItems(menu, button, choices, reading);
+    positionAudioSourceMenu(menu, button);
+    const items = audioMenuItems(menu);
+    if (items.length && (options && options.focusFirst)) {
+        try { items[0].focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+    } else {
+        try { menu.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+    }
 }
 
 // 收藏词的释义快照（纯文本）：按词典分段「【词典名】释义」，跳过隐藏词典与重定向
@@ -4444,6 +4740,8 @@ function fushiPopupIsEditableTarget(t) {
 }
 window.__fushiPopupKeyListener = async function(e) {
     if (!e || e.isComposing || e.repeat) return;
+    // 「选择音频源」菜单开着：按键归菜单（方向键 / Enter / Esc），弹窗动作不抢。
+    if (window.__fushiAudioMenuOpen === true) return;
     if (fushiPopupIsEditableTarget(e.target)) return;
     const action = fushiPopupKeyAction(e);
     if (!action) return;
@@ -5849,6 +6147,8 @@ window.renderPopup = function() {
     // returned before advancing this generation, so an old multi-entry timer
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
+    // 换词重渲染：上一个词的音频源菜单随旧 DOM 作废。
+    if (typeof closeAudioSourceMenu === 'function') closeAudioSourceMenu(false);
     // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
     // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
     // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的
@@ -6968,7 +7268,7 @@ function __fushiPopupClick(e) {
     // dismissDescendantsOf(parent), wrongly closing the child sub-popup (app-in).
     // It also hardens the app-OUT global overlay path (host frameIdAtPoint).
     if (target?.closest('.mine-button') || target?.closest('.audio-button') ||
-        target?.closest('.favorite-button')) return;
+        target?.closest('.favorite-button') || target?.closest('.fushi-audio-menu')) return;
     // BUG-2041：语法说明浮层的钉住态是可交互的（选中复制 / 关闭按钮），且它挂在
     // __fushiOverlayParent() 顶层、**不在 .entry 内**——不豁免就会一路落到本函数末尾
     // 的 tapOutside，点说明正文直接关掉整个查词窗。被它取代的旧 `.overlay` 卡片同样

@@ -422,7 +422,10 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
   @override
   Widget build(BuildContext context) {
     final Future<Uint8List>? future = _future;
-    if (future == null) return const ColoredBox(color: Color(0xff303030));
+    // 占位底走设计令牌（MD3 surfaceContainer / Apple 分组卡底），不再是浅色
+    // 主题下也恒为深灰的硬编码 #303030。
+    final Color placeholder = FushiDesignTokens.of(context).surfaces.group;
+    if (future == null) return ColoredBox(color: placeholder);
     return FutureBuilder<Uint8List>(
       future: future,
       builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
@@ -443,9 +446,9 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
             },
           );
         }
-        return const ColoredBox(
-          color: Color(0xff303030),
-          child: Center(child: FushiCircularProgressIndicator()),
+        return ColoredBox(
+          color: placeholder,
+          child: const Center(child: FushiLoadingView(compact: true)),
         );
       },
     );

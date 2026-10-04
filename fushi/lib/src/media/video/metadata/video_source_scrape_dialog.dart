@@ -332,7 +332,7 @@ class _VideoSourceScrapeTaskPanelState
   /// 对应的真实作品执行——绑定入口永远不会指向已消失的作品。
   Widget _buildPendingWorks() {
     if (_loadingPending) {
-      return const Center(child: FushiCircularProgressIndicator.adaptive());
+      return const FushiLoadingView();
     }
     if (_pendingError case final Object error) {
       return _buildLoadError(error, _reloadPendingWorks);
@@ -497,7 +497,7 @@ class _VideoSourceScrapeTaskPanelState
 
   Widget _buildHistory() {
     if (_loadingHistory) {
-      return const Center(child: FushiCircularProgressIndicator.adaptive());
+      return const FushiLoadingView();
     }
     if (_historyError case final Object error) {
       return _buildLoadError(error, _reloadHistory);

@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// 查词弹窗「玻璃」材质（app 设计系统选「玻璃」时随查词响应 theme 下发 --fushi-glass: '1'）。
+// 查词弹窗「玻璃」材质（扩展唯一的材质；只有 app 开墨水屏时随查词响应 theme 下发 --fushi-glass: '0' 关掉）。
 // 只有扩展这一宿主里 backdrop-filter 能真模糊：弹窗挂在网页文档的 shadow root 里，背后就是网页；
 // app 内弹窗是独立 WebView，文档里卡片背后没有 Flutter 画面可采样，故样式只写在
 // scripts/content-css-overlay.css（生成进 vendor/content.css），不进共享 popup.css。
-// 本测试钉住：① content.js 按 theme 开关给弹窗根 / shadow 宿主挂摘钩子（缺 key = 旧 app = 关）；
-// ② 生成的 content.css 里玻璃段整段在 @supports 里、数值与 Flutter 侧同源；
-// ③ 玻璃段不碰 popup.css 共享段（关时与改动前逐像素一致）。
+// 本测试钉住：① content.js 给弹窗根 / shadow 宿主挂玻璃钩子（缺 key = 旧 app = 玻璃；'0' = 墨水屏 = 摘）；
+// ② 生成的 content.css 里玻璃段整段在 @supports 里、数值与 Flutter 侧同源，减少透明度时回落不透明；
+// ③ 玻璃段不碰 popup.css 共享段（app 内弹窗不受影响）。
 
 const CONTENT = path.join(__dirname, 'content.js');
 const DICT_MEDIA = path.join(__dirname, 'vendor', 'dict-media.js');
@@ -100,7 +100,7 @@ test('暗色主题下宿主标 dark（描边改白 8%）', () => {
   assert.strictEqual(p.hostAttrs['data-fushi-glass'], 'dark');
 });
 
-test('关玻璃 / 旧 app 不下发该 key：两个钩子都不在（同一弹窗上切回即时摘掉）', () => {
+test('墨水屏（--fushi-glass: 0）两个钩子都不在（同一弹窗上切换即时摘掉）；旧 app 不下发该 key 仍是玻璃', () => {
   const s = loadSandbox();
   const p = fakePopup();
   s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '1' }, false);
@@ -110,8 +110,8 @@ test('关玻璃 / 旧 app 不下发该 key：两个钩子都不在（同一弹�
 
   const q = fakePopup();
   s.fushiApplyTheme(q.c, { '--fushi-color-scheme': 'light' }, false);
-  assert.ok(!q.classes.has('fushi-glass'));
-  assert.ok(!('data-fushi-glass' in q.hostAttrs));
+  assert.ok(q.classes.has('fushi-glass'));
+  assert.strictEqual(q.hostAttrs['data-fushi-glass'], 'light');
 });
 
 // 取出 content.css 里玻璃 @supports 段（花括号配平）。
@@ -138,12 +138,21 @@ test('content.css：玻璃样式整段在 @supports 内，数值与 Flutter 侧�
   // 细描边（黑/白 8%），用 outline 不占布局。
   assert.match(block, /outline:\s*1px solid rgba\(0, 0, 0, 0\.08\)/);
   assert.match(block, /:host\(\[data-fushi-glass="dark"\]\)\s*\{[^}]*rgba\(255, 255, 255, 0\.08\)/);
+  // 减少透明度（兼容层）：宿主不模糊、填充回不透明卡底。
+  const reduced = /@media \(prefers-reduced-transparency: reduce\)\s*\{([\s\S]*?)\n    \}/.exec(block);
+  assert.ok(reduced, '玻璃段缺减少透明度回退');
+  assert.match(reduced[1], /:host\(\[data-fushi-glass\]\)\s*\{[^}]*backdrop-filter:\s*none/);
+  assert.match(reduced[1], /background-color:\s*rgb\(var\(--fushi-card-bg-rgb/);
   // @supports 段之外不得再出现任何玻璃钩子 / backdrop-filter（不支持时保持不透明）。
-  const outside = css.replace(block, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // 「选择音频源」菜单（.fushi-audio-menu.is-glass / .is-eink）自带材质，不是弹窗卡片的玻璃钩子。
+  const outside = css.replace(block, '').replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '');
   assert.ok(!/fushi-glass|backdrop-filter/.test(outside), '玻璃钩子漏到 @supports 段外');
 });
 
-test('共享 popup.css 不含玻璃钩子（app 内弹窗背后无可模糊的内容，关时扩展逐像素不变）', () => {
-  const popupCss = fs.readFileSync(POPUP_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+test('共享 popup.css 不含玻璃钩子（app 内弹窗背后无可模糊的内容）', () => {
+  const popupCss = fs.readFileSync(POPUP_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    // 音频源菜单浮在同一文档的词条之上，背后有真内容可模糊，是本条的有意例外。
+    .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '');
   assert.ok(!/fushi-glass|backdrop-filter/.test(popupCss));
 });

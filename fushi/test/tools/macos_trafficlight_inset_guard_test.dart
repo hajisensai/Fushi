@@ -9,10 +9,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// `SafeArea.minimum` 预留一条 `kMacTitleBarHeight`，把 rail / 返回箭头整体下压。
 ///
 /// 现在 macOS 与 Windows 同壳：`main()` 用
-/// `setTitleBarStyle(hidden, windowButtonVisibility: false)` 隐藏系统标题栏**和**三个
-/// 交通灯，再由 `FushiDesktopTitleBar` 画 MD3 顶栏。顶栏吃掉真实布局高度，rail 与返回
-/// 箭头本来就落在它下面——再留 28pt 就是一条纯空白。所以不变式反过来了：桌面壳里不能
-/// 再出现那条 macOS 专用的 SafeArea 预留带。
+/// `setTitleBarStyle(hidden, windowButtonVisibility: Platform.isMacOS)` 隐藏系统标题栏，
+/// macOS 保留三个系统交通灯（用户 2026-10-04：macOS 无论设计系统一律用原生红绿灯），
+/// 再由 `FushiDesktopTitleBar` 画顶栏，并在 macOS 上于顶栏左侧给交通灯留位。交通灯
+/// 落在顶栏那一行里，顶栏又吃掉真实布局高度，rail 与返回箭头本来就落在它下面——再留
+/// 28pt 就是一条纯空白。所以不变式反过来了：桌面壳里不能再出现那条 macOS 专用的
+/// SafeArea 预留带。
 ///
 /// 源码守卫仍是最强可落地层：分支门在 `dart:io` 的 `Platform.isMacOS` 上，
 /// `debugDefaultTargetPlatformOverride` 伪装不了，Linux CI 上跑不出真 macOS 布局。
@@ -37,8 +39,8 @@ void main() {
         r'minimum:\s*EdgeInsets\.only\(\s*top:\s*Platform\.isMacOS',
       ).hasMatch(body),
       isFalse,
-      reason: 'macOS 已无交通灯（main() 的 windowButtonVisibility: false），自绘顶栏又'
-          '真占布局高度；再留 kMacTitleBarHeight 会在顶栏下面多出一条空白。',
+      reason: 'macOS 交通灯落在自绘顶栏左侧的留位里，顶栏又真占布局高度；'
+          '再留 kMacTitleBarHeight 会在顶栏下面多出一条空白。',
     );
     expect(
       body.contains('kMacTitleBarHeight'),
@@ -47,7 +49,7 @@ void main() {
     );
   });
 
-  test('macOS 的窗口控制来自自绘顶栏，而不是系统交通灯（BUG-869 根因消除）', () {
+  test('macOS 交通灯落在自绘顶栏的留位里，而不是浮在内容上（BUG-869 根因消除）', () {
     final String main = File('lib/main.dart').readAsStringSync();
     final int block = main.indexOf('Platform.isWindows || Platform.isMacOS');
     expect(
@@ -61,9 +63,21 @@ void main() {
       reason: '不隐藏系统标题栏 = 自绘顶栏之上再叠一条原生标题栏。',
     );
     expect(
-      main.contains('windowButtonVisibility: false'),
+      main.contains('windowButtonVisibility: Platform.isMacOS'),
       isTrue,
-      reason: '交通灯必须在同一次调用里关掉，否则它们会浮在自绘顶栏的标题上。',
+      reason: 'macOS 一律用系统原生红绿灯，Windows 不显示（用 MD3 三键）。',
+    );
+    final String titleBar = File(
+      'lib/src/utils/components/fushi_desktop_title_bar.dart',
+    ).readAsStringSync();
+    expect(
+      RegExp(
+        r'if\s*\(\s*trafficLights\s*\)\s*const\s+SizedBox\(\s*width:\s*'
+        r'_kTrafficLightsReserve',
+      ).hasMatch(titleBar),
+      isTrue,
+      reason: '交通灯是浮在 full-size content view 上的：自绘顶栏必须在 macOS 上给它们'
+          '留位，否则它们压住顶栏内容（BUG-869 的原始症状换个位置复发）。',
     );
   });
 }

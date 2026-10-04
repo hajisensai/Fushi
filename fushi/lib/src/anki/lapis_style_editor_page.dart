@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_lapis_style_assistant.dart';
@@ -595,28 +596,19 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ),
           ),
         ),
-        bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap,
+        // 共享底部动作条：MD3 贴底 surfaceContainer 条，Apple 悬浮玻璃胶囊。
+        bottomNavigationBar: FushiBottomActionBar(
+          actions: <Widget>[
+            FushiTextButton(
+              onPressed: _attemptClose,
+              child: Text(t.dialog_cancel),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                FushiTextButton(
-                  onPressed: _attemptClose,
-                  child: Text(t.dialog_cancel),
-                ),
-                SizedBox(width: tokens.spacing.gap),
-                FushiFilledButton.icon(
-                  onPressed: _isDirty ? _save : null,
-                  icon: const FushiIcon(Icons.save_outlined),
-                  label: Text(t.dialog_save),
-                ),
-              ],
+            FushiFilledButton.icon(
+              onPressed: _isDirty ? _save : null,
+              icon: const FushiIcon(Icons.save_outlined),
+              label: Text(t.dialog_save),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -809,20 +801,9 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           if (_selectedFieldNote case final String note)
             Padding(
               padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  FushiIcon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: tokens.surfaces.onVariant,
-                  ),
-                  SizedBox(width: tokens.spacing.gap),
-                  Expanded(
-                    child: Text(note, style: tokens.type.listSubtitle),
-                  ),
-                ],
-              ),
+              // 统一提示块（MD3 中性填充 r12 / Apple tertiaryFill r10，单色
+              // 图标），与页内「正在编辑」横幅同一层级语言，不再是裸图标 + 灰字。
+              child: FushiInlineNotice(message: note),
             ),
           Text(
             t.anki_lapis_visual_font_size(
@@ -1169,35 +1150,37 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 主题下几乎看不出来（用户反馈「右排的不明显」）。用实底容器 + 主色把当前
   /// 目标单独拎出来，选中态就不再依赖用户去分辨哪个 chip 稍亮一点。
   Widget _buildCurrentTargetBanner(FushiDesignTokens tokens) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 中性信息块 + 强调色图标 / 路径：醒目度靠强调色文字与粗体承担，
+    // 不再整块 primaryContainer 彩底（与同页中性卡片、填充按钮抢视觉）。
+    final Color accent = fushiAccentForeground(context);
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
         vertical: tokens.spacing.gap / 2,
       ),
-      decoration: BoxDecoration(
-        color: colors.primaryContainer,
-        borderRadius: tokens.radii.cardRadius,
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           FushiIcon(
             Icons.edit_outlined,
             size: 16,
-            color: colors.onPrimaryContainer,
+            color: accent,
           ),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: RichText(
               text: TextSpan(
                 style: tokens.type.listSubtitle
-                    .copyWith(color: colors.onPrimaryContainer),
+                    .copyWith(color: fushiNeutralBlockForeground(context)),
                 children: <InlineSpan>[
                   TextSpan(text: '${t.anki_lapis_visual_editing_now}  '),
                   TextSpan(
                     text: _selectedTargetPath.join('  ›  '),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),

@@ -821,7 +821,6 @@ class _MangaOcrSettingsSectionState
         // 不能传 null：InputDecorator 的 helper 带 ellipsis，null 反而退化成单行。
         helperMaxLines: 8,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
       items: <DropdownMenuItem<int>>[
         DropdownMenuItem<int>(value: 0, child: Text(t.manga_ocr_parallel_auto)),
@@ -884,7 +883,6 @@ class _MangaOcrSettingsSectionState
       decoration: InputDecoration(
         labelText: t.manga_ocr_default_engine,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
       // 闭合态只显示标签（说明是给「挑的时候」看的）。选中项的标签完整显示、
       // 放不下就换行（阅读器侧栏只有 ~320px，「自动（不会上传到 Lens）」这类
@@ -959,7 +957,6 @@ class _MangaOcrSettingsSectionState
       decoration: InputDecoration(
         labelText: t.manga_ocr_lens_language_label,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
       items: items,
       onChanged: (String? value) {
@@ -990,7 +987,6 @@ class _MangaOcrSettingsSectionState
             helperText: t.manga_ocr_ai_mode_desc,
             helperMaxLines: 6,
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           items: <DropdownMenuItem<MangaAiOcrMode>>[
             for (final MangaAiOcrMode mode in MangaAiOcrMode.values)
@@ -1369,7 +1365,6 @@ class _MangaOcrSettingsSectionState
             hintText: t.manga_ocr_external_cli_hint,
             hintMaxLines: 3,
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (String v) => unawaited(_writePath(v.trim())),
         ),
@@ -1405,13 +1400,20 @@ class _MangaOcrSettingsSectionState
   }
 
   Widget _sectionLabel(ThemeData theme, String text) {
+    // Apple 设计系统：分组标题是小号次级灰字（iOS inset grouped 的
+    // section header），不上强调色；MD3 保持主色 titleSmall。
+    final bool glass = isGlassDesign(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Text(
         text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
+        style: glass
+            ? theme.textTheme.labelLarge?.copyWith(
+                color: appleColorsOf(context).secondaryLabel,
+              )
+            : theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
       ),
     );
   }

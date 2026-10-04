@@ -405,7 +405,7 @@ class _TorrentTaskDetailDialogState
       return _buildEmptyNote(theme, _backendUnavailableMessage);
     }
     if (!state.attempted) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     if (state.failed || absentMessage == null) {
       return _buildEmptyNote(theme, t.error_load_failed);

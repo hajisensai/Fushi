@@ -1100,14 +1100,25 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           _scopeCssToDictionary(buildPerDictionaryStyleCss(rules, name), name),
       ].join('\n'),
     );
+    // 预览框：MD3 = 页面底 + outline 细边框；Apple = 分组圆角 + 物理 1px
+    // separator 细线（Apple 内容层不画 MD3 那种实描边框，只用分隔线色勾边界）。
+    final bool glass = isGlassDesign(context);
+    final BorderRadius previewRadius = glass
+        ? FushiAppleMetrics.of(context).groupBorderRadius
+        : tokens.radii.cardRadius;
     final Widget preview = DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.surfaces.page,
-        borderRadius: tokens.radii.cardRadius,
-        border: Border.all(color: tokens.surfaces.outline),
+        borderRadius: previewRadius,
+        border: Border.all(
+          color: glass
+              ? appleColorsOf(context).separator
+              : tokens.surfaces.outline,
+          width: glass ? fushiHairline(context) : 1,
+        ),
       ),
       child: ClipRRect(
-        borderRadius: tokens.radii.cardRadius,
+        borderRadius: previewRadius,
         child: widget.previewBuilder?.call(
               context,
               previewCss,

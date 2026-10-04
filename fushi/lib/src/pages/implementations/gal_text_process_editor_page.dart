@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -323,30 +324,21 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             ),
           ),
         ),
-        bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap,
+        // 共享底部动作条：MD3 贴底 surfaceContainer 条，Apple 悬浮玻璃胶囊。
+        bottomNavigationBar: FushiBottomActionBar(
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('gtp-cancel'),
+              onPressed: _attemptClose,
+              child: Text(t.dialog_cancel),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                FushiTextButton(
-                  key: const ValueKey<String>('gtp-cancel'),
-                  onPressed: _attemptClose,
-                  child: Text(t.dialog_cancel),
-                ),
-                SizedBox(width: tokens.spacing.gap),
-                FushiFilledButton.icon(
-                  key: const ValueKey<String>('gtp-save'),
-                  onPressed: _isDirty ? _save : null,
-                  icon: const FushiIcon(Icons.save_outlined),
-                  label: Text(t.dialog_save),
-                ),
-              ],
+            FushiFilledButton.icon(
+              key: const ValueKey<String>('gtp-save'),
+              onPressed: _isDirty ? _save : null,
+              icon: const FushiIcon(Icons.save_outlined),
+              label: Text(t.dialog_save),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -396,7 +388,8 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
   /// 一步的留痕卡：名称 + 输入 → 输出，改动段高亮。
   ///
   /// 三种要一眼看出的状态：**跳过**（步骤 disabled，整卡淡显）、**没改动**（淡显文案）、
-  /// **把整行清空**（错误色卡底 + 显式说明——空行会被 poll 路径整行丢弃）。
+  /// **把整行清空**（错误色图标 + 显式说明——空行会被 poll 路径整行丢弃；
+  /// 卡底保持中性，不铺 errorContainer 彩色块）。
   Widget _buildStepTraceCard(
     FushiDesignTokens tokens,
     int index,
@@ -407,7 +400,6 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     final _TextAffixes affixes = _commonAffixes(trace.input, trace.output);
     final Widget card = FushiCard(
       key: ValueKey<String>('gtp-trace-${trace.step.id}'),
-      color: trace.emptied ? scheme.errorContainer : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -451,7 +443,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           ],
           if (trace.emptied) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            _buildEmptiedNotice(tokens, scheme.onErrorContainer),
+            _buildEmptiedNotice(tokens),
           ],
         ],
       ),
@@ -462,10 +454,9 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
   }
 
   Widget _buildResultCard(FushiDesignTokens tokens, GalTextProcessTrace trace) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return FushiCard(
       key: const ValueKey<String>('gtp-result'),
-      color: trace.emptied ? scheme.errorContainer : tokens.surfaces.group,
+      color: tokens.surfaces.group,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -488,26 +479,31 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           ],
           if (trace.emptied) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            _buildEmptiedNotice(tokens, scheme.onErrorContainer),
+            _buildEmptiedNotice(tokens),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildEmptiedNotice(FushiDesignTokens tokens, Color color) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: <Widget>[
-      FushiIcon(Icons.report_problem_outlined, size: 16, color: color),
-      SizedBox(width: tokens.spacing.gap),
-      Expanded(
-        child: Text(
-          t.game_text_process_preview_emptied,
-          style: tokens.type.listSubtitle.copyWith(color: color),
+  /// 「整行被清空」说明：语义只上在单色图标 + 文字上（MD3 error / Apple
+  /// destructive；墨水屏 onSurface，靠图标形状区分）。
+  Widget _buildEmptiedNotice(FushiDesignTokens tokens) {
+    final Color color = fushiStatusColor(context, FushiStatusTone.error);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        FushiIcon(Icons.report_problem_outlined, size: 16, color: color),
+        SizedBox(width: tokens.spacing.gap),
+        Expanded(
+          child: Text(
+            t.game_text_process_preview_emptied,
+            style: tokens.type.listSubtitle.copyWith(color: color),
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 
   /// 按公共前后缀把中间那段标出来。
   Widget _buildAffixText({
@@ -568,7 +564,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             FushiReorderableColumn(
               itemCount: _steps.length,
               spacing: tokens.spacing.gap,
-              feedbackBorderRadius: tokens.radii.cardRadius,
+              feedbackBorderRadius: fushiCardBorderRadius(context),
               keyForIndex: (int index) =>
                   ValueKey<String>('gtp-step-row-${_steps[index].id}'),
               onReorder: _reorder,
@@ -609,30 +605,10 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     );
   }
 
+  // 提示块走共享 FushiInlineNotice：中性底 + 单色语义图标（原 secondaryContainer
+  // 彩色卡底在 Apple 下是 MD3 tonal 块，两套设计系统都改用同一提示件）。
   Widget _buildWarning(FushiDesignTokens tokens, Key key, String message) =>
-      FushiCard(
-        key: key,
-        color: tokens.surfaces.selected,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            FushiIcon(
-              Icons.info_outline,
-              size: 18,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Text(
-                message,
-                style: tokens.type.listSubtitle.copyWith(
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+      FushiInlineNotice(key: key, message: message);
 
   Widget _buildStepCard(FushiDesignTokens tokens, GalTextProcessStep step) {
     return FushiCard(

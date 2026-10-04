@@ -423,7 +423,6 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         filter.value as Map<String, List<String>>;
     final List<String> include = value['include'] ?? const <String>[];
     final List<String> exclude = value['exclude'] ?? const <String>[];
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -439,12 +438,11 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
                 selected:
                     include.contains(option.value) ||
                     exclude.contains(option.value),
-                selectedColor: exclude.contains(option.value)
-                    ? scheme.errorContainer
-                    : null,
-                avatar: exclude.contains(option.value)
-                    ? const FushiIcon(Icons.remove, size: 16)
-                    : null,
+                // 排除态交给共享组件：MD3 errorContainer 底 + 减号；Apple 中性灰底
+                // + destructive 减号。
+                tone: exclude.contains(option.value)
+                    ? FushiFilterChipTone.exclude
+                    : FushiFilterChipTone.include,
                 onSelected: (_) {
                   final List<String> nextInclude = List<String>.of(include);
                   final List<String> nextExclude = List<String>.of(exclude);

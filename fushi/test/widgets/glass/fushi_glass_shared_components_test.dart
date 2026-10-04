@@ -7,9 +7,12 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -186,7 +189,8 @@ void main() {
     expect(find.byType(Slider), findsOneWidget);
     expect(find.byType(SegmentedButton<int>), findsOneWidget);
     expect(find.byType(ChoiceChip), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // MD3 进度是 M3 Expressive 波浪环（自绘）。
+    expect(find.byType(FushiWavyCircularProgress), findsOneWidget);
     expect(find.byType(PopupMenuButton<int>), findsOneWidget);
   });
 
@@ -200,15 +204,20 @@ void main() {
     expect(find.byType(GlassListTile), findsNothing);
     expect(find.byType(FushiAppleGroupSurface), findsWidgets);
     expect(find.byType(FushiAppleRow), findsOneWidget);
-    expect(find.byType(GlassTextField), findsWidgets);
-    expect(find.byType(GlassChip), findsWidgets);
+    // 输入框与 chip 也是内容层实色控件（FushiTextFieldControl /
+    // fushiAppleChip），不是玻璃。
+    expect(find.byType(GlassChip), findsNothing);
     expect(find.byType(GlassContainer), findsWidgets);
-    expect(find.byType(GlassSwitch), findsWidgets);
-    expect(find.byType(GlassSlider), findsOneWidget);
+    expect(find.byType(FushiAppleSwitch), findsWidgets);
+    expect(find.byType(FushiAppleSlider), findsOneWidget);
     expect(find.byType(GlassSegmentedControl), findsOneWidget);
     expect(find.byType(GlassStepper), findsOneWidget);
-    expect(find.byType(GlassPicker), findsOneWidget);
-    expect(find.byType(GlassProgressIndicator), findsOneWidget);
+    // 设置行的选择器是 macOS / iOS 弹出菜单按钮（当前值 + 上下箭头 → 玻璃
+    // 菜单），不再是 GlassPicker 玻璃字段。
+    expect(find.byType(GlassSettingsPopUpButton), findsOneWidget);
+    expect(find.byType(GlassPicker), findsNothing);
+    // 确定进度是 Apple 细圆环（内容层，不是玻璃）。
+    expect(find.byType(FushiAppleProgressRing), findsOneWidget);
     expect(find.byType(GlassMenu), findsWidgets);
     expect(find.byType(GlassDivider), findsNothing);
     expect(find.byType(GlassButton), findsWidgets);
@@ -311,7 +320,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byType(GlassSwitch), findsOneWidget);
+      expect(find.byType(FushiAppleSwitch), findsOneWidget);
       targetNodeOf(tester, find.text('toggle me')).requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);

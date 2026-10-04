@@ -7,6 +7,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
 
 /// 发现页视图：正文只由已启用来源构成（MAL 元数据行已整体移除）。
@@ -116,7 +118,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(MangaDiscoverySourceRow),
-        matching: find.byType(CircularProgressIndicator),
+        matching: find.byType(FushiCircularProgressIndicator),
       ),
       findsOneWidget,
     );
@@ -140,7 +142,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(MangaDiscoverySourceRow),
-        matching: find.byType(CircularProgressIndicator),
+        matching: find.byType(FushiCircularProgressIndicator),
       ),
       findsNothing,
     );

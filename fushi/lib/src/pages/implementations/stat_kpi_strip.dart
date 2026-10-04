@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -130,7 +131,9 @@ class StatKpiStrip extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: item.deltaUp ? scheme.primary : scheme.error,
+                      color: item.deltaUp
+                          ? statChartColorsOf(context).up
+                          : statChartColorsOf(context).down,
                       fontWeight: FontWeight.w600,
                     ),
               ),

@@ -230,7 +230,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
 
   Widget _buildResults(ThemeData theme, FushiDesignTokens tokens) {
     if (_searching) {
-      return const Center(child: FushiCircularProgressIndicator());
+      return const FushiLoadingView();
     }
     final Object? failure = _searchFailure;
     if (failure != null) {

@@ -1,6 +1,76 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
+/// 拖拽重排中「被抬起的那一项」的统一浮层（[FushiReorderableColumn] /
+/// `FushiReorderableGrid` 的自绘浮层；页面里自写的拖拽代理也应套它）。
+///
+/// - MD3 Expressive：拖拽态 = 浮起面（tokens.surfaces.search）+ elevation 6 投影、无
+///   surface tint，圆角默认 12（行本身无圆角时也给一个，抬起的项像一张卡片）。
+/// - Apple（iOS 26 / macOS 26）：抬起的行是实色二级分组底（不是玻璃）+ 一圈
+///   柔和的大半径阴影 + 轻微放大 1.02（UITableView 拖拽 lift 的观感），圆角默认 10。
+/// - 墨水屏：无阴影（灰阶抖动），改一圈实描边标出抬起项。
+///
+/// 结构恒定：Transform → Material → child 三层在两套设计系统下都在，只换参数。
+class FushiReorderDragProxy extends StatelessWidget {
+  const FushiReorderDragProxy({
+    required this.child,
+    super.key,
+    this.borderRadius,
+    this.transparent = false,
+  });
+
+  final Widget child;
+
+  /// 浮层圆角；null 走设计系统默认（MD3 12 / Apple 10）。
+  final BorderRadius? borderRadius;
+
+  /// 行内容自带背景（封面网格单元等）时传 true：浮层只画阴影不涂底色。
+  final bool transparent;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context);
+    final BorderRadius radius = borderRadius ??
+        BorderRadius.all(Radius.circular(apple ? 10 : 12));
+    final Color fill;
+    final double elevation;
+    final Color shadowColor;
+    if (apple) {
+      final FushiAppleColors palette = appleColorsOf(context);
+      fill = palette.secondaryGroupedBackground;
+      elevation = eink ? 0 : 16;
+      shadowColor = Colors.black.withValues(
+        alpha: cs.brightness == Brightness.dark ? 0.6 : 0.22,
+      );
+    } else {
+      // surfaceContainerHigh（搜索 / 浮起面那一阶），比页面与卡片都高一层。
+      fill = FushiDesignTokens.of(context).surfaces.search;
+      elevation = eink ? 0 : 6;
+      shadowColor = cs.shadow;
+    }
+    return Transform.scale(
+      scale: apple && !eink ? 1.02 : 1.0,
+      child: Material(
+        type: MaterialType.canvas,
+        color: transparent ? Colors.transparent : fill,
+        elevation: elevation,
+        shadowColor: shadowColor,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
+  }
+}
 /// 行内容构造器：返回**不含任何拖拽监听**的纯行内容（开关/按钮照常可点）。
 typedef FushiReorderItemBuilder = Widget Function(
     BuildContext context, int index);
@@ -313,17 +383,9 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
             right: 0,
             child: IgnorePointer(
               // 浮层只包行内容（不含行间距，间距由上面的 Column 统一插入）；
-              // feedbackBorderRadius 非空时裁成圆角，避免矩形背景在圆角卡片外露底色。
-              child: Material(
-                elevation: 6,
-                color: Theme.of(context).colorScheme.surface,
-                shape: widget.feedbackBorderRadius != null
-                    ? RoundedRectangleBorder(
-                        borderRadius: widget.feedbackBorderRadius!)
-                    : null,
-                clipBehavior: widget.feedbackBorderRadius != null
-                    ? Clip.antiAlias
-                    : Clip.none,
+              // 抬起观感统一走 [FushiReorderDragProxy]（两套设计系统各自的拖拽浮起）。
+              child: FushiReorderDragProxy(
+                borderRadius: widget.feedbackBorderRadius,
                 child: widget.itemBuilder(context, dragged),
               ),
             ),

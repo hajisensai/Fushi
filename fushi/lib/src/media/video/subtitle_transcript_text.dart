@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -478,10 +479,38 @@ class SubtitleTranscriptRow extends StatelessWidget {
   final bool hovered;
   final bool favorited;
 
+  /// 行正文前景色，与 [build] 的当前行底色成对：MD3 当前行 = primaryContainer
+  /// 上的 onPrimaryContainer；Apple 当前行是中性灰填充，正文用 label。调用方
+  /// 不再各自硬写 onPrimaryContainer。
+  static Color textColorOf(
+    BuildContext context,
+    ColorScheme colorScheme, {
+    required bool selected,
+  }) {
+    if (!selected) return colorScheme.onSurface;
+    return isGlassDesign(context)
+        ? appleColorsOf(context).label
+        : colorScheme.onPrimaryContainer;
+  }
+
+  /// 行内次要前景（时间戳 / 行尾动作图标）：Apple 当前行用强调色标出「正在播」，
+  /// MD3 当前行与正文同为 onPrimaryContainer。
+  static Color secondaryColorOf(
+    BuildContext context,
+    ColorScheme colorScheme, {
+    required bool selected,
+  }) {
+    if (!selected) return colorScheme.onSurfaceVariant;
+    return isGlassDesign(context)
+        ? appleColorsOf(context).accent
+        : colorScheme.onPrimaryContainer;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
     final Color background = selected
-        ? colorScheme.primaryContainer
+        ? (apple ? appleColorsOf(context).fill : colorScheme.primaryContainer)
         : favorited
         ? colorScheme.tertiaryContainer.withValues(alpha: 0.32)
         : hovered

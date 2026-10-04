@@ -750,10 +750,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   Widget _buildDictionaryHistory() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final historyResults = appModel.dictionaryHistory.reversed.toList();
-    if (historyResults.every((r) => r.entries.isEmpty)) {
+    // 空结果条目本来就画成 SizedBox.shrink，这里直接滤掉：Apple 分组要按可见
+    // 行判首尾（圆角 / 分隔线），不能被看不见的空行打断。
+    final historyResults = appModel.dictionaryHistory.reversed
+        .where((r) => r.entries.isNotEmpty)
+        .toList();
+    if (historyResults.isEmpty) {
       return _buildPlaceholder();
     }
+    final bool glass = isGlassDesign(context);
     return ListView.builder(
       padding: EdgeInsets.only(
         top: tokens.spacing.gap / 2,
@@ -765,9 +770,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       itemCount: historyResults.length,
       itemBuilder: (context, index) {
         final result = historyResults[index];
-        if (result.entries.isEmpty) {
-          return const SizedBox.shrink();
-        }
         final searchTerm = result.searchTerm.trim();
         final first = result.entries.first;
         final word = first.word;
@@ -777,18 +779,19 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             reading.isNotEmpty && reading != word && reading != searchTerm;
         final dictCount =
             result.entries.map((e) => e.dictionaryName).toSet().length;
-        return FushiCard(
-          margin: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.page,
-            vertical: tokens.spacing.gap / 4,
-          ),
+        // 整段历史读作一个分组，而不是一摞各自独立的圆角卡（与词典管理页的
+        // 词典列表同口径）：MD3 分段分组 / Apple inset grouped，见共享外壳
+        // [FushiGroupedListItem]。
+        return FushiGroupedListItem(
+          index: index,
+          count: historyResults.length,
+          margin: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
           onTap: () {
             _controller.text = searchTerm;
             _controller.selection =
                 TextSelection.collapsed(offset: searchTerm.length);
             _showCachedResult(result);
           },
-          padding: EdgeInsets.zero,
           child: FushiListItem(
             title: Text(searchTerm.replaceAll('\n', ' ')),
             subtitle: hasWordInfo || hasReading
@@ -802,7 +805,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               children: [
                 Text('$dictCount'),
                 SizedBox(width: tokens.spacing.gap / 2),
-                const FushiIcon(Icons.chevron_right, size: 20),
+                glass
+                    ? const FushiAppleChevron()
+                    : const FushiIcon(Icons.chevron_right, size: 20),
               ],
             ),
           ),

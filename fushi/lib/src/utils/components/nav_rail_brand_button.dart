@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/current_app_icon.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/official_links.dart';
@@ -34,6 +35,12 @@ class NavRailBrandButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // Apple：应用图标按 iOS / macOS 图标圆角（边长 × 0.225）裁，点按无水波（Apple
+    // 的按压反馈是高亮而不是涟漪）；MD3 保持控件圆角 + 水波。
+    final bool apple = isGlassDesign(context);
+    final BorderRadius iconRadius = apple
+        ? const BorderRadius.all(Radius.circular(64 * 0.225))
+        : tokens.radii.controlRadius;
     // 8 + 64 + 8 正好等于 kAdaptiveNavRailWidth（80），零余量。rail 外面是
     // SafeArea(right: false)，left inset 一旦大于 0（带刘海的平板/折叠屏横屏）
     // 可用宽度就不足 80，写死的 64 会溢出。用 FittedBox 兜住：有地方时仍是 64，
@@ -45,7 +52,8 @@ class NavRailBrandButton extends StatelessWidget {
         child: InkWell(
           onTap: () => unawaited(openOfficialWebsite()),
           canRequestFocus: false,
-          borderRadius: tokens.radii.controlRadius,
+          borderRadius: iconRadius,
+          splashFactory: apple ? NoSplash.splashFactory : null,
           child: Semantics(
             button: true,
             label: 'Fushi',
@@ -57,7 +65,7 @@ class NavRailBrandButton extends StatelessWidget {
                 child: SizedBox.square(
                   dimension: 64,
                   child: ClipRRect(
-                    borderRadius: tokens.radii.controlRadius,
+                    borderRadius: iconRadius,
                     child: const CurrentAppIcon(),
                   ),
                 ),

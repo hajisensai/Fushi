@@ -767,7 +767,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
                 decoration: InputDecoration(
                   labelText: t.manga_ocr_wizard_title_label,
                   isDense: true,
-                  border: const OutlineInputBorder(),
                 ),
               ),
             ],
@@ -918,7 +917,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           decoration: InputDecoration(
             labelText: t.manga_ocr_local_model,
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           items: <DropdownMenuItem<MangaOcrLocalModel>>[
             for (final MangaOcrLocalModel model
@@ -996,7 +994,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       decoration: InputDecoration(
         labelText: t.manga_ocr_lens_language_label,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
     );
   }

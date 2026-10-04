@@ -1487,7 +1487,9 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool cupertino = isCupertinoPlatform(context);
+    // Apple 设计系统的行与 Cupertino 渲染同一套几何（16 边距 / 列表标题字号）。
+    final bool cupertino =
+        isCupertinoPlatform(context) || isGlassDesign(context);
     final TextStyle? titleStyle = cupertino
         ? tokens.type.listTitle
         : Theme.of(context).textTheme.bodyMedium;

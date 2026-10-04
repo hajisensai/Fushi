@@ -185,12 +185,14 @@ class _ExternalReaderImportPageState
             ),
             const SizedBox(height: 16),
             if (_scanning) ...<Widget>[
-              const Center(child: FushiCircularProgressIndicator()),
-              const SizedBox(height: 12),
-              Text(t.hoshi_import_scan_running, textAlign: TextAlign.center),
+              FushiLoadingView(message: t.hoshi_import_scan_running),
             ],
+            // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
             if (_error != null)
-              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+              FushiInlineNotice(
+                severity: FushiNoticeSeverity.error,
+                message: _error!,
+              ),
             if (_preview != null) _buildPreview(theme, _preview!),
             if (_report != null) _buildReport(theme, _report!),
           ],

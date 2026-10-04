@@ -90,10 +90,10 @@ void main() {
         glass: false,
       );
       expect(find.byType(Switch), findsNWidgets(2));
-      expect(find.byType(GlassSwitch), findsNothing);
+      expect(find.byType(FushiAppleSwitch), findsNothing);
     });
 
-    testWidgets('glass renders GlassSwitch, toggles on tap and Enter', (
+    testWidgets('glass renders FushiAppleSwitch, toggles on tap and Enter', (
       WidgetTester tester,
     ) async {
       final FocusNode node = FocusNode();
@@ -110,10 +110,10 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byType(GlassSwitch), findsOneWidget);
+      expect(find.byType(FushiAppleSwitch), findsOneWidget);
       expect(find.byType(Switch), findsNothing);
 
-      await tester.tap(find.byType(GlassSwitch));
+      await tester.tap(find.byType(FushiAppleSwitch));
       await settle(tester);
       expect(value, isTrue);
 
@@ -133,7 +133,7 @@ void main() {
         (_) => FushiSwitch(value: false, onChanged: null, focusNode: node),
         glass: true,
       );
-      expect(find.byType(GlassSwitch), findsOneWidget);
+      expect(find.byType(FushiAppleSwitch), findsOneWidget);
       node.requestFocus();
       await tester.pump();
       expect(node.hasFocus, isFalse);
@@ -148,10 +148,10 @@ void main() {
         glass: false,
       );
       expect(find.byType(Slider), findsOneWidget);
-      expect(find.byType(GlassSlider), findsNothing);
+      expect(find.byType(FushiAppleSlider), findsNothing);
     });
 
-    testWidgets('glass renders GlassSlider and arrow keys adjust the value', (
+    testWidgets('glass renders FushiAppleSlider and arrow keys adjust the value', (
       WidgetTester tester,
     ) async {
       final FocusNode node = FocusNode();
@@ -173,7 +173,7 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byType(GlassSlider), findsOneWidget);
+      expect(find.byType(FushiAppleSlider), findsOneWidget);
       expect(find.byType(Slider), findsNothing);
 
       node.requestFocus();
@@ -207,7 +207,7 @@ void main() {
         ),
         glass: true,
       );
-      final Rect rect = tester.getRect(find.byType(GlassSlider));
+      final Rect rect = tester.getRect(find.byType(FushiAppleSlider));
       await tester.tapAt(rect.centerRight - const Offset(30, 0));
       await settle(tester);
       expect(value, greaterThan(0.5));
@@ -582,7 +582,7 @@ void main() {
         glass: false,
       );
       expect(find.byType(SwitchListTile), findsOneWidget);
-      expect(find.byType(GlassSwitch), findsNothing);
+      expect(find.byType(FushiAppleSwitch), findsNothing);
     });
 
     testWidgets('glass row toggles on tap and Enter', (
@@ -604,7 +604,7 @@ void main() {
       );
       expect(find.byType(SwitchListTile), findsNothing);
       expect(find.byType(Switch), findsNothing);
-      expect(find.byType(GlassSwitch), findsOneWidget);
+      expect(find.byType(FushiAppleSwitch), findsOneWidget);
       expect(find.byType(GlassListTile), findsOneWidget);
 
       await tester.tap(find.text('Wifi'));
@@ -806,8 +806,8 @@ void main() {
       ]) {
         expect(find.byType(type), findsNothing, reason: '$type');
       }
-      expect(find.byType(GlassSwitch), findsNWidgets(2));
-      expect(find.byType(GlassSlider), findsOneWidget);
+      expect(find.byType(FushiAppleSwitch), findsNWidgets(2));
+      expect(find.byType(FushiAppleSlider), findsOneWidget);
       expect(find.byType(GlassListTile), findsNWidgets(3));
       expect(find.byType(GlassSegmentedControl), findsOneWidget);
     });

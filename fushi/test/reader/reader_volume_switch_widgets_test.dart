@@ -15,6 +15,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 
@@ -311,7 +312,7 @@ void main() {
         );
         await tester.pump();
         // 装载中主体转圈。
-        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(find.byType(FushiLoadingView), findsOneWidget);
 
         sibling.complete(
           ReaderGalleryVolumeImages(

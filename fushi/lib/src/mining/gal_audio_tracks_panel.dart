@@ -206,27 +206,10 @@ class _PanelHintBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Container(
-      margin: EdgeInsets.only(top: tokens.spacing.gap),
-      padding: EdgeInsets.all(tokens.spacing.gap + 2),
-      decoration: BoxDecoration(
-        color: colors.secondaryContainer,
-        borderRadius: tokens.radii.cardRadius,
-      ),
-      child: Row(
-        children: <Widget>[
-          FushiIcon(icon, color: colors.onSecondaryContainer, size: 18),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: colors.onSecondaryContainer),
-            ),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      child: FushiInlineNotice(icon: icon, message: text),
     );
   }
 }

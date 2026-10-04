@@ -321,12 +321,14 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     Color? tone;
     String? resultText;
     IconData? resultIcon;
+    // 结果语义色只上在图标上（成功 = 状态绿、失败 = 错误色），正文保持
+    // 中性前景，不整行染色。
     if (result == true) {
-      tone = theme.colorScheme.primary;
+      tone = fushiStatusColor(context, FushiStatusTone.success);
       resultText = t.browser_extension_verify_connected;
       resultIcon = Icons.check_circle;
     } else if (result == false) {
-      tone = theme.colorScheme.error;
+      tone = fushiStatusColor(context, FushiStatusTone.error);
       resultText = t.browser_extension_verify_not_detected;
       resultIcon = Icons.error_outline;
     }
@@ -367,7 +369,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                 FushiIcon(resultIcon, size: 18, color: tone),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(resultText, style: TextStyle(color: tone)),
+                  child: Text(resultText),
                 ),
               ],
             ),
@@ -410,28 +412,12 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
               ),
               if (mismatch) ...<Widget>[
                 const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.errorContainer,
-                    borderRadius: FushiBorderRadius.group,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      FushiIcon(Icons.update,
-                          size: 18, color: theme.colorScheme.onErrorContainer),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          t.browser_extension_version_mismatch,
-                          style: TextStyle(
-                              color: theme.colorScheme.onErrorContainer),
-                        ),
-                      ),
-                    ],
-                  ),
+                // 中性提示块，语义（版本不一致）只体现在单色图标上；走共享
+                // FushiInlineNotice，与全应用提示块同一几何。
+                FushiInlineNotice(
+                  severity: FushiNoticeSeverity.error,
+                  icon: Icons.update,
+                  message: t.browser_extension_version_mismatch,
                 ),
               ],
             ],
@@ -487,22 +473,8 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Container(
-            width: 24,
-            height: 24,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              '$index',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
+          // 中性步骤圆（无「当前步」概念，全部中性底 + 数字）。
+          FushiStepNumberBadge(number: index, size: 24),
           const SizedBox(width: 10),
           FushiIcon(icon, size: 20, color: theme.colorScheme.primary),
           const SizedBox(width: 10),
@@ -554,7 +526,6 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final bool autoReady = serverEnabled && hasToken;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -563,29 +534,15 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
         // 自动配置状态横幅：仅在未就绪时提醒（端口冲突 / 先开 server）。
         // 就绪时不再显示——「完成」由步骤 5 承担，横幅重复它反而是句废话。
         if (!autoReady) ...<Widget>[
-          FushiCard(
-            color: theme.colorScheme.tertiaryContainer,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                FushiIcon(
-                  Icons.info_outline,
-                  color: theme.colorScheme.onTertiaryContainer,
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    portConflict
-                        ? _portInUseMessage()
-                        : t.browser_extension_enable_server_first,
-                    style: TextStyle(
-                      color: theme.colorScheme.onTertiaryContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          // 统一提示块（中性底 + 单色语义图标），不再整卡 tertiaryContainer
+          // 彩底：端口冲突是警告，未开服务器只是提醒。
+          FushiInlineNotice(
+            severity: portConflict
+                ? FushiNoticeSeverity.warning
+                : FushiNoticeSeverity.info,
+            message: portConflict
+                ? _portInUseMessage()
+                : t.browser_extension_enable_server_first,
           ),
           const SizedBox(height: 16),
         ],

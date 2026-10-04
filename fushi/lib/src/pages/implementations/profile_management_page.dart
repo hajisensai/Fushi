@@ -10,6 +10,8 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
@@ -61,16 +63,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     if (uiState.isLoading) {
       return Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.page * 3),
-        child: Center(
-          child: SizedBox(
-            width: 36,
-            height: 36,
-            child: adaptiveIndicator(
-              context: context,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ),
+        // 统一加载占位（MD3 Expressive 指示器 / Apple 系统菊花）。
+        child: const FushiLoadingView(),
       );
     }
 
@@ -145,14 +139,15 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
         AdaptiveSettingsSection(
           title: t.profile_language_bindings,
           children: [
-            AdaptiveSettingsRow(
-              title: t.profile_language_bindings_hint,
-              titleMaxLines: 4,
-            ),
             for (final String tag in _languageBindingTags(uiState))
               _buildLanguageRow(tag, uiState, vm),
           ],
         ),
+        // 说明不再伪装成分组里的第一行（标题被截断、还带行高 / 分隔线语义），
+        // 改成与 schema section footer 同款的分组脚注（样式按设计系统由
+        // SettingsSectionFooter 自己取：Apple footnote 灰字 / MD3 bodySmall
+        // onVariant）。
+        SettingsSectionFooter(t.profile_language_bindings_hint),
       ],
     );
   }
@@ -202,6 +197,9 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
                   ? CupertinoIcons.check_mark_circled_solid
                   : Icons.check_circle)
               : (cupertino ? CupertinoIcons.circle : Icons.circle_outlined),
+          // 行首的实心 / 空心圆就是「当前激活」的唯一信号——不 showIcon 的话
+          // 共享行根本不画它，列表里看不出哪个方案在用。
+          showIcon: true,
           title: profile.name,
           onTap: () {
             if (profile.id != uiState.activeProfileId) {
@@ -489,13 +487,20 @@ class _ProfileActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    // Apple：行内操作字形是强调色（iOS 列表行里的可点图标口径），删除用系统
+    // destructive 红；MD3 维持中性 onSurfaceVariant / error。
+    final bool glass = !cupertino && isGlassDesign(context);
     final Color color = destructive
         ? (cupertino
             ? CupertinoColors.destructiveRed.resolveFrom(context)
-            : Theme.of(context).colorScheme.error)
+            : glass
+                ? appleColorsOf(context).destructive
+                : Theme.of(context).colorScheme.error)
         : (cupertino
             ? CupertinoTheme.of(context).primaryColor
-            : Theme.of(context).colorScheme.onSurfaceVariant);
+            : glass
+                ? appleColorsOf(context).accent
+                : Theme.of(context).colorScheme.onSurfaceVariant);
 
     if (cupertino) {
       return CupertinoButton(

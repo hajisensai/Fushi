@@ -958,9 +958,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         SizedBox(height: tokens.spacing.gap),
         FushiOutlinedButton.icon(
           onPressed: _confirmDelete,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
-          ),
+          destructive: true,
           icon: const FushiIcon(Icons.delete_outline),
           label: Text(t.delete_custom_theme),
         ),
@@ -1166,7 +1164,15 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 onTap: () => _resetRole(role),
               )
             else
-              FushiIcon(Icons.chevron_right, color: cs.onSurfaceVariant),
+              // Apple：行尾小号 chevron + tertiaryLabel（iOS 设置行的披露
+              // 指示）；MD3 原样。
+              FushiIcon(
+                Icons.chevron_right,
+                size: isGlassDesign(context) ? 16 : null,
+                color: isGlassDesign(context)
+                    ? appleColorsOf(context).tertiaryLabel
+                    : cs.onSurfaceVariant,
+              ),
           ],
         ),
       ),

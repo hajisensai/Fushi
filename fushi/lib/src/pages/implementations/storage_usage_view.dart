@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show settingsFootnoteStyle;
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/utils.dart';
 
@@ -449,9 +451,12 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     final bool showAnime4kDelete =
         id == StorageCategoryId.shaders && _anime4kBytes > 0;
     return <Widget>[
-      FushiListItem(
-        title: Text(_categoryTitle(id)),
-        leading: FushiIcon(_categoryIcons[id]),
+      // 类目行与同组首行「总计」同一个共享设置行（行首图标位 / 行高 / 文字起点
+      // 一致；Apple 下图标是强调色单色、按下是 systemFill 高亮），不再混用列表项。
+      AdaptiveSettingsRow(
+        title: _categoryTitle(id),
+        icon: _categoryIcons[id],
+        showIcon: true,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -473,7 +478,18 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
             Text(usage == null ? '…' : formatStorageBytes(usage.bytes)),
             if (expandable) ...<Widget>[
               const SizedBox(width: 4),
-              FushiIcon(expanded ? Icons.expand_less : Icons.expand_more, size: 18),
+              // 展开指示：Apple = iOS 披露 chevron（展开转到朝下），MD3 =
+              // expand_more（展开翻转朝上）；与可折叠设置分组同一口径。
+              AnimatedRotation(
+                turns: expanded ? (isGlassDesign(context) ? 0.25 : 0.5) : 0.0,
+                duration: einkSafeDuration(
+                  context,
+                  const Duration(milliseconds: 180),
+                ),
+                child: isGlassDesign(context)
+                    ? const FushiAppleChevron()
+                    : const FushiIcon(Icons.expand_more, size: 18),
+              ),
             ],
           ],
         ),
@@ -556,7 +572,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(
             t.storage_bundled_hint,
-            style: Theme.of(context).textTheme.bodySmall,
+            // 分组内说明走设置脚注的统一口径（Apple footnote + secondaryLabel /
+            // MD3 bodySmall + onVariant）。
+            style: settingsFootnoteStyle(context),
           ),
         ),
       ],

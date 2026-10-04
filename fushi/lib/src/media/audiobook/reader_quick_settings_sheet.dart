@@ -24,9 +24,8 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveCurrentTocEntry;
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -803,10 +802,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     SettingsContext settingsContext,
     SettingsDestination destination,
   ) {
-    final bool cupertino = isCupertinoPlatform(context);
-    final SettingsRenderer renderer = cupertino
-        ? const CupertinoSettingsRenderer()
-        : const MaterialSettingsRenderer();
+    // 按设计系统选渲染器（Apple → GlassSettingsRenderer、MD3 →
+    // MaterialSettingsRenderer、Cupertino 照旧），与设置主页 / 视频面板同一判据。
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     return renderer.buildDetailContent(
       settingsContext: settingsContext,
       destination: destination,

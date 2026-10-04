@@ -19,6 +19,9 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -460,26 +463,18 @@ class ReaderSideSheet extends StatelessWidget {
   }
 }
 
-/// 抽屉里分组标题（ッツ 风格：小号大写字母间距标签，如 THEME / TEXT / LAYOUT）。
+/// 抽屉里分组标题：委托共享 [FushiSectionTitle.group]（与设置分组同一口径，
+/// MD3 主色小标题 / Apple 13 号 semibold 次要灰字）。
 class ReaderSideSheetSectionLabel extends StatelessWidget {
   const ReaderSideSheetSectionLabel(this.label, {super.key});
 
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8),
-      child: Text(
-        label.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          letterSpacing: 1.2,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => FushiSectionTitle.group(
+    label,
+    padding: const EdgeInsets.only(top: 20, bottom: 8),
+  );
 }
 
 /// 抽屉贴哪一边：ッツ 形态下「导航 / 章节」贴左、「外观」贴右。
@@ -535,8 +530,17 @@ Future<T?> showReaderSideSheet<T>({
         height: double.infinity,
         child: Material(
           key: const ValueKey<String>('fushi_reader_side_sheet'),
-          color: Theme.of(ctx).colorScheme.surface,
-          elevation: 8,
+          // 抽屉底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
+          // （secondaryGroupedBackground）才浮得出来；MD3 = surfaceContainerLow
+          // （Expressive 侧边面板），分组卡 surfaceContainer 比它高一级。墨水屏
+          // 两者都塌成底色，描一圈 outline 切出抽屉。
+          color: isGlassDesign(ctx)
+              ? appleColorsOf(ctx).groupedBackground
+              : Theme.of(ctx).colorScheme.surfaceContainerLow,
+          shape: isEinkTheme(ctx)
+              ? Border.all(color: Theme.of(ctx).colorScheme.outline)
+              : null,
+          elevation: kFushiFloatingElevation,
           child: Padding(
             padding: EdgeInsets.only(
               bottom: MediaQuery.viewInsetsOf(ctx).bottom,

@@ -29,8 +29,10 @@ void main() {
           )
           .first,
     );
-    expect(material.color, isNotNull);
-    expect(material.color!.a, lessThan(1));
+    // MD3：浮动面板是实色 surfaceContainerLow（设置面板满是小字，压在跳动的
+    // 画面上不再半透明）；画面靠面板四周的留白与面板宽度露出。
+    final BuildContext ctx = tester.element(find.text('Speed'));
+    expect(material.color, Theme.of(ctx).colorScheme.surfaceContainerLow);
     expect(find.text('Speed'), findsOneWidget);
     expect(find.text('1.5x'), findsOneWidget);
     // BUG-254：右上角 X 关闭按钮已删除（关闭改由页面层全屏 barrier 点面板外承载）。
@@ -71,11 +73,14 @@ void main() {
     // 镜像这件事因此从「圆角换边」挪到了**位置**上：左对齐贴左、右对齐贴右，两侧
     // 各留同一个 10 的间距；圆角则两边完全一致。两条一起断，退回半圆角抽屉、或
     // 左右间距不对称，都当场红。
-    const BorderRadius floatingRadius = BorderRadius.all(Radius.circular(12));
+    // MD3 Expressive 浮动面板圆角 28（四角一致）。
+    const BorderRadius floatingRadius = BorderRadius.all(Radius.circular(28));
+    BorderRadiusGeometry? radiusOf(Material m) =>
+        (m.shape as RoundedRectangleBorder?)?.borderRadius;
 
     final Material left = await pumpPanel(Alignment.centerLeft);
     expect(
-      left.borderRadius,
+      radiusOf(left),
       floatingRadius,
       reason: '浮动侧栏四边都有间距，四个角都应是圆角（不是贴边抽屉的半圆角）',
     );
@@ -84,7 +89,7 @@ void main() {
 
     final Material right = await pumpPanel(Alignment.centerRight);
     expect(
-      right.borderRadius,
+      radiusOf(right),
       floatingRadius,
       reason: '左右两侧圆角必须一致——镜像体现在位置上，不再体现在圆角换边',
     );

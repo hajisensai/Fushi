@@ -91,7 +91,6 @@ void main() {
         'onTap', // 正文点击（命中文字 / 唤出控制栏）
         'onTapEmpty', // 正文空白
         'onVnBlankTap', // VN 模式空白
-        'onLyricsTapEmpty', // 歌词页空白
         'onSpreadTapEmpty', // 双页 spread 空白
         'onImageTap', // 插图（spread / 图片章几乎整屏都是它）
         'onCueTap', // 有声书逐句跳播
@@ -111,6 +110,31 @@ void main() {
               '抽屉却纹丝不动（BUG-2276）',
         );
       }
+    });
+
+    // 2026-10-04 歌词覆盖层有自己的 WebView（lyrics.part.dart），它的空白点击与
+    // 点行跳句同样要先过抽屉门控。
+    test('歌词覆盖层 WebView 的空白 / 跳句桥都先过 _closeSideSheetForWebViewPointer', () {
+      final String src = File(
+        'lib/src/pages/implementations/reader_fushi/lyrics.part.dart',
+      ).readAsStringSync();
+      final int consumed = src.indexOf('bool lyricsTapEmptyConsumed() {');
+      expect(consumed, greaterThan(-1));
+      expect(
+        src.substring(consumed, consumed + 400),
+        contains('_closeSideSheetForWebViewPointer()'),
+      );
+      for (final String bridge in <String>['onTapEmpty', 'onLyricsTapEmpty']) {
+        final int at = src.indexOf("handlerName: '$bridge',");
+        expect(at, greaterThan(-1), reason: '$bridge 桥改名了，守卫需同步更新');
+        expect(src.substring(at, at + 200), contains('lyricsTapEmptyConsumed()'));
+      }
+      final int cueTap = src.indexOf("handlerName: 'onLyricsCueTap',");
+      expect(cueTap, greaterThan(-1));
+      expect(
+        src.substring(cueTap, cueTap + 700),
+        contains('_closeSideSheetForWebViewPointer()'),
+      );
     });
 
     test('门控用 maybePop —— 不得绕过阅读器 PopScope 直接 pop', () {

@@ -194,19 +194,23 @@ class MangaSourceCatalogSection extends StatelessWidget {
           onTap: () => onOpenOpds(server),
         ),
     ];
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              t.manga_discovery_sources_browse,
-              style: Theme.of(context).textTheme.titleMedium,
+          // 区块标题与下方热门横滑行同一套 [FushiSectionTitle]（MD3 titleLarge /
+          // Apple Title 2 粗体），不再是小一号的 titleMedium。
+          FushiSectionTitle(
+            t.manga_discovery_sources_browse,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.section,
+              tokens.spacing.page,
+              tokens.spacing.gap,
             ),
           ),
-          const SizedBox(height: 8),
           if (tiles.isNotEmpty)
             // 桌面端默认 dragDevices 不含 mouse，横滑条必须包
             // HorizontalDragScrollable（横向滚动守卫）。
@@ -215,10 +219,13 @@ class MangaSourceCatalogSection extends StatelessWidget {
               child: HorizontalDragScrollable(
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  // 与区块标题、下方横滑行同一页边距，左缘对齐。
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.page,
+                  ),
                   itemCount: tiles.length,
                   separatorBuilder: (BuildContext context, int index) =>
-                      const SizedBox(width: 8),
+                      SizedBox(width: tokens.spacing.gap),
                   itemBuilder: (BuildContext context, int index) =>
                       tiles[index],
                 ),
@@ -226,10 +233,16 @@ class MangaSourceCatalogSection extends StatelessWidget {
             ),
           if (error != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                '$error',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                0,
+              ),
+              child: FushiInlineNotice(
+                severity: FushiNoticeSeverity.error,
+                icon: Icons.error_outline_rounded,
+                message: '$error',
               ),
             ),
         ],
@@ -257,7 +270,18 @@ class _SourceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 次级文字 / 行尾图标：Apple 取 secondaryLabel / tertiaryLabel 灰阶，MD3
+    // onSurfaceVariant（与共享列表行同口径）。
+    final bool apple = isGlassDesign(context);
+    final Color secondary = apple
+        ? appleColorsOf(context).secondaryLabel
+        : tokens.surfaces.onVariant;
+    final Color chevron = apple
+        ? appleColorsOf(context).tertiaryLabel
+        : tokens.surfaces.onVariant;
+    // 实色内容卡（MD3 surfaceContainerLow / Apple secondarySystemGrouped），
+    // 不是玻璃；焦点 / Enter 由 FushiCard 提供。
     return SizedBox(
       width: 216,
       child: FushiCard(
@@ -278,15 +302,13 @@ class _SourceTile extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall,
+                      style: tokens.type.listTitle,
                     ),
                     Text(
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: tokens.type.metadata.copyWith(color: secondary),
                     ),
                   ],
                 ),
@@ -294,7 +316,7 @@ class _SourceTile extends StatelessWidget {
               FushiIcon(
                 pinned ? Icons.push_pin_outlined : Icons.chevron_right,
                 size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
+                color: chevron,
               ),
             ],
           ),
@@ -312,20 +334,17 @@ class _LanguageBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 中性底徽标（不再是 secondaryContainer 彩块），文字次级标签色。
     return Container(
       width: 36,
       height: 36,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: FushiBorderRadius.control,
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Text(
         language.isEmpty ? '?' : language.toUpperCase(),
         maxLines: 1,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: scheme.onSecondaryContainer,
+              color: fushiNeutralSecondaryForeground(context),
               fontWeight: FontWeight.w600,
             ),
       ),

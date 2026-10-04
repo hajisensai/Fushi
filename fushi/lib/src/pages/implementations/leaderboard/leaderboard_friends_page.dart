@@ -257,10 +257,7 @@ class _LeaderboardFriendsPageState
               onRetry: () => unawaited(_load()),
             )
           else if (list == null)
-            Padding(
-              padding: EdgeInsets.all(tokens.spacing.section),
-              child: const Center(child: FushiCircularProgressIndicator()),
-            )
+            const FushiLoadingView()
           else if (client != null) ...<Widget>[
             LeaderboardSectionTitle(
               t.leaderboard_friends_incoming(n: list.incoming.length),
