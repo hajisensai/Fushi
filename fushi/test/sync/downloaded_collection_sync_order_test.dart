@@ -269,6 +269,89 @@ void main() {
     ]);
   });
 
+  test('云折叠：删除发布之前的旧文件不能把集号序标记带给同名重建的合集', () {
+    CollectionManifest file(int writtenAt, CollectionManifestEntry e) =>
+        CollectionManifest(
+          collections: <CollectionManifestEntry>[e],
+          lastWrittenAt: writtenAt,
+        );
+    const List<CollectionManifestMember> members = <CollectionManifestMember>[
+      CollectionManifestMember(mediaType: 'video', entryKey: 'v', sortIndex: 0),
+    ];
+    // 离线设备的旧文件（t=10）：下载合集、带标记。
+    final CollectionManifest stale = file(
+      10,
+      const CollectionManifestEntry(
+        name: 'X',
+        collectionType: 'playlist',
+        members: members,
+        episodeOrdered: true,
+      ),
+    );
+    // t=20 发布删除；t=30 用户同名新建普通合集（无标记）。
+    final CollectionManifest deleted = file(
+      20,
+      const CollectionManifestEntry(
+        name: 'X',
+        collectionType: 'playlist',
+        deletedAt: 20,
+        deletedPublishedAt: 20,
+      ),
+    );
+    final CollectionManifest recreated = file(
+      30,
+      const CollectionManifestEntry(
+        name: 'X',
+        collectionType: 'playlist',
+        members: members,
+      ),
+    );
+    final CollectionManifestEntry folded = CollectionSyncEngine.combinePeers(
+      <CollectionManifest>[stale, deleted, recreated],
+    ).collections.single;
+    expect(folded.deletedAt, isNull, reason: '删除后重建胜');
+    expect(folded.episodeOrdered, isFalse);
+
+    // 对照：没有删除时，任一文件带标记即是。
+    expect(
+      CollectionSyncEngine.combinePeers(<CollectionManifest>[
+        stale,
+        recreated,
+      ]).collections.single.episodeOrdered,
+      isTrue,
+    );
+  });
+
+  test('本机落库整理认父目录上的季号（旧番剧种子导入保留原文件名）', () async {
+    final _Device d = _Device('local');
+    addTearDown(d.db.close);
+    int? collectionId;
+    for (final String path in <String>[
+      'D:/anime/Show/Season 2/01.mkv',
+      'D:/anime/Show/Season 1/02.mkv',
+      'D:/anime/Show/Season 1/01.mkv',
+    ]) {
+      final SplitPlaylistImportResult result = await d.repo.importSplitPlaylist(
+        collectionName: 'Show',
+        entries: <PlaylistEntry>[PlaylistEntry(title: '', path: path)],
+        reuseExistingPaths: true,
+      );
+      collectionId = result.collectionId;
+    }
+    await d.repo.reorderDownloadedCollectionEpisodes(collectionId!);
+    final List<String> paths = <String>[
+      for (final MediaCollectionItemRow item in await d.db.getCollectionItems(
+        collectionId,
+      ))
+        (await d.db.getVideoBookByBookUid(item.entryKey))!.videoPath,
+    ];
+    expect(paths, <String>[
+      'D:/anime/Show/Season 1/01.mkv',
+      'D:/anime/Show/Season 1/02.mkv',
+      'D:/anime/Show/Season 2/01.mkv',
+    ]);
+  });
+
   test('episodeOrdered 是 additive wire 字段：false 不写 key、旧清单读作 false', () {
     const CollectionManifestEntry plain = CollectionManifestEntry(
       name: 'A',

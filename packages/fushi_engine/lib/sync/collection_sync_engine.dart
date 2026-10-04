@@ -850,7 +850,8 @@ class _FoldGroup {
       <String, int>{}; // 决策用 max(pub??removed)。
 
   final Set<String> _tagNames = <String>{}; // 各活文件标签并集（只增不删）。
-  bool _episodeOrdered = false; // 任一活文件标了集号序即是（BUG-2941）。
+  // 标了集号序（BUG-2941）的活文件中最新 lastWrittenAt；-1 = 没有。
+  int _episodeOrderedFileTimeMax = -1;
 
   void observe(_NormalizedEntry e, int fileTime) {
     if (e.deletedAt != null) {
@@ -868,7 +869,9 @@ class _FoldGroup {
       return; // 归一化后的死条目不携带成员/墓碑/标签。
     }
     _tagNames.addAll(e.tagNames); // 活文件标签并集。
-    if (e.episodeOrdered) _episodeOrdered = true;
+    if (e.episodeOrdered && fileTime > _episodeOrderedFileTimeMax) {
+      _episodeOrderedFileTimeMax = fileTime;
+    }
     if (fileTime > _aliveFileTimeMax) _aliveFileTimeMax = fileTime;
     if (e.orderUpdatedAt > _orderUpdatedAtMax) {
       _orderUpdatedAtMax = e.orderUpdatedAt;
@@ -966,7 +969,10 @@ class _FoldGroup {
       ],
       // 折叠活分支标签并集（确定性排序）；死分支上方 return 不带标签。
       tagNames: _tagNames.toList()..sort(),
-      episodeOrdered: _episodeOrdered,
+      // 与「删除后重建」同一判据：只认删除发布之后写的文件里的标记——否则长期
+      // 离线设备的旧文件会把已删下载合集的标记带给同名新建的普通合集。
+      episodeOrdered: _episodeOrderedFileTimeMax >
+          (_sawDelete ? _deletePubMaxDecision : -1),
     ));
   }
 

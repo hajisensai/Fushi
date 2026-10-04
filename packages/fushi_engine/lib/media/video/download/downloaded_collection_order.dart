@@ -17,9 +17,15 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 /// （它们的本地键与 wire 键可能不同域，参与排序会让本地整理与同步结果不一致）。
 /// 视频成员全序：有集号的按季（缺省第 1 季）→ 集；解不出集号的（PV / 特典）殿后；
 /// 最后按 entryKey 兜底，保证确定性。
+///
+/// [videoPathByUid] 只给本机落库整理用：旧番剧种子导入保留原文件名，季号可能只
+/// 写在父目录上（`Season 2/01.mkv`），bookUid 里已经丢了，得看真实路径。同步合并
+/// 不传（必须只依赖 wire 键）。两者只在「带集号序标记 + 季号只在目录上」时不同，
+/// 而带标记的下载合集文件都被整理器改名成 `… - SxxEyy`，不会出现这种情况。
 List<CollectionMemberKey> orderDownloadedCollectionMembers(
-  List<CollectionMemberKey> members,
-) {
+  List<CollectionMemberKey> members, {
+  Map<String, String> videoPathByUid = const <String, String>{},
+}) {
   final String video = MediaKind.video.dbValue;
   final List<CollectionMemberKey> videos = <CollectionMemberKey>[
     for (final CollectionMemberKey m in members)
@@ -28,7 +34,7 @@ List<CollectionMemberKey> orderDownloadedCollectionMembers(
   final Map<CollectionMemberKey, VideoNameInfo> infoOf =
       <CollectionMemberKey, VideoNameInfo>{
         for (final CollectionMemberKey m in videos)
-          m: parseVideoPath(m.entryKey),
+          m: parseVideoPath(videoPathByUid[m.entryKey] ?? m.entryKey),
       };
   videos.sort((CollectionMemberKey a, CollectionMemberKey b) {
     final VideoNameInfo ia = infoOf[a]!;
