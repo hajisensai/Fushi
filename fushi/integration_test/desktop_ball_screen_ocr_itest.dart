@@ -17,9 +17,9 @@
 
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:ui' show Offset, Rect;
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
@@ -127,7 +127,7 @@ void main() {
     }
 
     // 原生系统球起来（截屏时要藏它、之后放回来）。
-    await appModel.preferencesRepository.setFloatingBallSystem(true);
+    await appModel.prefsRepo.setFloatingBallSystem(true);
     for (int i = 0; i < 40 && _window('FushiFloatingBallWindow') == 0; i++) {
       await tester.pump(const Duration(milliseconds: 250));
     }
@@ -228,6 +228,6 @@ void main() {
     expect(await GlobalLookupChannel.isShowing(), isFalse, reason: '卡要收起');
     expect(debugDesktopScreenOcrState, isNull);
 
-    await appModel.preferencesRepository.setFloatingBallSystem(false);
+    await appModel.prefsRepo.setFloatingBallSystem(false);
   });
 }
