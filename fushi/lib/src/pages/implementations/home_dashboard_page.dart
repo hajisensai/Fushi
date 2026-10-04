@@ -60,6 +60,7 @@ import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 首页「继续」区是否收这本书：与书架读完筛选 / hero 计数同一判据
 /// [classifyShelfReadStatus]（`EpubBooks.completedAt` 优先于进度）。
@@ -1074,13 +1075,13 @@ class _HomeDashboardPageState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    heatmapCard,
+                    FushiStaggeredEntrance(index: 0, child: heatmapCard),
                     SizedBox(height: tokens.spacing.card),
-                    continueCard,
+                    FushiStaggeredEntrance(index: 1, child: continueCard),
                     // 空库不占位（用户反馈「底部很空」的填充提案）。
                     if (recentCard != null) ...<Widget>[
                       SizedBox(height: tokens.spacing.card),
-                      recentCard,
+                      FushiStaggeredEntrance(index: 2, child: recentCard),
                     ],
                   ],
                 ),
@@ -1092,11 +1093,16 @@ class _HomeDashboardPageState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
+                    // 侧列与主列并排：按各自列内的视觉顺序错峰（从 1 起，
+                    // 晚主列首块一拍，读作「先左后右」）。
                     if (trackingCard != null) ...<Widget>[
-                      trackingCard,
+                      FushiStaggeredEntrance(index: 1, child: trackingCard),
                       SizedBox(height: tokens.spacing.card),
                     ],
-                    activityCard,
+                    FushiStaggeredEntrance(
+                      index: trackingCard != null ? 2 : 1,
+                      child: activityCard,
+                    ),
                   ],
                 ),
               ),
@@ -1107,46 +1113,51 @@ class _HomeDashboardPageState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              heatmapCard,
+              FushiStaggeredEntrance(index: 0, child: heatmapCard),
               SizedBox(height: tokens.spacing.card),
-              continueCard,
+              FushiStaggeredEntrance(index: 1, child: continueCard),
               SizedBox(height: tokens.spacing.card),
               // 与宽屏主列同序（继续 → 最近添加）：窄屏单列把最近添加压在活动
               // 时间轴之下，时间轴天然很长，用户要滚到底才看得见新入库的条目。
               if (recentCard != null) ...<Widget>[
-                recentCard,
+                FushiStaggeredEntrance(index: 2, child: recentCard),
                 SizedBox(height: tokens.spacing.card),
               ],
               if (trackingCard != null) ...<Widget>[
-                trackingCard,
+                FushiStaggeredEntrance(index: 3, child: trackingCard),
                 SizedBox(height: tokens.spacing.card),
               ],
-              activityCard,
+              FushiStaggeredEntrance(index: 4, child: activityCard),
             ],
           );
         }
-        return ListView(
-          controller: _dashboardScrollController,
-          padding: EdgeInsets.all(tokens.spacing.card),
-          children: <Widget>[
-            // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
-            // SizedBox.shrink），没有更新的日子首页不多一块空卡。
-            UpdatesDashboardBanner(service: appModel.updateFeedService),
-            // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
-            if (appModel.isMigrationReadonly) ...<Widget>[
-              _MigrationReadonlyBanner(appModel: appModel),
-              SizedBox(height: tokens.spacing.card),
+        // 2026-10 动效重做：仪表盘首屏错峰进场——分区按视觉顺序、横滚行内条目
+        // 按行内 index 起播；窗口外（滚动 / 横滑带出、数据晚到补进来的卡）瞬间
+        // 出现，不拖影。
+        return FushiEntranceScope(
+          child: ListView(
+            controller: _dashboardScrollController,
+            padding: EdgeInsets.all(tokens.spacing.card),
+            children: <Widget>[
+              // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
+              // SizedBox.shrink），没有更新的日子首页不多一块空卡。
+              UpdatesDashboardBanner(service: appModel.updateFeedService),
+              // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
+              if (appModel.isMigrationReadonly) ...<Widget>[
+                _MigrationReadonlyBanner(appModel: appModel),
+                SizedBox(height: tokens.spacing.card),
+              ],
+              // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
+              // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
+              if (!kIsWeb &&
+                  Platform.isAndroid &&
+                  appModel.packageInfo.packageName !=
+                      kHibikiPackageName) ...<Widget>[
+                _FushiMigrationBanner(appModel: appModel),
+              ],
+              body,
             ],
-            // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
-            // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
-            if (!kIsWeb &&
-                Platform.isAndroid &&
-                appModel.packageInfo.packageName !=
-                    kHibikiPackageName) ...<Widget>[
-              _FushiMigrationBanner(appModel: appModel),
-            ],
-            body,
-          ],
+          ),
         );
       },
     );
@@ -1381,11 +1392,15 @@ class _HomeDashboardPageState
           itemCount: entries.length,
           separatorBuilder: (BuildContext _, int __) =>
               SizedBox(width: tokens.spacing.gap),
-          itemBuilder: (BuildContext context, int i) => _buildContinueCard(
-            tokens,
-            appModel,
-            entries[i],
-            videoLandscape: videoLandscape,
+          // 2026-10 动效重做：行内条目按行内 index 错峰（窗口由页级
+          // [FushiEntranceScope] 管，横滑带出的卡瞬间出现）。
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int i) => _buildContinueCard(
+              tokens,
+              appModel,
+              entries[i],
+              videoLandscape: videoLandscape,
+            ),
           ),
         ),
       ),
