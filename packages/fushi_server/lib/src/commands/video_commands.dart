@@ -20,7 +20,6 @@
 /// `FUSHI_ANIDB_PASSWORD` 给（不进 argv），其次是与 app 同名的偏好键。
 library;
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -38,7 +37,6 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
-import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart' show parseFfmpegFilterNames;
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/subs_commands.dart' show ffmpegUnavailableReason;
@@ -557,24 +555,11 @@ const Set<String> kBurnSubtitleExtensions = <String>{'.srt', '.ass', '.ssa', '.v
 /// 跑 `ffmpeg -hide_banner -filters` 取滤镜名；起不来 / 超时 / 解不出返回空集合
 /// （调用方按「不能烧」处理）。
 ///
-/// 可执行文件走引擎的唯一解析点 [resolveFfmpegExecutable]（配置文件 `ffmpeg:` 覆盖 >
-/// `FUSHI_FFMPEG` > 随包 > PATH），不另造查找逻辑。不经 [FfmpegBackend.run] 是因为
-/// 它只收 stderr、把 stdout 丢掉（ffmpeg 的工作日志都写 stderr），而 `-filters` 的
-/// 滤镜表恰恰写在 stdout——经它探永远是空表。
-Future<Set<String>> probeFfmpegFilterNames() async {
-  Process? process;
-  try {
-    process = await Process.start(resolveFfmpegExecutable(), const <String>['-hide_banner', '-filters']);
-    final Future<String> stdoutText = process.stdout.transform(const Utf8Decoder(allowMalformed: true)).join();
-    final Future<String> stderrText = process.stderr.transform(const Utf8Decoder(allowMalformed: true)).join();
-    final int code = await process.exitCode.timeout(const Duration(seconds: 30));
-    if (code != 0) return const <String>{};
-    return parseFfmpegFilterNames('${await stdoutText}\n${await stderrText}');
-  } on Object {
-    process?.kill(ProcessSignal.sigkill);
-    return const <String>{};
-  }
-}
+/// 与 app 的片段导出共用引擎的唯一探测点 [queryFfmpegFilterNames]（经
+/// [FfmpegBackend.runQuery] 收 stdout，可执行文件同样走「配置文件 `ffmpeg:` 覆盖 >
+/// `FUSHI_FFMPEG` > 随包 > PATH」解析），不再自己 `Process.start` 一份（BUG-2938）。
+Future<Set<String>> probeFfmpegFilterNames() =>
+    queryFfmpegFilterNames(resolveFfmpegBackend(), const Duration(seconds: 30));
 
 /// ffmpeg 烧录一次的上限（重编码比 copy 慢得多，长片段给足时间）。
 const Duration _kBurnTimeout = Duration(minutes: 30);

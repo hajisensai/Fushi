@@ -10,6 +10,14 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart' as host;
 /// 或语义走样都不会编译错——只会表现成「能转录但每次都慢一档」这种没人查得动的事。
 /// 这组用例就是那道验收门。
 class _RecordingBackend implements host.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<host.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _RecordingBackend({required this.runResult, required this.probeResult});
 
   final host.FfmpegRunResult runResult;
@@ -34,6 +42,14 @@ class _RecordingBackend implements host.FfmpegBackend {
 }
 
 class _ThrowingBackend implements host.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<host.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   @override
   Future<host.FfmpegRunResult> run(List<String> args, Duration timeout) async =>
       throw ProcessException('ffmpeg', args, '找不到可执行文件', 2);

@@ -399,17 +399,22 @@ class _ClipProbe {
 /// 秒级的用户操作；缓存换不来可感知的收益，却会引入「用户中途换了 `FUSHI_FFMPEG`
 /// 指向，缓存还是旧能力」的陈旧态。
 ///
-/// 探测失败一律当**不能烧**（返回空集合）：烧不了顶多退成无字幕导出，而误判成能烧
-/// 会让整次导出失败。
-Future<Set<String>> _probeFfmpegFilters(
+/// 探测失败（起不来 / 超时 / 非零退出）一律当**不能烧**（返回空集合）：烧不了顶多
+/// 退成无字幕导出，而误判成能烧会让整次导出失败。
+///
+/// 必须走 [FfmpegBackend.runQuery]：滤镜表写在 stdout，[FfmpegBackend.run] 只收
+/// stderr，经它探在桌面 CLI 上恒为空表、硬字幕静默退成无字幕（BUG-2938）。app 的片段
+/// 导出与无头服务端 `video clip --burn-subs` 共用这一个探测点。
+Future<Set<String>> queryFfmpegFilterNames(
   FfmpegBackend backend,
   Duration timeout,
 ) async {
   try {
-    final FfmpegRunResult probe = await backend.run(<String>[
+    final FfmpegRunResult probe = await backend.runQuery(<String>[
       '-hide_banner',
       '-filters',
     ], timeout);
+    if (!probe.isSuccess) return const <String>{};
     return parseFfmpegFilterNames(probe.output);
   } catch (e, stack) {
     engineLog.log('VideoClipExport', e, stack);
@@ -903,7 +908,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // 导出变成失败。失败原因写进错误日志，排查时看那条。
     if (subtitleCues.isNotEmpty && subtitleRenderer != null) {
       final ClipFrameSize? frame = probe.frameSize;
-      final Set<String> filters = await _probeFfmpegFilters(
+      final Set<String> filters = await queryFfmpegFilterNames(
         resolved,
         _kClipProbeTimeout,
       );
