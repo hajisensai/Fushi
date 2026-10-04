@@ -11,6 +11,7 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
@@ -454,6 +455,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       pendingQuestion: _state.question,
       slots: _slotsSnapshot(),
       history: _recentHistory(),
+      candidates: videoAcquisitionCandidateContext(_state),
       utterance: utterance,
     );
     VideoAcquisitionIntent? intent;
@@ -500,7 +502,9 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     };
   }
 
-  /// 最近 6 条对话（助手句只给种类名，页面文案不回传给模型）。
+  /// 最近 6 条对话。助手句给结构化的 `{kind, args, question}`（事实参数，不含
+  /// 页面文案）：只给种类名时模型不知道「当前这个版本」是谁，「哪个最好 / 有没
+  /// 有更小的」这类追问一律解析不了（BUG-2933）。
   List<({String role, String text})> _recentHistory() {
     final List<VideoAcquisitionMessage> transcript = _state.transcript;
     final int start = transcript.length > 6 ? transcript.length - 6 : 0;
@@ -511,13 +515,32 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
             role: 'user',
             text: text,
           ),
-          VideoAcquisitionAssistantMessage(:final VideoAcquisitionSay say) => (
-            role: 'assistant',
-            text: say.kind.name,
-          ),
+          VideoAcquisitionAssistantMessage(
+            :final VideoAcquisitionSay say,
+            :final VideoAcquisitionQuestion? question,
+          ) =>
+            (role: 'assistant', text: _assistantTurnJson(say, question)),
         },
     ];
   }
+
+  static String _assistantTurnJson(
+    VideoAcquisitionSay say,
+    VideoAcquisitionQuestion? question,
+  ) => jsonEncode(<String, Object?>{
+    'kind': say.kind.name,
+    'args': <String, Object?>{
+      for (final MapEntry<String, Object?> entry in say.args.entries)
+        if (_isJsonScalar(entry.value) ||
+            (entry.value is List &&
+                (entry.value! as List<Object?>).every(_isJsonScalar)))
+          entry.key: entry.value,
+    },
+    if (question != null) 'question': question.slot.name,
+  });
+
+  static bool _isJsonScalar(Object? value) =>
+      value == null || value is String || value is num || value is bool;
 
   /// 查不到 / 失败都回灌空列表：reducer 据此说「没找到」，原因留诊断日志。
   Future<void> _resolveAlias(String query) async {
