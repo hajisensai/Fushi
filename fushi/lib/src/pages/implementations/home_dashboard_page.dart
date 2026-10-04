@@ -208,113 +208,6 @@ class _ContinueEntry {
   final RemoteContinueCandidate? remote;
 }
 
-/// 每日字数目标编辑对话框。独立 StatefulWidget **自持** controller 生命周期：
-/// dispose 跟随路由销毁（弹出动画结束后）。此前「await showDialog 返回即
-/// dispose」会在退场动画帧触碰已销毁 controller——保存后本页 setState 让仍在
-/// 退场的 TextField 重建 addListener 直接断言崩（widget 测试实测复现）。
-/// 保存 pop 解析后的字数（空/非法 → 0 = 关闭目标），取消 pop null。
-///
-/// BUG-1075：此前只有一个裸 TextField（labelText=每日目标），用户「不知道该填
-/// 什么、单位是什么、算不算看视频」。现在补齐三件事（不引入加权系统——那是过度
-/// 设计，口径说清即可）：输入框带单位后缀 + 口径 helperText、近 7 日日均参考值、
-/// 一排快捷预设 chip。
-class _DailyGoalDialog extends StatefulWidget {
-  const _DailyGoalDialog({
-    required this.initialChars,
-    required this.recentDailyAverage,
-  });
-
-  /// 当前目标（0 = 未设，输入框留空）。
-  final int initialChars;
-
-  /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示参考行。
-  final int recentDailyAverage;
-
-  /// 快捷预设（字/天）：点一下直接填进输入框，省得用户凭空想数字。
-  static const List<int> presets = <int>[3000, 5000, 10000, 20000];
-
-  @override
-  State<_DailyGoalDialog> createState() => _DailyGoalDialogState();
-}
-
-class _DailyGoalDialogState extends State<_DailyGoalDialog> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initialChars == 0 ? '' : widget.initialChars.toString(),
-  );
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  /// 预设 chip → 填入输入框（光标置尾，用户可继续改）。
-  void _applyPreset(int chars) {
-    final String text = chars.toString();
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AlertDialog(
-      title: Text(t.stat_goal_set),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            TextField(
-              controller: _controller,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: t.stat_goal_daily,
-                // 单位：目标是「每天多少字」。口径说明行按用户要求删除。
-                suffixText: t.stat_goal_unit_chars,
-              ),
-            ),
-            if (widget.recentDailyAverage > 0) ...<Widget>[
-              SizedBox(height: tokens.spacing.gap),
-              Text(
-                t.stat_goal_recent_average(n: widget.recentDailyAverage),
-                style: tokens.type.metadata,
-              ),
-            ],
-            SizedBox(height: tokens.spacing.gap + 4),
-            Text(t.stat_goal_presets, style: tokens.type.metadata),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap / 2,
-              children: <Widget>[
-                for (final int preset in _DailyGoalDialog.presets)
-                  ActionChip(
-                    label: Text(preset.toString()),
-                    onPressed: () => _applyPreset(preset),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.cancel),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context)
-              .pop(int.tryParse(_controller.text.trim()) ?? 0),
-          child: Text(t.dialog_save),
-        ),
-      ],
-    );
-  }
-}
-
 class _BangumiWatchedDialog extends StatefulWidget {
   const _BangumiWatchedDialog({
     required this.service,
@@ -594,6 +487,14 @@ class _HomeDashboardPageState
   /// 库里同名 ≥2 本的 title（BUG-2216：日明细 sheet 身份分组的吸收否决）。
   Set<String> _ambiguousBookTitles = const <String>{};
 
+  /// 首次 [_loadDashboardData] 是否已结束（成功或 fail-open 都算）。
+  ///
+  /// 2026-10 体验优化：此前首帧各区块拿空数据直接渲染，用户先看到一闪
+  /// 「暂无活动记录」/ 空热力图，几百毫秒后才换成真实内容，像是数据丢了。
+  /// 完成前「继续」/ 热力图 / 动态区块显示加载指示，之后的防抖重载不再回到
+  /// 加载态（旧数据先留着，避免每次写库都闪一下）。
+  bool _initialLoadDone = false;
+
   @override
   void initState() {
     super.initState();
@@ -679,7 +580,24 @@ class _HomeDashboardPageState
       await _loadDashboardDataUnsafe();
     } catch (e, stack) {
       ErrorLogService.instance.log('HomeDashboardPage.load', e, stack);
+    } finally {
+      if (mounted && !_initialLoadDone) {
+        setState(() => _initialLoadDone = true);
+      }
     }
+  }
+
+  /// 区块首载占位（2026-10 体验优化，见 [_initialLoadDone]）。
+  Widget _sectionLoadingPlaceholder(FushiDesignTokens tokens) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
+      child: const Center(
+        child: SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      ),
+    );
   }
 
   /// 到下一个本地午夜整页重拉（每次加载重新排一次；页面已卸载则不动）。
@@ -1347,8 +1265,12 @@ class _HomeDashboardPageState
               options: filterOptions,
             )
           : null,
+      // 2026-10 体验优化：空态用「继续」自己的文案（此前误用动态区的「暂无
+      // 活动记录」）；首载未结束时显示加载占位而不是空态。
       child: filtered.isEmpty
-          ? Text(t.home_activity_empty, style: tokens.type.metadata)
+          ? (_initialLoadDone
+              ? Text(t.home_continue_empty, style: tokens.type.metadata)
+              : _sectionLoadingPlaceholder(tokens))
           : _continueCardsRow(tokens, appModel, filtered, videoLandscape: true),
     );
   }
@@ -2079,30 +2001,34 @@ class _HomeDashboardPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          StatContributionHeatmap(
-            valueByDateKey: charsByDay,
-            now: DateTime.now(),
-            baseColor: tokens.surfaces.primary,
-            // BUG-1073 病灶 1 根因：此前用 surfaces.card，与本卡底色
-            // surfaces.group 在暗色主题下几乎同色（两个相邻的 surface 容器
-            // 色阶）——「没活动的那些周」等于没画，观感是左边一大片死黑。改用
-            // 色阶更高的 surfaces.overlay 才和卡底拉开对比，空周照样是
-            // GitHub 式浅格子。BUG-1276：黑色/自定义主题仍可能把 surface 色阶
-            // 压得过近，因此再用 outlineVariant 描边兜底；即使填充与卡底同色，
-            // 53 周空格也不会重新融进背景。
-            emptyColor: tokens.surfaces.overlay,
-            emptyBorderColor: tokens.surfaces.outline,
-            // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
-            // 时长段），字数与时长都跟随当前来源筛选。
-            valueLabel: (String dateKey, int chars) {
-              final int timeMs = timeMsByDay[dateKey] ?? 0;
-              final String base =
-                  '${formatStatHeatmapDay(dateKey)} · ${formatStatChars(chars)}';
-              return timeMs > 0 ? '$base · ${formatStatTime(timeMs)}' : base;
-            },
-            onDaySelected: (String dateKey, int _) =>
-                unawaited(_showDayDetailSheet(dateKey)),
-          ),
+          if (!_initialLoadDone)
+            _sectionLoadingPlaceholder(tokens)
+          else
+            StatContributionHeatmap(
+              valueByDateKey: charsByDay,
+              now: DateTime.now(),
+              baseColor: tokens.surfaces.primary,
+              // BUG-1073 病灶 1 根因：此前用 surfaces.card，与本卡底色
+              // surfaces.group 在暗色主题下几乎同色（两个相邻的 surface 容器
+              // 色阶）——「没活动的那些周」等于没画，观感是左边一大片死黑。改用
+              // 色阶更高的 surfaces.overlay 才和卡底拉开对比，空周照样是
+              // GitHub 式浅格子。BUG-1276：黑色/自定义主题仍可能把 surface 色阶
+              // 压得过近，因此再用 outlineVariant 描边兜底；即使填充与卡底同色，
+              // 53 周空格也不会重新融进背景。
+              emptyColor: tokens.surfaces.overlay,
+              emptyBorderColor: tokens.surfaces.outline,
+              // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
+              // 时长段），字数与时长都跟随当前来源筛选。
+              valueLabel: (String dateKey, int chars) {
+                final int timeMs = timeMsByDay[dateKey] ?? 0;
+                final String base =
+                    '${formatStatHeatmapDay(dateKey)} · '
+                    '${formatStatChars(chars)}';
+                return timeMs > 0 ? '$base · ${formatStatTime(timeMs)}' : base;
+              },
+              onDaySelected: (String dateKey, int _) =>
+                  unawaited(_showDayDetailSheet(dateKey)),
+            ),
           SizedBox(height: tokens.spacing.gap),
           _buildDailyGoalRow(tokens),
         ],
@@ -2239,34 +2165,19 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 弹每日字数目标编辑对话框（阅读统计页 _editGoals 的数字输入范式，只编辑每日
-  /// 字数；0/清空 = 关闭目标）。写回 [AppModel.setReadingGoalDailyChars] 后
-  /// setState 刷新目标行（与统计页读同一偏好，两处天然同步）。取消返回 null 不写。
+  /// 弹目标编辑对话框（2026-10 体验优化：与统计页合并为同一份
+  /// [showStatGoalEditDialog]——每日 + 每周 + 预设 + 近 7 日参考）。写回偏好后
+  /// setState 刷新目标行（与统计页读同一偏好，多处天然同步）。取消不写。
   Future<void> _editDailyGoal() async {
-    final AppModel appModel = ref.read(appProvider);
-    final int? saved = await showDialog<int>(
-      context: context,
-      builder: (BuildContext _) => _DailyGoalDialog(
-        initialChars: appModel.readingGoalDailyChars,
-        recentDailyAverage: _recentDailyAverageChars(),
-      ),
-    );
-    if (saved == null) return;
-    await appModel.setReadingGoalDailyChars(saved < 0 ? 0 : saved);
-    if (mounted) setState(() {});
-  }
-
-  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（学习域
-  /// [studyGoalCharsForDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
-  /// 无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
-  int _recentDailyAverageChars({int days = 7}) {
-    if (days <= 0) return 0;
+    // 近 7 日日均吃本页窗口（跨午夜重拉，BUG-2219）。
     final StatWindow w = _statWindow;
-    int total = 0;
-    for (final String key in w.lastDayKeys(days)) {
-      total += studyGoalCharsForDay(_dailyRows, key);
-    }
-    return total ~/ days;
+    final bool saved = await showStatGoalEditDialog(
+      context,
+      ref.read(appProvider),
+      recentDailyAverage:
+          statRecentDailyAverageChars(_dailyRows, w.lastDayKeys(7)),
+    );
+    if (saved && mounted) setState(() {});
   }
 
   /// 统计中心入口（唯一入口：各媒体页头的「xx统计」已撤，统一从首页进总览）。
@@ -2478,7 +2389,9 @@ class _HomeDashboardPageState
             )
           : null,
       child: groups.isEmpty
-          ? Text(t.home_activity_empty, style: tokens.type.metadata)
+          ? (_initialLoadDone
+              ? Text(t.home_activity_empty, style: tokens.type.metadata)
+              : _sectionLoadingPlaceholder(tokens))
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -2561,9 +2474,11 @@ class _HomeDashboardPageState
       _relativeTimeLabel(entry.latestTimestampMs, now),
       if (entry.totalDurationMs > 0) formatStatTime(entry.totalDurationMs),
       if (entry.sessionCount > 1) t.home_session_count(n: entry.sessionCount),
-      // 设备来源（互联对端事件带 host 设备名；本机事件不标）。
-      if (entry.sourceDevice case final String device) device,
     ];
+    // 设备来源（互联对端事件带 host 设备名；本机事件不标）。2026-10 体验优化：
+    // 此前拼在元信息行末尾、单行省略——手机上动作词 · 时间 · 时长 · 次数已占满，
+    // 设备名永远被截掉。改为单独一行设备标签。
+    final String? sourceDevice = entry.sourceDevice;
     return InkWell(
       onTap: () => unawaited(
           _openActivityEntry(appModel, entry, booksByKey, videosByUid)),
@@ -2593,6 +2508,28 @@ class _HomeDashboardPageState
                     overflow: TextOverflow.ellipsis,
                     style: tokens.type.metadata,
                   ),
+                  if (sourceDevice != null) ...<Widget>[
+                    SizedBox(height: tokens.spacing.gap / 4),
+                    Row(
+                      key: const ValueKey<String>('home-activity-device'),
+                      children: <Widget>[
+                        Icon(
+                          Icons.devices_outlined,
+                          size: 14,
+                          color: tokens.type.metadata.color,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            sourceDevice,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.metadata,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3316,7 +3253,9 @@ class _HomeDashboardPageState
       ? selected
       : fallback;
 
-  /// 泛型筛选 chip 行：[ChoiceChip] 的 [Wrap]（窄屏自动换行，不溢出）。
+  /// 泛型筛选 chip 行：[FushiSelectableChip] 的 [Wrap]（窄屏自动换行，不溢出）。
+  /// 2026-10 体验优化：由裸 [ChoiceChip] 换成全应用统一的选择 chip（焦点环、
+  /// eink 反色、尺寸与统计中心范围条一致）。
   Widget _filterChips<T>({
     required FushiDesignTokens tokens,
     required T selected,
@@ -3328,8 +3267,8 @@ class _HomeDashboardPageState
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
         for (final (T value, String label) in options)
-          ChoiceChip(
-            label: Text(label),
+          FushiSelectableChip(
+            label: label,
             selected: selected == value,
             onSelected: (bool isSelected) {
               if (isSelected) onSelected(value);

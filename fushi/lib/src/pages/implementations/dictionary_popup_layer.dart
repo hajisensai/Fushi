@@ -741,6 +741,18 @@ class DictionaryPopupAiPick {
   final VoidCallback onTap;
 }
 
+/// 顶栏动作按钮的命中边长（2026-10 体验优化）：桌面 36（鼠标精确，压缩顶栏）；
+/// 移动端 44——触控目标下限，图标仍是 20，视觉不变、只是可点区域变大。
+double dictionaryPopupTopActionExtent({required bool mobile}) =>
+    mobile ? 44 : 36;
+
+/// 顶栏宽度低于此值且有 [DictionaryPopupLayer.headerWidget] 时，A−/A+/AI 收进
+/// 「⋯」溢出菜单（2026-10 体验优化），优先保住居中 header 与关闭按钮的宽度。
+const double kDictionaryPopupTopBarCompactWidth = 360;
+
+/// 顶栏溢出菜单里的动作。
+enum _PopupTopBarOverflowAction { zoomOut, zoomIn, aiPick }
+
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
     required this.result,
@@ -1017,8 +1029,14 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
-  static const BoxConstraints _topActionConstraints =
-      BoxConstraints.tightFor(width: 36, height: 36);
+  /// 顶栏按钮的命中区（见 [dictionaryPopupTopActionExtent]）。
+  static double get _topActionExtent =>
+      dictionaryPopupTopActionExtent(mobile: isMobilePlatform);
+
+  static BoxConstraints get _topActionConstraints => BoxConstraints.tightFor(
+        width: _topActionExtent,
+        height: _topActionExtent,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1274,6 +1292,19 @@ class DictionaryPopupLayer extends StatelessWidget {
       return null;
     }
 
+    // 2026-10 体验优化：窄宽（且有居中 header）时 A−/A+/AI 收进「⋯」菜单。
+    // LayoutBuilder 只读本层拿到的有界宽度，不改 BUG-822 的 Row 三段结构。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = headerWidget != null &&
+            constraints.hasBoundedWidth &&
+            constraints.maxWidth < kDictionaryPopupTopBarCompactWidth;
+        return _buildTopBarRow(context, compact: compact);
+      },
+    );
+  }
+
+  Widget _buildTopBarRow(BuildContext context, {required bool compact}) {
     final String backTooltip =
         MaterialLocalizations.of(context).backButtonTooltip;
     final DictionaryPopupHistoryNav? nav = historyNav;
@@ -1313,9 +1344,13 @@ class DictionaryPopupLayer extends StatelessWidget {
             onTap: nav.onForward,
           ),
         ],
-        _buildZoomFontButton(context, zoomIn: false),
-        _buildZoomFontButton(context, zoomIn: true),
-        if (aiPick != null) _buildAiPickButton(context, aiPick!),
+        if (compact)
+          _buildOverflowMenuButton(context)
+        else ...<Widget>[
+          _buildZoomFontButton(context, zoomIn: false),
+          _buildZoomFontButton(context, zoomIn: true),
+          if (aiPick != null) _buildAiPickButton(context, aiPick!),
+        ],
       ],
     );
 
@@ -1345,7 +1380,77 @@ class DictionaryPopupLayer extends StatelessWidget {
     // [_topActionConstraints] 按钮（design-2026-08 讨论区反馈：压缩顶栏与词头间距，命中区零缩水，
     // 旧值 40 只是给按钮上下各 2px 装饰性余量）；有 header 时高度由 header 自身
     // （[ReaderChromeScaler] 跟随 UI 缩放）决定。
-    return headerWidget == null ? SizedBox(height: 36, child: bar) : bar;
+    return headerWidget == null
+        ? SizedBox(height: _topActionExtent, child: bar)
+        : bar;
+  }
+
+  /// 溢出菜单项内容：图标 + 文字（菜单项本身已是 MD3 PopupMenuItem）。
+  static Widget _overflowMenuLabel(IconData icon, String label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Flexible(child: Text(label)),
+        ],
+      );
+
+  /// 窄宽顶栏的「⋯」溢出菜单：A−/A+（与独立按钮走同一条 zoomFontStep 路径）
+  /// + AI 挑词（进行中时禁用）。
+  Widget _buildOverflowMenuButton(BuildContext context) {
+    final DictionaryPopupAiPick? pick = aiPick;
+    return PopupMenuButton<_PopupTopBarOverflowAction>(
+      key: const ValueKey<String>('popup_topbar_overflow'),
+      tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+      padding: EdgeInsets.zero,
+      onSelected: (_PopupTopBarOverflowAction action) {
+        switch (action) {
+          case _PopupTopBarOverflowAction.zoomOut:
+            webViewKey.currentState?.zoomFontStep(zoomIn: false);
+          case _PopupTopBarOverflowAction.zoomIn:
+            webViewKey.currentState?.zoomFontStep(zoomIn: true);
+          case _PopupTopBarOverflowAction.aiPick:
+            pick?.onTap();
+        }
+      },
+      itemBuilder: (BuildContext context) =>
+          <PopupMenuEntry<_PopupTopBarOverflowAction>>[
+        PopupMenuItem<_PopupTopBarOverflowAction>(
+          value: _PopupTopBarOverflowAction.zoomOut,
+          child: _overflowMenuLabel(
+            Icons.text_decrease,
+            t.popup_font_size_decrease,
+          ),
+        ),
+        PopupMenuItem<_PopupTopBarOverflowAction>(
+          value: _PopupTopBarOverflowAction.zoomIn,
+          child: _overflowMenuLabel(
+            Icons.text_increase,
+            t.popup_font_size_increase,
+          ),
+        ),
+        if (pick != null)
+          PopupMenuItem<_PopupTopBarOverflowAction>(
+            value: _PopupTopBarOverflowAction.aiPick,
+            enabled: !pick.busy,
+            child: _overflowMenuLabel(
+              Icons.auto_awesome_outlined,
+              t.lookup_ai_pick_tooltip,
+            ),
+          ),
+      ],
+      child: ConstrainedBox(
+        constraints: _topActionConstraints,
+        child: Center(
+          child: pick != null && pick.busy
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.more_horiz, size: 20),
+        ),
+      ),
+    );
   }
 
   /// TODO-1353 复诉：弹窗顶栏可见的 A−/A+ 手动字号按钮。点按经

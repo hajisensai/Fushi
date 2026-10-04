@@ -81,6 +81,16 @@ class StatRangeBar extends StatelessWidget {
               ),
             ],
           ),
+          // 2026-10 体验优化：学习日历点某天会把范围切到单日，原先只能再点
+          // 「月」芯片 + 连按箭头才回得去。单日态下给一个显眼的「本月」快捷
+          // 入口，一步回到当月（锚点跟随今日）。
+          if (range.mode == StatRangeMode.day)
+            FushiActionChip(
+              key: const ValueKey<String>('stat-range-back-to-month'),
+              label: t.stat_this_month,
+              icon: Icons.calendar_month_outlined,
+              onPressed: () => onChanged(const StatRangeSelection()),
+            ),
         ],
       ),
     );
