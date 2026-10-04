@@ -324,8 +324,10 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
 如实反映引擎是否加载成功；加载失败 serve 照常起，查词路由不注册（客户端按不可用处理）。
 
 - 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
-  Linux 自编：`cmake -S native/fushidicts -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja -C build fushidicts_ffi`
-  （需要支持 `std::ranges::to` 的编译器，如 GCC 14）。
+  Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
+  `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
+  `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物已随包
+  这份 .so 与变形表；正式发布包（`release-server.yml`，ubuntu-22.04）**尚未**随包，需自行放进 `lib/`。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
 - 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
