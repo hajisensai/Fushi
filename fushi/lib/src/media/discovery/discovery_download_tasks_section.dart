@@ -384,6 +384,12 @@ String discoveryDownloadStatusLabel(
       return '${t.download_task_status_downloading} · '
           '$received / ${formatDiscoveryBytes(total)} ($percent%)';
     case DiscoveryDownloadStatus.done:
+      // 只有音频的有声书：下载完成、入库交给了转录队列（那条任务另有一行）。
+      // 不能说「已完成 · <书名>」——书此刻还不在库里。
+      if (task.importOutcome?.deferred ?? false) {
+        return '${t.download_task_status_completed} · '
+            '${t.audiobook_transcribe_status_queued_after_download}';
+      }
       final String? summary = task.importOutcome?.summary?.trim();
       return summary == null || summary.isEmpty
           ? t.download_task_status_completed

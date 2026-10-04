@@ -14,6 +14,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
@@ -26,6 +28,8 @@ DiscoveryDomainImporters buildProductionDiscoveryImporters({
   required SrtBookRepository srtBookRepo,
   required AudiobookRepository audiobookRepo,
   required GalgameRepository galgameRepo,
+  required Future<DiscoveryImportOutcome> Function(TranscribeAudiobookPlan plan)
+      transcribeAudiobook,
 }) {
   return DiscoveryDomainImporters(
     importEpub: (String filePath) => importDiscoveryEpub(db, filePath),
@@ -49,6 +53,13 @@ DiscoveryDomainImporters buildProductionDiscoveryImporters({
       audiobookRepo: audiobookRepo,
       plan: plan,
     ),
+    importSubtitleAudiobook: (SubtitleAudiobookPlan plan) =>
+        importDiscoverySubtitleAudiobook(
+      db: db,
+      srtBookRepo: srtBookRepo,
+      plan: plan,
+    ),
+    transcribeAudiobook: transcribeAudiobook,
     importMangaArchive: (String archivePath) =>
         importDiscoveryMangaArchive(db, archivePath),
     registerGameExes: (List<String> exePaths) async {

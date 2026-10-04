@@ -6,6 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, AudiobookStorage, SrtBookRepository;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -652,6 +653,15 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   }
 
   Widget _buildTasks() {
+    // 有声书「转录后入库」任务包在最外层：它的条目经闭包并进下面统一列表的
+    // additionalTasks，与各下载来源并列排序/筛选。
+    return AudiobookTranscribeTasksSection(
+      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
+          _buildTaskSources(transcribe),
+    );
+  }
+
+  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe) {
     return AnimeDownloadDialog(
                         embedded: true,
                         tasksOnly: true,
@@ -689,6 +699,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                 ...manga,
                                 ...remote,
                                 ...interconnect,
+                                ...transcribe,
                               ],
                               database: ref.read(appProvider).database,
                               metricsLoader: ref
