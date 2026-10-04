@@ -646,13 +646,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
     final bool confirmed = await confirmDeleteStatistics(context, video.title);
     if (!confirmed || !mounted) return;
-    await appModelNoUpdate.database.deleteVideoStatisticsForIdentity(
-      title: video.title,
-      bookUid: video.bookUid,
-      includeUnattributed: video.absorbedUnattributed,
+    await _runStatDeletion(
+      'VideoStatisticsPage.deleteVideo',
+      () => appModelNoUpdate.database.deleteVideoStatisticsForIdentity(
+        title: video.title,
+        bookUid: video.bookUid,
+        includeUnattributed: video.absorbedUnattributed,
+      ),
     );
-    if (!mounted) return;
-    await _loadFromDatabase();
   }
 
   /// TODO-1322：点顶栏「清空统计」→ 危险操作确认 → 清空**全部视频统计**（观看时长 /
@@ -663,9 +664,36 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       t.stat_clear_all_video_message,
     );
     if (!confirmed || !mounted) return;
-    await appModelNoUpdate.database.clearAllVideoStatistics();
+    await _runStatDeletion(
+      'VideoStatisticsPage.clearAll',
+      () => appModelNoUpdate.database.clearAllVideoStatistics(),
+    );
+  }
+
+  /// 删除 / 清空统计的共同收尾（2026-10 体验优化）：执行期间置 [_loading]（顶栏
+  /// 动作随之禁用、正文显示加载态，大库清空要跑一阵，此前界面毫无反应还能连点），
+  /// 结束后整页重聚合并给成功提示。写库抛错只记日志、不报成功；重聚合照跑，
+  /// [_loadFromDatabase] 负责把 [_loading] 复位。
+  Future<void> _runStatDeletion(
+    String logSource,
+    Future<void> Function() mutate,
+  ) async {
+    setState(() => _loading = true);
+    bool succeeded = false;
+    try {
+      await mutate();
+      succeeded = true;
+    } catch (e, stack) {
+      ErrorLogService.instance.log(logSource, e, stack);
+    }
     if (!mounted) return;
     await _loadFromDatabase();
+    if (succeeded && mounted) {
+      FushiToast.show(
+        msg: t.stat_cleared_toast,
+        severity: ToastSeverity.success,
+      );
+    }
   }
 
   /// 按视频 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。只认

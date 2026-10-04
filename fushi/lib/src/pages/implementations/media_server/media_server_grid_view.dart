@@ -248,40 +248,70 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         tokens.spacing.page,
         tokens.spacing.gap,
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: FushiSearchField(
-              fieldKey: const ValueKey<String>('media-server-grid-search'),
-              clearButtonKey: const ValueKey<String>(
-                'media-server-grid-search-clear',
+      // 2026-10 体验优化：窄于 480 时排序收成图标菜单。写死 180 宽的下拉在
+      // 手机竖屏上把搜索框挤到不足一半。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final bool compactSort = box.maxWidth < 480;
+          return Row(
+            children: <Widget>[
+              Expanded(
+                child: FushiSearchField(
+                  fieldKey: const ValueKey<String>('media-server-grid-search'),
+                  clearButtonKey: const ValueKey<String>(
+                    'media-server-grid-search-clear',
+                  ),
+                  focusId: FushiFocusId('$prefix-grid-search'),
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  hintText: t.media_server_search_hint,
+                  onChanged: _scheduleSearch,
+                  onSubmitted: _submitSearch,
+                  onClear: _clearSearch,
+                ),
               ),
-              focusId: FushiFocusId('$prefix-grid-search'),
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              hintText: t.media_server_search_hint,
-              onChanged: _scheduleSearch,
-              onSubmitted: _submitSearch,
-              onClear: _clearSearch,
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          // 搜索走服务器的相关度序，排序只对浏览生效；搜索态禁用而不是藏起来。
-          // 下拉里是 DropdownMenu（InputDecorator），在 Row 里必须给定宽。
-          SizedBox(
-            width: 180,
-            child: FushiDropdown<MediaServerSort>(
-              key: const ValueKey<String>('media-server-grid-sort'),
-              options: MediaServerSort.values,
-              initialOption: _sort,
-              generateLabel: _sortLabel,
-              onChanged: _changeSort,
-              enabled: !_searchMode,
-              focusId: FushiFocusId('$prefix-grid-sort'),
-            ),
-          ),
-        ],
+              SizedBox(width: tokens.spacing.gap),
+              // 搜索走服务器的相关度序，排序只对浏览生效；搜索态禁用而不是藏起来。
+              // 下拉里是 DropdownMenu（InputDecorator），在 Row 里必须给定宽。
+              if (compactSort)
+                _buildCompactSortButton()
+              else
+                SizedBox(
+                  width: 180,
+                  child: FushiDropdown<MediaServerSort>(
+                    key: const ValueKey<String>('media-server-grid-sort'),
+                    options: MediaServerSort.values,
+                    initialOption: _sort,
+                    generateLabel: _sortLabel,
+                    onChanged: _changeSort,
+                    enabled: !_searchMode,
+                    focusId: FushiFocusId('$prefix-grid-sort'),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
+    );
+  }
+
+  /// 窄屏的排序入口：图标菜单，当前项打勾。搜索态同样禁用。
+  Widget _buildCompactSortButton() {
+    return PopupMenuButton<MediaServerSort>(
+      key: const ValueKey<String>('media-server-grid-sort-compact'),
+      tooltip: t.sort_by,
+      enabled: !_searchMode,
+      icon: const Icon(Icons.sort_rounded),
+      initialValue: _sort,
+      onSelected: _changeSort,
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<MediaServerSort>>[
+        for (final MediaServerSort sort in MediaServerSort.values)
+          CheckedPopupMenuItem<MediaServerSort>(
+            value: sort,
+            checked: sort == _sort,
+            child: Text(_sortLabel(sort)),
+          ),
+      ],
     );
   }
 
@@ -406,6 +436,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         ),
         onLongPress: () =>
             openMediaServerItemDetail(context, widget.session, item),
+        onInfo: () => openMediaServerItemDetail(context, widget.session, item),
       );
     }),
     childCount: _items.length,
