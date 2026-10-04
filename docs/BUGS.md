@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2693 条。点号进各自文件。
+> 共 2694 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2933](bugs/BUG-2933-ai-acquire-which-is-best.md) | ✅ | ✅ | AI下视频问「哪个最好」被判没听懂（意图缺候选上下文） |
 | [BUG-2932](bugs/BUG-2932-cmvs-voice-sfx-paired-as-voice.md) | ✅ | ✅ | CMVS 语音只走通用 PCM：点击音效被配成台词语音、真实语音丢失 |
 | [BUG-2931](bugs/BUG-2931-catsystem2-2016-voice-sites.md) | ✅ | ✅ | CatSystem2 2016 版语音站点因编译形态不同而全部未解析 |
 | [BUG-2930](bugs/BUG-2930-catsystem2-bootmenu-launcher-handoff.md) | ✅ | ✅ | CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随 |
