@@ -19,6 +19,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
@@ -287,6 +289,16 @@ void main() {
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
+          // 墙卡的清晰度角标会经规格服务真起 ffprobe（本机 / CI 镜像装了
+          // ffmpeg 时）：真实子进程与 FakeAsync 的 20s 超时计时器赛跑，测试
+          // 结束时计时器还挂着就报 pending timer，结果随帧时序抖动。本文件测的
+          // 是菜单与删除，不测规格探测——注入不起进程的探测器。
+          videoSpecsProvider.overrideWithValue(
+            VideoSpecsService(
+              db,
+              probe: (String _) async => VideoProbeFacts.empty,
+            ),
+          ),
         ],
         child: TranslationProvider(
           child: MaterialApp(
