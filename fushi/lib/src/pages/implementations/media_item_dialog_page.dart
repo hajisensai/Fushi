@@ -416,10 +416,9 @@ class MediaItemDialogFrame extends StatelessWidget {
                       padding: EdgeInsets.zero,
                       leading: Icon(action.icon),
                       title: Text(action.label),
-                      trailing: Icon(
-                        Icons.chevron_right,
-                        color: colors.onSurfaceVariant,
-                      ),
+                      // 不画尾部 chevron（2026-10-04）：这些是「就地执行 / 弹个小框」
+                      // 的菜单动作，不是推入子页的导航项；每行一个「>」暗示了不存在
+                      // 的层级，还把视线拉向右缘。MD3 菜单项同样不带箭头。
                       onTap: action.onPressed,
                     ),
                 ],

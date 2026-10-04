@@ -7123,6 +7123,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集封面卡长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
+  /// 合集长按菜单的封面图源，与合集卡 [_buildCollectionCover] 同一优先级：自设
+  /// 封面 → 刮削到的作品海报 → 按合集内顺序第一个有封面文件的本地成员。都没有
+  /// 时为 null（菜单不画封面块）。
+  ImageProvider? _collectionMenuCoverImage(
+    MediaCollectionRow collection,
+    List<String> memberUidOrder,
+    List<VideoBookRow> library,
+  ) {
+    final String? own = collection.coverPath;
+    if (own != null && own.isNotEmpty && File(own).existsSync()) {
+      return resizedFileImage(File(own));
+    }
+    final ImageProvider? canonical =
+        _canonicalCollectionPosterProvider(collection.id);
+    if (canonical != null) return canonical;
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow b in library) b.bookUid: b,
+    };
+    for (final String uid in memberUidOrder) {
+      final String? cover = byUid[uid]?.coverPath;
+      if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+        return resizedFileImage(File(cover));
+      }
+    }
+    return null;
+  }
+
   Future<void> _showCollectionContextMenu(MediaCollectionRow collection) async {
     final VideoBookRepository repo = widget.repo;
     final AppModel appModel = ref.read(appProvider);
@@ -7130,19 +7157,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 「同时删除本地文件」二级勾选只在这个合集真有本机原件时才摆出来（成员全是
     // 远端流就没有文件可删，与单删 / 批删同一条「兑现不了就不显示」纪律）。判据
     // [videoBookHasLocalFiles] 要的是视频行本身，成员引用行只有 uid，故先取一遍库。
-    final Set<String> memberUids = <String>{
+    final List<String> memberUidOrder = <String>[
       for (final MediaCollectionItemRow m
           in await db.getCollectionItems(collection.id))
         if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
-    };
-    final bool anyLocalFile = memberUids.isNotEmpty &&
-        (await repo.listAll()).any((VideoBookRow b) =>
-            memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b));
+    ];
+    final Set<String> memberUids = memberUidOrder.toSet();
+    final List<VideoBookRow> library = memberUids.isEmpty
+        ? const <VideoBookRow>[]
+        : await repo.listAll();
+    final bool anyLocalFile = library.any((VideoBookRow b) =>
+        memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b));
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: db,
       collection: collection,
+      coverImage: _collectionMenuCoverImage(
+        collection,
+        memberUidOrder,
+        library,
+      ),
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         ref.invalidate(collectionTagMapProvider);

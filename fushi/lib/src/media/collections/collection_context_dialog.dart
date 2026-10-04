@@ -56,7 +56,21 @@ Future<void> showCollectionContextDialog({
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
+  ImageProvider? coverImage,
 }) async {
+  // [coverImage]：合集封面图源（自设封面 / 首个有封面的成员）。只给图源时由这里
+  // 画前景（contain，整幅可见），同时作为封面块两侧的模糊垫底
+  // （[MediaItemDialogFrame.coverBackdrop]）——此前合集菜单根本没有封面，一眼
+  // 认不出是哪个合集（2026-10-04 用户截图）。
+  final ImageProvider? coverSource = coverImage;
+  final Widget? effectiveCover = cover ??
+      (coverSource == null
+          ? null
+          : Image(
+              image: coverSource,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ));
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
@@ -66,7 +80,8 @@ Future<void> showCollectionContextDialog({
       }
 
       return MediaItemDialogFrame(
-        cover: cover,
+        cover: effectiveCover,
+        coverBackdrop: coverSource,
         title: collection.name,
         // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
         launchLabel: t.collection_view_all,
