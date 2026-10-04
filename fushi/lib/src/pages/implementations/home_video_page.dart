@@ -1847,16 +1847,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(message),
-                      CheckboxListTile(
+                      // 与 FushiDestructiveConfirmDialog 的勾选行同一写法：
+                      // 整行是唯一停靠点，Checkbox 只做显示。
+                      FushiListItem(
                         key: const ValueKey<String>(
                           'batch-dissolve-delete-subscriptions',
                         ),
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: deleteSubscriptions,
+                        density: FushiListDensity.compact,
+                        padding: EdgeInsets.zero,
+                        titleMaxLines: 3,
                         title: Text(subscriptionsLabel),
-                        onChanged: (bool? v) => setDialogState(
-                          () => deleteSubscriptions = v ?? false,
+                        leading: ExcludeFocus(
+                          child: IgnorePointer(
+                            child: Checkbox(
+                              value: deleteSubscriptions,
+                              onChanged: (_) {},
+                            ),
+                          ),
+                        ),
+                        onTap: () => setDialogState(
+                          () => deleteSubscriptions = !deleteSubscriptions,
                         ),
                       ),
                     ],
