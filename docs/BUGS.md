@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2699 条。点号进各自文件。
+> 共 2700 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2942](bugs/BUG-2942-collection-delete-orphans-subscriptions.md) | ✅ | ✅ | 删除合集后下载订阅仍启用并继续下载；任务页无法整组删除 |
 | [BUG-2941](bugs/BUG-2941-download-collection-sync-order.md) | ✅ | ✅ | 下载合集选集乱序：同步平手取远端冲掉按集号排序 |
 | [BUG-2937](bugs/BUG-2937-franchise-walk-batched.md) | ✅ | ✅ | AI下视频整套：系列查不完时按预算截断交半张清单·应分批续查到走完 |
 | [BUG-2936](bugs/BUG-2936-franchise-movies-silent-truncation.md) | ✅ | ✅ | AI下视频「全部哆啦A梦大电影」MAL系列遍历静默截断丢新剧场版·失败时静默降级成下单部TV·短片混进剧场版 |
