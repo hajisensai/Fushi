@@ -1,0 +1,7 @@
+## BUG-2941 · 下载合集选集乱序：同步平手取远端冲掉按集号排序
+- **报告**：2026-10-04（用户：视频播放器底部「选集」条顺序是 06,02,01,10,05,03,07,04,09,08,11…，截图来自「グロウアップショウ ～ひまわりのサーカス団～ (2026)」）
+- **真实性**：✅ 真 bug。本机 DB 只读核对：合集 88 的 `media_collection_items.sort_index` 存的就是这个顺序，`order_updated_at=0`（用户从未手动排序），13 个 nyaa 下载任务（`video_download_jobs.collection_id=88`）的完成先后与之逐项一致，跨 2026-09-11 ~ 09-29 逐集落库，期间合集同步在跑（有配对对端 + 云同步基线）。
+  - 根因：每集落库后 `VideoBookRepository.reorderDownloadedCollectionEpisodes`（`packages/fushi_engine/lib/media/video/video_book_repository.dart`）把本机排成集号序，但按设计不动 `orderUpdatedAt`；下一轮合集同步 `CollectionSyncEngine._mergeOne`（`packages/fushi_engine/lib/sync/collection_sync_engine.dart:224` 起「平手取远端」）两端都为 0 → 远端上轮的到达序整表覆盖本机，新集追加末尾 → 写回共享清单。逐集重复即得下载完成顺序。播放器 `video_fushi_page.dart:3128` 只是忠实读 `getCollectionItems` 的落库序。
+- **[x] ① 已修复** — 合并引擎加可选派生序钩子 `CollectionDerivedOrder`：两端 orderUpdatedAt 都为 0（无人手动排序）时，调用方能给出派生序则以派生序为准；`loadDownloadedCollectionDerivedOrder`（`packages/fushi_engine/lib/media/video/download/downloaded_collection_order.dart`）只对下载管理的合集（`downloadManagedCollectionIds`：被下载任务 / 订阅指向）给出集号序。三处生产合并（云编排器 / 互联 client / host 收 POST）全部注入。本机落库整理与同步派生序共用 `orderDownloadedCollectionMembers` 一个全序（集号 → 成员键兜底），保证收敛后无来回改写。手动排过序（>0）的合集照旧 LWW，非下载合集照旧平手取远端。已乱序的存量合集在下一轮同步即被重排。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/downloaded_collection_sync_order_test.dart`：双库 + 共享清单按用户真实到达序逐集落库、每集之间同步；含修复前复现、三端收敛、收敛后零改写、手动序胜、非下载合集不受影响。
+- **备注**：立即自救（不等新版）：作品详情页点「按季排序」——走手动排序、bump orderUpdatedAt，LWW 胜出并推给对端。

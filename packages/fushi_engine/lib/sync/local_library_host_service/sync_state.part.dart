@@ -143,6 +143,7 @@ mixin _LocalLibraryHostSyncState
         local: local,
         remote: incoming,
         lastSyncedAtMs: baseline,
+        derivedOrder: await loadDownloadedCollectionDerivedOrder(_db),
       );
       await applyCollectionLocalChanges(_db, outcome.changes);
       await writeCollectionsSyncBaselineMs(
