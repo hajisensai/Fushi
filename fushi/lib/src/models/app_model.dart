@@ -120,6 +120,8 @@ import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart'
+    show AudiobookshelfTokens;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
@@ -128,8 +130,10 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
@@ -5763,6 +5767,17 @@ class AppModel with ChangeNotifier {
       if (isPreferencesReady)
         for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
           if (site.enabled) AListDiscoverySource.fromConfig(site),
+      // 用户自配的 Audiobookshelf 服务器：同上。未登录的不登记——那样的源每次
+      // 浏览都必然以「未登录」失败，挂在来源下拉里只是一个必红的徽标。
+      if (isPreferencesReady)
+        for (final AudiobookshelfServerConfig server
+            in prefsRepo.discoveryAudiobookshelfServers)
+          if (server.enabled && server.isSignedIn)
+            AudiobookshelfDiscoverySource(
+              config: server,
+              onTokensChanged: (AudiobookshelfTokens tokens) =>
+                  persistAudiobookshelfTokens(server.id, tokens),
+            ),
     ]);
   }
 
@@ -5801,6 +5816,31 @@ class AppModel with ChangeNotifier {
     await prefsRepo.setDiscoveryAListSites(sites);
     await reloadDiscoverySources();
   }
+
+  /// 增删改 Audiobookshelf 服务器后的统一写回口（同 [setDiscoveryOpdsServers]）。
+  Future<void> setDiscoveryAudiobookshelfServers(
+    Iterable<AudiobookshelfServerConfig> servers,
+  ) async {
+    await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
+    await reloadDiscoverySources();
+  }
+
+  /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
+  /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。
+  ///
+  /// 只落偏好、**不**重建注册表：调用方就是注册表里正在跑请求的那个源实例，
+  /// 重建会把它 close 掉。它手上已经是新令牌，不需要重建来「生效」。
+  Future<void> persistAudiobookshelfTokens(
+    String configId,
+    AudiobookshelfTokens tokens,
+  ) =>
+      prefsRepo.setDiscoveryAudiobookshelfServers(
+        replaceAudiobookshelfTokens(
+          prefsRepo.discoveryAudiobookshelfServers,
+          configId,
+          tokens,
+        ),
+      );
 
   /// 「全部源」聚合排除的源 id（用户显式单选某源时不受限）。
   Set<String> get discoveryDisabledSourceIds => <String>{
