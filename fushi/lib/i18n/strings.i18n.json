@@ -4317,8 +4317,8 @@
   "video_subtitle_filter_all": "All",
   "video_subtitle_filter_favorites": "Favorites",
   "video_subtitle_filter_favorites_empty": "No favorited lines yet",
-  "video_subtitle_graphic_hint": "Graphic subtitle · shown on video · no word lookup",
-  "video_subtitle_graphic_shown": "Graphic subtitle shown on video (no word lookup): $label",
+  "video_subtitle_graphic_hint": "Graphic subtitle · shown on video · pause to look up words (OCR)",
+  "video_subtitle_graphic_shown": "Graphic subtitle shown on video (pause to look up words via OCR): $label",
   "video_subtitle_import_failed": "Failed to import subtitle",
   "video_subtitle_import_file": "Import subtitle file…",
   "video_subtitle_import_unsupported": "Unsupported subtitle format",
@@ -6170,7 +6170,7 @@
   "anki_dedup_progress_indexing": "Reading notes to find media references… ($done / $total)",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "video_subtitle_graphic_learning_hint": "Image subtitles are read by OCR when paused; tap a word to look it up. Use \"Convert to text subtitles\" below to look up words while playing.",
   "ai_feature_video_identify_assist_summary": "When scraping finds several candidates or nothing at all, let AI pick the matching work or suggest titles to search",
   "ai_feature_video_search_subtitle_summary": "Let AI re-rank subtitle results when subtitles are filled in automatically in the background",
   "video_scrape_ai_declined": "AI not adopted",
@@ -6251,5 +6251,10 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works."
+  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works.",
+  "video_subtitle_graphic_ocr_track": "Convert to text subtitles (OCR)",
+  "video_subtitle_graphic_ocr_track_hint": "Recognize the whole track once; then tap words to look them up while playing",
+  "video_subtitle_graphic_ocr_extracting": "Extracting image subtitle track…",
+  "video_subtitle_graphic_ocr_progress": "Recognizing subtitles $done/$total",
+  "video_subtitle_graphic_ocr_empty": "No text recognized in this subtitle track"
 }

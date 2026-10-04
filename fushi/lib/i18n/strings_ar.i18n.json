@@ -4317,8 +4317,8 @@
   "video_subtitle_filter_all": "الكل",
   "video_subtitle_filter_favorites": "المفضلة",
   "video_subtitle_filter_favorites_empty": "لا توجد سطور مفضلة بعد",
-  "video_subtitle_graphic_hint": "ترجمة رسومية · تُعرض على الفيديو · لا بحث للكلمات",
-  "video_subtitle_graphic_shown": "تُعرض ترجمة رسومية على الفيديو (لا بحث للكلمات): $label",
+  "video_subtitle_graphic_hint": "ترجمة رسومية · تُعرض على الفيديو · أوقف مؤقتًا للبحث عن الكلمات (OCR)",
+  "video_subtitle_graphic_shown": "تُعرض ترجمة رسومية على الفيديو (أوقف مؤقتًا للبحث عن الكلمات عبر OCR): $label",
   "video_subtitle_import_failed": "فشل استيراد الترجمة",
   "video_subtitle_import_file": "استيراد ملف ترجمة…",
   "video_subtitle_import_unsupported": "تنسيق ترجمة غير مدعوم",
@@ -6170,7 +6170,7 @@
   "anki_dedup_progress_indexing": "Reading notes to find media references… ($done / $total)",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "video_subtitle_graphic_learning_hint": "تُقرأ الترجمات المصوّرة بتقنية OCR عند الإيقاف المؤقت؛ اضغط على كلمة للبحث عنها. استخدم \"تحويل إلى ترجمة نصية\" أدناه للبحث أثناء التشغيل.",
   "ai_feature_video_identify_assist_summary": "عندما يعثر الجلب على عدة مرشحين أو لا يعثر على شيء، يختار الذكاء الاصطناعي العمل المطابق أو يقترح عناوين للبحث",
   "ai_feature_video_search_subtitle_summary": "يعيد الذكاء الاصطناعي ترتيب نتائج الترجمات عند إضافة الترجمات تلقائيًا في الخلفية",
   "video_scrape_ai_declined": "AI not adopted",
@@ -6251,5 +6251,10 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works."
+  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works.",
+  "video_subtitle_graphic_ocr_track": "تحويل إلى ترجمة نصية (OCR)",
+  "video_subtitle_graphic_ocr_track_hint": "تعرّف على المسار كاملًا مرة واحدة، ثم اضغط على الكلمات للبحث عنها أثناء التشغيل",
+  "video_subtitle_graphic_ocr_extracting": "جارٍ استخراج مسار الترجمة المصوّرة…",
+  "video_subtitle_graphic_ocr_progress": "جارٍ التعرّف على الترجمة $done/$total",
+  "video_subtitle_graphic_ocr_empty": "لم يُتعرّف على أي نص في مسار الترجمة هذا"
 }

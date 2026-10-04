@@ -4317,8 +4317,8 @@
   "video_subtitle_filter_all": "Tümü",
   "video_subtitle_filter_favorites": "Sık kullanılanlar",
   "video_subtitle_filter_favorites_empty": "Henüz favorilere eklenmiş satır yok",
-  "video_subtitle_graphic_hint": "Grafik altyazı · videoda gösterilir · sözcük araması yok",
-  "video_subtitle_graphic_shown": "Grafik altyazı videoda gösteriliyor (sözcük araması yok): $label",
+  "video_subtitle_graphic_hint": "Grafik altyazı · videoda gösterilir · duraklatınca sözcük arama (OCR)",
+  "video_subtitle_graphic_shown": "Grafik altyazı videoda gösteriliyor (duraklatınca OCR ile sözcük aranabilir): $label",
   "video_subtitle_import_failed": "Altyazı içe aktarılamadı",
   "video_subtitle_import_file": "Altyazı dosyası içe aktar…",
   "video_subtitle_import_unsupported": "Desteklenmeyen altyazı biçimi",
@@ -6170,7 +6170,7 @@
   "anki_dedup_progress_indexing": "Reading notes to find media references… ($done / $total)",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "video_subtitle_graphic_learning_hint": "Görüntü altyazıları duraklatıldığında OCR ile tanınır; aramak için bir sözcüğe dokunun. Oynatırken aramak için aşağıdaki \"Metin altyazıya dönüştür\" seçeneğini kullanın.",
   "ai_feature_video_identify_assist_summary": "Tarama birden fazla aday bulduğunda veya hiçbir şey bulamadığında, yapay zekâ eşleşen eseri seçer ya da aranacak başlıklar önerir",
   "ai_feature_video_search_subtitle_summary": "Altyazılar arka planda otomatik olarak eklendiğinde yapay zekâ altyazı sonuçlarını yeniden sıralar",
   "video_scrape_ai_declined": "AI not adopted",
@@ -6251,5 +6251,10 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works."
+  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works.",
+  "video_subtitle_graphic_ocr_track": "Metin altyazıya dönüştür (OCR)",
+  "video_subtitle_graphic_ocr_track_hint": "Tüm parçayı bir kez tanıyın; ardından oynatırken sözcüklere dokunarak arayın",
+  "video_subtitle_graphic_ocr_extracting": "Görüntü altyazı parçası çıkarılıyor…",
+  "video_subtitle_graphic_ocr_progress": "Altyazılar tanınıyor $done/$total",
+  "video_subtitle_graphic_ocr_empty": "Bu altyazı parçasında metin tanınmadı"
 }
