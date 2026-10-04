@@ -938,8 +938,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatChars(chars)),
         // 速度（字/时）紧跟字数：用户 2026-09-12 要求顶部方框直接给出每小时字数。
-        if (cph != null)
-          StatSummaryLine(label: t.stat_reading_speed, value: cph),
+        StatSummaryLine(
+          label: t.stat_reading_speed,
+          value: cph ?? kStatEmptyValue,
+        ),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
         StatSummaryLine(label: t.stat_mined, value: '$mined'),
         StatSummaryLine(label: t.stat_favorited, value: '$favorited'),

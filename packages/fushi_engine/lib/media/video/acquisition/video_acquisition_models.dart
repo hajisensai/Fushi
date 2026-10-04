@@ -221,6 +221,10 @@ enum VideoAcquisitionSlot {
   /// 整套清单确认：全部提交 / 取消（逐部勾选在页面的清单卡上）。
   franchise,
 
+  /// 整套没找到用户要的那部分（或清单取不到）：只下这一部 / 取消
+  /// （args: title）。
+  franchiseFallback,
+
   /// 版本确认：就这个 / 换一个 / 取消。
   resource,
 
@@ -420,8 +424,15 @@ enum VideoAcquisitionSayKind {
   /// 系列解析没走完（[VideoFranchise.truncated]）：清单可能不全（args: name）
   franchiseTruncated,
 
+  /// 系列还在分批查：到目前为止找到几部、还在继续（args: name, series, movies）
+  franchiseProgress,
+
   /// 这部作品没有找到同系列的其它作品，按单部继续（args: title）
   franchiseNotFound,
+
+  /// 没能取到完整的系列清单（资料源出错 / 不可用；args: title）——之后问
+  /// [VideoAcquisitionSlot.franchiseFallback]，不静默降级成单部（BUG-2936）
+  franchiseUnavailable,
 
   /// 整套清单已就绪（args: ready, total）
   franchiseReady,
@@ -779,6 +790,7 @@ class VideoAcquisitionState {
     this.busy = false,
     this.franchiseName,
     this.franchiseEntries = const <VideoAcquisitionFranchiseEntry>[],
+    this.franchiseDraft,
     this.aliasResolved = false,
   });
 
@@ -847,6 +859,9 @@ class VideoAcquisitionState {
   /// 整套下载的清单（剧集在前、剧场版按上映顺序在后）。
   final List<VideoAcquisitionFranchiseEntry> franchiseEntries;
 
+  /// 系列分批查询中已经收到的部分（不含续查入口）；查完或离开找系列阶段即清掉。
+  final VideoFranchise? franchiseDraft;
+
   VideoMediaReference? get reference => chosenItem?.reference;
 
   VideoAcquisitionState copyWith({
@@ -877,6 +892,8 @@ class VideoAcquisitionState {
     bool? busy,
     String? franchiseName,
     List<VideoAcquisitionFranchiseEntry>? franchiseEntries,
+    VideoFranchise? franchiseDraft,
+    bool clearFranchiseDraft = false,
     bool? aliasResolved,
   }) => VideoAcquisitionState(
     stage: stage ?? this.stage,
@@ -904,6 +921,9 @@ class VideoAcquisitionState {
     busy: busy ?? this.busy,
     franchiseName: franchiseName ?? this.franchiseName,
     franchiseEntries: franchiseEntries ?? this.franchiseEntries,
+    franchiseDraft: clearFranchiseDraft
+        ? null
+        : (franchiseDraft ?? this.franchiseDraft),
     aliasResolved: aliasResolved ?? this.aliasResolved,
   );
 
@@ -1256,6 +1276,14 @@ class VideoAcquisitionLoadFranchiseEffect extends VideoAcquisitionEffect {
   const VideoAcquisitionLoadFranchiseEffect(this.item);
 
   final VideoDiscoveryItem item;
+}
+
+/// 系列还没查完：调 [more]（上一批 [VideoFranchise.more]）接着查下一批，结果照样
+/// 回灌 [VideoAcquisitionFranchiseLoadedEvent]。reducer 只传、不调——它是纯函数。
+class VideoAcquisitionContinueFranchiseEffect extends VideoAcquisitionEffect {
+  const VideoAcquisitionContinueFranchiseEffect(this.more);
+
+  final Future<VideoFranchise> Function() more;
 }
 
 /// 整套清单的一部：拉详情（放送状态，定下载还是订阅）+ 在库检查 + 搜资源。

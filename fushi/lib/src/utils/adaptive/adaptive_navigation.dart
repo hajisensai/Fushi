@@ -144,19 +144,24 @@ class _MaterialNavCluster extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool horizontal = axis == Axis.horizontal;
 
-    final List<Widget> tiles = <Widget>[
-      for (int i = 0; i < items.length; i++)
-        _NavFocusCell(
-          id: FushiFocusId('$idPrefix-$i'),
-          item: items[i],
-          selected: i == currentIndex,
-          horizontal: horizontal,
-          onSelect: () {
-            if (i != currentIndex) fushiSelectionHaptic(context);
-            onTap(i);
-          },
-        ),
-    ];
+    // 2026-10 体验优化：底栏格宽不足时（手机竖屏最多 8 个入口，每格约 45dp）
+    // 只给选中项显示标签、其余仅图标 + tooltip / 语义标签（MD3 允许的
+    // 「仅选中项显示标签」形态），药丸宽度按格宽收窄而不是被硬压溢出。
+    // 侧栏宽度固定 80，恒为完整形态。
+    List<Widget> buildTiles({required double? cellWidth}) => <Widget>[
+          for (int i = 0; i < items.length; i++)
+            _NavFocusCell(
+              id: FushiFocusId('$idPrefix-$i'),
+              item: items[i],
+              selected: i == currentIndex,
+              horizontal: horizontal,
+              cellWidth: cellWidth,
+              onSelect: () {
+                if (i != currentIndex) fushiSelectionHaptic(context);
+                onTap(i);
+              },
+            ),
+        ];
 
     // eink：surfaceContainer / surface 都塌成页面底色，底栏 / 侧栏与内容面连成
     // 一整块白（黑）；靠一条前景色边线把导航区切出来。
@@ -187,12 +192,22 @@ class _MaterialNavCluster extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                   vertical: kAdaptiveNavBarContentPadding,
                 ),
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: <Widget>[
-                      for (final Widget tile in tiles) Expanded(child: tile),
-                    ],
-                  ),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) {
+                    final double? cellWidth =
+                        box.hasBoundedWidth && items.isNotEmpty
+                            ? box.maxWidth / items.length
+                            : null;
+                    return IntrinsicHeight(
+                      child: Row(
+                        children: <Widget>[
+                          for (final Widget tile
+                              in buildTiles(cellWidth: cellWidth))
+                            Expanded(child: tile),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -229,7 +244,8 @@ class _MaterialNavCluster extends StatelessWidget {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: <Widget>[
-                              for (final Widget tile in tiles)
+                              for (final Widget tile
+                                  in buildTiles(cellWidth: null))
                                 Padding(
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 6),
@@ -263,6 +279,7 @@ class _NavFocusCell extends StatelessWidget {
     required this.selected,
     required this.horizontal,
     required this.onSelect,
+    this.cellWidth,
   });
 
   final FushiFocusId id;
@@ -271,9 +288,24 @@ class _NavFocusCell extends StatelessWidget {
   final bool horizontal;
   final VoidCallback onSelect;
 
+  /// 底栏单格可用宽度；null = 侧栏 / 宽度未知，按完整形态绘制。
+  final double? cellWidth;
+
   @override
   Widget build(BuildContext context) {
-    final Widget tile = _FushiNavTile(item: item, selected: selected);
+    final AdaptiveNavTileMetrics metrics =
+        AdaptiveNavTileMetrics.forCellWidth(cellWidth);
+    Widget tile = _FushiNavTile(
+      item: item,
+      selected: selected,
+      pillWidth: metrics.pillWidth,
+      showLabel: selected || !metrics.selectedLabelOnly,
+    );
+    if (metrics.selectedLabelOnly && !selected) {
+      // 2026-10 体验优化：未选中项不画标签时用 tooltip 补出名称；Tooltip 自带
+      // 语义标签，读屏与长按都能拿到入口名。
+      tile = Tooltip(message: item.label, child: tile);
+    }
     // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
     // dispatches it at the primary-focus context and walks UP the Actions chain.
     return Actions(
@@ -311,14 +343,23 @@ class _NavFocusCell extends StatelessWidget {
 /// 一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下
 /// [fushiMotionDuration] 归零，三处都瞬间到位，最终几何与配色不变。
 class _FushiNavTile extends StatelessWidget {
-  const _FushiNavTile({required this.item, required this.selected});
+  const _FushiNavTile({
+    required this.item,
+    required this.selected,
+    this.pillWidth = AdaptiveNavTileMetrics.fullPillWidth,
+    this.showLabel = true,
+  });
 
   final AdaptiveNavItem item;
   final bool selected;
 
-  /// 药丸展开后的宽 / 高（与 MD3 NavigationBar 指示器同尺寸）。
-  static const double _pillWidth = 64;
-  static const double _pillHeight = 32;
+  /// 药丸展开后的宽度：完整形态 64（MD3 指示器），窄格按格宽收窄。
+  final double pillWidth;
+
+  /// false 时标签只占位不绘制（保持各格图标同一基线，切换选中不跳动）。
+  final bool showLabel;
+
+  static const double _pillHeight = AdaptiveNavTileMetrics.pillHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -339,7 +380,7 @@ class _FushiNavTile extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         SizedBox(
-          width: _pillWidth,
+          width: pillWidth,
           height: _pillHeight,
           child: Center(
             child: TweenAnimationBuilder<double>(
@@ -355,7 +396,7 @@ class _FushiNavTile extends StatelessWidget {
                         ? Colors.transparent
                         : pillColor.withValues(alpha: pillColor.a * t);
                 return Container(
-                  width: _pillHeight + (_pillWidth - _pillHeight) * t,
+                  width: _pillHeight + (pillWidth - _pillHeight) * t,
                   height: _pillHeight,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
@@ -401,14 +442,57 @@ class _FushiNavTile extends StatelessWidget {
             color: selected ? colors.onSurface : colors.onSurfaceVariant,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
-          child: Text(
-            item.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          child: Visibility(
+            visible: showLabel,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ],
     );
+  }
+}
+
+/// 底栏单格的绘制尺寸（2026-10 体验优化）。
+///
+/// 格宽 ≥ [labelAllMinCellWidth] 时与 MD3 NavigationBar 相同：药丸 64、所有
+/// 入口都显示标签；更窄时切到「仅选中项显示标签」，药丸宽度随格宽收窄
+/// （扣掉格内左右 4dp 内边距），下限为图标药丸高度 32。
+@immutable
+class AdaptiveNavTileMetrics {
+  const AdaptiveNavTileMetrics({
+    required this.pillWidth,
+    required this.selectedLabelOnly,
+  });
+
+  /// 格宽低于该值就只给选中项显示标签。
+  static const double labelAllMinCellWidth = 64;
+  static const double fullPillWidth = 64;
+  static const double pillHeight = 32;
+
+  /// 格内左右合计内边距（见 [_NavFocusCell] 的 horizontal: 4）。
+  static const double _cellHorizontalPadding = 8;
+
+  final double pillWidth;
+  final bool selectedLabelOnly;
+
+  static AdaptiveNavTileMetrics forCellWidth(double? cellWidth) {
+    if (cellWidth == null || cellWidth >= labelAllMinCellWidth) {
+      return const AdaptiveNavTileMetrics(
+        pillWidth: fullPillWidth,
+        selectedLabelOnly: false,
+      );
+    }
+    final double pill = (cellWidth - _cellHorizontalPadding)
+        .clamp(pillHeight, fullPillWidth)
+        .toDouble();
+    return AdaptiveNavTileMetrics(pillWidth: pill, selectedLabelOnly: true);
   }
 }
 
