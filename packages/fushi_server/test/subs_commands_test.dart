@@ -228,7 +228,7 @@ void main() {
       );
       await withRt(
         (ServerRuntime rt) => runSubsCommand(
-          _parse(<String>['search', video.path]),
+          _parse(<String>['search', video.path, '--provider', 'jimaku']),
           rt: rt,
           io: CliIo(out: StringBuffer(), err: StringBuffer()),
           deps: deps,
@@ -343,7 +343,9 @@ void main() {
       final _FakeProvider provider = _FakeProvider(const <VideoSubtitleCandidate>[]);
       await withRt(
         (ServerRuntime rt) => runSubsCommand(
-          _parse(<String>['search', 'vid-1', '--season', '2']),
+          // 点名 jimaku：CI 会注入内置 OpenSubtitles key，不点名时 opensubtitles 也算可用，
+          // 假工厂对两家返回同一个实例，请求就记了两条。
+          _parse(<String>['search', 'vid-1', '--season', '2', '--provider', 'jimaku']),
           rt: rt,
           io: CliIo(out: StringBuffer(), err: StringBuffer()),
           deps: SubsDeps(
