@@ -4317,8 +4317,8 @@
   "video_subtitle_filter_all": "ทั้งหมด",
   "video_subtitle_filter_favorites": "รายการโปรด",
   "video_subtitle_filter_favorites_empty": "ยังไม่มีบรรทัดที่ชื่นชอบ",
-  "video_subtitle_graphic_hint": "คำบรรยายแบบกราฟิก · แสดงบนภาพ · ค้นคำไม่ได้",
-  "video_subtitle_graphic_shown": "แสดงคำบรรยายแบบกราฟิกบนภาพ (ค้นคำไม่ได้): $label",
+  "video_subtitle_graphic_hint": "คำบรรยายแบบกราฟิก · แสดงบนภาพ · หยุดชั่วคราวเพื่อค้นคำ (OCR)",
+  "video_subtitle_graphic_shown": "แสดงคำบรรยายแบบกราฟิกบนภาพ (หยุดชั่วคราวเพื่อค้นคำด้วย OCR): $label",
   "video_subtitle_import_failed": "นำเข้าคำบรรยายไม่สำเร็จ",
   "video_subtitle_import_file": "นำเข้าไฟล์คำบรรยาย…",
   "video_subtitle_import_unsupported": "รูปแบบคำบรรยายที่ไม่รองรับ",
@@ -6170,7 +6170,7 @@
   "anki_dedup_progress_indexing": "Reading notes to find media references… ($done / $total)",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "video_subtitle_graphic_learning_hint": "คำบรรยายแบบภาพจะถูกอ่านด้วย OCR เมื่อหยุดชั่วคราว แตะคำเพื่อค้นหา ใช้ \"แปลงเป็นคำบรรยายข้อความ\" ด้านล่างเพื่อค้นคำขณะเล่นได้เลย",
   "ai_feature_video_identify_assist_summary": "เมื่อการดึงข้อมูลพบผู้สมัครหลายรายการหรือไม่พบเลย ให้ AI เลือกผลงานที่ตรงกันหรือแนะนำชื่อเรื่องสำหรับค้นหา",
   "ai_feature_video_search_subtitle_summary": "ให้ AI จัดลำดับผลการค้นหาคำบรรยายใหม่เมื่อเติมคำบรรยายอัตโนมัติในเบื้องหลัง",
   "video_scrape_ai_declined": "AI not adopted",
@@ -6251,5 +6251,10 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works."
+  "ai_video_acquire_franchise_truncated": "The \"$name\" series is too large to look up in full — the list below may be missing some works.",
+  "video_subtitle_graphic_ocr_track": "แปลงเป็นคำบรรยายข้อความ (OCR)",
+  "video_subtitle_graphic_ocr_track_hint": "อ่านทั้งแทร็กครั้งเดียว จากนั้นแตะคำเพื่อค้นหาได้ขณะเล่น",
+  "video_subtitle_graphic_ocr_extracting": "กำลังดึงแทร็กคำบรรยายแบบภาพ…",
+  "video_subtitle_graphic_ocr_progress": "กำลังอ่านคำบรรยาย $done/$total",
+  "video_subtitle_graphic_ocr_empty": "ไม่พบข้อความในแทร็กคำบรรยายนี้"
 }

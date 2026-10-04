@@ -48,6 +48,14 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
     show MihonRuntimeException;
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
+import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
+import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
+import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_overlay.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
@@ -5858,6 +5866,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
+  /// 图形字幕 OCR 查词层。引擎解析与漫画在线直读同一口径（引擎偏好 / Lens 上传
+  /// 同意 / 低置信度交 AI 重读），见 `graphic_subtitle_ocr.dart`。
+  Widget _buildGraphicSubtitleOcrOverlay(VideoPlayerController controller) {
+    return VideoGraphicSubtitleOcrOverlay(
+      controller: controller,
+      fit: videoFitModeToBoxFit(_videoFitMode),
+      prepare: _prepareGraphicSubtitleOcr,
+      onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
+          _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, null),
+      onUnavailable: _reportGraphicSubtitleOcrUnavailable,
+      onError: (Object error, StackTrace stack) => ErrorLogService.instance.log(
+        'VideoFushiPage.graphicSubtitleOcr',
+        error,
+        stack,
+      ),
+    );
+  }
+
+  /// 图形字幕识别引擎：与漫画在线直读同一口径（引擎偏好 / Lens 上传同意 / AI 重读）。
+  Future<MangaStreamOcrSetup> _prepareGraphicSubtitleOcr(String workDirPath) {
+    return prepareMangaStreamOcr(
+      imageDirPath: workDirPath,
+      engines: MangaOcrWizardEngines.resolve(
+        context: context,
+        db: appModel.database,
+      ),
+      preference: MangaOcrEnginePreferenceKey.fromKey(
+        appModel.mangaOcrEnginePreference,
+      ),
+      lensLanguage: appModel.mangaOcrLensLanguage,
+      confirmLensUpload: () async =>
+          mounted && await ensureGoogleLensDisclosure(context),
+    );
+  }
+
+  void _reportGraphicSubtitleOcrUnavailable(
+    GraphicSubtitleOcrUnavailableReason reason,
+  ) {
+    // 拒绝 Lens 上传是用户自己的选择，不再提示。
+    if (reason == GraphicSubtitleOcrUnavailableReason.lensDeclined) return;
+    _showOsd(t.manga_reader_ocr_unavailable, severity: ToastSeverity.error);
+  }
+
   void _popNestedPopupAt(int index) {
     debugPrint(
       '[video-lookup] dismiss popup index=$index '
@@ -9227,6 +9278,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕抽取/解析当前是否在进行。状态显示在右侧半透明字幕源面板里，画面仍可见；
   /// 底层 ffmpeg/文件解析 Future 目前没有取消契约，关闭面板只是不再打断观看。
   bool _subtitleLoadingShown = false;
+
+  /// 正在把图形字幕轨整轨 OCR 成文字字幕（一次只跑一轨）。
+  bool _graphicSubtitleOcrRunning = false;
 
   @override
   Widget build(BuildContext context) {
