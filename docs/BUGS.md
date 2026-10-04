@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2695 条。点号进各自文件。
+> 共 2697 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2938](bugs/BUG-2938-desktop-ffmpeg-filters-probe-stdout.md) | ✅ | ✅ | 桌面端片段导出滤镜探测丢 stdout，硬字幕恒不烧 |
 | [BUG-2935](bugs/BUG-2935-mal-franchise-silent-truncation.md) | ✅ | ✅ | 「整套下载」MAL 关联链走到上限静默截断，哆啦A梦等长寿系列可能漏收作品 |
 | [BUG-2934](bugs/BUG-2934-coreaudio-release-date-hidden.md) | ✅ | ✅ | CoreAudio 发现页把纸书初版日期当有声书日期展示 |
 | [BUG-2933](bugs/BUG-2933-ai-acquire-which-is-best.md) | ✅ | ✅ | AI下视频问「哪个最好」被判没听懂（意图缺候选上下文） |
