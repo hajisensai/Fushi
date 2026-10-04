@@ -661,6 +661,11 @@ extension _VideoLayout on _VideoFushiPageState {
                             respectAssStyle: appModel.videoRespectAssStyle,
                           ),
                         ),
+                        // 图形字幕（PGS / VobSub / DVB）没有 cue：暂停时对画面做 OCR，
+                        // 识别出的字原位铺可点区域查词（非图形字幕 / 播放中零尺寸）。
+                        Positioned.fill(
+                          child: _buildGraphicSubtitleOcrOverlay(controller),
+                        ),
                         _buildOsdOverlay(),
                         // 在线视频后台制卡 / 看完再制卡的右上角角标（无任务时零尺寸）。
                         _buildMineQueueBadgeOverlay(),

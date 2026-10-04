@@ -626,57 +626,14 @@ async function fushiRemoveQueued(okIds) {
     await chrome.storage.local.set({ fushiQueue: remaining });
   } catch (_) {}
 }
-// 制卡结果分类（TODO-1184）：卡已建(success)或已存在(duplicate) → 出队(done，队列才会清)；
-// Anki 未配置(notConfigured) → 留队 + 提示用户去配（配好再点生成即可，出队会静默丢词）；
-// 其余(error / 网络失败 / 上下文失效) → 留队下次重试。只有 done 才 push 进 okIds 被剔除。
-// TODO-1331：把制卡请求的 HTTP/网络层失败翻成用户能懂的原因。resp 形状见 background.js：
-// HTTP 成功 {ok:true,status,data}；非 2xx {ok:false,status,data:null}；fetch 抛异常
-// （连接被拒/超时/DNS）{ok:false,error}。据此分 401 鉴权 / 404 端点 / 4xx-5xx 服务端 /
-// 连不上（无 status）四类，让扩展弹明确 ✗ 原因，而不是静默 retry 到「你看日志却查不到」。
-function fushiMineHttpFailureReason(resp) {
-  if (!resp) return fushiTr('mine_err_no_response');
-  const status = typeof resp.status === 'number' ? resp.status : 0;
-  if (status === 401) return fushiTr('mine_err_401');
-  if (status === 404) return fushiTr('mine_err_404');
-  if (status >= 500) return fushiTr('mine_err_5xx', { status });
-  if (status >= 400) return fushiTr('mine_err_4xx', { status, error: resp.error || fushiTr('mine_err_check_settings') });
-  // ok:false 且无 status = fetch 抛异常（连接被拒/超时/DNS）：server 没开或主机/端口错。
-  return fushiTr('mine_err_unreachable', { error: resp.error || fushiTr('mine_err_refused') });
-}
+// 制卡结果分类：判据住在 mine-outcome.js（与 background 的 YouTube 批量制卡共用同一份），
+// 这里只负责把 notice 弹成页面 toast（Netflix 回放录制在本页里跑）。
 function fushiClassifyMineResp(resp) {
-  // TODO-1331：HTTP/网络层失败不再静默 retry——弹 ✗ 原因让用户看得见（YouTube/Netflix
-  // 批量制卡共用本分类器，两条链路的 HTTP 失败都据此显因）。
-  if (!resp || !resp.ok || !resp.data) {
-    if (typeof window.fushiToast === 'function') {
-      // 401 / 其它 4xx 的文案就是让用户去扩展设置核对 token，故这两类做成可点直达设置页。
-      const st = resp && typeof resp.status === 'number' ? resp.status : 0;
-      const settingsFixable = st === 401 || (st >= 400 && st < 500 && st !== 404);
-      try {
-        window.fushiToast('✗ ' + fushiMineHttpFailureReason(resp), false, settingsFixable);
-      } catch (_) {}
-    }
-    return 'retry';
+  const o = window.fushiMineOutcome(resp, fushiTr);
+  if (o.notice && typeof window.fushiToast === 'function') {
+    try { window.fushiToast(o.notice, false, o.settingsFixable); } catch (_) {}
   }
-  const d = resp.data;
-  const r = d.result;
-  // TODO-1303：服务端现在回带诊断（message=失败原因/音频落空警告，
-  // detail=技术细节）。末尾弹 toast 显因，终结「制卡失败报成功 + 没提示」；
-  // app 侧已把失败写进错误日志。
-  const reason = (d.message || d.detail || '').toString();
-  if (r === 'success' || r === 'duplicate') {
-    // 部分成功：卡建好了但单词音频落空（message 非空）→ 与真成功区分，
-    // 弹警告但仍算 done（卡确实建了）。
-    if (r === 'success' && reason && typeof window.fushiToast === 'function') {
-      try { window.fushiToast('⚠ ' + reason); } catch (_) {}
-    }
-    return 'done';
-  }
-  if (r === 'notConfigured') return 'unconfigured';
-  // error / 其它：失败，弹原因（无原因回落通用文案）后重试。
-  if (typeof window.fushiToast === 'function') {
-    try { window.fushiToast('✗ ' + (reason || fushiTr('mine_err_failed_retry'))); } catch (_) {}
-  }
-  return 'retry';
+  return o.cls;
 }
 function fushiQueueLoad() {
   try {
@@ -1116,43 +1073,6 @@ function fushiResolveTheme(fallback) {
     ? 'dark'
     : 'light';
 }
-
-// 生成全部（YouTube）：逐条把 {videoId,起,止} 发服务端从真实流裁 → 出卡。无录屏、无回放。
-// 只移除**成功**的项（失败留在队列下次重试）；跨视频累积的 youtube 项都在此生成。
-window.fushiGenerateAll = async function () {
-  const items = fushiQueue.filter((q) => q.site === 'youtube' && q.youtubeId);
-  if (!items.length) {
-    window.fushiToast(fushiTr('gen_youtube_queue_empty'));
-    return;
-  }
-  if (!fushiExtAlive()) { window.fushiToast(fushiTr('gen_ext_updated_refresh')); return; }
-  let done = 0, fail = 0, unconfigured = 0;
-  const okIds = [];
-  window.fushiToast(fushiTr('gen_progress', { done: 0, total: items.length }), true);
-  for (const q of items) {
-    const cls = await new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({
-          type: 'mineYoutube', fields: q.fields, sentence: q.sentence,
-          youtubeVideoId: q.youtubeId, startMs: q.startV, endMs: q.endV,
-        }, (resp) => {
-          try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
-          resolve(fushiClassifyMineResp(resp));
-        });
-      } catch (_) { resolve('retry'); }
-    });
-    // done(成功/已存在)才出队；unconfigured/retry 留队（前者提示配 Anki，后者下次重试）。
-    if (cls === 'done') { done++; okIds.push(q.id); }
-    else { fail++; if (cls === 'unconfigured') unconfigured++; }
-    window.fushiToast(fushiTr('gen_progress', { done: done + fail, total: items.length }), true);
-  }
-  await fushiRemoveQueued(okIds);
-  if (unconfigured > 0) {
-    window.fushiToast(fushiTr('gen_partial_anki_unconfigured', { done, kept: fail }));
-  } else {
-    window.fushiToast(fushiTr('gen_done_processed', { done }) + (fail ? fushiTr('gen_done_failed_suffix', { fail }) : ''));
-  }
-};
 
 // ── Netflix 回放录制（DRM）：由 content 驱动，capture 经 background/offscreen（beginClip/endClip）──
 let fushiNfBatchRunning = false;
@@ -1613,8 +1533,10 @@ async function fushiMaybeResumeNetflixBatch(fromLoad) {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg) return;
-  if (msg.type === 'fushiToastMsg' && typeof window.fushiToast === 'function') window.fushiToast(msg.text);
-  else if (msg.type === 'fushiRunYoutube' && typeof window.fushiGenerateAll === 'function') window.fushiGenerateAll();
+  // background 推来的提示（YouTube 批量制卡进度/结果在 service worker 里跑，借当前页显示）。
+  if (msg.type === 'fushiToastMsg' && typeof window.fushiToast === 'function') {
+    window.fushiToast(msg.text, !!msg.sticky, !!msg.openSettings);
+  }
 });
 // 图标点击设 fushiNfBatch(active) → storage 变化触发就地续跑(本页无重载,fromLoad=false 不导航);
 // 切集重载后由 setTimeout(fromLoad=true) 驱动导航到目标集。

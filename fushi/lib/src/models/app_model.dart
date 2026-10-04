@@ -119,6 +119,8 @@ import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart'
+    show AudiobookshelfTokens;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
@@ -127,8 +129,10 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
@@ -169,7 +173,16 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
-    show createAsrTranscriptionService;
+    show createAsrTranscriptionService, isAsrSupported;
+import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
+    show
+        importDiscoveryAudiobook,
+        importDiscoverySubtitleAudiobook,
+        importTranscribedAudiobook,
+        isDuplicateDiscoveryAudiobookContent;
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
 import 'package:fushi/src/sync/backup_service.dart';
@@ -5340,6 +5353,10 @@ class AppModel with ChangeNotifier {
       // 按域入库；.torrent 元数据落 app 目录随任务持久化。
       discoveryImporter: (DiscoveryMediaKind kind, List<String> paths) =>
           discoveryImportExecutor.importPaths(kind, paths),
+      // 「只下载」有声书（CoreAudio/TMW 合集单卷）下完：同样交执行器分类——
+      // 只有音频 → 转录后入库队列（开关关 / 本机无 ASR 时什么也不做，任务
+      // 面板的「配对」入口照旧）。
+      onDownloadOnlyCompleted: _onDownloadOnlyCompleted,
       manualTorrentDirectory:
           Directory(path.join(appDirectory.path, 'manual_torrents')),
       updateFeed: updateFeedService,
@@ -5347,6 +5364,9 @@ class AppModel with ChangeNotifier {
       defaultTargetSourceId: _defaultVideoDownloadSourceId,
     )..start();
     _videoDownloadPipelineService = pipeline;
+    // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
+    // 任务目录里）。没有 ASR 的平台不建队列。
+    if (isAsrSupported) unawaited(audiobookTranscribeImportQueue.load());
     _videoDownloadKeepAlive =
         VideoDownloadJobsKeepAliveBinding(database.watchVideoDownloadJobs());
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(
@@ -5541,9 +5561,9 @@ class AppModel with ChangeNotifier {
 
   /// 发现页新内容类型（有声书/游戏）种子完成后的入库回调：整包路径交给
   /// [DiscoveryImportExecutor]（分类 → 解压 → 复用各域既有导入原语）。
-  /// 返回入库条目数；分类不出/解压失败抛 [DiscoveryImportBlockedException]，
+  /// 返回入库结果（条目数 / 移交转录）；分类不出/解压失败抛 [DiscoveryImportBlockedException]，
   /// service 侧收进 failReason 展示。
-  Future<int?> _importDiscoveryDownload(
+  Future<DiscoveryImportOutcome?> _importDiscoveryDownload(
     AnimeDownloadPlan plan,
     List<String> absolutePaths,
   ) async {
@@ -5553,9 +5573,7 @@ class AppModel with ChangeNotifier {
       _ => null,
     };
     if (kind == null) return null;
-    final DiscoveryImportOutcome outcome =
-        await discoveryImportExecutor.importPaths(kind, absolutePaths);
-    return outcome.importedCount;
+    return discoveryImportExecutor.importPaths(kind, absolutePaths);
   }
 
   /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
@@ -5566,9 +5584,96 @@ class AppModel with ChangeNotifier {
           srtBookRepo: SrtBookRepository(database),
           audiobookRepo: AudiobookRepository(database),
           galgameRepo: galgameRepo,
+          transcribeAudiobook: _transcribeDiscoveryAudiobook,
         ),
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
+
+  /// 本机是否在有声书下载后自动转录：用户开关 + 设备端 ASR 可用。
+  bool get audiobookAutoTranscribeActive =>
+      prefsRepo.audiobookAutoTranscribe && isAsrSupported;
+
+  /// 有声书「转录后入库」队列（懒建，app 生命周期常驻；落盘在数据库目录旁，
+  /// 重启后未完成的任务从断点续跑）。
+  AudiobookTranscribeImportQueue get audiobookTranscribeImportQueue =>
+      _audiobookTranscribeImportQueue ??= AudiobookTranscribeImportQueue(
+        store: File(
+          path.join(databaseDirectory.path, 'audiobook_transcribe_jobs.json'),
+        ),
+        transcriber: AppAudiobookTranscriber(
+          serviceFactory: createAsrTranscriptionService,
+          preferredLanguageTag: () => prefsRepo.asrTranscribeLanguage,
+        ),
+        importer: (AudiobookTranscribeJob job, String subtitlePath) =>
+            importTranscribedAudiobook(
+          db: database,
+          srtBookRepo: SrtBookRepository(database),
+          audiobookRepo: AudiobookRepository(database),
+          subtitlePath: subtitlePath,
+          audioPaths: job.audioPaths,
+          contentPath: job.contentPath,
+          title: job.title,
+        ),
+      );
+  AudiobookTranscribeImportQueue? _audiobookTranscribeImportQueue;
+
+  /// 导入执行器的 `transcribeAudiobook` 端口：素材库 → 转录队列 → 挡下。
+  Future<DiscoveryImportOutcome> _transcribeDiscoveryAudiobook(
+    TranscribeAudiobookPlan plan,
+  ) {
+    final SrtBookRepository srtBookRepo = SrtBookRepository(database);
+    return routeTranscribeAudiobookPlan(
+      plan,
+      autoTranscribeEnabled: audiobookAutoTranscribeActive,
+      contentAlreadyInLibrary: (String contentPath) =>
+          isDuplicateDiscoveryAudiobookContent(database, contentPath),
+      matchMaterials: (List<String> audioPaths, String title) =>
+          matchAudiobookMaterialsForAudio(
+        audiobookMaterialService,
+        audioPaths,
+        title,
+      ),
+      importNow: (DiscoveryImportPlan matched) => switch (matched) {
+        AlignAudiobookPlan() => importDiscoveryAudiobook(
+            db: database,
+            srtBookRepo: srtBookRepo,
+            audiobookRepo: AudiobookRepository(database),
+            plan: matched,
+          ),
+        SubtitleAudiobookPlan() => importDiscoverySubtitleAudiobook(
+            db: database,
+            srtBookRepo: srtBookRepo,
+            plan: matched,
+          ),
+        _ => throw ArgumentError.value(matched, 'matched'),
+      },
+      enqueue: ({
+        required List<String> audioPaths,
+        String? contentPath,
+        required String title,
+      }) =>
+          audiobookTranscribeImportQueue.enqueue(
+        audioPaths: audioPaths,
+        contentPath: contentPath,
+        title: title,
+      ),
+    );
+  }
+
+  Future<void> _onDownloadOnlyCompleted(
+    DiscoveryMediaKind kind,
+    List<String> paths,
+  ) async {
+    if (kind != DiscoveryMediaKind.audiobook) return;
+    try {
+      await discoveryImportExecutor.importPaths(kind, paths);
+    } on DiscoveryImportBlockedException catch (blocked) {
+      // 预期结果而非故障：不自动转录（开关关 / 无 ASR）且素材库也配不到字幕。
+      // 任务已正常完成，面板对这类任务给「配对」入口，与改前一致。
+      debugPrint('[audiobook-auto] download-only job left for pairing: '
+          '${blocked.blocker.name}');
+    }
+  }
 
   /// 有声书素材库（懒建）。目录由用户在设置里指定，扫描结果缓存在服务内；
   /// 改目录后调 [AudiobookMaterialService.refresh] 重扫。
@@ -5658,6 +5763,17 @@ class AppModel with ChangeNotifier {
       if (isPreferencesReady)
         for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
           if (site.enabled) AListDiscoverySource.fromConfig(site),
+      // 用户自配的 Audiobookshelf 服务器：同上。未登录的不登记——那样的源每次
+      // 浏览都必然以「未登录」失败，挂在来源下拉里只是一个必红的徽标。
+      if (isPreferencesReady)
+        for (final AudiobookshelfServerConfig server
+            in prefsRepo.discoveryAudiobookshelfServers)
+          if (server.enabled && server.isSignedIn)
+            AudiobookshelfDiscoverySource(
+              config: server,
+              onTokensChanged: (AudiobookshelfTokens tokens) =>
+                  persistAudiobookshelfTokens(server.id, tokens),
+            ),
     ]);
   }
 
@@ -5696,6 +5812,31 @@ class AppModel with ChangeNotifier {
     await prefsRepo.setDiscoveryAListSites(sites);
     await reloadDiscoverySources();
   }
+
+  /// 增删改 Audiobookshelf 服务器后的统一写回口（同 [setDiscoveryOpdsServers]）。
+  Future<void> setDiscoveryAudiobookshelfServers(
+    Iterable<AudiobookshelfServerConfig> servers,
+  ) async {
+    await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
+    await reloadDiscoverySources();
+  }
+
+  /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
+  /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。
+  ///
+  /// 只落偏好、**不**重建注册表：调用方就是注册表里正在跑请求的那个源实例，
+  /// 重建会把它 close 掉。它手上已经是新令牌，不需要重建来「生效」。
+  Future<void> persistAudiobookshelfTokens(
+    String configId,
+    AudiobookshelfTokens tokens,
+  ) =>
+      prefsRepo.setDiscoveryAudiobookshelfServers(
+        replaceAudiobookshelfTokens(
+          prefsRepo.discoveryAudiobookshelfServers,
+          configId,
+          tokens,
+        ),
+      );
 
   /// 「全部源」聚合排除的源 id（用户显式单选某源时不受限）。
   Set<String> get discoveryDisabledSourceIds => <String>{
@@ -6732,8 +6873,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
     await setScreenWakelock(enable: false, source: 'closeMedia');
-    // Returning to the home/menu shell: hide the Android status bar again
-    // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
+    // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
     // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
     // Windows OS drop registration in case an opened reader/video/lookup
@@ -7056,6 +7196,10 @@ class AppModel with ChangeNotifier {
   bool get audiobookBackgroundPlay => prefsRepo.audiobookBackgroundPlay;
   Future<void> setAudiobookBackgroundPlay({required bool value}) =>
       prefsRepo.setAudiobookBackgroundPlay(value: value);
+
+  bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
+  Future<void> setAudiobookAutoTranscribe({required bool value}) =>
+      prefsRepo.setAudiobookAutoTranscribe(value: value);
 
   // ── player streams & audio handler (delegated to AudioController) ───
 
@@ -7455,6 +7599,13 @@ class AppModel with ChangeNotifier {
     await _disposeVideoDownloadPipelineRuntime(
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
+    // 转录后入库队列：入库那一步写库，必须在关库前停下（在跑的入库等它写完；
+    // 在跑的转录在下一个检查点暂停，进度留在 ASR 任务目录，任务回到排队、下次
+    // 启动续跑）。置空：数据根可能随之迁移，下次按新目录重建。
+    final AudiobookTranscribeImportQueue? transcribeQueue =
+        _audiobookTranscribeImportQueue;
+    _audiobookTranscribeImportQueue = null;
+    await transcribeQueue?.close();
     // 扩展视频沉浸时间桥持 StudyClock 写链：关库前封段并等写完，否则最后一段丢、
     // 或 stop 落在已关闭连接上抛「connection was closed」。幂等，可与
     // stopYomitanApiServer 重复调。

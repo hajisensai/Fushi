@@ -172,9 +172,40 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     });
   }
 
+  /// 删除单条游玩会话。
+  ///
+  /// 2026-10 体验优化：原先垃圾桶一点即删、不可撤销，会话又直接参与总时长 /
+  /// 每日折线统计，误触就丢数据——先确认（标出是哪一次），删完给 Toast。
   Future<void> _deleteSession(GalgameSessionRow row) async {
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text(t.game_stat_delete_session),
+            content: Text(
+              '${formatGalgameSessionRange(row)}'
+              ' · ${formatStatTime(row.durationSeconds * 1000)}',
+            ),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
     await _repo.deleteSession(row.id);
     await _load();
+    if (!mounted) return;
+    FushiToast.show(msg: t.storage_entry_delete_done);
   }
 
   /// 「加入合集」：mediaType=[MediaKind.game]、entryKey=`galgames.id`（本机局域
@@ -603,28 +634,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       children: <Widget>[
         // 四个 KPI 收进一块中性信息底（MD3 surfaceContainerHigh r12 / Apple
         // tertiaryFill r10）：裸文字行与下方折线图、会话列表没有分组边界，
-        // 读起来像散落的标签。两套设计系统都包这一层，结构恒定。
+        // 读起来像散落的标签。两套设计系统都包这一层，结构恒定；内部宽窄屏
+        // 排布（一行 / 2×2）由 [_buildKpis] 决定。
         DecoratedBox(
           decoration: fushiNeutralBlockDecoration(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: <Widget>[
-                _kpi(theme, t.game_stat_total_time,
-                    formatStatTime(game.totalPlaySeconds * 1000)),
-                _kpi(theme, t.game_stat_sessions, '${game.sessionCount}'),
-                _kpi(
-                    theme, t.game_stat_today, formatStatTime(_todaySeconds * 1000)),
-                _kpi(
-                  theme,
-                  t.game_stat_last_played,
-                  game.lastPlayedMs <= 0
-                      ? t.game_never_played
-                      : formatGalgameDate(
-                          DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs)),
-                ),
-              ],
-            ),
+            child: _buildKpis(theme, game),
           ),
         ),
         const SizedBox(height: 20),
@@ -638,9 +654,16 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             ),
             FushiSegmentedButton<int>(
               showSelectedIcon: false,
-              segments: const <ButtonSegment<int>>[
-                ButtonSegment<int>(value: 7, label: Text('7D')),
-                ButtonSegment<int>(value: 30, label: Text('30D')),
+              // 2026-10 体验优化：原硬编码 '7D' / '30D' 不随语言变化。
+              segments: <ButtonSegment<int>>[
+                ButtonSegment<int>(
+                  value: 7,
+                  label: Text(t.stat_format_days(n: 7)),
+                ),
+                ButtonSegment<int>(
+                  value: 30,
+                  label: Text(t.stat_format_days(n: 30)),
+                ),
               ],
               selected: <int>{_rangeDays},
               onSelectionChanged: (Set<int> s) => unawaited(_setRange(s.first)),
@@ -712,8 +735,59 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
+  /// 四个 KPI。
+  ///
+  /// 2026-10 体验优化：窄屏（<480）四格挤一行时「总时长 12h 34m」「最后游玩
+  /// 2026-10-04」这类值被截成省略号。窄屏改 2×2，值再套 `FittedBox` 兜底。
+  Widget _buildKpis(ThemeData theme, GalgameEntry game) {
+    final List<Widget> cells = <Widget>[
+      _kpi(theme, t.game_stat_total_time,
+          formatStatTime(game.totalPlaySeconds * 1000)),
+      _kpi(theme, t.game_stat_sessions, '${game.sessionCount}'),
+      _kpi(theme, t.game_stat_today, formatStatTime(_todaySeconds * 1000)),
+      _kpi(
+        theme,
+        t.game_stat_last_played,
+        game.lastPlayedMs <= 0
+            ? t.game_never_played
+            : formatGalgameDate(
+                DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs)),
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth >= 480) {
+          return Row(
+            children: <Widget>[
+              for (final Widget cell in cells) Expanded(child: cell),
+            ],
+          );
+        }
+        return Column(
+          key: const ValueKey<String>('galgame_detail_kpi_grid'),
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(child: cells[0]),
+                Expanded(child: cells[1]),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(child: cells[2]),
+                Expanded(child: cells[3]),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _kpi(ThemeData theme, String label, String value) {
-    return Expanded(
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -725,11 +799,14 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
-          Text(
-            value,
-            style: theme.textTheme.titleMedium,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              value,
+              style: theme.textTheme.titleMedium,
+              maxLines: 1,
+            ),
           ),
         ],
       ),

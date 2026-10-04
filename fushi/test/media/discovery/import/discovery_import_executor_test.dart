@@ -29,6 +29,14 @@ DiscoveryDomainImporters _recordingImporters(List<String> log) {
           '+${plan.audioPaths.length}');
       return 'key-audiobook';
     },
+    importSubtitleAudiobook: (SubtitleAudiobookPlan plan) async {
+      log.add('subtitle-book:${plan.subtitlePath}+${plan.audioPaths.length}');
+      return 'key-subtitle-book';
+    },
+    transcribeAudiobook: (TranscribeAudiobookPlan plan) async {
+      log.add('transcribe:${plan.contentPath}+${plan.audioPaths.length}');
+      return const DiscoveryImportOutcome(summary: 'queued', deferred: true);
+    },
     importMangaArchive: (String path) async {
       log.add('manga:$path');
       return 'key-manga';
@@ -290,5 +298,63 @@ void main() {
         ),
       ),
     );
+  });
+
+  group('有声书缺料分流', () {
+    Future<File> touch(String name) async {
+      final File f = File('${tempDir.path}${Platform.pathSeparator}$name');
+      await f.writeAsString(name);
+      return f;
+    }
+
+    test('字幕 + 音频、无正文 → 独立字幕书', () async {
+      final List<String> log = <String>[];
+      final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+        importers: _recordingImporters(log),
+      );
+      final File srt = await touch('book.srt');
+      final File mp3 = await touch('01.mp3');
+      final DiscoveryImportOutcome outcome = await executor.importPaths(
+        DiscoveryMediaKind.audiobook,
+        <String>[srt.path, mp3.path],
+      );
+      expect(outcome.importedCount, 1);
+      expect(outcome.deferred, isFalse);
+      expect(log.single, startsWith('subtitle-book:'));
+    });
+
+    test('只有音频 → 转录端口,结果按 deferred 带回', () async {
+      final List<String> log = <String>[];
+      final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+        importers: _recordingImporters(log),
+      );
+      final File a = await touch('Part 10.mp3');
+      final File b = await touch('Part 2.mp3');
+      final DiscoveryImportOutcome outcome = await executor.importPaths(
+        DiscoveryMediaKind.audiobook,
+        <String>[a.path, b.path],
+      );
+      expect(outcome.importedCount, 0);
+      expect(outcome.deferred, isTrue);
+      expect(log.single, 'transcribe:null+2');
+    });
+
+    test('音频 + 装着字幕/正文的压缩包 → 先解压再分类,不白跑转录', () async {
+      final List<String> log = <String>[];
+      final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+        importers: _recordingImporters(log),
+        extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+      );
+      final File mp3 = await touch('01.mp3');
+      final File zip = await _writeZip(tempDir, 'extras.zip', <String, String>{
+        'book.epub': 'epub',
+        'book.srt': '1\n00:00:00,000 --> 00:00:01,000\nx\n',
+      });
+      await executor.importPaths(DiscoveryMediaKind.audiobook, <String>[
+        mp3.path,
+        zip.path,
+      ]);
+      expect(log.single, startsWith('audiobook:'));
+    });
   });
 }

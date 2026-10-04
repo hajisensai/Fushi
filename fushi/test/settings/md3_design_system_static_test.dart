@@ -1031,10 +1031,6 @@ void main() {
           'content, not page chrome — the same reviewed media-page '
           'exception class as the parent video player page allowlist entry '
           'and the sibling video_quick_settings_sheet caption font size.',
-      'lib/src/pages/implementations/home_video_page.dart':
-          'Home video grid renders media content badges/download progress; '
-          'long-press management actions use the shared media dialog frame, '
-          'not bespoke bottom-sheet chrome.',
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
           'checkbox rows (transient video-subsystem content).',
@@ -1302,9 +1298,6 @@ void main() {
       },
       'lib/src/pages/implementations/history_reader_page.dart': <String>{
         'surfaceContainerHighest',
-      },
-      'lib/src/pages/implementations/home_video_page.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
         'ListTile(',

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
-    show DialogListAction;
+    show DialogListAction, MediaItemDialogFrame;
 import 'package:fushi/utils.dart';
 
 /// 三库页统一合集上下文菜单的**行为**守卫（破坏性分支优先）。
@@ -48,6 +49,7 @@ void main() {
     String? localFilesSubtitle,
     String? statisticsSubtitle,
     List<DialogListAction> extraListActions = const <DialogListAction>[],
+    ImageProvider? coverImage,
   }) async {
     final _Probe probe = _Probe();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -84,6 +86,7 @@ void main() {
                   deleteMembersLocalFilesSubtitle: localFilesSubtitle,
                   deleteMembersStatisticsSubtitle: statisticsSubtitle,
                   extraListActions: extraListActions,
+                  coverImage: coverImage,
                 ),
                 child: const Text('open'),
               ),
@@ -360,6 +363,39 @@ void main() {
 
     await tapDeleteAction(tester);
     expect(find.byType(Checkbox), findsNothing);
+  });
+
+  // 2026-10-04：合集菜单此前没有封面块，一眼认不出是哪个合集。传入图源时与书卡
+  // 菜单同形：前景 contain 封面 + 两侧同图模糊垫底；不传则不画封面块。
+  testWidgets('coverImage：画出封面块与模糊垫底，不传则没有封面块',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    const ValueKey<String> backdropKey =
+        ValueKey<String>('media_item_dialog_cover_backdrop');
+
+    await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: false,
+    );
+    expect(find.byKey(backdropKey), findsNothing);
+    expect(find.byType(Image), findsNothing);
+    Navigator.of(tester.element(find.byType(MediaItemDialogFrame))).pop();
+    await tester.pumpAndSettle();
+
+    await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: false,
+      coverImage: MemoryImage(Uint8List.fromList(const <int>[0])),
+    );
+    expect(find.byKey(backdropKey), findsOneWidget);
+    // 前景封面 + 垫底各一张。
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('顶部主按钮 = 打开详情（不写库、不触发 onChanged）', (WidgetTester tester) async {

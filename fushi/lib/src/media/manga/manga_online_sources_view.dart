@@ -20,6 +20,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -102,7 +103,8 @@ class _MangaOnlineSourcesViewState
         _aidokuError = null;
       });
       unawaited(_refreshAidokuRepositories());
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('Aidoku.repositories.load', error, stack);
       if (!mounted) return;
       setState(() => _aidokuError = error);
     }
@@ -250,8 +252,8 @@ class _MangaOnlineSourcesViewState
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('Aidoku.install.local', error, stack);
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -294,8 +296,8 @@ class _MangaOnlineSourcesViewState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -322,8 +324,8 @@ class _MangaOnlineSourcesViewState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -355,7 +357,8 @@ class _MangaOnlineSourcesViewState
             ),
           );
       if (mounted) setState(() => _aidokuIndexes = indexes);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('Aidoku.repositories.fetch', error, stack);
       if (mounted) setState(() => _aidokuError = error);
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -428,7 +431,10 @@ class _MangaOnlineSourcesViewState
       }
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -464,7 +470,10 @@ class _MangaOnlineSourcesViewState
       if (mounted) setState(() => _aidokuPackages = packages);
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -481,7 +490,10 @@ class _MangaOnlineSourcesViewState
       if (mounted) setState(() => _aidokuPackages = packages);
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -559,8 +571,8 @@ class _MangaOnlineSourcesViewState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (temporaryDirectory != null && await temporaryDirectory.exists()) {
@@ -655,7 +667,7 @@ class _MangaOnlineSourcesViewState
       Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Text(
-          '$_aidokuError',
+          describeOnlineSourceError(_aidokuError!),
           style: TextStyle(color: Theme.of(context).colorScheme.error),
         ),
       ),
@@ -790,7 +802,9 @@ class _MangaOnlineSourcesViewState
                     ? t.aidoku_repository_install
                     : update
                     ? t.aidoku_repository_update
-                    : t.aidoku_extension_remove,
+                    // 2026-10 体验优化：行内按钮与 Mihon / LNReader 同叫「卸载」，
+                    // 长文案「移除 Aidoku 扩展」只留给确认框标题。
+                    : t.mihon_extension_uninstall,
                 onPrimary: _aidokuInstallingSourceId != null
                     ? null
                     : package == null || update
@@ -812,7 +826,7 @@ class _MangaOnlineSourcesViewState
             enabled: package.enabled,
             onEnabledChanged: (bool value) =>
                 unawaited(_setAidokuEnabled(package, value)),
-            primaryLabel: t.aidoku_extension_remove,
+            primaryLabel: t.mihon_extension_uninstall,
             onPrimary: () => unawaited(_removeAidoku(package)),
           ),
         if (available.isEmpty && installed.isEmpty && !_aidokuBusy)
@@ -1093,8 +1107,8 @@ class _AidokuRepositorySourcesDialogState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _error = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (temporaryDirectory != null && await temporaryDirectory.exists()) {
@@ -1113,8 +1127,8 @@ class _AidokuRepositorySourcesDialogState
       await widget.onInstalled();
     } on Object catch (error) {
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _error = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -1142,7 +1156,7 @@ class _AidokuRepositorySourcesDialogState
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '$_error',
+                  describeOnlineSourceError(_error!),
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),

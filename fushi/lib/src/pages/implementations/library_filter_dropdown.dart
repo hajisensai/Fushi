@@ -288,6 +288,10 @@ class LibrarySearchField extends StatelessWidget {
 ///   筛选左对齐、放不下时横向滚动而不是换行；工具恒贴右。
 /// - 窄屏：第一行 `[搜索(撑满)] [工具]`，第二行筛选胶囊整宽横滚。
 ///
+/// - 窄屏且给了 [compactTrailing]：第一行搜索框**独占**整行（不与工具抢宽），
+///   第二行 `[筛选胶囊… 横滚] [compactTrailing]`——行尾工具多的库页（游戏库：
+///   刮削 / 排序 / 筛选 / 标签）在窄屏把次要动作收进溢出菜单，交给调用方装配。
+///
 /// 焦点顺序固定为 搜索 → 筛选 → 工具（[OrderedTraversalPolicy]），与布局无关。
 /// 与下方内容的分隔靠留白，不画分隔线。
 class LibraryToolbar extends StatelessWidget {
@@ -295,7 +299,9 @@ class LibraryToolbar extends StatelessWidget {
     required this.search,
     this.filters = const <Widget>[],
     this.trailing,
+    this.compactTrailing,
     this.filtersKey,
+    this.compactKey,
     super.key,
   });
 
@@ -307,8 +313,14 @@ class LibraryToolbar extends StatelessWidget {
   final List<Widget> filters;
   final Widget? trailing;
 
+  /// 窄屏专用行尾工具（见类注释）；为 null 时窄屏沿用 [trailing] 贴在搜索框右侧。
+  final Widget? compactTrailing;
+
   /// 挂在筛选横滚区上的 key。
   final Key? filtersKey;
+
+  /// 窄屏布局时挂在整块工具条上的 key（测试按它判定走了窄屏两行布局）。
+  final Key? compactKey;
 
   Widget _filterStrip({required bool wide}) {
     return HorizontalDragScrollable(
@@ -348,11 +360,13 @@ class LibraryToolbar extends StatelessWidget {
                 order: const NumericFocusOrder(2),
                 child: _filterStrip(wide: wide),
               );
-        final Widget? trailingSlot = trailing == null
+        final Widget? trailingWidget =
+            !wide && compactTrailing != null ? compactTrailing : trailing;
+        final Widget? trailingSlot = trailingWidget == null
             ? null
             : FocusTraversalOrder(
                 order: const NumericFocusOrder(3),
-                child: trailing!,
+                child: trailingWidget,
               );
         final Widget body;
         if (wide) {
@@ -374,8 +388,36 @@ class LibraryToolbar extends StatelessWidget {
               ],
             ),
           );
+        } else if (compactTrailing != null) {
+          body = Padding(
+            key: compactKey,
+            padding: const EdgeInsets.only(top: 8, bottom: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                  child: searchSlot,
+                ),
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: _hPad),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: filterSlot ?? const SizedBox.shrink(),
+                      ),
+                      trailingSlot!,
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
         } else {
           body = Padding(
+            key: compactKey,
             padding: const EdgeInsets.only(top: 8, bottom: 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,

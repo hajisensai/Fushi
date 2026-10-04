@@ -857,11 +857,21 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.behavior,
               order: 15,
             ),
+            // 2026-10 体验优化：重置会丢掉用户自定义的控件排列，先确认
+            // （destructive），完成后给一条提示，否则点了看不出有没有生效。
             onTap: (SettingsContext c) async {
+              final bool confirmed = await showSettingsConfirmationDialog(
+                c,
+                title: t.reader_control_reset_layout,
+                body: t.reader_control_layout_reset_confirm,
+                destructive: true,
+              );
+              if (!confirmed) return;
               await c.appModel.setReaderControlLayout(
                 ReaderControlLayout.defaults,
               );
               notifyReaderChromeReanchored(c);
+              FushiToast.show(msg: t.reader_control_layout_reset_done);
             },
           ),
           // 悬浮球不在这里：唯一入口是 设置 → 悬浮球（阅读器场景的按钮在那里勾选）。

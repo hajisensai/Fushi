@@ -3230,7 +3230,19 @@ $kSentenceAudioRubyGapJs
     // (HBK-REG-004)
     var inFlight = this._reanchorPending === true;
     var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
-    var scrollBefore = inFlight ? 0 : this.getPagePosition(this.getScrollContext());
+    var contextBefore = inFlight ? null : this.getScrollContext();
+    var scrollBefore = contextBefore ? this.getPagePosition(contextBefore) : 0;
+    // hintScroll is interpreted by scrollToCharOffset using the *current*
+    // pageSize. Chrome inset changes can change that pitch (especially
+    // vertical pagination, where top/bottom safe-area insets change the
+    // column height). Carrying raw pixels across the reflow therefore changes
+    // the implied page number: e.g. page 40 at an 800px pitch becomes page 39
+    // when the new pitch is 824px. Android lock/unlock can toggle those system
+    // insets, turning that mismatch into a one-page-back ratchet. Preserve the
+    // old logical page number and rematerialize its hint in the new pitch.
+    var hintPageBefore = contextBefore && contextBefore.pageSize > 0
+      ? Math.round(scrollBefore / contextBefore.pageSize)
+      : null;
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     // Chrome insets participate in the paginated column-width/pageStep CSS.
@@ -3253,7 +3265,11 @@ $kSentenceAudioRubyGapJs
     var self = this;
     this._reanchorFrame(function() {
       try {
-        self.scrollToCharOffset(charOffset, scrollBefore);
+        var contextAfter = self.getScrollContext();
+        var hintScroll = hintPageBefore !== null && contextAfter.pageSize > 0
+          ? hintPageBefore * contextAfter.pageSize
+          : scrollBefore;
+        self.scrollToCharOffset(charOffset, hintScroll);
       } finally {
         self._setReanchorPending(false);
       }

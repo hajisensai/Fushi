@@ -251,7 +251,12 @@ class _MaterialNavCluster extends StatelessWidget {
   final bool glassContentUnder;
   final int? glassSearchIndex;
 
-  Widget _cell(BuildContext context, int i, {bool iconOnly = false}) {
+  Widget _cell(
+    BuildContext context,
+    int i, {
+    bool iconOnly = false,
+    double? cellWidth,
+  }) {
     return _NavFocusCell(
       id: FushiFocusId('$idPrefix-$i'),
       item: items[i],
@@ -259,6 +264,7 @@ class _MaterialNavCluster extends StatelessWidget {
       horizontal: axis == Axis.horizontal,
       extended: axis == Axis.vertical && extended,
       iconOnly: iconOnly,
+      cellWidth: cellWidth,
       onSelect: () {
         if (i != currentIndex) fushiSelectionHaptic(context);
         onTap(i);
@@ -402,9 +408,14 @@ class _MaterialNavCluster extends StatelessWidget {
     // 侧栏是否展开（图标 + 文字横排）；收起的 rail 与底栏都是「图标为主」。
     final bool railExtended = !horizontal && extended;
 
-    final List<Widget> tiles = <Widget>[
-      for (int i = 0; i < items.length; i++) _cell(context, i),
-    ];
+    // 2026-10 体验优化：MD3 底栏格宽不足时（手机竖屏最多 8 个入口，每格约
+    // 45dp）只给选中项显示标签、其余仅图标 + tooltip / 语义标签（MD3 允许的
+    // 「仅选中项显示标签」形态），药丸宽度按格宽收窄而不是被硬压溢出。
+    // 侧栏与玻璃胶囊恒为完整形态（cellWidth: null）。
+    List<Widget> buildTiles({required double? cellWidth}) => <Widget>[
+          for (int i = 0; i < items.length; i++)
+            _cell(context, i, cellWidth: cellWidth),
+        ];
 
     // eink：surfaceContainer / surface 都塌成页面底色，底栏 / 侧栏与内容面连成
     // 一整块白（黑）；靠一条前景色边线把导航区切出来。
@@ -492,13 +503,22 @@ class _MaterialNavCluster extends StatelessWidget {
                         ),
                   child: glassDesign
                       ? _buildGlassTabBar(context)
-                      : IntrinsicHeight(
-                          child: Row(
-                            children: <Widget>[
-                              for (final Widget tile in tiles)
-                                Expanded(child: tile),
-                            ],
-                          ),
+                      : LayoutBuilder(
+                          builder: (BuildContext context, BoxConstraints box) {
+                            final double? cellWidth =
+                                box.hasBoundedWidth && items.isNotEmpty
+                                    ? box.maxWidth / items.length
+                                    : null;
+                            return IntrinsicHeight(
+                              child: Row(
+                                children: <Widget>[
+                                  for (final Widget tile
+                                      in buildTiles(cellWidth: cellWidth))
+                                    Expanded(child: tile),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                 ),
               ),
@@ -568,7 +588,8 @@ class _MaterialNavCluster extends StatelessWidget {
                       child: Column(
                         children: <Widget>[
                           const SizedBox(height: 8),
-                          for (final Widget tile in tiles)
+                          for (final Widget tile
+                              in buildTiles(cellWidth: null))
                             Padding(
                               padding: EdgeInsets.symmetric(
                                 vertical: glassDesign
@@ -947,6 +968,7 @@ class _NavFocusCell extends StatelessWidget {
     required this.onSelect,
     this.extended = true,
     this.iconOnly = false,
+    this.cellWidth,
   });
 
   final FushiFocusId id;
@@ -961,16 +983,31 @@ class _NavFocusCell extends StatelessWidget {
   /// 只画图标的圆形目的地（Apple 底栏的搜索圆钮 / 最小化圆）。
   final bool iconOnly;
 
+  /// MD3 底栏单格可用宽度；null = 侧栏 / 玻璃胶囊 / 宽度未知，按完整形态绘制。
+  final double? cellWidth;
+
   @override
   Widget build(BuildContext context) {
     final bool glassDesign = isGlassDesign(context);
-    final Widget tile = _FushiNavTile(
+    // 2026-10 体验优化只作用于 MD3 底栏：格宽不足时只给选中项显示标签、药丸
+    // 按格宽收窄。玻璃胶囊（iOS 26）与侧栏恒为完整形态。
+    final AdaptiveNavTileMetrics metrics = AdaptiveNavTileMetrics.forCellWidth(
+      horizontal && !glassDesign && !iconOnly ? cellWidth : null,
+    );
+    Widget tile = _FushiNavTile(
       item: item,
       selected: selected,
       horizontal: horizontal,
       extended: extended,
       iconOnly: iconOnly,
+      pillWidth: metrics.pillWidth,
+      showLabel: selected || !metrics.selectedLabelOnly,
     );
+    if (metrics.selectedLabelOnly && !selected) {
+      // 未选中项不画标签时用 tooltip 补出名称；Tooltip 自带语义标签，读屏与
+      // 长按都能拿到入口名。
+      tile = Tooltip(message: item.label, child: tile);
+    }
     // MD3 展开 rail 的行靠起始边（药丸包住图标 + 文字），其余居中。
     final bool materialRailRow = !glassDesign && !horizontal && extended;
     // 玻璃：按压反馈与选中态都是中性灰填充，桌面侧栏行悬停给一层最浅的
@@ -1048,6 +1085,8 @@ class _FushiNavTile extends StatelessWidget {
     this.horizontal = true,
     this.extended = true,
     this.iconOnly = false,
+    this.pillWidth = AdaptiveNavTileMetrics.fullPillWidth,
+    this.showLabel = true,
   });
 
   final AdaptiveNavItem item;
@@ -1210,9 +1249,14 @@ class _FushiNavTile extends StatelessWidget {
     );
   }
 
-  /// 药丸展开后的宽 / 高（M3 Expressive 导航栏 / 收起 rail 指示器 56×32）。
-  static const double _pillWidth = _kMaterialPillWidth;
-  static const double _pillHeight = _kMaterialPillHeight;
+  /// MD3 药丸展开后的宽度：完整形态 56（M3 Expressive 导航栏 / 收起 rail
+  /// 指示器 56×32），MD3 底栏窄格按格宽收窄（见 [AdaptiveNavTileMetrics]）。
+  final double pillWidth;
+
+  /// false 时标签只占位不绘制（保持各格图标同一基线，切换选中不跳动）。
+  final bool showLabel;
+
+  static const double _pillHeight = AdaptiveNavTileMetrics.pillHeight;
 
   /// MD3 展开 rail 的一行（M3 Expressive expanded navigation rail）：行高 56，
   /// 24 图标 + 14 号 w500 标签横排，选中是包住图标与文字的全圆角
@@ -1295,7 +1339,7 @@ class _FushiNavTile extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         SizedBox(
-          width: _pillWidth,
+          width: pillWidth,
           height: _pillHeight,
           child: Center(
             child: TweenAnimationBuilder<double>(
@@ -1306,7 +1350,7 @@ class _FushiNavTile extends StatelessWidget {
                 // t 落到端点时直接用目标色：settle 后的药丸与改造前逐值相同
                 // （eink 守卫按 `decoration.color == onSurface` 断言）。
                 final double width =
-                    _pillHeight + (_pillWidth - _pillHeight) * t;
+                    _pillHeight + (pillWidth - _pillHeight) * t;
                 final Color fill = t >= 1
                     ? pillColor
                     : t <= 0
@@ -1362,14 +1406,58 @@ class _FushiNavTile extends StatelessWidget {
             color: selected ? colors.onSurface : colors.onSurfaceVariant,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
-          child: Text(
-            item.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          child: Visibility(
+            visible: showLabel,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ],
     );
+  }
+}
+
+/// 底栏单格的绘制尺寸（2026-10 体验优化）。
+///
+/// 格宽 ≥ [labelAllMinCellWidth] 时与 M3 Expressive 导航栏相同：药丸 56、
+/// 所有入口都显示标签；更窄时切到「仅选中项显示标签」，药丸宽度随格宽收窄
+/// （扣掉格内左右 4dp 内边距），下限为图标药丸高度 32。只作用于 MD3 底栏；
+/// 玻璃胶囊与侧栏恒为完整形态。
+@immutable
+class AdaptiveNavTileMetrics {
+  const AdaptiveNavTileMetrics({
+    required this.pillWidth,
+    required this.selectedLabelOnly,
+  });
+
+  /// 格宽低于该值就只给选中项显示标签。
+  static const double labelAllMinCellWidth = 64;
+  static const double fullPillWidth = _kMaterialPillWidth;
+  static const double pillHeight = _kMaterialPillHeight;
+
+  /// 格内左右合计内边距（见 [_NavFocusCell] 的 horizontal: 4）。
+  static const double _cellHorizontalPadding = 8;
+
+  final double pillWidth;
+  final bool selectedLabelOnly;
+
+  static AdaptiveNavTileMetrics forCellWidth(double? cellWidth) {
+    if (cellWidth == null || cellWidth >= labelAllMinCellWidth) {
+      return const AdaptiveNavTileMetrics(
+        pillWidth: fullPillWidth,
+        selectedLabelOnly: false,
+      );
+    }
+    final double pill = (cellWidth - _cellHorizontalPadding)
+        .clamp(pillHeight, fullPillWidth)
+        .toDouble();
+    return AdaptiveNavTileMetrics(pillWidth: pill, selectedLabelOnly: true);
   }
 }
 

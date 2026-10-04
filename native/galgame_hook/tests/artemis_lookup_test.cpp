@@ -780,6 +780,43 @@ void TestLeftButtonClaim() {
   assert(!decision.mask && !decision.submit && !claim.owned);
 }
 
+void TestSubFrameTap() {
+  core::TapLatch latch;
+  // A touch tap: down and up on the same glyph, the sampler never saw it.
+  core::ArmTap(&latch, true, 7u, 3u, 2u);
+  assert(latch.armed);
+  assert(core::ReleaseTap(&latch, 7u, true, 3u, 2u));
+  assert(!latch.armed);
+  // One down is at most one lookup.
+  assert(!core::ReleaseTap(&latch, 7u, true, 3u, 2u));
+
+  // A mouse press the sampler saw between down and up stays the claim's.
+  core::ArmTap(&latch, true, 7u, 3u, 2u);
+  assert(!core::ReleaseTap(&latch, 8u, true, 3u, 2u));
+  assert(!latch.armed);
+
+  // Released off the glyph, on another glyph, or after the model changed.
+  core::ArmTap(&latch, true, 7u, 3u, 2u);
+  assert(!core::ReleaseTap(&latch, 7u, false, 0u, 0u));
+  core::ArmTap(&latch, true, 7u, 3u, 2u);
+  assert(!core::ReleaseTap(&latch, 7u, true, 3u, 1u));
+  core::ArmTap(&latch, true, 7u, 3u, 2u);
+  assert(!core::ReleaseTap(&latch, 7u, true, 4u, 2u));
+
+  // A down that is not on a glyph (or has no model) arms nothing and forgets
+  // an older armed press.
+  core::ArmTap(&latch, true, 7u, 3u, 2u);
+  core::ArmTap(&latch, false, 7u, 3u, 2u);
+  assert(!latch.armed);
+  assert(!core::ReleaseTap(&latch, 7u, true, 3u, 2u));
+  core::ArmTap(&latch, true, 7u, 0u, 2u);
+  assert(!latch.armed);
+  // An up without a down never submits.
+  assert(!core::ReleaseTap(&latch, 7u, true, 3u, 2u));
+  core::ArmTap(nullptr, true, 7u, 3u, 2u);
+  assert(!core::ReleaseTap(nullptr, 7u, true, 3u, 2u));
+}
+
 void TestHitTest() {
   core::ModelGlyph glyphs[3];
   glyphs[0].rect = {340, 552, 27, 41};
@@ -909,6 +946,7 @@ int main() {
   TestArchiveSetLeaf();
   TestRangeStartingAt();
   TestLeftButtonClaim();
+  TestSubFrameTap();
   TestHitTest();
   std::puts("artemis_lookup_test: ok");
   return 0;

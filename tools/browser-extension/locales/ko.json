@@ -300,7 +300,6 @@
   "ctx_confirm": "카드 만들기",
   "ctx_cancel": "취소",
   "gen_youtube_queue_empty": "YouTube 대기열이 비어 있습니다: 자막 켜기 → Shift를 누른 채 단어에 호버 → 팝업에서 “마이닝”을 눌러 대기열에 넣은 뒤 생성하세요",
-  "gen_ext_updated_refresh": "확장이 업데이트되었습니다. 페이지를 새로 고친 뒤(F5) 다시 시도하세요",
   "gen_progress": "생성 중… {done}/{total}",
   "gen_partial_anki_unconfigured": "일부만 생성됨: Anki가 설정되지 않았습니다. Fushi에서 Anki를 설정한 뒤 다시 시도하세요(처리 {done}, 보관 {kept})",
   "gen_partial_anki_unconfigured_kept": "일부만 생성됨: Anki가 설정되지 않았습니다. Fushi에서 Anki를 설정한 뒤 다시 시도하세요(보관 {kept})",
@@ -371,7 +370,7 @@
   "ap_gen_unsupported_hint": "대기열의 카드는 일괄 생성을 지원하지 않는 사이트에서 온 것입니다. 하나씩 제거하거나 대기열을 비우세요",
   "ap_gen_start_record_n": "녹화 및 생성 시작(카드 {n}장)",
   "ap_gen_start_n": "생성 시작(카드 {n}장)",
-  "ap_gen_other_youtube_hint": "YouTube에 {n}장 더 있음 — YouTube 페이지로 전환하여 생성하세요",
+  "ap_gen_other_youtube_hint": "YouTube {n}장은 Netflix가 아닌 페이지에서 이 메뉴를 열면 생성할 수 있습니다",
   "ap_gen_other_netflix_hint": "Netflix에 {n}장 더 있음 — Netflix 재생 페이지로 전환하여 생성하세요",
   "ap_gen_site_count": "{site} 카드 {n}장",
   "ap_gen_wrong_site_hint": "대기 중: {pending} — 대기열 항목을 클릭해 해당 영상 페이지로 이동한 뒤 생성하세요",
@@ -428,5 +427,5 @@
   "pc_style_more": "전체 설정",
   "pc_hint_site_track": "이 영상은 사이트 자체 자막 트랙을 재생하고 있어 Fushi 자막은 표시되지 않습니다. 눌러서 Fushi 자막으로 바꾸세요.",
   "opt_playerControls_title": "플레이어 안의 자막 버튼",
-  "opt_playerControls_desc": "플레이어의 컨트롤 바에 Fushi 버튼을 넣습니다(YouTube와 Netflix. 다른 사이트에서는 포인터를 올린 동안 영상 오른쪽 아래에 둥근 버튼이 나타납니다). 메뉴에서 이 페이지와 같은 설정 — Fushi 자막, 사이트 자막 대체, 숨기기, 싱크 조절, 자막 모양 — 을 영상을 벗어나지 않고 바꿀 수 있습니다."
+  "opt_playerControls_desc": "플레이어의 컨트롤 바에 Fushi 버튼을 넣습니다(YouTube와 Netflix. 다른 사이트에서는 포인터를 올린 동안 영상 오른쪽 위에 둥근 버튼이 나타납니다). 메뉴에서 이 페이지와 같은 설정 — Fushi 자막, 사이트 자막 대체, 숨기기, 싱크 조절, 자막 모양 — 을 영상을 벗어나지 않고 바꿀 수 있습니다."
 }

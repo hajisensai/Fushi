@@ -86,6 +86,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 「换一个空闲端口」进行中。端口扫描是一串 bind 尝试，最坏情况会连试 200 次，
   /// 必须防重入，否则两次点击会各挑一个端口、后完成的那次覆盖前一次。
   bool _portRepairBusy = false;
+  bool _ankiLaunchBusy = false;
 
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
@@ -125,6 +126,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 进程枚举）。手机连的是局域网另一台机上的 Anki，插件配置不在本机，改不了。
   static final bool _supportsPortRepair =
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  /// 是否提供「启动 Anki」三行（issue #1949）：桌面三端。「从运行中的 Anki 检测」
+  /// 依赖 Win32 进程枚举，只在 Windows 出现。
+  static final bool _supportsAnkiDesktopLaunch =
+      AnkiDesktopLauncher.isSupported;
+  static final bool _supportsAnkiExecutableDetect = Platform.isWindows;
 
   @override
   void initState() {
@@ -498,6 +505,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               onTap: _addonInstallBusy ? null : _installAnkiConnectAddon,
             ),
           ),
+        if (_supportsAnkiDesktopLaunch)
+          ..._buildAnkiDesktopLaunchRows(vm, settings),
       ],
     );
   }
@@ -1512,6 +1521,154 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
     } finally {
       if (mounted) setState(() => _portRepairBusy = false);
+    }
+  }
+
+  List<Widget> _buildAnkiDesktopLaunchRows(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) {
+    final String executable = settings.ankiDesktopExecutable;
+    return <Widget>[
+      SettingsSearchTarget(
+        id: 'card_creation.anki.desktop_auto_launch',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_desktop_auto_launch,
+          subtitle: t.anki_desktop_auto_launch_hint,
+          value: settings.autoLaunchAnkiDesktop,
+          onChanged: (bool value) =>
+              _setAutoLaunchAnkiDesktop(vm, settings, value),
+        ),
+      ),
+      SettingsSearchTarget(
+        id: 'card_creation.anki.desktop_executable',
+        child: AdaptiveSettingsRow(
+          icon: Icons.folder_open_outlined,
+          showIcon: true,
+          title: t.anki_desktop_executable,
+          subtitle: executable.isNotEmpty
+              ? executable
+              : (Platform.isWindows
+                    ? t.anki_desktop_executable_unset_required
+                    : t.anki_desktop_executable_unset_default),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (_supportsAnkiExecutableDetect)
+                IconButton(
+                  icon: const Icon(Icons.manage_search_outlined),
+                  tooltip: t.anki_desktop_executable_detect,
+                  onPressed: () => _detectAnkiExecutable(vm),
+                ),
+              if (executable.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  tooltip: t.clear,
+                  onPressed: () => vm.setAnkiDesktopExecutable(''),
+                ),
+            ],
+          ),
+          onTap: () => _pickAnkiExecutable(vm),
+        ),
+      ),
+      SettingsSearchTarget(
+        id: 'card_creation.anki.desktop_launch',
+        child: AdaptiveSettingsRow(
+          icon: Icons.rocket_launch_outlined,
+          showIcon: true,
+          title: t.anki_desktop_launch,
+          trailing: _ankiLaunchBusy
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: adaptiveIndicator(context: context, strokeWidth: 2),
+                )
+              : null,
+          onTap: _ankiLaunchBusy
+              ? null
+              : () => _launchAnkiDesktop(vm, settings),
+        ),
+      ),
+    ];
+  }
+
+  /// 打开开关时若本平台必须有路径而还没有，先试着从运行中的 Anki 认出来；
+  /// 认不出就提示去选——开关照样打开，路径补上后下次启动即生效。
+  Future<void> _setAutoLaunchAnkiDesktop(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+    bool value,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    await vm.setAutoLaunchAnkiDesktop(value);
+    if (!value || settings.ankiDesktopExecutable.isNotEmpty) return;
+    if (!Platform.isWindows) return;
+    final String? detected = AnkiDesktopLauncher.detectRunningExecutable();
+    if (detected != null) {
+      await vm.setAnkiDesktopExecutable(detected);
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(t.anki_desktop_launch_not_configured)),
+    );
+  }
+
+  Future<void> _detectAnkiExecutable(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final String? detected = AnkiDesktopLauncher.detectRunningExecutable();
+    if (detected == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.anki_desktop_executable_detect_failed)),
+      );
+      return;
+    }
+    await vm.setAnkiDesktopExecutable(detected);
+  }
+
+  Future<void> _pickAnkiExecutable(AnkiViewModel vm) async {
+    final FilePickerResult? picked = await pickFilesByExtensions(
+      context: context,
+      allowedExtensions: Platform.isWindows
+          ? const <String>{'exe'}
+          : (Platform.isMacOS ? const <String>{'app'} : null),
+      dialogTitle: t.anki_desktop_executable,
+    );
+    final String? path = picked?.files.single.path;
+    if (path == null) return;
+    await vm.setAnkiDesktopExecutable(path);
+  }
+
+  Future<void> _launchAnkiDesktop(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _ankiLaunchBusy = true);
+    try {
+      final AnkiDesktopLaunchResult result = await AnkiDesktopLauncher.launch(
+        settings,
+      );
+      final String? learned = result.learnedExecutable;
+      if (learned != null) await vm.setAnkiDesktopExecutable(learned);
+      messenger.showSnackBar(
+        SnackBar(content: Text(_ankiLaunchMessage(result))),
+      );
+    } finally {
+      if (mounted) setState(() => _ankiLaunchBusy = false);
+    }
+  }
+
+  String _ankiLaunchMessage(AnkiDesktopLaunchResult result) {
+    switch (result.status) {
+      case AnkiDesktopLaunchStatus.launched:
+        return t.anki_desktop_launch_started;
+      case AnkiDesktopLaunchStatus.alreadyRunning:
+        return t.anki_desktop_launch_already_running;
+      case AnkiDesktopLaunchStatus.notConfigured:
+        return t.anki_desktop_launch_not_configured;
+      case AnkiDesktopLaunchStatus.skipped:
+      case AnkiDesktopLaunchStatus.failed:
+        return t.anki_desktop_launch_failed(error: result.detail ?? '');
     }
   }
 

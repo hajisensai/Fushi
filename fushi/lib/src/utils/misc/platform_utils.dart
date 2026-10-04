@@ -44,28 +44,20 @@ bool get webViewUsesCustomSchemeTransport =>
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///
-/// Android phones in portrait have a permanently-visible status bar (the OS
-/// clock/battery strip) that sits directly above Hibiki's top-right action
-/// icons. Even though the home page already wraps its body in a [SafeArea]
-/// (so the icons are not literally clipped), the always-on status bar crowds
-/// the top-right controls and makes them awkward to tap (TODO-097). We hide the
-/// status bar on Android while keeping the navigation/gesture bar, so the top
-/// action row reclaims the strip the OS bar was occupying.
+/// Every platform, Android included, shows both the status bar and the
+/// navigation bar (the user reversed TODO-097 on 2026-10-04: the Android home
+/// shell shows the status bar again). Show every overlay first, then
+/// edge-to-edge: Flutter 3.44's edgeToEdge only changes decor fitting and does
+/// not clear the FULLSCREEN / IMMERSIVE_STICKY a video page leaves behind, so
+/// visibility must be restored explicitly through `manual` (BUG-2925).
 ///
-/// Android: [SystemUiMode.manual] with only [SystemUiOverlay.bottom] enabled --
-/// status bar hidden, navigation/gesture bar kept. Other platforms (iOS keeps
-/// the status bar -- it is expected there and handled via SafeArea; desktop has
-/// no system bars) keep the prior edge-to-edge behaviour. An open book/video
-/// still uses `immersiveSticky` (both bars hidden) on open and the reader
-/// restores its own mode on exit via `AppModel.closeMedia`, which calls back here.
+/// Readers restore this mode through AppModel.closeMedia; video pages restore
+/// it when the last display owner exits.
 Future<void> setHomeShellSystemUiMode() async {
-  if (Platform.isAndroid) {
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: <SystemUiOverlay>[SystemUiOverlay.bottom],
-    );
-    return;
-  }
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: SystemUiOverlay.values,
+  );
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
 

@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_preferences_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// 扩展提供的在线源列表：「导入」视图「在线源」段的正文，漫画与视频共用。
@@ -100,9 +101,16 @@ class _MihonInstalledSourcesSectionState
     if (confirmed != true) return;
     try {
       await widget.manager.clearSourceData(source);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'MihonInstalledSources',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -168,9 +176,16 @@ class _MihonInstalledSourcesSectionState
             : t.mihon_sources_sort_by_downloads_no_data,
         severity: sorted ? ToastSeverity.success : ToastSeverity.warning,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'MihonInstalledSources',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }

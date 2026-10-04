@@ -50,6 +50,7 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -2206,7 +2207,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       if (mounted) {
         FushiToast.show(
-          msg: error is OnlineMangaUnavailable ? error.message : '$error',
+          // 原始异常已进上面的错误日志；toast 只给归一后的短句。
+          msg: error is OnlineMangaUnavailable
+              ? error.userMessage
+              : describeOnlineSourceError(error),
           severity: ToastSeverity.error,
         );
       }

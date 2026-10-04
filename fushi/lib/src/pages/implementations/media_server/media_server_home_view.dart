@@ -334,6 +334,8 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           ),
           onLongPress: () =>
               openMediaServerItemDetail(context, widget.session, item),
+          onInfo: () =>
+              openMediaServerItemDetail(context, widget.session, item),
         );
       },
     );

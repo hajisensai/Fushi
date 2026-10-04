@@ -440,8 +440,14 @@ class MediaItemDialogFrame extends StatelessWidget {
       ...listActions,
     ];
     // 宽框 + 并排头部：启动按钮与快捷动作进头部右栏、紧接标题；横幅头部下方本来
-    // 就是整宽，动作留在正文里。
-    final bool actionsInHeader = wide && !banner && cover != null;
+    // 就是整宽，动作留在正文里。没有任何主动作时不进头部，否则右栏只剩标题下
+    // 一段空白间距（标题比封面高时会原样撑大头部）。
+    final bool hasLaunch =
+        showLaunchAction && launchLabel != null && onLaunch != null;
+    final bool actionsInHeader = wide &&
+        !banner &&
+        cover != null &&
+        (hasLaunch || buttonActions.isNotEmpty);
     final int columns = wide ? 2 : 1;
     // 两套设计系统同一棵树：面板垫底层 + 头部 + 正文。MD3 的模糊垫底只铺头部；
     // Apple 面板本身是液态玻璃，两层都留空。

@@ -121,6 +121,63 @@ class StatAxisScale {
 }
 
 /// 纵轴刻度数（0 刻度之外的格数）。
+/// 横轴标签实际画在哪里：被选中的下标与它的左缘 x。
+typedef StatAxisLabelSlot = ({int index, double left});
+
+/// 按**实测标签宽度**排横轴标签，保证互不重叠、不伸出画布（2026-10-04 用户截图：
+/// 手机上「统计中心 › 总览」末尾两个日期压成「09-0⁠7⁠9-28」）。
+///
+/// 旧做法只看柱数（`labelEvery ≈ 柱数 / 7`）并强制补画末柱标签，宽度一窄、或末柱
+/// 恰好离上一个被抽中的柱很近，两个标签就叠在一起；标签又以柱中心居中，末柱标签
+/// 右半截落在画布外。这里：
+/// - 抽稀步长从 [minEvery] 起逐步放大，直到相邻标签间距 ≥ [minGap]；
+/// - 末柱恒标（最新的数据点最重要），若它与前一个抽中的标签相撞，**让掉前一个**；
+/// - 每个标签的左缘夹在 `[minX, maxX - 宽度]` 内，首尾标签贴边不出界。
+List<StatAxisLabelSlot> statXAxisLabelSlots({
+  required int count,
+  required int minEvery,
+  required double Function(int index) centerOf,
+  required double Function(int index) widthOf,
+  required double minX,
+  required double maxX,
+  double minGap = 6,
+}) {
+  if (count <= 0) return const <StatAxisLabelSlot>[];
+  double leftOf(int i) {
+    final double w = widthOf(i);
+    final double hi = math.max(minX, maxX - w);
+    return (centerOf(i) - w / 2).clamp(minX, hi).toDouble();
+  }
+
+  bool collides(int a, int b) => leftOf(a) + widthOf(a) + minGap > leftOf(b);
+
+  for (int every = math.max(1, minEvery); every <= count; every++) {
+    final List<int> picked = <int>[
+      for (int i = 0; i < count; i += every) i,
+    ];
+    final int last = count - 1;
+    if (picked.last != last) {
+      // 末柱恒标；与前一个相撞就让掉前一个（只剩首柱时首柱也让）。
+      if (collides(picked.last, last)) picked.removeLast();
+      picked.add(last);
+    }
+    bool ok = true;
+    for (int k = 1; k < picked.length; k++) {
+      if (collides(picked[k - 1], picked[k])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      return <StatAxisLabelSlot>[
+        for (final int i in picked) (index: i, left: leftOf(i)),
+      ];
+    }
+  }
+  // 画布窄到连两个标签都放不下：只标最新的一根。
+  return <StatAxisLabelSlot>[(index: count - 1, left: leftOf(count - 1))];
+}
+
 const int _kAxisTickCount = 4;
 
 /// 时长纵轴的候选步长（毫秒）：秒 / 分 / 小时里的自然刻度，每个都是其单位的整数
@@ -433,19 +490,25 @@ class StatBarChartPainter extends CustomPainter {
         canvas.drawRRect(rect, paint);
       }
 
-      if (i % labelEvery == 0 || i == data.length - 1) {
-        final tp = TextPainter(
-          text: TextSpan(
-            text: labelOf(d),
-            style: labelStyle,
-          ),
+    }
+
+    // 横轴标签：按实测宽度排布，互不重叠、不出画布（[statXAxisLabelSlots]）。
+    final List<TextPainter> labels = <TextPainter>[
+      for (final StatDayData d in data)
+        TextPainter(
+          text: TextSpan(text: labelOf(d), style: labelStyle),
           textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(
-          canvas,
-          Offset(x + barWidth / 2 - tp.width / 2, chartHeight + 4),
-        );
-      }
+        )..layout(),
+    ];
+    for (final StatAxisLabelSlot slot in statXAxisLabelSlots(
+      count: data.length,
+      minEvery: labelEvery,
+      centerOf: (int i) => leftPadding + i * step + gap / 2 + barWidth / 2,
+      widthOf: (int i) => labels[i].width,
+      minX: leftPadding - 4,
+      maxX: size.width,
+    )) {
+      labels[slot.index].paint(canvas, Offset(slot.left, chartHeight + 4));
     }
   }
 
@@ -605,14 +668,24 @@ class StatLineChartPainter extends CustomPainter {
       }
     }
 
-    // 横轴标签（抽稀）。
-    for (int i = 0; i < xLabels.length && i < n; i++) {
-      if (i % labelEvery != 0 && i != n - 1) continue;
-      final TextPainter tp = TextPainter(
-        text: TextSpan(text: xLabels[i], style: labelStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(xAt(i) - tp.width / 2, chartHeight + 4));
+    // 横轴标签：按实测宽度抽稀，互不重叠、不出画布（[statXAxisLabelSlots]）。
+    final int labelCount = math.min(xLabels.length, n);
+    final List<TextPainter> labels = <TextPainter>[
+      for (int i = 0; i < labelCount; i++)
+        TextPainter(
+          text: TextSpan(text: xLabels[i], style: labelStyle),
+          textDirection: TextDirection.ltr,
+        )..layout(),
+    ];
+    for (final StatAxisLabelSlot slot in statXAxisLabelSlots(
+      count: labelCount,
+      minEvery: labelEvery,
+      centerOf: xAt,
+      widthOf: (int i) => labels[i].width,
+      minX: leftPadding - 4,
+      maxX: size.width,
+    )) {
+      labels[slot.index].paint(canvas, Offset(slot.left, chartHeight + 4));
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// 小说在线源列表：书的「导入」视图「在线源」段正文。
@@ -87,9 +88,16 @@ class _LnReaderInstalledSourcesSectionState
     if (confirmed != true) return;
     try {
       await widget.manager.clearData(plugin);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'LnReaderInstalledSources.clearData',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }

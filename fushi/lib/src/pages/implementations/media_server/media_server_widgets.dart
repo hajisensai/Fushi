@@ -143,6 +143,7 @@ class MediaServerItemCard extends StatelessWidget {
     required this.item,
     required this.onTap,
     this.onLongPress,
+    this.onInfo,
     this.focusId,
     super.key,
   });
@@ -151,6 +152,11 @@ class MediaServerItemCard extends StatelessWidget {
   final MediaServerItem item;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+
+  /// 封面左上角「详情」角标的回调。2026-10 体验优化：电影短按直接播放、
+  /// 详情只能长按 / 右键进，触屏用户发现不了；给电影 / 剧一个可见入口。
+  /// 只对 movie / series 生效，其余类型不画角标。
+  final VoidCallback? onInfo;
   final FushiFocusId? focusId;
 
   @override
@@ -188,6 +194,12 @@ class MediaServerItemCard extends StatelessWidget {
                     top: 6,
                     right: 6,
                     child: CoverBadge(label: '$unplayed'),
+                  ),
+                if (onInfo != null && _hasDetail(item.type))
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: MediaServerInfoCorner(onPressed: onInfo!),
                   ),
                 if (item.isPlayable && item.played)
                   const Positioned(
@@ -236,6 +248,9 @@ class MediaServerItemCard extends StatelessWidget {
     );
   }
 
+  static bool _hasDetail(MediaServerItemType type) =>
+      type == MediaServerItemType.movie || type == MediaServerItemType.series;
+
   static IconData _placeholderIcon(MediaServerItemType type) => switch (type) {
     MediaServerItemType.movie => Icons.movie_outlined,
     MediaServerItemType.series ||
@@ -243,6 +258,42 @@ class MediaServerItemCard extends StatelessWidget {
     MediaServerItemType.episode => Icons.tv_outlined,
     MediaServerItemType.folder => Icons.folder_outlined,
   };
+}
+
+/// 封面左上角的「详情」角标：视觉是常规 [CoverBadge]，命中区放大到 44×44
+/// （2026-10 体验优化，触屏可点）。不进焦点遍历——键盘 / 手柄已有右键 /
+/// 长按入口，多一个焦点停靠点只会拖慢方向键穿行。
+class MediaServerInfoCorner extends StatelessWidget {
+  const MediaServerInfoCorner({required this.onPressed, super.key});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: t.video_hero_detail_view,
+      child: Semantics(
+        button: true,
+        label: t.video_hero_detail_view,
+        child: GestureDetector(
+          key: const ValueKey<String>('media-server-card-info'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: const SizedBox(
+            width: 44,
+            height: 44,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: EdgeInsets.only(top: 6, left: 6),
+                child: CoverBadge(icon: Icons.info_outline_rounded),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 库封面拼贴最多取几张条目海报（220 宽的 16:9 槽里三张 2:3 海报各裁掉约一成，

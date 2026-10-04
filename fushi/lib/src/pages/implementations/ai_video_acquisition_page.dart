@@ -228,6 +228,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       VideoAcquisitionSayKind.summary => _summaryText(a),
       VideoAcquisitionSayKind.noMoreVersions =>
         t.ai_video_acquire_no_more_versions,
+      VideoAcquisitionSayKind.recommendation => _recommendationText(a),
       VideoAcquisitionSayKind.submitted =>
         a['mode'] == VideoAcquisitionMode.subscribe.name
             ? t.ai_video_acquire_submitted_subscribe
@@ -243,8 +244,18 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           series: arg('series'),
           movies: arg('movies'),
         ),
+      VideoAcquisitionSayKind.franchiseTruncated =>
+        t.ai_video_acquire_franchise_truncated(name: arg('name')),
+      VideoAcquisitionSayKind.franchiseProgress =>
+        t.ai_video_acquire_franchise_progress(
+          name: arg('name'),
+          series: arg('series'),
+          movies: arg('movies'),
+        ),
       VideoAcquisitionSayKind.franchiseNotFound =>
         t.ai_video_acquire_franchise_not_found(title: arg('title')),
+      VideoAcquisitionSayKind.franchiseUnavailable =>
+        t.ai_video_acquire_franchise_unavailable(title: arg('title')),
       VideoAcquisitionSayKind.franchiseReady =>
         t.ai_video_acquire_franchise_ready(
           ready: arg('ready'),
@@ -277,6 +288,21 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       t.ai_video_acquire_failure_remote_unavailable,
     _ => message,
   };
+
+  /// 「哪个最好」的回答（BUG-2933）：理由（按偏好排序 / 按用户给的条件）与
+  /// 结果（就是当前这个 / 已切换过去）两维正交，各一句模板。
+  String _recommendationText(Map<String, Object?> a) {
+    final String index = '${a['index'] ?? ''}';
+    final bool current = a['current'] == true;
+    if (a['byCriteria'] == true) {
+      return current
+          ? t.ai_video_acquire_recommend_criteria_current(index: index)
+          : t.ai_video_acquire_recommend_criteria_switch(index: index);
+    }
+    return current
+        ? t.ai_video_acquire_recommend_preference_current(index: index)
+        : t.ai_video_acquire_recommend_preference_switch(index: index);
+  }
 
   String _summaryText(Map<String, Object?> a) {
     final List<String> parts = <String>[
@@ -336,6 +362,10 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     VideoAcquisitionSlot.presence => t.ai_video_acquire_ask_presence,
     // 清单卡上方已经有 franchiseReady 那句说明，问句本身不再重复。
     VideoAcquisitionSlot.franchise => '',
+    VideoAcquisitionSlot.franchiseFallback =>
+      t.ai_video_acquire_ask_franchise_fallback(
+        title: '${q.args['title'] ?? ''}',
+      ),
   };
 
   String _optionLabel(VideoAcquisitionSlot slot, VideoAcquisitionOption o) {

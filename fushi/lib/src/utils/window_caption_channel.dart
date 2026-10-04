@@ -17,6 +17,24 @@ class WindowCaptionChannel {
   static int? _lastCaption;
   static int? _lastText;
 
+  /// macOS 启动时先隐藏 nib 自动显示的主窗口，首帧就绪后再显示。
+  static Future<void> showStartupWindow() async {
+    if (!Platform.isMacOS) return;
+    await _channel.invokeMethod<void>('showStartupWindow');
+  }
+
+  /// Windows 启动时暂缓向 Flutter 子窗口交付中间尺寸。
+  /// 调用方必须在 finally 中结束准备，最终尺寸仍经过原生 resize gate。
+  static Future<void> beginStartupWindowPreparation() async {
+    if (!Platform.isWindows) return;
+    await _channel.invokeMethod<void>('beginStartupWindowPreparation');
+  }
+
+  static Future<void> endStartupWindowPreparation() async {
+    if (!Platform.isWindows) return;
+    await _channel.invokeMethod<void>('endStartupWindowPreparation');
+  }
+
   /// 设置标题栏背景色与文字色。同值不重复下发，避免每次 rebuild 都刷 channel。
   static Future<void> setCaptionColors({
     required Color caption,

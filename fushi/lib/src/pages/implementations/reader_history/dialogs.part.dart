@@ -619,12 +619,17 @@ class _BatchTagIntentRow extends StatelessWidget {
       // 三段共享一行、每段仅得 ~90dp（手机窄弹窗），双字标签必须锁死单行，
       // 否则 SegmentedButton 会把「保持」竖排成「保/持」（原缺陷）。softWrap
       // 关掉后文字一律横排；配合下方 Expanded 铺满行宽 + 收紧内边距保证放得下。
-      return Text(
-        text,
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.visible,
-        style: TextStyle(color: selected == intent ? color : null),
+      // 2026-10 体验优化：overflow.visible 在长译文（德 / 俄）下会画出段外、压到
+      // 相邻段。改为仅对该标签 FittedBox(scaleDown) 缩小，兜底 ellipsis。
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          text,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: selected == intent ? color : null),
+        ),
       );
     }
 

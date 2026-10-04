@@ -59,6 +59,7 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -723,11 +724,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
-  /// 顶部工具行：搜索框 + 游玩状态筛选 + 行尾刮削 / 排序 / 筛选面板，与书架 /
-  /// 视频库同一个 [LibraryToolbar]（宽屏一行；窄屏搜索一行、筛选下一行）。
+  /// 顶部工具行：搜索框 + 游玩状态筛选 + 行尾刮削 / 排序 / 筛选面板 / 管理标签，
+  /// 与书架 / 视频库同一个 [LibraryToolbar]（宽屏一行）。
+  ///
+  /// 2026-10 体验优化：原先窄屏搜索框与行尾五个控件挤一行，手机上被挤到只剩
+  /// 图标宽。窄屏改两行：搜索框独占一行，第二行放状态筛选 + 筛选按钮 + 管理
+  /// 标签，刮削 / 排序收进溢出菜单（与书架 `_compactLibraryToolbar` 同口径，
+  /// 见 [LibraryToolbar.compactTrailing]）。
   Widget _buildToolbar(BuildContext context, List<BookTagRow> allTags) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // 管理标签（常驻，无标签时唯一的新建标签入口）。
+    Widget tagActions() => FushiTagFilterBar(
+          tags: allTags,
+          part: FushiTagFilterBarPart.actions,
+          onToggleFilter: _toggleTagFilter,
+          onReorder: _reorderTags,
+          onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+        );
     return LibraryToolbar(
+      compactKey: const ValueKey<String>('games_toolbar_compact'),
       search: LibrarySearchField(
         fieldKey: null,
         controller: _searchController,
@@ -760,20 +775,22 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           ),
         ),
       ],
-      // 动作：刮削 | 排序 + 筛选（Apple 下各成一枚玻璃胶囊）| 管理标签（常驻，
-      // 无标签时唯一的新建标签入口）。
+      // 宽屏动作：刮削 | 排序 + 筛选（Apple 下各成一枚玻璃胶囊）| 管理标签。
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           _buildActionToolbar(colors),
           const SizedBox(width: 8),
-          FushiTagFilterBar(
-            tags: allTags,
-            part: FushiTagFilterBarPart.actions,
-            onToggleFilter: _toggleTagFilter,
-            onReorder: _reorderTags,
-            onTagsChanged: () => ref.invalidate(gameTagMapProvider),
-          ),
+          tagActions(),
+        ],
+      ),
+      // 窄屏动作：筛选 | 管理标签 | ⋮（全部刮削 + 排序维度）。
+      compactTrailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _buildFilterButton(colors),
+          tagActions(),
+          _buildCompactOverflowMenu(),
         ],
       ),
     );
@@ -793,44 +810,89 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           FushiPopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
             icon: const FushiIcon(Icons.sort),
-            onSelected: (GalgameSortField field) => _setView(
-              field == _view.sortField
-                  // 再点当前维度 = 翻转方向（少一个独立的升降序按钮）。
-                  ? _view.copyWith(ascending: !_view.ascending)
-                  : _view.copyWith(sortField: field),
-            ),
+            onSelected: _selectSortField,
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<GalgameSortField>>[
               for (final GalgameSortField field in GalgameSortField.values)
                 PopupMenuItem<GalgameSortField>(
                   value: field,
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(child: Text(galgameSortFieldLabel(field))),
-                      if (field == _view.sortField)
-                        FushiIcon(
-                          _view.ascending
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward,
-                          size: 16,
-                        ),
-                    ],
-                  ),
+                  child: _sortFieldMenuLabel(field),
                 ),
             ],
           ),
-          FushiIconButtonControl(
-            tooltip: t.game_filter,
-            onPressed: () => unawaited(_showFilterSheet()),
-            icon: FushiIcon(
-              _view.hasActiveFilter
-                  ? Icons.filter_alt
-                  : Icons.filter_alt_outlined,
-              color: _view.hasActiveFilter ? colors.primary : null,
-            ),
-          ),
+          _buildFilterButton(colors),
         ],
       ]);
+  }
+
+  /// 再点当前维度 = 翻转方向（少一个独立的升降序按钮）。
+  void _selectSortField(GalgameSortField field) => _setView(
+        field == _view.sortField
+            ? _view.copyWith(ascending: !_view.ascending)
+            : _view.copyWith(sortField: field),
+      );
+
+  Widget _sortFieldMenuLabel(GalgameSortField field) {
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(galgameSortFieldLabel(field))),
+        if (field == _view.sortField)
+          FushiIcon(
+            _view.ascending ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 16,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFilterButton(ColorScheme colors) {
+    return FushiIconButtonControl(
+      tooltip: t.game_filter,
+      onPressed: () => unawaited(_showFilterSheet()),
+      icon: FushiIcon(
+        _view.hasActiveFilter ? Icons.filter_alt : Icons.filter_alt_outlined,
+        color: _view.hasActiveFilter ? colors.primary : null,
+      ),
+    );
+  }
+
+  /// 窄屏溢出菜单：「全部刮削」+ 排序维度（排序维度直接平铺，少一层子菜单）。
+  Widget _buildCompactOverflowMenu() {
+    return FushiPopupMenuButton<Object>(
+      key: const ValueKey<String>('games_toolbar_overflow'),
+      tooltip: t.common_more_actions,
+      icon: const FushiIcon(Icons.more_vert),
+      onSelected: (Object value) {
+        if (value is GalgameSortField) {
+          _selectSortField(value);
+        } else if (value == _GamesToolbarOverflowAction.scrapeAll) {
+          unawaited(_scrapeAllGames());
+        }
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<Object>>[
+        PopupMenuItem<Object>(
+          value: _GamesToolbarOverflowAction.scrapeAll,
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(Icons.manage_search_outlined, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Text(t.scrape_all)),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<Object>(
+          enabled: false,
+          height: 32,
+          child: Text(t.game_sort),
+        ),
+        for (final GalgameSortField field in GalgameSortField.values)
+          PopupMenuItem<Object>(
+            value: field,
+            child: _sortFieldMenuLabel(field),
+          ),
+      ],
+    );
   }
 
   /// 标签 chip 段（含「管理标签」齿轮）：只在有标签时占一行，紧贴工具行、
@@ -1134,17 +1196,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 不知道是否加入了」说的正是空库那一次）。现在占位恒定排在库内容段之前；空态 /
   /// 无匹配态用 [SliverFillRemaining] 只吃它**之后**的剩余空间，挤不掉它。
   Widget _buildBody(BuildContext context, List<GalgameEntry> visible) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final _GameGridMetrics metrics =
-            _GameGridMetrics.forWidth(constraints.maxWidth);
-        return CustomScrollView(
-          slivers: <Widget>[
-            ..._buildPendingDownloadSlivers(context, metrics),
-            ..._buildLibrarySlivers(context, visible, metrics),
-          ],
-        );
-      },
+    // 2026-10 动效重做：首屏卡片错峰淡入（与书架 / 视频库同一套），滚动带出的
+    // 卡瞬间出现。
+    return FushiEntranceScope(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final _GameGridMetrics metrics =
+              _GameGridMetrics.forWidth(constraints.maxWidth);
+          return CustomScrollView(
+            slivers: <Widget>[
+              ..._buildPendingDownloadSlivers(context, metrics),
+              ..._buildLibrarySlivers(context, visible, metrics),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1169,8 +1235,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             mainAxisExtent: _gameCardExtent(context, metrics.cardWidth),
           ),
           itemCount: pending.length,
-          itemBuilder: (BuildContext context, int i) =>
-              _buildPendingDownloadCard(pending[i]),
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildPendingDownloadCard(pending[i]),
+          ),
         ),
       ),
     ];
@@ -1267,8 +1335,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             mainAxisExtent: _gameCardExtent(context, metrics.cardWidth),
           ),
           itemCount: loose.length,
-          itemBuilder: (BuildContext context, int i) =>
-              _buildGameCard(loose[i]),
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildGameCard(loose[i]),
+          ),
         ),
       );
     }
@@ -2046,3 +2116,6 @@ class GameCoverThumb extends StatelessWidget {
     return placeholder;
   }
 }
+
+/// 游戏库窄屏工具条溢出菜单里除排序维度外的动作。
+enum _GamesToolbarOverflowAction { scrapeAll }

@@ -46,6 +46,7 @@ class VideoAcquisitionIntentQuery {
     this.slots = const <String, Object?>{},
     List<({String role, String text})> history =
         const <({String role, String text})>[],
+    this.candidates = const <Map<String, Object?>>[],
   }) : history = List<({String role, String text})>.unmodifiable(
          history.length > kVideoAcquisitionIntentHistoryLimit
              ? history.sublist(
@@ -75,6 +76,12 @@ class VideoAcquisitionIntentQuery {
   /// [kVideoAcquisitionIntentHistoryLimit] 条。
   final List<({String role, String text})> history;
 
+  /// 挂起的「这个版本？」问题里每个选项对应的已取回候选（字幕组 / 分辨率 /
+  /// 片源 / 做种数 / 每集体积 / 集数），`optionIndex` 指回
+  /// `pendingQuestion.options`。只在资源确认阶段非空；全是事实字段，模型据此
+  /// 判断「最小的 / 做种最多的」是哪个选项，不据此编造任何文字。
+  final List<Map<String, Object?>> candidates;
+
   /// 用户提示的 JSON 形状。
   Map<String, Object?> toJson() => <String, Object?>{
     'locale': locale,
@@ -94,6 +101,7 @@ class VideoAcquisitionIntentQuery {
             ],
           },
     'slots': slots,
+    if (candidates.isNotEmpty) 'candidates': candidates,
     'history': <Object?>[
       for (final ({String role, String text}) entry in history)
         <String, Object?>{'role': entry.role, 'text': entry.text},
@@ -180,6 +188,22 @@ Rules:
   "cancel" means "never mind / stop". "provide" when the message adds new
   information (a title, a quality, a language, an episode, ...). "unclear"
   when you cannot tell.
+- "recommend" when the user asks which option is best / recommended / which
+  one to take, or asks you to pick for them ("哪个最好", "推荐哪个", "你帮我选",
+  "which one is best"). Only when the user also states a criterion ("the
+  smallest", "the most seeders", "the highest resolution", "最小的",
+  "做种最多的") give "choiceIndex": the "optionIndex" of the entry in
+  "candidates" that best matches it. Otherwise omit "choiceIndex"; the app
+  recommends by the user's saved preferences.
+- "candidates" (only present while a version is being confirmed) lists the
+  fetched versions behind pendingQuestion.options: "optionIndex" points into
+  the options, "current" marks the version being shown, "bytesPerEpisode" is
+  the estimated size per episode, "seeders" the seeder count. A question about
+  the versions ("is there a smaller one", "which has more seeders") is answered
+  with "choose" + that optionIndex or "recommend" + that optionIndex; never
+  pick an optionIndex that is not in "candidates".
+- History entries with role "assistant" are JSON: "kind" is what the app said,
+  "args" its facts, "question" the slot it asked about.
 - When "pendingQuestion" is null there is nothing to choose; use "provide",
   "next", "confirm", "cancel" or "unclear" instead.
 - "workQueries": the work title as the user wrote it, plus 1 to 3 other
@@ -526,10 +550,7 @@ createPreferencesVideoAcquisitionAliasResolver(
       query: query,
     );
   } catch (error, stack) {
-    engineLog.logDiagnostic(
-      'VideoAcquisition.alias',
-      '$query: $error\n$stack',
-    );
+    engineLog.logDiagnostic('VideoAcquisition.alias', '$query: $error\n$stack');
     rethrow;
   } finally {
     client.close();

@@ -26,11 +26,20 @@ void main() {
     // 必须出现在文件里且落在 Scaffold(...) 内（第一个 Scaffold 是浏览页本体）。
     final int scaffold = src.indexOf('Scaffold(');
     expect(scaffold, greaterThanOrEqualTo(0), reason: '下载页应是一个 Scaffold');
+    // 2026-10 体验优化：inset 关闭收窄到「下载」页签（其它页签的搜索框需要
+    // 键盘顶起 body），守卫改钉「下载页签 → false」这条条件接线。
     expect(
-      src.contains('resizeToAvoidBottomInset: false'),
+      src.contains('resizeToAvoidBottomInset: !onDownloads'),
       isTrue,
-      reason: '下载页 Scaffold 必须显式 resizeToAvoidBottomInset:false，'
+      reason: '下载页签的 Scaffold 必须 resizeToAvoidBottomInset:false，'
           '否则软键盘弹出会把贴底「下载任务」区顶到顶部输入框边上（BUG-1003）',
+    );
+    expect(
+      RegExp(r'onDownloads\s*=\s*tabs\[controller\.index[^;]*'
+              r'BrowseTab\.downloads;')
+          .hasMatch(src),
+      isTrue,
+      reason: 'onDownloads 必须按当前页签是否为「下载」求值（BUG-1003）',
     );
   });
 

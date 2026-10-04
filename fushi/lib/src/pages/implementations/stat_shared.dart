@@ -86,6 +86,14 @@ Widget buildStatMediaRow(
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
+        // 2026-10 体验优化：删除入口统一为可见按钮（与会话列表一致），长按 /
+        // 右键仍保留作快捷方式。
+        if (onDelete != null)
+          IconButton(
+            tooltip: t.stat_delete_title,
+            icon: const Icon(Icons.delete_outline),
+            onPressed: onDelete,
+          ),
         if (onTap != null) ...<Widget>[
           SizedBox(width: tokens.spacing.gap / 2),
           FushiIcon(Icons.chevron_right, color: colors.onSurfaceVariant),
@@ -106,6 +114,9 @@ Widget buildStatMediaRow(
           ),
   );
 }
+
+/// 统计列表可点行的最小高度（2026-10 体验优化：触控目标 ≥ 48）。
+const double kStatRowMinHeight = 48;
 
 /// 「按媒体」行封面槽宽（逻辑像素，高 = 宽 × 1.4，接近 2:3 海报 / 书封）。
 const double kStatMediaCoverWidth = 40;
@@ -237,6 +248,10 @@ Widget buildStatPageBody({
   }
   return contentBuilder();
 }
+
+/// 汇总卡上「无数据」的统一占位（2026-10 体验优化：速度等可能算不出的行不再
+/// 时有时无，统一渲染并显示该占位，四张卡行数一致）。
+const String kStatEmptyValue = '—';
 
 /// 汇总周期卡的一条次级指标。[label] 为空时只显示值（如阅读卡主字数下的时长）。
 class StatSummaryLine {
@@ -430,6 +445,7 @@ Widget buildStatPeriodSummaryGrid(
             .map((StatPeriodSummary summary) => _StatPeriodSummaryCard(
                   summary: summary,
                   compact: layout.compact,
+                  width: layout.columnWidth ?? constraints.maxWidth,
                 ))
             .toList();
         if (layout.columnWidth == null) {
@@ -442,12 +458,27 @@ Widget buildStatPeriodSummaryGrid(
             ],
           );
         }
-        return Wrap(
-          spacing: layout.gap,
-          runSpacing: layout.gap,
+        // 2026-10 体验优化：两列时按行组装、行内 IntrinsicHeight + stretch，
+        // 同一排两张卡等高（旧 Wrap 各卡按自身内容高，同排高低不齐）。
+        return Column(
           children: <Widget>[
-            for (final Widget panel in panels)
-              SizedBox(width: layout.columnWidth, child: panel),
+            for (int i = 0; i < panels.length; i += 2) ...<Widget>[
+              if (i > 0) SizedBox(height: layout.gap),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    SizedBox(width: layout.columnWidth, child: panels[i]),
+                    SizedBox(width: layout.gap),
+                    if (i + 1 < panels.length)
+                      SizedBox(
+                        width: layout.columnWidth,
+                        child: panels[i + 1],
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ],
         );
       },
@@ -512,9 +543,14 @@ class _StatPeriodSummaryCard extends StatelessWidget {
   const _StatPeriodSummaryCard({
     required this.summary,
     this.compact = false,
+    this.width,
   });
 
   final StatPeriodSummary summary;
+
+  /// 卡片外宽（网格算出的列宽）；用来给次级指标的值列封顶，见
+  /// [_StatSummaryLineRow.valueMaxWidth]。null / 无界时不封顶。
+  final double? width;
 
   /// 手机两列下每列只有 ~155dp，卡片默认 20dp 内边距会把主值挤到读不出来；
   /// 紧凑态改用 [FushiSpacingTokens.rowHorizontal]（16dp），多让出 8dp 正文宽。
@@ -527,15 +563,23 @@ class _StatPeriodSummaryCard extends StatelessWidget {
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
           color: colorScheme.onSurfaceVariant,
         );
+    final double padding =
+        compact ? tokens.spacing.rowHorizontal : tokens.spacing.card;
+    final double? cardWidth = width;
+    // 值列最多占内容宽的 60%，超出等比缩小——同排卡外面套了 IntrinsicHeight，
+    // 这里不能用 LayoutBuilder 现量宽度，只能由网格把列宽传进来。
+    final double? valueMaxWidth = cardWidth != null && cardWidth.isFinite
+        ? (cardWidth - padding * 2) * 0.6
+        : null;
     final Widget card = FushiCard(
-      padding: compact
-          ? EdgeInsets.all(tokens.spacing.rowHorizontal)
-          : EdgeInsets.all(tokens.spacing.card),
+      padding: EdgeInsets.all(padding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
             summary.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -553,11 +597,14 @@ class _StatPeriodSummaryCard extends StatelessWidget {
                   ),
             ),
           ),
+          // 2026-10 体验优化：「标签 Expanded + 右对齐值 maxLines:1」，窄列下
+          // 标签省略、数值始终完整右对齐，四张卡的数值列竖向对齐可比。
           for (final StatSummaryLine line in summary.lines) ...<Widget>[
             SizedBox(height: tokens.spacing.gap / 2),
-            Text(
-              line.label == null ? line.value : '${line.label}: ${line.value}',
+            _StatSummaryLineRow(
+              line: line,
               style: subStyle,
+              valueMaxWidth: valueMaxWidth,
             ),
           ],
         ],
@@ -568,6 +615,63 @@ class _StatPeriodSummaryCard extends StatelessWidget {
       onTap: summary.onTap,
       borderRadius: FushiBorderRadius.card,
       child: card,
+    );
+  }
+}
+
+/// 汇总卡的一行次级指标（2026-10 体验优化）：有标签时标签占剩余宽度可省略、
+/// 值右对齐单行；无标签（如主值下的字数）只显示值。
+class _StatSummaryLineRow extends StatelessWidget {
+  const _StatSummaryLineRow({
+    required this.line,
+    required this.style,
+    this.valueMaxWidth,
+  });
+
+  final StatSummaryLine line;
+  final TextStyle? style;
+
+  /// 值列宽度上限：超出时等比缩小（不换行、不撑破卡片）。null = 不封顶。
+  final double? valueMaxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? label = line.label;
+    if (label == null) {
+      return Text(
+        line.value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        const SizedBox(width: 8),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: valueMaxWidth ?? double.infinity,
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerEnd,
+            child: Text(
+              line.value,
+              maxLines: 1,
+              textAlign: TextAlign.end,
+              style: style,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -854,84 +958,184 @@ String formatStatTime(int ms) {
 /// 每日 / 每周字数目标编辑对话框。写 0 = 清除（隐藏）该目标。返回 true 表示用户
 /// 点了保存并已写穿偏好，调用方据此重建。
 ///
-/// 阅读统计 tab 与统计中心总览 tab 编辑的是**同一个**持久化目标
-/// （`readingGoal*Chars`），所以只有一份表单；两处各写一份的话，单位、清零语义和
+/// 阅读统计 tab、统计中心总览 tab 与首页仪表盘编辑的是**同一个**持久化目标
+/// （`readingGoal*Chars`），所以只有一份表单；多处各写一份的话，单位、清零语义和
 /// 校验规则一改就只改到一处。
+///
+/// 2026-10 体验优化：首页原有一套只编每日目标的 `_DailyGoalDialog`（带预设 chip
+/// 与近 7 日参考），统计页这套只有两个裸输入框——两套对话框合并为本函数 +
+/// [StatGoalEditDialog]：每日 + 每周 + 预设 + 近 7 日参考，三处入口共用。
+/// [recentDailyAverage] 为近 7 日日均字数（与目标同口径，见
+/// [statRecentDailyAverageChars]）；<=0 不显示参考行。
 Future<bool> showStatGoalEditDialog(
   BuildContext context,
-  AppModel appModel,
-) async {
-  final TextEditingController dailyController = TextEditingController(
-    text: appModel.readingGoalDailyChars == 0
-        ? ''
-        : appModel.readingGoalDailyChars.toString(),
+  AppModel appModel, {
+  int recentDailyAverage = 0,
+}) async {
+  final StatGoalEditResult? result = await showAppDialog<StatGoalEditResult>(
+    context: context,
+    builder: (BuildContext _) => StatGoalEditDialog(
+      initialDailyChars: appModel.readingGoalDailyChars,
+      initialWeeklyChars: appModel.readingGoalWeeklyChars,
+      recentDailyAverage: recentDailyAverage,
+    ),
   );
-  final TextEditingController weeklyController = TextEditingController(
-    text: appModel.readingGoalWeeklyChars == 0
-        ? ''
-        : appModel.readingGoalWeeklyChars.toString(),
+  if (result == null) return false;
+  await appModel.setReadingGoalDailyChars(result.daily);
+  await appModel.setReadingGoalWeeklyChars(result.weekly);
+  return true;
+}
+
+/// [dayKeys]（调用方从自己的统计窗口取，如 `w.lastDayKeys(7)`）的日均字数，
+/// **与目标同口径**（学习域 [studyGoalCharsForDay]）：给「我该填多少」一个
+/// 真实参考值（BUG-1075）。无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
+int statRecentDailyAverageChars(
+  Iterable<StatFact> daily,
+  List<String> dayKeys,
+) {
+  if (dayKeys.isEmpty) return 0;
+  int total = 0;
+  for (final String key in dayKeys) {
+    total += studyGoalCharsForDay(daily, key);
+  }
+  return total ~/ dayKeys.length;
+}
+
+/// [StatGoalEditDialog] 保存时的结果（已规整为 >= 0；0 = 关闭该目标）。
+typedef StatGoalEditResult = ({int daily, int weekly});
+
+/// 目标编辑表单。独立 StatefulWidget **自持** controller 生命周期：dispose 跟随
+/// 路由销毁（弹出动画结束后）。曾经「await showDialog 返回即 dispose」会在退场
+/// 动画帧触碰已销毁 controller——保存后宿主 setState 让仍在退场的 TextField
+/// 重建 addListener 直接断言崩（widget 测试实测复现）。
+///
+/// BUG-1075：输入框带单位后缀、近 7 日日均参考值、一排快捷预设 chip（只填每日；
+/// 每周目标通常按每日 × 7 自行估算，不再额外塞一排）。保存 pop
+/// [StatGoalEditResult]，取消 pop null。
+class StatGoalEditDialog extends StatefulWidget {
+  const StatGoalEditDialog({
+    required this.initialDailyChars,
+    required this.initialWeeklyChars,
+    this.recentDailyAverage = 0,
+    super.key,
+  });
+
+  /// 当前每日 / 每周目标（0 = 未设，输入框留空）。
+  final int initialDailyChars;
+  final int initialWeeklyChars;
+
+  /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示参考行。
+  final int recentDailyAverage;
+
+  /// 每日目标快捷预设（字/天）：点一下直接填进输入框，省得用户凭空想数字。
+  static const List<int> presets = <int>[3000, 5000, 10000, 20000];
+
+  @override
+  State<StatGoalEditDialog> createState() => _StatGoalEditDialogState();
+}
+
+class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
+  late final TextEditingController _daily = TextEditingController(
+    text: _initialText(widget.initialDailyChars),
+  );
+  late final TextEditingController _weekly = TextEditingController(
+    text: _initialText(widget.initialWeeklyChars),
   );
 
-  final bool? saved = await showAppDialog<bool>(
-    context: context,
-    builder: (BuildContext dialogContext) {
-      final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
-      return FushiAlertDialog(
-        title: Text(t.stat_goal_set),
-        // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
-              // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
-              // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
-              FushiTextFieldControl(
-                controller: dailyController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.stat_goal_daily,
-                  suffixText: t.stat_goal_unit_chars,
-                ),
+  static String _initialText(int chars) =>
+      chars <= 0 ? '' : chars.toString();
+
+  static int _parse(TextEditingController c) {
+    final int value = int.tryParse(c.text.trim()) ?? 0;
+    return value < 0 ? 0 : value;
+  }
+
+  @override
+  void dispose() {
+    _daily.dispose();
+    _weekly.dispose();
+    super.dispose();
+  }
+
+  /// 预设 chip → 填入每日输入框（光标置尾，用户可继续改）。
+  void _applyPreset(int chars) {
+    final String text = chars.toString();
+    _daily.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiAlertDialog(
+      title: Text(t.stat_goal_set),
+      // 内容可能变高：横屏/小窗下用滚动兜底，不再顶到溢出。
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            // BUG-1075：单位后缀。口径说明行已按用户要求删除——统计口径由实际
+            // 计入的来源（阅读/漫画/视频字幕/游戏文本）自解释。
+            FushiTextFieldControl(
+              key: const ValueKey<String>('stat-goal-daily-field'),
+              controller: _daily,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: t.stat_goal_daily,
+                suffixText: t.stat_goal_unit_chars,
               ),
-              SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-              FushiTextFieldControl(
-                controller: weeklyController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.stat_goal_weekly,
-                  suffixText: t.stat_goal_unit_chars,
-                ),
+            ),
+            if (widget.recentDailyAverage > 0) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.stat_goal_recent_average(n: widget.recentDailyAverage),
+                style: tokens.type.metadata,
               ),
             ],
-          ),
+            SizedBox(height: tokens.spacing.gap + 4),
+            Text(t.stat_goal_presets, style: tokens.type.metadata),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap / 2,
+              children: <Widget>[
+                for (final int preset in StatGoalEditDialog.presets)
+                  FushiActionChipControl(
+                    label: Text(preset.toString()),
+                    onPressed: () => _applyPreset(preset),
+                  ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+            FushiTextFieldControl(
+              key: const ValueKey<String>('stat-goal-weekly-field'),
+              controller: _weekly,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: t.stat_goal_weekly,
+                suffixText: t.stat_goal_unit_chars,
+              ),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(t.cancel),
+      ),
+      actions: <Widget>[
+        FushiTextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.cancel),
+        ),
+        FushiTextButton(
+          onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
+            (daily: _parse(_daily), weekly: _parse(_weekly)),
           ),
-          FushiTextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(t.dialog_save),
-          ),
-        ],
-      );
-    },
-  );
-
-  final String dailyText = dailyController.text.trim();
-  final String weeklyText = weeklyController.text.trim();
-  dailyController.dispose();
-  weeklyController.dispose();
-
-  if (saved != true) return false;
-
-  final int daily = int.tryParse(dailyText) ?? 0;
-  final int weekly = int.tryParse(weeklyText) ?? 0;
-  await appModel.setReadingGoalDailyChars(daily < 0 ? 0 : daily);
-  await appModel.setReadingGoalWeeklyChars(weekly < 0 ? 0 : weekly);
-  return true;
+          child: Text(t.dialog_save),
+        ),
+      ],
+    );
+  }
 }
 
 /// 统计页字数外显：数字部分走当前语言的紧凑写法（[formatCompactCount]：CJK

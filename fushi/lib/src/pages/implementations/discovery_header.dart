@@ -30,10 +30,10 @@ class DiscoverySourceOption {
 
 /// 发现页头部（四个域统一）：
 ///
-/// - 第一行：来源下拉（宽屏）+ 搜索胶囊（MD3 填充 / Apple 玻璃，[FushiSearchField]）
-///   + 行尾动作（✨ AI 下载、刷新…）；
-/// - 第二行：筛选（[leading]，媒体域分段 / 筛选 chip）左对齐**单行**，放不下横滑；
-///   手机宽度下来源下拉也挪到这一行行首。
+/// - 宽屏：来源下拉 + 搜索胶囊（MD3 填充 / Apple 玻璃，[FushiSearchField]）
+///   + 行尾动作（✨ AI 下载、刷新…）同一行；
+/// - 窄屏（[isCompactWidth]）：搜索框独占整行，来源下拉 + 行尾动作排下一行；
+/// - 最后一行：筛选（[leading]，媒体域分段 / 筛选 chip）左对齐**单行**，放不下横滑。
 class DiscoveryHeaderControls extends StatelessWidget {
   const DiscoveryHeaderControls({
     required this.sources,
@@ -76,102 +76,109 @@ class DiscoveryHeaderControls extends StatelessWidget {
   /// 搜索框之后、同一行的附加按钮（页头不渲染时页头动作挪到这里，如刷新）。
   final List<Widget> trailing;
 
-  /// 低于此宽度时来源下拉让出搜索行，挪到筛选行行首（手机上与搜索框、✨ 挤在
-  /// 一行时搜索框只剩一指宽）。
-  static const double compactWidth = 600;
+  /// 窄屏判据：与视频发现页（`video_discovery_page.dart` 的 `compact`）同一条
+  /// ——按界面缩放折算后的逻辑宽度不足 600。三个域的发现页头因此在同一个宽度
+  /// 切到同一种两行形态。
+  static bool isCompactWidth(BuildContext context, double width) =>
+      width * FushiAppUiScale.of(context) < 600;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool compact = constraints.maxWidth < compactWidth;
-        final Widget sourceMenu = _buildSourceMenu(
-          context,
-          tokens,
-          // 手机：下拉挪到筛选行行首后收窄，别把后面的筛选 chip 挤出半屏。
-          width: compact ? 168 : null,
-        );
-        final Widget? filterRow = leading;
-        // 第二行：左对齐单行，放不下就横滑（不再折行把搜索框以下的内容一层层
-        // 往下推）。手机上来源下拉也在这一行行首。
-        final List<Widget> rowTwo = <Widget>[
-          if (compact) sourceMenu,
+    final Widget? filterRow = leading;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        0,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) =>
+                isCompactWidth(context, constraints.maxWidth)
+                ? _buildCompact(context, tokens)
+                : _buildWide(context, tokens),
+          ),
+          // 筛选行：左对齐单行，放不下就横滑（不再折行把搜索框以下的内容一层层
+          // 往下推）。
           if (filterRow != null) ...<Widget>[
-            if (compact)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-                child: const SizedBox(
-                  height: 24,
-                  child: FushiVerticalDivider(width: 1),
-                ),
+            SizedBox(height: tokens.spacing.gap),
+            HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: filterRow,
               ),
-            filterRow,
+            ),
           ],
-        ];
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.gap,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  if (!compact) ...<Widget>[
-                    sourceMenu,
-                    SizedBox(width: tokens.spacing.gap),
-                  ],
-                  Expanded(
-                    child: FushiSearchField(
-                      fieldKey: const ValueKey<String>(
-                        'discovery_search_field',
-                      ),
-                      clearButtonKey: const ValueKey<String>(
-                        'discovery_search_clear',
-                      ),
-                      focusId: searchFocusId,
-                      controller: searchController,
-                      focusNode: searchFocusNode,
-                      hintText: searchHintText,
-                      onChanged: onSearchChanged ?? (String _) {},
-                      onSubmitted: onSearchSubmitted,
-                      onClear: onSearchCleared,
-                    ),
-                  ),
-                  for (final Widget action in trailing) ...<Widget>[
-                    SizedBox(width: tokens.spacing.gap),
-                    action,
-                  ],
-                ],
-              ),
-              if (rowTwo.isNotEmpty) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: rowTwo,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
+        ],
+      ),
     );
   }
 
+  /// 宽屏：来源下拉 + 搜索框 + 附加按钮同一行。
+  Widget _buildWide(BuildContext context, FushiDesignTokens tokens) {
+    return Row(
+      children: <Widget>[
+        _buildSourceMenu(context, tokens),
+        SizedBox(width: tokens.spacing.gap),
+        Expanded(child: _buildSearchField()),
+        for (final Widget action in trailing) ...<Widget>[
+          SizedBox(width: tokens.spacing.gap),
+          action,
+        ],
+      ],
+    );
+  }
+
+  /// 窄屏（手机竖屏）：搜索框**独占一整行**，来源下拉与附加按钮排第二行。
+  ///
+  /// 此前窄屏也挤在一行里：`DropdownMenu` 按最长条目取固有宽度，书域在手机上
+  /// 把搜索框压成「搜…」，漫画域（来源名更长、还多一颗刷新）干脆把搜索框挤到
+  /// 只剩一道竖线；视频发现页却是整条长搜索框——同一个「浏览 › 发现」三个页签
+  /// 三种形态（2026-10-04 用户截图）。搜索是发现页的主操作，窄屏一律给整行，
+  /// 下拉在第二行填满按钮之外的宽度。
+  Widget _buildCompact(BuildContext context, FushiDesignTokens tokens) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildSearchField(),
+        SizedBox(height: tokens.spacing.gap),
+        Row(
+          children: <Widget>[
+            Expanded(child: _buildSourceMenu(context, tokens, expand: true)),
+            for (final Widget action in trailing) ...<Widget>[
+              SizedBox(width: tokens.spacing.gap),
+              action,
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchField() {
+    return FushiSearchField(
+      fieldKey: const ValueKey<String>('discovery_search_field'),
+      clearButtonKey: const ValueKey<String>('discovery_search_clear'),
+      focusId: searchFocusId,
+      controller: searchController,
+      focusNode: searchFocusNode,
+      hintText: searchHintText,
+      onChanged: onSearchChanged ?? (String _) {},
+      onSubmitted: onSearchSubmitted,
+      onClear: onSearchCleared,
+    );
+  }
+
+  /// 来源下拉。[expand] 为真时填满父级给的宽度（窄屏第二行）。
   Widget _buildSourceMenu(
     BuildContext context,
     FushiDesignTokens tokens, {
-    double? width,
+    bool expand = false,
   }) {
     // 隐式切源（点进某来源的目录）后下拉必须跟着变：DropdownMenu 的
     // initialSelection 只在初次构建生效，外面套一层随选中值变化的 key
@@ -181,11 +188,11 @@ class DiscoveryHeaderControls extends StatelessWidget {
       child: FushiDropdownMenu<String>(
         key: const ValueKey<String>('discovery_source_menu'),
         initialSelection: selectedSourceId,
-        width: width,
         requestFocusOnTap: false,
+        expandedInsets: expand ? EdgeInsets.zero : null,
         // 与搜索框同一几何：DropdownMenu 默认是 56 高的 MD3 文本框，比
-        // [kFushiSearchFieldHeight] 的搜索框高出一截、字号也大一号。压到同高 +
-        // 同一排版令牌。
+        // [kFushiSearchFieldHeight] 的搜索框高出一截、字号也大一号，同一行两个
+        // 输入控件高低不齐。压到同高 + 同一排版令牌。
         textStyle: tokens.type.listTitle,
         inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
           isDense: true,

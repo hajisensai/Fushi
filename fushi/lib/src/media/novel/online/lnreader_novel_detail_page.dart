@@ -19,6 +19,7 @@ import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart'
@@ -98,7 +99,12 @@ class _LnReaderNovelDetailPageState
         _shelfBook = shelfBook;
         _loading = false;
       });
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'LnReaderNovelDetailPage.load',
+        error,
+        stack,
+      );
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -125,7 +131,13 @@ class _LnReaderNovelDetailPageState
       await (widget.openExternal ?? _launchExternal)(uri);
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'LnReaderNovelDetailPage.openExternal',
+          ),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -169,11 +181,18 @@ class _LnReaderNovelDetailPageState
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       ref.invalidate(srtBooksProvider);
       return bookKey;
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'LnReaderNovelDetailPage.open',
+        error,
+        stack,
+      );
       if (!mounted) return null;
       setState(() => _opening = false);
       FushiToast.show(
-        msg: t.novel_online_open_failed(error: '$error'),
+        msg: t.novel_online_open_failed(
+          error: describeOnlineSourceError(error),
+        ),
         severity: ToastSeverity.error,
       );
       return null;
@@ -234,7 +253,10 @@ class _LnReaderNovelDetailPageState
         stack,
       );
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _opening = false);
@@ -314,9 +336,9 @@ class _LnReaderNovelDetailPageState
         final String message = error is LnReaderChapterDownloadException
             ? t.novel_download_failed(
                 chapter: error.chapter.name,
-                error: '${error.cause}',
+                error: describeOnlineSourceError(error.cause),
               )
-            : '$error';
+            : describeOnlineSourceError(error);
         FushiToast.show(msg: message, severity: ToastSeverity.error);
         // 章节被 Cloudflare 拦下时桥已记下挑战：重建一次让「站点验证」出现。
         setState(() {});
@@ -426,7 +448,7 @@ class _LnReaderNovelDetailPageState
             // 实色底），不再是一行裸红字。
             child: FushiInlineNotice(
               severity: FushiNoticeSeverity.error,
-              message: '$error',
+              message: describeOnlineSourceError(error),
             ),
           ),
         // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。

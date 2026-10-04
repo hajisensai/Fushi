@@ -155,10 +155,15 @@ void main() {
   });
 
   test('两模式重锚调用点都把「重锚前采到的位置」透传给 scrollToCharOffset（否则 <=0 无 hint 弹章顶）', () {
-    // 分页 setChromeInsets 传 scrollBefore（page-stable hint）。
-    expect(js.contains('self.scrollToCharOffset(charOffset, scrollBefore);'),
+    // 分页 inset 重排会改变页距：先记逻辑页，再按新页距生成 page-stable hint。
+    expect(n.contains('Math.round(scrollBefore / contextBefore.pageSize)'),
         isTrue,
-        reason: '分页 setChromeInsets 必须把 scrollBefore 作 hint 传入');
+        reason: '分页 setChromeInsets 必须在重排前保存逻辑页');
+    expect(n.contains('hintPageBefore * contextAfter.pageSize'), isTrue,
+        reason: '分页 hint 必须使用重排后的页距，不能把旧像素位当新页位');
+    expect(js.contains('self.scrollToCharOffset(charOffset, hintScroll);'),
+        isTrue,
+        reason: '分页 setChromeInsets 必须透传换算后的 page-stable hint');
     // 连续三条重锚透传 raw scroll（第 3 参 hintScroll）。
     expect(
       js.contains(

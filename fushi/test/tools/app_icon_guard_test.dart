@@ -161,10 +161,10 @@ void main() {
         reason: 'Runner.rc 应以 IDI_APP_ICON 引用 resources\\\\app_icon.ico');
   });
 
-  test('Android 12+ 系统 splash 图标用专用 splash wordmark 前景（TODO-886）', () {
-    // TODO-886：splash 前景改用专用 ic_splash_minimal_foreground（内容窄于
-    // 自适应安全区），避免启动器前景 wordmark 太宽被圆遮罩裁切。
-    // 几何断言详见 test/android/splash_icon_guard_test.dart。
+  test('Android 12+ 系统 splash 图标显式指向透明 ic_splash_empty', () {
+    // 系统 splash 不画图标（只铺底色），首帧由 Flutter 自己画；显式给透明
+    // 图标是为了不回退成启动器图标（TODO-886 的圆遮罩裁切）。
+    // 详见 test/android/splash_icon_guard_test.dart。
     for (final String rel in <String>[
       'android/app/src/main/res/values-v31/styles.xml',
       'android/app/src/main/res/values-night-v31/styles.xml',
@@ -172,9 +172,9 @@ void main() {
       final String styles = read(rel);
       expect(
         styles.contains('android:windowSplashScreenAnimatedIcon') &&
-            styles.contains('@drawable/ic_splash_minimal_foreground'),
+            styles.contains('@drawable/ic_splash_empty'),
         isTrue,
-        reason: '$rel 的 Android 12+ splash 应显示专用 splash wordmark 前景',
+        reason: '$rel 的 Android 12+ splash 应显式指向透明 ic_splash_empty',
       );
     }
   });

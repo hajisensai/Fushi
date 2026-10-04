@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/utils.dart';
 
 /// 统计中心「今日 / 本周 / 本月 / 全部」在手机上只显示一列的回归测试。
 ///
@@ -108,5 +109,67 @@ void main() {
     expect(tops[0], tops[1]);
     expect(tops[2], tops[3]);
     expect(tops[2], greaterThan(tops[0]));
+  });
+
+  // 2026-10 体验优化：同排两张卡等高；次级指标行「标签 + 右对齐值」单行不换行。
+  testWidgets('same-row period cards are equal height and values stay on one '
+      'line', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (BuildContext context) => buildStatPeriodSummaryGrid(
+            context,
+            const <StatPeriodSummary>[
+              StatPeriodSummary(
+                label: 'Today',
+                primaryValue: '12 min',
+                lines: <StatSummaryLine>[
+                  StatSummaryLine(value: '1,200 chars'),
+                  StatSummaryLine(
+                    label: 'Reading speed',
+                    value: kStatEmptyValue,
+                  ),
+                ],
+              ),
+              // 第二张多一行：旧 Wrap 下两卡高低不齐。
+              StatPeriodSummary(
+                label: 'Week',
+                primaryValue: '3 hr 20 min',
+                lines: <StatSummaryLine>[
+                  StatSummaryLine(value: '18,000 chars'),
+                  StatSummaryLine(
+                    label: 'A very long label that must ellipsize',
+                    value: '5,400 chars/h',
+                  ),
+                  StatSummaryLine(label: 'Lookups', value: '42'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ));
+    expect(tester.takeException(), isNull);
+
+    Rect cardOf(String label) => tester.getRect(
+          find
+              .ancestor(of: find.text(label), matching: find.byType(FushiCard))
+              .first,
+        );
+    expect(cardOf('Today').height, cardOf('Week').height);
+    expect(cardOf('Today').top, cardOf('Week').top);
+
+    // 「—」占位与长标签行的值都是单行、右对齐贴卡片右缘。
+    final Text dash = tester.widget<Text>(find.text(kStatEmptyValue));
+    expect(dash.maxLines, 1);
+    final Rect value = tester.getRect(find.text('5,400 chars/h'));
+    final Rect label =
+        tester.getRect(find.text('A very long label that must ellipsize'));
+    expect(value.left, greaterThanOrEqualTo(label.right));
+    expect(value.right, lessThanOrEqualTo(cardOf('Week').right));
   });
 }

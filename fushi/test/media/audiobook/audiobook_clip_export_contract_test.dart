@@ -46,9 +46,7 @@ void main() {
       // BUG-1320：不可导出时不再裸 `return null`——tooLong 的窗口要透传出去
       // （否则超长选区回落单句锚，静默产出「全文卡片 + 一句声音」）。锚点只取判据本身，
       // 不再锚返回值形态。
-      final int exportable = source.indexOf(
-        'if (!result.isExportable) return',
-      );
+      final int exportable = source.indexOf('if (!result.isExportable) return');
       final int equalityGate = source.indexOf(
         'audiobookClipCueTextMatchesSelection(',
         exportable,
@@ -84,6 +82,7 @@ void main() {
           imagePath: '/card.jpg',
           audioPath: '/clip.aac',
           outputPath: '/clip.mp4',
+          durationMs: 2500,
         ),
       );
     });
@@ -94,6 +93,7 @@ void main() {
           framesDir: '/frames',
           audioPath: '/clip.aac',
           outputPath: '/clip.mp4',
+          durationMs: 2500,
         ),
       );
     });
@@ -101,9 +101,7 @@ void main() {
     test('BUG-1243 mobile share exposes one self-contained video only', () {
       // TODO-2357：两端产物统一 H.264/.mp4，mime 恒 video/mp4（不再按编码器分叉）。
       final List<AudiobookClipShareAttachment> attachments =
-          audiobookClipMobileShareAttachments(
-        videoPath: '/tmp/clip.mp4',
-      );
+          audiobookClipMobileShareAttachments(videoPath: '/tmp/clip.mp4');
       expect(attachments, hasLength(1));
       expect(attachments.single.path, '/tmp/clip.mp4');
       expect(attachments.single.mimeType, 'video/mp4');

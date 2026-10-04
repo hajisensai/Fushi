@@ -146,11 +146,17 @@ void main() {
       );
     });
 
-    test('main.dart：重启标志 → 主窗口 show()/focus() 抢前台（机制B）', () {
+    test('main.dart：重启后的新进程走统一显窗点 show()/focus() 抢前台（机制B）', () {
+      // 隐藏建窗后，含迁移自动重启在内的每个进程都由 _revealStartupWindow
+      // 在首帧光栅化后 show + focus；不再有重启标志专用分支。
       final String src = readSource('lib/main.dart').readAsStringSync();
-      expect(src.contains('DesktopLifecycleService.restartMarkerArg'), isTrue);
-      expect(src.contains('windowManager.show()'), isTrue);
-      expect(src.contains('windowManager.focus()'), isTrue);
+      final int at = src.indexOf('Future<void> _revealStartupWindow()');
+      expect(at, greaterThan(-1), reason: '必须有唯一显窗点 _revealStartupWindow');
+      final int end = src.indexOf('Future<void> _revealStartupWindowFallback', at);
+      expect(end, greaterThan(at));
+      final String body = src.substring(at, end);
+      expect(body.contains('windowManager.show()'), isTrue);
+      expect(body.contains('windowManager.focus()'), isTrue);
     });
 
     test('desktop_lifecycle_service：重启给新进程带上前台标志', () {

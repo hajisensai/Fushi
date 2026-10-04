@@ -1941,17 +1941,52 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 合集行头长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
   /// 语义与合集详情页 AppBar 同源；删除支持「连同书一起删」勾选（复用
   /// [_deleteCollectionMembersMedia] 分派纪律）。
-  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
-    final String? ownCover = collection.coverPath;
+  /// 合集长按菜单的封面图源：自设封面 → 按合集内顺序第一本有封面的书（与书卡
+  /// 同一取图链 `getDisplayThumbnailFromMediaItem`）。都没有时为 null。
+  Future<ImageProvider?> _collectionMenuCoverImage(
+    MediaCollectionRow collection,
+  ) async {
+    final String? own = collection.coverPath;
+    if (own != null && own.isNotEmpty && File(own).existsSync()) {
+      return resizedFileImage(File(own));
+    }
+    final List<MediaItem> books =
+        ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+            const <MediaItem>[];
+    final Map<String, MediaItem> byKey = <String, MediaItem>{
+      for (final MediaItem item in books)
+        if (_parseBookKey(item.mediaIdentifier) case final String key)
+          key: item,
+    };
+    for (final MediaCollectionItemRow member
+        in await appModel.database.getCollectionItems(collection.id)) {
+      if (MediaKind.tryParse(member.mediaType) != MediaKind.epub) continue;
+      // v83：本地成员行 entryKey = uid，按 bookKey 反查（与
+      // [_deleteCollectionMembersMedia] 同一纪律；反查不上的按旧行 bookKey 认）。
+      final String bookKey =
+          await appModel.database.resolveEpubBookKeyByUid(member.entryKey) ??
+              member.entryKey;
+      final MediaItem? item = byKey[bookKey];
+      if (item == null || (item.imageUrl?.isEmpty ?? true)) continue;
+      return mediaSource.getDisplayThumbnailFromMediaItem(
+        appModel: appModel,
+        item: item,
+      );
+    }
+    return null;
+  }
+
+  Future<void> _showCollectionContextMenu(
+    MediaCollectionRow collection,
+  ) async {
+    final ImageProvider? coverImage =
+        await _collectionMenuCoverImage(collection);
+    if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: appModel.database,
       collection: collection,
-      coverImage: ownCover != null &&
-              ownCover.isNotEmpty &&
-              File(ownCover).existsSync()
-          ? resizedFileImage(File(ownCover))
-          : null,
+      coverImage: coverImage,
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         // 改名/删除影响折叠映射；标签影响行头 chip；删本体影响书架条目。
@@ -2627,11 +2662,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块。
       if ((Platform.isAndroid || Platform.isWindows) &&
           modules.isEnabled(ModuleId.listening))
+        // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），
+        // 改成明确的「关闭悬浮字幕」+ 不同图标。
         DialogListAction(
           label: _isBackgroundListeningBook(bookKey)
-              ? '${t.floating_lyric_toggle_action} ✓'
+              ? t.floating_lyric_stop_action
               : t.floating_lyric_toggle_action,
-          icon: Icons.subtitles_outlined,
+          icon: _isBackgroundListeningBook(bookKey)
+              ? Icons.subtitles_off_outlined
+              : Icons.subtitles_outlined,
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];

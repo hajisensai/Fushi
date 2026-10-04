@@ -532,7 +532,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           });
         }
       },
-      onError: (Object e) => _onOcrError(e),
+      onError: (Object e) => _onOcrError(_mokuroErrorMessage(e)),
     );
   }
 
@@ -563,6 +563,22 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       },
       onError: (Object e) => _onOcrError(_remoteErrorMessage(e)),
     );
+  }
+
+  /// 外部 mokuro 失败 → 本地化文案；原始异常（含启动失败的底层原因）进日志。
+  ///
+  /// 2026-10 体验优化：runner 原先抛写死的中文句子。
+  String _mokuroErrorMessage(Object e) {
+    ErrorLogService.instance.log('MangaOcrWizard.externalMokuro', e);
+    if (e is! MokuroRunnerException) return '$e';
+    return switch (e.code) {
+      MokuroRunnerErrorCode.notFound => t.manga_ocr_mokuro_not_found,
+      MokuroRunnerErrorCode.timeout => t.manga_ocr_mokuro_timeout,
+      MokuroRunnerErrorCode.launchFailed => t.manga_ocr_mokuro_launch_failed,
+      MokuroRunnerErrorCode.nonZeroExit =>
+        t.manga_ocr_mokuro_exit_code(code: e.exitCode ?? '?'),
+      MokuroRunnerErrorCode.noOutput => t.manga_ocr_mokuro_no_output,
+    };
   }
 
   /// 远程失败 → 本地化可读文案（机器可读 code 映射；未知归入通用失败 + 详情）。

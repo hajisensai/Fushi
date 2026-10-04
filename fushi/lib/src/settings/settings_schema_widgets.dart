@@ -224,13 +224,10 @@ class SettingsSchemaItem extends StatelessWidget
   }
 
   Widget _action(SettingsActionItem action) {
-    return AdaptiveSettingsRow(
-      title: action.title,
-      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
-      subtitle: action.resolveSubtitle(settingsContext),
-      icon: action.icon,
-      showIcon: showIcons,
-      onTap: () async => action.onTap(settingsContext),
+    return _SettingsActionRow(
+      action: action,
+      settingsContext: settingsContext,
+      showIcons: showIcons,
     );
   }
 
@@ -432,6 +429,51 @@ class SettingsSchemaItem extends StatelessWidget
 /// 界面大小滑条（settings_actions.dart 的 _AppUiScaleSliderRow）同款拖动解耦——
 /// 逐 tick 写穿在重页面（如 ~6400 行视频页）会触发全页 rebuild 掉帧（BUG-963）。
 /// 键盘/手柄步进经 _KeyboardSlider 同时回调 onChanged+onChangeEnd，每按即提交。
+/// 动作行（2026-10 体验优化）：给 [SettingsActionItem.onTap] 加进行中锁——
+/// 上一次点击的异步动作（确认框、写库、导出……）没结束前，再点 / 再按 Enter
+/// 直接忽略，不会叠出两个确认框或把同一动作跑两遍。行本身保持可聚焦、外观不变。
+class _SettingsActionRow extends StatefulWidget {
+  const _SettingsActionRow({
+    required this.action,
+    required this.settingsContext,
+    required this.showIcons,
+  });
+
+  final SettingsActionItem action;
+  final SettingsContext settingsContext;
+  final bool showIcons;
+
+  @override
+  State<_SettingsActionRow> createState() => _SettingsActionRowState();
+}
+
+class _SettingsActionRowState extends State<_SettingsActionRow> {
+  bool _running = false;
+
+  Future<void> _run() async {
+    if (_running) return;
+    _running = true;
+    try {
+      await widget.action.onTap(widget.settingsContext);
+    } finally {
+      _running = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsActionItem action = widget.action;
+    return AdaptiveSettingsRow(
+      title: action.title,
+      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
+      subtitle: action.resolveSubtitle(widget.settingsContext),
+      icon: action.icon,
+      showIcon: widget.showIcons,
+      onTap: _run,
+    );
+  }
+}
+
 class _CommitOnReleaseSlider extends StatefulWidget {
   const _CommitOnReleaseSlider({
     required this.item,

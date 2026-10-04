@@ -2,6 +2,8 @@
 // player response（见下方注释与 resolveYoutubeSource）。dart format 会把多行 import 的
 // `show VideoController` 换行，令行内 `// ignore` 锚点失效，故用 file 级抑制。
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:convert' show jsonDecode;
+
 import 'package:html_unescape/html_unescape.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_audio/fushi_audio_core.dart' show AudioCue;
@@ -435,8 +437,10 @@ const String kYoutubeVisionOsUserAgent =
 /// `fushi/test/media/video/youtube_client_fallback_test.dart`。`hl` 是 youtube_explode 其它
 /// 内置 client 都带的字段（yt-dlp 亦在 `build_innertube_clients` 里 setdefault 'en'）。
 ///
-/// 必须走 **watch page**（[yt.StreamClient.getManifest] 默认 `requireWatchPage: true`）：
-/// 该 client 的 player 请求要带观看页派生的 visitor cookie，裸 innertube 请求实测被判 bot。
+/// 它的 player 请求必须带 **visitor 身份**，裸 innertube 请求实测被判 bot。本常量只是模板：
+/// 取流时由 [youtubeClientWithVisitorData] 派生出带 `sw.js_data` visitorData 的副本再发
+/// （见 [kYoutubeVisitorIdentityClients]）。BUG-2946 前身份来自 watch page，那一步是整条
+/// 兜底链的单点。
 const yt.YoutubeApiClient kYoutubeVisionOsClient =
     yt.YoutubeApiClient(<String, dynamic>{
   'context': <String, dynamic>{
@@ -452,6 +456,72 @@ const yt.YoutubeApiClient kYoutubeVisionOsClient =
     },
   },
 }, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
+
+/// BUG-2946：player 请求要先带上 visitor 身份才不被判 bot 的 client（按引用相等）。
+///
+/// 旧实现让**每个** client 都走 youtube_explode 的 `requireWatchPage: true`：先拉一次
+/// watch page HTML，页面里缺 `og:url` 就在发任何 player 请求之前抛
+/// `VideoUnavailableException`（「Video 'xxx' is unavailable」）。YouTube 会间歇对某个出口
+/// 下发降级 watch page（有播放器壳、无 `og:url`），于是 5 个 client 全部死在同一张页面上，
+/// 公开视频被报成「不存在 / 私有 / 已删除」（实测 `N2uQWfV6Jr4`，3 分钟后同一出口恢复正常）。
+/// 而 watch page 在这条链里唯一的用处就是给 visionOS 提供 visitor 身份：其余 client 不拉
+/// 它结果逐个相同（android 出流、androidVr/tv unplayable、ios 首流 403）。所以链上一律不拉
+/// watch page，身份改由 [fetchYoutubeVisitorData] 单独取、只注入这里列出的 client。
+final Set<yt.YoutubeApiClient> kYoutubeVisitorIdentityClients =
+    <yt.YoutubeApiClient>{kYoutubeVisionOsClient};
+
+/// youtube_explode 给 IOS client 取 visitorData 用的同一个端点（`VideoController`
+/// `_extractVisitorData`）；它是 JSON，不经 watch page 的 HTML 结构判定。
+const String kYoutubeVisitorDataUrl = 'https://www.youtube.com/sw.js_data';
+
+/// 纯函数：从 `sw.js_data` 响应体取 visitorData（`)]}'` XSSI 前缀 + JSON，路径
+/// `[0][2][0][0][13]`，与 youtube_explode 同口径）。结构不符抛 [FormatException]，
+/// 由调用方当作「这个 client 失败」记下并试下一个。
+String parseYoutubeVisitorData(String body) {
+  final String json = body.startsWith(")]}'") ? body.substring(4) : body;
+  Object? node = jsonDecode(json);
+  for (final int index in const <int>[0, 2, 0, 0, 13]) {
+    if (node is! List<dynamic> || index >= node.length) {
+      throw const FormatException('sw.js_data: unexpected shape');
+    }
+    node = node[index];
+  }
+  if (node is! String || node.isEmpty) {
+    throw const FormatException('sw.js_data: visitorData missing');
+  }
+  return node;
+}
+
+/// IO：取一次 visitorData（UA 用 [userAgent]，与随后 player 请求的 client UA 一致）。
+Future<String> fetchYoutubeVisitorData(
+  yt.YoutubeHttpClient http, {
+  String userAgent = kYoutubeVisionOsUserAgent,
+}) async =>
+    parseYoutubeVisitorData(await http.getString(
+      kYoutubeVisitorDataUrl,
+      headers: <String, String>{'User-Agent': userAgent},
+    ));
+
+/// 纯函数：派生带 visitor 身份的 client 副本——`context.client.visitorData` + 请求头
+/// `X-Goog-Visitor-Id`（与 youtube_explode 带 watch page 时发的两处一致）。[base] 不被修改。
+yt.YoutubeApiClient youtubeClientWithVisitorData(
+  yt.YoutubeApiClient base,
+  String visitorData,
+) {
+  final Map<String, dynamic> context = Map<String, dynamic>.from(
+      base.payload['context'] as Map<String, dynamic>);
+  context['client'] =
+      Map<String, dynamic>.from(context['client'] as Map<String, dynamic>)
+        ..['visitorData'] = visitorData;
+  return yt.YoutubeApiClient(
+    <String, dynamic>{...base.payload, 'context': context},
+    base.apiUrl,
+    headers: <String, dynamic>{
+      ...base.headers,
+      'X-Goog-Visitor-Id': visitorData,
+    },
+  );
+}
 
 /// 单个 manifest client 的取流超时上限（[_getManifestWithClientFallback] 默认值）。
 ///
@@ -510,36 +580,81 @@ Map<String, String> youtubeStreamReplayHeaders() =>
 ///
 /// 「每 client 上限累计不超外层总超时」的不变式现在由 [kYoutubeResolveTimeout] 从链长
 /// **派生**保证（BUG-1832），不再靠注释人肉维护。
+///
+/// BUG-2946：一律 `requireWatchPage: false`，watch page 不再是全链共用的前置步骤；
+/// [kYoutubeVisitorIdentityClients] 里的 client 改用 [fetchYoutubeVisitorData] 取到的身份
+/// （本次解析只取一次，算进该 client 自己的超时）。全部失败时报错逐 client 列出各自原因。
 Future<yt.StreamManifest> _getManifestWithClientFallback(
   yt.YoutubeExplode client,
+  yt.YoutubeHttpClient http,
   yt.VideoId videoId,
   List<yt.YoutubeApiClient> ytClients, {
   Duration perClientTimeout = kYoutubePerClientManifestTimeout,
 }) async {
-  Object? lastError;
+  Future<String>? visitorData;
+  Future<yt.YoutubeApiClient> withIdentity(yt.YoutubeApiClient api) async {
+    if (!kYoutubeVisitorIdentityClients.contains(api)) return api;
+    visitorData ??= fetchYoutubeVisitorData(http);
+    return youtubeClientWithVisitorData(api, await visitorData!);
+  }
+
+  Future<yt.StreamManifest> fetch(yt.YoutubeApiClient api) async =>
+      client.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: <yt.YoutubeApiClient>[await withIdentity(api)],
+        requireWatchPage: false,
+      );
+
+  final List<String> failures = <String>[];
   for (final yt.YoutubeApiClient api in ytClients) {
     try {
       final yt.StreamManifest manifest =
-          await client.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: <yt.YoutubeApiClient>[api],
-      ).timeout(perClientTimeout);
+          await fetch(api).timeout(perClientTimeout);
       if (manifest.streams.isNotEmpty) return manifest;
+      failures.add('${youtubeClientName(api)}: no streams');
     } catch (e) {
-      // 单 client 失败（403 / 无流 / 限流 / 本 client 超时）：记异常、试下一个兜底
-      // client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
-      lastError = e;
+      // 单 client 失败（403 / 无流 / 限流 / 取身份失败 / 本 client 超时）：记下、试下一个
+      // 兜底 client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
+      failures
+          .add('${youtubeClientName(api)}: ${e.toString().split('\n').first}');
     }
   }
-  if (lastError != null) {
-    throw StateError(
-      'youtube manifest failed for all clients '
-      '(${ytClients.map((yt.YoutubeApiClient c) => c.apiUrl).toList()}): '
-      '$lastError',
-    );
+  if (failures.isEmpty) {
+    throw StateError('youtube manifest: empty client fallback list');
   }
-  throw StateError('youtube manifest: empty client fallback list');
+  throw StateError(
+    'youtube manifest failed for all clients ($videoId): '
+    '${failures.join('; ')}',
+  );
 }
+
+/// 测试入口：用注入的 [http]（如 `MockClient`）离线驱动真实兜底链（BUG-2946 回归测试）。
+@visibleForTesting
+Future<yt.StreamManifest> getYoutubeManifestWithClientFallback(
+  yt.YoutubeHttpClient http,
+  String videoId,
+  List<yt.YoutubeApiClient> ytClients, {
+  Duration perClientTimeout = kYoutubePerClientManifestTimeout,
+}) async {
+  final yt.YoutubeExplode client = yt.YoutubeExplode(http);
+  try {
+    return await _getManifestWithClientFallback(
+      client,
+      http,
+      yt.VideoId(videoId),
+      ytClients,
+      perClientTimeout: perClientTimeout,
+    );
+  } finally {
+    client.close();
+  }
+}
+
+/// innertube clientName（日志里区分兜底链各成员；5 个 client 有 4 个 apiUrl 相同）。
+String youtubeClientName(yt.YoutubeApiClient api) =>
+    ((api.payload['context'] as Map<String, dynamic>?)?['client']
+        as Map<String, dynamic>?)?['clientName'] as String? ??
+    api.apiUrl;
 
 /// IO：用 youtube_explode 解析可播放流 URL + 日文字幕（无则空）+ 标题。
 ///
@@ -566,14 +681,15 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
   // 非 null 走 [pickVideoStreamForTargetHeight]，可越过默认 1080p 上限到 1440p/4K）。
   int? playbackTargetHeight,
 }) async {
-  final yt.YoutubeExplode client =
-      yt.YoutubeExplode(_createYoutubeHttpClient());
+  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final yt.YoutubeExplode client = yt.YoutubeExplode(http);
   try {
     // 加超时：YouTube 的 innertube/googlevideo 偶发 tarpit（高频请求被限流时连接不完成），
     // youtube_explode 内部无超时 → 会永久挂住，UI 表现为「点了没反应也没报错」。超时后
     // finally 关 client 取消挂起请求、抛 TimeoutException，让调用方给出明确「解析失败」反馈。
     return await _resolveYoutubeSourceInner(
       client,
+      http,
       url,
       preferSubtitleLang,
       withCaptions,
@@ -587,6 +703,7 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
 
 Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   yt.YoutubeExplode client,
+  yt.YoutubeHttpClient http,
   String url,
   String preferSubtitleLang,
   bool withCaptions,
@@ -607,7 +724,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   }
   // A1（TODO-1307）：androidVr 首选、失败才回落 ios/tv（[_getManifestWithClientFallback]）。
   final yt.StreamManifest manifest =
-      await _getManifestWithClientFallback(client, videoId, ytClients);
+      await _getManifestWithClientFallback(client, http, videoId, ytClients);
   // 优先「video-only（编码优先 avc1>vp9>av01，≤1080p 最高清）+ 最高码率 audio-only」分离流；两者齐备才用，
   // 否则回落 muxed（YouTube 把 muxed 限 ≤360p，故仅作最后兜底）。
   String streamUrl;
@@ -815,11 +932,12 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
   // 对齐 ≤目标 的最高档，与初始播放选择一致。
   int? playbackTargetHeight,
 }) async {
-  final yt.YoutubeExplode client =
-      yt.YoutubeExplode(_createYoutubeHttpClient());
+  final yt.YoutubeHttpClient http = _createYoutubeHttpClient();
+  final yt.YoutubeExplode client = yt.YoutubeExplode(http);
   try {
     return await _resolveYoutubeVideoVariantsInner(
       client,
+      http,
       url,
       ytClients ?? kYoutubeManifestClientFallback,
       playbackTargetHeight,
@@ -831,13 +949,14 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
 
 Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   yt.YoutubeExplode client,
+  yt.YoutubeHttpClient http,
   String url,
   List<yt.YoutubeApiClient> ytClients,
   int? playbackTargetHeight,
 ) async {
   final yt.VideoId videoId = yt.VideoId(url);
   final yt.StreamManifest manifest =
-      await _getManifestWithClientFallback(client, videoId, ytClients);
+      await _getManifestWithClientFallback(client, http, videoId, ytClients);
   // 无分离流（仅 muxed ≤360p）：无多档可选，返回空集（播放页回退无 YouTube 画质菜单）。
   if (manifest.videoOnly.isEmpty || manifest.audioOnly.isEmpty) {
     return const YoutubeVariantSet(

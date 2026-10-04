@@ -75,11 +75,28 @@ class MangaExtensionManagementTile extends StatelessWidget {
   final int? groupIndex;
   final int? groupCount;
 
+  /// 窄于此宽度时文字动作按钮下移到副标题下方一行。
+  ///
+  /// 2026-10 体验优化：trailing 的 `Wrap` 在 `FushiListItem` 的 `Row` 里拿到
+  /// 的是无界宽度，永远不会换行——窄屏上「预览 + 安装」两个按钮加开关直接
+  /// 把标题列挤到只剩几个字甚至溢出。
+  static const double compactActionsBreakpoint = 480;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildTile(
+            context,
+            narrow: constraints.maxWidth < compactActionsBreakpoint,
+          ),
+    );
+  }
+
+  Widget _buildTile(BuildContext context, {required bool narrow}) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Widget row = _buildRow(context, theme, tokens);
+    final Widget row = _buildRow(context, theme, tokens, narrow: narrow);
     final int? index = groupIndex;
     final int? count = groupCount;
     if (index != null && count != null) {
@@ -110,8 +127,36 @@ class MangaExtensionManagementTile extends StatelessWidget {
   Widget _buildRow(
     BuildContext context,
     ThemeData theme,
-    FushiDesignTokens tokens,
-  ) {
+    FushiDesignTokens tokens, {
+    required bool narrow,
+  }) {
+    final List<Widget> actions = <Widget>[
+      if (secondaryLabel != null)
+        FushiTextButton(
+          style: _actionStyle,
+          onPressed: onSecondary,
+          child: Text(secondaryLabel!),
+        ),
+      if (primaryLabel != null)
+        FushiTextButton(
+          style: _actionStyle,
+          onPressed: onPrimary,
+          child: Text(primaryLabel!),
+        ),
+    ];
+    final List<Widget> trailingChildren = <Widget>[
+      if (busy)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: SizedBox.square(
+            dimension: 18,
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      if (enabled != null)
+        FushiSwitch.adaptive(value: enabled!, onChanged: onEnabledChanged),
+      if (!narrow) ...actions,
+    ];
     return FushiListItem(
       // 一行副标题 + 36px 图标已经自带高度；rowVertical(12) 是给两行副标题
       // 留的，这里收到 gap(8)，行高从 ~89 降到 ~62。
@@ -144,34 +189,30 @@ class MangaExtensionManagementTile extends StatelessWidget {
           ],
         ],
       ),
-      subtitle: subtitle,
-      trailing: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: <Widget>[
-          if (busy)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: SizedBox.square(
-                dimension: 18,
-                child: FushiCircularProgressIndicator(strokeWidth: 2),
-              ),
+      subtitle: narrow && actions.isNotEmpty
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                subtitle,
+                const SizedBox(height: 4),
+                Wrap(
+                  key: const ValueKey<String>(
+                    'manga_extension_tile_compact_actions',
+                  ),
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: actions,
+                ),
+              ],
+            )
+          : subtitle,
+      trailing: trailingChildren.isEmpty
+          ? null
+          : Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: trailingChildren,
             ),
-          if (enabled != null)
-            FushiSwitch.adaptive(value: enabled!, onChanged: onEnabledChanged),
-          if (secondaryLabel != null)
-            FushiTextButton(
-              style: _actionStyle,
-              onPressed: onSecondary,
-              child: Text(secondaryLabel!),
-            ),
-          if (primaryLabel != null)
-            FushiTextButton(
-              style: _actionStyle,
-              onPressed: onPrimary,
-              child: Text(primaryLabel!),
-            ),
-        ],
-      ),
     );
   }
 

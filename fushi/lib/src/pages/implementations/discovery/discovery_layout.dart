@@ -26,6 +26,7 @@ import 'package:fushi/src/media/collections/collection_detail_layout.dart'
     show CollectionHeroBadgeChips;
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -802,8 +803,17 @@ class DiscoveryCoverGrid extends StatelessWidget {
                 hasSubtitle: hasSubtitle,
               ),
             ),
+            // 2026-10 动效重做：逐项错峰淡入（与 [fushiStaggeredItemBuilder] 同一
+            // 包法；调用方已自行包 [FushiStaggeredEntrance] 的原样放行，不叠两层）。
+            // 进场窗口 [FushiEntranceScope] 由调用方在结果到达处给，这里不内置——
+            // 骨架网格与结果网格同位复用时，内置窗口会在骨架期就关掉。
             delegate: SliverChildBuilderDelegate(
-              itemBuilder,
+              (BuildContext context, int index) {
+                final Widget child = itemBuilder(context, index);
+                return child is FushiStaggeredEntrance
+                    ? child
+                    : FushiStaggeredEntrance(index: index, child: child);
+              },
               childCount: itemCount,
             ),
           );
@@ -867,12 +877,14 @@ class DiscoveryGridPage extends StatelessWidget {
       appBar: FushiAppBar(title: Text(title)),
       body: CustomScrollView(
         slivers: <Widget>[
-          DiscoveryCoverGrid(
-            itemCount: itemCount,
-            itemBuilder: itemBuilder,
-            shape: shape,
-            titleMaxLines: titleMaxLines,
-            hasSubtitle: hasSubtitle,
+          FushiEntranceScope(
+            child: DiscoveryCoverGrid(
+              itemCount: itemCount,
+              itemBuilder: itemBuilder,
+              shape: shape,
+              titleMaxLines: titleMaxLines,
+              hasSubtitle: hasSubtitle,
+            ),
           ),
           SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
         ],

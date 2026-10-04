@@ -81,6 +81,13 @@ void main() {
         'Future<void> _exitVideoNativeFullscreen() async {',
       ]) {
         final String body = methodBody(src, sig);
+        final int immersion = body.indexOf('await _applyVideoImmersiveMode();');
+        const String ownershipGuard =
+            'if (!VideoDisplayClaim.owns(this)) return;';
+        expect(immersion, greaterThanOrEqualTo(0));
+        expect(body.indexOf(ownershipGuard), lessThan(immersion));
+        expect(body.lastIndexOf(ownershipGuard), greaterThan(immersion),
+            reason: '已退页的全屏回调不得在 await 后重新锁方向');
         expect(
           body.contains('setPreferredOrientations(<DeviceOrientation>[])'),
           isFalse,

@@ -293,17 +293,33 @@ void main() {
       expect(hit.row, 2);
     });
 
-    test('落在格子间隙 → null', () {
-      // x=13 落在第 0 列格子(0..12)右侧的 spacing 间隙(12..15)。
-      expect(
-        hitStatHeatmapCell(
-          const Offset(13, 6),
-          cell: cell,
-          spacing: spacing,
-          cols: 5,
-        ),
-        isNull,
+    // 2026-10 体验优化：旧断言「落在缝里 → null」已过时——缝里的点击现在取
+    // 最近格（手机上 12dp 格子、3dp 缝，点到缝里就没反应是体验缺陷）。
+    test('落在格子间隙 → 取最近格', () {
+      // x=13 落在第 0 列格子(0..12)右侧缝(12..15)的左半，离第 0 列近。
+      final ({int col, int row})? left = hitStatHeatmapCell(
+        const Offset(13, 6),
+        cell: cell,
+        spacing: spacing,
+        cols: 5,
       );
+      expect(left, isNotNull);
+      expect(left!.col, 0);
+      expect(left.row, 0);
+      // x=14 落在缝的右半，归第 1 列；y=13.9 同理归第 1 行。
+      final ({int col, int row})? right = hitStatHeatmapCell(
+        const Offset(14, 13.9),
+        cell: cell,
+        spacing: spacing,
+        cols: 5,
+      );
+      expect(right, isNotNull);
+      expect(right!.col, 1);
+      expect(right.row, 1);
+    });
+
+    test('翻页箭头命中区 ≥ 40', () {
+      expect(kStatHeatmapArrowHitSize, greaterThanOrEqualTo(40));
     });
 
     test('越界（列 >= cols 或 行 >= 7 或负）→ null', () {
