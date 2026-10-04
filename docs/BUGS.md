@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2698 条。点号进各自文件。
+> 共 2700 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2943](bugs/BUG-2943-reader-lock-inset-page-hint.md) | ✅ | ✅ | 阅读器锁屏解锁改变页距后重锚 hint 退回上一页 |
+| [BUG-2942](bugs/BUG-2942-horizontal-controls-mouse-drag.md) | ✅ | ✅ | 视频筛选行与有声书溢出按钮缺少鼠标横拖接线 |
 | [BUG-2937](bugs/BUG-2937-franchise-walk-batched.md) | ✅ | ✅ | AI下视频整套：系列查不完时按预算截断交半张清单·应分批续查到走完 |
 | [BUG-2936](bugs/BUG-2936-franchise-movies-silent-truncation.md) | ✅ | ✅ | AI下视频「全部哆啦A梦大电影」MAL系列遍历静默截断丢新剧场版·失败时静默降级成下单部TV·短片混进剧场版 |
 | [BUG-2935](bugs/BUG-2935-mal-franchise-silent-truncation.md) | ✅ | ✅ | 「整套下载」MAL 关联链走到上限静默截断，哆啦A梦等长寿系列可能漏收作品 |

@@ -1,0 +1,7 @@
+## BUG-2942 · 视频筛选行与有声书溢出按钮缺少鼠标横拖接线
+- **报告**：2026-10-04（修复 PR [#1955](https://github.com/hajisensai/Fushi/pull/1955) 的 CI 失败时发现）。
+- **真实性**：✅ 真 bug（生产接线缺失已确认；未对旧安装包做真实桌面界面复现）。Flutter 默认滚动行为不接收鼠标拖动；视频首页窄屏搜索筛选行、全部视频筛选行，以及有声书播放条 trailing 的横向 `SingleChildScrollView` 都缺少已有共享件 `HorizontalDragScrollable`。根因位置：`fushi/lib/src/pages/implementations/home_video_page.dart:6361–6400`、`fushi/lib/src/media/audiobook/audiobook_play_bar.dart:181–187`（行号对应修复提交 `c0b05431f921c091ab32527e6f2095684a4e955e`）；共享行为定义在 `fushi/lib/src/utils/misc/platform_utils.dart:87`。原 CI 的 `horizontal_drag_scroll_guard_test.dart` 指出视频文件 3 个横滚区域仅 1 个 wrapper、有声书 1 个区域无 wrapper。三处内容是点按按钮/状态文本，没有必须保留的竞争横拖手势。
+- **[x] ① 已修复** — `c0b05431f921c091ab32527e6f2095684a4e955e` 在上述三个滚动件外逐个接入 `HorizontalDragScrollable`，保留原 key、padding、`reverse: !reversed` 和控件布局。未放开全局鼠标滚动、未添加滚轮转横滚、未改守卫或新增豁免。
+- **[x] ② 已加自动化测试** — 同一提交扩展 `fushi/test/media/audiobook/audiobook_play_bar_trailing_overflow_test.dart:77–105`：两种 `reversed` 下先确认确有溢出，使用 `PointerDeviceKind.mouse` 真发 Flutter widget 拖动事件，断言滚动位置增加且固定播放键边界不动。`fushi/test/pages/home_video_filter_empty_test.dart:224–245` 检查两个视频筛选滚动件实际继承的 `dragDevices` 包含 mouse（此项是接线验证，不是视频筛选行真实拖动端到端测试）。原目录扫描守卫保持不变。
+- **验证**：代码提交 `c0b05431f921c091ab32527e6f2095684a4e955e` 的 [GitHub CI run 37186223135](https://github.com/hajisensai/Fushi/actions/runs/37186223135) 四个 unit-test shards 及分析/包/JS 测试通过；独立源代码审查未发现新的阻断缺陷。此结论仅属于该代码 SHA，不代表后续文档提交已跑 CI。
+- **备注**：真实桌面 app 的窄屏筛选、溢出按钮可达性和反转布局肉眼复测待补。本轮没有启动目标平台安装包；widget 行为证据与实际设备/窗口验证分开记录。Android release verify 与多平台实际构建均被 workflow 条件跳过。
