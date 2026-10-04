@@ -3133,12 +3133,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   // ── 长按菜单 ──────────────────────────────────────────────────────
 
+  /// 长按菜单封面块的模糊垫底图源（[MediaItemDialogFrame.coverBackdrop]）：与
+  /// [_buildCover] 同一判据——文件不存在时为 null，菜单退回纯色 letterbox。
+  ImageProvider? _coverBackdropFor(String? coverPath) {
+    if (coverPath == null || coverPath.isEmpty) return null;
+    final File file = File(coverPath);
+    return file.existsSync() ? FileImage(file) : null;
+  }
+
   /// 长按视频卡：打开与书架书籍一致的封面背景动作面板。播放仍由卡片点击负责。
   void _showVideoMenu(VideoBookRow book) {
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildCover(book),
+        coverBackdrop: _coverBackdropFor(book.coverPath),
         title: book.title,
         showLaunchAction: false,
         // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
@@ -6488,6 +6497,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteVideoCover(video),
+        coverBackdrop: _remoteCoverProvider(video),
         title: video.title,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[

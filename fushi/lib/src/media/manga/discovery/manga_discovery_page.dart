@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
 ///
@@ -876,18 +877,24 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         ),
       );
     } else {
-      body = SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-        sliver: SliverGrid.builder(
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 160,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.6,
+      // 2026-10 动效重做：首屏结果卡错峰淡入，翻页补进来的卡瞬间出现。
+      body = FushiEntranceScope(
+        child: SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 160,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.6,
+            ),
+            itemCount: loaded.length,
+            itemBuilder: (BuildContext context, int index) =>
+                FushiStaggeredEntrance(
+              index: index,
+              child: _SourceItemCard(item: loaded[index]),
+            ),
           ),
-          itemCount: loaded.length,
-          itemBuilder: (BuildContext context, int index) =>
-              _SourceItemCard(item: loaded[index]),
         ),
       );
     }
