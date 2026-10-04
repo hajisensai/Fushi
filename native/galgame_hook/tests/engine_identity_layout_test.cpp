@@ -20,6 +20,8 @@
 #include "../hook/adapters/catsystem2_profile.h"
 #include "../hook/adapters/elf_ai6_profile.h"
 #include "../hook/adapters/malie_profile.h"
+#include "../include/launcher_layout.h"
+#include "../injector/launch_engine_signature.h"
 
 #include <cassert>
 #include <cstdio>
@@ -168,6 +170,61 @@ int main() {
     const char not_kif[8] = {'R', 'I', 'F', 'F', 0, 0, 0, 0};
     WriteBytes(root + L"\\voice.int", not_kif, sizeof(not_kif));
     assert(!fushi_voice_hook::MatchesCatSystem2Layout(root));
+    RemoveTree(root);
+  }
+  // BUG-2930：体验版「根目录 WCBOOTMENU 启动器 + data\cs2.exe」。注入器的启动器判据
+  // （LooksLikeLauncherLayout + DirectoryHasEngineSignature）必须靠同一份 CatSystem2
+  // 判据在 data\ 认出真游戏；根目录本身就是 CatSystem2（Grisaia 形态）时不算启动器。
+  {
+    const std::wstring root = MakeTempRoot(L"cs2_bootmenu");
+    const std::wstring data = root + L"\\data";
+    assert(CreateDirectoryW(data.c_str(), nullptr));
+    assert(CreateDirectoryW((data + L"\\config").c_str(), nullptr));
+    const char xml[] = "<?xml version=\"1.0\"?><startup/>";
+    WriteBytes(data + L"\\config\\startup.xml", xml, sizeof(xml) - 1);
+    char kif[32] = {0};
+    std::memcpy(kif, ::fushi_voice_hook::catsystem2::kIntSignature,
+                ::fushi_voice_hook::catsystem2::kIntSignatureBytes);
+    WriteBytes(data + L"\\scene.int", kif, sizeof(kif));
+    const char stub[] = "MZ";
+    WriteBytes(root + L"\\bootmenu.exe", stub, sizeof(stub) - 1);
+    assert(CreateDirectoryW((root + L"\\manual").c_str(), nullptr));
+
+    // 注入器实际调用的那一个函数，不是 MatchesCatSystem2Layout 本身：注入器漏接
+    // CatSystem2 这一条时这里必须变红。
+    auto is_game_dir = [](const std::wstring& dir) {
+      return fushi_voice_hook::DirectoryHasEngineSignature(dir);
+    };
+    auto list_dirs = [](const std::wstring& dir) {
+      std::vector<std::wstring> out;
+      WIN32_FIND_DATAW found = {};
+      HANDLE search = FindFirstFileW((dir + L"\\*").c_str(), &found);
+      if (search == INVALID_HANDLE_VALUE) return out;
+      do {
+        const std::wstring name = found.cFileName;
+        if (name == L"." || name == L"..") continue;
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) continue;
+        out.push_back(dir + L"\\" + name);
+      } while (FindNextFileW(search, &found));
+      FindClose(search);
+      return out;
+    };
+    assert(fushi_voice_hook::LooksLikeLauncherLayout(
+        root, fushi_voice_hook::kLauncherLayoutMaxDepth, is_game_dir,
+        list_dirs));
+    // 子目录只有 startup.xml、没有 KIF 归档：不是 CatSystem2，启动器判据随之失效。
+    DeleteFileW((data + L"\\scene.int").c_str());
+    assert(!fushi_voice_hook::LooksLikeLauncherLayout(
+        root, fushi_voice_hook::kLauncherLayoutMaxDepth, is_game_dir,
+        list_dirs));
+    WriteBytes(data + L"\\scene.int", kif, sizeof(kif));
+    // 根目录自己就带签名（cs2.exe 与 KIF 同级）：被启动的就是游戏，不是启动器。
+    assert(CreateDirectoryW((root + L"\\config").c_str(), nullptr));
+    WriteBytes(root + L"\\config\\startup.xml", xml, sizeof(xml) - 1);
+    WriteBytes(root + L"\\scene.int", kif, sizeof(kif));
+    assert(!fushi_voice_hook::LooksLikeLauncherLayout(
+        root, fushi_voice_hook::kLauncherLayoutMaxDepth, is_game_dir,
+        list_dirs));
     RemoveTree(root);
   }
   assert(!fushi_voice_hook::MatchesCatSystem2Profile(nullptr));

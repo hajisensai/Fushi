@@ -2546,8 +2546,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // [FushiDesktopTitleBar] 的全屏监听里。
     // TODO-158/BUG-219: 进入视频页显式持有「沉浸隐藏系统栏」所有权（移动端）。原先
     // 只靠 [AppModel.openMedia] 在打开媒体时一次性设 immersiveSticky（书 / 视频共用
-    // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
-    // [AppModel.closeMedia] 的 setHomeShellSystemUiMode 还原；桌面 no-op。
+    // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出时，
+    // 最后一个视频页释放显示态时由 [_releaseVideoDisplayClaim] 还原；桌面 no-op。
     unawaited(_applyVideoImmersiveMode());
     // TODO-658/BUG-383: 监听系统栏真实可见性，喂 [_videoBottomSystemInset] 的门控
     // （隐栏归零、可见才避让），根治手势导航下进度条被恒非零 viewPadding 顶高。
@@ -2941,7 +2941,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (isAnimeSourceVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
         try {
-          // 合规门 + 运行时平台门（iOS 不带在线源宿主、Linux 没有 Mihon 宿主）：
+          // 合规门 + 运行时平台门（iOS 不带在线源宿主、没有 Mihon 宿主的平台）：
           // 取 animeMihonManager 之前先问门——门外取用会在不该有宿主的平台上起宿主
           // （或直接抛 UnsupportedError）。不可用走下面「扩展不可用」的失败提示。
           if (!isVideoOnlineSourcesAvailable) {
@@ -8396,10 +8396,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 用 [SystemUiMode.immersiveSticky]（与 openMedia 既有基线一致）：上划仍可临时
   /// 唤出系统栏，但随后自动重隐；配合 `resumed` 重申覆盖后台返回 / 通知栏交互后的
   /// 残留。严格限本页：不动 openMedia（书 / 视频共用入口，竖排小说由 reader 自设
-  /// edgeToEdge 覆盖、首页由 setHomeShellSystemUiMode 接管），退出由 [AppModel.closeMedia]
-  /// 的 setHomeShellSystemUiMode 统一还原。桌面门控 no-op（桌面无系统栏）。
+  /// edgeToEdge 覆盖、首页由 setHomeShellSystemUiMode 接管）。视频独立 push/pop，
+  /// 不经过 AppModel.closeMedia；最后一个显示态 owner 离开时由
+  /// [_releaseVideoDisplayClaim] 还原。已释放的 owner 不得通过异步回调重隐系统栏。
   Future<void> _applyVideoImmersiveMode() async {
     if (!isMobilePlatform) return;
+    if (!VideoDisplayClaim.owns(this)) return;
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
@@ -8434,6 +8436,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
     if (isMobilePlatform) {
       unawaited(SystemChrome.setSystemUIChangeCallback(null));
+      unawaited(setHomeShellSystemUiMode());
     }
     // TODO-099: 还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
     unawaited(_restoreOrientationOnExit());

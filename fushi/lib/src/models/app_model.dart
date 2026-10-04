@@ -4682,7 +4682,7 @@ class AppModel with ChangeNotifier {
   /// 运行时；这里是唯一的分派点。
   ///
   /// **Aidoku 分支刻意不碰 [mihonManager]**：平台矩阵不重合——Mihon 是
-  /// Android/Windows/macOS，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
+  /// Android/Windows/macOS/Linux，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
   /// 条目时去取 mihonManager 会直接抛 `UnsupportedError`，把「打开这本书」变成
   /// 崩溃。两个分支各自独立到底。
   OnlineMangaLibraryService onlineMangaLibraryService(
@@ -4705,7 +4705,7 @@ class AppModel with ChangeNotifier {
           updateFeed: updateFeedService,
         );
       // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
-      // iOS/Linux 上直接抛 UnsupportedError。
+      // 没有 Mihon 宿主的平台（iOS）上直接抛 UnsupportedError。
       case OnlineMangaRuntimeKind.interconnect:
         return OnlineMangaLibraryService(
           database: database,
@@ -6737,8 +6737,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
     await setScreenWakelock(enable: false, source: 'closeMedia');
-    // Returning to the home/menu shell: hide the Android status bar again
-    // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
+    // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
     // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
     // Windows OS drop registration in case an opened reader/video/lookup

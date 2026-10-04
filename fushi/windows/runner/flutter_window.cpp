@@ -518,6 +518,13 @@ bool FlutterWindow::OnCreate() {
                                static_cast<uint32_t>(text_argb));
           }
           result->Success();
+        } else if (call.method_name() == "beginStartupWindowPreparation") {
+          // Visible integration-test windows retain normal resize delivery.
+          BeginStartupWindowPreparation();
+          result->Success();
+        } else if (call.method_name() == "endStartupWindowPreparation") {
+          EndStartupWindowPreparation();
+          result->Success();
         } else if (call.method_name() == "clearTaskbarFlash") {
           // TODO-615: actively stop any taskbar "flash / request attention"
           // state on the main window. SetForegroundWindow (window_manager's
@@ -2600,7 +2607,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
              uint32_t card_height, uint32_t view_width, uint32_t view_height,
              int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w,
              uint32_t glyph_h, uint32_t* out_client_width,
-             uint32_t* out_client_height) {
+             uint32_t* out_client_height, int32_t* out_root_client_x,
+             int32_t* out_root_client_y) {
         const uint32_t pid = fushi::VoiceHookReader::Instance().CurrentPid();
         if (attached_text_surface_window_ == nullptr ||
             !attached_text_surface_window_->DesktopOverlayAvailableForTarget(
@@ -2612,7 +2620,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         return card->RevealOverProcessClient(
             pid, anchor_x, anchor_y, card_width, card_height, view_width,
             view_height, glyph_x, glyph_y, glyph_w, glyph_h,
-            out_client_width, out_client_height);
+            out_client_width, out_client_height, out_root_client_x,
+            out_root_client_y);
       });
   fushi::VoiceHookReader::Instance().SetLookupCaptureRequest(
       [this](uint32_t max_width, uint32_t max_height,
@@ -3233,7 +3242,8 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                 IntFromValue(args, "height", 0),
                 DoubleFromValue(args, "left", 0.0),
                 DoubleFromValue(args, "top", 0.0),
-                Int64FromValue(args, "geometryEpoch", 0));
+                Int64FromValue(args, "geometryEpoch", 0),
+                IntFromValue(args, "rootHeight", 0));
           } else {
             win->RevealStack(
                 IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
