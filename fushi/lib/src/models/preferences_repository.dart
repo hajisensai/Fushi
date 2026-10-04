@@ -1427,6 +1427,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 播放器底栏时间显示「剩余时长」（`-12:34 / 24:00`）而不是已播时长。
+  /// 默认 false；点按底栏时间切换并记住。
+  bool get videoTimeDisplayRemaining =>
+      getPref('video_time_display_remaining', defaultValue: false) as bool;
+
+  Future<void> setVideoTimeDisplayRemaining(bool value) async {
+    await setPref('video_time_display_remaining', value);
+    notifyListeners();
+  }
+
   /// 旧本地封面补齐开关。现只控制 sidecar / 本地封面 sweep，不会发起元数据
   /// 网络请求；保留该偏好用于兼容已有设备设置。在线刮削统一由
   /// `VideoSourceScrapeCoordinator` 管理。

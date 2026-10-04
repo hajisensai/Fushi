@@ -113,6 +113,8 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
+import 'package:fushi/src/media/video/video_chapter_skip.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -266,6 +268,7 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 part 'video_fushi/danmaku.part.dart';
@@ -1494,6 +1497,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// `setState` 不会重建全屏路由 → 全屏换集后标题停在旧集。改用 [ValueNotifier] + 顶栏
   /// `ValueListenableBuilder` 监听：它在全屏路由内也会随 notifier 变化自重建，标题跟上。
   final ValueNotifier<String?> _titleNotifier = ValueNotifier<String?>(null);
+
+  /// 底栏时间显示「剩余时长」（MD3 Expressive chrome，点按底栏时间切换）。初值读
+  /// 偏好 `video_time_display_remaining`；同全屏路由的标题一样走 notifier，全屏路由
+  /// 快照的主题里也能跟着切。
+  /// 双击快进 / 快退的涟漪提示事件（MD3 Expressive，[VideoM3eDoubleTapRipple]）。
+  final ValueNotifier<VideoM3eRippleEvent?> _doubleTapRipple =
+      ValueNotifier<VideoM3eRippleEvent?>(null);
+
+  late final ValueNotifier<bool> _videoTimeShowsRemaining = ValueNotifier<bool>(
+    _appModel.videoTimeDisplayRemaining,
+  );
+
+  /// 切换底栏时间显示（已播 ⇄ 剩余）并记住。
+  void _toggleVideoTimeRemaining() {
+    _pokeControlsVisible();
+    final bool next = !_videoTimeShowsRemaining.value;
+    _videoTimeShowsRemaining.value = next;
+    unawaited(_appModel.setVideoTimeDisplayRemaining(next));
+  }
 
   /// 字幕跳转列表面板的可见性（TODO-069；asbplayer 式 transcript 面板）。
   ///
@@ -5265,6 +5287,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
+    _videoTimeShowsRemaining.dispose();
+    _doubleTapRipple.dispose();
     // TODO-364：先摘控制条可见性派生监听，再 dispose 各 notifier（监听回调读多个 notifier，
     // 顺序错会在 dispose 后回调里触碰已释放对象）。
     _mediaKitControlsVisible.removeListener(
@@ -7331,21 +7355,106 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 「⋯」按钮：与同条栏其它按钮同款（media_kit 按钮、同图标尺寸），只在有控件被收起时
   /// 出现（[VideoControlBar] 决定）。
-  Widget _videoBarMoreButton(VoidCallback open, {required bool desktop}) {
+  Widget _videoBarMoreButton(
+    VoidCallback open, {
+    required bool desktop,
+    bool tonal = false,
+  }) {
     void onPressed() {
       // 与其它控制条按钮一致：按一下续命控制条，菜单弹出期间它不该在背后自己消失。
       _pokeControlsVisible();
       open();
     }
 
-    final Widget icon = FushiIcon(Icons.more_horiz, size: _videoControlIconSize);
     return FushiTooltip(
       message: MaterialLocalizations.of(context).showMenuTooltip,
-      child: desktop
-          ? MaterialDesktopCustomButton(icon: icon, onPressed: onPressed)
-          : MaterialCustomButton(icon: icon, onPressed: onPressed),
+      child: _chromeIconButton(
+        // MD3 Expressive：溢出菜单用竖排 ⋮（M3 顶栏 / 底栏的溢出惯例）。
+        icon: _appleChrome ? Icons.more_horiz : Icons.more_vert,
+        onPressed: onPressed,
+        desktop: desktop,
+        tonal: tonal,
+      ),
     );
   }
+
+  /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
+  bool get _m3eChrome => !_appleChrome;
+
+  /// MD3 Expressive 图标钮的直径：沿用旧 media_kit 按钮「字形 + 12」的命中区量级，
+  /// 按钮行高（[_videoButtonBarHeight]）与字幕避让的几何不变。
+  double get _m3eButtonExtent =>
+      (_videoControlIconSize + 12) * _controlsDensityScale;
+
+  /// 控制条上的一枚图标钮（顶栏 / 底栏 / 侧栏共用的唯一出口）。
+  ///
+  /// Apple：media_kit 的按钮壳 + SF 字形，与改动前逐像素相同。MD3：
+  /// [VideoM3eIconButton]——24dp 级字形、圆形命中区、按下弹簧形变，[tonal] 时常驻
+  /// tonal 圆底（顶栏按钮组）。两条分支都是同一位置上的单个叶子，焦点 / Tooltip /
+  /// 语义链路一致。
+  Widget _chromeIconButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required bool desktop,
+    bool tonal = false,
+    bool selected = false,
+    double? appleIconSize,
+  }) {
+    if (_appleChrome) {
+      final double size = appleIconSize ?? _videoControlIconSize;
+      final Widget glyph = FushiIcon(icon, size: size);
+      return desktop
+          ? MaterialDesktopCustomButton(
+              icon: glyph,
+              iconSize: appleIconSize,
+              onPressed: onPressed,
+            )
+          : MaterialCustomButton(
+              icon: glyph,
+              iconSize: appleIconSize,
+              onPressed: onPressed,
+            );
+    }
+    final double extent = _m3eButtonExtent;
+    return VideoM3eIconButton(
+      icon: FushiIcon(icon),
+      onPressed: onPressed,
+      extent: extent,
+      iconSize: extent * 0.54,
+      tonal: tonal,
+      selected: selected,
+    );
+  }
+
+  List<AudioCue>? _m3eCueDensitySource;
+  int _m3eCueDensityDurationMs = -1;
+  List<double> _m3eCueDensityCache = const <double>[];
+
+  /// MD3 进度条上的字幕密度刻度（[videoCueDensity]）：按主字幕 cue 表 + 时长缓存，
+  /// 只在换字幕 / 时长变化时重算（进度条每次重建都会来问）。
+  List<double> _m3eCueDensity(
+    VideoPlayerController controller,
+    Duration duration,
+  ) {
+    final List<AudioCue> cues = controller.cues;
+    final int ms = duration.inMilliseconds;
+    if (identical(cues, _m3eCueDensitySource) &&
+        ms == _m3eCueDensityDurationMs) {
+      return _m3eCueDensityCache;
+    }
+    _m3eCueDensitySource = cues;
+    _m3eCueDensityDurationMs = ms;
+    _m3eCueDensityCache = videoCueDensity(<({int startMs, int endMs})>[
+      for (final AudioCue cue in cues) (startMs: cue.startMs, endMs: cue.endMs),
+    ], ms);
+    return _m3eCueDensityCache;
+  }
+
+  /// 槽位是否在顶栏（顶栏按钮在 MD3 下是 tonal 圆钮组）。
+  bool _isTopSlot(VideoControlSlot slot) =>
+      slot == VideoControlSlot.topLeft ||
+      slot == VideoControlSlot.topCenter ||
+      slot == VideoControlSlot.topRight;
 
   /// 标题项落在顶部哪个槽（用户可把它拖到 topLeft / topCenter / topRight）；没放置
   /// 或被移除时返回 null。标题是单实例项（[VideoControlItem.isSingleInstance]），
@@ -7406,6 +7515,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   Widget _topBarTitleText({required AlignmentGeometry alignment}) {
+    if (_m3eChrome) return _m3eTopBarTitle(alignment: alignment);
     return Align(
       alignment: alignment,
       child: ValueListenableBuilder<String?>(
@@ -7420,6 +7530,81 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               ? TextAlign.center
               : TextAlign.start,
           style: _videoControlTitleStyle(),
+        ),
+      ),
+    );
+  }
+
+  /// MD3 Expressive 浮动标题区：两行——作品 / 集名（titleMedium 档，单行省略）+
+  /// 合集里的集序（bodySmall 档，降一级透明度）。单集视频只有一行。
+  ///
+  /// 集序随 [_titleNotifier] 一起重建：换集时标题推送在前，全屏路由（主题快照）里
+  /// 也能跟上（BUG-120 同一条路）。
+  Widget _m3eTopBarTitle({required AlignmentGeometry alignment}) {
+    final TextAlign textAlign = alignment == AlignmentDirectional.centerEnd
+        ? TextAlign.end
+        : alignment == AlignmentDirectional.center
+        ? TextAlign.center
+        : TextAlign.start;
+    final CrossAxisAlignment cross = alignment == AlignmentDirectional.centerEnd
+        ? CrossAxisAlignment.end
+        : alignment == AlignmentDirectional.center
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
+    final double scale = _videoUiScale * _controlsDensityScale;
+    return Align(
+      alignment: alignment,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8 * scale),
+        child: ValueListenableBuilder<String?>(
+          valueListenable: _titleNotifier,
+          builder: (BuildContext _, String? title, __) {
+            final String? episode = _isPlaylist
+                ? t.video_player_episode_of(
+                    n: _currentEpisode + 1,
+                    count: _episodes.length,
+                  )
+                : null;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: cross,
+              children: <Widget>[
+                Text(
+                  title ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: textAlign,
+                  style: TextStyle(
+                    color: _videoChromeNeutralFg,
+                    fontSize: 16 * scale,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.1,
+                    shadows: const <Shadow>[
+                      Shadow(color: Color(0x66000000), blurRadius: 8),
+                    ],
+                  ),
+                ),
+                if (episode != null)
+                  Text(
+                    episode,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: textAlign,
+                    style: TextStyle(
+                      color: _videoChromeNeutralFg.withValues(alpha: 0.72),
+                      fontSize: 12 * scale,
+                      height: 1.3,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.4,
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -7446,6 +7631,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           message: t.video_bottom_play_pause,
           child: _appleChrome
               ? _applePlayPauseButton(controller, desktop: desktop)
+              : _m3eChrome
+              ? _m3ePlayPauseButton(controller, slot: slot)
               : desktop
               ? MaterialDesktopPlayOrPauseButton(
                   iconSize: _videoPlayPauseIconSize,
@@ -7463,28 +7650,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.previousCue:
         return FushiTooltip(
           message: t.video_bottom_prev_cue,
-          child: desktop
-              ? MaterialDesktopCustomButton(
-                  icon: FushiIcon(Icons.skip_previous, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: false),
-                )
-              : MaterialCustomButton(
-                  icon: FushiIcon(Icons.skip_previous, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: false),
-                ),
+          child: _chromeIconButton(
+            icon: _appleChrome
+                ? Icons.skip_previous
+                : Icons.keyboard_double_arrow_left_rounded,
+            desktop: desktop,
+            tonal: _isTopSlot(slot),
+            onPressed: () => _skipCueAndPokeControls(forward: false),
+          ),
         );
       case VideoControlItem.nextCue:
         return FushiTooltip(
           message: t.video_bottom_next_cue,
-          child: desktop
-              ? MaterialDesktopCustomButton(
-                  icon: FushiIcon(Icons.skip_next, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: true),
-                )
-              : MaterialCustomButton(
-                  icon: FushiIcon(Icons.skip_next, size: _videoControlIconSize),
-                  onPressed: () => _skipCueAndPokeControls(forward: true),
-                ),
+          child: _chromeIconButton(
+            icon: _appleChrome
+                ? Icons.skip_next
+                : Icons.keyboard_double_arrow_right_rounded,
+            desktop: desktop,
+            tonal: _isTopSlot(slot),
+            onPressed: () => _skipCueAndPokeControls(forward: true),
+          ),
         );
       case VideoControlItem.seekBackward:
         // 原样形态带 ±10s 文字；放不下时的纯图标形态由 [_bottomSlotButtons] 作为
@@ -7512,6 +7697,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return _frameStepButton(controller, forward: true);
       case VideoControlItem.fullscreen:
         return _buildFullscreenButton(desktop: desktop);
+      case VideoControlItem.replayCue:
       case VideoControlItem.back:
       case VideoControlItem.immersiveLock:
       case VideoControlItem.screenshot:
@@ -7582,29 +7768,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  /// MD3 Expressive 底栏播放键：主色实心「宽」胶囊（M3E 宽按钮 = 1.3 倍高），
+  /// 暂停态圆、播放态弹成圆角方形。点击路径与 Apple 分支相同（续命控制条 +
+  /// `controller.playOrPause`）；按 [controller] 重建以跟随播放态。
+  Widget _m3ePlayPauseButton(
+    VideoPlayerController controller, {
+    required VideoControlSlot slot,
+  }) {
+    final double extent = _m3eButtonExtent;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (BuildContext context, Widget? _) => VideoM3ePlayPauseButton(
+        playing: controller.isPlaying,
+        extent: extent,
+        width: _isTopSlot(slot) ? extent : extent * 1.3,
+        semanticLabel: t.video_bottom_play_pause,
+        onPressed: () {
+          _pokeControlsVisible();
+          unawaited(controller.playOrPause());
+        },
+      ),
+    );
+  }
+
   Widget _plainSlotButton(
     VideoControlItem item,
     VideoPlayerController controller, {
     required bool desktop,
     required VideoControlSlot slot,
   }) {
-    final Widget icon = FushiIcon(
-      _videoControlItemIcon(item),
-      size: _videoControlIconSize,
-    );
     return FushiTooltip(
       message: _videoControlItemTooltip(item),
-      child: desktop
-          ? MaterialDesktopCustomButton(
-              icon: icon,
-              onPressed: () =>
-                  _activateVideoControlItem(item, controller, sourceSlot: slot),
-            )
-          : MaterialCustomButton(
-              icon: icon,
-              onPressed: () =>
-                  _activateVideoControlItem(item, controller, sourceSlot: slot),
-            ),
+      child: _chromeIconButton(
+        icon: _videoControlItemIcon(item),
+        desktop: desktop,
+        // MD3 Expressive：上 / 下一集与底栏播放键连成一组（tonal 圆钮夹着主色宽
+        // 播放键，[_m3ePlayPauseButton]）；顶栏按钮恒 tonal。
+        tonal:
+            _isTopSlot(slot) ||
+            item == VideoControlItem.previousEpisode ||
+            item == VideoControlItem.nextEpisode,
+        onPressed: () =>
+            _activateVideoControlItem(item, controller, sourceSlot: slot),
+      ),
     );
   }
 
@@ -7666,6 +7872,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.seekForward:
       case VideoControlItem.previousCue:
       case VideoControlItem.nextCue:
+      case VideoControlItem.replayCue:
       case VideoControlItem.screenshot:
       case VideoControlItem.clipExport:
       case VideoControlItem.subtitleTrack:
@@ -7739,31 +7946,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : null;
       final Widget button = FushiTooltip(
         message: _videoControlItemTooltip(item),
-        child: desktop
-            ? MaterialDesktopCustomButton(
-                icon: FushiIcon(
-                  _videoControlItemIcon(item),
-                  size: _videoControlIconSize,
-                ),
-                onPressed: () => _activateVideoControlItem(
-                  item,
-                  controller,
-                  popoverLink: popoverLink,
-                  sourceSlot: slot,
-                ),
-              )
-            : MaterialCustomButton(
-                icon: FushiIcon(
-                  _videoControlItemIcon(item),
-                  size: _videoControlIconSize,
-                ),
-                onPressed: () => _activateVideoControlItem(
-                  item,
-                  controller,
-                  popoverLink: popoverLink,
-                  sourceSlot: slot,
-                ),
-              ),
+        child: _chromeIconButton(
+          icon: _videoControlItemIcon(item),
+          desktop: desktop,
+          tonal: true,
+          onPressed: () => _activateVideoControlItem(
+            item,
+            controller,
+            popoverLink: popoverLink,
+            sourceSlot: slot,
+          ),
+        ),
       );
       if (popoverLink == null) return button;
       return _controlPopoverAnchor(
@@ -7853,6 +8046,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.skip_previous;
       case VideoControlItem.nextCue:
         return Icons.skip_next;
+      case VideoControlItem.replayCue:
+        return Icons.replay_rounded;
       case VideoControlItem.fullscreen:
         return Icons.fullscreen;
       case VideoControlItem.screenshot:
@@ -7926,6 +8121,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return t.video_control_previous_cue;
       case VideoControlItem.nextCue:
         return t.video_control_next_cue;
+      case VideoControlItem.replayCue:
+        return t.shortcut_action_video_replay_current_subtitle;
       case VideoControlItem.fullscreen:
         return t.video_control_fullscreen;
       case VideoControlItem.screenshot:
@@ -8047,6 +8244,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             seekSeconds: _asbConfig.seekSeconds,
           ),
         );
+        break;
+      case VideoControlItem.replayCue:
+        // 与快捷键 videoReplayCurrentSubtitle 同一实现（回到本句开头、只播这一句，
+        // 续命控制条）。
+        unawaited(_replayCurrentCueAndKeepControls());
         break;
       case VideoControlItem.fullscreen:
         // 控制条按钮属指针控制，沉浸锁定态走 full-controls 门控（非快捷键门控）。
@@ -8180,6 +8382,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             fontSize: 12.0 * _videoUiScale,
             color: _videoChromeAccent(Theme.of(context).colorScheme),
           );
+    final Player? player = _controller?.videoController?.player;
+    if (_m3eChrome && player != null) {
+      // MD3 Expressive：等宽数字（跳秒不左右抖）、中性前景，点按切「已播 / 剩余」
+      // （偏好 [_videoTimeShowsRemaining]，见 [_toggleVideoTimeRemaining]）。
+      return ValueListenableBuilder<bool>(
+        valueListenable: _videoTimeShowsRemaining,
+        builder: (BuildContext _, bool remaining, __) =>
+            VideoM3ePositionIndicator(
+              player: player,
+              showRemaining: remaining,
+              tooltip: t.video_time_remaining_toggle,
+              onToggle: _toggleVideoTimeRemaining,
+              style: TextStyle(
+                height: 1.0,
+                fontSize: 13.0 * _videoUiScale * _controlsDensityScale,
+                fontWeight: FontWeight.w500,
+                color: videoChromeNeutralForeground,
+              ),
+            ),
+      );
+    }
     return desktop
         ? MaterialDesktopPositionIndicator(style: style)
         : MaterialPositionIndicator(style: style);
@@ -8318,27 +8541,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final LayerLink? popoverLink = button == VideoControlButton.speed
         ? _controlPopoverLinkFor(slot, VideoControlItem.speed)
         : null;
-    final Widget icon = FushiIcon(
-      _videoControlButtonIcon(button),
-      size: _videoControlIconSize,
+    final Widget controlButton = _chromeIconButton(
+      icon: _videoControlButtonIcon(button),
+      desktop: desktop,
+      tonal: _isTopSlot(slot),
+      onPressed: () => _activateVideoControlButton(
+        button,
+        popoverLink: popoverLink,
+        sourceSlot: slot,
+      ),
     );
-    final Widget controlButton = desktop
-        ? MaterialDesktopCustomButton(
-            icon: icon,
-            onPressed: () => _activateVideoControlButton(
-              button,
-              popoverLink: popoverLink,
-              sourceSlot: slot,
-            ),
-          )
-        : MaterialCustomButton(
-            icon: icon,
-            onPressed: () => _activateVideoControlButton(
-              button,
-              popoverLink: popoverLink,
-              sourceSlot: slot,
-            ),
-          );
     if (popoverLink == null) return controlButton;
     return _controlPopoverAnchor(
       kind: _VideoControlPopoverKind.speed,
@@ -10094,21 +10306,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool right = localDx > width * 2 / 3;
     if (!left && !right) return false; // 中带：落空，交回平台分流。
     final bool forward = right;
+    // MD3 Expressive：提示改成被点那一侧的涟漪（[VideoM3eDoubleTapRipple]），
+    // 取代 OSD 文字条；Apple 保持 OSD。
+    void feedback(String label) {
+      if (_m3eChrome) {
+        _doubleTapRipple.value = VideoM3eRippleEvent(
+          forward: forward,
+          label: label,
+          origin: renderObject.globalToLocal(globalPosition),
+          serial: (_doubleTapRipple.value?.serial ?? 0) + 1,
+        );
+      } else {
+        _showOsd(
+          label,
+          icon: forward ? Icons.fast_forward : Icons.fast_rewind,
+        );
+      }
+    }
+
     if (action == VideoAsbplayerConfig.kDoubleTapSubtitle) {
       // 字幕模式：双击左/右 = 跳上/下一句（无字幕段回退/前进 seekSeconds 秒，TODO-119/073）。
       unawaited(_skipCueAndPokeControls(forward: forward));
-      _showOsd(
+      feedback(
         forward ? t.video_double_tap_next_cue : t.video_double_tap_prev_cue,
-        icon: forward ? Icons.fast_forward : Icons.fast_rewind,
       );
     } else {
       // 秒数模式：相对 seek ±action 秒。
       final int deltaMs = (forward ? action : -action) * 1000;
       unawaited(_seekRelative(deltaMs));
-      _showOsd(
-        '${forward ? '+' : '-'}${action}s',
-        icon: forward ? Icons.fast_forward : Icons.fast_rewind,
-      );
+      feedback('${forward ? '+' : '-'}${action}s');
     }
     return true;
   }

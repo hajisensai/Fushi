@@ -30,6 +30,7 @@
       layer.box.remove();
     }
     requests.delete(parent);
+    updateOccluders(null);
     updateParents();
   }
   function withContext(layer, callback) {
@@ -109,6 +110,135 @@
       left: pos.left + 'px', top: pos.top + 'px', width: width + 'px',
       height: Math.min(height, pos.maxHeight || height) + 'px',
     });
+    // 已显示的层长高 / 夹高：下层的洞随外框的 height/top 过渡同步跟过去。
+    if (layer.revealed) updateOccluders(null);
+  }
+  // 「玻璃叠玻璃」修正：把每一层被**更上层玻璃查词卡**盖住的区域从它身上整块挖掉。
+  // backdrop-filter 采样的是元素背后已经画好的一切；子层压在父层上时采到的是父层那块
+  // 已经磨砂 + 0.72 填充的面板，结果是 0.72 + 0.28 × 父层 ≈ 再白一档（用户 2026-10-05 YouTube
+  // 截图：第一层空白处 (221,229,226)，压在第一层上的第二层 (236,242,241)；第二层压在深色页面
+  // 上那一截是 (187,191,191) = 0.72 × 251 + 0.28 × 15，填充本身与第一层逐字相同）。
+  // 挖掉之后上层模糊采到的就是网页本身——每一层同一背景、同一参数、同一观感；被盖住的那块
+  // 下层本来就看不见。与 app 内 PopupOccluderClip（dictionary_popup_layer.dart）同一修法。
+  // 用 mask 而不是 clip-path：多个洞彼此重叠时 clip-path 的 evenodd / nonzero 会把重叠处
+  // 填回来；mask 先把洞并起来（add）再从整块里减掉（subtract）。mask-clip:no-clip + 外扩的
+  // 整块底图保住本层投影（默认 border-box 会把框外投影一并裁掉）。Chrome 的 mask 同时裁本层
+  // 自己的 backdrop-filter（CfT 153 实测）。
+  const OCCLUDER_PAD = 96;
+  const holeImages = new Map();
+  const masked = new Set();
+  function holeImage(radius) {
+    const r = Math.max(0, Math.round(radius * 100) / 100);
+    if (!holeImages.has(r)) {
+      // 无固有尺寸的 SVG：按 mask-size 铺满，rx 以 px 计、不随洞的尺寸拉伸。
+      const svg = "<svg xmlns='http://www.w3.org/2000/svg'><rect width='100%' height='100%' rx='" + r + "'/></svg>";
+      holeImages.set(r, 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")');
+    }
+    return holeImages.get(r);
+  }
+  function px(value) {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  // 子层外框的**落点**（place 写下的终值），不取 getBoundingClientRect：入场 transform 与
+  // 高度过渡进行中读到的是中间值。
+  function layerRect(layer) {
+    const s = layer.box.style || {};
+    const r = { x: px(s.left), y: px(s.top), w: px(s.width), h: px(s.height) };
+    return [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0 ? r : null;
+  }
+  // 被挖的那一层：子层外框用落点；第一层 shadow host 用它的边框盒与自身 zoom
+  // （content.js 给 host 设了 CSS zoom，mask 的长度按 host 自己的未缩放坐标计）。
+  function lowerFrame(element) {
+    const owner = layers.find(layer => layer.box === element);
+    if (owner) {
+      const r = layerRect(owner);
+      return r && { ...r, zoom: 1 };
+    }
+    if (!element || typeof element.getBoundingClientRect !== 'function') return null;
+    const b = element.getBoundingClientRect();
+    let zoom = 1;
+    try {
+      const z = px(element.style && element.style.zoom);
+      if (z > 0) zoom = z;
+    } catch (_) { /* 保持 1 */ }
+    const r = { x: b.left, y: b.top, w: b.width, h: b.height, zoom };
+    return [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0 ? r : null;
+  }
+  function overlaps(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+  function radiusOf(layer) {
+    const r = px(layer.box.style && layer.box.style.borderRadius);
+    return Number.isFinite(r) ? r : 10;
+  }
+  function maskGeometry(frame, holes) {
+    const z = frame.zoom;
+    const local = holes.map(h => ({ x: (h.x - frame.x) / z, y: (h.y - frame.y) / z, w: h.w / z, h: h.h / z }));
+    const base = { pos: -OCCLUDER_PAD + 'px ' + -OCCLUDER_PAD + 'px',
+      size: 'calc(100% + ' + 2 * OCCLUDER_PAD + 'px) calc(100% + ' + 2 * OCCLUDER_PAD + 'px)' };
+    return {
+      position: [base.pos, ...local.map(h => h.x + 'px ' + h.y + 'px')].join(', '),
+      size: [base.size, ...local.map(h => h.w + 'px ' + h.h + 'px')].join(', '),
+    };
+  }
+  function clearMask(element) {
+    masked.delete(element);
+    const s = element && element.style;
+    if (!s) return;
+    for (const k of ['maskImage', 'maskPosition', 'maskSize', 'maskRepeat', 'maskComposite', 'maskClip', 'maskOrigin',
+      'webkitMaskImage', 'webkitMaskPosition', 'webkitMaskSize', 'webkitMaskRepeat', 'webkitMaskComposite', 'webkitMaskClip', 'webkitMaskOrigin']) {
+      if (k in s) s[k] = '';
+    }
+  }
+  // starts：本次入场层的起始几何（与 playEnter 的 transform 起点一致），洞从那里随外框一起长到终点。
+  // 返回值：本次有被挖的层的那些上层（入场层据此判「压在别的层上」）。
+  function updateOccluders(starts) {
+    const occluding = new Set();
+    const lowers = [fushiHost, ...layers.map(layer => layer.box)];
+    const keep = new Set();
+    lowers.forEach((element, index) => {
+      if (!element || !element.style) return;
+      const frame = lowerFrame(element);
+      if (!frame) return;
+      const above = layers.slice(index).filter(layer => layer.revealed && layer.data.glassBackdrop === true);
+      const hits = above.map(layer => ({ layer, rect: layerRect(layer) }))
+        .filter(hit => hit.rect && overlaps(hit.rect, frame));
+      if (!hits.length) return;
+      hits.forEach(hit => occluding.add(hit.layer));
+      keep.add(element);
+      const s = element.style;
+      const images = ['linear-gradient(#000 0 0)', ...hits.map(hit => holeImage(radiusOf(hit.layer) / frame.zoom))].join(', ');
+      const to = maskGeometry(frame, hits.map(hit => hit.rect));
+      const from = maskGeometry(frame, hits.map(hit =>
+        (starts && starts.get(hit.layer)) || hit.layer.holeRect || hit.rect));
+      const composite = ['subtract', ...hits.map(() => 'add')].join(', ');
+      s.maskImage = images; s.maskPosition = to.position; s.maskSize = to.size;
+      s.maskRepeat = 'no-repeat'; s.maskComposite = composite; s.maskClip = 'no-clip'; s.maskOrigin = 'border-box';
+      masked.add(element);
+      if ((from.position !== to.position || from.size !== to.size) && typeof element.animate === 'function' && !prefersReducedMotion()) {
+        try {
+          element.animate([
+            { maskPosition: from.position, maskSize: from.size },
+            { maskPosition: to.position, maskSize: to.size },
+          ], { duration: RESIZE_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+        } catch (_) { /* 不支持就直接落终值 */ }
+      }
+    });
+    for (const layer of layers) {
+      const r = layerRect(layer);
+      if (layer.revealed && r) layer.holeRect = r;
+    }
+    for (const element of [...masked]) if (!keep.has(element)) clearMask(element);
+    return occluding;
+  }
+  // 入场 transform 起点（translateY(±6px) scale(0.97)，原点在贴词那条边的中点）对应的外框几何。
+  function enterStartRect(layer, side) {
+    const r = layerRect(layer);
+    if (!r) return null;
+    const above = side === 'above';
+    const ox = r.x + r.w / 2, oy = above ? r.y + r.h : r.y;
+    return { x: ox + (r.x - ox) * 0.97, y: oy + (r.y - oy) * 0.97 + (above ? 6 : -6), w: r.w * 0.97, h: r.h * 0.97 };
   }
   // 入场：落点算好、内容首帧已渲染之后才显示，再做一段短促的 opacity + 轻微位移/缩放（从靠近
   // 被查词的一侧长出来）。只动 opacity / transform，不碰尺寸与位置，合成器线程完成；
@@ -121,15 +251,17 @@
       return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     } catch (_) { return false; }
   }
-  function playEnter(box, side) {
+  // fade=false：本层压在别的层上（下层已挖洞）。淡入期间洞里会直接露出未模糊的网页，
+  // 只做 transform（洞随 updateOccluders 的起点几何同步长到终点）。
+  function playEnter(box, side, fade) {
     if (typeof box.animate !== 'function' || prefersReducedMotion()) return;
     const above = side === 'above';
     // 缩放原点落在贴词的那条边上：像从被查词处长出来，而不是从中心或左上角。
     box.style.transformOrigin = above ? '50% 100%' : '50% 0%';
     try {
       box.animate([
-        { opacity: 0, transform: 'translateY(' + (above ? 6 : -6) + 'px) scale(0.97)' },
-        { opacity: 1, transform: 'none' },
+        { ...(fade === false ? {} : { opacity: 0 }), transform: 'translateY(' + (above ? 6 : -6) + 'px) scale(0.97)' },
+        { ...(fade === false ? {} : { opacity: 1 }), transform: 'none' },
       ], {
         duration: ENTER_MS,
         easing: 'cubic-bezier(0.2, 0, 0, 1)',
@@ -146,7 +278,9 @@
     layer.revealed = true;
     layer.side = layer.placedSide; // 显示即锁边（BUG-2773 同款）
     layer.box.style.visibility = 'visible';
-    playEnter(layer.box, layer.side);
+    const start = enterStartRect(layer, layer.side);
+    const occluding = updateOccluders(start ? new Map([[layer, start]]) : null);
+    playEnter(layer.box, layer.side, !occluding.has(layer));
     // 显示之后的长高 / 夹高走短过渡（落词上方时底边贴词、长高改的是 top，一并过渡）。
     // 显示前的落点不过渡：入场时外框已在终点。
     if (!prefersReducedMotion()) {

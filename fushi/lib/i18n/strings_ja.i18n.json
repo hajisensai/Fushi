@@ -6370,5 +6370,12 @@
   "popup_bottom_docked_books_only": "Dock only in novels",
   "popup_bottom_docked_books_only_hint": "Pin the lookup popup to the bottom of the screen while reading novels. Manga, video and games keep their current behavior.",
   "lookup_popup_size_preview_effective": "On this screen: $width × $height",
-  "lookup_popup_size_shared_hint": "Shared with manga and video lookups. Dragging the popup's bottom-right corner changes it too."
+  "lookup_popup_size_shared_hint": "Shared with manga and video lookups. Dragging the popup's bottom-right corner changes it too.",
+  "manga_reader_page_grid": "すべてのページ",
+  "manga_reader_quick_settings": "クイック設定",
+  "manga_reader_all_settings": "すべての設定",
+  "video_time_remaining_toggle": "Show elapsed / remaining time",
+  "video_player_episode_of": "Episode $n of $count",
+  "video_skip_opening": "Skip opening",
+  "video_skip_ending": "Skip ending"
 }

@@ -80,6 +80,7 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.seekForward:
       return 80;
     case VideoControlItem.previousCue:
+    case VideoControlItem.replayCue:
     case VideoControlItem.nextCue:
       return 75;
     case VideoControlItem.volume:
@@ -122,6 +123,7 @@ VideoBarHideGroup? videoControlItemBarHideGroup(VideoControlItem item) {
     case VideoControlItem.seekForward:
       return VideoBarHideGroup.seek;
     case VideoControlItem.previousCue:
+    case VideoControlItem.replayCue:
     case VideoControlItem.nextCue:
       return VideoBarHideGroup.cue;
     case VideoControlItem.frameBackward:

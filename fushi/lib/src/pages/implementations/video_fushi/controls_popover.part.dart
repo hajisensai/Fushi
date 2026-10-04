@@ -70,27 +70,17 @@ extension _VideoControlsPopover on _VideoFushiPageState {
       builder: (BuildContext context, double value, Widget? child) {
         return FushiTooltip(
           message: t.shortcut_action_video_toggle_mute,
-          child: desktop
-              ? MaterialDesktopCustomButton(
-                  icon:
-                      FushiIcon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () => _toggleControlPopover(
-                    _VideoControlPopoverKind.volume,
-                    popoverLink: popoverLink,
-                    sourceSlot: slot,
-                    sourceItem: VideoControlItem.volume,
-                  ),
-                )
-              : MaterialCustomButton(
-                  icon:
-                      FushiIcon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () => _toggleControlPopover(
-                    _VideoControlPopoverKind.volume,
-                    popoverLink: popoverLink,
-                    sourceSlot: slot,
-                    sourceItem: VideoControlItem.volume,
-                  ),
-                ),
+          child: _chromeIconButton(
+            icon: _volumeIconFor(value),
+            desktop: desktop,
+            tonal: _isTopSlot(slot),
+            onPressed: () => _toggleControlPopover(
+              _VideoControlPopoverKind.volume,
+              popoverLink: popoverLink,
+              sourceSlot: slot,
+              sourceItem: VideoControlItem.volume,
+            ),
+          ),
         );
       },
     );

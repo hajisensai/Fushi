@@ -1,5 +1,6 @@
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
@@ -12,6 +13,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
+    show fushiPopupBackdropSampleable;
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -398,6 +401,7 @@ Widget parkedPopupLayer({
   required Size screen,
   required Widget child,
   double entranceStartProgress = 0.0,
+  List<Rect> occluders = const <Rect>[],
 }) {
   return Positioned(
     key: key,
@@ -419,11 +423,89 @@ Widget parkedPopupLayer({
         child: _PopupEntranceFade(
           visible: visible,
           startProgress: entranceStartProgress,
-          child: child,
+          child: visible && occluders.isNotEmpty
+              ? PopupOccluderClip(
+                  layerRect: pos,
+                  occluders: occluders,
+                  child: child,
+                )
+              : child,
         ),
       ),
     ),
   );
+}
+
+/// 嵌套查词「玻璃叠玻璃」修正：把本层被**更上层查词卡**盖住的区域整块裁掉。
+///
+/// 每层查词面板的 BackdropFilter 模糊的是「它下面已经画好的一切」。Skia 后端
+/// （Windows / Linux 默认渲染器）不认 [kFushiLookupPopupBackdropKey] 的背景快照分组，
+/// 子层压在父层卡上时采到的是父层那块 88% 面板，结果是 0.88 + 0.12 × 0.88 ≈ 99%
+/// 的实色板，与第一层（采到的是正文 / 视频）观感明显不同（用户 2026-10-05 截图：
+/// 第一层天空处 (44,52,48)，第二层同一片天空处 (23,29,23) ≈ 纯面板色）。
+///
+/// 把下层被上层覆盖的部分（含 WebView 纹理）裁掉后，上层模糊采到的就是正文本身，
+/// 每层同一背景、同一参数、同一观感。被盖住的部分本来就看不见（上层 88% 不透明），
+/// 命中测试也只该落在上层。
+///
+/// 只在 Flutter 自己能采到弹窗背后画面的平台生效（[fushiPopupBackdropSampleable]：
+/// Windows / Linux）：iOS / macOS 的模糊由原生系统材质在窗口内做，给平台视图挂路径
+/// 裁剪会让祖先多出 layer mask、原生材质失去模糊；Android 面板本就不透明。
+///
+/// [layerRect] 与 [occluders] 同在宿主 Stack 坐标系；[occluderRadius] 与查词面板
+/// 外圈圆角一致（[FushiDesignTokens] 卡片圆角 10），上层圆角外的那一小角仍露出下层。
+class PopupOccluderClip extends StatelessWidget {
+  const PopupOccluderClip({
+    required this.layerRect,
+    required this.occluders,
+    required this.child,
+    super.key,
+    this.occluderRadius = 10,
+  });
+
+  final Rect layerRect;
+  final List<Rect> occluders;
+  final double occluderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!fushiPopupBackdropSampleable(context)) return child;
+    final List<Rect> local = <Rect>[
+      for (final Rect r in occluders)
+        if (r.overlaps(layerRect)) r.shift(-layerRect.topLeft),
+    ];
+    if (local.isEmpty) return child;
+    return ClipPath(
+      clipper: _PopupOccluderClipper(local, occluderRadius),
+      child: child,
+    );
+  }
+}
+
+class _PopupOccluderClipper extends CustomClipper<Path> {
+  _PopupOccluderClipper(this.occluders, this.radius);
+
+  final List<Rect> occluders;
+  final double radius;
+
+  @override
+  Path getClip(Size size) {
+    Path visible = Path()..addRect(Offset.zero & size);
+    for (final Rect r in occluders) {
+      visible = Path.combine(
+        PathOperation.difference,
+        visible,
+        Path()..addRRect(RRect.fromRectAndRadius(r, Radius.circular(radius))),
+      );
+    }
+    return visible;
+  }
+
+  @override
+  bool shouldReclip(_PopupOccluderClipper oldClipper) =>
+      oldClipper.radius != radius ||
+      !listEquals(oldClipper.occluders, occluders);
 }
 
 /// 把 [parkedPopupLayer] 的**最终**可见性（条目可见 && 未被对话框挪到屏外）交给层内

@@ -202,3 +202,33 @@ test('translucent glass fill only when the host confirms its backdrop blur', () 
   eink.receive({ type: 'render', data: { popupJson: '[]', theme: { ...theme, '--fushi-glass': '0' }, glassBackdrop: true } });
   assert.equal(cs3.has('fushi-glass'), false);
 });
+
+// 嵌套层的有效填充必须与第一层完全一致：iframe 文档里只有 #entries-container.fushi-glass 那一层
+// 填充（与第一层 shadow 同一份 vendor/content.css），html / body / 宿主根一律透明，没有第二层底色
+// 叠在 0.72 填充之上（用户 2026-10-05：「每一层都和第一层一样」）。
+test('nested frame document adds no background of its own: the only fill is the first layer content.css rule', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'nested-popup.html'), 'utf8');
+  const inline = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
+  assert.match(inline, /html,body\{[^}]*background:transparent/);
+  const backgrounds = [...inline.matchAll(/background(?:-color)?\s*:\s*([^;}]+)/g)].map(m => m[1].trim());
+  assert.deepEqual(backgrounds, ['transparent'], 'iframe 文档内联样式只允许透明底');
+  const sheets = [...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(sheets, ['theme.css']);
+  const themeCss = fs.readFileSync(path.join(__dirname, 'theme.css'), 'utf8');
+  let rootBlocks = 0;
+  for (const block of themeCss.matchAll(/(^|\})\s*([^{}@]*?)\{([^{}]*)\}/g)) {
+    const selector = block[2];
+    if (/(^|[\s,])(:root|html|body)\b/.test(selector)) {
+      rootBlocks++;
+      assert.doesNotMatch(block[3], /(^|;|\s)background(-color)?\s*:/, 'theme.css 不给 iframe 根画底：' + selector.trim());
+    }
+  }
+  assert.ok(rootBlocks >= 2, '扫到了 theme.css 的 :root 规则');
+  // iframe 里的弹窗与第一层吃同一份 content.css（同一条 0.72 / 0.62 填充规则）。
+  const nestedJs = fs.readFileSync(path.join(__dirname, 'nested-popup.js'), 'utf8');
+  assert.match(nestedJs, /stylesheet\.href = 'vendor\/content\.css'/);
+  const w = world();
+  w.receive({ type: 'render', data: { popupJson: '[]', theme: { '--fushi-color-scheme': 'light' }, glassBackdrop: true } });
+  assert.equal(w.document.documentElement.style.values['background'], undefined);
+  assert.equal(w.document.documentElement.style.values['background-color'], undefined);
+});

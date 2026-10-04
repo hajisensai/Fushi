@@ -6370,5 +6370,12 @@
   "popup_bottom_docked_books_only": "只在小說中底部停靠",
   "popup_bottom_docked_books_only_hint": "讀小說時把查詞彈窗固定為螢幕底部的整寬面板；漫畫、影片、遊戲保持原樣。",
   "lookup_popup_size_preview_effective": "目前螢幕實際：$width × $height",
-  "lookup_popup_size_shared_hint": "與漫畫、影片的查詞彈窗共用；拖動彈窗右下角也會修改。"
+  "lookup_popup_size_shared_hint": "與漫畫、影片的查詞彈窗共用；拖動彈窗右下角也會修改。",
+  "manga_reader_page_grid": "全部頁面",
+  "manga_reader_quick_settings": "快速設定",
+  "manga_reader_all_settings": "全部設定",
+  "video_time_remaining_toggle": "Show elapsed / remaining time",
+  "video_player_episode_of": "Episode $n of $count",
+  "video_skip_opening": "Skip opening",
+  "video_skip_ending": "Skip ending"
 }

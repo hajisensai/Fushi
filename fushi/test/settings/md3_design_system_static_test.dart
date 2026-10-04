@@ -915,6 +915,22 @@ void main() {
           'progress-bar scrub, not ordinary page chrome — same reviewed '
           'exception class as the sibling video_volume_overlays HUD and '
           'video_danmaku_overlay.',
+      'lib/src/media/video/video_m3e_chrome.dart':
+          '2026-10-05 M3 Expressive video chrome: the player controls are a '
+          'media-page overlay drawn on the video picture (fixed dark chrome '
+          'scheme, not the page ColorScheme). Morphing play button radii, the '
+          'seek-track time bubble, the double-tap ripple and the tabular time '
+          'text sizes scale with appUiScale x controls density; '
+          'surfaceContainerHigh is the translucent dark-scheme container of '
+          'the centre transport. Same reviewed media-page overlay class as '
+          'video_apple_chrome / video_volume_overlays.',
+      'lib/src/media/video/video_quick_settings_sheet.dart':
+          'Video settings sheet category bar (2026-10-05 M3E connected button '
+          'group): the segment corner radii (10 idle / pill selected), the '
+          'surfaceContainerHigh idle segment fill and the Apple footnote / '
+          'section-title font sizes are the reviewed segment geometry of that '
+          'one control; the rows below are rendered by the shared settings '
+          'renderer.',
       'lib/src/media/video/video_long_press_speed_badge.dart':
           'TODO-1154 long-press temporary-speed badge: a video-subsystem '
           'transient overlay bubble (BorderRadius.circular(8) pill + speed '
@@ -1218,6 +1234,16 @@ void main() {
       'lib/src/media/video/video_episode_rail.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
+        'fontSize:',
+      },
+      'lib/src/media/video/video_m3e_chrome.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'fontSize:',
+      },
+      'lib/src/media/video/video_quick_settings_sheet.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
         'fontSize:',
       },
       'lib/src/media/video/video_long_press_speed_badge.dart': <String>{

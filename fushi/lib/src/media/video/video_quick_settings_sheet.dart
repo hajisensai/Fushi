@@ -278,7 +278,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     return Wrap(
       alignment: WrapAlignment.start,
       runAlignment: WrapAlignment.start,
-      spacing: isGlassDesign(context) ? tokens.spacing.gap / 2 : 0,
+      // MD3 Expressive 连接按钮组：段间 4dp 缝；Apple 胶囊标签间半个 gap。
+      spacing: isGlassDesign(context) ? tokens.spacing.gap / 2 : 4,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
         for (final ({String id, IconData icon, String label}) cat
@@ -590,9 +591,12 @@ class _VideoSettingsCategoryTab extends StatelessWidget {
     final bool glass = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
     final FushiAppleColors apple = appleColorsOf(context);
+    // MD3 Expressive（2026-10-05 播放器 UI 重做）：分类条改成连接按钮组——选中段
+    // secondaryContainer 实底 + 弹成全胶囊，其余段 surfaceContainerHigh 小圆角；
+    // 墨水屏实色描边。
     final Color selectedColor = glass
         ? apple.label
-        : (eink ? cs.onSurface : cs.primary);
+        : (eink ? cs.surface : cs.onSecondaryContainer);
     final Color idleColor = glass ? apple.secondaryLabel : cs.onSurfaceVariant;
     final Color foreground = selected ? selectedColor : idleColor;
     final TextStyle? labelStyle = glass
@@ -604,13 +608,13 @@ class _VideoSettingsCategoryTab extends StatelessWidget {
             color: foreground,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           );
-    final BorderRadius radius = glass
+    final BorderRadius radius = glass || selected
         ? BorderRadius.circular(999)
-        : const BorderRadius.vertical(top: Radius.circular(12));
+        : BorderRadius.circular(10);
     final Widget content = Padding(
       padding: glass
           ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
-          : const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          : const EdgeInsets.fromLTRB(16, 10, 18, 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -627,8 +631,8 @@ class _VideoSettingsCategoryTab extends StatelessWidget {
         ],
       ),
     );
-    // MD3 下划线：内容宽、3dp、上圆角（M3 primary tab 指示器）；非选中占同高透明
-    // 条，切换时文字不跳动。Apple 无下划线，选中态是胶囊底。
+    // MD3：连接按钮组的一段，选中与否在圆角 / 底色间做状态过渡（墨水屏与减弱
+    // 动效下瞬间到位）。Apple 选中态是系统灰胶囊底。
     final Widget body = glass
         ? DecoratedBox(
             decoration: BoxDecoration(
@@ -637,26 +641,19 @@ class _VideoSettingsCategoryTab extends StatelessWidget {
             ),
             child: content,
           )
-        : IntrinsicWidth(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                content,
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: selected ? selectedColor : Colors.transparent,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(3),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+        : AnimatedContainer(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            decoration: BoxDecoration(
+              color: eink
+                  ? (selected ? cs.onSurface : cs.surface)
+                  : selected
+                  ? cs.secondaryContainer
+                  : cs.surfaceContainerHigh,
+              borderRadius: radius,
+              border: eink ? Border.all(color: cs.onSurface) : null,
             ),
+            child: content,
           );
     return Semantics(
       button: true,

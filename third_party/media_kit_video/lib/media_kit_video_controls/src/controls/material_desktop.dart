@@ -284,6 +284,11 @@ class MaterialDesktopVideoControlsThemeData {
   /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(double? fraction)? onHoverPosition;
 
+  /// Hibiki patch (M3 Expressive chrome): host-painted seek-bar track. Null
+  /// (upstream default) = upstream track. Gestures stay in the fork. See
+  /// PATCHES.md.
+  final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -343,6 +348,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.onSeekEnd,
     this.onSeekDispatched,
     this.onHoverPosition,
+    this.seekBarTrackBuilder,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -393,6 +399,7 @@ class MaterialDesktopVideoControlsThemeData {
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
     void Function(double? fraction)? onHoverPosition,
+    VideoSeekBarTrackBuilder? seekBarTrackBuilder,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -457,6 +464,7 @@ class MaterialDesktopVideoControlsThemeData {
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
+      seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
     );
   }
 }
@@ -1351,7 +1359,22 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
               color: const Color(0x00000000),
               width: constraints.maxWidth,
               height: _theme(context).seekBarContainerHeight,
-              child: Stack(
+              // Hibiki patch (M3 Expressive chrome): host-painted track.
+              child: _theme(context).seekBarTrackBuilder != null
+                  ? _theme(context).seekBarTrackBuilder!(
+                      context,
+                      VideoSeekBarVisual(
+                        position: click ? slider : positionPercent,
+                        buffer: bufferPercent,
+                        hover: hover || click ? slider : null,
+                        hovering: hover,
+                        dragging: click,
+                        playing: playing,
+                        duration: duration,
+                        alignment: Alignment.center,
+                      ),
+                    )
+                  : Stack(
                 clipBehavior: Clip.none,
                 alignment: Alignment.centerLeft,
                 children: [

@@ -359,3 +359,68 @@ test('without usable backdrop-filter the layer stays opaque instead of transluce
   assert.doesNotMatch(child.box.style.cssText, /backdrop-filter/);
   assert.equal(child.messages.find(message => message.type === 'render').data.glassBackdrop, false);
 });
+
+// 用户 2026-10-05 YouTube 截图：第二层压在第一层上那块明显更白（(236,242,241) vs 第一层
+// (221,229,226)）——子层的 backdrop-filter 采到的是第一层已经磨砂 + 0.72 填充的面板，等效
+// 双重填充；填充本身两层逐字相同（第二层压在深色页面上那截 (187,191,191) = 0.72×251 + 0.28×15）。
+// 修法：把下层被上层玻璃卡盖住的区域挖掉（mask），上层采到的就是网页本身。
+test('glass on glass: every lower layer is cut where an upper glass layer covers it, so each layer samples the page', () => {
+  const h = harness();
+  const animations = [];
+  h.root.style = { zoom: '1.25' };
+  h.root.getBoundingClientRect = () => ({ left: 40, top: 60, width: 500, height: 400 });
+  h.root.animate = (frames, options) => animations.push({ frames, options });
+  h.context.fushiComputePlacement = () => ({ left: 290, top: 160, maxHeight: 500 });
+  h.api.open('子', { x: 80, y: 100 }); h.replyLookup(0);
+  const child = h.frames[0];
+  const enter = [];
+  child.box.animate = (frames) => enter.push(frames);
+  assert.equal(h.root.style.maskImage, undefined, '子层显示前不挖');
+  h.call(child, 'popupRendered', [300]);
+  const s = h.root.style;
+  // 第一层 host 带 CSS zoom 1.25：mask 长度按 host 自己的未缩放坐标（视口差 / zoom）。
+  assert.equal(s.maskPosition, '-96px -96px, 200px 80px');
+  assert.equal(s.maskSize, 'calc(100% + 192px) calc(100% + 192px), 400px 240px');
+  assert.equal(s.maskComposite, 'subtract, add', '洞先并（add）再从整块里减（subtract），重叠的洞不会互相抵消');
+  assert.equal(s.maskClip, 'no-clip', '保住第一层框外投影');
+  assert.equal(s.maskRepeat, 'no-repeat');
+  assert.match(s.maskImage, /^linear-gradient\(#000 0 0\), url\("data:image\/svg\+xml,/);
+  assert.match(decodeURIComponent(s.maskImage), /rx='8'/, '洞是上层圆角（10px / zoom 1.25）');
+  // 入场：压在下层上时只做 transform（淡入会让洞里露出未模糊的网页），洞从入场起点同步长到终点。
+  assert.equal(enter.length, 1);
+  assert.equal('opacity' in enter[0][0], false);
+  assert.equal(animations.length, 1);
+  assert.notEqual(animations[0].frames[0].maskPosition, s.maskPosition);
+  assert.equal(animations[0].frames[1].maskPosition, s.maskPosition);
+  assert.equal(animations[0].options.duration, 180, '与外框入场 / 高度过渡同一时长');
+  // 孙层：同时盖住第一层与子层 → 两层都挖，第一层上两个洞。
+  h.context.fushiComputePlacement = () => ({ left: 300, top: 200, maxHeight: 500 });
+  h.call(child, 'textSelected', ['孫', { x: 10, y: 20 }]); h.replyLookup(1);
+  const grandchild = h.frames[1];
+  h.call(grandchild, 'popupRendered', [200]);
+  assert.equal(h.root.style.maskComposite, 'subtract, add, add');
+  assert.equal(child.box.style.maskComposite, 'subtract, add');
+  assert.equal(child.box.style.maskPosition, '-96px -96px, 10px 40px', '子层外框不带 zoom：按落点直接相减');
+  assert.equal(grandchild.box.style.maskImage, undefined, '最上层不挖');
+  // 逐层关闭：洞随层一起撤掉，第一层恢复完整。
+  h.api.pop();
+  assert.equal(child.box.style.maskImage, '');
+  assert.equal(h.root.style.maskComposite, 'subtract, add');
+  h.api.pop();
+  assert.equal(h.root.style.maskImage, '');
+  assert.equal(h.root.style.maskPosition, '');
+});
+
+test('opaque (non-glass) upper layers never cut the layer below and keep the fade-in entrance', () => {
+  const h = harness();
+  h.window.CSS = { supports: () => false };
+  h.root.style = {};
+  h.root.getBoundingClientRect = () => ({ left: 40, top: 60, width: 500, height: 400 });
+  h.api.open('子'); h.replyLookup(0);
+  const child = h.frames[0];
+  const enter = [];
+  child.box.animate = (frames) => enter.push(frames);
+  h.call(child, 'popupRendered', [300]);
+  assert.equal(h.root.style.maskImage, undefined);
+  assert.equal(enter[0][0].opacity, 0);
+});

@@ -706,3 +706,22 @@ fields whose defaults reproduce the upstream pixels exactly:
 
 Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
 (only the Apple branch passes non-default values; MD3 leaves them untouched).
+
+## M3 Expressive chrome: host-painted seek-bar track
+
+`lib/media_kit_video_controls/src/controls/seek_bar_visual.dart` (new, exported
+from `media_kit_video_controls.dart`), plus the theme data classes and the two
+seek bar bodies in `material_desktop.dart` / `material.dart`.
+
+Fushi's MD3 design system draws the scrubber as a Material 3 Expressive wavy
+progress bar (wavy played segment while playing, flat when paused, a vertical
+handle, a time bubble while scrubbing). Upstream hard-codes the track as a
+stack of `Container`s, so the patch adds `seekBarTrackBuilder`
+(`VideoSeekBarTrackBuilder?`, both themes, default `null`). When set, the seek
+bar keeps its own `MouseRegion` / `Listener` / pan gestures, seek dispatch and
+every host callback, and only replaces the track painting with
+`seekBarTrackBuilder(context, VideoSeekBarVisual(...))`, which fills the hit
+box (`seekBarContainerHeight`). `null` = upstream track, pixel for pixel.
+
+Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
+(MD3 branch only; the Apple branch keeps the theme-field scrubber above).

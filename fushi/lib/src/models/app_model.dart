@@ -4134,6 +4134,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
 
+  /// 播放器底栏时间显示剩余时长（默认关，点按底栏时间切换）。
+  bool get videoTimeDisplayRemaining => prefsRepo.videoTimeDisplayRemaining;
+
+  Future<void> setVideoTimeDisplayRemaining(bool value) =>
+      prefsRepo.setVideoTimeDisplayRemaining(value);
+
   /// 自动下载的外挂字幕按视频内嵌字幕轨对时间轴（默认开）。
   bool get subtitleReferenceSyncEnabled =>
       prefsRepo.subtitleReferenceSyncEnabled;

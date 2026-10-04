@@ -384,6 +384,11 @@ class MaterialVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Future<void> seek)? onSeekDispatched;
 
+  /// Hibiki patch (M3 Expressive chrome): host-painted seek-bar track. Null
+  /// (upstream default) = upstream track. Gestures stay in the fork. See
+  /// PATCHES.md.
+  final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
+
   /// Hibiki patch (BUG-2731 follow-up): the base position that **relative**
   /// seeks (horizontal swipe, double-tap ±N s) are measured from. On a remote
   /// stream a seek re-buffers for seconds while `player.state.position` still
@@ -468,6 +473,7 @@ class MaterialVideoControlsThemeData {
     this.onSeekEnd,
     this.onSeekDispatched,
     this.relativeSeekBasePosition,
+    this.seekBarTrackBuilder,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -530,6 +536,7 @@ class MaterialVideoControlsThemeData {
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
     Duration Function()? relativeSeekBasePosition,
+    VideoSeekBarTrackBuilder? seekBarTrackBuilder,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -616,6 +623,7 @@ class MaterialVideoControlsThemeData {
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       relativeSeekBasePosition:
           relativeSeekBasePosition ?? this.relativeSeekBasePosition,
+      seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
     );
   }
 }
@@ -2047,7 +2055,26 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
                 width: constraints.maxWidth,
                 alignment: _theme(context).seekBarAlignment,
                 height: _theme(context).seekBarContainerHeight,
-                child: Stack(
+                // Hibiki patch (M3 Expressive chrome): host-painted track.
+                child: _theme(context).seekBarTrackBuilder != null
+                    ? SizedBox(
+                        width: constraints.maxWidth,
+                        height: _theme(context).seekBarContainerHeight,
+                        child: _theme(context).seekBarTrackBuilder!(
+                          context,
+                          VideoSeekBarVisual(
+                            position: tapped ? slider : positionPercent,
+                            buffer: bufferPercent,
+                            hover: tapped ? slider : null,
+                            hovering: false,
+                            dragging: tapped,
+                            playing: playing,
+                            duration: duration,
+                            alignment: _theme(context).seekBarAlignment,
+                          ),
+                        ),
+                      )
+                    : Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.bottomCenter,
                   children: [

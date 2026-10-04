@@ -439,6 +439,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：SubDL 是否参与字幕搜索。与 api key 组成 `enabled && key`
   // 双门控（形状对齐 Jimaku）；key 为空即不装配，所以默认开不会产生任何请求。
   'video_subtitle_subdl_enabled',
+  // bool（默认 false）：播放器底栏时间显示「剩余时长」而不是「已播时长」。
+  // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
+  'video_time_display_remaining',
   'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',

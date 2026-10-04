@@ -120,7 +120,7 @@ void main() {
     );
 
     final Finder source =
-        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+        _placedChip(VideoControlItem.settings, VideoControlSlot.topRight);
     final Finder target = _slotRegion(VideoControlSlot.bottomLeft);
     expect(source, findsOneWidget);
     expect(target, findsOneWidget);
@@ -138,7 +138,8 @@ void main() {
     expect(committed, isNotNull);
     expect(committed!.itemsIn(VideoControlSlot.bottomLeft),
         contains(VideoControlItem.settings));
-    expect(committed!.itemsIn(VideoControlSlot.screenRight),
+    // 2026-10-05 M3E 重排：设置默认在右上（原右侧栏）。
+    expect(committed!.itemsIn(VideoControlSlot.topRight),
         isNot(contains(VideoControlItem.settings)));
     expect(closed, isTrue);
   });
@@ -306,7 +307,7 @@ void main() {
     expect(_paletteChip(VideoControlItem.subtitleTrack), findsOneWidget);
     expect(_paletteChip(VideoControlItem.audioTrack), findsOneWidget);
     expect(
-      _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.topRight),
+      _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.bottomRight),
       findsOneWidget,
     );
     expect(
@@ -384,7 +385,7 @@ void main() {
       onLayoutChanged: (VideoControlLayout layout) async => committed = layout,
     );
     final Finder settings =
-        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+        _placedChip(VideoControlItem.settings, VideoControlSlot.topRight);
     final Finder hidden = _slotRegion(VideoControlSlot.hidden);
     expect(settings, findsOneWidget);
     expect(_willAccept(tester, settings, hidden), isTrue);
@@ -409,7 +410,7 @@ void main() {
       isTouchControls: true,
     );
     final Finder settings =
-        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+        _placedChip(VideoControlItem.settings, VideoControlSlot.topRight);
     final Finder hidden = _slotRegion(VideoControlSlot.hidden);
     expect(settings, findsOneWidget);
     expect(
@@ -432,7 +433,7 @@ void main() {
       onLayoutChanged: (_) async {},
     );
     expect(
-      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.screenRight),
+      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.topRight),
       findsOneWidget,
     );
 
@@ -445,7 +446,7 @@ void main() {
       isTouchControls: true,
     );
     expect(
-      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.screenRight),
+      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.topRight),
       findsNothing,
       reason: 'no rejected tap target for the pinned settings entry on touch',
     );

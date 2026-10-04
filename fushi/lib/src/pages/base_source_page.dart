@@ -1187,6 +1187,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // 钉住整层，让元素真正搬位而不是拆建原生表面。
       key: ObjectKey(item),
       pos: pos,
+      // 被更上层查词卡盖住的部分裁掉：上层的模糊才采到正文而不是本层面板
+      // （[PopupOccluderClip]，玻璃叠玻璃）。
+      occluders: <Rect>[
+        for (int j = index + 1; j < stack.length; j++)
+          if (stack[j].visible)
+            _calculatePopupPosition(
+              stack[j].selectionRect,
+              screen,
+              verticalWriting: _layerVerticalWriting(j),
+            ),
+      ],
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图
       // （WebView2 / Android platform view）盖住 showAppDialog 弹的对话框（层级不对）。

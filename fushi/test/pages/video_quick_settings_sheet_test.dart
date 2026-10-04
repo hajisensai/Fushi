@@ -1941,7 +1941,7 @@ void main() {
         // 槽位内不再嵌套滚动：所有已放置的 chip 必须完整落在自己槽位里。
         final Rect bottomRight =
             tester.getRect(slotFinder(VideoControlSlot.bottomRight));
-        final List<VideoControlItem> placed = VideoControlLayout.currentChrome
+        final List<VideoControlItem> placed = videoLegacyChromeLayoutFixture
             .itemsIn(VideoControlSlot.bottomRight);
         expect(placed.length, greaterThanOrEqualTo(4));
         for (int index = 0; index < placed.length; index++) {
