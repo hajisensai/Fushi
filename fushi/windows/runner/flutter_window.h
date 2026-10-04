@@ -17,8 +17,11 @@
 #include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
 #include "ime_language_switch.h"
+#include "screen_ocr_overlay.h"
+#include "system_ocr_windows.h"
 #include "win32_window.h"
 #include "window_capture_reply_queue.h"
+#include "worker_reply_queue.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -107,6 +110,20 @@ class FlutterWindow : public Win32Window {
       floating_ball_channel_;
   std::unique_ptr<FloatingBallWindow> floating_ball_window_;
   void RegisterFloatingBallChannel();
+  // 应用外球「截屏识字」的冻结层（spec「截屏识字」）。回调经 floating_ball_channel_。
+  std::unique_ptr<ScreenOcrOverlay> screen_ocr_overlay_;
+  // startScreenOcrCapture：藏球 → 截球所在显示器 → 显示冻结层 → 回 {png, screen}。
+  flutter::EncodableValue StartScreenOcrCapture(const flutter::EncodableMap* args);
+  // 关冻结层（不回调）并恢复球。
+  void StopScreenOcr();
+
+  // app.fushi.reader/system_ocr（Windows.Media.Ocr）。识别在工作线程，结果经
+  // system_ocr_replies_ 由计时器在平台线程回话（同 window_capture 的范式）。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      system_ocr_channel_;
+  std::unique_ptr<fushi::WorkerReplyQueue<fushi::SystemOcrResult>>
+      system_ocr_replies_;
+  void RegisterSystemOcrChannel();
 
   // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
   // rich text-only mode, independent of the audiobook lyric strip.

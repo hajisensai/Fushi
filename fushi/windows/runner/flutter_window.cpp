@@ -722,6 +722,7 @@ bool FlutterWindow::OnCreate() {
   RegisterGlobalLookupChannel();
   RegisterForegroundSelectionChannel();
   RegisterWindowCaptureChannel();
+  RegisterSystemOcrChannel();
   RegisterHdrVideoHostChannel();
   RegisterAudioLoopbackChannel();
   RegisterVoiceHookChannel();
@@ -1841,6 +1842,70 @@ HWND ResolveOverlayClickShieldGame() {
                   : fushi::game_client_extent::FindProcessClientWindow(pid);
 }
 
+// app.fushi.reader/system_ocr 的回话计时器（工作线程识别完，平台线程回话）。
+constexpr UINT_PTR kSystemOcrReplyTimerId = 0x46534F43;  // 'FSOC'
+constexpr UINT kSystemOcrReplyTickMs = 16;
+
+// Dart 的数值可能是 double / int32 / int64（`<double>[...]` 编码成 double，整数
+// 列表编码成 int）：三种都收。
+std::optional<double> NumberFromValue(const flutter::EncodableValue& value) {
+  if (const auto* d = std::get_if<double>(&value)) return *d;
+  if (const auto* i = std::get_if<int32_t>(&value)) {
+    return static_cast<double>(*i);
+  }
+  if (const auto* l = std::get_if<int64_t>(&value)) {
+    return static_cast<double>(*l);
+  }
+  return std::nullopt;
+}
+
+// `[left, top, right, bottom]` → RectD；形状不对返回 nullopt。
+std::optional<fushi::screen_ocr::RectD> RectFromValue(
+    const flutter::EncodableValue& value) {
+  const auto* list = std::get_if<flutter::EncodableList>(&value);
+  if (list == nullptr || list->size() != 4) {
+    return std::nullopt;
+  }
+  double v[4] = {};
+  for (size_t i = 0; i < 4; ++i) {
+    const std::optional<double> n = NumberFromValue((*list)[i]);
+    if (!n || !std::isfinite(*n)) return std::nullopt;
+    v[i] = *n;
+  }
+  return fushi::screen_ocr::RectD{v[0], v[1], v[2], v[3]};
+}
+
+const flutter::EncodableValue* FindArg(const flutter::EncodableMap* args,
+                                       const char* key) {
+  if (args == nullptr) return nullptr;
+  const auto it = args->find(flutter::EncodableValue(key));
+  return it == args->end() ? nullptr : &it->second;
+}
+
+flutter::EncodableValue SystemOcrReplyMap(const fushi::SystemOcrResult& ocr) {
+  flutter::EncodableList lines;
+  lines.reserve(ocr.lines.size());
+  for (const fushi::SystemOcrLine& line : ocr.lines) {
+    // 不带 `vertical`：由 Dart 的 inferSystemOcrVertical 按包围盒推断。
+    lines.push_back(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("text"), flutter::EncodableValue(line.text)},
+        {flutter::EncodableValue("left"), flutter::EncodableValue(line.left)},
+        {flutter::EncodableValue("top"), flutter::EncodableValue(line.top)},
+        {flutter::EncodableValue("right"), flutter::EncodableValue(line.right)},
+        {flutter::EncodableValue("bottom"),
+         flutter::EncodableValue(line.bottom)},
+    }));
+  }
+  return flutter::EncodableValue(flutter::EncodableMap{
+      {flutter::EncodableValue("width"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.width))},
+      {flutter::EncodableValue("height"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.height))},
+      {flutter::EncodableValue("lines"),
+       flutter::EncodableValue(std::move(lines))},
+  });
+}
+
 }  // namespace
 
 void FlutterWindow::RegisterFloatingLyricChannel() {
@@ -2090,6 +2155,29 @@ void FlutterWindow::RegisterFloatingBallChannel() {
             std::make_unique<flutter::EncodableValue>(std::move(map)));
       });
 
+  // 截屏识字冻结层的回调同样跑在平台线程。
+  screen_ocr_overlay_ = std::make_unique<ScreenOcrOverlay>();
+  screen_ocr_overlay_->SetTapCallback([this](int x, int y) {
+    // 截图像素 = 相对显示器左上的物理像素。层不自动关，Dart 决定。
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("x"),
+         flutter::EncodableValue(static_cast<double>(x))},
+        {flutter::EncodableValue("y"),
+         flutter::EncodableValue(static_cast<double>(y))},
+    };
+    floating_ball_channel_->InvokeMethod(
+        "screenOcrTap",
+        std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
+  screen_ocr_overlay_->SetDismissCallback([this]() {
+    // 层已由 overlay 自己关掉：恢复球后再告诉 Dart。
+    if (floating_ball_window_) {
+      floating_ball_window_->RestoreAfterCapture();
+    }
+    floating_ball_channel_->InvokeMethod(
+        "screenOcrDismissed", std::make_unique<flutter::EncodableValue>());
+  });
+
   floating_ball_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
@@ -2155,7 +2243,33 @@ void FlutterWindow::RegisterFloatingBallChannel() {
               floating_ball_window_->Start(config, dock_left, fraction, GetHandle());
           result->Success(flutter::EncodableValue(started));
         } else if (method == "stopSystemBall") {
+          // 冻结层跟着球走：球没了，定格的画面也不该留着（不回调）。
+          screen_ocr_overlay_->Close();
           floating_ball_window_->Stop();
+          result->Success();
+        } else if (method == "startScreenOcrCapture") {
+          result->Success(StartScreenOcrCapture(args));
+        } else if (method == "updateScreenOcrOverlay") {
+          std::vector<fushi::screen_ocr::RectD> lines;
+          if (const auto* v = FindArg(args, "lines")) {
+            if (const auto* list = std::get_if<flutter::EncodableList>(v)) {
+              for (const auto& item : *list) {
+                if (const auto rect = RectFromValue(item)) {
+                  lines.push_back(*rect);
+                }
+              }
+            }
+          }
+          std::optional<std::wstring> message;
+          if (const auto* v = FindArg(args, "message")) {
+            if (const auto* text = std::get_if<std::string>(v)) {
+              message = Utf8ToWideString(*text);
+            }
+          }
+          screen_ocr_overlay_->Update(std::move(lines), std::move(message));
+          result->Success();
+        } else if (method == "stopScreenOcr") {
+          StopScreenOcr();
           result->Success();
         } else if (method == "isSystemBallRunning") {
           result->Success(
@@ -2168,6 +2282,166 @@ void FlutterWindow::RegisterFloatingBallChannel() {
           result->Success(flutter::EncodableValue(false));
         } else {
           result->NotImplemented();
+        }
+      });
+}
+
+flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
+    const flutter::EncodableMap* args) {
+  auto failure = [](const char* error) {
+    return flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("error"), flutter::EncodableValue(error)},
+    });
+  };
+  if (!screen_ocr_overlay_ || !floating_ball_window_) {
+    return failure("capture_failed");
+  }
+  std::optional<fushi::screen_ocr::RectD> anchor;
+  if (const auto* v = FindArg(args, "anchor")) {
+    anchor = RectFromValue(*v);
+  }
+  ScreenOcrOverlay::Style style;
+  if (const auto* v = FindArg(args, "labels")) {
+    if (const auto* labels = std::get_if<flutter::EncodableMap>(v)) {
+      style.recognizing = Utf8ToWideString(
+          StringFromValue(labels, "recognizing", std::string()));
+      style.hint =
+          Utf8ToWideString(StringFromValue(labels, "hint", std::string()));
+      style.close =
+          Utf8ToWideString(StringFromValue(labels, "close", std::string()));
+    }
+  }
+  if (const auto* v = FindArg(args, "colors")) {
+    if (const auto* colors = std::get_if<flutter::EncodableMap>(v)) {
+      style.primary = ArgbFromValue(colors, "primary", style.primary);
+      style.surface = ArgbFromValue(colors, "surface", style.surface);
+      style.on_surface = ArgbFromValue(colors, "onSurface", style.on_surface);
+    }
+  }
+
+  // 截哪块：anchor（球）中心所在显示器；没有 anchor 取光标所在。
+  POINT cursor = {};
+  GetCursorPos(&cursor);
+  const fushi::screen_ocr::ProbePoint probe =
+      fushi::screen_ocr::MonitorProbePoint(anchor, {cursor.x, cursor.y});
+  const HMONITOR monitor =
+      MonitorFromPoint(POINT{probe.x, probe.y}, MONITOR_DEFAULTTONEAREST);
+
+  // 上一层还开着（重复点）：先关掉，不回调；它与球都不能入镜。
+  screen_ocr_overlay_->Close();
+  floating_ball_window_->HideForCapture();
+  // 等 DWM 把「球已隐藏」合成上屏再截：第一次 DwmFlush 可能正赶上隐藏之前就已
+  // 提交的那一帧，第二次保证至少有一整帧是在隐藏之后合成的。
+  DwmFlush();
+  DwmFlush();
+
+  ScreenOcrOverlay::Capture capture;
+  if (!ScreenOcrOverlay::CaptureMonitor(monitor, &capture)) {
+    floating_ball_window_->RestoreAfterCapture();
+    return failure("capture_failed");
+  }
+  const RECT screen = capture.screen;
+  const int width = capture.width;
+  const int height = capture.height;
+  // 先盖冻结层（画面立刻「定格」并显示「识别中」），再编 PNG。
+  if (!screen_ocr_overlay_->Show(std::move(capture), style)) {
+    floating_ball_window_->RestoreAfterCapture();
+    return failure("capture_failed");
+  }
+  std::string encode_error;
+  std::vector<uint8_t> png = fushi::EncodeBgraToPng(
+      screen_ocr_overlay_->capture().bgra.data(), static_cast<UINT>(width),
+      static_cast<UINT>(height), static_cast<UINT>(width) * 4, &encode_error);
+  if (png.empty()) {
+    StopScreenOcr();
+    return failure("capture_failed");
+  }
+  flutter::EncodableList screen_rect{
+      flutter::EncodableValue(static_cast<int32_t>(screen.left)),
+      flutter::EncodableValue(static_cast<int32_t>(screen.top)),
+      flutter::EncodableValue(static_cast<int32_t>(screen.right)),
+      flutter::EncodableValue(static_cast<int32_t>(screen.bottom)),
+  };
+  return flutter::EncodableValue(flutter::EncodableMap{
+      {flutter::EncodableValue("png"), flutter::EncodableValue(std::move(png))},
+      {flutter::EncodableValue("screen"),
+       flutter::EncodableValue(std::move(screen_rect))},
+  });
+}
+
+void FlutterWindow::StopScreenOcr() {
+  if (screen_ocr_overlay_) {
+    screen_ocr_overlay_->Close();
+  }
+  if (floating_ball_window_) {
+    floating_ball_window_->RestoreAfterCapture();
+  }
+}
+
+// app.fushi.reader/system_ocr（Windows.Media.Ocr，契约见 system_ocr_channel.dart）。
+// isAvailable 只枚举识别语言，平台线程同步答；recognize 在工作线程识别，结果经
+// WorkerReplyQueue 由计时器投回平台线程回话。`tiles` 忽略（整页识别、行不带下标，
+// Dart 的跨片合并对这种结果是恒等的）；modelStatus 等 Android 专有方法回
+// NotImplemented（Dart 视为 MissingPluginException = 系统组件、恒就绪）。
+void FlutterWindow::RegisterSystemOcrChannel() {
+  system_ocr_replies_ =
+      std::make_unique<fushi::WorkerReplyQueue<fushi::SystemOcrResult>>([] {
+        fushi::SystemOcrResult cancelled;
+        cancelled.error_code = "HOST_CLOSED";
+        cancelled.error_message = "system OCR host closed";
+        return cancelled;
+      });
+  system_ocr_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.fushi.reader/system_ocr",
+          &flutter::StandardMethodCodec::GetInstance());
+  system_ocr_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const std::string& method = call.method_name();
+        if (method == "isAvailable") {
+          result->Success(
+              flutter::EncodableValue(fushi::SystemOcrIsAvailable()));
+          return;
+        }
+        if (method != "recognize") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const auto* bytes_value = FindArg(args, "bytes");
+        const auto* bytes =
+            bytes_value == nullptr
+                ? nullptr
+                : std::get_if<std::vector<uint8_t>>(bytes_value);
+        if (bytes == nullptr || bytes->empty()) {
+          result->Error("INVALID_IMAGE", "missing image bytes");
+          return;
+        }
+        const std::string language = StringFromValue(args, "language", "ja");
+        if (system_ocr_replies_->empty() &&
+            SetTimer(GetHandle(), kSystemOcrReplyTimerId, kSystemOcrReplyTickMs,
+                     nullptr) == 0) {
+          result->Error("RECOGNIZE_FAILED",
+                        "could not schedule OCR completion");
+          return;
+        }
+        auto reply = std::shared_ptr<
+            flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
+        auto completion = system_ocr_replies_->Enqueue(
+            [reply](fushi::SystemOcrResult ocr) {
+              if (!ocr.error_code.empty()) {
+                reply->Error(ocr.error_code, ocr.error_message);
+                return;
+              }
+              reply->Success(SystemOcrReplyMap(ocr));
+            });
+        if (completion) {
+          std::thread([image = *bytes, language, completion]() {
+            completion->Publish(fushi::RecognizeImageText(image, language));
+          }).detach();
         }
       });
 }
@@ -4348,6 +4622,16 @@ void FlutterWindow::OnDestroy() {
     window_capture_replies_->Close();
     window_capture_replies_.reset();
   }
+  if (system_ocr_channel_) {
+    system_ocr_channel_->SetMethodCallHandler(nullptr);
+  }
+  KillTimer(GetHandle(), kSystemOcrReplyTimerId);
+  if (system_ocr_replies_) {
+    // 未完成的识别回 HOST_CLOSED（messenger 此刻还活着）；之后才完成的结果丢弃。
+    system_ocr_replies_->Close();
+    system_ocr_replies_.reset();
+  }
+  system_ocr_channel_.reset();
   // TODO-1066 — 撤销全局侧键的 Raw Input 登记。登记是绑在**本窗口 HWND** 上的
   // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
   // 必须在这里主动摘掉而不是等进程退出兜底。
@@ -4357,6 +4641,11 @@ void FlutterWindow::OnDestroy() {
   }
   // 应用外悬浮球的回调走 floating_ball_channel_：趁 messenger 还活着先拆窗
   // （Stop 不触发回调），再撤通道。
+  // 截屏识字冻结层同理（Close 不回调），先于球拆掉。
+  if (screen_ocr_overlay_) {
+    screen_ocr_overlay_->Close();
+    screen_ocr_overlay_.reset();
+  }
   if (floating_ball_window_) {
     floating_ball_window_->Stop();
     floating_ball_window_.reset();
@@ -4400,6 +4689,15 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_TIMER && wparam == kSystemOcrReplyTimerId) {
+    if (system_ocr_replies_) {
+      system_ocr_replies_->Drain();
+    }
+    if (!system_ocr_replies_ || system_ocr_replies_->empty()) {
+      KillTimer(hwnd, kSystemOcrReplyTimerId);
+    }
+    return 0;
+  }
   if (message == WM_TIMER && wparam == kWindowCaptureReplyTimerId) {
     if (window_capture_replies_) {
       window_capture_replies_->Drain();
