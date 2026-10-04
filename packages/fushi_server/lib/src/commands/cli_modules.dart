@@ -4,6 +4,7 @@ library;
 import 'package:fushi_server/src/commands/audiobook_commands.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/import_commands.dart';
+import 'package:fushi_server/src/commands/leaderboard_commands.dart';
 import 'package:fushi_server/src/commands/ocr_commands.dart';
 import 'package:fushi_server/src/commands/discover_commands.dart';
 import 'package:fushi_server/src/commands/export_commands.dart';
@@ -30,4 +31,5 @@ const List<CliModule> kCliModules = <CliModule>[
   SubsCliModule(),
   VideoCliModule(),
   DictCliModule(),
+  LeaderboardModule(),
 ];
