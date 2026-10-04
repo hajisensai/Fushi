@@ -258,6 +258,53 @@ jobs:
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
           cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
           ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+      # 词典引擎 libfushidicts_ffi.so：服务端查词按 bin/../lib/ 定位、变形表按
+      # bin/../share/fushi/transforms 定位。fushidicts 要 C++23（std::ranges::to 等），
+      # 下限 GCC 14；ubuntu-22.04 系统源只到 gcc-12，所以从 ubuntu-toolchain-r/test PPA
+      # 装 g++-14。libstdc++ / libgcc 静态链进 .so，目标机不需要这个 PPA 的运行库；
+      # 下面断言产物的 GLIBC 符号版本不超过 2.35，守住本 job 承诺的 glibc 下限。
+      # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺查词能力的服务端包。
+      - name: Install gcc-14 (ubuntu-toolchain-r/test PPA)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-14 g++-14 libstdc++-14-dev
+          g++-14 --version | head -n 1
+      - name: Build and bundle fushidicts (Linux x64)
+        shell: bash
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          set -euo pipefail
+          bash native/fushidicts/build_linux_so.sh
+          lib=build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
+          mkdir -p "$(dirname "$lib")"
+          cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so "$lib"
+          max_glibc="$(objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -n 1)"
+          echo "libfushidicts_ffi.so requires glibc >= $max_glibc"
+          if [ "$(printf '%s\n' "$max_glibc" 2.35 | sort -V | tail -n 1)" != "2.35" ]; then
+            echo "::error::libfushidicts_ffi.so needs glibc $max_glibc (> 2.35)"; exit 1
+          fi
+          DICTS_LIB="$lib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
+          lib.fushidicts_create.restype = ctypes.c_void_p
+          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.fushidicts_create()
+          if not handle:
+              raise SystemExit("fushidicts_create returned null")
+          lib.fushidicts_destroy(handle)
+          print("fushidicts .so smoke ok")
+          PY
+          share=build/fushi_server_linux/bundle/share/fushi
+          mkdir -p "$share"
+          rm -rf "$share/transforms"
+          cp -a fushi/assets/transforms "$share/transforms"
+          test -f "$share/transforms/manifest.json"
       # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
       # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
       # fushi-anki-sync.SOURCE.txt（commit 取 hibiki checkout 的 HEAD——这里 GITHUB_SHA
