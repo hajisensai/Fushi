@@ -17,6 +17,8 @@
 #include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
 #include "ime_language_switch.h"
+#include "screen_ocr_overlay.h"
+#include "system_ocr_channel_host.h"
 #include "win32_window.h"
 #include "window_capture_reply_queue.h"
 
@@ -107,6 +109,17 @@ class FlutterWindow : public Win32Window {
       floating_ball_channel_;
   std::unique_ptr<FloatingBallWindow> floating_ball_window_;
   void RegisterFloatingBallChannel();
+  // 应用外球「截屏识字」的冻结层（spec「截屏识字」）。回调经 floating_ball_channel_。
+  std::unique_ptr<ScreenOcrOverlay> screen_ocr_overlay_;
+  // startScreenOcrCapture：藏球 → 截球所在显示器 → 显示冻结层 → 回 {png, screen}。
+  flutter::EncodableValue StartScreenOcrCapture(const flutter::EncodableMap* args);
+  // 关冻结层（不回调）并恢复球。
+  void StopScreenOcr();
+
+  // app.fushi.reader/system_ocr 的宿主（实现与工作线程都在
+  // system_ocr_channel_host.cpp；这里只持有并转发它的计时器消息）。
+  std::unique_ptr<fushi::SystemOcrChannelHost> system_ocr_host_;
+  void RegisterSystemOcrChannel();
 
   // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
   // rich text-only mode, independent of the audiobook lyric strip.

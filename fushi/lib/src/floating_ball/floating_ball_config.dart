@@ -193,12 +193,13 @@ enum FloatingBallGlobalAction {
 
   /// 在某个场景的球上有没有这颗按钮。只有桌面的应用外球与众不同：它浮在别的程序
   /// 上面，「应用外查词」在那里就是查前台程序当前选中的文字（与全局查词热键同一条
-  /// 路径），截屏识字 / 拍照查词桌面不提供；其余场景同 [availableOn]。
+  /// 路径），截屏识字是截球所在的显示器、在冻结画面上点字（结果用同一张全局查词
+  /// 卡），拍照查词桌面不提供；其余场景同 [availableOn]。
   ///
   /// [lookupModuleEnabled]：「查词」模块开着没有。桌面应用外球的「查词」（打开
-  /// 查词页）与「应用外查词」（全局查词覆盖窗）都挂在这个模块上——模块关着时查词
-  /// 页没有入口、全局查词也不启动，按钮点了没反应，所以干脆不出现。剪贴板查词在
-  /// 覆盖窗不可用时退回主窗查词弹窗，不受影响。
+  /// 查词页）、「应用外查词」与「截屏识字」（都用全局查词覆盖窗）都挂在这个模块
+  /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
+  /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
   bool availableIn(
     FloatingBallScope scope, {
     required bool isAndroid,
@@ -209,9 +210,9 @@ enum FloatingBallGlobalAction {
     if (scope == FloatingBallScope.system && isDesktop) {
       return switch (this) {
         FloatingBallGlobalAction.lookup ||
-        FloatingBallGlobalAction.popupLookup => lookupModuleEnabled,
+        FloatingBallGlobalAction.popupLookup ||
+        FloatingBallGlobalAction.screenOcr => lookupModuleEnabled,
         FloatingBallGlobalAction.clipboard => true,
-        FloatingBallGlobalAction.screenOcr ||
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,
       };
