@@ -61,6 +61,30 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     );
   }
 
+  /// 被下载管线管理的合集 id（任一下载任务或下载订阅指向它）。这类合集的集序
+  /// 不是用户写出来的，而是「按集号」派生的（合集同步平手时据此重算，BUG-2941）。
+  Future<Set<int>> downloadManagedCollectionIds() async {
+    final List<int?> fromJobs =
+        await (selectOnly(videoDownloadJobs, distinct: true)
+              ..addColumns(<Expression<Object>>[videoDownloadJobs.collectionId])
+              ..where(videoDownloadJobs.collectionId.isNotNull()))
+            .map((TypedResult r) => r.read(videoDownloadJobs.collectionId))
+            .get();
+    final List<int?> fromSubscriptions =
+        await (selectOnly(videoDownloadSubscriptions, distinct: true)
+              ..addColumns(<Expression<Object>>[
+                videoDownloadSubscriptions.collectionId
+              ])
+              ..where(videoDownloadSubscriptions.collectionId.isNotNull()))
+            .map((TypedResult r) =>
+                r.read(videoDownloadSubscriptions.collectionId))
+            .get();
+    return <int>{
+      for (final int? id in <int?>[...fromJobs, ...fromSubscriptions])
+        if (id != null) id,
+    };
+  }
+
   Expression<bool> _pendingVideoDownloadJobsOfSource(int sourceId) =>
       videoDownloadJobs.targetSourceId.equals(sourceId) &
       videoDownloadJobs.lifecycle

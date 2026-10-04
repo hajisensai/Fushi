@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_routes
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 库 / 文件夹 / BoxSet 的分页网格；搜索框非空时改走 [MediaServerBrowser.search]
 /// （同样分页），排序只对浏览生效。
@@ -247,40 +248,70 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         tokens.spacing.page,
         tokens.spacing.gap,
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: FushiSearchField(
-              fieldKey: const ValueKey<String>('media-server-grid-search'),
-              clearButtonKey: const ValueKey<String>(
-                'media-server-grid-search-clear',
+      // 2026-10 体验优化：窄于 480 时排序收成图标菜单。写死 180 宽的下拉在
+      // 手机竖屏上把搜索框挤到不足一半。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final bool compactSort = box.maxWidth < 480;
+          return Row(
+            children: <Widget>[
+              Expanded(
+                child: FushiSearchField(
+                  fieldKey: const ValueKey<String>('media-server-grid-search'),
+                  clearButtonKey: const ValueKey<String>(
+                    'media-server-grid-search-clear',
+                  ),
+                  focusId: FushiFocusId('$prefix-grid-search'),
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  hintText: t.media_server_search_hint,
+                  onChanged: _scheduleSearch,
+                  onSubmitted: _submitSearch,
+                  onClear: _clearSearch,
+                ),
               ),
-              focusId: FushiFocusId('$prefix-grid-search'),
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              hintText: t.media_server_search_hint,
-              onChanged: _scheduleSearch,
-              onSubmitted: _submitSearch,
-              onClear: _clearSearch,
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          // 搜索走服务器的相关度序，排序只对浏览生效；搜索态禁用而不是藏起来。
-          // 下拉里是 DropdownMenu（InputDecorator），在 Row 里必须给定宽。
-          SizedBox(
-            width: 180,
-            child: FushiDropdown<MediaServerSort>(
-              key: const ValueKey<String>('media-server-grid-sort'),
-              options: MediaServerSort.values,
-              initialOption: _sort,
-              generateLabel: _sortLabel,
-              onChanged: _changeSort,
-              enabled: !_searchMode,
-              focusId: FushiFocusId('$prefix-grid-sort'),
-            ),
-          ),
-        ],
+              SizedBox(width: tokens.spacing.gap),
+              // 搜索走服务器的相关度序，排序只对浏览生效；搜索态禁用而不是藏起来。
+              // 下拉里是 DropdownMenu（InputDecorator），在 Row 里必须给定宽。
+              if (compactSort)
+                _buildCompactSortButton()
+              else
+                SizedBox(
+                  width: 180,
+                  child: FushiDropdown<MediaServerSort>(
+                    key: const ValueKey<String>('media-server-grid-sort'),
+                    options: MediaServerSort.values,
+                    initialOption: _sort,
+                    generateLabel: _sortLabel,
+                    onChanged: _changeSort,
+                    enabled: !_searchMode,
+                    focusId: FushiFocusId('$prefix-grid-sort'),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
+    );
+  }
+
+  /// 窄屏的排序入口：图标菜单，当前项打勾。搜索态同样禁用。
+  Widget _buildCompactSortButton() {
+    return PopupMenuButton<MediaServerSort>(
+      key: const ValueKey<String>('media-server-grid-sort-compact'),
+      tooltip: t.sort_by,
+      enabled: !_searchMode,
+      icon: const Icon(Icons.sort_rounded),
+      initialValue: _sort,
+      onSelected: _changeSort,
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<MediaServerSort>>[
+        for (final MediaServerSort sort in MediaServerSort.values)
+          CheckedPopupMenuItem<MediaServerSort>(
+            value: sort,
+            checked: sort == _sort,
+            child: Text(_sortLabel(sort)),
+          ),
+      ],
     );
   }
 
@@ -318,82 +349,96 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
       );
     }
     final String prefix = widget.session.serverId;
-    return CustomScrollView(
-      key: PageStorageKey<String>('$prefix-grid-${widget.parentId ?? 'root'}'),
-      controller: _scrollController,
-      slivers: <Widget>[
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          sliver: SliverLayoutBuilder(
-            builder: (BuildContext context, SliverConstraints constraints) {
-              // 行高按「实际列宽 × 3/2（2:3 海报）+ 文字块」精确给：发现页那种
-              // `childAspectRatio: 0.50` 是把文字区按列宽的一半留，桌面 210 列宽下
-              // 文字块只要 ~60，卡片底部空出一截（像素预览实测）。列数与
-              // [SliverGridDelegateWithMaxCrossAxisExtent] 同一算法（ceil）。
-              final double gap = tokens.spacing.gap;
-              final double maxExtent = readerShelfGridExtentForWidth(
-                MediaQuery.sizeOf(context).width,
-              );
-              final double width = constraints.crossAxisExtent;
-              final int columns = ((width + gap) / (maxExtent + gap))
-                  .ceil()
-                  .clamp(1, 1 << 16)
-                  .toInt();
-              final double cardWidth = (width - gap * (columns - 1)) / columns;
-              return SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  mainAxisSpacing: gap,
-                  crossAxisSpacing: gap,
-                  mainAxisExtent:
-                      cardWidth * 3 / 2 + mediaServerCardTextBlock(context),
-                ),
-                delegate: _cardDelegate(context, prefix),
-              );
-            },
-          ),
+    // 2026-10 动效重做：首屏卡片错峰淡入；翻页补进来的卡在窗口外，瞬间出现。
+    return FushiEntranceScope(
+      child: CustomScrollView(
+        key: PageStorageKey<String>(
+          '$prefix-grid-${widget.parentId ?? 'root'}',
         ),
-        if (_loadingMore)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.card),
-              child: Center(child: adaptiveIndicator(context: context)),
+        controller: _scrollController,
+        slivers: <Widget>[
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            sliver: SliverLayoutBuilder(
+              builder: (BuildContext context, SliverConstraints constraints) {
+                // 行高按「实际列宽 × 3/2（2:3 海报）+ 文字块」精确给：发现页那种
+                // `childAspectRatio: 0.50` 是把文字区按列宽的一半留，桌面 210 列宽下
+                // 文字块只要 ~60，卡片底部空出一截（像素预览实测）。列数与
+                // [SliverGridDelegateWithMaxCrossAxisExtent] 同一算法（ceil）。
+                final double gap = tokens.spacing.gap;
+                final double maxExtent = readerShelfGridExtentForWidth(
+                  MediaQuery.sizeOf(context).width,
+                );
+                final double width = constraints.crossAxisExtent;
+                final int columns = ((width + gap) / (maxExtent + gap))
+                    .ceil()
+                    .clamp(1, 1 << 16)
+                    .toInt();
+                final double cardWidth =
+                    (width - gap * (columns - 1)) / columns;
+                return SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisSpacing: gap,
+                    crossAxisSpacing: gap,
+                    mainAxisExtent:
+                        cardWidth * 3 / 2 + mediaServerCardTextBlock(context),
+                  ),
+                  delegate: _cardDelegate(context, prefix),
+                );
+              },
             ),
-          )
-        else if (_loadMoreFailed)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.card),
-              child: Center(
-                child: TextButton.icon(
-                  key: const ValueKey<String>('media-server-grid-retry-more'),
-                  onPressed: _retryLoadMore,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: Text(t.retry),
+          ),
+          if (_loadingMore)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(tokens.spacing.card),
+                child: Center(child: adaptiveIndicator(context: context)),
+              ),
+            )
+          else if (_loadMoreFailed)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(tokens.spacing.card),
+                child: Center(
+                  child: TextButton.icon(
+                    key: const ValueKey<String>('media-server-grid-retry-more'),
+                    onPressed: _retryLoadMore,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: Text(t.retry),
+                  ),
                 ),
               ),
-            ),
-          )
-        else
-          SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
-      ],
+            )
+          else
+            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
+        ],
+      ),
     );
   }
 
   SliverChildBuilderDelegate _cardDelegate(
     BuildContext context,
     String prefix,
-  ) => SliverChildBuilderDelegate((BuildContext context, int index) {
-    final MediaServerItem item = _items[index];
-    return MediaServerItemCard(
-      key: ValueKey<String>('media-server-grid-card-${item.id}'),
-      browser: _browser,
-      item: item,
-      focusId: FushiFocusId('$prefix-grid-card-${item.id}'),
-      onTap: () =>
-          openMediaServerItem(context, widget.session, item, siblings: _items),
-      onLongPress: () =>
-          openMediaServerItemDetail(context, widget.session, item),
-    );
-  }, childCount: _items.length);
+  ) => SliverChildBuilderDelegate(
+    fushiStaggeredItemBuilder((BuildContext context, int index) {
+      final MediaServerItem item = _items[index];
+      return MediaServerItemCard(
+        key: ValueKey<String>('media-server-grid-card-${item.id}'),
+        browser: _browser,
+        item: item,
+        focusId: FushiFocusId('$prefix-grid-card-${item.id}'),
+        onTap: () => openMediaServerItem(
+          context,
+          widget.session,
+          item,
+          siblings: _items,
+        ),
+        onLongPress: () =>
+            openMediaServerItemDetail(context, widget.session, item),
+        onInfo: () => openMediaServerItemDetail(context, widget.session, item),
+      );
+    }),
+    childCount: _items.length,
+  );
 }

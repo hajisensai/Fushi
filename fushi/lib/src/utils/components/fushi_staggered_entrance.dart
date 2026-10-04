@@ -170,3 +170,18 @@ class _FushiStaggeredEntranceState extends State<FushiStaggeredEntrance>
     );
   }
 }
+
+/// `itemBuilder` 适配器：把网格 / 列表的每一项包进 [FushiStaggeredEntrance]。
+///
+/// 各库页 / 浏览页的 `GridView.builder` / `SliverGrid.builder` 一处套用即可接入
+/// 错峰进场；调用方仍须在网格外包一层 [FushiEntranceScope]，否则窗口常开、懒加载
+/// 滚出的每一格都会淡入（拖影）。
+NullableIndexedWidgetBuilder fushiStaggeredItemBuilder(
+  NullableIndexedWidgetBuilder builder,
+) {
+  return (BuildContext context, int index) {
+    final Widget? child = builder(context, index);
+    if (child == null) return null;
+    return FushiStaggeredEntrance(index: index, child: child);
+  };
+}

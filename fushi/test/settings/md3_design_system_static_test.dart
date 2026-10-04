@@ -1017,10 +1017,6 @@ void main() {
           'content, not page chrome — the same reviewed media-page '
           'exception class as the parent video player page allowlist entry '
           'and the sibling video_quick_settings_sheet caption font size.',
-      'lib/src/pages/implementations/home_video_page.dart':
-          'Home video grid renders media content badges/download progress; '
-          'long-press management actions use the shared media dialog frame, '
-          'not bespoke bottom-sheet chrome.',
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
           'checkbox rows (transient video-subsystem content).',
@@ -1284,9 +1280,6 @@ void main() {
       },
       'lib/src/pages/implementations/history_reader_page.dart': <String>{
         'surfaceContainerHighest',
-      },
-      'lib/src/pages/implementations/home_video_page.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
         'BorderRadius.circular(',
@@ -1951,9 +1944,19 @@ void main() {
       expect(frame, isNot(contains('SingleChildScrollView(')));
       expect(frame, isNot(contains('ListTile(')));
       expect(frame, isNot(contains('OutlinedButton.icon(')));
-      // 旧 scrim 背景结构（封面铺底 + 渐变遮罩）不得回归。
-      expect(frame, isNot(contains('Positioned.fill')));
+      // 旧 scrim 背景结构（**前景封面**铺底 + 渐变遮罩、封面几乎不可见）不得回归。
+      // 2026-10-04 起封面块两侧允许铺一层「同图模糊垫底」（coverBackdrop，只填
+      // contain 后的横向留白）：Positioned.fill 只能装垫底图 / 色层，传入的封面
+      // widget 必须仍是 Stack 的最后一个非定位子项、清晰地画在最前面。
+      expect(frame, isNot(contains('Positioned.fill(child: cover')));
       expect(frame, isNot(contains('LinearGradient(')));
+      expect(frame, contains('final ImageProvider? coverBackdrop;'));
+      expect(frame, contains('ui.ImageFilter.blur('));
+      expect(
+        frame,
+        matches(RegExp(r'cover!,\s*\],\s*\),\s*\);')),
+        reason: '前景封面必须是垫底 Stack 的最后一个子项（画在最上层）',
+      );
     },
   );
 

@@ -54,6 +54,8 @@ class VideoFranchise {
     required this.name,
     required this.series,
     required this.movies,
+    this.truncated = false,
+    this.more,
   });
 
   /// 显示名：有 collection 用它去掉「系列」后缀的名字，否则用锚点作品名。
@@ -61,7 +63,28 @@ class VideoFranchise {
   final List<VideoDiscoveryItem> series;
   final List<VideoDiscoveryItem> movies;
 
+  /// 解析因失败停下（MAL 中途请求失败 / 某个来源整个出错）：[series] / [movies]
+  /// 只是已经收到的那部分，不能当「全部」交给用户。还没查完但能接着查的不算——
+  /// 那是 [more]。
+  final bool truncated;
+
+  /// 还没查完：调用它从断点接着查下一批，返回**到目前为止**的全部结果（含之前
+  /// 各批）；最后一批的 [more] 为 null。只能调一次。
+  ///
+  /// 分批而不是一口气走完 / 撞上预算就停：长寿系列（哆啦A梦 100+ 个关联节点、
+  /// Jikan 约 1 秒一个请求）一次走完要好几分钟，调用方每批报一次进度、用户随时
+  /// 可取消；撞预算就停则是把半张清单当整套交出去（BUG-2937）。
+  final Future<VideoFranchise> Function()? more;
+
   int get length => series.length + movies.length;
+
+  /// 去掉 [more] 的快照（续查的结果回来后，旧的续查入口已经用过了）。
+  VideoFranchise withoutMore() => VideoFranchise(
+    name: name,
+    series: series,
+    movies: movies,
+    truncated: truncated,
+  );
 }
 
 /// 系列解析要的 TMDB 能力（生产实现是 `TmdbVideoDiscoveryProvider`；测试注入假的）。
@@ -160,8 +183,15 @@ abstract interface class VideoFranchiseRelationSource {
   Future<List<VideoMetadataWork>> searchAnime(String title);
 }
 
-/// 沿 MAL 关联最多走几部（Jikan 闸门约 1.1 秒一个请求：60 部 ≈ 1 分钟）。
-const int kVideoFranchiseMaxMalWorks = 60;
+/// 沿 MAL 关联每批请求几部（Jikan 闸门约 1.1 秒一个请求：40 部 ≈ 45 秒报一次进度）。
+///
+/// 计的是请求数而不是收进清单的部数：OVA / Special 不收，但要请求一次才知道它是
+/// OVA。**没有总上限**：关联图是有限的（只走 [kVideoFranchiseMalRelations]、访问过
+/// 的不再走），批与批之间经 [VideoFranchise.more] 接着走，直到走完。旧做法是总
+/// 上限 60 / 150 撞上就停（BUG-2935 / BUG-2937）：哆啦A梦从 1979 版出发，1979 版
+/// 一层外传就 ~50 部，剧场版、同映短片、特别篇层层展开 100+ 个节点，停在哪里都是
+/// 把半张清单当整套交出去。
+const int kVideoFranchiseMalBatch = 40;
 
 /// 沿着走的 MAL 关系（小写）。「Other」「Spin-off」「Character」「Summary」不走：
 /// 长寿作品在这几类上挂满联动、客串与总集篇；「Alternative setting」也不走——
@@ -175,46 +205,102 @@ const Set<String> kVideoFranchiseMalRelations = <String>{
   'alternative version',
 };
 
-/// MAL `type` → 系列里的哪一段；null = 不收（OVA / Special / PV / CM / Music——
-/// 这些是特典或番外，不是「全部季 + 全部剧场版」）。
-VideoMetadataMediaKind? _malFranchiseKind(String? malType) =>
-    switch (malType?.trim().toLowerCase()) {
-      'movie' => VideoMetadataMediaKind.movie,
+/// 长片下限（分钟）：AMPAS / BFI 对「长片」的定义是 40 分钟以上。MAL 把同映
+/// 短片（哆啦A梦剧场版同映的 15–30 分钟短片、The☆Doraemons、天象馆片）也标
+/// `Movie`，不按片长分就会默认勾选进「全部剧场版」（BUG-2936）。片长未知的照收。
+const int kVideoFranchiseMinFeatureMinutes = 40;
+
+/// MAL `type` → 系列里的哪一段；null = 不收（OVA / Special / PV / CM / Music /
+/// 短于 [kVideoFranchiseMinFeatureMinutes] 的同映短片——这些是特典或番外，不是
+/// 「全部季 + 全部剧场版」）。
+VideoMetadataMediaKind? _malFranchiseKind(MalRelatedWorks related) =>
+    switch (related.malType?.trim().toLowerCase()) {
+      'movie' =>
+        _isShortFilm(related.work) ? null : VideoMetadataMediaKind.movie,
       'tv' || 'ona' => VideoMetadataMediaKind.tv,
       _ => null,
     };
 
-/// MAL 关联链展开的系列；锚点既没有 MAL 身份、按标题也搜不到时返回 null。
+bool _isShortFilm(VideoMetadataWork work) {
+  final int? minutes = work.runtimeMinutes;
+  return minutes != null && minutes < kVideoFranchiseMinFeatureMinutes;
+}
+
+/// MAL 关联链展开的系列（第一批；没走完时经 [VideoFranchise.more] 接着走）；
+/// 锚点既没有 MAL 身份、按标题也搜不到时返回 null。
 Future<VideoFranchise?> resolveMalFranchise(
   VideoFranchiseRelationSource source,
   VideoDiscoveryItem anchor, {
-  int maxWorks = kVideoFranchiseMaxMalWorks,
+  int batchSize = kVideoFranchiseMalBatch,
 }) async {
   final String? start = await _anchorMalId(source, anchor);
   if (start == null) return null;
-  final _WorkSet series = _WorkSet();
-  final _WorkSet movies = _WorkSet();
-  final Set<int> visited = <int>{};
-  final List<int> queue = <int>[int.parse(start)];
-  String? name;
-  while (queue.isNotEmpty && visited.length < maxWorks) {
-    final int id = queue.removeAt(0);
-    if (!visited.add(id)) continue;
+  return _MalFranchiseWalk(
+    source,
+    fallbackName: anchor.reference.title,
+    start: int.parse(start),
+    batchSize: batchSize,
+  ).next();
+}
+
+/// 一次 MAL 关联图广度优先遍历的全部状态：批与批之间就停在这里，
+/// [VideoFranchise.more] 是指向 [next] 的入口。
+class _MalFranchiseWalk {
+  _MalFranchiseWalk(
+    this._source, {
+    required String fallbackName,
+    required int start,
+    required int batchSize,
+  }) : _fallbackName = fallbackName,
+       _batchSize = batchSize,
+       _queue = <int>[start];
+
+  final VideoFranchiseRelationSource _source;
+  final String _fallbackName;
+  final int _batchSize;
+  final List<int> _queue;
+  final Set<int> _visited = <int>{};
+  final _WorkSet _series = _WorkSet();
+  final _WorkSet _movies = _WorkSet();
+  String? _name;
+  bool _failed = false;
+
+  /// 再走一批（最多 [_batchSize] 个请求），交出到目前为止的全部结果。
+  Future<VideoFranchise> next() async {
+    int fetched = 0;
+    while (!_failed && _queue.isNotEmpty && fetched < _batchSize) {
+      final int id = _queue.removeAt(0);
+      if (!_visited.add(id)) continue;
+      fetched++;
+      await _visit(id);
+    }
+    _queue.removeWhere(_visited.contains);
+    return VideoFranchise(
+      name: _name ?? _fallbackName,
+      series: _series.sortedByYear(),
+      movies: _movies.sortedByYear(),
+      truncated: _failed,
+      more: !_failed && _queue.isNotEmpty ? next : null,
+    );
+  }
+
+  Future<void> _visit(int id) async {
     final MalRelatedWorks? related;
     try {
-      related = await source.fetchRelatedWorks('$id');
+      related = await _source.fetchRelatedWorks('$id');
     } on Object catch (error, stack) {
       // 走到第 40 部碰上一次 5xx / 限流重试用尽：停在这里、交出已经收集到的，
-      // 而不是让前面 39 部一起作废。
+      // 而不是让前面 39 部一起作废；标 truncated 如实说清单不全。
       engineLog.logDiagnostic(
         'VideoFranchise.malTraversal',
-        'stopped at mal:$id after ${visited.length - 1} works: $error\n$stack',
+        'stopped at mal:$id after ${_visited.length - 1} works: $error\n$stack',
       );
-      break;
+      _failed = true;
+      return;
     }
-    if (related == null) continue;
-    name ??= related.work.title;
-    final VideoMetadataMediaKind? kind = _malFranchiseKind(related.malType);
+    if (related == null) return;
+    _name ??= related.work.title;
+    final VideoMetadataMediaKind? kind = _malFranchiseKind(related);
     if (kind != null) {
       final VideoDiscoveryItem item = VideoDiscoveryItem.fromMetadataWork(
         work: related.work.kind == kind
@@ -223,22 +309,17 @@ Future<VideoFranchise?> resolveMalFranchise(
         discoveryCategory: VideoDiscoveryCategory.anime,
         externalId: '$id',
       );
-      (kind == VideoMetadataMediaKind.movie ? movies : series).add(item);
+      (kind == VideoMetadataMediaKind.movie ? _movies : _series).add(item);
     }
     for (final MalRelation relation in related.relations) {
       if (kVideoFranchiseMalRelations.contains(
             relation.relation.trim().toLowerCase(),
           ) &&
-          !visited.contains(relation.malId)) {
-        queue.add(relation.malId);
+          !_visited.contains(relation.malId)) {
+        _queue.add(relation.malId);
       }
     }
   }
-  return VideoFranchise(
-    name: name ?? anchor.reference.title,
-    series: series.sortedByYear(),
-    movies: movies.sortedByYear(),
-  );
 }
 
 Future<String?> _anchorMalId(
@@ -284,7 +365,10 @@ Future<String?> _anchorMalId(
 }
 
 /// 合并几份系列清单：按标题 + 年份去重，剧集 / 剧场版各自按年份排；名字取第一份
-/// 非空的（TMDB collection 名比 MAL 的首部标题更像系列名）。
+/// 非空的（TMDB collection 名比 MAL 的首部标题更像系列名）。任一份因失败没走完，
+/// 合并结果也算没走完：别的来源补上了多少无从核对。续查入口 [VideoFranchise.more]
+/// 取第一份带的（只有 MAL 关联链分批）——合并层不能把它吞掉，否则后面的批次
+/// 永远查不到。
 VideoFranchise? mergeVideoFranchises(Iterable<VideoFranchise?> parts) {
   final List<VideoFranchise> present = <VideoFranchise>[
     for (final VideoFranchise? part in parts)
@@ -301,6 +385,13 @@ VideoFranchise? mergeVideoFranchises(Iterable<VideoFranchise?> parts) {
     name: present.first.name,
     series: series.sortedByYear(),
     movies: movies.sortedByYear(),
+    truncated: present.any((VideoFranchise part) => part.truncated),
+    more: present
+        .map((VideoFranchise part) => part.more)
+        .firstWhere(
+          (Future<VideoFranchise> Function()? more) => more != null,
+          orElse: () => null,
+        ),
   );
 }
 

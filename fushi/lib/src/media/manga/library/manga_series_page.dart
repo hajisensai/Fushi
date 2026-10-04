@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
@@ -412,7 +413,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.enqueue', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
     await _refreshDownloadState();
@@ -426,14 +430,41 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     await _refreshDownloadState();
   }
 
+  /// 删除某章的本地下载。
+  ///
+  /// 2026-10 体验优化：原先菜单一点即删整章页图（重下要再跑一遍网络 + OCR），
+  /// 先确认（写明章名），删完给 Toast。
   Future<void> _deleteChapterDownload(OnlineMangaChapter chapter) async {
     final EpubBookRow? row = _row;
     if (row == null) return;
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text(t.manga_chapter_download_delete_action),
+            content: Text(chapter.name),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
     try {
       await deleteChapterDownload(
         await MangaStorage.bookPath(row.bookKey),
         chapter.key,
       );
+      if (mounted) FushiToast.show(msg: t.storage_entry_delete_done);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaSeriesPage.deleteDownload',
@@ -441,7 +472,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         stack,
       );
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
     await _refreshDownloadState();
@@ -492,7 +526,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.downloadAll', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
     await _refreshDownloadState();
@@ -608,7 +645,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on OnlineMangaUnavailable catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.sibling', error, stack);
       if (mounted) {
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
       return;
     } finally {
@@ -654,7 +694,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       await (widget.openExternal ?? _launchExternal)(url);
     } on Object catch (error) {
       if (!mounted) return;
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: describeOnlineSourceError(error),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -870,7 +913,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.subscribe', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -1045,20 +1091,27 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
       if (!mounted) return;
       setState(() => _refreshError = error);
+      // 手点刷新才补 toast：提示条可能早已挂着，没有 toast 等于点了没反应。
       if (!silent) {
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: _loadErrorText(error),
+          severity: ToastSeverity.error,
+        );
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.refresh', error, stack);
       if (!mounted) return;
       final OnlineMangaUnavailable wrapped = OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.runtimeFailure,
-        '$error',
+        describeOnlineSourceError(error),
         cause: error,
       );
       setState(() => _refreshError = wrapped);
       if (!silent) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: wrapped.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -1081,7 +1134,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.add', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1151,7 +1207,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.remove', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1229,12 +1288,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (mounted) {
         _challengeRetry = () => _openChapterAt(index);
         setState(() => _refreshError = error);
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.openChapter', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1526,6 +1591,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
+  /// 可读文案：桥接层 message 往往是 `Exception: ...` 原串，经
+  /// [OnlineMangaUnavailable.userMessage] 归一（2026-10 体验优化）；原串只进
+  /// 「查看详情」。
+  static String _loadErrorText(OnlineMangaUnavailable error) =>
+      error.userMessage;
+
   /// 一点内容都拉不到时的完整错误视图。
   ///
   /// 三件事缺一不可（BUG-1767 用例逐条盯着）：**原因可见**（把桥接层给的
@@ -1548,8 +1619,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
+            // 原始异常（含堆栈）在「查看详情」对话框里，这里给可读短句。
             SelectableText(
-              error.message,
+              _loadErrorText(error),
               style: theme.textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
@@ -1559,12 +1631,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               alignment: WrapAlignment.center,
               children: <Widget>[
                 if (retryable)
-                  FilledButton(
+                  FilledButton.icon(
                     key: const ValueKey<String>('manga_series_error_retry'),
                     onPressed: _refreshing
                         ? null
                         : () => unawaited(_refreshFromSource()),
-                    child: Text(t.retry),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: Text(t.retry),
                   ),
                 _challengeAction(error),
                 TextButton(
@@ -1599,7 +1672,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           ),
           const SizedBox(height: 8),
           SelectableText(
-            '$error',
+            describeOnlineSourceError(error),
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),

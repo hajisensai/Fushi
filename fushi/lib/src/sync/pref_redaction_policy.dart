@@ -99,6 +99,8 @@ abstract final class PrefRedactionPolicy {
     'discovery_opds_servers',
     // 同形：AList / OpenList 站点清单里的 base64 密码。
     'discovery_alist_sites',
+    // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
+    'discovery_audiobookshelf_servers',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -172,6 +173,12 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       quickActions: _quickActions,
       listActions: _listActions,
       dangerActions: _dangerActions,
+      coverBackdrop: _hasCover
+          ? mediaSource.getDisplayThumbnailFromMediaItem(
+              appModel: appModel,
+              item: widget.item,
+            )
+          : null,
     );
   }
 
@@ -243,10 +250,21 @@ class MediaItemDialogFrame extends StatelessWidget {
     this.quickActions = const [],
     this.listActions = const [],
     this.dangerActions = const [],
+    this.coverBackdrop,
     super.key,
   });
 
   final Widget? cover;
+
+  /// 封面块两侧的「同图模糊垫底」图源（2026-10-04 用户反馈：竖版封面 contain
+  /// 后两侧大片纯色空白，「差点意思」）。非空时封面块背后铺一层同一张图的 cover
+  /// 裁切 + 高斯模糊 + 半透明压暗，横向留白被封面自身的色调填满，前景封面仍完整
+  /// 不裁。
+  ///
+  /// 只收图源、不复用 [cover] widget：后者可能带 key / GlobalKey，画两遍会撞
+  /// key。解码按 [_backdropDecodeWidth] 降采样——模糊后看不出分辨率，省内存与
+  /// 解码。为 null（占位图标、拿不到图源）时退回纯色 letterbox；墨水屏不模糊。
+  final ImageProvider? coverBackdrop;
   final String title;
   final String? author;
   final bool showLaunchAction;
@@ -266,6 +284,68 @@ class MediaItemDialogFrame extends StatelessWidget {
   /// TODO-557 restores the cover as a visible top-of-dialog block.
   static const double _coverHeightFactor = 0.34;
 
+  /// 模糊垫底的解码宽度（像素）：σ=28 的模糊之后 64px 与原图看不出差别。
+  static const int _backdropDecodeWidth = 64;
+
+  Widget _buildCoverBlock(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    double screenHeight,
+  ) {
+    final ImageProvider? backdrop = coverBackdrop;
+    final Widget block = backdrop == null || isEinkTheme(context)
+        ? ColoredBox(
+            color: tokens.surfaces.overlay,
+            child: cover!,
+          )
+        : ClipRect(
+            child: Stack(
+              // passthrough：前景封面拿到与原 letterbox 相同的约束（整宽、限高），
+              // Stack 尺寸仍由封面决定，几何与改造前逐值一致。
+              fit: StackFit.passthrough,
+              children: <Widget>[
+                Positioned.fill(
+                  child: ColoredBox(color: tokens.surfaces.overlay),
+                ),
+                Positioned.fill(
+                  child: ExcludeSemantics(
+                    child: ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                      child: Image(
+                        key: const ValueKey<String>(
+                          'media_item_dialog_cover_backdrop',
+                        ),
+                        image: ResizeImage.resizeIfNeeded(
+                          _backdropDecodeWidth,
+                          null,
+                          backdrop,
+                        ),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+                // 压暗一层：模糊色块只做氛围，不能比前景封面抢眼，也让浅色封面
+                // 的两侧不至于发白刺眼。
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: tokens.surfaces.overlay.withValues(alpha: 0.45),
+                  ),
+                ),
+                cover!,
+              ],
+            ),
+          );
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: screenHeight * _coverHeightFactor,
+      ),
+      child: block,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.sizeOf(context).height;
@@ -280,16 +360,7 @@ class MediaItemDialogFrame extends StatelessWidget {
           // Visible cover block at the top of the dialog (TODO-557). The cover
           // widget itself uses BoxFit.contain, so the whole artwork stays
           // visible and is never cropped; the ColoredBox letterboxes it.
-          if (cover != null)
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: screenHeight * _coverHeightFactor,
-              ),
-              child: ColoredBox(
-                color: tokens.surfaces.overlay,
-                child: cover!,
-              ),
-            ),
+          if (cover != null) _buildCoverBlock(context, tokens, screenHeight),
           Padding(
             padding: EdgeInsets.all(tokens.spacing.card),
             child: Column(
@@ -345,10 +416,9 @@ class MediaItemDialogFrame extends StatelessWidget {
                       padding: EdgeInsets.zero,
                       leading: Icon(action.icon),
                       title: Text(action.label),
-                      trailing: Icon(
-                        Icons.chevron_right,
-                        color: colors.onSurfaceVariant,
-                      ),
+                      // 不画尾部 chevron（2026-10-04）：这些是「就地执行 / 弹个小框」
+                      // 的菜单动作，不是推入子页的导航项；每行一个「>」暗示了不存在
+                      // 的层级，还把视线拉向右缘。MD3 菜单项同样不带箭头。
                       onTap: action.onPressed,
                     ),
                 ],

@@ -897,6 +897,7 @@ class VideoDownloadPipelineService {
     this.defaultContentLanguage,
     this.subtitleLanguageResolver,
     this.discoveryImporter,
+    this.onDownloadOnlyCompleted,
     this.manualTorrentDirectory,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
     String? workerId,
@@ -942,6 +943,16 @@ class VideoDownloadPipelineService {
 
   /// 见 [VideoDownloadDiscoveryImporter]。
   final VideoDownloadDiscoveryImporter? discoveryImporter;
+
+  /// 「只下载」任务（`download-only-<域>` 策略，如 CoreAudio/TMW 合集单卷）完成
+  /// 之后调一次：参数是该任务落盘的已选文件绝对路径。这类任务不能改走
+  /// importAfterDownload（同包多卷的种子槽位接力挂在「只下载」上），宿主要在
+  /// 下完后做的事（有声书：排进转录后入库队列）从这里接。
+  ///
+  /// 此刻任务已经完成并落库，端口抛的异常只记日志、不回滚任务——下载本身是
+  /// 成功的，补救入口（任务面板的「配对」）仍在。
+  final Future<void> Function(DiscoveryMediaKind kind, List<String> paths)?
+      onDownloadOnlyCompleted;
 
   /// 手动任务 .torrent 元数据的落盘目录（`<jobId>.torrent`）。null 时手动
   /// 任务只接受磁力链接。
@@ -3098,6 +3109,7 @@ class VideoDownloadPipelineService {
           completedAt: DateTime.now().millisecondsSinceEpoch,
         ),
       );
+      await _notifyDownloadOnlyCompleted(job);
       return;
     }
     await _advance(job, VideoDownloadJobStage.import);
@@ -4248,6 +4260,31 @@ class VideoDownloadPipelineService {
   /// 从持久化发现身份恢复 MAL/TMDB lookup，保留旧行读取兼容。
   VideoMetadataLookup? _confirmedMetadataLookup(VideoDownloadJobRow job) =>
       videoDiscoveryMetadataLookup(_mediaReference(job));
+
+  Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
+    final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =
+        onDownloadOnlyCompleted;
+    final DiscoveryMediaKind? kind =
+        downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy);
+    if (hook == null || kind == null) return;
+    final List<VideoDownloadJobFileRow> rows = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    final List<String> paths = <String>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if (row.selected && (row.finalAbsolutePath?.trim().isNotEmpty ?? false))
+          row.finalAbsolutePath!,
+    ];
+    if (paths.isEmpty) return;
+    try {
+      await hook(kind, paths);
+    } catch (error, stack) {
+      engineLog.log(
+        'VideoDownloadPipelineService.onDownloadOnlyCompleted(${job.jobId})',
+        error,
+        stack,
+      );
+    }
+  }
 
   /// 手动「按域入库」任务的 import：整包绝对路径交给 [discoveryImporter]
   /// （分类 → 需要时解压 → 各域既有导入原语），成功即完成任务。
