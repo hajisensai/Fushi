@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -76,6 +77,21 @@ class OnlineMangaUnavailable implements Exception {
       '',
       detail,
     ].join('\n');
+  }
+
+  /// 给用户看的一句话（toast / 错误视图正文）。
+  ///
+  /// [message] 多数是包装时的 `'$error'` 原串（`SocketException: Failed host
+  /// lookup ...`），原样保留给 [diagnostics] / 日志；展示一律走这里，经
+  /// [describeOnlineSourceError] 归一。[message] 不是 [cause] 的原串时说明
+  /// 包装方专门写了说明（如「对端还没下载这一章」），按文本归一而不是退回
+  /// [cause]。
+  String get userMessage {
+    final Object? nested = cause;
+    if (nested != null && message == '$nested') {
+      return describeOnlineSourceError(nested);
+    }
+    return describeOnlineSourceErrorText(message);
   }
 
   @override

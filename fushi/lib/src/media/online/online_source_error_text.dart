@@ -21,9 +21,13 @@ final RegExp _httpStatusPattern = RegExp(
 );
 
 /// 可剥掉的异常类型前缀（可能叠多层：`Exception: Exception: ...`）。
+///
+/// 类型名后可带一段括号限定：`MihonRuntimeException(CODE): ...`、
+/// 漫画在线源包装异常的 `OnlineMangaUnavailable(<reason>): ...`——后者经
+/// `'$error'` 落进下载任务的 `lastError` 后只剩字符串，必须在这里认。
 final RegExp _exceptionPrefixPattern = RegExp(
-  r'^(?:[A-Za-z0-9_]*(?:Exception|Error)|Bad state|Invalid argument'
-  r'(?:\(s\))?)\s*:\s*',
+  r'^(?:[A-Za-z0-9_]*(?:Exception|Error)|OnlineMangaUnavailable|Bad state'
+  r'|Invalid argument(?:\(s\))?)(?:\([^)]*\))?\s*:\s*',
 );
 
 const List<String> _timeoutMarkers = <String>[
@@ -63,7 +67,17 @@ String describeOnlineSourceError(
   if (error is SocketException || error is HandshakeException) {
     return t.online_source_error_network;
   }
-  final String raw = '$error'.trim();
+  return describeOnlineSourceErrorText('$error');
+}
+
+/// [describeOnlineSourceError] 的字符串入口：给**已经落成字符串**的原始
+/// 异常（如下载任务持久化的 `lastError`、包装异常里的 `message`）用。
+///
+/// 与异常对象入口共用同一套映射——`'$error'` 本来就是那边类型判断之后的
+/// 兜底路径，原始串里的 `SocketException` / `TimeoutException` / HTTP 状态
+/// 码都能按文本认出来。原始串本身由调用方保留（诊断、日志、导出不变）。
+String describeOnlineSourceErrorText(String rawError) {
+  final String raw = rawError.trim();
   final String lower = raw.toLowerCase();
   if (_timeoutMarkers.any(lower.contains)) {
     return t.online_source_error_timeout;
