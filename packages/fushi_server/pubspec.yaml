@@ -26,6 +26,10 @@ dependencies:
     path: ../fushi_anki
   fushi_audio:
     path: ../fushi_audio
+  # 只许 import 零 Flutter 的 fushi_dictionary_core.dart（词典引擎 FushiDicts + 查词结果
+  # 构建；纯度守卫同上）。原生库 libfushidicts_ffi 随包放 bin/../lib/。
+  fushi_dictionary:
+    path: ../fushi_dictionary
   fushi_engine:
     path: ../fushi_engine
   fushi_platform:
