@@ -1392,15 +1392,13 @@ class _HomeDashboardPageState
           itemCount: entries.length,
           separatorBuilder: (BuildContext _, int __) =>
               SizedBox(width: tokens.spacing.gap),
-          // 2026-10 动效重做：行内条目按行内 index 错峰（窗口由页级
-          // [FushiEntranceScope] 管，横滑带出的卡瞬间出现）。
-          itemBuilder: fushiStaggeredItemBuilder(
-            (BuildContext context, int i) => _buildContinueCard(
-              tokens,
-              appModel,
-              entries[i],
-              videoLandscape: videoLandscape,
-            ),
+          // 行内卡不再单独错峰：整行已随所在分区一起进场（页级
+          // [FushiEntranceScope]），两层叠加的位移在实测里过于花哨。
+          itemBuilder: (BuildContext context, int i) => _buildContinueCard(
+            tokens,
+            appModel,
+            entries[i],
+            videoLandscape: videoLandscape,
           ),
         ),
       ),
