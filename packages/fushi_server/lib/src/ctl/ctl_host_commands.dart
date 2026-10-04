@@ -76,7 +76,8 @@ const String kCtlHostUsage = '''
   metadata [ls]
   scrape search <bookUid> -q <词> | identify <bookUid> --provider anidb|mal|tmdb --external-id <id>
          [--media-kind tv|movie] [--episode-group g] | episode-groups <bookUid>
-         | episode-group <bookUid> --episode-group <g> | pending      （合集作品用 --collection 名 --collection-type 类型）
+         | episode-group <bookUid> --episode-group <g>      （合集作品用 --collection 名 --collection-type 类型）
+         | pending | sweep（补刮从未识别的作品） | ai-identify <pending id>
   activity | collections | tags | tombstones
   jobs submit asr <音频> [-l ja] [-o x.srt] [--wait] | get <id> | result <id> [产物名] [-o 文件]
   assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
@@ -154,6 +155,11 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
 
     case 'scrape':
       if (sub == 'pending') return const CtlHostRequest('GET', '/api/admin/scrape/pending', listKey: 'works');
+      if (sub == 'sweep') return const CtlHostRequest('POST', '/api/admin/scrape/sweep');
+      if (sub == 'ai-identify') {
+        if (arg(0) == null) return usage('scrape ai-identify <待确认作品 id（scrape pending 的第一列）>');
+        return CtlHostRequest('POST', '/api/admin/scrape/ai-identify', body: <String, Object?>{'id': arg(0)});
+      }
       final Map<String, Object?>? key = _workKey(arg(0), command);
       switch (sub) {
         case 'search' when key != null:

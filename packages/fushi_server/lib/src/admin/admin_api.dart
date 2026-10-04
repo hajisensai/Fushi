@@ -202,6 +202,27 @@ class AdminApi {
         final ServerVideoScrape? scrape = ctx.host.videoScrape;
         if (scrape == null) return _err(503, 'video scrape is not running');
         return _json(<String, Object?>{'works': await scrape.pendingWorks()});
+      case ('POST', '/api/admin/scrape/sweep'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        // 不 await：一轮补刮可能很久，结果看 status.scrape / scrape/pending。
+        unawaited(scrape.sweep().catchError((Object e, StackTrace st) => ctx.log.log('AdminApi.scrape.sweep', e, st)));
+        return _json(const <String, Object?>{'started': true});
+      case ('POST', '/api/admin/scrape/ai-identify'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        final String id = ((await _body(request))['id'] ?? '').toString();
+        if (id.isEmpty) throw const FormatException('id required (a pending work id)');
+        // 先同步校验，免得「已开始」之后才在日志里报找不到。
+        if (!(await scrape.pendingWorks()).any((Map<String, Object?> w) => w['id'] == id)) {
+          return _err(404, 'work "$id" is not in the pending list');
+        }
+        // AI 识别要多轮请求，同样不阻塞；结果落库后 pending 清单会少一条。
+        unawaited(scrape
+            .identifyPendingWithAi(id)
+            .then((Map<String, Object?> r) => ctx.log.info('scrape ai-identify $id: $r'))
+            .catchError((Object e, StackTrace st) => ctx.log.log('AdminApi.scrape.aiIdentify', e, st)));
+        return _json(<String, Object?>{'started': true, 'id': id});
       case (_, _) when path.startsWith(_hostProxyPrefix):
         return _hostProxy(request, path.substring(_hostProxyPrefix.length));
     }

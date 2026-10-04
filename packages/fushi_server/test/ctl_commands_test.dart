@@ -353,6 +353,8 @@ void main() {
       <String>['activity']: ('GET', '/api/admin/host/library/activity'),
       <String>['tombstones']: ('GET', '/api/admin/host/tombstones'),
       <String>['scrape', 'pending']: ('GET', '/api/admin/scrape/pending'),
+      <String>['scrape', 'sweep']: ('POST', '/api/admin/scrape/sweep'),
+      <String>['scrape', 'ai-identify', 'book:u1']: ('POST', '/api/admin/scrape/ai-identify'),
       <String>['assistant', 'stop', 's1']: ('DELETE', '/api/admin/host/assistant/sessions/s1'),
       <String>['host', 'get', '/api/library/tags']: ('GET', '/api/admin/host/library/tags'),
     };
