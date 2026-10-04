@@ -123,6 +123,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
@@ -3804,72 +3805,79 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
             // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
             // 以 240 为目标宽算响应式列数，两处共用同一实际卡宽。
-            return RefreshIndicator(
-              onRefresh: _pullToRefresh,
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final FushiDesignTokens tokens =
-                      FushiDesignTokens.of(context);
-                  // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
-                  // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
-                  // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
-                  final double availableWallWidth =
-                      constraints.maxWidth - tokens.spacing.card * 2;
-                  final ({int columns, double cardWidth}) cardLayout =
-                      unifiedShelfCardLayout(
-                    availableWidth: availableWallWidth,
-                    targetWidth:
-                        readerShelfGridExtentForWidth(constraints.maxWidth),
-                  );
-                  final ({int columns, double cardWidth}) allVideosCardLayout =
-                      unifiedShelfCardLayout(
-                    availableWidth: availableWallWidth,
-                    targetWidth: allVideoThumbnailTargetWidthForWidth(
-                      constraints.maxWidth,
-                    ),
-                  );
-                  return CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: <Widget>[
-                      // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                      // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                      // [all] 描述整库，不随标签筛选变。
-                      // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
-                      // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
-                      if (widget.section == VideoLibrarySection.home &&
-                          (all.isNotEmpty || remoteVideos.isNotEmpty))
-                        SliverToBoxAdapter(
-                          child: _buildOverviewSection(
-                            all,
-                            remoteVideos,
-                            ordered,
-                            constraints.maxWidth,
-                            cardLayout,
+            // 2026-10 动效重做（与书架散书网格同一套）：首屏的墙格与横滚行卡
+            // 错峰淡入；窗口关闭后滚动带出 / 懒加载补入的卡瞬间出现，不拖影。
+            // 三个分区共用同一个 State，切分区（[widget.section]）时重开窗口，
+            // 新的一屏也有一次进场。
+            return FushiEntranceScope(
+              replayKey: widget.section,
+              child: RefreshIndicator(
+                onRefresh: _pullToRefresh,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final FushiDesignTokens tokens =
+                        FushiDesignTokens.of(context);
+                    // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
+                    // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
+                    // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
+                    final double availableWallWidth =
+                        constraints.maxWidth - tokens.spacing.card * 2;
+                    final ({int columns, double cardWidth}) cardLayout =
+                        unifiedShelfCardLayout(
+                      availableWidth: availableWallWidth,
+                      targetWidth:
+                          readerShelfGridExtentForWidth(constraints.maxWidth),
+                    );
+                    final ({int columns, double cardWidth}) allVideosCardLayout =
+                        unifiedShelfCardLayout(
+                      availableWidth: availableWallWidth,
+                      targetWidth: allVideoThumbnailTargetWidthForWidth(
+                        constraints.maxWidth,
+                      ),
+                    );
+                    return CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: <Widget>[
+                        // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                        // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                        // [all] 描述整库，不随标签筛选变。
+                        // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
+                        // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
+                        if (widget.section == VideoLibrarySection.home &&
+                            (all.isNotEmpty || remoteVideos.isNotEmpty))
+                          SliverToBoxAdapter(
+                            child: _buildOverviewSection(
+                              all,
+                              remoteVideos,
+                              ordered,
+                              constraints.maxWidth,
+                              cardLayout,
+                            ),
                           ),
-                        ),
-                      if (widget.section == VideoLibrarySection.series)
-                        ..._buildLocalVideoSlivers(
-                            all, ordered, remoteVideos, cardLayout),
-                      if (widget.section == VideoLibrarySection.allVideos)
-                        ..._buildAllVideoSlivers(
-                            all, ordered, remoteVideos, allVideosCardLayout),
-                      // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
-                      // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
-                      // 同一个 State，多选态下从「全部视频」切到首页时，可见序
-                      // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
-                      // 没有的条目（批量栏不按分区门控，切过来照样显示）。
-                      if (widget.section == VideoLibrarySection.home)
-                        ..._homeSectionSelectionReset(),
-                      if (widget.section == VideoLibrarySection.home &&
-                          all.isEmpty &&
-                          remoteVideos.isEmpty)
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: _buildEmpty(),
-                        ),
-                    ],
-                  );
-                },
+                        if (widget.section == VideoLibrarySection.series)
+                          ..._buildLocalVideoSlivers(
+                              all, ordered, remoteVideos, cardLayout),
+                        if (widget.section == VideoLibrarySection.allVideos)
+                          ..._buildAllVideoSlivers(
+                              all, ordered, remoteVideos, allVideosCardLayout),
+                        // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
+                        // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
+                        // 同一个 State，多选态下从「全部视频」切到首页时，可见序
+                        // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
+                        // 没有的条目（批量栏不按分区门控，切过来照样显示）。
+                        if (widget.section == VideoLibrarySection.home)
+                          ..._homeSectionSelectionReset(),
+                        if (widget.section == VideoLibrarySection.home &&
+                            all.isEmpty &&
+                            remoteVideos.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _buildEmpty(),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ),
             );
           },
@@ -4864,7 +4872,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       SizedBox(width: tokens.spacing.gap),
                   itemBuilder: (BuildContext context, int i) => Padding(
                     padding: EdgeInsets.symmetric(vertical: liftHeadroom),
-                    child: items[i].build(),
+                    child: FushiStaggeredEntrance(
+                      index: i,
+                      child: items[i].build(),
+                    ),
                   ),
                 ),
               ),
@@ -7059,7 +7070,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           childAspectRatio: cardLayout.cardWidth / cellHeight,
         ),
         itemBuilder: (BuildContext context, int index) =>
-            cells[index].build(VideoCardOrientation.portrait),
+            FushiStaggeredEntrance(
+              index: index,
+              child: cells[index].build(VideoCardOrientation.portrait),
+            ),
       ),
     );
   }
@@ -7088,7 +7102,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           childAspectRatio: cardLayout.cardWidth / cellHeight,
         ),
         itemBuilder: (BuildContext context, int index) =>
-            cells[index].build(VideoCardOrientation.landscape),
+            FushiStaggeredEntrance(
+              index: index,
+              child: cells[index].build(VideoCardOrientation.landscape),
+            ),
       ),
     );
   }
