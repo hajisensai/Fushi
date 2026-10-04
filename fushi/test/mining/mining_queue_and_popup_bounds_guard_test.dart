@@ -82,7 +82,10 @@ void main() {
               File('${content.parent.path}/background.js').readAsStringSync();
           expect(bg.contains('self.fushiMineOutcome('), isTrue,
               reason: '${content.parent.path} YouTube 生成路径未走共享分类器');
-          expect(bg.contains("if (o.cls === 'done') { ok++; okIds.push(q.id); }"),
+          // 成功即刻出队（SW 可能被 MV3 中途杀掉，攒到最后再出队会让已成功的卡重制）。
+          expect(
+              bg.contains(
+                  "if (o.cls === 'done') { ok++; await fushiRemoveQueuedId(q.id); }"),
               isTrue,
               reason: '${content.parent.path} YouTube 出队未门控到 cls===done');
           // 旧的「仅 success 才出队」硬判据不得残留。
