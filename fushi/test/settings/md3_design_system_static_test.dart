@@ -1931,11 +1931,17 @@ void main() {
         source.length,
       );
 
-      // 共享 MD3 对话框框 + 顶部可见封面块（限高 + letterbox 背景）。
+      // 共享 MD3 对话框框 + 可见封面卡（2026-10-04 hero 重设计：封面按自身宽高比
+      // 定尺寸，不再整宽 contain 出 letterbox；限高仍在）。
       expect(frame, contains('FushiDialogFrame('));
       expect(frame, contains('ConstrainedBox('));
       expect(frame, contains('ColoredBox('));
       expect(frame, contains('tokens.surfaces.overlay'));
+      expect(frame, contains('AspectRatio('));
+      expect(frame, contains('class _CoverAspectResolver'));
+      expect(frame, contains('screenHeight * _coverHeightFactor'));
+      // 宽框列表动作双列、窄框单列。
+      expect(frame, contains('columns: wide ? 2 : 1'));
       // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
       // BUG-2603：chip 网格是按真实内在宽度决定列数的 _QuickActionGrid，不再是
       // 「常量猜最小宽 + Wrap」（那套在手机宽度把标签截成「查…/导…/从…」）。
@@ -1951,18 +1957,21 @@ void main() {
       expect(frame, isNot(contains('SingleChildScrollView(')));
       expect(frame, isNot(contains('ListTile(')));
       expect(frame, isNot(contains('OutlinedButton.icon(')));
-      // 旧 scrim 背景结构（**前景封面**铺底 + 渐变遮罩、封面几乎不可见）不得回归。
-      // 2026-10-04 起封面块两侧允许铺一层「同图模糊垫底」（coverBackdrop，只填
-      // contain 后的横向留白）：Positioned.fill 只能装垫底图 / 色层，传入的封面
-      // widget 必须仍是 Stack 的最后一个非定位子项、清晰地画在最前面。
+      // 旧 scrim 背景结构（TODO-455：**前景封面**铺底 + 渐变遮罩、封面几乎不可见）
+      // 不得回归。hero 头部的模糊垫底与渐变只装 coverBackdrop 图源（降采样后的
+      // 另一份图），传入的封面 widget 只能出现在前景封面卡里、清晰不透明。
       expect(frame, isNot(contains('Positioned.fill(child: cover')));
-      expect(frame, isNot(contains('LinearGradient(')));
       expect(frame, contains('final ImageProvider? coverBackdrop;'));
       expect(frame, contains('ui.ImageFilter.blur('));
       expect(
+        RegExp(r'cover!').allMatches(frame).length,
+        1,
+        reason: '封面 widget 只画一次：在前景封面卡里',
+      );
+      expect(
         frame,
-        matches(RegExp(r'cover!,\s*\],\s*\),\s*\);')),
-        reason: '前景封面必须是垫底 Stack 的最后一个子项（画在最上层）',
+        matches(RegExp(r'ClipRRect\([^;]*?child: cover!,')),
+        reason: '前景封面必须在圆角封面卡（ClipRRect）里画，不是背景层',
       );
     },
   );
