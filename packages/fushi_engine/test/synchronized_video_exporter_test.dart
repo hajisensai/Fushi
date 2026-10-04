@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show MiningClipFormat;
 import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 import 'package:test/test.dart';
 
@@ -48,6 +50,10 @@ void main() {
       expect(args, contains('1:a:0'));
       expect(args, isNot(contains('copy')));
       expect(args, isNot(contains('-an')));
+      // #1951: FFmpeg 6.0 (mobile ffmpeg-kit) drops every frame of the raw ADTS
+      // sentence audio under `-shortest`; both inputs are already `-t` bounded.
+      expect(args, isNot(contains('-shortest')));
+      expect(args.where((String a) => a == '-t'), hasLength(3));
       expect(
         args,
         containsAll(<String>['libx264', 'aac', 'yuv420p', '+faststart']),
@@ -211,6 +217,67 @@ void main() {
       expect(result.outputPath, output);
       expect(File(output).existsSync(), isTrue);
     });
+  });
+
+  group('#1951 real ffmpeg: ADTS sentence audio reaches the clip', () {
+    final bool hasFfmpeg = () {
+      try {
+        return Process.runSync(resolveFfmpegExecutable(), <String>[
+              '-version',
+            ]).exitCode ==
+            0;
+      } on ProcessException {
+        return false;
+      }
+    }();
+
+    for (final MiningClipFormat format in <MiningClipFormat>[
+      MiningClipFormat.webmVp9,
+      MiningClipFormat.mp4H264,
+    ]) {
+      test(format.wireName, () async {
+        final String ffmpeg = resolveFfmpegExecutable();
+        final String video = '${temp.path}/source.mkv';
+        // The production sentence audio on Android: a pre-trimmed raw ADTS file.
+        final String audio = '${temp.path}/sentence.aac';
+        expect(
+          Process.runSync(ffmpeg, <String>[
+            '-hide_banner', '-y', //
+            '-f', 'lavfi', '-i', 'testsrc2=duration=12:size=320x240:rate=24',
+            '-f', 'lavfi', '-i', 'sine=frequency=440:duration=12',
+            '-c:v', 'libx264', '-g', '120', '-c:a', 'aac', video,
+          ]).exitCode,
+          0,
+        );
+        expect(
+          Process.runSync(ffmpeg, <String>[
+            '-hide_banner', '-y', '-ss', '6', '-t', '3', '-i', video, //
+            '-vn', '-c:a', 'aac', '-f', 'adts', audio,
+          ]).exitCode,
+          0,
+        );
+        final String clip = '${temp.path}/clip.${format.fileExtension}';
+        final VideoClipExportResult result = await exportSynchronizedVideoClip(
+          videoPath: video,
+          startMs: 6000,
+          endMs: 9000,
+          audioPath: audio,
+          audioStartMs: 0,
+          outputPath: clip,
+          format: format,
+        );
+        expect(result.isSuccess, isTrue, reason: result.detail);
+        final ProcessResult probe = Process.runSync(ffmpeg, <String>[
+          '-hide_banner', '-i', clip, '-map', '0:a:0', //
+          '-c', 'copy', '-f', 'framecrc', '-',
+        ]);
+        final int audioPackets = (probe.stdout as String)
+            .split('\n')
+            .where((String l) => l.trim().isNotEmpty && !l.startsWith('#'))
+            .length;
+        expect(audioPackets, greaterThan(0));
+      }, skip: hasFfmpeg ? false : 'ffmpeg unavailable');
+    }
   });
 
   test(

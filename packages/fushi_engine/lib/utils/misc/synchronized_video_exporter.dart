@@ -85,7 +85,11 @@ List<String> buildSynchronizedVideoClipArgs({
     '-af', 'asetpts=$pts',
     ...synchronizedClipCodecArgs(format),
     '-sn', '-dn', '-map_metadata', '-1',
-    '-t', duration, '-shortest',
+    // No `-shortest`: both inputs are already bounded by their own `-t`, and on
+    // FFmpeg 6.0 (Android / iOS ffmpeg-kit) its sync queue swallows every frame of
+    // a raw ADTS input — the trimmed sentence `.aac` — so the clip came out with a
+    // declared but empty audio track, exit code 0 (#1951; fixed upstream in 6.1).
+    '-t', duration,
     if (format == MiningClipFormat.mp4H264)
       ...buildClipFaststartArgs(outputPath),
     '-f', format.fileExtension, outputPath,
