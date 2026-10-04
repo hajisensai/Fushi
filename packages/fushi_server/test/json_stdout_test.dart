@@ -18,6 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'command_harness.dart';
+import 'support/dart_executable.dart';
 
 /// fd 级隔离只在 POSIX 上做（见 json_stdout_isolation.dart 库注释）。
 final bool _posix = Platform.isLinux || Platform.isMacOS;
@@ -37,7 +38,7 @@ void main() {
   test(
     '隔离下后台 isolate / 根 isolate 的 print 都改道 stderr，stdout 只剩 JSON',
     () async {
-      final ProcessResult r = await Process.run(Platform.resolvedExecutable, <String>[
+      final ProcessResult r = await Process.run(dartExecutable(), <String>[
         p.join('test', 'support', 'json_noise_cli.dart'),
       ]);
       expect(r.exitCode, 0, reason: '${r.stderr}');
@@ -71,7 +72,7 @@ void main() {
         '2\n00:00:02,000 --> 00:00:04,000\n名前はまだ無い。\n',
       );
 
-      final ProcessResult r = await Process.run(Platform.resolvedExecutable, <String>[
+      final ProcessResult r = await Process.run(dartExecutable(), <String>[
         'run',
         p.join('bin', 'fushi_server.dart'),
         '-c',

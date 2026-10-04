@@ -15,10 +15,11 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'command_harness.dart';
+import 'support/dart_executable.dart';
 
 /// 起一个子进程拿住数据目录锁，等它报 `locked`。
 Future<Process> _holdLock(String dataDir, String mode) async {
-  final Process proc = await Process.start(Platform.resolvedExecutable, <String>[
+  final Process proc = await Process.start(dartExecutable(), <String>[
     p.join('test', 'support', 'hold_data_lock.dart'),
     dataDir,
     mode,
@@ -95,7 +96,7 @@ void main() {
           .replaceFirst(RegExp(r'^port: .*$', multiLine: true), 'port: 0')
           .replaceFirst(RegExp(r'^admin_port: .*$', multiLine: true), 'admin_port: 0'),
     );
-    final Process serve = await Process.start(Platform.resolvedExecutable, <String>[
+    final Process serve = await Process.start(dartExecutable(), <String>[
       'run',
       p.join('bin', 'fushi_server.dart'),
       ...cli(<String>['serve', '--no-scan']),
