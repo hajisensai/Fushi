@@ -4,6 +4,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
     show OnlineMangaSiblingSource, OnlineMangaSourceLanguageScope;
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
@@ -19,9 +20,14 @@ enum _ChapterDownloadState {
 ///
 /// 2026-10 体验优化：章节列表与下载页任务行原各拼一份，下载页那份在原因为
 /// 空时留下尾冒号；收成一个函数两处共用。
+///
+/// [lastError] 是下载服务持久化的原始异常串（`SocketException: Failed host
+/// lookup ...`），库里保留原样供诊断；这里经 [describeOnlineSourceErrorText]
+/// 归一成给用户看的短句再拼。
 String mangaChapterDownloadFailedLabel(String? lastError) {
-  final String reason = lastError?.trim() ?? '';
-  if (reason.isEmpty) return t.manga_chapter_download_status_failed;
+  final String raw = lastError?.trim() ?? '';
+  if (raw.isEmpty) return t.manga_chapter_download_status_failed;
+  final String reason = describeOnlineSourceErrorText(raw);
   return '${t.manga_chapter_download_status_failed} · $reason';
 }
 

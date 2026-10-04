@@ -730,8 +730,8 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         : switch (job?.status) {
             MangaDownloadJobStatus.running => _progressLabel(job!),
             MangaDownloadJobStatus.queued => t.download_status_queued,
-            MangaDownloadJobStatus.failed =>
-              '${t.manga_online_failed}: ${job!.lastError ?? ''}',
+            // lastError 是持久化的原始异常串，只给归一后的短句。
+            MangaDownloadJobStatus.failed => _failedLabel(job!.lastError),
             _ => null,
           };
     final Widget? subtitle = subtitleText == null
@@ -797,6 +797,14 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
 
   /// 执行中任务的进度文案：CBZ 阶段是字节、导入阶段是页——任务行只存比值，
   /// 这里统一显示成「x / y」。
+  /// 卷下载失败文案：原因为空时只给「失败」，否则拼上归一后的短句（原始串
+  /// 留在任务行里供诊断）。
+  static String _failedLabel(String? lastError) {
+    final String raw = lastError?.trim() ?? '';
+    if (raw.isEmpty) return t.manga_online_failed;
+    return '${t.manga_online_failed}: ${describeOnlineSourceErrorText(raw)}';
+  }
+
   static String _progressLabel(MangaDownloadJobRow job) => job.pagesTotal > 0
       ? t.manga_ocr_wizard_page_progress(
           done: job.pagesDone,

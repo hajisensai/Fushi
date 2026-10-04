@@ -23,8 +23,8 @@ void main() {
   }
 
   test('视频首页：墙卡（本地/远端/合集）+ 横滚行卡都接标题溢出 Tooltip', () {
-    // 4 处：合集封面卡 / 远端占位卡 / 本地散卡 / 横滚行通用卡。
-    // hero 轮播已随无调用方的死代码删除，不再登记其标题接线。
+    // 4 处：合集封面卡 / 远端占位卡 / 本地散卡 / 横滚行通用卡。原先第 5 处是
+    // hero 轮播标题——轮播已无调用方、整段删除（a73811871a），不是接线丢了。
     expect(
       countIn('lib/src/pages/implementations/home_video_page.dart'),
       greaterThanOrEqualTo(4),

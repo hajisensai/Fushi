@@ -330,7 +330,10 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # 设计的形态，也是 Jellyfin / Emby 给 mpv 客户端的标准形态。h264 进 TS 由已编入的
 # h264_mp4toannexb bsf 转 Annex B（见 BSFS）。
 # webm：音画同步片段的 WebM 容器（VP9/AV1 + Opus）。它与 matroska 共用 matroskaenc。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
+# sup：图形字幕整轨 OCR（graphic_subtitle_track_ocr.dart）把 PGS 轨 `-c copy -f sup`
+# 原样抽成 `.sup` 段流再由 Dart 解析。supenc.c 只是给每段补 `PG`+PTS/DTS 头，LGPL、
+# 几十行；缺它 ffmpeg 报 "Requested output format 'sup' is not known"（exit -22）。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
