@@ -107,7 +107,10 @@ void main() {
   });
 
   test('纯 Dart 宿主的变形表读取落到 stub（条件 import 没把 rootBundle 带进来）', () {
-    expect(FushiDicts.transformAssetBackend, 'none');
+    // CI 的 server job 用 `flutter test` 跑本包，flutter_tester 带 dart:ui，条件 import 会选中
+    // Flutter 分支；发布的 `dart build cli` 与 `dart test` 是纯 Dart VM，必须落到 stub。
+    const bool hasDartUi = bool.fromEnvironment('dart.library.ui');
+    expect(FushiDicts.transformAssetBackend, hasDartUi ? 'rootBundle' : 'none');
   });
 
   group('原生库缺失', () {
