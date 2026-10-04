@@ -1,6 +1,7 @@
 // Algorithm-level behavior regression, NOT a browser/Android reproduction.
 //
-// The Dart driver exports the original paginatedShellSource() and kStudyUnitJs.
+// The Dart driver generates an ordinary installer function from the original
+// paginatedShellSource() and kStudyUnitJs, then passes it to this exported runner.
 // This harness installs the entire production shell factory, including the
 // separately assigned updatePageSize. No production reader method is replaced.
 // Only its browser boundary is modeled: ideal vertical multicol glyph geometry,
@@ -14,17 +15,16 @@
 // logs or device-specific timings are required by the fixture. Assertions inspect
 // final visible text and public pageInfo(), not private implementation fields.
 //
-// Run: node test/reader/geometry_reanchor_roundtrip_behavior_test.js payload.json
+// Run through geometry_reanchor_roundtrip_behavior_test.dart.
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const WIDTH = 400;
 const HEIGHT = 824;
 const GAP = 22;
 const TOTAL_CHARS = 40000;
 const NODE_CHARS = 200;
 
-function model(initialTop = 0, { trailingMediaPages = 0, hidden = false } = {}) {
+function createModel(installProductionShell, initialTop = 0,
+  { trailingMediaPages = 0, hidden = false } = {}) {
   const frames = [];
   const timers = [];
   const events = [];
@@ -184,13 +184,9 @@ function model(initialTop = 0, { trailingMediaPages = 0, hidden = false } = {}) 
     __fushiApplyReaderMargins() {},
     flutter_inappwebview: { callHandler(name) { events.push(name); return Promise.resolve(); } },
   };
-  new Function('window', payload.studyUnits)(window);
-  const source = payload.paged.replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '');
-  new Function('window', 'document', 'getComputedStyle', 'Node', 'NodeFilter',
-    'requestAnimationFrame', 'setTimeout', 'CSS', 'Highlight', source)(
-      window, document, getComputedStyle, { TEXT_NODE: 3 },
-      { SHOW_TEXT: 4, FILTER_REJECT: 2, FILTER_ACCEPT: 1 },
-      requestAnimationFrame, setTimeout, {}, function Highlight() {});
+  installProductionShell(window, document, getComputedStyle, { TEXT_NODE: 3 },
+    { SHOW_TEXT: 4, FILTER_REJECT: 2, FILTER_ACCEPT: 1 },
+    requestAnimationFrame, setTimeout, {}, function Highlight() {});
   window.__fushiShells.paginated({ perfTraceEnabled: false });
   const reader = window.fushiReader;
   // DOM setup, not initialize(): startup image loading and native restore are
@@ -246,7 +242,8 @@ function samePlace(actual, expected, message) {
     { first: expected.first, page: expected.page }, message);
 }
 
-async function main() {
+async function runCases(installProductionShell) {
+  const model = createModel.bind(null, installProductionShell);
   await test('unchanged inset and viewport size do not reanchor', () => {
     const m = model(24);
     const before = m.snapshot();
@@ -493,4 +490,4 @@ async function main() {
     failures.length + ' geometry regression case(s) failed: ' + failures.map(c => c.name).join('; '));
   console.log(`all assertions passed (${cases.length} cases)`);
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = runCases;

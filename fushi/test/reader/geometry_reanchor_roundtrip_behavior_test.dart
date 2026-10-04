@@ -30,18 +30,13 @@ void main() {
       final Directory temp = Directory.systemTemp.createTempSync(
         'fushi-geometry-roundtrip-',
       );
-      final File payload = File('${temp.path}/payload.json')
-        ..writeAsStringSync(
-          jsonEncode(<String, String>{
-            'paged': ReaderPaginationScripts.paginatedShellSource(),
-            'studyUnits': kStudyUnitJs,
-          }),
-        );
       late final ProcessResult result;
       try {
+        final File fixture = File('${temp.path}/geometry_roundtrip.cjs')
+          ..writeAsStringSync(_productionFixtureSource(jsTest));
         result = await Process.run(
           nodeExe,
-          <String>[jsTest.path, payload.path],
+          <String>[fixture.path],
           stdoutEncoding: utf8,
           stderrEncoding: utf8,
         );
@@ -55,9 +50,42 @@ void main() {
             'geometry round-trip JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'));
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed (33 cases)'),
+      );
     },
   );
+}
+
+/// Generates ordinary JavaScript functions from the trusted production source.
+/// The harness receives an installer function, never a path or executable text
+/// from command-line arguments. The complete shell remains under test.
+String _productionFixtureSource(File jsTest) {
+  final String shell = ReaderPaginationScripts.paginatedShellSource().trim();
+  const String openingTag = '<script>';
+  const String closingTag = '</script>';
+  expect(shell, startsWith(openingTag));
+  expect(shell, endsWith(closingTag));
+  final String paginatedSource = shell.substring(
+    openingTag.length,
+    shell.length - closingTag.length,
+  );
+  return '''
+const runCases = require(${jsonEncode(jsTest.absolute.path)});
+function installStudyUnits(window) {
+$kStudyUnitJs
+}
+function installProductionShell(window, document, getComputedStyle, Node,
+    NodeFilter, requestAnimationFrame, setTimeout, CSS, Highlight) {
+  installStudyUnits(window);
+$paginatedSource
+}
+runCases(installProductionShell).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
+''';
 }
 
 String? _resolveNode() {
