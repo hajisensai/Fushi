@@ -28,6 +28,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/ctl_commands.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
+import 'package:fushi_server/src/json_stdout_isolation.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
@@ -117,6 +118,27 @@ Future<int> runFushiServerCli(List<String> args) async {
   }
   final File configFile = File(p.absolute(results['config'] as String));
   final bool verbose = results['verbose'] as bool;
+  final String label = _commandLabel(command);
+  // --json：stdout 只留给最终 JSON，后台 isolate / 原生库的打印整体改道 stderr。
+  if (commandChainWantsJson(command)) {
+    return runWithJsonStdoutIsolation(() => _dispatch(parser, command, configFile, verbose, label));
+  }
+  return _dispatch(parser, command, configFile, verbose, label);
+}
+
+/// 命令链摘要（`audiobook align`），写进数据目录锁文件。
+String _commandLabel(ArgResults command) {
+  final List<String> names = <String>[];
+  ArgResults? level = command;
+  while (level != null) {
+    final String? name = level.name;
+    if (name != null) names.add(name);
+    level = level.command;
+  }
+  return names.join(' ');
+}
+
+Future<int> _dispatch(ArgParser parser, ArgResults command, File configFile, bool verbose, String label) async {
   switch (command.name) {
     case 'init':
       return _init(configFile, command);
@@ -126,29 +148,36 @@ Future<int> runFushiServerCli(List<String> args) async {
           verbose,
           (ServerRuntime rt) => _serve(rt,
               scan: command['scan'] as bool,
-              prune: _explicitFlag(command, 'prune')));
+              prune: _explicitFlag(command, 'prune')),
+          serve: true,
+          command: label);
     case 'scan':
       return withServerRuntime(configFile, verbose,
           (ServerRuntime rt) => _scan(rt,
               prune: _explicitFlag(command, 'prune'),
-              scrape: _explicitFlag(command, 'scrape')));
+              scrape: _explicitFlag(command, 'scrape')),
+          command: label);
     case 'status':
-      return withServerRuntime(configFile, verbose, _status);
+      return withServerRuntime(configFile, verbose, _status, command: label);
     case 'pair':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _pair(rt, command.rest));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _pair(rt, command.rest), command: label);
     case 'admin':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _admin(rt, command.rest));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _admin(rt, command.rest), command: label);
     case 'models':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _models(rt, command));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _models(rt, command), command: label);
     case 'transcribe':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _transcribe(rt, command));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _transcribe(rt, command), command: label);
     case 'ctl':
       // 不走 _withRuntime：ctl 只发 HTTP，不开数据库、不装 host 绑定（serve 正占着它们）。
       return runCtl(configFile, command);
   }
   for (final CliModule module in kCliModules) {
     if (module.commands.contains(command.name)) {
-      return module.run(command.name!, command, CliContext(configFile: configFile, verbose: verbose));
+      return module.run(
+        command.name!,
+        command,
+        CliContext(configFile: configFile, verbose: verbose, commandLabel: label),
+      );
     }
   }
   _usage(parser);
@@ -214,6 +243,11 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     );
     try {
       await admin.start();
+      // 锁文件补上 WebUI 地址：被拒的离线命令据此提示「改用 ctl」该连哪。
+      await rt.dataLock.update(
+        admin: '${rt.config.tls ? 'https' : 'http'}://'
+            '${rt.config.adminBind == '0.0.0.0' ? '127.0.0.1' : rt.config.adminBind}:${admin.port}',
+      );
       stdout.writeln('WebUI: ${rt.config.tls ? 'https' : 'http'}://'
           '${rt.config.adminBind == '0.0.0.0' ? '<本机地址>' : rt.config.adminBind}:${admin.port}/ '
           '（admin_token 在配置文件里）');

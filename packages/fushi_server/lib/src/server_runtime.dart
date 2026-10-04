@@ -9,8 +9,10 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
+import 'package:fushi_server/src/commands/command_io.dart' show kExitConflict;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/host_bindings.dart';
+import 'package:fushi_server/src/server_data_lock.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
@@ -26,6 +28,7 @@ class ServerRuntime {
     required this.db,
     required this.prefs,
     required this.identity,
+    required this.dataLock,
   });
 
   final ServerConfig config;
@@ -36,17 +39,34 @@ class ServerRuntime {
   final ServerPrefs prefs;
   final ServerIdentity identity;
 
+  /// 数据目录排他锁（见 server_data_lock.dart）；数据库关掉之后才放。
+  final ServerDataLock dataLock;
+
   Future<void> dispose() async {
-    await db.close();
-    await log.close();
+    try {
+      await db.close();
+      await log.close();
+    } finally {
+      await dataLock.release();
+    }
   }
 }
 
 /// 打开配置 / 数据目录 / 数据库 / 宿主装配，跑完 [body] 后统一释放。
 ///
-/// 离线命令（`scan` / `status` / `import` …）的共同前置：找不到配置 → 66，
-/// 配置解析失败 → 65；缺 admin_token 时补一个写回配置。
-Future<int> withServerRuntime(File configFile, bool verbose, Future<int> Function(ServerRuntime rt) body) async {
+/// 离线命令（`scan` / `status` / `import` …）与 `serve` 的共同前置：找不到配置 → 66，
+/// 配置解析失败 → 65；数据目录被另一个 fushi_server 进程占着（serve 或别的离线命令）
+/// → 75；缺 admin_token 时补一个写回配置。
+///
+/// [serve] 标明调用方是 `serve`（锁文件里记成 serve，被拒的离线命令据此提示改用
+/// `ctl`）；[command] 是写进锁文件的命令摘要。
+Future<int> withServerRuntime(
+  File configFile,
+  bool verbose,
+  Future<int> Function(ServerRuntime rt) body, {
+  bool serve = false,
+  String? command,
+}) async {
   if (!await configFile.exists()) {
     stderr.writeln('找不到配置文件 ${configFile.path}；先跑 fushi_server init');
     return 66;
@@ -58,6 +78,32 @@ Future<int> withServerRuntime(File configFile, bool verbose, Future<int> Functio
     stderr.writeln('配置文件解析失败: ${e.message}');
     return 65;
   }
+  // 先拿数据目录锁再碰任何东西（配置回写、迁移、偏好补写都是写）：两个进程同开
+  // 一份库没有任何协调，迁移撞上 serve 的写事务就是损坏 / SQLITE_BUSY。
+  final ServerDataLock dataLock;
+  try {
+    dataLock = await ServerDataLock.acquire(config.dataDir, mode: serve ? 'serve' : 'offline', command: command);
+  } on ServerDataLockedException catch (e) {
+    stderr.writeln(serve ? 'serve 拒绝启动：${e.describe()}' : e.describe());
+    return kExitConflict;
+  }
+  try {
+    return await _withLockedRuntime(configFile, config, verbose, dataLock, body);
+  } catch (_) {
+    // 运行时还没建起来（dispose 管不到锁）时出错：这里放锁；建起来之后 dispose 放，
+    // release 幂等。
+    await dataLock.release();
+    rethrow;
+  }
+}
+
+Future<int> _withLockedRuntime(
+  File configFile,
+  ServerConfig config,
+  bool verbose,
+  ServerDataLock dataLock,
+  Future<int> Function(ServerRuntime rt) body,
+) async {
   if (config.adminToken == null) {
     config = config.copyWith(adminToken: FushiSyncServer.generateToken());
     await config.save(configFile);
@@ -87,6 +133,7 @@ Future<int> withServerRuntime(File configFile, bool verbose, Future<int> Functio
     db: db,
     prefs: prefs,
     identity: identity,
+    dataLock: dataLock,
   );
   try {
     return await body(rt);
