@@ -314,7 +314,7 @@ void main() {
       deps: deps,
     );
 
-    test('用法 64 / 缺输入 66 / 硬烧字幕无头不可用 69', () async {
+    test('用法 64 / 缺输入 66 / 缺 ffmpeg 69', () async {
       final String out = p.join(temp.path, 'o.mkv');
       expect(await clip(<String>['clip', video.path, '--from', '1', '-o', out]), kExitUsage);
       expect(await clip(<String>['clip', video.path, '--from', 'x', '--to', '2', '-o', out]), kExitUsage);
@@ -326,8 +326,8 @@ void main() {
         kExitNoInput,
       );
       expect(
-        await clip(<String>['clip', video.path, '--from', '1', '--to', '2', '-o', out, '--burn-subs', 'x.srt']),
-        kExitUnavailable,
+        await clip(<String>['clip', video.path, '--from', '1', '--to', '2', '-o', out, '--burn-subs', '/no/such.srt']),
+        kExitNoInput,
       );
       expect(
         await clip(<String>[
