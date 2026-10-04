@@ -953,4 +953,156 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('整组删除', () {
+    DownloadTaskEntry member(
+      String id,
+      String group, {
+      DownloadTaskActions actions = const DownloadTaskActions(),
+    }) => DownloadTaskEntry(
+      id: id,
+      title: id,
+      kind: DownloadTaskKind.video,
+      status: DownloadTaskStatus.completed,
+      actions: actions,
+      collectionKey: group,
+      collectionTitle: group,
+      builder: (BuildContext context) => DownloadTaskCard(
+        key: ValueKey<String>(id),
+        taskId: id,
+        title: id,
+        status: 'x',
+        details: Text('details-$id'),
+      ),
+    );
+
+    testWidgets('组头删除作用于整组（含折叠成员），不碰别的组', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> deleted = <String>[];
+      DownloadTaskActions deletable(String id) => DownloadTaskActions(
+        delete: ({required bool deleteFiles}) async => deleted.add(id),
+        deletesFiles: true,
+      );
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('a1', 'group-a', actions: deletable('a1')),
+          member('b1', 'group-b', actions: deletable('b1')),
+          member('b2', 'group-b', actions: deletable('b2')),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      // 先折叠 group-b：组头删除说的是「这一组」，折叠不该改变范围。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-group-collection:group-b')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('b1')), findsNothing);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('download-group-delete-collection:group-b'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(t.download_batch_delete_confirm(n: 2)),
+        findsOneWidget,
+        reason: '确认框必须写明整组的真实条数',
+      );
+      await tester.tap(find.text(t.dialog_delete).last);
+      await tester.pumpAndSettle();
+
+      expect(deleted, <String>['b1', 'b2']);
+    });
+
+    testWidgets('组里混着不可删条目时确认框的 N 只算可删的', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> deleted = <String>[];
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('plain', 'g'),
+          member(
+            'del',
+            'g',
+            actions: DownloadTaskActions(
+              delete: ({required bool deleteFiles}) async => deleted.add('del'),
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-group-delete-collection:g')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(t.download_batch_delete_confirm(n: 1)),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.dialog_delete).last);
+      await tester.pumpAndSettle();
+      expect(deleted, <String>['del']);
+    });
+
+    testWidgets('组里没有可删条目时不摆删除按钮；选择态下也不摆', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('plain', 'group-plain'),
+          member(
+            'deletable',
+            'group-del',
+            actions: DownloadTaskActions(
+              delete: ({required bool deleteFiles}) async {},
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('download-group-delete-collection:group-plain'),
+        ),
+        findsNothing,
+      );
+      final Finder groupDelete = find.byKey(
+        const ValueKey<String>('download-group-delete-collection:group-del'),
+      );
+      expect(groupDelete, findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-task-select-mode')),
+      );
+      await tester.pumpAndSettle();
+      expect(groupDelete, findsNothing, reason: '选择态里删除走批量栏');
+    });
+
+    for (final double scale in <double>[1, 2]) {
+      testWidgets('360 宽、文字放大 $scale 下组头带删除按钮不溢出', (
+        WidgetTester tester,
+      ) async {
+        _viewport(tester, const Size(360, 800));
+        await tester.pumpWidget(
+          _host(<DownloadTaskEntry>[
+            for (int i = 0; i < 12; i++)
+              member(
+                'm$i',
+                'Re：从零开始的异世界生活 第四季 丧失篇',
+                actions: DownloadTaskActions(
+                  delete: ({required bool deleteFiles}) async {},
+                ),
+              ),
+          ], scale: scale),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }
