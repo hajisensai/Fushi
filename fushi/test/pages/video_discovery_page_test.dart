@@ -615,9 +615,23 @@ void main() {
       tester.getCenter(sort).dy,
       closeTo(tester.getCenter(category).dy, 1),
     );
+    // 窄屏两行形态（与书 / 漫画发现页同构）：搜索框独占整行，入口按钮在它
+    // 下面一行，分类 chip + 排序再下一行；整块页头仍克制在三行控件高度内。
+    final Finder openFiltersButton = find.byKey(
+      const ValueKey<String>('video-discovery-open-filters'),
+    );
+    expect(
+      tester.getTopLeft(openFiltersButton).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(search).dy),
+      reason: '窄屏搜索框应独占一整行，入口按钮排在下一行',
+    );
+    expect(
+      tester.getTopLeft(category).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(openFiltersButton).dy),
+    );
     expect(
       tester.getBottomRight(sort).dy - tester.getTopLeft(search).dy,
-      lessThan(140),
+      lessThan(200),
     );
     final int originalRequests = controller.requests.length;
     await tester.tap(

@@ -1093,6 +1093,46 @@ inline ClaimDecision DecideLeftButton(uint32_t state, bool eligible,
   return decision;
 }
 
+// ── game-thread message tap (sub-frame presses) ────────────────────────────
+
+// Input::Update samples the left button once per frame.  A Windows touch tap is
+// promoted to a back-to-back WM_LBUTTONDOWN/UP pair that fits inside one frame,
+// so the sampler (and the engine) never see it: the stock game ignores touch
+// taps.  The message tap watches the same press at the window-message level.
+// `sampled` counts frames in which the sampler saw the button in any non-idle
+// state; while it is unchanged from the down to the up message, the press is
+// one the sampler never owned and the tap may finish it as a lookup.
+struct TapLatch {
+  bool armed = false;
+  uint64_t sampled = 0u;     // sampler counter at the down message
+  uint64_t generation = 0u;  // model generation the down hit
+  uint32_t glyph = 0u;       // glyph the down hit
+};
+
+// Down message: arm only on an eligible hit, otherwise forget any older press.
+inline void ArmTap(TapLatch* latch, bool eligible, uint64_t sampled,
+                   uint64_t generation, uint32_t glyph) {
+  if (latch == nullptr) return;
+  *latch = TapLatch();
+  if (!eligible || generation == 0u) return;
+  latch->armed = true;
+  latch->sampled = sampled;
+  latch->generation = generation;
+  latch->glyph = glyph;
+}
+
+// Up message: submit when the press is still armed, the sampler never saw it,
+// and the release re-validates on the same glyph of the same model.  Always
+// disarms: one down is at most one lookup.
+inline bool ReleaseTap(TapLatch* latch, uint64_t sampled, bool eligible,
+                       uint64_t generation, uint32_t glyph) {
+  if (latch == nullptr) return false;
+  const TapLatch armed = *latch;
+  *latch = TapLatch();
+  return armed.armed && armed.sampled == sampled && eligible &&
+         armed.generation == generation && armed.glyph == glyph;
+}
+
 // ── model hit test (game thread) ───────────────────────────────────────────
 
 struct ModelGlyph {

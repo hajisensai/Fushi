@@ -8,6 +8,7 @@ import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
@@ -96,35 +97,44 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final double horizontal = pushRoutes
         ? tokens.spacing.page
         : tokens.spacing.gap;
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        horizontal,
-        tokens.spacing.gap,
-        horizontal,
-        pushRoutes
-            ? tokens.spacing.page + mediaPadding.bottom
-            : tokens.spacing.gap,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (final SettingsNavigationGroup group in groupSettingsDestinations(
-            destinations,
-          ))
-            AdaptiveSettingsSection(
-              key: ValueKey<SettingsNavigationGroupId>(group.id),
-              title: group.id.title(context),
-              // 宽屏主从（pushRoutes:false）下整个导航块已经装在一张 FushiCard 里
-              // （settings_home_page._buildWideLayout），分组再铺一层同色卡片就是
-              // 卡中卡：卡片边界看不见，只剩多余的内边距。那里分组只做分段与标题，
-              // 填充交给外层导航卡。窄屏 push 列表没有外层卡、直接铺在
-              // `surfaces.page` 上，分组卡仍是它唯一的容器，保持不变。
-              surfaceColor: pushRoutes ? null : Colors.transparent,
-              children: group.destinations
-                  .map(destinationRow)
-                  .toList(growable: false),
-            ),
-        ],
+    return FushiEntranceScope(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          horizontal,
+          tokens.spacing.gap,
+          horizontal,
+          pushRoutes
+              ? tokens.spacing.page + mediaPadding.bottom
+              : tokens.spacing.gap,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (final (int index, SettingsNavigationGroup group)
+                in groupSettingsDestinations(destinations).indexed)
+              // 2026-10 动效重做：分类分组首次出现时错峰淡入；宽屏主从下切分类
+              // 只重建本列表、不重开进场窗口，不会每点一下都重播。
+              FushiStaggeredEntrance(
+                key: ValueKey<(String, SettingsNavigationGroupId)>(
+                  ('entrance', group.id),
+                ),
+                index: index,
+                child: AdaptiveSettingsSection(
+                  key: ValueKey<SettingsNavigationGroupId>(group.id),
+                  title: group.id.title(context),
+                  // 宽屏主从（pushRoutes:false）下整个导航块已经装在一张 FushiCard 里
+                  // （settings_home_page._buildWideLayout），分组再铺一层同色卡片就是
+                  // 卡中卡：卡片边界看不见，只剩多余的内边距。那里分组只做分段与标题，
+                  // 填充交给外层导航卡。窄屏 push 列表没有外层卡、直接铺在
+                  // `surfaces.page` 上，分组卡仍是它唯一的容器，保持不变。
+                  surfaceColor: pushRoutes ? null : Colors.transparent,
+                  children: group.destinations
+                      .map(destinationRow)
+                      .toList(growable: false),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -198,10 +208,25 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
     // 与它们共享同一个滚动容器与内边距。
     final Widget? bodyWidget = destination.body?.call(settingsContext);
-    final List<Widget> content = <Widget>[
+    final List<Widget> rawContent = <Widget>[
       if (bodyWidget != null && destination.bodyBeforeSections) bodyWidget,
       for (int index = 0; index < sections.length; index++) section(index),
       if (bodyWidget != null && !destination.bodyBeforeSections) bodyWidget,
+    ];
+    // 2026-10 动效重做：详情的各分组卡错峰淡入上移。宽屏主从切分类时详情整棵
+    // 按 destination id 重建（settings_home_page 的 KeyedSubtree），新分类的分组
+    // 随之重播一次进场——此前切分类是整块瞬间替换。只改 opacity / transform、
+    // 不改布局，滚动范围（BUG-037）与 shrinkWrap 测量不受影响。
+    final List<Widget> content = <Widget>[
+      for (final (int index, Widget child) in rawContent.indexed)
+        FushiStaggeredEntrance(
+          // 包装层按子项 key 锚定：分组随谓词增删时，内层带 key 的分组仍能在
+          // 兄弟间按 key 认领自己的 State（包装层若按位置配对，内层 key 只在
+          // 单子槽里比，错位后 State 会被重建）。
+          key: child.key == null ? null : ValueKey<Key>(child.key!),
+          index: index,
+          child: child,
+        ),
     ];
 
     // Embedded in a PARENT scrollable (cupertino CustomScrollView, the desktop
@@ -210,25 +235,27 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // so its extent is already exact. Keep it — it doesn't own the scroll, so
     // the lazy-extent drift below never applies.
     if (shrinkWrap) {
-      return ListView.builder(
-        controller: scrollController,
-        shrinkWrap: true,
-        // Embedded in a PARENT scrollable (no own controller) ⇒ must NOT own the
-        // scroll. A shrink-wrapped ListView still installs its own Scrollable
-        // with a vertical drag recognizer; sized to content its scroll extent is
-        // zero, so a drag that lands ON its rows wins the gesture arena, moves
-        // nothing, and never bubbles to the parent — the reader quick-settings
-        // 布局 sub-page couldn't be scrolled by touch (BUG-042). Disabling the
-        // inner physics lets every drag reach the parent. Mirrors the cupertino
-        // renderer, which is already NeverScrollable here. The one caller that
-        // drives this list itself (fushi_settings_page master-detail) passes a
-        // controller and keeps real physics so it can still scroll.
-        physics: scrollController == null
-            ? const NeverScrollableScrollPhysics()
-            : null,
-        padding: padding,
-        itemCount: content.length,
-        itemBuilder: (BuildContext context, int index) => content[index],
+      return FushiEntranceScope(
+        child: ListView.builder(
+          controller: scrollController,
+          shrinkWrap: true,
+          // Embedded in a PARENT scrollable (no own controller) ⇒ must NOT own the
+          // scroll. A shrink-wrapped ListView still installs its own Scrollable
+          // with a vertical drag recognizer; sized to content its scroll extent is
+          // zero, so a drag that lands ON its rows wins the gesture arena, moves
+          // nothing, and never bubbles to the parent — the reader quick-settings
+          // 布局 sub-page couldn't be scrolled by touch (BUG-042). Disabling the
+          // inner physics lets every drag reach the parent. Mirrors the cupertino
+          // renderer, which is already NeverScrollable here. The one caller that
+          // drives this list itself (fushi_settings_page master-detail) passes a
+          // controller and keeps real physics so it can still scroll.
+          physics: scrollController == null
+              ? const NeverScrollableScrollPhysics()
+              : null,
+          padding: padding,
+          itemCount: content.length,
+          itemBuilder: (BuildContext context, int index) => content[index],
+        ),
       );
     }
 
@@ -242,12 +269,14 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // content jumping (BUG-037). A settings page has a bounded, small number of
     // sections, so laying them ALL out (non-lazy SingleChildScrollView + Column)
     // costs nothing and makes the scroll extent exact and constant.
-    return SingleChildScrollView(
-      controller: scrollController,
-      padding: padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: content,
+    return FushiEntranceScope(
+      child: SingleChildScrollView(
+        controller: scrollController,
+        padding: padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: content,
+        ),
       ),
     );
   }

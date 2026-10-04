@@ -70,6 +70,7 @@
 #include "adapters/yuris_voice_core.h"
 #include "adapters/fvp_lookup_core.h"
 #include "adapters/catsystem2_voice_core.h"
+#include "adapters/cmvs_voice_core.h"
 #include "lookup_selected_text.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
