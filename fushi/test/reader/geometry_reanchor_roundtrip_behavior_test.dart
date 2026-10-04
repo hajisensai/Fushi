@@ -7,7 +7,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
 /// Executes the real paginated shell against an explicitly modeled DOM.
 ///
-/// A settled 0 -> 42 -> 0 chrome-inset round trip must not repeatedly sample
+/// A settled 0 -> 24 -> 0 chrome-inset round trip must not repeatedly sample
 /// the temporary page's first character and ratchet the reading position back.
 /// The Node harness uses ideal vertical glyph geometry, not Android/WebView
 /// rendering. It asserts observable characters/pages, including navigation and

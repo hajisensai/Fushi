@@ -9,10 +9,10 @@
 // font shaping, ruby, image loading, or DPR rounding. A dedicated race case explicitly
 // injects a transient zero scroll reading at the modeled DOM boundary.
 //
-// Regression evidence includes independent 0 -> 42 -> 0 system-top-inset events
-// 77-261ms apart. Distinct settled frames, rather than an invented timeout,
-// reproduce the important ordering. Assertions inspect final visible text and
-// public pageInfo(), not private retained-anchor fields or helper names.
+// Synthetic 0 -> 24 -> 0 geometry changes exercise character-capacity changes.
+// Separately settled frames and coalesced changes are both tested; no device
+// logs or device-specific timings are required by the fixture. Assertions inspect
+// final visible text and public pageInfo(), not private implementation fields.
 //
 // Run: node test/reader/geometry_reanchor_roundtrip_behavior_test.js payload.json
 const assert = require('node:assert/strict');
@@ -248,44 +248,44 @@ function samePlace(actual, expected, message) {
 
 async function main() {
   await test('unchanged inset and viewport size do not reanchor', () => {
-    const m = model(42);
+    const m = model(24);
     const before = m.snapshot();
     const reads = m.caretReads;
-    m.reader.setChromeInsets(42, 0);
+    m.reader.setChromeInsets(24, 0);
     m.reader.updatePageSize(WIDTH, HEIGHT);
     assert.equal(m.caretReads, reads, 'unchanged geometry must not sample an anchor');
     assert.equal(m.frames.length, 0);
     assert.equal(m.events.length, 0);
     assert.deepEqual(m.snapshot(), before);
   });
-  await test('coalesced 0 -> 42 -> 0 before the first frame', () => {
+  await test('coalesced 0 -> 24 -> 0 before the first frame', () => {
     const m = model(); const before = m.snapshot();
-    m.reader.setChromeInsets(42, 0);
+    m.reader.setChromeInsets(24, 0);
     m.reader.setChromeInsets(0, 0);
     m.flush();
     assert.deepEqual(m.snapshot(), before);
   });
   await test('same pitch with top/bottom padding redistributed', () => {
-    const m = model(42); const before = m.snapshot();
-    m.inset(0, 42); m.inset(42, 0);
+    const m = model(24); const before = m.snapshot();
+    m.inset(0, 24); m.inset(24, 0);
     assert.deepEqual(m.snapshot(), before);
   });
   await test('changed pitch with unchanged text capacity', () => {
-    const m = model(42); const before = m.snapshot();
-    const temporary = m.inset(40);
+    const m = model(24); const before = m.snapshot();
+    const temporary = m.inset(20);
     assert.notEqual(temporary.pitch, before.pitch);
     assert.equal(temporary.capacity, before.capacity);
-    m.inset(42);
+    m.inset(24);
     assert.deepEqual(m.snapshot(), before);
   });
-  for (const initialTop of [0, 42]) {
-    await test(`three settled ${initialTop} -> ${42 - initialTop} -> ${initialTop} cycles`, () => {
+  for (const initialTop of [0, 24]) {
+    await test(`three settled ${initialTop} -> ${24 - initialTop} -> ${initialTop} cycles`, () => {
       const m = model(initialTop); const before = m.snapshot();
       const history = [before];
       for (let cycle = 0; cycle < 3; cycle++) {
-        history.push(m.inset(42 - initialTop));
+        history.push(m.inset(24 - initialTop));
         assert.notEqual(history.at(-1).capacity, before.capacity,
-          '42px change must cross a glyph-row boundary in this regression');
+          '24px change must cross a glyph-row boundary in this regression');
         history.push(m.inset(initialTop));
       }
       for (let i = 2; i < history.length; i += 2) {
@@ -293,12 +293,12 @@ async function main() {
       }
     });
   }
-  for (const initialTop of [0, 42]) {
-    await test(`hidden document: three settled ${initialTop} -> ${42 - initialTop} -> ${initialTop} cycles`, () => {
+  for (const initialTop of [0, 24]) {
+    await test(`hidden document: three settled ${initialTop} -> ${24 - initialTop} -> ${initialTop} cycles`, () => {
       const m = model(initialTop, { hidden: true });
       const before = m.snapshot();
       for (let cycle = 0; cycle < 3; cycle++) {
-        m.reader.setChromeInsets(42 - initialTop, 0);
+        m.reader.setChromeInsets(24 - initialTop, 0);
         assert.equal(m.frames.length, 0, 'hidden geometry must not wait for a frozen animation frame');
         assert.ok(m.timers.length > 0, 'the production hidden-document timer path must run');
         assert.equal(m.reader.pageInfo(), null, 'geometry remains pending until its timer runs');
@@ -312,11 +312,11 @@ async function main() {
     await test(`height/inset round trip: ${order}`, () => {
       const m = model(); const before = m.snapshot();
       if (order === 'inset first') {
-        m.inset(42); m.resize(782); m.inset(0); m.resize(HEIGHT);
+        m.inset(24); m.resize(800); m.inset(0); m.resize(HEIGHT);
       } else if (order === 'height first') {
-        m.resize(782); m.inset(42); m.resize(HEIGHT); m.inset(0);
+        m.resize(800); m.inset(24); m.resize(HEIGHT); m.inset(0);
       } else {
-        m.reader.setChromeInsets(42, 0); m.reader.updatePageSize(WIDTH, 782); m.flush();
+        m.reader.setChromeInsets(24, 0); m.reader.updatePageSize(WIDTH, 800); m.flush();
         m.reader.updatePageSize(WIDTH, HEIGHT); m.reader.setChromeInsets(0, 0); m.flush();
       }
       samePlace(m.snapshot(), before, 'height and inset changes must share a semantic anchor');
@@ -345,7 +345,7 @@ async function main() {
     for (const pending of [false, true]) {
       await test(`${name} supersedes a ${pending ? 'pending' : 'settled'} geometry anchor`, async () => {
         const m = model();
-        m.reader.setChromeInsets(42, 0);
+        m.reader.setChromeInsets(24, 0);
         if (!pending) m.flush();
         await navigate(m);
         // pageInfo deliberately returns null during reanchor, so observe the
@@ -360,7 +360,7 @@ async function main() {
         checkPosition();
         m.flush(checkPosition);
         samePlace(m.snapshot(), wanted, 'old callback must not undo explicit navigation');
-        for (let cycle = 0; cycle < 3; cycle++) { m.inset(0); m.inset(42); }
+        for (let cycle = 0; cycle < 3; cycle++) { m.inset(0); m.inset(24); }
         samePlace(m.snapshot(), wanted, 'later geometry must preserve the newly navigated position');
       });
     }
@@ -371,7 +371,7 @@ async function main() {
       const m = model();
       await navigate(m);
       m.flush();
-      m.reader.setChromeInsets(42, 0);
+      m.reader.setChromeInsets(24, 0);
       assert.equal(m.reader.pageInfo(), null, 'fixture must have a pending geometry callback');
       // No image decode is simulated here. Invoke its actual production
       // reapply entry point, using the anchor registered by real navigation.
@@ -390,7 +390,7 @@ async function main() {
   }
   await test('late-image reapply without an anchor leaves pending geometry intact', () => {
     const m = model();
-    m.reader.setChromeInsets(42, 0);
+    m.reader.setChromeInsets(24, 0);
     const queued = m.frames.length;
     assert.ok(queued > 0);
     assert.equal(m.reader.reapplyImageLateAnchor(), false);
@@ -403,7 +403,7 @@ async function main() {
   for (const direction of ['forward', 'backward']) {
     await test(`pending geometry with transient zero DOM scroll then paginate ${direction}`, () => {
       const m = model();
-      m.reader.setChromeInsets(42, 0);
+      m.reader.setChromeInsets(24, 0);
       m.resetDomScroll();
       assert.equal(m.reader.paginate(direction), 'scrolled');
       const wantedPage = direction === 'forward' ? 21 : 19;
@@ -414,7 +414,7 @@ async function main() {
   }
   await test('navigation plus a new geometry request before an older callback settles', async () => {
     const m = model();
-    m.reader.setChromeInsets(42, 0);
+    m.reader.setChromeInsets(24, 0);
     await m.reader.restoreToCharOffset(12000);
     m.flush();
     const wanted = m.snapshot();
@@ -424,7 +424,7 @@ async function main() {
     const newFirst = m.reader.getFirstVisibleCharOffset();
     const newPage = Math.round(m.reader.getPagePosition(context) / context.pageSize) + 1;
     assert.ok(newFirst > wanted.first, 'navigation must actually advance');
-    m.reader.setChromeInsets(42, 0);
+    m.reader.setChromeInsets(24, 0);
     m.flush();
     m.inset(0);
     samePlace(m.snapshot(), { first: newFirst, page: newPage },
@@ -437,7 +437,7 @@ async function main() {
     const before = m.snapshot();
     assert.equal(before.first, TOTAL_CHARS, 'page after all text must expose the text-end sentinel');
     assert.equal(m.reader.isAtEnd(), true);
-    m.reader.updatePageSize(WIDTH, 782);
+    m.reader.updatePageSize(WIDTH, 800);
     m.resetDomScroll();
     m.flush();
     assert.equal(m.reader.isAtEnd(), true, 'a textless terminal anchor must follow the true content end');
@@ -453,7 +453,7 @@ async function main() {
     const before = m.snapshot();
     assert.equal(before.first, TOTAL_CHARS);
     assert.equal(m.reader.isAtEnd(), false, 'fixture must start on an intermediate textless page');
-    m.reader.updatePageSize(WIDTH, 782);
+    m.reader.updatePageSize(WIDTH, 800);
     m.resetDomScroll();
     m.flush();
     assert.equal(m.snapshot().page, before.page, 'unresolvable text-end anchor needs its logical-page fallback');
@@ -461,11 +461,11 @@ async function main() {
     samePlace(m.snapshot(), before, 'logical-page fallback must round-trip without jumping to the last page');
   });
   await test('BUG-2205: increasing capacity must not skip the original anchor', () => {
-    const m = model(42);
+    const m = model(24);
     const before = m.snapshot();
     // First create a retained geometry anchor, then perform the real style
     // reanchor sequence. Its hint must not pin a later page past the old text.
-    m.inset(0); m.inset(42);
+    m.inset(0); m.inset(24);
     const anchor = m.reader.beginStyleReanchor(m.styleElement, 'body { font-size: 19px; }');
     assert.equal(m.reader.commitStyleReanchor(), true);
     m.flush();
@@ -476,13 +476,13 @@ async function main() {
     assert.ok(anchor < after.first + after.capacity, 'original anchor must remain on the visible page');
   });
   await test('style change retires the earlier geometry anchor', () => {
-    const m = model(42);
-    m.inset(0); m.inset(42);
+    const m = model(24);
+    m.inset(0); m.inset(24);
     m.reader.beginStyleReanchor(m.styleElement, 'body { font-size: 19px; }');
     assert.equal(m.reader.commitStyleReanchor(), true);
     m.flush();
     const after = m.snapshot();
-    m.inset(0); m.inset(42);
+    m.inset(0); m.inset(24);
     samePlace(m.snapshot(), after, 'subsequent geometry must not resurrect a pre-style anchor');
   });
   console.log(JSON.stringify({

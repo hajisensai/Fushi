@@ -3233,7 +3233,7 @@ $kSentenceAudioRubyGapJs
     this.setPagePosition(context, aligned);
   },
   // 几何变化保留“读到哪里”，直到明确导航或样式变更。不能在每个已落定的
-  // inset 事件重新采页首：Android 唤醒的 0→42→0 会先把锚量化到临时页首，
+  // inset 事件重新采页首：临时安全区往返会先把锚量化到临时页首，
   // 再把临时页首量化回原排版，形成每轮退一页。字符锚和原逻辑页必须一起保留；
   // 只保其中一个仍会被 scrollToCharOffset 的 ±1 页 hint 再次量化。
   _captureGeometryReanchorAnchor: function() {
