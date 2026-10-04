@@ -2,6 +2,7 @@
 library;
 
 import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/commands/discover_commands.dart';
 import 'package:fushi_server/src/commands/export_commands.dart';
 import 'package:fushi_server/src/commands/stats_commands.dart';
 import 'package:fushi_server/src/commands/sync_commands.dart';
@@ -12,4 +13,5 @@ const List<CliModule> kCliModules = <CliModule>[
   StatsModule(),
   SyncModule(),
   ExportModule(),
+  DiscoverModule(),
 ];
