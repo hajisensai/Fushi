@@ -2289,7 +2289,9 @@ mixin _FushiDbVideoDomain
   /// 会漏掉绝大多数订阅）：
   /// 1. 订阅行的 `collection_id`；
   /// 2. 订阅派生的任务（`subscription_items.job_id`）整理进了这个合集；
-  /// 3. 订阅的作品身份（provider + externalId）就是这个合集刮削到的作品。
+  /// 3. 订阅的作品身份（provider + externalId）就是这个合集刮削到的作品——
+  ///    仅当该身份不同时挂在别的合集下、且订阅没有任务落进别的合集时才算，
+  ///    否则删 A 会把给 B 追更的订阅一起删掉。
   Future<List<VideoDownloadSubscriptionRow>>
       getVideoDownloadSubscriptionsOwnedByCollections(
     Iterable<int> collectionIds,
@@ -2304,12 +2306,18 @@ mixin _FushiDbVideoDomain
         videoDownloadJobs.jobId.equalsExp(videoDownloadSubscriptionItems.jobId),
       ),
     ])
-          ..where(videoDownloadJobs.collectionId.isIn(ids)))
+          ..where(videoDownloadJobs.collectionId.isNotNull()))
         .get();
-    final Set<String> viaJobs = <String>{
-      for (final TypedResult row in jobRows)
-        row.readTable(videoDownloadSubscriptionItems).subscriptionId,
-    };
+    // 订阅派生任务落进的合集：落进被删合集的算归属（线 2）；落进别的合集的
+    // 订阅不再凭作品身份认领（线 3）——它在给另一个合集追更。
+    final Set<String> viaJobs = <String>{};
+    final Set<String> feedsOthers = <String>{};
+    for (final TypedResult row in jobRows) {
+      final String id =
+          row.readTable(videoDownloadSubscriptionItems).subscriptionId;
+      final int? target = row.readTable(videoDownloadJobs).collectionId;
+      (ids.contains(target) ? viaJobs : feedsOthers).add(id);
+    }
     final List<TypedResult> identityRows = await (select(
       videoMetadataProviderIdentities,
     ).join(<Join>[
@@ -2318,23 +2326,34 @@ mixin _FushiDbVideoDomain
         videoMetadataWorks.id.equalsExp(videoMetadataProviderIdentities.workId),
       ),
     ])
-          ..where(videoMetadataWorks.collectionId.isIn(ids)))
+          ..where(videoMetadataWorks.collectionId.isNotNull()))
         .get();
-    final Set<String> identities = <String>{
-      for (final TypedResult row in identityRows)
-        _subscriptionIdentityKey(
-          row.readTable(videoMetadataProviderIdentities).provider,
-          row.readTable(videoMetadataProviderIdentities).externalId,
-        ),
-    }..remove('');
+    // 同一作品身份也挂在别的合集下时，身份分不清订阅属于谁，不认领。
+    final Set<String> identities = <String>{};
+    final Set<String> sharedIdentities = <String>{};
+    for (final TypedResult row in identityRows) {
+      final VideoMetadataProviderIdentityRow identity =
+          row.readTable(videoMetadataProviderIdentities);
+      final String key =
+          _subscriptionIdentityKey(identity.provider, identity.externalId);
+      final int? owner = row.readTable(videoMetadataWorks).collectionId;
+      (ids.contains(owner) ? identities : sharedIdentities).add(key);
+    }
+    identities
+      ..removeAll(sharedIdentities)
+      ..remove('');
     return <VideoDownloadSubscriptionRow>[
       for (final VideoDownloadSubscriptionRow sub
           in await select(videoDownloadSubscriptions).get())
         if (ids.contains(sub.collectionId) ||
             viaJobs.contains(sub.subscriptionId) ||
-            identities.contains(
-              _subscriptionIdentityKey(sub.metadataProvider, sub.externalId),
-            ))
+            (!feedsOthers.contains(sub.subscriptionId) &&
+                identities.contains(
+                  _subscriptionIdentityKey(
+                    sub.metadataProvider,
+                    sub.externalId,
+                  ),
+                )))
           sub,
     ];
   }

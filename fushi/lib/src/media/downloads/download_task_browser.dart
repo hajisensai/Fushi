@@ -694,10 +694,19 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                                     tooltip: t.download_task_group_delete,
                                     icon: Icons.delete_outline,
                                     onTap: () => unawaited(
+                                      // 只交可删的成员：确认框里的 N
+                                      // 必须等于真会删掉的条数。
                                       _confirmDelete(
-                                        List<DownloadTaskEntry>.of(
-                                          group.value,
-                                        ),
+                                        group.value
+                                            .where(
+                                              (DownloadTaskEntry task) =>
+                                                  downloadTaskBatchCallable(
+                                                    task,
+                                                    DownloadBatchAction.delete,
+                                                  ) !=
+                                                  null,
+                                            )
+                                            .toList(),
                                       ),
                                     ),
                                   ),

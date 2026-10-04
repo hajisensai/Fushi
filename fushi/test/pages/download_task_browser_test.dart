@@ -1017,6 +1017,37 @@ void main() {
       expect(deleted, <String>['b1', 'b2']);
     });
 
+    testWidgets('组里混着不可删条目时确认框的 N 只算可删的', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> deleted = <String>[];
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('plain', 'g'),
+          member(
+            'del',
+            'g',
+            actions: DownloadTaskActions(
+              delete: ({required bool deleteFiles}) async => deleted.add('del'),
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-group-delete-collection:g')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(t.download_batch_delete_confirm(n: 1)),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.dialog_delete).last);
+      await tester.pumpAndSettle();
+      expect(deleted, <String>['del']);
+    });
+
     testWidgets('组里没有可删条目时不摆删除按钮；选择态下也不摆', (
       WidgetTester tester,
     ) async {

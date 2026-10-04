@@ -161,4 +161,29 @@ void main() {
     expect(await db.getVideoDownloadJob('job-1'), isNotNull);
     expect(await db.deleteVideoDownloadSubscriptions(<String>[]), 0);
   });
+
+  test('作品身份不唯一指向被删合集时不凭身份认领（防误删别的合集的订阅）', () async {
+    final FushiDatabase db = await _openDb();
+    final int a = await db.createMediaCollection('A');
+    final int b = await db.createMediaCollection('B');
+
+    // 两个合集刮到同一部作品：身份分不清订阅属于谁。
+    await _scrapeWork(db, a, 'mal', '1');
+    await _scrapeWork(db, b, 'mal', '1');
+    await db.upsertVideoDownloadSubscription(
+      _subscription('shared', externalId: '1'),
+    );
+
+    // 身份只挂在 A，但订阅的任务实际进了 B：它在给 B 追更。
+    await _scrapeWork(db, a, 'anidb', '2');
+    await db.upsertVideoDownloadSubscription(
+      _subscription('feeds-b', provider: 'anidb', externalId: '2'),
+    );
+    await db.upsertVideoDownloadJob(_job('job-b', collectionId: b));
+    await _linkItem(db, 'feeds-b', 'job-b');
+
+    expect(await _owned(db, <int>[a]), isEmpty);
+    // 两个合集一起删时身份就唯一落在被删集合内，正常认领。
+    expect(await _owned(db, <int>[a, b]), <String>{'shared', 'feeds-b'});
+  });
 }
