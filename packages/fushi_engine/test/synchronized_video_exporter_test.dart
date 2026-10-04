@@ -141,6 +141,78 @@ void main() {
     expect(result.failure, VideoClipExportFailure.outputMissing);
   });
 
+  group('#1951 export must actually carry both streams', () {
+    // ffmpeg-kit 6.0 (Android) prints the stats line without a prefix and in kB.
+    const String ffmpeg6Stats =
+        'frame=   76 fps=0.0 q=0.0 Lsize=      86kB time=00:00:03.16\n'
+        'video:84kB audio:0kB subtitle:0kB other streams:0kB '
+        'global headers:0kB muxing overhead: 2.1%\n';
+    // 7.x prefixes the output and switched to KiB.
+    const String ffmpeg7Stats =
+        '[out#0/webm @ 000001d2] video:84KiB audio:25KiB subtitle:0KiB '
+        'other streams:0KiB global headers:0KiB muxing overhead: 1.8%\n';
+
+    Future<VideoClipExportResult> exportWithLog(String log) =>
+        exportSynchronizedVideoClip(
+          videoPath: source.path,
+          startMs: 0,
+          endMs: 1000,
+          outputPath: output,
+          backend: _Backend((List<String> args) async {
+            // A real webm header alone is tens of KB; non-empty proves nothing.
+            await File(args.last).writeAsString('webm header');
+            return FfmpegRunResult(returnCode: 0, output: log);
+          }),
+        );
+
+    test('parses both stats formats and ignores stream info lines', () {
+      expect(parseFfmpegMuxedBytes(ffmpeg6Stats), (
+        videoKiB: 84.0,
+        audioKiB: 0.0,
+      ));
+      expect(parseFfmpegMuxedBytes(ffmpeg7Stats), (
+        videoKiB: 84.0,
+        audioKiB: 25.0,
+      ));
+      expect(
+        parseFfmpegMuxedBytes('  Stream #1:0: Audio: aac (LC), 48000 Hz\n'),
+        isNull,
+      );
+    });
+
+    test(
+      'declared audio track without audio data is a failed export',
+      () async {
+        final VideoClipExportResult result = await exportWithLog(ffmpeg6Stats);
+        expect(result.isSuccess, isFalse);
+        expect(result.failure, VideoClipExportFailure.outputMissing);
+        expect(result.detail, contains('no audio data muxed'));
+        expect(File(output).existsSync(), isFalse);
+      },
+    );
+
+    test('missing video data is a failed export', () async {
+      final VideoClipExportResult result = await exportWithLog(
+        'video:0kB audio:25kB subtitle:0kB other streams:0kB\n',
+      );
+      expect(result.detail, contains('no video data muxed'));
+      expect(File(output).existsSync(), isFalse);
+    });
+
+    test('no final stats means no evidence, not success', () async {
+      final VideoClipExportResult result = await exportWithLog('');
+      expect(result.failure, VideoClipExportFailure.outputMissing);
+      expect(result.detail, contains('ffmpeg final stats missing'));
+    });
+
+    test('both streams muxed is success', () async {
+      final VideoClipExportResult result = await exportWithLog(ffmpeg7Stats);
+      expect(result.isSuccess, isTrue);
+      expect(result.outputPath, output);
+      expect(File(output).existsSync(), isTrue);
+    });
+  });
+
   test(
     'existing file cannot be overwritten or cleaned as partial output',
     () async {
