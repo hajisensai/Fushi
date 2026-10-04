@@ -1,12 +1,8 @@
-## BUG-2943 · 阅读器锁屏解锁改变页距后重锚 hint 退回上一页
-- **报告**：2026-10-04（PR [#1955](https://github.com/hajisensai/Fushi/pull/1955) 补录；用户报告竖排阅读器锁屏/解锁后退回上一页）。
-- **真实性**：✅ 真 bug（页距变化下的重锚 hint 契约错误已沿生产路径确认；用户设备上的锁屏/解锁原始路径尚未复现）。分页 `setChromeInsets` 原先在重排前采集像素滚动位，重排后直接交给 `scrollToCharOffset`；后者却按当前 `pageSize` 解读 hint。根因位置：`fushi/lib/src/reader/reader_pagination_scripts.dart:3233–3272`（以下行号对应代码提交 `c0b05431f921c091ab32527e6f2095684a4e955e`），消费者在同文件 `scrollToCharOffset` 的 `hintScroll / ctx0.pageSize` 分支。第 40 页、旧页距 800px 时的 32000px，在新页距 824px 下被量化为第 39 页。系统 inset 改变可触发该条件，但本记录没有 Android 设备 inset 日志来证明用户原始事件链。
-- **[x] ① 已修复** — `5d53fcc4b` 在 inset 重排前保存逻辑页号，下一次重锚回调再按新页距计算 `hintScroll`（40 × 824 = 32960px）。不改变已有的 in-flight 重锚串行化与缺少有效页距时的原始像素回退；原修复随 `c0b05431f921c091ab32527e6f2095684a4e955e` 保留。
-- **[x] ② 已加自动化测试** — `6a4e7b4fc` 增加 `fushi/test/reader/restore_reanchor_transient_viewport_behavior_test.js:154–173`，由同名 Dart driver 运行生产 paginated shell；模拟页距 800→824，断言只调用一次重锚并传入 32960px。`c0b05431f9` 更新 `fushi/test/reader/chapter_start_illustration_charoffset_guard_test.dart`，要求保存逻辑页、按新页距换算并透传 hint，连续模式的 raw-scroll 契约保持。该 Node harness 桩替了几何采样和 `scrollToCharOffset`，证明调用参数契约，不证明真实 WebView 最终落点。
-- **验证**：代码提交 `c0b05431f921c091ab32527e6f2095684a4e955e` 的 [GitHub CI run 37186223135](https://github.com/hajisensai/Fushi/actions/runs/37186223135) 中，四个主应用 unit-test shards、Dart analyze、包测试及 JS 行为测试通过。独立代码审查额外对提取的生产 `setChromeInsets` 跑 8 个 Node 场景均通过；旧 raw-hint 反例得到 32000 而非 32960，断言失败。这是有限的调用级验证，仍不是设备或完整布局验收。此处 CI 结论仅属于所列代码 SHA，不外推到后续文档提交。
-- **备注 / 待补设备验收**：
-  - Android 真机锁屏/解锁：未验证，无截图、logcat 或前后页首字证据。本轮是云端代码/文档工作，没有运行具备该锁屏路径的 app 设备会话。
-  - `paginated`：Node 调用级回归通过；真实 WebView 布局、反复锁屏/解锁及最终页首字保持待补。
-  - `continuous`：现有 CI 覆盖没有报告回归；真实设备锁屏/解锁、滚动位置保持待补。
-  - `vn`：本次没有 VN 专项设备/真实布局证据，待补；未直接修改 VN 不等于已完成验收。
-  - Android release verify 与多平台实际构建被各自 workflow 条件跳过，不记作构建通过。代码/自动化修复已落地，不能据此宣称用户设备原始问题已经端到端解决。
+## BUG-2943 · 阅读器锁屏解锁的 inset 往返丢失原字符锚
+- **报告**：2026-10-04；PR [#1955](https://github.com/hajisensai/Fushi/pull/1955) 之后用户在 Android 16 电子阅读器仍报告：唤醒先显示正确内容，随后刷新时有时退回上一页；手动刷新电子墨水屏不触发，同版本另一台 Android 设备不触发。
+- **真实性**：✅ 真 bug。用户提供的安装版 `2.9.1-debug.17121` 诊断导出显示：最新进程记录中 7 组系统顶部 inset `0→42→0`，分别在归零后约 219–414 ms 出现回退的可见字符区间；顶栏、底栏、进度条预留均为 0。日志只证明 Dart 请求及后续区间变化，不含输入事件、JS 页距与每次重锚的提交顺序，不能据此伪称已完成真机可控复现。原始日志和书名不入库。
+- **根因**：`fushi/lib/src/reader/reader_pagination_scripts.dart` 的分页 `setChromeInsets` 在每个已完成的几何事件前重新采页首。首个重排为了不跳过旧锚会落到含锚的前一页；第二次把那个临时页首当成新锚，再量化一次，原始落点永久丢失。高度变化的 `updatePageSize` 还走粗节点进度，必须与 inset 共用精确锚。PR #1955 的像素 hint 按新页距换算有必要，但只能解决页距口径，不能保住跨事件的语义锚。
+- **[x] ① 已修复** — 分页几何重锚在明确导航之前保留字符锚及原逻辑页；inset 与尺寸共用捕获/提交入口。独立 token 标识在飞回调，翻页、恢复、fragment、跟读/搜索揭示、迟到图片目标更新会撤销旧回调，旧回调不能覆盖新导航或清新回调的旗。显式样式变更开启新的基线。保留 BUG-2205 的防跳字检查、无变化早退、图片尺寸更新、metrics 失效和物理章尾夹取，不使用任意延时。
+- **[x] ② 已加自动化测试** — `geometry_reanchor_roundtrip_behavior_test.dart/js` 用 Dart 生成真实分页 shell，再由 Node 执行原生产方法，DOM 边界采用明确标注的理想多列几何；断言最终页首字符、页号及导航落点，不能用桩替 `scrollToCharOffset` 后只验参数。包含实际 42px 双向多轮往返、同帧合并/分帧、同容量变页距、尺寸/inset 交错、旧回调不能覆盖明确导航、前导内容与防跳字边界。Node 执行：修前 33 条中 26 条失败、7 条对照通过；修后 33 条全部通过；临时移除 BUG-2205 防跳字检查时对应断言变红，防止以强留页号掩盖根因。Flutter driver 已执行：7 个定向文件共 27 个测试通过、无跳过；CI 结果待补。
+- **PR #1955 清理审计**：移除并替换每次事件单独捕获/提交 hint 的实现，换算本身保留到统一 helper；删除已被最终页首/页号行为回归覆盖的旧调用参数桩测试。该 PR 的 audiobook/video 鼠标拖动测试对应上游已经保留的独立修复，删除它们只会损失有效覆盖，因此不回滚。metrics 失效和图片盒更新早于该 PR，不属于可随意撤销的代码。
+- **验证边界**：已在 `c59d631` 提取的生产方法上先得到页首/页号失败，修复后 33 条行为模型通过，独立审查复核；原恢复重锚及隐藏帧调度 Node 测试通过。Flutter 3.44 定向测试 27/27 通过，全量 `flutter analyze --no-pub` 退出 0、No issues found；最终 CI 待补。真实 WebView 排版与 Android 电源键路径仍需设备验收；本云环境 Chromium 启动被 socket 权限阻塞，浏览器运行零断言，不能算通过。`continuous` 与 `vn` 不改变几何重锚策略；既有行为测试及实际设备验收分别记录，不把“未改动”视作已验证。
